@@ -1239,6 +1239,7 @@ fn previewed_finisher(
             kill_value: 250.0,
             siege: false,
             captures: true,
+            wall_threat: 0.0,
         }],
         vec![Candidate {
             shooter: 0,
@@ -1807,6 +1808,7 @@ fn kill_only_shots_join_a_sequence_that_kills_and_nothing_less() {
         kill_value: 250.0,
         siege: false,
         captures: true,
+        wall_threat: 0.0,
     }];
     let shot = |index: usize, uid: u32| Candidate {
         shooter: index,

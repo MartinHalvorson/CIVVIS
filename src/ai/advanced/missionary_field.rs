@@ -188,6 +188,13 @@ impl AdvancedAi {
     /// caller goes on with its turn; `Some(false)` when nothing legal helps,
     /// which holds the unit. One step per call; the unit loop composes the
     /// rest of the turn, and the next call reads the new tile.
+    ///
+    /// Under `corps-comes-home-alive` the flight is the whole move, not one
+    /// step: the tile is chosen among everything the unit reaches this turn
+    /// and walked to in one order. A soldier at war is no slow raider. Live
+    /// 120557Z turn 158: an Apostle with six charges beside a Cavalry took
+    /// one step to a tile the Cavalry still reached and was condemned; turn
+    /// 172 the same beside a Scythian Cavalry.
     pub(super) fn religious_unit_evades_raiders(
         &self,
         g: &mut Game,
@@ -217,10 +224,17 @@ impl AdvancedAi {
                 .min()
                 .unwrap_or(0)
         };
-        let flight = g
-            .nbrs(current)
+        let whole_move = self.corps_comes_home_alive;
+        let candidates: Vec<Pos> = if whole_move {
+            g.reachable(uid)
+        } else {
+            g.nbrs(current)
+                .into_iter()
+                .filter(|position| g.can_move(uid, *position))
+                .collect()
+        };
+        let flight = candidates
             .into_iter()
-            .filter(|position| g.can_move(uid, *position))
             .map(|position| {
                 (
                     Self::religious_tile_in_reach(g, pid, position, &threats),
@@ -244,6 +258,15 @@ impl AdvancedAi {
                "a religious unit is condemned by the raider that reaches its tile, and \
                 this one moves faster than any raider; the step {outcome}";
                position);
+        if whole_move && g.wdist(current, position) > 1 {
+            if self.base.path_walk_to(g, pid, uid, position) {
+                return Some(true);
+            }
+            let step = g
+                .route_step(uid, position, 0)
+                .filter(|next| g.can_move(uid, *next));
+            return Some(step.is_some_and(|next| self.base.path_move(g, pid, uid, next)));
+        }
         Some(self.base.path_move(g, pid, uid, position))
     }
 

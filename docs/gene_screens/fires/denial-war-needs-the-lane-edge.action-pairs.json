@@ -1,0 +1,34 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "denial-war-needs-the-lane-edge",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 23 boards of eight live Deity Online Kristina (Sweden) Culture games of 2026-11-10 (140731Z, 144009Z, 152217Z, 153619Z, 160429Z, 161648Z-cont2, 164254Z, 165607Z), each the run's events.jsonl cut after the state frame whose decision record carries our science-denial war's order: the Formal-War denunciation of the racer (10 boards, 5 of them a declared friend on its renewal turn) or the declaration itself (13 boards, every 'Declaring war on X to deny the space race' in those why.logs). Both arms run one frozen civvis_orders --resumed built from the branch at 7bae560031 with the run's own requested genome; the on arm adds --with denial-war-needs-the-lane-edge. The off arm reproduces the live DENOUNCE or DECLARE order on 23/23; the on arm emits neither on 23/23 and journals 'Culture keeps the peace with X | denial-war-needs-the-lane-edge: ...' (18 under 1.2 times the rival's steady power, at 0.03-0.96x; 5 denunciations of a declared friend on its renewal turn, which the host still counted as a friend).",
+ "archive": {
+  "path": "docs/eval/2026-11-10-denial-war-needs-the-lane-edge.native-queries.tar.xz",
+  "sha256": "9bd8f517eb4e44b4181a698686346ec236edf6906839472121edcd979a19960d"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0010/result.json",
+  "native-queries-01/0011/result.json",
+  "native-queries-01/0012/result.json",
+  "native-queries-01/0013/result.json",
+  "native-queries-01/0014/result.json",
+  "native-queries-01/0015/result.json",
+  "native-queries-01/0016/result.json",
+  "native-queries-01/0017/result.json",
+  "native-queries-01/0018/result.json",
+  "native-queries-01/0019/result.json",
+  "native-queries-01/0020/result.json",
+  "native-queries-01/0021/result.json",
+  "native-queries-01/0022/result.json"
+ ]
+}

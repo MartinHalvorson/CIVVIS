@@ -1,0 +1,18 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "culture-bank-holds-the-counterweight",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Cases: the turns at or after Nationalism on which live Deity Online Kristina (Sweden) Culture runs bought a counterweight Missionary with Faith: civvis-20261110T171451Z t118 and t136, civvis-20261110T173750Z t103, t125 and t165, civvis-20261110T153619Z t136 and t151; each cut at its turn's first state export and queried with --resumed on a ci-profile civvis_orders built from a tree carrying this branch's change (the sibling opt-in gene culture-gold-buys-the-shrines off in both arms). Both arms carry the run's requested genome; the on arm adds the gene. At 171451Z t136 the off arm reproduces the live Missionary purchase and the on arm drops it, journalling the hold; at t118 the on arm journals the hold and neither arm buys; at the other five cut points neither arm reaches the purchase from the first frame (the live buys came later in those turns).",
+  "archive": {
+    "path": "docs/eval/2026-11-10-culture-bank-holds-the-counterweight.native-queries.tar.xz",
+    "sha256": "5562c73c7849f63dc33fdc138d70ed6ac60de3ca7ec87816d21f9fe994d4414f"
+  },
+  "members": [
+    "nq-counter-171451Z/0000/result.json",
+    "nq-counter-171451Z/0001/result.json",
+    "nq-counter-173750Z/0000/result.json",
+    "nq-counter-173750Z/0001/result.json",
+    "nq-counter-173750Z/0002/result.json",
+    "nq-counter-153619Z/0000/result.json",
+    "nq-counter-153619Z/0001/result.json"
+  ]
+}

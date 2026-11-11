@@ -55,6 +55,18 @@
 //!     may lay the hull down
 //!     ([`AdvancedAi::religion_seat_hull_before_cartography`]); Cartography
 //!     gives every ship already afloat the Ocean.
+//!   - *It is an eye, not a soldier.* civvis-20261110T123943Z floated its
+//!     Galley at t77, eleven turns before Cartography, and met its last two
+//!     rivals at t112 and t144. Between t77 and t133 the journal has its
+//!     sea task forces on 206 lines (the reserve 127, a Settler's escort 50,
+//!     Destroy missions 26, other 3), and that Galley never sailed more than
+//!     32 tiles from the capital. civvis-20261110T112233Z lost its only ship
+//!     at t110 striking for a Destroy mission at 0.8 local strength. The
+//!     first unlinked warship of ours with water still to chart
+//!     ([`AdvancedAi::religion_seat_charting_ship`]) is left out of the
+//!     objective board's pool and is not bound as a Settler's naval guard,
+//!     so the sea scout's turn has it. One ship: the rest of the fleet
+//!     fights as before, and an embarked Settler waits for another hull.
 //! - **Across the water.** The charting goal was dry ground beside a rival
 //!   city we know, or dry fog within reach of the unit, so a rival overseas
 //!   with no city seen drew nobody. Six live games of 2026-11-10 on the armed
@@ -196,10 +208,13 @@ impl BasicAi {
 
     /// The contact gap as this seat reads it: `contact-fleet`'s own, or, for
     /// a seat `religion-seat-charts-the-rivals` acts for, a met major still
-    /// under-charted. See the module.
+    /// under-charted, or a lane charting gene's own gap
+    /// (`domination-charts-every-capital`: a rival capital never seen). See
+    /// the module and `advanced/domination_charts_every_capital.rs`.
     pub(crate) fn contact_gap_open(&self, g: &Game, pid: usize) -> bool {
         Self::contact_fleet_gap(g, pid)
             || (self.charts_rival_majorities && Self::under_charted_majors(g, pid) > 0)
+            || self.lane_charting_gap
     }
 }
 
@@ -223,15 +238,32 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
-        self.religion_seat_charts_the_rivals_active(g, pid)
-            && self.naval_eye_commitment(g, pid, cid, plan, item)
+        self.seat_charts_the_water(g, pid) && self.naval_eye_commitment(g, pid, cid, plan, item)
+    }
+
+    /// The seat's charting ship: the first unlinked warship of ours with open
+    /// water still to chart, while the gene acts for the seat and the contact
+    /// gap is open. The objective board and the Settler's naval guard leave
+    /// it alone. `None` otherwise. See the module.
+    pub(super) fn religion_seat_charting_ship(&self, g: &Game, pid: usize) -> Option<u32> {
+        if !self.seat_charts_the_water(g, pid) || !self.base.contact_gap_open(g, pid) {
+            return None;
+        }
+        g.player_unit_ids(pid).into_iter().find(|uid| {
+            let unit = &g.units[uid];
+            let spec = &g.rules.units[unit.kind];
+            spec.class == "military"
+                && spec.domain.as_deref() == Some("sea")
+                && unit.linked_to.is_none()
+                && BasicAi::naval_recon_ship_can_chart(g, pid, *uid)
+        })
     }
 
     /// Whether the sea scout's queue claim may lay a hull down before a ship
     /// can cross Ocean: the gene acts for this seat and Buttress, the last
     /// technology before Cartography, is known. See the module.
     pub(super) fn religion_seat_hull_before_cartography(&self, g: &Game, pid: usize) -> bool {
-        self.religion_seat_charts_the_rivals_active(g, pid)
+        self.seat_charts_the_water(g, pid)
             && g.players[pid].techs.contains(&crate::name!("buttress"))
     }
 
@@ -239,12 +271,17 @@ impl AdvancedAi {
     /// [`CARTOGRAPHY_VALUE`] for a step toward Cartography while a living
     /// major is unmet, unlocated or under-charted and the empire is coastal.
     pub(super) fn religion_seat_cartography_value(&self, g: &Game, pid: usize, tech: &str) -> f64 {
-        if !self.religion_seat_charts_the_rivals_active(g, pid)
+        if !self.seat_charts_the_water(g, pid)
             || g.players[pid].techs.contains(&crate::name!("cartography"))
             || !self.tech_leads_to(g, tech, "cartography")
             || !BasicAi::empire_is_coastal(g, pid)
         {
             return 0.0;
+        }
+        // `domination-charts-every-capital`: a lane charting gene's seat
+        // reads its own schedule.
+        if !self.religion_seat_charts_the_rivals_active(g, pid) {
+            return self.lane_cartography_value(g, pid);
         }
         let (unmet, unlocated) = BasicAi::contact_fleet_missing_majors(g, pid);
         if unmet + unlocated + BasicAi::under_charted_majors(g, pid) == 0 {

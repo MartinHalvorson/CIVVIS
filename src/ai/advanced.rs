@@ -5138,11 +5138,19 @@ pub struct AdvancedAi {
     apostle_evangelizes_unspent: bool,
     /// Research parity compares wounded land units against field targets.
     barbarian_research_prices_the_field: bool,
+    /// `band-bank-bars-people-under-fire`: a city under fire opens the Rock
+    /// Band bank to the defence only, not to Great People. See
+    /// `advanced/culture_band_bank.rs`. Off by default.
+    band_bank_bars_people_under_fire: bool,
     /// `battle-solver`: play every local fight forward and choose the turn
     /// by how the battle ends. See `advanced/battle_solver.rs`.
     battle_solver: bool,
     /// Follow the objective board's own Defend assignment. Off by default.
     anvil_follows_the_defense: bool,
+    /// `band-buys-near-the-stage`: a Rock Band is bought in the city nearest
+    /// a stage it can play, not the first city that accepts. See
+    /// `advanced/band_buys_near_the_stage.rs`. Off by default.
+    band_buys_near_the_stage: bool,
     /// `board-ignores-the-faith-war`: the war `faith-war-is-no-front`
     /// exempts from `one_war_holds_declaration` does not hold the board's
     /// declaration (`war_policy_declaration`) either. Off by default.
@@ -5625,7 +5633,25 @@ pub struct AdvancedAi {
     /// `acropolis-before-the-deterrent`: a quick first Theater Square passes a
     /// deterrent unit at peace. See `advanced/acropolis_before_the_deterrent.rs`.
     acropolis_before_the_deterrent: bool,
+    /// `band-stage-needs-three-venues`: under `band-plays-at-level-three`, a
+    /// promotion's two-level stage counts as reaching level 3 only where at
+    /// least three such stages are open; a thinner one is ranked by levels
+    /// times stages. See `advanced/band_plays_its_stage.rs`. Off by default.
+    band_stage_needs_three_venues: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-pass-keeps-half-the-army`: the culture claims pass the
+    /// near-rival deterrent only while our power is at least half the near
+    /// neighbour's. See `advanced/culture_past_the_deterrent.rs`. Opt-in.
+    culture_pass_keeps_half_the_army: bool,
+    /// `domination-charts-every-capital`: a Domination seat keeps charting
+    /// until every rival's original capital is on its map, and takes
+    /// Cartography sooner. See `advanced/domination_charts_every_capital.rs`.
+    /// Opt-in.
+    domination_charts_every_capital: bool,
+    /// `denial-charts-the-racer`: a Culture or Domination seat charts every
+    /// city of the leading Science rival. See
+    /// `advanced/denial_charts_the_racer.rs`. Opt-in.
+    denial_charts_the_racer: bool,
     /// `corps-comes-home-alive`: a wounded religious unit walks to a Holy
     /// Site of ours and heals, fights only what it survives, and reads every
     /// rival blow that can land on a tile together. See
@@ -6742,6 +6768,10 @@ pub struct AdvancedAi {
     /// `chop-feeds-the-long-build` alone. A Builder clears into a space-race
     /// project or the Spaceport and into nothing else. Opt-in.
     chop_feeds_the_space_race: bool,
+    /// `cold-war-before-conservation`: a Culture target on a six-slot
+    /// government takes only the road to Cold War until it is known. See
+    /// `advanced/cold_war_before_conservation.rs`. Opt-in.
+    cold_war_before_conservation: bool,
     /// `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen
     /// is working now. See `AdvancedAi::chop_spares`. Opt-in.
     chop_spares_the_worked_tile: bool,
@@ -6749,6 +6779,113 @@ pub struct AdvancedAi {
     /// it is seen or cannot be reached. See
     /// `advanced/religion_seat_charts_the_rivals.rs`.
     charting_goals: RefCell<BTreeMap<u32, Pos>>,
+    /// `culture-bank-opens-at-nationalism`: a Culture target holds its Rock
+    /// Band bank from Nationalism, not Ideology, and spends Faith on no Great
+    /// Person but a Writer, Artist or Musician from then on. See
+    /// `advanced/culture_band_bank.rs`. Opt-in.
+    culture_bank_opens_at_nationalism: bool,
+    /// `culture-seat-builds-past-the-deterrent`: at peace, a Culture seat's
+    /// Theater, Amphitheater, Art Museum and Monument claims pass a deterrent
+    /// unit and the deterrent leaves them alone. See
+    /// `advanced/culture_past_the_deterrent.rs`. Off by default.
+    culture_seat_builds_past_the_deterrent: bool,
+    /// `culture-faith-site-per-theater`: the Culture Faith claim develops one
+    /// Holy Site per city with a standing Theater Square (up to six) and keeps
+    /// opening sources until Faith reaches twenty a city, and the seat
+    /// researches Astrology once its first Theater Square stands. See
+    /// `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_faith_site_per_theater: bool,
+    /// `culture-gold-buys-the-shrines`: while the Culture Faith sources are
+    /// open, the treasury buys one Shrine or Temple a turn in a standing Holy
+    /// Site city. See `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_gold_buys_the_shrines: bool,
+    /// `culture-road-earns-its-inspirations`: a Culture seat orders its civic
+    /// beeline by when each Inspiration lands and researches the technology
+    /// that inspires a near civic of the road to Cold War first. See
+    /// `advanced/culture_road_inspirations.rs`. Off by default.
+    culture_road_earns_its_inspirations: bool,
+    /// `culture-digs-every-site`: a Culture seat keeps an Archaeological
+    /// Museum per three reachable Antiquity Sites (at most two), claims the
+    /// Museum city's queue for an Archaeologist, and walks it on past a site
+    /// it cannot reach. Carries `culture-digs-one-museum`. See
+    /// `advanced/culture_digs_every_site.rs`. Off by default.
+    culture_digs_every_site: bool,
+    /// `curator-sits-with-the-works`: once a Culture seat holds four Writing,
+    /// Art or Music works, Curator is Pingala's next promotion, and a Pingala
+    /// holding it sits in the city holding the most of them. See
+    /// `advanced/curator_sits_with_the_works.rs`. Off by default.
+    curator_sits_with_the_works: bool,
+    /// `culture-digs-every-site`: sites an Archaeologist failed to step
+    /// toward, by tile, with the turn each is open again. Empty with the gene
+    /// off.
+    dig_dead_sites: BTreeMap<Pos, u32>,
+    /// `denial-war-needs-the-lane-edge`: off Domination, the science-denial
+    /// war needs the launcher counter's edge over the rival's steady power
+    /// and spares a friend. See `advanced/denial_war_needs_the_lane_edge.rs`.
+    /// Off by default.
+    denial_war_needs_the_lane_edge: bool,
+    /// `culture-seat-appoints-pingala-first`: a Culture target spends its
+    /// first Governor titles on Pingala and Connoisseur instead of the
+    /// opening's Expansion roster. See `advanced/culture_pingala_first.rs`.
+    /// Opt-in.
+    culture_seat_appoints_pingala_first: bool,
+    /// `culture-bank-holds-the-counterweight`: from Nationalism, a Culture
+    /// seat's home religious defence buys no counterweight Missionary unless
+    /// the threat faith stands at match point; the Faith stays for the Rock
+    /// Bands. See `advanced/culture_band_bank.rs`. Opt-in.
+    culture_bank_holds_the_counterweight: bool,
+    /// `culture-road-builds-its-triggers`: a Culture seat lays the Farms and
+    /// builds the last Market a near road civic's Inspiration counts. See
+    /// `advanced/culture_road_triggers.rs`. Off by default.
+    culture_road_builds_its_triggers: bool,
+    /// `culture-faith-site-per-theater-2`: version one, and the Culture Faith
+    /// sources are claimed in parallel, one item per Theater city, rather
+    /// than one in the whole empire. See `advanced/culture_faith_sources.rs`.
+    /// Opt-in.
+    culture_faith_site_per_theater_2: bool,
+    /// `culture-keeps-pingala-home`: a Culture target's seated Pingala answers
+    /// a Loyalty emergency only in a city about to flip. See
+    /// `advanced/culture_pingala_first.rs`. Opt-in.
+    culture_keeps_pingala_home: bool,
+    /// `domination-target-gets-its-breaker`: the Domination lane owns a wall
+    /// breaker matched to its target's walls before it declares, and keeps
+    /// one with every siege. See
+    /// `advanced/domination_target_gets_its_breaker.rs`. Opt-in.
+    domination_target_gets_its_breaker: bool,
+    /// `domination-target-gets-its-breaker`: the turn a breaker was last
+    /// bought for each target, by the target's tile, for the cooldown.
+    domination_breaker_bought: BTreeMap<Pos, u32>,
+    /// `city-strike-takes-the-gun`: every city and Encampment strike is
+    /// priced by the command phase (the delegated city loop's first-hostile
+    /// pass stands aside), and a gun at our walls carries the wall-threat
+    /// premium there. See `advanced/siege_at_the_walls_dies_first.rs`. Off by
+    /// default.
+    city_strike_takes_the_gun: bool,
+    /// `culture-road-takes-the-unique-first`: a Culture seat takes the civic
+    /// that unlocks its own largest Culture source first and has its
+    /// Builders standing when it lands. See `advanced/culture_unique_first.rs`.
+    /// Off by default.
+    culture_road_takes_the_unique_first: bool,
+    /// `culture-faith-braves-the-barbarians`: the Culture Faith claim's
+    /// six-tile soldier rule skips Barbarian units. See
+    /// `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_faith_braves_the_barbarians: bool,
+    /// `cold-war-then-heritage`: once a Culture target knows Cold War, the
+    /// civic slot takes Conservation and then Cultural Heritage before the
+    /// government ladder and the culture list. See
+    /// `advanced/cold_war_then_heritage.rs`. Opt-in.
+    cold_war_then_heritage: bool,
+    /// `culture-faith-site-per-theater-3`: versions one and two without their
+    /// caps (a Holy Site in every Theater city, sources open to forty Faith a
+    /// city), a Theater city's last free specialty district slot kept for its
+    /// Holy Site, and Astrology ahead of the production technologies. See
+    /// `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_faith_site_per_theater_3: bool,
+    /// `culture-seat-monuments-2`: version one, and a war holds the Monument
+    /// claim only for a city that is itself threatened, while a near-done
+    /// Monument goes before the city's other heads. See
+    /// `advanced/culture_monuments.rs`. Opt-in.
+    culture_seat_monuments_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -7480,6 +7617,30 @@ pub struct AdvancedAi {
     /// `exalted-goddess-buys-the-coastal-guard`: the turn each city last
     /// bought its guard. Empty with the gene off.
     exalted_goddess_guard_bought: BTreeMap<u32, u32>,
+    /// `flower-power-in-the-dark`: a Culture seat in a peaceful Dark Age
+    /// slots Flower Power while it holds or can buy a Rock Band, and drops it
+    /// when the seat needs units. See `advanced/flower_power_in_the_dark.rs`.
+    /// Off by default.
+    flower_power_in_the_dark: bool,
+    /// `first-capital-before-the-walls`: a Domination seat opens the early
+    /// conquest on the nearest rival capital it can walk to while its walls
+    /// are Ancient or none. See `advanced/first_capital_before_the_walls.rs`.
+    /// Off by default.
+    first_capital_before_the_walls: bool,
+    /// `every-shooter-at-the-walls`: every hostile land shooter in reach of our
+    /// walls is a wall threat priced by the city damage its next blow would do,
+    /// and an escort may shoot one. See
+    /// `advanced/siege_at_the_walls_dies_first.rs`. Off by default.
+    every_shooter_at_the_walls: bool,
+    /// `faith-strike-spares-the-stages`: a Culture seat holds the heretic
+    /// strike once Cold War is known or its band bank is open, and ends a
+    /// strike war then as soon as the host signs. See
+    /// `advanced/faith_strike.rs`. Opt-in.
+    faith_strike_spares_the_stages: bool,
+    /// `faith-strike-fears-the-tech-lead`: a Culture seat strikes no rival
+    /// that leads it by 10 or more techs. See `advanced/faith_strike.rs`.
+    /// Opt-in.
+    faith_strike_fears_the_tech_lead: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -7836,6 +7997,11 @@ pub struct AdvancedAi {
     /// empire can hold, while a city founded now still repays. See
     /// `advanced/good_land_lifts_the_city_target.rs`. Off by default.
     good_land_lifts_the_city_target: bool,
+    /// `great-works-never-wait`: a Culture seat never sells a Great Work,
+    /// moves a Writing out of the Palace into an empty Amphitheater slot, and
+    /// claims a slot building for an Artist or Musician the host cannot seat.
+    /// See `advanced/great_works_never_wait.rs`. Off by default.
+    great_works_never_wait: bool,
     // ---- append: l-o ------------------------------------------------
     /// `last-charge-joins-the-army`: on a Religion seat an Apostle keeps its
     /// last charge and hunts rival religious units, and a Missionary keeps
@@ -9051,6 +9217,11 @@ pub struct AdvancedAi {
     /// cheapest. See `advanced/religion_seat_counts_the_pressure.rs`. Off by
     /// default.
     religion_seat_counts_the_pressure: bool,
+    /// `peace-waits-for-the-host-minimum`: no peace offer goes to a major
+    /// whose war on us is younger than the host's minimum war length, so the
+    /// bridge's retry window is not spent on an offer the host never signs.
+    /// See `advanced/unchosen_war_peace.rs`. Opt-in.
+    peace_waits_for_the_host_minimum: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
@@ -9814,6 +9985,32 @@ pub struct AdvancedAi {
     sea_scout_claims_the_queue_2: bool,
     /// Rank Spy producers by native turns, sparing science on ties. Off by default.
     spies_price_the_science_head: bool,
+    /// `space-denial-promotes-the-rocket-scientist`: a Culture or Domination
+    /// seat whose spies answer a space race promotes them to Rocket Scientist
+    /// first. See `advanced/space_denial_rocket_scientist.rs`. Off by default.
+    space_denial_promotes_the_rocket_scientist: bool,
+    /// `sweden-builds-open-air-museums`: Sweden's Builders price the
+    /// Open-Air Museum (2 Culture and 2 Tourism per terrain class of Sweden's
+    /// city centres). See `advanced/sweden_builds_open_air_museums.rs`. Off by
+    /// default.
+    sweden_builds_open_air_museums: bool,
+    /// `space-denial-slots-the-spy-cards`: a Culture or Domination seat whose
+    /// spies answer a space race slots Machiavellianism and Cryptography. See
+    /// `advanced/space_denial_spy_cards.rs`. Off by default.
+    space_denial_slots_the_spy_cards: bool,
+    /// `siege-at-the-walls-dies-first`: a hostile siege gun in reach of our
+    /// walls, or a taker beside an open city of ours, is the first target of
+    /// the kill plan, the ladder and the city strike. See
+    /// `advanced/siege_at_the_walls_dies_first.rs`. Off by default.
+    siege_at_the_walls_dies_first: bool,
+    /// `settler-stall-counts-turns`: `SETTLER_STALL_LIMIT` counts a Settler's
+    /// stall at most once per game turn, and not on a turn it got closer. See
+    /// `advanced/settler_stall_counts_turns.rs`. Off by default.
+    settler_stall_counts_turns: bool,
+    /// `settler-stall-counts-turns`: the last game turn already spoken for
+    /// (a stall counted, or progress made), keyed by the Settler's stable
+    /// Civ VI id so the live mirror's per-frame board ids cannot reset it.
+    settler_stall_turn: BTreeMap<i64, u32>,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -10206,6 +10403,11 @@ pub struct AdvancedAi {
     /// friendship. See `advanced/tribute_buys_the_friendship.rs`. Off by
     /// default.
     tribute_buys_the_friendship: bool,
+    /// `unique-unit-closes-the-dark-age`: a seat one to four Era Score short
+    /// of a Normal Age researches and trains or buys its first unique unit
+    /// before the era closes. See `advanced/unique_unit_closes_the_age.rs`.
+    /// Opt-in.
+    unique_unit_closes_the_dark_age: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -10573,6 +10775,8 @@ mod treatment_flags;
 
 mod age_closer;
 mod domination_research_commitment;
+/// `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`.
+mod flower_power_in_the_dark;
 /// `capital-leaves-the-frost`: see `advanced/frost_capital.rs`.
 mod frost_capital;
 mod granary_payback;
@@ -10580,6 +10784,8 @@ mod granary_payback;
 /// remedies for a class earned and blocked. See
 /// `advanced/great_person_housing.rs`.
 mod great_person_housing;
+/// `great-works-never-wait`: see `advanced/great_works_never_wait.rs`.
+mod great_works_never_wait;
 mod host_war_losses;
 mod housing_research;
 mod live_gp_commitment;
@@ -10714,6 +10920,8 @@ mod denial_spies_count_their_losses;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;
+/// `denial-war-needs-the-lane-edge`: see `advanced/denial_war_needs_the_lane_edge.rs`.
+mod denial_war_needs_the_lane_edge;
 /// `denounce-only-to-declare`: see `advanced/denounce_only_to_declare.rs`.
 mod denounce_only_to_declare;
 /// `deterrence-trusts-a-friend`: see `advanced/deterrence_trusts_a_friend.rs`.
@@ -10760,6 +10968,8 @@ mod culture_drama_first;
 mod culture_faith_sources;
 /// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
 mod culture_theater_first;
+/// `culture-road-takes-the-unique-first`: see `advanced/culture_unique_first.rs`.
+mod culture_unique_first;
 /// `diplo-match-point-beelines-the-points`; see
 /// `advanced/diplo_match_point_research.rs`.
 mod diplo_match_point_research;
@@ -10770,10 +10980,18 @@ mod diplo_wonder_claim;
 mod artifact_activation_tests;
 /// `culture-keeps-every-border-open`: see `advanced/culture_open_borders.rs`.
 mod culture_dig_museum;
+/// `culture-digs-every-site`: see `advanced/culture_digs_every_site.rs`.
+mod culture_digs_every_site;
 /// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
 mod culture_monuments;
 mod culture_open_borders;
+/// `culture-seat-builds-past-the-deterrent`: see
+/// `advanced/culture_past_the_deterrent.rs`.
+mod culture_past_the_deterrent;
+mod culture_pingala_first;
 mod culture_work_purchase;
+/// `curator-sits-with-the-works`: see `advanced/curator_sits_with_the_works.rs`.
+mod curator_sits_with_the_works;
 
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.
 mod diplo_statue_harbor;
@@ -10781,6 +10999,11 @@ mod diplo_statue_harbor;
 mod culture_museum_swaps;
 /// `culture-recovery-spends-the-bank`: see `advanced/culture_recovery_bank.rs`.
 mod culture_recovery_bank;
+/// `culture-road-earns-its-inspirations`: see
+/// `advanced/culture_road_inspirations.rs`.
+mod culture_road_inspirations;
+/// `culture-road-builds-its-triggers`: see `advanced/culture_road_triggers.rs`.
+mod culture_road_triggers;
 /// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
 mod culture_routes;
 /// `culture-seat-allies`: see `advanced/culture_seat_allies.rs`.
@@ -10806,6 +11029,12 @@ mod civilian_safety;
 /// Coastal city-site scoring genes: a Harbor-eligible coast baseline and a
 /// resource-aware version. See `advanced/coastal_sites.rs`.
 mod coastal_sites;
+/// `cold-war-before-conservation`: a Culture target takes only the road to
+/// Cold War. See `advanced/cold_war_before_conservation.rs`.
+mod cold_war_before_conservation;
+/// `cold-war-then-heritage`: after Cold War, Conservation and then Cultural
+/// Heritage. See `advanced/cold_war_then_heritage.rs`.
+mod cold_war_then_heritage;
 mod culture_defensive_research;
 /// Two Deity habits: chase eurekas with Builders and with the production
 /// queue. Two opt-in genes; see `advanced/deity_habits.rs`.
@@ -10939,6 +11168,7 @@ mod battle_solver;
 mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;
 mod guru_walks_to_the_wounded;
+mod unique_unit_closes_the_age;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
@@ -10947,6 +11177,10 @@ pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 mod close_as_a_body;
 
 mod siege_production;
+
+/// `siege-at-the-walls-dies-first`: a gun at our walls is the first target.
+/// See `advanced/siege_at_the_walls_dies_first.rs`.
+mod siege_at_the_walls_dies_first;
 
 /// Opt-in routing from a Defend task force to its assigned city.
 mod anvil_assignment;
@@ -11154,10 +11388,32 @@ mod aqueduct_claims_the_capped_queue;
 /// the second city stands. See `advanced/astrology_before_the_second_city.rs`.
 mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
+/// `band-buys-near-the-stage`: a Rock Band is bought in the city nearest a
+/// stage it can play. See `advanced/band_buys_near_the_stage.rs`.
+mod band_buys_near_the_stage;
 mod band_hunt;
 /// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
 /// survival depends on. See `advanced/band_plays_its_stage.rs`.
+/// `band-plays-at-level-three`: a Rock Band plays its first concerts where
+/// its performance level reaches 3, and is promoted to get there. See
+/// `advanced/band_plays_at_level_three.rs`.
+mod band_plays_at_level_three;
 mod band_plays_its_stage;
+/// `band-plays-what-it-can-reach`: a Rock Band plays, or steps toward a
+/// stage it can really reach; a refused trip turns it to another host. See
+/// `advanced/band_plays_what_it_can_reach.rs`.
+mod band_plays_what_it_can_reach;
+/// `band-stall-bars-no-host`: a Rock Band trip the host walked nowhere bars
+/// its host only on the second turn running. See
+/// `advanced/band_stall_bars_no_host.rs`.
+mod band_stall_bars_no_host;
+/// `bands-draw-from-the-bar`: a Rock Band's concert is weighted by how much
+/// of the Culture race it closes. See `advanced/bands_draw_from_the_bar.rs`.
+mod bands_draw_from_the_bar;
+/// `bands-wait-at-the-door`: a Rock Band with nothing it can play waits at
+/// the border of the closed land it most wants. See
+/// `advanced/bands_wait_at_the_door.rs`.
+mod bands_wait_at_the_door;
 mod campus_above_sea;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
@@ -11274,6 +11530,11 @@ mod siege_shortfall_projects;
 mod siege_tier_before_the_beeline;
 /// `siege-moves-under-the-wing`: see `advanced/siege_under_the_wing.rs`.
 mod siege_under_the_wing;
+/// `space-denial-promotes-the-rocket-scientist`: see
+/// `advanced/space_denial_rocket_scientist.rs`.
+mod space_denial_rocket_scientist;
+/// `space-denial-slots-the-spy-cards`: see `advanced/space_denial_spy_cards.rs`.
+mod space_denial_spy_cards;
 /// `space-people-call-the-projects`: see
 /// `advanced/space_people_call_the_projects.rs`.
 mod space_people_call_the_projects;
@@ -11291,6 +11552,9 @@ mod spy_civics_come_first;
 /// A Spy the host reports idle spends its order's patience. See
 /// `advanced/spy_patience_reads_the_host.rs`.
 mod spy_patience_reads_the_host;
+/// `sweden-builds-open-air-museums`: see
+/// `advanced/sweden_builds_open_air_museums.rs`.
+mod sweden_builds_open_air_museums;
 mod trader_fills_the_idle_route;
 /// `tribute-buys-the-friendship`: see
 /// `advanced/tribute_buys_the_friendship.rs`.
@@ -11303,7 +11567,15 @@ pub use science_victory_drive::ScienceDrive;
 mod capital_campus_claim;
 mod culture_defense;
 mod decisive_window;
+/// `denial-charts-the-racer`: see `advanced/denial_charts_the_racer.rs`.
+mod denial_charts_the_racer;
+/// `domination-charts-every-capital`: see
+/// `advanced/domination_charts_every_capital.rs`.
+mod domination_charts_every_capital;
 mod domination_research;
+/// `domination-target-gets-its-breaker`: the Domination lane's breaker for
+/// its target. See `advanced/domination_target_gets_its_breaker.rs`.
+mod domination_target_gets_its_breaker;
 mod government_plaza;
 /// `launch-pad-holds-its-queue`: the first pad holds its city's queue. See
 /// `advanced/launch_pad_holds_its_queue.rs`.
@@ -11392,6 +11664,9 @@ mod settler_shelters_from_the_war;
 /// A Settler is started only while an acceptable, unclaimed site exists for
 /// it. One opt-in gene; see `advanced/settler_site_gate.rs`.
 mod settler_site_gate;
+/// A Settler's stall limit counts game turns, not decision frames. One
+/// opt-in gene; see `advanced/settler_stall_counts_turns.rs`.
+mod settler_stall_counts_turns;
 /// A Settler is never sent to a site not worth the walk. One opt-in gene;
 /// see `advanced/settler_target_floor.rs`.
 mod settler_target_floor;
@@ -11416,12 +11691,21 @@ mod threatened_lane_lends_the_army;
 /// `advanced/threatened_war_holds_the_claims.rs`.
 mod threatened_war_holds_the_claims;
 
+/// `first-capital-before-the-walls`: a Domination seat's early conquest on
+/// the nearest walkable rival capital before its walls pass Ancient. One
+/// opt-in gene; see `advanced/first_capital_before_the_walls.rs`.
+mod first_capital_before_the_walls;
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
 /// short. One opt-in gene; see `advanced/first_luxury.rs`.
 mod first_luxury;
 /// `korea-mines-beside-the-seowon`: see `advanced/korea_mines_beside_the_seowon.rs`.
 mod korea_mines_beside_the_seowon;
+/// `kristina-builds-the-bibliotheque`: see
+/// `advanced/kristina_builds_the_bibliotheque.rs`.
+mod kristina_builds_the_bibliotheque;
+/// `kristina-fills-to-theme`: see `advanced/kristina_fills_to_theme.rs`.
+mod kristina_fills_to_theme;
 /// `luxury-asks-pay-in-strategics`: see `advanced/luxury_asks_pay_in_strategics.rs`.
 mod luxury_asks_pay_in_strategics;
 mod luxury_research;
@@ -11778,6 +12062,7 @@ impl AdvancedAi {
         self.idle_production_streak.clear();
         self.settler_targets.clear();
         self.settler_stalls.clear();
+        self.settler_stall_turn.clear();
         self.escort_march.clear();
         self.settler_guards.clear();
         self.settler_sea_guards.clear();
@@ -14782,6 +15067,9 @@ impl AdvancedAi {
         // Museums. Lent for the call; see `advanced/culture_dig_museum.rs`.
         let restore_dig_museum = self.base.digs_one_museum;
         self.base.digs_one_museum = self.dig_museum_lane_active(g);
+        // `culture-digs-every-site`: lent the same way; zero with it off.
+        let restore_dig_museums_wanted = self.base.dig_museums_wanted;
+        self.base.dig_museums_wanted = self.dig_museums_wanted(g, pid);
         // `purchases-keep-the-upkeep-reserve`: the delegated governor's own
         // Gold pass bought the Lighthouse that, with a Shrine, took
         // civvis-20261013T220550Z to 17 Gold at turn 199. Lent for the call;
@@ -14812,6 +15100,7 @@ impl AdvancedAi {
             self.base.prefers_priced_melee = restore_priced_melee;
             self.base.exclude_space_race = restore_space_race;
             self.base.digs_one_museum = restore_dig_museum;
+            self.base.dig_museums_wanted = restore_dig_museums_wanted;
             self.base.w.mil_per_city = restore_military;
             self.base.w.faith_builder = restore_faith_builder;
             self.base.lent_military_floor_base = None;
@@ -14846,6 +15135,7 @@ impl AdvancedAi {
         self.base.prefers_priced_melee = restore_priced_melee;
         self.base.exclude_space_race = restore_space_race;
         self.base.digs_one_museum = restore_dig_museum;
+        self.base.dig_museums_wanted = restore_dig_museums_wanted;
         self.base.w.city_target = restore_target;
         self.base.w.settler_stop_turn = restore_stop;
         self.base.w.builder_per_city = restore_builders;
@@ -16633,8 +16923,9 @@ impl AdvancedAi {
             _ => 100.0,
         };
         let faith_reserve = self.conversion_faith_reserve(g, pid, faith_reserve)
-            // See `advanced/culture_band_bank.rs`.
-            + self.culture_band_bank(g, pid)
+            // See `advanced/culture_band_bank.rs` (and
+            // `band-bank-bars-people-under-fire` there).
+            + self.culture_band_bank_for_people(g, pid)
             // See `counterweight_faith_reserve` (`counterweight-spends-the-bank`).
             + self.counterweight_faith_reserve(g, pid)
             // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`).
@@ -16770,6 +17061,13 @@ impl AdvancedAi {
                 ("gold", g.players[pid].gold, gold_reserve),
                 ("faith", g.players[pid].faith, faith_reserve),
             ] {
+                // See `advanced/culture_band_bank.rs`
+                // (`culture-bank-opens-at-nationalism`).
+                if currency == "faith"
+                    && self.culture_bank_bars_faith_great_person(g, pid, strategy, kind)
+                {
+                    continue;
+                }
                 let ordinary_limit = if age_closing.is_some() || (currency == "faith" && idle_faith)
                 {
                     1.0
@@ -17337,6 +17635,10 @@ impl AdvancedAi {
             gold_buys_the_settler::SettlerFund::Saving { reserve: fund } => reserve.max(fund),
             gold_buys_the_settler::SettlerFund::Off => reserve,
         };
+        // `culture-gold-buys-the-shrines`: a wanted Shrine or Temple keeps its
+        // price from the discretionary purchases below. See
+        // `advanced/culture_faith_sources.rs`.
+        let reserve = reserve.max(self.culture_shrine_gold_fund(g, pid, plan));
         // `camp_tile_buyout`: an outpost inside a city's own rings costs
         // that city something no yield in the ranking below can express, and
         // every plot there is a surplus purchase that a unit or a building
@@ -18129,7 +18431,13 @@ impl AdvancedAi {
                 return;
             }
         }
-        for city in g.player_city_ids(pid) {
+        // `band-buys-near-the-stage`: see `advanced/band_buys_near_the_stage.rs`.
+        let band_cities = if self.band_buys_near_the_stage {
+            self.band_purchase_cities(g, pid)
+        } else {
+            g.player_city_ids(pid)
+        };
+        for city in band_cities {
             // Same correction as the religious units above: the shipped rules
             // cost is the Standard-speed rate, and a Rock Band's price also
             // climbs 100 per band this player has already bought. Reading the
@@ -20007,9 +20315,13 @@ impl AdvancedAi {
                 .as_ref()
                 .is_some_and(|(_, item)| self.diplo_wonder_holds(g, pid, cid, plan, item));
             // `culture-seat-monuments`: the claimed Monument finishes.
-            let culture_monument_commitment = committed
-                .as_ref()
-                .is_some_and(|(_, item)| self.culture_monument_holds(g, pid, cid, plan, item));
+            // `culture-digs-every-site` and `great-works-never-wait`: the
+            // claimed Archaeologist and slot building finish too.
+            let culture_monument_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                self.culture_monument_holds(g, pid, cid, plan, item)
+                    || self.dig_archaeologist_holds(g, pid, cid, plan, item)
+                    || self.great_work_slot_building_holds(g, pid, cid, plan, item)
+            });
             // `diplo-seat-statue-harbor`: the Statue's Harbor finishes.
             let statue_harbor_commitment = committed
                 .as_ref()
@@ -20948,6 +21260,9 @@ impl AdvancedAi {
         // this board before anything is placed. Nothing happens while the gene
         // is off. See `advanced/district_planning.rs`.
         preview.snapshot_bulldoze_sites(&board, pid);
+        // `culture-faith-site-per-theater-3`: the hint keeps the same slot for
+        // the Holy Site as the main path; the board is thrown away after.
+        let _ = preview.culture_faith_hold_the_slots(&mut board, pid);
         if !incoming_settler {
             preview.reserve_air_resource_colony(&mut board, pid, &plan);
         }
@@ -24499,11 +24814,21 @@ impl AdvancedAi {
                             + strength * 2.0
                             + if siege { 70.0 } else { 0.0 }
                             + if captures { 30.0 } else { 0.0 }
+                            // `siege-at-the-walls-dies-first`: zero with the
+                            // gene off. See its module.
+                            + self.wall_threat_premium(g, pid, unit, 0.0, true)
                     }
                     Some(defender) => {
                         (hp - defender.hp).max(0) as f64 * (1.0 + strength / 100.0)
                             + if siege { 25.0 } else { 0.0 }
                             + if captures { 8.0 } else { 0.0 }
+                            + self.wall_threat_premium(
+                                g,
+                                pid,
+                                unit,
+                                f64::from((hp - defender.hp).max(0)),
+                                false,
+                            )
                     }
                 },
             )
@@ -25434,6 +25759,10 @@ impl AdvancedAi {
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         // See `last_civ_standing`: "one more turn" leaves one lane.
         self.plays_for_the_last_civ(g, pid);
+        // `culture-keeps-pingala-home`: both Loyalty passes read the runway.
+        // See `advanced/culture_pingala_first.rs`.
+        self.base.pingala_loyalty_runway =
+            self.culture_pingala_stays_home(g).map(|(_, runway)| runway);
         // `districts-price-the-improvement`: what a District could bulldoze.
         self.snapshot_bulldoze_sites(g, pid);
         // `breach-support-reads-the-wall-tier`: see `Game::observed_wall_tier_rules`.
@@ -25488,6 +25817,9 @@ impl AdvancedAi {
         // `religion-seat-charts-the-rivals`: read by the contact gap in
         // `BasicAi`'s exploration and the hull claims, after any hand-over.
         self.base.charts_rival_majorities = self.religion_seat_charts_the_rivals_active(g, pid);
+        // `domination-charts-every-capital`: the same read for a lane charting
+        // gene's own gap.
+        self.base.lane_charting_gap = self.lane_charts_the_water(g, pid);
         // `stalled-conquest-takes-science`: see
         // `advanced/stalled_conquest_takes_science.rs`.
         self.hand_over_a_stalled_conquest(g, pid);
@@ -25564,6 +25896,11 @@ impl AdvancedAi {
             self.base.take_turn(g, pid);
             return;
         }
+        // `city-strike-takes-the-gun`: the delegated city loop leaves the
+        // strikes to `advanced_city_strikes`, which runs only under victory
+        // planning. See `advanced/siege_at_the_walls_dies_first.rs`.
+        self.base.city_strikes_left_to_the_planner =
+            self.city_strike_takes_the_gun && self.victory_planning;
         // The fallback record for `turn_start_hostiles`: nothing of ours has
         // acted yet on a native turn. The live bridge records earlier, before
         // its finishing volley, and this call then does nothing.
@@ -25713,7 +26050,12 @@ impl AdvancedAi {
         // the wall-breaker a held siege is waiting for. See
         // `advanced/siege_train/breaker_purchase.rs`.
         if !emergency_city_defense && !surprise_defense_purchase {
-            self.siege_breaker_purchase(g, pid);
+            // `domination-target-gets-its-breaker`: the Domination target's
+            // breaker, when the war or the declaration waits on it. Exact
+            // no-op while the gene is off.
+            if !self.buy_domination_breaker(g, pid, &plan) {
+                self.siege_breaker_purchase(g, pid);
+            }
         }
         let mut held_acropolis_site = None;
         // A watched prewar capital can arm one healthy Slinger before the
@@ -25731,6 +26073,9 @@ impl AdvancedAi {
             // `advanced/gold_buys_the_production_tile.rs`.
             self.production_tile_purchase(g, pid, &plan);
             self.idle_trader_purchase(g, pid, &plan);
+            // `culture-digs-every-site`: an Archaeologist whose queue is slow.
+            // See `advanced/culture_digs_every_site.rs`.
+            self.dig_archaeologist_purchase(g, pid, &plan);
             // `gold-buys-the-backlog-builder`: past the opening buy and the
             // route slot's Trader, a Builder for the unimproved worked tiles
             // the queues have not answered. See
@@ -25789,6 +26134,10 @@ impl AdvancedAi {
             self.strategic_governors(g, pid, &plan);
             self.relocate_governors_for_dividends(g, pid, &plan);
         }
+        // `curator-sits-with-the-works`: both loyalty backstops below (this
+        // one and the ancillary pass's) send another Governor before a
+        // Pingala holding Curator. False with the gene off.
+        self.base.curator_keeps_his_seat = self.curator_seat_active(g);
         // AdvancedAi owns its turn pipeline instead of delegating through
         // BasicAi::take_turn, so explicitly retain the live-only governor
         // emergency pass that protects an ungoverned city with a measured
@@ -25854,6 +26203,10 @@ impl AdvancedAi {
         // city-saving or surprise-defense purchase already owns the turn.
         if !emergency_city_defense && !surprise_defense_purchase {
             self.modernize_before_the_purchase_pass(g, pid);
+            // `culture-gold-buys-the-shrines`: a standing Holy Site's Shrine
+            // or Temple, before the general purchase pass. Exact no-op while
+            // the gene is off. See `advanced/culture_faith_sources.rs`.
+            self.buy_culture_shrine(g, pid, &plan);
         }
         if self.victory_planning && !emergency_city_defense && !surprise_defense_purchase {
             self.advanced_gold_spending(g, pid, &plan);
@@ -25902,6 +26255,11 @@ impl AdvancedAi {
         // slot from every production writer below, released before the
         // defence handoff. Nothing is held with the gene off.
         let held_field_slot = self.surge_hold_field_slot(g, pid);
+        // `culture-faith-site-per-theater-3`: a Theater city's last free
+        // district slot waits for its Holy Site through the same pass,
+        // released just before the field slot. Nothing is held with the gene
+        // off. See `advanced/culture_faith_sources.rs`.
+        let held_faith_slots = self.culture_faith_hold_the_slots(g, pid);
 
         // Physical Firaxis Great People with no legal activation plot are
         // mirror-owned assets the ordinary immediate-retirement model cannot
@@ -26089,6 +26447,12 @@ impl AdvancedAi {
                     wall_breaker_claims.push(claim);
                 }
             }
+            // `domination-target-gets-its-breaker`: the target's Ram, Tower or
+            // gun, before the war as well as during it. Exact no-op while the
+            // gene is off. See `advanced/domination_target_gets_its_breaker.rs`.
+            if let Some(claim) = self.claim_domination_breaker(g, pid, &plan) {
+                wall_breaker_claims.push(claim);
+            }
             // Reserve one useful support element before broad production
             // consumes the idle queues of an active foreign-city assault.
             let city_assault_support_reserved =
@@ -26118,6 +26482,10 @@ impl AdvancedAi {
             // `plaza-serves-the-scientist-3`: the Plaza district itself, once
             // the capital's Campus stands. Exact no-op while the gene is off.
             self.claim_queue_for_the_plaza_district(g, pid, &plan);
+            // `kristina-builds-the-bibliotheque`: Sweden's Plaza tier, else the
+            // Plaza itself, under the same displacement rule. Exact no-op while
+            // the gene is off. See `advanced/kristina_builds_the_bibliotheque.rs`.
+            self.claim_queue_for_kristinas_plaza(g, pid, &plan);
             // `space-people-call-the-projects`: the district projects that earn
             // a space-race person on offer. Exact no-op while the gene is off.
             self.claim_queues_for_the_space_people(g, pid, &plan);
@@ -26205,6 +26573,7 @@ impl AdvancedAi {
                 self.delegated_cities(g, pid, &plan);
             }
         }
+        Self::culture_faith_release_the_slots(g, held_faith_slots);
         Self::surge_release_field_slot(g, held_field_slot);
         // `religion-seat-first-shrine`: the founder's first Shrine, after every
         // ordinary writer so none of them takes the head back, and before the
@@ -26219,6 +26588,10 @@ impl AdvancedAi {
         // handoffs below. Exact no-op while the gene is off. See
         // `advanced/capital_walls_before_the_surprise.rs`.
         self.claim_capital_walls_before_the_surprise(g, pid);
+        // `unique-unit-closes-the-dark-age`: the first unique unit before
+        // the era closes, when it turns a Dark Age Normal. Exact no-op while
+        // the gene is off. See `advanced/unique_unit_closes_the_age.rs`.
+        self.claim_unique_unit_for_the_age(g, pid);
         // `paused-district-finishes`: after every ordinary writer, before the
         // declaration response and the defence handoffs below.
         self.claim_paused_district_finishes(g, pid);

@@ -645,6 +645,22 @@ impl BasicAi {
     /// the old threshold is treated as an emergency in its own right so a city
     /// already in trouble is never ranked behind a healthy one.
     pub(super) fn reassign_governor_for_loyalty(&self, g: &mut Game, pid: usize) -> bool {
+        let spared = self
+            .pingala_loyalty_runway
+            .map(|runway| ("pingala", runway));
+        self.reassign_governor_for_loyalty_sparing(g, pid, spared)
+    }
+
+    /// [`Self::reassign_governor_for_loyalty`], with `spared` naming a seated
+    /// Governor that stays where it sits unless the target city's
+    /// [`Self::loyalty_emergency`] reads within the given turns
+    /// (`culture-keeps-pingala-home`, `advanced/culture_pingala_first.rs`).
+    pub(crate) fn reassign_governor_for_loyalty_sparing(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        spared: Option<(&str, f64)>,
+    ) -> bool {
         let target = g
             .player_city_ids(pid)
             .into_iter()
@@ -664,7 +680,7 @@ impl BasicAi {
             && self
                 .loyalty_emergency(g, target)
                 .is_some_and(|turns| turns < VICTOR_SHORT_RUNWAY_TURNS);
-        let action = g
+        let mut eligible: Vec<_> = g
             .legal_actions_within(pid, ActionFamilies::EMPIRE)
             .into_iter()
             .filter_map(|action| {
@@ -675,6 +691,16 @@ impl BasicAi {
                     return None;
                 }
                 let state = &g.players[pid].governor_roster[governor];
+                if let Some((name, within)) = spared {
+                    if governor == name
+                        && state.city.is_some()
+                        && self
+                            .loyalty_emergency(g, target)
+                            .is_some_and(|turns| turns > within)
+                    {
+                        return None;
+                    }
+                }
                 let source_loyalty = state
                     .city
                     .and_then(|city| g.cities.get(&city))
@@ -699,6 +725,26 @@ impl BasicAi {
                         action,
                     ))
             })
+            .collect();
+        // `curator-sits-with-the-works`: a Pingala holding Curator goes only
+        // when no other Governor can. Off, every eligible Governor stays.
+        if self.curator_keeps_his_seat {
+            let curator = |governor: &Name| {
+                *governor == "pingala"
+                    && g.players[pid]
+                        .governor_roster
+                        .get("pingala")
+                        .is_some_and(|state| state.promotions.contains("curator"))
+            };
+            if eligible
+                .iter()
+                .any(|(_, _, _, governor, _)| !curator(&governor.0))
+            {
+                eligible.retain(|(_, _, _, governor, _)| !curator(&governor.0));
+            }
+        }
+        let action = eligible
+            .into_iter()
             .max_by(|left, right| {
                 left.0
                     .cmp(&right.0)

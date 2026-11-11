@@ -551,3 +551,63 @@ fn a_religion_founders_hull_keeps_the_head_from_other_claims() {
     founder(true).claim_bound_granaries(&mut kept, 0, &plan);
     assert_eq!(kept.cities[&city].queue.first(), Some(&hull));
 }
+
+/// ★ The 123943Z shape: the one ship afloat spent t77-133 in sea task forces
+/// and never left home waters while two rivals stood unmet. A Religion
+/// founder's first charting ship is left off the objective board; a second
+/// ship, another seat's ship, and a ship with the gap closed are not.
+#[test]
+fn a_religion_founders_charting_ship_is_left_off_the_board() {
+    let (mut game, city) = coastal_seat();
+    game.players[0].religion = Some("Buddhism".to_string());
+    let mut shores = game
+        .nbrs(game.cities[&city].pos)
+        .into_iter()
+        .filter(|pos| {
+            game.map
+                .get(*pos)
+                .is_some_and(|tile| game.rules.is_water(tile))
+        })
+        .collect::<Vec<_>>();
+    shores.sort();
+    let first = game.spawn_test_unit("galley", 0, shores[0]);
+    let founder = |charts: bool| {
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Religion);
+        ai.enable_contact_fleet();
+        if charts {
+            ai.enable_religion_seat_charts_the_rivals();
+        }
+        ai
+    };
+    if !BasicAi::naval_recon_ship_can_chart(&game, 0, first) {
+        // A fixture sea with nothing to chart has no charting ship.
+        assert_eq!(founder(true).religion_seat_charting_ship(&game, 0), None);
+        return;
+    }
+    assert_eq!(
+        founder(true).religion_seat_charting_ship(&game, 0),
+        Some(first)
+    );
+    assert!(!founder(true).board_pool(&game, 0).contains(&first));
+    assert!(founder(false).board_pool(&game, 0).contains(&first));
+    assert_eq!(founder(false).religion_seat_charting_ship(&game, 0), None);
+    let mut other = diplomat(true);
+    other.enable_religion_seat_charts_the_rivals();
+    assert!(other.board_pool(&game, 0).contains(&first));
+
+    // One eye: a second hull is a soldier.
+    if let Some(berth) = shores.get(1).copied() {
+        let second = game.spawn_test_unit("galley", 0, berth);
+        let pool = founder(true).board_pool(&game, 0);
+        assert!(!pool.contains(&first));
+        assert!(pool.contains(&second));
+    }
+
+    // With every rival met and charted the ship is a soldier again.
+    let mut closed = game.clone();
+    close_the_gap(&mut closed, city);
+    if !founder(true).base.contact_gap_open(&closed, 0) {
+        assert_eq!(founder(true).religion_seat_charting_ship(&closed, 0), None);
+        assert!(founder(true).board_pool(&closed, 0).contains(&first));
+    }
+}

@@ -2251,6 +2251,20 @@ impl Game {
         level.saturating_add(venue_levels).clamp(1, 6)
     }
 
+    /// The performance level this band would play `position` at (its Rock
+    /// Band level plus the venue's matching-promotion levels), or `None` where
+    /// it has no concert. `band-plays-at-level-three` reads it.
+    pub(crate) fn rock_concert_performance_level(
+        &self,
+        pid: usize,
+        uid: u32,
+        position: Pos,
+    ) -> Option<i32> {
+        let unit = self.units.get(&uid)?;
+        let (_, venue_levels, _) = self.rock_concert_venue_details(pid, Some(unit), position)?;
+        Some(self.rock_band_performance_level(unit, venue_levels))
+    }
+
     /// The band's concert reading at this venue: venue Tourism, the expected
     /// result and album multiplier, survival odds and the Goes To 11 audience.
     fn rock_concert_read(&self, pid: usize, unit: &Unit, position: Pos) -> Option<RockConcertRead> {
@@ -2329,6 +2343,73 @@ impl Game {
                 + read.survival * self.rock_band_stage_future(unit))
                 * self.rock_concert_race_factor(pid, read.host),
         )
+    }
+
+    /// `bands-draw-from-the-bar`: the concert and the rest of the band's
+    /// career, as `rock_concert_stage_value` prices them, weighted by
+    /// [`rock_concert_bar_factor`](Self::rock_concert_bar_factor) instead of
+    /// the host's share of the bar. The career is weighted too because a band
+    /// tours where it stands: live 20261109T190910Z played all ten of its
+    /// concerts in the bar holder's land, 20261110T120557Z its first four in
+    /// Canada's.
+    pub(crate) fn rock_concert_bar_value(
+        &self,
+        pid: usize,
+        uid: u32,
+        position: Pos,
+    ) -> Option<f64> {
+        let unit = self.units.get(&uid)?;
+        if unit.owner != pid || unit.kind != "rock_band" || unit.promotions.is_empty() {
+            return None;
+        }
+        let read = self.rock_concert_read(pid, unit, position)?;
+        Some(
+            (read.base * read.expected_multiplier * read.nearby_factor
+                + read.survival * self.rock_band_stage_future(unit))
+                * self.rock_concert_bar_factor(pid, read.host),
+        )
+    }
+
+    /// What a visitor from `host` is worth to our Culture race, from 1 to 2.
+    /// The bar is the largest domestic count among our living rival majors,
+    /// and a visitor comes out of its host's domestic count. Drawn from a
+    /// rival that binds the bar it lowers the bar as well as raising our
+    /// count: 2. Drawn from any other rival it only raises our count until the
+    /// rivals above it have been drawn down to its level, which takes
+    /// `depth` = the sum of (D - D_host) over the rivals above it. So a host
+    /// within `max(10, 5% of the bar)` of binding is 2, a host at or below
+    /// our own visitors is 1, and between them `1 + (1 - depth / (bar - V))`
+    /// clamped to 1..2, V being our visitors. With no bar left to close,
+    /// every host is 1. For a lone rival above, this is `1 + (D - V) / (bar -
+    /// V)`; with several above, a far rival reads close to 1 where
+    /// `band-plays-its-stage`'s `1 + D / bar` read it at up to 2.
+    pub(crate) fn rock_concert_bar_factor(&self, pid: usize, host: usize) -> f64 {
+        if host == pid || self.players[host].is_minor || self.players[host].is_barbarian {
+            return 1.0;
+        }
+        let domestic: Vec<f64> = self
+            .players
+            .iter()
+            .filter(|rival| {
+                rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
+            })
+            .map(|rival| self.domestic_tourists(rival.id).max(0) as f64)
+            .collect();
+        let bar = domestic.iter().copied().fold(0.0, f64::max);
+        let ours = self.foreign_tourists(pid).max(0) as f64;
+        let here = self.domestic_tourists(host).max(0) as f64;
+        if bar <= ours || here <= ours {
+            return 1.0;
+        }
+        let depth: f64 = domestic
+            .iter()
+            .filter(|other| **other > here)
+            .map(|other| other - here)
+            .sum();
+        if depth <= (0.05 * bar).max(10.0) {
+            return 2.0;
+        }
+        1.0 + (1.0 - depth / (bar - ours)).clamp(0.0, 1.0)
     }
 
     /// A visitor always adds one to our count. Taken from the civilization
@@ -3406,11 +3487,11 @@ impl Game {
             purchase_discount += self.gov_effects(pid).faith_purchase_discount_pct;
         }
         // Flower Power: every unit costs +100% to buy (ADJUST_UNITS_PURCHASE_COST
-        // -100 with IncludeCivilian) except a Rock Band, which is free.
-        purchase_discount -= self.policy_effect(pid, "unit_purchase_cost_pct");
-        if unit == "rock_band" {
-            purchase_discount += self.policy_effect(pid, "unit_purchase_cost_pct")
-                + self.policy_effect(pid, "rock_band_purchase_discount_pct");
+        // -100 with IncludeCivilian) except a Rock Band, which keeps its
+        // normal price: live civvis-20261110T192354Z held the card t171-185
+        // and the band's Faith quote kept its +50 step (450 to 650).
+        if unit != "rock_band" {
+            purchase_discount -= self.policy_effect(pid, "unit_purchase_cost_pct");
         }
         if religious && currency == "faith" {
             if let Some(religion) = self.city_religion(city) {

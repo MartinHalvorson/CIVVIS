@@ -1001,6 +1001,36 @@ world(patch);
 T += 16; paint(.2);
 expect(store.list.length === 0 && drawn.length === 0, "an unmet civilization was named");
 
+store.list = [];
+players = [{civ:"Rome"}, {civ:"Geneva", is_minor:true}, {civ:"Barbarians", is_minor:true, is_barbarian:true}];
+world((i, j) => i >= 20 && i <= 23 && j >= 7 && j <= 10 ? 0
+  : i >= 20 && i <= 22 && j >= 14 && j <= 16 ? 1
+  : i >= 24 && i <= 26 && j >= 3 && j <= 5 ? 2 : null);
+function paintAt(scale) {
+  drawn = [];
+  drawPlanetEmpireLabels(fakeContext(), cameraAt(.2), scale, RADIUS, CENTER, CENTER, new Set(), true);
+}
+T += 16; paintAt(.25);
+expect(store.list.map(item => item.name).join() === "ROME,GENEVA" && drawn.length === 2,
+       "a city-state must be named as a civilization is, and a barbarian must not");
+expect(store.sprites.has("9|#fff|ROME") && store.sprites.has("6|#fff|GENEVA"),
+       "a city-state's name was not lettered at 60% of a civilization's");
+const geneva = store.list.find(item => item.minor);
+T += 16; paintAt(.7);
+const genevaSpot = planetProject(geneva.at, cameraAt(.2), .7, CENTER, CENTER);
+expect(drawn.length === 1 && Math.abs(drawn[0].x - genevaSpot.x) < 1e-6,
+       "between the two hand-overs only the city-state keeps its territory's name");
+T += 16; paintAt(1);
+expect(drawn.length === 0, "a city-state's territory and its city both carried its name");
+
+store.list = [];
+world((i, j) => i === 22 && j >= 8 && j <= 11 ? 0
+  : i >= 18 && i <= 21 && j >= 8 && j <= 11 ? 1 : null);
+T += 16; paintAt(.25);
+expect(!store.list[0].minor && store.list[0].shown && !store.list[1].shown,
+       "a large city-state's name took the place of a small civilization's");
+store.list = [];
+
 players = [{civ:"Rome"}];
 world((i, j) => j >= 8 && j <= 11 ? 0 : null);
 T += 16; paint(.2);

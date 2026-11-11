@@ -343,9 +343,13 @@ fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
     // Moved again by `Units.WMDCapable` on the Bomber, Jet Bomber and Nuclear
     // Submarine, which is what lets those three carry a device.
     // Moved again by Sumeria's levy discount and Tamar's doubled Envoys.
+    // Moved again by Flower Power's Rock Band price: live
+    // civvis-20261110T192354Z held the card t171-185 and the band's Faith
+    // quote kept its +50 step (450, 500, 550, 600, 650), so a band is no
+    // longer free under it; every other unit still costs +100%.
     assert_eq!(
         Rules::shipped().source_fingerprint(),
-        "fnv1a64:5e27c254aed61f85"
+        "fnv1a64:526e959f1ebf836c"
     );
 }
 
@@ -376,6 +380,40 @@ fn gathering_storm_unique_rows_match_the_installed_database() {
     assert_eq!(llanero.unique_to.as_deref(), Some("Gran Colombia"));
     assert_eq!(llanero.replaces, Some(crate::name!("cavalry")));
     assert_eq!(llanero.upgrade_to, Some(crate::name!("helicopter")));
+
+    // Macedon and Persia's unique units DO cost strategics under Gathering
+    // Storm. The base rows in `DLC/Macedonia_Persia/Data/
+    // Macedonia_Persia_GameplayData.xml` carry no `StrategicResource`, but
+    // `Macedonia_Persia_Expansion2.xml` sets it (`<Update>` on `Units`: Iron
+    // for the Hypaspist and the Immortal, Horses for the Hetairoi) and prices
+    // it in `Units_XP2` (`ResourceCost` 5, 10 and 10). Reading only the base
+    // file, or only `Expansion2_Units.xml`, says they are free; they are not.
+    for (unit, resource, cost) in [
+        ("hypaspist", "iron", 5.0),
+        ("hetairoi", "horses", 10.0),
+        ("immortal", "iron", 10.0),
+    ] {
+        let spec = &rules.units[unit];
+        assert_eq!(
+            (spec.requires_resource, spec.resource_cost),
+            (Some(crate::name::Name::from(resource)), cost),
+            "{unit}"
+        );
+    }
+    let hypaspist = &rules.units["hypaspist"];
+    assert_eq!(
+        (hypaspist.cost, hypaspist.moves, hypaspist.strength),
+        (100.0, 2.0, 38.0)
+    );
+    assert_eq!(hypaspist.unique_to.as_deref(), Some("Macedon"));
+    assert_eq!(hypaspist.replaces, Some(crate::name!("swordsman")));
+    let hetairoi = &rules.units["hetairoi"];
+    assert_eq!(
+        (hetairoi.cost, hetairoi.moves, hetairoi.strength),
+        (100.0, 4.0, 36.0)
+    );
+    assert_eq!(hetairoi.unique_to.as_deref(), Some("Macedon"));
+    assert_eq!(hetairoi.replaces, Some(crate::name!("horseman")));
 
     let prasat = &rules.buildings["prasat"];
     assert_eq!(prasat.yields.faith, 6.0);

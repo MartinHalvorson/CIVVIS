@@ -914,6 +914,11 @@ struct Target {
     kill_value: f64,
     siege: bool,
     captures: bool,
+    /// `siege-at-the-walls-dies-first`: how hard this unit presses our walls
+    /// (`wall_threat_scale`; zero when it does not). Its kill value already
+    /// carries the premium at that scale; a wound earns the damage premium at
+    /// it. Zero with the gene off.
+    wall_threat: f64,
 }
 
 /// One legal blow: a shooter, from a stand, at a target, with the exact
@@ -1060,7 +1065,9 @@ impl BeamState {
                 target.strength,
                 target.siege,
                 target.captures,
-            )
+            ) + super::siege_at_the_walls_dies_first::WALL_THREAT_DAMAGE_PREMIUM
+                * target.wall_threat
+                * damage.min(remaining)
         };
         let mut cost = 0.0;
         let mut returned = 0.0;
@@ -1754,6 +1761,13 @@ impl AdvancedAi {
                 let unit = &g.units[&uid];
                 let spec = &g.rules.units[unit.kind];
                 let strength = g.unit_strength(unit, true);
+                // `siege-at-the-walls-dies-first`: see
+                // `advanced/siege_at_the_walls_dies_first.rs`.
+                let wall_threat = if self.siege_at_the_walls_dies_first {
+                    self.wall_threat_scale(g, pid, uid)
+                } else {
+                    0.0
+                };
                 Target {
                     uid,
                     pos,
@@ -1764,15 +1778,28 @@ impl AdvancedAi {
                         strength,
                         spec.siege,
                         spec.is_melee_capable(),
-                    ),
+                    ) + super::siege_at_the_walls_dies_first::WALL_THREAT_KILL_PREMIUM
+                        * wall_threat,
                     siege: spec.siege,
                     captures: spec.is_melee_capable(),
+                    wall_threat,
                 }
             })
             .collect();
         let mut armed: BTreeSet<u32> = BTreeSet::new();
         if targets.is_empty() {
             return (Vec::new(), Vec::new(), Vec::new(), armed);
+        }
+        let wall_threats = targets
+            .iter()
+            .filter(|target| target.wall_threat > 0.0)
+            .count();
+        if wall_threats > 0 {
+            think!(self.journal(), Military, Detail,
+                "Wall threats: {} gun(s) or taker(s) at our walls are the kill plan's first targets", wall_threats;
+                "siege-at-the-walls-dies-first: a kill adds {:.0}, a point of damage {:.0}",
+                super::siege_at_the_walls_dies_first::WALL_THREAT_KILL_PREMIUM,
+                super::siege_at_the_walls_dies_first::WALL_THREAT_DAMAGE_PREMIUM);
         }
         let enemy_city_near = |pos: Pos, range: i32| {
             g.cities.values().any(|city| {
@@ -1798,7 +1825,10 @@ impl AdvancedAi {
                     && !(self.ranged_kills_are_free && spec.has_ranged_attack()))
                 || self.battle_planner_ordered.contains(&uid)
                 || (self.guard_is_reserved_for_civilian(uid)
-                    && !(self.ranged_kills_are_free && spec.has_ranged_attack()))
+                    && !(self.ranged_kills_are_free && spec.has_ranged_attack())
+                    // `every-shooter-at-the-walls`: an escort may shoot a
+                    // wall threat from where it stands.
+                    && !(self.every_shooter_at_the_walls && spec.has_ranged_attack()))
                 // `battle-planner-3`: the siege's taker is not the plan's.
                 || (self.battle_planner_3 && self.unit_is_reserved(uid))
             {
@@ -1924,8 +1954,16 @@ impl AdvancedAi {
                 || self.guard_is_reserved_for_civilian(uid);
             if recovering {
                 own.retain(|candidate| candidate.ranged && candidate.from == unit.pos);
+                // `every-shooter-at-the-walls`: an escort's shot at a wall
+                // threat is a full blow, not kill-only. Nothing else changes.
+                let escort_fires = self.every_shooter_at_the_walls
+                    && !self.battle_planner_recovering.contains(&uid);
                 for candidate in &mut own {
-                    candidate.kill_only = true;
+                    candidate.kill_only =
+                        !(escort_fires && targets[candidate.target].wall_threat > 0.0);
+                }
+                if escort_fires {
+                    own.retain(|candidate| !candidate.kill_only || self.ranged_kills_are_free);
                 }
             }
             if own.is_empty() {
@@ -2003,9 +2041,12 @@ impl AdvancedAi {
             })
             .collect();
         target_order.sort_by(|a, b| {
-            targets[*a]
-                .hp
-                .cmp(&targets[*b].hp)
+            // `siege-at-the-walls-dies-first`: wall threats are never the
+            // targets trimmed away. Constant false with the gene off.
+            targets[*b]
+                .wall_threat
+                .total_cmp(&targets[*a].wall_threat)
+                .then_with(|| targets[*a].hp.cmp(&targets[*b].hp))
                 .then_with(|| targets[*b].kill_value.total_cmp(&targets[*a].kill_value))
                 .then_with(|| targets[*a].uid.cmp(&targets[*b].uid))
         });
@@ -3028,6 +3069,13 @@ impl AdvancedAi {
             city.owner != pid && g.is_at_war(pid, city.owner)
         });
         let mut contacts = Self::contacts(g, pid, &members, CONTACT_BAND);
+        // `siege-at-the-walls-dies-first`: the shooters are laid at range of
+        // the guns at our walls before the most finishable contacts, so the
+        // next turn's shot is from where they stand. A stable sort; nothing
+        // moves with the gene off.
+        if self.siege_at_the_walls_dies_first {
+            contacts.sort_by_key(|contact| !self.wall_threat(g, pid, contact.uid));
+        }
         if let Some(anchor) = defense_anchor {
             contacts.retain(|contact| {
                 g.wdist(contact.pos, anchor) <= super::defenders_hold_the_walls::WALL_THREAT_REACH

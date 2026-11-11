@@ -4928,6 +4928,16 @@
           "culture-defense-theater-2": null
         }
       },
+      "culture-faith-site-per-theater": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "culture-faith-site-per-theater": null,
+          "culture-faith-site-per-theater-2": null,
+          "culture-faith-site-per-theater-3": null
+        }
+      },
       "culture-keeps-every-border-open": {
         "rule_on": [],
         "head": null,
@@ -4946,6 +4956,15 @@
         "versions": {
           "culture-lane-forecast": null,
           "culture-lane-forecast-2": null
+        }
+      },
+      "culture-seat-monuments": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "culture-seat-monuments": null,
+          "culture-seat-monuments-2": null
         }
       },
       "culture-seat-theater-first": {

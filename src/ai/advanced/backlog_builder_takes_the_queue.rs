@@ -194,6 +194,7 @@ impl AdvancedAi {
                     || self.bound_granary_holds(g, pid, cid, plan, item)
                     || self.idle_route_trader_holds(g, pid, cid, plan, item)
                     || self.charting_hull_holds(g, pid, cid, plan, item)
+                    || self.culture_monument_finishes_first(g, pid, cid, plan, item)
                     || !Self::idle_route_trader_may_defer(g, pid, cid, item, at_major_war)
                 {
                     continue;

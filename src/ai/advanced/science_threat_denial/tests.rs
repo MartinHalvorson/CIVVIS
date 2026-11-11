@@ -1363,6 +1363,21 @@ fn a_religion_seat_with_a_religion_opens_no_denial_war() {
 }
 
 #[test]
+fn a_launcher_that_already_follows_us_is_not_spared() {
+    let (mut g, mut ai, _) = religion_denial_fixture(VictoryTarget::Religion);
+    g.players[0].religion = Some("Home Faith".to_string());
+    ai.enable_religion_seat_spares_the_launcher();
+    assert!(ai.launcher_is_spared(&g, 0, 1), "unconverted: spared");
+    std::sync::Arc::make_mut(&mut g.observed_majority_religion)
+        .insert(1, "Other Faith".to_string());
+    assert!(ai.launcher_is_spared(&g, 0, 1), "another faith: spared");
+    std::sync::Arc::make_mut(&mut g.observed_majority_religion).insert(1, "Home Faith".to_string());
+    assert!(!ai.launcher_is_spared(&g, 0, 1), "its majority is won");
+    assert!(ai.science_denial_war_diplomacy(&mut g, 0));
+    assert!(g.is_at_war(0, 1));
+}
+
+#[test]
 fn the_launcher_is_spared_only_by_a_religion_seat_that_owns_a_religion() {
     // No religion yet: the war opens as before.
     let (mut g, mut ai, _) = religion_denial_fixture(VictoryTarget::Religion);

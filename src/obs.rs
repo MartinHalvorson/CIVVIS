@@ -1150,13 +1150,15 @@ fn world_politics_json(g: &Game, pid: usize, omniscient: bool) -> Value {
 
 /// One string for each of `civs` and one letter for each cell, this being the
 /// largest table in the panel: `F`riendly, `N`eutral, `U`nfriendly or
-/// `D`enounced, for what that row's leader makes of that column's. A `-` is the
-/// civilization itself, a pair already named among the bonds or wars, or a
-/// state nobody knows.
+/// `D`enounced, for what that row's leader makes of that column's. A `?` is a
+/// pair who have not met, of whom the ledger's reading would mean nothing. A
+/// `-` is the civilization itself, a pair already named among the bonds or
+/// wars, or a state nobody knows.
 ///
 /// Civilization VI gives a mirrored game one state per rival, the one it holds
 /// toward our seat, so that state fills both of that pair's cells and every
-/// pair of rivals stays unknown. The local ledger would otherwise invent them.
+/// pair of rivals stays unknown, whether they have met included. The local
+/// ledger would otherwise invent them.
 fn world_politics_attitudes(g: &Game, civs: Vec<usize>) -> Value {
     let letter = |state: &str| match state {
         "friendly" => 'F',
@@ -1173,7 +1175,15 @@ fn world_politics_attitudes(g: &Game, civs: Vec<usize>) -> Value {
                 states
                     .into_iter()
                     .enumerate()
-                    .map(|(column, state)| if row == column { '-' } else { letter(state) })
+                    .map(|(column, state)| {
+                        if row == column {
+                            '-'
+                        } else if !g.has_met(civs[row], civs[column]) {
+                            '?'
+                        } else {
+                            letter(state)
+                        }
+                    })
                     .collect()
             })
             .collect()
@@ -1182,6 +1192,7 @@ fn world_politics_attitudes(g: &Game, civs: Vec<usize>) -> Value {
             .map(|&row| {
                 civs.iter()
                     .map(|&column| match (row, column) {
+                        (0, rival) | (rival, 0) if rival != 0 && !g.has_met(0, rival) => '?',
                         (0, rival) | (rival, 0) if rival != 0 => g.players[rival]
                             .observed_diplomatic_state
                             .get(&0)

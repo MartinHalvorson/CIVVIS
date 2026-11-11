@@ -73,6 +73,8 @@ mod formation_refusals;
 mod generals_lead_the_army;
 #[path = "civvis_orders/governor_exchange.rs"]
 mod governor_exchange;
+#[path = "civvis_orders/great_works_never_wait.rs"]
+mod great_works_never_wait;
 #[path = "civvis_orders/host_ledgers.rs"]
 mod host_ledgers;
 #[path = "civvis_orders/host_move_audit.rs"]
@@ -83,6 +85,8 @@ mod host_move_postconditions;
 mod host_ranged_history;
 #[path = "civvis_orders/host_refusals.rs"]
 mod host_refusals;
+#[path = "civvis_orders/kristina_fills_to_theme.rs"]
+mod kristina_fills_to_theme;
 #[path = "civvis_orders/spaceport_above_sea.rs"]
 mod spaceport_above_sea;
 #[path = "civvis_orders/unit_identity.rs"]
@@ -5460,7 +5464,29 @@ fn decide(
             }
         }
     }
-    match append_work_sale_order(state, &mut orders) {
+    // `great-works-never-wait`: the Culture seat sells no placed work. See
+    // `ai/advanced/great_works_never_wait.rs`.
+    let work_sale = if ai.culture_keeps_its_great_works(&mirror_state.game) {
+        // Name the turns a sale would have gone out, for the live read.
+        // The sale reads only the deals already in this batch.
+        let mut withheld: Vec<Order> = orders
+            .iter()
+            .filter(|order| matches!(order.kind, "sell" | "buy"))
+            .map(|order| Order {
+                kind: order.kind,
+                subject: order.subject,
+                verb: order.verb.clone(),
+                pos: order.pos,
+            })
+            .collect();
+        if append_work_sale_order(state, &mut withheld).is_none() {
+            note_bits.push("work_sale_held=culture_keeps_its_works".to_string());
+        }
+        Some("work_sale_hold:culture_keeps_its_works")
+    } else {
+        append_work_sale_order(state, &mut orders)
+    };
+    match work_sale {
         None => note_bits.push("work_sale=1".to_string()),
         Some(why) => {
             // The holds worth a glance: a starved person whose kind has no
@@ -5537,8 +5563,24 @@ fn decide(
         note_bits.push(format!("sales={sales}"));
     }
 
-    let (person_orders, great_person_stall) =
+    let (mut person_orders, great_person_stall) =
         great_person_orders_led(state, ai.generals_lead_the_army_enabled());
+    // `great-works-never-wait`: a Writer keeps out of the Palace while
+    // another slot is open. See `civvis_orders/great_works_never_wait.rs`.
+    if ai.writers_skip_the_palace(&mirror_state.game) {
+        let retargeted = great_works_never_wait::retarget_writers(state, &mut person_orders);
+        if retargeted > 0 {
+            note_bits.push(format!("writer_palace_retargets={retargeted}"));
+        }
+    }
+    // `kristina-fills-to-theme`: Sweden's cultural people fill the buildings
+    // Kristina themes. See `civvis_orders/kristina_fills_to_theme.rs`.
+    if ai.kristina_fills_to_theme_on(&mirror_state.game, 0) {
+        let retargeted = kristina_fills_to_theme::retarget(state, &mut person_orders);
+        if retargeted > 0 {
+            note_bits.push(format!("kristina_theme_retargets={retargeted}"));
+        }
+    }
     if great_person_stall.generals_leading > 0 {
         note_bits.push(format!(
             "generals_leading={}",
@@ -5857,6 +5899,10 @@ fn decide(
     let same_turn_replays = host_move_refusals.suppress_same_turn_replays(&mut orders, state, ours);
     if same_turn_replays > 0 {
         note_bits.push(format!("same_turn_replays={same_turn_replays}"));
+    }
+    let chained_moves_resent = host_move_refusals.resend_cleared_chained_moves(&mut orders, state);
+    if chained_moves_resent > 0 {
+        note_bits.push(format!("chained_moves_resent={chained_moves_resent}"));
     }
 
     // Retained assignments must pass the same refusal filter and outbound

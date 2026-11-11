@@ -1,0 +1,16 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "culture-digs-every-site",
+  "scope": "One frozen ci-profile civvis_orders built from this branch, run on clones of live Deity Kristina civvis-20261110T144009Z (t130, t140) and civvis-20261110T161648Z-cont2 (t140, t189, t190) events.jsonl, each with its run's own forced tags (culture-digs-one-museum armed), --victory culture and --resumed; the on arm adds only this tag. Orders changed in every case: Stockholm (144009Z t130 over a Chancery, t140 over a Factory) and Goteborg (cont2 t140 over a Neighborhood) produce UNIT_ARCHAEOLOGIST while the live seat built none until t156/t159; at cont2 t189/t190 the Archaeologist that walked in circles beside a site it could not step onto (off arm MOVE_TO (5,28), refused live) is sent on toward the next site instead. Proposed actions only; no host execution or strength claim.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-culture-digs-every-site.native-queries.tar.xz",
+    "sha256": "d0dd62a0f3ca08cd4374747efb7a2b8ae82043f53c7378405be2c2e80100d98e"
+  },
+  "members": [
+    "native-queries/0000/result.json",
+    "native-queries/0001/result.json",
+    "native-queries/0002/result.json",
+    "native-queries/0003/result.json",
+    "native-queries/0004/result.json"
+  ]
+}

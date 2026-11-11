@@ -132,6 +132,32 @@ fn a_unit_in_the_ring_finishes_healing_before_it_leaves() {
 }
 
 #[test]
+fn a_chaplain_abroad_is_no_healing_ring() {
+    let (mut g, _, _, _) = field();
+    let chaplain = spawn(&mut g, "apostle", 0, (20, 8), 80, 3);
+    g.units
+        .get_mut(&chaplain)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("chaplain"));
+    let wounded = spawn(&mut g, "apostle", 0, (21, 8), 50, 3);
+    assert!(
+        g.unit_heal_rate(wounded) > 0 && g.unit_heal_rate(chaplain) > 0,
+        "fixture: the engine reads a heal beside the Chaplain"
+    );
+    let ai = home_alive();
+    assert!(!AdvancedAi::heals_in_a_ring_of_ours(&g, 0, wounded));
+    // The Chaplain above the floor works on; the unit below it walks home.
+    assert_eq!(ai.wounded_preacher_goes_home(&mut g, 0, chaplain), None);
+    let before = g.units[&wounded].pos;
+    assert_eq!(
+        ai.wounded_preacher_goes_home(&mut g, 0, wounded),
+        Some(true)
+    );
+    assert_ne!(g.units[&wounded].pos, before, "it does not park beside it");
+}
+
+#[test]
 fn an_inquisitor_in_the_ring_keeps_working_above_the_floor() {
     let (mut g, _, site, _) = field();
     let inquisitor = spawn(&mut g, "inquisitor", 0, site, 75, 3);
@@ -436,6 +462,53 @@ fn a_religious_unit_leaves_the_reach_of_a_soldier_at_war() {
     g.spawn_unit("warrior", 1, (21, 8));
     let off = AdvancedAi::targeting(VictoryTarget::Religion);
     assert_eq!(off.religious_unit_evades_raiders(&mut g, 0, apostle), None);
+}
+
+#[test]
+fn the_flight_is_the_whole_move_not_one_step() {
+    let (mut g, _, _, _) = field();
+    g.at_war.insert((0, 1));
+    let apostle = spawn(&mut g, "apostle", 0, (20, 8), 100, 3);
+    let rider = g.spawn_unit("horseman", 1, (21, 8));
+    let ai = home_alive();
+    let reach = soldier_reach(&g, rider);
+    assert!(
+        g.nbrs((20, 8))
+            .into_iter()
+            .all(|next| reach.contains(&next)),
+        "the rider reaches every neighbour, so one step saves nothing"
+    );
+    assert_eq!(
+        ai.religious_unit_evades_raiders(&mut g, 0, apostle),
+        Some(true)
+    );
+    assert!(
+        !soldier_reach(&g, rider).contains(&g.units[&apostle].pos),
+        "one order carries the Apostle out of the rider's reach"
+    );
+}
+
+#[test]
+fn a_warship_reaches_the_embarked_unit_and_not_the_shore() {
+    let (mut g, _, _, _) = field();
+    g.at_war.insert((0, 1));
+    for x in 20..=26 {
+        g.map.tiles.get_mut(&(x, 8)).unwrap().terrain = crate::name!("coast");
+    }
+    let apostle = spawn(&mut g, "apostle", 0, (19, 8), 100, 3);
+    g.spawn_unit("galley", 1, (22, 8));
+    let ai = home_alive();
+    let threats = ai.condemners_near(&g, 0, apostle);
+    assert_eq!(threats.len(), 1, "the warship at war is read");
+    assert!(
+        AdvancedAi::religious_tile_in_reach(&g, 0, (20, 8), &threats),
+        "the water beside the shore is where it condemns"
+    );
+    assert!(
+        !AdvancedAi::religious_tile_in_reach(&g, 0, (19, 8), &threats),
+        "a unit on the shore is out of a warship's reach"
+    );
+    assert_eq!(ai.religious_unit_evades_raiders(&mut g, 0, apostle), None);
 }
 
 #[test]

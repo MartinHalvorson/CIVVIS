@@ -281,3 +281,205 @@ fn the_diplomacy_step_opens_the_strike() {
     assert!(g.is_at_war(0, 1));
     assert!(targets.iter().all(|uid| !g.units.contains_key(uid)));
 }
+
+/// `faith-strike-spares-the-stages`: a Culture seat whose city is being
+/// converted to the rival faith (at 70% of the city's strongest pressure),
+/// with three Missionaries in reach of three soldiers.
+fn culture_fixture() -> (Game, AdvancedAi) {
+    let (mut g, mut ai) = fixture();
+    ai.victory_target = Some(VictoryTarget::Culture);
+    let home = g.player_city_ids(0)[0];
+    let pressure = &mut g.cities.get_mut(&home).unwrap().pressure;
+    pressure.insert("Buddhism".into(), 100.0);
+    pressure.insert("Islam".into(), 70.0);
+    for at in [(4, 8), (5, 9), (6, 8)] {
+        soldier(&mut g, at);
+    }
+    for at in [(4, 9), (6, 9), (7, 8)] {
+        spreader(&mut g, "missionary", at);
+    }
+    (g, ai)
+}
+
+#[test]
+fn the_stages_gene_ships_off_and_is_registered() {
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "faith-strike-spares-the-stages",
+        |ai| ai.faith_strike_spares_the_stages,
+    );
+}
+
+#[test]
+fn cold_war_holds_the_strike_on_a_culture_seat() {
+    let (g, mut ai) = culture_fixture();
+    ai.enable_faith_strike_spares_the_stages();
+    let mut before = g.clone();
+    assert!(
+        ai.faith_strike_opening(&mut before, 0),
+        "before the bands the strike goes"
+    );
+
+    let (mut g, mut ai) = culture_fixture();
+    g.players[0].civics.insert(crate::name!("cold_war"));
+    let mut off = g.clone();
+    assert!(ai.faith_strike_opening(&mut off, 0), "off: struck");
+    ai.enable_faith_strike_spares_the_stages();
+    assert_eq!(
+        ai.faith_strike_gate(&g, 0, 1).map(|(gate, _)| gate),
+        Some("stages")
+    );
+    assert!(!ai.faith_strike_opening(&mut g, 0));
+    assert!(!g.is_at_war(0, 1), "the stages hold the strike");
+
+    let (mut g, mut ai) = culture_fixture();
+    g.players[0].civics.insert(crate::name!("cold_war"));
+    ai.enable_faith_strike_spares_the_stages();
+    ai.victory_target = Some(VictoryTarget::Science);
+    assert!(
+        ai.faith_strike_opening(&mut g, 0),
+        "another target strikes as before"
+    );
+}
+
+#[test]
+fn an_open_band_bank_holds_the_strike() {
+    let (mut g, mut ai) = culture_fixture();
+    ai.enable_faith_strike_spares_the_stages();
+    g.players[0].civics.insert(crate::name!("nationalism"));
+    let mut shut = g.clone();
+    assert!(
+        ai.faith_strike_opening(&mut shut, 0),
+        "no bank gene: the bank is shut and the strike goes"
+    );
+    ai.enable_culture_bank_opens_at_nationalism();
+    assert!(ai.culture_band_bank(&g, 0) > 0.0);
+    assert!(!ai.faith_strike_opening(&mut g, 0));
+    assert!(!g.is_at_war(0, 1));
+}
+
+/// The heretic strike's war on rival 1, opened at turn 83, with our city
+/// still being converted and Cold War known.
+fn strike_war() -> (Game, AdvancedAi, StrategicPlan) {
+    let (mut g, mut ai) = culture_fixture();
+    g.players[0].civics.insert(crate::name!("cold_war"));
+    g.at_war.insert((0, 1));
+    g.at_war.insert((1, 0));
+    ai.faith_strike_last.insert(1, 83);
+    ai.faith_war_before_the_flip_war = Some(faith_war_before_the_flip::FaithWar {
+        rival: 1,
+        opened: 83,
+        spreader_seen: 83,
+    });
+    g.turn = 95;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    (g, ai, plan)
+}
+
+#[test]
+fn the_strike_war_ends_once_the_bands_need_the_stages() {
+    let (g, mut ai, plan) = strike_war();
+    assert!(ai.faith_war_keeps_the_war(&g, 0, 1), "off: kept");
+    assert!(!ai.faith_war_exit_peace(&g, 0, 1, &plan), "off: no exit");
+    ai.enable_faith_strike_spares_the_stages();
+    assert!(!ai.faith_war_keeps_the_war(&g, 0, 1));
+    assert!(ai.faith_war_exit_peace(&g, 0, 1, &plan));
+
+    let mut targeted = plan.clone();
+    targeted.target_player = Some(1);
+    assert!(
+        !ai.faith_war_exit_peace(&g, 0, 1, &targeted),
+        "the plan's own war is not ended"
+    );
+
+    let (mut g, mut ai, plan) = strike_war();
+    ai.enable_faith_strike_spares_the_stages();
+    g.players[0].civics.remove(&crate::name!("cold_war"));
+    assert!(ai.faith_war_keeps_the_war(&g, 0, 1), "before the bands");
+    assert!(!ai.faith_war_exit_peace(&g, 0, 1, &plan));
+
+    let (g, mut ai, plan) = strike_war();
+    ai.enable_faith_strike_spares_the_stages();
+    ai.faith_strike_last.clear();
+    assert!(
+        ai.faith_war_keeps_the_war(&g, 0, 1),
+        "a faith war the strike did not open is unchanged"
+    );
+    assert!(!ai.faith_war_exit_peace(&g, 0, 1, &plan));
+}
+
+/// Rival 1 knows `lead` more techs than we do, on the seats' own trees.
+fn rival_leads_by(g: &mut Game, lead: usize) {
+    let target = g.players[0].techs.len() + lead;
+    let unknown: Vec<_> = g
+        .rules
+        .techs
+        .keys()
+        .copied()
+        .filter(|tech| !g.players[1].techs.contains(tech))
+        .collect();
+    let missing = target.saturating_sub(g.players[1].techs.len());
+    g.players[1].techs.extend(unknown.into_iter().take(missing));
+    assert_eq!(g.players[1].techs.len(), target);
+}
+
+#[test]
+fn the_tech_lead_gene_ships_off_and_is_registered() {
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "faith-strike-fears-the-tech-lead",
+        |ai| ai.faith_strike_fears_the_tech_lead,
+    );
+}
+
+#[test]
+fn a_rival_far_ahead_in_technology_is_not_struck() {
+    let (mut g, mut ai) = culture_fixture();
+    rival_leads_by(&mut g, FAITH_STRIKE_TECH_LEAD);
+    let mut off = g.clone();
+    assert!(ai.faith_strike_opening(&mut off, 0), "off: struck");
+    ai.enable_faith_strike_fears_the_tech_lead();
+    let (gate, reason) = ai.faith_strike_gate(&g, 0, 1).unwrap();
+    assert_eq!(gate, "tech_lead");
+    assert!(reason.starts_with(&format!("it leads us by {FAITH_STRIKE_TECH_LEAD} techs")));
+    assert!(!ai.faith_strike_opening(&mut g, 0));
+    assert!(!g.is_at_war(0, 1));
+
+    let (mut g, mut ai) = culture_fixture();
+    rival_leads_by(&mut g, FAITH_STRIKE_TECH_LEAD - 1);
+    ai.enable_faith_strike_fears_the_tech_lead();
+    assert!(ai.faith_strike_opening(&mut g, 0), "one short of the bar");
+
+    let (mut g, mut ai) = culture_fixture();
+    rival_leads_by(&mut g, FAITH_STRIKE_TECH_LEAD);
+    ai.enable_faith_strike_fears_the_tech_lead();
+    ai.victory_target = Some(VictoryTarget::Religion);
+    assert!(
+        ai.faith_strike_opening(&mut g, 0),
+        "a Religion seat strikes as before"
+    );
+}
+
+/// A live board redacts a rival's tree; the host's public count is read.
+#[test]
+fn the_tech_lead_reads_the_hosts_public_count() {
+    let (mut g, mut ai) = culture_fixture();
+    ai.enable_faith_strike_fears_the_tech_lead();
+    assert_eq!(ai.faith_strike_gate(&g, 0, 1), None);
+    let ours = g.players[0].techs.len();
+    std::sync::Arc::make_mut(&mut g.observed_public_empire_stats)
+        .entry(1)
+        .or_default()
+        .techs = Some(ours + FAITH_STRIKE_TECH_LEAD);
+    assert_eq!(
+        ai.faith_strike_gate(&g, 0, 1).map(|(gate, _)| gate),
+        Some("tech_lead")
+    );
+    assert!(!ai.faith_strike_opening(&mut g, 0));
+}

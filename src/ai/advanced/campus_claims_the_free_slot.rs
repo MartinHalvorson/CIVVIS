@@ -457,6 +457,8 @@ impl AdvancedAi {
                         Some("Factory claim")
                     } else if self.campus_building_claim_holds(g, pid, cid, plan, item) {
                         Some("Campus building claim")
+                    } else if self.culture_monument_finishes_first(g, pid, cid, plan, item) {
+                        Some("near-done Monument")
                     } else if Self::queued_wall_breaker(g, item) {
                         Some("queued wall-breaker")
                     } else if !campus_before_settler

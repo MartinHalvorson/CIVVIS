@@ -315,6 +315,15 @@ impl AdvancedAi {
             }
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let culture_education_goal = self.culture_education_goal(g, pid);
+            // `culture-road-earns-its-inspirations`: the technology that
+            // inspires a near civic of the road to Cold War. See
+            // `advanced/culture_road_inspirations.rs`. `None` with the gene off.
+            let culture_road_tech = self.culture_road_trigger_tech(g, pid);
+            if let Some((tech, _)) = culture_road_tech {
+                if !available.contains(&tech) {
+                    available.push(tech);
+                }
+            }
             // The rolling window protects unattended research from leaving
             // an old branch behind. An explicit Science target (or an
             // adaptive seat that is already driving) is a different contract:
@@ -353,6 +362,7 @@ impl AdvancedAi {
             let lane_target: Option<&str> = science_harbor_goal
                 .or(science_victory_goal)
                 .or(great_person_goal.as_deref());
+            let unique_unit_age_goal = self.unique_unit_age_tech(g, pid);
             let bargain_goal_3 =
                 self.boosted_bargain_tech_3(g, pid, plan, &available, lane_target, None);
             let barbarian_military_goal = if self.base.barbarian_tactics_enabled()
@@ -610,6 +620,19 @@ impl AdvancedAi {
                 // strand the expedition without its next launch or laser tech.
                 _ if endgame_research_preempts_wartime => endgame_goal,
                 _ if standing_army_fuel_goal.is_some() => standing_army_fuel_goal.as_deref(),
+                // `culture-faith-site-per-theater-3`: the Holy Site's unlock
+                // ahead of the production technologies, never ahead of a
+                // launch, wartime-upgrade, siege or endgame goal. See
+                // `advanced/culture_faith_sources.rs`.
+                _ if first_launch_goal.is_none()
+                    && wartime_modernization_goal.is_none()
+                    && domination_siege_goal.is_none()
+                    && endgame_goal.is_none()
+                    && g.players[pid].techs.len() >= PROPHET_RACE_OPENING_TECHS
+                    && self.culture_faith_astrology_first(g, pid) =>
+                {
+                    Some("astrology")
+                }
                 _ if production_technology_goal.is_some() => production_technology_goal
                     .as_ref()
                     .map(|tech| tech.as_str()),
@@ -634,12 +657,21 @@ impl AdvancedAi {
                 // `advanced/domination_research.rs`.
                 // Science can take the same earlier slot without moving any
                 // military, barbarian, wall or committed launch goal above it.
+                // `unique-unit-closes-the-dark-age`: the unique unit's unlock,
+                // when its first unit turns this era's Dark Age Normal. See
+                // `advanced/unique_unit_closes_the_age.rs`.
+                _ if unique_unit_age_goal.is_some() => unique_unit_age_goal.as_deref(),
                 _ if science_writing_goal.is_some() => science_writing_goal,
                 _ if self.campus_unlock_before_the_luxury && domination_campus_goal.is_some() => {
                     domination_campus_goal
                 }
+                // `culture-faith-site-per-theater`: a Culture seat with a
+                // standing Theater Square takes it too, so its Holy Sites can
+                // start when the Faith sources open. See
+                // `advanced/culture_faith_sources.rs`.
                 _ if (self.prophet_race_enterable_for(g, pid, self.victory_target)
-                    || self.astrology_before_the_second_city_due(g, pid))
+                    || self.astrology_before_the_second_city_due(g, pid)
+                    || self.culture_faith_astrology_due(g, pid))
                     && g.players[pid].techs.len() >= PROPHET_RACE_OPENING_TECHS
                     && !g.players[pid].techs.contains(&crate::name!("astrology")) =>
                 {
@@ -684,6 +716,9 @@ impl AdvancedAi {
                 // its Printing/Radio chain; emergencies and military goals
                 // above retain the slot, and existing research is untouched.
                 _ if culture_education_goal.is_some() => culture_education_goal,
+                _ if culture_road_tech.is_some() => {
+                    culture_road_tech.map(|(tech, _)| tech.as_str())
+                }
                 _ if science_commitment && science_lane_active => {
                     Self::science_victory_tech_goal(g, pid, GrandStrategy::Science)
                 }
@@ -998,6 +1033,14 @@ impl AdvancedAi {
                                 )
                             } else if domination_campus_goal == Some(goal) {
                                 "unlock campuses for the expanding domination economy".to_string()
+                            } else if let Some((_, civic)) =
+                                culture_road_tech.filter(|(tech, _)| *tech == goal)
+                            {
+                                format!(
+                                    "culture-road-earns-its-inspirations: {} inspires {}, which the road to Cold War takes next",
+                                    plain(goal),
+                                    plain(&civic)
+                                )
                             } else {
                                 format!(
                                     "the {step} step toward {}, which {} needs",
@@ -1082,6 +1125,12 @@ impl AdvancedAi {
                 _ if self.diplo_match_point_civic(g, pid).is_some() => {
                     self.diplo_match_point_civic(g, pid)
                 }
+                // `culture-road-takes-the-unique-first`: the civic that unlocks
+                // the seat's own largest Culture source (Sweden's Open-Air
+                // Museum at Nationalism) ahead of the museum unlock and the
+                // Cold War goal. See `advanced/culture_unique_first.rs`.
+                // No-op with the gene off.
+                _ if self.unique_first_goal(g, pid).is_some() => self.unique_first_goal(g, pid),
                 // Put an already-built museum to work before buying more
                 // government capacity. Recovery keeps the normal ladder.
                 GrandStrategy::Culture
@@ -1098,6 +1147,9 @@ impl AdvancedAi {
                 // temporary counterplan once it has six policy slots. Native
                 // 040449Z reached 121 Faith/turn but lost at 179 without Cold
                 // War after researching Class Struggle and then Suffrage.
+                // See `advanced/cold_war_before_conservation.rs`. No-op with
+                // the gene off.
+                _ if self.cold_war_first_goal(g, pid).is_some() => self.cold_war_first_goal(g, pid),
                 GrandStrategy::Culture
                     if self.culture_cold_war_window
                         && (plan.strategy == GrandStrategy::Culture
@@ -1121,6 +1173,14 @@ impl AdvancedAi {
                 _ if decisive_civic_goal.is_some() => decisive_civic_goal.map(Name::as_str),
                 _ if self.domination_upgrade_civic_goal(g, pid).is_some() => {
                     self.domination_upgrade_civic_goal(g, pid)
+                }
+                // `cold-war-then-heritage`: after Cold War, Conservation and
+                // then Cultural Heritage, below the emergency and window goals
+                // above and ahead of the government ladder and the culture
+                // list. See `advanced/cold_war_then_heritage.rs`. No-op with
+                // the gene off.
+                _ if self.cold_war_then_heritage_goal(g, pid).is_some() => {
+                    self.cold_war_then_heritage_pick(g, pid)
                 }
                 // Filled museums can use this tourism card now; eight slots
                 // already provide room for it. Keep emergency and unit-window
@@ -1221,7 +1281,17 @@ impl AdvancedAi {
             // `civic-awaits-its-inspiration`: a civic that would finish before
             // its near inspiration lands gives way. See
             // `advanced/civic_inspiration_wait.rs`.
+            // `culture-road-earns-its-inspirations` orders the beeline in its
+            // place on a Culture seat. See `advanced/culture_road_inspirations.rs`.
             let pick = pick.map(|civic| {
+                if let Some(goal) = goal_pick
+                    .and(forced_goal)
+                    .filter(|_| self.culture_road_active(g))
+                {
+                    return self
+                        .culture_road_pick(g, pid, &available, &civic, goal, civic_objective)
+                        .unwrap_or(civic);
+                }
                 self.civic_awaits_its_inspiration_pick(
                     g,
                     pid,

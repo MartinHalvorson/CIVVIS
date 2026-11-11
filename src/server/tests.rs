@@ -7078,6 +7078,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
             "production",
             "science",
             "culture",
+            "tourism",
             "faith",
             "gold",
             "military",
@@ -7128,6 +7129,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
             "production",
             "science",
             "culture",
+            "tourism",
             "faith",
             "gold",
             "military",
@@ -10150,22 +10152,35 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
     // Anything less than a pact is one leader's view, read from the row.
     assert!(matrix.contains("WORLD_POLITICS_ATTITUDES[stances[seat.get(column.id)]]"));
     assert!(matrix.contains("${row.civ} toward ${column.civ}"));
-    for state in ["friendly", "neutral", "unfriendly", "denounced"] {
+    assert!(matrix.contains("have not met"));
+    for state in ["friendly", "neutral", "unfriendly", "denounced", "unmet"] {
         assert!(EMBEDDED_INDEX.contains(&format!(".politics-mark.{state} {{")));
         assert!(EMBEDDED_INDEX.contains(&format!("[\"{state}\", \"")));
     }
-    // The key is outside the name column, which holds names and nothing else.
-    assert!(EMBEDDED_INDEX.contains("<div id=\"politicskey\" class=\"politics-key\" hidden></div>"));
+    // The key is outside the name column, which holds names and nothing else,
+    // and is read before the table it explains.
+    let key = EMBEDDED_INDEX
+        .find("<div id=\"politicskey\" class=\"politics-key\" hidden></div>")
+        .expect("key");
+    assert!(
+        key < EMBEDDED_INDEX
+            .find("<div id=\"worldpolitics\"")
+            .expect("table")
+    );
     assert!(matrix.contains("<td class=\"politics-corner\"></td>"));
     assert!(!EMBEDDED_INDEX.contains("politics-legend"));
 
-    // Both sets of names stay put while the table scrolls under them, and the
-    // scroller is held to the deck's window so that it, not the deck, scrolls.
+    // Both sets of names stay put while the table scrolls under them. Six rows
+    // always fit, and the labels below stop covering the table while it is open.
     assert!(EMBEDDED_INDEX.contains(".politics-matrix tbody th { left: 0; z-index: 1;"));
     assert!(EMBEDDED_INDEX.contains(".politics-matrix thead th { top: 0; z-index: 2;"));
     assert!(EMBEDDED_INDEX.contains(
-        "#side.deck-stops .politics-list { max-height: max(calc(var(--deck-window) - 106px), min(calc(var(--deck-window) - 43px), 130px)); }"
+        "#side.deck-stops .politics-list { max-height: max(calc(var(--politics-name) + 35px + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }"
     ));
+    assert!(EMBEDDED_INDEX.contains(
+        "#side.deck-stops #politicssec[open] ~ .sidebar-section:not([open]) { position: static; box-shadow: none; }"
+    ));
+    assert!(EMBEDDED_INDEX.contains("section.scrollIntoView({ block: \"nearest\" });"));
     assert!(EMBEDDED_INDEX
         .contains("side.style.setProperty(\"--deck-window\", `${Math.round(room)}px`);"));
 
@@ -12659,7 +12674,7 @@ fn browser_stops_asking_for_turns_after_any_terminal_result() {
     assert!(EMBEDDED_INDEX.contains("winner-actions-sim"));
     assert!(EMBEDDED_INDEX.contains("id=\"play-on-one-more-turn\""));
     assert!(EMBEDDED_INDEX.contains(
-        "onclick=\"playOnPastVictory('last_civ_standing', false)\"\n            title=\"Keep this world playing until only one civilization remains.\">One more turn<span class=\"winner-again-note\">(play until the last Civ standing)</span></button>"
+        "onclick=\"playOnPastVictory('last_civ_standing', false)\"\n            title=\"Keep this world playing until only one civilization remains.\">One more turn<span class=\"winner-again-note\">(play until only one Civ remains)</span></button>"
     ));
     // A result that already left one civilization has nothing to play on to.
     assert!(EMBEDDED_INDEX.contains("const oneMoreTurn = st.last_civ_standing === null"));
@@ -14533,7 +14548,79 @@ fn a_launch_passing_another_world_crosses_the_top_of_the_frame() {
     assert!(flyby.contains("return {start:{x:left, y}, end:{x:right, y},"));
     assert!(js.contains("const SKY_FLYBY_MS = 2200;"));
     assert!(js.contains("const SKY_FLYBY_TOP = SKY_LABEL_TOP + 18,"));
-    assert!(js.contains("const fade = film.flyby ? 1 : trailFade;"));
+    assert!(js.contains("const fade = film.flyby || film.lands ? 1 : trailFade;"));
+}
+
+/// A rocket goes by only what is short of where it is going. Watching the
+/// Moon you do not see an Earth satellite go past, and watching Mars you do
+/// not see a Moon rocket.
+#[test]
+fn a_launch_goes_by_only_what_is_short_of_its_destination() {
+    let js = EMBEDDED_APP_JS;
+    let flight = js
+        .split_once("function skyGlobeFlight(")
+        .expect("the flight")
+        .1
+        .split_once("function drawSkyLaunches(")
+        .expect("the end of the flight")
+        .0;
+    let refused = flight
+        .find("if (!skyLaunchPassesHere(place, centerX, centerY, stage)) return null;")
+        .expect("the rule");
+    let flyby = flight
+        .find("route.crossing = skyLaunchFlyby(launch, stage, margin);")
+        .expect("the flyby");
+    assert!(refused < flyby);
+    // The name of a far-off satellite must not wait at the edge of a picture
+    // that has no Earth in it either.
+    assert!(flight.contains("if (!place && radius <= 10 && skyHomeInPicture("));
+
+    let rule = js
+        .split_once("function skyLaunchPassesHere(")
+        .expect("the rule's body")
+        .1
+        .split_once("\n}\n")
+        .expect("the end of the rule")
+        .0;
+    // A satellite names no body, and a destination is not short of itself.
+    assert!(rule.contains("return !!place &&"));
+    assert!(rule.contains("Math.hypot(place.x - centerX, place.y - centerY) - place.r;"));
+}
+
+/// A landing comes down, raises dust and plants a flag, and the marker left
+/// on the world afterwards is the last frame of that same drawing.
+#[test]
+fn a_landing_plants_a_ship_and_a_flag_that_stay() {
+    let js = EMBEDDED_APP_JS;
+    let body_of = |name: &str| {
+        js.split_once(name)
+            .unwrap_or_else(|| panic!("{name}"))
+            .1
+            .split_once("\n}\n")
+            .unwrap_or_else(|| panic!("the end of {name}"))
+            .0
+    };
+    let landings = body_of("function drawSkyLandings(");
+    assert!(landings.contains("if (skyLanderFits(place, gap)) {"));
+    assert!(landings.contains("skyLandingUnderway(player.id, place.id, now)"));
+    let lander = body_of("function drawSkyLander(");
+    assert!(lander.contains("const progress = landing ? landing.progress : 1;"));
+    assert!(lander.contains("drawLaunchSmoke("));
+    assert!(lander.contains("drawSkyLanderFlag("));
+
+    // All three worlds: the exoplanet counts whoever actually got there, and
+    // that landing is queued when its distance runs out.
+    assert!(js.contains("moon:\"moon\", mars:\"mars\", exo:\"arrival\""));
+    assert!(
+        js.contains("body.id === \"exo\" ? crews.expedition.filter(skyExpeditionArrived) : [];")
+    );
+    assert!(body_of("function queueSkyLaunches(").contains("mission:\"arrival\""));
+
+    // The flight hands over to the landing rather than fading out above it.
+    let flight = body_of("function skyGlobeFlight(");
+    assert!(flight.contains("{...film, lands:true, hover:approach.hover}"));
+    let painter = body_of("function drawLaunchFlight(");
+    assert!(painter.contains("launch.touchdown = {size, hover:film.hover};"));
 }
 
 /// Gearing the wheel made fourteen orders of magnitude *reachable*; it did

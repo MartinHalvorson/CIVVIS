@@ -89,6 +89,12 @@ impl AdvancedAi {
         if !war_holds {
             self.claim_bound_granaries(g, pid, plan);
         }
+        // `domination-target-gets-its-breaker`: the Domination target's
+        // Ram, Tower or gun, after the Settler, Monument and Granary and
+        // ahead of the deterrent, which otherwise takes every idle queue a
+        // breaker could have. Exact no-op while the gene is off. See
+        // `advanced/domination_target_gets_its_breaker.rs`.
+        let _ = self.claim_domination_breaker(g, pid, plan);
         // `near-rival-deterrence`: a land unit while a neighbour at peace
         // out-guns us, after the floor's Settler and ahead of the Prophet
         // race and the routine claims. Exact no-op while the gene is off.
@@ -174,12 +180,37 @@ impl AdvancedAi {
         if !war_holds {
             self.claim_culture_theaters(g, pid, plan);
         }
+        // `culture-road-takes-the-unique-first`: Builders for the seat's own
+        // Culture improvement shortly before its civic lands. Exact no-op
+        // while the gene is off. See `advanced/culture_unique_first.rs`.
+        if !war_holds {
+            self.claim_unique_source_builders(g, pid, plan);
+        }
         // `culture-seat-monuments`: a Culture seat's Monuments, after the
         // Theater claim (whose heads they leave alone). Exact no-op while
-        // the gene is off. See `advanced/culture_monuments.rs`.
-        if !war_holds {
+        // the gene is off. Version two holds a Monument only in a city that
+        // is itself threatened, so the war's hold does not reach it. See
+        // `advanced/culture_monuments.rs`.
+        if !war_holds || self.culture_seat_monuments_2 {
             self.claim_culture_monuments(g, pid, plan);
         }
+        // `culture-road-builds-its-triggers`: the last Market a near road
+        // civic's Inspiration counts, after the Culture claims. Exact no-op
+        // while the gene is off. See `advanced/culture_road_triggers.rs`.
+        if !war_holds {
+            self.claim_culture_road_triggers(g, pid, plan);
+        }
+        // `culture-digs-every-site`: the Museum city's Archaeologist, after
+        // the Culture claims, and while the war holds the economy's claims
+        // too (a threatened city and a military head at war keep their
+        // queue). Exact no-op while the gene is off. See
+        // `advanced/culture_digs_every_site.rs`.
+        self.claim_dig_archaeologist(g, pid, plan);
+        // `great-works-never-wait`: a waiting Artist's or Musician's slot
+        // building, likewise while the war holds the economy's claims.
+        // Exact no-op while the gene is off. See
+        // `advanced/great_works_never_wait.rs`.
+        self.claim_great_work_slot_building(g, pid, plan);
         // `diplo-seat-statue-harbor`: the Statue of Liberty's Harbor on a
         // Diplomacy seat. Exact no-op while the gene is off. See
         // `advanced/diplo_statue_harbor.rs`.

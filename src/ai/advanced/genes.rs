@@ -5441,6 +5441,39 @@ pub const GENES: &[Gene] = &[
     // An Apostle that has spent a charge stops asking to Evangelize, which
     // the host refuses. See `advanced/apostle_evangelizes_unspent.rs`.
     Gene { tag: "apostle-evangelizes-unspent", field: "apostle_evangelizes_unspent", kind: Kind::OptIn, enable: AdvancedAi::enable_apostle_evangelizes_unspent, disable: AdvancedAi::disable_apostle_evangelizes_unspent },
+    // A Rock Band's concert is weighted by how much of the Culture race it
+    // closes: a visitor from the bar holder lowers the bar too. Opt-in; see
+    // `advanced/bands_draw_from_the_bar.rs`.
+    Gene { tag: "bands-draw-from-the-bar", field: "bands_draw_from_the_bar", kind: Kind::OptIn, enable: AdvancedAi::enable_bands_draw_from_the_bar, disable: AdvancedAi::disable_bands_draw_from_the_bar },
+    // A Rock Band plays, or steps toward a stage it can really reach, and a
+    // trip the host walked nowhere turns it to another host. Opt-in; see
+    // `advanced/band_plays_what_it_can_reach.rs`.
+    Gene { tag: "band-plays-what-it-can-reach", field: "band_plays_what_it_can_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_what_it_can_reach, disable: AdvancedAi::disable_band_plays_what_it_can_reach },
+    // A Rock Band with nothing it can play waits at the border of the closed
+    // land it most wants, so it plays the turn that land reopens. Opt-in; see
+    // `advanced/bands_wait_at_the_door.rs`.
+    Gene { tag: "bands-wait-at-the-door", field: "bands_wait_at_the_door", kind: Kind::OptIn, enable: AdvancedAi::enable_bands_wait_at_the_door, disable: AdvancedAi::disable_bands_wait_at_the_door },
+    // A Rock Band below level 3 plays first where its performance level
+    // reaches 3, and takes the promotion that lifts the most open stages
+    // there. Opt-in; see `advanced/band_plays_at_level_three.rs`.
+    Gene { tag: "band-plays-at-level-three", field: "band_plays_at_level_three", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_at_level_three, disable: AdvancedAi::disable_band_plays_at_level_three },
+    // A Rock Band is bought in the city nearest a stage it can play rather
+    // than the first city that accepts. Opt-in; see
+    // `advanced/band_buys_near_the_stage.rs`.
+    Gene { tag: "band-buys-near-the-stage", field: "band_buys_near_the_stage", kind: Kind::OptIn, enable: AdvancedAi::enable_band_buys_near_the_stage, disable: AdvancedAi::disable_band_buys_near_the_stage },
+    // A city under fire opens the Rock Band bank to the defence only: the
+    // Great Person pass still leaves it. Opt-in; see
+    // `advanced/culture_band_bank.rs`.
+    Gene { tag: "band-bank-bars-people-under-fire", field: "band_bank_bars_people_under_fire", kind: Kind::OptIn, enable: AdvancedAi::enable_band_bank_bars_people_under_fire, disable: AdvancedAi::disable_band_bank_bars_people_under_fire },
+    // A Rock Band's two-level promotion wins its first pick only where three
+    // such stages are open: one Entertainment Complex or Water Park is a
+    // concert or two at level 3 and a career at level 1. Opt-in; see
+    // `advanced/band_plays_its_stage.rs`.
+    Gene { tag: "band-stage-needs-three-venues", field: "band_stage_needs_three_venues", kind: Kind::OptIn, enable: AdvancedAi::enable_band_stage_needs_three_venues, disable: AdvancedAi::disable_band_stage_needs_three_venues },
+    // A Rock Band trip the host walked nowhere bars its host only on the
+    // second turn running: a turn the host moved nobody bars nobody. Opt-in;
+    // see `advanced/band_stall_bars_no_host.rs`.
+    Gene { tag: "band-stall-bars-no-host", field: "band_stall_bars_no_host", kind: Kind::OptIn, enable: AdvancedAi::enable_band_stall_bars_no_host, disable: AdvancedAi::disable_band_stall_bars_no_host },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
@@ -5471,6 +5504,137 @@ pub const GENES: &[Gene] = &[
     // citizen is working at nothing, so only idle land is cleared. Opt-in;
     // see `AdvancedAi::chop_spares` in `advanced/chop_for_expansion.rs`.
     Gene { tag: "chop-spares-the-worked-tile", field: "chop_spares_the_worked_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_spares_the_worked_tile, disable: AdvancedAi::disable_chop_spares_the_worked_tile },
+    // `cold-war-before-conservation`: a Culture target on a six-slot
+    // government researches only the road to Cold War until it is known, so
+    // Conservation, Class Struggle, Professional Sports and Cultural Heritage
+    // wait for the bands. Opt-in; see
+    // `advanced/cold_war_before_conservation.rs`.
+    Gene { tag: "cold-war-before-conservation", field: "cold_war_before_conservation", kind: Kind::OptIn, enable: AdvancedAi::enable_cold_war_before_conservation, disable: AdvancedAi::disable_cold_war_before_conservation },
+    // `culture-bank-opens-at-nationalism`: the Rock Band Faith bank opens at
+    // Nationalism, and Faith buys only Writers, Artists and Musicians from
+    // then on. Live Kristina 20261110T140731Z spent 1,370 Faith on three
+    // Great People at t124-144 while the bank waited for Ideology. Opt-in;
+    // see `advanced/culture_band_bank.rs`.
+    Gene { tag: "culture-bank-opens-at-nationalism", field: "culture_bank_opens_at_nationalism", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_bank_opens_at_nationalism, disable: AdvancedAi::disable_culture_bank_opens_at_nationalism },
+    // Live Deity Kristina 11-10: the near-rival deterrent held the capital
+    // t39-t69 and took the first Amphitheater back eleven times before t92.
+    // A Culture seat's culture claims pass it at peace. Opt-in; see
+    // `advanced/culture_past_the_deterrent.rs`.
+    Gene { tag: "culture-seat-builds-past-the-deterrent", field: "culture_seat_builds_past_the_deterrent", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_builds_past_the_deterrent, disable: AdvancedAi::disable_culture_seat_builds_past_the_deterrent },
+    // Live Deity Kristina 11-10: no Artifact dug before t182 in six games with a
+    // median four own Antiquity Sites; one Museum, an Archaeologist behind the
+    // claims, a digger that idled beside a site. Carries
+    // `culture-digs-one-museum`. Opt-in; see `advanced/culture_digs_every_site.rs`.
+    Gene { tag: "culture-digs-every-site", field: "culture_digs_every_site", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_digs_every_site, disable: AdvancedAi::disable_culture_digs_every_site },
+    // Live Deity Kristina 11-10: Pingala held Curator in a city with no Great
+    // Works for 30-55 turns while 3-5 stood elsewhere. Opt-in; see
+    // `advanced/curator_sits_with_the_works.rs`.
+    Gene { tag: "curator-sits-with-the-works", field: "curator_sits_with_the_works", kind: Kind::OptIn, enable: AdvancedAi::enable_curator_sits_with_the_works, disable: AdvancedAi::disable_curator_sits_with_the_works },
+    // `culture-faith-site-per-theater`: one Holy Site per Theater city, Faith
+    // claims up to twenty a city, and Astrology once a Theater stands. Live
+    // Deity Kristina 11-10 held 0-2 Holy Sites and 0-15 Faith a turn at t100,
+    // with Astrology at t74-79 in four of six games. Opt-in; see
+    // `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-faith-site-per-theater", field: "culture_faith_site_per_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater, disable: AdvancedAi::disable_culture_faith_site_per_theater },
+    // `culture-bank-holds-the-counterweight`: from Nationalism a Culture seat
+    // buys no counterweight Missionary unless the threat faith is at match
+    // point. Live Deity Kristina 11-10: 21 bought from Nationalism on in 5
+    // of 8 games. Opt-in; see
+    // `advanced/culture_band_bank.rs`.
+    Gene { tag: "culture-bank-holds-the-counterweight", field: "culture_bank_holds_the_counterweight", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_bank_holds_the_counterweight, disable: AdvancedAi::disable_culture_bank_holds_the_counterweight },
+    // `culture-gold-buys-the-shrines`: while the Culture Faith sources are
+    // open, Gold buys one Shrine or Temple a turn in a standing Holy Site
+    // city. Live Deity Kristina 11-10 waited 5-53 turns from Holy Site to
+    // Temple with 120-290 Gold banked. Opt-in; see
+    // `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-gold-buys-the-shrines", field: "culture_gold_buys_the_shrines", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_gold_buys_the_shrines, disable: AdvancedAi::disable_culture_gold_buys_the_shrines },
+    // `culture-seat-appoints-pingala-first`: a Culture target's first titles
+    // go to Pingala and Connoisseur. Live Deity Kristina 11-10, 13 games:
+    // Magnus took the first three titles under the opening's Expansion plan,
+    // so Connoisseur (+1 Culture per citizen) came at t75-t117. Opt-in; see
+    // `advanced/culture_pingala_first.rs`.
+    Gene { tag: "culture-seat-appoints-pingala-first", field: "culture_seat_appoints_pingala_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_appoints_pingala_first, disable: AdvancedAi::disable_culture_seat_appoints_pingala_first },
+    // `culture-road-earns-its-inspirations`: a Culture seat orders its civic
+    // beeline by when each Inspiration lands, and researches the technology
+    // that inspires a near road civic first. Opt-in; see
+    // `advanced/culture_road_inspirations.rs`.
+    Gene { tag: "culture-road-earns-its-inspirations", field: "culture_road_earns_its_inspirations", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_earns_its_inspirations, disable: AdvancedAi::disable_culture_road_earns_its_inspirations },
+    // `culture-faith-site-per-theater-2`: version one, and the Faith sources
+    // are claimed in parallel, one per Theater city. Live Deity Kristina
+    // 20261110T183027Z under version one built one source at a time (Holy
+    // Site t60, Shrine t69, Temple t92, next Holy Site t121) and made 12
+    // Faith a turn at t100. Opt-in; see `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-faith-site-per-theater-2", field: "culture_faith_site_per_theater_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater_2, disable: AdvancedAi::disable_culture_faith_site_per_theater_2 },
+    // Live Deity Kristina 11-10: 13 science-denial wars at 0.04-0.88 of the
+    // target's power took 13 of our cities and delayed no launch. Off
+    // Domination the war needs the launcher counter's edge and spares a
+    // friend. Opt-in; see `advanced/denial_war_needs_the_lane_edge.rs`.
+    Gene { tag: "denial-war-needs-the-lane-edge", field: "denial_war_needs_the_lane_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_war_needs_the_lane_edge, disable: AdvancedAi::disable_denial_war_needs_the_lane_edge },
+    // `culture-keeps-pingala-home`: a Culture target's seated Pingala answers a
+    // Loyalty emergency only in a city flipping within twelve standard turns.
+    // Live Kristina 11-10: 9 of 20 Pingala moves went to a city 3+ citizens
+    // smaller; four of the first five carriers of the Pingala-first gene lost
+    // her to a two-citizen border city within 25 turns of her appointment.
+    // Opt-in; see `advanced/culture_pingala_first.rs`.
+    Gene { tag: "culture-keeps-pingala-home", field: "culture_keeps_pingala_home", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_pingala_home, disable: AdvancedAi::disable_culture_keeps_pingala_home },
+    // `culture-road-builds-its-triggers`: a Culture seat lays the Farms and
+    // builds the last Market a near road civic's Inspiration counts. Opt-in;
+    // see `advanced/culture_road_triggers.rs`.
+    Gene { tag: "culture-road-builds-its-triggers", field: "culture_road_builds_its_triggers", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_builds_its_triggers, disable: AdvancedAi::disable_culture_road_builds_its_triggers },
+    // `culture-faith-braves-the-barbarians`: the Culture Faith claim's
+    // six-tile soldier rule skips Barbarian units. Live Kristina 212836Z, at
+    // peace, held Stockholm's and Linköping's Holy Sites t80-t130 for two
+    // Barbarians nearby; Faith stood at 1 a turn. Opt-in; see
+    // `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-faith-braves-the-barbarians", field: "culture_faith_braves_the_barbarians", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_braves_the_barbarians, disable: AdvancedAi::disable_culture_faith_braves_the_barbarians },
+    // Kristina Deity 11-10: the delegated city loop fired each wall at the
+    // first hostile in disk order before the command phase priced anything;
+    // a gun stood in reach of a walled city that struck elsewhere on 19 of 26
+    // unhit gun-turns with siege-at-the-walls-dies-first armed. See
+    // `advanced/siege_at_the_walls_dies_first.rs`.
+    Gene { tag: "city-strike-takes-the-gun", field: "city_strike_takes_the_gun", kind: Kind::OptIn, enable: AdvancedAi::enable_city_strike_takes_the_gun, disable: AdvancedAi::disable_city_strike_takes_the_gun },
+    // `domination-charts-every-capital`: a Domination seat keeps charting
+    // until every rival's original capital is seen, and takes Cartography
+    // sooner. Opt-in; see `advanced/domination_charts_every_capital.rs`.
+    Gene { tag: "domination-charts-every-capital", field: "domination_charts_every_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_charts_every_capital, disable: AdvancedAi::disable_domination_charts_every_capital },
+    // `denial-charts-the-racer`: a Culture or Domination seat charts every
+    // city of the leading Science rival, so its Spies have the Spaceport city
+    // to go to. Opt-in; see `advanced/denial_charts_the_racer.rs`.
+    Gene { tag: "denial-charts-the-racer", field: "denial_charts_the_racer", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_charts_the_racer, disable: AdvancedAi::disable_denial_charts_the_racer },
+    // `domination-target-gets-its-breaker`: the Domination lane owns a Ram,
+    // Tower or gun matched to its target's walls before it declares, and
+    // keeps one with every siege. Opt-in; see
+    // `advanced/domination_target_gets_its_breaker.rs`.
+    Gene { tag: "domination-target-gets-its-breaker", field: "domination_target_gets_its_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_target_gets_its_breaker, disable: AdvancedAi::disable_domination_target_gets_its_breaker },
+    // `cold-war-then-heritage`: once a Culture target knows Cold War, its
+    // civic slot takes Conservation, then Cultural Heritage, before the
+    // government ladder (Class Struggle, Suffrage) and the culture list.
+    // Opt-in; see `advanced/cold_war_then_heritage.rs`.
+    Gene { tag: "cold-war-then-heritage", field: "cold_war_then_heritage", kind: Kind::OptIn, enable: AdvancedAi::enable_cold_war_then_heritage, disable: AdvancedAi::disable_cold_war_then_heritage },
+    // `culture-road-takes-the-unique-first`: a Culture seat takes the civic
+    // that unlocks its own largest Culture source first, with its Builders
+    // ready. Opt-in; see `advanced/culture_unique_first.rs`.
+    Gene { tag: "culture-road-takes-the-unique-first", field: "culture_road_takes_the_unique_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_takes_the_unique_first, disable: AdvancedAi::disable_culture_road_takes_the_unique_first },
+    // `culture-seat-monuments-2`: version one, and the war holds the
+    // Monument claim only in a threatened city, while a Monument three Online
+    // turns from done (or half built) goes first. Live Deity Culture seats
+    // 11-10: a non-capital city waited a median 48 turns for its Monument;
+    // the war gates held 1,147 Monument-less city-turns empire-wide, and
+    // 1,331 sat with a near-done Monument behind another head. Opt-in; see
+    // `advanced/culture_monuments.rs`.
+    Gene { tag: "culture-seat-monuments-2", field: "culture_seat_monuments_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_monuments_2, disable: AdvancedAi::disable_culture_seat_monuments_2 },
+    // `culture-faith-site-per-theater-3`: version two without the caps of six
+    // Holy Sites and 160 Faith, a Theater city's last free district slot kept
+    // for its Holy Site, and Astrology ahead of the production technologies.
+    // Live Pericles 232642Z put a Diplomatic Quarter, a Commercial Hub and two
+    // Industrial Zones in those slots; the Holy Sites came 16-68 turns later.
+    // Opt-in; see `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-faith-site-per-theater-3", field: "culture_faith_site_per_theater_3", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater_3, disable: AdvancedAi::disable_culture_faith_site_per_theater_3 },
+    // `culture-pass-keeps-half-the-army`: `culture-seat-builds-past-the-deterrent`
+    // lets the culture claims pass the near-rival deterrent only while our
+    // power is at least half the near neighbour's. Opt-in; see
+    // `advanced/culture_past_the_deterrent.rs`.
+    Gene { tag: "culture-pass-keeps-half-the-army", field: "culture_pass_keeps_half_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_pass_keeps_half_the_army, disable: AdvancedAi::disable_culture_pass_keeps_half_the_army },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5487,6 +5651,38 @@ pub const GENES: &[Gene] = &[
     // the rival's army is away from our cities. Needs the strike gene. Unpriced,
     // off. See `advanced/faith_strike.rs`.
     Gene { tag: "faith-strike-at-a-quiet-parity", field: "faith_strike_at_a_quiet_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_at_a_quiet_parity, disable: AdvancedAi::disable_faith_strike_at_a_quiet_parity },
+    // Live Deity Kristina 11-10: 6 of 12 games sat in a Dark Age in the
+    // Atomic era or later with Flower Power on offer, and no deck named it.
+    // A Culture seat slots it at peace while it holds or can buy a Rock Band.
+    // Opt-in; see `advanced/flower_power_in_the_dark.rs`.
+    Gene { tag: "flower-power-in-the-dark", field: "flower_power_in_the_dark", kind: Kind::OptIn, enable: AdvancedAi::enable_flower_power_in_the_dark, disable: AdvancedAi::disable_flower_power_in_the_dark },
+    // Deity domination: 0 early-conquest openings in 72 surviving Deity runs
+    // (183 refusals for the 10-tile reach, 118 for the stand-down; naming
+    // closes at t40 Online) while 38 of 40 rival capitals stood at walls of
+    // 100 or less at t50. A Domination seat opens on the nearest walkable
+    // rival capital within 20 tiles while its walls are Ancient or none,
+    // melee-led, guards left home, standing down when the walls outgrow its
+    // Ram or Siege Tower. Opt-in;
+    // see `advanced/first_capital_before_the_walls.rs`.
+    Gene { tag: "first-capital-before-the-walls", field: "first_capital_before_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_before_the_walls, disable: AdvancedAi::disable_first_capital_before_the_walls },
+    // Live Deity Pericles 11-10: heretic strikes at t127 (232642Z), t130
+    // (204138Z) and t133 (220038Z) opened 29-32-turn wars on the neighbours
+    // whose land held our Rock Bands' stages. A Culture seat holds the strike
+    // once Cold War is known or its band bank is open, and ends a strike war
+    // then as soon as the host signs. Opt-in; see `advanced/faith_strike.rs`.
+    Gene { tag: "faith-strike-spares-the-stages", field: "faith_strike_spares_the_stages", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_spares_the_stages, disable: AdvancedAi::disable_faith_strike_spares_the_stages },
+    // Pericles Deity 11-10 (234227Z): Field Cannons took Athens (82% of its
+    // last eight turns' damage) while the city struck others 27 times; they
+    // were 59 of 383 gun-turns before t130 and no siege-class gun. See
+    // `advanced/siege_at_the_walls_dies_first.rs`.
+    Gene { tag: "every-shooter-at-the-walls", field: "every_shooter_at_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_every_shooter_at_the_walls, disable: AdvancedAi::disable_every_shooter_at_the_walls },
+    // Live Deity Culture seats, 25 games from 2026-11-10 20:00Z: the only
+    // wars the seat declared were 8 heretic strikes; 3 of 7 targets declared
+    // on us later and two of those wars were fatal (201752Z struck Sumeria at
+    // t95 at 42 techs to our 19; 214026Z the Aztecs at t115 at 45 to 29). A
+    // Culture seat strikes no rival 10 or more techs ahead. Opt-in; see
+    // `advanced/faith_strike.rs`.
+    Gene { tag: "faith-strike-fears-the-tech-lead", field: "faith_strike_fears_the_tech_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_fears_the_tech_lead, disable: AdvancedAi::disable_faith_strike_fears_the_tech_lead },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
@@ -5499,6 +5695,18 @@ pub const GENES: &[Gene] = &[
     // discretion, for good land only. The target rises above ten by one city
     // per good holdable seat. See `good_land_lifts_the_city_target.rs`.
     Gene { tag: "good-land-lifts-the-city-target", field: "good_land_lifts_the_city_target", kind: Kind::OptIn, enable: AdvancedAi::enable_good_land_lifts_the_city_target, disable: AdvancedAi::disable_good_land_lifts_the_city_target },
+    // Kristina Deity 11-10: no Government Plaza by t150 and the Queen's
+    // Bibliotheque ruled out by a fixed tier list. See
+    // `advanced/kristina_builds_the_bibliotheque.rs`.
+    Gene { tag: "kristina-builds-the-bibliotheque", field: "kristina_builds_the_bibliotheque", kind: Kind::OptIn, enable: AdvancedAi::enable_kristina_builds_the_bibliotheque, disable: AdvancedAi::disable_kristina_builds_the_bibliotheque },
+    // Kristina Deity 11-10: a Great Musician idled 40 turns and an Artist 27
+    // with no slot. See `advanced/kristina_fills_to_theme.rs`.
+    Gene { tag: "kristina-fills-to-theme", field: "kristina_fills_to_theme", kind: Kind::OptIn, enable: AdvancedAi::enable_kristina_fills_to_theme, disable: AdvancedAi::disable_kristina_fills_to_theme },
+    // Live Deity Kristina 11-10: three placed works sold to rivals, a Writing in
+    // the Palace while Amphitheaters stood empty and a Musician idled 55 turns,
+    // Artists idle for want of a Museum. Opt-in; see
+    // `advanced/great_works_never_wait.rs`.
+    Gene { tag: "great-works-never-wait", field: "great_works_never_wait", kind: Kind::OptIn, enable: AdvancedAi::enable_great_works_never_wait, disable: AdvancedAi::disable_great_works_never_wait },
     // ---- append: l-o ------------------------------------------------
     // An Apostle fights at full strength on one charge: it keeps the charge
     // and hunts, and a Missionary keeps its own and scouts.
@@ -5566,12 +5774,45 @@ pub const GENES: &[Gene] = &[
     // A Religion-target founder's corps caps stop binding once the bank
     // holds two Apostles. See `advanced/religion_seat_spends_the_bank.rs`.
     Gene { tag: "religion-seat-spends-the-bank", field: "religion_seat_spends_the_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_spends_the_bank, disable: AdvancedAi::disable_religion_seat_spends_the_bank },
+    // `peace-waits-for-the-host-minimum`: no peace offer to a major whose war
+    // on us is younger than the host's minimum (8 Online turns), so the
+    // bridge's five-turn retry lands the first ask on the first turn the host
+    // signs. Opt-in; see `advanced/unchosen_war_peace.rs`.
+    Gene { tag: "peace-waits-for-the-host-minimum", field: "peace_waits_for_the_host_minimum", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_the_host_minimum, disable: AdvancedAi::disable_peace_waits_for_the_host_minimum },
     // ---- append: s-s ------------------------------------------------
+    // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
+    // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
+    // +48 Tourism a turn). See `advanced/sweden_builds_open_air_museums.rs`.
+    Gene { tag: "sweden-builds-open-air-museums", field: "sweden_builds_open_air_museums", kind: Kind::OptIn, enable: AdvancedAi::enable_sweden_builds_open_air_museums, disable: AdvancedAi::disable_sweden_builds_open_air_museums },
+    // Kristina Deity 11-10: 9 of 16 games lost Stockholm by t103; in 8 of 18
+    // cities lost at war before t130 a Catapult/Trebuchet/Domrey broke the
+    // walls, and on 49 of 77 turns a gun stood within two tiles we hit none. See
+    // `advanced/siege_at_the_walls_dies_first.rs`.
+    Gene { tag: "siege-at-the-walls-dies-first", field: "siege_at_the_walls_dies_first", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_at_the_walls_dies_first, disable: AdvancedAi::disable_siege_at_the_walls_dies_first },
+    // Kristina Deity 11-10: 10 rival Science wins t168-198; Machiavellianism
+    // on the menu every turn from t120 in 9 games, never slotted; 8 of 32
+    // Disrupts on the winner landed. See `advanced/space_denial_spy_cards.rs`.
+    Gene { tag: "space-denial-slots-the-spy-cards", field: "space_denial_slots_the_spy_cards", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_slots_the_spy_cards, disable: AdvancedAi::disable_space_denial_slots_the_spy_cards },
+    // Kristina Deity 11-10: the host offered Rocket Scientist (Disrupt as if 2
+    // levels higher) in 6 of 28 Spy promotion menus and the Culture list took
+    // none. See `advanced/space_denial_rocket_scientist.rs`.
+    Gene { tag: "space-denial-promotes-the-rocket-scientist", field: "space_denial_promotes_the_rocket_scientist", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_promotes_the_rocket_scientist, disable: AdvancedAi::disable_space_denial_promotes_the_rocket_scientist },
+    // Deity 11-10, 28 games t2-80: the stall limit counted decision frames (2-3
+    // a live turn), so one held turn, or a Settler that ended its move short,
+    // dropped its site silently. See `advanced/settler_stall_counts_turns.rs`.
+    Gene { tag: "settler-stall-counts-turns", field: "settler_stall_counts_turns", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_stall_counts_turns, disable: AdvancedAi::disable_settler_stall_counts_turns },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
     // reading leaves out, so 40 of 64 matched fights were losing exchanges.
     Gene { tag: "theology-fights-count-the-host-edge", field: "theology_fights_count_the_host_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_theology_fights_count_the_host_edge, disable: AdvancedAi::disable_theology_fights_count_the_host_edge },
+    // `unique-unit-closes-the-dark-age`: one to four Era Score short of a
+    // Normal Age, research the unique unit's unlock and train or buy the
+    // first one (+4) before the era closes. Live Deity Online 11-10: 30 of 49
+    // seats entered the Classical era Dark, 24 of them four or less short; the
+    // first Hoplite came at t31-59 in every Pericles game. Opt-in; see
+    // `advanced/unique_unit_closes_the_age.rs`.
+    Gene { tag: "unique-unit-closes-the-dark-age", field: "unique_unit_closes_the_dark_age", kind: Kind::OptIn, enable: AdvancedAi::enable_unique_unit_closes_the_dark_age, disable: AdvancedAi::disable_unique_unit_closes_the_dark_age },
 ];
 
 // ═══ GENERATED BY tools/genes.py — THE VERDICTS. Do not edit below: `python3 tools/genes.py write` ═══

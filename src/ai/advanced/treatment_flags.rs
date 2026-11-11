@@ -88,10 +88,39 @@ impl AdvancedAi {
         /// `band-plays-its-stage`: Rock Bands take the promotions and tours that
         /// keep them alive, because album sales compound over a band's career.
         base.band_plays_its_stage => enable_band_plays_its_stage, disable_band_plays_its_stage;
+        /// `bands-draw-from-the-bar`: see `advanced/bands_draw_from_the_bar.rs`.
+        base.bands_draw_from_the_bar => enable_bands_draw_from_the_bar, disable_bands_draw_from_the_bar;
         barbarian_research_prices_the_field => enable_barbarian_research_prices_the_field, disable_barbarian_research_prices_the_field;
         /// `acropolis-before-the-deterrent`: see
         /// `advanced/acropolis_before_the_deterrent.rs`.
         acropolis_before_the_deterrent => enable_acropolis_before_the_deterrent, disable_acropolis_before_the_deterrent;
+        /// Opt-in gene `kristina-builds-the-bibliotheque`; see
+        /// `advanced/kristina_builds_the_bibliotheque.rs`.
+        base.kristina_builds_the_bibliotheque => enable_kristina_builds_the_bibliotheque, disable_kristina_builds_the_bibliotheque;
+        /// Opt-in gene `kristina-fills-to-theme`; see
+        /// `advanced/kristina_fills_to_theme.rs`.
+        base.kristina_fills_to_theme => enable_kristina_fills_to_theme, disable_kristina_fills_to_theme;
+        /// Opt-in gene `band-plays-what-it-can-reach`; see
+        /// `advanced/band_plays_what_it_can_reach.rs`.
+        base.band_plays_what_it_can_reach => enable_band_plays_what_it_can_reach, disable_band_plays_what_it_can_reach;
+        /// Opt-in gene `bands-wait-at-the-door`; see
+        /// `advanced/bands_wait_at_the_door.rs`.
+        base.bands_wait_at_the_door => enable_bands_wait_at_the_door, disable_bands_wait_at_the_door;
+        /// Opt-in gene `band-plays-at-level-three`; see
+        /// `advanced/band_plays_at_level_three.rs`.
+        base.band_plays_at_level_three => enable_band_plays_at_level_three, disable_band_plays_at_level_three;
+        /// Opt-in gene `band-buys-near-the-stage`; see
+        /// `advanced/band_buys_near_the_stage.rs`.
+        band_buys_near_the_stage => enable_band_buys_near_the_stage, disable_band_buys_near_the_stage;
+        /// Opt-in gene `band-bank-bars-people-under-fire`; see
+        /// `advanced/culture_band_bank.rs`.
+        band_bank_bars_people_under_fire => enable_band_bank_bars_people_under_fire, disable_band_bank_bars_people_under_fire;
+        /// Opt-in gene `band-stage-needs-three-venues`; see
+        /// `advanced/band_plays_its_stage.rs`.
+        band_stage_needs_three_venues => enable_band_stage_needs_three_venues, disable_band_stage_needs_three_venues;
+        /// Opt-in gene `band-stall-bars-no-host`; see
+        /// `advanced/band_stall_bars_no_host.rs`.
+        base.band_stall_bars_no_host => enable_band_stall_bars_no_host, disable_band_stall_bars_no_host;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
@@ -127,6 +156,77 @@ impl AdvancedAi {
         /// `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen
         /// is working now. See `AdvancedAi::chop_spares`.
         chop_spares_the_worked_tile => enable_chop_spares_the_worked_tile, disable_chop_spares_the_worked_tile;
+        /// `cold-war-before-conservation`: see
+        /// `advanced/cold_war_before_conservation.rs`.
+        cold_war_before_conservation => enable_cold_war_before_conservation, disable_cold_war_before_conservation;
+        /// `culture-bank-opens-at-nationalism`: see `advanced/culture_band_bank.rs`.
+        culture_bank_opens_at_nationalism => enable_culture_bank_opens_at_nationalism, disable_culture_bank_opens_at_nationalism;
+        /// `culture-road-earns-its-inspirations`: see
+        /// `advanced/culture_road_inspirations.rs`.
+        culture_road_earns_its_inspirations => enable_culture_road_earns_its_inspirations, disable_culture_road_earns_its_inspirations;
+        /// `culture-seat-builds-past-the-deterrent`: see
+        /// `advanced/culture_past_the_deterrent.rs`.
+        culture_seat_builds_past_the_deterrent => enable_culture_seat_builds_past_the_deterrent, disable_culture_seat_builds_past_the_deterrent;
+        /// Opt-in gene `culture-digs-every-site`; see
+        /// `advanced/culture_digs_every_site.rs`.
+        culture_digs_every_site => enable_culture_digs_every_site, disable_culture_digs_every_site;
+        /// Opt-in gene `curator-sits-with-the-works`; see
+        /// `advanced/curator_sits_with_the_works.rs`.
+        curator_sits_with_the_works => enable_curator_sits_with_the_works, disable_curator_sits_with_the_works;
+        /// `culture-faith-site-per-theater`: see
+        /// `advanced/culture_faith_sources.rs`.
+        culture_faith_site_per_theater => enable_culture_faith_site_per_theater, disable_culture_faith_site_per_theater;
+        /// `culture-faith-site-per-theater-2`: see
+        /// `advanced/culture_faith_sources.rs`.
+        culture_faith_site_per_theater_2 => enable_culture_faith_site_per_theater_2, disable_culture_faith_site_per_theater_2;
+        /// `culture-road-builds-its-triggers`: see
+        /// `advanced/culture_road_triggers.rs`.
+        culture_road_builds_its_triggers => enable_culture_road_builds_its_triggers, disable_culture_road_builds_its_triggers;
+        /// `culture-bank-holds-the-counterweight`: see
+        /// `advanced/culture_band_bank.rs`.
+        culture_bank_holds_the_counterweight => enable_culture_bank_holds_the_counterweight, disable_culture_bank_holds_the_counterweight;
+        /// `culture-gold-buys-the-shrines`: see
+        /// `advanced/culture_faith_sources.rs`.
+        culture_gold_buys_the_shrines => enable_culture_gold_buys_the_shrines, disable_culture_gold_buys_the_shrines;
+        /// `culture-seat-appoints-pingala-first`: see
+        /// `advanced/culture_pingala_first.rs`.
+        culture_seat_appoints_pingala_first => enable_culture_seat_appoints_pingala_first, disable_culture_seat_appoints_pingala_first;
+        /// `denial-war-needs-the-lane-edge`: see
+        /// `advanced/denial_war_needs_the_lane_edge.rs`.
+        denial_war_needs_the_lane_edge => enable_denial_war_needs_the_lane_edge, disable_denial_war_needs_the_lane_edge;
+        /// `culture-road-takes-the-unique-first`: see
+        /// `advanced/culture_unique_first.rs`.
+        culture_road_takes_the_unique_first => enable_culture_road_takes_the_unique_first, disable_culture_road_takes_the_unique_first;
+        /// Opt-in gene `city-strike-takes-the-gun`; see
+        /// `advanced/siege_at_the_walls_dies_first.rs`.
+        city_strike_takes_the_gun => enable_city_strike_takes_the_gun, disable_city_strike_takes_the_gun;
+        /// `domination-charts-every-capital`: see
+        /// `advanced/domination_charts_every_capital.rs`.
+        domination_charts_every_capital => enable_domination_charts_every_capital, disable_domination_charts_every_capital;
+        /// `denial-charts-the-racer`: see
+        /// `advanced/denial_charts_the_racer.rs`.
+        denial_charts_the_racer => enable_denial_charts_the_racer, disable_denial_charts_the_racer;
+        /// `domination-target-gets-its-breaker`: see
+        /// `advanced/domination_target_gets_its_breaker.rs`.
+        domination_target_gets_its_breaker => enable_domination_target_gets_its_breaker, disable_domination_target_gets_its_breaker;
+        /// `culture-keeps-pingala-home`: see
+        /// `advanced/culture_pingala_first.rs`.
+        culture_keeps_pingala_home => enable_culture_keeps_pingala_home, disable_culture_keeps_pingala_home;
+        /// `culture-pass-keeps-half-the-army`: see
+        /// `advanced/culture_past_the_deterrent.rs`.
+        culture_pass_keeps_half_the_army => enable_culture_pass_keeps_half_the_army, disable_culture_pass_keeps_half_the_army;
+        /// `cold-war-then-heritage`: see
+        /// `advanced/cold_war_then_heritage.rs`.
+        cold_war_then_heritage => enable_cold_war_then_heritage, disable_cold_war_then_heritage;
+        /// `culture-faith-braves-the-barbarians`: see
+        /// `advanced/culture_faith_sources.rs`.
+        culture_faith_braves_the_barbarians => enable_culture_faith_braves_the_barbarians, disable_culture_faith_braves_the_barbarians;
+        /// `culture-seat-monuments-2`: see
+        /// `advanced/culture_monuments.rs`.
+        culture_seat_monuments_2 => enable_culture_seat_monuments_2, disable_culture_seat_monuments_2;
+        /// `culture-faith-site-per-theater-3`: see
+        /// `advanced/culture_faith_sources.rs`.
+        culture_faith_site_per_theater_3 => enable_culture_faith_site_per_theater_3, disable_culture_faith_site_per_theater_3;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -134,6 +234,20 @@ impl AdvancedAi {
         /// Opt-in `faith-strike-at-a-quiet-parity`; see
         /// `AdvancedAi::faith_strike_at_a_quiet_parity`.
         faith_strike_at_a_quiet_parity => enable_faith_strike_at_a_quiet_parity, disable_faith_strike_at_a_quiet_parity;
+        /// `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`.
+        flower_power_in_the_dark => enable_flower_power_in_the_dark, disable_flower_power_in_the_dark;
+        /// `first-capital-before-the-walls`: see
+        /// `advanced/first_capital_before_the_walls.rs`.
+        first_capital_before_the_walls => enable_first_capital_before_the_walls, disable_first_capital_before_the_walls;
+        /// Opt-in `faith-strike-spares-the-stages`; see
+        /// `AdvancedAi::faith_strike_spares_the_stages`.
+        faith_strike_spares_the_stages => enable_faith_strike_spares_the_stages, disable_faith_strike_spares_the_stages;
+        /// Opt-in gene `every-shooter-at-the-walls`; see
+        /// `advanced/siege_at_the_walls_dies_first.rs`.
+        every_shooter_at_the_walls => enable_every_shooter_at_the_walls, disable_every_shooter_at_the_walls;
+        /// Opt-in `faith-strike-fears-the-tech-lead`; see
+        /// `AdvancedAi::faith_strike_fears_the_tech_lead`.
+        faith_strike_fears_the_tech_lead => enable_faith_strike_fears_the_tech_lead, disable_faith_strike_fears_the_tech_lead;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
@@ -146,6 +260,9 @@ impl AdvancedAi {
         /// Opt-in gene `good-land-lifts-the-city-target`; see
         /// `advanced/good_land_lifts_the_city_target.rs`.
         good_land_lifts_the_city_target => enable_good_land_lifts_the_city_target, disable_good_land_lifts_the_city_target;
+        /// Opt-in gene `great-works-never-wait`; see
+        /// `advanced/great_works_never_wait.rs`.
+        great_works_never_wait => enable_great_works_never_wait, disable_great_works_never_wait;
         // ---- append: l-o --------------------------------------------
         /// Opt-in gene `last-charge-joins-the-army`; see
         /// `advanced/apostle_army.rs`.
@@ -205,11 +322,32 @@ impl AdvancedAi {
         religion_seat_charts_the_rivals => enable_religion_seat_charts_the_rivals, disable_religion_seat_charts_the_rivals;
         /// See `advanced/religion_seat_spends_the_bank.rs`.
         religion_seat_spends_the_bank => enable_religion_seat_spends_the_bank, disable_religion_seat_spends_the_bank;
+        /// `peace-waits-for-the-host-minimum`: see
+        /// `advanced/unchosen_war_peace.rs`.
+        peace_waits_for_the_host_minimum => enable_peace_waits_for_the_host_minimum, disable_peace_waits_for_the_host_minimum;
         // ---- append: s-s --------------------------------------------
+        /// Opt-in gene `sweden-builds-open-air-museums`; see
+        /// `advanced/sweden_builds_open_air_museums.rs`.
+        sweden_builds_open_air_museums => enable_sweden_builds_open_air_museums, disable_sweden_builds_open_air_museums;
+        /// Opt-in gene `siege-at-the-walls-dies-first`; see
+        /// `advanced/siege_at_the_walls_dies_first.rs`.
+        siege_at_the_walls_dies_first => enable_siege_at_the_walls_dies_first, disable_siege_at_the_walls_dies_first;
+        /// Opt-in gene `space-denial-slots-the-spy-cards`; see
+        /// `advanced/space_denial_spy_cards.rs`.
+        space_denial_slots_the_spy_cards => enable_space_denial_slots_the_spy_cards, disable_space_denial_slots_the_spy_cards;
+        /// Opt-in gene `space-denial-promotes-the-rocket-scientist`; see
+        /// `advanced/space_denial_rocket_scientist.rs`.
+        space_denial_promotes_the_rocket_scientist => enable_space_denial_promotes_the_rocket_scientist, disable_space_denial_promotes_the_rocket_scientist;
+        /// Opt-in gene `settler-stall-counts-turns`; see
+        /// `advanced/settler_stall_counts_turns.rs`.
+        settler_stall_counts_turns => enable_settler_stall_counts_turns, disable_settler_stall_counts_turns;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
         theology_fights_count_the_host_edge => enable_theology_fights_count_the_host_edge, disable_theology_fights_count_the_host_edge;
+        /// `unique-unit-closes-the-dark-age`: see
+        /// `advanced/unique_unit_closes_the_age.rs`.
+        unique_unit_closes_the_dark_age => enable_unique_unit_closes_the_dark_age, disable_unique_unit_closes_the_dark_age;
     }
 
     toggles! {

@@ -1,0 +1,19 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "culture-keeps-pingala-home",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 8 boards of five live Deity Online Kristina (Sweden) Culture games of 2026-11-10 at the turn the Loyalty pass moved a seated Pingala (195741Z t34, 201305Z t31 and t57, 201752Z t50, 193814Z t100, 140731Z t115, 153619Z t85 and t106), each the run's events.jsonl cut at frame 0 of that turn. Both arms run one frozen civvis_orders --resumed built from the branch at f31b1ff2db with the run's own requested genome; the on arm adds --with culture-keeps-pingala-home. Governor orders differ on 6/8 boards: the off arm reassigns Pingala (GOVERNOR_THE_EDUCATOR) to the emergency city on all six, the on arm keeps her seated; on 193814Z t100 the on arm sends Reyna (GOVERNOR_THE_MERCHANT) instead. On 153619Z t85 and t106 neither arm moves a Governor at frame 0.",
+ "archive": {
+  "path": "docs/eval/2026-11-10-culture-keeps-pingala-home.native-queries.tar.xz",
+  "sha256": "8f451c603ccf7625725625e8d8c94a9d4229e100209e287e42d7c116b827f414"
+ },
+ "members": [
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0003/result.json"
+ ]
+}

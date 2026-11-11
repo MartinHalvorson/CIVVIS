@@ -1,0 +1,17 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "space-denial-promotes-the-rocket-scientist",
+  "scope": "One frozen unoptimized ci-profile civvis_orders built from this branch (ab3d109a44), run on three live Deity Kristina runs of 2026-11-10 (all lost to a rival Science Victory t185-198), each events.jsonl cut before the second state frame of a turn on which the host offered a Spy of ours Rocket Scientist (6 turns t153-179), with the run's own forced tags, --victory culture and --resumed; the on arm adds only this tag. Where the board owes the promotion (173750Z t159, 164254Z t179) the off arm takes what the live game took (Quartermaster, Ace Driver) and the on arm takes Rocket Scientist; the other four frames issue no promotion in either arm. Proposed orders only; no host execution or strength claim.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-space-denial-promotes-the-rocket-scientist.native-queries.tar.xz",
+    "sha256": "6e3bdde4fa33b3b3ee53c8e2115507d2f74b94cf7710a4428cca0d2353132265"
+  },
+  "members": [
+    "native-queries/0000/result.json",
+    "native-queries/0001/result.json",
+    "native-queries/0002/result.json",
+    "native-queries/0003/result.json",
+    "native-queries/0004/result.json",
+    "native-queries/0005/result.json"
+  ]
+}

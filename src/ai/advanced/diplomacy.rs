@@ -1979,6 +1979,19 @@ impl AdvancedAi {
                     || science_defensive_peace
                     || unchosen_peace.is_some())
             {
+                // `peace-waits-for-the-host-minimum`: no offer to a war
+                // declared on us before the host signs any; the bridge's
+                // retry window would spend it. `None` with the gene off. See
+                // `advanced/unchosen_war_peace.rs`.
+                if let Some(age) = self.young_war_peace_waits(g, pid, *other) {
+                    if self.journal().wants(crate::reasoning::Level::Decision) {
+                        think!(self.journal(), Diplomacy, Decision,
+                               "Holding the peace offer to {}", g.players[*other].civ;
+                               "peace-waits-for-the-host-minimum: their war on us is {age} turn(s) old and the host signs none before {}; an ask now would hold the next one five turns",
+                               g.standard_duration(super::unchosen_war_peace::PEACE_HOST_MINIMUM_STANDARD));
+                    }
+                    continue;
+                }
                 // `no-peace-with-a-launcher`: no peace with a rival past its
                 // Mars base while a pad of its stands, unless our cities are
                 // falling. `false` with the gene off. See
@@ -2080,6 +2093,12 @@ impl AdvancedAi {
                         "the religion plan cannot spread into a war".to_string()
                     } else if interception_handoff {
                         "the religious interception is over and another city is ready for a conquest campaign".to_string()
+                    } else if faith_war_exit
+                        && self.faith_strike_war_spares_the_stages(g, pid, *other)
+                    {
+                        // `faith-strike-spares-the-stages`: see
+                        // `advanced/faith_strike.rs`.
+                        "faith-strike-spares-the-stages: the heretic strike's war closes the stages our Rock Bands play, so it ends as soon as the host signs".to_string()
                     } else if faith_war_exit {
                         "faith-war-before-the-flip: no spreader of its faith has stood at our cities for five turns and no city of ours is converting".to_string()
                     } else {
@@ -3267,6 +3286,10 @@ impl AdvancedAi {
                 })
             })
             .min();
+        // `space-denial-promotes-the-rocket-scientist`: Rocket Scientist first
+        // on a Culture or Domination seat whose spies answer a space race.
+        // False with the gene off. See `advanced/space_denial_rocket_scientist.rs`.
+        let rocket_scientist_first = self.denial_wants_the_rocket_scientist(g, pid);
         for spy_id in ids {
             // A Spy whose last order is still running is left alone; the
             // rebuilt mirror cannot see the running operation, so without
@@ -3332,6 +3355,13 @@ impl AdvancedAi {
                     "technologist",
                     "linguist",
                 ],
+            };
+            let denial_priority: Vec<&str>;
+            let promotion_priority: &[&str] = if rocket_scientist_first {
+                denial_priority = Self::rocket_scientist_first(promotion_priority);
+                &denial_priority
+            } else {
+                promotion_priority
             };
             if let Some(action) = promotion_priority
                 .iter()

@@ -1322,14 +1322,15 @@ impl BasicAi {
         // turn 38, no Plaza by 81), and which would take any tier-one Plaza
         // building. A Prophet race still open goes first. See
         // `plaza_building_item` and `plaza_item`.
+        // `kristina-builds-the-bibliotheque`: Sweden's tiers, no Prophet-race
+        // hold, and a city other than a site-less capital; the stock lists
+        // otherwise. See `advanced/kristina_builds_the_bibliotheque.rs`.
         if self.plaza_in_the_district_list && !self.minor && !self.barb {
-            if let Some(item) =
-                Self::plaza_building_item_for(g, pid, cid, self.plaza_serves_science)
-            {
+            if let Some(item) = self.plaza_tier_item(g, pid, cid) {
                 return Some(item);
             }
-            if !self.plaza_prophet_race_open(g, pid) {
-                if let Some(item) = Self::plaza_item(g, pid, cid) {
+            if !self.plaza_waits_for_the_prophet(g, pid) {
+                if let Some(item) = self.plaza_item_for_seat(g, pid, cid) {
                     return Some(item);
                 }
             }
@@ -1650,7 +1651,11 @@ impl BasicAi {
             let tiebreak = self.slot_kind_tiebreak;
             // `culture-digs-one-museum`: a Culture seat's first Museum takes the
             // Artifact slot. See `advanced/culture_dig_museum.rs`.
-            let dig_first = self.digs_one_museum && !Self::owns_dig_museum(g, pid);
+            // `culture-digs-every-site`: the same tie-break until the wanted
+            // Museums stand. Zero (off) leaves the line above unchanged.
+            let dig_first = (self.digs_one_museum && !Self::owns_dig_museum(g, pid))
+                || (self.dig_museums_wanted > 0
+                    && Self::dig_museums_owned(g, pid) < self.dig_museums_wanted);
             let slot_worth = |b: &Name| -> f64 {
                 if !tiebreak && !dig_first {
                     return 0.0;
@@ -1749,7 +1754,7 @@ impl BasicAi {
     }
 
     fn culture_museum_digger(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
-        if !self.digs_one_museum
+        if !(self.digs_one_museum || self.dig_museums_wanted > 0)
             || self.minor
             || self.barb
             || self.plan_threatened_city == Some(cid)

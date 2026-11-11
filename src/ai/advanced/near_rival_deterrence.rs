@@ -193,6 +193,9 @@ impl AdvancedAi {
             if plan.threatened_city == Some(cid)
                 || self.early_settler_floor_holds(g, pid, cid, plan)
                 || !self.deterrence_may_displace(g, pid, cid)
+                // `culture-seat-builds-past-the-deterrent`: see
+                // `advanced/culture_past_the_deterrent.rs`.
+                || self.deterrent_spares_the_culture_build(g, pid, cid, plan)
                 || self.first_seowon_holds_parity(g, pid, cid, plan)
                 || g.cities[&cid]
                     .queue
