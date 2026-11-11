@@ -2134,6 +2134,10 @@ const PLAYER_HUD_COLUMNS = [
       ["food", "Food", worldStandingsInPlay], ["production", "Production"],
       ["science", "Science", worldStandingsInPlay],
       ["culture", "Culture", worldStandingsInPlay],
+      // Tourism stands beside the Culture it is the export of: the pressure a
+      // Culture victory is won by, as a rate, the same figure Civ VI's top
+      // panel shows.
+      ["tourism", "Tourism", worldStandingsInPlay],
       ["faith", "Faith", worldStandingsInPlay],
       ["gold", "Gold", worldStandingsInPlay], ["military", "Military"],
       ["nukes", "Nuclear stockpile", worldStandingsInPlay],
@@ -2208,6 +2212,14 @@ try {
         rest.splice(at < 0 ? rest.length : at, 0, key);
         merged = rest;
       }
+    // Tourism joined after Culture, which is where it goes in a layout saved
+    // before it existed, wherever that viewer has put Culture.
+    if (!known.includes("tourism")) {
+      const rest = merged.filter(key => key !== "tourism");
+      const at = rest.indexOf("culture");
+      rest.splice(at < 0 ? rest.length : at + 1, 0, "tourism");
+      merged = rest;
+    }
     predatesClosestVictory = !known.includes("closest_victory");
     if (predatesClosestVictory) {
       const rest = merged.filter(key => key !== "closest_victory");
@@ -2307,7 +2319,8 @@ function visiblePlayerHudColumns() {
 // that a fresh table lacks is never shed, because they asked for it.
 const PLAYER_HUD_SHED_ORDER = [
   "player", "leader", "win_start", "win_delta", "age", "nukes", "suzerain",
-  "wonders", "closest_victory", "food", "population", "rank", "faith", "gold", "culture",
+  "wonders", "closest_victory", "food", "population", "rank", "tourism", "faith", "gold",
+  "culture",
 ];
 const PLAYER_HUD_READABLE_WIDTH = {
   lock:11, watch:70, rank:26, civ:70, leader:62, player:66, elo_delta:40,
@@ -2641,6 +2654,7 @@ const PLAYER_HUD_HEAD_LABELS = {
   cities:["CITY", "Cities controlled"], population:["POP", "Total population"],
   food:["FOOD", "Food per turn"], production:["PROD", "Production per turn"],
   science:["SCI", "Science per turn"], culture:["CUL", "Culture per turn"],
+  tourism:["TOUR", "Tourism per turn"],
   faith:["FPT", "Faith per turn"], gold:["GPT", "Net Gold per turn"],
   military:["MIL", "Military strength"], nukes:["NUK", "Nuclear devices held"],
   suzerain:["SUZ", "City-states under suzerainty"],
@@ -27973,6 +27987,9 @@ function playerHudStats(player, rank) {
     ["production", "PROD", y.production, `Production: ${exactStat(y.production)} per turn`],
     ["science", "SCI", y.science, `Science: ${exactStat(y.science)} per turn`],
     ["culture", "CUL", y.culture, `Culture: ${exactStat(y.culture)} per turn`],
+    ["tourism", "TOUR", player.tourism_per_turn,
+      `Tourism: ${exactStat(player.tourism_per_turn)} per turn · ` +
+      `${exactStat(player.foreign_tourists)} visiting · ${exactStat(player.domestic_tourists)} domestic`],
     ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`, foundedReligionMarker(player)],
     ["gold", "GPT", goldPerTurn, `Net Gold: ${exactStat(goldPerTurn)} per turn · ${exactStat(player.gold)} banked`],
     ["military", "MIL", player.military, `Military strength: ${exactStat(player.military)}`],
@@ -28592,7 +28609,8 @@ function playerHudCityRows(player, cities, hidden, visibleColumns) {
 
 // The figure and tooltip a city prints under a value head, or null under a
 // head that is not a fact of a city: the city count itself, the nuclear
-// stockpile, suzerainty and score belong to the empire.
+// stockpile, suzerainty and score belong to the empire, and Tourism arrives
+// only as the empire's total.
 function playerHudCityStat(city, key) {
   const name = city.name || "City";
   const fogged = what => ["—", `${name} · ${what} not visible under fog`];
