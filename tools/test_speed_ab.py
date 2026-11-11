@@ -956,9 +956,12 @@ class TheSiteWorkloadPlaysTheSitesWorld(unittest.TestCase):
         self.assertGreaterEqual(len(timed), 3, formats)
         for text in timed:
             self.assertTrue(speed_ab.TIMING_LINE.match(text), text)
+        # Anything else in brackets is a count that differs between two
+        # builds playing one game, and has to be stripped with the times.
         for text in formats:
             if text not in timed:
-                self.assertTrue(text.startswith("checkpoint "), text)
+                self.assertTrue(text.startswith("checkpoint ")
+                                or speed_ab.TIMING_LINE.match(text), text)
 
     def test_a_binary_older_than_the_command_is_recognised(self):
         """`civvis nonsense` prints the usage line and exits 0, so an old base

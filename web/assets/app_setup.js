@@ -213,14 +213,32 @@ function syncTacticsEraPool() {
   const pool = document.getElementById("tactics-era-pool");
   if (pool) pool.hidden = readSetting("tacticsera") !== "custom";
 }
-function setOptionalWorldNumber(id, value, defaultValue = Number.NaN) {
-  const input = document.getElementById(id);
-  const number = Number(value);
-  const min = Number(input?.min || 0);
-  const max = Number(input?.max || Number.MAX_SAFE_INTEGER);
-  const automatic = Number.isSafeInteger(defaultValue) && number === defaultValue;
-  if (input) input.value = Number.isSafeInteger(number) && number >= min && number <= max && !automatic
-    ? String(number) : "";
+// The seed on screen belongs to the world on screen, not to the next one.
+//
+// The panel used to copy it into the Map seed field with the rest of the
+// world's settings, so "Restart sim · same settings" sent it straight back
+// and replayed the identical map with the identical civilizations. A new
+// world now leaves the field blank — a fresh map and a fresh deal of
+// civilizations on every start — and names its own seed underneath, one press
+// away for anybody who does want that exact world again.
+let shownWorldSeed = null;
+function showWorldSeed(seed) {
+  const input = document.getElementById("mapseed");
+  if (input) input.value = "";
+  const known = Number.isSafeInteger(seed) && seed >= 0;
+  shownWorldSeed = known ? seed : null;
+  const line = document.getElementById("mapseed-current");
+  const value = document.getElementById("mapseed-current-value");
+  if (value) value.textContent = known ? String(seed) : "";
+  if (line) line.hidden = !known;
+}
+// Asking for this world again is a choice like any other on the panel: it is
+// staged for the next game and turns the start control into a change.
+function replayShownWorldSeed() {
+  const input = document.getElementById("mapseed");
+  if (!input || shownWorldSeed === null) return;
+  input.value = String(shownWorldSeed);
+  stageSelectedSimulationSettings();
 }
 // What this computer can do about the other game, and what a run it can see is
 // doing. The verification-only mode is retained everywhere and refused where it
@@ -467,7 +485,9 @@ function applyQueuedSimulationSettings(settings) {
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
   syncEarthShape();
   document.getElementById("gamespeed").value = settings.speed;
-  setOptionalWorldNumber("mapseed", settings.seed);
+  // The queue's seed is not read back. It always holds one — the live world's
+  // own when nobody typed another — so adopting it would pin the next game to
+  // the map on screen, which is the replay `showWorldSeed` exists to prevent.
   document.getElementById("leaderpool").value = normalizedLeaderPoolId(settings.leader_pool || "civ6");
   if (settings.leader_selection)
     document.getElementById("leaderselection").value = settings.leader_selection;
@@ -512,8 +532,8 @@ function updateRestartSimulationButton() {
     : human
     ? "Start a single-player game with the selected settings"
     : changed
-    ? "Restart with the selected settings"
-    : "Restart with the same settings");
+    ? "Start a new game with the selected settings"
+    : "Start a new game with the same settings, on a fresh map");
   button.querySelector(".sub").textContent = civ6
     ? "on this computer"
     : human || changed
@@ -1387,6 +1407,7 @@ async function playOnPastVictory(mode, paused) {
 }
 document.getElementById("restart-sim").onclick = startNewSimulation;
 document.getElementById("setup-start").onclick = startNewSimulation;
+document.getElementById("mapseed-replay").onclick = replayShownWorldSeed;
 document.getElementById("newgame-options").addEventListener("change", stageSelectedSimulationSettings);
 
 // ── deferred cross-file init ─────────────────────────────────────────────────

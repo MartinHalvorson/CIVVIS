@@ -5731,7 +5731,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // human game never offers to replace it with a simulation by default.
     assert!(EMBEDDED_INDEX.contains("select.value = SPEC ? \"ai_sim\" : \"single\""));
     assert!(EMBEDDED_INDEX.contains(
-        "id=\"restart-sim\" title=\"Restart with the same settings\"><span class=\"lbl\">Restart sim</span><span class=\"sub\">same settings</span>"
+        "id=\"restart-sim\" title=\"Start a new game with the same settings, on a fresh map\"><span class=\"lbl\">Restart sim</span><span class=\"sub\">same settings</span>"
     ));
     assert!(!EMBEDDED_INDEX.contains("id=\"fresh-sim\""));
     assert!(!EMBEDDED_INDEX.contains("id=\"default-settings\""));
@@ -12135,7 +12135,51 @@ fn browser_sets_up_and_reopens_a_single_player_game() {
     // above remain the single-player additions. City-states follow the
     // selected map-size profile, and the turn cap follows the selected
     // game speed; neither needs a separate control.
-    assert!(EMBEDDED_INDEX.contains("setOptionalWorldNumber(\"mapseed\", st.seed);"));
+    //
+    // The seed is also the one setting the panel does not adopt from the
+    // world on screen. Copying it into the field made "Restart sim · same
+    // settings" send it straight back, so the restart replayed the identical
+    // map with the identical civilizations instead of starting a new game.
+    // The field is blanked for every new world, the staged queue's seed
+    // (always present, the live world's own by default) is not read back
+    // into it, and the world's seed is named under the field with one
+    // control that asks for it on purpose.
+    assert!(EMBEDDED_INDEX.contains("showWorldSeed(st.seed);"));
+    assert!(!EMBEDDED_INDEX.contains("setOptionalWorldNumber"));
+    let show_seed = EMBEDDED_INDEX
+        .split_once("function showWorldSeed(seed) {")
+        .and_then(|(_, tail)| tail.split_once("\n}\n"))
+        .expect("the panel names the world's seed")
+        .0;
+    assert!(show_seed.contains("if (input) input.value = \"\";"));
+    assert!(show_seed.contains("if (line) line.hidden = !known;"));
+    let queued = EMBEDDED_INDEX
+        .split_once("function applyQueuedSimulationSettings(settings) {")
+        .and_then(|(_, tail)| tail.split_once("\n}\n"))
+        .expect("the panel reads the staged queue back")
+        .0;
+    assert!(!queued.contains("mapseed"));
+    assert!(EMBEDDED_INDEX.contains(
+        "<small class=\"setup-number-hint\" id=\"mapseed-current\" hidden>This world is seed <b id=\"mapseed-current-value\"></b>"
+    ));
+    assert!(
+        EMBEDDED_INDEX.contains("#newgame-options .setup-number-hint[hidden] { display: none; }")
+    );
+    assert!(EMBEDDED_INDEX
+        .contains("document.getElementById(\"mapseed-replay\").onclick = replayShownWorldSeed;"));
+    let replay = EMBEDDED_INDEX
+        .split_once("function replayShownWorldSeed() {")
+        .and_then(|(_, tail)| tail.split_once("\n}\n"))
+        .expect("the panel can ask for this world again")
+        .0;
+    assert!(replay.contains("input.value = String(shownWorldSeed);"));
+    assert!(replay.contains("stageSelectedSimulationSettings();"));
+    // With the field blank, the start control rolls the seed itself.
+    assert!(EMBEDDED_INDEX.contains("seed: settings.seed ?? Math.floor(Math.random() * 1e9)"));
+    assert!(EMBEDDED_INDEX.contains("? \"Start a new game with the selected settings\""));
+    assert!(
+        EMBEDDED_INDEX.contains(": \"Start a new game with the same settings, on a fresh map\");")
+    );
     // A build without the save endpoints hides the group rather than
     // offering one that cannot work.
     assert!(EMBEDDED_INDEX.contains("catch (error) { group.style.display = \"none\";"));
@@ -14918,6 +14962,59 @@ fn the_sky_carries_its_own_way_about() {
     assert!(
         EMBEDDED_INDEX.contains("const beside = controls && controls.right + 14 + width <= right;")
     );
+}
+
+/// The Moon and Mars are tiled to the Earth's scale and seeded with
+/// resources each game. A deposit count is a multiple of what the Earth
+/// carries on the same amount of land, so the page's figure for the Earth's
+/// strategic supply has to be the generator's own quota and its tile count
+/// the globe's own formula, not numbers that merely started out equal.
+#[test]
+fn the_moon_and_mars_are_tiled_to_the_earth_and_seeded_each_game() {
+    for (world, deposits) in [
+        ("moon", "deposits:{stone:1, aluminum:1.7, uranium:.6"),
+        (
+            "mars",
+            "deposits:{stone:1, aluminum:.6, uranium:.25, copper:5, salt:.2, mercury:.2",
+        ),
+    ] {
+        let spec = EMBEDDED_INDEX
+            .split_once(&format!("id:\"{world}\""))
+            .unwrap_or_else(|| panic!("{world} is absent from the sky catalogue"))
+            .1
+            .split_once("}},")
+            .unwrap_or_else(|| panic!("{world} carries no deposits"))
+            .0;
+        assert!(
+            spec.contains("earthTiles:true"),
+            "{world} is not tiled to the Earth"
+        );
+        assert!(spec.ends_with(deposits), "{world} is seeded differently");
+    }
+
+    // One tile is the same piece of ground on all three worlds, and nothing
+    // reads a seeded world's catalogue frequency past `skyFrequency`.
+    assert!(EMBEDDED_INDEX
+        .contains("return earth ? Math.max(2, Math.round(earth * body.size)) : body.frequency;"));
+    assert!(EMBEDDED_INDEX.contains("const cells = skyGlobeMesh(frequency);"));
+    assert!(!EMBEDDED_INDEX.contains("skyGlobeMesh(body.frequency)"));
+    assert!(!EMBEDDED_INDEX.contains("place.frequency"));
+
+    // The size arithmetic: the Earth's tiles times the body's share of its
+    // surface, never less than one of anything the catalogue lists.
+    assert!(EMBEDDED_INDEX.contains(
+        "const ground = earth ? (10 * earth * earth + 2) * body.size * body.size : tiles;"
+    ));
+    assert_eq!(crate::sphere::Sphere::tiles_for(18), 10 * 18 * 18 + 2);
+    assert!(EMBEDDED_INDEX.contains("counts.push([resource, Math.max(1, whole + extra)]);"));
+    assert!(EMBEDDED_INDEX.contains("const SKY_EARTH_LAND_PER_STRATEGIC_DEPOSIT = 90;"));
+    assert!(include_str!("../mapgen.rs")
+        .contains("let quota = (num_major_spawns + 1).max(land.len() / 90);"));
+
+    // A new game or a new Earth size rebuilds the world rather than reusing
+    // the last game's.
+    assert!(EMBEDDED_INDEX.contains("const stamp = `${frequency}:${worldSeed}`;"));
+    assert!(EMBEDDED_INDEX.contains("if (kept && kept.stamp === stamp) return kept.globe;"));
 }
 
 /// Every non-Sun body in the catalogue that has a frequency is a tiled

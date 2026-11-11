@@ -304,6 +304,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `faith-strike-wipes-the-spreaders` | off (unmeasured) | Opt-in `faith-strike-wipes-the-spreaders`; see `AdvancedAi::faith_strike_wipes_the_spreaders`. | 1 \| 1 |
 | `faith-war-defends-the-diplomat` | off (unmeasured) | Opt-in gene `faith-war-defends-the-diplomat`; see `Self::faith_war_defends_the_diplomat`. | 1 \| 1 |
 | `faith-war-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-war-needs-the-edge`; see `Self::faith_war_needs_the_edge`. | 1 \| 1 |
+| `faith-war-on-a-small-world` | off (unmeasured) | Opt-in `faith-war-on-a-small-world`; see `AdvancedAi::faith_war_on_a_small_world`. | 1 \| 1 |
 | `field-reads-the-tile-it-leaves` | off (unmeasured) | Opt-in gene `field-reads-the-tile-it-leaves`; see `Self::field_reads_the_tile_it_leaves`. | 1 \| 1 |
 | `first-capital-before-the-camp` | off (unmeasured) | Opening defence priority for the threatened sole capital. | 1 \| 1 |
 | `first-capital-before-the-walls` | off (unmeasured) | `first-capital-before-the-walls`: see `advanced/first_capital_before_the_walls.rs`. | 1 \| 1 |
@@ -345,6 +346,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `kristina-builds-the-bibliotheque` | off (unmeasured) | Opt-in gene `kristina-builds-the-bibliotheque`; see `advanced/kristina_builds_the_bibliotheque.rs`. | 1 \| 1 |
 | `kristina-fills-to-theme` | off (unmeasured) | Opt-in gene `kristina-fills-to-theme`; see `advanced/kristina_fills_to_theme.rs`. | 1 \| 1 |
 | `land-grab-outlasts-the-opening` | off (unmeasured) | Opt-in gene `land-grab-outlasts-the-opening`; see `Self::land_grab_outlasts_the_opening`. | 1 \| 1 |
+| `land-recon-before-the-first-capital` | off (unmeasured) | `land-recon-before-the-first-capital`: the missing land recon arm claims an idle queue before optional economy work on an early Domination seat without a reachable capital. | 1 \| 1 |
 | `last-charge-joins-the-army` | off (unmeasured) | Opt-in gene `last-charge-joins-the-army`; see `advanced/apostle_army.rs`. | 1 \| 1 |
 | `launch-commits-the-endgame` | off (unmeasured) | Opt-in gene `launch-commits-the-endgame`; see `Self::launch_commits_the_endgame`. | 1 \| 1 |
 | `launch-pad-holds-its-queue` | off (unmeasured) | Opt-in gene `launch-pad-holds-its-queue`; see `Self::launch_pad_holds_its_queue`. | 1 \| 1 |

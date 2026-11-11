@@ -630,6 +630,12 @@ pub struct Session {
     /// back when a viewer slows down. The game is byte-for-byte identical at
     /// any count — the dial buys throughput, never different play.
     simultaneous_jobs: usize,
+    /// Whether a seat's turn keeps its rivals' city yields between passes
+    /// (`Game::keep_rival_yields`). On for every session; `site-bench` turns
+    /// it off to price it, and the game is the same game either way.
+    pub keeps_rival_yields: bool,
+    /// The acting seat's own cities as well (`Game::keep_own_yields`).
+    pub keeps_own_yields: bool,
 }
 
 /// The identity of a person playing a seat.
@@ -2189,6 +2195,8 @@ impl Session {
             resumed_next_game_params: None,
             autoplay_strategy: None,
             last_autoplay_request: None,
+            keeps_rival_yields: true,
+            keeps_own_yields: true,
             human_players,
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
@@ -2284,6 +2292,8 @@ impl Session {
             resumed_next_game_params: next_game_params,
             autoplay_strategy: None,
             last_autoplay_request: None,
+            keeps_rival_yields: true,
+            keeps_own_yields: true,
             human_players,
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
@@ -2841,7 +2851,14 @@ impl Session {
             g.finish_at_turn_limit();
             return pid;
         }
+        // For the length of this seat's turn city yields are kept from one
+        // pass to the next. Off again before anything else reads the world:
+        // the session edits the game between turns without actions.
+        g.keep_rival_yields(self.keeps_rival_yields);
+        g.keep_own_yields(self.keeps_rival_yields && self.keeps_own_yields);
         self.ais[pid].take_turn(g, pid);
+        g.keep_own_yields(false);
+        g.keep_rival_yields(false);
         if g.current == pid && !g.is_finished() {
             let _ = g.apply(pid, &Action::EndTurn);
         }
