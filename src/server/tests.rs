@@ -14411,9 +14411,15 @@ fn every_decorated_state_field_reaches_the_browser_build_or_says_why_not() {
 /// label on it. The two are read off each other below rather than pinned
 /// twice, so retuning the world retunes the button or fails here.
 ///
-/// A hand on the world stops it, for good rather than for the moment. All
-/// three ways of taking hold — the pointer drag, the two-finger pinch and
-/// the one-finger pan — stop it as they take the camera.
+/// A hand on the world stops it, and it stays stopped when the hand lets
+/// go. All three ways of taking hold — the pointer drag, the two-finger
+/// pinch and the one-finger pan — stop it as they take the camera. But a
+/// hand is not a choice: it saves nothing, so the hold lasts for this world
+/// only and the next world, or the next visit, opens as the button last left
+/// it. Under the first storage key every drag wrote "off" for good, and a
+/// visitor who had looked around once never saw the world turn again
+/// (operator, 2026-11-11: "it should default on"); the key was renamed so
+/// those stored drags are not read as choices.
 #[test]
 fn the_world_turns_about_its_own_poles_until_a_hand_stops_it() {
     let js = EMBEDDED_APP_JS;
@@ -14466,6 +14472,30 @@ fn the_world_turns_about_its_own_poles_until_a_hand_stops_it() {
         "the pointer drag, the pinch and the one-finger pan each stop the \
              turn as they take the camera"
     );
+    // A hand holds the world and saves nothing; only `setWorldSpin`, which
+    // the button and the bar call, writes the preference.
+    let hand = js
+        .split_once("function stopWorldSpin() {")
+        .expect("the hand's stop")
+        .1
+        .split_once("\n}\n")
+        .expect("the end of stopWorldSpin")
+        .0;
+    assert!(hand.contains("WORLD_SPIN = false;"));
+    assert!(
+        !hand.contains("localStorage") && !hand.contains("setWorldSpin("),
+        "a drag of the map must not be saved as the viewer's choice"
+    );
+    assert_eq!(
+        js.matches("localStorage.setItem(WORLD_SPIN_STORAGE_KEY")
+            .count(),
+        1,
+        "the preference has one writer"
+    );
+    assert!(js.contains(r#"const WORLD_SPIN_STORAGE_KEY = "civvis-world-spin-2";"#));
+    // The next world opens as the button last left it.
+    assert!(js.contains("if (newWorld) restoreWorldSpin();"));
+    assert!(js.contains(r#"const saved = localStorage.getItem(WORLD_SPIN_STORAGE_KEY) === "1";"#));
     // The button is the instrument: a globe whose meridian keeps the
     // world's own period, lit only while there is a world turning — and
     // it opens unlit, because the world opens still.

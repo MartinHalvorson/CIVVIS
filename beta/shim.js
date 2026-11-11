@@ -47,9 +47,11 @@
 
   // Seed public-site defaults before the viewer reads its preferences. An
   // explicit choice, including spin off or no trail, always wins on return.
+  // The spin key is the viewer's `WORLD_SPIN_STORAGE_KEY`: only its button
+  // and bar write there, never a drag of the map.
   function applyPublishedViewDefaults(storage) {
     for (const [key, value] of [
-      ["civvis-world-spin", "1"],
+      ["civvis-world-spin-2", "1"],
       ["civvis-unit-tail-turns", "2"],
     ]) {
       if (storage.getItem(key) === null) storage.setItem(key, value);
