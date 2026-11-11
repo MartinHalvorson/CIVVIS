@@ -5635,6 +5635,14 @@ pub const GENES: &[Gene] = &[
     // power is at least half the near neighbour's. Opt-in; see
     // `advanced/culture_past_the_deterrent.rs`.
     Gene { tag: "culture-pass-keeps-half-the-army", field: "culture_pass_keeps_half_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_pass_keeps_half_the_army, disable: AdvancedAi::disable_culture_pass_keeps_half_the_army },
+    // `city-state-before-the-first-capital`: a Domination seat's early
+    // conquest opening takes one nearby, unsuzerained city-state behind at
+    // most Ancient Walls (3 melee, 2 shooters, a Battering Ram) before, and
+    // without spending, the opening on a rival capital. Live Deity: a
+    // city-state stood within 12 tiles in ~90% of 110 games, walls 100 and
+    // about four Warriors at t30-50, no suzerain in 64% at t40. Opt-in; see
+    // `advanced/city_state_before_the_first_capital.rs`.
+    Gene { tag: "city-state-before-the-first-capital", field: "city_state_before_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_city_state_before_the_first_capital, disable: AdvancedAi::disable_city_state_before_the_first_capital },
     // `denial-spies-fill-every-slot`: a Culture or Domination seat trains a
     // Spy for every free slot from its first slot, side by side, in the
     // cities that finish one soonest. Opt-in; see
@@ -5694,6 +5702,22 @@ pub const GENES: &[Gene] = &[
     // Culture seat strikes no rival 10 or more techs ahead. Opt-in; see
     // `advanced/faith_strike.rs`.
     Gene { tag: "faith-strike-fears-the-tech-lead", field: "faith_strike_fears_the_tech_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_fears_the_tech_lead, disable: AdvancedAi::disable_faith_strike_fears_the_tech_lead },
+    // Live Deity Macedon, Tiny Pangaea, Online (040245Z): Washington was
+    // charted at t11, 12 tiles out behind no walls, and refused at every
+    // note from t12 to t62 as "no charted land walk reaches their capital":
+    // the capital exchange charts the capital, not the ground between. On a
+    // map with one landmass the first capital's walk counts uncharted ground
+    // as land, and the nearest free scout charts that fog. Opt-in; see
+    // `advanced/first_capital_walks_the_one_landmass.rs`.
+    Gene { tag: "first-capital-walks-the-one-landmass", field: "first_capital_walks_the_one_landmass", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_walks_the_one_landmass, disable: AdvancedAi::disable_first_capital_walks_the_one_landmass },
+    // Live Deity 4-player Pangaea civvis-20261111T040245Z: the Netherlands'
+    // Protestantism held a second major from t51 ("religion race reads 50%")
+    // and won at t83; the faith war on it was held at t52 on power alone (199
+    // against a steady 398). On four living majors or fewer the war opens on
+    // such a founder without the power, edge, rout and solvency gates, and is
+    // kept while the race holds. Rides `faith-war-before-the-flip-2`. Opt-in;
+    // see `advanced/faith_war_before_the_flip.rs`.
+    Gene { tag: "faith-war-on-a-small-world", field: "faith_war_on_a_small_world", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_on_a_small_world, disable: AdvancedAi::disable_faith_war_on_a_small_world },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
@@ -5726,6 +5750,8 @@ pub const GENES: &[Gene] = &[
     // First-slot ranged support. Leaves later recon settings unchanged;
     // the opening Scout is displaced. No Native strength claim.
     Gene { tag: "opening-ranged-support", field: "opening_ranged_support", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_ranged_support, disable: AdvancedAi::disable_opening_ranged_support },
+    // A missing land eye precedes economy claims until an early Domination target is charted.
+    Gene { tag: "land-recon-before-the-first-capital", field: "land_recon_before_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_land_recon_before_the_first_capital, disable: AdvancedAi::disable_land_recon_before_the_first_capital },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.

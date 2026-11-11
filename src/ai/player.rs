@@ -84,6 +84,8 @@ pub struct PaceSample {
 
 impl PaceSample {
     pub fn observe(game: &Game, pid: usize) -> Self {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = game.query_memo();
         let cities = game.player_city_ids(pid);
         let mut yields = game.player_yield_extras(pid);
         for id in &cities {
@@ -133,6 +135,7 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
         // Governor preferences are player decisions, not predicted resources.
         game.players[pid].citizen_food_bias = view.players[pid].citizen_food_bias;
         game.players[pid].city_directives = view.players[pid].city_directives.clone();
+        game.board_written();
         let mut executed_movement = Vec::new();
         // `districts-price-the-improvement`: like the live bridge, which sends
         // the host only each city's last Produce of a batch, a city's earlier

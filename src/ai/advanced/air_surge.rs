@@ -2130,6 +2130,8 @@ impl AdvancedAi {
     }
 
     fn air_surge_field_slot_city(&self, g: &Game, pid: usize, field: Name) -> Option<u32> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         // district_sites checks terrain and remaining capacity even before
         // Flight is known. Reserve only a city that can actually host a field.
         let threatened = self.threatened_city(g, pid);
@@ -2210,6 +2212,8 @@ impl AdvancedAi {
     /// The fastest any of our cities could deliver an item of `item`'s kind,
     /// at its current production rate. `None` when no city can.
     fn air_surge_fastest_rate(g: &Game, pid: usize, item: &Item) -> Option<f64> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let mut rates: Vec<(f64, u32)> = g
             .player_city_ids(pid)
             .into_iter()

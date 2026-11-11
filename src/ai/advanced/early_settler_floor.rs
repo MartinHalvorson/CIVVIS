@@ -213,6 +213,9 @@ impl AdvancedAi {
                 || Self::early_settler_raider_near(g, city.pos)
                 || self.short_seowon_holds_settler_floor(g, pid, cid)
                 || self.science_campus_holds_repeat_settler(g, pid, cid, plan)
+                || city.queue.first().is_some_and(|head| {
+                    self.first_capital_land_recon_holds(g, pid, cid, plan, head)
+                })
                 || !Self::early_settler_may_displace(g, pid, cid)
                 || !g.can_produce(pid, cid, &item)
             {

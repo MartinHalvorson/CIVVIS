@@ -84,6 +84,8 @@ impl AdvancedAi {
     /// See the module. `None` with the gene off, against a rival that is no
     /// decisive space racer, or when it stands no reachable pad.
     pub(super) fn suppression_pad_city(&self, g: &Game, pid: usize, rival: usize) -> Option<u32> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.science_suppression_hits_the_pads || !g.victory_conditions.science {
             return None;
         }

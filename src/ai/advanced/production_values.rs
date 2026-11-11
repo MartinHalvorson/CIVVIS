@@ -101,6 +101,8 @@ impl AdvancedAi {
         spec: &crate::rules::WonderSpec,
         lane: GrandStrategy,
     ) -> f64 {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let effect = |key: &str| spec.effects.get(key).copied().unwrap_or(0.0);
         // ⚠ NOTHING IS READ OFF THE BOARD UNTIL AN EFFECT ASKS FOR IT. This
         // runs inside `production_value`, which `take_turn` calls once per

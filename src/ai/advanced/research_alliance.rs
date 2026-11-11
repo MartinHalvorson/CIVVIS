@@ -175,6 +175,8 @@ impl AdvancedAi {
     /// `ALLIANCE_SCIENCE_SHARING_FROM_ALLY` takes 10 percent of, so the
     /// ranking is measured in the units the alliance actually pays in.
     pub(crate) fn research_alliance_science(g: &Game, pid: usize) -> f64 {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         g.player_city_ids(pid)
             .into_iter()
             .map(|city| g.city_yields(city).science)
