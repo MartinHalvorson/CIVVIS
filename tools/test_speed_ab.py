@@ -899,5 +899,73 @@ class TheRequiredGateHasAWayToSayYes(unittest.TestCase):
         self.assertRegex(raw, rf"{variable}: \$\{{\{{ github.event.pull_request.body")
 
 
+SITE_REPORT = """[{total}s]
+[turns 1-10: 10 frames, 54.0 ms a frame, 111 KB a document; majors {majors}s, \
+city-states and barbarians 0.050s, documents 0.320s]
+[all: majors {majors}s, city-states and barbarians 0.050s, documents 0.320s]
+checkpoint 11: save {save}, document 00000000deadbeef
+No winner: turn 11 of 500, and no enabled victory was achieved
+  1. Rome  score 12
+"""
+
+
+class TheSiteWorkloadPlaysTheSitesWorld(unittest.TestCase):
+    """The gate's world is the gene screen's. A visitor's browser runs another
+    one, and a change that only that world pays for read as noise here."""
+
+    def test_it_runs_the_site_bench_and_no_screen_shape(self):
+        command = speed_ab.game_command(
+            Path("/x/civvis"), 7, dict(speed_ab.DEFAULTS, workload="site"))
+        self.assertEqual(command, ["/x/civvis", "site-bench", "--seed", "7",
+                                   "--turns", str(speed_ab.DEFAULTS["turns"])])
+
+    def test_the_gate_still_plays_the_screens_shape(self):
+        """`compare` is handed `DEFAULTS` with no workload in it by every
+        caller written before this one, and must keep meaning the screen."""
+        for opts in (speed_ab.DEFAULTS, dict(speed_ab.DEFAULTS, workload="screen")):
+            command = speed_ab.game_command(Path("/x/civvis"), 7, opts)
+            self.assertEqual(command[1], "simulate")
+            for flag in ("--players", "--width", "--height", "--city-states",
+                         "--speed", "--map", "--shape", "--jobs"):
+                self.assertIn(flag, command)
+        self.assertNotIn("--workload", gate_invocation(),
+                         "the CI gate measures the screen's shape")
+
+    def test_a_site_report_hashes_its_game_and_not_its_clock(self):
+        fast = SITE_REPORT.format(total="1.000", majors="0.200", save="aa")
+        slow = SITE_REPORT.format(total="9.000", majors="7.000", save="aa")
+        other = SITE_REPORT.format(total="1.000", majors="0.200", save="ab")
+        self.assertEqual(speed_ab.report_digest(fast), speed_ab.report_digest(slow))
+        self.assertNotEqual(speed_ab.report_digest(fast),
+                            speed_ab.report_digest(other),
+                            "a different checkpoint is a different game")
+        self.assertEqual(speed_ab.turns_played(fast), 11)
+
+    def test_every_line_the_engine_times_is_a_line_this_tool_strips(self):
+        """The engine's half of that contract, read from its source: a line of
+        `site-bench` output that carries a time and did not match
+        `TIMING_LINE` would make two runs of one binary disagree."""
+        source = (REPO / "src" / "main.rs").read_text(encoding="utf-8")
+        body = source[source.index("fn site_bench_command"):]
+        body = body[:body.index("\n}\n")]
+        formats = [re.sub(r"\\\n\s*", "", literal) for literal in
+                   re.findall(r'println!\(\s*"((?:[^"\\]|\\[\s\S])*)"', body)]
+        self.assertGreaterEqual(len(formats), 4, formats)
+        timed = [text for text in formats if "s" in text and "{:.3}" in text]
+        self.assertGreaterEqual(len(timed), 3, formats)
+        for text in timed:
+            self.assertTrue(speed_ab.TIMING_LINE.match(text), text)
+        for text in formats:
+            if text not in timed:
+                self.assertTrue(text.startswith("checkpoint "), text)
+
+    def test_a_site_reading_is_not_written_into_the_screens_ledger(self):
+        with self.assertRaises(SystemExit) as refused:
+            speed_ab.main(["--baseline", "/x/a", "--candidate", "/x/b",
+                           "--workload", "site", "--record-ledger",
+                           "--ledger-machine", "here"])
+        self.assertIn("ledger holds the screen's shape", str(refused.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

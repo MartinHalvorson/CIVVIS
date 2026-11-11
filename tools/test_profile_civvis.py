@@ -250,6 +250,83 @@ class ParentsAnswerWhoMadeItExpensive(unittest.TestCase):
         self.assertEqual(len(parsed().parents("no_such_symbol")), 0)
 
 
+LINES_SAMPLE = """\
+Load Address:    0x100d2c000
+
+Call graph:
+    1000 Thread_1   DispatchQueue_1: com.apple.main-thread  (serial)
+      1000 _RNvMsg_NtNtCs3wqUwMJoTxo_6civvis2ai8advancedNtB5_10AdvancedAi15take_turn_inner  (in civvis) + 256684  [0x1016e76d8]
+        600 _RNvMNtNtCs3wqUwMJoTxo_6civvis4game4cityNtB4_4Game11city_yields  (in civvis) + 40  [0x101000028]
+      400 _RNvMsg_NtNtCs3wqUwMJoTxo_6civvis2ai8advancedNtB5_10AdvancedAi15take_turn_inner  (in civvis) + 118580  [0x1016c5b60]
+        400 _RNvMNtNtCs3wqUwMJoTxo_6civvis4game7actionsNtB4_4Game5apply  (in civvis) + 8  [0x101000100]
+      250 _RNvMsg_NtNtCs3wqUwMJoTxo_6civvis2ai8advancedNtB5_10AdvancedAi15take_turn_inner  (in civvis) + 256684  [0x1016e76d8]
+        250 _RNvMNtNtCs3wqUwMJoTxo_6civvis4game4cityNtB4_4Game11city_yields  (in civvis) + 40  [0x101000028]
+
+Total number in stack (recursive counted multiple, when >=5):
+
+Sort by top of stack, same collapsed (when >= 5):
+        _RNvMNtNtCs3wqUwMJoTxo_6civvis4game4cityNtB4_4Game11city_yields        850
+"""
+
+
+class TheLinesInsideOneFunction(unittest.TestCase):
+    """`take_turn_inner` is nine tenths of a site game and most of its passes
+    are inlined into it. A symbol cannot say which pass asked; the return
+    address `sample` prints on every row can."""
+
+    def test_rows_are_summed_by_the_address_they_return_to(self):
+        sites = profiler.call_sites(LINES_SAMPLE, "take_turn_inner")
+        self.assertEqual([(address, count) for address, count, _ in sites],
+                         [("0x1016e76d8", 1250), ("0x1016c5b60", 400)])
+
+    def test_each_site_names_what_it_called(self):
+        sites = dict((address, callee) for address, _, callee in
+                     profiler.call_sites(LINES_SAMPLE, "take_turn_inner"))
+        self.assertIn("city_yields", sites["0x1016e76d8"])
+        self.assertIn("apply", sites["0x1016c5b60"])
+
+    def test_a_pattern_that_matches_nothing_returns_nothing(self):
+        self.assertEqual(profiler.call_sites(LINES_SAMPLE, "no_such_symbol"), [])
+
+    def test_the_report_puts_the_matched_functions_line_first(self):
+        """`atos -i` answers innermost first; the line a reader is looking for
+        is the one in the function they asked about, which is last."""
+        asked = []
+
+        def resolve(binary, load, address):
+            asked.append((load, address))
+            return ["city_yields (in civvis) (city.rs:1662)",
+                    "culture_lane_spends (in civvis) (victory_lane.rs:310)",
+                    "take_turn_inner (in civvis) (advanced.rs:26426)"]
+
+        out = io.StringIO()
+        profiler.report_lines(LINES_SAMPLE, "take_turn_inner", Path(__file__),
+                              2000, 1, out=out, resolve=resolve)
+        text = out.getvalue()
+        self.assertEqual(asked, [("0x100d2c000", "0x1016e76d8")])
+        self.assertIn(" 62.50%  advanced.rs:26426  -> ", text)
+        self.assertIn("inlined: city.rs:1662 < victory_lane.rs:310", text)
+
+    def test_without_a_binary_it_prints_addresses_and_says_why(self):
+        out = io.StringIO()
+        profiler.report_lines(LINES_SAMPLE, "take_turn_inner", None, 2000, 5,
+                              out=out)
+        text = out.getvalue()
+        self.assertIn("0x1016e76d8", text)
+        self.assertIn("--binary", text)
+
+    def test_line_tables_do_not_touch_the_gates_profile(self):
+        """They are an environment override on purpose: `Cargo.toml`'s `ci`
+        profile is what the merge gate compiles."""
+        self.assertEqual(set(profiler.LINE_TABLE_ENV),
+                         {"CARGO_PROFILE_CI_DEBUG",
+                          "CARGO_PROFILE_CI_SPLIT_DEBUGINFO"})
+        cargo = (REPO / "Cargo.toml").read_text(encoding="utf-8")
+        ci = cargo[cargo.index("[profile.ci]"):]
+        ci = ci[:ci.index("\n[", 1)] if "\n[" in ci[1:] else ci
+        self.assertNotRegex(ci, r"(?m)^debug\s*=")
+
+
 class TheShapeComesFromTheScreen(unittest.TestCase):
     """Hard-coding it is how every speed reading was taken on the wrong map."""
 
@@ -271,6 +348,15 @@ class TheShapeComesFromTheScreen(unittest.TestCase):
             self.assertIn(flag, command)
         self.assertEqual(command[command.index("--turns") + 1], "250")
         self.assertEqual(command[command.index("--jobs") + 1], "1")
+
+    def test_the_site_workload_names_no_shape_at_all(self):
+        """`--site` is the stock opening world: the engine owns its shape, so
+        the command carries a seed and a clock and nothing a screen decides."""
+        command = profiler.site_command(Path("/bin/civvis"), 7, 150)
+        self.assertEqual(command, ["/bin/civvis", "site-bench", "--seed", "7",
+                                   "--turns", "150"])
+        source = (REPO / "src" / "main.rs").read_text(encoding="utf-8")
+        self.assertIn('"site-bench" => site_bench_command(args)', source)
 
     def test_the_topology_is_the_one_the_screen_gets_by_not_asking(self):
         """★★★ THE SIXTH LEG, AND THE ONLY ONE `simulate` DISAGREES ABOUT.
