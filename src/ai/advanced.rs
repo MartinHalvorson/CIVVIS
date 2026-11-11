@@ -5138,6 +5138,10 @@ pub struct AdvancedAi {
     apostle_evangelizes_unspent: bool,
     /// Research parity compares wounded land units against field targets.
     barbarian_research_prices_the_field: bool,
+    /// `band-bank-bars-people-under-fire`: a city under fire opens the Rock
+    /// Band bank to the defence only, not to Great People. See
+    /// `advanced/culture_band_bank.rs`. Off by default.
+    band_bank_bars_people_under_fire: bool,
     /// `battle-solver`: play every local fight forward and choose the turn
     /// by how the battle ends. See `advanced/battle_solver.rs`.
     battle_solver: bool,
@@ -16874,8 +16878,9 @@ impl AdvancedAi {
             _ => 100.0,
         };
         let faith_reserve = self.conversion_faith_reserve(g, pid, faith_reserve)
-            // See `advanced/culture_band_bank.rs`.
-            + self.culture_band_bank(g, pid)
+            // See `advanced/culture_band_bank.rs` (and
+            // `band-bank-bars-people-under-fire` there).
+            + self.culture_band_bank_for_people(g, pid)
             // See `counterweight_faith_reserve` (`counterweight-spends-the-bank`).
             + self.counterweight_faith_reserve(g, pid)
             // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`).
