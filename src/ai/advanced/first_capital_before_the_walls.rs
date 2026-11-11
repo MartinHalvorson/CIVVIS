@@ -456,28 +456,32 @@ impl AdvancedAi {
     }
 
     /// The reserved bodies still missing, as `(ranged, melee)`, with the
-    /// city guards taken out of the census first, so the force is trained on
-    /// top of them.
+    /// city guards and civilian escorts taken out of the census first, so the
+    /// force is trained on top of them. Queued and projected replacements in
+    /// `counts` still count; only fielded bodies unavailable to the strike
+    /// are subtracted, as `conquest_force` excludes those same reservations.
     pub(super) fn first_capital_shortfall(
         &self,
         g: &Game,
         pid: usize,
         counts: &EmpireCounts,
     ) -> (usize, usize) {
-        let (mut ranged_guards, mut melee_guards) = (0, 0);
-        for uid in self.first_capital_home_guards(g, pid) {
-            let spec = &g.rules.units[g.units[&uid].kind];
-            if Self::conquest_ranged_body(spec) {
-                ranged_guards += 1;
-            } else {
-                melee_guards += 1;
-            }
+        let mut guards = self.first_capital_home_guards(g, pid);
+        if self.first_capital_active() || self.city_state_stone_stands() {
+            guards.extend(self.all_reserved_civilian_guards());
+        }
+        let mut reserved = EmpireCounts::default();
+        for uid in guards {
+            let Some(unit) = g.units.get(&uid).filter(|unit| unit.owner == pid) else {
+                continue;
+            };
+            reserved.add_field_unit(g, unit);
         }
         let melee = counts
             .melee
             .saturating_sub(counts.scouts)
-            .saturating_sub(melee_guards);
-        let ranged = counts.ranged.saturating_sub(ranged_guards);
+            .saturating_sub(reserved.melee.saturating_sub(reserved.scouts));
+        let ranged = counts.ranged.saturating_sub(reserved.ranged);
         let (want_ranged, want_melee) = self.conquest_quota();
         (
             want_ranged.saturating_sub(ranged),
