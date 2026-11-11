@@ -285,3 +285,60 @@ fn the_first_capital_claim_keeps_existing_builds_and_closes_with_the_reservation
         );
     }
 }
+
+#[test]
+fn a_bound_capitals_granary_cannot_retake_the_last_reserved_body() {
+    let (mut game, capital, _, mut ai) = first_capital_board();
+    ai.disable_capital_monument_after_the_second_city();
+    ai.enable_granary_claims_the_bound_queue();
+    game.players[0].techs.insert(crate::name!("pottery"));
+    let housing = game.city_housing(&game.cities[&capital]);
+    game.cities.get_mut(&capital).unwrap().pop = (housing.ceil() as i32).max(2);
+    let granary = Item::Building {
+        building: crate::name!("granary"),
+    };
+    game.cities
+        .get_mut(&capital)
+        .unwrap()
+        .production_progress
+        .insert(Game::item_progress_key(&granary), 50.0);
+    let plan = ai.plan.clone().unwrap();
+    assert!(ai.bound_granary_item(&game, 0, capital, &plan).is_some());
+    // An idle city may stand aside for a due Settler. Give the Granary
+    // the actual competing military build it is allowed to interrupt.
+    game.cities
+        .get_mut(&capital)
+        .unwrap()
+        .queue
+        .push(Item::Unit {
+            unit: crate::name!("warrior"),
+        });
+    let mut off = ai.clone();
+    off.disable_first_capital_before_the_walls();
+    let mut untreated = game.clone();
+    off.run_idle_queue_claims(&mut untreated, 0, &plan);
+    assert_eq!(untreated.cities[&capital].queue.first(), Some(&granary));
+
+    ai.run_idle_queue_claims(&mut game, 0, &plan);
+    let reserved = game.cities[&capital].queue.first().unwrap().clone();
+    assert!(matches!(reserved, Item::Unit { .. }));
+    // All remaining demand is met, including queued replacements. The
+    // already reserved last body must still finish before the Granary.
+    let sites: Vec<Pos> = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(pos, tile)| !game.rules.is_water(tile) && game.city_at(**pos).is_none())
+        .map(|(pos, _)| *pos)
+        .take(16)
+        .collect();
+    for (index, pos) in sites.into_iter().enumerate() {
+        game.spawn_test_unit(if index < 8 { "warrior" } else { "archer" }, 0, pos);
+    }
+    assert_eq!(
+        ai.first_capital_shortfall(&game, 0, &ai.counts(&game, 0)),
+        (0, 0)
+    );
+    ai.run_idle_queue_claims(&mut game, 0, &plan);
+    assert_eq!(game.cities[&capital].queue.first(), Some(&reserved));
+}
