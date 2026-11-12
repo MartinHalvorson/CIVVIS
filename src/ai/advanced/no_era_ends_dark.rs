@@ -72,6 +72,37 @@
 //! The age closers (`age-closer-2`, `camps-close-the-age-3`) stay the
 //! last-turns backstop.
 //!
+//! ## `score-seat-banks-era-score`: Era Score is score
+//!
+//! On a Score-target seat (`VictoryTarget::Score`) Era Score counts 1:1 in
+//! `Game::score_parts`, so the second gene drops the Normal-Age target and
+//! buys every moment worth its price, all game. Live Deity Rome, 6-player
+//! Continents, Online, t170 limit (`civvis-20261112T190022Z`, `T191211Z`):
+//! our Era Score 86 and 151 at t171 against the winners' 269 and 275.
+//!
+//! 1. **Clause buildings, all game.** The scheduler runs whether or not the
+//!    era is short. A clause building is worth its Era Score plus the one
+//!    building point it adds; it is taken when it costs at most
+//!    [`SCORE_PRODUCTION_PER_POINT`] Production a point (a Library at 45
+//!    Production for 2 points, an Amphitheater at 75), with
+//!    [`SCORE_MOMENT_MAX_OPEN`] at queue heads at once. The Dedication is
+//!    ranked on its record plus everything schedulable (no shortfall cap).
+//! 2. **Great People.** `advanced_great_people` lifts the closeness limit
+//!    for both currencies and ranks the offers by price per point (5 score,
+//!    plus 1 Era Score, or 3 when the patronage pays more than half), cheapest
+//!    first. The Faith reserve is waived for the last
+//!    [`SCORE_FINAL_STANDARD`] standard turns, so the game does not end on
+//!    Faith that buys one. Gold keeps its reserve.
+//! 3. **Trading Posts.** A Trader with a free origin opens a route to a
+//!    rival major in which we hold no Trading Post (`trading_post_in:` on the
+//!    model; no current route of ours there on a mirrored board), best route
+//!    value first: `MOMENT_TRADING_POST_CONSTRUCTED_IN_OTHER_CIV`, +1 a
+//!    civilization and +3 for every one.
+//!
+//! A Golden Age pays no clause, so there the scheduler takes nothing; the
+//! Great People and the Trading Posts still score (their Moments are not
+//! Dedications). Grep the journal for `score-seat-banks-era-score:`.
+//!
 //! Off, every entry point returns before reading the board. Grep the journal
 //! for `no-era-ends-dark:`. Tests: `no_era_ends_dark/tests.rs`.
 
@@ -103,6 +134,16 @@ const SCHEDULED_TRIGGERS: [&str; 3] = [
 ];
 /// Turns of the era between two budget lines in the journal.
 const BUDGET_JOURNAL_EVERY: u32 = 5;
+/// `score-seat-banks-era-score`: the most Production one score point may
+/// cost when the scheduler buys it (an Era Score point or a building point).
+pub(super) const SCORE_PRODUCTION_PER_POINT: f64 = 40.0;
+/// `score-seat-banks-era-score`: paying buildings at queue heads at once.
+pub(super) const SCORE_MOMENT_MAX_OPEN: usize = 3;
+/// `score-seat-banks-era-score`: standard turns before the turn limit from
+/// which the Faith reserve is spent on Great People (10 at Online).
+pub(super) const SCORE_FINAL_STANDARD: u32 = 15;
+/// Score a recruited Great Person is worth (`Game::score_parts`).
+const SCORE_PER_GREAT_PERSON: f64 = 5.0;
 
 /// One era's Era Score budget. See [`AdvancedAi::era_budget`].
 #[derive(Clone, Debug, PartialEq)]
@@ -124,9 +165,27 @@ pub(super) struct EraBudget {
     pub short: i64,
     /// Whether this age pays Dedication score at all.
     pub banks: bool,
+    /// `score-seat-banks-era-score` is reading it: no target, every moment
+    /// worth its price.
+    pub score: bool,
 }
 
 impl AdvancedAi {
+    /// `score-seat-banks-era-score` is on and the seat plays for Score.
+    pub(super) fn score_era_on(&self, g: &Game) -> bool {
+        self.score_seat_banks_era_score
+            && self.active_victory_target(g) == Some(VictoryTarget::Score)
+    }
+
+    /// The journal tag of whichever gene is reading the budget.
+    fn era_tag(score: bool) -> &'static str {
+        if score {
+            "score-seat-banks-era-score"
+        } else {
+            "no-era-ends-dark"
+        }
+    }
+
     /// Whether a Dedication's Normal-Age half pays in the seat's age: a Normal
     /// or Dark Age, or Georgia's Strength in Unity in any age (the same rule as
     /// `policy_deck::dedication_banks`).
@@ -211,7 +270,11 @@ impl AdvancedAi {
     /// The era's Era Score budget. `None` with the gene off, for a minor, and
     /// in the last era (no next age to decide).
     pub(super) fn era_budget(&self, g: &Game, pid: usize) -> Option<EraBudget> {
-        if !self.no_era_ends_dark {
+        if !self.no_era_ends_dark && !self.score_seat_banks_era_score {
+            return None;
+        }
+        let score = self.score_era_on(g);
+        if !self.no_era_ends_dark && !score {
             return None;
         }
         let player = g.players.get(pid)?;
@@ -260,6 +323,7 @@ impl AdvancedAi {
             in_hand,
             short,
             banks,
+            score,
         })
     }
 
@@ -274,6 +338,7 @@ impl AdvancedAi {
         cid: u32,
         trigger: Option<&str>,
         turns_left: u32,
+        score: bool,
     ) -> Option<(Item, f64, i64)> {
         let cap = f64::from(
             g.standard_duration(ERA_MOMENT_MAX_STANDARD)
@@ -307,6 +372,18 @@ impl AdvancedAi {
                 (building, turns, Self::era_building_pay(g, pid, &building))
             })
             .filter(|(_, turns, _)| turns.is_finite() && turns.ceil() <= cap)
+            // On a Score seat a building is worth its Era Score and its own
+            // building point, and is bought at no more than the exchange rate.
+            .filter(|(building, _, pay)| {
+                !score || {
+                    let item = Item::Building {
+                        building: *building,
+                    };
+                    let points = (*pay).max(0) as f64 + 1.0;
+                    g.item_remaining_cost_for_city(pid, cid, &item)
+                        <= SCORE_PRODUCTION_PER_POINT * points
+                }
+            })
             .min_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(&b.0)))
             .map(|(building, turns, pay)| (Item::Building { building }, turns, pay))
     }
@@ -352,11 +429,15 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> bool {
-        if !self.no_era_ends_dark
+        if !(self.no_era_ends_dark || self.score_seat_banks_era_score)
             || pid >= g.players.len()
             || !Self::era_dedication_banks(g, pid)
             || g.available_dedications(pid).is_empty()
         {
+            return false;
+        }
+        let score = self.score_era_on(g);
+        if !self.no_era_ends_dark && !score {
             return false;
         }
         let (_, end) = Self::era_window(g);
@@ -364,9 +445,12 @@ impl AdvancedAi {
         // The budget schedules no more than the era is short, so a clause is
         // credited no more buildings than that: on course, the record alone
         // ranks, exactly as `Banking` does.
-        let short = self
-            .era_budget(g, pid)
-            .map_or(0, |budget| budget.short.max(0));
+        let short = if score {
+            ERA_MOMENT_PLAN_CAP
+        } else {
+            self.era_budget(g, pid)
+                .map_or(0, |budget| budget.short.max(0))
+        };
         let cities: Vec<u32> = g
             .player_city_ids(pid)
             .into_iter()
@@ -396,6 +480,7 @@ impl AdvancedAi {
                                         **cid,
                                         Some(trigger),
                                         turns_left,
+                                        score,
                                     )
                                     .is_some()
                                 })
@@ -431,19 +516,22 @@ impl AdvancedAi {
                 .unwrap_or_else(|| "nothing else offered".to_string());
             think!(self.journal(), Diplomacy, Decision,
                    "Dedicating the {age} age to {}", chosen.as_str();
-                   "no-era-ends-dark: expecting {} Era Score ({tally} on last era's record, \
+                   "{}: expecting {} Era Score ({tally} on last era's record, \
                     {scheduled} the budget can schedule) against {against}",
-                   tally + scheduled);
+                   Self::era_tag(score), tally + scheduled);
         }
     }
 
     /// `no-era-ends-dark`: while the era's budget is short, one city puts the
     /// cheapest building the active clause pays for at the head of its queue.
-    /// Exact no-op with the gene off.
+    /// `score-seat-banks-era-score`: on a Score seat, whenever such a building
+    /// is worth its Production at [`SCORE_PRODUCTION_PER_POINT`], short or
+    /// not. Exact no-op with both genes off.
     pub(super) fn claim_era_moments(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         let Some(budget) = self.era_budget(g, pid) else {
             return;
         };
+        let tag = Self::era_tag(budget.score);
         let era = crate::rules::ERA_NAMES
             .get(g.world_era)
             .copied()
@@ -454,19 +542,18 @@ impl AdvancedAi {
             if g.turn == budget.start {
                 think!(self.journal(), Economy, Detail,
                        "Era budget: the {era} age banks no Dedication score";
-                       "no-era-ends-dark: a Golden Age's Dedication pays its Golden half only; \
-                        earned {} so far, Normal at {}", budget.earned,
-                       g.players[pid].normal_age_threshold);
+                       "{tag}: a Golden Age's Dedication pays its Golden half only; earned {} so \
+                        far, Normal at {}", budget.earned, g.players[pid].normal_age_threshold);
             }
             return;
         }
-        if budget.short <= 0 || budget.turns_left <= 1 || self.endgame_army_clock(g, pid).is_some()
-        {
-            if journal_turn && budget.short <= 0 {
+        let on_course = budget.short <= 0 && !budget.score;
+        if on_course || budget.turns_left <= 1 || self.endgame_army_clock(g, pid).is_some() {
+            if journal_turn && on_course {
                 think!(self.journal(), Economy, Detail,
                        "Era budget: the {era} era is on course for a Normal Age";
-                       "no-era-ends-dark: earned {}, {} turns left; the usual pace adds {:.1} and \
-                        {} is under way against {} (Normal +{ERA_BUDGET_MARGIN})",
+                       "{tag}: earned {}, {} turns left; the usual pace adds {:.1} and {} is under \
+                        way against {} (Normal +{ERA_BUDGET_MARGIN})",
                        budget.earned, budget.turns_left, budget.passive, budget.in_hand,
                        budget.target);
             }
@@ -493,15 +580,30 @@ impl AdvancedAi {
             }
         };
         if journal_turn {
-            think!(self.journal(), Economy, Detail,
-                   "Era budget: the {era} era is {} Era Score short of a Normal Age", budget.short;
-                   "no-era-ends-dark: earned {}, {} turns left to t{}; the usual pace adds {:.1} \
-                    and {} is under way against {} (Normal +{ERA_BUDGET_MARGIN}); {open} paying \
-                    building(s) at a queue head under {dedications}",
-                   budget.earned, budget.turns_left, budget.end, budget.passive, budget.in_hand,
-                   budget.target);
+            if budget.score {
+                think!(self.journal(), Economy, Detail,
+                       "Era budget: every {era} moment worth its price";
+                       "{tag}: Era Score is score; earned {} this era, {} turns left to t{}; \
+                        {open} paying building(s) at a queue head under {dedications}, at most \
+                        {SCORE_PRODUCTION_PER_POINT:.0} Production a point",
+                       budget.earned, budget.turns_left, budget.end);
+            } else {
+                think!(self.journal(), Economy, Detail,
+                       "Era budget: the {era} era is {} Era Score short of a Normal Age",
+                       budget.short;
+                       "{tag}: earned {}, {} turns left to t{}; the usual pace adds {:.1} and {} \
+                        is under way against {} (Normal +{ERA_BUDGET_MARGIN}); {open} paying \
+                        building(s) at a queue head under {dedications}",
+                       budget.earned, budget.turns_left, budget.end, budget.passive,
+                       budget.in_hand, budget.target);
+            }
         }
-        if open >= ERA_MOMENT_MAX_OPEN {
+        let max_open = if budget.score {
+            SCORE_MOMENT_MAX_OPEN
+        } else {
+            ERA_MOMENT_MAX_OPEN
+        };
+        if open >= max_open {
             return;
         }
         let n_cities = g.player_city_ids(pid).len();
@@ -512,7 +614,7 @@ impl AdvancedAi {
             .filter_map(|cid| {
                 let army = self.era_moment_city(g, pid, cid, plan)?;
                 let (item, turns, pay) =
-                    self.era_moment_building(g, pid, cid, None, budget.turns_left)?;
+                    self.era_moment_building(g, pid, cid, None, budget.turns_left, budget.score)?;
                 Some((turns, cid, item, pay, army))
             })
             .collect();
@@ -535,15 +637,103 @@ impl AdvancedAi {
             };
             let name = g.cities[&cid].name.clone();
             let building = Self::plain_item(&item);
+            let cost = g.item_remaining_cost_for_city(pid, cid, &item);
             if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
-                think!(self.journal(), Cities, Decision,
-                       "{name} builds its {building} for the age";
-                       "no-era-ends-dark: +{pay} Era Score under {dedications}, {turns:.1} turns \
-                        before the era ends at t{}; it goes ahead of {passed}; the era is {} short",
-                       budget.end, budget.short);
+                if budget.score {
+                    think!(self.journal(), Cities, Decision,
+                           "{name} builds its {building} for the score";
+                           "{tag}: +{pay} Era Score under {dedications} and +1 building, \
+                            {cost:.0} Production in {turns:.1} turns before the era ends at t{}; \
+                            it goes ahead of {passed}", budget.end);
+                } else {
+                    think!(self.journal(), Cities, Decision,
+                           "{name} builds its {building} for the age";
+                           "{tag}: +{pay} Era Score under {dedications}, {turns:.1} turns before \
+                            the era ends at t{}; it goes ahead of {passed}; the era is {} short",
+                           budget.end, budget.short);
+                }
                 return;
             }
         }
+    }
+
+    /// `score-seat-banks-era-score`: Score a patronised Great Person adds:
+    /// five points and its Moment (+3 Era Score when the currency pays more
+    /// than half of it, `Game::recruit_great_person`, else +1).
+    pub(super) fn score_patronage_points(g: &Game, pid: usize, kind: &str) -> f64 {
+        let points = g.players[pid].gpp.get(kind).copied().unwrap_or(0.0);
+        let cost = g.gp_cost(pid, kind);
+        let moment = if (cost - points) > cost / 2.0 {
+            3.0
+        } else {
+            1.0
+        };
+        SCORE_PER_GREAT_PERSON + moment
+    }
+
+    /// `score-seat-banks-era-score`: the last turns, in which the Faith
+    /// reserve buys a Great Person instead of ending the game unspent.
+    pub(super) fn score_final_turns(g: &Game) -> bool {
+        g.max_turns > 0
+            && g.turn
+                .saturating_add(g.standard_duration(SCORE_FINAL_STANDARD))
+                >= g.max_turns
+    }
+
+    /// `score-seat-banks-era-score`: the rival city a Trader in `origin`
+    /// should open a route to so we hold a Trading Post in every rival
+    /// civilization, with that route's value; `None` off, on another target,
+    /// or once every reachable rival holds our post or a current route.
+    pub(super) fn score_route_claim(
+        &self,
+        g: &Game,
+        pid: usize,
+        origin: u32,
+        strategy: GrandStrategy,
+    ) -> Option<(f64, u32)> {
+        if !self.score_era_on(g) {
+            return None;
+        }
+        let _memo = g.query_memo();
+        let claim = g
+            .cities
+            .values()
+            .filter(|city| {
+                let owner = city.owner;
+                let rival = &g.players[owner];
+                owner != pid
+                    && rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && !rival.is_free_city
+                    && !g.same_team(pid, owner)
+                    && !g.is_at_war(pid, owner)
+                    && !g.players[pid]
+                        .counters
+                        .contains_key(&format!("trading_post_in:{owner}"))
+                    && !g.has_tourism_trade_route(pid, owner)
+            })
+            .filter(|city| g.can_establish_trade_route(pid, origin, city.id))
+            .map(|city| {
+                (
+                    self.trade_route_destination_value_from(g, pid, Some(origin), city, strategy),
+                    city.id,
+                )
+            })
+            .max_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| right.1.cmp(&left.1))
+            });
+        if let Some((_, city)) = claim {
+            let destination = &g.cities[&city];
+            let civ = &g.players[destination.owner].civ;
+            think!(self.journal(), Economy, Decision,
+                   "A Trader opens a route to {}", destination.name;
+                   "score-seat-banks-era-score: no Trading Post of ours in {civ} yet: +1 Era \
+                    Score, and +3 once every civilization holds one");
+        }
+        claim
     }
 }
 

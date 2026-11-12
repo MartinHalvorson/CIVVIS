@@ -6044,6 +6044,14 @@ pub const GENES: &[Gene] = &[
     // unit-turns in reach of ours (116 Deity games, 11-11..12) it struck 25%,
     // never above ~70% in any cell. See `advanced/battle_solver/host_enemy.rs`.
     Gene { tag: "solver-plays-the-host", field: "solver_plays_the_host", kind: Kind::OptIn, enable: AdvancedAi::enable_solver_plays_the_host, disable: AdvancedAi::disable_solver_plays_the_host },
+    // Live Deity Rome Score lane 2026-11-12: our Era Score 86 and 151 at
+    // t171 against the winner's 269 and 275, and Era Score is score 1:1. On
+    // a Score seat every Dedication-clause building costing 40 Production a
+    // point or less is scheduled all game, Great People are patronised
+    // cheapest per point with Faith (no reserve in the last turns) and Gold
+    // above the reserve, and a Trader opens a route to each rival without
+    // our Trading Post. Opt-in; see `advanced/no_era_ends_dark.rs`.
+    Gene { tag: "score-seat-banks-era-score", field: "score_seat_banks_era_score", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_banks_era_score, disable: AdvancedAi::disable_score_seat_banks_era_score },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

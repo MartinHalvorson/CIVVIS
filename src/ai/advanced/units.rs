@@ -65,8 +65,12 @@ impl AdvancedAi {
             // `culture-routes-reach-every-rival`: a rival without a route of
             // ours first. `None` while the gene is off. See
             // `advanced/culture_routes.rs`.
+            // `score-seat-banks-era-score`: a rival without our Trading Post
+            // next. `None` while the gene is off. See
+            // `advanced/no_era_ends_dark.rs`.
             if let Some((_, city)) = self
                 .culture_route_claim(g, pid, origin, strategy)
+                .or_else(|| self.score_route_claim(g, pid, origin, strategy))
                 .or_else(|| self.best_trade_route_destination(g, pid, origin, strategy))
             {
                 return g
@@ -107,6 +111,7 @@ impl AdvancedAi {
         };
         let Some((_, city)) = self
             .culture_route_claim(g, pid, origin, strategy)
+            .or_else(|| self.score_route_claim(g, pid, origin, strategy))
             .or_else(|| self.best_trade_route_destination(g, pid, origin, strategy))
         else {
             return false;

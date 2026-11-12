@@ -324,3 +324,141 @@ fn two_paying_heads_are_the_cap() {
         "below the cap a city is claimed"
     );
 }
+
+#[test]
+fn score_seat_banks_era_score_is_opt_in() {
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "score-seat-banks-era-score",
+        |ai| ai.score_seat_banks_era_score,
+    );
+}
+
+fn score_seat(target: VictoryTarget) -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(target);
+    ai.enable_score_seat_banks_era_score();
+    ai
+}
+
+/// On course for a Normal Age, `no-era-ends-dark` schedules nothing, but a
+/// Score seat still takes a clause building worth its Production: one point
+/// of Era Score and one building point for a 60-Production Monument. On
+/// another target the Score gene does nothing.
+#[test]
+fn a_score_seat_schedules_the_clause_building_on_course() {
+    let (mut game, cities) = medieval_board();
+    let plan = quiet_plan(&game);
+    game.players[0].era_score = 47;
+    game.players[0]
+        .dedications
+        .insert("pen_brush_and_voice".to_string());
+    for cid in &cities {
+        game.cities.get_mut(cid).unwrap().queue = vec![building("granary")];
+    }
+    let granaries = heads(&game);
+
+    let mut dark = game.clone();
+    seat(true).claim_era_moments(&mut dark, 0, &plan);
+    assert_eq!(heads(&dark), granaries, "no-era-ends-dark on course");
+
+    let mut domination = game.clone();
+    score_seat(VictoryTarget::Domination).claim_era_moments(&mut domination, 0, &plan);
+    assert_eq!(heads(&domination), granaries, "another target");
+    assert_eq!(
+        score_seat(VictoryTarget::Domination).era_budget(&game, 0),
+        None
+    );
+
+    let ai = score_seat(VictoryTarget::Score);
+    assert!(ai.era_budget(&game, 0).is_some_and(|budget| budget.score));
+    let mut score = game.clone();
+    ai.claim_era_moments(&mut score, 0, &plan);
+    assert_eq!(
+        heads(&score)
+            .into_iter()
+            .filter(|head| *head == Some(monument()))
+            .count(),
+        1,
+        "a Score seat takes one city a turn"
+    );
+
+    // A Golden Age pays no clause: the Score seat takes nothing.
+    let mut golden = game.clone();
+    golden.players[0].age = "golden".to_string();
+    ai.claim_era_moments(&mut golden, 0, &plan);
+    assert_eq!(heads(&golden), granaries, "a Golden Age");
+}
+
+/// A Great Person patronised for more than half its cost is worth the
+/// +3 Moment and five score; a near recruit the +1 Moment and five score.
+/// The Faith reserve is spent in the last turns before the limit.
+#[test]
+fn a_great_person_and_the_last_turns_are_priced_in_score() {
+    let (mut game, _) = medieval_board();
+    let kind = "scientist";
+    let cost = game.gp_cost(0, kind);
+    game.players[0].gpp.insert(kind.to_string(), 0.0);
+    assert_eq!(AdvancedAi::score_patronage_points(&game, 0, kind), 8.0);
+    game.players[0].gpp.insert(kind.to_string(), cost * 0.9);
+    assert_eq!(AdvancedAi::score_patronage_points(&game, 0, kind), 6.0);
+
+    let last = game.standard_duration(SCORE_FINAL_STANDARD);
+    game.max_turns = 170;
+    game.turn = 170 - last - 1;
+    assert!(!AdvancedAi::score_final_turns(&game));
+    game.turn = 170 - last;
+    assert!(AdvancedAi::score_final_turns(&game));
+    game.max_turns = 0;
+    assert!(
+        !AdvancedAi::score_final_turns(&game),
+        "no limit, no last turns"
+    );
+}
+
+/// A Score seat's Trader opens a route to a rival in which it holds no
+/// Trading Post; once the post stands, the ordinary chooser decides.
+#[test]
+fn a_score_seat_routes_a_trader_to_a_rival_without_our_post() {
+    let (mut game, cities) = medieval_board();
+    let homes: Vec<Pos> = cities.iter().map(|cid| game.cities[cid].pos).collect();
+    let mut sites: Vec<Pos> = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(pos, tile)| {
+            !game.rules.is_water(tile)
+                && homes
+                    .iter()
+                    .all(|home| (5..=10).contains(&game.wdist(**pos, *home)))
+        })
+        .map(|(pos, _)| *pos)
+        .collect();
+    sites.sort();
+    let rival = game.place_city(1, *sites.last().expect("fixture: a rival site"), None);
+    game.players[1].alive = true;
+    let origin = cities[0];
+    assert!(
+        game.can_establish_trade_route(0, origin, rival),
+        "fixture: a legal route to the rival"
+    );
+    let strategy = GrandStrategy::Expansion;
+    assert_eq!(
+        seat(true).score_route_claim(&game, 0, origin, strategy),
+        None,
+        "off"
+    );
+    assert_eq!(
+        score_seat(VictoryTarget::Domination).score_route_claim(&game, 0, origin, strategy),
+        None,
+        "another target"
+    );
+    let ai = score_seat(VictoryTarget::Score);
+    assert_eq!(
+        ai.score_route_claim(&game, 0, origin, strategy)
+            .map(|(_, city)| city),
+        Some(rival)
+    );
+    game.players[0]
+        .counters
+        .insert("trading_post_in:1".to_string(), 1);
+    assert_eq!(ai.score_route_claim(&game, 0, origin, strategy), None);
+}
