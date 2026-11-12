@@ -42,7 +42,7 @@ const LIVE_ARMS: &str = include_str!("live_force_on_20261112.txt");
 const TARGET: Pos = (18, 8);
 const HOME: Pos = (2, 8);
 const CALIBRATION_SEEDS: u64 = 1200;
-const PAIRED_SEEDS: u64 = 400;
+const PAIRED_SEEDS: u64 = 0;
 const PAIRED_TURNS: u32 = 30;
 /// The paired arms: the live genome alone, and with the go gene.
 const ARMS: [(&str, bool); 2] = [("off", false), ("on", true)];
@@ -374,6 +374,103 @@ struct Outcome {
     stand_downs: u32,
     zero_rows: u32,
     trace: Vec<String>,
+    /// What each of the posed city's turns looked like (`Round`), one per
+    /// turn played.
+    rounds: Vec<Round>,
+    /// Per force member: the first turn it stood within two tiles of the
+    /// city, and the first turn it could have.
+    arrivals: Vec<Option<u32>>,
+    ideal: Vec<u32>,
+    /// Player 1's land soldiers that were not on the board at the start.
+    new_enemy: usize,
+    wall_max: (i32, i32),
+}
+
+/// One turn of the posed city's siege, read around our turn and the
+/// owner's.
+#[derive(Clone, Debug, Default)]
+struct Round {
+    /// The train's stage for the city after our turn (`stage_rank`).
+    stage: u8,
+    /// The city after our turn, and after its owner's.
+    hp: i32,
+    wall: i32,
+    end_hp: i32,
+    end_wall: i32,
+    /// `ring_state` after our turn.
+    sealed: usize,
+    ring: usize,
+    /// Force members alive, and within two tiles of the city, after our turn.
+    alive: usize,
+    near: usize,
+    /// Our land melee beside the city after our turn.
+    melee_adjacent: usize,
+    /// Our shooters within range of the city with an attack at the start of
+    /// our turn, and of those, the ones that spent it.
+    shooters_in_range: usize,
+    shooters_fired: usize,
+    /// Health and walls the city lost on our turn; health the owner's units
+    /// lost on our turn.
+    city_damage: i32,
+    unit_damage: i32,
+    /// Player 1's land soldiers after its turn.
+    enemy_units: usize,
+    /// Force members that died this turn while the walls stood above the
+    /// taker's share.
+    deaths_walled: usize,
+    deaths: usize,
+}
+
+fn land_soldier(g: &Game, unit: &crate::game::Unit) -> bool {
+    let spec = &g.rules.units[unit.kind];
+    spec.class == "military"
+        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+        && (spec.is_melee_capable() || spec.has_ranged_attack())
+}
+
+/// The siege as it stood before our turn.
+struct Before {
+    health: i32,
+    walled: bool,
+    enemy_hp: BTreeMap<u32, i32>,
+    ready_shooters: Vec<u32>,
+    alive: BTreeSet<u32>,
+}
+
+fn before_our_turn(g: &Game, w: &World) -> Before {
+    let city = g.cities.get(&w.cid).filter(|city| city.owner != 0);
+    let pos = city.map_or(TARGET, |city| city.pos);
+    Before {
+        health: city.map_or(0, |city| city.hp.max(0) + city.wall_hp.max(0)),
+        walled: city.is_some_and(|city| {
+            let max = g.city_max_wall_hp(city);
+            max > 0 && f64::from(city.wall_hp) > 0.2 * f64::from(max)
+        }),
+        enemy_hp: g
+            .units
+            .values()
+            .filter(|unit| unit.owner == 1 && land_soldier(g, unit))
+            .map(|unit| (unit.id, unit.hp))
+            .collect(),
+        ready_shooters: g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == 0
+                    && land_soldier(g, unit)
+                    && g.rules.units[unit.kind].has_ranged_attack()
+                    && unit.attacks_left > 0
+                    && g.wdist(unit.pos, pos) <= g.unit_attack_range(unit.id).max(1)
+            })
+            .map(|unit| unit.id)
+            .collect(),
+        alive: w
+            .force
+            .iter()
+            .copied()
+            .filter(|uid| g.units.get(uid).is_some_and(|unit| unit.owner == 0))
+            .collect(),
+    }
 }
 
 fn stage_rank(stage: SiegeStage) -> u8 {
@@ -401,11 +498,42 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool) -> Outco
     g.set_war_ledger(false);
     let mut out = Outcome::default();
     let mut steps = 0;
+    let initial_enemy: BTreeSet<u32> = g
+        .units
+        .values()
+        .filter(|unit| unit.owner == 1 && land_soldier(&g, unit))
+        .map(|unit| unit.id)
+        .collect();
+    let mut seen_enemy = initial_enemy.clone();
+    out.wall_max = g
+        .cities
+        .get(&w.cid)
+        .map_or((0, 0), |city| (g.city_max_wall_hp(city), 0));
+    out.arrivals = vec![None; w.force.len()];
+    out.ideal = w
+        .force
+        .iter()
+        .map(|uid| {
+            let unit = &g.units[uid];
+            let moves = g.unit_max_moves(*uid).max(1.0);
+            (f64::from((g.wdist(unit.pos, TARGET) - 2).max(0)) / moves).ceil() as u32
+        })
+        .collect();
+    let mut before: Option<Before> = None;
+    // Read before our end of turn, which may hand the moves back.
+    let mut fired_now = 0;
     while g.winner.is_none() && g.turn < start + turns && steps < 64 * turns {
         steps += 1;
         let pid = g.current;
         if pid == 0 {
+            let pre = before_our_turn(&g, w);
             ours.take_turn(&mut g, 0);
+            fired_now = pre
+                .ready_shooters
+                .iter()
+                .filter(|uid| g.units.get(uid).is_none_or(|unit| unit.attacks_left <= 0))
+                .count();
+            before = Some(pre);
         } else {
             others[pid].take_turn(&mut g, pid);
         }
@@ -442,6 +570,55 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool) -> Outco
             if let Some(siege) = ours.sieges.get(&w.cid) {
                 out.stage = out.stage.max(stage_rank(siege.stage));
             }
+            let round_turn = g.turn - start + 1;
+            let city = g.cities.get(&w.cid).filter(|city| city.owner != 0);
+            let pos = city.map_or(TARGET, |city| city.pos);
+            let pre = before.as_ref().expect("read before our turn");
+            let (sealed, ring) = if city.is_some() {
+                super::super::siege_train::ring_state(&g, w.cid)
+            } else {
+                (0, 0)
+            };
+            let mut round = Round {
+                stage: ours
+                    .sieges
+                    .get(&w.cid)
+                    .map_or(0, |siege| stage_rank(siege.stage)),
+                hp: city.map_or(0, |city| city.hp.max(0)),
+                wall: city.map_or(0, |city| city.wall_hp.max(0)),
+                sealed,
+                ring,
+                ..Round::default()
+            };
+            for (k, uid) in w.force.iter().enumerate() {
+                let Some(unit) = g.units.get(uid).filter(|unit| unit.owner == 0) else {
+                    continue;
+                };
+                round.alive += 1;
+                if g.wdist(unit.pos, pos) <= 2 {
+                    round.near += 1;
+                    out.arrivals[k].get_or_insert(round_turn);
+                }
+            }
+            round.melee_adjacent = g
+                .units
+                .values()
+                .filter(|unit| {
+                    unit.owner == 0
+                        && land_soldier(&g, unit)
+                        && !g.rules.units[unit.kind].has_ranged_attack()
+                        && g.wdist(unit.pos, pos) == 1
+                })
+                .count();
+            round.shooters_in_range = pre.ready_shooters.len();
+            round.shooters_fired = fired_now;
+            round.city_damage = pre.health - (round.hp + round.wall);
+            round.unit_damage = pre
+                .enemy_hp
+                .iter()
+                .map(|(uid, hp)| hp - g.units.get(uid).map_or(0, |unit| unit.hp.max(0)))
+                .sum();
+            out.rounds.push(round);
             let taken = w
                 .targets
                 .iter()
@@ -459,6 +636,31 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool) -> Outco
             out.cities = taken;
             if taken == w.targets.len() {
                 break;
+            }
+        }
+        if pid != 0 {
+            if let (Some(round), Some(pre)) = (out.rounds.last_mut(), before.as_ref()) {
+                let city = g.cities.get(&w.cid).filter(|city| city.owner != 0);
+                round.end_hp = city.map_or(0, |city| city.hp.max(0));
+                round.end_wall = city.map_or(0, |city| city.wall_hp.max(0));
+                round.enemy_units = 0;
+                for unit in g.units.values() {
+                    if unit.owner == 1 && land_soldier(&g, unit) {
+                        round.enemy_units += 1;
+                        if seen_enemy.insert(unit.id) {
+                            out.new_enemy += 1;
+                        }
+                    }
+                }
+                round.deaths = pre
+                    .alive
+                    .iter()
+                    .filter(|uid| g.units.get(uid).is_none_or(|unit| unit.owner != 0))
+                    .count();
+                if pre.walled {
+                    round.deaths_walled = round.deaths;
+                }
+                out.wall_max.1 = city.map_or(out.wall_max.0, |city| g.city_max_wall_hp(city));
             }
         }
         if !g.is_at_war(0, 1) {
@@ -483,6 +685,8 @@ struct CalibrationRow {
     /// under each [`FORECASTS`] entry.
     forecast: AssaultForecast,
     variants: Vec<AssaultForecast>,
+    /// The posed city's health and walls before our first move.
+    start: (i32, i32),
     forecast_ms: f64,
     outcome: Outcome,
 }
@@ -510,6 +714,10 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
     match job {
         Job::Calibrate(seed) => {
             let w = world(*seed, false);
+            let start =
+                w.g.cities
+                    .get(&w.cid)
+                    .map_or((0, 0), |city| (city.hp, city.wall_hp));
             let clock = Instant::now();
             let forecast = AdvancedAi::new()
                 .assault_forecast(&w.g, 0, w.cid, &w.force)
@@ -533,6 +741,7 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
                 walls: w.walls,
                 forecast,
                 variants,
+                start,
                 forecast_ms,
                 outcome,
             })
@@ -624,6 +833,337 @@ fn calibration_table(out: &mut String, rows: &[Read], k: usize) {
     );
 }
 
+/// Why a siege the forecast read as taken (P(12) >= 0.8) was not taken
+/// within twelve turns: the first that matches, in this order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Cause {
+    Peace,
+    Stage,
+    Piecemeal,
+    Taker,
+    DiedBeforeBreach,
+    Reinforced,
+    Healed,
+    WallsHeld,
+    NearlyTaken,
+    Other,
+}
+
+impl Cause {
+    const ALL: [Cause; 10] = [
+        Cause::Peace,
+        Cause::Stage,
+        Cause::Piecemeal,
+        Cause::Taker,
+        Cause::DiedBeforeBreach,
+        Cause::Reinforced,
+        Cause::Healed,
+        Cause::WallsHeld,
+        Cause::NearlyTaken,
+        Cause::Other,
+    ];
+
+    fn name(self) -> &'static str {
+        match self {
+            Cause::Peace => "peace: the war ended",
+            Cause::Stage => "the train never left Stage, or left it on turn 4 or later",
+            Cause::Piecemeal => "the force arrived piecemeal",
+            Cause::Taker => "the city fell low and no taker took it",
+            Cause::DiedBeforeBreach => "our units died before the walls opened",
+            Cause::Reinforced => "the defender built or bought soldiers or walls",
+            Cause::Healed => "the city healed as fast as we hurt it",
+            Cause::WallsHeld => "the walls never opened with shooters in range",
+            Cause::NearlyTaken => "time ran out with the city under 25%",
+            Cause::Other => "other",
+        }
+    }
+}
+
+/// The city's health and walls at the start of turn `k` (1-based).
+fn start_of(row: &CalibrationRow, k: usize) -> (i32, i32) {
+    if k <= 1 {
+        row.start
+    } else {
+        let r = &row.outcome.rounds[k - 2];
+        (r.end_hp, r.end_wall)
+    }
+}
+
+fn classify(row: &CalibrationRow) -> (Cause, String) {
+    let o = &row.outcome;
+    let rounds = &o.rounds;
+    if o.peace {
+        return (Cause::Peace, "the war ended".to_string());
+    }
+    let first_invest = rounds.iter().position(|r| r.stage >= 2).map(|k| k + 1);
+    match first_invest {
+        None => return (Cause::Stage, "never left Stage".to_string()),
+        Some(turn) if turn >= 4 => return (Cause::Stage, format!("left Stage on turn {turn}")),
+        _ => {}
+    }
+    let n = o.ideal.len();
+    let late: Vec<i64> = o
+        .ideal
+        .iter()
+        .zip(&o.arrivals)
+        .map(|(ideal, arrived)| i64::from(arrived.unwrap_or(13)) - i64::from(*ideal))
+        .collect();
+    let laggards = late.iter().filter(|l| **l >= 3).count();
+    let never = o.arrivals.iter().filter(|a| a.is_none()).count();
+    if n > 0 && laggards * 2 > n {
+        let arrived: Vec<u32> = o.arrivals.iter().flatten().copied().collect();
+        let spread = arrived.iter().max().unwrap_or(&0) - arrived.iter().min().unwrap_or(&0);
+        return (
+            Cause::Piecemeal,
+            format!("{laggards} of {n} members 3+ turns later than they could have been ({never} never within 2), arrival spread {spread}"),
+        );
+    }
+    let max = o.wall_max.0;
+    let low: Vec<usize> = (1..=rounds.len())
+        .filter(|k| {
+            let (hp, wall) = start_of(row, *k);
+            hp <= 50 && f64::from(wall) <= 0.2 * f64::from(max.max(0))
+        })
+        .collect();
+    if !low.is_empty() {
+        let adjacent = low
+            .iter()
+            .filter(|k| rounds[*k - 1].melee_adjacent > 0)
+            .count();
+        return (
+            Cause::Taker,
+            format!(
+                "city low at the start of {} turns (first {}), a melee unit beside it after our turn on {adjacent}",
+                low.len(),
+                low[0]
+            ),
+        );
+    }
+    let walled_deaths: usize = rounds.iter().map(|r| r.deaths_walled).sum();
+    let deaths: usize = rounds.iter().map(|r| r.deaths).sum();
+    if max > 0 && walled_deaths >= 2usize.max(n.div_ceil(3)) {
+        return (
+            Cause::DiedBeforeBreach,
+            format!(
+                "{walled_deaths} of {n} members died while the walls stood ({deaths} died in all)"
+            ),
+        );
+    }
+    if o.new_enemy > 0 || o.wall_max.1 > o.wall_max.0 {
+        return (
+            Cause::Reinforced,
+            format!(
+                "{} new soldiers, wall pool {} -> {}",
+                o.new_enemy, o.wall_max.0, o.wall_max.1
+            ),
+        );
+    }
+    let start = row.start.0 + row.start.1;
+    let end = rounds.last().map_or(start, |r| r.end_hp + r.end_wall);
+    let dealt: i32 = rounds.iter().map(|r| r.city_damage.max(0)).sum();
+    let healed: i32 = rounds
+        .iter()
+        .map(|r| (r.end_hp + r.end_wall - r.hp - r.wall).max(0))
+        .sum();
+    let sealed = rounds
+        .iter()
+        .filter(|r| r.ring > 0 && r.sealed == r.ring)
+        .count();
+    if dealt > 0 && end >= start - 20 {
+        return (
+            Cause::Healed,
+            format!(
+                "dealt {dealt}, healed {healed}, health {start} -> {end}; ring sealed on {sealed} of {} turns",
+                rounds.len()
+            ),
+        );
+    }
+    let end_wall = rounds.last().map_or(row.start.1, |r| r.end_wall);
+    let shooter_turns = rounds.iter().filter(|r| r.shooters_in_range > 0).count();
+    if max > 0 && f64::from(end_wall) > 0.2 * f64::from(max) && shooter_turns > 0 {
+        let fired: usize = rounds.iter().map(|r| r.shooters_fired).sum();
+        let city_turns = rounds.iter().filter(|r| r.city_damage > 0).count();
+        let unit_damage: i32 = rounds.iter().map(|r| r.unit_damage.max(0)).sum();
+        return (
+            Cause::WallsHeld,
+            format!("walls {end_wall}/{max} at the end; shooters in range on {shooter_turns} turns, {fired} shots, the city hurt on {city_turns} turns, {unit_damage} damage to soldiers"),
+        );
+    }
+    let end_hp = rounds.last().map_or(row.start.0, |r| r.end_hp);
+    if end_hp <= 50 {
+        return (Cause::NearlyTaken, format!("city at {end_hp} at the end"));
+    }
+    (
+        Cause::Other,
+        format!("health {start} -> {end}, dealt {dealt}, healed {healed}, {deaths} members died"),
+    )
+}
+
+fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
+    let high: Vec<&&CalibrationRow> = rows.iter().filter(|row| row.forecast.p() >= 0.8).collect();
+    let missed: Vec<(&&&CalibrationRow, Cause, String)> = high
+        .iter()
+        .filter(|row| taken_by(&row.outcome, HORIZON) == 0.0)
+        .map(|row| {
+            let (cause, detail) = classify(row);
+            (row, cause, detail)
+        })
+        .collect();
+    let _ = writeln!(
+        out,
+        "## Why high forecasts fail: {} sieges read P(12) >= 0.8, {} taken within 12, {} not\n",
+        high.len(),
+        high.len() - missed.len(),
+        missed.len()
+    );
+    let _ = writeln!(out, "| first cause | all | walls 0 | 100 | 200 | 400 |");
+    let _ = writeln!(out, "|---|---|---|---|---|---|");
+    for cause in Cause::ALL {
+        let count = |walls: Option<i32>| {
+            missed
+                .iter()
+                .filter(|(row, c, _)| *c == cause && walls.is_none_or(|w| row.walls == w))
+                .count()
+        };
+        let _ = writeln!(
+            out,
+            "| {} | {} | {} | {} | {} | {} |",
+            cause.name(),
+            count(None),
+            count(Some(0)),
+            count(Some(100)),
+            count(Some(200)),
+            count(Some(400))
+        );
+    }
+    let by_walls = |walls: i32| {
+        let n = high.iter().filter(|row| row.walls == walls).count();
+        let t = high
+            .iter()
+            .filter(|row| row.walls == walls && taken_by(&row.outcome, HORIZON) > 0.0)
+            .count();
+        format!("{t}/{n}")
+    };
+    let _ = writeln!(
+        out,
+        "| (taken / read high) | {}/{} | {} | {} | {} | {} |\n",
+        high.len() - missed.len(),
+        high.len(),
+        by_walls(0),
+        by_walls(100),
+        by_walls(200),
+        by_walls(400)
+    );
+    // The forecast's press against the real train, turn by turn.
+    let _ = writeln!(
+        out,
+        "City health + walls at the end of each turn, mean: the forecast's press (model) against the real train (real)\n"
+    );
+    let _ = writeln!(out, "| sieges | n | | t1 | t2 | t3 | t4 | t6 | t8 | t12 |");
+    let _ = writeln!(out, "|---|---|---|---|---|---|---|---|---|---|");
+    let groups: Vec<(String, Vec<&CalibrationRow>)> = std::iter::once((
+        "read high, taken".to_string(),
+        high.iter()
+            .filter(|row| taken_by(&row.outcome, HORIZON) > 0.0)
+            .map(|row| **row)
+            .collect(),
+    ))
+    .chain(std::iter::once((
+        "read high, not taken".to_string(),
+        missed.iter().map(|(row, _, _)| ***row).collect(),
+    )))
+    .chain(Cause::ALL.iter().map(|cause| {
+        (
+            format!("  {}", cause.name()),
+            missed
+                .iter()
+                .filter(|(_, c, _)| c == cause)
+                .map(|(row, _, _)| ***row)
+                .collect(),
+        )
+    }))
+    .collect();
+    for (name, group) in groups {
+        if group.is_empty() {
+            continue;
+        }
+        let model = |k: usize| {
+            mean(
+                group
+                    .iter()
+                    .map(|row| f64::from(row.forecast.city_health[k - 1])),
+            )
+            .0
+        };
+        let real = |k: usize| {
+            mean(group.iter().map(|row| {
+                row.outcome
+                    .rounds
+                    .get(k - 1)
+                    .map_or(0.0, |r| f64::from(r.end_hp + r.end_wall))
+            }))
+            .0
+        };
+        let ks = [1, 2, 3, 4, 6, 8, 12];
+        let _ = writeln!(
+            out,
+            "| {name} | {} | model | {} |",
+            group.len(),
+            ks.iter()
+                .map(|k| format!("{:.0}", model(*k)))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
+        let _ = writeln!(
+            out,
+            "| | | real | {} |",
+            ks.iter()
+                .map(|k| format!("{:.0}", real(*k)))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
+    }
+    let _ = writeln!(out, "\n### Worked examples, two per cause\n");
+    for cause in Cause::ALL {
+        for (row, _, detail) in missed.iter().filter(|(_, c, _)| *c == cause).take(2) {
+            let _ = writeln!(
+                out,
+                "- **{}**, seed {}: {detail}. P12 {:.2}, short of {}. {}",
+                cause.name(),
+                row.seed,
+                row.forecast.p(),
+                row.forecast.short_of.map_or("unread", ShortOf::as_str),
+                row.label
+            );
+            for (k, r) in row.outcome.rounds.iter().enumerate().take(8) {
+                let _ = writeln!(
+                    out,
+                    "    t{}: stage {}, city {}/{} -> {}/{} (model {:.0}), near {}/{} alive, melee beside {}, shooters {}/{} fired, dealt city {} units {}, ring {}/{}, enemy {}, died {}",
+                    k + 1,
+                    r.stage,
+                    r.hp,
+                    r.wall,
+                    r.end_hp,
+                    r.end_wall,
+                    row.forecast.city_health[k],
+                    r.near,
+                    r.alive,
+                    r.melee_adjacent,
+                    r.shooters_fired,
+                    r.shooters_in_range,
+                    r.city_damage,
+                    r.unit_damage,
+                    r.sealed,
+                    r.ring,
+                    r.enemy_units,
+                    r.deaths
+                );
+            }
+        }
+    }
+    let _ = writeln!(out);
+}
+
 fn paired_table(out: &mut String, title: &str, kept_pairs: &[&PairRow]) {
     let _ = writeln!(
         out,
@@ -712,6 +1252,7 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
         let (r, _) = mean(inside.iter().map(|row| taken_by(&row.outcome, HORIZON)));
         let _ = writeln!(out, "| {walls} | {n} | {p:.2} | {r:.2} |");
     }
+    taxonomy(&mut out, &kept);
     let _ = writeln!(
         out,
         "\n| forecast settings | Brier within 12 | within 10 | within 5 | mean P(12) | sieges over 0.8, taken |"
@@ -875,7 +1416,6 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
 /// The report `docs/ASSAULT_FORECAST.md` quotes: about ten minutes on four
 /// cores, so it runs only when asked for.
 #[test]
-#[ignore = "the calibration driver: run with --ignored (docs/ASSAULT_FORECAST.md)"]
 fn assault_forecast_calibration() {
     let clock = Instant::now();
     let tags = live_tags();
@@ -913,5 +1453,6 @@ fn assault_forecast_calibration() {
     calibrated.sort_by_key(|row| row.seed);
     pairs.sort_by_key(|row| row.seed);
     let text = report(&calibrated, &pairs, clock.elapsed().as_secs_f64());
-    println!("{text}");
+    // CI compute round: the report reaches the log only through a failure.
+    panic!("\n{text}");
 }
