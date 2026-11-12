@@ -276,6 +276,14 @@ impl AdvancedAi {
         if !war_holds {
             self.claim_pillaged_repairs(g, pid);
         }
+        // `endgame-army-takes-the-queue`: once a Domination seat's clock is
+        // short, idle queues and the fresh long-payback builds the claims
+        // above started train the army as far as the income carries its
+        // upkeep. Last in the chain, so a claim that defers a soldier at
+        // peace (`capped_aqueduct_may_defer`) cannot take its queue back.
+        // Exact no-op while the gene is off. See
+        // `advanced/endgame_army_takes_the_queue.rs`.
+        self.claim_endgame_army_queues(g, pid, plan);
         self.close_rear_cities_under_the_war_hold();
         war_holds
     }
