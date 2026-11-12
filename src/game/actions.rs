@@ -5665,6 +5665,18 @@ impl Game {
         if family == "city_center" {
             return true;
         }
+        // Most buildings name the district the city actually holds. Its
+        // placements use interned-ID comparisons, without resolving a family
+        // for every district. An inactive exact match must still try active
+        // replacements below; repeatable districts must try every placement.
+        if city
+            .districts
+            .positions(family)
+            .iter()
+            .any(|position| self.district_is_active(city, family, *position))
+        {
+            return true;
+        }
         let wanted = self.district_family(family);
         city.districts.iter().any(|(district, position)| {
             self.district_family(*district) == wanted
@@ -6966,3 +6978,6 @@ mod ranged_visibility_tests;
 #[cfg(test)]
 #[path = "builder_operation_refusal_tests.rs"]
 mod builder_operation_refusal_tests;
+
+#[cfg(test)]
+mod building_district_lookup_tests;
