@@ -332,6 +332,9 @@ impl AdvancedAi {
         /// claims an idle queue before optional economy work on an early
         /// Domination seat without a reachable capital.
         land_recon_before_the_first_capital => enable_land_recon_before_the_first_capital, disable_land_recon_before_the_first_capital;
+        /// Opt-in `own-flip-faith-war-asks-no-power`; see
+        /// `advanced/own_flip_faith_war.rs`.
+        own_flip_faith_war_asks_no_power => enable_own_flip_faith_war_asks_no_power, disable_own_flip_faith_war_asks_no_power;
         // ---- append: p-r --------------------------------------------
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;

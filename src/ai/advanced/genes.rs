@@ -5843,6 +5843,18 @@ pub const GENES: &[Gene] = &[
     // that city, and a Scout lost before turn 25 Online while no rival capital
     // is charted is replaced at once, once a game. See `ai/scout_first.rs`.
     Gene { tag: "opening-scout-comes-back", field: "opening_scout_comes_back", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_scout_comes_back, disable: AdvancedAi::disable_opening_scout_comes_back },
+    // Live Deity Gran Colombia, 62 games of 2026-11-11 19:57Z to 11-12
+    // 11:00Z: 8 of the 10 Religious defeats ran through the small-world
+    // own-flip reading (only the founder on its faith, half our cities
+    // leaning) to our own flip, the war held on power at 0.21-0.37 times
+    // the founder. Of the 43 decided games in that reading, 1 of 14 with a
+    // faith war before our flip lost on Religion against 7 of 29 without;
+    // the 18 faith wars opened under 0.7 times lost 0.22 cities in 30
+    // turns and none of 17 decided games on Religion. The reading drops its
+    // 0.5 power floor, and its war skips version 2's floor, the edge and
+    // the rout ratio. Rides `faith-war-on-a-small-world`. Opt-in; see
+    // `advanced/own_flip_faith_war.rs`.
+    Gene { tag: "own-flip-faith-war-asks-no-power", field: "own_flip_faith_war_asks_no_power", kind: Kind::OptIn, enable: AdvancedAi::enable_own_flip_faith_war_asks_no_power, disable: AdvancedAi::disable_own_flip_faith_war_asks_no_power },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
