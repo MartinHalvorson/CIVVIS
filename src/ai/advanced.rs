@@ -8795,6 +8795,11 @@ pub struct AdvancedAi {
     /// taken while that capture stands, and its siege goes without the
     /// muster's bill. See `advanced/open_city_objective.rs`. Opt-in.
     open_city_is_the_objective: bool,
+    /// `no-era-ends-dark`: an Era Score budget from each era's first turn;
+    /// the Dedication whose clause pays most for what the era can build, and
+    /// the clause's cheapest building scheduled early. See
+    /// `advanced/no_era_ends_dark.rs`. Opt-in.
+    no_era_ends_dark: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -11520,6 +11525,8 @@ mod near_done_work_finishes;
 /// out-guns us in the opening. One opt-in gene; see
 /// `advanced/near_rival_deterrence.rs`.
 mod near_rival_deterrence;
+/// `no-era-ends-dark`: see `advanced/no_era_ends_dark.rs`.
+mod no_era_ends_dark;
 /// `rival-pace`: a calibrated rival chair's city horizon follows the live
 /// Immortal field's city count by turn. Not a gene — set only by
 /// `gene_screen --rival-pace` on its rival chairs; see

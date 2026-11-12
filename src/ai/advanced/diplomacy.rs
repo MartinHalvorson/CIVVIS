@@ -1567,7 +1567,13 @@ impl AdvancedAi {
         } else {
             self.recovery_since = None;
         }
-        if self.golden_dedication_serves_the_conquest {
+        // `no-era-ends-dark`: in an age that banks Dedication score, the
+        // Dedication whose clause pays most for what this era can build. It
+        // returns false, having done nothing, with the gene off and in a
+        // Golden or Heroic Age. See `advanced/no_era_ends_dark.rs`.
+        if self.choose_era_dedication(g, pid, plan) {
+            // Chosen and journalled there.
+        } else if self.golden_dedication_serves_the_conquest {
             let age = g.players[pid].age.clone();
             for dedication in
                 crate::ai::choose_conquest_dedications(g, pid, self.base.w.dedication_choice)

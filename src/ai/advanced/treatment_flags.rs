@@ -357,6 +357,8 @@ impl AdvancedAi {
         /// Opt-in `open-city-is-the-objective`; see
         /// `advanced/open_city_objective.rs`.
         open_city_is_the_objective => enable_open_city_is_the_objective, disable_open_city_is_the_objective;
+        /// Opt-in `no-era-ends-dark`; see `advanced/no_era_ends_dark.rs`.
+        no_era_ends_dark => enable_no_era_ends_dark, disable_no_era_ends_dark;
         // ---- append: p-r --------------------------------------------
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;

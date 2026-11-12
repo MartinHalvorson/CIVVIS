@@ -5908,6 +5908,14 @@ pub const GENES: &[Gene] = &[
     // objective and the front, the war is kept while the capture stands, and
     // its siege goes. Opt-in; see `advanced/open_city_objective.rs`.
     Gene { tag: "open-city-is-the-objective", field: "open_city_is_the_objective", kind: Kind::OptIn, enable: AdvancedAi::enable_open_city_is_the_objective, disable: AdvancedAi::disable_open_city_is_the_objective },
+    // Live Deity Gran Colombia 2026-11-12, 38 games: Medieval and Industrial
+    // eras ended Dark in 23 of 37 and 18 of 31, a few Era Score short; the
+    // Dedication's clause paid 2.2 and 0.2 a era, the end-of-era closers had
+    // nothing affordable to buy, and 27 of 34 loyalty flips came in our Dark
+    // Age. From each era's first turn a budget (Normal +2) picks the
+    // Dedication by what the era can build and schedules the clause's
+    // cheapest building early. Opt-in; see `advanced/no_era_ends_dark.rs`.
+    Gene { tag: "no-era-ends-dark", field: "no_era_ends_dark", kind: Kind::OptIn, enable: AdvancedAi::enable_no_era_ends_dark, disable: AdvancedAi::disable_no_era_ends_dark },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
