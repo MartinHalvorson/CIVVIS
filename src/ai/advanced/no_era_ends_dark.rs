@@ -49,7 +49,8 @@
 //!    Dedication is worth last era's measured record of its triggers (the
 //!    engine's own `projected_dedication_score`) plus the buildings of its
 //!    clause the budget can schedule this era (at most
-//!    [`ERA_MOMENT_PLAN_CAP`] a trigger). Ties keep the `Banking` order.
+//!    [`ERA_MOMENT_PLAN_CAP`] a trigger, and no more than the era is short:
+//!    on course, the record alone ranks). Ties keep the `Banking` order.
 //! 3. **Moments** ([`AdvancedAi::claim_era_moments`]). While short, one city a
 //!    turn puts the cheapest building the active clause pays for (a Monument
 //!    under Pen, Brush and Voice; a Library under Free Inquiry; an Industrial
@@ -360,6 +361,12 @@ impl AdvancedAi {
         }
         let (_, end) = Self::era_window(g);
         let turns_left = end.saturating_sub(g.turn);
+        // The budget schedules no more than the era is short, so a clause is
+        // credited no more buildings than that: on course, the record alone
+        // ranks, exactly as `Banking` does.
+        let short = self
+            .era_budget(g, pid)
+            .map_or(0, |budget| budget.short.max(0));
         let cities: Vec<u32> = g
             .player_city_ids(pid)
             .into_iter()
@@ -393,7 +400,7 @@ impl AdvancedAi {
                                     .is_some()
                                 })
                                 .count() as i64;
-                            amount * open.min(ERA_MOMENT_PLAN_CAP)
+                            amount * open.min(ERA_MOMENT_PLAN_CAP).min(short)
                         })
                         .sum();
                     (dedication, tally, scheduled)

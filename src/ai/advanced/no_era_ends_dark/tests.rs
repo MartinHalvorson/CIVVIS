@@ -169,8 +169,9 @@ fn a_mirrored_era_reads_the_schedule_until_the_countdown_runs() {
 
 /// A tied record (two Eurekas against two Inspirations) goes to the clause
 /// the era can build for: two Monument-less cities make Pen, Brush and Voice
-/// worth four. Off, `Banking` breaks the tie by name and takes Free Inquiry.
-/// In a Golden Age the gene leaves the choice to the caller.
+/// worth four. Off, `Banking` breaks the tie by name and takes Free Inquiry,
+/// and so does the gene when the era is on course. In a Golden Age the gene
+/// leaves the choice to the caller.
 #[test]
 fn the_dedication_follows_what_the_era_can_build() {
     let (mut game, _) = medieval_board();
@@ -198,6 +199,13 @@ fn the_dedication_follows_what_the_era_can_build() {
     golden.players[0].age = "golden".to_string();
     assert!(!seat(true).choose_era_dedication(&mut golden, 0, &plan));
     assert!(golden.players[0].dedications.is_empty());
+
+    // On course for a Normal Age the budget schedules nothing, so the record
+    // alone ranks and the tie goes by name, as off.
+    let mut on_course = game.clone();
+    on_course.players[0].era_score = 45;
+    assert!(seat(true).choose_era_dedication(&mut on_course, 0, &plan));
+    assert!(on_course.players[0].dedications.contains("free_inquiry"));
 }
 
 /// Short of its target under Pen, Brush and Voice, one city a turn puts its
