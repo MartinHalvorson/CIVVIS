@@ -4987,6 +4987,15 @@
           "declaration-needs-the-edge-2": null
         }
       },
+      "defend-force-holds-the-city": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "defend-force-holds-the-city": null,
+          "defend-force-holds-the-city-2": null
+        }
+      },
       "diplomatic-contender-kept": {
         "rule_on": [],
         "head": null,

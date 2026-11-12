@@ -5775,6 +5775,19 @@ impl AdvancedAi {
         self.exalted_goddess_buys_the_coastal_guard = false;
     }
 
+    /// Opt-in gene `defend-force-holds-the-city-2`; version two of the
+    /// family, so version one is turned off. See
+    /// `advanced/defend_force_holds_the_city.rs`.
+    pub fn enable_defend_force_holds_the_city_2(&mut self) {
+        self.defend_force_holds_the_city = false;
+        self.defend_force_holds_the_city_2 = true;
+    }
+
+    /// The twin of `enable_defend_force_holds_the_city_2`.
+    pub fn disable_defend_force_holds_the_city_2(&mut self) {
+        self.defend_force_holds_the_city_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

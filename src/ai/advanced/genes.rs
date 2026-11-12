@@ -5719,6 +5719,16 @@ pub const GENES: &[Gene] = &[
     // tiles the enemy melee can reach, every soldier striking from its post.
     // Opt-in; see `advanced/defend_force_holds_the_city.rs`.
     Gene { tag: "defend-force-holds-the-city", field: "defend_force_holds_the_city", kind: Kind::OptIn, enable: AdvancedAi::enable_defend_force_holds_the_city, disable: AdvancedAi::disable_defend_force_holds_the_city },
+    // Version one read neutral in the 60-seed paired whole-game sim (cities
+    // lost 1.42 -> 1.62, units lost 20.95 -> 23.20, lost to barbarians
+    // 3.13 -> 3.90, kill:loss 5.86 -> 3.51): 491 lost units were last ordered
+    // by its posts, and the positions plan crossed them 250 times. Version
+    // two holds only against a civilization that can take the city, posts
+    // the ring only when the city can fall within two enemy turns (or the
+    // death chance is low when outclassed), keeps the rest out of the enemy's
+    // reach, and keeps the positions plan off the posts. Opt-in; see
+    // `advanced/defend_force_holds_the_city.rs`.
+    Gene { tag: "defend-force-holds-the-city-2", field: "defend_force_holds_the_city_2", kind: Kind::OptIn, enable: AdvancedAi::enable_defend_force_holds_the_city_2, disable: AdvancedAi::disable_defend_force_holds_the_city_2 },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

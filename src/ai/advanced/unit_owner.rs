@@ -397,7 +397,7 @@ impl AdvancedAi {
             Owner::Amphibious => self.amphibious_member(uid),
             Owner::CentreKeeper => self.keeps_the_centre(g, pid, uid),
             Owner::DefendPost => {
-                self.defend_force_holds_the_city
+                self.defend_hold_on()
                     && self.defend_hold_plan.turn == g.turn
                     && self.defend_hold_plan.posts.contains_key(&uid)
             }

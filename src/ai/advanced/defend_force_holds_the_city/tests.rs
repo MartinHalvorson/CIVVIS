@@ -7,7 +7,13 @@ use crate::name;
 /// cleared, the map explored and everyone met, nobody at war, turn 60. (The
 /// objective board's test board.)
 fn flat_board(seed: u64, capitals: &[Pos]) -> Game {
-    let mut game = Game::new_full(capitals.len(), 36, 22, seed, 1_000, 0, false);
+    flat_board_with(seed, capitals, false)
+}
+
+/// [`flat_board`], with a barbarian seat when `barbarians` (its camps
+/// cleared).
+fn flat_board_with(seed: u64, capitals: &[Pos], barbarians: bool) -> Game {
+    let mut game = Game::new_full(capitals.len(), 36, 22, seed, 1_000, 0, barbarians);
     for unit in game.units.keys().copied().collect::<Vec<_>>() {
         game.remove_unit(unit);
     }
@@ -259,8 +265,174 @@ fn every_unit_holds_one_post_and_no_tile_two() {
 }
 
 // ----------------------------------------------------------------------
-// Paired posed defences: off, `centre-keeps-its-garrison`,
-// `defend-force-holds-the-city`, and both, on the same boards.
+// Version two.
+// ----------------------------------------------------------------------
+
+fn v2_on() -> AdvancedAi {
+    let mut ai = AdvancedAi::new();
+    ai.enable_defend_force_holds_the_city_2();
+    ai
+}
+
+#[test]
+fn version_two_turns_version_one_off_and_carries_its_reads() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_defend_force_holds_the_city();
+    ai.enable_defend_force_holds_the_city_2();
+    assert!(!ai.defend_force_holds_the_city);
+    assert!(ai.defend_force_holds_the_city_2);
+    assert!(ai.defend_hold_on());
+    let (mut g, city) = front();
+    let warrior = spawn(&mut g, "warrior", 0, city);
+    spawn(
+        &mut g,
+        "swordsman",
+        1,
+        ring_tile_toward(&g, city, at(12, 8)),
+    );
+    ai.hold_the_cities(&mut g, 0, &BTreeSet::new());
+    assert_eq!(ai.defend_hold_plan.posts[&warrior].role, HoldRole::Centre);
+    assert!(ai.defend_hold_holds(g.city_at(city).unwrap()));
+}
+
+#[test]
+fn barbarians_form_no_hold_under_version_two() {
+    let city = at(8, 8);
+    let build = || {
+        let mut g = flat_board_with(11, &[city, at(28, 8)], true);
+        let barbarian = g.barb_pid.expect("a barbarian seat");
+        spawn(&mut g, "warrior", 0, city);
+        spawn(&mut g, "spearman", 0, at(7, 9));
+        spawn(
+            &mut g,
+            "horseman",
+            barbarian,
+            ring_tile_toward(&g, city, at(12, 8)),
+        );
+        g
+    };
+    let mut g = build();
+    let mut ai = v2_on();
+    ai.hold_the_cities(&mut g, 0, &BTreeSet::new());
+    assert!(
+        ai.defend_hold_plan.cities.is_empty(),
+        "a raider is no capturer"
+    );
+    assert!(ai.defend_hold_plan.posts.is_empty());
+    // Version one held it.
+    let mut g = build();
+    let mut ai = gene_on();
+    ai.hold_the_cities(&mut g, 0, &BTreeSet::new());
+    assert_eq!(ai.defend_hold_plan.cities.len(), 1);
+}
+
+#[test]
+fn no_ring_until_the_city_can_fall() {
+    // One swordsman three tiles out against a full-health city: no fall
+    // within two enemy turns, so the spearmen stand ready off the ring.
+    let (mut g, city) = front();
+    spawn(&mut g, "archer", 0, city);
+    let west: Vec<u32> = [at(7, 7), at(7, 9)]
+        .into_iter()
+        .map(|pos| spawn(&mut g, "spearman", 0, pos))
+        .collect();
+    spawn(&mut g, "swordsman", 1, at(11, 8));
+    let mut ai = v2_on();
+    ai.hold_the_cities(&mut g, 0, &BTreeSet::new());
+    for uid in &west {
+        let post = &ai.defend_hold_plan.posts[uid];
+        assert_ne!(post.role, HoldRole::Ring, "no ring post before it matters");
+        assert!(g.wdist(post.at, city) <= 2, "it stands ready within two");
+    }
+}
+
+#[test]
+fn the_ring_forms_once_a_capturer_stands_beside_the_city() {
+    let (mut g, city) = front();
+    spawn(&mut g, "archer", 0, city);
+    let spearmen: Vec<u32> = [at(7, 7), at(7, 9)]
+        .into_iter()
+        .map(|pos| spawn(&mut g, "spearman", 0, pos))
+        .collect();
+    let beside = ring_tile_toward(&g, city, at(12, 8));
+    spawn(&mut g, "warrior", 1, beside);
+    spawn(&mut g, "warrior", 1, at(11, 7));
+    let mut ai = v2_on();
+    ai.hold_the_cities(&mut g, 0, &BTreeSet::new());
+    let ring = spearmen
+        .iter()
+        .filter(|uid| ai.defend_hold_plan.posts[*uid].role == HoldRole::Ring)
+        .count();
+    assert!(
+        ring >= 1,
+        "a capturer beside the centre: the ring is posted"
+    );
+}
+
+#[test]
+fn an_outclassed_ring_takes_no_soldier_one_blow_removes() {
+    let (mut g, city) = front();
+    spawn(&mut g, "archer", 0, city);
+    let warriors: Vec<u32> = [at(7, 7), at(7, 9)]
+        .into_iter()
+        .map(|pos| spawn(&mut g, "warrior", 0, pos))
+        .collect();
+    let beside = ring_tile_toward(&g, city, at(12, 8));
+    spawn(&mut g, "tank", 1, beside);
+    spawn(&mut g, "tank", 1, at(11, 7));
+    spawn(&mut g, "tank", 1, at(11, 9));
+    let mut ai = v2_on();
+    ai.hold_the_cities(&mut g, 0, &BTreeSet::new());
+    for uid in &warriors {
+        assert_ne!(
+            ai.defend_hold_plan.posts.get(uid).map(|post| post.role),
+            Some(HoldRole::Ring),
+            "a warrior is not posted beside tanks"
+        );
+    }
+}
+
+#[test]
+fn a_civilians_guard_keeps_guarding() {
+    let (mut g, city) = front();
+    spawn(&mut g, "archer", 0, city);
+    let guard = spawn(&mut g, "spearman", 0, at(7, 9));
+    spawn(&mut g, "builder", 0, at(7, 9));
+    spawn(
+        &mut g,
+        "swordsman",
+        1,
+        ring_tile_toward(&g, city, at(12, 8)),
+    );
+    let mut ai = v2_on();
+    ai.hold_the_cities(&mut g, 0, &BTreeSet::new());
+    assert!(!ai.defend_hold_plan.posts.contains_key(&guard));
+    assert_eq!(g.units[&guard].pos, at(7, 9));
+}
+
+#[test]
+fn the_positions_plan_leaves_this_turns_posts_alone() {
+    let (mut g, city) = front();
+    let warrior = spawn(&mut g, "warrior", 0, city);
+    spawn(
+        &mut g,
+        "swordsman",
+        1,
+        ring_tile_toward(&g, city, at(12, 8)),
+    );
+    let mut ai = v2_on();
+    ai.preview_hold_members(&g, 0);
+    assert!(ai.defend_hold_member_v2(warrior));
+    // Version one leaves the planner as it was.
+    let mut ai = gene_on();
+    ai.preview_hold_members(&g, 0);
+    assert!(!ai.defend_hold_member_v2(warrior));
+    assert!(ai.defend_hold_members.is_empty());
+}
+
+// ----------------------------------------------------------------------
+// Paired posed defences: off, version one, version two, and version two
+// with `centre-keeps-its-garrison`, on the same boards.
 // ----------------------------------------------------------------------
 
 /// The defence genes the live Gran Colombia seat armed on 2026-11-12
@@ -296,37 +468,42 @@ const LIVE_DEFENCE: &[&str] = &[
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Arm {
+    v1: bool,
+    v2: bool,
     keep: bool,
-    hold: bool,
 }
 
 const ARMS: [(&str, Arm); 4] = [
     (
         "off",
         Arm {
+            v1: false,
+            v2: false,
             keep: false,
-            hold: false,
         },
     ),
     (
-        "keep",
+        "v1",
         Arm {
-            keep: true,
-            hold: false,
-        },
-    ),
-    (
-        "hold",
-        Arm {
+            v1: true,
+            v2: false,
             keep: false,
-            hold: true,
         },
     ),
     (
-        "both",
+        "v2",
         Arm {
+            v1: false,
+            v2: true,
+            keep: false,
+        },
+    ),
+    (
+        "v2+keep",
+        Arm {
+            v1: false,
+            v2: true,
             keep: true,
-            hold: true,
         },
     ),
 ];
@@ -339,15 +516,17 @@ fn our_seat(arm: Arm) -> AdvancedAi {
             (gene.enable)(&mut ai);
         }
     }
+    ai.disable_centre_keeps_its_garrison();
+    ai.disable_defend_force_holds_the_city();
+    ai.disable_defend_force_holds_the_city_2();
     if arm.keep {
         ai.enable_centre_keeps_its_garrison();
-    } else {
-        ai.disable_centre_keeps_its_garrison();
     }
-    if arm.hold {
+    if arm.v1 {
         ai.enable_defend_force_holds_the_city();
-    } else {
-        ai.disable_defend_force_holds_the_city();
+    }
+    if arm.v2 {
+        ai.enable_defend_force_holds_the_city_2();
     }
     ai
 }
@@ -364,8 +543,8 @@ fn east_of(pos: Pos, of: Pos) -> bool {
     crate::hex::axial_to_offset(pos.0, pos.1).0 > crate::hex::axial_to_offset(of.0, of.1).0
 }
 
-/// The two board sets.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// The board sets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Set {
     /// #5198's 96 boards: ancient garrisons, 1-3 soldiers beside the front
     /// city, 3-6 ancient attackers.
@@ -373,6 +552,11 @@ enum Set {
     /// A real force: medieval garrisons, 4-8 mixed soldiers about the front
     /// city, 5-8 medieval and Renaissance attackers.
     Force,
+    /// Peace with the rival; 3-5 barbarian raiders about the front city,
+    /// two Builders working beside it.
+    Raiders,
+    /// Medieval defenders against 5-8 industrial and modern attackers.
+    Outclassed,
 }
 
 /// What a board set fields: our garrisons, our soldiers about the front
@@ -387,18 +571,8 @@ struct Mix {
     far: i32,
 }
 
-/// One posed defence: two cities of ours, a garrison in each, soldiers
-/// around the front city, and an attacking force east of it.
-fn posed(seed: u64, set: Set) -> Game {
-    let mut rng = crate::rng::Rng::new(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x5eed);
-    let capital = at(8, 6);
-    let mut g = flat_board(seed, &[capital, at(29, 8)]);
-    let second = at(8 + rng.randint(-1, 1), 13 + rng.randint(0, 2));
-    g.found_city_for(0, second, None);
-    war(&mut g, 0, 1);
-    let ours = [capital, second];
-    let front = rng.below(2);
-    let mix = match set {
+fn mix(set: Set) -> Mix {
+    match set {
         Set::Light => Mix {
             garrison: &["warrior", "slinger", "archer", "spearman", "warrior"],
             own: &["warrior", "archer", "spearman", "horseman", "slinger"],
@@ -449,7 +623,60 @@ fn posed(seed: u64, set: Set) -> Game {
             near: 2,
             far: 4,
         },
+        Set::Raiders => Mix {
+            garrison: &["warrior", "archer", "spearman", "slinger"],
+            own: &["warrior", "archer", "spearman", "horseman"],
+            theirs: &["warrior", "spearman", "horseman", "archer", "warrior"],
+            extra: (1, 3),
+            attackers: (3, 5),
+            near: 2,
+            far: 4,
+        },
+        Set::Outclassed => Mix {
+            garrison: &["crossbowman", "pikeman", "musketman", "man_at_arms"],
+            own: &[
+                "crossbowman",
+                "pikeman",
+                "musketman",
+                "man_at_arms",
+                "knight",
+                "archer",
+            ],
+            theirs: &[
+                "line_infantry",
+                "cavalry",
+                "infantry",
+                "artillery",
+                "machine_gun",
+                "field_cannon",
+                "tank",
+            ],
+            extra: (3, 6),
+            attackers: (5, 8),
+            near: 2,
+            far: 4,
+        },
+    }
+}
+
+/// One posed defence: two cities of ours, a garrison in each, soldiers
+/// around the front city, and an attacking force east of it (the rival at
+/// war, or barbarians at peace with the rival).
+fn posed(seed: u64, set: Set) -> Game {
+    let mut rng = crate::rng::Rng::new(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x5eed);
+    let capital = at(8, 6);
+    let raiders = set == Set::Raiders;
+    let mut g = flat_board_with(seed, &[capital, at(29, 8)], raiders);
+    let second = at(8 + rng.randint(-1, 1), 13 + rng.randint(0, 2));
+    g.found_city_for(0, second, None);
+    let attacker = if raiders {
+        g.barb_pid.expect("a barbarian seat")
+    } else {
+        war(&mut g, 0, 1);
+        1
     };
+    let ours = [capital, second];
+    let front = rng.below(2);
     let Mix {
         garrison,
         own,
@@ -458,7 +685,7 @@ fn posed(seed: u64, set: Set) -> Game {
         attackers,
         near,
         far,
-    } = mix;
+    } = mix(set);
     for city in ours {
         spawn(&mut g, garrison[rng.below(garrison.len())], 0, city);
     }
@@ -479,6 +706,14 @@ fn posed(seed: u64, set: Set) -> Game {
         let pos = tiles[rng.below(tiles.len())];
         spawn(&mut g, own[rng.below(own.len())], 0, pos);
     }
+    if raiders {
+        for _ in 0..2 {
+            let tiles = ring(&g, ours[front], 1, 2);
+            if let Some(pos) = tiles.get(rng.below(tiles.len().max(1))) {
+                spawn(&mut g, "builder", 0, *pos);
+            }
+        }
+    }
     for _ in 0..rng.randint(attackers.0, attackers.1) {
         let tiles: Vec<Pos> = ring(&g, ours[front], near, far)
             .into_iter()
@@ -488,9 +723,9 @@ fn posed(seed: u64, set: Set) -> Game {
             break;
         }
         let pos = tiles[rng.below(tiles.len())];
-        spawn(&mut g, theirs[rng.below(theirs.len())], 1, pos);
+        spawn(&mut g, theirs[rng.below(theirs.len())], attacker, pos);
     }
-    if rng.chance(0.4) {
+    if !raiders && rng.chance(0.4) {
         for _ in 0..rng.randint(2, 3) {
             let tiles: Vec<Pos> = ring(&g, ours[1 - front], near, far)
                 .into_iter()
@@ -500,7 +735,7 @@ fn posed(seed: u64, set: Set) -> Game {
                 break;
             }
             let pos = tiles[rng.below(tiles.len())];
-            spawn(&mut g, theirs[rng.below(theirs.len())], 1, pos);
+            spawn(&mut g, theirs[rng.below(theirs.len())], attacker, pos);
         }
     }
     g
@@ -510,14 +745,17 @@ fn posed(seed: u64, set: Set) -> Game {
 struct Held {
     cities_lost: usize,
     ours_lost: usize,
+    civilians_lost: usize,
     theirs_lost: usize,
     /// Our turns that ended with a threatened City Center of ours empty.
     empty_centre_turns: usize,
     /// Turns each starting city of ours stayed ours, summed.
     turns_held: usize,
-    /// Posts drawn, and posts a unit ended our turn off (other than by its
-    /// own blow, a refill or death): the mechanism checks.
+    /// Posts drawn, and the mechanism checks: posts a unit ended our turn
+    /// off (other than by its own blow, a refill or death), and tiles posted
+    /// twice.
     posts: usize,
+    ring_posts: usize,
     posts_broken: usize,
     shared_tiles: usize,
 }
@@ -533,36 +771,45 @@ fn play(seed: u64, set: Set, arm: Arm) -> Held {
         .filter(|city| city.owner == 0)
         .map(|city| city.pos)
         .collect();
-    let military = |g: &Game, pid: usize| -> BTreeSet<u32> {
+    let ours_of = |g: &Game, class: &str| -> BTreeSet<u32> {
         g.units
             .values()
-            .filter(|unit| unit.owner == pid && g.rules.units[unit.kind].class == "military")
+            .filter(|unit| unit.owner == 0 && g.rules.units[unit.kind].class == class)
             .map(|unit| unit.id)
             .collect()
     };
-    let ours_start = military(&g, 0);
-    let theirs_start = military(&g, 1);
+    let enemy_start: BTreeSet<u32> = g
+        .units
+        .values()
+        .filter(|unit| unit.owner != 0 && g.rules.units[unit.kind].class == "military")
+        .map(|unit| unit.id)
+        .collect();
+    let ours_start = ours_of(&g, "military");
+    let civilians_start = ours_of(&g, "civilian");
     let probe = gene_on();
     let mut us = our_seat(arm);
     let mut them = attacker_seat();
+    let mut others: BTreeMap<usize, AdvancedAi> = BTreeMap::new();
     let mut held = Held::default();
     let mut lost_at: BTreeMap<Pos, u32> = BTreeMap::new();
+    let mut guard = 0;
     while g.winner.is_none() && g.turn < start + POSED_TURNS && g.players[0].alive {
+        guard += 1;
+        assert!(guard < 400, "the posed game advances");
         let pid = g.current;
         if pid == 0 {
             us.take_turn(&mut g, pid);
-            // The mechanism: one post a unit, one unit a tile, and every
-            // posted unit on its post at the end of our turn unless its own
-            // blow carried it forward, it refilled the centre, or it died.
             let plan = us.defend_hold_plan.clone();
-            if arm.hold {
-                assert!(plan.turn == g.turn || plan.posts.is_empty());
-            } else {
+            if !(arm.v1 || arm.v2) {
                 assert!(plan.posts.is_empty(), "the gene off draws no posts");
+                assert!(us.defend_hold_members.is_empty());
             }
             let mut tiles = BTreeSet::new();
             for (uid, post) in &plan.posts {
                 held.posts += 1;
+                if post.role == HoldRole::Ring {
+                    held.ring_posts += 1;
+                }
                 if post.role != HoldRole::March && !tiles.insert(post.at) {
                     held.shared_tiles += 1;
                 }
@@ -570,9 +817,10 @@ fn play(seed: u64, set: Set, arm: Arm) -> Held {
                     continue;
                 };
                 let centre = g.cities.get(&post.city).map(|city| city.pos);
+                let struck = unit.attacks_left == 0;
                 let on_post = unit.pos == post.at
                     || Some(unit.pos) == centre
-                    || (unit.attacks_left == 0 && g.wdist(unit.pos, post.at) == 1);
+                    || (struck && (arm.v2 || g.wdist(unit.pos, post.at) == 1));
                 if !on_post {
                     held.posts_broken += 1;
                 }
@@ -589,14 +837,21 @@ fn play(seed: u64, set: Set, arm: Arm) -> Held {
                     })
                 })
                 .count();
-        } else {
+        } else if pid == 1 && set != Set::Raiders {
             them.take_turn(&mut g, pid);
+        } else {
+            others
+                .entry(pid)
+                .or_insert_with(AdvancedAi::new)
+                .take_turn(&mut g, pid);
         }
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
         }
-        war(&mut g, 0, 1);
-        g.peace_treaties.remove(&(0, 1));
+        if set != Set::Raiders {
+            war(&mut g, 0, 1);
+            g.peace_treaties.remove(&(0, 1));
+        }
         for pos in &cities {
             let ours = g.city_at(*pos).is_some_and(|cid| g.cities[&cid].owner == 0);
             if !ours {
@@ -612,35 +867,43 @@ fn play(seed: u64, set: Set, arm: Arm) -> Held {
         .iter()
         .map(|pos| lost_at.get(pos).copied().unwrap_or(POSED_TURNS) as usize)
         .sum();
-    let ours_end = military(&g, 0);
-    let theirs_end = military(&g, 1);
-    held.ours_lost = ours_start.difference(&ours_end).count();
-    held.theirs_lost = theirs_start.difference(&theirs_end).count();
+    held.ours_lost = ours_start.difference(&ours_of(&g, "military")).count();
+    held.civilians_lost = civilians_start.difference(&ours_of(&g, "civilian")).count();
+    held.theirs_lost = enemy_start
+        .iter()
+        .filter(|uid| !g.units.contains_key(uid))
+        .count();
     held
 }
 
 fn add(total: &mut Held, one: &Held) {
     total.cities_lost += one.cities_lost;
     total.ours_lost += one.ours_lost;
+    total.civilians_lost += one.civilians_lost;
     total.theirs_lost += one.theirs_lost;
     total.empty_centre_turns += one.empty_centre_turns;
     total.turns_held += one.turns_held;
     total.posts += one.posts;
+    total.ring_posts += one.ring_posts;
     total.posts_broken += one.posts_broken;
     total.shared_tiles += one.shared_tiles;
 }
 
-/// Off, `centre-keeps-its-garrison`, `defend-force-holds-the-city` and both
-/// over the same posed boards, ten turns each: #5198's 96 light boards and 64
-/// boards where the defender has a real force against medieval and
-/// Renaissance attackers. Prints the arms side by side (run with
-/// `--nocapture` to read it on a pass); asserts only the mechanism: posts are
-/// held, no tile is posted twice, and the gene off draws nothing.
+/// Off, version one, version two, and version two with
+/// `centre-keeps-its-garrison`, over the same posed boards, ten turns each:
+/// #5198's 96 light boards, 64 boards where the defender has a real force,
+/// 32 boards of barbarian raiders about a city at peace, and 32 boards of
+/// medieval defenders against industrial and modern attackers. Prints the
+/// arms side by side (run with `--nocapture` to read it on a pass); asserts
+/// only the mechanism: posts are held, no tile is posted twice, the genes
+/// off draw nothing, and version two forms no hold against raiders.
 #[test]
 fn paired_posed_defences_four_arms() {
     let boards: Vec<(Set, u64)> = (1..=96)
         .map(|seed| (Set::Light, seed))
         .chain((1001..=1064).map(|seed| (Set::Force, seed)))
+        .chain((2001..=2032).map(|seed| (Set::Raiders, seed)))
+        .chain((3001..=3032).map(|seed| (Set::Outclassed, seed)))
         .collect();
     let workers = 4;
     let rows: Vec<(Set, u64, [Held; 4])> = std::thread::scope(|scope| {
@@ -663,16 +926,17 @@ fn paired_posed_defences_four_arms() {
             .into_iter()
             .flat_map(|handle| handle.join().expect("a posed defence panicked"))
             .collect();
-        rows.sort_by_key(|row| (row.0 == Set::Force, row.1));
+        rows.sort_by_key(|row| (row.0, row.1));
         rows
     });
     let mut report = String::from(
-        "defend-force-holds-the-city paired posed defences (10 turns; arms off | keep | hold | both)\n",
+        "defend-force-holds-the-city-2 paired posed defences (10 turns; arms off | v1 | v2 | v2+keep)\n",
     );
     let mut broken = 0;
     let mut shared = 0;
     let mut posts = 0;
-    for set in [Set::Light, Set::Force] {
+    let mut raider_posts_v2 = 0;
+    for set in [Set::Light, Set::Force, Set::Raiders, Set::Outclassed] {
         let mut totals = [Held::default(); 4];
         let mut better = [0usize; 4];
         let mut worse = [0usize; 4];
@@ -690,7 +954,7 @@ fn paired_posed_defences_four_arms() {
         }
         let line = |name: &str, read: &dyn Fn(&Held) -> usize| -> String {
             format!(
-                "  {name:<26} {:>5} | {:>5} | {:>5} | {:>5}\n",
+                "  {name:<28} {:>5} | {:>5} | {:>5} | {:>5}\n",
                 read(&totals[0]),
                 read(&totals[1]),
                 read(&totals[2]),
@@ -701,11 +965,13 @@ fn paired_posed_defences_four_arms() {
         report.push_str(&line("cities lost", &|h| h.cities_lost));
         report.push_str(&line("turns cities held", &|h| h.turns_held));
         report.push_str(&line("our starting units lost", &|h| h.ours_lost));
+        report.push_str(&line("our civilians lost", &|h| h.civilians_lost));
         report.push_str(&line("enemy starting units killed", &|h| h.theirs_lost));
         report.push_str(&line("empty-centre turn ends", &|h| h.empty_centre_turns));
         report.push_str(&line("posts drawn", &|h| h.posts));
+        report.push_str(&line("ring posts drawn", &|h| h.ring_posts));
         report.push_str(&format!(
-            "  {:<26} {:>5} | {:>5} | {:>5} | {:>5}\n",
+            "  {:<28} {:>5} | {:>5} | {:>5} | {:>5}\n",
             "boards better/worse vs off",
             "-",
             format!("{}/{}", better[1], worse[1]),
@@ -717,9 +983,18 @@ fn paired_posed_defences_four_arms() {
             shared += held.shared_tiles;
             posts += held.posts;
         }
+        if set == Set::Raiders {
+            raider_posts_v2 = totals[2].posts + totals[3].posts;
+        }
     }
     eprintln!("{report}");
     assert!(posts > 0, "the hold drew posts\n{report}");
     assert_eq!(broken, 0, "a posted unit left its post\n{report}");
     assert_eq!(shared, 0, "a tile was posted twice\n{report}");
+    assert_eq!(
+        raider_posts_v2, 0,
+        "version two formed a hold against raiders\n{report}"
+    );
+    // WIP: the CI log is the read-out.
+    panic!("{report}");
 }
