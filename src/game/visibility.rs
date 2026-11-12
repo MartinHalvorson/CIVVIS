@@ -366,6 +366,38 @@ impl Game {
         target_height: i32,
         see_through_woods: bool,
     ) -> bool {
+        if let Some(arc) = self
+            .map
+            .sphere()
+            .and_then(|sphere| sphere.short_sight_arc(from, to, steps))
+        {
+            return arc.interior().iter().all(|position| {
+                let blocker = self.blocker_height_via(heights, *position, see_through_woods);
+                !(blocker > viewer_height && blocker >= target_height)
+            });
+        }
+        self.arc_is_clear_uncached(
+            heights,
+            from,
+            to,
+            steps,
+            viewer_height,
+            target_height,
+            see_through_woods,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn arc_is_clear_uncached(
+        &self,
+        heights: &mut HeightField,
+        from: Pos,
+        to: Pos,
+        steps: i32,
+        viewer_height: i32,
+        target_height: i32,
+        see_through_woods: bool,
+    ) -> bool {
         let Some(sphere) = self.map.sphere() else {
             return true;
         };
@@ -1978,3 +2010,6 @@ impl Game {
         }
     }
 }
+
+#[cfg(test)]
+mod sight_arc_cache_tests;
