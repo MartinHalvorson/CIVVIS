@@ -228,10 +228,12 @@ pub(crate) struct Knobs {
 }
 
 /// What the forecast plays: our melee wait for the breach as the train's
-/// taker does (`siege_train::MELEE_WALL_FRACTION`), and the solver's enemy.
+/// taker does (`siege_train::MELEE_WALL_FRACTION`), and the enemy acts on
+/// every turn rather than the solver's half: on 1,200 posed sieges that
+/// scored the better Brier at 12, 10 and 5 turns (`docs/ASSAULT_FORECAST.md`).
 pub(crate) const KNOBS: Knobs = Knobs {
     melee_breach_share: super::siege_train::MELEE_WALL_FRACTION as f32,
-    enemy_aggression: 0.5,
+    enemy_aggression: 1.0,
 };
 
 // CI scaffolding: the forecast settings this thread reads, `KNOBS` unless
@@ -253,9 +255,10 @@ fn knobs() -> Knobs {
 }
 
 // CI scaffolding: which variant of `siege-goes-on-the-forecast` this
-// thread plays (0 as specified; 1 without the stand-down; 2 without the
-// Siege-row ranking; 3 the stand-down only while the siege makes no
-// progress). Always 0 outside tests.
+// thread plays, as bits (0 as specified; 1 no stand-down; 2 no Siege-row
+// ranking; 4 the stand-down only while the siege makes no progress; 8 only
+// when no one more unit would help; 16 only under 2% six readings running).
+// Always 0 outside tests.
 #[cfg(test)]
 thread_local! {
     pub(crate) static VARIANT: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
@@ -1259,12 +1262,20 @@ impl AdvancedAi {
         let falling = city.wall_hp <= 0 && city.hp <= FALLING_CITY_HP;
         let health = city.hp.max(0) + city.wall_hp.max(0);
         let turn = g.turn;
-        if variant() == 1 {
+        if variant() & 1 != 0 {
             return false;
         }
         self.siege_forecast_hopeless
             .retain(|_, run| run.last + HOPELESS_STAND_DOWN_TURNS >= turn || turn < run.down_until);
-        let hopeless = !falling && forecast.gathered() && forecast.p() < HOPELESS_P;
+        let (hopeless_p, streak_needed) = if variant() & 16 != 0 {
+            (0.02, 6)
+        } else {
+            (HOPELESS_P, HOPELESS_STREAK)
+        };
+        let hopeless = !falling
+            && forecast.gathered()
+            && forecast.p() < hopeless_p
+            && (variant() & 8 == 0 || forecast.short_of == Some(ShortOf::Nothing));
         let run = self.siege_forecast_hopeless.entry(pos).or_default();
         if turn < run.down_until {
             return false;
@@ -1273,7 +1284,7 @@ impl AdvancedAi {
         if run.last != turn {
             run.health = health;
         }
-        if !hopeless || (variant() == 3 && progress) {
+        if !hopeless || (variant() & 4 != 0 && progress) {
             run.streak = 0;
             run.last = turn;
             return false;
@@ -1282,7 +1293,7 @@ impl AdvancedAi {
             run.streak += 1;
             run.last = turn;
         }
-        if run.streak < HOPELESS_STREAK {
+        if run.streak < streak_needed {
             return false;
         }
         run.down_until = turn + HOPELESS_STAND_DOWN_TURNS;
@@ -1307,7 +1318,7 @@ impl AdvancedAi {
         cid: u32,
         pool: &[u32],
     ) -> Option<f64> {
-        if variant() == 2 {
+        if variant() & 2 != 0 {
             return None;
         }
         self.assault_capture_curve(g, pid, cid, pool)

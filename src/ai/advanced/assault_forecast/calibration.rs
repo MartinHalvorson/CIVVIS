@@ -44,28 +44,29 @@ const CALIBRATION_SEEDS: u64 = 1200;
 const PAIRED_SEEDS: u64 = 400;
 const PAIRED_TURNS: u32 = 30;
 /// The paired arms: the live genome alone, then with the gene as specified
-/// and in its CI variants (`super::VARIANT`).
-const ARMS: [(&str, Option<u8>, Knobs); 7] = [
+/// and in its CI variants (`super::VARIANT` bits).
+const ARMS: [(&str, Option<u8>, Knobs); 8] = [
     ("off", None, KNOBS),
     ("on", Some(0), KNOBS),
     ("on, no stand-down", Some(1), KNOBS),
-    ("on, stand-down needs a stall", Some(3), KNOBS),
-    ("on, enemy always acts", Some(0), ALWAYS),
-    ("on, enemy always acts, no stand-down", Some(1), ALWAYS),
-    ("on, melee chips any wall", Some(0), CHIPS),
+    ("on, stand-down only when no one unit helps", Some(8), KNOBS),
+    (
+        "on, stand-down under 2% six readings running",
+        Some(16),
+        KNOBS,
+    ),
+    ("on, stand-down needs both", Some(8 | 16), KNOBS),
+    ("on, no stand-down, no row ranking", Some(1 | 2), KNOBS),
+    ("on, forecast enemy acts half its turns", Some(0), HALF),
 ];
 /// Forecast settings the calibration reads side by side.
-const ALWAYS: Knobs = Knobs {
-    enemy_aggression: 1.0,
-    ..KNOBS
-};
-const CHIPS: Knobs = Knobs {
-    melee_breach_share: 0.0,
+const HALF: Knobs = Knobs {
+    enemy_aggression: 0.5,
     ..KNOBS
 };
 const FORECASTS: [(&str, Knobs); 5] = [
     (
-        "melee wait for the breach, enemy acts half its turns (shipped)",
+        "melee wait for the breach, enemy always acts (shipped)",
         KNOBS,
     ),
     (
@@ -75,13 +76,19 @@ const FORECASTS: [(&str, Knobs); 5] = [
             ..KNOBS
         },
     ),
-    ("melee wait for the breach, enemy always acts", ALWAYS),
-    ("melee chip any wall, enemy acts half its turns", CHIPS),
+    ("melee wait for the breach, enemy acts half its turns", HALF),
     (
         "melee chip any wall, enemy always acts",
         Knobs {
             melee_breach_share: 0.0,
-            enemy_aggression: 1.0,
+            ..KNOBS
+        },
+    ),
+    (
+        "melee chip any wall, enemy acts half its turns",
+        Knobs {
+            melee_breach_share: 0.0,
+            enemy_aggression: 0.5,
         },
     ),
 ];
@@ -132,6 +139,8 @@ const ERAS: [Era; 4] = [
 struct World {
     g: Game,
     cid: u32,
+    /// Every city of player 1's: the posed one first.
+    targets: Vec<Pos>,
     force: Vec<u32>,
     label: String,
     walls: i32,
@@ -155,7 +164,10 @@ fn pick_ring(g: &Game, rng: &mut Rng, distance: i32) -> Option<Pos> {
     (!tiles.is_empty()).then(|| tiles[rng.below(tiles.len())])
 }
 
-fn world(seed: u64) -> World {
+/// `world`, and for a paired seed a second city of player 1's about eight
+/// tiles beyond the first, so a siege stood down has somewhere to go. Its
+/// draws come from their own stream: the first city's siege is the same.
+fn world(seed: u64, second: bool) -> World {
     let mut rng = Rng::new(seed ^ 0x51e6_e0f0_7ca5_7001);
     let era = rng.below(ERAS.len());
     let enemy_era = (era as i32 + [-1, 0, 0, 1][rng.below(4)]).clamp(0, 3) as usize;
@@ -269,12 +281,50 @@ fn world(seed: u64) -> World {
             kinds.push(format!("{kind}@{distance}"));
         }
     }
+    let mut targets = vec![TARGET];
+    let mut beyond = String::new();
+    if second {
+        let mut rng = Rng::new(seed ^ 0x2c17_5ec0_0d0c_17e5);
+        let spot = g
+            .wring(TARGET, 8)
+            .into_iter()
+            .filter(|pos| {
+                free_land(&g, *pos)
+                    && g.wdisk(*pos, 1)
+                        .iter()
+                        .all(|n| free_land(&g, *n) || *n == *pos)
+            })
+            .max_by_key(|pos| (g.wdist(*pos, HOME), std::cmp::Reverse(*pos)));
+        if let Some(spot) = spot {
+            let other = g.found_city_for(1, spot, None);
+            let walls = [0, 0, 100, 200][rng.below(4)];
+            {
+                let city = g.cities.get_mut(&other).unwrap();
+                if walls > 0 {
+                    city.buildings.push(crate::name!("walls"));
+                }
+                city.wall_hp = walls;
+            }
+            Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(other, walls);
+            let garrison = rng.chance(0.5).then(|| {
+                let kind = enemy.defenders[rng.below(enemy.defenders.len())];
+                g.spawn_test_unit(kind, 1, spot);
+                kind
+            });
+            targets.push(spot);
+            beyond = format!(
+                "; second city walls {walls}, defence {:.0}, garrison {}",
+                g.city_strength(other),
+                garrison.unwrap_or("none")
+            );
+        }
+    }
     g.record_contact(0, 1);
     g.at_war.insert((0, 1));
     g.current = 0;
     g.turn = 60 + 35 * era as u32;
     let label = format!(
-        "era {era} v {enemy_era}, walls {wall_hp}/{walls}, city {city_hp}, defence {:.0}, defenders [{}], force [{}]",
+        "era {era} v {enemy_era}, walls {wall_hp}/{walls}, city {city_hp}, defence {:.0}, defenders [{}], force [{}]{beyond}",
         g.city_strength(cid),
         defenders.join(" "),
         kinds.join(" ")
@@ -282,6 +332,7 @@ fn world(seed: u64) -> World {
     World {
         g,
         cid,
+        targets,
         force,
         label,
         walls,
@@ -315,8 +366,13 @@ fn live_seat(tags: &BTreeSet<&'static str>, go: bool) -> AdvancedAi {
 
 #[derive(Clone, Debug, Default)]
 struct Outcome {
-    /// Turn of the capture, 1 = this turn.
+    /// Turn of the first capture, 1 = this turn.
     captured: Option<u32>,
+    /// Player 1's cities taken.
+    cities: usize,
+    /// Turn the posed city itself was taken: what its forecast is read
+    /// against.
+    posed: Option<u32>,
     /// Force members gone by the capture or the end.
     lost: usize,
     peace: bool,
@@ -399,11 +455,22 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool) -> Outco
             if let Some(siege) = ours.sieges.get(&w.cid) {
                 out.stage = out.stage.max(stage_rank(siege.stage));
             }
-            let ours_now = g
-                .city_at(TARGET)
-                .is_none_or(|cid| g.cities[&cid].owner == 0);
-            if ours_now {
+            let taken = w
+                .targets
+                .iter()
+                .filter(|pos| g.city_at(**pos).is_none_or(|cid| g.cities[&cid].owner == 0))
+                .count();
+            if taken > 0 && out.captured.is_none() {
                 out.captured = Some(g.turn - start + 1);
+            }
+            if out.posed.is_none()
+                && g.city_at(TARGET)
+                    .is_none_or(|cid| g.cities[&cid].owner == 0)
+            {
+                out.posed = Some(g.turn - start + 1);
+            }
+            out.cities = taken;
+            if taken == w.targets.len() {
                 break;
             }
         }
@@ -455,7 +522,7 @@ enum Row {
 fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
     match job {
         Job::Calibrate(seed) => {
-            let w = world(*seed);
+            let w = world(*seed, false);
             let clock = Instant::now();
             let forecast = AdvancedAi::new()
                 .assault_forecast(&w.g, 0, w.cid, &w.force)
@@ -484,7 +551,7 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
             })
         }
         Job::Pair(seed) => {
-            let w = world(*seed);
+            let w = world(*seed, true);
             let forecast = AdvancedAi::new()
                 .assault_forecast(&w.g, 0, w.cid, &w.force)
                 .expect("a posed city at war reads");
@@ -529,7 +596,7 @@ fn paired(values: &[f64]) -> (f64, f64) {
 
 fn taken_by(outcome: &Outcome, k: usize) -> f64 {
     f64::from(u8::from(
-        outcome.captured.is_some_and(|turn| turn as usize <= k),
+        outcome.posed.is_some_and(|turn| turn as usize <= k),
     ))
 }
 
@@ -586,21 +653,18 @@ fn paired_table(out: &mut String, title: &str, kept_pairs: &[&PairRow]) {
     );
     let _ = writeln!(
         out,
-        "| arm | cities taken | gained / lost vs off | invested | force units lost (vs off) | turns to capture | go orders | held aborts | stand-downs | zero-rate row turns | s a siege |"
+        "| arm | cities taken | pairs ahead / behind off | invested | force units lost (vs off) | turns to first capture | go orders | held aborts | stand-downs | zero-rate row turns | s a siege |"
     );
     let _ = writeln!(out, "|---|---|---|---|---|---|---|---|---|---|---|");
     for (a, (name, _, _)) in ARMS.iter().enumerate() {
-        let taken = kept_pairs
-            .iter()
-            .filter(|row| row.arms[a].captured.is_some())
-            .count();
+        let taken: usize = kept_pairs.iter().map(|row| row.arms[a].cities).sum();
         let gained = kept_pairs
             .iter()
-            .filter(|row| row.arms[a].captured.is_some() && row.arms[0].captured.is_none())
+            .filter(|row| row.arms[a].cities > row.arms[0].cities)
             .count();
         let lost_caps = kept_pairs
             .iter()
-            .filter(|row| row.arms[a].captured.is_none() && row.arms[0].captured.is_some())
+            .filter(|row| row.arms[a].cities < row.arms[0].cities)
             .count();
         let invested = kept_pairs
             .iter()
@@ -791,8 +855,9 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
             .iter()
             .map(|o| {
                 format!(
-                    "{}/{}/{}{}",
+                    "{}x{}/{}/{}{}",
                     o.captured.map_or("-".to_string(), |t| t.to_string()),
+                    o.cities,
                     o.lost,
                     o.stage,
                     if o.peace { " peace" } else { "" }
