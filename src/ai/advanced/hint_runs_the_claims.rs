@@ -143,6 +143,13 @@ impl AdvancedAi {
         if growth_claims {
             self.claim_trader_for_idle_route(g, pid, plan);
         }
+        // `endgame-army-takes-the-queue`: once a Domination seat's clock is
+        // short, idle queues and fresh long-payback builds train the army as
+        // far as the income carries its upkeep, after the breaker, deterrence
+        // and Trader claims and ahead of every growth and economy claim.
+        // Exact no-op while the gene is off. See
+        // `advanced/endgame_army_takes_the_queue.rs`.
+        self.claim_endgame_army_queues(g, pid, plan);
         // Remember idle opportunities before routine claims fill them.
         let commerce = if !war_holds {
             self.culture_commerce_candidate(g, pid, plan)
