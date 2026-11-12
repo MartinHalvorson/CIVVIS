@@ -2113,6 +2113,16 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertEqual(civ6_play.setup_drift({**seat, "city_states": 9}, reload),
                          ["city_states 9 != 6"])
 
+    def test_a_hung_rival_turn_skips_the_dialogue_rescue(self) -> None:
+        """`--ai-stall-seconds` reaches both watch loops, defaults to the
+        climb's frozen threshold, and the rescue loop ends on its reason
+        instead of sweeping clicks over a live map."""
+        source = Path(civ6_play.__file__).read_text()
+        self.assertEqual(source.count("ai_stall_s=args.ai_stall_seconds or None"), 2)
+        self.assertIn('ap.add_argument("--ai-stall-seconds", type=float, default=240.0', source)
+        self.assertIn("if reason.startswith(watch.AI_PHASE_STALL_REASON):", source)
+        self.assertTrue(civ6_play.watch.AI_PHASE_STALL_REASON.startswith("stalled"))
+
     def test_the_live_lane_seat_passes(self) -> None:
         """The seat every 2026-10-04 game reported (G61-G65)."""
         live = {"players": 4, "size": "MAPSIZE_TINY", "map": "Pangaea.lua", "city_states": 6}
