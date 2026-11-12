@@ -471,6 +471,12 @@ struct Round {
     /// and of those, the ones that spent it.
     melee_ready: usize,
     melee_struck: usize,
+    /// Our treasury and income at the start of our turn.
+    gold: f64,
+    gold_per_turn: f64,
+    /// Player 0's events from the start of our turn to the end of the
+    /// owner's (`Game::events`).
+    events: Vec<String>,
 }
 
 fn land_soldier(g: &Game, unit: &crate::game::Unit) -> bool {
@@ -602,6 +608,8 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
     let mut before: Option<Before> = None;
     // Read before our end of turn, which may hand the moves back.
     let mut fired_now = 0;
+    let mut events_seen = g.events.len();
+    let mut gold_now = (0.0, 0.0);
     let mut struck_now = 0;
     let mut striking_dead = 0;
     while g.winner.is_none() && g.turn < start + turns && steps < 64 * turns {
@@ -622,6 +630,7 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
         }
         if pid == 0 {
             let pre = before_our_turn(&g, w);
+            gold_now = (g.players[0].gold, g.players[0].gold_per_turn);
             ours.take_turn(&mut g, 0);
             fired_now = pre
                 .ready_shooters
@@ -731,6 +740,8 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
             round.melee_ready = pre.ready_melee.len();
             round.melee_struck = struck_now;
             round.died_striking = striking_dead;
+            round.gold = gold_now.0;
+            round.gold_per_turn = gold_now.1;
             round.city_damage = pre.health - (round.hp + round.wall);
             round.unit_damage = pre
                 .enemy_hp
@@ -771,6 +782,14 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
                         }
                     }
                 }
+                round.events.extend(
+                    g.events
+                        .iter()
+                        .skip(events_seen)
+                        .filter(|event| event.player == 0)
+                        .map(|event| event.text.clone()),
+                );
+                events_seen = g.events.len();
                 let ledger = g.combat_ledger(0).units_lost as usize;
                 round.combat_deaths = ledger.saturating_sub(combat_seen);
                 combat_seen = ledger;
@@ -1399,6 +1418,15 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
                     r.deaths,
                     r.died_striking
                 );
+                if r.deaths > 0 || k == 0 {
+                    let _ = writeln!(
+                        out,
+                        "      gold {:.0} ({:+.0} a turn); events: {}",
+                        r.gold,
+                        r.gold_per_turn,
+                        r.events.join(" / ").chars().take(400).collect::<String>()
+                    );
+                }
             }
         }
     }
