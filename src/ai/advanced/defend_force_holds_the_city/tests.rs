@@ -134,28 +134,46 @@ fn a_shooter_swaps_into_the_centre() {
 fn the_ring_tiles_the_enemy_melee_reaches_are_blocked() {
     let (mut g, city) = front();
     spawn(&mut g, "archer", 0, city);
-    let west: Vec<u32> = [at(7, 7), at(7, 9)]
+    let west: Vec<u32> = [at(7, 7), at(7, 9), at(6, 8)]
         .into_iter()
         .map(|pos| spawn(&mut g, "spearman", 0, pos))
         .collect();
-    spawn(&mut g, "swordsman", 1, at(11, 8));
-    spawn(&mut g, "swordsman", 1, at(11, 9));
+    let enemies: Vec<u32> = [at(10, 7), at(11, 8), at(10, 9)]
+        .into_iter()
+        .map(|pos| spawn(&mut g, "swordsman", 1, pos))
+        .collect();
+    // The ring tiles an enemy swordsman can stand on next turn, read before
+    // anyone moves.
+    let reach: BTreeSet<Pos> = enemies
+        .iter()
+        .flat_map(|uid| g.threat_reach(*uid))
+        .collect();
+    let threatened: Vec<Pos> = g
+        .nbrs(city)
+        .into_iter()
+        .filter(|tile| reach.contains(tile))
+        .collect();
+    assert!(threatened.len() >= 2, "the board threatens the east ring");
     let mut ai = gene_on();
     ai.hold_the_cities(&mut g, 0, &BTreeSet::new());
-    let enemies: Vec<Pos> = g
-        .units
-        .values()
-        .filter(|unit| unit.owner == 1)
-        .map(|unit| unit.pos)
+    let ring_posts: Vec<Pos> = west
+        .iter()
+        .filter_map(|uid| ai.defend_hold_plan.posts.get(uid))
+        .filter(|post| post.role == HoldRole::Ring)
+        .map(|post| post.at)
         .collect();
-    for uid in &west {
-        let post = &ai.defend_hold_plan.posts[uid];
-        assert_eq!(post.role, HoldRole::Ring, "a spearman blocks the ring");
-        assert_eq!(g.units[uid].pos, post.at);
-        assert_eq!(g.wdist(post.at, city), 1);
-        // Nearest threat first: each block faces the attackers.
-        let nearest = enemies.iter().map(|e| g.wdist(*e, post.at)).min().unwrap();
-        assert!(nearest <= 3, "the block stands on the threatened side");
+    // The two spearmen on the west ring can each reach an east tile this
+    // turn; the third, two tiles west, cannot.
+    assert!(
+        ring_posts.len() >= 2,
+        "the spearmen in reach block the threatened ring: {ring_posts:?} of {threatened:?}"
+    );
+    for tile in &ring_posts {
+        assert!(
+            threatened.contains(tile),
+            "a block stands where the enemy can reach"
+        );
+        assert!(g.unit_ids_at(*tile).iter().any(|id| west.contains(id)));
     }
 }
 
@@ -357,6 +375,18 @@ enum Set {
     Force,
 }
 
+/// What a board set fields: our garrisons, our soldiers about the front
+/// city and how many, the attackers, how many, and how far out.
+struct Mix {
+    garrison: &'static [&'static str],
+    own: &'static [&'static str],
+    theirs: &'static [&'static str],
+    extra: (i32, i32),
+    attackers: (i32, i32),
+    near: i32,
+    far: i32,
+}
+
 /// One posed defence: two cities of ours, a garrison in each, soldiers
 /// around the front city, and an attacking force east of it.
 fn posed(seed: u64, set: Set) -> Game {
@@ -368,19 +398,11 @@ fn posed(seed: u64, set: Set) -> Game {
     war(&mut g, 0, 1);
     let ours = [capital, second];
     let front = rng.below(2);
-    let (garrison, own, theirs, extra, attackers, near, far): (
-        &[&str],
-        &[&str],
-        &[&str],
-        (i32, i32),
-        (i32, i32),
-        i32,
-        i32,
-    ) = match set {
-        Set::Light => (
-            &["warrior", "slinger", "archer", "spearman", "warrior"],
-            &["warrior", "archer", "spearman", "horseman", "slinger"],
-            &[
+    let mix = match set {
+        Set::Light => Mix {
+            garrison: &["warrior", "slinger", "archer", "spearman", "warrior"],
+            own: &["warrior", "archer", "spearman", "horseman", "slinger"],
+            theirs: &[
                 "swordsman",
                 "horseman",
                 "archer",
@@ -389,20 +411,20 @@ fn posed(seed: u64, set: Set) -> Game {
                 "warrior",
                 "swordsman",
             ],
-            (1, 3),
-            (3, 6),
-            2,
-            3,
-        ),
-        Set::Force => (
-            &[
+            extra: (1, 3),
+            attackers: (3, 6),
+            near: 2,
+            far: 3,
+        },
+        Set::Force => Mix {
+            garrison: &[
                 "crossbowman",
                 "pikeman",
                 "man_at_arms",
                 "archer",
                 "spearman",
             ],
-            &[
+            own: &[
                 "crossbowman",
                 "pikeman",
                 "man_at_arms",
@@ -412,7 +434,7 @@ fn posed(seed: u64, set: Set) -> Game {
                 "spearman",
                 "horseman",
             ],
-            &[
+            theirs: &[
                 "knight",
                 "crossbowman",
                 "pikeman",
@@ -422,12 +444,21 @@ fn posed(seed: u64, set: Set) -> Game {
                 "bombard",
                 "cuirassier",
             ],
-            (4, 8),
-            (5, 8),
-            2,
-            4,
-        ),
+            extra: (4, 8),
+            attackers: (5, 8),
+            near: 2,
+            far: 4,
+        },
     };
+    let Mix {
+        garrison,
+        own,
+        theirs,
+        extra,
+        attackers,
+        near,
+        far,
+    } = mix;
     for city in ours {
         spawn(&mut g, garrison[rng.below(garrison.len())], 0, city);
     }
@@ -691,6 +722,4 @@ fn paired_posed_defences_four_arms() {
     assert!(posts > 0, "the hold drew posts\n{report}");
     assert_eq!(broken, 0, "a posted unit left its post\n{report}");
     assert_eq!(shared, 0, "a tile was posted twice\n{report}");
-    // WIP: the CI log is the read-out.
-    panic!("{report}");
 }

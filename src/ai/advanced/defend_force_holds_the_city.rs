@@ -163,6 +163,10 @@ fn can_reach(g: &Game, uid: u32, pos: Pos) -> bool {
     g.units.get(&uid).is_some_and(|unit| unit.pos == pos) || g.reachable(uid).contains(&pos)
 }
 
+/// How a blow from a post ranks: beside the city, kills, damage, then the
+/// tile.
+type BlowKey = (bool, bool, i64, std::cmp::Reverse<Pos>);
+
 /// A visible enemy soldier near a held city, and its reach next turn.
 struct Threat {
     uid: u32,
@@ -778,13 +782,12 @@ impl AdvancedAi {
                 })
         };
         // (beside the city, kills, damage, tile) -> the order.
-        let mut best: Option<((bool, bool, i64, std::cmp::Reverse<Pos>), Action, bool)> = None;
-        let mut consider =
-            |key: (bool, bool, i64, std::cmp::Reverse<Pos>), action: Action, advances: bool| {
-                if best.as_ref().is_none_or(|(k, _, _)| key > *k) {
-                    best = Some((key, action, advances));
-                }
-            };
+        let mut best: Option<(BlowKey, Action, bool)> = None;
+        let mut consider = |key: BlowKey, action: Action, advances: bool| {
+            if best.as_ref().is_none_or(|(k, _, _)| key > *k) {
+                best = Some((key, action, advances));
+            }
+        };
         if spec.has_ranged_attack() {
             let frame = g.player_vision_frame(pid);
             let viewers = g.visibility_viewers(pid);
@@ -868,27 +871,24 @@ impl AdvancedAi {
             }
             let left = after.units.get(&uid).is_none_or(|unit| unit.pos != centre);
             if left {
-                let refill = self
-                    .defend_hold_plan
-                    .posts
-                    .iter()
-                    .filter(|(other, other_post)| {
-                        **other != uid
-                            && other_post.city == post.city
-                            && matches!(other_post.role, HoldRole::Shooter | HoldRole::March)
-                    })
-                    .map(|(other, _)| *other)
-                    .find(|other| {
-                        after
-                            .units
-                            .get(other)
-                            .is_some_and(|unit| unit.moves_left > 0.0 && unit.attacks_left > 0)
-                            && after.reachable(*other).contains(&centre)
-                    });
-                if refill.is_none() {
-                    return None;
-                }
-                refill
+                Some(
+                    self.defend_hold_plan
+                        .posts
+                        .iter()
+                        .filter(|(other, other_post)| {
+                            **other != uid
+                                && other_post.city == post.city
+                                && matches!(other_post.role, HoldRole::Shooter | HoldRole::March)
+                        })
+                        .map(|(other, _)| *other)
+                        .find(|other| {
+                            after
+                                .units
+                                .get(other)
+                                .is_some_and(|unit| unit.moves_left > 0.0 && unit.attacks_left > 0)
+                                && after.reachable(*other).contains(&centre)
+                        })?,
+                )
             } else {
                 None
             }
