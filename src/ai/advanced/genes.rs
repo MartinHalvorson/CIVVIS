@@ -6060,6 +6060,18 @@ pub const GENES: &[Gene] = &[
     // on the best paying city and the war opens once its takers stand there.
     // Opt-in; see `advanced/score_takes_what_pays.rs`.
     Gene { tag: "score-seat-takes-what-pays", field: "score_seat_takes_what_pays", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_takes_what_pays, disable: AdvancedAi::disable_score_seat_takes_what_pays },
+    // Version one's "owner's military at most ours" never opened at Deity
+    // (live 222448Z refused five paying cities at 5-17 expected points a
+    // hundred; 60 of 60 paired sims identical). Graded caps on the owner's
+    // military, with the local picture (soldiers near the city, the assault
+    // forecast at the declaration), walled and garrisoned border cities and a
+    // funded corps; a garrison in the city taken and peace after it.
+    Gene { tag: "score-seat-takes-what-pays-2", field: "score_seat_takes_what_pays_2", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_takes_what_pays_2, disable: AdvancedAi::disable_score_seat_takes_what_pays_2 },
+    Gene { tag: "score-seat-takes-what-pays-3", field: "score_seat_takes_what_pays_3", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_takes_what_pays_3, disable: AdvancedAi::disable_score_seat_takes_what_pays_3 },
+    // Any ratio, when the capture lands within three turns of the declaration
+    // and peace is asked the turn after: whether tempo stands in for power.
+    // Not a version of the family (it holds three); overrides any version.
+    Gene { tag: "score-seat-grabs-what-pays", field: "score_seat_grabs_what_pays", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_grabs_what_pays, disable: AdvancedAi::disable_score_seat_grabs_what_pays },
     // Rome Score seat civvis-20261112T190022Z (t170 tally 529 against 1,531):
     // no wonder (the Score lane priced one at +180 raw), 27% of production on
     // units in a game with no war, 601 Production unfinished at the tally.

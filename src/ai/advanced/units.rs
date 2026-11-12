@@ -1202,6 +1202,13 @@ impl AdvancedAi {
             self.ordering(OrderStep::CentreGarrison);
             return acted;
         }
+        // `score-seat-takes-what-pays` (graded): a centre we took keeps a
+        // soldier, and an empty one takes one in reach. `None` with the graded
+        // versions off. See `advanced/score_takes_what_pays.rs`.
+        if let Some(acted) = self.score_take_garrison_step(g, pid, uid) {
+            self.ordering(OrderStep::CentreGarrison);
+            return acted;
+        }
         // `amphibious-siege-train`: a member of the crossing in hand takes
         // the train's orders before anything else can land it at home. `None`
         // with the gene off. See `advanced/amphibious_siege_train.rs`.

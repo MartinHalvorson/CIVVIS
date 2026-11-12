@@ -5512,6 +5512,16 @@
           "science-victory-drive-2": null
         }
       },
+      "score-seat-takes-what-pays": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "score-seat-takes-what-pays": null,
+          "score-seat-takes-what-pays-2": null,
+          "score-seat-takes-what-pays-3": null
+        }
+      },
       "sea-scout-claims-the-queue": {
         "rule_on": [],
         "head": null,

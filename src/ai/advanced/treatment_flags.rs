@@ -462,6 +462,15 @@ impl AdvancedAi {
         /// Opt-in `score-seat-takes-what-pays`; see
         /// `advanced/score_takes_what_pays.rs`.
         score_seat_takes_what_pays => enable_score_seat_takes_what_pays, disable_score_seat_takes_what_pays;
+        /// Opt-in `score-seat-takes-what-pays-2`; see
+        /// `advanced/score_takes_what_pays.rs`.
+        score_seat_takes_what_pays_2 => enable_score_seat_takes_what_pays_2, disable_score_seat_takes_what_pays_2;
+        /// Opt-in `score-seat-takes-what-pays-3`; see
+        /// `advanced/score_takes_what_pays.rs`.
+        score_seat_takes_what_pays_3 => enable_score_seat_takes_what_pays_3, disable_score_seat_takes_what_pays_3;
+        /// Opt-in `score-seat-grabs-what-pays`; see
+        /// `advanced/score_takes_what_pays.rs`.
+        score_seat_grabs_what_pays => enable_score_seat_grabs_what_pays, disable_score_seat_grabs_what_pays;
         /// Opt-in gene `score-seat-plays-for-points`; see
         /// `advanced/score_seat.rs`.
         score_seat_plays_for_points => enable_score_seat_plays_for_points, disable_score_seat_plays_for_points;

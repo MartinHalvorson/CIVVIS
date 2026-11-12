@@ -64,14 +64,52 @@
 //!   denouncement, then the Formal War), with the treasury, the one-war rule
 //!   and the peace treaty still holding it; the Formal War re-reads the
 //!   window when it is due.
-//! - **After.** A capture is journalled with its points; the board then
-//!   names the next paying city or none, and the shipped peace desk decides.
+//! - **After.** A capture is journalled with its points and what the war
+//!   cost; the board then names the next paying city or none, and the
+//!   shipped peace desk decides.
+//!
+//! ## The graded versions (`-2`, `-3`) and the grab
+//! (`score-seat-grabs-what-pays`)
+//!
+//! The empire-wide comparison of version one never opened at Deity: live
+//! `civvis-20261112T222448Z` read five paying cities at 5-17 expected
+//! points a hundred Production (Tula, St. Petersburg, Novgorod, Bangalore)
+//! and refused every one on "its owner's military stands above ours", and
+//! the 60 paired sims played identically. A Deity neighbour fields 1.4 to
+//! 5 times our military all game. The graded versions trade that one test
+//! for the circumstances that decide a quick grab, and cap the empire-wide
+//! ratio at [`SCORE_TAKE_POWER_RATIO_2`] (`-2`), [`SCORE_TAKE_POWER_RATIO_3`]
+//! (`-3`) or not at all (the grab, `score-seat-grabs-what-pays`, whose
+//! capture must land within [`SCORE_TAKE_QUICK_TURNS`] turns of the
+//! declaration and which asks peace the turn after it; the family holds at
+//! most three versions, so the grab is its own tag and overrides any version
+//! played beside it). Each adds:
+//!
+//! - **The local picture.** The owner's soldiers in sight within
+//!   [`SCORE_TAKE_LOCAL_REACH`] tiles of the city are no stronger than the
+//!   corps; and at the declaration the assault forecast, read as if the war
+//!   began this turn, gives a calibrated P(capture within the window) of at
+//!   least [`SCORE_TAKE_FORECAST_P`] for the mustered takers.
+//! - **The home front.** Every city of ours within
+//!   [`SCORE_TAKE_BORDER_REACH`] tiles of one of the owner's holds Walls and
+//!   a garrison: a city without is the price of the war.
+//! - **The treasury.** It carries the corps' upkeep for
+//!   [`SCORE_TAKE_FUNDED_TURNS`] turns, and the shipped war reserve holds.
+//! - **After the capture.** The captured centre keeps (or takes) a soldier
+//!   for [`SCORE_TAKE_HOLD_TURNS`] standard turns, and peace is offered to
+//!   its owner once no second paying city of its stands in reach (the
+//!   grab: at once).
+//!
+//! A city is remembered by its tile and its owner by name: the live mirror
+//! rebuilds city and city-state ids every frame.
 
 use super::open_city_objective::open_city_take_turns;
 use super::soft_city_window::SOFT_CITY_GARRISON_BONUS;
 use super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
-use crate::game::{effective_strength, Game, Item};
+use crate::game::{effective_strength, Action, Game, Item};
 use crate::think;
+use crate::Pos;
+use std::collections::BTreeMap;
 
 /// Tiles from one of our cities a candidate may stand.
 pub(crate) const SCORE_TAKE_REACH: i32 = 12;
@@ -97,6 +135,32 @@ pub(crate) const SCORE_TAKE_MUSTER_TURNS: u32 = 5;
 pub(crate) const SCORE_TAKE_WALL_WINDOW: u32 = 7;
 /// The most the owner's military may be, as a multiple of ours.
 pub(crate) const SCORE_TAKE_POWER_RATIO: f64 = 1.0;
+/// `-2`: the most the owner's military may be, as a multiple of ours.
+pub(crate) const SCORE_TAKE_POWER_RATIO_2: f64 = 1.5;
+/// `-3`: the most the owner's military may be, as a multiple of ours.
+pub(crate) const SCORE_TAKE_POWER_RATIO_3: f64 = 2.5;
+/// The grab (`score-seat-grabs-what-pays`): the turns, from the declaration,
+/// within which the capture lands (march included); no empire-wide cap.
+pub(crate) const SCORE_TAKE_QUICK_TURNS: u32 = 3;
+/// Graded: tiles from the city within which the owner's soldiers in sight
+/// must be no stronger than the corps.
+pub(crate) const SCORE_TAKE_LOCAL_REACH: i32 = 6;
+/// Graded: tiles from one of the owner's cities within which a city of ours
+/// must hold Walls and a garrison.
+pub(crate) const SCORE_TAKE_BORDER_REACH: i32 = 10;
+/// Graded: turns of the corps' upkeep the treasury must carry.
+pub(crate) const SCORE_TAKE_FUNDED_TURNS: f64 = 15.0;
+/// Graded: the least calibrated P(capture within the window) the assault
+/// forecast must read for the mustered takers at the declaration. Readings
+/// under 0.2 were right (4% realized); this asks a little more than a no.
+pub(crate) const SCORE_TAKE_FORECAST_P: f32 = 0.3;
+/// Graded: the expected-points factor on the forecast's calibrated reading.
+pub(crate) const SCORE_TAKE_FORECAST_FACTOR: f64 = 0.5;
+/// Graded: standard turns a captured city's centre keeps a soldier.
+pub(crate) const SCORE_TAKE_HOLD_TURNS: u32 = 20;
+/// Graded: tiles from a held centre a soldier of ours may come from to fill
+/// it.
+pub(crate) const SCORE_TAKE_FILL_REACH: i32 = 3;
 /// Tiles from the city within which the takers count for the declaration.
 pub(crate) const SCORE_TAKE_STAGE_REACH: i32 = 6;
 /// Tiles from the city within which the owner's soldiers in sight answer.
@@ -141,11 +205,21 @@ pub(crate) struct ScoreTake {
     pub(crate) minor: bool,
 }
 
-/// What the gene named last turn and has journalled.
+/// What the gene named last turn and has journalled. Cities by tile and
+/// owners by name: the live mirror rebuilds their ids every frame.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct ScoreTakeState {
-    /// The city the plan is taking, its owner and its points when named.
-    pub(crate) named: Option<(usize, u32, f64)>,
+    /// The city the plan is taking: its tile, its owner's name and its
+    /// points when named.
+    pub(crate) named: Option<(Pos, String, f64)>,
+    /// The war on the named city's owner: its name and our ledger against
+    /// it (units lost, theirs, cities lost, theirs) when the war began.
+    pub(crate) war_base: Option<(String, (u32, u32, u32, u32))>,
+    /// Graded: centres we took, with their former owner's name and the turn
+    /// they hold a garrison until.
+    pub(crate) held: BTreeMap<Pos, (String, u32)>,
+    /// Graded: owners we took a city from in the war still running.
+    pub(crate) took_from: BTreeMap<String, u32>,
     /// The last board line: its key and turn.
     pub(crate) line: Option<(Option<u32>, String, u32)>,
     /// The last turn the declaration said it was holding for the muster.
@@ -153,10 +227,58 @@ pub(crate) struct ScoreTakeState {
 }
 
 impl AdvancedAi {
-    /// Whether the gene acts for this seat: on, and on the Score lane.
+    /// The version this seat plays: 4 (the grab), 3, 2, 1, or 0 with every
+    /// version off. A seat plays at most one of the family; the grab
+    /// overrides it.
+    pub(crate) fn score_take_version(&self) -> u8 {
+        if self.score_seat_grabs_what_pays {
+            4
+        } else if self.score_seat_takes_what_pays_3 {
+            3
+        } else if self.score_seat_takes_what_pays_2 {
+            2
+        } else {
+            u8::from(self.score_seat_takes_what_pays)
+        }
+    }
+
+    /// Whether a graded version (`-2`, `-3`) or the grab plays.
+    pub(crate) fn score_take_graded(&self) -> bool {
+        self.score_take_version() >= 2
+    }
+
+    /// The most the owner's military may be, as a multiple of ours.
+    pub(crate) fn score_take_power_ratio(&self) -> f64 {
+        match self.score_take_version() {
+            2 => SCORE_TAKE_POWER_RATIO_2,
+            3 => SCORE_TAKE_POWER_RATIO_3,
+            4 => f64::INFINITY,
+            _ => SCORE_TAKE_POWER_RATIO,
+        }
+    }
+
+    /// The turns from the declaration within which the capture must land.
+    pub(crate) fn score_take_window(&self) -> u32 {
+        if self.score_take_version() == 4 {
+            SCORE_TAKE_QUICK_TURNS
+        } else {
+            SCORE_TAKE_WALL_WINDOW
+        }
+    }
+
+    /// Whether the gene acts for this seat: a version on, and on the Score
+    /// lane.
     pub(crate) fn score_take_on(&self, g: &Game) -> bool {
-        self.score_seat_takes_what_pays
-            && self.active_victory_target(g) == Some(VictoryTarget::Score)
+        self.score_take_version() > 0 && self.active_victory_target(g) == Some(VictoryTarget::Score)
+    }
+
+    /// The named city as this frame knows it: its owner and id, resolved
+    /// from its tile.
+    pub(crate) fn score_take_named_city(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
+        let (pos, _, _) = self.score_take_state.named.as_ref()?;
+        let cid = g.city_at(*pos)?;
+        let owner = g.cities[&cid].owner;
+        (owner != pid).then_some((owner, cid))
     }
 
     /// Whether the plan names a paying city this turn. `false` with the
@@ -180,7 +302,7 @@ impl AdvancedAi {
     /// gene off; the name is only ever held on the Score lane
     /// (`score_take_observe` clears it elsewhere).
     pub(crate) fn score_take_lifts_the_cap(&self) -> bool {
-        self.score_seat_takes_what_pays && self.score_take_state.named.is_some()
+        self.score_take_version() > 0 && self.score_take_state.named.is_some()
     }
 
     /// The city's score to its holder: 5, its citizens, 2 a district (4 a
@@ -237,7 +359,7 @@ impl AdvancedAi {
 
     /// The best melee body a city of ours can train now: its strength and
     /// Production cost.
-    fn score_take_trainable(g: &Game, pid: usize) -> Option<(f64, f64)> {
+    fn score_take_trainable(g: &Game, pid: usize) -> Option<(f64, f64, f64)> {
         let cities = g.player_city_ids(pid);
         g.rules
             .units
@@ -251,7 +373,7 @@ impl AdvancedAi {
                     .filter(|cid| g.can_produce(pid, *cid, &item))
                     .map(|cid| g.item_remaining_cost_for_city(pid, cid, &item))
                     .min_by(f64::total_cmp)
-                    .map(|cost| (spec.strength, cost))
+                    .map(|cost| (spec.strength, cost, spec.maintenance))
             })
             .max_by(|a, b| a.0.total_cmp(&b.0).then(b.1.total_cmp(&a.1)))
     }
@@ -356,12 +478,12 @@ impl AdvancedAi {
                 .map(|(_, strength, hp, _)| (*strength, *hp, 1))
                 .collect();
             if new > 0 {
-                let (strength, _) = trainable?;
+                let (strength, _, _) = trainable?;
                 force.extend(std::iter::repeat_n((strength, 100, 1), new));
             }
             if let Some(turns) = Self::score_take_turns(&force, defence, city.hp, SCORE_TAKE_TURNS)
             {
-                let production = new as f64 * trainable.map_or(0.0, |(_, cost)| cost);
+                let production = new as f64 * trainable.map_or(0.0, |(_, cost, _)| cost);
                 let march = standing
                     .first()
                     .map(|(_, _, _, first)| *first)
@@ -424,34 +546,42 @@ impl AdvancedAi {
         pid: usize,
         take: &ScoreTake,
         threatened: bool,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), String> {
         let ours = g.military_power(pid);
-        if g.military_power(take.rival) > SCORE_TAKE_POWER_RATIO * ours {
-            return Err("its owner's military stands above ours");
+        let ratio = self.score_take_power_ratio();
+        if g.military_power(take.rival) > ratio * ours {
+            return Err(if ratio <= SCORE_TAKE_POWER_RATIO {
+                "its owner's military stands above ours".to_string()
+            } else {
+                format!("its owner's military stands above {ratio:.1} times ours")
+            });
         }
         if threatened || Self::our_cities_falling(g, pid) {
-            return Err("a city of ours is threatened");
+            return Err("a city of ours is threatened".to_string());
         }
         if self
             .one_war_enemies(g, pid)
             .into_iter()
             .any(|enemy| enemy != take.rival)
         {
-            return Err("we are at war with another major");
+            return Err("we are at war with another major".to_string());
         }
         let at_war = g.is_at_war(pid, take.rival);
         if !at_war && !self.campaign_target_legal(g, pid, take.rival) {
-            return Err("the war would not be legal");
+            return Err("the war would not be legal".to_string());
         }
         if take.minor && !at_war {
             if g.envoys_at(pid, take.rival) > 0 {
-                return Err("our envoys stand in that city-state");
+                return Err("our envoys stand in that city-state".to_string());
             }
             if let Some(suzerain) = g.suzerain_of(take.rival) {
-                if suzerain == pid || g.military_power(suzerain) > SCORE_TAKE_POWER_RATIO * ours {
-                    return Err("its suzerain is us or stronger than us");
+                if suzerain == pid || g.military_power(suzerain) > ratio * ours {
+                    return Err("its suzerain is us or stronger than us".to_string());
                 }
             }
+        }
+        if self.score_take_graded() {
+            self.score_take_local(g, pid, take)?;
         }
         let production: f64 = g
             .player_city_ids(pid)
@@ -475,7 +605,93 @@ impl AdvancedAi {
             );
         let lands = g.turn + build as u32 + march + take.turns + SCORE_TAKE_TALLY_MARGIN;
         if g.max_turns > 0 && lands > g.max_turns {
-            return Err("the capture would land after the tally");
+            return Err("the capture would land after the tally".to_string());
+        }
+        Ok(())
+    }
+
+    /// The graded versions' local circumstances: the owner's soldiers in
+    /// sight near the city no stronger than the corps, every city of ours in
+    /// the owner's reach walled and garrisoned, the treasury carrying the
+    /// corps, and (the grab) the capture within its quick window.
+    pub(crate) fn score_take_local(
+        &self,
+        g: &Game,
+        pid: usize,
+        take: &ScoreTake,
+    ) -> Result<(), String> {
+        let Some(city) = g.cities.get(&take.city) else {
+            return Err("the city is gone".to_string());
+        };
+        if self.score_take_version() == 4 && take.turns > SCORE_TAKE_QUICK_TURNS {
+            return Err(format!(
+                "the corps takes it in {} turns, over the {SCORE_TAKE_QUICK_TURNS} a grab at any odds allows",
+                take.turns
+            ));
+        }
+        let trainable = Self::score_take_trainable(g, pid);
+        let standing: f64 = self
+            .score_take_standing(g, pid, city.pos, SCORE_TAKE_REACH)
+            .iter()
+            .take(take.standing)
+            .map(|(_, strength, hp, _)| effective_strength(*strength, *hp))
+            .sum();
+        let new = (take.bodies - take.standing) as f64;
+        let corps = standing + new * trainable.map_or(0.0, |(strength, _, _)| strength);
+        let visible = self.battlefront_visibility(g, pid);
+        let theirs: f64 = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == city.owner)
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
+            .filter(|unit| g.wdist(unit.pos, city.pos) <= SCORE_TAKE_LOCAL_REACH)
+            .filter(|unit| g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid))
+            .map(|unit| effective_strength(g.unit_strength(unit, true), unit.hp))
+            .sum();
+        if theirs > corps {
+            return Err(format!(
+                "its soldiers within {SCORE_TAKE_LOCAL_REACH} tiles ({theirs:.0}) outweigh the corps ({corps:.0})"
+            ));
+        }
+        let owner_cities: Vec<Pos> = g
+            .player_city_ids(city.owner)
+            .into_iter()
+            .map(|cid| g.cities[&cid].pos)
+            .collect();
+        for ours in g.player_city_ids(pid) {
+            let home = &g.cities[&ours];
+            if !owner_cities
+                .iter()
+                .any(|pos| g.wdist(*pos, home.pos) <= SCORE_TAKE_BORDER_REACH)
+            {
+                continue;
+            }
+            let garrisoned = g.unit_ids_at(home.pos).iter().any(|uid| {
+                g.units.get(uid).is_some_and(|unit| {
+                    unit.owner == pid && g.rules.units[unit.kind].class == "military"
+                })
+            });
+            if home.wall_hp <= 0 || !garrisoned {
+                return Err(format!(
+                    "{} lies within {SCORE_TAKE_BORDER_REACH} tiles of its owner without {}",
+                    home.name,
+                    match (home.wall_hp > 0, garrisoned) {
+                        (false, false) => "Walls or a garrison",
+                        (false, true) => "Walls",
+                        _ => "a garrison",
+                    }
+                ));
+            }
+        }
+        let upkeep = take.bodies as f64 * trainable.map_or(2.0, |(_, _, upkeep)| upkeep.max(1.0));
+        let gold = g.players[pid].gold;
+        let per_turn = g.players[pid].gold_per_turn - upkeep;
+        if !self.treasury_can_carry_a_war(g, pid)
+            || (per_turn < 0.0 && gold + per_turn * SCORE_TAKE_FUNDED_TURNS < 0.0)
+        {
+            return Err(format!(
+                "the treasury would not carry the corps ({gold:.0} Gold at {per_turn:+.0} a turn with its {upkeep:.0} upkeep)"
+            ));
         }
         Ok(())
     }
@@ -501,24 +717,55 @@ impl AdvancedAi {
     }
 
     /// Once a turn: record the city the plan names, journal the board when
-    /// it changes, and journal a capture with its points. Exact no-op off.
+    /// it changes, journal a capture with its points and what the war cost,
+    /// and (graded) keep the captured centres and the owners we took from.
+    /// Exact no-op off.
     pub(crate) fn score_take_observe(&mut self, g: &Game, pid: usize) {
         if !self.score_take_on(g) {
             self.score_take_state = ScoreTakeState::default();
             return;
         }
         // A capture of the named city.
-        if let Some((rival, cid, _)) = self.score_take_state.named {
-            if g.cities.get(&cid).is_some_and(|city| city.owner == pid) {
+        if let Some((pos, civ, _)) = self.score_take_state.named.clone() {
+            if let Some(cid) = g.city_at(pos).filter(|cid| g.cities[cid].owner == pid) {
                 let city = &g.cities[&cid];
+                let rival = g.players.iter().find(|p| p.civ == civ).map(|p| p.id);
+                let cost = match (rival, self.score_take_state.war_base.as_ref()) {
+                    (Some(rival), Some((base_civ, base))) if *base_civ == civ => {
+                        let now = self.one_war_ledger(g, pid, rival);
+                        format!(
+                            "; the war cost {} unit(s) and {} city(ies) of ours, against {} of theirs",
+                            now.0.saturating_sub(base.0),
+                            now.2.saturating_sub(base.2),
+                            now.1.saturating_sub(base.1)
+                        )
+                    }
+                    _ => String::new(),
+                };
                 think!(self.journal(), Strategy, Strategy,
-                       "Took {} from {}", city.name, g.players[rival].civ;
-                       "score-seat-takes-what-pays: {:.0} points to us ({} citizens, {} districts, {} buildings, {} wonders); the board names the next paying city or none",
+                       "Took {} from {}", city.name, civ;
+                       "score-seat-takes-what-pays: {:.0} points to us ({} citizens, {} districts, {} buildings, {} wonders){cost}; the board names the next paying city or none",
                        Self::score_city_points(g, cid), city.pop, city.districts.len(),
                        city.buildings.len(), city.wonders.len();
                        city.pos);
+                if self.score_take_graded() {
+                    let until = g.turn + g.standard_duration(SCORE_TAKE_HOLD_TURNS);
+                    self.score_take_state.held.insert(pos, (civ.clone(), until));
+                    self.score_take_state.took_from.insert(civ, g.turn);
+                }
             }
         }
+        // Held centres expire or fall; owners we made peace with are done.
+        self.score_take_state.held.retain(|pos, (_, until)| {
+            g.turn < *until
+                && g.city_at(*pos)
+                    .is_some_and(|cid| g.cities[&cid].owner == pid)
+        });
+        self.score_take_state.took_from.retain(|civ, _| {
+            g.players
+                .iter()
+                .any(|p| p.civ == *civ && p.alive && g.is_at_war(pid, p.id))
+        });
         let plan = self.plan.clone();
         let threatened = plan
             .as_ref()
@@ -529,8 +776,115 @@ impl AdvancedAi {
                 plan.strategy == GrandStrategy::Conquest && plan.target_city == Some(take.city)
             })
         });
-        self.score_take_state.named = named.map(|take| (take.rival, take.city, take.swing));
+        self.score_take_state.named = named.map(|take| {
+            (
+                g.cities[&take.city].pos,
+                g.players[take.rival].civ.clone(),
+                take.swing,
+            )
+        });
+        // The war on the named city's owner: our ledger when it began.
+        match named {
+            Some(take) if g.is_at_war(pid, take.rival) => {
+                let civ = g.players[take.rival].civ.clone();
+                if self
+                    .score_take_state
+                    .war_base
+                    .as_ref()
+                    .is_none_or(|(base_civ, _)| *base_civ != civ)
+                {
+                    let base = self.one_war_ledger(g, pid, take.rival);
+                    self.score_take_state.war_base = Some((civ, base));
+                }
+            }
+            Some(_) => self.score_take_state.war_base = None,
+            None => {}
+        }
         self.journal_score_take_board(g, pid, pick.as_ref(), threatened);
+    }
+
+    /// Graded: whether peace is offered to `other` because we took a city of
+    /// its in this war and no second paying city of its stands in reach
+    /// (the grab: at once). `false` with the graded versions off.
+    pub(crate) fn score_take_peace_due(&self, g: &Game, pid: usize, other: usize) -> bool {
+        if !self.score_take_graded() || !self.score_take_on(g) || !g.is_at_war(pid, other) {
+            return false;
+        }
+        let Some(civ) = g.players.get(other).map(|p| &p.civ) else {
+            return false;
+        };
+        if !self.score_take_state.took_from.contains_key(civ) {
+            return false;
+        }
+        self.score_take_version() == 4
+            || self
+                .score_take_pick(g, pid, false)
+                .is_none_or(|take| take.rival != other)
+    }
+
+    /// Graded: a soldier of ours on a centre we took keeps it for
+    /// [`SCORE_TAKE_HOLD_TURNS`]; an empty one takes the first soldier within
+    /// [`SCORE_TAKE_FILL_REACH`] that can step onto it this turn. `None` with
+    /// the graded versions off, or when neither applies.
+    pub(super) fn score_take_garrison_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> Option<bool> {
+        if !self.score_take_graded()
+            || self.score_take_state.held.is_empty()
+            || !Self::centre_soldier(g, pid, uid)
+        {
+            return None;
+        }
+        let at = g.units.get(&uid)?.pos;
+        let ours = |g: &Game, pos: Pos| {
+            g.city_at(pos)
+                .is_some_and(|cid| g.cities[&cid].owner == pid)
+        };
+        if self.score_take_state.held.contains_key(&at) && ours(g, at) {
+            return Some(self.base.fortify_or_stop(g, pid, uid));
+        }
+        if g.units[&uid].moves_left <= 0.0
+            || self.guard_is_bound_to_any_settler(uid)
+            || self.guard_is_reserved_for_civilian(uid)
+            || g.city_at(at).is_some_and(|cid| g.cities[&cid].owner == pid)
+        {
+            return None;
+        }
+        let empty = |g: &Game, pos: Pos| {
+            !g.unit_ids_at(pos).iter().any(|id| {
+                g.units.get(id).is_some_and(|other| {
+                    other.owner == pid && g.rules.units[other.kind].class == "military"
+                })
+            })
+        };
+        let mut open: Vec<(i32, Pos)> = self
+            .score_take_state
+            .held
+            .keys()
+            .copied()
+            .filter(|pos| ours(g, *pos) && empty(g, *pos))
+            .map(|pos| (g.wdist(at, pos), pos))
+            .filter(|(distance, _)| *distance <= SCORE_TAKE_FILL_REACH)
+            .collect();
+        open.sort();
+        let reach = g.reachable(uid);
+        let (_, to) = open.into_iter().find(|(_, pos)| reach.contains(pos))?;
+        if !self.base.path_walk_to(g, pid, uid, to) {
+            return None;
+        }
+        let kind = g.units[&uid].kind;
+        let name = g
+            .city_at(to)
+            .map(|cid| g.cities[&cid].name.clone())
+            .unwrap_or_default();
+        think!(self.journal(), Military, Decision,
+               "Garrisoning {name} with the {}", kind.as_str();
+               "score-seat-takes-what-pays: a city we took holds a soldier in its centre for {SCORE_TAKE_HOLD_TURNS} standard turns (martial law, and no empty centre to retake)";
+               to);
+        Some(true)
     }
 
     fn journal_score_take_board(
@@ -582,7 +936,7 @@ impl AdvancedAi {
                         g.cities[&take.city].name,
                         self.score_take_circumstances(g, pid, take, threatened)
                             .err()
-                            .unwrap_or("its circumstances do not hold")
+                            .unwrap_or_else(|| "its circumstances do not hold".to_string())
                     ),
                 }
             }
@@ -632,7 +986,7 @@ impl AdvancedAi {
         if !self.score_take_on(g) || plan.strategy != GrandStrategy::Conquest {
             return false;
         }
-        let Some((rival, cid, _)) = self.score_take_state.named else {
+        let Some((rival, cid)) = self.score_take_named_city(g, pid) else {
             return false;
         };
         if plan.target_city != Some(cid)
@@ -650,10 +1004,11 @@ impl AdvancedAi {
         if city.wall_hp > 0 {
             return false;
         }
+        let window = self.score_take_window();
         let takers: Vec<(u32, f64, i32, u32)> = self
             .score_take_standing(g, pid, city.pos, SCORE_TAKE_STAGE_REACH)
             .into_iter()
-            .filter(|(_, _, _, first)| *first <= SCORE_TAKE_MUSTER_TURNS)
+            .filter(|(_, _, _, first)| *first <= SCORE_TAKE_MUSTER_TURNS.min(window))
             .collect();
         let force: Vec<(f64, i32, u32)> = takers
             .iter()
@@ -667,8 +1022,22 @@ impl AdvancedAi {
             .map(|(_, _, _, first)| *first)
             .max()
             .unwrap_or(0);
-        let capture = Self::score_take_turns(&force, defence, city.hp, SCORE_TAKE_WALL_WINDOW);
-        let Some(turns) = capture.filter(|_| theirs <= ours) else {
+        let capture = Self::score_take_turns(&force, defence, city.hp, window);
+        // Graded: the assault forecast, read as if the war began this turn,
+        // must give the mustered takers a calibrated chance within the window.
+        let reading = if self.score_take_graded() && capture.is_some() && theirs <= ours {
+            let forecast = self.assault_forecast_at_peace(g, pid, cid, &ids);
+            Some((
+                forecast
+                    .as_ref()
+                    .map_or(0.0, |f| f.calibrated_within(window as usize, 0)),
+                forecast.as_ref().map_or(0.0, |f| f.units_lost),
+            ))
+        } else {
+            None
+        };
+        let forecast_short = reading.is_some_and(|(p, _)| p < SCORE_TAKE_FORECAST_P);
+        let Some(turns) = capture.filter(|_| theirs <= ours && !forecast_short) else {
             // Still mustering: say so at most every five turns.
             let due = self
                 .score_take_state
@@ -677,12 +1046,21 @@ impl AdvancedAi {
             if due && self.journal().wants(crate::reasoning::Level::Detail) {
                 self.score_take_state.muster_line = Some(g.turn);
                 let civ = g.players[rival].civ.clone();
+                let why = if theirs > ours {
+                    "are outweighed".to_string()
+                } else if let Some((p, _)) = reading.filter(|_| forecast_short) {
+                    format!(
+                        "read a calibrated {:.0}% within the {window}-turn window, under the {:.0}% the war asks",
+                        100.0 * p,
+                        100.0 * SCORE_TAKE_FORECAST_P
+                    )
+                } else {
+                    format!("do not take it within the {window}-turn window")
+                };
                 think!(self.journal(), Military, Detail,
                        "Mustering for {} before the war on {civ}", city.name;
-                       "score-seat-takes-what-pays: {} taker(s) within {} tiles and {} turns of it ({ours:.0} strength against {theirs:.0} in sight) {}; the war waits, since its walls come about {} turns after it begins; the city is named, so the peacetime army cap is lifted while the corps is raised and walks in",
-                       takers.len(), SCORE_TAKE_STAGE_REACH, SCORE_TAKE_MUSTER_TURNS,
-                       if theirs > ours { "are outweighed".to_string() } else { format!("do not take it within the {SCORE_TAKE_WALL_WINDOW}-turn window") },
-                       SCORE_TAKE_WALL_WINDOW;
+                       "score-seat-takes-what-pays: {} taker(s) within {} tiles and {} turns of it ({ours:.0} strength against {theirs:.0} in sight) {why}; the war waits, since its walls come about {SCORE_TAKE_WALL_WINDOW} turns after it begins; the city is named, so the peacetime army cap is lifted while the corps is raised and walks in",
+                       takers.len(), SCORE_TAKE_STAGE_REACH, SCORE_TAKE_MUSTER_TURNS.min(window);
                        city.pos);
             }
             return false;
@@ -690,7 +1068,7 @@ impl AdvancedAi {
         let Some(action) = self.preferred_war_opening(g, pid, rival) else {
             return false;
         };
-        let denounce = matches!(action, crate::game::Action::Denounce { .. });
+        let denounce = matches!(action, Action::Denounce { .. });
         let civ = g.players[rival].civ.clone();
         let (power, their_power) = (g.military_power(pid), g.military_power(rival));
         let points = Self::score_city_points(g, cid);
@@ -702,10 +1080,17 @@ impl AdvancedAi {
         } else {
             "Declaring war on"
         };
+        let forecast = reading.map_or_else(String::new, |(p, lost)| {
+            format!(
+                "; the forecast reads a calibrated {:.0}% within {window} turns ({:.1} expected points at {SCORE_TAKE_FORECAST_FACTOR}), {lost:.1} unit(s) expected lost",
+                100.0 * p,
+                points * SCORE_TAKE_FORECAST_FACTOR * f64::from(p)
+            )
+        });
         think!(self.journal(), Military, Strategy,
                "{what} {civ} for {}", city.name;
-               "score-seat-takes-what-pays: {} is worth {points:.0} points; {} taker(s) stand within {reach} turn(s) of it and take it by turn +{turns} against a centre of {defence:.0} ({ours:.0} strength against {theirs:.0} in sight), inside the {SCORE_TAKE_WALL_WINDOW}-turn window before its walls; {power:.0} power against their {their_power:.0}{}",
-               city.name, takers.len(),
+               "score-seat-takes-what-pays: {} is worth {points:.0} points; {} taker(s) stand within {reach} turn(s) of it and take it by turn +{turns} against a centre of {defence:.0} ({ours:.0} strength against {theirs:.0} in sight), inside the {window}-turn window before its walls{forecast}; {power:.0} power against their {their_power:.0} (version {}){}",
+               city.name, takers.len(), self.score_take_version(),
                if denounce { "; the Formal War opens once the denouncement's five turns have passed, and the window is read again then" } else { "" };
                city.pos);
         true

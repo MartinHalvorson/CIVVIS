@@ -1895,6 +1895,11 @@ impl AdvancedAi {
             // declared a war the expansion cannot afford, once the host will
             // sign. `None` with the gene off. See `advanced/unchosen_war_peace.rs`.
             let unchosen_peace = self.unchosen_war_peace_since(g, pid, *other, plan);
+            // `score-seat-takes-what-pays` (graded): we took the city we went
+            // for and no second paying city of theirs stands in reach. `false`
+            // with the graded versions off. See
+            // `advanced/score_takes_what_pays.rs`.
+            let score_take_peace = self.score_take_peace_due(g, pid, *other);
             if g.is_at_war(pid, *other)
                 && !g.emergency_war_pair(pid, *other)
                 && !g.players[*other].is_minor
@@ -1984,7 +1989,8 @@ impl AdvancedAi {
                     || (interception_handoff && !air_front)
                     || faith_war_exit
                     || science_defensive_peace
-                    || unchosen_peace.is_some())
+                    || unchosen_peace.is_some()
+                    || score_take_peace)
             {
                 // `peace-waits-for-the-host-minimum`: no offer to a war
                 // declared on us before the host signs any; the bridge's
@@ -2121,6 +2127,8 @@ impl AdvancedAi {
                         "faith-strike-spares-the-stages: the heretic strike's war closes the stages our Rock Bands play, so it ends as soon as the host signs".to_string()
                     } else if faith_war_exit {
                         "faith-war-before-the-flip: no spreader of its faith has stood at our cities for five turns and no city of ours is converting".to_string()
+                    } else if score_take_peace {
+                        "score-seat-takes-what-pays: we took the city we went for and no second paying city of theirs stands in reach".to_string()
                     } else {
                         "the war has stalled".to_string()
                     };
