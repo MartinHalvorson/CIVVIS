@@ -147,11 +147,24 @@ fn the_unit_bill_counts_against_the_room() {
     };
     let upkeep = AdvancedAi::item_added_upkeep(&g, &spear);
     assert!(upkeep > 0.0, "the fixture needs a unit with upkeep");
-    // Income carries exactly one Spearman.
+    // Income carries exactly one Spearman. The ranged pick that follows it
+    // (a Slinger) costs nothing; the next Spearman no longer fits.
     g.players[0].gold_per_turn = upkeep;
     on().claim_endgame_army_queues(&mut g, 0, &plan);
-    let started = ours.iter().filter(|cid| military_head(&g, **cid)).count();
-    assert_eq!(started, 1, "one unit's upkeep fits the income");
+    let heads: Vec<Item> = ours
+        .iter()
+        .filter_map(|cid| g.cities[cid].queue.first().cloned())
+        .collect();
+    let bill: f64 = heads
+        .iter()
+        .map(|item| AdvancedAi::item_added_upkeep(&g, item))
+        .sum();
+    assert!(heads.contains(&spear), "the Spearman the income carries");
+    assert!(bill <= upkeep, "the started units' upkeep fits the income");
+    assert!(
+        heads.len() < ours.len(),
+        "the bill stops the claim before every city: {heads:?}"
+    );
 }
 
 #[test]
