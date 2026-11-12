@@ -6,13 +6,15 @@
 //! - **Arena** (`docs/DOCTRINE_ARENA.md`): every doctrine position, each seed
 //!   played twice with the roles swapped, the gene's seat against the same
 //!   seat without it. Two seats: the stock `advanced`, and a Domination seat
-//!   carrying the live tactical genes (`LIVE_TACTICS`). A control
-//!   (`advanced` against itself) must read exactly zero.
+//!   carrying the live tactical genes (`LIVE_TACTICS`). Each seat's control
+//!   (against itself) must read exactly zero, and gives the base rate of
+//!   each role's losses and cities.
 //! - **Skirmish** (`battle_bench`): the control and the treatment.
-//! - **Worlds**: a Domination seat at Deity that plays without the handicap
-//!   against Domination rivals that keep it (so it is out-teched and at war),
+//! - **Worlds** (`SHAPES`): a Domination seat that plays without the
+//!   handicap against rivals that keep it, so it is out-teched and at war,
 //!   carrying the repository's live force-on genome plus the live tactical
-//!   genes, the same seed with the gene off and on.
+//!   genes; the same seed with the gene off and on. The on-arm's refusals are
+//!   counted by mission off its journal.
 
 use crate::ai::{AdvancedAi, Ai, VictoryTarget};
 use crate::doctrine::{matched_position, MatchedPosition, POSITIONS};
@@ -183,7 +185,7 @@ fn print_arena(title: &str, rows: &[(String, ArenaRow)]) {
 }
 
 #[test]
-// WIP-CI-RUN #[ignore = "plays the paired arena; run with --ignored --nocapture"]
+#[ignore = "plays the paired arena; run with --ignored --nocapture"]
 fn priced_risk_paired_arena() {
     let started = Instant::now();
     let positions: Vec<(&'static str, u64)> = POSITIONS
@@ -438,7 +440,7 @@ fn world(shape: Shape, seed: u64, on: bool) -> WorldRow {
 }
 
 #[test]
-// WIP-CI-RUN #[ignore = "plays paired whole worlds; run with --ignored --nocapture"]
+#[ignore = "plays paired whole worlds; run with --ignored --nocapture"]
 fn priced_risk_paired_worlds() {
     for shape in SHAPES {
         worlds(shape);

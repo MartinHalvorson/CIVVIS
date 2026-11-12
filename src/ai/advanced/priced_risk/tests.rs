@@ -40,14 +40,14 @@ fn plan() -> StrategicPlan {
     }
 }
 
-/// Our healthy Warrior at (16, 10), a Babylonian Line Infantry at (20, 10)
+/// Our healthy Warrior at (17, 10), a Babylonian Line Infantry at (20, 10)
 /// seen by a second Warrior of ours at (22, 10), and Babylon's city at
 /// (30, 10). The Line Infantry steps once and strikes: (18, 10) is in its
 /// reach, (17, 10) is not, (19, 10) it strikes without moving, and its blow
 /// on a Warrior always kills.
 fn march() -> (Game, AdvancedAi, u32, u32, u32) {
     let mut g = field(377_310);
-    let warrior = g.spawn_test_unit("warrior", 0, (16, 10));
+    let warrior = g.spawn_test_unit("warrior", 0, (17, 10));
     let hostile = g.spawn_test_unit("line_infantry", 1, (20, 10));
     g.spawn_test_unit("warrior", 0, (22, 10));
     let city = g.found_city_for(1, (30, 10), None);
@@ -300,7 +300,6 @@ fn a_healthy_warrior_will_not_march_beside_a_line_infantry_while_staging() {
     assert_eq!(risk.allowance, MARCH_ALLOWANCE);
     let beside = risk.death_at(&g, warrior, (19, 10));
     assert!(beside > MARCH_ALLOWANCE, "{beside}");
-    assert!(ai.base.path_move(&mut g, 0, warrior, (17, 10)));
     assert!(ai.base.path_move(&mut g, 0, warrior, (18, 10)));
     assert!(
         !ai.base.path_move(&mut g, 0, warrior, (19, 10)),
@@ -329,7 +328,6 @@ fn a_healthy_warrior_will_not_march_beside_a_line_infantry_while_staging() {
     ai.mark_priced_risk(&g, 0, &plan());
     assert!(ai.base.priced_risk.is_empty());
     assert_eq!(ai.base.priced_risk_cost(&g, warrior, (19, 10), 1.0), 0.0);
-    assert!(ai.base.path_move(&mut g, 0, warrior, (17, 10)));
     assert!(ai.base.path_move(&mut g, 0, warrior, (18, 10)));
     assert!(ai.base.path_move(&mut g, 0, warrior, (19, 10)));
 }
@@ -360,7 +358,6 @@ fn a_defend_member_closes_on_the_attacker_beside_its_city_at_the_same_risk() {
         beside > MARCH_ALLOWANCE && beside <= HOLD_ALLOWANCE,
         "{beside}"
     );
-    assert!(ai.base.path_move(&mut g, 0, warrior, (17, 10)));
     assert!(ai.base.path_move(&mut g, 0, warrior, (18, 10)));
     assert!(
         ai.base.path_move(&mut g, 0, warrior, (19, 10)),
@@ -453,7 +450,6 @@ fn a_dead_hostile_and_a_planned_unit_are_left_out() {
     assert!(risk_of(&ai, warrior).death_at(&g, warrior, (19, 10)) > MARCH_ALLOWANCE);
     g.remove_unit(hostile);
     assert_eq!(risk_of(&ai, warrior).death_at(&g, warrior, (19, 10)), 0.0);
-    assert!(ai.base.path_move(&mut g, 0, warrior, (17, 10)));
     assert!(ai.base.path_move(&mut g, 0, warrior, (18, 10)));
     assert!(ai.base.path_move(&mut g, 0, warrior, (19, 10)));
 
