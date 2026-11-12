@@ -581,13 +581,13 @@ fn world(shape: Shape, seed: u64, arm: Arm) -> WorldRow {
 }
 
 #[test]
-// WIP-CI-RUN #[ignore = "plays the Emperor world ablation; run with --ignored --nocapture"]
+#[ignore = "plays the Emperor world ablation; run with --ignored --nocapture"]
 fn priced_risk_paired_worlds_emperor() {
     worlds(EMPEROR);
 }
 
 #[test]
-// WIP-CI-RUN #[ignore = "plays the Immortal world ablation; run with --ignored --nocapture"]
+#[ignore = "plays the Immortal world ablation; run with --ignored --nocapture"]
 fn priced_risk_paired_worlds_immortal() {
     worlds(IMMORTAL);
 }
