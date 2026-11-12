@@ -5741,6 +5741,14 @@ pub const GENES: &[Gene] = &[
     // kept while the race holds. Rides `faith-war-before-the-flip-2`. Opt-in;
     // see `advanced/faith_war_before_the_flip.rs`.
     Gene { tag: "faith-war-on-a-small-world", field: "faith_war_on_a_small_world", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_on_a_small_world, disable: AdvancedAi::disable_faith_war_on_a_small_world },
+    // Live Deity Gran Colombia, 26 games of 2026-11-11 19:57Z-23:50Z: our
+    // Education landed at a median t92 (none by the game's end in 6) against
+    // the first rival's t55, so no University stood at t100 while 3.55
+    // Campuses did; Science 41 against the best rival's 154. A Domination seat
+    // with a Campus and a Library in one city researches Education in the
+    // Campus unlock's slot, behind every military goal. Opt-in; see
+    // `advanced/research/domination_education.rs`.
+    Gene { tag: "education-follows-the-library", field: "education_follows_the_library", kind: Kind::OptIn, enable: AdvancedAi::enable_education_follows_the_library, disable: AdvancedAi::disable_education_follows_the_library },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
