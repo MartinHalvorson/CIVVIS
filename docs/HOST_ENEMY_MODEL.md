@@ -230,17 +230,66 @@ Off, the stock enemy plays exactly as before.
 - City strikes, wounded retreat and any unit we cannot see are not fitted.
 - The fit is Deity and these two days' lanes (Gran Colombia domination,
   culture and religion seats); 47% of in-reach rows are barbarian.
-- Whether the solver plays better live with it. The bench below is a
-  no-regression read only.
+- Whether the solver plays better live with it. The bench below is against
+  this repository's own AI, and there it plays worse.
 
-## Bench: a no-regression read
+## Bench: a no-regression read, and it reads negative
 
 The opponent on `battle_bench` and `doctrine_arena` is this repository's own
-AI, not the host, so these rows say only that the fitted enemy does not break
-the solver. The evidence for the model is the held-out likelihood above.
+AI, not the host. The evidence for the model is the held-out likelihood
+above; this bench can only say how a solver that assumes the host's habits
+fares against an opponent that does not have them.
 
-`src/ai/advanced/battle_solver/host_enemy_bench.rs` (`cargo test --lib
-host_enemy_bench -- --ignored --nocapture`). See the PR for the run.
+`src/ai/advanced/battle_solver/host_enemy_bench.rs`, run on the PR's CI
+(`cargo-test`, 4 threads, run 43259725481, head b5a426ae70 merged with main):
+seat A is the live tactical stack + `battle-solver` + `solver-plays-the-host`,
+seat B the same without the gene, both at the horizon named. Columns: paired
+material swing A less B (mean ± se), seeds better/worse/tied, kills/losses of
+each seat, seeds where play diverged, elapsed seconds.
+
+```
+solver-plays-the-host bench: A = live tactical stack + battle-solver + solver-plays-the-host, B = the same without solver-plays-the-host; paired material swing A less B, mean +/- se, seeds better/worse/tied; 96 skirmish seeds, 48 position seeds, seed block 9800000, 4 threads
+h2 control on/on                       +0.00 +/-    0.00    0/  0/  2  kills/losses fitted    2/2    stock    2/2     diverged   0/2        3s
+h2 control off/off                     +0.00 +/-    0.00    0/  0/  2  kills/losses fitted    3/3    stock    3/3     diverged   0/2        4s
+h2 battle_bench combined arms         -75.21 +/-   24.45   31/ 62/  3  kills/losses fitted  293/347  stock  347/293   diverged  96/96      55s
+h2 battle_bench ranged heavy          -46.56 +/-   20.86   32/ 55/  9  kills/losses fitted  260/292  stock  292/260   diverged  96/96      99s
+h2 battle_bench melee only            -39.48 +/-    8.53   11/ 38/ 47  kills/losses fitted   47/76   stock   76/47    diverged  96/96     148s
+h2 battle_bench medieval mounted     -176.46 +/-   63.42   32/ 54/ 10  kills/losses fitted  432/468  stock  468/432   diverged  96/96     191s
+h2 battle_bench pooled                -84.43 +/-   18.05  106/209/ 69  kills/losses fitted 1032/1183 stock 1183/1032  diverged 384/384    191s
+h2 doctrine central_position         -116.25 +/-   32.05   19/ 27/  2  kills/losses fitted  179/221  stock  221/179   diverged  46/48     210s
+h2 doctrine the_defile                -95.83 +/-   29.64   15/ 30/  3  kills/losses fitted   75/110  stock  110/75    diverged  45/48     226s
+h2 doctrine the_ridge                -127.29 +/-   46.63   15/ 32/  1  kills/losses fitted  225/273  stock  273/225   diverged  47/48     246s
+h2 doctrine hammer_and_anvil         -171.88 +/-   37.54   12/ 35/  1  kills/losses fitted  194/253  stock  253/194   diverged  47/48     265s
+h2 doctrine the_relief               -172.50 +/-   52.45   15/ 32/  1  kills/losses fitted  185/238  stock  238/185   diverged  47/48     298s
+h2 doctrine pooled                   -136.75 +/-   18.11   76/156/  8  kills/losses fitted  858/1095 stock 1095/858   diverged 232/240    298s
+h4 control on/on                       +0.00 +/-    0.00    0/  0/  2  kills/losses fitted    7/7    stock    7/7     diverged   0/2      301s
+h4 control off/off                     +0.00 +/-    0.00    0/  0/  2  kills/losses fitted    7/7    stock    7/7     diverged   0/2      304s
+h4 battle_bench combined arms         -70.31 +/-   20.67   34/ 52/ 10  kills/losses fitted  244/298  stock  298/244   diverged  96/96     370s
+h4 battle_bench ranged heavy          -70.83 +/-   22.26   35/ 53/  8  kills/losses fitted  272/329  stock  329/272   diverged  96/96     427s
+h4 battle_bench melee only            -12.50 +/-    6.89   11/ 20/ 65  kills/losses fitted   25/36   stock   36/25    diverged  96/96     493s
+h4 battle_bench medieval mounted     -206.67 +/-   59.06   30/ 59/  7  kills/losses fitted  397/439  stock  439/397   diverged  96/96     546s
+h4 battle_bench pooled                -90.08 +/-   17.02  110/184/ 90  kills/losses fitted  938/1102 stock 1102/938   diverged 384/384    546s
+h4 doctrine central_position         -158.54 +/-   35.89   12/ 36/  0  kills/losses fitted  152/208  stock  208/152   diverged  48/48     568s
+h4 doctrine the_defile                -73.33 +/-   32.76   17/ 27/  4  kills/losses fitted   86/113  stock  113/86    diverged  44/48     586s
+h4 doctrine the_ridge                -102.08 +/-   50.16   20/ 28/  0  kills/losses fitted  217/248  stock  248/217   diverged  48/48     612s
+h4 doctrine hammer_and_anvil          -57.29 +/-   38.71   20/ 26/  2  kills/losses fitted  200/219  stock  219/200   diverged  47/48     642s
+h4 doctrine the_relief                -14.58 +/-   56.47   25/ 23/  0  kills/losses fitted  235/240  stock  240/235   diverged  48/48     678s
+h4 doctrine pooled                    -81.17 +/-   19.64   94/140/  6  kills/losses fitted  890/1028 stock 1028/890   diverged 235/240    678s
+```
+
+The controls read exactly zero with the gene on both sides and off both
+sides. Against this AI the fitted enemy is worse at both horizons: pooled
+battle_bench −84.4 ± 18.1 at horizon 2 and −90.1 ± 17.0 at horizon 4,
+doctrine_arena −136.8 ± 18.1 and −81.2 ± 19.6. The stock enemy's 0.5 was
+tuned on this bench against this AI (`docs/BATTLE_SOLVER.md`: a greedy enemy
+read −100, half-aggression +262); the fitted enemy strikes on about a quarter
+of its chances and is fitted to the host. This bench cannot tell "the host
+model is wrong" from "the host model describes the host and not this AI".
+Only a live or host-replay read can, and none was run.
+
+Run it with `cargo test --lib host_enemy_bench -- --ignored --nocapture`
+(`CIVVIS_HOST_BENCH_SEEDS` sets the skirmish seeds per row; positions get
+half).
 
 ## Reproduce
 

@@ -5,8 +5,10 @@
 //! ⚠ A no-regression read, not the evidence for the gene. The opponent on
 //! both benches is this repository's own AI (the live tactical stack), not
 //! the host, so the fitted model is if anything a worse forecast of it than
-//! the stock guess. What `solver-plays-the-host` rests on is the held-out
-//! likelihood of the host's recorded moves in `docs/HOST_ENEMY_MODEL.md`.
+//! the stock guess, which was tuned here. What `solver-plays-the-host` rests
+//! on is the held-out likelihood of the host's recorded moves. The CI run
+//! of 2026-11-12 (96 skirmish and 48 position seeds a row) read negative at
+//! both horizons; the table is in `docs/HOST_ENEMY_MODEL.md`.
 //!
 //! `cargo test --lib host_enemy_bench -- --ignored --nocapture`, with
 //! `CIVVIS_HOST_BENCH_SEEDS` for the seeds per row.
@@ -219,8 +221,8 @@ fn the_bench_control_reads_zero_with_the_gene_on_and_off() {
 
 /// Fitted-enemy solver (seat A) against stock-enemy solver (seat B).
 #[test]
+#[ignore = "a bench: about 11 minutes on 4 cores; run with --ignored --nocapture"]
 fn host_enemy_bench() {
-    // WIP: CI evidence run; the report rides the panic into the log.
     let skirmish_seeds = seeds(96);
     let position_seeds = (skirmish_seeds / 2).max(2);
     let mut report = vec![format!(
@@ -273,5 +275,7 @@ fn host_enemy_bench() {
         ));
     }
     TEST_HORIZON.store(0, std::sync::atomic::Ordering::Relaxed);
-    panic!("HOST-BENCH-REPORT\n{}", report.join("\n"));
+    for text in &report {
+        println!("{text}");
+    }
 }
