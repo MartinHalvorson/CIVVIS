@@ -2,6 +2,19 @@
 //! the unit in hammers, and an allowance of risk bought by what the unit is
 //! for.
 //!
+//! **Verdict (2026-11-12, PR #5196): opt-in, not to be armed on an
+//! out-teched seat.** On the Emperor world shape it loses fewer units and no
+//! more cities (-3.06 ± 1.01 combat units lost a world, cities lost
+//! -0.50 ± 0.39, 16 paired worlds). On the out-teched Immortal shape it loses
+//! more units and takes fewer cities (+6.12 ± 2.35 combat units lost,
+//! cities taken -0.44 ± 0.22). A refusal protects the unit refused: on
+//! identical boards, 8 of 13 units that walked onto the refused tile died
+//! within two turns, 3 of 13 when refused. The world still reads worse; the
+//! ablation by allowance class (`priced_risk::ablation`, `driver_tests`)
+//! puts the harm in the engaged classes (hold-back, fight, hold), not the
+//! march class. The reading, the price and the journal are the service;
+//! this gene is its consumer.
+//!
 //! **Why.** 62 live Deity games of 2026-11-12 lost 1,295 of our units; 63% of
 //! those killed defending were at 50+ hp when the fight began, and Warriors,
 //! Archers, Scouts and Heavy Chariots were 48% of the losses. An earlier
