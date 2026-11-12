@@ -5135,6 +5135,13 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `assault-forecast-is-read`: the train's every assessed siege gets a
+    /// capture forecast and one journal line; no decision changes. See
+    /// `advanced/assault_forecast.rs`. Off by default.
+    assault_forecast_is_read: bool,
+    /// The turn's capture forecasts, by city tile and force signature, so a
+    /// turn pays once. Untouched while both forecast genes are off.
+    assault_forecast_frame: RefCell<assault_forecast::ForecastFrame>,
     /// `apostle-evangelizes-unspent`: an Apostle that has spent a charge
     /// stops asking to Evangelize. See
     /// `advanced/apostle_evangelizes_unspent.rs`. Off by default.
@@ -9402,6 +9409,14 @@ pub struct AdvancedAi {
     /// See `advanced/policy_swap_keeps_the_army_paid.rs`. Opt-in.
     policy_swap_keeps_the_army_paid: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `siege-goes-on-the-forecast`: the siege train goes, holds and stands
+    /// down on the capture forecast, and the Objective Board ranks Siege rows
+    /// by value x P / expected turns. Implies the reading. See
+    /// `advanced/assault_forecast.rs`. Off by default.
+    siege_goes_on_the_forecast: bool,
+    /// `siege-goes-on-the-forecast`: each city's run of hopeless forecasts,
+    /// by tile. Empty with the gene off.
+    siege_forecast_hopeless: BTreeMap<Pos, assault_forecast::HopelessRun>,
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
     /// Victory Points. See `advanced/diplo_statue_harbor.rs`.
@@ -11381,6 +11396,11 @@ mod siege_production;
 /// `siege-at-the-walls-dies-first`: a gun at our walls is the first target.
 /// See `advanced/siege_at_the_walls_dies_first.rs`.
 mod siege_at_the_walls_dies_first;
+
+/// `assault-forecast-is-read` and `siege-goes-on-the-forecast`: the chance a
+/// siege force takes its city, turn by turn, on the battle solver's board.
+/// See `advanced/assault_forecast.rs`.
+mod assault_forecast;
 
 /// Opt-in routing from a Defend task force to its assigned city.
 mod anvil_assignment;

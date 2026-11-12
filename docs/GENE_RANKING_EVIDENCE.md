@@ -193,6 +193,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `apostle-evangelizes-unspent` | off (unmeasured) | Opt-in gene `apostle-evangelizes-unspent`; see `advanced/apostle_evangelizes_unspent.rs`. | 1 \| 1 |
 | `apostle-transit-keeps-the-cover` | off (unmeasured) | Opt-in gene `apostle-transit-keeps-the-cover`; see `Self::apostle_transit_keeps_the_cover`. | 1 \| 1 |
 | `artifact-before-more-museums` | off (unmeasured) | One digger for an owned person's missing Artifact, before more Museums. | 1 \| 1 |
+| `assault-forecast-is-read` | off (unmeasured) | Opt-in gene `assault-forecast-is-read`: a capture forecast and one journal line for every siege the train assesses; no decision changes. | 1 \| 1 |
 | `band-bank-bars-people-under-fire` | off (unmeasured) | Opt-in gene `band-bank-bars-people-under-fire`; see `advanced/culture_band_bank.rs`. | 1 \| 1 |
 | `band-buys-near-the-stage` | off (unmeasured) | Opt-in gene `band-buys-near-the-stage`; see `advanced/band_buys_near_the_stage.rs`. | 1 \| 1 |
 | `band-plays-at-level-three` | off (unmeasured) | Opt-in gene `band-plays-at-level-three`; see `advanced/band_plays_at_level_three.rs`. | 1 \| 1 |
@@ -465,6 +466,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `settler-shelters-from-the-war-2` | off (unmeasured) | Opt-in gene `settler-shelters-from-the-war-2`, version two of `settler-shelters-from-the-war`; see `advanced/settler_shelters_from_the_war.rs`. | — \| 2 |
 | `settler-stall-counts-turns` | off (unmeasured) | Opt-in gene `settler-stall-counts-turns`; see `advanced/settler_stall_counts_turns.rs`. | 1 \| 1 |
 | `siege-at-the-walls-dies-first` | off (unmeasured) | Opt-in gene `siege-at-the-walls-dies-first`; see `advanced/siege_at_the_walls_dies_first.rs`. | 1 \| 1 |
+| `siege-goes-on-the-forecast` | off (unmeasured) | Opt-in gene `siege-goes-on-the-forecast`: the siege train goes, holds and stands down on the capture forecast, and Siege rows rank by value x P / expected turns; implies the reading. | 1 \| 1 |
 | `siege-moves-under-the-wing` | off (unmeasured) | Opt-in gene `siege-moves-under-the-wing`; see `Self::siege_moves_under_the_wing`. | 1 \| 1 |
 | `siege-shortfall-claims-the-projects` | off (unmeasured) | Let a siege short of its bill take the repeatable-project queues. | 1 \| 1 |
 | `siege-tier-yields-to-the-bombers-2` | off (unmeasured) | Opt-in gene `siege-tier-yields-to-the-bombers-2`; see `Self::siege_tier_yields_to_the_bombers_2`. | 1 \| 2 |
