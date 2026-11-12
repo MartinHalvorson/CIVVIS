@@ -168,17 +168,16 @@ impl AdvancedAi {
             .iter()
             .chain(g.players[pid].policies.iter())
             .copied()
-            .chain(wanted.iter().map(|card| Name::new(card)));
+            .chain(wanted.iter().map(|&card| Name::new(card)));
         for card in cards {
-            if paid.contains_key(&card) {
-                continue;
-            }
-            let upkeep = Self::upkeep_card_value(g, pid, card.as_str());
-            let gold = match wartime_union {
-                Some(marginal) if card == "economic_union" => marginal,
-                _ => Self::card_gold_estimate(g, pid, card.as_str()),
-            };
-            paid.insert(card, (upkeep, gold));
+            paid.entry(card).or_insert_with(|| {
+                let upkeep = Self::upkeep_card_value(g, pid, card.as_str());
+                let gold = match wartime_union {
+                    Some(marginal) if card == "economic_union" => marginal,
+                    _ => Self::card_gold_estimate(g, pid, card.as_str()),
+                };
+                (upkeep, gold)
+            });
         }
         Some(ArmyPay {
             gold_per_turn: g.players[pid].gold_per_turn,
