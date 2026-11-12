@@ -1,5 +1,5 @@
 use super::*;
-use crate::ai::advanced::{GrandStrategy, StrategicPlan};
+use crate::ai::advanced::{GrandStrategy, StrategicPlan, VictoryTarget};
 use crate::game::Action;
 
 fn board() -> (Game, AdvancedAi, StrategicPlan) {
@@ -283,4 +283,42 @@ fn a_domination_pingala_stays_seated_with_the_gene() {
     assert!(within > 0.0);
     let science = pingala_first_seat(VictoryTarget::Science, true);
     assert_eq!(science.culture_pingala_stays_home(&game), None);
+}
+
+/// `conquest_or_score_seat`: a Score seat (an Expansion plan) seats Pingala
+/// first as a Domination seat does, and takes the economic Governor after a
+/// founded Moksha; a Culture, Science or Religion seat does with the gene
+/// what it does without it.
+#[test]
+fn a_score_seat_appoints_pingala_first_and_other_targets_are_unchanged() {
+    let opening = opening_plan(&opening_board(9_206), GrandStrategy::Expansion);
+    for target in [VictoryTarget::Domination, VictoryTarget::Score] {
+        let mut game = opening_board(9_206);
+        pingala_first_seat(target, true).strategic_governors(&mut game, 0, &opening);
+        assert_eq!(opening_roster(&game), ["pingala"], "{target:?}");
+    }
+    for target in [
+        VictoryTarget::Culture,
+        VictoryTarget::Science,
+        VictoryTarget::Religion,
+    ] {
+        let mut on = opening_board(9_206);
+        pingala_first_seat(target, true).strategic_governors(&mut on, 0, &opening);
+        let mut off = opening_board(9_206);
+        pingala_first_seat(target, false).strategic_governors(&mut off, 0, &opening);
+        assert_eq!(opening_roster(&on), opening_roster(&off), "{target:?}");
+    }
+
+    let (g, mut ai, plan) = board();
+    ai.victory_target = Some(VictoryTarget::Score);
+    assert!(ai.domination_needs_economic_governor(&g, 0));
+    assert_eq!(ai.governor_priority_for(&g, 0, plan.strategy)[0], "pingala");
+    for target in [
+        VictoryTarget::Culture,
+        VictoryTarget::Science,
+        VictoryTarget::Religion,
+    ] {
+        ai.victory_target = Some(target);
+        assert!(!ai.domination_needs_economic_governor(&g, 0), "{target:?}");
+    }
 }

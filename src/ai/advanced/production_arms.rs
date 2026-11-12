@@ -731,6 +731,19 @@ impl AdvancedAi {
         // strategy when it does not — a targeted agent whose plan has
         // swung to Conquest under pressure is still playing for the
         // target, and `Recovery` refuses the lane outright below.
+        // `score-seat-plays-for-points`: the Score lane's wonder at the live
+        // race's price, under the live race's own development guards. Exact
+        // no-op off, and off a Score target. See `advanced/score_seat.rs`.
+        let score_seat_race = lane_opens
+            && plan.strategy != GrandStrategy::Recovery
+            && self.score_seat_wonder_race_opens(
+                city_count,
+                city.buildings.len(),
+                wonder_era,
+                g.world_era,
+                wonders_in_flight,
+                turns,
+            );
         let strategic_lane = self
             .victory_target
             .map(VictoryTarget::strategy)
@@ -857,7 +870,11 @@ impl AdvancedAi {
                 } else if plan.strategy == GrandStrategy::Culture {
                     320.0
                 } else if self.victory_target == Some(VictoryTarget::Score) {
-                    180.0
+                    if score_seat_race {
+                        Self::score_seat_wonder_price(g)
+                    } else {
+                        180.0
+                    }
                 } else {
                     0.0
                 }

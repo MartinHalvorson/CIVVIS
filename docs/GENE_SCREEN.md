@@ -772,6 +772,8 @@ row carries the measured seat's ledger at the end of the game:
 | `units_lost_to_barbarians` | of `units_lost`, struck by the barbarian seat (the Free Cities' are in none of the three) |
 | `civilians_lost` | this seat's civilian and support units captured or destroyed |
 | `last_orders` | this seat's military units that died, by the step that last moved, held or struck with them: `{"coordinated": [within, beyond], …}`, where `within` ended its last turn within two tiles of a visible hostile; only steps that saw a death are written |
+| `claim_crossings` | this seat's orders that crossed another claim on the unit, `{"siege_taker:immediate_kills": [crossed, deliberate, refused], …}`: the claim that owned the unit (`ai/advanced/unit_owner.rs`) and the step that ordered it anyway; `deliberate` are the crossings the code makes on purpose, `refused` the ones `one-owner-per-unit` stopped |
+| `unit_turns`, `unordered_unit_turns` | this seat's military units counted at the end of each of its turns, and those no step ordered that turn |
 
 Every one is absent from a row written before it, and `None` when read, so a
 reader tells "not recorded" from "lost none". `--trace` writes the first five
@@ -784,7 +786,12 @@ the `--json` summary carries the same seven under each gene's `unit_ledger`.
 pre-pass of the unit pass is followed by one line that credits the orders it
 applied, and each branch of the per-unit ladder names itself with one line.
 `other` is an order no step named and `unordered` a unit nobody ordered; the
-share of `other` is the part of the census still to be named. A unit the seat
+share of `other` is the part of the census still to be named.
+`claim_crossings` reads every existing claim on a unit (a siege's taker and
+members, a Settler's or Builder's guard, the battle plan, a unit out to heal,
+the amphibious crossing, the centre keeper and four smaller ones) in one
+fixed precedence and counts each order a step gave a unit another claim
+owned; the opt-in gene `one-owner-per-unit` refuses those orders. A unit the seat
 disbands or merges is not a death; one removed by maintenance or fallout is
 counted as one. Neither instrument changes a decision: the frozen anchor
 (`advanced_v1_plays_the_same_game_it_always_did`) is unchanged.
