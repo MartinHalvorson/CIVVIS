@@ -6001,6 +6001,10 @@ pub const GENES: &[Gene] = &[
     // a live turn), so one held turn, or a Settler that ended its move short,
     // dropped its site silently. See `advanced/settler_stall_counts_turns.rs`.
     Gene { tag: "settler-stall-counts-turns", field: "settler_stall_counts_turns", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_stall_counts_turns, disable: AdvancedAi::disable_settler_stall_counts_turns },
+    // The battle solver's enemy plays as the live host does: over 17,669
+    // unit-turns in reach of ours (116 Deity games, 11-11..12) it struck 25%,
+    // never above ~70% in any cell. See `advanced/battle_solver/host_enemy.rs`.
+    Gene { tag: "solver-plays-the-host", field: "solver_plays_the_host", kind: Kind::OptIn, enable: AdvancedAi::enable_solver_plays_the_host, disable: AdvancedAi::disable_solver_plays_the_host },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
