@@ -18,6 +18,7 @@ use crate::ai::{AdvancedAi, Ai, VictoryTarget};
 use crate::doctrine::{matched_position, MatchedPosition, POSITIONS};
 use crate::elo::seat_ai;
 use crate::game::{Action, Game, GameOptions};
+use crate::reasoning::{Journal, Level};
 use crate::skirmish::{matched_skirmish, SkirmishSetup};
 use std::collections::BTreeMap;
 use std::time::Instant;
@@ -265,6 +266,13 @@ struct WorldRow {
     turns: u32,
     secs: f64,
     stopped: bool,
+    /// The measured seat's `risk-is-priced` refusals, by mission, read off
+    /// its journal (a floor: a turn past the journal's budget drops lines).
+    refusals: BTreeMap<String, usize>,
+    /// Its siege guns' step-outs.
+    step_outs: usize,
+    /// Turns the journal truncated.
+    truncated: u64,
 }
 
 fn measured_seat(on: bool) -> AdvancedAi {
@@ -350,6 +358,13 @@ fn world(shape: Shape, seed: u64, on: bool) -> WorldRow {
             }
         })
         .collect();
+    // The measured seat's journal, in both arms alike: a recording journal
+    // plays the unit phase serially, so neither arm differs from the other
+    // by that.
+    let journal = Journal::recording();
+    journal.set_ceiling(Level::Decision);
+    ais[0].attach_journal(journal.handle());
+    let mut cursor = 0;
     let mut owners: BTreeMap<u32, usize> = BTreeMap::new();
     let mut row = WorldRow::default();
     // `run_game`'s loop, with a wall-clock stop so a slow runner reports a
@@ -386,6 +401,25 @@ fn world(shape: Shape, seed: u64, on: bool) -> WorldRow {
         ais[pid].take_turn(&mut g, pid);
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
+        }
+        if pid == 0 {
+            let delta = journal.since(cursor);
+            cursor = delta.cursor;
+            row.truncated = delta.truncated_turns;
+            for thought in delta.thoughts {
+                let Some(rest) = thought.detail.strip_prefix("risk-is-priced: ") else {
+                    continue;
+                };
+                if let Some(mission) = rest
+                    .split_once("over the ")
+                    .and_then(|(_, tail)| tail.split_once(" allowance"))
+                    .map(|(mission, _)| mission.to_string())
+                {
+                    *row.refusals.entry(mission).or_default() += 1;
+                } else {
+                    row.step_outs += 1;
+                }
+            }
         }
     }
     row.units_lost = g.players[0].unit_lifetimes.values().map(|s| s.units).sum();
@@ -452,6 +486,20 @@ fn worlds(shape: Shape) {
             d_taken.push(on.cities_taken as f64 - off.cities_taken as f64);
         }
     }
+    let mut refusals: BTreeMap<&str, usize> = BTreeMap::new();
+    let (mut step_outs, mut truncated) = (0, 0);
+    for (_, on, row) in &rows {
+        truncated += row.truncated;
+        if *on {
+            step_outs += row.step_outs;
+            for (mission, count) in &row.refusals {
+                *refusals.entry(mission.as_str()).or_default() += count;
+            }
+        }
+    }
+    println!(
+        "on-arm refusals by mission over {WORLD_SEEDS} worlds: {refusals:?}; gun step-outs {step_outs}; journal-truncated turns (both arms) {truncated}"
+    );
     let (a, sa) = mean_se(&d_lost);
     let (b, sb) = mean_se(&d_clost);
     let (c, sc) = mean_se(&d_taken);

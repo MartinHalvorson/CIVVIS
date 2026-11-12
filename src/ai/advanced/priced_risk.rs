@@ -17,17 +17,26 @@
 //! Warrior marching past a Line Infantry; the mission can.
 //!
 //! **The reading** ([`death_chance`]). The chance a unit standing on a tile is
-//! dead before our next turn: every visible at-war hostile whose strike reach
+//! dead before our next turn. Every visible at-war hostile whose strike reach
 //! covers the tile (the battle planner's `strike-reach` flood, one move plus a
-//! blow, zone of control included) and every walled enemy City Center or
-//! Encampment within two tiles strikes it with probability [`HOST_STRIKE_P`],
-//! each independently, with the engine's exact roll distribution and the
-//! wound penalty compounding inside the volley (`battle_solver::dice`). A
+//! blow, zone of control included) hits it with the host AI's own fitted odds
+//! (#5197's `battle_solver::host_enemy`, 17,669 live Deity unit-turns;
+//! copied in `priced_risk/host_fit.rs` until #5197 is on main): the
+//! chance it strikes at all (`strike_probability`, read on its class, owner,
+//! health, home, best strength edge, targets in reach and whether one is in
+//! reach without moving) times the chance it picks this unit among ours in its
+//! reach (`target_utility`, a conditional logit that prefers the unit in front
+//! of it). A walled enemy City Center or Encampment within two tiles strikes
+//! at [`CITY_STRIKE_P`], shared over our units within two of it. Each source
+//! is independent; the damage is the engine's exact roll distribution with the
+//! wound penalty compounding inside the volley (`battle_solver::dice`), and a
 //! known hazard (fire, fallout) lands first at its planning damage. The pairs
 //! are the field's own (`DangerField::blow_pairs_at_hp`). Read once a frame
 //! per (unit, tile) over every tile the unit can reach this turn, each blow
-//! kept with its source, so a hostile killed or a city taken later in the
-//! frame stops counting and a unit wounded since is re-read at its health.
+//! kept with its source and its chance, so a hostile killed or a city taken
+//! later in the frame stops counting and a unit wounded since is re-read at
+//! its health. The target shares are the frame's: our other units are read
+//! where they stood when it was read.
 //!
 //! **The price** ([`unit_price`]): production cost times the hp share, plus
 //! [`PROMOTION_PREMIUM`] of the cost per promotion, times
@@ -67,17 +76,21 @@ use std::sync::Arc;
 
 use super::battle_planner::{wounded_penalty, BlowPair, DangerField, STRUCTURE_SOURCE};
 use super::battle_solver::dice::VolleyDist;
+// #5197's `battle_solver::host_enemy`, copied until it is on main.
 use super::objective_board::ObjectiveKey;
 use super::{AdvancedAi, ForcePosture, ForceRole, StrategicPlan};
 use crate::ai::{BasicAi, UnitDoctrine};
-use crate::game::Game;
+use crate::game::{expected_damage, Game};
 use crate::think;
 use crate::Pos;
+use host_fit::{
+    strike_probability, target_utility, HostClass, Owner, StrikeFeatures, TargetFeatures,
+};
 
-/// The chance a hostile in reach strikes the unit asked about. The battle
-/// solver's `enemy_aggression` (over 115 live Deity games the host struck well
-/// under half the units it could reach); a fitted value replaces both.
-pub(crate) const HOST_STRIKE_P: f64 = 0.5;
+/// The chance a walled City Center or Encampment strikes one of our units
+/// within two tiles, before it is shared over them. The host fit (#5197) reads
+/// units, not cities; its units' no-move strike rate (0.43) stands in.
+pub(crate) const CITY_STRIKE_P: f64 = 0.43;
 /// A Defend or Relieve member, an active siege post, or a unit standing by a
 /// contested city of ours.
 pub(crate) const HOLD_ALLOWANCE: f64 = 0.6;
@@ -185,13 +198,15 @@ impl Source {
     }
 }
 
-/// One blow on one tile: its source, the striker's strength and our unit's
-/// defence before its own wound penalty (re-read at its health by the dice).
+/// One blow on one tile: its source, the striker's strength, our unit's
+/// defence before its own wound penalty (re-read at its health by the dice),
+/// and the chance this source lands it on this unit here.
 #[derive(Clone, Copy, Debug)]
 struct Blow {
     source: Source,
     att: f32,
     def_base: f32,
+    p: f64,
 }
 
 /// One tile's reading for one unit.
@@ -233,28 +248,186 @@ pub(crate) struct UnitRisk {
 pub(crate) type PricedRiskMap = Arc<HashMap<u32, UnitRisk>>;
 
 /// The chance a unit at `hp` is dead before our next turn: `hazard` lands
-/// first, then each `(att, def_base)` blow strikes with probability
-/// `strike_p`, independently, through the exact roll distribution with the
-/// wound penalty compounding (`dice::VolleyDist`). At `strike_p` one this is
+/// first, then each `(att, def_base, p)` blow lands with probability `p`,
+/// independently, through the exact roll distribution with the wound penalty
+/// compounding (`dice::VolleyDist`). With every `p` one this is
 /// `dice::kill_probability` of the hazard-wounded unit.
-pub(crate) fn death_chance(hp: i32, hazard: f64, blows: &[(f32, f32)], strike_p: f64) -> f64 {
+pub(crate) fn death_chance(hp: i32, hazard: f64, blows: &[(f32, f32, f64)]) -> f64 {
     let start = hp - hazard.round() as i32;
     if start <= 0 {
         return 1.0;
     }
     let mut dist = VolleyDist::new(start);
-    for &(att, def_base) in blows {
+    for &(att, def_base, p) in blows {
         let mut struck = dist.clone();
         struck.strike(att, def_base);
         for (stood, hit) in dist.hp.iter_mut().zip(struck.hp.iter()) {
-            *stood = (1.0 - strike_p) * *stood + strike_p * *hit;
+            *stood = (1.0 - p) * *stood + p * *hit;
         }
     }
     dist.p_killed()
 }
 
+/// A visible hostile as the host fit reads it, with the units of ours in its
+/// reach where they stand this frame.
+struct Striker {
+    pos: Pos,
+    range: i32,
+    features: StrikeFeatures,
+    /// Our units in its reach: (unit, target utility, strength edge, in reach
+    /// without moving).
+    targets: Vec<(u32, f32, f32, bool)>,
+}
+
+impl Striker {
+    fn read(g: &Game, id: u32) -> Self {
+        let unit = &g.units[&id];
+        let spec = &g.rules.units[unit.kind];
+        let class = if spec.siege {
+            HostClass::Siege
+        } else if spec.has_ranged_attack() {
+            HostClass::Ranged
+        } else if matches!(
+            spec.promotion_class.as_str(),
+            "light_cavalry" | "heavy_cavalry"
+        ) {
+            HostClass::Cavalry
+        } else {
+            HostClass::Melee
+        };
+        let player = &g.players[unit.owner];
+        let owner = if player.is_barbarian {
+            Owner::Barbarian
+        } else if player.is_minor {
+            Owner::CityState
+        } else {
+            Owner::Major
+        };
+        let home = g.wdisk(unit.pos, 1).into_iter().any(|pos| {
+            g.city_at(pos)
+                .is_some_and(|cid| g.cities[&cid].owner == unit.owner)
+        });
+        Striker {
+            pos: unit.pos,
+            range: if spec.has_ranged_attack() {
+                g.unit_attack_range(id).max(1)
+            } else {
+                1
+            },
+            features: StrikeFeatures {
+                class,
+                owner,
+                hp: unit.hp.clamp(0, 100) as i16,
+                home,
+                edge: 0.0,
+                targets: 1,
+                still: false,
+            },
+            targets: Vec::new(),
+        }
+    }
+
+    /// One unit of ours at `at`, under the pair this striker resolves on it:
+    /// (target utility, strength edge, in reach without moving).
+    fn target(&self, g: &Game, uid: u32, at: Pos, att: f64, def: f64) -> (f32, f32, bool) {
+        let unit = &g.units[&uid];
+        let spec = &g.rules.units[unit.kind];
+        let distance = g.wdist(self.pos, at);
+        let still = distance <= self.range;
+        let utility = target_utility(&TargetFeatures {
+            hp: unit.hp.clamp(0, 100) as i16,
+            dealt: expected_damage(att, def) as f32,
+            shooter: spec.has_ranged_attack(),
+            distance: distance.clamp(0, 255) as u8,
+            still,
+        });
+        (utility, (att - def) as f32, still)
+    }
+
+    /// The chance this striker lands its blow on `uid` standing at `at`: it
+    /// strikes at all, and it picks `uid` over the others in its reach.
+    fn lands_on(&self, g: &Game, uid: u32, at: Pos, att: f64, def: f64) -> f64 {
+        let (utility, edge, still) = self.target(g, uid, at, att, def);
+        let others = self.targets.iter().filter(|(other, ..)| *other != uid);
+        let mut features = self.features;
+        features.edge = edge;
+        features.targets = 1;
+        features.still = still;
+        let mut weight = 0.0_f64;
+        for &(_, other_utility, other_edge, other_still) in others {
+            features.edge = features.edge.max(other_edge);
+            features.targets += 1;
+            features.still |= other_still;
+            weight += f64::from(other_utility - utility).exp();
+        }
+        f64::from(strike_probability(&features)) / (1.0 + weight)
+    }
+}
+
+/// What the frame knows about the hostiles: each visible striker, and where
+/// our units that a city could strike stand.
+struct Frame {
+    strikers: HashMap<u32, Striker>,
+    /// Our units a structure could strike: not garrisoned, on land.
+    exposed: Vec<(u32, Pos)>,
+}
+
+impl Frame {
+    fn read(g: &Game, pid: usize, field: &mut DangerField) -> Self {
+        let mut strikers: HashMap<u32, Striker> = visible_hostiles(g, pid)
+            .map(|id| (id, Striker::read(g, id)))
+            .collect();
+        let mut exposed = Vec::new();
+        for uid in g.player_unit_ids(pid) {
+            let unit = &g.units[&uid];
+            let spec = &g.rules.units[unit.kind];
+            if spec.class != "military"
+                || matches!(spec.domain.as_deref(), Some("air"))
+                || g.is_embarked(unit)
+                || g.city_at(unit.pos).is_some()
+                || g.defending_district_at(unit.pos).is_some()
+            {
+                continue;
+            }
+            exposed.push((uid, unit.pos));
+            for (source, pair) in field.blow_pairs_at_hp(unit.pos, uid, unit.hp) {
+                let (Some(id), BlowPair::Strike { att, def }) = (source, pair) else {
+                    continue;
+                };
+                if let Some(striker) = strikers.get_mut(&id) {
+                    let (utility, edge, still) = striker.target(g, uid, unit.pos, att, def);
+                    striker.targets.push((uid, utility, edge, still));
+                }
+            }
+        }
+        Frame { strikers, exposed }
+    }
+
+    /// The chance a structure of city `cid` lands its strike on `uid` at
+    /// `at`: [`CITY_STRIKE_P`] shared over our exposed units within two.
+    fn city_lands_on(&self, g: &Game, cid: u32, uid: u32, at: Pos) -> f64 {
+        let Some(city) = g.cities.get(&cid) else {
+            return 0.0;
+        };
+        let others = self
+            .exposed
+            .iter()
+            .filter(|(other, pos)| *other != uid && g.wdist(*pos, city.pos) <= 2)
+            .count();
+        let me = usize::from(g.wdist(at, city.pos) <= 2);
+        CITY_STRIKE_P / (others + me).max(1) as f64
+    }
+}
+
 impl TileRisk {
-    fn read(pairs: &[(Option<u32>, BlowPair)], hp: i32) -> Self {
+    fn read(
+        g: &Game,
+        frame: &Frame,
+        uid: u32,
+        tile: Pos,
+        pairs: &[(Option<u32>, BlowPair)],
+        hp: i32,
+    ) -> Self {
         let mut hazard = 0.0;
         let mut blows = Vec::new();
         for (source, pair) in pairs {
@@ -264,10 +437,15 @@ impl TileRisk {
                     let Some(id) = *source else {
                         continue;
                     };
-                    let source = if id & STRUCTURE_SOURCE != 0 {
-                        Source::City(id & CITY_ID_MASK)
+                    let (source, p) = if id & STRUCTURE_SOURCE != 0 {
+                        let cid = id & CITY_ID_MASK;
+                        (Source::City(cid), frame.city_lands_on(g, cid, uid, tile))
                     } else {
-                        Source::Unit(id)
+                        let p = frame
+                            .strikers
+                            .get(&id)
+                            .map_or(0.0, |striker| striker.lands_on(g, uid, tile, att, def));
+                        (Source::Unit(id), p)
                     };
                     blows.push(Blow {
                         source,
@@ -276,12 +454,13 @@ impl TileRisk {
                         // `hp`; the dice want it before, to re-read it after
                         // every hit.
                         def_base: (def + wounded_penalty(hp)) as f32,
+                        p,
                     });
                 }
             }
         }
-        let pairs: Vec<(f32, f32)> = blows.iter().map(|b| (b.att, b.def_base)).collect();
-        let death = death_chance(hp, hazard, &pairs, HOST_STRIKE_P);
+        let volley: Vec<(f32, f32, f64)> = blows.iter().map(|b| (b.att, b.def_base, b.p)).collect();
+        let death = death_chance(hp, hazard, &volley);
         TileRisk {
             hazard,
             blows,
@@ -308,13 +487,13 @@ impl UnitRisk {
         if unit.hp == self.hp && all_stand {
             return risk.death;
         }
-        let pairs: Vec<(f32, f32)> = risk
+        let volley: Vec<(f32, f32, f64)> = risk
             .blows
             .iter()
             .filter(|blow| blow.source.stands(g, unit.owner))
-            .map(|blow| (blow.att, blow.def_base))
+            .map(|blow| (blow.att, blow.def_base, blow.p))
             .collect();
-        death_chance(unit.hp, risk.hazard, &pairs, HOST_STRIKE_P)
+        death_chance(unit.hp, risk.hazard, &volley)
     }
 
     /// Why the move `from -> to` is refused, if it is: its death chance is
@@ -551,6 +730,7 @@ impl AdvancedAi {
             })
             .collect();
         let mut field = DangerField::with_reach(g, pid, true);
+        let frame = Frame::read(g, pid, &mut field);
         let mut map = HashMap::new();
         for uid in units {
             let unit = &g.units[&uid];
@@ -569,7 +749,7 @@ impl AdvancedAi {
                 if pairs.is_empty() {
                     continue;
                 }
-                tiles.insert(tile, TileRisk::read(&pairs, hp));
+                tiles.insert(tile, TileRisk::read(g, &frame, uid, tile, &pairs, hp));
             }
             map.insert(
                 uid,
@@ -706,5 +886,6 @@ impl BasicAi {
 
 #[cfg(test)]
 mod driver_tests;
+mod host_fit;
 #[cfg(test)]
 mod tests;

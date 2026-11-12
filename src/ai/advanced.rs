@@ -9403,8 +9403,8 @@ pub struct AdvancedAi {
     policy_swap_keeps_the_army_paid: bool,
     /// `risk-is-priced`: every pathed move of a land unit the battle planner
     /// did not order reads one death chance (every visible hostile in strike
-    /// reach and every walled city strike, each striking at
-    /// `HOST_STRIKE_P`, on the exact dice), and a move over the allowance its
+    /// reach at the host's fitted odds, and every walled city strike, on the
+    /// exact dice), and a move over the allowance its
     /// mission buys is refused unless it lowers the unit's current death
     /// chance; the one-ply movers subtract `death chance x price`. Supersedes
     /// `guns-stay-out-of-reach` for the units it reads. See
