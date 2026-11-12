@@ -155,9 +155,15 @@ pub(crate) const FIRST_CAPITAL_BARE_STRENGTH: f64 = 20.0;
 pub(crate) const FIRST_CAPITAL_BARE_REACH: i32 = 14;
 
 /// The cities the empire holds before the reservation opens on a bare
-/// capital, and before its strike: one. The capital's production goes to the
-/// force before the first Settler; a rival capital is worth more cities.
-pub(crate) const FIRST_CAPITAL_BARE_CITIES: usize = 1;
+/// capital, and before its strike: two, the soft capital's count. It was
+/// one (#5124), so the force came before the first Settler. Live Deity Gran
+/// Colombia, the four games that named a bare capital after the latch held
+/// (`civvis-20261111T195754Z`, `civvis-20261112T003131Z`, `003932Z`,
+/// `010242Z`): none declared (one city trains the six bodies and a Ram in
+/// 25 to 35 turns; two forces stood out the patience window, one never
+/// assembled, one neighbour declared first), and they held 2.5 and 3.0
+/// cities at turns 40 and 60 against 3.1 and 4.5 in the 31 other games.
+pub(crate) const FIRST_CAPITAL_BARE_CITIES: usize = 2;
 
 /// The military power the reserved force adds to ours once it is trained:
 /// four Warriors and two Slingers or Archers. A capital is bare only when
@@ -842,7 +848,7 @@ impl AdvancedAi {
                 think!(self.journal(), Military, Strategy,
                        "First capital before the walls: {} is bare", city.name;
                        "defence {:.0}, no walls, {} tiles from our capital: the reservation opens \
-                        at {} city and the strike does not wait for a second",
+                        at {} cities, and the latch keeps it open while the capital stays soft",
                        g.city_strength(city.id),
                        Self::first_capital_home(g, pid).map_or(0, |home| g.wdist(home, city.pos)),
                        FIRST_CAPITAL_BARE_CITIES;
@@ -893,9 +899,9 @@ impl AdvancedAi {
         self.first_capital_read_the_bareness(g, pid, soft);
     }
 
-    /// The cities a soft capital's reservation waits for (one for a bare
-    /// one), or `None` while the named capital is not soft (or the gene is
-    /// off).
+    /// The cities a soft capital's reservation waits for (the same two for a
+    /// bare one, see [`FIRST_CAPITAL_BARE_CITIES`]), or `None` while the
+    /// named capital is not soft (or the gene is off).
     pub(super) fn first_capital_soft_settler_cities(&self) -> Option<usize> {
         (self.first_capital_soft_now && self.first_capital_strikes_active()).then_some(
             if self.first_capital_bare.is_some() {
