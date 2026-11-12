@@ -46,9 +46,9 @@
 //! defence replay that starts beside the falling city read neutral — the
 //! cost sat in the march to the defence, which this version releases.
 //!
-//! With `risk-is-priced` on (`priced_risk.rs`), every unit that gene reads —
-//! guns included — is left out of all three versions here, so no unit is
-//! vetoed twice.
+//! With `risk-is-priced` on (`priced_risk.rs`), every unit that gene's frame
+//! reads — guns included — is left out of all three versions here, so no
+//! unit is vetoed twice; the frame is read first.
 use super::battle_planner::{DangerField, STRUCTURE_SOURCE};
 use super::{AdvancedAi, ForceRole};
 use crate::game::Game;
@@ -95,8 +95,8 @@ impl AdvancedAi {
                     && g.rules.units[unit.kind].domain.as_deref() != Some("sea")
                     && unit.moves_left > 0.0
                     && !g.is_embarked(unit)
-                    // `risk-is-priced` reads the units it covers instead.
-                    && !self.priced_risk_covers(g, *uid)
+                    // `risk-is-priced` reads the units in its frame instead.
+                    && !self.base.priced_risk.contains_key(uid)
             })
             .collect();
         let others: Vec<u32> = if every_unit {
@@ -112,7 +112,7 @@ impl AdvancedAi {
                         && !g.is_embarked(unit)
                         && !self.battle_planner_ordered.contains(uid)
                         && !defenders.contains(uid)
-                        && !self.priced_risk_covers(g, *uid)
+                        && !self.base.priced_risk.contains_key(uid)
                 })
                 .collect()
         } else {

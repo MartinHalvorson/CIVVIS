@@ -2711,14 +2711,15 @@ impl AdvancedAi {
         // read once the turn's kills are settled, and a gun already standing
         // on one steps off it. Nothing with the gene off. See
         // `advanced/guns_stay_out_of_reach.rs`.
+        //
+        // `risk-is-priced` reads its frame first: each covered unit's
+        // mission, allowance, price and death chance on every tile it can
+        // reach, which the guns' veto then leaves alone; a siege gun over its
+        // allowance steps out (credited with the guns' own step-out).
+        // Nothing with the gene off. See `advanced/priced_risk.rs`.
+        self.mark_priced_risk(g, pid, plan);
         self.mark_gun_lethal_tiles(g, pid);
         self.guns_step_out_of_reach(g, pid);
-        // `risk-is-priced`: each covered unit's mission, allowance, price and
-        // death chance on every tile it can reach, read at the same point,
-        // and a siege gun over its allowance steps out (credited with the
-        // guns' own step-out). Nothing with the gene off. See
-        // `advanced/priced_risk.rs`.
-        self.mark_priced_risk(g, pid, plan);
         self.priced_risk_guns_step_out(g, pid);
         self.credit_orders(g, OrderStep::GunsOutOfReach);
         let mut air_assault_units = self.plan_air_city_assault(g, pid, plan);

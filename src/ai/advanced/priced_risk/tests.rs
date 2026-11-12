@@ -411,9 +411,10 @@ fn an_active_siege_shooter_keeps_its_post() {
         let target = g.cities[&city].pos;
         ai.force_groups = vec![group(vec![gun], target, ForcePosture::Engage)];
         ai.sieges.insert(city, siege(stage, g.turn));
+        // The unit pass's order (`advanced_units`).
+        ai.mark_priced_risk(&g, 0, &plan());
         ai.mark_gun_lethal_tiles(&g, 0);
         ai.guns_step_out_of_reach(&mut g, 0);
-        ai.mark_priced_risk(&g, 0, &plan());
         ai.priced_risk_guns_step_out(&mut g, 0);
         (g, ai, gun)
     };

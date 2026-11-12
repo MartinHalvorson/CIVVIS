@@ -51,8 +51,9 @@
 //! [`HOME_RELIEF_RADIUS`] of a city of ours with a visible hostile at it, may
 //! buy up to [`HOLD_ALLOWANCE`]; a Destroy, Escort or engaged unit
 //! [`FIGHT_ALLOWANCE`];
-//! marching, staging, mustering, Reserve, Deter, Recon, ClearCamp, healing and
-//! exploring units [`MARCH_ALLOWANCE`]; a scout [`SCOUT_ALLOWANCE`].
+//! marching, staging, mustering or held-back, Reserve, Deter, Recon, ClearCamp,
+//! healing and exploring units [`MARCH_ALLOWANCE`]; a scout
+//! [`SCOUT_ALLOWANCE`].
 //!
 //! **The rule.** A move whose death chance exceeds the allowance is refused
 //! unless it lowers the unit's current death chance. Among allowed moves the
@@ -66,8 +67,8 @@
 //! `tactical_step` and `coordinated_tactical_step` (filter and score), the
 //! campaign staging and wartime reinforcement walks (their raw final step).
 //! Units the battle planner or the battle solver ordered this turn are left
-//! alone, and with the gene on `guns-stay-out-of-reach` v1/v2/v3 no longer
-//! mark the units this reads (no double veto). Every refusal writes one
+//! alone, and `guns-stay-out-of-reach` v1/v2/v3 do not mark a unit this
+//! frame reads (no double veto). Every refusal writes one
 //! journal line naming the unit, the tile, the death chance and the
 //! allowance. Off by default; nothing is read or written with the gene off.
 
@@ -134,6 +135,7 @@ pub(crate) enum Mission {
     Escort,
     Engaged,
     Staging,
+    Muster,
     March,
     Reserve,
     Deter,
@@ -149,6 +151,7 @@ impl Mission {
             Mission::Defend | Mission::Relieve | Mission::SiegePost => HOLD_ALLOWANCE,
             Mission::Destroy | Mission::Escort | Mission::Engaged => FIGHT_ALLOWANCE,
             Mission::Staging
+            | Mission::Muster
             | Mission::March
             | Mission::Reserve
             | Mission::Deter
@@ -168,6 +171,7 @@ impl Mission {
             Mission::Escort => "escort",
             Mission::Engaged => "engaged",
             Mission::Staging => "staging",
+            Mission::Muster => "muster",
             Mission::March => "march",
             Mission::Reserve => "reserve",
             Mission::Deter => "deter",
@@ -176,6 +180,65 @@ impl Mission {
             Mission::Healing => "healing",
             Mission::Scout => "scout",
         }
+    }
+}
+
+/// Test-only ablation of the allowance classes (`driver_tests`): a class left
+/// out of the thread's mask is not read at all, as with the gene off. Every
+/// class is read outside tests and by default.
+#[cfg(test)]
+pub(crate) mod ablation {
+    use super::Mission;
+    use std::cell::Cell;
+
+    pub(crate) const SCOUT: u8 = 1;
+    pub(crate) const HEALING: u8 = 1 << 1;
+    /// Staging, mustering or held back, Reserve, Deter: not yet engaged.
+    pub(crate) const HOLD_BACK: u8 = 1 << 2;
+    /// Marching or reinforcing (Advance, alone), Recon, ClearCamp.
+    pub(crate) const MARCH: u8 = 1 << 3;
+    /// Engaged, Destroy, Escort.
+    pub(crate) const FIGHT: u8 = 1 << 4;
+    /// Defend, Relieve, siege posts.
+    pub(crate) const HOLD: u8 = 1 << 5;
+    pub(crate) const ALL: u8 = SCOUT | HEALING | HOLD_BACK | MARCH | FIGHT | HOLD;
+
+    thread_local! {
+        static CLASSES: Cell<u8> = const { Cell::new(ALL) };
+    }
+
+    /// Read only these classes on this thread from now on.
+    pub(crate) fn set(classes: u8) {
+        CLASSES.with(|mask| mask.set(classes));
+    }
+
+    pub(crate) fn class(mission: Mission) -> u8 {
+        match mission {
+            Mission::Scout => SCOUT,
+            Mission::Healing => HEALING,
+            Mission::Staging | Mission::Muster | Mission::Reserve | Mission::Deter => HOLD_BACK,
+            Mission::March | Mission::Recon | Mission::ClearCamp => MARCH,
+            Mission::Engaged | Mission::Destroy | Mission::Escort => FIGHT,
+            Mission::Defend | Mission::Relieve | Mission::SiegePost => HOLD,
+        }
+    }
+
+    pub(crate) fn reads(mission: Mission) -> bool {
+        CLASSES.with(|mask| mask.get() & class(mission) != 0)
+    }
+}
+
+/// Whether the frame reads a unit on this mission: always, outside the
+/// test-only ablation.
+fn class_is_read(mission: Mission) -> bool {
+    #[cfg(test)]
+    {
+        ablation::reads(mission)
+    }
+    #[cfg(not(test))]
+    {
+        let _ = mission;
+        true
     }
 }
 
@@ -654,7 +717,9 @@ impl AdvancedAi {
                 Some(group) => match group.posture {
                     ForcePosture::Engage => Mission::Engaged,
                     ForcePosture::Recover => Mission::Healing,
-                    _ => Mission::March,
+                    // Gathering, or held back: not yet going anywhere.
+                    ForcePosture::Muster | ForcePosture::Hold => Mission::Muster,
+                    ForcePosture::Advance => Mission::March,
                 },
                 // Exploring, marching alone: the march allowance.
                 None => Mission::March,
@@ -736,6 +801,9 @@ impl AdvancedAi {
             let unit = &g.units[&uid];
             let hp = unit.hp;
             let mission = self.priced_risk_mission(g, pid, uid, plan, &contested);
+            if !class_is_read(mission) {
+                continue;
+            }
             let cost = g.rules.units[unit.kind].cost.max(1.0);
             let price = unit_price(g, uid, strongest);
             let mut tiles = HashMap::new();

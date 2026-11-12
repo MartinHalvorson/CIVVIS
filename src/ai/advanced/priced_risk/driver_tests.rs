@@ -10,19 +10,25 @@
 //!   (against itself) must read exactly zero, and gives the base rate of
 //!   each role's losses and cities.
 //! - **Skirmish** (`battle_bench`): the control and the treatment.
-//! - **Worlds** (`SHAPES`): a Domination seat that plays without the
-//!   handicap against rivals that keep it, so it is out-teched and at war,
-//!   carrying the repository's live force-on genome plus the live tactical
-//!   genes; the same seed with the gene off and on. The on-arm's refusals are
-//!   counted by mission off its journal.
+//! - **Worlds** (`EMPEROR`, `IMMORTAL`): a Domination seat that plays without
+//!   the handicap against rivals that keep it, so it is out-teched and at
+//!   war, carrying the repository's live force-on genome plus the live
+//!   tactical genes; the same seed in five arms (`ARMS`: off, the full gene,
+//!   and three ablations by allowance class through the test-only
+//!   `priced_risk::ablation` switch). Read: combat units lost and killed
+//!   (`Game::combat_ledger`), cities, refusals by class off the seat's
+//!   journal, the `last_orders` census, and what arm B's refused units did
+//!   instead.
 
+use super::ablation;
 use crate::ai::{AdvancedAi, Ai, VictoryTarget};
 use crate::doctrine::{matched_position, MatchedPosition, POSITIONS};
 use crate::elo::seat_ai;
 use crate::game::{Action, Game, GameOptions};
 use crate::reasoning::{Journal, Level};
 use crate::skirmish::{matched_skirmish, SkirmishSetup};
-use std::collections::BTreeMap;
+use crate::Pos;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 /// The tactical genes the live seat carries beyond the repository's
@@ -45,7 +51,7 @@ const WORLD_SEEDS: u64 = 16;
 const WORLD_TURNS: u32 = 200;
 /// A world past this many seconds stops where it stands (`stopped`).
 const WORLD_BUDGET_SECS: u64 = 16 * 60;
-const JOBS: usize = 3;
+const JOBS: usize = 2;
 
 fn live_seat(base: &str) -> String {
     let mut seat = base.to_string();
@@ -255,26 +261,102 @@ fn priced_risk_paired_arena() {
     println!("\narena wall {:.0}s", started.elapsed().as_secs_f64());
 }
 
+/// One arm of the world ablation: off, or the gene reading only `classes`
+/// (`priced_risk::ablation`).
+#[derive(Clone, Copy)]
+struct Arm {
+    name: &'static str,
+    on: bool,
+    classes: u8,
+}
+
+const ARMS: [Arm; 5] = [
+    Arm {
+        name: "A off",
+        on: false,
+        classes: 0,
+    },
+    Arm {
+        name: "B full",
+        on: true,
+        classes: ablation::ALL,
+    },
+    Arm {
+        name: "C scout+heal",
+        on: true,
+        classes: ablation::SCOUT | ablation::HEALING,
+    },
+    Arm {
+        name: "D C+hold-back",
+        on: true,
+        classes: ablation::SCOUT | ablation::HEALING | ablation::HOLD_BACK,
+    },
+    Arm {
+        name: "E B-march",
+        on: true,
+        classes: ablation::ALL & !ablation::MARCH,
+    },
+];
+
+/// The allowance class a refusal's mission label belongs to.
+fn class_of(label: &str) -> &'static str {
+    match label {
+        "scout" => "scout",
+        "healing" => "healing",
+        "staging" | "muster" | "reserve" | "deter" => "hold-back",
+        "march" | "recon" | "clear camp" => "march",
+        "engaged" | "destroy" | "escort" => "fight",
+        "defend" | "relieve" | "siege post" => "hold",
+        _ => "?",
+    }
+}
+
+const CLASSES: [&str; 6] = ["scout", "healing", "hold-back", "march", "fight", "hold"];
+
+/// One refusal read off the journal: turn, unit, the tile refused, class.
+#[derive(Clone, Debug)]
+struct Refused {
+    turn: u32,
+    uid: u32,
+    tile: Pos,
+    class: &'static str,
+}
+
+/// Our seat's turn as the log and the board saw it.
+#[derive(Clone, Debug, Default)]
+struct SeatTurn {
+    /// Our military units and where they stood when our turn began.
+    start: BTreeMap<u32, Pos>,
+    /// Where they stood when it ended.
+    end: BTreeMap<u32, Pos>,
+    /// Tiles each unit was ordered onto this turn.
+    entered: BTreeMap<u32, Vec<Pos>>,
+    /// Units that struck.
+    struck: BTreeSet<u32>,
+    /// Our and every hostile unit's tile and health when the turn began:
+    /// two arms on the same board read the same.
+    board: u64,
+}
+
 /// One world's reading for the measured seat.
 #[derive(Debug, Default)]
 struct WorldRow {
-    units_lost: u64,
+    ledger: crate::game::CombatLedger,
     cities_lost: usize,
     cities_taken: usize,
     cities_end: usize,
     techs: usize,
     rival_techs: usize,
-    war_turns: u32,
     turns: u32,
     secs: f64,
     stopped: bool,
-    /// The measured seat's `risk-is-priced` refusals, by mission, read off
-    /// its journal (a floor: a turn past the journal's budget drops lines).
-    refusals: BTreeMap<String, usize>,
-    /// Its siege guns' step-outs.
+    refusals: BTreeMap<&'static str, usize>,
+    refused: Vec<Refused>,
     step_outs: usize,
-    /// Turns the journal truncated.
     truncated: u64,
+    last_orders: BTreeMap<String, [u32; 2]>,
+    /// By our turn number.
+    turns_seen: BTreeMap<u32, SeatTurn>,
 }
 
 fn measured_seat(on: bool) -> AdvancedAi {
@@ -308,35 +390,57 @@ struct Shape {
     rivals: [VictoryTarget; 3],
 }
 
-const SHAPES: [Shape; 2] = [
+const EMPEROR: Shape = Shape {
     // Emperor rivals keep their handicap and the seat plays without it: the
     // seat is out-teched, and one rival plays for Domination.
-    Shape {
-        name: "emperor-mixed",
-        difficulty: "emperor",
-        rival_yields: None,
-        rivals: [
-            VictoryTarget::Domination,
-            VictoryTarget::Science,
-            VictoryTarget::Culture,
-        ],
-    },
+    name: "emperor-mixed",
+    difficulty: "emperor",
+    rival_yields: None,
+    rivals: [
+        VictoryTarget::Domination,
+        VictoryTarget::Science,
+        VictoryTarget::Culture,
+    ],
+};
+
+const IMMORTAL: Shape = Shape {
     // The live-calibrated shape (`gene_screen --rival-rung -2`): Immortal
     // combat and start units with King yields, two Domination rivals and a
-    // Science one. The seat is out-teched and at war, and lives to fight.
-    Shape {
-        name: "immortal-king-yields",
-        difficulty: "immortal",
-        rival_yields: Some("king"),
-        rivals: [
-            VictoryTarget::Domination,
-            VictoryTarget::Domination,
-            VictoryTarget::Science,
-        ],
-    },
-];
+    // Science one. The seat is out-teched and at war.
+    name: "immortal-king-yields",
+    difficulty: "immortal",
+    rival_yields: Some("king"),
+    rivals: [
+        VictoryTarget::Domination,
+        VictoryTarget::Domination,
+        VictoryTarget::Science,
+    ],
+};
 
-fn world(shape: Shape, seed: u64, on: bool) -> WorldRow {
+fn hash_board(g: &Game) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut units: Vec<(u32, usize, Pos, i32)> = g
+        .units
+        .values()
+        .filter(|unit| g.rules.units[unit.kind].class == "military")
+        .map(|unit| (unit.id, unit.owner, unit.pos, unit.hp))
+        .collect();
+    units.sort_unstable();
+    units.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn our_soldiers(g: &Game) -> BTreeMap<u32, Pos> {
+    g.player_unit_ids(0)
+        .into_iter()
+        .filter(|uid| g.rules.units[g.units[uid].kind].class == "military")
+        .map(|uid| (uid, g.units[&uid].pos))
+        .collect()
+}
+
+fn world(shape: Shape, seed: u64, arm: Arm) -> WorldRow {
+    ablation::set(arm.classes);
     let started = Instant::now();
     let mut g = Game::new_with(GameOptions {
         speed: "online".to_string(),
@@ -350,7 +454,7 @@ fn world(shape: Shape, seed: u64, on: bool) -> WorldRow {
         .map(|pid| {
             if pid == 0 {
                 majors += 1;
-                measured_seat(on)
+                measured_seat(arm.on)
             } else if g.players[pid].is_minor || g.players[pid].is_barbarian {
                 AdvancedAi::new()
             } else {
@@ -360,17 +464,14 @@ fn world(shape: Shape, seed: u64, on: bool) -> WorldRow {
             }
         })
         .collect();
-    // The measured seat's journal, in both arms alike: a recording journal
-    // plays the unit phase serially, so neither arm differs from the other
-    // by that.
+    // The measured seat's journal, in every arm alike: a recording journal
+    // plays the unit phase serially, so no arm differs from another by that.
     let journal = Journal::recording();
     journal.set_ceiling(Level::Decision);
     ais[0].attach_journal(journal.handle());
     let mut cursor = 0;
     let mut owners: BTreeMap<u32, usize> = BTreeMap::new();
     let mut row = WorldRow::default();
-    // `run_game`'s loop, with a wall-clock stop so a slow runner reports a
-    // shorter world instead of losing the job.
     g.set_fog_memory(ais.iter().any(Ai::uses_player_observation));
     g.set_war_ledger(false);
     let mut observed = None;
@@ -392,15 +493,33 @@ fn world(shape: Shape, seed: u64, on: bool) -> WorldRow {
                 }
             }
             owners = now;
-            if g.players
-                .iter()
-                .any(|p| p.id != 0 && !p.is_barbarian && p.alive && g.is_at_war(0, p.id))
-            {
-                row.war_turns += 1;
-            }
         }
         let pid = g.current;
+        let before = (pid == 0).then(|| (g.log.len(), our_soldiers(&g), hash_board(&g)));
         ais[pid].take_turn(&mut g, pid);
+        if let Some((log_start, start, board)) = before {
+            let mut seen = SeatTurn {
+                start,
+                end: our_soldiers(&g),
+                board,
+                ..SeatTurn::default()
+            };
+            for (actor, action) in g.log.since(log_start.min(g.log.len())) {
+                if *actor != 0 {
+                    continue;
+                }
+                match action {
+                    Action::Move { unit, to } | Action::MoveTo { unit, to } => {
+                        seen.entered.entry(*unit).or_default().push(*to);
+                    }
+                    Action::Attack { unit, .. } | Action::Ranged { unit, .. } => {
+                        seen.struck.insert(*unit);
+                    }
+                    _ => {}
+                }
+            }
+            row.turns_seen.insert(g.turn, seen);
+        }
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
         }
@@ -412,19 +531,41 @@ fn world(shape: Shape, seed: u64, on: bool) -> WorldRow {
                 let Some(rest) = thought.detail.strip_prefix("risk-is-priced: ") else {
                     continue;
                 };
-                if let Some(mission) = rest
+                let Some(label) = rest
                     .split_once("over the ")
                     .and_then(|(_, tail)| tail.split_once(" allowance"))
-                    .map(|(mission, _)| mission.to_string())
-                {
-                    *row.refusals.entry(mission).or_default() += 1;
-                } else {
+                    .map(|(label, _)| label)
+                else {
                     row.step_outs += 1;
+                    continue;
+                };
+                let class = class_of(label);
+                *row.refusals.entry(class).or_default() += 1;
+                // "The warrior 5 does not step to (19, 10): ..."
+                let parsed =
+                    thought
+                        .headline
+                        .split_once(" does not step to (")
+                        .and_then(|(who, tail)| {
+                            let uid = who.rsplit(' ').next()?.parse::<u32>().ok()?;
+                            let (tile, _) = tail.split_once(')')?;
+                            let (x, y) = tile.split_once(", ")?;
+                            Some((uid, (x.parse::<i32>().ok()?, y.parse::<i32>().ok()?)))
+                        });
+                if let Some((uid, tile)) = parsed {
+                    row.refused.push(Refused {
+                        turn: thought.turn,
+                        uid,
+                        tile,
+                        class,
+                    });
                 }
             }
         }
     }
-    row.units_lost = g.players[0].unit_lifetimes.values().map(|s| s.units).sum();
+    ais[0].settle_last_orders(&g, 0);
+    row.last_orders = ais[0].strategy_census().last_orders.map();
+    row.ledger = g.combat_ledger(0);
     row.cities_end = g.player_city_ids(0).len();
     row.techs = g.players[0].techs.len();
     row.rival_techs = g
@@ -440,73 +581,225 @@ fn world(shape: Shape, seed: u64, on: bool) -> WorldRow {
 }
 
 #[test]
-#[ignore = "plays paired whole worlds; run with --ignored --nocapture"]
-fn priced_risk_paired_worlds() {
-    for shape in SHAPES {
-        worlds(shape);
-    }
+// WIP-CI-RUN #[ignore = "plays the Emperor world ablation; run with --ignored --nocapture"]
+fn priced_risk_paired_worlds_emperor() {
+    worlds(EMPEROR);
+}
+
+#[test]
+// WIP-CI-RUN #[ignore = "plays the Immortal world ablation; run with --ignored --nocapture"]
+fn priced_risk_paired_worlds_immortal() {
+    worlds(IMMORTAL);
+}
+
+/// Did `uid` die within two of our turns after `turn`: gone from our units
+/// when our turn `turn + 1` or `turn + 2` began, or when the world ended.
+fn died_within_two(turns: &BTreeMap<u32, SeatTurn>, turn: u32, uid: u32) -> bool {
+    let later: Vec<&SeatTurn> = (turn + 1..=turn + 2)
+        .filter_map(|t| turns.get(&t))
+        .collect();
+    later.iter().any(|seen| !seen.start.contains_key(&uid))
+        || (later.is_empty()
+            && turns
+                .get(&turn)
+                .is_some_and(|seen| !seen.end.contains_key(&uid)))
 }
 
 fn worlds(shape: Shape) {
-    let jobs: Vec<(u64, bool)> = (0..WORLD_SEEDS)
-        .flat_map(|seed| [(seed, false), (seed, true)])
+    let jobs: Vec<(u64, usize)> = (0..WORLD_SEEDS)
+        .flat_map(|seed| (0..ARMS.len()).map(move |arm| (seed, arm)))
         .collect();
     let rows = crate::parallel::map(jobs.len(), JOBS, |i| {
-        let (seed, on) = jobs[i];
-        (seed, on, world(shape, 9_100 + seed, on))
+        let (seed, arm) = jobs[i];
+        world(shape, 9_100 + seed, ARMS[arm])
     });
+    let row = |seed: u64, arm: usize| &rows[seed as usize * ARMS.len() + arm];
     println!(
-        "\n== worlds {}: {} (rival yields {}), measured seat unhandicapped Domination with the live genome, 4p 44x28 Online, {WORLD_TURNS} turns ==",
+        "\n== worlds {}: {} (rival yields {}), seat 0 plays Domination unhandicapped with the live genome, 4p 44x28 Online, {WORLD_TURNS} turns, {WORLD_SEEDS} seeds ==",
         shape.name,
         shape.difficulty,
         shape.rival_yields.unwrap_or("the rung's")
     );
-    println!("seed arm  units_lost cities_lost cities_taken cities_end techs rival_techs war_turns turns secs stopped");
-    let (mut d_lost, mut d_clost, mut d_taken) = (Vec::new(), Vec::new(), Vec::new());
-    let mut by_seed: BTreeMap<u64, [Option<&WorldRow>; 2]> = BTreeMap::new();
-    for (seed, on, row) in &rows {
-        println!(
-            "{seed:>4} {:<4} {:>10} {:>11} {:>12} {:>10} {:>5} {:>11} {:>9} {:>5} {:>4.0} {}",
-            if *on { "on" } else { "off" },
-            row.units_lost,
-            row.cities_lost,
-            row.cities_taken,
-            row.cities_end,
-            row.techs,
-            row.rival_techs,
-            row.war_turns,
-            row.turns,
-            row.secs,
-            row.stopped
+    println!("per seed, arm A off: lost(majors/city-states/barbarians) killed cities -lost/+taken end techs rival turns secs; then each arm's lost/killed/-lost/+taken");
+    for seed in 0..WORLD_SEEDS {
+        let a = row(seed, 0);
+        let mut line = format!(
+            "{seed:>3} A {:>3}({}/{}/{}) {:>3} -{}/+{} {:>2} {:>2}/{:>2} t{:<3} {:>3.0}s{}",
+            a.ledger.units_lost,
+            a.ledger.units_lost_to_majors,
+            a.ledger.units_lost_to_city_states,
+            a.ledger.units_lost_to_barbarians,
+            a.ledger.units_killed,
+            a.cities_lost,
+            a.cities_taken,
+            a.cities_end,
+            a.techs,
+            a.rival_techs,
+            a.turns,
+            a.secs,
+            if a.stopped { " STOPPED" } else { "" }
         );
-        by_seed.entry(*seed).or_default()[usize::from(*on)] = Some(row);
-    }
-    for pair in by_seed.values() {
-        if let [Some(off), Some(on)] = pair {
-            d_lost.push(on.units_lost as f64 - off.units_lost as f64);
-            d_clost.push(on.cities_lost as f64 - off.cities_lost as f64);
-            d_taken.push(on.cities_taken as f64 - off.cities_taken as f64);
+        for (arm, spec) in ARMS.iter().enumerate().skip(1) {
+            let r = row(seed, arm);
+            line.push_str(&format!(
+                " | {} {}/{} -{}/+{}{}",
+                &spec.name[..1],
+                r.ledger.units_lost,
+                r.ledger.units_killed,
+                r.cities_lost,
+                r.cities_taken,
+                if r.stopped { " STOPPED" } else { "" }
+            ));
         }
+        println!("{line}");
     }
-    let mut refusals: BTreeMap<&str, usize> = BTreeMap::new();
-    let (mut step_outs, mut truncated) = (0, 0);
-    for (_, on, row) in &rows {
-        truncated += row.truncated;
-        if *on {
-            step_outs += row.step_outs;
-            for (mission, count) in &row.refusals {
-                *refusals.entry(mission.as_str()).or_default() += count;
+    println!(
+        "\n{:<14} {:>15} {:>15} {:>15} {:>15} {:>15} {:>15} | refusals {:?}",
+        "arm",
+        "lost",
+        "lost to majors",
+        "lost to barbs",
+        "killed",
+        "cities lost",
+        "cities taken",
+        CLASSES
+    );
+    for (arm, spec) in ARMS.iter().enumerate() {
+        let stat = |read: &dyn Fn(&WorldRow) -> f64| -> String {
+            if arm == 0 {
+                let total: f64 = (0..WORLD_SEEDS).map(|seed| read(row(seed, 0))).sum();
+                format!("{:.2}/world", total / WORLD_SEEDS as f64)
+            } else {
+                let diffs: Vec<f64> = (0..WORLD_SEEDS)
+                    .map(|seed| read(row(seed, arm)) - read(row(seed, 0)))
+                    .collect();
+                let (mean, se) = mean_se(&diffs);
+                format!("{mean:+.2}±{se:.2}")
+            }
+        };
+        let refusals: Vec<usize> = CLASSES
+            .iter()
+            .map(|class| {
+                (0..WORLD_SEEDS)
+                    .map(|seed| row(seed, arm).refusals.get(class).copied().unwrap_or(0))
+                    .sum()
+            })
+            .collect();
+        let step_outs: usize = (0..WORLD_SEEDS).map(|seed| row(seed, arm).step_outs).sum();
+        println!(
+            "{:<14} {:>15} {:>15} {:>15} {:>15} {:>15} {:>15} | {refusals:?} gun step-outs {step_outs}",
+            spec.name,
+            stat(&|r| f64::from(r.ledger.units_lost)),
+            stat(&|r| f64::from(r.ledger.units_lost_to_majors)),
+            stat(&|r| f64::from(r.ledger.units_lost_to_barbarians)),
+            stat(&|r| f64::from(r.ledger.units_killed)),
+            stat(&|r| r.cities_lost as f64),
+            stat(&|r| r.cities_taken as f64),
+        );
+    }
+    let truncated: u64 = rows.iter().map(|r| r.truncated).sum();
+    let stopped = rows.iter().filter(|r| r.stopped).count();
+    println!("(rows after A are paired on-off against A, mean ± se over seeds; journal-truncated turns {truncated}; stopped worlds {stopped})");
+
+    // Which step last ordered each unit that died, [ended within two of a
+    // visible hostile, beyond], summed over the seeds, for every arm.
+    let mut steps: BTreeSet<String> = BTreeSet::new();
+    let mut census: Vec<BTreeMap<String, [u32; 2]>> = vec![BTreeMap::new(); ARMS.len()];
+    for (arm, total) in census.iter_mut().enumerate() {
+        for seed in 0..WORLD_SEEDS {
+            for (step, pair) in &row(seed, arm).last_orders {
+                steps.insert(step.clone());
+                let slot = total.entry(step.clone()).or_default();
+                slot[0] += pair[0];
+                slot[1] += pair[1];
             }
         }
     }
+    println!("\nlast_orders (deaths by the step that last ordered the unit, within-two/beyond, summed over seeds):");
     println!(
-        "on-arm refusals by mission over {WORLD_SEEDS} worlds: {refusals:?}; gun step-outs {step_outs}; journal-truncated turns (both arms) {truncated}"
+        "{:<22} {}",
+        "step",
+        ARMS.iter()
+            .map(|arm| format!("{:>14}", arm.name))
+            .collect::<String>()
     );
-    let (a, sa) = mean_se(&d_lost);
-    let (b, sb) = mean_se(&d_clost);
-    let (c, sc) = mean_se(&d_taken);
+    for step in &steps {
+        let cells: String = census
+            .iter()
+            .map(|total| {
+                let pair = total.get(step).copied().unwrap_or_default();
+                let cell = format!("{}/{}", pair[0], pair[1]);
+                format!("{cell:>14}")
+            })
+            .collect();
+        println!("{step:<22} {cells}");
+    }
+
+    // Arm B's refusals: what the refused unit did that turn instead, and
+    // whether it died within two of our turns; against arm A's same unit on
+    // the same turn where A ordered it onto the refused tile (and where the
+    // two arms' boards were still the same when that turn began).
+    let mut instead: BTreeMap<&str, BTreeMap<&str, [usize; 2]>> = BTreeMap::new();
+    let (mut matched, mut matched_dead, mut same_board, mut same_board_dead) = (0, 0, 0, 0);
+    let (mut b_matched_dead, mut b_same_board_dead) = (0, 0);
+    let mut first_of: BTreeSet<(u64, u32, u32)> = BTreeSet::new();
+    for seed in 0..WORLD_SEEDS {
+        let b = row(seed, 1);
+        let a = row(seed, 0);
+        for refusal in &b.refused {
+            // One reading per unit and turn: its first refusal.
+            if !first_of.insert((seed, refusal.turn, refusal.uid)) {
+                continue;
+            }
+            let Some(seen) = b.turns_seen.get(&refusal.turn) else {
+                continue;
+            };
+            let what = if !seen.end.contains_key(&refusal.uid) {
+                "died on our turn"
+            } else if seen.struck.contains(&refusal.uid) {
+                "struck"
+            } else if seen.end.get(&refusal.uid) != seen.start.get(&refusal.uid) {
+                "moved elsewhere"
+            } else {
+                "stood still"
+            };
+            let died = died_within_two(&b.turns_seen, refusal.turn, refusal.uid);
+            let cell = instead
+                .entry(refusal.class)
+                .or_default()
+                .entry(what)
+                .or_default();
+            cell[0] += 1;
+            cell[1] += usize::from(died);
+            let Some(seen_a) = a.turns_seen.get(&refusal.turn) else {
+                continue;
+            };
+            let made_the_move = seen_a
+                .entered
+                .get(&refusal.uid)
+                .is_some_and(|tiles| tiles.contains(&refusal.tile));
+            if !made_the_move {
+                continue;
+            }
+            let a_died = died_within_two(&a.turns_seen, refusal.turn, refusal.uid);
+            matched += 1;
+            matched_dead += usize::from(a_died);
+            b_matched_dead += usize::from(died);
+            if seen_a.board == seen.board {
+                same_board += 1;
+                same_board_dead += usize::from(a_died);
+                b_same_board_dead += usize::from(died);
+            }
+        }
+    }
+    println!("\narm B refusals (first per unit and turn): what the unit did instead that turn, [count, died within two of our turns]:");
+    for (class, rows) in &instead {
+        println!("  {class:<10} {rows:?}");
+    }
     println!(
-        "paired on-off over {} seeds: units lost {a:+.2} ± {sa:.2}, cities lost {b:+.2} ± {sb:.2}, cities taken {c:+.2} ± {sc:.2}",
-        d_lost.len()
+        "matched in arm A (same unit, same turn, A ordered it onto the refused tile): {matched}; died within two turns: A {matched_dead}, B {b_matched_dead}"
+    );
+    println!(
+        "  of which the two boards were the same when the turn began: {same_board}; died within two turns: A {same_board_dead}, B {b_same_board_dead}"
     );
 }

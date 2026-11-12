@@ -1,0 +1,6 @@
+# SCAFFOLDING for PR risk-is-priced: print the paired driver's report from CI.
+# Removed before the PR leaves draft.
+[[profile.default.overrides]]
+filter = 'test(/priced_risk_paired/)'
+success-output = "immediate"
+failure-output = "immediate"
