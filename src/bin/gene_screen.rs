@@ -118,6 +118,8 @@ use std::time::Instant;
 
 #[path = "gene_screen/rival_war_pace.rs"]
 mod rival_war_pace;
+#[path = "gene_screen/unit_ledger.rs"]
+mod unit_ledger;
 
 /// ⭐ THE SCREEN. One shape, so two batches are comparable without an argument
 /// about which regime read which gene (operator, 2026-08-22). Six majors on
@@ -1088,6 +1090,19 @@ struct TraceSample {
     near_housing: usize,
     #[serde(default)]
     near_housing_fed: usize,
+    /// ⭐ The seat's unit ledger at the mark (`game/combat_ledger.rs`), the
+    /// row's end-of-game columns of the same names read mid-game. Absent in
+    /// older batches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    units_killed: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    units_lost: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    units_lost_to_majors: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    units_lost_to_barbarians: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    civilians_lost: Option<u32>,
 }
 
 impl TraceSample {
@@ -1153,6 +1168,11 @@ impl TraceSample {
             walled,
             near_housing,
             near_housing_fed,
+            units_killed: Some(g.combat_ledger(pid).units_killed),
+            units_lost: Some(g.combat_ledger(pid).units_lost),
+            units_lost_to_majors: Some(g.combat_ledger(pid).units_lost_to_majors),
+            units_lost_to_barbarians: Some(g.combat_ledger(pid).units_lost_to_barbarians),
+            civilians_lost: Some(g.combat_ledger(pid).civilians_lost),
         }
     }
 }
@@ -1303,16 +1323,41 @@ struct Row {
     /// strategy is wrong or because the live bridge cannot execute the orders
     /// the strategy gives — which are different problems with different fixes.
     ///
-    /// ⚠ Unit kills and losses are deliberately NOT here. `kills` is a
-    /// counter but there is no per-player loss counter to divide it by, so a
-    /// `kills_per_loss` on this side would have to be invented rather than
-    /// read. Cities are counted honestly today; units need an engine counter
-    /// first.
+    /// Unit kills and losses are the `units_*` columns below, read off the
+    /// engine's per-player ledger rather than invented here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cities_taken: Option<usize>,
     /// The other half of the city ledger. See `cities_taken`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cities_lost: Option<usize>,
+    /// ⭐ THE UNIT LEDGER, the city ledger's twin for the army (2026-11-12):
+    /// enemy military units this seat's units, cities and districts killed;
+    /// its own military units lost, and of those the ones a major and the
+    /// barbarians struck (`units_lost_to_city_states` is the third split;
+    /// the Free Cities' are in none); its own civilians and support units
+    /// captured or destroyed. Read off `Game::combat_ledger`, which counts
+    /// each unit where the engine removes it (`game/combat_ledger.rs`).
+    /// `None` in every file written before, and not written then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    units_killed: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    units_lost: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    units_lost_to_majors: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    units_lost_to_city_states: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    units_lost_to_barbarians: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    civilians_lost: Option<u32>,
+    /// ⭐ WHO ORDERED THE UNITS THAT DIED: this seat's military units that
+    /// died, by the step that last moved, held or struck with them, as
+    /// `step: [ended its last turn within two tiles of a visible hostile,
+    /// beyond]`. Only steps that saw a death are written; `other` is an
+    /// order no step named. See `ai/advanced/last_orders.rs`. Empty — and
+    /// absent — in files written before.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    last_orders: BTreeMap<String, [u32; 2]>,
     /// ⭐ THE OPENING BAND: cities held at the start of the turn equivalent to
     /// Standard turn `OPENING_BAND_STANDARD_TURN`, or the final count when the
     /// game ended before it. `None` in every file written before the field
@@ -2929,6 +2974,10 @@ fn play_game(
                 row.cities_taken_100 = marks_100.as_ref().map(|marks| marks[seat].1);
             }
             row.victory_portfolio = Some(ais[seat].victory_portfolio_report());
+            // The deaths since the seat's last turn are counted first: the
+            // game is over, so nothing it decides can follow.
+            ais[seat].settle_last_orders(&world, seat);
+            row.last_orders = ais[seat].strategy_census().last_orders.map();
             row.player_target = civvis::ai::player::target_for(seed, index, &profile.target_mix)
                 .map_or("civvis", |target| target.as_str())
                 .to_string();
@@ -3161,6 +3210,14 @@ fn row_for_seat(
         buildings: None,
         cities_taken: None,
         cities_lost: None,
+        units_killed: Some(game.combat_ledger(seat).units_killed),
+        units_lost: Some(game.combat_ledger(seat).units_lost),
+        units_lost_to_majors: Some(game.combat_ledger(seat).units_lost_to_majors),
+        units_lost_to_city_states: Some(game.combat_ledger(seat).units_lost_to_city_states),
+        units_lost_to_barbarians: Some(game.combat_ledger(seat).units_lost_to_barbarians),
+        civilians_lost: Some(game.combat_ledger(seat).civilians_lost),
+        // Filled in by `play_game`, which holds the seat's agent.
+        last_orders: BTreeMap::new(),
         victories_off: Vec::new(),
         difficulty: String::new(),
         rival_mix: String::new(),
@@ -3352,6 +3409,8 @@ struct Seats<'a> {
     /// zeros, which is no measurement.
     techs_boosted_share: Option<Vec<f64>>,
     civics_inspired_share: Option<Vec<f64>>,
+    /// ⭐ The city and unit ledgers, column by column (`unit_ledger::COLUMNS`).
+    unit_ledger: Vec<Option<Vec<f64>>>,
 }
 
 impl<'a> Seats<'a> {
@@ -3423,6 +3482,7 @@ impl<'a> Seats<'a> {
         };
         let techs_boosted_share = share_of(&|row| (row.techs_boosted, row.techs_researched));
         let civics_inspired_share = share_of(&|row| (row.civics_inspired, row.civics_adopted));
+        let unit_ledger = unit_ledger::outcomes(&rows);
         Seats {
             rows,
             columns,
@@ -3437,6 +3497,7 @@ impl<'a> Seats<'a> {
             science_end,
             techs_boosted_share,
             civics_inspired_share,
+            unit_ledger,
         }
     }
 
@@ -3615,6 +3676,9 @@ struct GeneEstimate {
     /// census.
     techs_boosted_share: Option<(f64, f64)>,
     civics_inspired_share: Option<(f64, f64)>,
+    /// ⭐ On−off Δ of each ledger column (`unit_ledger::COLUMNS`), `None`
+    /// where the rows predate it.
+    unit_ledger: Vec<Option<(f64, f64)>>,
 }
 
 impl GeneEstimate {
@@ -3705,6 +3769,7 @@ fn estimate(header: &Header, rows: &[Row]) -> Estimates {
                 science_end: pace(&seats.science_end),
                 techs_boosted_share: pace(&seats.techs_boosted_share),
                 civics_inspired_share: pace(&seats.civics_inspired_share),
+                unit_ledger: seats.unit_ledger.iter().map(pace).collect(),
             }
         })
         .collect();
@@ -4848,6 +4913,7 @@ fn print_table(header: &Header, rows: &[Row]) {
          standard error: compute is wall seconds per completed turn, time is whole-game wall \
          seconds, and positive is slower."
     );
+    unit_ledger::print(&genes);
     print_families(header, rows);
     print_victory_masks(header, rows);
     print_difficulty_rungs(header, rows);
@@ -5166,6 +5232,9 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
                 // file whose rows predate the census, never a Δ of zero.
                 "techs_boosted_share_pp": pace_json(e.techs_boosted_share, e.n_on, e.n_off),
                 "civics_inspired_share_pp": pace_json(e.civics_inspired_share, e.n_on, e.n_off),
+                // ⭐ The city and unit ledgers: on − off Δ per column; null
+                // where the rows predate it.
+                "unit_ledger": unit_ledger::json(e),
                 "adjusted_pp": e.adjusted.map(|(b, _)| 100.0 * b),
                 "adjusted_se_pp": e.adjusted.map(|(_, se)| 100.0 * se),
                 "read": read_column(e.win_z(), e.share_z(), family_z),
@@ -7868,6 +7937,13 @@ mod tests {
             buildings: None,
             cities_taken: None,
             cities_lost: None,
+            units_killed: None,
+            units_lost: None,
+            units_lost_to_majors: None,
+            units_lost_to_city_states: None,
+            units_lost_to_barbarians: None,
+            civilians_lost: None,
+            last_orders: BTreeMap::new(),
             science_end: None,
             wonders: 0,
             military: 0.0,
@@ -9393,6 +9469,11 @@ mod tests {
             walled: 0,
             near_housing: 0,
             near_housing_fed: 0,
+            units_killed: Some(3),
+            units_lost: Some(5),
+            units_lost_to_majors: Some(4),
+            units_lost_to_barbarians: Some(1),
+            civilians_lost: None,
         }];
         let text = serde_json::to_string(&traced).expect("serializes");
         let back: Row = serde_json::from_str(&text).expect("parses");
@@ -10623,6 +10704,7 @@ mod tests {
         // The median is what the run-level figure reports, so a single
         // un-resolvable row cannot drag the whole run's number to infinity.
         let se = |win: f64| GeneEstimate {
+            unit_ledger: Vec::new(),
             techs_150: None,
             techs_end: None,
             science_end: None,
@@ -10671,5 +10753,184 @@ mod tests {
             "legacy anchors are not screened games and do not widen the window"
         );
         assert_eq!(played_seed_window(&[]), None);
+    }
+
+    /// ⭐ The unit ledger and the last-order map are absent on a row written
+    /// before them — a reader can tell "not recorded" from "lost none" — and
+    /// round-trip on a row that carries them.
+    #[test]
+    fn the_unit_ledger_is_absent_on_an_old_row_and_round_trips_on_a_new_one() {
+        let legacy = r#"{"kind":"game","game":0,"seed":7,"seat":1,"genome":"10","win":false,
+            "winner":0,"victory":"score","turn":250,"score":900,"score_share":0.3,"rank":2,
+            "cities":8,"alive":true,"secs":50.0,"techs":41,"cities_taken":1,"cities_lost":2}"#;
+        let old: Row = serde_json::from_str(legacy).unwrap();
+        assert_eq!(old.units_killed, None);
+        assert_eq!(old.units_lost, None);
+        assert_eq!(old.units_lost_to_majors, None);
+        assert_eq!(old.units_lost_to_city_states, None);
+        assert_eq!(old.units_lost_to_barbarians, None);
+        assert_eq!(old.civilians_lost, None);
+        assert!(old.last_orders.is_empty());
+        let text = serde_json::to_string(&old).unwrap();
+        for field in ["units_", "civilians_lost", "last_orders"] {
+            assert!(
+                !text.contains(field),
+                "an old row stays what it was: {text}"
+            );
+        }
+        let mut row = test_row(0, 0, "10", true);
+        row.units_killed = Some(7);
+        row.units_lost = Some(5);
+        row.units_lost_to_majors = Some(3);
+        row.units_lost_to_city_states = Some(0);
+        row.units_lost_to_barbarians = Some(2);
+        row.civilians_lost = Some(1);
+        row.last_orders = BTreeMap::from([
+            ("coordinated".to_string(), [2, 1]),
+            ("other".to_string(), [0, 1]),
+        ]);
+        let text = serde_json::to_string(&row).unwrap();
+        assert!(text.contains("\"units_lost\":5"), "{text}");
+        assert!(
+            text.contains("\"last_orders\":{\"coordinated\":[2,1],\"other\":[0,1]}"),
+            "{text}"
+        );
+        let back: Row = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.units_killed, Some(7));
+        assert_eq!(back.units_lost, Some(5));
+        assert_eq!(back.units_lost_to_majors, Some(3));
+        assert_eq!(back.units_lost_to_city_states, Some(0));
+        assert_eq!(back.units_lost_to_barbarians, Some(2));
+        assert_eq!(back.civilians_lost, Some(1));
+        assert_eq!(back.last_orders, row.last_orders);
+    }
+
+    /// ⭐ `--analyze` reads the unit ledger as an on−off Δ beside the city
+    /// ledger, and says nothing for a file that predates it.
+    #[test]
+    fn the_unit_ledger_reads_on_minus_off_beside_the_city_ledger() {
+        let header = test_header(&["a"]);
+        let mut rows = Vec::new();
+        for game in 0..12 {
+            for seat in 0..3 {
+                let on = (game + seat) % 2 == 0;
+                let mut row = test_row(game, seat, if on { "1" } else { "0" }, false);
+                row.cities_taken = Some(if on { 2 } else { 1 });
+                row.cities_lost = Some(0);
+                row.units_killed = Some(if on { 9 } else { 6 });
+                row.units_lost = Some(if on { 4 } else { 7 });
+                row.units_lost_to_majors = Some(if on { 3 } else { 5 });
+                row.units_lost_to_barbarians = Some(1);
+                row.civilians_lost = Some(if on { 0 } else { 2 });
+                rows.push(row);
+            }
+        }
+        let estimates = estimate(&header, &rows);
+        let e = &estimates.genes[0];
+        let names: Vec<&str> = unit_ledger::COLUMNS.iter().map(|(name, _)| *name).collect();
+        assert_eq!(e.unit_ledger.len(), names.len());
+        let delta = |name: &str| {
+            let column = names.iter().position(|n| *n == name).unwrap();
+            e.unit_ledger[column]
+                .expect("every row carries the column")
+                .0
+        };
+        for (name, expected) in [
+            ("cities_taken", 1.0),
+            ("cities_lost", 0.0),
+            ("units_killed", 3.0),
+            ("units_lost", -3.0),
+            ("units_lost_to_majors", -2.0),
+            ("units_lost_to_barbarians", 0.0),
+            ("civilians_lost", -2.0),
+        ] {
+            assert!(
+                (delta(name) - expected).abs() < 1e-9,
+                "{name}: {}",
+                delta(name)
+            );
+        }
+        let json = unit_ledger::json(e);
+        assert!((json["units_lost"]["diff"].as_f64().unwrap() + 3.0).abs() < 1e-9);
+        assert_eq!(json["units_lost"]["n_on"], 18);
+        // A file written before the ledger: no measurement, never a Δ of 0.
+        let old: Vec<Row> = rows
+            .iter()
+            .cloned()
+            .map(|mut row| {
+                row.units_lost = None;
+                row
+            })
+            .collect();
+        let estimates = estimate(&header, &old);
+        let column = names.iter().position(|n| *n == "units_lost").unwrap();
+        assert_eq!(estimates.genes[0].unit_ledger[column], None);
+        assert_eq!(
+            unit_ledger::json(&estimates.genes[0])["units_lost"],
+            serde_json::Value::Null
+        );
+    }
+
+    /// ⭐ A traced mark carries the ledger at that turn, read off the engine.
+    #[test]
+    fn a_trace_mark_reads_the_seats_ledger() {
+        let mut g = Game::new_full(2, 24, 16, 91_011, 250, 0, false);
+        g.players[0].combat_ledger.units_killed = 4;
+        g.players[0].combat_ledger.units_lost = 2;
+        g.players[0].combat_ledger.units_lost_to_barbarians = 2;
+        g.players[0].combat_ledger.civilians_lost = 1;
+        let sample = TraceSample::observe(&g, 0);
+        assert_eq!(sample.units_killed, Some(4));
+        assert_eq!(sample.units_lost, Some(2));
+        assert_eq!(sample.units_lost_to_majors, Some(0));
+        assert_eq!(sample.units_lost_to_barbarians, Some(2));
+        assert_eq!(sample.civilians_lost, Some(1));
+    }
+
+    /// ⭐ One short game of production agents played to its end: each major's
+    /// row carries the engine's unit ledger, and the last-order census names
+    /// the step behind the deaths it counted. The census is read the way
+    /// `play_game` reads it, settled after the last turn.
+    #[test]
+    fn a_short_game_records_the_exchange_and_who_ordered_the_dead() {
+        let seed = 4_242;
+        let mut world = Game::new_full(4, 32, 20, seed, 120, 2, true);
+        let mut ais: Vec<AdvancedAi> = (0..world.players.len())
+            .map(|_| AdvancedAi::new())
+            .collect();
+        civvis::ai::run_game(&mut world, &mut ais);
+        let majors: Vec<usize> = world
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        let mut steps: BTreeMap<String, [u32; 2]> = BTreeMap::new();
+        let (mut killed, mut lost) = (0u32, 0u32);
+        for &seat in &majors {
+            ais[seat].settle_last_orders(&world, seat);
+            let row = row_for_seat(&world, 0, seed, seat, String::new(), 0.0);
+            let ledger = world.combat_ledger(seat);
+            assert_eq!(row.units_killed, Some(ledger.units_killed));
+            assert_eq!(row.units_lost, Some(ledger.units_lost));
+            assert_eq!(row.civilians_lost, Some(ledger.civilians_lost));
+            killed += ledger.units_killed;
+            lost += ledger.units_lost;
+            for (step, pair) in ais[seat].strategy_census().last_orders.map() {
+                let total = steps.entry(step).or_default();
+                total[0] += pair[0];
+                total[1] += pair[1];
+            }
+        }
+        let deaths: u32 = steps.values().map(|pair| pair[0] + pair[1]).sum();
+        let other = steps.get("other").map_or(0, |pair| pair[0] + pair[1]);
+        let report = format!(
+            "majors killed {killed} and lost {lost} military units; the census counted \
+             {deaths} deaths, {other} of them `other` ({:.1}%); by step {steps:?}",
+            100.0 * f64::from(other) / f64::from(deaths.max(1))
+        );
+        assert!(lost > 0, "the game has to have a fight in it: {report}");
+        assert!(deaths > 0, "{report}");
+        panic!("REPORT {report}");
     }
 }

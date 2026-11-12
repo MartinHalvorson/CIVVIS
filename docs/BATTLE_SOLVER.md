@@ -152,6 +152,18 @@ worth, in the order they bind:
    0.39), melee-only the least (1.14 against 0.88), so production decides how
    much the tactics can return.
 
-A game-level kill and loss count on the seat record is the instrument that is
+A game-level kill and loss count on the seat record was the instrument that was
 missing: without it a whole-game null cannot be split into "the tactics did not
-change the exchange" and "the exchange did not change the game".
+change the exchange" and "the exchange did not change the game". It exists
+since 2026-11-12. The engine counts each unit where it removes it in combat
+(`Game::combat_ledger`, `src/game/combat_ledger.rs`): units killed, units
+lost and who struck them (a major, a city-state or the barbarians), and
+civilians taken and lost. `gene_screen` writes the seat's ledger on every row
+(`units_killed`, `units_lost`, `units_lost_to_majors`,
+`units_lost_to_city_states`, `units_lost_to_barbarians`, `civilians_lost`) and
+at every `--trace` mark, and `--analyze` prints their on−off Δ beside
+`cities_taken` and `cities_lost`. The row's `last_orders` map says which step
+last ordered each of the seat's military units that died — the battle
+planner, the solver, the rotation, the coordinated step and some forty others
+— and whether it ended its last turn within two tiles of a visible hostile
+(`src/ai/advanced/last_orders.rs`). Nothing reads either to decide anything.
