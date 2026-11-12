@@ -5203,7 +5203,7 @@
     position: absolute; z-index: 8; top: var(--solo-below-bars);
     right: calc(var(--panel-edge) + 42px + var(--panel-gap));
     max-width: calc(100% - var(--solo-track-width) - 42px - 5 * var(--panel-edge));
-    display: flex; gap: 7px; padding: 6px 8px; overflow-x: auto; scrollbar-width: none;
+    display: flex; gap: 7px; padding: 6px 8px 13px; overflow-x: auto; scrollbar-width: none;
     border-radius: 24px; border: 1px solid #3c554d; background: #0a1512d4;
     box-shadow: var(--shadow); backdrop-filter: blur(14px);
   }
@@ -5216,9 +5216,20 @@
     font: 800 12px/1 Georgia, serif; letter-spacing: .02em; text-transform: none;
   }
   .ribbon-leader:hover { color: var(--civ-trim); background: var(--civ); filter: brightness(1.15); }
+  /* The bust fills the disc and is cut to it; the monogram hangs beneath as
+     the name tag, clear of the stance mark in the corner. */
+  .ribbon-bust {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    fill: var(--civ-trim); clip-path: circle(50%);
+  }
+  .ribbon-crest {
+    position: absolute; left: 50%; bottom: -9px; transform: translateX(-50%);
+    padding: 1px 4px; border-radius: 6px; font: 800 9px/1 system-ui, sans-serif;
+    letter-spacing: .04em; color: #e9efe9; background: #0b0f0e; border: 1px solid var(--civ-trim);
+  }
   .ribbon-leader.mine { box-shadow: 0 0 0 1px #0b0f0e, 0 0 0 3px var(--gold); }
   .ribbon-mark {
-    position: absolute; right: -5px; bottom: -4px; min-width: 15px; height: 15px; padding: 0 2px;
+    position: absolute; right: -5px; top: -4px; min-width: 15px; height: 15px; padding: 0 2px;
     display: grid; place-items: center; border-radius: 8px;
     color: #e9efe9; background: #1d2a25; border: 1px solid #4d685f;
     font: 800 10px/1 system-ui, sans-serif;

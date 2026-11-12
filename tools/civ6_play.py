@@ -1017,7 +1017,17 @@ def city_deficit_reading(event: dict, deficit: int) -> dict | None:
 # t181-t255) took their first rival capital after turn 100 (t104-t177; the
 # other at t87). The 11 Deity Domination-lane games that reached turn 100 held
 # none by then and won none.
+#
+# ★ A game that is level on techs is not retired. Live Deity Gran Colombia
+# civvis-20261112T002140Z (four players, Pangaea, Online) was retired at turn
+# 152 holding 51 techs against the best rival's 54, 11 cities against 9, 6 and
+# 5, and 0.9 times the power of the rival it was fighting: the strongest seat
+# of some fifty games that day. CIVVIS_RESTART_DOMINATION_NO_CAPITAL_LEVEL_TECHS
+# is the share of the best rival's tech count at which the game plays on (0.85
+# spares that game; the usual retired game stood at 0.55); 0 or absent keeps
+# the rule unconditional. A record without the tech counts is not level.
 DOMINATION_NO_CAPITAL_POLICY_KEY = "CIVVIS_RESTART_DOMINATION_NO_CAPITAL_FROM_TURN"
+DOMINATION_NO_CAPITAL_LEVEL_KEY = "CIVVIS_RESTART_DOMINATION_NO_CAPITAL_LEVEL_TECHS"
 DOMINATION_NO_CAPITAL_TURNS = 3
 
 
@@ -1034,6 +1044,41 @@ def parse_domination_no_capital_from_turn(value: str | None) -> int:
               "not a turn number such as 100", flush=True)
         return 0
     return turn
+
+
+def parse_domination_no_capital_level(value: str | None) -> float:
+    """The tech share that spares a level game, from `0.85`; 0 = no exemption."""
+    if value is None or value == "":
+        return 0.0
+    try:
+        share = float(value)
+    except ValueError:
+        share = -1.0
+    if not 0.0 <= share <= 2.0:
+        print(f"[policy] ignoring {DOMINATION_NO_CAPITAL_LEVEL_KEY}={value!r}: "
+              "not a share such as 0.85", flush=True)
+        return 0.0
+    return share
+
+
+def domination_no_capital_level_policy(path: Path | None = None) -> float:
+    """The policy's level-game tech share for the no-capital rule; 0 when unset."""
+    return parse_domination_no_capital_level(
+        read_policy_value(DOMINATION_NO_CAPITAL_LEVEL_KEY, path))
+
+
+def domination_tech_share(event: dict) -> float | None:
+    """Our tech count over the best rival's in one `state` record; None if unreadable."""
+    ours = event.get("techs")
+    rivals = event.get("rivals")
+    if not isinstance(ours, list) or not isinstance(rivals, list):
+        return None
+    counts = [rival.get("techs") for rival in rivals if isinstance(rival, dict)]
+    counts = [count for count in counts
+              if isinstance(count, int) and not isinstance(count, bool) and count > 0]
+    if not counts:
+        return None
+    return len(ours) / max(counts)
 
 
 def domination_no_capital_policy(path: Path | None = None) -> int:
@@ -1057,8 +1102,11 @@ def domination_no_capital_turn(args: argparse.Namespace) -> int:
 
 
 def domination_no_capital_reading(state: dict, event: dict,
-                                  from_turn: int) -> dict | None:
+                                  from_turn: int, level_techs: float = 0.0) -> dict | None:
     """Fold one record into the no-capital watch; a verdict once the run holds.
+
+    `level_techs` above 0 spares a game whose tech count is at least that share
+    of the best rival's (`domination_tech_share`): the run of turns is cleared.
 
     `from_turn` is already at the game's speed (see `online_turns`); 0 is off.
     `state` carries our player (`domination_owner`), the city-states seen
@@ -1102,6 +1150,12 @@ def domination_no_capital_reading(state: dict, event: dict,
         return None
     if turn < from_turn:
         return None
+    if isinstance(level_techs, (int, float)) and not isinstance(level_techs, bool) \
+            and level_techs > 0:
+        share = domination_tech_share(event)
+        if share is not None and share >= level_techs:
+            state.pop("domination_no_capital", None)
+            return None
     run = state.get("domination_no_capital")
     if run is None:
         run = state["domination_no_capital"] = {"since": turn, "last": turn, "turns": 1}
@@ -5329,12 +5383,17 @@ def play(args: argparse.Namespace) -> int:
     no_capital_from = (domination_no_capital_policy() if no_capital_from is None
                        else parse_domination_no_capital_from_turn(str(no_capital_from)))
     args.restart_domination_no_capital_from_turn = no_capital_from
+    no_capital_level = domination_no_capital_level_policy()
+    args.restart_domination_no_capital_level_techs = no_capital_level
     if no_capital_from > 0 and getattr(args, "civvis_victory", None) == "domination":
         speed = getattr(args, "speed", None)
         print(f"[policy] a domination game holding no rival original capital for "
               f"{DOMINATION_NO_CAPITAL_TURNS} turns running from turn "
               f"{online_turns(no_capital_from, speed)} is retired (operator 2026-11-10; "
               f"from turn {no_capital_from} at Online, scaled to {speed})", flush=True)
+        if no_capital_level > 0:
+            print(f"[policy] ... unless it holds {no_capital_level:.0%} of the best "
+                  "rival's techs or more: a level game plays on", flush=True)
     if production_share > 0:
         speed = getattr(args, "speed", None)
         print(f"[policy] a game whose Production stays under {production_share:.0%} "
@@ -6817,7 +6876,9 @@ def _play(args: argparse.Namespace) -> int:
         # ★ OPERATOR 2026-11-10: a Domination game with no rival original
         # capital by the policy's turn. See `domination_no_capital_reading`.
         if no_capital_from > 0:
-            reading = domination_no_capital_reading(state, event, no_capital_from)
+            reading = domination_no_capital_reading(
+                state, event, no_capital_from,
+                getattr(args, "restart_domination_no_capital_level_techs", 0.0) or 0.0)
             if reading is not None and reading.get("fires"):
                 print(f"[abandon] turn {reading['turn']}: no rival original capital held "
                       f"since turn {reading['since']} ({reading['turns']} turns running "
