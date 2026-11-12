@@ -24861,7 +24861,7 @@ function retirePlanetEffects(now) {
   live(anim.floats, () => 700);
   if (anim.strike && now - anim.strike.t0 >= 220) anim.strike = null;
 }
-function drawPlanetMap() {
+function drawPlanetMap(reuseBackdrop = false) {
   cityPlateBoxes = [];
   if (!planetMap()) { planetGpuHide(); return false; }
   if (!planetReady()) {
@@ -24910,124 +24910,140 @@ function drawPlanetMap() {
   const gpuSurface = !gpuMap && drawPlanetGpuSurface(camera, radius, centerX, centerY);
   if (!gpuSurface && !gpuMap) planetGpuHide();
 
-  cx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  // The GPU surface is an opaque black-backed layer under this canvas.  Clear
-  // only the overlay when it is active; otherwise Canvas retains its ordinary
-  // complete black field.
-  if (gpuSurface || gpuMap) {
-    cx.clearRect(0, 0, MAPW, MAPH);
+  // A chart, GPU surface or interactive lens keeps its established renderer.
+  const backdropEligible = SPEC && spectator && !camera.chart && !gpuSurface &&
+    !gpuMap && !mapLens && !sel && !selCity && !mapSearchQuery && !tacks.length;
+  const backdropView = backdropEligible ? planetBackdropView(centerX, centerY) : null;
+  const heldBackdrop = reuseBackdrop && backdropEligible
+    ? reusablePlanetBackdrop(backdropView) : null;
+  let cells, inkOnly;
+  if (heldBackdrop) {
+    paintPlanetBackdrop(heldBackdrop, centerY);
+    cells = heldBackdrop.cells;
+    inkOnly = heldBackdrop.hitFrame.inkOnly;
   } else {
-    // Space is a true black field. The globe, stars, and bodies are the only
-    // lights in it, rather than floating over a blue atmospheric wash.
-    cx.fillStyle = "#000";
-    cx.fillRect(0, 0, MAPW, MAPH);
-  }
-  // Stars emerge as the globe draws back; the black field stays constant. A
-  // chart is a sheet, not a ball in space: nothing of the sky — stars here,
-  // and the bodies, orbits, satellites and launches in `drawPlanetSky` — is
-  // ever painted over or around it.
-  const depth = skyDepth(radius);
-  // Over the GPU's globe the stars would land on the ground: keep them to the
-  // sky around it, which is all the Canvas globe leaves of them.
-  const starsAroundGpuGlobe = gpuMap && depth > 0;
-  if (starsAroundGpuGlobe) {
-    cx.save();
-    cx.beginPath(); cx.rect(0, 0, MAPW, MAPH); cx.arc(centerX, centerY, radius, 0, 7);
-    cx.clip("evenodd");
-  }
-  if (depth > 0 && !camera.chart) drawSkyStars(depth, radius);
-  if (starsAroundGpuGlobe) cx.restore();
-
-  // Everything that belongs to the Earth is painted through one camera. On a
-  // known globe that camera was tilted in 3D before projection, preserving the
-  // circular limb; only an undiscovered chart needs the planar transform below.
-  // Keeping it outside individual icon painters still makes a unit, building,
-  // badge, border, and host cell agree about their projection. The sky remains
-  // in screen space below.
-  cx.save();
-  applyPlanetGroundTilt(centerY);
-
-  if (!gpuSurface && !gpuMap) {
-    // The ocean sphere under the tiles: it fills the limb no tile quite reaches
-    // and gives the globe its roundness. On a chart there is no limb and no ball
-    // to be round, so the same wash is spread to the corners of the sheet instead
-    // — an unknown sea running off the edge of the paper, which is what the blank
-    // parts of a chart have always been.
-    const sheet = camera.chart ? planetStageReach(centerX, centerY) : radius;
-    cx.save();
-    if (!camera.chart) {
-      // The drop shadow is the globe's own, so it has to shrink with it: a fixed
-      // eighteen-pixel blur around a five-pixel Earth is a smudge with a world in
-      // the middle of it. Nothing is casting one across a chart.
-      cx.shadowColor = "#000d";
-      cx.shadowBlur = Math.max(Math.min(18, radius * .4), radius * .12);
-      cx.shadowOffsetY = Math.max(Math.min(8, radius * .2), radius * .05);
-    }
-    const ocean = cx.createRadialGradient(centerX - sheet * .32, centerY - sheet * .36,
-                                          sheet * .05, centerX, centerY, sheet);
-    if (camera.chart && !spectator) {
-      ocean.addColorStop(0, PARCH_LIGHT); ocean.addColorStop(.52, PARCH);
-      ocean.addColorStop(.88, "#aa9364"); ocean.addColorStop(1, "#77623f");
-    } else if (spectator) {
-      ocean.addColorStop(0, "#46679f"); ocean.addColorStop(.52, "#14315e");
-      ocean.addColorStop(.88, "#091a3a"); ocean.addColorStop(1, "#020714");
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    // The GPU surface is an opaque black-backed layer under this canvas.  Clear
+    // only the overlay when it is active; otherwise Canvas retains its ordinary
+    // complete black field.
+    if (gpuSurface || gpuMap) {
+      cx.clearRect(0, 0, MAPW, MAPH);
     } else {
-      // Under fog the bare sphere is everything this empire has never seen, so
-      // it reads as unknown rather than as an ocean nobody needs to explore.
-      ocean.addColorStop(0, "#39434c"); ocean.addColorStop(.52, "#222a32");
-      ocean.addColorStop(.88, "#141a20"); ocean.addColorStop(1, "#05090d");
+      // Space is a true black field. The globe, stars, and bodies are the only
+      // lights in it, rather than floating over a blue atmospheric wash.
+      cx.fillStyle = "#000";
+      cx.fillRect(0, 0, MAPW, MAPH);
     }
-    cx.fillStyle = ocean;
-    if (camera.chart) cx.fillRect(0, 0, MAPW, MAPH);
-    else { cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.fill(); }
-    cx.restore();
-
-    if (camera.chart && !spectator) {
-      drawPlanetChartFibres(camera, scale, centerX, centerY);
-      drawPlanetChartMarginalia(camera, scale, centerX, centerY);
+    // Stars emerge as the globe draws back; the black field stays constant. A
+    // chart is a sheet, not a ball in space: nothing of the sky — stars here,
+    // and the bodies, orbits, satellites and launches in `drawPlanetSky` — is
+    // ever painted over or around it.
+    const depth = skyDepth(radius);
+    // Over the GPU's globe the stars would land on the ground: keep them to the
+    // sky around it, which is all the Canvas globe leaves of them.
+    const starsAroundGpuGlobe = gpuMap && depth > 0;
+    if (starsAroundGpuGlobe) {
+      cx.save();
+      cx.beginPath(); cx.rect(0, 0, MAPW, MAPH); cx.arc(centerX, centerY, radius, 0, 7);
+      cx.clip("evenodd");
     }
-  }
+    if (depth > 0 && !camera.chart) drawSkyStars(depth, radius);
+    if (starsAroundGpuGlobe) cx.restore();
 
-  // Only the view nobody is steering can stop at the inked tiles: a lens, a
-  // selection or a search paints whichever tiles it likes.
-  const inkOnly = gpuSurface && planetIsHuge() && spectator && !mapLens && !sel &&
-    !mapSearchMatches().size && !unitIntelLayers().length;
-  // The GPU globe has already drawn every cell's ground; the ink above it
-  // iterates only the cells that carry some, and finds the rest by key.
-  const cells = !earthInFrame ? []
-    : gpuInk && !planetGpuMapOverlayWalksCells()
-      ? planetGpuMapOverlayCells(camera, scale, centerX, centerY, radius, visible, spectator)
-    : gpuInk ? planetCells(camera, scale, centerX, centerY)
-    : gpuMap ? planetGpuMapNearCells(PLANET_GPU.map, camera, scale, centerX, centerY)
-    : planetCells(camera, scale, centerX, centerY, undefined,
-                  inkOnly ? planetInkTiles() : state.map.tiles,
-                  planetIsHuge() && !gpuSurface);
-  PLANET_HIT_FRAME = {cells, camera, scale, centerX, centerY, inkOnly};
-  // Over the GPU globe these are not every cell either, and a pointer is
-  // answered without building them at all (`planetHitCellAt`).
-  if (gpuMap) { PLANET_HIT_FRAME.inkOnly = true; PLANET_HIT_FRAME.onDemand = true; }
-  if (!gpuSurface && !gpuMap)
-    drawPlanetGround(cells, camera, scale, radius, centerX, centerY, turnVisible, spectator);
-  else if (gpuMap && !gpuInk)
-    drawPlanetGroundInk(cells, scale, radius, turnVisible, spectator, false);
-  if (!gpuInk) {
-    // A route is ground infrastructure on the globe too: draw it before the
-    // frontier ribbon and before every terrain landmark that shares its tile.
-    drawPlanetStrategicRoads(cells, turnVisible, spectator);
+    // Everything that belongs to the Earth is painted through one camera. On a
+    // known globe that camera was tilted in 3D before projection, preserving the
+    // circular limb; only an undiscovered chart needs the planar transform below.
+    // Keeping it outside individual icon painters still makes a unit, building,
+    // badge, border, and host cell agree about their projection. The sky remains
+    // in screen space below.
+    cx.save();
+    applyPlanetGroundTilt(centerY);
 
-    // Frontiers go over the finished ground, the way they do on a flat board, and
-    // below everything a viewer clicks. Under a coin-sized world a tile is a
-    // pixel and its border is a smear, which is the same reason the grid stops.
-    if (radius >= SKY_MARKERS) drawPlanetCoastlines(cells, turnVisible, spectator);
-    if (radius >= SKY_MARKERS) drawPlanetFrontiers(cells);
-  }
+    if (!gpuSurface && !gpuMap) {
+      // The ocean sphere under the tiles: it fills the limb no tile quite reaches
+      // and gives the globe its roundness. On a chart there is no limb and no ball
+      // to be round, so the same wash is spread to the corners of the sheet instead
+      // — an unknown sea running off the edge of the paper, which is what the blank
+      // parts of a chart have always been.
+      const sheet = camera.chart ? planetStageReach(centerX, centerY) : radius;
+      cx.save();
+      if (!camera.chart) {
+        // The drop shadow is the globe's own, so it has to shrink with it: a fixed
+        // eighteen-pixel blur around a five-pixel Earth is a smudge with a world in
+        // the middle of it. Nothing is casting one across a chart.
+        cx.shadowColor = "#000d";
+        cx.shadowBlur = Math.max(Math.min(18, radius * .4), radius * .12);
+        cx.shadowOffsetY = Math.max(Math.min(8, radius * .2), radius * .05);
+      }
+      const ocean = cx.createRadialGradient(centerX - sheet * .32, centerY - sheet * .36,
+                                            sheet * .05, centerX, centerY, sheet);
+      if (camera.chart && !spectator) {
+        ocean.addColorStop(0, PARCH_LIGHT); ocean.addColorStop(.52, PARCH);
+        ocean.addColorStop(.88, "#aa9364"); ocean.addColorStop(1, "#77623f");
+      } else if (spectator) {
+        ocean.addColorStop(0, "#46679f"); ocean.addColorStop(.52, "#14315e");
+        ocean.addColorStop(.88, "#091a3a"); ocean.addColorStop(1, "#020714");
+      } else {
+        // Under fog the bare sphere is everything this empire has never seen, so
+        // it reads as unknown rather than as an ocean nobody needs to explore.
+        ocean.addColorStop(0, "#39434c"); ocean.addColorStop(.52, "#222a32");
+        ocean.addColorStop(.88, "#141a20"); ocean.addColorStop(1, "#05090d");
+      }
+      cx.fillStyle = ocean;
+      if (camera.chart) cx.fillRect(0, 0, MAPW, MAPH);
+      else { cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.fill(); }
+      cx.restore();
 
-  // The planet is another projection of the strategic map, not a lower-detail
-  // terrain mode. Its rivers, cliffs, landmarks, improvements, deposits and
-  // yields therefore use the same authored vocabulary as the flat board.
-  if (scale > PLANET_STRATEGIC_DETAIL_SCALE) {
-    if (gpuInk) drawPlanetNaturalWonders(cells, turnVisible, spectator);
-    else drawPlanetStrategicTerrain(cells, turnVisible, spectator);
+      if (camera.chart && !spectator) {
+        drawPlanetChartFibres(camera, scale, centerX, centerY);
+        drawPlanetChartMarginalia(camera, scale, centerX, centerY);
+      }
+    }
+
+    // Only the view nobody is steering can stop at the inked tiles: a lens, a
+    // selection or a search paints whichever tiles it likes.
+    inkOnly = gpuSurface && planetIsHuge() && spectator && !mapLens && !sel &&
+      !mapSearchMatches().size && !unitIntelLayers().length;
+    // The GPU globe has already drawn every cell's ground; the ink above it
+    // iterates only the cells that carry some, and finds the rest by key.
+    cells = !earthInFrame ? []
+      : gpuInk && !planetGpuMapOverlayWalksCells()
+        ? planetGpuMapOverlayCells(camera, scale, centerX, centerY, radius, visible, spectator)
+      : gpuInk ? planetCells(camera, scale, centerX, centerY)
+      : gpuMap ? planetGpuMapNearCells(PLANET_GPU.map, camera, scale, centerX, centerY)
+      : planetCells(camera, scale, centerX, centerY, undefined,
+                    inkOnly ? planetInkTiles() : state.map.tiles,
+                    planetIsHuge() && !gpuSurface);
+    PLANET_HIT_FRAME = {cells, camera, scale, centerX, centerY, inkOnly};
+    // Over the GPU globe these are not every cell either, and a pointer is
+    // answered without building them at all (`planetHitCellAt`).
+    if (gpuMap) { PLANET_HIT_FRAME.inkOnly = true; PLANET_HIT_FRAME.onDemand = true; }
+    if (!gpuSurface && !gpuMap)
+      drawPlanetGround(cells, camera, scale, radius, centerX, centerY, turnVisible, spectator);
+    else if (gpuMap && !gpuInk)
+      drawPlanetGroundInk(cells, scale, radius, turnVisible, spectator, false);
+    if (!gpuInk) {
+      // A route is ground infrastructure on the globe too: draw it before the
+      // frontier ribbon and before every terrain landmark that shares its tile.
+      drawPlanetStrategicRoads(cells, turnVisible, spectator);
+
+      // Frontiers go over the finished ground, the way they do on a flat board, and
+      // below everything a viewer clicks. Under a coin-sized world a tile is a
+      // pixel and its border is a smear, which is the same reason the grid stops.
+      if (radius >= SKY_MARKERS) drawPlanetCoastlines(cells, turnVisible, spectator);
+      if (radius >= SKY_MARKERS) drawPlanetFrontiers(cells);
+    }
+
+    // The planet is another projection of the strategic map, not a lower-detail
+    // terrain mode. Its rivers, cliffs, landmarks, improvements, deposits and
+    // yields therefore use the same authored vocabulary as the flat board.
+    if (scale > PLANET_STRATEGIC_DETAIL_SCALE) {
+      if (gpuInk) drawPlanetNaturalWonders(cells, turnVisible, spectator);
+      else drawPlanetStrategicTerrain(cells, turnVisible, spectator);
+    }
+    // Warm once on an ordinary redraw. A camera moving during animation does
+    // not pay for a succession of copies it could never reuse.
+    if (!reuseBackdrop && backdropEligible) savePlanetBackdrop(backdropView, cells);
   }
 
   const highlighted = new Map();
@@ -25375,13 +25391,14 @@ function drawUnitMovementTails(unitAlpha) {
   }
 }
 
-function drawScene() {
+function drawScene(reuseBackdrop = false) {
   if (!state) return;
   // Before the branch, because the sky's own way about has to come down when
   // the world under it is a flat board as surely as it goes up when the camera
   // leaves a globe.
   syncSkyNav();
-  if (drawPlanetMap()) return;
+  if (!reuseBackdrop) planetBackdrop = null;
+  if (drawPlanetMap(reuseBackdrop)) return;
   const now0 = performance.now();
   cx.setTransform(1, 0, 0, 1, 0, 0);
   cx.fillStyle = "#0a0e14";
@@ -26206,10 +26223,10 @@ function drawScene() {
   drawNuclearFlash(now0);
 }
 
-function draw() {
+function draw(reuseBackdrop = false) {
   if (!state) return;
   const started = performance.now();
-  drawScene();
+  drawScene(reuseBackdrop === true);
   recordPerformanceRender(performance.now() - started);
 }
 
@@ -39883,7 +39900,7 @@ function animTick(now) {
       const t0 = performance.now();
       // This complete overlay paint also submits the current GPU orientation,
       // so it replaces rather than doubles the direct terrain draw below.
-      draw();
+      draw(true);
       drawCost = drawCost * .85 + (performance.now() - t0) * .15;
       paintMiniWithCamera(now, userCameraMoving);
     } else drawPlanetGpuAnimationFrame();
@@ -39893,7 +39910,7 @@ function animTick(now) {
     gpuNeedsSettledPaint = false;
     lastIdleDraw = now;
     const t0 = performance.now();
-    draw();
+    draw(true);
     drawCost = drawCost * .85 + (performance.now() - t0) * .15;
     drawMini(); lastMiniDraw = now;
     return;
@@ -39905,7 +39922,7 @@ function animTick(now) {
   if (active && now - lastIdleDraw > cadence) {
     lastIdleDraw = now;
     const t0 = performance.now();
-    draw();
+    draw(true);
     drawCost = drawCost * 0.85 + (performance.now() - t0) * 0.15;
     gpuNeedsSettledPaint = false;
     // A detonation animates on the minimap too, and unlike a camera move it can

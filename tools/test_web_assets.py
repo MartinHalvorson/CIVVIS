@@ -796,7 +796,7 @@ class PlanetEmpireNames(unittest.TestCase):
 
     def test_names_are_the_top_of_the_map_under_only_what_flies(self):
         source = self.source()
-        start = source.index("function drawPlanetMap()")
+        start = source.index("function drawPlanetMap(")
         frame = source[start:source.index("\n}\n", start)]
         for names in (frame.index("drawPlanetEmpireLabels(cx,"),
                       frame.index("paintPlanetEmpireLabelLayer(")):

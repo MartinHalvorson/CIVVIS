@@ -493,6 +493,7 @@ pub(crate) fn offered_cost(game: &Game, action: &Action) -> Option<f64> {
 
 const EMBEDDED_INDEX_HTML: &str = include_str!("../web/index.html");
 const EMBEDDED_APP_PALETTE_JS: &str = include_str!("../web/assets/app_palette.js");
+const EMBEDDED_APP_BACKDROP_JS: &str = include_str!("../web/assets/app_backdrop.js");
 const EMBEDDED_APP_JS: &str = include_str!("../web/assets/app.js");
 /// The whole page source — the document plus its one external script — as a
 /// single searchable string. Only the source-contract tests read it: they
@@ -509,10 +510,14 @@ static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(||
     // that reason — the assertions were about terrain colours and tile art that
     // had simply moved to the script beside it.
     let mut page = String::with_capacity(
-        EMBEDDED_INDEX_HTML.len() + EMBEDDED_APP_PALETTE_JS.len() + EMBEDDED_APP_JS.len(),
+        EMBEDDED_INDEX_HTML.len()
+            + EMBEDDED_APP_PALETTE_JS.len()
+            + EMBEDDED_APP_BACKDROP_JS.len()
+            + EMBEDDED_APP_JS.len(),
     );
     page.push_str(EMBEDDED_INDEX_HTML);
     page.push_str(EMBEDDED_APP_PALETTE_JS);
+    page.push_str(EMBEDDED_APP_BACKDROP_JS);
     page.push_str(EMBEDDED_APP_JS);
     page.push_str(EMBEDDED_APP_SETUP_JS);
     page.push_str(EMBEDDED_APP_MOMENTS_JS);
@@ -3218,6 +3223,7 @@ impl Session {
 }
 
 const APP_PALETTE_JS_TAG: &str = r#"<script src="/assets/app_palette.js"></script>"#;
+const APP_BACKDROP_JS_TAG: &str = r#"<script src="/assets/app_backdrop.js"></script>"#;
 const APP_JS_TAG: &str = r#"<script src="/assets/app.js"></script>"#;
 const APP_SETUP_JS_TAG: &str = r#"<script src="/assets/app_setup.js"></script>"#;
 const APP_FRONTDOOR_JS_TAG: &str = r#"<script src="/assets/app_frontdoor.js"></script>"#;
@@ -3232,6 +3238,8 @@ const APP_MOMENTS_JS_TAG: &str = r#"<script src="/assets/app_moments.js"></scrip
 fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
     let palette_tag =
         format!(r#"<script src="/assets/app_palette.js?instance={instance}"></script>"#);
+    let backdrop_tag =
+        format!(r#"<script src="/assets/app_backdrop.js?instance={instance}"></script>"#);
     let app_tag = format!(r#"<script src="/assets/app.js?instance={instance}"></script>"#);
     let setup_tag = format!(r#"<script src="/assets/app_setup.js?instance={instance}"></script>"#);
     let frontdoor_tag =
@@ -3239,6 +3247,7 @@ fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
     let moments_tag =
         format!(r#"<script src="/assets/app_moments.js?instance={instance}"></script>"#);
     page.replacen(APP_PALETTE_JS_TAG, &palette_tag, 1)
+        .replacen(APP_BACKDROP_JS_TAG, &backdrop_tag, 1)
         .replacen(APP_JS_TAG, &app_tag, 1)
         .replacen(APP_SETUP_JS_TAG, &setup_tag, 1)
         .replacen(APP_FRONTDOOR_JS_TAG, &frontdoor_tag, 1)
@@ -3271,6 +3280,11 @@ fn app_palette_js() -> Vec<u8> {
         }
     }
     EMBEDDED_APP_PALETTE_JS.as_bytes().to_vec()
+}
+
+fn app_backdrop_js() -> Vec<u8> {
+    std::fs::read("web/assets/app_backdrop.js")
+        .unwrap_or_else(|_| EMBEDDED_APP_BACKDROP_JS.as_bytes().to_vec())
 }
 
 fn app_moments_js() -> Vec<u8> {
@@ -4561,6 +4575,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 "200 OK",
                 "text/javascript; charset=utf-8",
                 &app_palette_js(),
+            );
+        }
+        ("GET", "/assets/app_backdrop.js") => {
+            respond(
+                stream,
+                "200 OK",
+                "text/javascript; charset=utf-8",
+                &app_backdrop_js(),
             );
         }
         ("GET", "/assets/app.js") => {

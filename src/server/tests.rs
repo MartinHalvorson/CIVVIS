@@ -29,10 +29,12 @@ use std::time::{Duration, Instant};
 
 #[test]
 fn served_index_tags_the_app_script_with_its_server_instance() {
-    let page = r#"<html><script src="/assets/app.js"></script><script src="/assets/app_setup.js"></script></html>"#;
+    let page = r#"<html><script src="/assets/app_backdrop.js"></script><script src="/assets/app.js"></script><script src="/assets/app_setup.js"></script></html>"#;
     let served =
         String::from_utf8(index_with_app_instance(page, 4242)).expect("the HTML fixture is UTF-8");
 
+    assert!(served.contains(r#"<script src="/assets/app_backdrop.js?instance=4242"></script>"#));
+    assert!(!served.contains(r#"<script src="/assets/app_backdrop.js"></script>"#));
     assert!(served.contains(r#"<script src="/assets/app.js?instance=4242"></script>"#));
     assert!(!served.contains(r#"<script src="/assets/app.js"></script>"#));
     assert!(served.contains(r#"<script src="/assets/app_setup.js?instance=4242"></script>"#));
@@ -478,7 +480,7 @@ fn browser_traces_each_units_walked_route_for_n_turns() {
 #[test]
 fn browser_does_not_shade_tiles_based_on_unit_presence() {
     let ground = EMBEDDED_INDEX
-        .split_once("function drawScene() {")
+        .split_once("function drawScene(reuseBackdrop = false) {")
         .expect("flat strategic renderer")
         .1
         .split_once("// --- territory borders:")
@@ -3896,7 +3898,7 @@ fn a_globe_draws_and_drains_everything_the_map_animates() {
     // read them. On a globe, the default world, units teleported, blows landed
     // with no number, and the full queues kept the page repainting for ever.
     let planet = EMBEDDED_APP_JS
-        .split_once("function drawPlanetMap() {")
+        .split_once("function drawPlanetMap(reuseBackdrop = false) {")
         .and_then(|(_, rest)| rest.split_once("\n}\n"))
         .expect("drawPlanetMap is a top-level function")
         .0;
@@ -5801,7 +5803,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains("id=\"maptype\""));
     // The globe has its own renderer, and it is the only one: both globe
     // scripts are drawn by it, so neither needs a projection of its own.
-    assert!(EMBEDDED_INDEX.contains("function drawPlanetMap()"));
+    assert!(EMBEDDED_INDEX.contains("function drawPlanetMap(reuseBackdrop = false)"));
     // A world faces the way it was found until north is discovered, so
     // nothing in the viewer may go back to a bare north-up reset: the
     // camera paths, the compass and the minimap all read one bearing.
@@ -6531,7 +6533,9 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // and the optional yield overlay is the reader's top-most map layer.
     // Keep both projections in lockstep so switching to the globe does not
     // invert the information hierarchy.
-    let flat_map = EMBEDDED_INDEX.find("function drawScene() {").unwrap();
+    let flat_map = EMBEDDED_INDEX
+        .find("function drawScene(reuseBackdrop = false) {")
+        .unwrap();
     let flat = &EMBEDDED_INDEX[flat_map..];
     let flat_roads = flat.find("drawFlatStrategicRoads(tiles);").unwrap();
     let flat_borders = flat.find("// --- territory borders:").unwrap();
@@ -6549,7 +6553,9 @@ fn browser_orders_controls_interface_setup_and_logs() {
             && flat_units < flat_yields,
         "flat-map painter order must be roads, borders/resources, units, then yields"
     );
-    let globe_map = EMBEDDED_INDEX.find("function drawPlanetMap() {").unwrap();
+    let globe_map = EMBEDDED_INDEX
+        .find("function drawPlanetMap(reuseBackdrop = false) {")
+        .unwrap();
     let globe = &EMBEDDED_INDEX[globe_map..];
     let globe_roads = globe
         .find("drawPlanetStrategicRoads(cells, turnVisible, spectator);")
@@ -16492,7 +16498,8 @@ fn clicking_your_city_opens_it_and_a_garrison_does_not_get_in_the_way() {
         .find("const pos = pixelToHex(sx, sy);\n  if (!pos || !state) return;\n  const k = key(pos);\n  if (sitePick)")
         .expect("the map click reads its tile");
     assert!(plate < tile);
-    assert!(EMBEDDED_APP_JS.contains("function drawPlanetMap() {\n  cityPlateBoxes = [];"));
+    assert!(EMBEDDED_APP_JS
+        .contains("function drawPlanetMap(reuseBackdrop = false) {\n  cityPlateBoxes = [];"));
 }
 
 #[test]
@@ -16612,6 +16619,7 @@ fn no_two_page_scripts_declare_the_same_function() {
     // failed, because audio stays suspended until a real click.
     let scripts = [
         ("app_palette.js", super::EMBEDDED_APP_PALETTE_JS),
+        ("app_backdrop.js", super::EMBEDDED_APP_BACKDROP_JS),
         ("app.js", EMBEDDED_APP_JS),
         ("app_setup.js", EMBEDDED_APP_SETUP_JS),
         ("app_moments.js", EMBEDDED_APP_MOMENTS_JS),
