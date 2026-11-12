@@ -163,18 +163,36 @@ impl TacticsCensus {
         a.valves += b.valves;
     }
 
-    /// The rows as `{row: [hits, rows]}`, for a report.
-    pub fn map(&self) -> BTreeMap<String, [f64; 2]> {
-        self.rows
+    /// The rows as `{row: [hits, rows]}`, and what the switch did as
+    /// `{gate: what: [count, governed unit-turns]}`, for a report.
+    pub fn report(&self) -> BTreeMap<String, [f64; 2]> {
+        let mut out: BTreeMap<String, [f64; 2]> = self
+            .rows
             .iter()
             .map(|(key, tally)| (key.to_string(), [tally.hits, tally.rows as f64]))
-            .collect()
+            .collect();
+        let g = &self.gate;
+        if g.units > 0 {
+            let units = g.units as f64;
+            for (name, count) in [
+                ("strikes drawn", g.strikes_drawn),
+                ("strikes landed", g.strikes_landed),
+                ("strikes failed", g.strikes_failed),
+                ("held", g.held),
+                ("no retreat", g.no_retreat),
+                ("refusals", g.refusals),
+                ("valves", g.valves),
+            ] {
+                out.insert(format!("gate: {name}"), [count as f64, units]);
+            }
+        }
+        out
     }
 }
 
 /// The table beside the live host's: one line per [`LIVE`] row, then a column
-/// per census.
-pub fn compare(columns: &[(&str, &TacticsCensus)]) -> String {
+/// per census, each read from a [`TacticsCensus::report`].
+pub fn compare(columns: &[(&str, &BTreeMap<String, [f64; 2]>)]) -> String {
     let mut out = format!("{:<38} {:>16}", "row", "live host");
     for (name, _) in columns {
         out.push_str(&format!(" {name:>22}"));
@@ -186,9 +204,13 @@ pub fn compare(columns: &[(&str, &TacticsCensus)]) -> String {
             hits / *rows as f64,
             rows
         ));
-        for (_, census) in columns {
-            let tally = census.rows.get(key).copied().unwrap_or_default();
-            out.push_str(&format!("       {:>6.3} ({:>6})", tally.rate(), tally.rows));
+        for (_, report) in columns {
+            let [hits, rows] = report.get(*key).copied().unwrap_or([0.0, 0.0]);
+            out.push_str(&format!(
+                "       {:>6.3} ({:>6})",
+                hits / rows.max(1.0),
+                rows
+            ));
         }
         out.push('\n');
     }
@@ -581,6 +603,10 @@ fn govern(g: &mut Game, pid: usize, host: &HostTactics, counts: &mut GateCounts)
     g.host_gate = Some(Box::new(gate));
 }
 
+/// A measured seat's unit in open-ground reach: `(id, distance, hp, expected
+/// damage, in reach without moving)`.
+type InReach = (u32, i32, i32, f64, bool);
+
 /// One of the chair's units as the census reads it at the start of its turn.
 struct Watched {
     uid: u32,
@@ -589,7 +615,7 @@ struct Watched {
     gap: Option<i32>,
     /// `(victim uid, distance, hp, expected damage, still)` per unit in
     /// open-ground reach.
-    targets: Vec<(u32, i32, i32, f64, bool)>,
+    targets: Vec<InReach>,
 }
 
 /// The census's view of a chair's turn: taken at the start, closed at the end.
@@ -730,7 +756,7 @@ impl Watch {
                             let near = row.targets.iter().map(|t| t.1).min().unwrap_or(0);
                             let weak = row.targets.iter().map(|t| t.2).min().unwrap_or(0);
                             let hurt = row.targets.iter().map(|t| t.3).fold(f64::MIN, f64::max);
-                            let tied = |pred: &dyn Fn(&(u32, i32, i32, f64, bool)) -> bool| -> f64 {
+                            let tied = |pred: &dyn Fn(&InReach) -> bool| -> f64 {
                                 row.targets.iter().filter(|t| pred(t)).count() as f64 / n
                             };
                             census.add("target: nearest", chosen.1 == near);
