@@ -218,10 +218,10 @@ pub(crate) struct HopelessRun {
     pub(crate) health: i32,
 }
 
-/// CI scaffolding: which variant of `siege-goes-on-the-forecast` this
-/// thread plays (0 as specified; 1 without the stand-down; 2 without the
-/// Siege-row ranking; 3 the stand-down only while the siege makes no
-/// progress). Always 0 outside tests.
+// CI scaffolding: which variant of `siege-goes-on-the-forecast` this
+// thread plays (0 as specified; 1 without the stand-down; 2 without the
+// Siege-row ranking; 3 the stand-down only while the siege makes no
+// progress). Always 0 outside tests.
 #[cfg(test)]
 thread_local! {
     pub(crate) static VARIANT: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
