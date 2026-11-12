@@ -1641,7 +1641,7 @@ impl AdvancedAi {
     }
 
     pub(super) fn strategic_governors(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        let strategy = self.governor_title_strategy(g, plan.strategy);
+        let strategy = self.governor_title_strategy(g, pid, plan.strategy);
         while g.governor_titles_available(pid) > 0 {
             // `curator-sits-with-the-works`: Curator first once the works
             // stand. Exact no-op with the gene off.
@@ -1657,7 +1657,12 @@ impl AdvancedAi {
             let primary_name = g.players[pid]
                 .governor_roster
                 .iter()
-                .filter(|(_, state)| state.promotions.len() < 2)
+                // `domination-seat-appoints-pingala-first`: Researcher
+                // completes Pingala's foundation on a Domination seat.
+                .filter(|(name, state)| {
+                    state.promotions.len() < 2
+                        && !self.domination_pingala_founded(g, pid, name.as_str())
+                })
                 .min_by_key(|(name, state)| (state.assigned_turn, name.as_str()))
                 .map(|(name, _)| *name)
                 .unwrap_or_else(|| Name::new(priority[0]));

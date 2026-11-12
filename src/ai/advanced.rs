@@ -5647,6 +5647,12 @@ pub struct AdvancedAi {
     /// stood, for the journal of its loss. `None` while the gene is off.
     breaker_shield_memory: Option<breaker_walks_under_a_shield::BreakerShieldMemory>,
     // ---- append: c-d ------------------------------------------------
+    /// `domination-seat-appoints-pingala-first`: a Domination target spends
+    /// its first Governor titles on Pingala in its largest city and her
+    /// Researcher promotion instead of the opening's Magnus, and keeps her
+    /// seated unless a city is about to flip. See
+    /// `advanced/domination_governors.rs`. Opt-in.
+    domination_seat_appoints_pingala_first: bool,
     /// `culture-pass-keeps-half-the-army`: the culture claims pass the
     /// near-rival deterrent only while our power is at least half the near
     /// neighbour's. See `advanced/culture_past_the_deterrent.rs`. Opt-in.
@@ -8087,6 +8093,12 @@ pub struct AdvancedAi {
     /// claims a slot building for an Artist or Musician the host cannot seat.
     /// See `advanced/great_works_never_wait.rs`. Off by default.
     great_works_never_wait: bool,
+    /// `hopeless-army-yields-the-queue`: a Domination seat trains no guns
+    /// or offensive bodies for a target whose walls nothing it can field
+    /// will breach, and stops its near-rival deterrent at a ranged garrison
+    /// once the neighbour fields twice its power. See
+    /// `advanced/hopeless_army_yields_the_queue.rs`. Opt-in.
+    hopeless_army_yields_the_queue: bool,
     // ---- append: l-o ------------------------------------------------
     /// Ask the host for a cash price for a native land upgrade material bill.
     /// Opt-in; see `advanced/army_upgrade_materials.rs`.
@@ -11608,6 +11620,9 @@ mod holdable_land_keeps_settling;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
 /// faith. See `advanced/holy_city_guard.rs`.
 mod holy_city_guard;
+/// `hopeless-army-yields-the-queue`: no soldiers for walls nothing breaches.
+/// See `advanced/hopeless_army_yields_the_queue.rs`.
+mod hopeless_army_yields_the_queue;
 /// `industrial-zone-claims-the-factory`: once Industrialization is known, the
 /// Factory that reaches the most new cities (then the Coal Power Plant that
 /// powers the most Factories) claims its city's queue. See
@@ -22651,6 +22666,12 @@ impl AdvancedAi {
         let desired_military = self.enemy_weighted_army_target(g, pid, desired_military);
         // See `last_civ_standing`: a final war raises the land target.
         let desired_military = self.final_war_army_target(g, pid, city_count, desired_military);
+        // `hopeless-army-yields-the-queue`: an offensive whose walls nothing
+        // we can field will breach asks only the per-city garrison; a
+        // threatened city keeps the full target. See
+        // `advanced/hopeless_army_yields_the_queue.rs`.
+        let desired_military =
+            self.hopeless_army_target(g, pid, plan, threatened, city_count, desired_military);
         // ★★★★ EVERY WALKER GETS A GUARD AND EVERY CLAIM A GARRISON. See
         // `land_grab`: the peacetime land army wants one body per city plus
         // one per Settler in flight, so a wider pipeline never marches alone
