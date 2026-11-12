@@ -689,6 +689,7 @@ pub(super) mod tests {
             reach0: vec![Vec::new(); n],
             los0: Vec::new(),
             has_los: false,
+            host: Vec::new(),
         };
         board.city_melee = vec![0.0; 0];
         board.city_ranged = vec![0.0; 0];
