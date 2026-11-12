@@ -20,6 +20,10 @@ thread_local! {
     /// How many times this thread has taken the empire-wide census below
     /// rather than answering from a scope's memo.
     static WORKED_BACKLOG_CENSUSES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    // Run the original exhaustive improvement scan as an assignment oracle.
+    static CITIZEN_REFERENCE_IMPROVEMENTS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static CITIZEN_IMPROVEMENT_PAIRS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static CITIZEN_BOUNDED_PLANS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 impl Game {
@@ -733,14 +737,43 @@ impl Game {
         }
 
         // One-swap local optimum under the nutrition constraint.
+        // Jobs are sorted by tier, then decreasing value. A later job either
+        // has a worse tier or cannot improve value, so only earlier unselected
+        // jobs can replace a selected job. Keep their original iteration and
+        // arithmetic order. Non-finite values retain the exhaustive scan:
+        // infinity minus infinity does not obey the finite ordering proof.
+        let ordered_values = cands.iter().all(|job| job.value.is_finite());
+        #[cfg(test)]
+        let ordered_values =
+            ordered_values && !CITIZEN_REFERENCE_IMPROVEMENTS.with(std::cell::Cell::get);
+        #[cfg(test)]
+        if ordered_values {
+            CITIZEN_BOUNDED_PLANS.with(|count| count.set(count.get() + 1));
+        }
         for _ in 0..cands.len() {
             let mut best: Option<(f64, &CitizenJobKey, &CitizenJobKey, usize, usize)> = None;
+            let first_out = if ordered_values {
+                selected
+                    .iter()
+                    .position(|chosen| !chosen)
+                    .map_or(cands.len(), |first_open| first_open + 1)
+            } else {
+                0
+            };
             for (out, a) in cands
                 .iter()
                 .enumerate()
+                .skip(first_out)
                 .filter(|(i, _)| selected[*i] && !is_locked(*i))
             {
-                for (inside, b) in cands.iter().enumerate().filter(|(i, _)| !selected[*i]) {
+                let end = if ordered_values { out } else { cands.len() };
+                for (inside, b) in cands[..end]
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| !selected[*i])
+                {
+                    #[cfg(test)]
+                    CITIZEN_IMPROVEMENT_PAIRS.with(|count| count.set(count.get() + 1));
                     if b.fallback_tier > a.fallback_tier {
                         continue;
                     }
@@ -797,3 +830,6 @@ impl Game {
 
 #[cfg(test)]
 mod worked_backlog_memo_tests;
+
+#[cfg(test)]
+mod improvement_pair_bounds_tests;
