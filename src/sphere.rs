@@ -122,8 +122,8 @@ const SHORT_SIGHT_ARC_BYTES: usize = 16 * 1024 * 1024;
 /// Distinct samples of the original great-circle walk, including endpoints.
 /// Terrain is deliberately absent: the caller still reads every blocker live.
 pub(crate) struct ShortSightArc {
-    positions: [Pos; 4],
-    len: usize,
+    pub(crate) positions: [Pos; 4],
+    pub(crate) len: usize,
 }
 
 impl ShortSightArc {
@@ -416,7 +416,13 @@ impl Sphere {
     /// Reuse exactly the original ordered geometry for the common sight and
     /// ranged-fire distances. No height, ownership, unit or visibility state
     /// is retained here. Longer rays and oversized globes remain scalar.
-    pub(crate) fn short_sight_arc(&self, from: Pos, to: Pos, steps: i32) -> Option<&ShortSightArc> {
+    pub(crate) fn short_sight_arc(
+        &self,
+        from: Pos,
+        to: Pos,
+        steps: i32,
+        build: impl FnOnce() -> ShortSightArc,
+    ) -> Option<&ShortSightArc> {
         if !(2..=3).contains(&steps) {
             return None;
         }
@@ -444,11 +450,7 @@ impl Sphere {
         if i32::from(entry.distance) != steps {
             return None;
         }
-        Some(
-            entry
-                .arc
-                .get_or_init(|| self.draw_short_sight_arc(from, to, steps)),
-        )
+        Some(entry.arc.get_or_init(build))
     }
 
     fn short_sight_arc_rows(&self, budget: usize) -> Option<ShortSightArcRows> {
@@ -471,63 +473,6 @@ impl Sphere {
                 .collect::<Vec<_>>()
                 .into_boxed_slice()
         })
-    }
-
-    fn draw_short_sight_arc(&self, from: Pos, to: Pos, steps: i32) -> ShortSightArc {
-        let start = self.center(from).unwrap();
-        let end = self.center(to).unwrap();
-        // Keep the scalar reader's arithmetic and neighbour order verbatim.
-        let angle = start
-            .iter()
-            .zip(end)
-            .map(|(a, b)| a * b)
-            .sum::<f64>()
-            .clamp(-1.0, 1.0)
-            .acos();
-        let mut arc = ShortSightArc {
-            positions: [(0, 0); 4],
-            len: 0,
-        };
-        let mut at = from;
-        for step in 0..=steps {
-            let t = step as f64 / steps as f64;
-            let (first, second) = if angle < 1e-9 {
-                (1.0 - t, t)
-            } else {
-                (
-                    ((1.0 - t) * angle).sin() / angle.sin(),
-                    (t * angle).sin() / angle.sin(),
-                )
-            };
-            let sample = [
-                start[0] * first + end[0] * second,
-                start[1] * first + end[1] * second,
-                start[2] * first + end[2] * second,
-            ];
-            let toward = |pos: Pos| {
-                self.center(pos).map_or(f64::MIN, |center| {
-                    center.iter().zip(sample).map(|(a, b)| a * b).sum()
-                })
-            };
-            loop {
-                let mut best = (toward(at), at);
-                for neighbor in self.neighbors(at) {
-                    let score = toward(neighbor);
-                    if score > best.0 {
-                        best = (score, neighbor);
-                    }
-                }
-                if best.1 == at {
-                    break;
-                }
-                at = best.1;
-            }
-            if arc.len == 0 || arc.positions[arc.len - 1] != at {
-                arc.positions[arc.len] = at;
-                arc.len += 1;
-            }
-        }
-        arc
     }
 
     /// Every tile of the globe, in storage order.

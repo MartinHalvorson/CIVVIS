@@ -76,7 +76,11 @@ fn short_sight_arc_keeps_geometry_across_clones_but_reads_changed_cover() {
     let sphere = game.map.sphere().unwrap();
     let from = sphere.positions().next().unwrap();
     let to = sphere.ring(from, 2)[0];
-    let ray = sphere.short_sight_arc(from, to, 2).unwrap();
+    let ray = sphere
+        .short_sight_arc(from, to, 2, || {
+            game.draw_short_sight_arc(sphere, from, to, 2)
+        })
+        .unwrap();
     let blocker = ray.interior()[0];
     assert!(game.arc_is_clear(&mut HeightField::none(), from, to, 2, 0, 0, false));
     let mut changed = game.clone();
@@ -87,7 +91,7 @@ fn short_sight_arc_keeps_geometry_across_clones_but_reads_changed_cover() {
             .map
             .sphere()
             .unwrap()
-            .short_sight_arc(from, to, 2)
+            .short_sight_arc(from, to, 2, || panic!("clone should reuse warm geometry"))
             .unwrap()
     ));
     assert!(!changed.arc_is_clear(&mut HeightField::none(), from, to, 2, 0, 0, false));
@@ -110,7 +114,9 @@ fn long_sight_arcs_retain_original_scalar_path() {
             if steps <= 3 {
                 continue;
             }
-            assert!(sphere.short_sight_arc(from, to, steps).is_none());
+            assert!(sphere
+                .short_sight_arc(from, to, steps, || panic!("long ray stays scalar"))
+                .is_none());
             assert_eq!(
                 game.arc_is_clear(&mut HeightField::none(), from, to, steps, 0, 0, false),
                 game.arc_is_clear_uncached(&mut HeightField::none(), from, to, steps, 0, 0, false),

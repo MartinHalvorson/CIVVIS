@@ -1,17 +1,30 @@
 use super::*;
 
+fn sample(from: Pos, to: Pos) -> ShortSightArc {
+    ShortSightArc {
+        positions: [from, to, (0, 0), (0, 0)],
+        len: 2,
+    }
+}
+
 #[test]
 fn short_sight_arc_is_lazy_directed_and_reused() {
     let globe = build(3);
     assert!(globe.short_sight_arcs.get().is_none());
     let from = globe.positions().next().unwrap();
     let to = globe.ring(from, 2)[0];
-    let first = globe.short_sight_arc(from, to, 2).unwrap();
+    let first = globe
+        .short_sight_arc(from, to, 2, || sample(from, to))
+        .unwrap();
     assert!(std::ptr::eq(
         first,
-        globe.short_sight_arc(from, to, 2).unwrap()
+        globe
+            .short_sight_arc(from, to, 2, || sample(from, to))
+            .unwrap()
     ));
-    let reverse = globe.short_sight_arc(to, from, 2).unwrap();
+    let reverse = globe
+        .short_sight_arc(to, from, 2, || sample(to, from))
+        .unwrap();
     assert!(!std::ptr::eq(first, reverse));
     assert_eq!(first.positions[0], from);
     assert_eq!(first.positions[first.len - 1], to);
@@ -25,13 +38,25 @@ fn unsupported_or_misidentified_short_sight_arc_does_not_poison_cache() {
     let from = globe.positions().next().unwrap();
     let to = globe.ring(from, 3)[0];
     for steps in [-1, 0, 1, 4, 200] {
-        assert!(globe.short_sight_arc(from, to, steps).is_none());
+        assert!(globe
+            .short_sight_arc(from, to, steps, || panic!(
+                "unsupported ray must remain scalar"
+            ))
+            .is_none());
     }
     assert!(globe.short_sight_arcs.get().is_none());
-    assert!(globe.short_sight_arc((-999, -999), to, 3).is_none());
-    assert!(globe.short_sight_arc(from, (-999, -999), 3).is_none());
-    assert!(globe.short_sight_arc(from, to, 2).is_none());
-    assert!(globe.short_sight_arc(from, to, 3).is_some());
+    assert!(globe
+        .short_sight_arc((-999, -999), to, 3, || panic!("invalid origin"))
+        .is_none());
+    assert!(globe
+        .short_sight_arc(from, (-999, -999), 3, || panic!("invalid target"))
+        .is_none());
+    assert!(globe
+        .short_sight_arc(from, to, 2, || sample(from, to))
+        .is_none());
+    assert!(globe
+        .short_sight_arc(from, to, 3, || sample(from, to))
+        .is_some());
 }
 
 #[test]
@@ -44,6 +69,8 @@ fn short_sight_arc_budget_falls_back_without_allocating_rows() {
     globe.short_sight_arcs.set(None).ok().unwrap();
     let from = globe.positions().next().unwrap();
     assert!(globe
-        .short_sight_arc(from, globe.ring(from, 2)[0], 2)
+        .short_sight_arc(from, globe.ring(from, 2)[0], 2, || panic!(
+            "budget disabled"
+        ))
         .is_none());
 }
