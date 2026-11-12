@@ -84,11 +84,13 @@ fn accepted_identical_production_reuses_own_and_rival_answers() {
 fn identical_but_illegal_production_still_refuses_and_drops_answers() {
     let (mut game, ours, theirs, _) = capitals();
     let item = Item::Building {
-        building: crate::name!("palace"),
+        building: crate::name!("monument"),
     };
-    assert!(game.cities[&ours]
+    game.cities
+        .get_mut(&ours)
+        .unwrap()
         .buildings
-        .contains(&crate::name!("palace")));
+        .insert(crate::name!("monument"));
     assert!(!game.can_produce(0, ours, &item));
     game.cities.get_mut(&ours).unwrap().queue = vec![item.clone()];
     warm(&game, ours, theirs);
