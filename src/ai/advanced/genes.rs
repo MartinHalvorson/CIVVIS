@@ -5655,6 +5655,15 @@ pub const GENES: &[Gene] = &[
     // cities that finish one soonest. Opt-in; see
     // `advanced/denial_spies_fill_every_slot.rs`.
     Gene { tag: "denial-spies-fill-every-slot", field: "denial_spies_fill_every_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_fill_every_slot, disable: AdvancedAi::disable_denial_spies_fill_every_slot },
+    // Live Deity Gran Colombia, 28 games of 2026-11-11/12: a median 0
+    // Commercial Hubs at t100 (none by the game's end in 14) and trade
+    // capacity 1-2, net Gold 11 against the best rival's 89. The Hub step only
+    // fills an idle queue; 70% of the Hub-ready city-turns t60-100 were at
+    // peace or without the war hold. At peace, a Hub's Market, then the first
+    // Hub, go ahead of a routine queue. Rides
+    // `commercial-hub-in-the-strategic-queue`. Opt-in; see
+    // `advanced/commercial_hub_claims_a_peace_queue.rs`.
+    Gene { tag: "commercial-hub-claims-a-peace-queue", field: "commercial_hub_claims_a_peace_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_commercial_hub_claims_a_peace_queue, disable: AdvancedAi::disable_commercial_hub_claims_a_peace_queue },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

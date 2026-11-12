@@ -6912,6 +6912,12 @@ pub struct AdvancedAi {
     city_state_stone_named: bool,
     /// The turn the last "none named" note was journalled.
     city_state_stone_noted: Option<u32>,
+    /// `commercial-hub-claims-a-peace-queue`: at peace, a Domination seat's
+    /// Commercial Hub city takes its Market, and the empire's first Hub is
+    /// claimed, ahead of a routine queue. Rides
+    /// `commercial-hub-in-the-strategic-queue`. See
+    /// `advanced/commercial_hub_claims_a_peace_queue.rs`. Opt-in.
+    commercial_hub_claims_a_peace_queue: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11141,6 +11147,9 @@ mod cold_war_before_conservation;
 /// `cold-war-then-heritage`: after Cold War, Conservation and then Cultural
 /// Heritage. See `advanced/cold_war_then_heritage.rs`.
 mod cold_war_then_heritage;
+/// `commercial-hub-claims-a-peace-queue`: see
+/// `advanced/commercial_hub_claims_a_peace_queue.rs`.
+mod commercial_hub_claims_a_peace_queue;
 mod culture_defensive_research;
 /// Two Deity habits: chase eurekas with Builders and with the production
 /// queue. Two opt-in genes; see `advanced/deity_habits.rs`.
@@ -26823,6 +26832,11 @@ impl AdvancedAi {
             // `space-people-call-the-projects`: the district projects that earn
             // a space-race person on offer. Exact no-op while the gene is off.
             self.claim_queues_for_the_space_people(g, pid, &plan);
+            // `commercial-hub-claims-a-peace-queue`: at peace, a Commercial
+            // Hub's Market, then the empire's first Hub, ahead of a routine
+            // queue. Exact no-op while the gene is off. See
+            // `advanced/commercial_hub_claims_a_peace_queue.rs`.
+            self.claim_peace_queue_for_the_commercial_hub(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
