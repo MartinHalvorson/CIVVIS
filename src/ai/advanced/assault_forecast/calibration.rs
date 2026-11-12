@@ -51,6 +51,9 @@ const TARGET: Pos = (18, 8);
 const HOME: Pos = (2, 8);
 const CALIBRATION_SEEDS: u64 = 1200;
 const PAIRED_SEEDS: u64 = 0;
+/// Seeds of the two-city family (`Family::TwoCities`), reported on their
+/// own.
+const TWO_CITY_SEEDS: u64 = 400;
 /// Seeds of the tempo family (`Family::Tempo`), reported on their own.
 const TEMPO_SEEDS: u64 = 400;
 const PAIRED_TURNS: u32 = 30;
@@ -154,6 +157,10 @@ enum Family {
     /// lightly walled city, the force 6-12 tiles out, and the owner
     /// raising the walls to 200 eight to twelve turns in.
     Tempo,
+    /// The mix with a second city of the owner's about eight tiles beyond
+    /// the first, so the campaign has another objective to switch to (the
+    /// live case of 2026-11-12: Warsaw and Wroclaw, five tiles apart).
+    TwoCities,
 }
 
 fn free_land(g: &Game, pos: Pos) -> bool {
@@ -944,7 +951,7 @@ enum Row {
 fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
     match job {
         Job::Calibrate(seed, family, solvent) => {
-            let mut w = world_of(*seed, false, *family);
+            let mut w = world_of(*seed, *family == Family::TwoCities, *family);
             // The forecast reads the treasuries the game then plays with.
             if *solvent {
                 for pid in 0..2 {
@@ -1899,6 +1906,7 @@ fn go_arm(out: &mut String, rows: &[&CalibrationRow]) {
 fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "ASSAULT FORECAST REPORT ({seconds:.0} s wall)\n");
+    let all = calibrated;
     let tempo_rows: Vec<&CalibrationRow> = calibrated
         .iter()
         .filter(|row| row.family == Family::Tempo && !row.outcome.peace)
@@ -1979,6 +1987,24 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
         blows.len()
     );
     taxonomy(&mut out, &tempo_rows);
+    let two_rows: Vec<&CalibrationRow> = all
+        .iter()
+        .filter(|row| row.family == Family::TwoCities && !row.outcome.peace)
+        .collect();
+    let _ = writeln!(
+        out,
+        "## Two cities: {} of the mix's sieges with a second city of the owner's about eight tiles beyond the first ({} left out for peace)\n",
+        two_rows.len(),
+        all.iter()
+            .filter(|row| row.family == Family::TwoCities && row.outcome.peace)
+            .count()
+    );
+    let reads: Vec<Read> = two_rows
+        .iter()
+        .map(|row| (&row.forecast, &row.outcome))
+        .collect();
+    calibration_table(&mut out, &reads, HORIZON);
+    taxonomy(&mut out, &two_rows);
     let _ = writeln!(
         out,
         "\n| forecast settings | Brier within 12 | within 10 | within 5 | mean P(12) | sieges over 0.8, taken |"
@@ -2149,6 +2175,7 @@ fn assault_forecast_calibration() {
         .map(|seed| Job::Pair(100_000 + seed))
         .collect();
     jobs.extend((0..TEMPO_SEEDS).map(|seed| Job::Calibrate(200_000 + seed, Family::Tempo, true)));
+    jobs.extend((0..TWO_CITY_SEEDS).map(|seed| Job::Calibrate(seed, Family::TwoCities, true)));
     jobs.extend((0..CALIBRATION_SEEDS).map(|seed| Job::Calibrate(seed, Family::Mixed, true)));
     jobs.extend((0..CALIBRATION_SEEDS).map(|seed| Job::Calibrate(seed, Family::Mixed, false)));
     let next = AtomicUsize::new(0);
