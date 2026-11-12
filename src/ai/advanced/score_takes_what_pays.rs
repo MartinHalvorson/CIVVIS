@@ -354,7 +354,7 @@ impl AdvancedAi {
                 .collect();
             if new > 0 {
                 let (strength, _) = trainable?;
-                force.extend(std::iter::repeat((strength, 100, 1)).take(new));
+                force.extend(std::iter::repeat_n((strength, 100, 1), new));
             }
             if let Some(turns) = Self::score_take_turns(&force, defence, city.hp, SCORE_TAKE_TURNS)
             {
