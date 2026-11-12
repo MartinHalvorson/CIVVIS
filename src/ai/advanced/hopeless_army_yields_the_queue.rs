@@ -25,17 +25,30 @@
 //!   against 70) while seven Catapults were reserved for it.
 //!
 //! **The reading** ([`AdvancedAi::walls_nothing_breaches`]): a city of
-//! another player whose walls stand, where no Battering Ram or Siege Tower
-//! of ours (fielded or buildable) works on those walls
-//! (`Game::city_allows_siege_support`) and our best land gun, fielded or
-//! buildable, cannot breach and take it even with
-//! `siege_production::BREAKER_MATCH_MAX` guns within
-//! `siege_production::BREAKER_MATCH_MAX_TURNS` turns at the city's
-//! strength (`siege_production::matched_guns`, the `breakers-match-the-walls`
-//! arithmetic at its most generous budget), or we have no land gun at all.
-//! A buildable gun or Ram that would open the walls makes the siege viable,
-//! so it is never withheld. The offensive read is the plan's target city
-//! while we are at war with its owner or the plan is Conquest against it.
+//! another player whose walls stand and that neither path takes:
+//! - **guns**: our best land gun, fielded or buildable, cannot breach and
+//!   take it even with `siege_production::BREAKER_MATCH_MAX` guns within
+//!   `siege_production::BREAKER_MATCH_MAX_TURNS` turns at the city's
+//!   strength (`siege_production::matched_guns`, the
+//!   `breakers-match-the-walls` arithmetic at its most generous budget), or
+//!   we have no land gun at all. Guns that take the city to 0 health need no
+//!   strong taker: the engine lets any melee unit walk into a city at 0
+//!   health without a blow (`Game::do_attack`);
+//! - **Ram or Tower**: no Battering Ram or Siege Tower of ours (fielded or
+//!   buildable) works on those walls (`Game::city_allows_siege_support`), or
+//!   one does but the city's return blow removes our best land melee taker,
+//!   fielded or buildable (non-siege, non-ranged, cavalry included), at full
+//!   health: its strength stands `outclassed_siege::ONE_BLOW_GAP` or more
+//!   over the taker's, the gap at which a blow's upper roll removes a
+//!   full-health unit. A taker that dies attacking leaves the city at 1
+//!   health and never captures (`Game::do_attack`). Live Deity
+//!   civvis-20261112T043248Z t85-103 stood before Smolensk's Ancient Walls
+//!   with a Ram in hand at a city strength of 67 against our best melee of
+//!   35-36 and took nothing in 40 turns of war.
+//!
+//! A buildable gun count, Ram or taker that would make the siege viable is
+//! never withheld. The offensive read is the plan's target city while we are
+//! at war with its owner or the plan is Conquest against it.
 //!
 //! **What yields**, on the Domination lane only:
 //! - the delegated walled-assault reservation
@@ -65,6 +78,7 @@
 //! Off, or on any other lane, nothing changes. Grep the journal for
 //! `hopeless-army-yields-the-queue:`.
 
+use super::outclassed_siege::ONE_BLOW_GAP;
 use super::siege_production::{matched_guns, BREAKER_MATCH_MAX, BREAKER_MATCH_MAX_TURNS};
 use super::*;
 use crate::game::expected_damage;
@@ -90,24 +104,41 @@ pub(crate) struct HopelessWalls {
     /// Our best land gun's expected blow, fielded or buildable; `None` with
     /// no land gun at all.
     pub(crate) hit: Option<f64>,
+    /// Whether a Ram or Tower of ours (fielded or buildable) works on the
+    /// walls; it opens them only for a taker that survives its blow.
+    pub(crate) breach_support: bool,
+    /// Our best land melee taker's strength, fielded or buildable; `None`
+    /// with no melee unit at all.
+    pub(crate) taker: Option<f64>,
 }
 
 impl HopelessWalls {
     /// The reading as a journal detail.
     pub(crate) fn describe(&self) -> String {
-        match self.hit {
+        let guns = match self.hit {
             Some(hit) => format!(
-                "walls {}/{}: our best gun hits {hit:.1} a shot against {:.0}, and \
-                 {BREAKER_MATCH_MAX} cannot breach and take the city within \
-                 {BREAKER_MATCH_MAX_TURNS:.0} turns; no Ram or Tower of ours works on them",
-                self.walls, self.max_walls, self.defense
+                "our best gun hits {hit:.1} a shot against {:.0}, and {BREAKER_MATCH_MAX} \
+                 cannot breach and take the city within {BREAKER_MATCH_MAX_TURNS:.0} turns",
+                self.defense
             ),
-            None => format!(
-                "walls {}/{}: no land gun fielded or buildable, and no Ram or Tower of ours \
-                 works on them",
-                self.walls, self.max_walls
-            ),
-        }
+            None => "no land gun fielded or buildable".to_string(),
+        };
+        let support = if !self.breach_support {
+            "no Ram or Tower of ours works on them".to_string()
+        } else {
+            match self.taker {
+                Some(taker) => format!(
+                    "a Ram or Tower works on them, but the city's strength {:.0} stands \
+                     {ONE_BLOW_GAP:.0} or more over our best melee taker's {taker:.0}, so its \
+                     return blow removes the taker",
+                    self.defense
+                ),
+                None => "a Ram or Tower works on them, but we field and can build no melee \
+                         taker"
+                    .to_string(),
+            }
+        };
+        format!("walls {}/{}: {guns}; {support}", self.walls, self.max_walls)
     }
 }
 
@@ -116,6 +147,16 @@ fn land_gun(spec: &crate::rules::UnitSpec) -> bool {
     spec.class == "military"
         && spec.siege
         && spec.has_ranged_attack()
+        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+}
+
+/// A land melee unit that can take a city: not a siege gun or a shooter,
+/// cavalry included.
+fn melee_taker(spec: &crate::rules::UnitSpec) -> bool {
+    spec.class == "military"
+        && !spec.siege
+        && spec.is_melee_capable()
+        && !spec.has_ranged_attack()
         && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
 }
 
@@ -150,27 +191,57 @@ impl AdvancedAi {
                 .any(|cid| g.can_produce(pid, cid, &Item::Unit { unit: kind }))
     }
 
+    /// Our best land melee taker's attack strength: the strongest land
+    /// melee unit (not a siege gun, not a shooter, cavalry included) we field
+    /// unembarked (`Game::unit_strength`) or can build (its listed strength).
+    /// `None` with neither.
+    pub(crate) fn best_melee_taker(g: &Game, pid: usize) -> Option<f64> {
+        let fielded = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid && melee_taker(&g.rules.units[unit.kind]) && !g.is_embarked(unit)
+            })
+            .map(|unit| g.unit_strength(unit, false));
+        let buildable = g
+            .rules
+            .units
+            .iter()
+            .filter(|(kind, spec)| {
+                melee_taker(spec) && Self::hopeless_army_buildable(g, pid, **kind)
+            })
+            .map(|(_, spec)| spec.strength);
+        fielded.chain(buildable).reduce(f64::max)
+    }
+
     /// See the module: `cid`'s standing walls, when nothing `pid` fields or
-    /// can build opens them. `None` for a city of ours, a city with no wall
-    /// standing, or walls a Ram, Tower or matched gun count would open.
+    /// can build takes it. `None` for a city of ours, a city with no wall
+    /// standing, walls a Ram or Tower opens for a taker that survives the
+    /// city's blow, or a matched gun count that takes it.
     /// Ungated; callers check [`Self::hopeless_army_active`].
     pub(crate) fn walls_nothing_breaches(g: &Game, pid: usize, cid: u32) -> Option<HopelessWalls> {
         let city = g.cities.get(&cid)?;
         if city.owner == pid || city.wall_hp <= 0 {
             return None;
         }
-        for kind in ["battering_ram", "siege_tower"] {
+        let defense = g.city_strength(cid);
+        let breach_support = ["battering_ram", "siege_tower"].into_iter().any(|kind| {
             let name = Name::new(kind);
-            if g.rules.units.contains_key(&name)
+            g.rules.units.contains_key(&name)
                 && g.city_allows_siege_support(cid, kind)
                 && (g
                     .units
                     .values()
                     .any(|unit| unit.owner == pid && unit.kind == name)
                     || Self::hopeless_army_buildable(g, pid, name))
-            {
-                return None;
-            }
+        });
+        let taker = if breach_support {
+            Self::best_melee_taker(g, pid)
+        } else {
+            None
+        };
+        if taker.is_some_and(|taker| defense < taker + ONE_BLOW_GAP) {
+            return None;
         }
         let fielded = g
             .units
@@ -184,7 +255,6 @@ impl AdvancedAi {
             .filter(|(kind, spec)| land_gun(spec) && Self::hopeless_army_buildable(g, pid, **kind))
             .map(|(_, spec)| spec.ranged_attack_strength());
         let attack = fielded.chain(buildable).reduce(f64::max);
-        let defense = g.city_strength(cid);
         let hit = attack.map(|attack| expected_damage(attack, defense));
         if let Some(hit) = hit {
             let walls = f64::from(city.wall_hp);
@@ -199,6 +269,8 @@ impl AdvancedAi {
             max_walls: g.city_max_wall_hp(city),
             defense,
             hit,
+            breach_support,
+            taker,
         })
     }
 

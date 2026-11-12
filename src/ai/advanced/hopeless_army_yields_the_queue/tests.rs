@@ -216,6 +216,56 @@ fn a_hopeless_siege_buys_no_body_but_a_threatened_city_still_does() {
     );
 }
 
+/// The taker arm (live Deity civvis-20261112T043248Z, Smolensk): Ancient
+/// Walls of 100 and a buildable Ram, no gun, and a city strength 30 over our
+/// best melee taker: the city's return blow removes the taker, so the walls
+/// are hopeless; the same board with a Knight in the field (a taker within
+/// `ONE_BLOW_GAP` of the city) is not.
+#[test]
+fn a_ram_opens_nothing_for_a_taker_the_city_removes() {
+    let (mut g, _, plan, _, target) = walled_war(50.0);
+    g.players[0].techs.remove(&crate::name!("engineering"));
+    {
+        let city = g.cities.get_mut(&target).unwrap();
+        city.buildings.retain(|building| {
+            !matches!(building.as_str(), "medieval_walls" | "renaissance_walls")
+        });
+        city.wall_hp = 100;
+    }
+    assert!(g.city_allows_siege_support(target, "battering_ram"));
+    assert!(g.can_produce(
+        0,
+        g.player_city_ids(0)[0],
+        &Item::Unit {
+            unit: crate::name!("battering_ram")
+        }
+    ));
+    let best = AdvancedAi::best_melee_taker(&g, 0).expect("a buildable melee unit");
+    std::sync::Arc::make_mut(&mut g.observed_city_strength).insert(target, best + 30.0);
+
+    let read = AdvancedAi::walls_nothing_breaches(&g, 0, target).expect("the taker dies");
+    assert!(read.breach_support);
+    assert_eq!((read.hit, read.taker), (None, Some(best)));
+    assert!(
+        read.describe().contains("removes the taker"),
+        "{}",
+        read.describe()
+    );
+    let ai = armed(AdvancedAi::targeting(VictoryTarget::Domination));
+    assert!(ai.hopeless_offensive(&g, 0, &plan).is_some());
+
+    let mut knight = g.clone();
+    let pos = knight.cities[&knight.player_city_ids(0)[0]].pos;
+    knight.spawn_unit("knight", 0, pos);
+    assert!(AdvancedAi::best_melee_taker(&knight, 0).is_some_and(|taker| taker > best + 5.0));
+    assert_eq!(
+        AdvancedAi::walls_nothing_breaches(&knight, 0, target),
+        None,
+        "a taker within reach of the city makes the Ram's breach viable"
+    );
+    assert!(ai.hopeless_offensive(&knight, 0, &plan).is_none());
+}
+
 /// On another lane the gene reads nothing.
 #[test]
 fn another_lane_reads_nothing() {
