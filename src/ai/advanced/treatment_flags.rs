@@ -300,6 +300,9 @@ impl AdvancedAi {
         /// Opt-in `first-campus-before-the-settler`; see
         /// `advanced/first_campus_before_the_settler.rs`.
         first_campus_before_the_settler => enable_first_campus_before_the_settler, disable_first_campus_before_the_settler;
+        /// Opt-in `endgame-army-takes-the-queue`; see
+        /// `advanced/endgame_army_takes_the_queue.rs`.
+        endgame_army_takes_the_queue => enable_endgame_army_takes_the_queue, disable_endgame_army_takes_the_queue;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
