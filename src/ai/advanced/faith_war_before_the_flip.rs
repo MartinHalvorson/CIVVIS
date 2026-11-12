@@ -103,6 +103,13 @@
 //! but legality and version 2's cooldown, and keeps it while that holds; see
 //! `advanced/faith_war_at_match_point.rs`.
 //!
+//! ## `own-flip-faith-war-asks-no-power`
+//!
+//! Riding `faith-war-on-a-small-world`, the own-flip reading no longer asks
+//! [`SMALL_WORLD_OWN_POWER`]; the war that reading alone opens skips version
+//! 2's power floor, the edge and the rout ratio and keeps every other hold;
+//! see `advanced/own_flip_faith_war.rs`.
+//!
 //! Off: unchanged.
 
 use super::*;
@@ -239,10 +246,13 @@ impl AdvancedAi {
     }
 
     /// The journal's name for the gene deciding the faith war on `rival`:
+    /// `own-flip-faith-war-asks-no-power` when its reading alone opens it,
     /// `faith-war-on-a-small-world` while its reading holds, else
     /// [`Self::faith_war_tag`].
     fn faith_war_tag_for(&self, g: &Game, pid: usize, rival: usize) -> &'static str {
-        if self.faith_war_small_world(g, pid, rival).is_some() {
+        if self.own_flip_asks_no_power(g, pid, rival).is_some() {
+            "own-flip-faith-war-asks-no-power"
+        } else if self.faith_war_small_world(g, pid, rival).is_some() {
             "faith-war-on-a-small-world"
         } else {
             self.faith_war_tag()
@@ -256,14 +266,29 @@ impl AdvancedAi {
     /// our own cities follow or are converting to it (of at least
     /// [`SMALL_WORLD_OWN_CITIES`] cities, at least
     /// [`SMALL_WORLD_OWN_LEANING`] of them, and at
-    /// [`SMALL_WORLD_OWN_POWER`] of its steady power or more). `None` on a
-    /// larger world, and always with the gene or version 2 off.
+    /// [`SMALL_WORLD_OWN_POWER`] of its steady power or more, a floor
+    /// `own-flip-faith-war-asks-no-power` lifts). `None` on a larger world,
+    /// and always with the gene or version 2 off.
     pub(crate) fn faith_war_small_world(
         &self,
         g: &Game,
         pid: usize,
         rival: usize,
     ) -> Option<SmallWorldRace> {
+        self.faith_war_small_world_race(g, pid, rival, self.own_flip_faith_war_asks_no_power)
+            .map(|(race, _)| race)
+    }
+
+    /// [`Self::faith_war_small_world`], with the own-flip reading's power
+    /// floor asked unless `own_flip_asks_no_power`, and whether our own flip
+    /// is next by the own-flip city thresholds alone, whatever our power.
+    pub(crate) fn faith_war_small_world_race(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+        own_flip_asks_no_power: bool,
+    ) -> Option<(SmallWorldRace, bool)> {
         if !self.faith_war_on_a_small_world || !self.faith_war_before_the_flip_2 {
             return None;
         }
@@ -289,18 +314,24 @@ impl AdvancedAi {
         // We are the next major to flip: half our cities are on the faith.
         // That reading asks for an empire that can fight the war: see
         // `SMALL_WORLD_OWN_CITIES` and `SMALL_WORLD_OWN_POWER`.
+        // `own-flip-faith-war-asks-no-power` lifts the power floor.
         let cities = g.player_city_ids(pid).len();
         let leaning = Self::our_cities_on_the_faith(g, pid, faith);
-        let next = cities >= SMALL_WORLD_OWN_CITIES
+        let own_flip = cities >= SMALL_WORLD_OWN_CITIES
             && leaning >= SMALL_WORLD_OWN_LEANING
-            && 100 * leaning >= SMALL_WORLD_OWN_SHARE * cities
-            && g.military_power(pid)
-                >= SMALL_WORLD_OWN_POWER * self.steady_rival_power(g, rival).max(1.0);
-        (others > 0 || race >= SMALL_WORLD_RACE || next).then_some(SmallWorldRace {
-            majors,
-            race,
-            others,
-        })
+            && 100 * leaning >= SMALL_WORLD_OWN_SHARE * cities;
+        let next = own_flip
+            && (own_flip_asks_no_power
+                || g.military_power(pid)
+                    >= SMALL_WORLD_OWN_POWER * self.steady_rival_power(g, rival).max(1.0));
+        (others > 0 || race >= SMALL_WORLD_RACE || next).then_some((
+            SmallWorldRace {
+                majors,
+                race,
+                others,
+            },
+            own_flip,
+        ))
     }
 
     /// `faith-war-on-a-small-world`: the race reading that keeps the faith war
@@ -397,7 +428,16 @@ impl AdvancedAi {
     /// rout ratio, the treasury reserve and the income gate while its
     /// reading holds (`faith_war_small_world`), and names a declared
     /// friendship or alliance as the legality that holds the war.
-    fn faith_war_gate(&self, g: &Game, pid: usize, rival: usize) -> Option<(&'static str, String)> {
+    ///
+    /// `own-flip-faith-war-asks-no-power`: on the war its reading alone
+    /// opens, only the power floor, the edge and the rout ratio are lifted,
+    /// and each hold names the power it would waive.
+    pub(super) fn faith_war_gate(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> Option<(&'static str, String)> {
         let small_world = self.faith_war_small_world(g, pid, rival).is_some();
         if !self.campaign_target_legal(g, pid, rival) {
             if small_world && (g.are_friends(pid, rival) || g.alliance_with(pid, rival).is_some()) {
@@ -407,6 +447,14 @@ impl AdvancedAi {
                 ));
             }
             return Some(("legal", "not a legal target".to_string()));
+        }
+        if self.own_flip_asks_no_power(g, pid, rival).is_some() {
+            let waived = self.own_flip_power_waived(g, pid, rival);
+            return self
+                .faith_war_holds(g, pid, rival, false)
+                .into_iter()
+                .find(|(gate, _)| !matches!(*gate, "power" | "edge" | "rout"))
+                .map(|(gate, reason)| (gate, format!("{reason} (the power it waives: {waived})")));
         }
         self.faith_war_holds(g, pid, rival, small_world)
             .into_iter()
@@ -510,6 +558,33 @@ impl AdvancedAi {
             .find(|action| matches!(action, Action::DeclareWar { player } if *player == rival))
     }
 
+    /// Denounce `rival` when the host allows no war on it yet, so a Formal
+    /// War is legal once the denouncement's five turns have passed;
+    /// journalled with `why`. `true` when the denouncement was made. Used by
+    /// `faith-war-at-match-point` and `own-flip-faith-war-asks-no-power`.
+    pub(super) fn faith_war_denounce(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        rival: usize,
+        why: &str,
+    ) -> bool {
+        let Some(denounce) = g
+            .legal_actions_within(pid, ActionFamilies::DIPLOMACY)
+            .into_iter()
+            .find(|action| matches!(action, Action::Denounce { player } if *player == rival))
+        else {
+            return false;
+        };
+        if g.apply(pid, &denounce).is_err() {
+            return false;
+        }
+        think!(self.journal(), Military, Strategy,
+               "Denouncing {} for the faith war", g.players[rival].civ;
+               "{why}");
+        true
+    }
+
     /// Journal a held faith war, at most once per founder every
     /// [`FAITH_WAR_NOTE_TURNS`] standard turns for the same gate.
     fn journal_faith_war_held(
@@ -595,7 +670,20 @@ impl AdvancedAi {
                 self.journal_faith_war_held(g, pid, rival, gate, &reason, trigger);
                 continue;
             }
+            // `own-flip-faith-war-asks-no-power`: the war its reading alone
+            // opens. `None` with the gene off.
+            let own_flip = self.own_flip_asks_no_power(g, pid, rival);
             let Some(opening) = self.faith_war_opening(g, pid, rival) else {
+                // A founder the host shields is denounced first.
+                if own_flip.is_some() {
+                    let why = format!(
+                        "own-flip-faith-war-asks-no-power: {}, but the host allows no war on it yet; a Formal War opens once the denouncement's five turns have passed",
+                        Self::own_flip_cities(g, pid, rival)
+                    );
+                    if self.faith_war_denounce(g, pid, rival, &why) {
+                        return true;
+                    }
+                }
                 self.journal_faith_war_held(
                     g,
                     pid,
@@ -607,6 +695,9 @@ impl AdvancedAi {
                 continue;
             };
             let small_world = self.faith_war_small_world(g, pid, rival);
+            let waived = own_flip
+                .map(|_| self.own_flip_power_waived(g, pid, rival))
+                .unwrap_or_default();
             if g.apply(pid, &opening).is_err() {
                 continue;
             }
@@ -616,6 +707,14 @@ impl AdvancedAi {
                 spreader_seen: g.turn,
             });
             let (spreaders, on_it) = trigger;
+            if own_flip.is_some() {
+                // The power read before the declaration.
+                think!(self.journal(), Military, Strategy,
+                       "Opening the faith war on {}", g.players[rival].civ;
+                       "own-flip-faith-war-asks-no-power: {}; the own-flip floor, the 0.7x floor, the edge and the rout ratio are not asked ({waived}); {spreaders} spreader(s) at our cities; defensive, no siege: our soldiers condemn its spreaders",
+                       Self::own_flip_cities(g, pid, rival));
+                return true;
+            }
             if let Some(reading) = small_world {
                 think!(self.journal(), Military, Strategy,
                        "Opening the faith war on {}", g.players[rival].civ;
@@ -785,9 +884,14 @@ impl AdvancedAi {
         };
         if converting == 0 {
             if let Some((reading, since)) = self.faith_war_small_world_keeps(g, pid, rival) {
+                let tag = if self.own_flip_asks_no_power(g, pid, rival).is_some() {
+                    "own-flip-faith-war-asks-no-power"
+                } else {
+                    "faith-war-on-a-small-world"
+                };
                 think!(self.journal(), Diplomacy, Decision,
                        "{what} {}", g.players[rival].civ;
-                       "faith-war-on-a-small-world: {} living majors and its race reads {}%; a spreader of its faith stood at our cities {since} turn(s) ago; at war our soldiers condemn its spreaders",
+                       "{tag}: {} living majors and its race reads {}%; a spreader of its faith stood at our cities {since} turn(s) ago; at war our soldiers condemn its spreaders",
                        reading.majors, reading.race);
                 return;
             }

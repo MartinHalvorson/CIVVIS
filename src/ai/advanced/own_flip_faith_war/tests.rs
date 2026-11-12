@@ -121,7 +121,9 @@ fn opens_on_our_own_flip_at_a_quarter_of_the_founders_power() {
         opened.detail
     );
     assert!(
-        opened.detail.contains("ours 50 against their steady 200 (0.25x)"),
+        opened
+            .detail
+            .contains("ours 50 against their steady 200 (0.25x)"),
         "{}",
         opened.detail
     );
@@ -149,12 +151,17 @@ fn a_threatened_city_still_holds_it() {
     assert!(!g.is_at_war(0, 1), "a threatened city of ours");
     let civ = g.players[1].civ.clone();
     assert!(
-        ai.journal().since(0).thoughts.iter().any(|thought| thought.headline
-            == format!("Holding the faith war on {civ}")
-            && thought
-                .detail
-                .starts_with("own-flip-faith-war-asks-no-power: ")
-            && thought.detail.contains("a city of ours is threatened")),
+        ai.journal()
+            .since(0)
+            .thoughts
+            .iter()
+            .any(
+                |thought| thought.headline == format!("Holding the faith war on {civ}")
+                    && thought
+                        .detail
+                        .starts_with("own-flip-faith-war-asks-no-power: ")
+                    && thought.detail.contains("a city of ours is threatened")
+            ),
         "the hold is journalled under the gene's tag"
     );
 }
@@ -261,7 +268,10 @@ fn a_founder_the_host_shields_is_denounced_first() {
 fn the_counter_floor_does_not_hold_the_founder() {
     let (g, mut ai, _, _) = own_flip(50.0, 200.0);
     ai.enable_counter_war_needs_parity();
-    assert!(ai.counter_war_hopeless(&g, 0, 1), "fixture: under the floor");
+    assert!(
+        ai.counter_war_hopeless(&g, 0, 1),
+        "fixture: under the floor"
+    );
     assert!(ai.counter_floor_holds(&g, 0, 1, true), "off: held");
     ai.enable_own_flip_faith_war_asks_no_power();
     assert!(!ai.counter_floor_holds(&g, 0, 1, true), "on: not held");
