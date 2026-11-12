@@ -227,6 +227,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `captives-come-home` | off (unmeasured) | Opt-in gene `captives-come-home`; see `advanced/captives_come_home.rs`. | — \| 2 |
 | `captives-come-home-2` | off (unmeasured) | Opt-in gene `captives-come-home-2` (version 2, carrying version 1); see `advanced/captives_come_home.rs`. | — \| 2 |
 | `capture-scar-reads-the-new-city` | off (unmeasured) | Opt-in gene `capture-scar-reads-the-new-city`; see `advanced/civilian_safety.rs` (`resolve_vanished_settlers`). | 1 \| 1 |
+| `centre-keeps-its-garrison` | off (unmeasured) | Opt-in gene `centre-keeps-its-garrison`; see `advanced/centre_keeps_its_garrison.rs`. | 1 \| 1 |
 | `chop-feeds-the-long-build` | off (unmeasured) | `chop-feeds-the-long-build`: a Builder clears a forest into a district, a wonder or a space-race project. | 1 \| 1 |
 | `chop-feeds-the-space-race` | off (unmeasured) | `chop-feeds-the-space-race`: the space-race leg of `chop-feeds-the-long-build` alone. | 1 \| 1 |
 | `chop-spares-the-worked-tile` | off (unmeasured) | `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen is working now. | 1 \| 1 |

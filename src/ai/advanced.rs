@@ -6955,6 +6955,11 @@ pub struct AdvancedAi {
     /// Pingala takes Connoisseur as her second promotion. See
     /// `advanced/domination_culture.rs`. Opt-in.
     domination_seat_raises_its_culture: bool,
+    /// `centre-keeps-its-garrison`: the land soldier in the City Center of a
+    /// threatened city of ours keeps that post (a shooter fires from it), and
+    /// an empty threatened City Center takes a soldier in reach. See
+    /// `advanced/centre_keeps_its_garrison.rs`. Opt-in.
+    centre_keeps_its_garrison: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11050,6 +11055,8 @@ mod war_plans;
 /// `war-target-prices-the-walls`: see `advanced/war_target_walls.rs`.
 mod war_target_walls;
 
+/// `centre-keeps-its-garrison`: see `advanced/centre_keeps_its_garrison.rs`.
+mod centre_keeps_its_garrison;
 /// `defence-holds-under-fire`: see `advanced/defence_holds.rs`.
 mod defence_holds;
 mod defense_formation;
