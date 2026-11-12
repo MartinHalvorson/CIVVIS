@@ -22,7 +22,7 @@ mod diplomacy;
 /// quotes enumeration needs. See `game/actions/legal.rs`.
 mod legal;
 
-/// The global side effects a military step's reveal/refresh can produce.
+/// The global side effects a unit step's reveal/refresh can produce.
 /// A changed exploration/contact ledger or Envoy placement takes the full
 /// invalidation path, even if the step itself touched no tile.
 struct QuietMoveYields {
@@ -443,7 +443,7 @@ impl Game {
         // the tile grid's epoch reports by itself. A city's own yields do read
         // its queue (the citizen plan, a running project, the envoy bonus),
         // so the acting seat's own cities are dropped as for any action.
-        // An uncontested military step can also leave every rival city as it
+        // An uncontested unit step can also leave every rival city as it
         // was. Keep that possibility through the action, while `acting`
         // prevents either reading or filling any kept answer. Its reveal can
         // make contact and award an Envoy, so the read-back below decides
@@ -474,7 +474,11 @@ impl Game {
     /// A military garrison can change this seat's amenities, so its own cities
     /// still go at both ends, exactly as for Produce.
     fn quiet_move_yields(&self, pid: usize, action: &Action) -> Option<QuietMoveYields> {
-        if !self.query_memo.keeps_rival_yields.get() || self.current != pid || self.is_arena() {
+        if !self.query_memo.keeps_rival_yields.get()
+            || self.current != pid
+            || self.is_arena()
+            || self.query_memo.rival_yields.borrow().is_empty()
+        {
             return None;
         }
         let Action::Move { unit, to } = action else {
@@ -484,7 +488,6 @@ impl Game {
         let mover = self.units.get(unit)?;
         if mover.owner != pid
             || mover.linked_to.is_some()
-            || self.rules.units[mover.kind].class != "military"
             || self.wdist(mover.pos, *to) != 1
             || !self.unit_ids_at(*to).is_empty()
             || self.city_at(*to).is_some()

@@ -1707,7 +1707,7 @@ impl Game {
     ///   and it is never read or filled while one is in flight: the rules
     ///   read yields half-way through changing the board. `Action::Produce`
     ///   names what one of the acting seat's own cities builds next and
-    ///   reaches nothing of another seat's. An uncontested military step can
+    ///   reaches nothing of another seat's. An uncontested unit step can
     ///   keep the rivals too, after `apply` reads back the map/round stamps,
     ///   exploration, contacts, completed research and exact Envoy placements.
     ///   A refused step or any changed stamp drops everything; `apply` carries

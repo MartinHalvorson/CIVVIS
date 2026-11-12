@@ -155,8 +155,9 @@ fn refused_steps_drop_rivals() {
 
 #[test]
 fn envoy_values_are_read_back_even_when_the_ledger_length_is_unchanged() {
-    let (mut game, _, _, unit, to) = fixture();
+    let (mut game, _, theirs, unit, to) = fixture();
     game.players[1].envoys.push((0, 2));
+    game.city_yields(theirs);
     let before = game
         .quiet_move_yields(0, &Action::Move { unit, to })
         .unwrap();
@@ -166,11 +167,78 @@ fn envoy_values_are_read_back_even_when_the_ledger_length_is_unchanged() {
 
 #[test]
 fn occupied_destinations_keep_the_conservative_action_path() {
-    let (mut game, _, _, unit, to) = fixture();
+    let (mut game, _, theirs, unit, to) = fixture();
     game.spawn_unit("builder", 1, to);
+    game.city_yields(theirs);
     assert!(game
         .quiet_move_yields(0, &Action::Move { unit, to })
         .is_none());
+}
+
+#[test]
+fn a_step_with_no_kept_rivals_does_not_take_a_snapshot() {
+    let (game, ours, _, unit, to) = fixture();
+    assert!(game.query_memo.rival_yields.borrow().is_empty());
+    assert!(game
+        .quiet_move_yields(0, &Action::Move { unit, to })
+        .is_none());
+    game.city_yields(ours);
+    assert!(game.query_memo.rival_yields.borrow().is_empty());
+    assert!(game
+        .quiet_move_yields(0, &Action::Move { unit, to })
+        .is_none());
+}
+
+#[test]
+fn a_builder_step_reuses_rivals_and_matches_fresh_derivation() {
+    let (mut game, _, theirs, military, to) = fixture();
+    let builder = game.spawn_unit("builder", 0, game.units[&military].pos);
+    game.city_yields(theirs);
+    let before = game.rival_yields_reused().0;
+    let mut fresh = game.clone();
+    fresh.keep_rival_yields(false);
+    let action = Action::Move { unit: builder, to };
+    game.apply(0, &action).unwrap();
+    fresh.apply(0, &action).unwrap();
+    assert_eq!(
+        bits(game.city_yields(theirs)),
+        bits(fresh.city_yields(theirs))
+    );
+    assert_eq!(game.rival_yields_reused().0, before + 1);
+}
+
+#[test]
+fn other_moving_land_classes_reuse_the_same_guarded_path() {
+    let (template, _, _, _, _) = fixture();
+    let mut representatives = BTreeMap::new();
+    for (kind, spec) in &template.rules.units {
+        if spec.class != "military" && spec.moves > 0.0 && spec.domain.as_deref() == Some("land") {
+            representatives.entry(spec.class.clone()).or_insert(*kind);
+        }
+    }
+    assert!(representatives.contains_key("civilian"));
+    assert!(representatives.contains_key("religious"));
+    assert!(representatives.contains_key("support"));
+    for (class, kind) in representatives {
+        let (mut game, _, theirs, military, to) = fixture();
+        let unit = game.spawn_unit(kind.as_str(), 0, game.units[&military].pos);
+        // This tests the common step handler, including classes whose normal
+        // orders use another tool. Production still checks each move's legality.
+        game.units.get_mut(&unit).unwrap().moves_left = 2.0;
+        game.city_yields(theirs);
+        let before = game.rival_yields_reused().0;
+        let mut fresh = game.clone();
+        fresh.keep_rival_yields(false);
+        let action = Action::Move { unit, to };
+        game.apply(0, &action)
+            .unwrap_or_else(|error| panic!("{class}/{kind}: {error}"));
+        fresh.apply(0, &action).unwrap();
+        assert_eq!(
+            bits(game.city_yields(theirs)),
+            bits(fresh.city_yields(theirs))
+        );
+        assert_eq!(game.rival_yields_reused().0, before + 1, "{class}/{kind}");
+    }
 }
 
 #[test]
