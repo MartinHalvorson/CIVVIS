@@ -125,26 +125,49 @@ fn campus_board() -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
 }
 
 /// The live Library gap as a model board: the six-city Online empire of
-/// `producer_empire` (a standing Campus each, Production 40 down to 10)
-/// with no Library built, every city two-thirds into nothing but a
-/// Commercial Hub with 20 Production paid. The gene is armed;
+/// `producer_empire` (a standing Campus each) with no Library built, every
+/// city making 10 Production and building a Commercial Hub with 2 paid, so
+/// the Hub is several turns from done. The gene is armed;
 /// `near-done-work-finishes` is off.
 fn library_board() -> (Game, Vec<u32>, AdvancedAi, StrategicPlan) {
     let (mut g, ranked) = producer_empire("CAMPUSLIBRARYFIRST", 94_131, 1);
     for cid in &ranked {
         let hub = BasicAi::civ_district(&g, 0, "commercial_hub");
-        let site = g
-            .district_sites(*cid, hub)
-            .into_iter()
+        // Any free tile of the city: the head's progress is what is tested,
+        // not where the Hub stands.
+        let center = g.cities[cid].pos;
+        let site = g.cities[cid]
+            .owned_tiles
+            .iter()
+            .copied()
+            .filter(|pos| *pos != center && g.map.tiles[pos].district.is_none())
             .min()
-            .expect("a Hub site");
+            .expect("a free tile");
         let city = g.cities.get_mut(cid).unwrap();
         city.buildings.retain(|building| *building != "library");
         city.queue = vec![Item::District {
             district: hub,
             pos: site,
         }];
-        city.production = 20.0;
+        city.production = 2.0;
+        let hub = city.queue[0].clone();
+        let adjustment = Arc::make_mut(&mut g.observed_city_yield_adjustments)
+            .remove(cid)
+            .unwrap_or_default();
+        let base = g.city_yields(*cid).production;
+        Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
+            *cid,
+            Yields {
+                production: 10.0 - base,
+                ..adjustment
+            },
+        );
+        let left = g.item_cost_for_city(0, *cid, &hub) - 2.0;
+        let rate = g.city_yields(*cid).production;
+        assert!(
+            left > 2.0 * rate,
+            "fixture: the Hub is {left} from done at {rate} a turn"
+        );
         assert_eq!(
             BasicAi::campus_building_item(&g, 0, *cid),
             Some(library()),
@@ -292,7 +315,7 @@ fn every_library_goes_ahead_of_a_commercial_hub_only_with_the_gene() {
         .count();
     assert_eq!(passed, ranked.len(), "{details:?}");
     let hub = g.cities[&ranked[0]].queue[0].clone();
-    assert_eq!(on.item_invested_production(ranked[0], &hub), 20.0);
+    assert_eq!(on.item_invested_production(ranked[0], &hub), 2.0);
 }
 
 #[test]
