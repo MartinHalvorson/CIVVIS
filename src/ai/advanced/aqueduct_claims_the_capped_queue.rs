@@ -284,6 +284,11 @@ impl AdvancedAi {
         let settlers = self.counts(g, pid).settlers;
         let mut best: Option<(f64, f64, u32, Item)> = None;
         for cid in city_ids {
+            // `rear-cities-grow-through-the-war-hold`: under the war's hold,
+            // only a rear city. Always open while the gene is off.
+            if !self.claim_open_behind_the_front(cid) {
+                continue;
+            }
             let Some((aqueduct, turns, over)) = self.capped_aqueduct_item(g, pid, cid, plan) else {
                 continue;
             };

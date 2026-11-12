@@ -14165,7 +14165,7 @@ fn a_selected_city_shows_what_its_land_yields() {
         tiles.contains("if (buying) for (const site of sitePick.sites.keys()) tiles.add(site);")
     );
     assert!(EMBEDDED_APP_JS
-        .contains("return !SPEC && Boolean((sitePick && sitePick.plots) || cityScreenOpen());"));
+        .contains("return !SPEC && Boolean((sitePick && (sitePick.plots || sitePick.citizens)) || cityScreenOpen());"));
     // Both maps read it, and the yield icons being on still shows everything.
     assert_eq!(
         EMBEDDED_APP_JS
@@ -16092,7 +16092,12 @@ fn a_played_seat_sets_its_citys_yield_focus() {
     // state the write produced.
     let favoured = ask(&mut session, "food", 1);
     assert!(favoured["error"].is_null(), "{}", favoured["error"]);
-    assert!(session.game.players[0].city_directives[&city].emphasis.food > 0.0);
+    assert!(session.game.players[0].citizen_focus[&city].food > 0.0);
+    // An agent that takes the seat rebuilds every directive. The seat's own
+    // focus is not one of them, so auto-play does not erase it.
+    session.game.players[0].city_directives.clear();
+    session.game.board_written();
+    assert!(citizens(&session.state())["emphasis"]["food"].as_f64() > Some(0.0));
     let after = citizens(&favoured);
     assert!(after["emphasis"]["food"].as_f64() > Some(0.0));
     assert!(after["weights"]["food"].as_f64() > before["weights"]["food"].as_f64());
@@ -16160,9 +16165,251 @@ fn a_city_keeps_a_queue_the_page_reissues() {
     // what the focus is.
     assert!(EMBEDDED_APP_JS.contains("const emphasis = city.citizens && city.citizens.emphasis;"));
     assert!(EMBEDDED_APP_JS.contains("onclick='cycleCityFocus(${city.id},\"${kind}\")'>"));
+    assert!(EMBEDDED_APP_JS.contains("body: JSON.stringify({city: cityId, yield: kind, stance})"));
+    // A lean is called a focus only at the size a player's press makes it:
+    // an agent that held the seat leaves small tilts of its own behind.
+    assert!(EMBEDDED_APP_JS
+        .contains("return lean >= 1 ? \"favoured\" : lean <= -.5 ? \"disfavoured\" : \"\";"));
+    // Every press says what it did, including when nobody could be moved.
     assert!(EMBEDDED_APP_JS.contains(
-        "body: JSON.stringify({city: cityId, yield: kind, stance: lean > 0 ? -1 : lean < 0 ? 0 : 1})"
+        "if (!moved) return `${said}: no citizen has a better tile to work. It will tell as the city grows.`;"
     ));
+    assert!(EMBEDDED_APP_JS
+        .contains("cityFocusNote.city === city.id && cityFocusNote.turn === state.turn"));
+    // A favoured yield outranks every appetite the governor reaches by itself.
+    let routes = include_str!("../routes.rs");
+    assert!(routes.contains("const FOCUS_FAVOURED: f64 = 4.0;"));
+    assert!(routes.contains("const FOCUS_DISFAVOURED: f64 = -1.0;"));
+}
+
+/// Civilization VI's Manage Citizens: a player presses a tile and a citizen
+/// works it until told otherwise. Placing a citizen was the last thing a
+/// person could do in a city there and not here.
+#[test]
+fn a_played_seat_places_a_citizen_by_hand() {
+    let mut params = current();
+    params.spectate = false;
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_014;
+    let mut session = Session::new(params);
+    let settler = session
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "settler")
+        .map(|unit| unit.pos)
+        .expect("seat 0 opens with a settler");
+    session.game.found_city_for(0, settler, None);
+    let (city, center) = session
+        .game
+        .cities
+        .values()
+        .find(|city| city.owner == 0)
+        .map(|city| (city.id, city.pos))
+        .expect("the city just founded");
+    session.game.cities.get_mut(&city).unwrap().pop = 2;
+    session.game.board_written();
+    let citizens = |state: &Value| {
+        state["cities"]
+            .as_array()
+            .expect("cities")
+            .iter()
+            .find(|seen| seen["id"] == json!(city))
+            .expect("the seat's own city")["citizens"]
+            .clone()
+    };
+    let before = citizens(&session.state());
+    assert_eq!(before["locked"], json!([]));
+    let worked = before["worked_tiles"]
+        .as_array()
+        .expect("worked tiles")
+        .clone();
+    assert_eq!(worked.len(), 2);
+
+    // Three tiles the city owns and the governor left unworked.
+    let spare: Vec<(i32, i32)> = session.game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|pos| *pos != center && !worked.contains(&json!([pos.0, pos.1])))
+        .filter(|pos| {
+            session
+                .game
+                .map
+                .get(*pos)
+                .is_some_and(|tile| tile.district.is_none() && tile.wonder.is_none())
+        })
+        .take(3)
+        .collect();
+    assert_eq!(spare.len(), 3, "a new city owns more land than it works");
+    let ask = |session: &mut Session, pos: (i32, i32), lock: bool| {
+        crate::routes::city_citizen(
+            session,
+            &json!({"city": city, "pos": [pos.0, pos.1], "lock": lock}),
+        )
+    };
+
+    // Placed: the citizen works that tile, and the page is told it was placed.
+    let placed = ask(&mut session, spare[0], true);
+    assert!(placed["error"].is_null(), "{}", placed["error"]);
+    let after = citizens(&placed);
+    assert_eq!(after["locked"], json!([[spare[0].0, spare[0].1]]));
+    let now_worked = after["worked_tiles"].as_array().expect("worked tiles");
+    assert!(now_worked.contains(&json!([spare[0].0, spare[0].1])));
+    assert_eq!(
+        now_worked.len(),
+        2,
+        "placing moves a citizen, it does not add one"
+    );
+
+    // Two citizens, so a second may be placed and a third may not.
+    assert!(ask(&mut session, spare[1], true)["error"].is_null());
+    assert!(ask(&mut session, spare[2], true)["error"].is_string());
+    // Nor on the city's own tile, nor on land that is not the city's.
+    assert!(ask(&mut session, center, true)["error"].is_string());
+    assert!(ask(&mut session, (4_000, 4_000), true)["error"].is_string());
+
+    // Released, the governor has the citizens back, to the tile.
+    ask(&mut session, spare[0], false);
+    let released = ask(&mut session, spare[1], false);
+    assert_eq!(citizens(&released)["locked"], json!([]));
+    assert_eq!(citizens(&released)["worked_tiles"], before["worked_tiles"]);
+    assert!(session.game.players[0].citizen_locks.is_empty());
+
+    // Both front ends answer it, and the browser build routes it to the engine.
+    assert!(include_str!("../wasm.rs").contains("(\"POST\", \"/city-citizen\")"));
+    assert!(include_str!("../server.rs").contains("(\"POST\", \"/city-citizen\")"));
+    assert!(include_str!("../../beta/shim.js").contains("\"/city-citizen\""));
+
+    // The page: a mode on the map that stays up, marks who works what, and
+    // only appears for a server that says which citizens are placed.
+    assert!(EMBEDDED_APP_JS
+        .contains("if (sitePick.citizens) { toggleCitizenLock(sitePick.cityId, pos); return; }"));
+    assert!(EMBEDDED_APP_JS.contains("(city.citizens && Array.isArray(city.citizens.locked)"));
+    assert!(EMBEDDED_APP_JS
+        .contains(": {city: cityId, pos: [pos[0], pos[1]], lock: !held.has(key(pos))};"));
+    assert_eq!(
+        EMBEDDED_APP_JS
+            .matches("    markCitizenPick(site, ")
+            .count(),
+        2
+    );
+}
+
+/// Civilization VI lets a player seat a specialist in a district. The route
+/// that places a citizen on a tile seats one in a district's slots too, by a
+/// count, and the page shows each district as seated of slots.
+#[test]
+fn a_played_seat_seats_a_specialist_by_hand() {
+    let mut params = current();
+    params.spectate = false;
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_014;
+    let mut session = Session::new(params);
+    let settler = session
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "settler")
+        .map(|unit| unit.pos)
+        .expect("seat 0 opens with a settler");
+    session.game.found_city_for(0, settler, None);
+    let (city, center) = session
+        .game
+        .cities
+        .values()
+        .find(|city| city.owner == 0)
+        .map(|city| (city.id, city.pos))
+        .expect("the city just founded");
+    // A campus with a library on land the city owns, and two citizens.
+    let site = session.game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|pos| *pos != center)
+        .expect("land beside the city");
+    session.game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
+    {
+        let held = session.game.cities.get_mut(&city).unwrap();
+        held.pop = 2;
+        held.districts.insert(crate::name!("campus"), site);
+        held.buildings.push(crate::name!("library"));
+    }
+    session.game.board_written();
+    let citizens = |state: &Value| {
+        state["cities"]
+            .as_array()
+            .expect("cities")
+            .iter()
+            .find(|seen| seen["id"] == json!(city))
+            .expect("the seat's own city")["citizens"]
+            .clone()
+    };
+    let before = citizens(&session.state());
+    let slots = before["specialist_slots"]
+        .as_array()
+        .expect("slots")
+        .clone();
+    assert_eq!(slots.len(), 1, "{before}");
+    assert_eq!(slots[0]["family"], json!("campus"));
+    assert_eq!(slots[0]["pos"], json!([site.0, site.1]));
+    assert_eq!(slots[0]["placed"], json!(0));
+    let offered = slots[0]["slots"].as_u64().expect("a slot count");
+    assert!(offered >= 1);
+    assert_eq!(before["specialists"], json!([]));
+
+    let ask = |session: &mut Session, family: &str, count: u64| {
+        crate::routes::city_citizen(
+            session,
+            &json!({"city": city, "specialist": family, "count": count}),
+        )
+    };
+    // Seated: one citizen leaves the land for the campus and is held there.
+    let seated = ask(&mut session, "campus", 1);
+    assert!(seated["error"].is_null(), "{}", seated["error"]);
+    let after = citizens(&seated);
+    assert_eq!(after["specialists"], json!(["campus"]));
+    assert_eq!(after["specialist_slots"][0]["placed"], json!(1));
+    assert_eq!(after["worked_tiles"].as_array().map(Vec::len), Some(1));
+
+    // More than the district has, a district the city lacks, and more
+    // citizens than the city has are each refused.
+    assert!(ask(&mut session, "campus", offered + 1)["error"].is_string());
+    assert!(ask(&mut session, "holy_site", 1)["error"].is_string());
+    let land = session.game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|pos| *pos != center && *pos != site)
+        .take(2)
+        .collect::<Vec<_>>();
+    let place = |session: &mut Session, pos: (i32, i32)| {
+        crate::routes::city_citizen(session, &json!({"city": city, "pos": [pos.0, pos.1]}))
+    };
+    assert!(place(&mut session, land[0])["error"].is_null());
+    assert!(place(&mut session, land[1])["error"].is_string());
+
+    // Released, the governor has the citizen back.
+    let released = ask(&mut session, "campus", 0);
+    assert_eq!(
+        citizens(&released)["specialist_slots"][0]["placed"],
+        json!(0)
+    );
+    assert!(session.game.players[0].specialist_locks.is_empty());
+
+    // The page seats by the district's own count and shows seated of slots.
+    assert!(EMBEDDED_APP_JS.contains(
+        "? {city: cityId, specialist: site.specialist, count: site.held >= site.slots ? 0 : site.held + 1}"
+    ));
+    assert!(
+        EMBEDDED_APP_JS.contains("cx.fillText(`${slot.seated}/${slot.slots}`, x, y + size * .03);")
+    );
 }
 
 /// Two live games were ended by "New game from the CIVVIS page" (2026-10-15
@@ -16304,6 +16551,11 @@ fn the_leaders_a_player_has_met_ride_the_top_of_the_map() {
     // a record, not a name, and printing it as one stopped the page drawing
     // the turn an alliance was signed.
     assert!(EMBEDDED_APP_JS.contains("try { html = leaderRibbonMarkup(); }"));
+    // A leader is a drawn bust in the civilization's colours with its
+    // monogram as the name tag. The drawing is the page's own.
+    assert!(ribbon
+        .contains("`<svg class=\"ribbon-bust\" viewBox=\"0 0 36 36\" aria-hidden=\"true\">` +"));
+    assert!(EMBEDDED_INDEX.contains("fill: var(--civ-trim); clip-path: circle(50%);"));
     assert!(EMBEDDED_APP_JS
         .contains("const kind = held && typeof held === \"object\" ? held.kind : held;"));
     assert_eq!(EMBEDDED_APP_JS.matches("allianceWord(player)").count(), 3);

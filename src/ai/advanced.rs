@@ -6912,6 +6912,12 @@ pub struct AdvancedAi {
     city_state_stone_named: bool,
     /// The turn the last "none named" note was journalled.
     city_state_stone_noted: Option<u32>,
+    /// `commercial-hub-claims-a-peace-queue`: at peace, a Domination seat's
+    /// Commercial Hub city takes its Market, and the empire's first Hub is
+    /// claimed, ahead of a routine queue. Rides
+    /// `commercial-hub-in-the-strategic-queue`. See
+    /// `advanced/commercial_hub_claims_a_peace_queue.rs`. Opt-in.
+    commercial_hub_claims_a_peace_queue: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -7682,11 +7688,12 @@ pub struct AdvancedAi {
     /// `first-capital-strikes-the-open-window`: whether the named capital
     /// read soft at the start of this turn. Always `false` with the gene off.
     first_capital_soft_now: bool,
-    /// `first-capital-strikes-the-open-window`: the named capital that read
-    /// bare (no walls, a centre our Warriors out-fight, next door) while its
-    /// opening stood undeclared. Its reservation opens at one city and its
-    /// strike does not wait for a second. `None` with the gene off.
-    first_capital_bare: Option<u32>,
+    /// `first-capital-strikes-the-open-window`: the tile of the named capital
+    /// that read bare (no walls, a centre our Warriors out-fight, next door)
+    /// while its opening stood undeclared. Its reservation opens at one city
+    /// and its strike does not wait for a second. The tile, not the city's
+    /// id: a live rebuild renumbers cities. `None` with the gene off.
+    first_capital_bare: Option<Pos>,
     /// `first-capital-walks-the-one-landmass`: on a map with one landmass,
     /// `first-capital-before-the-walls` counts uncharted ground as land in
     /// its walk to the target capital, and the nearest free scout charts the
@@ -7705,6 +7712,15 @@ pub struct AdvancedAi {
     /// shared ten and its target walks two ahead of the cities it holds. See
     /// `advanced/each_civ_draws_its_width.rs`. Opt-in.
     each_civ_draws_its_width: bool,
+    /// `education-follows-the-library`: a Domination seat with a Campus and
+    /// a Library standing in one of its cities researches Education in the
+    /// Campus unlock's slot. See `advanced/research/domination_education.rs`.
+    /// Opt-in.
+    education_follows_the_library: bool,
+    /// `first-campus-before-the-settler`: a Domination seat's first Campus
+    /// goes ahead of the early Settler floor's Settler once two cities stand.
+    /// See `advanced/first_campus_before_the_settler.rs`. Opt-in.
+    first_campus_before_the_settler: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -9305,6 +9321,16 @@ pub struct AdvancedAi {
     /// army's breaker and unique melee research after the stepping stone ends.
     /// See `advanced/first_capital_research.rs`. Off by default.
     research_follows_the_first_capital: bool,
+    /// `rear-cities-grow-through-the-war-hold`: while
+    /// `threatened-war-holds-the-claims` holds the claims, the Granary,
+    /// Aqueduct, Neighbourhood, backlog Builder, Campus building, parallel
+    /// Library and idle-route Trader claims still run for the cities away
+    /// from the front. See `advanced/rear_cities_grow_through_the_war_hold.rs`.
+    /// Off by default.
+    rear_cities_grow_through_the_war_hold: bool,
+    /// The rear cities those claims may take during one idle-queue pass under
+    /// the hold. `None` outside such a pass, so every claim reads every city.
+    rear_cities_open_under_the_hold: Option<BTreeSet<u32>>,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
@@ -11125,6 +11151,9 @@ mod cold_war_before_conservation;
 /// `cold-war-then-heritage`: after Cold War, Conservation and then Cultural
 /// Heritage. See `advanced/cold_war_then_heritage.rs`.
 mod cold_war_then_heritage;
+/// `commercial-hub-claims-a-peace-queue`: see
+/// `advanced/commercial_hub_claims_a_peace_queue.rs`.
+mod commercial_hub_claims_a_peace_queue;
 mod culture_defensive_research;
 /// Two Deity habits: chase eurekas with Builders and with the production
 /// queue. Two opt-in genes; see `advanced/deity_habits.rs`.
@@ -11581,6 +11610,9 @@ mod industrial_zone_claims_the_factory;
 mod industrial_zone_claims_the_producer_queue;
 
 mod barbarian_research_prices_the_field;
+/// `first-campus-before-the-settler`: see
+/// `advanced/first_campus_before_the_settler.rs`.
+mod first_campus_before_the_settler;
 /// `launch-commits-the-endgame`: see `advanced/launch_commits_endgame.rs`.
 mod launch_commits_endgame;
 mod launcher_war;
@@ -11758,6 +11790,9 @@ mod early_conquest;
 /// Version two of rapid city expansion keeps the measured-positive opening
 /// pace and safety gates without version one's forced queues, sprawl, or war.
 pub(super) mod rapid_city_expansion;
+/// `rear-cities-grow-through-the-war-hold`: see
+/// `advanced/rear_cities_grow_through_the_war_hold.rs`.
+mod rear_cities_grow_through_the_war_hold;
 /// `settler-never-idles`: a Settler always has somewhere to go — exhaustion
 /// asks wider questions instead of holding, and a watchdog bounds every
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
@@ -11789,6 +11824,11 @@ mod siege_response;
 /// A Settler past its walk allowance takes a safe site within reach. One
 /// opt-in gene; see `advanced/stalled_settler_site.rs`.
 mod stalled_settler_site;
+/// `the-worked-backlog-gets-its-builder-first`: a worked backlog two or more
+/// tiles ahead of the Builder charges calls a Builder ahead of the other
+/// idle-queue claims. See
+/// `advanced/the_worked_backlog_gets_its_builder_first.rs`.
+mod the_worked_backlog_gets_its_builder_first;
 /// `threatened-city-buys-its-defender`: the plan's threatened city buys
 /// its land defender while its menu sells one. See
 /// `advanced/threatened_city_purchase.rs`.
@@ -11834,6 +11874,10 @@ mod kristina_fills_to_theme;
 /// `luxury-asks-pay-in-strategics`: see `advanced/luxury_asks_pay_in_strategics.rs`.
 mod luxury_asks_pay_in_strategics;
 mod luxury_research;
+/// `first-capital-strikes-the-open-window`, beyond the first capital: a
+/// neighbour's unwalled city within reach of our soldiers opens the war.
+/// See `advanced/soft_city_window.rs`.
+mod soft_city_window;
 
 /// `growth-prices-the-farm`: the Builder prices the Housing and Food a small
 /// city cannot grow without. One opt-in gene; see `advanced/growth_farm.rs`.
@@ -26800,6 +26844,11 @@ impl AdvancedAi {
             // `space-people-call-the-projects`: the district projects that earn
             // a space-race person on offer. Exact no-op while the gene is off.
             self.claim_queues_for_the_space_people(g, pid, &plan);
+            // `commercial-hub-claims-a-peace-queue`: at peace, a Commercial
+            // Hub's Market, then the empire's first Hub, ahead of a routine
+            // queue. Exact no-op while the gene is off. See
+            // `advanced/commercial_hub_claims_a_peace_queue.rs`.
+            self.claim_peace_queue_for_the_commercial_hub(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and

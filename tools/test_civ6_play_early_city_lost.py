@@ -357,6 +357,47 @@ class DominationNoCapitalReading(unittest.TestCase):
         self.assertEqual(self.read([capital_record(t, CAPITAL) for t in range(80, 100)]),
                          [None] * 20)
 
+    def test_a_game_level_on_techs_plays_on(self):
+        """Live 002140Z: 51 techs against 54 at turn 152 is not a game to retire."""
+        level = {"techs": ["t"] * 51, "rivals": [{"techs": 54}, {"techs": 48}, {"techs": 52}]}
+        behind = {"techs": ["t"] * 34, "rivals": [{"techs": 62}, {"techs": 55}]}
+        state: dict = {}
+        spared = [civ6_play.domination_no_capital_reading(
+            state, capital_record(t, CAPITAL, **level), 150, 0.85) for t in (150, 151, 152, 153)]
+        self.assertEqual(spared, [None] * 4)
+        self.assertNotIn("domination_no_capital", state)
+        # The same records with no exemption set fire as before.
+        state = {}
+        fired = [civ6_play.domination_no_capital_reading(
+            state, capital_record(t, CAPITAL, **level), 150) for t in (150, 151, 152)]
+        self.assertTrue(fired[2]["fires"])
+        # Behind on techs, and a record without the counts: retired.
+        state = {}
+        fired = [civ6_play.domination_no_capital_reading(
+            state, capital_record(t, CAPITAL, **behind), 150, 0.85) for t in (150, 151, 152)]
+        self.assertTrue(fired[2]["fires"])
+        state = {}
+        fired = [civ6_play.domination_no_capital_reading(
+            state, capital_record(t, CAPITAL), 150, 0.85) for t in (150, 151, 152)]
+        self.assertTrue(fired[2]["fires"])
+        # Falling behind later starts the count afresh.
+        state = {}
+        records = ([capital_record(t, CAPITAL, **level) for t in (150, 151)]
+                   + [capital_record(t, CAPITAL, **behind) for t in (152, 153, 154)])
+        results = [civ6_play.domination_no_capital_reading(state, record, 150, 0.85)
+                   for record in records]
+        self.assertEqual(results[:4], [None] * 4)
+        self.assertEqual(results[4]["since"], 152)
+
+    def test_the_level_share_parses(self):
+        self.assertEqual(civ6_play.parse_domination_no_capital_level("0.85"), 0.85)
+        self.assertEqual(civ6_play.parse_domination_no_capital_level(None), 0.0)
+        self.assertEqual(civ6_play.parse_domination_no_capital_level("lots"), 0.0)
+        self.assertEqual(civ6_play.parse_domination_no_capital_level("-1"), 0.0)
+        self.assertAlmostEqual(civ6_play.domination_tech_share(
+            {"techs": ["t"] * 51, "rivals": [{"techs": 54}, {"techs": 48}]}), 51 / 54)
+        self.assertIsNone(civ6_play.domination_tech_share({"techs": ["t"], "rivals": []}))
+
     def test_turns_before_the_line_do_not_count(self):
         results = self.read([capital_record(t, CAPITAL) for t in (98, 99, 100, 101)])
         self.assertEqual(results, [None] * 4)

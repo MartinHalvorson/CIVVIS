@@ -115,11 +115,30 @@ def verification_intent() -> str | None:
     return value or None
 
 
-def verification_intent_description() -> str | None:
-    """A refusal reason when automatic verification is not authorized."""
+# What `civvis-games on` records on a host whose policy says
+# CIVVIS_CONTROL=terminal: the loop a Terminal window hosts may play, and
+# nothing in the background may start or recover one.
+TERMINAL_INTENT = "terminal"
+
+
+def verification_intent_description(*, terminal_window: bool = False) -> str | None:
+    """A refusal reason when automatic verification is not authorized.
+
+    ``running`` authorizes the unattended lane, its keepers included.
+    ``terminal`` authorizes only the loop a Terminal window hosts, and that
+    chain alone passes ``terminal_window=True``. Every keeper, watchdog and
+    background service leaves it false, so under ``terminal`` they refuse and a
+    loop the operator closed stays closed.
+    """
     value = verification_intent()
     if value == "running":
         return None
+    if value == TERMINAL_INTENT:
+        if terminal_window:
+            return None
+        return (f"verification intent is {value!r} at {OPERATOR_INTENT}; only "
+                "the Terminal window that hosts the loop may play, so nothing "
+                "in the background starts or recovers it")
     if value is None:
         return (f"verification intent is missing or unreadable at {OPERATOR_INTENT}; "
                 "run civvis-games on to authorize automatic verification")
@@ -303,8 +322,11 @@ def acquire(
         # halt simply because it did not use the current host script.
         if operator_halt() is not None:
             return False
+        # The launcher is the Terminal-window chain itself, so `terminal`
+        # authorizes it as well as `running`.
         if (require_verification_intent
-                and verification_intent_description() is not None):
+                and verification_intent_description(terminal_window=True)
+                is not None):
             return False
         foreign = foreign_run(tag)
         if foreign is not None:

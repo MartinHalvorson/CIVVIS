@@ -124,6 +124,15 @@ impl AdvancedAi {
         /// Opt-in gene `breaker-walks-under-a-shield`; see
         /// `advanced/breaker_walks_under_a_shield.rs`.
         breaker_walks_under_a_shield => enable_breaker_walks_under_a_shield, disable_breaker_walks_under_a_shield;
+        /// `opening-scout-comes-back`: the opening Scout the barbarian defence
+        /// displaced is that city's next build, and a Scout lost early while no
+        /// rival capital is charted is replaced at once. See `ai/scout_first.rs`.
+        base.opening_scout_comes_back => enable_opening_scout_comes_back, disable_opening_scout_comes_back;
+        /// Opt-in gene `the-worked-backlog-gets-its-builder-first`; acts
+        /// through `builders-cover-the-worked-backlog`'s step and
+        /// `backlog-builder-takes-the-queue`'s claim. See
+        /// `advanced/the_worked_backlog_gets_its_builder_first.rs`.
+        base.the_worked_backlog_gets_its_builder_first => enable_the_worked_backlog_gets_its_builder_first, disable_the_worked_backlog_gets_its_builder_first;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
@@ -236,6 +245,9 @@ impl AdvancedAi {
         /// `city-state-before-the-first-capital`: a Domination seat's early
         /// conquest opening takes one nearby city-state before the first capital.
         city_state_before_the_first_capital => enable_city_state_before_the_first_capital, disable_city_state_before_the_first_capital;
+        /// Opt-in `commercial-hub-claims-a-peace-queue`; see
+        /// `advanced/commercial_hub_claims_a_peace_queue.rs`.
+        commercial_hub_claims_a_peace_queue => enable_commercial_hub_claims_a_peace_queue, disable_commercial_hub_claims_a_peace_queue;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -272,6 +284,12 @@ impl AdvancedAi {
         /// `first-capital-walks-the-one-landmass`: see
         /// `advanced/first_capital_walks_the_one_landmass.rs`.
         first_capital_walks_the_one_landmass => enable_first_capital_walks_the_one_landmass, disable_first_capital_walks_the_one_landmass;
+        /// Opt-in `education-follows-the-library`; see
+        /// `advanced/research/domination_education.rs`.
+        education_follows_the_library => enable_education_follows_the_library, disable_education_follows_the_library;
+        /// Opt-in `first-campus-before-the-settler`; see
+        /// `advanced/first_campus_before_the_settler.rs`.
+        first_campus_before_the_settler => enable_first_campus_before_the_settler, disable_first_campus_before_the_settler;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
@@ -360,6 +378,9 @@ impl AdvancedAi {
         /// `research-follows-the-first-capital`: see
         /// `advanced/first_capital_research.rs`.
         research_follows_the_first_capital => enable_research_follows_the_first_capital, disable_research_follows_the_first_capital;
+        /// `rear-cities-grow-through-the-war-hold`: see
+        /// `advanced/rear_cities_grow_through_the_war_hold.rs`.
+        rear_cities_grow_through_the_war_hold => enable_rear_cities_grow_through_the_war_hold, disable_rear_cities_grow_through_the_war_hold;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `sweden-builds-open-air-museums`; see
         /// `advanced/sweden_builds_open_air_museums.rs`.

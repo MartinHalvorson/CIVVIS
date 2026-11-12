@@ -34,7 +34,7 @@
   // a strategic map sprite atlas, and goes to the network untouched.
   const ENGINE_ROUTES = new Set([
     "/state", "/status", "/runtime", "/rules", "/gene-program", "/pedia", "/save", "/saves",
-    "/load", "/action", "/step", "/autoplay", "/play-on", "/route", "/forecast", "/city-focus", "/view",
+    "/load", "/action", "/step", "/autoplay", "/play-on", "/route", "/forecast", "/city-focus", "/city-citizen", "/view",
     "/intel", "/spectator-status", "/next-game-settings", "/new",
     "/supervisor-new", "/pace", "/next-game",
     "/machine-metrics", "/civ6", "/civ6/start", "/policy-effects", "/map-search-buildings",

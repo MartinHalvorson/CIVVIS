@@ -5655,6 +5655,15 @@ pub const GENES: &[Gene] = &[
     // cities that finish one soonest. Opt-in; see
     // `advanced/denial_spies_fill_every_slot.rs`.
     Gene { tag: "denial-spies-fill-every-slot", field: "denial_spies_fill_every_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_fill_every_slot, disable: AdvancedAi::disable_denial_spies_fill_every_slot },
+    // Live Deity Gran Colombia, 28 games of 2026-11-11/12: a median 0
+    // Commercial Hubs at t100 (none by the game's end in 14) and trade
+    // capacity 1-2, net Gold 11 against the best rival's 89. The Hub step only
+    // fills an idle queue; 70% of the Hub-ready city-turns t60-100 were at
+    // peace or without the war hold. At peace, a Hub's Market, then the first
+    // Hub, go ahead of a routine queue. Rides
+    // `commercial-hub-in-the-strategic-queue`. Opt-in; see
+    // `advanced/commercial_hub_claims_a_peace_queue.rs`.
+    Gene { tag: "commercial-hub-claims-a-peace-queue", field: "commercial_hub_claims_a_peace_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_commercial_hub_claims_a_peace_queue, disable: AdvancedAi::disable_commercial_hub_claims_a_peace_queue },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5741,6 +5750,23 @@ pub const GENES: &[Gene] = &[
     // kept while the race holds. Rides `faith-war-before-the-flip-2`. Opt-in;
     // see `advanced/faith_war_before_the_flip.rs`.
     Gene { tag: "faith-war-on-a-small-world", field: "faith_war_on_a_small_world", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_on_a_small_world, disable: AdvancedAi::disable_faith_war_on_a_small_world },
+    // Live Deity Gran Colombia, 26 games of 2026-11-11 19:57Z-23:50Z: our
+    // Education landed at a median t92 (none by the game's end in 6) against
+    // the first rival's t55, so no University stood at t100 while 3.55
+    // Campuses did; Science 41 against the best rival's 154. A Domination seat
+    // with a Campus and a Library in one city researches Education in the
+    // Campus unlock's slot, behind every military goal. Opt-in; see
+    // `advanced/research/domination_education.rs`.
+    Gene { tag: "education-follows-the-library", field: "education_follows_the_library", kind: Kind::OptIn, enable: AdvancedAi::enable_education_follows_the_library, disable: AdvancedAi::disable_education_follows_the_library },
+    // Live Deity Gran Colombia, 38 games of 2026-11-11 19:57Z to 11-12 02:00Z:
+    // Writing at a median t32, the first Campus queued at t46 and finished at
+    // t55; Science 11.4 at t50 against the best rival's 71.5. At peace the
+    // early Settler floor held the quickest first Campus for 139 turns, the
+    // largest single cause, 136 of them with two or more cities standing. A
+    // Domination seat's first Campus (at most 7 Online turns, the best site)
+    // goes ahead of that Settler. Opt-in; see
+    // `advanced/first_campus_before_the_settler.rs`.
+    Gene { tag: "first-campus-before-the-settler", field: "first_campus_before_the_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_first_campus_before_the_settler, disable: AdvancedAi::disable_first_campus_before_the_settler },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
@@ -5784,6 +5810,10 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "no-city-limit", field: "no_city_limit", kind: Kind::OptIn, enable: AdvancedAi::enable_no_city_limit, disable: AdvancedAi::disable_no_city_limit },
     // A missing land eye precedes economy claims until an early Domination target is charted.
     Gene { tag: "land-recon-before-the-first-capital", field: "land_recon_before_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_land_recon_before_the_first_capital, disable: AdvancedAi::disable_land_recon_before_the_first_capital },
+    // The opening Scout the barbarian defence displaced is the next build in
+    // that city, and a Scout lost before turn 25 Online while no rival capital
+    // is charted is replaced at once, once a game. See `ai/scout_first.rs`.
+    Gene { tag: "opening-scout-comes-back", field: "opening_scout_comes_back", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_scout_comes_back, disable: AdvancedAi::disable_opening_scout_comes_back },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
@@ -5850,6 +5880,12 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "peace-waits-for-the-host-minimum", field: "peace_waits_for_the_host_minimum", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_the_host_minimum, disable: AdvancedAi::disable_peace_waits_for_the_host_minimum },
     // Opt-in; see `advanced/first_capital_research.rs`.
     Gene { tag: "research-follows-the-first-capital", field: "research_follows_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_research_follows_the_first_capital, disable: AdvancedAi::disable_research_follows_the_first_capital },
+    // Gran Colombia Deity Domination 11-11/12: the war's hold held every city's
+    // growth claims for a median 36 turns a game, while the threat stood at one
+    // city. Rear cities keep the Granary, Aqueduct, Neighbourhood, backlog
+    // Builder, Campus building and Trader claims under the hold. Opt-in; see
+    // `advanced/rear_cities_grow_through_the_war_hold.rs`.
+    Gene { tag: "rear-cities-grow-through-the-war-hold", field: "rear_cities_grow_through_the_war_hold", kind: Kind::OptIn, enable: AdvancedAi::enable_rear_cities_grow_through_the_war_hold, disable: AdvancedAi::disable_rear_cities_grow_through_the_war_hold },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
@@ -5889,6 +5925,11 @@ pub const GENES: &[Gene] = &[
     // first Hoplite came at t31-59 in every Pericles game. Opt-in; see
     // `advanced/unique_unit_closes_the_age.rs`.
     Gene { tag: "unique-unit-closes-the-dark-age", field: "unique_unit_closes_the_dark_age", kind: Kind::OptIn, enable: AdvancedAi::enable_unique_unit_closes_the_dark_age, disable: AdvancedAi::disable_unique_unit_closes_the_dark_age },
+    // Deity Gran Colombia 11-11/12, 32 games: 1 Builder and 2 charges against
+    // 7 improvable worked tiles at t60; the stock 60%/four-tile quota and the
+    // Granary, deterrent and Settler claims ahead of the backlog's took the
+    // queues. See `advanced/the_worked_backlog_gets_its_builder_first.rs`.
+    Gene { tag: "the-worked-backlog-gets-its-builder-first", field: "the_worked_backlog_gets_its_builder_first", kind: Kind::OptIn, enable: AdvancedAi::enable_the_worked_backlog_gets_its_builder_first, disable: AdvancedAi::disable_the_worked_backlog_gets_its_builder_first },
 ];
 
 // ═══ GENERATED BY tools/genes.py — THE VERDICTS. Do not edit below: `python3 tools/genes.py write` ═══

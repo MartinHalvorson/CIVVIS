@@ -4907,6 +4907,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             drop(session);
             respond_json(stream, &answer);
         }
+        // A citizen of the played seat placed on a tile by hand.
+        ("POST", "/city-citizen") => {
+            let mut session = lock_or_recover(&sh.session);
+            let answer = crate::routes::city_citizen(&mut session, &parsed);
+            drop(session);
+            respond_json(stream, &answer);
+        }
         // What a blow would do, read before it is struck.
         ("POST", "/forecast") => {
             let session = lock_or_recover(&sh.session);

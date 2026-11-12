@@ -233,6 +233,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `city-strike-takes-the-gun` | off (unmeasured) | Opt-in gene `city-strike-takes-the-gun`; see `advanced/siege_at_the_walls_dies_first.rs`. | 1 \| 1 |
 | `cold-war-before-conservation` | off (unmeasured) | `cold-war-before-conservation`: see `advanced/cold_war_before_conservation.rs`. | 1 \| 1 |
 | `cold-war-then-heritage` | off (unmeasured) | `cold-war-then-heritage`: see `advanced/cold_war_then_heritage.rs`. | 1 \| 1 |
+| `commercial-hub-claims-a-peace-queue` | off (unmeasured) | Opt-in `commercial-hub-claims-a-peace-queue`; see `advanced/commercial_hub_claims_a_peace_queue.rs`. | 1 \| 1 |
 | `contact-fleet` | off (unmeasured) | While a living major is unmet or unlocated, or a city-state is unmet, the queued sea scout keeps its queue, ships route toward foreign landfall, and the faster hull is preferred. | 1 \| 1 |
 | `corps-comes-home-alive` | off (unmeasured) | Opt-in gene `corps-comes-home-alive`; see `advanced/apostle_army.rs`. | 1 \| 1 |
 | `counterweight-builds-its-source` | off (unmeasured) | Opt-in gene `counterweight-builds-its-source`; see `Self::counterweight_builds_its_source`. | 1 \| 1 |
@@ -296,6 +297,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `each-civ-draws-its-width` | off (unmeasured) | Opt-in `each-civ-draws-its-width`; see `advanced/each_civ_draws_its_width.rs`. | 1 \| 1 |
 | `early-cities-keep-their-distance` | off (unmeasured) | Opt-in gene `early-cities-keep-their-distance`; see `Self::early_cities_keep_their_distance`. | 1 \| 1 |
 | `early-route-feeds-production` | off (unmeasured) | Opt-in gene `early-route-feeds-production`; see `Self::early_route_feeds_production`. | 1 \| 1 |
+| `education-follows-the-library` | off (unmeasured) | Opt-in `education-follows-the-library`; see `advanced/research/domination_education.rs`. | 1 \| 1 |
 | `elimination-yields-to-a-launch-2` | off (unmeasured) | Enable the separately measured staged Culture air-interception version. | 1 \| 2 |
 | `embassy-finds-the-capital-2` | off (unmeasured) | Opt-in gene `embassy-finds-the-capital-2`; see `advanced/embassy_capital.rs`. | 1 \| 2 |
 | `every-shooter-at-the-walls` | off (unmeasured) | Opt-in gene `every-shooter-at-the-walls`; see `advanced/siege_at_the_walls_dies_first.rs`. | 1 \| 1 |
@@ -308,6 +310,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `faith-war-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-war-needs-the-edge`; see `Self::faith_war_needs_the_edge`. | 1 \| 1 |
 | `faith-war-on-a-small-world` | off (unmeasured) | Opt-in `faith-war-on-a-small-world`; see `AdvancedAi::faith_war_on_a_small_world`. | 1 \| 1 |
 | `field-reads-the-tile-it-leaves` | off (unmeasured) | Opt-in gene `field-reads-the-tile-it-leaves`; see `Self::field_reads_the_tile_it_leaves`. | 1 \| 1 |
+| `first-campus-before-the-settler` | off (unmeasured) | Opt-in `first-campus-before-the-settler`; see `advanced/first_campus_before_the_settler.rs`. | 1 \| 1 |
 | `first-capital-before-the-camp` | off (unmeasured) | Opening defence priority for the threatened sole capital. | 1 \| 1 |
 | `first-capital-before-the-walls` | off (unmeasured) | `first-capital-before-the-walls`: see `advanced/first_capital_before_the_walls.rs`. | 1 \| 1 |
 | `first-capital-strikes-the-open-window` | off (unmeasured) | `first-capital-strikes-the-open-window`: see `advanced/first_capital_strikes_the_open_window.rs`. | 1 \| 1 |
@@ -372,6 +375,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `old-techs-before-the-beeline` | off (unmeasured) | Opt-in gene `old-techs-before-the-beeline`; see `advanced/old_techs_before_the_beeline.rs`. | 1 \| 1 |
 | `opening-builder-after-the-first-settler` | off (unmeasured) | Opt-in gene `opening-builder-after-the-first-settler`; see `BasicAi::opening_builder_after_the_first_settler`. | 1 \| 1 |
 | `opening-ranged-support` | off (unmeasured) | Replace the capital's first opening slot with legal ranged support. | 1 \| 1 |
+| `opening-scout-comes-back` | off (unmeasured) | `opening-scout-comes-back`: the opening Scout the barbarian defence displaced is that city's next build, and a Scout lost early while no rival capital is charted is replaced at once. | 1 \| 1 |
 | `outclassed-siege-stands-down` | off (unmeasured) | Opt-in gene `outclassed-siege-stands-down`; see `Self::outclassed_siege_stands_down`. | 1 \| 1 |
 | `outmatched-war-prices-the-army` | off (unmeasured) | Opt-in gene `outmatched-war-prices-the-army`; see `advanced/outmatched_war_prices_the_army.rs`. | 1 \| 1 |
 | `parallel-library-backlog` | off (unmeasured) | Coordinate a quoted opening Library and backlog Builder. | 1 \| 1 |
@@ -393,6 +397,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `racer-spies-search-for-the-pad` | off (unmeasured) | Opt-in gene `racer-spies-search-for-the-pad`; see `Self::racer_spies_search_for_the_pad`. | 1 \| 1 |
 | `ranged-finish-on-the-mean` | off (unmeasured) | Opt-in gene `ranged-finish-on-the-mean`; see `Self::ranged_finish_on_the_mean`. | 1 \| 1 |
 | `ranged-kills-are-free` | off (unmeasured) | Opt-in gene `ranged-kills-are-free`; see `Self::ranged_kills_are_free`. | 1 \| 1 |
+| `rear-cities-grow-through-the-war-hold` | off (unmeasured) | `rear-cities-grow-through-the-war-hold`: see `advanced/rear_cities_grow_through_the_war_hold.rs`. | 1 \| 1 |
 | `religion-denial-needs-the-edge` | off (unmeasured) | Require the launcher counter's military edge for a Religion seat's separate science-denial declaration. | 1 \| 1 |
 | `religion-finishes-majorities` | off (unmeasured) | Opt-in `religion-finishes-majorities`; see `religion_majorities.rs`. | 1 \| 1 |
 | `religion-lane-hands-over` | off (unmeasured) | Opt-in gene `religion-lane-hands-over`; see `Self::religion_lane_hands_over`. | 1 \| 1 |
@@ -466,6 +471,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `sweden-builds-open-air-museums` | off (unmeasured) | Opt-in gene `sweden-builds-open-air-museums`; see `advanced/sweden_builds_open_air_museums.rs`. | 1 \| 1 |
 | `the-giant-gets-the-peace-offer` | off (unmeasured) | Opt-in gene `the-giant-gets-the-peace-offer`; see `Self::the_giant_gets_the_peace_offer`. | 1 \| 1 |
 | `the-last-two-capitals-come-first` | off (unmeasured) | Opt-in gene `the-last-two-capitals-come-first`; see `Self::the_last_two_capitals_come_first`. | 1 \| 1 |
+| `the-worked-backlog-gets-its-builder-first` | off (unmeasured) | Opt-in gene `the-worked-backlog-gets-its-builder-first`; acts through `builders-cover-the-worked-backlog`'s step and `backlog-builder-takes-the-queue`'s claim. | 1 \| 1 |
 | `theology-fights-count-the-host-edge` | off (unmeasured) | Opt-in gene `theology-fights-count-the-host-edge`; see `advanced/theology_fights.rs`. | 1 \| 1 |
 | `threatened-lane-lends-the-army` | off (unmeasured) | Opt-in gene `threatened-lane-lends-the-army`; see `advanced/threatened_lane_lends_the_army.rs`. | 1 \| 1 |
 | `threatened-war-holds-the-claims` | off (unmeasured) | Opt-in gene `threatened-war-holds-the-claims`; see `advanced/threatened_war_holds_the_claims.rs`. | 1 \| 1 |

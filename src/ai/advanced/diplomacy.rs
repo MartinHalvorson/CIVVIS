@@ -2203,6 +2203,12 @@ impl AdvancedAi {
         if !self.first_capital_holds_the_raid(g) && self.opportunistic_war_diplomacy(g, pid, plan) {
             return;
         }
+        // `first-capital-strikes-the-open-window`: a neighbour's unwalled
+        // city within reach of our soldiers. The turn's one declaration.
+        // `false` with the gene off. See `advanced/soft_city_window.rs`.
+        if self.soft_city_window_opening(g, pid, plan) {
+            return;
+        }
         // `early-conquest-opening`: the assembled force's declaration, and the
         // terms it asks for once the war stops paying. A declaration here is
         // the turn's one declaration. Exact no-op while off. See

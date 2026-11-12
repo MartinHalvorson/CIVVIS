@@ -112,20 +112,28 @@ impl BasicAi {
         // `WORKED_BACKLOG_COVER` of `backlog`, and the gates below are the
         // stock ones. See `ai/prod_tiles_call_the_builders.rs`.
         let (wanted, production) = self.worked_backlog_charges_wanted(g, pid, backlog);
-        if production.is_none() && backlog < Self::WORKED_BACKLOG_MIN_TILES {
-            return None;
-        }
-        if production.is_some()
-            && wanted < Self::WORKED_BACKLOG_MIN_TILES as f64 * Self::WORKED_BACKLOG_COVER
-        {
-            return None;
-        }
         let cover = Self::builder_charge_cover(g, pid);
-        if production.is_none() && f64::from(cover) >= backlog as f64 * Self::WORKED_BACKLOG_COVER {
-            return None;
-        }
-        if production.is_some() && f64::from(cover) >= wanted {
-            return None;
+        // `the-worked-backlog-gets-its-builder-first`: a backlog two or more
+        // tiles ahead of the charges wants a Builder whatever the quota below
+        // says. Always false with the gene off, which leaves the stock gates.
+        // See `ai/advanced/the_worked_backlog_gets_its_builder_first.rs`.
+        if !self.worked_backlog_runs_ahead(backlog, cover) {
+            if production.is_none() && backlog < Self::WORKED_BACKLOG_MIN_TILES {
+                return None;
+            }
+            if production.is_some()
+                && wanted < Self::WORKED_BACKLOG_MIN_TILES as f64 * Self::WORKED_BACKLOG_COVER
+            {
+                return None;
+            }
+            if production.is_none()
+                && f64::from(cover) >= backlog as f64 * Self::WORKED_BACKLOG_COVER
+            {
+                return None;
+            }
+            if production.is_some() && f64::from(cover) >= wanted {
+                return None;
+            }
         }
         let builder = Item::Unit {
             unit: crate::name!("builder"),

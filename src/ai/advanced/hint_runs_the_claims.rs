@@ -64,6 +64,14 @@ impl AdvancedAi {
         // while the gene is off. See
         // `advanced/threatened_war_holds_the_claims.rs`.
         let war_holds = self.threatened_war_holds_the_claims_holds(g, pid, plan);
+        // `rear-cities-grow-through-the-war-hold`: under that hold, the growth
+        // claims below (Granary, Trader, parallel Library, backlog Builder,
+        // Aqueduct, Neighbourhood, Campus building, free-slot Campus) still run, but only for
+        // the cities away from the front. Each claim's city loop skips the
+        // rest (`claim_open_behind_the_front`). Exact no-op while the gene is
+        // off. See `advanced/rear_cities_grow_through_the_war_hold.rs`.
+        let rear_grows = self.open_rear_cities_under_the_war_hold(g, pid, plan, war_holds);
+        let growth_claims = !war_holds || rear_grows;
         self.claim_forward_airfield_stage_in_flight(g, pid, plan);
         // `early-settler-floor`: a Settler for the opening's band floor
         // goes first, ahead of the Prophet race and the routine claims
@@ -93,6 +101,15 @@ impl AdvancedAi {
                     .first()
                     .is_some_and(|item| self.first_capital_training_holds(g, pid, cid, item))
             });
+        // `the-worked-backlog-gets-its-builder-first`: while the worked
+        // backlog runs two or more tiles ahead of the Builder charges, the
+        // backlog Builder's claim is asked here too, ahead of the Monument,
+        // Granary, breaker, deterrent and Trader claims. Exact no-op while
+        // the gene is off. See
+        // `advanced/the_worked_backlog_gets_its_builder_first.rs`.
+        if !war_holds {
+            self.claim_worked_backlog_builder_first(g, pid, plan);
+        }
         // `capital-monument-after-the-second-city`: the capital's Monument,
         // once the second city stands, after the floor's Settler and ahead
         // of the routine claims. Exact no-op while the gene is off. See
@@ -104,7 +121,7 @@ impl AdvancedAi {
         // ahead of the deterrent and the routine claims below; a due
         // Settler and the faith defence above keep their order. See
         // `advanced/granary_claims_the_bound_queue.rs`.
-        if !war_holds {
+        if growth_claims {
             self.claim_bound_granaries(g, pid, plan);
         }
         // `domination-target-gets-its-breaker`: the Domination target's
@@ -123,7 +140,7 @@ impl AdvancedAi {
         // and ahead of the Prophet race and the routine claims. Exact
         // no-op while the gene is off. See
         // `advanced/trader_fills_the_idle_route.rs`.
-        if !war_holds {
+        if growth_claims {
             self.claim_trader_for_idle_route(g, pid, plan);
         }
         // Remember idle opportunities before routine claims fill them.
@@ -136,25 +153,25 @@ impl AdvancedAi {
         // after the Trader and ahead of the Prophet race and the routine
         // claims. Exact no-op while the gene is off. See
         // `advanced/backlog_builder_takes_the_queue.rs`.
-        let early_library = if !war_holds {
+        let early_library = if growth_claims {
             self.claim_parallel_library_backlog(g, pid, plan)
         } else {
             None
         };
-        if !war_holds {
+        if growth_claims {
             self.claim_backlog_builder(g, pid, plan);
         }
         // `aqueduct-claims-the-capped-queue`: the most capped city's legal
         // Aqueduct, after the backlog Builder and ahead of the Prophet race
         // and the routine claims. Exact no-op while the gene is off. See
         // `advanced/aqueduct_claims_the_capped_queue.rs`.
-        if !war_holds {
+        if growth_claims {
             self.claim_capped_aqueduct(g, pid, plan);
         }
         // `neighborhood-houses-the-capped-city`: after the Aqueduct, the
         // most capped city's Neighborhood. Exact no-op while the gene is
         // off. See `advanced/neighborhood_houses_the_capped_city.rs`.
-        if !war_holds {
+        if growth_claims {
             self.claim_capped_neighborhood(g, pid, plan);
         }
         // `industrial-zone-claims-the-producer-queue`: the producer step's
@@ -181,14 +198,15 @@ impl AdvancedAi {
                 .get(cid)
                 .is_some_and(|city| city.queue.first() == Some(item))
         });
-        if !war_holds && !library_still_held {
+        if growth_claims && !library_still_held {
             self.claim_campus_building(g, pid, plan);
         }
         // `campus-claims-the-free-slot`: a free district slot's first
         // Campus, after the Campus building claim and ahead of the Prophet
         // race and the routine claims. Exact no-op while the gene is off.
-        // See `advanced/campus_claims_the_free_slot.rs`.
-        if !war_holds {
+        // See `advanced/campus_claims_the_free_slot.rs`. Under the war hold
+        // it runs for the rear cities alone (`rear-cities-grow-through-the-war-hold`).
+        if growth_claims {
             self.claim_free_slot_campus(g, pid, plan);
         }
         // `culture-seat-theater-first`: a Culture seat's first Theater
@@ -258,6 +276,7 @@ impl AdvancedAi {
         if !war_holds {
             self.claim_pillaged_repairs(g, pid);
         }
+        self.close_rear_cities_under_the_war_hold();
         war_holds
     }
 

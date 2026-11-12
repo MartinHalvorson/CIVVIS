@@ -141,6 +141,156 @@ fn provision_settlers_keep_the_ordinary_growth_appetite() {
 
 /// `CitizenJobKey` replaced the formatted text the citizen plan broke ties on.
 /// Its derived order must be that text's order, or a tie resolves differently.
+/// Civilization VI lets a player lock a citizen to a tile. The governor seats
+/// that citizen first and places everyone else around it, and no later pass
+/// moves it, including the one that covers consumption.
+#[test]
+fn a_citizen_placed_by_hand_stays_where_it_was_put() {
+    let (mut game, city) = settler_city();
+    game.cities.get_mut(&city).unwrap().queue.clear();
+    let before = game.city_citizen_plan(city);
+    assert_eq!(before.worked_tiles.len(), 3);
+    // A tile the governor did not choose, and would not: the poorest it owns.
+    let center = game.cities[&city].pos;
+    let mut spare: Vec<Pos> = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|pos| *pos != center && !before.worked_tiles.contains(pos))
+        .filter(|pos| {
+            let tile = &game.map.tiles[pos];
+            tile.district.is_none() && tile.wonder.is_none()
+        })
+        .collect();
+    spare.sort_by(|a, b| {
+        let value = |pos: &Pos| game.workable_tile_yields(*pos).total();
+        value(a).partial_cmp(&value(b)).unwrap().then(a.cmp(b))
+    });
+    let placed = *spare.first().expect("a tile the governor left unworked");
+
+    // Nothing placed is the shipped plan, to the tile.
+    game.players[0].citizen_locks.insert(city, BTreeSet::new());
+    assert_eq!(game.city_citizen_plan(city), before);
+
+    game.players[0]
+        .citizen_locks
+        .entry(city)
+        .or_default()
+        .insert(placed);
+    game.board_written();
+    let held = game.city_citizen_plan(city);
+    assert!(held.worked_tiles.contains(&placed), "{held:?}");
+    assert_eq!(held.worked_tiles.len(), before.worked_tiles.len());
+
+    // Favouring anything else does not pull the placed citizen off its tile.
+    game.players[0].city_directives.insert(
+        city,
+        CityDirective {
+            emphasis: Yields {
+                food: 4.0,
+                production: 4.0,
+                ..Yields::default()
+            },
+            ..CityDirective::default()
+        },
+    );
+    game.board_written();
+    assert!(game.city_citizen_plan(city).worked_tiles.contains(&placed));
+    game.players[0].city_directives.clear();
+
+    // More placed than there are citizens: the first few are seated and the
+    // governor has nobody left to place.
+    let all: BTreeSet<Pos> = spare
+        .iter()
+        .copied()
+        .chain(before.worked_tiles.iter().copied())
+        .collect();
+    assert!(all.len() > 3);
+    game.players[0].citizen_locks.insert(city, all.clone());
+    game.board_written();
+    let full = game.city_citizen_plan(city);
+    assert_eq!(full.worked_tiles.len(), 3);
+    assert!(full.worked_tiles.iter().all(|pos| all.contains(pos)));
+
+    // Taken off again, the governor's own plan comes back exactly.
+    game.players[0].citizen_locks.remove(&city);
+    game.board_written();
+    assert_eq!(game.city_citizen_plan(city), before);
+}
+
+/// A campus with a library on land the test city owns, for the two tests
+/// below: one specialist slot the governor would not fill by itself.
+fn campus_city() -> (Game, u32, Pos) {
+    let (mut game, city) = settler_city();
+    let center = game.cities[&city].pos;
+    let site = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|pos| *pos != center)
+        .expect("land beside the city");
+    game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
+    let held = game.cities.get_mut(&city).unwrap();
+    held.queue.clear();
+    held.districts.insert(crate::name!("campus"), site);
+    held.buildings.push(crate::name!("library"));
+    game.board_written();
+    (game, city, site)
+}
+
+/// Civilization VI lets a player seat a specialist in a district. The governor
+/// leaves a slot empty while there is land to work; a specialist placed by
+/// hand takes the slot and keeps it.
+#[test]
+fn a_specialist_placed_by_hand_takes_its_slot() {
+    let (mut game, city, site) = campus_city();
+    let slots = game.city_specialist_slots(city);
+    assert_eq!(slots.len(), 1, "{slots:?}");
+    assert_eq!((slots[0].0.as_str(), slots[0].1), ("campus", site));
+    assert!(slots[0].2 >= 1);
+
+    let before = game.city_citizen_plan(city);
+    assert!(before.specialists.is_empty(), "{before:?}");
+    game.players[0]
+        .specialist_locks
+        .entry(city)
+        .or_default()
+        .insert("campus".to_string(), 1);
+    game.board_written();
+    let held = game.city_citizen_plan(city);
+    assert_eq!(held.specialists, vec!["campus".to_string()]);
+    assert_eq!(held.worked_tiles.len() + held.specialists.len(), 3);
+
+    // Released, the governor's own plan comes back exactly.
+    game.players[0].specialist_locks.clear();
+    game.board_written();
+    assert_eq!(game.city_citizen_plan(city), before);
+}
+
+/// An agent rebuilds every city directive on the turns it plays. A focus a
+/// person set used to live there and was erased by handing the seat to
+/// auto-play; it is the seat's own now.
+#[test]
+fn a_seats_focus_outlives_the_directives_an_agent_rewrites() {
+    let (mut game, city, _) = campus_city();
+    let before = game.citizen_strategy(city).weights;
+    game.players[0].citizen_focus.insert(
+        city,
+        Yields {
+            gold: 4.0,
+            ..Yields::default()
+        },
+    );
+    assert_eq!(game.citizen_strategy(city).weights.gold, before.gold + 4.0);
+    game.players[0].city_directives.clear();
+    game.players[0]
+        .city_directives
+        .insert(city, CityDirective::default());
+    game.board_written();
+    assert_eq!(game.citizen_strategy(city).weights.gold, before.gold + 4.0);
+    assert_eq!(game.citizen_strategy(city).weights.food, before.food);
+}
+
 #[test]
 fn citizen_job_keys_order_exactly_as_their_text_did() {
     let values = [

@@ -80,7 +80,9 @@
 //! [`SMALL_WORLD_MAJORS`] living majors (counted, not read off the map
 //! size), when the founder's faith already holds the majority of a living
 //! major other than us and the founder, or its race (living majors following
-//! it, as a percentage) reads [`SMALL_WORLD_RACE`] or more
+//! it, as a percentage) reads [`SMALL_WORLD_RACE`] or more, or half our own
+//! cities already follow or are converting to it
+//! ([`SMALL_WORLD_OWN_SHARE`]: we are the next major to flip)
 //! (`faith_war_small_world`), and the shipped trigger is met, the war opens
 //! without the power floor, the edge (`faith-war-needs-the-edge`), the rout
 //! ratio, the treasury reserve and the income gate. The legality of the
@@ -157,6 +159,34 @@ pub(crate) const SMALL_WORLD_MAJORS: usize = 4;
 /// edge: on four majors, the founder and one more.
 pub(crate) const SMALL_WORLD_RACE: usize = 50;
 
+/// `faith-war-on-a-small-world`: the share of our own cities, as a
+/// percentage, following or converting to the founder's faith at which we
+/// are the next major to flip and the war opens without the edge although no
+/// other major follows the faith yet. Live Deity Gran Colombia
+/// `civvis-20261111T181048Z` (four majors): turns 68-69 read "7 spreader(s)
+/// at our cities and 7 of ours lean to its faith" of ten cities, the race
+/// still 25%, and the war was held on the power floor at 402 against 634;
+/// we flipped about turn 70 and Byzantium won on turn 81.
+/// `civvis-20261111T182106Z` lost the same way to France on turn 90.
+pub(crate) const SMALL_WORLD_OWN_SHARE: usize = 50;
+
+/// `faith-war-on-a-small-world`: the cities we must hold for our own flip to
+/// open the war ([`SMALL_WORLD_OWN_SHARE`]), and how many of them must be on
+/// the founder's faith. One leaning city of two is half an empire that
+/// cannot fight: live Deity Gran Colombia `civvis-20261111T194319Z` opened
+/// on Arabia at turn 46 with two cities, one leaning, at 205 power against
+/// 489, and held one city at turn 110.
+pub(crate) const SMALL_WORLD_OWN_CITIES: usize = 3;
+
+/// See [`SMALL_WORLD_OWN_CITIES`].
+pub(crate) const SMALL_WORLD_OWN_LEANING: usize = 2;
+
+/// `faith-war-on-a-small-world`: our power, as a share of the founder's
+/// steady power, under which our own flip does not open the war. The
+/// Byzantium game that motivated the rule stood at 0.63 (402 against 634);
+/// the Arabia game above at 0.42.
+pub(crate) const SMALL_WORLD_OWN_POWER: f64 = 0.5;
+
 /// `faith-war-on-a-small-world`: a founder's race on a small world.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct SmallWorldRace {
@@ -214,9 +244,13 @@ impl AdvancedAi {
 
     /// `faith-war-on-a-small-world`: `rival`'s race on a world of at most
     /// [`SMALL_WORLD_MAJORS`] living majors, when its founded faith holds the
-    /// majority of a living major other than us and `rival`, or its race
-    /// reads [`SMALL_WORLD_RACE`] or more. `None` on a larger world, and
-    /// always with the gene or version 2 off.
+    /// majority of a living major other than us and `rival`, its race reads
+    /// [`SMALL_WORLD_RACE`] or more, or [`SMALL_WORLD_OWN_SHARE`] percent of
+    /// our own cities follow or are converting to it (of at least
+    /// [`SMALL_WORLD_OWN_CITIES`] cities, at least
+    /// [`SMALL_WORLD_OWN_LEANING`] of them, and at
+    /// [`SMALL_WORLD_OWN_POWER`] of its steady power or more). `None` on a
+    /// larger world, and always with the gene or version 2 off.
     pub(crate) fn faith_war_small_world(
         &self,
         g: &Game,
@@ -245,7 +279,17 @@ impl AdvancedAi {
             .count();
         let (converted, _) = self.religious_conversion_tally(g, rival);
         let race = 100 * converted / majors.max(1);
-        (others > 0 || race >= SMALL_WORLD_RACE).then_some(SmallWorldRace {
+        // We are the next major to flip: half our cities are on the faith.
+        // That reading asks for an empire that can fight the war: see
+        // `SMALL_WORLD_OWN_CITIES` and `SMALL_WORLD_OWN_POWER`.
+        let cities = g.player_city_ids(pid).len();
+        let leaning = Self::our_cities_on_the_faith(g, pid, faith);
+        let next = cities >= SMALL_WORLD_OWN_CITIES
+            && leaning >= SMALL_WORLD_OWN_LEANING
+            && 100 * leaning >= SMALL_WORLD_OWN_SHARE * cities
+            && g.military_power(pid)
+                >= SMALL_WORLD_OWN_POWER * self.steady_rival_power(g, rival).max(1.0);
+        (others > 0 || race >= SMALL_WORLD_RACE || next).then_some(SmallWorldRace {
             majors,
             race,
             others,

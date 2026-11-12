@@ -149,6 +149,15 @@ pub(crate) const STONE_MELEE_MAX: usize = 8;
 /// the strike a body it does not count.
 pub(crate) const STONE_SPARE_BODIES: usize = 1;
 
+/// What a garrisoned soldier's strength gains in a city-state's capital
+/// behind one wall level (+3 each, `game/city.rs`). Live Deity Gran Colombia
+/// `civvis-20261111T202441Z` sized its force for Singapore at a centre of
+/// about 27 at turn 30 and declared at 40; with Singapore's Swordsman inside
+/// the centre read 42 at the assault and a Warrior's blow took 14 from the
+/// walls. Six declarations on city-states in the 19 games after the strike's
+/// fixes took none of them.
+pub(crate) const STONE_GARRISON_BONUS: f64 = 6.0;
+
 /// A land unit's full health.
 const STONE_BODY_HEALTH: f64 = 100.0;
 
@@ -564,6 +573,24 @@ impl AdvancedAi {
         self.city_state_stone_progress_note(g, pid, &opening, held);
     }
 
+    /// The stone's centre as it will fight: its strength as last seen, or
+    /// the strongest soldier of the city-state on the board with what a
+    /// garrison gains in a walled capital ([`STONE_GARRISON_BONUS`]),
+    /// whichever is more. At peace a centre reads its owner's best unit less
+    /// ten; when the war opens that unit walks in and the centre reads the
+    /// unit itself (`game/city.rs`).
+    pub(crate) fn city_state_stone_centre(g: &Game, city: &crate::game::City) -> f64 {
+        let garrison = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == city.owner)
+            .map(|unit| &g.rules.units[unit.kind])
+            .filter(|spec| spec.class == "military")
+            .map(|spec| spec.strength + STONE_GARRISON_BONUS)
+            .fold(0.0, f64::max);
+        g.city_strength(city.id).max(garrison)
+    }
+
     /// The melee bodies the stone's force reserves now.
     pub(super) fn city_state_stone_melee(&self) -> usize {
         self.city_state_stone
@@ -583,7 +610,7 @@ impl AdvancedAi {
         opening: &ConquestOpening,
     ) -> Option<(usize, f64, f64)> {
         let city = g.cities.get(&opening.city)?;
-        let defence = g.city_strength(city.id);
+        let defence = Self::city_state_stone_centre(g, city);
         let fielded = opening
             .force
             .iter()
@@ -1036,6 +1063,31 @@ impl AdvancedAi {
         true
     }
 
+    /// `city-state-before-the-first-capital`: whether `cid`, a city of ours
+    /// that is not the capital, trains the stone's reserved bodies as well:
+    /// while the stone stands, any city within the purchase reach of the
+    /// rally ([`STONE_BREAKER_PURCHASE_REACH`]). `false` with the gene off
+    /// and with no stone.
+    ///
+    /// The shipped reservation is the capital's alone. Live Deity Gran
+    /// Colombia `civvis-20261111T184206Z` named Antananarivo at turn 11; the
+    /// capital finished a Settler (16), the Ram (23) and seven Warriors, one
+    /// every two turns, and the force stood at the rally at turn 39. Its
+    /// second city, at 3 to 7 Production a turn against the capital's ten,
+    /// trained a Builder, a Monument, a Scout, a Settler and an Archer over
+    /// those turns. A city-state's centre gains about a point a turn from
+    /// turn 30, so the turns are what the strike is short of.
+    pub(super) fn city_state_stone_trains_in(&self, g: &Game, cid: u32) -> bool {
+        if !self.city_state_stone_stands() {
+            return false;
+        }
+        let (Some(opening), Some(city)) = (self.conquest_opening.as_ref(), g.cities.get(&cid))
+        else {
+            return false;
+        };
+        g.wdist(city.pos, opening.rally) <= STONE_BREAKER_PURCHASE_REACH
+    }
+
     /// The stone's commit clock floor: its own naming deadline (50 on
     /// Online), under the shipped approach grace. Zero with no stone.
     pub(super) fn city_state_stone_commit_floor(&self, g: &Game) -> u32 {
@@ -1167,7 +1219,7 @@ impl AdvancedAi {
         opening: &ConquestOpening,
     ) -> Option<(usize, f64, f64)> {
         let city = g.cities.get(&opening.city)?;
-        let defence = g.city_strength(city.id);
+        let defence = Self::city_state_stone_centre(g, city);
         let mut bodies = 0;
         let mut blows = 0.0;
         for unit in opening.force.iter().filter_map(|uid| g.units.get(uid)) {

@@ -1144,3 +1144,84 @@ fn gold_buys_a_missing_melee_body_for_the_stone() {
     assert!(!ai.city_state_stone_body_purchase(&mut game, 0));
     assert_eq!(warriors(&game), held);
 }
+
+/// While the stone stands, a city of ours near the rally trains the
+/// reserved bodies as the capital does; a far one does not, and off the
+/// stone the reservation is the capital's alone.
+#[test]
+fn a_city_near_the_rally_trains_the_stones_force() {
+    let (mut game, near, _) = fixture();
+    stand_walls(&mut game, near);
+    let far_city = game.found_city_for(0, at(45, 20), None);
+    let mut ai = seat(true);
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.city_state_stone_stands());
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    let capital = game.city_at(at(6, 12)).expect("our capital");
+    let second = game.city_at(at(6, 18)).expect("our second city");
+    assert!(game.wdist(at(6, 18), rally) <= STONE_BREAKER_PURCHASE_REACH);
+    assert!(game.wdist(at(45, 20), rally) > STONE_BREAKER_PURCHASE_REACH);
+    let warrior = game.rules.units.get("warrior").unwrap().clone();
+    let counts = ai.counts(&game, 0);
+    assert!(ai.conquest_reservation(&game, 0, capital, &warrior, &counts, false) > 0.0);
+    assert!(
+        ai.conquest_reservation(&game, 0, second, &warrior, &counts, false) > 0.0,
+        "the second city trains the force too"
+    );
+    assert!(ai.city_state_stone_trains_in(&game, second));
+    assert!(!ai.city_state_stone_trains_in(&game, far_city));
+    assert_eq!(
+        ai.conquest_reservation(&game, 0, far_city, &warrior, &counts, false),
+        0.0,
+        "a city past the reach does not"
+    );
+
+    // Off the stone no other city is asked.
+    let mut plain = seat(false);
+    plain.maintain_conquest_opening(&mut game, 0);
+    assert!(!plain.city_state_stone_trains_in(&game, second));
+    assert_eq!(
+        plain.conquest_reservation(&game, 0, second, &warrior, &counts, false),
+        0.0
+    );
+}
+
+/// The centre is priced with the garrison that walks in: a city-state
+/// with only Warriors fights at 26, and one with a Swordsman at 41, which no
+/// force of Warriors finishes, so the strike on it is never declared.
+#[test]
+fn the_centre_is_priced_with_the_city_states_strongest_soldier() {
+    let (mut game, near, _) = fixture();
+    stand_walls(&mut game, near);
+    let mut ai = seat(true);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    force_at(&mut game, rally);
+    unit(&mut game, "battering_ram", rally);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.clone().unwrap();
+    let city = game.cities[&near].clone();
+    assert!((AdvancedAi::city_state_stone_centre(&game, &city) - 20.0).abs() < 1e-6);
+    assert_eq!(ai.city_state_stone_holds(&game, 0, &opening), None);
+
+    // Its own Warrior, far from the city: the centre fights at 26.
+    game.spawn_test_unit("warrior", 2, at(20, 12));
+    assert!((AdvancedAi::city_state_stone_centre(&game, &city) - 26.0).abs() < 1e-6);
+    let (bodies, _, _) =
+        AdvancedAi::city_state_stone_bodies_needed(&game, &opening).expect("priced");
+    assert_eq!(bodies, 7, "six finish a centre of 26 and one is spare");
+
+    // A Swordsman: 41, and the five Warriors at the rally hold.
+    game.spawn_test_unit("swordsman", 2, at(21, 12));
+    assert!((AdvancedAi::city_state_stone_centre(&game, &city) - 41.0).abs() < 1e-6);
+    let (_, blows, needed) =
+        AdvancedAi::city_state_stone_kill_time(&game, &opening).expect("priced");
+    assert!(blows <= needed, "{blows} against {needed}");
+    assert_eq!(
+        ai.city_state_stone_holds(&game, 0, &opening),
+        Some("the melee bodies at the rally would not finish the city before they fall")
+    );
+    let (bodies, _, _) =
+        AdvancedAi::city_state_stone_bodies_needed(&game, &opening).expect("priced");
+    assert!(bodies > STONE_MELEE_MAX, "{bodies}");
+}

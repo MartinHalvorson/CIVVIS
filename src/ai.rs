@@ -1815,6 +1815,15 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `prod-tiles-call-the-builders`.
     pub(crate) prod_tiles_call_the_builders: bool,
+    /// With `builders_cover_the_worked_backlog`, the backlog step also wants a
+    /// Builder while the unimproved worked tiles run two or more ahead of the
+    /// charges in hand and queued (about one charge a tile), whatever the
+    /// 60% quota says. See
+    /// `ai/advanced/the_worked_backlog_gets_its_builder_first.rs`.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene
+    /// `the-worked-backlog-gets-its-builder-first`.
+    pub(crate) the_worked_backlog_gets_its_builder_first: bool,
     /// From turn 90 standard (t60 Online), ahead of the military floor: the
     /// Market of a standing Commercial Hub, then a Trader while the empire's
     /// routes and Traders leave a route slot open, then a Commercial Hub on
@@ -3176,6 +3185,22 @@ pub struct BasicAi {
     pub(crate) first_pad_in_the_forge: bool,
     /// Independent first-slot exploration experiment.
     pub(crate) scout_first_opening: bool,
+    /// `opening-scout-comes-back`: the opening Scout the barbarian defence
+    /// displaced is the next build in that city, and a Scout lost before
+    /// `OPENING_SCOUT_LOSS_TURNS` standard turns, while no rival capital is
+    /// charted, is replaced at once, once a game. See `ai/scout_first.rs`.
+    /// Set through `AdvancedAi::enable_opening_scout_comes_back`.
+    pub(crate) opening_scout_comes_back: bool,
+    /// `opening-scout-comes-back`: the tile of the city whose opening Scout
+    /// the barbarian defence displaced. A tile, not a city id: the live
+    /// mirror renumbers cities when it rebuilds the board.
+    pub(crate) opening_scout_owed_at: Option<Pos>,
+    /// `opening-scout-comes-back`: a recon unit of ours has stood on the
+    /// board this game, so its absence is a loss.
+    pub(crate) opening_recon_fielded: bool,
+    /// `opening-scout-comes-back`: the one replacement of a lost early Scout
+    /// has been ordered.
+    pub(crate) opening_scout_replaced: bool,
     /// Opt-in first-slot ranged support; later recon behavior stays enabled.
     pub(crate) opening_ranged_support: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
@@ -3980,6 +4005,7 @@ impl BasicAi {
             housing_cap_builds_the_aqueduct: false,
             builders_cover_the_worked_backlog: false,
             prod_tiles_call_the_builders: false,
+            the_worked_backlog_gets_its_builder_first: false,
             commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,
@@ -4126,6 +4152,10 @@ impl BasicAi {
             opening_builder_paid: false,
             first_pad_in_the_forge: false,
             scout_first_opening: false,
+            opening_scout_comes_back: false,
+            opening_scout_owed_at: None,
+            opening_recon_fielded: false,
+            opening_scout_replaced: false,
             opening_ranged_support: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
@@ -4433,6 +4463,7 @@ impl BasicAi {
             housing_cap_builds_the_aqueduct: false,
             builders_cover_the_worked_backlog: false,
             prod_tiles_call_the_builders: false,
+            the_worked_backlog_gets_its_builder_first: false,
             commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,
@@ -4579,6 +4610,10 @@ impl BasicAi {
             opening_builder_paid: false,
             first_pad_in_the_forge: false,
             scout_first_opening: false,
+            opening_scout_comes_back: false,
+            opening_scout_owed_at: None,
+            opening_recon_fielded: false,
+            opening_scout_replaced: false,
             opening_ranged_support: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
@@ -5981,6 +6016,8 @@ impl BasicAi {
                     if live && displaces_settler {
                         self.opening_defense_preempts += 1;
                     }
+                    // `opening-scout-comes-back`: a displaced Scout is owed.
+                    self.note_opening_scout_displaced(g, *cid, displaced.as_ref());
                     if self.journal.wants(crate::reasoning::Level::Decision) {
                         let city = &g.cities[cid];
                         think!(self.journal, Military, Decision,
@@ -6006,6 +6043,11 @@ impl BasicAi {
                     }
                     continue;
                 }
+            }
+            // `opening-scout-comes-back`: the displaced Scout, or a lost early
+            // Scout's one replacement, before the book. See `ai/scout_first.rs`.
+            if self.play_opening_scout_comes_back(g, pid, *cid) {
+                continue;
             }
             // The held opening-book Settler takes the capital's queue the turn
             // the city reaches the host's floor. See `opening_settler_waits`.

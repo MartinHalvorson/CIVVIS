@@ -11027,12 +11027,13 @@ function drawTileYields(t, x, y, worked) {
 // tiles its citizens work ringed, and, while land is being bought, what each
 // priced plot would add. Null when a city has nothing to add to the overlay.
 function cityYieldsShowing() {
-  return !SPEC && Boolean((sitePick && sitePick.plots) || cityScreenOpen());
+  return !SPEC && Boolean((sitePick && (sitePick.plots || sitePick.citizens)) || cityScreenOpen());
 }
 function cityYieldTiles() {
   if (!state || !cityYieldsShowing()) return null;
   const buying = sitePick && sitePick.plots;
-  const cityId = buying ? sitePick.cityId : cityScreenId;
+  const placing = sitePick && sitePick.citizens;
+  const cityId = buying || placing ? sitePick.cityId : cityScreenId;
   const city = cityId === null ? null
     : state.cities.find(candidate => candidate.id === cityId && candidate.owner === 0);
   if (!city) return null;
@@ -17547,216 +17548,9 @@ const LIGHT_YEAR = LY_KM / EARTH_KM;// 1.485e9 Earth radii
 //           already there.
 const SKY_RUNG_ORDER = {chart:0, eye:1, glass:2, space:3};
 
-// ---------------------------------------------------------------- the system
-//
-// `km` is the body's own radius, `au` its semi-major axis about the Sun and
-// `moonKm` its semi-major axis about its parent, in kilometres; `period` is its
-// year in ours. `floor` is the smallest it is ever drawn — at true scale a
-// planet is a fraction of a pixel across the moment its whole orbit is in
-// frame, and a solar system of nothing is not a picture of a solar system.
-// `frequency` is that world's own tiling: the same hexagons-and-twelve-
-// pentagons construction the Earth has, coarser on a smaller world so a tile is
-// about the same size on screen whichever one you are standing over.
-//
-// `skyResources` is a survey annotation, not a ruleset deposit: it reuses an
-// existing Civilization resource pictogram to say what has actually been found
-// on a body, without creating a yield, stockpile, action, or gameplay hook.
-// That keeps the sky truthful in both Future Era modes while leaving any future
-// off-world economy to the Modified Future Era's own design.
-//
-// `earthTiles` marks a world whose tiling follows the Earth's: see
-// `skyFrequency`. Its catalogue `frequency` is then only the answer for a map
-// with no globe to measure against. `deposits` is what such a world is seeded
-// with each game, as how common each resource is on a piece of its ground
-// against the same piece of the Earth's land: see `skyDepositCounts`.
-const SKY_SYSTEM_SPECS = [
-  {id:"sun", name:"The Sun", km:695700, au:0, period:0, rung:"eye", floor:3.4,
-   tint:"#fff2c0", dark:"#e07d10", light:true},
-
-  // Mercury's enormous core is predominantly iron. Its surface is sulfur-rich
-  // too, but sulfur is not a Civilization resource, so the honest available
-  // marker is iron rather than the planet's misleadingly namesake resource.
-  {id:"mercury", name:"Mercury", km:2439.7, au:0.38710, period:0.24085,
-   rung:"eye", floor:2.2, tint:"#a49a90", dark:"#2b2723", frequency:8,  seed:2617,
-   skyResources:["iron"]},
-  {id:"venus",   name:"Venus",   km:6051.8, au:0.72333, period:0.61520,
-   rung:"eye", floor:2.4, tint:"#e8dcb0", dark:"#4d4126", frequency:10, seed:3121},
-  {id:"earth",   name:"Earth",   km:6371,   au:1.00000, period:1.00000,
-   rung:"eye", floor:2.4, tint:"#5aa0d8", dark:"#123048"},
-  {id:"moon",    name:"The Moon", km:1737.4, moonKm:384400, parent:"earth",
-   period:0.074803, rung:"eye", floor:2.0, tint:"#c3c6cb", dark:"#31333a",
-   frequency:9, seed:1721, earthTiles:true,
-   deposits:{stone:1, aluminum:1.7, uranium:.6}},
-  {id:"mars",    name:"Mars",    km:3389.5, au:1.52371, period:1.88082,
-   rung:"eye", floor:2.2, tint:"#c8683c", dark:"#3d1d13", frequency:11, seed:4409,
-   earthTiles:true,
-   deposits:{stone:1, aluminum:.6, uranium:.25, copper:5, salt:.2, mercury:.2}},
-
-  // Dawn found sodium-carbonate salt crusts left by brine in Occator crater.
-  {id:"ceres",   name:"Ceres",   km:473,    au:2.76750, period:4.6011,
-   rung:"glass", floor:1.6, tint:"#8c8378", dark:"#2a2622", frequency:6, seed:5501,
-   skyResources:["salt"]},
-
-  {id:"jupiter", name:"Jupiter", km:69911,  au:5.20440, period:11.862,
-   rung:"eye", floor:3.0, tint:"#d8bd94", dark:"#5a4127", frequency:13, seed:6113,
-   giant:true},
-  {id:"io",       name:"Io",       km:1821.6, moonKm:421700,  parent:"jupiter",
-   period:0.0048450, rung:"glass", floor:1.4, tint:"#e2d08a", dark:"#4a3a12",
-   frequency:7, seed:6217},
-  {id:"europa",   name:"Europa",   km:1560.8, moonKm:671034,  parent:"jupiter",
-   period:0.0097225, rung:"glass", floor:1.4, tint:"#ddd4c4", dark:"#4a4438",
-   frequency:7, seed:6301},
-  {id:"ganymede", name:"Ganymede", km:2634.1, moonKm:1070412, parent:"jupiter",
-   period:0.0195900, rung:"glass", floor:1.5, tint:"#9d9384", dark:"#332f28",
-   frequency:8, seed:6373},
-  // Galileo's bulk model is ice mixed with rock that includes iron and iron
-  // sulfide. Iron is the matching resource already in the Civ catalogue.
-  {id:"callisto", name:"Callisto", km:2410.3, moonKm:1882709, parent:"jupiter",
-   period:0.0456890, rung:"glass", floor:1.5, tint:"#7c7264", dark:"#2a251f",
-   frequency:8, seed:6449, skyResources:["iron"]},
-
-  {id:"saturn",  name:"Saturn",  km:58232,  au:9.58260, period:29.457,
-   rung:"eye", floor:3.0, tint:"#e6d3a4", dark:"#5e4d2c", frequency:13, seed:7219,
-   giant:true, rings:[1.24, 2.27]},
-  // Cassini measured methane and ethane seas: hydrocarbons, represented by
-  // the existing oil resource rather than inventing a Titan-only one.
-  {id:"titan",    name:"Titan",    km:2574.7, moonKm:1221870, parent:"saturn",
-   period:0.0436880, rung:"glass", floor:1.5, tint:"#d9a05a", dark:"#4a3418",
-   frequency:8, seed:7307, skyResources:["oil"]},
-
-  {id:"uranus",  name:"Uranus",  km:25362,  au:19.2184, period:84.021,
-   rung:"glass", floor:2.4, tint:"#b6e3e6", dark:"#1f5761", frequency:12, seed:8291,
-   giant:true, rings:[1.64, 2.00]},
-  {id:"neptune", name:"Neptune", km:24622,  au:30.0700, period:164.79,
-   rung:"glass", floor:2.4, tint:"#7ba4dd", dark:"#1b3161", frequency:12, seed:9377,
-   giant:true},
-  {id:"pluto",   name:"Pluto",   km:1188.3, au:39.4820, period:247.94,
-   rung:"glass", floor:1.4, tint:"#cbb9a4", dark:"#40372e", frequency:6, seed:1031},
-];
-
-// ------------------------------------------------------- the neighbourhood
-//
-// Every star within about fifty light-years that anybody has a name for, at its
-// real distance and in its real direction. `l` and `b` are galactic longitude
-// and latitude in degrees and `ly` is the distance: `l` = 0 points at the
-// galactic centre, `b` = 0 is the plane of the disc. That is the frame these
-// distances are published in, so storing them this way is storing what was
-// measured rather than a projection of it.
-//
-// The roster runs out past the twenty light-years the zoom now stops at, and it
-// has to: a destination is a planet *around one of these stars*, and the
-// expedition can be aimed at a world forty light-years away. What the stop
-// truncates is how far out the camera goes on its own, not what is out there.
-//
-// `mag` is absolute visual magnitude, used only to decide how brightly a star
-// is drawn, and `km` is its radius where it is known. The list is dominated by
-// red dwarfs because the real neighbourhood is: of the sixty-odd systems
-// inside 16 light-years, over three quarters are M dwarfs and exactly four —
-// Sirius, Procyon, Altair and Alpha Centauri A — are brighter than the Sun.
-const SKY_STAR_SPECS = [
-  {id:"alpha_cen",  name:"Alpha Centauri",   ly:4.37,  l:315.73, b:-0.68,  type:"G2V",  km:854000},
-  {id:"barnard",    name:"Barnard's Star",   ly:5.96,  l:31.01,  b:14.06,  type:"M4V",  km:135000},
-  {id:"wolf359",    name:"Wolf 359",         ly:7.86,  l:244.09, b:56.11,  type:"M6V",  km:112000},
-  {id:"lalande",    name:"Lalande 21185",    ly:8.31,  l:185.14, b:65.39,  type:"M2V",  km:274000},
-  {id:"sirius",     name:"Sirius",           ly:8.60,  l:227.23, b:-8.89,  type:"A1V",  km:1191000},
-  {id:"luyten726",  name:"Luyten 726-8",     ly:8.73,  l:175.46, b:-75.65, type:"M5V",  km:98000},
-  {id:"ross154",    name:"Ross 154",         ly:9.70,  l:11.30,  b:-10.28, type:"M3V",  km:167000},
-  {id:"ross248",    name:"Ross 248",         ly:10.30, l:110.00, b:-16.90, type:"M5V",  km:112000},
-  {id:"eps_eri",    name:"Epsilon Eridani",  ly:10.48, l:195.84, b:-48.05, type:"K2V",  km:512000},
-  {id:"lac9352",    name:"Lacaille 9352",    ly:10.72, l:8.36,   b:-66.01, type:"M1V",  km:328000},
-  {id:"ross128",    name:"Ross 128",         ly:11.01, l:270.06, b:59.63,  type:"M4V",  km:141000},
-  {id:"ez_aqr",     name:"EZ Aquarii",       ly:11.10, l:47.13,  b:-57.05, type:"M5V",  km:97000},
-  {id:"61_cyg",     name:"61 Cygni",         ly:11.40, l:82.31,  b:-5.82,  type:"K5V",  km:466000},
-  {id:"procyon",    name:"Procyon",          ly:11.46, l:213.70, b:13.02,  type:"F5IV", km:1440000},
-  {id:"struve2398", name:"Struve 2398",      ly:11.53, l:89.29,  b:24.22,  type:"M3V",  km:246000},
-  {id:"groom34",    name:"Groombridge 34",   ly:11.62, l:116.66, b:-18.44, type:"M1V",  km:265000},
-  {id:"dx_cnc",     name:"DX Cancri",        ly:11.68, l:201.24, b:32.42,  type:"M6V",  km:80000},
-  {id:"eps_ind",    name:"Epsilon Indi",     ly:11.87, l:336.19, b:-48.04, type:"K5V",  km:494000},
-  {id:"tau_ceti",   name:"Tau Ceti",         ly:11.91, l:173.11, b:-73.44, type:"G8V",  km:552000},
-  {id:"gj1061",     name:"GJ 1061",          ly:12.04, l:251.87, b:-34.55, type:"M5V",  km:110000},
-  {id:"yz_cet",     name:"YZ Ceti",          ly:12.13, l:170.03, b:-72.06, type:"M4V",  km:117000},
-  {id:"luyten",     name:"Luyten's Star",    ly:12.35, l:212.30, b:9.60,   type:"M3V",  km:203000},
-  {id:"teegarden",  name:"Teegarden's Star", ly:12.50, l:160.26, b:-16.99, type:"M7V",  km:87000},
-  {id:"kapteyn",    name:"Kapteyn's Star",   ly:12.83, l:250.53, b:-36.05, type:"M1V",  km:203000},
-  {id:"lac8760",    name:"Lacaille 8760",    ly:12.95, l:5.11,   b:-40.96, type:"M0V",  km:344000},
-  {id:"kruger60",   name:"Kruger 60",        ly:13.08, l:109.61, b:7.42,   type:"M3V",  km:174000},
-  {id:"ross614",    name:"Ross 614",         ly:13.35, l:212.93, b:-6.37,  type:"M4V",  km:157000},
-  {id:"wolf1061",   name:"Wolf 1061",        ly:14.05, l:4.20,   b:13.85,  type:"M3V",  km:212000},
-  {id:"van_maanen", name:"Van Maanen's Star",ly:14.07, l:121.90, b:-57.42, type:"DZ",   km:9000},
-  {id:"gliese1",    name:"Gliese 1",         ly:14.22, l:315.05, b:-75.94, type:"M2V",  km:265000},
-  {id:"tz_ari",     name:"TZ Arietis",       ly:14.60, l:161.16, b:-33.63, type:"M4V",  km:100000},
-  {id:"gj1245",     name:"GJ 1245",          ly:14.81, l:71.85,  b:16.60,  type:"M5V",  km:97000},
-  {id:"gliese687",  name:"Gliese 687",       ly:14.79, l:98.03,  b:31.20,  type:"M3V",  km:346000},
-  {id:"gliese674",  name:"Gliese 674",       ly:14.84, l:337.06, b:-11.65, type:"M3V",  km:246000},
-  {id:"gliese876",  name:"Gliese 876",       ly:15.24, l:52.86,  b:-59.58, type:"M4V",  km:250000},
-  {id:"groom1618",  name:"Groombridge 1618", ly:15.85, l:175.42, b:43.15,  type:"K7V",  km:430000},
-  {id:"gliese832",  name:"Gliese 832",       ly:16.20, l:353.09, b:-42.10, type:"M2V",  km:340000},
-  {id:"40_eri",     name:"40 Eridani",       ly:16.33, l:200.79, b:-38.06, type:"K1V",  km:562000},
-  {id:"70_oph",     name:"70 Ophiuchi",      ly:16.59, l:29.83,  b:11.35,  type:"K0V",  km:601000},
-  {id:"altair",     name:"Altair",           ly:16.73, l:47.74,  b:-8.91,  type:"A7V",  km:1300000},
-  {id:"sigma_dra",  name:"Sigma Draconis",   ly:18.80, l:88.60,  b:29.94,  type:"K0V",  km:539000},
-  {id:"eta_cas",    name:"Eta Cassiopeiae",  ly:19.32, l:122.53, b:-5.11,  type:"F9V",  km:695000},
-  {id:"36_oph",     name:"36 Ophiuchi",      ly:19.50, l:358.32, b:6.87,   type:"K2V",  km:483000},
-  {id:"82_eri",     name:"82 Eridani",       ly:19.71, l:234.62, b:-52.02, type:"G8V",  km:640000},
-  {id:"delta_pav",  name:"Delta Pavonis",    ly:19.92, l:329.32, b:-25.94, type:"G8IV", km:820000},
-  {id:"gliese581",  name:"Gliese 581",       ly:20.42, l:354.40, b:34.00,  type:"M3V",  km:200000},
-  {id:"hd219134",   name:"HD 219134",        ly:21.34, l:109.71, b:-14.29, type:"K3V",  km:539000},
-  {id:"gliese667",  name:"Gliese 667",       ly:23.62, l:0.06,   b:11.31,  type:"K3V",  km:528000},
-  {id:"vega",       name:"Vega",             ly:25.04, l:67.45,  b:19.24,  type:"A0V",  km:1930000},
-  {id:"fomalhaut",  name:"Fomalhaut",        ly:25.13, l:20.49,  b:-64.90, type:"A3V",  km:1240000},
-  {id:"chi1_ori",   name:"Chi-1 Orionis",    ly:28.26, l:188.53, b:2.10,   type:"G0V",  km:695000},
-  {id:"gliese12",   name:"Gliese 12",        ly:39.70, l:79.99,  b:-31.30, type:"M4V",  km:170000},
-  {id:"trappist1",  name:"TRAPPIST-1",       ly:40.66, l:69.50,  b:-47.14, type:"M8V",  km:83000},
-  {id:"55_cnc",     name:"55 Cancri",        ly:41.06, l:196.40, b:31.60,  type:"K0V",  km:659000},
-  {id:"ups_and",    name:"Upsilon Andromedae",ly:44.00,l:132.00, b:-19.00, type:"F8V",  km:1090000},
-  {id:"lhs1140",    name:"LHS 1140",         ly:48.93, l:175.10, b:-71.30, type:"M4.5V",km:127000},
-  {id:"tau_boo",    name:"Tau Bootis",       ly:51.00, l:358.30, b:73.90,  type:"F7V",  km:986000},
-];
-
-// ------------------------------------------------------------ the destination
-//
-// The expedition is going to a real place. These are the worlds inside fifty
-// light-years that are actually argued about as targets — the temperate ones,
-// around the stars named above — with the distance the trip really is and the
-// thing that is really wrong with each of them.
-//
-// `radius` is the planet's own radius in Earths, `hz` is a plain grade for how
-// habitable it is thought to be, and `note` is the catch. There is a genuine
-// trade-off in this list and it is the trade-off the field actually has: the
-// nearest worlds are around flare stars and tidally locked, and the calmest
-// star with a temperate planet is nearly five times further away.
-const SKY_TARGET_SPECS = [
-  {id:"proxima_b",  name:"Proxima Centauri b", star:"alpha_cen", ly:4.24,  radius:1.03,
-   hz:"marginal", tint:"#b08a6a", dark:"#3a2a1e", frequency:11, seed:4241,
-   note:"Earth-mass, in the temperate band, and one stellar flare from bare rock."},
-  {id:"tau_ceti_e", name:"Tau Ceti e",         star:"tau_ceti",  ly:11.91, radius:1.81,
-   hz:"marginal", tint:"#c9a06a", dark:"#3d2c18", frequency:12, seed:1191,
-   note:"A quiet Sun-like star, but the inner edge of the band and a debris disc."},
-  {id:"gj273_b",    name:"Luyten's Star b",    star:"luyten",    ly:12.35, radius:1.51,
-   hz:"good",     tint:"#7fae8e", dark:"#20402f", frequency:12, seed:1235,
-   note:"A super-Earth in the band around one of the calmer red dwarfs."},
-  {id:"teegarden_b",name:"Teegarden's Star b", star:"teegarden", ly:12.50, radius:1.04,
-   hz:"good",     tint:"#8fb083", dark:"#26402a", frequency:11, seed:1250,
-   note:"The best Earth-similarity score on the list, around a very old, very quiet star."},
-  {id:"wolf1061_c", name:"Wolf 1061 c",        star:"wolf1061",  ly:14.05, radius:1.66,
-   hz:"marginal", tint:"#b6a072", dark:"#39301c", frequency:12, seed:1405,
-   note:"In the band, probably tidally locked, probably a thick atmosphere."},
-  {id:"hd20794_d",  name:"82 Eridani d",       star:"82_eri",    ly:19.71, radius:1.55,
-   hz:"good",     tint:"#79a691", dark:"#1f3d33", frequency:12, seed:1971,
-   note:"A Sun-like star with a temperate super-Earth, confirmed only in 2025."},
-  {id:"gj667_cc",   name:"Gliese 667 Cc",      star:"gliese667", ly:23.62, radius:1.54,
-   hz:"good",     tint:"#84ab7e", dark:"#243d26", frequency:12, seed:2362,
-   note:"A super-Earth in the band of a triple system: three suns in its sky."},
-  {id:"gliese12_b", name:"Gliese 12 b",        star:"gliese12",  ly:39.70, radius:0.96,
-   hz:"marginal", tint:"#c2a98a", dark:"#3b3226", frequency:11, seed:3970,
-   note:"Earth-sized and temperate, and it may have no atmosphere left at all."},
-  {id:"trappist1_e",name:"TRAPPIST-1 e",       star:"trappist1", ly:40.66, radius:0.92,
-   hz:"good",     tint:"#6fa2a8", dark:"#1d3b41", frequency:11, seed:4066,
-   note:"One of seven, three of them temperate: a whole system to settle, not a world."},
-  {id:"lhs1140_b",  name:"LHS 1140 b",         star:"lhs1140",   ly:48.93, radius:1.73,
-   hz:"best",     tint:"#4f9fb0", dark:"#123a45", frequency:14, seed:4893,
-   note:"The strongest candidate anywhere: a temperate super-Earth that may be an ocean."},
-];
+// The catalogue itself (`SKY_SYSTEM_SPECS`, `SKY_STAR_SPECS`, `SKY_TARGET_SPECS`:
+// the system, the neighbourhood and the destinations, each in the units it is
+// published in) is data and nothing else, and lives in `app_palette.js`.
 
 // --------------------------------------------------------- building the sky
 //
@@ -18088,7 +17882,24 @@ function skyLaunchLabelRest(launch, x, y, half, stage, pixel) {
 // Gran Colombia would otherwise lose its ends whenever a rocket flies near the
 // side of the picture, and a rocket leaving through the top or the bottom would
 // take the whole label with it first.
-function drawSkyLaunchLabel(launch, x, y, alpha, stage, pixel = 1, waiting = false) {
+// A name rides just above its rocket. Leaving a world that is a dot among dots,
+// that is where home's own name is, or the Sun, and `crowd` holds the boxes of
+// both: the launch's name goes over the top of whichever it would be written
+// across. It slides there rather than jumping, since a rocket can fly out from
+// under one of them.
+const SKY_LABEL_SLIDE = .15;
+function skyLaunchLabelOver(launch, x, y, half, crowd) {
+  let over = y;
+  for (const box of [...crowd].sort((a, b) => b.bottom - a.bottom))
+    if (x + half > box.left && x - half < box.right && over > box.top - 2 && over - 13 < box.bottom)
+      over = box.top - 2;
+  const now = performance.now(), rise = y - over, had = launch.labelRise ?? rise;
+  const most = SKY_LABEL_SLIDE * Math.max(0, now - (launch.labelRiseAt ?? now));
+  launch.labelRise = had + Math.max(-most, Math.min(most, rise - had));
+  launch.labelRiseAt = now;
+  return y - launch.labelRise;
+}
+function drawSkyLaunchLabel(launch, x, y, alpha, stage, pixel = 1, waiting = false, crowd = null) {
   const label = skyLaunchLabel(launch);
   cx.save();
   cx.globalAlpha = alpha;
@@ -18102,6 +17913,8 @@ function drawSkyLaunchLabel(launch, x, y, alpha, stage, pixel = 1, waiting = fal
   if (waiting) {
     const rest = skyLaunchLabelRest(launch, placed, high, half, stage, pixel);
     placed = stage.left + rest.x * pixel; high = stage.top + rest.y * pixel;
+  } else if (crowd?.length) {
+    high = skyLaunchLabelOver(launch, placed, high, half, crowd);
   }
   cx.strokeText(label, placed, high);
   cx.fillStyle = "#e9f4f5"; cx.fillText(label, placed, high);
@@ -21686,19 +21499,87 @@ function skyBestAscent(launch, pad, camera, radius, centerX, centerY, stage, mar
 }
 
 // From far enough out the Earth is a dot and the Moon is on the stage with it,
-// and the whole trip is in the picture. A body closer than the rocket is long
-// gets a short departure instead, since there is no distance to fly: at Solar
-// System zoom the Moon is two pixels from the Earth.
+// and the whole trip is in the picture. So the rocket flies the whole trip, from
+// home to where it is going and no further, however short that is: at Solar
+// System zoom Mars is a dozen pixels from the Earth. A fixed hop of forty-four
+// took a Mars rocket four times too far, out through the asteroid belt, and a
+// hull drawn at its close-up size was longer than the nine pixels between the
+// Earth and the Sun, so it set off looking as though it had left the Sun.
+//
+// Out here the hull is fitted to the trip instead: never more than this share of
+// it, which is what the longest of them took of the shortest trip that used to
+// be flown, and never so short it stops being a rocket.
+const SKY_HULL_SHARE = .68, SKY_HULL_LEAST = 4.5;
+// Nearer home than this a destination is not a second place on the screen, which
+// is the Moon from anywhere past Mars. There is no trip to draw to it.
+const SKY_TRIP_APART = 5;
+// A departure is as long as this when the picture gives it nothing to be in
+// scale with, and never shorter than the least.
+const SKY_HOP_MOST = 44, SKY_HOP_LEAST = 7;
+// Leaving a world that is a dot for somewhere too near it to be drawn apart from
+// it: a short departure, because there is no distance to fly. How short is the
+// picture's business. Home's room in a picture of the system is its distance
+// from the Sun, so the hop is three quarters of that and never more than `most`;
+// with the whole system a speck there is nothing left to be in scale with, and
+// it flies all of `most`. A bearing that would carry it over the Sun is turned
+// the least that takes it clear, because which of the two it left is the one
+// thing a viewer has to be able to read.
+function skyDotDeparture(start, dx, dy, most, radius, centerX, centerY) {
+  const span = Math.hypot(dx, dy);
+  const bearing = span > 1 ? Math.atan2(dy, dx) : -Math.PI / 2;
+  const sun = skyPlacement(SKY_SUN, radius, centerX, centerY);
+  const sunX = sun.x - start.x, sunY = sun.y - start.y, sunAway = Math.hypot(sunX, sunY);
+  const reach = most + (Math.max(SKY_HOP_LEAST, Math.min(most, sunAway * .75)) - most) *
+    skyFade(sunAway, 1, 2.5);
+  const hull = Math.max(SKY_HULL_LEAST, reach * SKY_HULL_SHARE);
+  // Clear means all of it, the nose included as it reaches the end.
+  const room = Math.min(sun.r + 4, sunAway * .8);
+  const clear = angle => {
+    const ux = Math.cos(angle), uy = Math.sin(angle);
+    const along = Math.max(0, Math.min(reach + hull / 2, sunX * ux + sunY * uy));
+    return Math.hypot(sunX - ux * along, sunY - uy * along) >= room;
+  };
+  // With the Sun on the same pixel as home there are not two of them to tell apart.
+  let turn = 0;
+  while (sunAway > 2.5 && turn < Math.PI && !clear(bearing + turn) && !clear(bearing - turn))
+    turn += .2;
+  const angle = !turn || clear(bearing + turn) ? bearing + turn : bearing - turn;
+  return {end:{x:start.x + Math.cos(angle) * reach, y:start.y + Math.sin(angle) * reach}, hull};
+}
+// How far a trip bows off its straight line, as `skyLaunchPoint` counts it: the
+// least that keeps it off the Sun. In a picture of the system the Sun can be
+// sitting right on the line from the Earth to Mars, and a rocket that crossed it
+// would be a launch that seems to be the Sun's all over again. It goes round,
+// which is also what a transfer does. Settled once, with the rest of the route.
+function skyTripBend(start, end, radius, centerX, centerY) {
+  const sun = skyPlacement(SKY_SUN, radius, centerX, centerY);
+  for (const bend of [.5, -.5, 1, -1, 1.5, -1.5, 2, -2, 2.5, -2.5]) {
+    let clear = true;
+    for (let step = 0; step <= 16 && clear; step++) {
+      const point = skyLaunchPoint(start, end, step / 16, bend, ease => ease);
+      clear = Math.hypot(point.x - sun.x, point.y - sun.y) >= sun.r + 4;
+    }
+    if (clear) return bend;
+  }
+  return .5;
+}
 function skyTransferRoute(launch, player, place, crews, view, radius, centerX, centerY) {
   const start = planetProject(skyLaunchPad(launch, player), view, radius, centerX, centerY);
   const goal = skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY);
   const dx = goal.x - start.x, dy = goal.y - start.y, span = Math.hypot(dx, dy);
-  const hop = span < 30;
-  const end = hop
-    ? {x:start.x + (span > 1 ? dx / span : 0) * 44, y:start.y + (span > 1 ? dy / span : -1) * 44}
-    : goal;
-  return {start, end, entering:false, leaving:hop, law:hop ? skyThrustLaw() : skyTransferLaw,
-          pointAt:progress => ({...skyLaunchPoint(start, end, progress, .5, ease => ease),
+  // What is near home for the expedition is only where its lane begins. The trip
+  // is light-years long, so it departs, as it always has, unless that beginning
+  // is itself some way off.
+  const hop = span < (launch.mission === "expedition" ? 30 : SKY_TRIP_APART)
+    ? skyDotDeparture(start, dx, dy, SKY_HOP_MOST, radius, centerX, centerY) : null;
+  const end = hop ? hop.end : goal;
+  const route = launch.route || {};
+  if (!hop && route.bend === undefined)
+    route.bend = skyTripBend(start, end, radius, centerX, centerY);
+  const bend = hop ? .5 : route.bend ?? .5;
+  return {start, end, entering:false, leaving:!!hop, law:hop ? skyThrustLaw() : skyTransferLaw,
+          hull:hop ? hop.hull : Math.max(SKY_HULL_LEAST, span * SKY_HULL_SHARE),
+          pointAt:progress => ({...skyLaunchPoint(start, end, progress, bend, ease => ease),
                                 z:start.z * (1 - progress)})};
 }
 
@@ -21859,11 +21740,13 @@ function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, c
     skySatellitePlan(launch, player, index, pad, camera, radius, centerX, centerY);
   // From far enough out the world is a dot and low orbit has no size at all;
   // all there is to see is something leaving it.
-  if (!place && radius <= 10 && skyHomeInPicture(radius, centerX, centerY, stage)) return {
-    start:{x:centerX, y:centerY}, end:{x:centerX + 14, y:centerY - 30},
-    entering:false, leaving:true, law:skyThrustLaw(),
-    pointAt:progress => ({x:centerX + 14 * progress * progress, y:centerY - 30 * progress}),
-  };
+  if (!place && radius <= 10 && skyHomeInPicture(radius, centerX, centerY, stage)) {
+    const start = {x:centerX, y:centerY};
+    const {end, hull} = skyDotDeparture(start, 14, -30, Math.hypot(14, 30),
+                                        radius, centerX, centerY);
+    return {start, end, entering:false, leaving:true, law:skyThrustLaw(), hull,
+            pointAt:progress => skyLaunchPoint(start, end, progress, -.5, ease => ease)};
+  }
   if (!launch.route) {
     launch.route = place
       ? skyPlanMission(launch, player, place, crews, camera, radius, centerX, centerY, stage, margin)
@@ -21903,16 +21786,19 @@ function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, c
   return route.crossing;
 }
 
-function drawSkyLaunches(crews, placements, camera, radius, centerX, centerY, now) {
+function drawSkyLaunches(crews, placements, camera, radius, centerX, centerY, now, crowd = null) {
   const stage = {left:0, top:0, right:MAPW, bottom:MAPH};
   const size = Math.max(3, Math.min(7, radius * .065));
   for (const {launch, player, flight} of skyLaunchesToPaint(now)) {
     const place = flight.body && placements.get(flight.body);
     if (flight.body && !place) continue;
+    const length = skyRocketGeometry(flight.rocket, size).length;
     const film = skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, centerY,
-                                stage, Math.max(36, skyRocketGeometry(flight.rocket, size).length));
-    if (film) drawLaunchFlight(launch, player, flight, film, size, now, 1, stage,
-                               {x:centerX, y:centerY, r:radius});
+                                stage, Math.max(36, length));
+    // A film flown between dots says how long a hull it has room for.
+    if (film) drawLaunchFlight(launch, player, flight, film,
+                               size * Math.min(1, (film.hull ?? length) / length), now, 1, stage,
+                               {x:centerX, y:centerY, r:radius, crowd});
   }
 }
 
@@ -22005,6 +21891,8 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   // a fixed grid of moments so its corners do not crawl as the rocket climbs.
   // Whatever is behind the world is not drawn, so a trail comes round the limb
   // with its rocket instead of being laid across the planet's face.
+  // A hull fitted to a short trip leaves a trail no wider than itself.
+  const slim = film.hull ? Math.max(.4, Math.min(1, size / (3 * pixel))) : 1;
   let last = pointAt(film.law(0));
   for (let step = 1, steps = Math.ceil(clock * 64); step <= steps; step++) {
     const when = Math.min(clock, step / 64);
@@ -22013,9 +21901,9 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
       const thin = Math.max(.16, 1 - (clock - when) / .6) * trailFade;
       cx.beginPath(); cx.moveTo(last.x, last.y); cx.lineTo(point.x, point.y);
       cx.globalAlpha = thin * .3; cx.strokeStyle = "#e8e6dc";
-      cx.lineWidth = 3.4 * pixel; cx.stroke();
+      cx.lineWidth = 3.4 * pixel * slim; cx.stroke();
       cx.globalAlpha = thin * .8; cx.strokeStyle = colour;
-      cx.lineWidth = 1.3 * pixel; cx.stroke();
+      cx.lineWidth = 1.3 * pixel * slim; cx.stroke();
     }
     last = point;
   }
@@ -22059,7 +21947,8 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   cx.restore();
 
   if (!unseen(at))
-    drawSkyLaunchLabel(launch, at.x, at.y - lift, launch.labelPause ? .88 : .88 * fade, stage, pixel);
+    drawSkyLaunchLabel(launch, at.x, at.y - lift, launch.labelPause ? .88 : .88 * fade, stage, pixel,
+                       false, limb?.crowd);
 }
 
 // A body nobody could name is just a light. The caption carries the name and,
@@ -22209,11 +22098,51 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
   // a dot among dots and needs saying so; the names out here are the engine's
   // own — its four projects are the Earth satellite, the Moon landing, the Mars
   // colony and the exoplanet expedition — so the globe under all of it is Earth.
+  //
+  // Home is also the one world the roster above leaves out, because its ground
+  // is the map and the map draws it. In a picture of the whole system that
+  // ground is a thousandth of a pixel across: every other planet was a dot at
+  // its floor and the one the game is played on was a name with nothing over
+  // it, so a launch seemed to come from the nearest thing there was to see,
+  // which is the Sun. It gets the marble the others get, at the same floor and
+  // faded in by the same rule, once the map's own disc is smaller than that.
+  const crowd = [];
+  const marble = {...SKY_EARTH, x:centerX, y:centerY, r:SKY_EARTH.floor};
+  const marbleShown = skyFade(SKY_EARTH.separation * radius, 2.5, 7) *
+    (1 - skyFade(radius, marble.r * .6, marble.r));
+  if (marbleShown > .01)
+    drawSkyBall(marble, marbleShown, skySunDirection(marble, radius, centerX, centerY));
   if (radius < 22 && radius * AU > 6) {
     const home = {x:centerX, y:centerY, r:Math.max(radius, 3), name:"Earth"};
-    if (skyLabelClaim(home.x, home.y + home.r + 9, 34, 11))
-      drawSkyCaption(home, crews.satellite, Math.min(1, (22 - radius) / 7), "");
+    // A name hangs under its world, and from out here that can be exactly where
+    // the Sun is: the Earth's name lay across the Sun, the Sun went without one,
+    // and the picture was of a star called Earth. The name goes above when that
+    // side has less under it, and the Sun counts for more than a planet does.
+    const stack = crews.satellite.length ? 14 : 0;
+    const captionTop = above => above ? home.y - home.r - 9 - stack : home.y + home.r + 7;
+    const covers = above => {
+      const top = captionTop(above);
+      let cost = 0;
+      for (const place of placements.values()) {
+        if (place.kind !== "body" || place.parent) continue;
+        if (Math.abs(place.x - home.x) < 22 + place.r &&
+            place.y + place.r > top && place.y - place.r < top + 11 + stack)
+          cost += place.id === "sun" ? 3 : 1;
+      }
+      return cost;
+    };
+    const above = covers(true) < covers(false);
+    if (skyLabelClaim(home.x, home.y + (above ? -1 : 1) * (home.r + 9), 34, 11)) {
+      drawSkyCaption(home, crews.satellite, Math.min(1, (22 - radius) / 7), "", above);
+      const top = captionTop(above);
+      crowd.push({left:home.x - 22, right:home.x + 22, top, bottom:top + 11 + stack});
+    }
   }
+  // The Sun as a dot beside home is the other thing a launch's name must not be
+  // written across: a name over the Sun says the launch is the Sun's.
+  const sun = placements.get("sun");
+  if (sun && sun.r < 8 && skyOnCanvas(sun))
+    crowd.push({left:sun.x - sun.r, right:sun.x + sun.r, top:sun.y - sun.r, bottom:sun.y + sun.r});
   // Then everything else, in the order the labels are worth having: the
   // destination, home, the Sun, and after those simply whatever is biggest.
   // A name that will not fit is dropped rather than moved, because the place it
@@ -22258,7 +22187,7 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
   }
   if (exo) drawSkyExpeditions(crews.expedition, exo, radius, centerX, centerY, 1, now);
   drawSkySatellites(crews.satellite, camera, radius, centerX, centerY, 1, now);
-  drawSkyLaunches(crews, placements, camera, radius, centerX, centerY, now);
+  drawSkyLaunches(crews, placements, camera, radius, centerX, centerY, now, crowd);
   drawSkyScale(radius, skyDepth(radius));
 }
 
@@ -30287,6 +30216,13 @@ function leaderRibbonMarkup() {
         `style="--civ:${pcol(player.id)};--civ-trim:${pcol2(player.id)}" ` +
         `title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}" ` +
         `onclick="openDiplomacyWith(${player.id})">` +
+        // A drawn bust in the civilization's own two colours, with its
+        // monogram as the name tag: Civilization VI's ribbon is a row of
+        // heads, and a row of letters did not read as people. The drawing is
+        // this page's own; no portrait is borrowed.
+        `<svg class="ribbon-bust" viewBox="0 0 36 36" aria-hidden="true">` +
+        `<circle cx="18" cy="13.2" r="6.4"/>` +
+        `<path d="M4.5 36c0-9.4 6-14 13.5-14s13.5 4.6 13.5 14z"/></svg>` +
         `<span class="ribbon-crest">${escapeAttr(fdMonogram(player.civ))}</span>` +
         (stance.mark ? `<span class="ribbon-mark">${stance.mark}</span>` : "") + `</button>`;
     }).join("");
@@ -31169,6 +31105,7 @@ function cancelSitePick() {
 function chooseSite(pos) {
   const action = sitePick.sites.get(key(pos));
   if (!action) return;
+  if (sitePick.citizens) { toggleCitizenLock(sitePick.cityId, pos); return; }
   if (sitePick.queue) {
     // Chosen for the queue: the order keeps its tile and waits its turn, and
     // the city comes back up to be given the next thing.
@@ -31206,6 +31143,101 @@ function beginPlotPick(cityId) {
   modeline(); draw(); drawUbar();
   return true;
 }
+// ------------------------------------------------------------ manage citizens
+// Civilization VI's Manage Citizens: the city's land with who works what, and
+// a press on a tile to put a citizen there and keep them there. The governor
+// is the engine's and places everyone else around a citizen placed by hand
+// (`Player::citizen_locks`, written by `POST /city-citizen`). The page only
+// shows the assignment and asks.
+function beginCitizenPick(cityId, said) {
+  const city = state.cities.find(candidate => candidate.id === cityId && candidate.owner === 0);
+  if (!city || !city.citizens) return false;
+  const arriving = !sitePick;
+  const center = key(city.pos);
+  const sites = new Map();
+  for (const pos of city.owned_tiles || []) {
+    const tile = TMAP.get(key(pos));
+    if (!tile || key(pos) === center || tile.district || tile.wonder) continue;
+    sites.set(key(pos), {pos});
+  }
+  // A district with specialist slots is a site too. Its slots are
+  // interchangeable, so it is filled by a count: each press holds one more,
+  // and a press on a full district releases them all.
+  const seatedIn = family => (city.citizens.specialists || [])
+    .filter(name => name === family).length;
+  let inDistricts = 0;
+  for (const slot of city.citizens.specialist_slots || []) {
+    inDistricts += seatedIn(slot.family);
+    sites.set(key(slot.pos), {pos: slot.pos, specialist: slot.family, slots: slot.slots,
+      held: slot.placed, seated: seatedIn(slot.family)});
+  }
+  const placed = new Set((city.citizens.locked || []).map(key));
+  sitePick = {cityId, citizens: true, lens: sitePick ? sitePick.lens : mapLens, sites,
+    worked: new Set(city.citizens.worked_tiles.map(key)), placed};
+  closeCityScreen();
+  sel = null; selCity = city;
+  document.getElementById("site-pick-text").textContent = said ||
+    `${city.name}: ${city.citizens.worked_tiles.length} of ${city.pop} citizens on the land` +
+    (inDistricts ? `, ${inDistricts} in districts` : "") +
+    (placed.size ? `, ${placed.size} placed by hand (ringed)` : "") +
+    ` · press a tile to place a citizen there or release one` +
+    ((city.citizens.specialist_slots || []).length ? `, a district to seat a specialist` : "");
+  document.getElementById("site-pick").hidden = false;
+  document.body.classList.add("site-picking");
+  if (arriving) centerOn(city.pos);
+  modeline(); draw(); drawUbar();
+  return true;
+}
+async function toggleCitizenLock(cityId, pos) {
+  const city = state.cities.find(candidate => candidate.id === cityId);
+  const held = new Set(((city && city.citizens && city.citizens.locked) || []).map(key));
+  const site = sitePick && sitePick.sites.get(key(pos));
+  const ask = site && site.specialist
+    ? {city: cityId, specialist: site.specialist, count: site.held >= site.slots ? 0 : site.held + 1}
+    : {city: cityId, pos: [pos[0], pos[1]], lock: !held.has(key(pos))};
+  let answer = null;
+  try {
+    answer = await fetchJSON("/city-citizen", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(ask)});
+  } catch (error) { answer = {error: "The citizen could not be placed."}; }
+  if (answer && Array.isArray(answer.cities)) render(answer);
+  // The mode stays up with the new assignment, or with the engine's reason.
+  if (sitePick && sitePick.citizens)
+    beginCitizenPick(cityId, answer && answer.error
+      ? `${String(answer.error).replace(/^./, first => first.toUpperCase())}.` : "");
+}
+// Worked land carries a citizen; one placed by hand wears a white ring; land
+// nobody works shows where a citizen could go.
+function markCitizenPick(site, x, y, size) {
+  if (!sitePick.citizens) return;
+  const slot = sitePick.sites.get(site);
+  if (slot && slot.specialist) {
+    // A district reads as seated of slots, ringed while any are held by hand.
+    cx.save();
+    cx.beginPath(); cx.arc(x, y, size * .66, 0, Math.PI * 2);
+    cx.fillStyle = slot.seated ? "#f0d28c" : "#0b0f0ecc"; cx.fill();
+    cx.lineWidth = size * (slot.held ? .17 : .07);
+    cx.strokeStyle = slot.held ? "#ffffff" : "#f0d28c99"; cx.stroke();
+    cx.fillStyle = slot.seated ? "#10151d" : "#f0d28c";
+    cx.font = `800 ${size * .6}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+    cx.textAlign = "center"; cx.textBaseline = "middle";
+    cx.fillText(`${slot.seated}/${slot.slots}`, x, y + size * .03);
+    cx.restore();
+    return;
+  }
+  const worked = sitePick.worked.has(site), placed = sitePick.placed.has(site);
+  cx.save();
+  cx.beginPath(); cx.arc(x, y, size * .5, 0, Math.PI * 2);
+  cx.fillStyle = worked ? "#f0d28c" : "#0b0f0e99"; cx.fill();
+  cx.lineWidth = size * (placed ? .17 : .07);
+  cx.strokeStyle = placed ? "#ffffff" : worked ? "#0b0f0e" : "#f0d28c99"; cx.stroke();
+  if (worked) {
+    cx.fillStyle = "#10151d";
+    cx.beginPath(); cx.arc(x, y - size * .13, size * .15, 0, Math.PI * 2); cx.fill();
+    cx.beginPath(); cx.arc(x, y + size * .32, size * .27, Math.PI, 0); cx.fill();
+  }
+  cx.restore();
+}
 // The price sits on the plot it buys, in Gold's own colour.
 function priceSitePick(site, x, y, size) {
   if (!sitePick.plots) return;
@@ -31220,6 +31252,12 @@ function priceSitePick(site, x, y, size) {
 }
 document.getElementById("site-pick-cancel").onclick = cancelSitePick;
 function outlineSitePick() {
+  // A city's whole land is the board while citizens are managed: it is edged
+  // and left its own colour, so the yields and the citizens are what read.
+  if (sitePick.citizens) {
+    cx.strokeStyle = "#f0d28c88"; cx.lineWidth = 1.4; cx.stroke();
+    return;
+  }
   cx.fillStyle = "#f0d28c33"; cx.fill();
   cx.strokeStyle = "#f0d28c"; cx.lineWidth = 2.6; cx.stroke();
 }
@@ -31232,6 +31270,8 @@ function drawSitePicksPlanet(cellByKey, onSheet) {
     outlineSitePick();
     priceSitePick(site, cell.center.x, cell.center.y - planetCellInradius(cell) * .52,
       planetCellInradius(cell) * .5);
+    markCitizenPick(site, cell.center.x, cell.center.y - planetCellInradius(cell) * .52,
+      planetCellInradius(cell) * .5);
   }
 }
 function drawSitePicksFlat() {
@@ -31243,6 +31283,7 @@ function drawSitePicksFlat() {
     hexPath(x, y - (tile ? elev(tile) : 0), S - 2);
     outlineSitePick();
     priceSitePick(site, x, y - (tile ? elev(tile) : 0) - S * .45, S * .43);
+    markCitizenPick(site, x, y - (tile ? elev(tile) : 0) - S * .45, S * .43);
   }
 }
 async function sendFromCity(action) {
@@ -31433,17 +31474,52 @@ async function resumeCityQueues() {
 // Civilization VI's city panel: press a yield to favour it, again to
 // disfavour it, again to leave it to the governor. The governor is the
 // engine's; this only tells it what the city is for.
+//
+// A lean is only called a focus once it is the size a player's press makes
+// it. An agent that held the seat leaves its own small tilts on the same
+// directive, and those are the governor's business, not a mark on the panel.
+function cityFocusStance(lean) {
+  return lean >= 1 ? "favoured" : lean <= -.5 ? "disfavoured" : "";
+}
+// What the last press did, said under the yields until the turn moves on. A
+// city with as many citizens as it has tiles has nobody to move, and a button
+// that changes nothing without saying why reads as a button that is broken.
+let cityFocusNote = null; // {city, turn, text}
+function cityFocusOutcome(kind, stance, before, after) {
+  const said = stance > 0 ? `Favouring ${titleCase(kind)}`
+    : stance < 0 ? `Disfavouring ${titleCase(kind)}` : `${titleCase(kind)} left to the governor`;
+  if (!before || !after) return said;
+  const moved = before.worked !== after.citizens.worked_tiles.map(String).sort().join(" ") ||
+    before.specialists !== (after.citizens.specialists || []).join(" ");
+  if (!moved) return `${said}: no citizen has a better tile to work. It will tell as the city grows.`;
+  const shifts = CIV6_YIELD_ICON_KINDS.map(name => {
+    const delta = Math.round(((after.yields[name] || 0) - (before.yields[name] || 0)) * 10) / 10;
+    return delta ? `${titleCase(name)} ${delta > 0 ? "+" : "−"}${Math.abs(delta)}` : "";
+  }).filter(Boolean);
+  return `${said}: citizens moved` + (shifts.length ? ` · ${shifts.join(" · ")}` : "");
+}
 let cityFocusPending = false;
 async function cycleCityFocus(cityId, kind) {
   if (SPEC || turnAdvancePending || cityFocusPending) return;
   const city = state.cities.find(candidate => candidate.id === cityId);
-  const lean = Number(city?.citizens?.emphasis?.[kind]) || 0;
+  const now = cityFocusStance(Number(city?.citizens?.emphasis?.[kind]) || 0);
+  const stance = now === "favoured" ? -1 : now === "disfavoured" ? 0 : 1;
+  const before = city && city.citizens ? {yields: {...city.yields},
+    worked: city.citizens.worked_tiles.map(String).sort().join(" "),
+    specialists: (city.citizens.specialists || []).join(" ")} : null;
   cityFocusPending = true;
   try {
     const next = await fetchJSON("/city-focus", {method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({city: cityId, yield: kind, stance: lean > 0 ? -1 : lean < 0 ? 0 : 1})});
-    if (next && !next.error && Array.isArray(next.cities)) render(next);
+      body: JSON.stringify({city: cityId, yield: kind, stance})});
+    if (next && !next.error && Array.isArray(next.cities)) {
+      render(next);
+      const after = state.cities.find(candidate => candidate.id === cityId);
+      cityFocusNote = {city: cityId, turn: state.turn, text: cityFocusOutcome(kind, stance,
+        before && {yields: before.yields, worked: before.worked, specialists: before.specialists},
+        after && after.citizens ? after : null)};
+      drawCityScreen();
+    }
   } catch (error) {
     // A server without the route leaves the focus where it was.
   } finally { cityFocusPending = false; }
@@ -31502,14 +31578,14 @@ function drawCityScreen() {
       `<b>${Math.round((yields[kind] || 0) * 10) / 10}</b><span>${titleCase(kind)}</span>`;
     if (!emphasis)
       return `<div class="city-yield" title="${titleCase(kind)} per turn">${body}</div>`;
-    const lean = Number(emphasis[kind]) || 0;
-    const stance = lean > 0 ? "favoured" : lean < 0 ? "disfavoured" : "";
+    const stance = cityFocusStance(Number(emphasis[kind]) || 0);
+    const favoured = stance === "favoured";
     return `<button type="button" class="city-yield ${stance}" aria-pressed="${stance ? "true" : "false"}" ` +
       `title="${titleCase(kind)} per turn. ${stance
-        ? `${titleCase(stance)}: citizens ${lean > 0 ? "work for it first" : "avoid working for it"}. `
-        : ""}Press to ${lean > 0 ? "disfavour it" : lean < 0 ? "leave it to the governor" : "favour it"}." ` +
+        ? `${titleCase(stance)}: citizens ${favoured ? "work for it first" : "avoid working for it"}. `
+        : ""}Press to ${favoured ? "disfavour it" : stance ? "leave it to the governor" : "favour it"}." ` +
       `onclick='cycleCityFocus(${city.id},"${kind}")'>${body}` +
-      (stance ? `<em class="city-focus-mark">${lean > 0 ? "✓" : "✕"}</em>` : "") + `</button>`;
+      (stance ? `<em class="city-focus-mark">${favoured ? "✓" : "✕"}</em>` : "") + `</button>`;
   };
   const meter = (label, note, bar) =>
     `<div class="city-meter"><div class="row"><span class="small">${label}</span>` +
@@ -31522,6 +31598,8 @@ function drawCityScreen() {
   const queueTurns = current ? turnsFor(queueCost, perTurn, banked) : null;
   let dossier =
     `<div class="city-yields">${CIV6_YIELD_ICON_KINDS.map(yieldChip).join("")}</div>` +
+    (cityFocusNote && cityFocusNote.city === city.id && cityFocusNote.turn === state.turn
+      ? `<div class="city-focus-note" role="status">${escapeAttr(cityFocusNote.text)}</div>` : "") +
     `<div class="city-meters">` +
     meter("Growth", growthTurns ? `${turnsWord(growthTurns)} until growth` : "stalled",
       prog(city.food, city.growth_need, "#76c893")) +
@@ -31551,6 +31629,12 @@ function drawCityScreen() {
       ? `<button type="button" title="Every plot the treasury can afford is priced on the map" ` +
         `onclick="beginPlotPick(${city.id})">⬡ Purchase tile` +
         `<small>from ${Math.round(plotBuys[0].cost)} Gold</small></button>` : "") +
+    // Placing citizens needs a server that says which are placed.
+    (city.citizens && Array.isArray(city.citizens.locked)
+      ? `<button type="button" title="See who works which tile, and place a citizen by hand" ` +
+        `onclick="beginCitizenPick(${city.id})">☻ Manage citizens` +
+        (city.citizens.locked.length
+          ? `<small>${city.citizens.locked.length} placed</small>` : "") + `</button>` : "") +
     `<button type="button" aria-expanded="${cityDetailsOpen}" ` +
     `onclick="toggleCityDetails()">${cityDetailsOpen ? "▾" : "▸"} City details</button></div>`;
   const strikes = cityStrikeButtons(city.id);
