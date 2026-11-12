@@ -170,3 +170,162 @@ fn existing_disabled_and_unbounded_clock_guards_still_skip_the_sweep() {
     assert_eq!(ai.culture_lane_forecast_score_with(&game, 0, true), 0);
     assert_eq!(game.rival_yields_reused(), (0, 0));
 }
+
+#[test]
+fn threshold_decisions_match_full_scores_for_rates_and_banked_visitors() {
+    for revised in [false, true] {
+        for tourism in [0.0, -0.0, 10.0, 500.0, -4.0, f64::INFINITY, f64::NAN] {
+            for visitors in [0.0, 50.0] {
+                let mut game = world(tourism);
+                game.players[0]
+                    .tourism_pressure
+                    .insert(1, 4.0 * crate::game::TOURISM_PER_VISITOR * visitors);
+                let ai = forecaster(revised);
+                let expected = full_score(&ai, &game);
+                for minimum in [-1, 0, 1, 40, 60, 100, 101] {
+                    assert_eq!(
+                        ai.culture_lane_forecast_reaches(&game, 0, minimum),
+                        expected >= minimum,
+                        "version {revised}, rate {tourism}, visitors {visitors}, threshold {minimum}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn one_actual_rival_can_rule_out_positive_tourism_without_pricing_the_rest() {
+    for revised in [false, true] {
+        let game = world(10.0);
+        let ai = forecaster(revised);
+        assert!(full_score(&ai, &game) < 60);
+        assert!(!ai.culture_lane_forecast_reaches(&game, 0, 60));
+        assert_eq!(
+            game.rival_yields_reused(),
+            (0, 1),
+            "derive the first rival's actual culture, skip the other two"
+        );
+    }
+}
+
+#[test]
+fn reaching_the_threshold_requires_the_complete_rival_bar() {
+    for revised in [false, true] {
+        let game = world(10_000.0);
+        let ai = forecaster(revised);
+        assert!(full_score(&ai, &game) >= 60);
+        assert!(ai.culture_lane_forecast_reaches(&game, 0, 60));
+        assert_eq!(game.rival_yields_reused(), (0, 3));
+    }
+}
+
+fn correct_city_culture(game: &mut Game, rival: usize, adjustment: f64) {
+    let city = game.player_city_ids(rival)[0];
+    std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+        city,
+        Yields {
+            culture: adjustment,
+            ..Yields::default()
+        },
+    );
+}
+
+#[test]
+fn negative_first_bars_do_not_hide_a_later_decisive_rival() {
+    for revised in [false, true] {
+        let mut game = world(10.0);
+        correct_city_culture(&mut game, 1, -100_000.0);
+        correct_city_culture(&mut game, 2, -100_000.0);
+        correct_city_culture(&mut game, 3, 10_000.0);
+        let ai = forecaster(revised);
+        assert!(full_score(&ai, &game) < 60);
+        assert!(!ai.culture_lane_forecast_reaches(&game, 0, 60));
+        assert_eq!(game.rival_yields_reused(), (0, 3));
+    }
+}
+
+#[test]
+fn threshold_decisions_preserve_nonfinite_and_negative_culture_bars() {
+    for revised in [false, true] {
+        for adjustment in [-100_000.0, f64::NEG_INFINITY, f64::INFINITY, f64::NAN] {
+            for tourism in [10.0, f64::INFINITY, f64::NAN] {
+                let mut game = world(tourism);
+                correct_city_culture(&mut game, 1, adjustment);
+                let ai = forecaster(revised);
+                let expected = full_score(&ai, &game);
+                for minimum in [0, 1, 60, 100, 101] {
+                    assert_eq!(
+                        ai.culture_lane_forecast_reaches(&game, 0, minimum),
+                        expected >= minimum,
+                        "version {revised}, correction {adjustment}, rate {tourism}, threshold {minimum}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn thresholds_use_the_original_rounding_at_the_score_boundary() {
+    for revised in [false, true] {
+        for minimum in [1, 60, 100] {
+            for offset in [-1e-10, 0.0, 1e-10] {
+                let mut game = world(1.0);
+                let bar = (1..4)
+                    .map(|rival| {
+                        game.domestic_tourists(rival) as f64
+                            + game
+                                .player_city_ids(rival)
+                                .into_iter()
+                                .map(|city| game.city_yields(city).culture)
+                                .sum::<f64>()
+                                * 190.0
+                                / 100.0
+                    })
+                    .fold(0.0_f64, f64::max);
+                let tourism = (f64::from(minimum) - 0.5 + offset) * bar / 100.0
+                    * (4.0 * crate::game::TOURISM_PER_VISITOR)
+                    / (3.0 * 190.0);
+                std::sync::Arc::make_mut(&mut game.observed_tourism_per_turn).insert(0, tourism);
+                game.board_written();
+                let ai = forecaster(revised);
+                assert_eq!(
+                    ai.culture_lane_forecast_reaches(&game, 0, minimum),
+                    full_score(&ai, &game) >= minimum,
+                    "version {revised}, threshold {minimum}, boundary offset {offset}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn threshold_traces_ask_every_question_of_the_full_score() {
+    for revised in [false, true] {
+        for tourism in [0.0, 10.0] {
+            let game = world(tourism);
+            let ai = forecaster(revised);
+            let reference = game.trace_policy_reads(0);
+            let expected_score = ai.culture_lane_forecast_score_with(&game, 0, true);
+            let expected = reference.finish();
+            drop(reference);
+
+            let trace = game.trace_policy_reads(0);
+            assert_eq!(
+                ai.culture_lane_forecast_reaches(&game, 0, 60),
+                expected_score >= 60
+            );
+            let actual = trace.finish();
+            drop(trace);
+            assert_eq!(actual.is_opaque(), expected.is_opaque());
+            for card in game.rules.policies.keys() {
+                assert_eq!(
+                    actual.card_is_inert(&game.rules, *card),
+                    expected.card_is_inert(&game.rules, *card),
+                    "same policy dependencies for {card} at Tourism {tourism}"
+                );
+            }
+        }
+    }
+}

@@ -268,8 +268,7 @@ impl AdvancedAi {
             // priorities. Delay the city-wide projection until the late pass
             // where a posture switch can otherwise strand the Culture sink.
             && g.turn >= g.standard_duration(100)
-            && self.culture_lane_forecast_score_with(g, pid, true)
-                >= ADAPTIVE_CULTURE_SPENDING_SCORE
+            && self.culture_lane_forecast_reaches(g, pid, ADAPTIVE_CULTURE_SPENDING_SCORE)
     }
 
     fn adaptive_culture_lane_spends(
