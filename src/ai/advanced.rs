@@ -10261,14 +10261,28 @@ pub struct AdvancedAi {
     /// `battle-solver` on. Off by default.
     solver_plays_the_host: bool,
     /// `score-seat-plays-for-points`: a Score-target seat races wonders at
-    /// the live race's price, holds its peacetime army at one body a city,
-    /// takes the Ancestral Hall over the Warlord's Throne, and starts nothing
-    /// in the last turns that cannot finish before the tally. See
-    /// `advanced/score_seat.rs`. Off by default.
+    /// the live race's price, takes the Ancestral Hall over the Warlord's
+    /// Throne, and starts nothing in the last turns that cannot finish before
+    /// the tally. See `advanced/score_seat.rs`. Off by default.
     score_seat_plays_for_points: bool,
     /// `score-seat-plays-for-points`: what the gene's journal has already
     /// said, so each line is written once per change. Observation only.
     score_seat_journal: score_seat::ScoreSeatJournal,
+    /// `score-seat-trims-the-idle-army`: with `score-seat-plays-for-points`
+    /// on, a Score seat at peace from turn 80 (Online), holding four cities
+    /// and at least 0.8 of the strongest neighbour's military, trains no land
+    /// unit past one a city (four at least). See `advanced/score_seat.rs`.
+    /// Off by default.
+    score_seat_trims_the_idle_army: bool,
+    /// `score-seat-takes-what-pays`: a Score seat takes the open city of a
+    /// neighbour no stronger than us that buys more points per Production
+    /// than its queues: the plan turns to Conquest on that city, the war
+    /// opens once the takers stand there, and the Domination war machinery
+    /// answers it. See `advanced/score_takes_what_pays.rs`. Opt-in.
+    score_seat_takes_what_pays: bool,
+    /// `score-seat-takes-what-pays`: the city the plan names and the last
+    /// board line. Empty with the gene off.
+    score_take_state: score_takes_what_pays::ScoreTakeState,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -12076,6 +12090,9 @@ mod luxury_research;
 /// See `advanced/soft_city_window.rs`.
 mod soft_city_window;
 
+/// `score-seat-takes-what-pays`: see `advanced/score_takes_what_pays.rs`.
+mod score_takes_what_pays;
+
 /// `growth-prices-the-farm`: the Builder prices the Housing and Food a small
 /// city cannot grow without. One opt-in gene; see `advanced/growth_farm.rs`.
 mod growth_farm;
@@ -13310,6 +13327,10 @@ impl AdvancedAi {
         // `open-city-draws-the-front`: the open city the front turned to; exact
         // no-op with the gene off. See `advanced/open_city_front.rs`.
         self.open_city_observe(g, pid);
+        // `score-seat-takes-what-pays`: the paying city the plan names, the
+        // board line and a capture; exact no-op with the gene off. See
+        // `advanced/score_takes_what_pays.rs`.
+        self.score_take_observe(g, pid);
         // `war-policy-via-board`: the tide with every major at war and the
         // unserved-Defend clocks; exact no-op with the gene off. See
         // `advanced/war_policy.rs`.
@@ -22878,12 +22899,15 @@ impl AdvancedAi {
         // `advanced/hopeless_army_yields_the_queue.rs`.
         let desired_military =
             self.hopeless_army_target(g, pid, plan, threatened, city_count, desired_military);
-        // `score-seat-plays-for-points`: at peace with every major, a Score
-        // seat's land army stops at one body a city; the Settler escorts and
-        // the barbarian floor below still add theirs. See
+        // `score-seat-trims-the-idle-army`: from turn 80 (Online), at peace,
+        // with four cities and 0.8 of the strongest neighbour's military, a
+        // Score seat's land army stops at one body a city (four at least),
+        // except in a frontier city with no garrison; the Settler escorts
+        // and the barbarian floor below still add theirs. `false` off. See
         // `advanced/score_seat.rs`.
+        let score_seat_trims = self.score_seat_trims_here(g, pid, cid, active_major_war);
         let desired_military =
-            self.score_seat_army_target(city_count, active_major_war, desired_military);
+            self.score_seat_army_target(city_count, score_seat_trims, desired_military);
         // ★★★★ EVERY WALKER GETS A GUARD AND EVERY CLAIM A GARRISON. See
         // `land_grab`: the peacetime land army wants one body per city plus
         // one per Settler in flight, so a wider pipeline never marches alone
@@ -23264,10 +23288,11 @@ impl AdvancedAi {
                     // keep every unit weakly positive forever, so a rejected Library
                     // could expose another Warrior on every turn. Threatened cities
                     // bypass the ceiling, and naval/air have independent targets.
-                    // `score-seat-plays-for-points`: a Score seat at peace
-                    // keeps no composition buffer above its targets, land or
-                    // sea; a unit buys no points. See `advanced/score_seat.rs`.
-                    let score_seat_holds = self.score_seat_holds_the_army(active_major_war);
+                    // `score-seat-trims-the-idle-army`: where the trim acts
+                    // (above), no composition buffer above the land and sea
+                    // targets; a unit buys no points. See
+                    // `advanced/score_seat.rs`.
+                    let score_seat_holds = score_seat_trims;
                     let ceiling_buffer = if (plan.strategy == GrandStrategy::Conquest
                         && !offensive_conquest)
                         || score_seat_holds

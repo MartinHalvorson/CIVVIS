@@ -2119,8 +2119,9 @@ impl AdvancedAi {
     /// charges every enemy blow to every one of our units at once and must
     /// not undo that verdict one unit at a time.
     pub(super) fn active_siege_member(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        // `score-seat-takes-what-pays`: or a Score seat's paying city.
         self.siege_train
-            && self.active_victory_target(g) == Some(super::VictoryTarget::Domination)
+            && self.conquest_gates_open(g)
             && self.force_groups.iter().any(|group| {
                 group.domain == ForceDomain::Land
                     && group.units.contains(&uid)
@@ -2146,8 +2147,9 @@ impl AdvancedAi {
     /// 100-hp catapults before Babylon were rotated out at danger 96-100 and
     /// fortified; Stage never invested in 18 turns.
     pub(super) fn staging_siege_member(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        // `score-seat-takes-what-pays`: or a Score seat's paying city.
         self.siege_train
-            && self.active_victory_target(g) == Some(super::VictoryTarget::Domination)
+            && self.conquest_gates_open(g)
             && self.force_groups.iter().any(|group| {
                 group.domain == ForceDomain::Land
                     && group.units.contains(&uid)
@@ -3039,7 +3041,9 @@ impl AdvancedAi {
         }
         let go_reading = forecast
             .as_ref()
-            .filter(|_| self.siege_goes_on_the_forecast)
+            .filter(|_| {
+                self.siege_goes_on_the_forecast && assault_forecast::forecast_goes_and_holds()
+            })
             .map(|reading| reading.within(assault_forecast::GO_HORIZON));
         let forecast_go = go_reading.is_some_and(|p| p >= assault_forecast::GO_P);
         let forecast_holds = go_reading.is_some_and(|p| p >= assault_forecast::HOLD_P);
@@ -4678,7 +4682,8 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         group: &ForceGroup,
     ) -> Option<bool> {
-        if self.active_victory_target(g) != Some(super::VictoryTarget::Domination)
+        // `score-seat-takes-what-pays`: or a Score seat's paying city.
+        if !self.conquest_gates_open(g)
             || city.hp <= 0
             || (city.wall_hp > 0 && !melee_wall_attack_allowed(g, pid, uid, city.id))
         {
@@ -4935,7 +4940,8 @@ impl AdvancedAi {
     /// Keep enough health to survive the reply and remain a capture body.
     fn safe_taker_pressure(&mut self, g: &mut Game, pid: usize, uid: u32, city: &CityView) -> bool {
         let unit = &g.units[&uid];
-        if self.active_victory_target(g) != Some(super::VictoryTarget::Domination)
+        // `score-seat-takes-what-pays`: or a Score seat's paying city.
+        if !self.conquest_gates_open(g)
             || city.wall_hp > 0
             || unit.hp < 80
             || unit.attacks_left <= 0
