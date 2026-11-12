@@ -72,6 +72,11 @@ fn journalled(
 /// Campus quoted there, the other two at one citizen. The gene is armed;
 /// `near-done-work-finishes` is off so only this gene decides.
 fn campus_board() -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
+    campus_board_with(3)
+}
+
+/// [`campus_board`] with `cities` founded cities (three or four).
+fn campus_board_with(cities: usize) -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
     let mut g = Game::new_full(2, 36, 20, 95_345, 250, 0, false);
     g.units.clear();
     for tile in g.map.tiles.values_mut() {
@@ -84,8 +89,9 @@ fn campus_board() -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
     for tech in ["pottery", "writing", "mining", "masonry", "bronze_working"] {
         g.players[0].techs.insert(Name::new(tech));
     }
-    let ids: Vec<_> = [(5, 5), (15, 5), (25, 5)]
+    let ids: Vec<_> = [(5, 5), (15, 5), (25, 5), (15, 14)]
         .into_iter()
+        .take(cities)
         .map(|pos| g.found_city_for(0, pos, None))
         .collect();
     g.game_speed = GameSpeed::Online;
@@ -331,21 +337,151 @@ fn the_gene_opens_the_library_claim_with_the_building_gene_off() {
 }
 
 #[test]
-fn settlers_and_a_threatened_city_keep_their_queue_against_the_library() {
-    let (mut g, ranked, ai, mut plan) = library_board();
+fn a_half_built_settler_and_a_threatened_city_keep_their_queue_against_the_library() {
+    let (mut g, ranked, mut ai, mut plan) = library_board();
     let threatened = ranked[0];
-    let settling = ranked[1];
+    let half_built = ranked[1];
+    let fresh = ranked[2];
     plan.threatened_city = Some(threatened);
-    let city = g.cities.get_mut(&settling).unwrap();
-    city.queue = vec![AdvancedAi::early_settler_item()];
-    city.production = 20.0;
-    ai.claim_campus_building(&mut g, 0, &plan);
+    let settler = AdvancedAi::early_settler_item();
+    let cost = g.item_cost_for_city(0, half_built, &settler);
+    let city = g.cities.get_mut(&half_built).unwrap();
+    city.queue = vec![settler.clone()];
+    city.production = (0.6 * cost).floor();
+    let city = g.cities.get_mut(&fresh).unwrap();
+    city.queue = vec![settler.clone()];
+    city.production = 0.0;
+    let details = journalled(&mut ai, &mut g, |ai, g| {
+        ai.claim_campus_building(g, 0, &plan)
+    });
     assert!(
         hub_head(&g, threatened),
         "the threatened city keeps its Hub"
     );
-    assert_eq!(head(&g, settling), Some(AdvancedAi::early_settler_item()));
-    for cid in &ranked[2..] {
+    assert_eq!(head(&g, half_built), Some(settler.clone()), "half built");
+    assert_eq!(
+        head(&g, fresh),
+        Some(library()),
+        "six cities: a fresh Settler waits"
+    );
+    assert!(
+        details.iter().any(|detail| detail.starts_with(TAG)
+            && detail.contains("Library goes ahead of the Settler (0 of")),
+        "{details:?}"
+    );
+    for cid in &ranked[3..] {
         assert_eq!(head(&g, *cid), Some(library()));
+    }
+    // The Settler claims leave the claimed Library alone from four cities.
+    assert!(ai.science_campus_holds_repeat_settler(&g, 0, fresh, &plan));
+}
+
+/// [`campus_board_with`]'s capital training the early floor's Settler, `paid`
+/// of 85 Production in, with the floor (six cities) open and
+/// `first-campus-before-the-settler` off.
+fn floor_settler_board(cities: usize, paid: f64) -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
+    let (mut g, mut ai, cid, plan, campus) = campus_board_with(cities);
+    let settler = AdvancedAi::early_settler_item();
+    quote(&mut g, cid, &settler, 8.0, 85.0);
+    let capital = g.cities.get_mut(&cid).unwrap();
+    capital.queue = vec![settler];
+    capital.production = paid;
+    ai.enable_early_settler_floor();
+    assert!(ai.early_settler_floor_holds(&g, 0, cid, &plan));
+    (g, ai, cid, plan, campus)
+}
+
+#[test]
+fn a_four_city_empire_puts_its_first_campus_ahead_of_a_fresh_floor_settler() {
+    // No progress, and 20 of 85 paid (under half): the Settler keeps it.
+    for paid in [0.0, 20.0] {
+        let (g, mut ai, cid, plan, campus) = floor_settler_board(4, paid);
+        let settler = AdvancedAi::early_settler_item();
+
+        let mut off = ai.clone();
+        off.disable_campus_and_library_before_the_claims();
+        let mut control = g.clone();
+        off.claim_free_slot_campus(&mut control, 0, &plan);
+        assert_eq!(
+            head(&control, cid),
+            Some(settler.clone()),
+            "off, {paid} paid"
+        );
+
+        let mut on = g.clone();
+        let details = journalled(&mut ai, &mut on, |ai, g| {
+            ai.claim_free_slot_campus(g, 0, &plan)
+        });
+        assert_eq!(head(&on, cid), Some(campus), "{paid} paid");
+        assert_eq!(on.item_invested_production(cid, &settler), paid);
+        let line = format!("first Campus goes ahead of the Settler ({paid:.0} of 85");
+        assert!(
+            details
+                .iter()
+                .any(|detail| detail.starts_with(TAG) && detail.contains(&line)),
+            "{details:?}"
+        );
+        // Both Settler claims leave it alone now.
+        assert!(ai.science_campus_holds_repeat_settler(&on, 0, cid, &plan));
+    }
+}
+
+#[test]
+fn a_three_city_empire_keeps_the_floor_settler_first() {
+    let (mut g, ai, cid, plan, _) = floor_settler_board(3, 0.0);
+    ai.claim_free_slot_campus(&mut g, 0, &plan);
+    assert_eq!(head(&g, cid), Some(AdvancedAi::early_settler_item()));
+}
+
+#[test]
+fn a_half_built_floor_settler_keeps_the_queue() {
+    let (mut g, ai, cid, plan, _) = floor_settler_board(4, 50.0);
+    ai.claim_free_slot_campus(&mut g, 0, &plan);
+    assert_eq!(head(&g, cid), Some(AdvancedAi::early_settler_item()));
+}
+
+#[test]
+fn a_counterweight_holy_site_yields_with_nothing_paid_but_not_with_progress() {
+    let (base, armed, cid, plan, campus) = campus_board();
+    let center = base.cities[&cid].pos;
+    let campus_site = match &campus {
+        Item::District { pos, .. } => *pos,
+        _ => unreachable!(),
+    };
+    let site = base.cities[&cid]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|pos| *pos != center && *pos != campus_site)
+        .min()
+        .expect("a free tile");
+    let holy_site = Item::District {
+        district: crate::name!("holy_site"),
+        pos: site,
+    };
+    for (paid, gene, passes) in [(0.0, true, true), (5.0, true, false), (0.0, false, false)] {
+        let mut g = base.clone();
+        let mut ai = armed.clone();
+        if !gene {
+            ai.disable_campus_and_library_before_the_claims();
+        }
+        let capital = g.cities.get_mut(&cid).unwrap();
+        capital.queue = vec![holy_site.clone()];
+        capital.production = paid;
+        let details = journalled(&mut ai, &mut g, |ai, g| {
+            ai.claim_free_slot_campus(g, 0, &plan)
+        });
+        let expected = if passes {
+            campus.clone()
+        } else {
+            holy_site.clone()
+        };
+        assert_eq!(head(&g, cid), Some(expected), "paid {paid}, gene {gene}");
+        assert_eq!(
+            details.iter().any(|detail| detail.starts_with(TAG)
+                && detail.contains("first Campus goes ahead of the Holy Site")),
+            passes,
+            "{details:?}"
+        );
     }
 }

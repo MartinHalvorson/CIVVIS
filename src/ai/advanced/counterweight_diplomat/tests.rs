@@ -218,7 +218,8 @@ fn quito_claims_a_holy_site(lane: VictoryTarget) -> Option<bool> {
     ai.rival_faith_presses_us(&g, 0)?;
     ai.enable_counterweight_builds_its_source();
     g.players[0].gold = 0.0;
-    ai.counterweight_builds_its_source(&mut g, 0);
+    let plan = ai.assess(&g, 0);
+    ai.counterweight_builds_its_source(&mut g, 0, &plan);
     Some(matches!(
         g.cities[&quito].queue.first(),
         Some(Item::District { district, .. }) if g.district_family(*district) == "holy_site"
@@ -250,7 +251,8 @@ fn a_standing_source_claims_nothing() {
     ai.enable_counterweight_builds_its_source();
     let before = g.cities[&quito].queue.clone();
     let gold = g.players[0].gold;
-    ai.counterweight_builds_its_source(&mut g, 0);
+    let plan = ai.assess(&g, 0);
+    ai.counterweight_builds_its_source(&mut g, 0, &plan);
     assert_eq!(g.cities[&quito].queue, before);
     assert_eq!(g.players[0].gold, gold);
 }

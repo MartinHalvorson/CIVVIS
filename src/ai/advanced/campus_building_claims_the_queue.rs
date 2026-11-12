@@ -39,9 +39,11 @@
 //!
 //! `campus-and-library-before-the-claims` opens this claim for a Domination
 //! seat's Library and quick University even with this gene off, lets them
-//! pass the claims' heads, and claims in every such city each turn. See
+//! pass the claims' heads (from four cities the Library passes the floor's
+//! Settler too), and claims in every such city each turn. See
 //! `advanced/campus_and_library_before_the_claims.rs`.
 
+use super::campus_and_library_before_the_claims::ScienceFirstItem;
 use super::*;
 
 /// The claim's order among Campus buildings: the Library first (it unlocks the
@@ -197,7 +199,23 @@ impl AdvancedAi {
             if science_first_only && reach.is_none() {
                 continue;
             }
-            if self.early_settler_floor_holds(g, pid, cid, plan) {
+            // `campus-and-library-before-the-claims`: what the gene puts
+            // first here.
+            let what = if rank == 0 {
+                ScienceFirstItem::Library
+            } else {
+                ScienceFirstItem::University
+            };
+            // From four cities the Library passes the floor's Settler while
+            // at most half of it is paid; the head test below passes it too.
+            if self.early_settler_floor_holds(g, pid, cid, plan)
+                && !reach.is_some_and(|reach| {
+                    g.cities[&cid].queue.first().is_some_and(|item| {
+                        self.campus_and_library_passes(g, pid, cid, plan, item, reach, what)
+                            .is_some()
+                    })
+                })
+            {
                 continue;
             }
             let mut passed = None;
@@ -219,7 +237,7 @@ impl AdvancedAi {
                         || !Self::capped_aqueduct_may_defer(g, pid, cid, item, at_major_war)
                     {
                         passed = reach.and_then(|reach| {
-                            self.campus_and_library_passes(g, pid, cid, plan, item, reach, true)
+                            self.campus_and_library_passes(g, pid, cid, plan, item, reach, what)
                         });
                         if passed.is_none() {
                             continue;
