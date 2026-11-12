@@ -87,12 +87,12 @@ const SCORE_ARMY_LINE_EVERY: u32 = 10;
 /// a District 2 and a Settler 5 plus its citizens. Journal arithmetic only.
 const SCORE_POINTS_PER_HUNDRED_PRODUCTION: f64 = 2.0;
 
-/// `score-seat-trims-the-idle-army`: the first turn, in Standard turns (80 at
-/// Online), on which the trim may act. Eleven Rome games of 2026-11-12: five
+/// `score-seat-trims-the-idle-army`: the first turn, in Standard turns, on
+/// which the trim may act: 80 at Online (`GameSpeed::scale_turns`, 66%). Eleven Rome games of 2026-11-12: five
 /// rival declarations came at t24-t51 and four cities fell at t30-t58
 /// (Ostia, the capital, Antium, Ostia); the waste the trim was built for came
 /// after t100 (game one: Artillery 1,179, Cuirassiers 620, Bombards 457).
-pub(super) const SCORE_TRIM_FROM_STANDARD: u32 = 160;
+pub(super) const SCORE_TRIM_FROM_STANDARD: u32 = 120;
 
 /// `score-seat-trims-the-idle-army`: cities held before the trim acts.
 pub(super) const SCORE_TRIM_MIN_CITIES: usize = 4;
