@@ -442,6 +442,9 @@ impl AdvancedAi {
         /// Opt-in gene `settler-stall-counts-turns`; see
         /// `advanced/settler_stall_counts_turns.rs`.
         settler_stall_counts_turns => enable_settler_stall_counts_turns, disable_settler_stall_counts_turns;
+        /// Opt-in gene `solver-plays-the-host`; see
+        /// `advanced/battle_solver/host_enemy.rs`.
+        solver_plays_the_host => enable_solver_plays_the_host, disable_solver_plays_the_host;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

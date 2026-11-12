@@ -471,6 +471,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-shortfall-claims-the-projects` | off (unmeasured) | Let a siege short of its bill take the repeatable-project queues. | 1 \| 1 |
 | `siege-tier-yields-to-the-bombers-2` | off (unmeasured) | Opt-in gene `siege-tier-yields-to-the-bombers-2`; see `Self::siege_tier_yields_to_the_bombers_2`. | 1 \| 2 |
 | `slots-survive-the-roll` | off (unmeasured) | Opt-in gene `slots-survive-the-roll`; see `Self::slots_survive_the_roll`. | 1 \| 1 |
+| `solver-plays-the-host` | off (unmeasured) | Opt-in gene `solver-plays-the-host`; see `advanced/battle_solver/host_enemy.rs`. | 1 \| 1 |
 | `space-denial-promotes-the-rocket-scientist` | off (unmeasured) | Opt-in gene `space-denial-promotes-the-rocket-scientist`; see `advanced/space_denial_rocket_scientist.rs`. | 1 \| 1 |
 | `space-denial-slots-the-spy-cards` | off (unmeasured) | Opt-in gene `space-denial-slots-the-spy-cards`; see `advanced/space_denial_spy_cards.rs`. | 1 \| 1 |
 | `space-people-call-the-projects` | off (unmeasured) | `space-people-call-the-projects`: while a Great Person who speeds the space race is on offer, a Science seat's district projects earn that class's points. | 1 \| 1 |
