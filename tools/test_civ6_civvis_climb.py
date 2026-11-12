@@ -2383,6 +2383,29 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
             saves[2],
         )
 
+    def test_one_hang_is_reloaded_at_most_three_times(self):
+        """civvis-20261112T112009Z hung at t90, t89 and t88 across two reloads
+        (40 minutes); a fourth stride back is not taken. A caller that does
+        not track episodes keeps the whole budget."""
+        class Args:
+            max_resumes = 6
+            resume_min_turn = climb.RESUME_MIN_TURN
+
+        saves = [Path(f"/saves/AutoSave_{n:04d}.Civ6Save") for n in range(90, 40, -1)]
+        finder = lambda newer_than=None: saves
+        frozen = {"last_turn": 88}
+        self.assertEqual(climb.RESUME_EPISODE_MAX, 3)
+        self.assertIsNotNone(climb.resume_from_autosave(
+            frozen, "frozen", 2, Args(), 1234.5, recent=finder, stride_index=2))
+        self.assertIsNone(climb.resume_from_autosave(
+            frozen, "frozen", 3, Args(), 1234.5, recent=finder, stride_index=3))
+        # A new episode (a freeze two or more turns later) reloads again.
+        self.assertIsNotNone(climb.resume_from_autosave(
+            frozen, "frozen", 3, Args(), 1234.5, recent=finder, stride_index=0))
+        # No episode tracking: the historical stride sequence, budget only.
+        self.assertIsNotNone(climb.resume_from_autosave(
+            frozen, "frozen", 3, Args(), 1234.5, recent=finder))
+
     def test_a_short_rolling_list_never_reuses_a_clamped_resume(self):
         args = self._Args()
         args.max_resumes = 6
@@ -2672,10 +2695,14 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
 
         self.assertEqual(code, 1)
         self.assertEqual(len(rows), 1)
+        # Three reloads, each a different board, and then the hang is given
+        # up (`RESUME_EPISODE_MAX`): the fourth freeze at the same turn used
+        # to clamp onto `AutoSave_0080`, a board between two that had already
+        # hung.
         self.assertEqual(
             [resume["save"] for resume in rows[0]["resumes"]],
             ["AutoSave_0087.Civ6Save", "AutoSave_0084.Civ6Save",
-             "AutoSave_0079.Civ6Save", "AutoSave_0080.Civ6Save"],
+             "AutoSave_0079.Civ6Save"],
         )
 
     def test_resumes_can_be_switched_off(self):

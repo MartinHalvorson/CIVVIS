@@ -3561,12 +3561,23 @@ impl AdvancedAi {
             }
             // `racer-keeps-the-spies`: an idle Spy outside the leading space
             // racer's cities (and any culture racer's, and any other racer's
-            // where Disrupt Rocketry is offered) goes to the leader, before
-            // any pad of it is seen. Never taken with the gene off
-            // (`racer_spy_leader` is `None`).
+            // where this seat can run the Disrupt Rocketry offered there)
+            // goes to the leader, before any pad of it is seen. Never taken
+            // with the gene off (`racer_spy_leader` is `None`).
             let racer_spy_searching = self.racer_spy_search().is_some_and(|search| {
                 Self::racer_spy_searching(g, spy_id, current_city, racer_spy_leader, search, &legal)
             });
+            // The racer this Spy leaves while the host still offers Disrupt
+            // Rocketry where it stands: an offer the board cannot run (its pad
+            // there reads pillaged from a fogged sighting) no longer holds it.
+            let racer_spy_left_offer = current_city
+                .and_then(|city| g.cities.get(&city))
+                .filter(|city| {
+                    racer_spy_racers.contains(&city.owner)
+                        && Some(city.owner) != racer_spy_leader
+                        && Self::racer_spy_disrupt_offered(g, spy_id, &legal)
+                })
+                .map(|city| (g.players[city.owner].civ.to_string(), city.name.clone()));
             // `spies-steal-the-lead`: a Science aim posts to a Campus city.
             if let Some(post) = Self::racer_spy_post_for(
                 g,
@@ -3579,6 +3590,7 @@ impl AdvancedAi {
                 self.racer_spy_search(),
                 self.spies_steal_the_lead_on(plan),
                 &self.steal_dry_cities,
+                &every_pad_threats,
             ) {
                 if let Some(action) = legal.iter().find(
                     |action| matches!(action, Action::AssignSpy { city, .. } if *city == post),
@@ -3609,6 +3621,17 @@ impl AdvancedAi {
                                     {landed} space project(s) and Disrupt Rocketry is not \
                                     offered in {here}, so the pad is elsewhere; {unseen} of \
                                     its cities we have not seen");
+                        } else if let Some((left, left_city)) = &racer_spy_left_offer {
+                            *g.players[pid]
+                                .counters
+                                .entry("racer_spy_unrunnable_offers_left".to_string())
+                                .or_insert(0) += 1;
+                            think!(self.journal(), Military, Decision,
+                                   "A Spy leaves {left}'s {left_city} for {racer}'s {city_name}";
+                                   "racer-keeps-the-spies: {racer} leads the space race, not \
+                                    {left}; the host offers Disrupt Rocketry in {left_city}, but \
+                                    every Spaceport of {left} our board holds near it reads \
+                                    pillaged, so the Spy cannot run it there");
                         } else {
                             think!(self.journal(), Military, Decision,
                                    "A Spy goes to {racer}'s {city_name}";

@@ -5677,6 +5677,13 @@ pub const GENES: &[Gene] = &[
     // Campus and its Library (then a quick University) go ahead of those
     // claims. Opt-in; see `advanced/campus_and_library_before_the_claims.rs`.
     Gene { tag: "campus-and-library-before-the-claims", field: "campus_and_library_before_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_and_library_before_the_claims, disable: AdvancedAi::disable_campus_and_library_before_the_claims },
+    // Live Deity Gran Colombia 11-12: four of five games that reached t150
+    // set every denial Spy claim aside on `upkeep-waits-for-the-income` for
+    // 15-25 turns while the winner raced (081824Z 75 of 92 claims, t173-197,
+    // 3-4 slots empty, Mapuche past its Moon). A Spy the denial still wants
+    // against a racer past its Moon is not held while the treasury carries
+    // its own upkeep. Opt-in; see `advanced/denial_spies_skip_the_upkeep_wait.rs`.
+    Gene { tag: "denial-spies-skip-the-upkeep-wait", field: "denial_spies_skip_the_upkeep_wait", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_skip_the_upkeep_wait, disable: AdvancedAi::disable_denial_spies_skip_the_upkeep_wait },
     // Split out of hopeless-army-yields-the-queue (#5169) after the 11-12
     // live arm: the cap lowered the seat's total power, which the faith-war
     // and counter-war floors read. Opt-in, not armed; see
@@ -5942,6 +5949,14 @@ pub const GENES: &[Gene] = &[
     // Builder, Campus building and Trader claims under the hold. Opt-in; see
     // `advanced/rear_cities_grow_through_the_war_hold.rs`.
     Gene { tag: "rear-cities-grow-through-the-war-hold", field: "rear_cities_grow_through_the_war_hold", kind: Kind::OptIn, enable: AdvancedAi::enable_rear_cities_grow_through_the_war_hold, disable: AdvancedAi::disable_rear_cities_grow_through_the_war_hold },
+    // Live Deity Gran Colombia 2026-11-12 (`civvis-20261112T075931Z`) t192: a
+    // free policy window at +40.8 Gold a turn re-seated the deck without
+    // Levée en Masse and Economic Union; income read -29.8 the next frame,
+    // the treasury sat at 0 from t193 and the host disbanded the army.
+    // Income is projected against the turn's starting deck and a paying card
+    // stays while losing it takes the projection to zero or below. Opt-in;
+    // see `advanced/policy_swap_keeps_the_army_paid.rs`.
+    Gene { tag: "policy-swap-keeps-the-army-paid", field: "policy_swap_keeps_the_army_paid", kind: Kind::OptIn, enable: AdvancedAi::enable_policy_swap_keeps_the_army_paid, disable: AdvancedAi::disable_policy_swap_keeps_the_army_paid },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and

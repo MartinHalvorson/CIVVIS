@@ -255,6 +255,9 @@ impl AdvancedAi {
         /// Opt-in `campus-and-library-before-the-claims`; see
         /// `advanced/campus_and_library_before_the_claims.rs`.
         campus_and_library_before_the_claims => enable_campus_and_library_before_the_claims, disable_campus_and_library_before_the_claims;
+        /// Opt-in `denial-spies-skip-the-upkeep-wait`; see
+        /// `advanced/denial_spies_skip_the_upkeep_wait.rs`.
+        denial_spies_skip_the_upkeep_wait => enable_denial_spies_skip_the_upkeep_wait, disable_denial_spies_skip_the_upkeep_wait;
         /// Opt-in gene `deterrence-stops-at-a-garrison`; see
         /// `advanced/deterrence_stops_at_a_garrison.rs`.
         deterrence_stops_at_a_garrison => enable_deterrence_stops_at_a_garrison, disable_deterrence_stops_at_a_garrison;
@@ -403,6 +406,10 @@ impl AdvancedAi {
         /// `rear-cities-grow-through-the-war-hold`: see
         /// `advanced/rear_cities_grow_through_the_war_hold.rs`.
         rear_cities_grow_through_the_war_hold => enable_rear_cities_grow_through_the_war_hold, disable_rear_cities_grow_through_the_war_hold;
+        /// Opt-in gene `policy-swap-keeps-the-army-paid`: no policy swap takes
+        /// projected income to zero or below; see
+        /// `advanced/policy_swap_keeps_the_army_paid.rs`.
+        policy_swap_keeps_the_army_paid => enable_policy_swap_keeps_the_army_paid, disable_policy_swap_keeps_the_army_paid;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `sweden-builds-open-air-museums`; see
         /// `advanced/sweden_builds_open_air_museums.rs`.

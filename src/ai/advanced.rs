@@ -6929,6 +6929,11 @@ pub struct AdvancedAi {
     /// routine claims that keep a city's queue. See
     /// `advanced/campus_and_library_before_the_claims.rs`. Opt-in.
     campus_and_library_before_the_claims: bool,
+    /// `denial-spies-skip-the-upkeep-wait`: a Spy the space denial still
+    /// wants against a racer past its Moon is not set aside by
+    /// `upkeep-waits-for-the-income` while the treasury carries its own
+    /// upkeep. See `advanced/denial_spies_skip_the_upkeep_wait.rs`. Opt-in.
+    denial_spies_skip_the_upkeep_wait: bool,
     /// `deterrence-stops-at-a-garrison`: on the Domination lane,
     /// `near-rival-deterrence` against a neighbour of twice our power or more
     /// trains only a ranged garrison in a city that has none. Split out of
@@ -9376,6 +9381,12 @@ pub struct AdvancedAi {
     /// The rear cities those claims may take during one idle-queue pass under
     /// the hold. `None` outside such a pass, so every claim reads every city.
     rear_cities_open_under_the_hold: Option<BTreeSet<u32>>,
+    /// `policy-swap-keeps-the-army-paid`: the policy pass projects income
+    /// against the deck the turn began with and does not give up a card
+    /// (upkeep relief, priced Gold) whose loss would take it to zero or
+    /// below; the paying cards the base deck review gave up come back first.
+    /// See `advanced/policy_swap_keeps_the_army_paid.rs`. Opt-in.
+    policy_swap_keeps_the_army_paid: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
@@ -11773,6 +11784,9 @@ mod denial_charts_the_racer;
 /// `denial-spies-fill-every-slot`: see
 /// `advanced/denial_spies_fill_every_slot.rs`.
 mod denial_spies_fill_every_slot;
+/// `denial-spies-skip-the-upkeep-wait`: see
+/// `advanced/denial_spies_skip_the_upkeep_wait.rs`.
+mod denial_spies_skip_the_upkeep_wait;
 /// `domination-charts-every-capital`: see
 /// `advanced/domination_charts_every_capital.rs`.
 mod domination_charts_every_capital;
@@ -11974,6 +11988,9 @@ mod envoys_open_the_siege_road;
 mod forward_airfield_project;
 mod frontier_walls_before_the_surprise;
 mod modernization_prices_the_path;
+/// `policy-swap-keeps-the-army-paid`: see
+/// `advanced/policy_swap_keeps_the_army_paid.rs`.
+mod policy_swap_keeps_the_army_paid;
 /// The research turn: the tech and civic `AdvancedAi` studies next, and how
 /// it prices them. See `advanced/research.rs`.
 mod research;

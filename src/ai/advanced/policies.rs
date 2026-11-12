@@ -989,6 +989,22 @@ impl AdvancedAi {
                     while our Spies answer the space race",
                    denial_spy_cards.iter().map(|card| plain(card)).collect::<Vec<_>>().join(" and "));
         }
+        // `policy-swap-keeps-the-army-paid`: income is projected against the
+        // deck the turn began with. While the deck the base review (or a
+        // government change) left projects zero or less, the paying cards it
+        // gave up are wanted back first. `None` with the gene off. See
+        // `advanced/policy_swap_keeps_the_army_paid.rs`.
+        let army_pay = self.army_pay(g, pid, &desired, protect_wartime_income);
+        let mut army_paid_kept: BTreeMap<Name, String> = BTreeMap::new();
+        if let Some(pay) = &army_pay {
+            let slottable: HashSet<Name> = g.available_policies(pid).into_iter().collect();
+            let back = pay.restores(&g.players[pid].policies, |card| slottable.contains(card));
+            for (card, projected) in back.into_iter().rev() {
+                desired.retain(|wanted| *wanted != card.as_str());
+                desired.insert(0, card.as_str());
+                army_paid_kept.insert(card, pay.detail(card.as_str(), projected, None));
+            }
+        }
         let desired_set: HashSet<&str> = desired.iter().copied().collect();
         // If circumstances changed, remove a downside-bearing Dark Age card
         // immediately. Isolationism must not coexist with a live Settler.
@@ -1308,6 +1324,21 @@ impl AdvancedAi {
                     }
                 }
             }
+            // `policy-swap-keeps-the-army-paid`: a card stays when giving it
+            // up for this one takes the projected income to zero or below,
+            // counting every card given up or slotted since the turn began.
+            if let Some(pay) = &army_pay {
+                let deck = &g.players[pid].policies;
+                replaceable.retain(|current| {
+                    let Some(after) = pay.keeps(deck, current.as_str(), card) else {
+                        return true;
+                    };
+                    army_paid_kept
+                        .entry(*current)
+                        .or_insert_with(|| pay.detail(current.as_str(), after, Some(card)));
+                    false
+                });
+            }
             replaceable.sort_by(|first, second| {
                 let key = |current: &str| {
                     let policy = &g.rules.policies[current];
@@ -1395,6 +1426,14 @@ impl AdvancedAi {
                    "Keeping {} while income is not positive", plain(&current);
                    "solvent-or-hold: {:+.1} Gold a turn; {} would have taken its slot",
                    g.players[pid].gold_per_turn, plain(card));
+        }
+        // `policy-swap-keeps-the-army-paid`: only a card the deck still holds.
+        for (current, detail) in army_paid_kept {
+            if g.players[pid].policies.contains(&current) {
+                think!(self.journal(), Policies, Decision,
+                       "Keeping {} while income is not positive", plain(&current);
+                       "{detail}");
+            }
         }
     }
 
