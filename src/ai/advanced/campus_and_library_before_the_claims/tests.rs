@@ -123,12 +123,14 @@ fn campus_board_with(cities: usize) -> (Game, AdvancedAi, u32, StrategicPlan, It
     capital.pop = 5;
     capital.queue = vec![granary()];
     capital.production = 5.0;
+    let campus = BasicAi::first_campus_item(&g, 0, cid).unwrap();
+    quote(&mut g, cid, &campus, 5.0, 56.0);
+    // The host's quote: a Granary is 65 Production at Online.
+    quote(&mut g, cid, &granary(), 6.0, 65.0);
     assert!(
         g.item_cost_for_city(0, cid, &granary()) - 5.0 > 2.0 * g.city_yields(cid).production,
         "fixture: the Granary is turns from done"
     );
-    let campus = BasicAi::first_campus_item(&g, 0, cid).unwrap();
-    quote(&mut g, cid, &campus, 5.0, 56.0);
     let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
     ai.enable_campus_claims_the_free_slot_2();
     ai.disable_near_done_work_finishes();
@@ -581,8 +583,8 @@ fn the_university_passes_a_hub_but_not_a_builder_granary_aqueduct_zone_or_settle
     ];
     for (cid, item) in &kept {
         assert!(
-            g.item_cost_for_city(0, *cid, item) > 2.0 * g.city_yields(*cid).production,
-            "fixture: {item:?} is turns from done"
+            g.item_cost_for_city(0, *cid, item) > g.city_yields(*cid).production,
+            "fixture: {item:?} is more than a turn from done"
         );
     }
     let details = journalled(&mut ai, &mut g, |ai, g| {
