@@ -1615,7 +1615,11 @@ impl AdvancedAi {
                             // `faith-war-before-the-flip`: see
                             // `advanced/faith_war_before_the_flip.rs`.
                             || (deal.peace
-                                && self.faith_war_keeps_the_war(g, pid, deal.from)));
+                                && self.faith_war_keeps_the_war(g, pid, deal.from))
+                            // `open-city-is-the-objective`: see
+                            // `advanced/open_city_objective.rs`.
+                            || (deal.peace
+                                && self.open_city_keeps_the_war(g, pid, deal.from)));
                     (
                         worth >= 0.0 && !pins_objective,
                         deal.peace,
@@ -1631,6 +1635,9 @@ impl AdvancedAi {
             }
             if peace && !accept && self.faith_war_keeps_the_war(g, pid, from) {
                 self.journal_faith_war_keeps(g, pid, from, true);
+            }
+            if peace && !accept && self.open_city_keeps_the_war(g, pid, from) {
+                self.journal_open_city_keeps_the_war(g, pid, from, true);
             }
             if self.journal().wants(crate::reasoning::Level::Decision) {
                 let who = g
@@ -2014,6 +2021,19 @@ impl AdvancedAi {
                 // `advanced/faith_war_before_the_flip.rs`.
                 if self.faith_war_keeps_the_war(g, pid, *other) {
                     self.journal_faith_war_keeps(g, pid, *other, false);
+                    continue;
+                }
+                // `open-city-is-the-objective`: no peace while an open city
+                // of theirs is ours to take within a few turns, unless our
+                // cities are falling, we are outmatched, or the one-war rule
+                // makes it for the victory counter, a settled capital or a
+                // rout. `false` with the gene off. See
+                // `advanced/open_city_objective.rs`.
+                if !science_defensive_peace
+                    && !Self::open_city_yields_to(one_war_peace)
+                    && self.open_city_keeps_the_war(g, pid, *other)
+                {
+                    self.journal_open_city_keeps_the_war(g, pid, *other, false);
                     continue;
                 }
                 // `prey-war-is-kept`: no peace with prey unless our cities

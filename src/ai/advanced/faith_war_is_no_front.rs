@@ -65,6 +65,10 @@ impl AdvancedAi {
         // `prey-war-is-kept`: a faith war on prey is a front. See
         // `advanced/prey_war_is_kept.rs`.
         exempt.retain(|rival| !self.prey_faith_war_is_a_front(g, pid, *rival));
+        // `open-city-is-the-objective`: a war whose rival has an open city
+        // our takers can take is a front. See
+        // `advanced/open_city_objective.rs`.
+        exempt.retain(|rival| !self.open_city_war_is_a_front(g, pid, *rival));
         // `first-capital-strikes-the-open-window`: while a first capital's
         // window stands, its home faith wars are no front either. Empty with
         // the gene off. See `advanced/first_capital_strikes_the_open_window.rs`.
