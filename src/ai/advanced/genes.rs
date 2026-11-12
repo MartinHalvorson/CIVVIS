@@ -5798,6 +5798,11 @@ pub const GENES: &[Gene] = &[
     // Artists idle for want of a Museum. Opt-in; see
     // `advanced/great_works_never_wait.rs`.
     Gene { tag: "great-works-never-wait", field: "great_works_never_wait", kind: Kind::OptIn, enable: AdvancedAi::enable_great_works_never_wait, disable: AdvancedAi::disable_great_works_never_wait },
+    // Live Deity Gran Colombia 11-12: 181 soldiers and guns ordered on war
+    // turns whose siege read the walls could not be opened, and 89
+    // near-rival deterrents at peace; 20 city hits in 396 such war turns.
+    // Opt-in; see `advanced/hopeless_army_yields_the_queue.rs`.
+    Gene { tag: "hopeless-army-yields-the-queue", field: "hopeless_army_yields_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_hopeless_army_yields_the_queue, disable: AdvancedAi::disable_hopeless_army_yields_the_queue },
     // ---- append: l-o ------------------------------------------------
     // Native Deity Macedon 100029Z: model-priced horse/iron barter was
     // declined at51/55 and refused as barter_short at61. Ask the host for
