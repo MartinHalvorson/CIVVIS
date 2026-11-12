@@ -1192,6 +1192,7 @@ impl AdvancedAi {
         // post and holds it. `None` with the gene off or without a post. See
         // `advanced/defend_force_holds_the_city.rs`.
         if let Some(acted) = self.defend_hold_step(g, pid, uid) {
+            self.ordering(OrderStep::DefendHold);
             return acted;
         }
         // `centre-keeps-its-garrison`: a threatened city's garrison keeps
@@ -2778,6 +2779,7 @@ impl AdvancedAi {
             claimed.extend(air_assault_units.iter().copied());
             claimed.extend(opening_recon_warrior);
             self.hold_the_cities(g, pid, &claimed);
+            self.credit_orders(g, OrderStep::DefendHold);
         }
         let mut ids = g.player_unit_ids(pid);
         ids.retain(|uid| {

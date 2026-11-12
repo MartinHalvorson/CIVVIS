@@ -40,8 +40,9 @@
 //!    next turn (`threat_reach`), or already stands beside, gets a melee or
 //!    anti-cavalry soldier, nearest-threat first, the strongest that can reach
 //!    it. Cavalry fills in after them.
-//!    The fitted host (#5197 `host_enemy.rs`) strikes a target in reach
-//!    without moving 43% of the time and one it must walk to 11%. A post's
+//!    The fitted host (#5197 `host_enemy.rs`, not yet merged, so the two
+//!    rates are constants here) strikes a target in reach without moving 43%
+//!    of the time and one it must walk to 11%. A post's
 //!    expected cost is the sum over the enemy melee that reach it of that
 //!    chance times the expected blow. A soldier is not posted where that sum
 //!    meets its health.
@@ -90,7 +91,9 @@ pub(crate) const HOLD_RADIUS: i32 = 3;
 /// Visible enemy soldiers this close to a held city shape its ring.
 pub(crate) const HOLD_ENEMY_RADIUS: i32 = 6;
 /// The fitted host (#5197, `host_enemy.rs`): the share of turns it strikes a
-/// target in reach without moving.
+/// target in reach without moving. #5197 had not merged when this gene
+/// shipped, so the two rates are carried here; read them from
+/// `battle_solver/host_enemy.rs` once it lands.
 pub(crate) const HOST_STRIKES_IN_PLACE: f64 = 0.43;
 /// The same fit: the share when it must move first.
 pub(crate) const HOST_STRIKES_AFTER_A_MOVE: f64 = 0.11;
