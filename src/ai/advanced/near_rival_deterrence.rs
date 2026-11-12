@@ -105,8 +105,13 @@ impl AdvancedAi {
         if !Self::deterrence_land_unit(g, unit) {
             return false;
         }
-        self.deterrence_threat(g, pid)
-            .is_some_and(|(_, theirs)| g.military_power(pid) < DETERRENCE_RATIO * theirs)
+        self.deterrence_threat(g, pid).is_some_and(|(_, theirs)| {
+            g.military_power(pid) < DETERRENCE_RATIO * theirs
+                // `hopeless-army-yields-the-queue`: out of reach, only a
+                // garrisonless city's ranged garrison is held.
+                && (!self.deterrence_out_of_reach(g, pid, theirs)
+                    || Self::deterrence_garrison_head(g, pid, item))
+        })
     }
 
     fn deterrence_land_unit(g: &Game, unit: &Name) -> bool {
@@ -188,6 +193,11 @@ impl AdvancedAi {
             .map(|city| city.pos)
             .collect();
         let max_turns = g.standard_duration(DETERRENCE_MAX_BUILD) as f64;
+        // `hopeless-army-yields-the-queue`: against twice our power or more,
+        // a city with a ranged garrison trains no deterrent and one without
+        // trains only that garrison.
+        let out_of_reach = self.deterrence_out_of_reach(g, pid, theirs);
+        let mut garrisoned = 0usize;
         let mut best: Option<(f64, i32, u32, String)> = None;
         for &cid in &city_ids {
             if plan.threatened_city == Some(cid)
@@ -220,10 +230,17 @@ impl AdvancedAi {
             {
                 continue;
             }
-            let Some(unit) = self
-                .base
-                .combined_arms_unit(g, pid, cid, counts.melee, counts.ranged)
-                .filter(|unit| Self::deterrence_land_unit(g, &Name::new(unit)))
+            if out_of_reach && Self::city_has_ranged_garrison(g, pid, cid) {
+                garrisoned += 1;
+                continue;
+            }
+            let pick = if out_of_reach {
+                Self::garrison_shooter_for(g, pid, cid).map(|unit| unit.to_string())
+            } else {
+                self.base
+                    .combined_arms_unit(g, pid, cid, counts.melee, counts.ranged)
+            };
+            let Some(unit) = pick.filter(|unit| Self::deterrence_land_unit(g, &Name::new(unit)))
             else {
                 continue;
             };
@@ -253,6 +270,13 @@ impl AdvancedAi {
             }
         }
         let Some((turns, _, cid, unit)) = best else {
+            if out_of_reach && garrisoned > 0 {
+                think!(self.journal(), Military, Detail,
+                    "No deterrent against {}: it is out of reach", g.players[rival].civ;
+                    "hopeless-army-yields-the-queue: {theirs:.0} power against our {ours:.0}, \
+                     {:.1}x or more; {garrisoned} of our cities already hold a ranged garrison",
+                    super::hopeless_army_yields_the_queue::DETERRENCE_OUT_OF_REACH);
+            }
             return;
         };
         let displaced = g.cities[&cid].queue.first().cloned();
@@ -261,12 +285,17 @@ impl AdvancedAi {
         };
         if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
             think!(self.journal(), Military, Decision,
-                "{} trains a deterrent against {}", g.cities[&cid].name, g.players[rival].civ;
-                "near-rival-deterrence: {} for {ours:.0} power against their {theirs:.0}, a city \
-                 within {DETERRENCE_NEAR_TILES} tiles; {turns:.1} turns{}",
-                unit.replace('_', " "),
-                displaced.map_or(String::new(), |item| format!(
-                    "; {} keeps its progress", Self::plain_item(&item))));
+            "{} trains a deterrent against {}", g.cities[&cid].name, g.players[rival].civ;
+            "near-rival-deterrence: {} for {ours:.0} power against their {theirs:.0}, a city \
+             within {DETERRENCE_NEAR_TILES} tiles; {turns:.1} turns{}{}",
+            unit.replace('_', " "),
+            displaced.map_or(String::new(), |item| format!(
+                "; {} keeps its progress", Self::plain_item(&item))),
+            if out_of_reach {
+                "; hopeless-army-yields-the-queue: out of reach, a ranged garrison only"
+            } else {
+                ""
+            });
         }
     }
 }

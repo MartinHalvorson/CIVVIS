@@ -352,6 +352,13 @@ impl AdvancedAi {
         }
         let recovery_due = g.players[pid].gold_per_turn < -0.5
             && g.players[pid].gold < 100.0 + 25.0 * g.player_city_ids(pid).len() as f64;
+        // `hopeless-army-yields-the-queue`: a gun for walls nothing we can
+        // field will breach does not take its queue back.
+        let hopeless = if claimed.is_empty() {
+            None
+        } else {
+            self.hopeless_offensive(g, pid, plan)
+        };
         for (cid, item) in claimed {
             let Some(city) = g.cities.get(cid) else {
                 continue;
@@ -384,6 +391,13 @@ impl AdvancedAi {
                         "income {:.1} with {:.0} Gold; an extra wall breaker would add upkeep",
                         g.players[pid].gold_per_turn, g.players[pid].gold);
                 }
+                continue;
+            }
+            if let Some(walls) = &hopeless {
+                think!(self.journal(), Economy, Decision,
+                    "{} leaves its {} to the economy", city.name, Self::plain_item(item);
+                    "hopeless-army-yields-the-queue: {}", walls.describe();
+                    city.pos);
                 continue;
             }
             let city_name = city.name.clone();
@@ -438,6 +452,16 @@ impl AdvancedAi {
                                 .techs
                                 .contains(&crate::name!("masonry"))))
             })?;
+        // `hopeless-army-yields-the-queue`: no gun for walls nothing we can
+        // field will breach. See `advanced/hopeless_army_yields_the_queue.rs`.
+        if let Some(walls) = self.hopeless_offensive(g, pid, plan) {
+            think!(self.journal(), Military, Decision,
+                "Siege of {}: the army yields the queue", target.name;
+                "hopeless-army-yields-the-queue: {}; no gun is reserved, and the land army \
+                 is priced at one garrison a city", walls.describe();
+                target.pos);
+            return None;
+        }
         let objective = target.pos;
         let target_name = target.name.clone();
         let counts = self.counts(g, pid);
@@ -746,6 +770,11 @@ impl AdvancedAi {
             || !spec.siege
             || matches!(spec.domain.as_deref(), Some("sea" | "air"))
         {
+            return false;
+        }
+        // `hopeless-army-yields-the-queue`: no slot opens for a gun against
+        // walls nothing we can field will breach.
+        if self.hopeless_offensive(g, pid, plan).is_some() {
             return false;
         }
         // A full roster of obsolete Catapults is not a modern siege train.
