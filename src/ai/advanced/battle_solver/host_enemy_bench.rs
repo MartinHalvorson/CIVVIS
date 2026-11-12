@@ -86,6 +86,7 @@ struct Row {
     b: (usize, usize),
     diverged: usize,
     seeds: usize,
+    differences: Vec<f64>,
 }
 
 fn row(differences: &[f64], a: (usize, usize), b: (usize, usize), diverged: usize) -> Row {
@@ -106,7 +107,20 @@ fn row(differences: &[f64], a: (usize, usize), b: (usize, usize), diverged: usiz
         b,
         diverged,
         seeds: differences.len(),
+        differences: differences.to_vec(),
     }
+}
+
+/// Every seed of `rows` as one row.
+fn pooled(rows: &[Row]) -> Row {
+    let differences: Vec<f64> = rows.iter().flat_map(|r| r.differences.clone()).collect();
+    let sum = |pick: &dyn Fn(&Row) -> usize| rows.iter().map(pick).sum::<usize>();
+    row(
+        &differences,
+        (sum(&|r| r.a.0), sum(&|r| r.a.1)),
+        (sum(&|r| r.b.0), sum(&|r| r.b.1)),
+        sum(&|r| r.diverged),
+    )
 }
 
 fn skirmish_row(army: &[&str], seeds: usize, a: &str, b: &str) -> Row {
@@ -207,7 +221,7 @@ fn the_bench_control_reads_zero_with_the_gene_on_and_off() {
 #[test]
 fn host_enemy_bench() {
     // WIP: CI evidence run; the report rides the panic into the log.
-    let skirmish_seeds = seeds(8);
+    let skirmish_seeds = seeds(96);
     let position_seeds = (skirmish_seeds / 2).max(2);
     let mut report = vec![format!(
         "solver-plays-the-host bench: A = live tactical stack + battle-solver + solver-plays-the-host, \
@@ -231,6 +245,7 @@ fn host_enemy_bench() {
             ));
             assert_eq!((r.mean, r.diverged), (0.0, 0), "control h{horizon} {seat}");
         }
+        let mut bench = Vec::new();
         for (name, army) in ARMIES {
             let r = skirmish_row(army, skirmish_seeds, HOST, STOCK);
             report.push(line(
@@ -238,11 +253,24 @@ fn host_enemy_bench() {
                 &r,
                 started,
             ));
+            bench.push(r);
         }
+        report.push(line(
+            &format!("h{horizon} battle_bench pooled"),
+            &pooled(&bench),
+            started,
+        ));
+        let mut arena = Vec::new();
         for id in POSITIONS {
             let r = position_row(id, position_seeds, HOST, STOCK);
             report.push(line(&format!("h{horizon} doctrine {id}"), &r, started));
+            arena.push(r);
         }
+        report.push(line(
+            &format!("h{horizon} doctrine pooled"),
+            &pooled(&arena),
+            started,
+        ));
     }
     TEST_HORIZON.store(0, std::sync::atomic::Ordering::Relaxed);
     panic!("HOST-BENCH-REPORT\n{}", report.join("\n"));

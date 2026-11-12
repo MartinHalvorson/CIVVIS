@@ -1074,10 +1074,12 @@ impl<'b> Sim<'b> {
         (class, Owner::Major)
     }
 
-    /// Where unit `i` strikes unit `j` from this turn, if it can: the stock
-    /// enemy's stands (`act`). A shooter fires from its own tile when in range,
-    /// else from the nearest tile in range with movement left; melee takes the
-    /// free stand beside the target with the best cover. Reads `flood(i)`.
+    /// Where unit `i` strikes unit `j` from this turn, if it can. A unit
+    /// that can strike from where it stands does (the host's habit, and what
+    /// the fit's "no move needed" reads); otherwise the stock enemy's stand
+    /// (`act`): the nearest tile in range with movement left for a shooter,
+    /// the free stand beside the target with the best cover for melee.
+    /// Reads `flood(i)`.
     fn host_stand(&self, i: usize, j: usize) -> Option<u16> {
         let me = self.s.units[i];
         let other = self.s.units[j];
@@ -1099,6 +1101,9 @@ impl<'b> Sim<'b> {
         }
         if !me.has(F_MELEE) {
             return None;
+        }
+        if self.b.d(me.tile, other.tile) == 1 {
+            return Some(me.tile);
         }
         let mut stand: Option<(u16, f32)> = None;
         for t in self.b.nbrs[other.tile as usize] {

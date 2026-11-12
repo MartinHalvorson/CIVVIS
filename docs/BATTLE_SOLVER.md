@@ -57,6 +57,14 @@ far less reliably than a greedy model, and among the units it could hit it picks
 neither the weakest (27%) nor the one it damages most (24%) more often than
 chance.
 
+Gene `solver-plays-the-host` (opt-in) replaces that guess with the host's own
+habits, fitted to 30,869 enemy unit-turns from 116 live Deity games and scored
+on held-out games (`docs/HOST_ENEMY_MODEL.md`, `battle_solver/host_enemy.rs`).
+The host struck one of ours on a quarter of the turns it had one in reach (43%
+when it need not move, 11% when it must), took the unit in front of it rather
+than the best trade, and did not retreat when wounded. The fitted target is
+the one struck on 76% of held-out strikes, against 37% for the greedy pick.
+
 ## Evidence
 
 Measured on `battle_bench` and `doctrine_arena`, seat A
