@@ -13092,6 +13092,20 @@ impl AdvancedAi {
         })
     }
 
+    /// The seats the Domination lane's economy genes serve: the Domination
+    /// target and a Score target, whose score counts the techs, civics,
+    /// citizens, cities, districts and buildings those genes raise
+    /// (`Game::score_parts`). It gates the governor, Campus, Monument and
+    /// first-Campus claims and the open-city capture of a war already in
+    /// hand; no gene that declares a war, raises an army or retires the lane
+    /// reads it.
+    fn conquest_or_score_seat(&self, g: &Game) -> bool {
+        matches!(
+            self.active_victory_target(g),
+            Some(VictoryTarget::Domination | VictoryTarget::Score)
+        )
+    }
+
     fn victory_strategy_enabled(g: &Game, strategy: GrandStrategy) -> bool {
         match strategy {
             GrandStrategy::Science => g.victory_conditions.science,

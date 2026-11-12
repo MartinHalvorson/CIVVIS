@@ -28,8 +28,8 @@
 //! done, the faith defence's Holy Site and Shrine, a siege reservation's gun
 //! and the Aqueduct claim's Aqueduct.
 //!
-//! **The gene.** It applies while the active victory target is Domination, in
-//! a city that is ours, is not the plan's threatened city, was not attacked
+//! **The gene.** It applies while the active victory target is Domination or
+//! Score, in a city that is ours, is not the plan's threatened city, was not attacked
 //! within four turns and, while a major is at war with us, stands away from
 //! the front (no hostile presses it: `rear-cities-grow-through-the-war-hold`'s
 //! rear-city test). There:
@@ -50,8 +50,9 @@
 //! 3. Its University, once Education is in and when it finishes within
 //!    [`CAMPUS_AND_LIBRARY_UNIVERSITY_ONLINE_TURNS`] Online turns, takes the
 //!    head the same way but passes less: a Commercial Hub or its Market, the
-//!    faith defence's Holy Site and Shrine, a wonder with nothing paid and,
-//!    at peace with no hostile near, a soldier.
+//!    faith defence's Holy Site and Shrine, a wonder with nothing paid (not
+//!    on a Score seat, where a wonder is fifteen score) and, at peace with no
+//!    hostile near, a soldier.
 //! 4. A Settler (the early floor's and `holdable-land-keeps-settling`'s
 //!    included) with at most half its cost paid waits for the Library from
 //!    [`CAMPUS_AND_LIBRARY_SETTLER_MIN_CITIES`] (four) cities and for the
@@ -126,6 +127,14 @@
 //! the governor's rescoring then leave the claimed Campus or Library alone
 //! ([`AdvancedAi::campus_and_library_holds`]). Off, nothing changes.
 //!
+//! **A Score seat too (live Deity Rome, 6-player Continents, Online, turn
+//! limit 170, from 2026-11-12 18:58Z).** The score counts 3 a civic, 5 a
+//! city, 2 a district, 1 a building, 1 a citizen and 2 a technology
+//! (`Game::score_parts`), and the Gran Colombia seat held 0.40 of the best
+//! rival's score at every mark from t25 to t170, so the economy this gene
+//! builds is the Score seat's aim as much as the Domination seat's. It reads
+//! [`AdvancedAi::conquest_or_score_seat`].
+//!
 //! Grep the journal for `campus-and-library-before-the-claims:`.
 
 use super::*;
@@ -180,9 +189,8 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> Option<ScienceFirstReach> {
-        if !self.campus_and_library_before_the_claims
-            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
-        {
+        // A Score seat too: see [`AdvancedAi::conquest_or_score_seat`].
+        if !self.campus_and_library_before_the_claims || !self.conquest_or_score_seat(g) {
             return None;
         }
         let city = g.cities.get(&cid)?;
@@ -279,6 +287,11 @@ impl AdvancedAi {
         }
         let invested = g.item_invested_production(cid, item);
         let army = reach == ScienceFirstReach::EconomyAndArmy;
+        // The University passes a wonder with nothing paid, but not on a
+        // Score seat: a wonder is fifteen score, the most any one item buys.
+        let wonder_waits = what == ScienceFirstItem::University
+            && invested <= 0.0
+            && self.active_victory_target(g) != Some(VictoryTarget::Score);
         let race_site = || {
             self.base
                 .race_site_city(g, pid)
@@ -323,8 +336,7 @@ impl AdvancedAi {
             Item::Building { building } => {
                 let spec = g.rules.buildings.get(building)?;
                 if spec.wonder {
-                    return (what == ScienceFirstItem::University && invested <= 0.0)
-                        .then(|| format!("the {}", Self::plain_item(item)));
+                    return wonder_waits.then(|| format!("the {}", Self::plain_item(item)));
                 }
                 match spec.replaces.unwrap_or(*building).as_str() {
                     "granary" if economy => Some("the Granary".to_string()),
@@ -347,8 +359,7 @@ impl AdvancedAi {
                 }
                 _ => None,
             },
-            Item::Wonder { .. } => (what == ScienceFirstItem::University && invested <= 0.0)
-                .then(|| format!("the {}", Self::plain_item(item))),
+            Item::Wonder { .. } => wonder_waits.then(|| format!("the {}", Self::plain_item(item))),
             _ => None,
         }
     }
