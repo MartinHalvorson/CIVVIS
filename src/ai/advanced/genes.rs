@@ -5664,6 +5664,12 @@ pub const GENES: &[Gene] = &[
     // `commercial-hub-in-the-strategic-queue`. Opt-in; see
     // `advanced/commercial_hub_claims_a_peace_queue.rs`.
     Gene { tag: "commercial-hub-claims-a-peace-queue", field: "commercial_hub_claims_a_peace_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_commercial_hub_claims_a_peace_queue, disable: AdvancedAi::disable_commercial_hub_claims_a_peace_queue },
+    // `domination-seat-appoints-pingala-first`: live Deity Gran Colombia
+    // 2026-11-12 spent its first three Governor titles (t28, t36, t56) on
+    // Magnus in the second city and seated Pingala at t69-73, while Science
+    // read 8-13 through t60 with a nine-citizen capital. Researcher is +1
+    // Science per citizen there. Opt-in; see `advanced/domination_governors.rs`.
+    Gene { tag: "domination-seat-appoints-pingala-first", field: "domination_seat_appoints_pingala_first", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_seat_appoints_pingala_first, disable: AdvancedAi::disable_domination_seat_appoints_pingala_first },
     // Live Deity Gran Colombia civvis-20261112T064834Z: 22 techs at t100
     // against 46. The capital's Campus stood at t55 and its Library started
     // at t91; every other first Campus came at t81-99, held by the Builder,
