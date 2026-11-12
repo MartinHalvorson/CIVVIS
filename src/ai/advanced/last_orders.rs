@@ -78,6 +78,8 @@ pub enum OrderStep {
     RaidPrize,
     DoctrineAction,
     Garrison,
+    /// `centre-keeps-its-garrison`: a threatened City Center's garrison.
+    CentreGarrison,
     Staging,
     Improver,
     Camp,
@@ -94,7 +96,7 @@ pub enum OrderStep {
 
 impl OrderStep {
     /// Every step, in the order the census prints them.
-    pub const ALL: [OrderStep; 44] = [
+    pub const ALL: [OrderStep; 45] = [
         OrderStep::Other,
         OrderStep::Unordered,
         OrderStep::TurnStart,
@@ -127,6 +129,7 @@ impl OrderStep {
         OrderStep::RaidPrize,
         OrderStep::DoctrineAction,
         OrderStep::Garrison,
+        OrderStep::CentreGarrison,
         OrderStep::Staging,
         OrderStep::Improver,
         OrderStep::Camp,
@@ -176,6 +179,7 @@ impl OrderStep {
             OrderStep::RaidPrize => "raid_prize",
             OrderStep::DoctrineAction => "doctrine_action",
             OrderStep::Garrison => "garrison",
+            OrderStep::CentreGarrison => "centre_garrison",
             OrderStep::Staging => "staging",
             OrderStep::Improver => "improver",
             OrderStep::Camp => "camp",

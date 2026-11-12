@@ -1192,6 +1192,7 @@ impl AdvancedAi {
         // its City Center, and an empty one takes a soldier in reach. `None`
         // with the gene off. See `advanced/centre_keeps_its_garrison.rs`.
         if let Some(acted) = self.centre_garrison_step(g, pid, uid) {
+            self.ordering(OrderStep::CentreGarrison);
             return acted;
         }
         // `amphibious-siege-train`: a member of the crossing in hand takes
