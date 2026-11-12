@@ -316,6 +316,82 @@ fn knobs() -> Knobs {
     KNOBS
 }
 
+/// CI scaffolding: variants of `siege-goes-on-the-forecast` for the
+/// whole-world experiment (`world_tests`), set per thread. Outside tests,
+/// and by default, the gene as written.
+#[cfg(test)]
+pub(crate) mod variant {
+    use std::cell::Cell;
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub(crate) struct Variant {
+        /// Hopeless readings in a row that stand a siege down; `None` is
+        /// `HOPELESS_STREAK`.
+        pub(crate) streak: Option<u32>,
+        /// A reading under `HOPELESS_P` counts whatever one more unit would
+        /// do.
+        pub(crate) any_short_of: bool,
+        /// The stand-down alone: no go, no held abort.
+        pub(crate) stand_down_only: bool,
+    }
+
+    impl Variant {
+        pub(crate) const MERGED: Variant = Variant {
+            streak: None,
+            any_short_of: false,
+            stand_down_only: false,
+        };
+    }
+
+    thread_local! {
+        static VARIANT: Cell<Variant> = const { Cell::new(Variant::MERGED) };
+    }
+
+    pub(crate) fn set(variant: Variant) {
+        VARIANT.with(|cell| cell.set(variant));
+    }
+
+    pub(crate) fn get() -> Variant {
+        VARIANT.with(Cell::get)
+    }
+}
+
+/// Gathered hopeless readings in a row that stand a siege down.
+fn hopeless_streak() -> u32 {
+    #[cfg(test)]
+    {
+        variant::get().streak.unwrap_or(HOPELESS_STREAK)
+    }
+    #[cfg(not(test))]
+    {
+        HOPELESS_STREAK
+    }
+}
+
+/// Whether a hopeless reading needs no one more unit to lift it.
+fn hopeless_needs_nothing_short() -> bool {
+    #[cfg(test)]
+    {
+        !variant::get().any_short_of
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
+}
+
+/// Whether the forecast's go and held abort act (the stand-down always does).
+pub(super) fn forecast_goes_and_holds() -> bool {
+    #[cfg(test)]
+    {
+        !variant::get().stand_down_only
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
+}
+
 /// A land soldier the model plays: no ships, aircraft or embarked units, as
 /// `battle_solver::extract` reads one.
 fn plays_on_land(g: &Game, uid: u32) -> bool {
@@ -1782,7 +1858,7 @@ impl AdvancedAi {
         let hopeless = !falling
             && forecast.gathered()
             && forecast.p() < HOPELESS_P
-            && forecast.short_of == Some(ShortOf::Nothing);
+            && (!hopeless_needs_nothing_short() || forecast.short_of == Some(ShortOf::Nothing));
         let run = self.siege_forecast_hopeless.entry(pos).or_default();
         if turn < run.down_until {
             return false;
@@ -1796,7 +1872,7 @@ impl AdvancedAi {
             run.streak += 1;
             run.last = turn;
         }
-        if run.streak < HOPELESS_STREAK {
+        if run.streak < hopeless_streak() {
             return false;
         }
         run.down_until = turn + HOPELESS_STAND_DOWN_TURNS;
@@ -1805,7 +1881,7 @@ impl AdvancedAi {
             "Siege of {} stands down: the forecast reads it hopeless", name;
             "siege-goes-on-the-forecast: {} gathered assessments in a row under {:.0}% within {HORIZON} turns \
              that no one more taker, breaker or body lifts (now {:.0}%, {} members); down for {HOPELESS_STAND_DOWN_TURNS} turns",
-            HOPELESS_STREAK, HOPELESS_P * 100.0, forecast.p() * 100.0, forecast.members();
+            hopeless_streak(), HOPELESS_P * 100.0, forecast.p() * 100.0, forecast.members();
             pos);
         true
     }
@@ -1829,3 +1905,5 @@ impl AdvancedAi {
 mod calibration;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod world_tests;

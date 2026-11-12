@@ -594,6 +594,11 @@ impl AdvancedAi {
         let threat_recovery = threatened_city.is_some()
             && !(self.recovery_needs_the_deficit
                 && my_power >= RECOVERY_THREAT_POWER_RATIO * recovery_opponent_power.max(1.0));
+        // `score-seat-takes-what-pays`: the open city a Score seat takes
+        // because it pays more points per Production than its queues, under
+        // the gene's circumstances. `None` with the gene off and off the
+        // Score lane. See `advanced/score_takes_what_pays.rs`.
+        let score_take = self.score_take_pick(g, pid, threatened_city.is_some());
         // A final war has no later to recover for and no race left to deny:
         // every civilization in it attacks. See `last_civ_standing`.
         let (strategy, because) = if last_civ_standing::fights_the_final_war(g, pid) {
@@ -651,6 +656,12 @@ impl AdvancedAi {
             (
                 counter,
                 "countering a rival close to winning, ahead of the lane",
+            )
+        } else if score_take.is_some() {
+            // `score-seat-takes-what-pays`: see above.
+            (
+                GrandStrategy::Conquest,
+                "a neighbour's open city pays more points than the queues",
             )
         } else if let Some(target) = active_victory_target {
             if target == VictoryTarget::Religion
@@ -1454,6 +1465,22 @@ impl AdvancedAi {
             .or(wing_city.map(|(_, city)| city))
             .or(committed_target_city)
             .or(ranked_target_city);
+        // `score-seat-takes-what-pays`: the paying city is the objective of
+        // the Conquest plan it chose, unless a home emergency or the
+        // finishing capital holds the plan. `None` with the gene off.
+        let score_take_named = score_take
+            .as_ref()
+            .filter(|_| {
+                strategy == GrandStrategy::Conquest
+                    && because == "a neighbour's open city pays more points than the queues"
+                    && emergency_objective.is_none()
+                    && finishing_capital.is_none()
+            })
+            .map(|take| (take.rival, take.city));
+        let (target_player, target_city) = match score_take_named {
+            Some((rival, city)) => (Some(rival), Some(city)),
+            None => (target_player, target_city),
+        };
         // `open-city-is-the-objective`: at war for any reason, an open city
         // our takers would take within a few turns is the objective, unless a
         // home emergency, the finishing capital or a war already running on

@@ -6052,11 +6052,32 @@ pub const GENES: &[Gene] = &[
     // unit-turns in reach of ours (116 Deity games, 11-11..12) it struck 25%,
     // never above ~70% in any cell. See `advanced/battle_solver/host_enemy.rs`.
     Gene { tag: "solver-plays-the-host", field: "solver_plays_the_host", kind: Kind::OptIn, enable: AdvancedAi::enable_solver_plays_the_host, disable: AdvancedAi::disable_solver_plays_the_host },
+    // Live Deity Rome Score games of 2026-11-12: sixth of six at 529-726
+    // against 1,361-1,531, no war declared. In 3 of 4 a neighbour at or
+    // under our military held an open city worth 15-38 points that 1-6
+    // melee bodies (110-390 Production) take in five turns: 4-17 points a
+    // hundred Production against the queues' 2. The plan turns to Conquest
+    // on the best paying city and the war opens once its takers stand there.
+    // Opt-in; see `advanced/score_takes_what_pays.rs`.
+    Gene { tag: "score-seat-takes-what-pays", field: "score_seat_takes_what_pays", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_takes_what_pays, disable: AdvancedAi::disable_score_seat_takes_what_pays },
     // Rome Score seat civvis-20261112T190022Z (t170 tally 529 against 1,531):
     // no wonder (the Score lane priced one at +180 raw), 27% of production on
     // units in a game with no war, 601 Production unfinished at the tally.
     // See `advanced/score_seat.rs`.
     Gene { tag: "score-seat-plays-for-points", field: "score_seat_plays_for_points", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_plays_for_points, disable: AdvancedAi::disable_score_seat_plays_for_points },
+    // Live Deity Rome Score lane 2026-11-12, 11 games: Settlers were born at
+    // the same pace in the fast and the slow games, but took a mean 8.7
+    // turns from birth to founding in the three fastest against 23.8 in the
+    // slow ones (727 Settler-turns past the eighth turn out). On a Score
+    // seat a Settler past 8 Online turns, or turned home by the corridor,
+    // founds on the best safe, holdable site within four tiles. Opt-in; see
+    // `advanced/score_seat_founds_early.rs`.
+    Gene { tag: "score-seat-founds-early", field: "score_seat_founds_early", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_founds_early, disable: AdvancedAi::disable_score_seat_founds_early },
+    // Split out of score-seat-plays-for-points after its live arm lost the
+    // capital (civvis-20261112T211954Z, t24 declaration at 0.46 of the
+    // declarer). Eleven Rome games: every city lost followed a declaration
+    // at under 0.55 of the declarer. See `advanced/score_seat.rs`.
+    Gene { tag: "score-seat-trims-the-idle-army", field: "score_seat_trims_the_idle_army", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_trims_the_idle_army, disable: AdvancedAi::disable_score_seat_trims_the_idle_army },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

@@ -626,8 +626,8 @@ as shipped (enemy acts every turn).
 - **Live play.** Both seats are this codebase's AI, on posed boards. The
   reading gene exists to calibrate on live games. Its journal lines can be
   joined to captures from why.log the same way.
-- **Whole worlds.** None were run here. The coordinating session runs paired
-  `gene_screen` worlds from this branch.
+- **Whole worlds.** None were run for the sections above; the last section
+  is the whole-world read (PR #5211).
 - **The stand-down's purpose.** Retargeting the army to a better city needs
   several fronts. The two-city worlds are the smallest version of that, and
   the evidence there is a null.
@@ -636,3 +636,54 @@ as shipped (enemy acts every turn).
   its way, and promotions earned in the fight. Rams and towers themselves
   are modelled since #5212 (above, "For callers"); the calibration tables
   predate that.
+
+## Whole worlds: hopeless sieges and the stand-down (PR #5211, 2026-11-12)
+
+This experiment answers two questions, on whole worlds rather than posed sieges. Do hopeless sieges kill their units? Does standing them down save those units without costing cities?
+
+The driver is `assault_forecast/world_tests.rs` (ignored by default). It runs #5196's two world shapes:
+- 4 players on a 44x28 map, Online speed, 200 turns, 2 city-states.
+- Seat 0 plays Domination without the handicap. It carries `deploy/live-force-on.txt` plus the live tactical genes.
+- 24 paired seeds per shape.
+
+It plays four arms through a test-only switch (`assault_forecast::variant`):
+- **A**: the forecast is read only (`assault-forecast-is-read`). It changes no decision.
+- **B**: `siege-goes-on-the-forecast` as merged.
+- **C**: B, standing down after one hopeless reading, without the "no one more unit lifts it" clause.
+- **D**: B's stand-down alone.
+
+In the tables below, rows B to D are paired against A: mean and standard error over the seeds.
+
+**Immortal with King yields** (rivals: Domination, Domination, Science)
+
+| arm | units lost | cities lost | cities taken | stand-downs | `siege_doctrine` deaths by the siege's reading (<0.1 / 0.1-0.4 / >0.4 / none) |
+| --- | --- | --- | --- | --- | --- |
+| A | 25.75 a world | 1.29 | 0.96 | 0 | 138 / 0 / 30 / 101 |
+| B | +1.71 ± 1.29 | +0.00 ± 0.15 | -0.17 ± 0.17 | 48 | 108 / 2 / 32 / 117 |
+| C | +2.58 ± 2.28 | +0.46 ± 0.26 | +0.00 ± 0.21 | 61 | 103 / 2 / 11 / 161 |
+| D | +0.46 ± 1.10 | -0.04 ± 0.13 | -0.21 ± 0.13 | 50 | 106 / 1 / 28 / 110 |
+
+**Emperor** (rivals: Domination, Science, Culture)
+
+| arm | units lost | cities lost | cities taken | stand-downs |
+| --- | --- | --- | --- | --- |
+| A | 15.79 a world | 0.75 | 0.46 | 0 |
+| B | +0.96 ± 1.40 | +0.08 ± 0.06 | +0.00 ± 0.00 | 20 |
+| C | +0.29 ± 1.36 | +0.00 ± 0.06 | +0.08 ± 0.06 | 36 |
+| D | +0.21 ± 1.04 | +0.08 ± 0.06 | +0.00 ± 0.00 | 21 |
+
+**Calibration on whole worlds.** Arm A, every assessment's P(capture within 10). A city counts as taken if it became ours within the next 10 turns.
+
+| P within 10 | Immortal: taken / read | Emperor: taken / read |
+| --- | --- | --- |
+| 0.0-0.1 | 1 / 1238 | 0 / 1061 |
+| 0.1-0.4 | 0 / 8 | 0 / 3 |
+| 0.4-0.6 | 2 / 10 | 0 / 4 |
+| 0.6-0.9 | 1 / 15 | 0 / 3 |
+| 0.9-1.0 | 59 / 146 | 7 / 40 |
+
+**Conclusion.**
+- Hopeless sieges kill their units. On the Immortal shape, 138 of the 168 deaths last ordered by `siege_doctrine` that had a reading were in sieges read under 0.1. The train stands in Stage on 95% (Immortal) to 99% (Emperor) of its siege-turns.
+- Standing those sieges down cuts that bin's deaths by about 30 over 24 worlds (B and D). It does not cut units lost: the same units then die under rotation, healing and the battle planner. The aggressive variant (C) costs cities.
+- No change to this gene's constants follows.
+- On whole worlds the forecast is reliable when low and overconfident when high, as on the posed sieges.
