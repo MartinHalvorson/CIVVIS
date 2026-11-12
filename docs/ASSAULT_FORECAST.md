@@ -27,7 +27,11 @@ sieges read:
 - Brier within 12 of 0.136, against the base rate's 0.238;
 - units lost: predicted 1.98, realized 0.61.
 
-#5207 is working through the rest of the gap.
+#5207 traced the rest of the gap to the train, not the model. Of the 92
+solvent readings of 0.8 or more not taken, 3 trace to something the
+forecast does not see, 65 to the train not doing what the forecast's press
+does, and 24 are undetermined. The go gene does not close the gap. See
+[Why high readings fail](#why-high-readings-fail-5207).
 
 ## For callers
 
@@ -60,7 +64,8 @@ cached for the turn, and change no decision.
   - Readings under 0.2 pass through; low readings were right.
   - Above 0.2 the reading is pulled down linearly to the high bin's realized
     rate for the city's wall pool (table below), and is never raised.
-  - It will be replaced when #5207 fixes the cause of the gap.
+  - #5207 found the gap is the train's execution, not the model. The
+    discount stays until the train realizes what the forecast reads.
 
 A Battering Ram or Siege Tower in the force or among the recruits works as
 the engine works it (`Game::siege_support_effects`). From the turn after it
@@ -104,6 +109,143 @@ to 0.00. A test holds the constants to these lines.
 
 The same sieges with unfunded seats, as #5195 ran them: 99 / 165 (0.60),
 47 / 113 (0.42), 39 / 109 (0.36), 22 / 86 (0.26).
+
+## Why high readings fail (#5207)
+
+**Answer.**
+
+- The model is not where the gap is. The city's owner raised something the
+  forecast does not see before the press would have taken the city in 3 of
+  the 92 misses. All three were Warriors the city finished on turn 11. None
+  was bought.
+- The train is. In 65 of the 92 it did not do what the press does: it
+  struck late, stayed in Stage, arrived piecemeal, left the ring open, or
+  kept its shooters out of range of standing walls.
+- The other 24 are undetermined: 6 where our units died while the walls
+  stood, and 18 that fit no class.
+- The high bin stays at 0.81 realized against 0.99 predicted. That gap of
+  0.18 misses the 0.15 target. It is the train's to close, and
+  `calibrated_within` keeps discounting until it does.
+
+**Data.** The 1,200 mixed posed sieges with solvent seats: CI run
+43315093796 on 868cdae043. The forecast is the merged one, unchanged by
+#5207. 473 read 0.8 or more within 12 turns, 381 were taken, and 92 were
+not.
+
+Each miss gets the first cause that fits, in the order of the table.
+
+- A raise (a new soldier, or walls rising) counts only if it came by the
+  press's capture turn: the first turn the forecast takes the city in half
+  its rollouts.
+- The last column counts the sieges where the train fell back from Invest or
+  later to Stage at some point.
+
+| first cause | all | walls 0 | 100 | 200 | 400 | fell back to Stage |
+|---|---|---|---|---|---|---|
+| peace: the war ended | 0 | 0 | 0 | 0 | 0 | 0 |
+| the train never left Stage, or left it on turn 4 or later | 8 | 0 | 1 | 4 | 3 | 3 |
+| the first blow came 3+ turns after the press made its first | 19 | 6 | 6 | 2 | 5 | 14 |
+| the force arrived piecemeal | 8 | 4 | 2 | 2 | 0 | 6 |
+| the city fell low and no taker took it | 6 | 4 | 0 | 1 | 1 | 0 |
+| our units died before the walls opened | 6 | 0 | 3 | 1 | 2 | 6 |
+| the owner raised soldiers or walls before the press's capture turn | 3 | 0 | 0 | 0 | 3 | 2 |
+| the city healed as fast as we hurt it | 11 | 8 | 1 | 1 | 1 | 8 |
+| the walls never opened with shooters in range | 13 | 0 | 1 | 5 | 7 | 9 |
+| time ran out with the city under 25% | 0 | 0 | 0 | 0 | 0 | 0 |
+| other | 18 | 2 | 5 | 7 | 4 | 4 |
+| taken / read high | 381 / 473 | 141 / 165 | 94 / 113 | 86 / 109 | 60 / 86 | |
+
+**Model vs execution.**
+
+- Model: 3 of 92 (3%), the owner's raise.
+- Execution: 65 of 92 (71%). This counts Stage, the late first blow,
+  piecemeal arrival, the missing taker, walls held with shooters out of
+  range, and healing. Healing counts as execution because the model heals
+  the city by the same rule (20 a turn unless the ring is sealed). The
+  difference is the real train's ring and its rate of damage.
+- Undetermined: 24 of 92 (26%), units dead before the breach and other.
+  The model over-counts losses overall (1.98 a siege predicted, 0.61
+  realized). Deaths before the breach are therefore more likely the train
+  exposing units than the model missing a threat. They are not counted
+  either way.
+
+The train fell back to Stage in 52 of the 92 misses.
+
+City health plus walls at the end of each turn, mean. Model is the
+forecast's press; real is the train.
+
+| sieges | n | | t1 | t2 | t3 | t4 | t6 | t8 | t12 |
+|---|---|---|---|---|---|---|---|---|---|
+| read high, taken | 381 | model | 271 | 216 | 156 | 99 | 30 | 6 | 0 |
+| | | real | 276 | 227 | 173 | 123 | 61 | 23 | 0 |
+| read high, not taken | 92 | model | 337 | 313 | 271 | 224 | 132 | 64 | 3 |
+| | | real | 342 | 336 | 330 | 317 | 293 | 279 | 236 |
+
+In the misses the real train is behind from turn 1. By turn 3 it has taken
+12 off the city against the press's 66.
+
+**What did not close it.**
+
+- **The owner's defenders, put into the forecast (WIP rounds 7-9, then
+  taken out).**
+  - The model: the owner buys the strongest land soldier its treasury
+    covers on its first turn, then builds its best melee unit each time the
+    city's production finishes one.
+  - No siege of the 1,200 planned one. 100 Gold bought nothing at the
+    engine's prices, and no city finishes its best melee unit within 12
+    turns.
+  - What the owner did raise: a soldier in 478 of the 1,200 sieges, none
+    paid for in Gold. In the 27 misses whose cause round 7 gave as the owner's soldiers, every one
+    was a Warrior finished on turn 11. Round 7 had read any raise as the
+    cause, at any turn. Counting only raises by the press's capture turn
+    leaves 3.
+- **`siege-goes-on-the-forecast`, the existing execution gene.** It played
+  the same 1,200 solvent sieges for 12 turns, paired seed by seed:
+
+| sieges | n | taken off | taken on | on - off (+/- se) | fell back to Stage off / on | force lost off / on |
+|---|---|---|---|---|---|---|
+| all | 1200 | 0.39 | 0.38 | -0.006 +/- 0.004 | 381 / 380 | 0.61 / 0.61 |
+| read >= 0.8 | 473 | 0.81 | 0.81 | +0.006 +/- 0.008 | 53 / 46 | 0.26 / 0.27 |
+| read >= 0.8, walls 0 | 165 | 0.85 | 0.85 | +0.000 +/- 0.009 | 15 / 12 | 0.25 / 0.24 |
+| read >= 0.8, walls 100 | 113 | 0.83 | 0.84 | +0.009 +/- 0.020 | 11 / 12 | 0.35 / 0.35 |
+| read >= 0.8, walls 200 | 109 | 0.79 | 0.79 | +0.000 +/- 0.018 | 13 / 11 | 0.22 / 0.25 |
+| read >= 0.8, walls 400 | 86 | 0.70 | 0.72 | +0.023 +/- 0.023 | 14 / 11 | 0.22 / 0.27 |
+| read < 0.8 | 727 | 0.12 | 0.10 | -0.014 +/- 0.005 | 328 / 334 | 0.84 / 0.83 |
+
+With the gene: 292 go orders, 239 holds (an abort vetoed) and 236
+stand-downs.
+
+- On the high readings it does nothing measurable. It trims the fall-backs
+  (53 to 46) but not the misses.
+- On the low readings it costs 0.014 (+/- 0.005) of captures. Its
+  stand-downs act on those readings; they were not measured separately.
+
+**The tempo family.** 400 sieges with the city open or behind 100 walls,
+the force 6-12 tiles out, and the owner raising walls to 200 on turn 8-12.
+
+- The press's first dent and the train's come on the same turn on average:
+  5.4 against 5.2.
+- The high bin realized 0.73 against 0.99 predicted.
+- Of its 52 misses, the largest classes are healing (17, 13 of them fell
+  back to Stage), Stage (15) and piecemeal arrival (8). The late first blow
+  accounts for 4.
+- Tempo in the sense of a slow march to the walls is not the gap; what the
+  train does once there is.
+
+**Where a train fix would start.** Execution misses have no single
+dominant class: the late first blow is 19, walls held with shooters out of
+range 13, healing with the ring open 11. What cuts across them is the
+fall-back to Stage (52 of 92) and the damage rate. By turn 4 the train
+has done a fifth of the press's damage (25 against 113), and by turn 12 a
+third (106 against 334). The worked examples show three patterns:
+
+- Shooters and guns not in range of the city on most turns (shooters 0/0
+  fired).
+- Melee beside a walled city not striking while the walls stand.
+- A knight spending its attacks on field units while the city heals.
+
+The driver prints two worked examples per cause, turn by turn: `cargo test
+--profile ci --lib -- --ignored assault_forecast_calibration --nocapture`.
 
 ## The genes
 

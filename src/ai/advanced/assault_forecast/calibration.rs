@@ -14,6 +14,14 @@
 //! - **Calibration**: the forecast is read before our first move, then the
 //!   game plays [`HORIZON`] turns. Predicted P against the realized capture,
 //!   in five bins, with the Brier score, under every [`FORECASTS`] setting.
+//!   Both seats are kept solvent (`play_world`'s `solvent`); the same seeds
+//!   left to their treasuries, as #5195 ran them, are printed beside.
+//! - **Why high readings fail** (#5207): each reading of 0.8 or more not
+//!   taken gets its first cause (`classify`), with two worked examples per
+//!   cause; the same solvent sieges are played again with
+//!   `siege-goes-on-the-forecast` on, paired; and a tempo family
+//!   (`Family::Tempo`) poses the force 6-12 tiles out with the owner raising
+//!   walls on turn 8-12.
 //! - **Paired**: the seed with a second city of player 1's beyond the first,
 //!   played [`PAIRED_TURNS`] turns twice, the live genome with and without
 //!   `siege-goes-on-the-forecast`. A war that ends in peace takes nothing;
@@ -42,7 +50,7 @@ const LIVE_ARMS: &str = include_str!("live_force_on_20261112.txt");
 const TARGET: Pos = (18, 8);
 const HOME: Pos = (2, 8);
 const CALIBRATION_SEEDS: u64 = 1200;
-const PAIRED_SEEDS: u64 = 0;
+const PAIRED_SEEDS: u64 = 400;
 /// Seeds of the tempo family (`Family::Tempo`), reported on their own.
 const TEMPO_SEEDS: u64 = 400;
 const PAIRED_TURNS: u32 = 30;
@@ -1966,9 +1974,10 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
     out
 }
 
-/// The report `docs/ASSAULT_FORECAST.md` quotes: about ten minutes on four
-/// cores, so it runs only when asked for.
+/// The report `docs/ASSAULT_FORECAST.md` quotes: about twenty minutes on
+/// four cores, so it runs only when asked for.
 #[test]
+#[ignore = "the calibration driver: run with --ignored (docs/ASSAULT_FORECAST.md)"]
 fn assault_forecast_calibration() {
     let clock = Instant::now();
     let tags = live_tags();
@@ -2008,6 +2017,5 @@ fn assault_forecast_calibration() {
     calibrated.sort_by_key(|row| row.seed);
     pairs.sort_by_key(|row| row.seed);
     let text = report(&calibrated, &pairs, clock.elapsed().as_secs_f64());
-    // CI compute round: the report reaches the log only through a failure.
-    panic!("\n{text}");
+    println!("{text}");
 }
