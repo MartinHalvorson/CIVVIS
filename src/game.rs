@@ -1851,6 +1851,11 @@ pub struct QueryCache {
     // derived, and a clone must start empty.
     policy_reads_on: std::cell::Cell<bool>,
     policy_reads: std::cell::RefCell<PolicyReadSet>,
+    // Player mutable accesses that only refresh fog memory, explicitly
+    // counted by visibility snapshot/turn ledgers when they write no new
+    // explored ground. Subtract these from the general player epoch only for the
+    // quiet-move witness; all other epoch readers remain unchanged.
+    fog_only_player_writes: std::cell::Cell<u64>,
 }
 
 /// What one read-only sweep asked a seat's policy deck — see

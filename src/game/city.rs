@@ -1717,10 +1717,15 @@ impl Game {
     ///
     /// * **By every action,** at both ends of `apply`, successful or refused,
     ///   and it is never read or filled while one is in flight: the rules
-    ///   read yields half-way through changing the board. The one exception
-    ///   is `Action::Produce`, which names what one of the acting seat's own
+    ///   read yields half-way through changing the board. `Action::Produce`
+    ///   names what one of the acting seat's own
     ///   cities builds next and reaches nothing of another seat's; `apply`
     ///   carries the argument.
+    ///   An uncontested adjacent `Move` inside deferred visibility can keep
+    ///   rivals too, only after every original hook succeeds without advancing
+    ///   tile/player/city write counters or the round. Own cities always go.
+    ///   The outer visibility flush drops both sides before and after it
+    ///   publishes discoveries and contacts. See `Game::apply`.
     /// * **By every tile write,** through the tile grid's epoch, which every
     ///   `get_mut` moves whoever calls it.
     /// * **By [`Game::board_written`],** which is what a caller that writes

@@ -22,6 +22,19 @@ mod diplomacy;
 /// quotes enumeration needs. See `game/actions/legal.rs`.
 mod legal;
 
+/// Every mutable economy-bearing roster, plus the round in which it is read.
+/// Unit steps do not write these unless one of their original hooks reaches
+/// the wider world. All mutable accessors advance the existing counters.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct QuietMoveYieldStamp {
+    tiles: u64,
+    players: u64,
+    cities: u64,
+    turn: u32,
+    current: usize,
+    world_era: usize,
+}
+
 /// One band's concert at one venue, as a plan reads it before performing.
 struct RockConcertRead {
     host: usize,
@@ -416,23 +429,84 @@ impl Game {
         // cache in this file's history was built on. See
         // `Game::keep_rival_yields`.
         //
-        // One action is known not to reach another seat's cities, and it is
-        // the one a seat issues most while it plans. `do_produce` writes the
+        // Production does not reach another seat's cities. `do_produce` writes the
         // named city's queue and banked progress, the seat's own strategic
         // resource commitments, and for a district a foundation tile — which
         // the tile grid's epoch reports by itself. A city's own yields do read
         // its queue (the citizen plan, a running project, the envoy bonus),
         // so the acting seat's own cities are dropped as for any action.
-        // Everything else drops everything: nothing here reasons about what a
-        // purchase, a move, an envoy or a deal can touch.
+        // An uncontested adjacent step under deferred visibility can leave
+        // rival economies untouched too. Read back all economy-bearing write
+        // counters after the complete original action and hooks. Own cities
+        // always go: moving their garrison can change their amenities.
+        let quiet_move = self.quiet_move_yield_candidate(pid, action);
         let reach = match action {
             Action::Produce { .. } => ActionReach::OwnCities,
+            _ if quiet_move.is_some() => ActionReach::OwnCities,
             _ => ActionReach::Board,
         };
         self.query_memo.action_begins(reach);
         let result = self.apply_unbracketed(pid, action);
+        let reach = match quiet_move {
+            Some(before) if result.is_err() || before != self.quiet_move_yield_stamp() => {
+                ActionReach::Board
+            }
+            _ => reach,
+        };
         self.query_memo.action_ends(reach);
         result
+    }
+
+    /// Only the mover, its occupancy and its own carried aircraft can change
+    /// on this path. Entered units, cities, districts, linked formations and
+    /// airlifts keep the original full invalidation. A camp/village, contact,
+    /// discovery or other post-effect is caught by the counters afterwards.
+    /// Rival yields read unit occupancy only for their own city's garrison;
+    /// none of the units moved here belongs to a rival. No unit state is
+    /// assumed to be an economy counter: own yields are always discarded.
+    fn quiet_move_yield_candidate(
+        &self,
+        pid: usize,
+        action: &Action,
+    ) -> Option<QuietMoveYieldStamp> {
+        let Action::Move { unit, to } = action else {
+            return None;
+        };
+        if !self.query_memo.keeps_rival_yields.get()
+            || self.query_memo.acting.get() != 0
+            || self.visibility_batch.depth == 0
+            || self.current != pid
+            || self.is_arena()
+            || self.query_memo.rival_yields.borrow().is_empty()
+        {
+            return None;
+        }
+        let destination = self.map.get(*to)?;
+        let mover = self.units.get(unit)?;
+        if mover.owner != pid
+            || mover.linked_to.is_some()
+            || self.wdist(mover.pos, *to) != 1
+            || !self.unit_ids_at(*to).is_empty()
+            || self.city_at(*to).is_some()
+            || destination.district.is_some()
+        {
+            return None;
+        }
+        Some(self.quiet_move_yield_stamp())
+    }
+
+    fn quiet_move_yield_stamp(&self) -> QuietMoveYieldStamp {
+        QuietMoveYieldStamp {
+            tiles: self.map.tiles.epoch(),
+            players: self
+                .players
+                .epoch()
+                .wrapping_sub(self.query_memo.fog_only_player_writes.get()),
+            cities: self.cities.generation(),
+            turn: self.turn,
+            current: self.current,
+            world_era: self.world_era,
+        }
     }
 
     fn apply_unbracketed(&mut self, pid: usize, action: &Action) -> Result<(), String> {
@@ -6969,3 +7043,6 @@ mod ranged_visibility_tests;
 #[cfg(test)]
 #[path = "builder_operation_refusal_tests.rs"]
 mod builder_operation_refusal_tests;
+
+#[cfg(test)]
+mod quiet_move_epoch_tests;

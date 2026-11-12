@@ -1209,10 +1209,16 @@ impl Game {
         let result = actions(self);
         self.visibility_batch.depth -= 1;
         if self.visibility_batch.depth == 0 {
+            // A quiet step may have kept rival yields while sight was deferred.
+            // Discoveries and contacts publish here and can change economies.
+            // Hide old answers throughout both flush paths, then drop anything
+            // derived while only part of the new knowledge was published.
+            self.query_memo.action_begins(ActionReach::Board);
             match pool {
                 Some(pool) => self.flush_deferred_visibility_parallel(pool),
                 None => self.flush_deferred_visibility(),
             }
+            self.query_memo.action_ends(ActionReach::Board);
         }
         result
     }
@@ -1377,6 +1383,10 @@ impl Game {
             }
         }
         let tiles = &self.map.tiles;
+        // This access only records the acting viewer's observation ledger.
+        self.query_memo
+            .fog_only_player_writes
+            .set(self.query_memo.fog_only_player_writes.get().wrapping_add(1));
         let player = &mut self.players[pid];
         player.turn_units.retain(|id, unit| {
             let position = unit.air_patrol_pos.unwrap_or(unit.pos);
@@ -1498,6 +1508,16 @@ impl Game {
         // Most seats in a game are minor, so keeping their memory was most of
         // the memory kept.
         let observed_seat = !self.players[pid].is_minor && !self.players[pid].is_barbarian;
+        // Each branch below takes exactly one mutable player access. With no
+        // new explored tiles it writes only fog memory (or extends explored
+        // by zero elements), so count that one non-economic write separately.
+        // Contacts and discovery rewards are outside this block and continue
+        // to advance the ordinary player witness without this offset.
+        if newly_explored.is_empty() {
+            self.query_memo
+                .fog_only_player_writes
+                .set(self.query_memo.fog_only_player_writes.get().wrapping_add(1));
+        }
         if self.track_fog_memory && observed_seat {
             let turn = self.turn;
             let tiles: Vec<(Pos, RememberedTile)> = fresh
