@@ -1364,8 +1364,15 @@ impl AdvancedAi {
                     let unit = &g.units[id];
                     unit.owner == pid && g.rules.units[unit.kind].class == "military"
                 }) {
-                    blocked += 1;
-                    if candidates.contains(&holder) && !posted.contains(&holder) {
+                    // A candidate already on the tile holds it only under the
+                    // death-chance limit; otherwise it stands back with the
+                    // rest. A soldier not ours to post blocks it anyway.
+                    if !candidates.contains(&holder) || posted.contains(&holder) {
+                        blocked += 1;
+                    } else if ring_rank(g, holder).is_some()
+                        && post_death_chance(g, holder, tile, &threats) < limit
+                    {
+                        blocked += 1;
                         posted.insert(holder);
                         posts.push((holder, post(tile, HoldRole::Ring)));
                     }

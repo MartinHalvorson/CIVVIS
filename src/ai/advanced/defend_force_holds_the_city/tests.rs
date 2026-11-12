@@ -832,10 +832,10 @@ fn play(seed: u64, set: Set, arm: Arm) -> Held {
         } else if pid == 1 && set != Set::Raiders {
             them.take_turn(&mut g, pid);
         } else {
-            others
-                .entry(pid)
-                .or_insert_with(AdvancedAi::new)
-                .take_turn(&mut g, pid);
+            // `AdvancedAi::default()` is the blank agent; a seat plays `new()`.
+            #[allow(clippy::unwrap_or_default)]
+            let seat = others.entry(pid).or_insert_with(AdvancedAi::new);
+            seat.take_turn(&mut g, pid);
         }
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
