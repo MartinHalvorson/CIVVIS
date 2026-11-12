@@ -243,17 +243,52 @@ fn first_campus_goes_ahead_of_a_granary_head_only_with_the_gene() {
 }
 
 #[test]
-fn a_builder_head_keeps_its_queue_against_the_first_campus() {
-    let (mut g, mut ai, cid, plan, _) = campus_board();
-    g.cities.get_mut(&cid).unwrap().queue = vec![unit("builder")];
+fn first_campus_goes_ahead_of_a_builder_head_only_with_the_gene() {
+    let (mut g, mut ai, cid, plan, campus) = campus_board();
+    let capital = g.cities.get_mut(&cid).unwrap();
+    capital.queue = vec![unit("builder")];
+    capital.production = 5.0;
+
+    let mut off = ai.clone();
+    off.disable_campus_and_library_before_the_claims();
+    let mut control = g.clone();
+    off.claim_free_slot_campus(&mut control, 0, &plan);
+    assert_eq!(head(&control, cid), Some(unit("builder")), "off");
+
     let details = journalled(&mut ai, &mut g, |ai, g| {
         ai.claim_free_slot_campus(g, 0, &plan)
     });
-    assert_eq!(head(&g, cid), Some(unit("builder")));
+    assert_eq!(head(&g, cid), Some(campus));
+    assert_eq!(g.item_invested_production(cid, &unit("builder")), 5.0);
     assert!(
-        !details.iter().any(|detail| detail.starts_with(TAG)),
+        details.iter().any(|detail| detail.starts_with(TAG)
+            && detail.contains("first Campus goes ahead of the Builder")),
         "{details:?}"
     );
+}
+
+#[test]
+fn a_started_first_campus_keeps_its_queue_against_both_settler_claims() {
+    // Four cities: an unstarted Campus does not pass a Settler yet, but one
+    // with Production in finishes before the floor's or the holdable land's
+    // Settler takes the queue, and the backlog Builder claims leave it too.
+    for (paid, held) in [(10.0, true), (0.0, false)] {
+        let (mut g, ai, cid, plan, campus) = campus_board_with(4);
+        let capital = g.cities.get_mut(&cid).unwrap();
+        capital.queue = vec![campus.clone()];
+        capital.production = paid;
+        assert_eq!(g.item_invested_production(cid, &campus), paid);
+        assert!(ai.campus_and_library_holds(&g, 0, cid, &plan, &campus));
+        assert_eq!(
+            ai.science_campus_holds_repeat_settler(&g, 0, cid, &plan),
+            held,
+            "{paid} paid"
+        );
+        assert_eq!(
+            ai.campus_and_library_holds_the_settler(&g, 0, cid, &plan),
+            held
+        );
+    }
 }
 
 #[test]
@@ -476,17 +511,36 @@ fn a_half_built_floor_settler_keeps_the_queue() {
 }
 
 #[test]
-fn a_builder_keeps_its_queue_against_the_library() {
-    let (mut g, ranked, ai, plan) = library_board();
+fn every_library_goes_ahead_of_a_builder_only_with_the_gene() {
+    let (mut g, ranked, mut ai, plan) = library_board();
     for cid in &ranked {
         let city = g.cities.get_mut(cid).unwrap();
         city.queue = vec![unit("builder")];
         city.production = 0.0;
+        assert!(
+            g.item_cost_for_city(0, *cid, &unit("builder")) > g.city_yields(*cid).production,
+            "fixture: the Builder is more than a turn from done"
+        );
     }
-    ai.claim_campus_building(&mut g, 0, &plan);
+    let mut off = ai.clone();
+    off.disable_campus_and_library_before_the_claims();
+    let mut control = g.clone();
+    off.claim_campus_building(&mut control, 0, &plan);
+    assert!(ranked
+        .iter()
+        .all(|cid| head(&control, *cid) == Some(unit("builder"))));
+
+    let details = journalled(&mut ai, &mut g, |ai, g| {
+        ai.claim_campus_building(g, 0, &plan)
+    });
     for cid in &ranked {
-        assert_eq!(head(&g, *cid), Some(unit("builder")));
+        assert_eq!(head(&g, *cid), Some(library()));
     }
+    assert!(
+        details.iter().any(|detail| detail.starts_with(TAG)
+            && detail.contains("Library goes ahead of the Builder")),
+        "{details:?}"
+    );
 }
 
 fn university() -> Item {
