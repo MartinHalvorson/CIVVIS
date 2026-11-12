@@ -22,6 +22,29 @@ mod diplomacy;
 /// quotes enumeration needs. See `game/actions/legal.rs`.
 mod legal;
 
+/// Inputs that post-action discovery or historic moments could change even
+/// when `do_produce` accepts the queue head without writing anything.
+#[derive(PartialEq, Eq)]
+struct UnchangedProductionStamp {
+    tiles: u64,
+    turn: u32,
+    current: usize,
+    world_era: usize,
+    players: Vec<UnchangedProductionPlayerStamp>,
+}
+
+#[derive(PartialEq, Eq)]
+struct UnchangedProductionPlayerStamp {
+    alive: bool,
+    explored: usize,
+    met: usize,
+    techs: usize,
+    civics: usize,
+    counters: usize,
+    era_score: i64,
+    envoys: Vec<(usize, i64)>,
+}
+
 /// One band's concert at one venue, as a plan reads it before performing.
 struct RockConcertRead {
     host: usize,
@@ -416,23 +439,86 @@ impl Game {
         // cache in this file's history was built on. See
         // `Game::keep_rival_yields`.
         //
-        // One action is known not to reach another seat's cities, and it is
-        // the one a seat issues most while it plans. `do_produce` writes the
+        // Production ordinarily reaches only our own cities. It writes the
         // named city's queue and banked progress, the seat's own strategic
         // resource commitments, and for a district a foundation tile — which
         // the tile grid's epoch reports by itself. A city's own yields do read
         // its queue (the citizen plan, a running project, the envoy bonus),
-        // so the acting seat's own cities are dropped as for any action.
+        // so the acting seat's own cities ordinarily drop too. An identical
+        // non-district request returns before those writes, but still runs
+        // all validation, discovery, historic moments and action logging.
+        // Keep its answers provisionally and check those post-effects below.
         // Everything else drops everything: nothing here reasons about what a
         // purchase, a move, an envoy or a deal can touch.
-        let reach = match action {
-            Action::Produce { .. } => ActionReach::OwnCities,
-            _ => ActionReach::Board,
+        let unchanged = self.unchanged_production_candidate(pid, action);
+        let reach = if unchanged.is_some() {
+            ActionReach::Unchanged
+        } else {
+            match action {
+                Action::Produce { .. } => ActionReach::OwnCities,
+                _ => ActionReach::Board,
+            }
         };
         self.query_memo.action_begins(reach);
         let result = self.apply_unbracketed(pid, action);
+        let reach = match unchanged {
+            Some(before) if result.is_ok() && before == self.unchanged_production_stamp() => {
+                ActionReach::Unchanged
+            }
+            Some(_) => ActionReach::Board,
+            None => reach,
+        };
         self.query_memo.action_ends(reach);
         result
+    }
+
+    fn unchanged_production_candidate(
+        &self,
+        pid: usize,
+        action: &Action,
+    ) -> Option<UnchangedProductionStamp> {
+        let Action::Produce { city, item } = action else {
+            return None;
+        };
+        let memo = &self.query_memo;
+        if !memo.keeps_rival_yields.get()
+            || !memo.keeps_own_yields.get()
+            || memo.policy_reads_on.get()
+            || self.current != pid
+            || self.is_arena()
+            || matches!(item, Item::District { .. })
+            || memo.own_yields.borrow().is_empty()
+        {
+            return None;
+        }
+        let city = self.cities.get(city)?;
+        if city.owner != pid || city.queue.first() != Some(item) {
+            return None;
+        }
+        Some(self.unchanged_production_stamp())
+    }
+
+    fn unchanged_production_stamp(&self) -> UnchangedProductionStamp {
+        UnchangedProductionStamp {
+            tiles: self.map.tiles.epoch(),
+            turn: self.turn,
+            current: self.current,
+            world_era: self.world_era,
+            players: self
+                .players
+                .iter()
+                .map(|player| UnchangedProductionPlayerStamp {
+                    alive: player.alive,
+                    explored: player.explored.len(),
+                    met: player.met.len(),
+                    techs: player.techs.len(),
+                    civics: player.civics.len(),
+                    counters: player.counters.len(),
+                    era_score: player.era_score,
+                    envoys: player.envoys.clone(),
+                })
+                .collect(),
+        }
     }
 
     fn apply_unbracketed(&mut self, pid: usize, action: &Action) -> Result<(), String> {
@@ -6966,3 +7052,6 @@ mod ranged_visibility_tests;
 #[cfg(test)]
 #[path = "builder_operation_refusal_tests.rs"]
 mod builder_operation_refusal_tests;
+
+#[cfg(test)]
+mod unchanged_produce_yield_tests;

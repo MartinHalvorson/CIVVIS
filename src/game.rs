@@ -1924,6 +1924,8 @@ impl Drop for PolicyReadTrace<'_> {
 /// How far an action reaches into the yields `Game::keep_rival_yields` holds.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ActionReach {
+    /// A repeated production request, verified after all post-action work.
+    Unchanged,
     /// Only the acting seat's own cities can read differently afterwards.
     OwnCities,
     /// Anything can.
@@ -1946,7 +1948,7 @@ impl QueryCache {
     }
 
     fn drop_kept_yields(&self, reach: ActionReach) {
-        if !self.keeps_rival_yields.get() {
+        if !self.keeps_rival_yields.get() || reach == ActionReach::Unchanged {
             return;
         }
         self.own_yields.borrow_mut().clear();
