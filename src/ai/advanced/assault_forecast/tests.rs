@@ -611,26 +611,39 @@ fn the_corps_is_the_smallest_set_that_reaches() {
     assert!(corps.forecast.within(HORIZON) >= 0.8, "{corps:?}");
     assert!(corps.members.len() < pool.len(), "a subset: {corps:?}");
     assert!(corps.members.iter().all(|uid| pool.contains(uid)));
-    // Asked again the same turn, the same answer from the cache.
+    // Asked again the same turn, the same answer from the one search.
     assert_eq!(
         ai.assault_corps_for(&g, 0, cid, &pool, 0.8, HORIZON),
-        Ok(corps)
+        Some(corps.clone())
+    );
+    assert_eq!(
+        ai.assault_corps_best(&g, 0, cid, &pool, 0.8, HORIZON),
+        Some(corps)
     );
 
     let (mut g, cid) = front_at_peace(400, 60.0);
     g.spawn_test_unit("musketman", 1, TARGET);
     let pool = army(&mut g, &["warrior"; 4], 3);
-    match AdvancedAi::new().assault_corps_for(&g, 0, cid, &pool, 0.5, HORIZON) {
-        Err(Some(best)) => assert!(best.forecast.within(HORIZON) < 0.5, "{best:?}"),
-        other => panic!("400 walls before Warriors fall short: {other:?}"),
-    }
-    let (g, cid) = front(0, 20.0);
-    let ours = g.player_city_ids(0)[0];
+    let ai = AdvancedAi::new();
     assert_eq!(
-        AdvancedAi::new().assault_corps_for(&g, 0, ours, &pool, 0.5, HORIZON),
-        Err(None)
+        ai.assault_corps_for(&g, 0, cid, &pool, 0.5, HORIZON),
+        None,
+        "400 walls before Warriors fall short"
     );
-    let _ = cid;
+    let best = ai
+        .assault_corps_best(&g, 0, cid, &pool, 0.5, HORIZON)
+        .expect("the best the pool reached is read");
+    assert!(best.forecast.within(HORIZON) < 0.5, "{best:?}");
+    assert!(!best.members.is_empty());
+
+    let (g, _) = front(0, 20.0);
+    let ours = g.player_city_ids(0)[0];
+    let ai = AdvancedAi::new();
+    assert_eq!(ai.assault_corps_for(&g, 0, ours, &pool, 0.5, HORIZON), None);
+    assert_eq!(
+        ai.assault_corps_best(&g, 0, ours, &pool, 0.5, HORIZON),
+        None
+    );
 }
 
 #[test]

@@ -59,7 +59,7 @@
 //! Its enemy is the solver's greedy one. On 1,200 posed sieges
 //! (`docs/ASSAULT_FORECAST.md`) it is right where it reads under 20% (4%
 //! taken) and overconfident above 80% (44% taken as #5195 ran them, 67% with
-//! the seats funded): read it as "this force could take this city", not
+//! a 100-Gold start): read it as "this force could take this city", not
 //! "this train will". The reading gene is there to calibrate it on live
 //! games.
 //!
@@ -251,7 +251,8 @@ impl AssaultForecast {
 /// `AssaultForecast::calibrated_within`: readings under this pass through.
 pub(crate) const CALIBRATED_FROM: f32 = 0.2;
 /// PROVISIONAL, `docs/ASSAULT_FORECAST.md`: of the 1,200 posed sieges with
-/// funded seats (#5207, CI run 43288840120 on 49f02f9681), per wall pool,
+/// each seat starting at 100 Gold (#5207, CI run 43288840120 on
+/// 49f02f9681; not yet solvent, see the doc), per wall pool,
 /// the sieges read at P(capture within 12) >= 0.8 and how many were taken
 /// within 12 turns. A test holds these to the doc's table.
 pub(crate) const HIGH_BIN_TAKEN: [(i32, u32, u32); 4] =
@@ -262,7 +263,7 @@ pub(crate) const HIGH_BIN_TAKEN: [(i32, u32, u32); 4] =
 pub(crate) struct ForecastFrame {
     turn: u32,
     entries: BTreeMap<(Pos, u64), AssaultForecast>,
-    corps: BTreeMap<(Pos, u64), Result<AssaultCorps, Option<AssaultCorps>>>,
+    corps: BTreeMap<(Pos, u64), CorpsSearch>,
     /// Forecasts computed (not served from the cache) this turn.
     pub(crate) computed: u32,
 }
@@ -875,14 +876,6 @@ struct Tally {
 }
 
 impl Tally {
-    fn within(&self, turns: usize) -> f32 {
-        if self.runs == 0 {
-            0.0
-        } else {
-            self.captured[turns.clamp(1, HORIZON) - 1] as f32 / self.runs as f32
-        }
-    }
-
     fn p(&self) -> f32 {
         if self.runs == 0 {
             0.0
@@ -1117,6 +1110,14 @@ pub(crate) struct Recruit {
     pub(crate) kind: Name,
     pub(crate) count: u32,
     pub(crate) turns: u32,
+}
+
+/// What one corps search found: the corps it ended with, and whether its
+/// reading reached the chance asked for.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct CorpsSearch {
+    reached: bool,
+    corps: Option<AssaultCorps>,
 }
 
 /// The smallest corps a pool offers against a city, and its reading.
@@ -1525,13 +1526,14 @@ impl AdvancedAi {
 
     /// The smallest set of `pool` whose reading reaches `want_p` within
     /// `horizon` turns (1..=[`HORIZON`]), at war or as if the war began this
-    /// turn. Greedy: each step takes the land soldier or support unit of the
-    /// pool that raises the chance most (a quick reading of
-    /// [`SEARCH_ROLLOUTS`]), the dearer then the nearer on a tie, up to
-    /// [`MAX_MEMBERS`] soldiers. `Ok` is the first set whose full reading
-    /// reaches `want_p`. `Err(Some)` is the best the pool reached, for the
-    /// caller to log; `Err(None)` reads no city (one of ours, or gone).
-    /// Cached for the turn like the readings.
+    /// turn; `None` when the whole pool falls short, or no city reads (one
+    /// of ours, or gone). [`Self::assault_corps_best`] then gives the best
+    /// the pool reached, from the same search. Greedy: each step takes the
+    /// land soldier or support unit of the pool that raises the chance most
+    /// (a quick reading of [`SEARCH_ROLLOUTS`]), the dearer then the nearer
+    /// on a tie, up to [`MAX_MEMBERS`] soldiers; the first set whose full
+    /// reading reaches `want_p` is the answer. One search a turn per city,
+    /// pool, chance and horizon, cached like the readings.
     #[allow(
         dead_code,
         reason = "an entry point for the Score lane's target board; no caller in this tree yet"
@@ -1544,10 +1546,45 @@ impl AdvancedAi {
         pool: &[u32],
         want_p: f32,
         horizon: usize,
-    ) -> Result<AssaultCorps, Option<AssaultCorps>> {
+    ) -> Option<AssaultCorps> {
+        let search = self.corps_search(g, pid, city, pool, want_p, horizon);
+        search.corps.filter(|_| search.reached)
+    }
+
+    /// The corps [`Self::assault_corps_for`]'s search ended with: the corps
+    /// that reaches `want_p`, or else the best reading the pool reached, for
+    /// the caller to log. `None` only when no city reads.
+    #[allow(
+        dead_code,
+        reason = "an entry point for the Score lane's target board; no caller in this tree yet"
+    )]
+    pub(crate) fn assault_corps_best(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: u32,
+        pool: &[u32],
+        want_p: f32,
+        horizon: usize,
+    ) -> Option<AssaultCorps> {
+        self.corps_search(g, pid, city, pool, want_p, horizon).corps
+    }
+
+    fn corps_search(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: u32,
+        pool: &[u32],
+        want_p: f32,
+        horizon: usize,
+    ) -> CorpsSearch {
         let horizon = horizon.clamp(1, HORIZON);
         let Some(target) = g.cities.get(&city).filter(|city| city.owner != pid) else {
-            return Err(None);
+            return CorpsSearch {
+                reached: false,
+                corps: None,
+            };
         };
         let center = target.pos;
         let owned = war_board(g, pid, target.owner);
@@ -1654,7 +1691,10 @@ impl AdvancedAi {
                 best = Some(corps);
             }
         }
-        let answer = found.ok_or(best);
+        let answer = CorpsSearch {
+            reached: found.is_some(),
+            corps: found.or(best),
+        };
         let mut frame = self.assault_forecast_frame.borrow_mut();
         frame.computed += 1;
         frame.corps.insert(key, answer.clone());

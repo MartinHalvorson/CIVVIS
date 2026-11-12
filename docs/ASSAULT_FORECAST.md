@@ -40,13 +40,14 @@ cached for the turn, and change no decision.
   recruit arrives at the board's edge nearest our cities `turns` from now.
   A Battering Ram or Siege Tower among them stands beside the city when its
   walk in from that edge ends.
-- `assault_corps_for(g, pid, city, pool, want_p, horizon) -> Result<AssaultCorps, Option<AssaultCorps>>`:
+- `assault_corps_for(g, pid, city, pool, want_p, horizon) -> Option<AssaultCorps>`:
   the smallest greedy subset of `pool` whose reading reaches `want_p` within
   `horizon` turns (1-12), at war or as if at war. `pool` can hold soldiers
-  and support units, up to 20 soldiers.
-  - `Ok` is that subset and its reading.
-  - `Err(Some(best))` is the best the pool reached; log it.
-  - `Err(None)` means no city reads.
+  and support units, up to 20 soldiers. `None` means the whole pool falls
+  short, or no city reads.
+- `assault_corps_best(g, pid, city, pool, want_p, horizon) -> Option<AssaultCorps>`:
+  from the same cached search, the corps that reaches, or else the best the
+  pool reached, for the caller to log. `None` only when no city reads.
 - `AssaultForecast::calibrated_within(turns, walls) -> f32`, **provisional**:
   a conservative chance for turning a reading into an expected value.
   - Readings under 0.2 pass through; low readings were right.
@@ -73,15 +74,20 @@ tower against Ancient or Medieval Walls.
 
 **Warning: a raw high reading is not a probability.** Readings of 0.8 or
 more were taken 44% of the time on the posed sieges as #5195 ran them
-(unfunded seats), and 67% with the seats funded (#5207). Use
+(unfunded seats), and 67% when each seat started with 100 Gold (#5207). Use
 `calibrated_within` for an expected value.
 
 ### The high bin by wall pool (what `calibrated_within` reads)
 
-From the 1,200 mixed posed sieges with funded seats: #5207, CI run
-43288840120 on 49f02f9681. Each seat ends its turn holding seven turns of
-its deficit, so no unit is disbanded. A test holds the constants to these
-lines.
+From the 1,200 mixed posed sieges with each seat starting at 100 Gold:
+#5207, CI run 43288840120 on 49f02f9681.
+
+The harness also meant to cover each seat's deficit every turn. That top-up
+never ran (found in #5207 round 5): the agent ends its own turn, and the
+check sat after it. So seats with a deep deficit still ran dry after a few
+turns and lost units to the engine's bankruptcy disbanding. These rates are
+better funded than #5195's, not yet solvent. #5207 replaces them. A test
+holds the constants to these lines.
 
 | walls | read >= 0.8 | taken within 12 | rate |
 |---|---|---|---|
