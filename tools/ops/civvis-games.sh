@@ -19,6 +19,16 @@
 #   spectator  the headless CIVVIS exhibition league on :8766 (com.civvis.spectator,
 #              KeepAlive).
 #
+# ★ TERMINAL CONTROL. A host whose policy file (~/.civvis-verification-policy)
+# says CIVVIS_CONTROL=terminal runs the ladder loop in its Terminal window and
+# nowhere else. There `on` records the intent `terminal` instead of `running`,
+# opens that one window, and loads no service. The loop's own chain accepts
+# `terminal`; the ladder keeper, `ensure`, the windowless relaunch and the
+# spectator league all ask for the exact value `running`, so none of them can
+# start or recover a game, and a window the operator closed stays closed until
+# the next `on`. Asked for on 2026-11-12 after `ensure` reopened a loop 47
+# seconds after the operator had quit Terminal to stop it.
+#
 # ⚠⚠ WHY `off` IS MORE THAN `gamelock.py --halt`. The halt marker is honoured at
 # every *boundary* — the watchdog won't start a loop, the interactive host exits,
 # gamelock.acquire() refuses a new attempt, the spectator stands down. It cannot
@@ -49,6 +59,15 @@ UID_N=$(id -u)
 LADDER_JOB=com.civvis.ladder-watchdog
 SPECTATOR_JOB=com.civvis.spectator
 INTENTFILE=${CIVVIS_OPERATOR_INTENT_FILE:-${CIVVIS_INTENTFILE:-$HOME/.civvis-operator-intent}}
+POLICY=${CIVVIS_VERIFICATION_POLICY:-$HOME/.civvis-verification-policy}
+
+control_mode() {   # who may run the ladder loop on this host: unattended | terminal
+  local value=""
+  if [[ -r "$POLICY" ]]; then
+    value=$(sed -n 's/^[[:space:]]*CIVVIS_CONTROL[[:space:]]*=[[:space:]]*\([^#[:space:]]*\).*$/\1/p' "$POLICY" | tail -1)
+  fi
+  print -r -- "${value:-unattended}"
+}
 
 say() { print -r -- "$*" }
 
@@ -303,6 +322,10 @@ intent_is_running() {
   [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == running ]]
 }
 
+intent_is_terminal() {   # the loop may play in its Terminal window; nothing may recover it
+  [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == terminal ]]
+}
+
 intent_report() {
   if [[ -r "$INTENTFILE" ]]; then
     print -r -- "$(<"$INTENTFILE")"
@@ -325,7 +348,18 @@ relaunch_ladder() {
 case ${1:-status} in
 
 on)
-  reason=${2:-"operator: run both lanes indefinitely"}
+  mode=$(control_mode)
+  if [[ $mode == unattended ]]; then
+    want=running
+    reason=${2:-"operator: run both lanes indefinitely"}
+  elif [[ $mode == terminal ]]; then
+    want=terminal
+    reason=${2:-"operator: run the ladder loop in its Terminal window"}
+  else
+    say "== refusing to turn the game lanes on =="
+    say "  CIVVIS_CONTROL='$mode' in $POLICY must be terminal or unattended"
+    exit 2
+  fi
   say "== turning the game lanes ON =="
   victory_report
   # Pin the version before granting authorization. A watchdog tick that lands
@@ -353,18 +387,28 @@ on)
     say "  refusing: could not clear the operator halt; intent remains stopped"
     exit 1
   fi
-  set_intent running
-  if ! intent_is_running; then
+  set_intent "$want"
+  if [[ "$(intent_report)" != "$want" ]]; then
     python3 "$GAMELOCK" --halt --reason "civvis-games on could not record verification intent" >/dev/null 2>&1 || true
-    say "  refusing: could not record running intent at $INTENTFILE"
+    say "  refusing: could not record $want intent at $INTENTFILE"
     exit 1
   fi
-  say "  operator halt cleared (${reason}); explicit verification intent recorded: running"
-  say "  services:"
-  ensure_job "$LADDER_JOB"
-  ensure_job "$SPECTATOR_JOB"
-  relaunch_ladder
-  say "  spectator: KeepAlive brings it back within ~60s"
+  say "  operator halt cleared (${reason}); explicit verification intent recorded: $want"
+  if [[ $want == terminal ]]; then
+    # No service is loaded here, and none that is already loaded can act: each
+    # asks for the exact intent `running`.
+    say "  control:   terminal — the loop plays in its Terminal window (titled"
+    say "             'CIVVIS managed ladder', minimised) and nowhere else. No keeper,"
+    say "             watchdog or background league starts or recovers a game, and a"
+    say "             window you close stays closed until the next civvis-games on"
+    relaunch_ladder
+  else
+    say "  services:"
+    ensure_job "$LADDER_JOB"
+    ensure_job "$SPECTATOR_JOB"
+    relaunch_ladder
+    say "  spectator: KeepAlive brings it back within ~60s"
+  fi
   say ""
   say "watch it:  tail -f ~/Library/Logs/civvis-ladder.log"
   say "retire one game: civvis-games retire"
@@ -373,7 +417,7 @@ on)
 
 retire)
   reason=${2:-"operator: retire current verification game"}
-  if ! intent_is_running; then
+  if ! intent_is_running && ! intent_is_terminal; then
     say "== refusing retirement =="
     say "  verification intent is $(intent_report); use civvis-games on before requesting a replacement"
     exit 2
@@ -455,6 +499,7 @@ ensure)
 status)
   say "== civvis game lanes =="
   say "intent:    $(intent_report) at ${INTENTFILE/#$HOME/~} (only exact 'running' authorizes recovery)"
+  say "control:   $(control_mode) (CIVVIS_CONTROL in ${POLICY/#$HOME/~}; terminal = only the loop's Terminal window plays, nothing recovers it)"
   say "live pause: $(python3 "$LIVE_PAUSE" status 2>&1)"
   if halt=$(python3 "$GAMELOCK" --halt-status 2>&1); then
     say "switch:    OFF — ${halt}"
