@@ -12030,34 +12030,45 @@ impl Game {
     /// tile. Effects of the same family do not stack, so a maximum also
     /// handles a Medic beside a Supply Convoy or a Balloon beside a Drone.
     fn adjacent_support_effect(&self, unit: &Unit, effect: &str) -> f64 {
-        self.wdisk(unit.pos, 1)
-            .into_iter()
-            .flat_map(|position| self.unit_ids_at(position))
-            .filter(|other| self.units[other].owner == unit.owner)
-            .filter_map(|other| {
-                let support = &self.rules.units[self.units[other].kind];
-                (support.class == "support")
-                    .then(|| support.effects.get(effect).copied().unwrap_or(0.0))
-            })
-            .fold(0.0, f64::max)
+        let mut strongest = 0.0_f64;
+        self.map.for_each_disk(unit.pos, 1, |position| {
+            for other in self.unit_ids_at(position) {
+                let other = &self.units[other];
+                if other.owner == unit.owner {
+                    let support = &self.rules.units[other.kind];
+                    if support.class == "support" {
+                        strongest =
+                            strongest.max(support.effects.get(effect).copied().unwrap_or(0.0));
+                    }
+                }
+            }
+        });
+        strongest
     }
 
     /// Strongest aura supplied by any adjacent same-owner unit. Unlike the
     /// support-only family above, unique-unit formation bonuses such as the
     /// Tagma's apply from an ordinary military unit and never to itself.
     fn adjacent_friendly_unit_effect(&self, unit: &Unit, effect: &str) -> f64 {
-        self.wdisk(unit.pos, 1)
-            .into_iter()
-            .flat_map(|position| self.unit_ids_at(position))
-            .filter(|other| **other != unit.id && self.units[other].owner == unit.owner)
-            .map(|other| {
-                self.rules.units[self.units[other].kind]
-                    .effects
-                    .get(effect)
-                    .copied()
-                    .unwrap_or(0.0)
-            })
-            .fold(0.0, f64::max)
+        let mut strongest = 0.0_f64;
+        self.map.for_each_disk(unit.pos, 1, |position| {
+            for other_id in self.unit_ids_at(position) {
+                if *other_id == unit.id {
+                    continue;
+                }
+                let other = &self.units[other_id];
+                if other.owner == unit.owner {
+                    strongest = strongest.max(
+                        self.rules.units[other.kind]
+                            .effects
+                            .get(effect)
+                            .copied()
+                            .unwrap_or(0.0),
+                    );
+                }
+            }
+        });
+        strongest
     }
 
     /// Taxis scales with converted Holy Cities, including an enemy founder's
@@ -13785,3 +13796,6 @@ mod mongolia_combat_tests;
 
 #[cfg(test)]
 mod ranged_handicap_tests;
+
+#[cfg(test)]
+mod aura_disk_tests;
