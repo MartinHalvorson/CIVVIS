@@ -18,6 +18,8 @@ fn field(seed: u64) -> Game {
         tile.feature = None;
         tile.resource = None;
         tile.hills = false;
+        tile.river_edges = [false; 6];
+        tile.riverside = false;
     }
     g.found_city_for(0, (6, 10), None);
     g.current = 0;
@@ -371,20 +373,41 @@ fn a_dead_hostile_and_a_planned_unit_are_left_out() {
 }
 
 /// A unit already in danger may step to a tile that lowers its death chance,
-/// never to one that does not; a wound since the frame was read is re-read at
-/// the unit's health.
+/// never to one that does not; a source gone since the frame was read stops
+/// counting. Read on a hand-built frame: two certain kills on one tile, one
+/// on the next.
 #[test]
-fn a_unit_in_danger_may_step_to_less_and_a_wound_is_re_read() {
-    // Two Line Infantry two tiles either side: both reach (18, 10), only the
-    // western one reaches (17, 10).
-    let mut g = field(377_315);
+fn a_move_that_lowers_the_death_chance_is_allowed_over_the_allowance() {
+    let mut g = field(377_310);
     let warrior = g.spawn_test_unit("warrior", 0, (18, 10));
-    g.spawn_test_unit("line_infantry", 1, (20, 10));
-    g.spawn_test_unit("line_infantry", 1, (16, 10));
-    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
-    ai.enable_risk_is_priced();
-    ai.mark_priced_risk(&g, 0, &plan());
-    let risk = risk_of(&ai, warrior).clone();
+    let a = g.spawn_test_unit("line_infantry", 1, (20, 10));
+    let b = g.spawn_test_unit("line_infantry", 1, (26, 14));
+    let kill = |source: u32| Blow {
+        source: Source::Unit(source),
+        att: 65.0,
+        def_base: 20.0,
+    };
+    let tile = |blows: Vec<Blow>| {
+        let pairs: Vec<(f32, f32)> = blows.iter().map(|b| (b.att, b.def_base)).collect();
+        TileRisk {
+            hazard: 0.0,
+            death: death_chance(100, 0.0, &pairs, HOST_STRIKE_P),
+            blows,
+        }
+    };
+    let risk = UnitRisk {
+        mission: Mission::March,
+        allowance: MARCH_ALLOWANCE,
+        price: 40.0,
+        hp_equivalent: 100.0,
+        hp: 100,
+        tiles: [
+            ((18, 10), tile(vec![kill(a), kill(b)])),
+            ((17, 10), tile(vec![kill(a)])),
+        ]
+        .into_iter()
+        .collect(),
+    };
     let both = risk.death_at(&g, warrior, (18, 10));
     let one = risk.death_at(&g, warrior, (17, 10));
     assert!((both - 0.75).abs() < 1e-9, "{both}");
@@ -393,20 +416,33 @@ fn a_unit_in_danger_may_step_to_less_and_a_wound_is_re_read() {
         risk.refusal(&g, warrior, (18, 10), (17, 10)).is_none(),
         "over the allowance, but lower than where it stands"
     );
+    let refused = risk
+        .refusal(&g, warrior, (17, 10), (18, 10))
+        .expect("higher than where it stands");
+    assert_eq!((refused.death, refused.here), (both, one));
+    assert!(risk.refusal(&g, warrior, (16, 10), (17, 10)).is_some());
+    // The second Line Infantry falls: the tile reads one blow, and a step
+    // between two equal readings over the allowance is refused.
+    g.remove_unit(b);
+    assert!((risk.death_at(&g, warrior, (18, 10)) - 0.5).abs() < 1e-9);
     assert!(risk.refusal(&g, warrior, (17, 10), (18, 10)).is_some());
+}
 
-    // Two Swordsmen beside a Spearman: no single blow kills it healthy,
-    // two can; wounded, the same two are likelier to.
-    let mut g = field(377_314);
-    let spear = g.spawn_test_unit("spearman", 0, (18, 10));
+/// A wound since the frame was read is re-read at the unit's health: one
+/// Swordsman's blow never kills a healthy Spearman and often kills one at
+/// forty.
+#[test]
+fn a_wound_since_the_frame_is_re_read() {
+    let mut g = field(377_310);
+    let spear = g.spawn_test_unit("spearman", 0, (16, 10));
     g.spawn_test_unit("swordsman", 1, (20, 10));
-    g.spawn_test_unit("swordsman", 1, (16, 10));
+    g.spawn_test_unit("warrior", 0, (22, 10));
     let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
     ai.enable_risk_is_priced();
     ai.mark_priced_risk(&g, 0, &plan());
     let risk = risk_of(&ai, spear).clone();
-    let healthy = risk.death_at(&g, spear, (18, 10));
-    g.units.get_mut(&spear).unwrap().hp = 60;
+    assert_eq!(risk.death_at(&g, spear, (18, 10)), 0.0);
+    g.units.get_mut(&spear).unwrap().hp = 40;
     let wounded = risk.death_at(&g, spear, (18, 10));
-    assert!(wounded > healthy, "{healthy} -> {wounded}");
+    assert!(wounded > 0.0 && wounded <= HOST_STRIKE_P, "{wounded}");
 }

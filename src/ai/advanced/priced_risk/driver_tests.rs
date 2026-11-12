@@ -34,15 +34,15 @@ const LIVE_TACTICS: &[&str] = &[
 ];
 /// The positions the brief names, read at the full seed count.
 const KEY_POSITIONS: &[&str] = &["the_relief", "the_reserve", "the_storming"];
-const KEY_SEEDS: u64 = 12;
-const OTHER_SEEDS: u64 = 4;
-const CONTROL_SEEDS: u64 = 2;
-const SKIRMISH_SEEDS: u64 = 16;
-const WORLD_SEEDS: u64 = 2;
-const WORLD_TURNS: u32 = 120;
+const KEY_SEEDS: u64 = 48;
+const OTHER_SEEDS: u64 = 12;
+const CONTROL_SEEDS: u64 = 4;
+const SKIRMISH_SEEDS: u64 = 40;
+const WORLD_SEEDS: u64 = 10;
+const WORLD_TURNS: u32 = 200;
 /// A world past this many seconds stops where it stands (`stopped`).
 const WORLD_BUDGET_SECS: u64 = 16 * 60;
-const JOBS: usize = 2;
+const JOBS: usize = 3;
 
 fn live_seat(base: &str) -> String {
     let mut seat = base.to_string();
@@ -271,22 +271,61 @@ fn measured_seat(on: bool) -> AdvancedAi {
     ai
 }
 
-fn world(seed: u64, on: bool) -> WorldRow {
+/// One board for the worlds: the rung, the rivals' yield rung, and what the
+/// three rivals play for.
+#[derive(Clone, Copy)]
+struct Shape {
+    name: &'static str,
+    difficulty: &'static str,
+    rival_yields: Option<&'static str>,
+    rivals: [VictoryTarget; 3],
+}
+
+const SHAPES: [Shape; 2] = [
+    // Every rival keeps Deity whole and rushes: the seat is out-teched from
+    // the start and fights for its life.
+    Shape {
+        name: "deity-rush",
+        difficulty: "deity",
+        rival_yields: None,
+        rivals: [VictoryTarget::Domination; 3],
+    },
+    // The live-calibrated shape (`gene_screen --rival-rung -2`): Immortal
+    // combat and start units with King yields, two Domination rivals and a
+    // Science one. The seat is out-teched and at war, and lives to fight.
+    Shape {
+        name: "immortal-king-yields",
+        difficulty: "immortal",
+        rival_yields: Some("king"),
+        rivals: [
+            VictoryTarget::Domination,
+            VictoryTarget::Domination,
+            VictoryTarget::Science,
+        ],
+    },
+];
+
+fn world(shape: Shape, seed: u64, on: bool) -> WorldRow {
     let started = Instant::now();
     let mut g = Game::new_with(GameOptions {
         speed: "online".to_string(),
-        difficulty: "deity".to_string(),
+        difficulty: shape.difficulty.to_string(),
+        ai_yield_rung: shape.rival_yields.map(str::to_string),
         handicap_exempt: [0].into_iter().collect(),
         ..GameOptions::new(4, 44, 28, seed, WORLD_TURNS, 2)
     });
+    let mut majors = 0;
     let mut ais: Vec<AdvancedAi> = (0..g.players.len())
         .map(|pid| {
             if pid == 0 {
+                majors += 1;
                 measured_seat(on)
             } else if g.players[pid].is_minor || g.players[pid].is_barbarian {
                 AdvancedAi::new()
             } else {
-                AdvancedAi::targeting(VictoryTarget::Domination)
+                let target = shape.rivals[(majors - 1) % shape.rivals.len()];
+                majors += 1;
+                AdvancedAi::targeting(target)
             }
         })
         .collect();
@@ -346,14 +385,25 @@ fn world(seed: u64, on: bool) -> WorldRow {
 #[test]
 // WIP-CI-RUN #[ignore = "plays paired whole worlds; run with --ignored --nocapture"]
 fn priced_risk_paired_worlds() {
+    for shape in SHAPES {
+        worlds(shape);
+    }
+}
+
+fn worlds(shape: Shape) {
     let jobs: Vec<(u64, bool)> = (0..WORLD_SEEDS)
         .flat_map(|seed| [(seed, false), (seed, true)])
         .collect();
     let rows = crate::parallel::map(jobs.len(), JOBS, |i| {
         let (seed, on) = jobs[i];
-        (seed, on, world(9_100 + seed, on))
+        (seed, on, world(shape, 9_100 + seed, on))
     });
-    println!("\n== worlds: Deity, measured seat unhandicapped Domination vs 3 Domination rivals, 4p 44x28 Online, {WORLD_TURNS} turns ==");
+    println!(
+        "\n== worlds {}: {} (rival yields {}), measured seat unhandicapped Domination with the live genome, 4p 44x28 Online, {WORLD_TURNS} turns ==",
+        shape.name,
+        shape.difficulty,
+        shape.rival_yields.unwrap_or("the rung's")
+    );
     println!("seed arm  units_lost cities_lost cities_taken cities_end techs rival_techs war_turns turns secs stopped");
     let (mut d_lost, mut d_clost, mut d_taken) = (Vec::new(), Vec::new(), Vec::new());
     let mut by_seed: BTreeMap<u64, [Option<&WorldRow>; 2]> = BTreeMap::new();
