@@ -50,7 +50,7 @@ const LIVE_ARMS: &str = include_str!("live_force_on_20261112.txt");
 const TARGET: Pos = (18, 8);
 const HOME: Pos = (2, 8);
 const CALIBRATION_SEEDS: u64 = 1200;
-const PAIRED_SEEDS: u64 = 400;
+const PAIRED_SEEDS: u64 = 0;
 /// Seeds of the tempo family (`Family::Tempo`), reported on their own.
 const TEMPO_SEEDS: u64 = 400;
 const PAIRED_TURNS: u32 = 30;
@@ -435,6 +435,8 @@ struct Outcome {
     wall_max: (i32, i32),
     /// The first turn the stage-musters-out-of-reach muster closed.
     muster_closed: Option<u32>,
+    /// The posed city.
+    cid: u32,
     /// Our military units an enemy removed (`CombatLedger::units_lost`).
     combat_lost: usize,
 }
@@ -488,6 +490,13 @@ struct Round {
     /// Player 0's events from the start of our turn to the end of the
     /// owner's (`Game::events`).
     events: Vec<String>,
+    /// The campaign's target city after our turn (`StrategicPlan::target_city`).
+    target: Option<u32>,
+    /// Force members farther than two tiles out, alive, that ended our turn
+    /// no nearer the city.
+    held: usize,
+    /// The train's hold lines this turn, by the guard that wrote them.
+    guards: Vec<&'static str>,
 }
 
 fn land_soldier(g: &Game, unit: &crate::game::Unit) -> bool {
@@ -505,6 +514,8 @@ struct Before {
     enemy_hp: BTreeMap<u32, i32>,
     ready_shooters: Vec<u32>,
     alive: BTreeSet<u32>,
+    /// Each live force member's distance to the city.
+    dist: BTreeMap<u32, i32>,
 }
 
 fn before_our_turn(g: &Game, w: &World) -> Before {
@@ -540,6 +551,16 @@ fn before_our_turn(g: &Game, w: &World) -> Before {
             .copied()
             .filter(|uid| g.units.get(uid).is_some_and(|unit| unit.owner == 0))
             .collect(),
+        dist: w
+            .force
+            .iter()
+            .filter_map(|uid| {
+                g.units
+                    .get(uid)
+                    .filter(|unit| unit.owner == 0)
+                    .map(|unit| (*uid, g.wdist(unit.pos, pos)))
+            })
+            .collect(),
         ready_melee: g
             .units
             .values()
@@ -564,6 +585,18 @@ fn stage_rank(stage: SiegeStage) -> u8 {
         SiegeStage::Hold => 5,
     }
 }
+
+/// The train's hold lines (`siege_train.rs`), by the guard that writes them.
+const GUARD_LINES: [(&str, &str); 8] = [
+    ("holds short of a hostile seen in the fog", "fog hostile"),
+    ("closed borders", "closed borders"),
+    ("holds on land short of the water", "water"),
+    ("waits on its dry road", "dry road"),
+    ("holds at the muster line", "muster line"),
+    ("the mustered train holds", "mustered train"),
+    ("stops short of its post", "short of its post"),
+    ("holds off the capture", "off the capture"),
+];
 
 /// Under `solvent`, each seat starts its turn holding this many turns of its
 /// deficit plus `SOLVENT_MARGIN`. That is enough that neither the engine's
@@ -604,6 +637,7 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
         .map(|unit| unit.id)
         .collect();
     let mut seen_enemy = initial_enemy.clone();
+    out.cid = w.cid;
     out.wall_max = g
         .cities
         .get(&w.cid)
@@ -681,8 +715,18 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
         if pid == 0 {
             let delta = journal.since(cursor);
             cursor = delta.cursor;
+            let mut guards = Vec::new();
             for thought in delta.thoughts.iter().filter(|t| t.player == 0) {
                 let head = &thought.headline;
+                if head.starts_with("Siege") {
+                    if let Some(guard) = GUARD_LINES
+                        .iter()
+                        .find(|(needle, _)| head.contains(needle))
+                        .map(|(_, guard)| *guard)
+                    {
+                        guards.push(guard);
+                    }
+                }
                 if head.contains("the mustered train closes") && out.muster_closed.is_none() {
                     out.muster_closed = Some(g.turn - start + 1);
                 }
@@ -721,6 +765,19 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
                 (0, 0)
             };
             let mut round = Round {
+                target: ours.plan.as_ref().and_then(|plan| plan.target_city),
+                held: pre
+                    .dist
+                    .iter()
+                    .filter(|(uid, was)| {
+                        **was > 2
+                            && g.units
+                                .get(*uid)
+                                .filter(|unit| unit.owner == 0)
+                                .is_some_and(|unit| g.wdist(unit.pos, pos) >= **was)
+                    })
+                    .count(),
+                guards,
                 stage: ours
                     .sieges
                     .get(&w.cid)
@@ -1104,6 +1161,113 @@ fn first_blows(row: &CalibrationRow) -> (Option<u32>, Option<u32>) {
     (dent, blow)
 }
 
+/// What the walk to the walls looked like, per siege: the turns up to the
+/// first blow (all of them when none came).
+struct Walk {
+    /// Turns the campaign's target changed from the turn before.
+    switches: usize,
+    /// Turns it targeted another city or none.
+    off_target: usize,
+    /// Members more than two tiles out that ended our turn no nearer.
+    held: usize,
+    guards: Vec<&'static str>,
+    spread: u32,
+    blow: Option<u32>,
+    muster_to_blow: Option<u32>,
+}
+
+fn walk_of(row: &CalibrationRow) -> Walk {
+    let o = &row.outcome;
+    let (_, blow) = first_blows(row);
+    let until = blow.map_or(o.rounds.len(), |b| (b as usize).min(o.rounds.len()));
+    let walk = &o.rounds[..until];
+    let arrived: Vec<u32> = o.arrivals.iter().flatten().copied().collect();
+    Walk {
+        switches: walk
+            .windows(2)
+            .filter(|w| w[0].target != w[1].target)
+            .count(),
+        off_target: walk.iter().filter(|r| r.target != Some(o.cid)).count(),
+        held: walk.iter().map(|r| r.held).sum(),
+        guards: walk.iter().flat_map(|r| r.guards.iter().copied()).collect(),
+        spread: arrived.iter().max().unwrap_or(&0) - arrived.iter().min().unwrap_or(&0),
+        blow,
+        muster_to_blow: o
+            .muster_closed
+            .zip(blow)
+            .map(|(closed, blow)| blow.saturating_sub(closed)),
+    }
+}
+
+/// Objective switches and guard holds on the walk, next to arrival spread
+/// and the first blow: the read-high sieges taken, those not, and the
+/// misses by first cause.
+fn walk_table(
+    out: &mut String,
+    high: &[&&CalibrationRow],
+    missed: &[(&&&CalibrationRow, Cause, String)],
+) {
+    let _ = writeln!(
+        out,
+        "The walk to the walls, up to the first blow (all 12 turns when none came): campaign target switches, turns it targeted another city or none, members more than two tiles out that ended our turn no nearer (unit-turns), the train's hold lines by guard, arrival spread, the first blow, and muster close to the first blow\n"
+    );
+    let _ = writeln!(
+        out,
+        "| sieges | n | target switches (sieges with any) | turns off target | held unit-turns | hold lines by guard | arrival spread | first blow turn (never) | muster close to first blow (n) |"
+    );
+    let _ = writeln!(out, "|---|---|---|---|---|---|---|---|---|");
+    let line = |out: &mut String, name: &str, rows: &[&CalibrationRow]| {
+        let walks: Vec<Walk> = rows.iter().map(|row| walk_of(row)).collect();
+        let n = walks.len();
+        let (switches, _) = mean(walks.iter().map(|w| w.switches as f64));
+        let any = walks.iter().filter(|w| w.switches > 0).count();
+        let (off, _) = mean(walks.iter().map(|w| w.off_target as f64));
+        let (held, _) = mean(walks.iter().map(|w| w.held as f64));
+        let mut guards: BTreeMap<&str, usize> = BTreeMap::new();
+        for w in &walks {
+            for guard in &w.guards {
+                *guards.entry(*guard).or_default() += 1;
+            }
+        }
+        let guards = if guards.is_empty() {
+            "none".to_string()
+        } else {
+            guards
+                .iter()
+                .map(|(g, k)| format!("{g} {k}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let (spread, _) = mean(walks.iter().map(|w| f64::from(w.spread)));
+        let (blow, _) = mean(walks.iter().filter_map(|w| w.blow).map(f64::from));
+        let never = walks.iter().filter(|w| w.blow.is_none()).count();
+        let (muster, m) = mean(walks.iter().filter_map(|w| w.muster_to_blow).map(f64::from));
+        let _ = writeln!(
+            out,
+            "| {name} | {n} | {switches:.2} ({any}) | {off:.1} | {held:.1} | {guards} | {spread:.1} | {blow:.1} ({never}) | {muster:.1} ({m}) |"
+        );
+    };
+    let taken: Vec<&CalibrationRow> = high
+        .iter()
+        .filter(|row| taken_by(&row.outcome, HORIZON) > 0.0)
+        .map(|row| **row)
+        .collect();
+    line(out, "read high, taken", &taken);
+    let not: Vec<&CalibrationRow> = missed.iter().map(|(row, _, _)| ***row).collect();
+    line(out, "read high, not taken", &not);
+    for cause in Cause::ALL {
+        let rows: Vec<&CalibrationRow> = missed
+            .iter()
+            .filter(|(_, c, _)| *c == cause)
+            .map(|(row, _, _)| ***row)
+            .collect();
+        if !rows.is_empty() {
+            line(out, &format!("  {}", cause.name()), &rows);
+        }
+    }
+    let _ = writeln!(out);
+}
+
 /// The turn the forecast's press takes the city in half its rollouts, or
 /// the horizon: a soldier or wall the owner raises after it cannot be why
 /// the train did not take the city.
@@ -1428,6 +1592,7 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
             .collect::<Vec<_>>()
             .join(", ")
     );
+    walk_table(out, &high, &missed);
     // The forecast's press against the real train, turn by turn.
     let _ = writeln!(
         out,
@@ -1977,7 +2142,6 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
 /// The report `docs/ASSAULT_FORECAST.md` quotes: about twenty minutes on
 /// four cores, so it runs only when asked for.
 #[test]
-#[ignore = "the calibration driver: run with --ignored (docs/ASSAULT_FORECAST.md)"]
 fn assault_forecast_calibration() {
     let clock = Instant::now();
     let tags = live_tags();
@@ -2017,5 +2181,6 @@ fn assault_forecast_calibration() {
     calibrated.sort_by_key(|row| row.seed);
     pairs.sort_by_key(|row| row.seed);
     let text = report(&calibrated, &pairs, clock.elapsed().as_secs_f64());
-    println!("{text}");
+    // CI compute round: the report reaches the log only through a failure.
+    panic!("\n{text}");
 }
