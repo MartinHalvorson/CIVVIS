@@ -52,6 +52,15 @@ jobs:
         run: python3 -m unittest discover -s tools -p test_site_wasm_browser_ci.py -v
       - name: Test paired browser guards without playing games
         run: python3 -m unittest discover -s tools -p test_site_wasm_browser_pair_ci.py -v
+      - name: Install a fixed browser without automatic updates for paired games
+        if: ${{ inputs.mode == 'browser-pair' }}
+        run: |
+          curl --fail --location --retry 3 \
+            https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.80/mac-arm64/chrome-mac-arm64.zip \
+            --output "$RUNNER_TEMP/civvis-chrome.zip"
+          shasum -a 256 "$RUNNER_TEMP/civvis-chrome.zip"
+          ditto -x -k "$RUNNER_TEMP/civvis-chrome.zip" "$RUNNER_TEMP/civvis-chrome"
+          echo "CIVVIS_BROWSER_EXECUTABLE=$RUNNER_TEMP/civvis-chrome/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing" >> "$GITHUB_ENV"
       - name: Download the qualified engine
         uses: actions/download-artifact@v4
         with:
@@ -98,7 +107,8 @@ jobs:
           python3 tools/site_wasm_browser_pair_ci.py \
             --candidate qualified --candidate-source "$PROFILE_SOURCE" --candidate-run "$QUALIFIED_RUN" \
             --baseline qualified-baseline --baseline-source "$BASELINE_SOURCE" --baseline-run "$BASELINE_RUN" \
-            --repo "$GITHUB_REPOSITORY" --case "$PROFILE_CASE" --out browser-pair
+            --repo "$GITHUB_REPOSITORY" --case "$PROFILE_CASE" --out browser-pair \
+            --chrome "$CIVVIS_BROWSER_EXECUTABLE"
       - name: Preserve all paired browser observations and original saves
         if: ${{ always() && inputs.mode == 'browser-pair' }}
         uses: actions/upload-artifact@v4

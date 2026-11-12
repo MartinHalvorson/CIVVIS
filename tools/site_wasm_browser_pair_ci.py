@@ -35,7 +35,7 @@ def plan(case: str) -> list[tuple[int, str]]:
 def summarize(records: list[dict], case: str) -> dict:
     if [(row['repeat'], row['arm']) for row in records] != plan(case):
         raise ValueError('four complete games in both original orders are required')
-    for field in ('save_sha256', 'publication_identities', 'chrome', 'runtime'):
+    for field in ('save_sha256', 'publication_identities', 'chrome', 'chrome_executable_sha256', 'runtime'):
         if not records[0].get(field) or any(row[field] != records[0][field] for row in records):
             raise ValueError('browser games differ in ' + field)
     ratios = []
@@ -77,7 +77,7 @@ def host_snapshot() -> dict:
 
 def compare(baseline: Path, baseline_source: str, baseline_run: int,
             candidate: Path, candidate_source: str, candidate_run: int,
-            repo: str, case: str, out: Path) -> dict:
+            repo: str, case: str, out: Path, chrome: Path | None = None) -> dict:
     if case not in browser.profile.CASES or min(baseline_run, candidate_run) <= 0:
         raise ValueError('invalid normal case or qualification run')
     if out.exists():
@@ -107,7 +107,8 @@ def compare(baseline: Path, baseline_source: str, baseline_run: int,
             result['active_game'] = str(game_dir)
             record()
             before = host_snapshot()
-            receipt = browser.browser_game(Path(entry['directory']), entry['source'], entry['run'], repo, case, game_dir)
+            receipt = browser.browser_game(Path(entry['directory']), entry['source'], entry['run'], repo, case, game_dir,
+                                           chrome=chrome)
             if (receipt.get('phase') != 'complete' or receipt.get('source') != entry['source']
                     or receipt.get('case') != case or receipt.get('qualification_run') != entry['run']):
                 raise ValueError('subgame is incomplete or names a different input')
@@ -123,7 +124,8 @@ def compare(baseline: Path, baseline_source: str, baseline_run: int,
             records.append({'repeat': repeat, 'arm': arm, 'path': str(game_dir),
                             'save_sha256': receipt['raw_save']['sha256'],
                             'publication_identities': identities, 'host_before': before,
-                            'chrome': receipt['chrome'], 'runtime': receipt['runtime'],
+                            'chrome': receipt['chrome'], 'chrome_executable_sha256': receipt['chrome_executable_sha256'],
+                            'runtime': receipt['runtime'],
                             'host_after': host_snapshot(), **receipt['timing']})
             record()
         # Compare bytes as well as hashes; neither path reparses/reserializes them.
@@ -150,10 +152,12 @@ def main():
     parser.add_argument('--repo', required=True)
     parser.add_argument('--case', choices=sorted(browser.profile.CASES), required=True)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--chrome', type=Path, required=True,
+                        help='Fixed Chrome for Testing executable; do not use an updating desktop browser')
     args = parser.parse_args()
     result = compare(args.baseline.resolve(), args.baseline_source, args.baseline_run,
                      args.candidate.resolve(), args.candidate_source, args.candidate_run,
-                     args.repo, args.case, args.out.resolve())
+                     args.repo, args.case, args.out.resolve(), chrome=args.chrome.resolve())
     print(json.dumps(result['summary']))
 
 

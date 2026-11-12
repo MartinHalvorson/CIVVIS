@@ -14,7 +14,8 @@ RAW = b'original opaque save bytes with u64 18446744073709551615'
 
 def records():
     return [dict(repeat=repeat, arm=arm, save_sha256='same', publication_identities=[[7, 1, 0, False]],
-                 chrome='Chrome synthetic', runtime=dict(hostname=paired.browser.PUBLISHED_HOST, secure=True, publishedSite=True),
+                 chrome='Chrome synthetic', chrome_executable_sha256='browser binary hash',
+                 runtime=dict(hostname=paired.browser.PUBLISHED_HOST, secure=True, publishedSite=True),
                  first_paint_to_final_paint_ms=1000 if arm == 'baseline' else 800,
                  navigation_to_final_paint_ms=1200 if arm == 'baseline' else 1000)
             for repeat, arm in paired.plan('default-7')]
@@ -49,7 +50,8 @@ class PairGuards(unittest.TestCase):
 
     def test_changed_save_or_publication_identity_rejects_comparison(self):
         for field, value in [('save_sha256', 'different'), ('publication_identities', [[7, 99, 4, True]]),
-                             ('chrome', 'different browser'), ('runtime', dict(secure=False))]:
+                             ('chrome', 'different browser'), ('chrome_executable_sha256', 'changed binary'),
+                             ('runtime', dict(secure=False))]:
             value_rows = records()
             value_rows[2][field] = value
             with self.assertRaises(ValueError):
@@ -77,7 +79,7 @@ class PairGuards(unittest.TestCase):
         self.assertEqual(paired.summarize(rows, 'default-7')['both_order_geometric_change'],
                          dict(first_paint_to_final_paint_ms_pct=0, navigation_to_final_paint_ms_pct=0))
 
-    def fake_guard(self, path, source, run, repo, case, out):
+    def fake_guard(self, path, source, run, repo, case, out, chrome=None):
         out.mkdir()
         (out / 'game.save.json').write_bytes(RAW)
         (out / 'observation.json').write_text(json.dumps({'observation': {'frames': [
@@ -85,7 +87,8 @@ class PairGuards(unittest.TestCase):
             dict(seed=7, turn=2, sequence=1, finished=True, winner=0, victoryType='science')]}}))
         elapsed = 1000 if source == 'a' * 40 else 800
         return dict(phase='complete', source=source, qualification_run=run, case=case,
-                    chrome='Chrome synthetic', runtime=dict(hostname=paired.browser.PUBLISHED_HOST, secure=True, publishedSite=True),
+                    chrome='Chrome synthetic', chrome_executable_sha256='browser binary hash',
+                    runtime=dict(hostname=paired.browser.PUBLISHED_HOST, secure=True, publishedSite=True),
                     raw_save=dict(sha256=hashlib.sha256(RAW).hexdigest()),
                     timing=dict(first_paint_to_final_paint_ms=elapsed, navigation_to_final_paint_ms=elapsed + 200))
 
@@ -97,8 +100,9 @@ class PairGuards(unittest.TestCase):
             with patch.object(paired.browser, 'verify_module', return_value=(module, RECIPE)), \
                     patch.object(paired.browser, 'browser_game', side_effect=self.fake_guard) as game:
                 result = paired.compare(root, 'a' * 40, 1, root, 'b' * 40, 2,
-                                        'o/r', 'default-7', root / 'out')
+                                        'o/r', 'default-7', root / 'out', chrome=root / 'fixed-chrome')
             self.assertEqual(game.call_count, 4)
+            self.assertTrue(all(call.kwargs == {'chrome': root / 'fixed-chrome'} for call in game.call_args_list))
             self.assertEqual(result['phase'], 'complete')
             self.assertTrue(result['same_engine_bytes'])
             self.assertFalse(result['identical_qualification_control'])
@@ -123,11 +127,11 @@ class PairGuards(unittest.TestCase):
             module = root / 'module.wasm'
             module.write_bytes(b'mocked module')
             calls = []
-            def fail_second(*args):
+            def fail_second(*args, **kwargs):
                 calls.append(args)
                 if len(calls) == 2:
                     raise RuntimeError('actual subgame failure')
-                return self.fake_guard(*args)
+                return self.fake_guard(*args, **kwargs)
             with patch.object(paired.browser, 'verify_module', return_value=(module, RECIPE)), \
                     patch.object(paired.browser, 'browser_game', side_effect=fail_second):
                 with self.assertRaises(RuntimeError):
