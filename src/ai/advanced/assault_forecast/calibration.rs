@@ -424,6 +424,8 @@ struct Outcome {
     wall_max: (i32, i32),
     /// The first turn the stage-musters-out-of-reach muster closed.
     muster_closed: Option<u32>,
+    /// Our military units an enemy removed (`CombatLedger::units_lost`).
+    combat_lost: usize,
 }
 
 /// One turn of the posed city's siege, read around our turn and the
@@ -524,9 +526,20 @@ fn stage_rank(stage: SiegeStage) -> u8 {
     }
 }
 
-fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool) -> Outcome {
+/// Gold kept above a seat's deficit under `solvent`: enough that the
+/// engine's end of turn (`settle_gold_budget`, one unit disbanded per 10
+/// Gold short) disbands nothing, too little to buy with.
+const SOLVENT_MARGIN: f64 = 20.0;
+
+fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent: bool) -> Outcome {
     let clock = Instant::now();
     let mut g = w.g.clone();
+    if solvent {
+        for pid in 0..2 {
+            g.players[pid].gold = g.players[pid].gold.max(100.0);
+        }
+    }
+    let combat_lost_at_start = g.combat_ledger(0).units_lost;
     let journal = Journal::recording();
     ours.attach_journal(journal.handle());
     let mut cursor = 0;
@@ -592,6 +605,14 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool) -> Outco
             others[pid].take_turn(&mut g, pid);
         }
         if g.winner.is_none() && g.current == pid {
+            if solvent && pid < 2 {
+                // Cover last turn's deficit, so the end of turn disbands
+                // nothing; the seat starts its next turn near empty.
+                let need = SOLVENT_MARGIN - g.players[pid].gold_per_turn;
+                if g.players[pid].gold < need {
+                    g.players[pid].gold = need;
+                }
+            }
             let _ = g.apply(pid, &Action::EndTurn);
         }
         if pid == 0 {
@@ -731,6 +752,7 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool) -> Outco
         .iter()
         .filter(|uid| g.units.get(uid).is_none_or(|unit| unit.owner != 0))
         .count();
+    out.combat_lost = (g.combat_ledger(0).units_lost - combat_lost_at_start) as usize;
     out.seconds = clock.elapsed().as_secs_f64();
     out
 }
@@ -738,6 +760,7 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool) -> Outco
 struct CalibrationRow {
     seed: u64,
     family: Family,
+    solvent: bool,
     label: String,
     walls: i32,
     /// The shipped forecast with its short-of reading, then the curve
@@ -760,7 +783,9 @@ struct PairRow {
 }
 
 enum Job {
-    Calibrate(u64, Family),
+    /// A calibration seed, its family, and whether the seats are kept
+    /// solvent.
+    Calibrate(u64, Family, bool),
     Pair(u64),
 }
 
@@ -771,7 +796,7 @@ enum Row {
 
 fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
     match job {
-        Job::Calibrate(seed, family) => {
+        Job::Calibrate(seed, family, solvent) => {
             let w = world_of(*seed, false, *family);
             let start =
                 w.g.cities
@@ -793,10 +818,17 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
                     read
                 })
                 .collect();
-            let outcome = play_world(&w, live_seat(tags, false), HORIZON as u32, *seed < TRACED);
+            let outcome = play_world(
+                &w,
+                live_seat(tags, false),
+                HORIZON as u32,
+                *seed < TRACED,
+                *solvent,
+            );
             Row::Calibrated(CalibrationRow {
                 seed: *seed,
                 family: *family,
+                solvent: *solvent,
                 label: w.label.clone(),
                 walls: w.walls,
                 forecast,
@@ -814,7 +846,7 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
             let trace = *seed < 100_000 + TRACED;
             let arms = ARMS
                 .iter()
-                .map(|(_, go)| play_world(&w, live_seat(tags, *go), PAIRED_TURNS, trace))
+                .map(|(_, go)| play_world(&w, live_seat(tags, *go), PAIRED_TURNS, trace, true))
                 .collect();
             Row::Paired(PairRow {
                 seed: *seed,
@@ -1280,6 +1312,48 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
     let _ = writeln!(out);
 }
 
+/// The same sieges with the seats left to their treasury (as #5195 ran
+/// them) and kept solvent.
+fn funding(out: &mut String, unfunded: &[&CalibrationRow], solvent: &[&CalibrationRow]) {
+    let _ = writeln!(
+        out,
+        "## Funding: the same mixed sieges, seats left to their treasury (as #5195 ran them) and kept solvent\n"
+    );
+    let _ = writeln!(
+        out,
+        "| seats | sieges | Brier within 12 | read >= 0.8 | of them taken | force members lost | in combat (all our units) | members lost otherwise |"
+    );
+    let _ = writeln!(out, "|---|---|---|---|---|---|---|---|");
+    for (name, rows) in [("unfunded", unfunded), ("solvent", solvent)] {
+        let brier =
+            mean(rows.iter().map(|row| {
+                (f64::from(row.forecast.p()) - taken_by(&row.outcome, HORIZON)).powi(2)
+            }))
+            .0;
+        let high: Vec<&&CalibrationRow> =
+            rows.iter().filter(|row| row.forecast.p() >= 0.8).collect();
+        let (taken, _) = mean(high.iter().map(|row| taken_by(&row.outcome, HORIZON)));
+        let (lost, _) = mean(rows.iter().map(|row| row.outcome.lost as f64));
+        let (combat, _) = mean(rows.iter().map(|row| row.outcome.combat_lost as f64));
+        let (other, _) = mean(
+            rows.iter()
+                .map(|row| row.outcome.lost.saturating_sub(row.outcome.combat_lost) as f64),
+        );
+        let _ = writeln!(
+            out,
+            "| {name} | {} | {brier:.3} | {} | {taken:.2} | {lost:.2} | {combat:.2} | {other:.2} |",
+            rows.len(),
+            high.len()
+        );
+    }
+    let reads: Vec<Read> = unfunded
+        .iter()
+        .map(|row| (&row.forecast, &row.outcome))
+        .collect();
+    let _ = writeln!(out, "\nUnfunded:\n");
+    calibration_table(out, &reads, HORIZON);
+}
+
 fn paired_table(out: &mut String, title: &str, kept_pairs: &[&PairRow]) {
     let _ = writeln!(
         out,
@@ -1337,10 +1411,15 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
         .iter()
         .filter(|row| row.family == Family::Tempo && !row.outcome.peace)
         .collect();
+    let unfunded: Vec<&CalibrationRow> = calibrated
+        .iter()
+        .filter(|row| row.family == Family::Mixed && !row.solvent && !row.outcome.peace)
+        .collect();
     let calibrated: Vec<&CalibrationRow> = calibrated
         .iter()
-        .filter(|row| row.family == Family::Mixed)
+        .filter(|row| row.family == Family::Mixed && row.solvent)
         .collect();
+    funding(&mut out, &unfunded, &calibrated);
     let kept: Vec<&CalibrationRow> = calibrated
         .iter()
         .copied()
@@ -1576,8 +1655,9 @@ fn assault_forecast_calibration() {
     let mut jobs: Vec<Job> = (0..PAIRED_SEEDS)
         .map(|seed| Job::Pair(100_000 + seed))
         .collect();
-    jobs.extend((0..TEMPO_SEEDS).map(|seed| Job::Calibrate(200_000 + seed, Family::Tempo)));
-    jobs.extend((0..CALIBRATION_SEEDS).map(|seed| Job::Calibrate(seed, Family::Mixed)));
+    jobs.extend((0..TEMPO_SEEDS).map(|seed| Job::Calibrate(200_000 + seed, Family::Tempo, true)));
+    jobs.extend((0..CALIBRATION_SEEDS).map(|seed| Job::Calibrate(seed, Family::Mixed, true)));
+    jobs.extend((0..CALIBRATION_SEEDS).map(|seed| Job::Calibrate(seed, Family::Mixed, false)));
     let next = AtomicUsize::new(0);
     let rows: Mutex<Vec<(usize, Row)>> = Mutex::new(Vec::new());
     let threads = std::thread::available_parallelism()
