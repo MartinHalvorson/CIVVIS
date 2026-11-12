@@ -705,3 +705,63 @@ fn a_counterweight_holy_site_yields_with_nothing_paid_but_not_with_progress() {
         );
     }
 }
+
+/// `conquest_or_score_seat`: a Score seat's first Campus goes ahead of the
+/// Granary as a Domination seat's does; a Culture, Science or Religion seat
+/// keeps the Granary.
+#[test]
+fn a_score_seat_puts_its_first_campus_first_and_other_targets_keep_the_granary() {
+    let (g, armed, cid, plan, campus) = campus_board();
+    for (target, expected) in [
+        (VictoryTarget::Domination, campus.clone()),
+        (VictoryTarget::Score, campus.clone()),
+        (VictoryTarget::Culture, granary()),
+        (VictoryTarget::Science, granary()),
+        (VictoryTarget::Religion, granary()),
+    ] {
+        let mut board = g.clone();
+        let mut ai = armed.clone();
+        ai.victory_target = Some(target);
+        ai.claim_free_slot_campus(&mut board, 0, &plan);
+        assert_eq!(head(&board, cid), Some(expected), "{target:?}");
+    }
+}
+
+/// The University passes a wonder with nothing paid on a Domination seat,
+/// but not on a Score seat, where a wonder is fifteen score. A wonder with
+/// Production in keeps its queue on both.
+#[test]
+fn a_score_seat_keeps_its_wonder_ahead_of_the_university() {
+    let (g, ranked, armed, plan) = university_board();
+    let cid = ranked[0];
+    let wonder = Item::Wonder {
+        wonder: crate::name!("pyramids"),
+        pos: g.cities[&cid].pos,
+    };
+    let reach = ScienceFirstReach::EconomyAndArmy;
+    let passes = |ai: &AdvancedAi, g: &Game| {
+        ai.campus_and_library_passes(
+            g,
+            0,
+            cid,
+            &plan,
+            &wonder,
+            reach,
+            ScienceFirstItem::University,
+        )
+    };
+    let mut domination = armed.clone();
+    domination.victory_target = Some(VictoryTarget::Domination);
+    let mut score = armed.clone();
+    score.victory_target = Some(VictoryTarget::Score);
+    assert!(passes(&domination, &g).is_some(), "an unpaid wonder waits");
+    assert_eq!(passes(&score, &g), None, "a Score seat keeps its wonder");
+    let mut paid = g.clone();
+    paid.cities
+        .get_mut(&cid)
+        .unwrap()
+        .production_progress
+        .insert(Game::item_progress_key(&wonder), 20.0);
+    assert_eq!(passes(&domination, &paid), None, "a started wonder");
+    assert_eq!(passes(&score, &paid), None, "a started wonder");
+}

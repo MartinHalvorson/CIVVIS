@@ -142,3 +142,30 @@ fn settlers_and_the_gates_keep_every_queue() {
         assert_eq!(heads(&board, &ranked), before);
     }
 }
+
+/// `conquest_or_score_seat`: a Score seat at peace claims its first Hub as a
+/// Domination seat does; a Culture, Science or Religion seat claims nothing.
+#[test]
+fn a_score_seat_claims_its_first_hub_and_other_targets_do_not() {
+    let catapult = unit("catapult");
+    let (game, ranked) = empire("PEACEHUBSCORE", &catapult);
+    let before = heads(&game, &ranked);
+    for (target, claims) in [
+        (VictoryTarget::Domination, true),
+        (VictoryTarget::Score, true),
+        (VictoryTarget::Culture, false),
+        (VictoryTarget::Science, false),
+        (VictoryTarget::Religion, false),
+    ] {
+        let mut ai = controller(true);
+        ai.victory_target = Some(target);
+        let mut board = game.clone();
+        ai.claim_peace_queue_for_the_commercial_hub(&mut board, 0, &plan());
+        let after = heads(&board, &ranked);
+        let hubs = after.iter().filter(|head| is_hub(&board, head)).count();
+        assert_eq!(hubs, usize::from(claims), "{target:?}: {after:?}");
+        if !claims {
+            assert_eq!(after, before, "{target:?}");
+        }
+    }
+}
