@@ -57,7 +57,12 @@ function paintPlanetBackdrop(held, centerY) {
   cx.setTransform(DPR, 0, 0, DPR, 0, 0);
   cx.save();
   applyPlanetGroundTilt(centerY);
-  Object.assign(cx, held.paint);
+  // Leave matching Canvas attributes untouched. Reassigning their existing
+  // values changed close-up foreground pixels in the native Chrome fixture,
+  // even though those values read back unchanged.
+  for (const [field, value] of Object.entries(held.paint)) {
+    if (cx[field] !== value) cx[field] = value;
+  }
   cx.setLineDash(held.dash);
   PLANET_HIT_FRAME = {...held.hitFrame};
   held.hits++;

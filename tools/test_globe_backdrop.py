@@ -20,7 +20,7 @@ class BackdropGuards(unittest.TestCase):
     def test_actual_js_cache_guards(self):
         result = subprocess.run(['node', str(ROOT / 'web/globe_backdrop_test.mjs')],
                                 check=True, capture_output=True, text=True)
-        self.assertIn('10 pure backdrop tests passed', result.stdout)
+        self.assertIn('11 pure backdrop tests passed', result.stdout)
 
     def test_helper_script_loads_before_the_renderer(self):
         page = (ROOT / 'web/index.html').read_text()

@@ -15307,7 +15307,7 @@ fn the_sky_carries_its_own_way_about() {
         .find("  syncSkyNav();")
         .expect("the sky navigator is synced from the renderer");
     let branch = EMBEDDED_INDEX
-        .find("if (drawPlanetMap()) return;")
+        .find("if (drawPlanetMap(")
         .expect("the planet branch");
     assert!(
         sync < branch,

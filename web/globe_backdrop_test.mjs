@@ -82,6 +82,16 @@ test('replay copies pixels with identity transform and restores overlay paint st
   assert.deepEqual(f.commands[paint-2], ['transform', 1, 0, 0, 1, 0, 0]);
 });
 
+test('replay does not rewrite an already matching native drawing attribute', () => {
+  const f = fixture(); let assignments = 0;
+  Object.defineProperty(f.context, 'imageSmoothingQuality', {
+    enumerable:true, get:() => 'low',
+    set:() => { if (f.stack.length === 1) assignments++; }
+  });
+  f.run('savePlanetBackdrop(planetBackdropView(17, 19), []); paintPlanetBackdrop(planetBackdrop, 19)');
+  assert.equal(assignments, 0, 'matching setters can still alter native image/font state');
+});
+
 test('repeated ordinary publications reuse one backing allocation', () => {
   const f = fixture();
   for (let i=0; i<100; i++) f.run('planetBackdrop = null; savePlanetBackdrop(planetBackdropView(17, 19), []);');
