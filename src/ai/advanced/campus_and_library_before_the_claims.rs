@@ -35,8 +35,9 @@
 //! rear-city test). There:
 //!
 //! 1. The first Campus `campus-claims-the-free-slot` (or `-2`) would claim
-//!    but for a hold goes ahead of a Granary, an Aqueduct, an Industrial
-//!    Zone, a Commercial Hub or its Market. At peace and with no hostile
+//!    but for a hold goes ahead of a Builder (the backlog claims' included), a
+//!    Granary, an Aqueduct, an Industrial Zone, a Commercial Hub or its
+//!    Market. At peace and with no hostile
 //!    near, it also goes ahead of a soldier: the deterrent, or a routine unit
 //!    that is not a siege gun.
 //! 2. A standing Campus's Library takes the head through
@@ -63,8 +64,10 @@
 //!    outside the Prophet race's site city: the counterweight's and the
 //!    adopted faith's sanctuary. A Holy Site with progress finishes first.
 //!
-//! **A Builder always keeps its queue** against all three: the worked
-//! backlog's Builder is what turns land into Production.
+//! **A started first Campus finishes.** A first Campus with Production in
+//! keeps its queue against both Settler claims at any city count, and, like
+//! any first Campus or Library the gene holds, against both backlog Builder
+//! claims ([`AdvancedAi::campus_and_library_holds`]).
 //!
 //! **Why points 4 and 5 (live `civvis-20261112T085526Z`, the gene not yet armed,
 //! `no-city-limit` armed).** The seat held 5, 7 and 9 cities at t50, t75 and
@@ -85,8 +88,8 @@
 //! head ([`AdvancedAi::campus_and_library_holds`]), as do both Settler
 //! claims from the city count that lets the head pass a Settler.
 //!
-//! **Why the Builder keeps its queue and the University passes less (the
-//! armed gene, 11 live games since 10:00Z and a 60-seed paired simulation).**
+//! **Why the University passes less (the armed gene, 11 live games since
+//! 10:00Z and a 60-seed paired simulation).**
 //! Science rose (t50 24.7 against 13.5, t100 77.0 against 62.7 live; +6.9 at
 //! t50 in the simulation) but Production fell: 75 against 106 at t100 live,
 //! -14.8 (z -4.4) in the simulation, with 0.62 fewer cities and 4.6 fewer
@@ -95,10 +98,24 @@
 //! Campus ahead of the Granary 42, the Settler 22 and the Builder 22; the
 //! Library ahead of the Settler 30, the Granary 21 and the Builder 13; the
 //! University ahead of the Builder 32. 63% of worked tiles were unimproved at
-//! t40.
+//! t40. A retune then kept a Builder ahead of all three; see below for why
+//! the first Campus and the Library pass it again.
 //!
-//! A Builder, a Settler (below the city count, more than half paid, or before
-//! a University), Walls, a wonder (but an unpaid one before a University), a
+//! **Why the first Campus and the Library pass a Builder again (live, non-
+//! capital cities founded by t45, turns from founding to a finished
+//! Campus).** Before the gene 36 (quartiles 21-61) and no Library by t85;
+//! with the gene before the retune (18 games, 52 cities) 14.5 (6-22) and the
+//! Library at 34, the capital's Library at t50; after the retune (7 games, 12
+//! cities) 25 (8-37) and the Library at 50, the capital's at t61.5. Science
+//! at t50 / t75 / t100 read 23.8 / 45.5 / 72.7 before the retune and 16.2 /
+//! 30.3 / 56.8 after it, Production at t100 81 and 65, and cities were
+//! founded no faster. A new city's head is most often the worked-backlog
+//! Builder, so its Campus waited behind Builders again. The paired
+//! simulation that read the retune's Production gain builds its Campuses on
+//! time with or without the gene, so it cannot see this.
+//!
+//! A Builder (before a University), a Settler (below the city count, more
+//! than half paid, or before a University), Walls, a wonder (but an unpaid one before a University), a
 //! project, a Trader, a Ram or Siege Tower, a ship, the first capital's
 //! reserved soldier and Scout, and anything finishing this turn keep their
 //! queue. So does saved work within two turns of done while
@@ -141,9 +158,10 @@ pub(super) enum ScienceFirstItem {
 /// How far the gene may reach into a city's queue this turn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ScienceFirstReach {
-    /// The economy's heads only: a Granary, an Aqueduct, an Industrial Zone,
-    /// a Commercial Hub or its Market, the faith defence's Holy Site and
-    /// Shrine, and a Settler (see [`AdvancedAi::campus_and_library_passes`]).
+    /// The economy's heads only: a Builder, a Granary, an Aqueduct, an
+    /// Industrial Zone, a Commercial Hub or its Market, the faith defence's
+    /// Holy Site and Shrine, and a Settler (see
+    /// [`AdvancedAi::campus_and_library_passes`]).
     Economy,
     /// Those and a soldier too: at peace, with no hostile pressing the city.
     EconomyAndArmy,
@@ -268,9 +286,14 @@ impl AdvancedAi {
         };
         match item {
             Item::Unit { unit } => {
+                // The first Campus and the Library pass a Builder; the
+                // University does not.
+                if *unit == "builder" {
+                    return (what != ScienceFirstItem::University)
+                        .then(|| "the Builder".to_string());
+                }
                 // A Settler with at most half its cost paid waits for the
-                // Library from four cities and the first Campus from six. A
-                // Builder is a civilian and always keeps its queue.
+                // Library from four cities and the first Campus from six.
                 if *unit == "settler" {
                     let cost = g.item_cost_for_city(pid, cid, item);
                     return (Self::campus_and_library_passes_settlers(g, pid, what)
@@ -387,7 +410,9 @@ impl AdvancedAi {
 
     /// Whether `cid`'s head is the first Campus or Library the gene holds and
     /// both Settler claims leave it alone too: from six cities for the
-    /// Campus, four for the Library. Always false with the gene off.
+    /// Campus, four for the Library, and at any count for a first Campus
+    /// with Production in (finish what was started). Always false with the
+    /// gene off.
     pub(super) fn campus_and_library_holds_the_settler(
         &self,
         g: &Game,
@@ -411,7 +436,9 @@ impl AdvancedAi {
                         }
                         _ => return false,
                     };
-                    Self::campus_and_library_passes_settlers(g, pid, what)
+                    let started = what == ScienceFirstItem::FirstCampus
+                        && g.item_invested_production(cid, item) > 0.0;
+                    (started || Self::campus_and_library_passes_settlers(g, pid, what))
                         && self.campus_and_library_holds(g, pid, cid, plan, item)
                 })
     }
