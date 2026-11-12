@@ -2471,6 +2471,9 @@ impl AdvancedAi {
 
     pub(super) fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.builder_support.clear();
+        // `risk-is-priced`: the last frame's reading goes before anything
+        // moves; this frame's is read below, once the kills are settled.
+        self.clear_priced_risk();
         self.base.begin_movement_turn(g, pid);
         self.refresh_wonder_clearance(g, pid);
         // In a native game a Trader has walking movement and the ordinary unit
@@ -2630,6 +2633,12 @@ impl AdvancedAi {
         // `advanced/guns_stay_out_of_reach.rs`.
         self.mark_gun_lethal_tiles(g, pid);
         self.guns_step_out_of_reach(g, pid);
+        // `risk-is-priced`: each covered unit's mission, allowance, price and
+        // death chance on every tile it can reach, read at the same point,
+        // and a siege gun over its allowance steps out. Nothing with the gene
+        // off. See `advanced/priced_risk.rs`.
+        self.mark_priced_risk(g, pid, plan);
+        self.priced_risk_guns_step_out(g, pid);
         let mut air_assault_units = self.plan_air_city_assault(g, pid, plan);
         for (uid, moves, attacks) in held_readiness {
             if let Some(unit) = g.units.get_mut(&uid) {

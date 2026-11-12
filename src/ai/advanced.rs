@@ -9401,6 +9401,15 @@ pub struct AdvancedAi {
     /// below; the paying cards the base deck review gave up come back first.
     /// See `advanced/policy_swap_keeps_the_army_paid.rs`. Opt-in.
     policy_swap_keeps_the_army_paid: bool,
+    /// `risk-is-priced`: every pathed move of a land unit the battle planner
+    /// did not order reads one death chance (every visible hostile in strike
+    /// reach and every walled city strike, each striking at
+    /// `HOST_STRIKE_P`, on the exact dice), and a move over the allowance its
+    /// mission buys is refused unless it lowers the unit's current death
+    /// chance; the one-ply movers subtract `death chance x price`. Supersedes
+    /// `guns-stay-out-of-reach` for the units it reads. See
+    /// `advanced/priced_risk.rs`. Opt-in.
+    risk_is_priced: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
@@ -11368,6 +11377,8 @@ mod battle_solver;
 mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;
 mod guru_walks_to_the_wounded;
+/// `risk-is-priced`: see `advanced/priced_risk.rs`.
+pub(super) mod priced_risk;
 mod unique_unit_closes_the_age;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
@@ -26236,6 +26247,7 @@ impl AdvancedAi {
         self.air_city_assault = None;
         self.base.gun_lethal_tiles.clear();
         self.base.unit_lethal_blows.clear();
+        self.clear_priced_risk();
         self.builder_support.clear();
         self.battlefront_frame = None;
         self.settlement_atlas.borrow_mut().clear();
