@@ -103,8 +103,10 @@ impl AdvancedAi {
         if production <= 0.0 || !self.city_works_the_tile(g, pid, cid, pos) {
             return 0.0;
         }
-        let surplus = g.city_yields(cid).food - 2.0 * city.pop as f64;
-        if surplus <= WORKED_FOOD_SURPLUS_FLOOR && g.city_housing_headroom(city) > 1.0 {
+        // Housing can rule out starvation without deriving the city's food.
+        if g.city_housing_headroom(city) > 1.0
+            && g.city_yields(cid).food - 2.0 * city.pop as f64 <= WORKED_FOOD_SURPLUS_FLOOR
+        {
             return 0.0;
         }
         self.yield_value(
@@ -119,3 +121,6 @@ impl AdvancedAi {
                     * PRODUCTION_FOUNDATION_IMPROVEMENT_MULTIPLIER)
     }
 }
+
+#[cfg(test)]
+mod guard_tests;
