@@ -20,8 +20,7 @@
 //! dead before our next turn. Every visible at-war hostile whose strike reach
 //! covers the tile (the battle planner's `strike-reach` flood, one move plus a
 //! blow, zone of control included) hits it with the host AI's own fitted odds
-//! (#5197's `battle_solver::host_enemy`, 17,669 live Deity unit-turns;
-//! copied in `priced_risk/host_fit.rs` until #5197 is on main): the
+//! (`battle_solver::host_enemy`, #5197: 17,669 live Deity unit-turns): the
 //! chance it strikes at all (`strike_probability`, read on its class, owner,
 //! health, home, best strength edge, targets in reach and whether one is in
 //! reach without moving) times the chance it picks this unit among ours in its
@@ -77,16 +76,15 @@ use std::sync::Arc;
 
 use super::battle_planner::{wounded_penalty, BlowPair, DangerField, STRUCTURE_SOURCE};
 use super::battle_solver::dice::VolleyDist;
-// #5197's `battle_solver::host_enemy`, copied until it is on main.
+use super::battle_solver::host_enemy::{
+    strike_probability, target_utility, HostClass, Owner, StrikeFeatures, TargetFeatures,
+};
 use super::objective_board::ObjectiveKey;
 use super::{AdvancedAi, ForcePosture, ForceRole, StrategicPlan};
 use crate::ai::{BasicAi, UnitDoctrine};
 use crate::game::{expected_damage, Game};
 use crate::think;
 use crate::Pos;
-use host_fit::{
-    strike_probability, target_utility, HostClass, Owner, StrikeFeatures, TargetFeatures,
-};
 
 /// The chance a walled City Center or Encampment strikes one of our units
 /// within two tiles, before it is shared over them. The host fit (#5197) reads
@@ -954,6 +952,5 @@ impl BasicAi {
 
 #[cfg(test)]
 mod driver_tests;
-mod host_fit;
 #[cfg(test)]
 mod tests;
