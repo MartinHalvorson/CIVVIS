@@ -37,9 +37,11 @@
 //! takers. With the gene on, on the Domination lane:
 //!
 //! - **The objective.** The best such city is the campaign's objective,
-//!   ahead of a walled committed or ranked city, unless a home emergency, a
-//!   city of ours falling, the capital that completes Domination, an urgent
-//!   rival victory, or a city already being reduced holds the plan.
+//!   ahead of a walled committed or ranked city or a rival at peace (a
+//!   second front, a counter not yet declared), unless a home emergency, a
+//!   city of ours falling, the capital that completes Domination, a war
+//!   already running on another rival's urgent victory clock, or a city
+//!   already being reduced holds the plan.
 //! - **The front.** A faith war on its owner is a front
 //!   (`faith-war-is-no-front` does not exempt it), and the one-war front
 //!   turns to its owner while the current front offers no such city.
@@ -261,9 +263,10 @@ impl AdvancedAi {
     }
 
     /// `assess`: the objective the gene names in place of `target_city`, or
-    /// `None` to leave the plan as it stands. `held` is true when a home
-    /// emergency, the capital that completes Domination or an urgent rival
-    /// clock other than the open city's owner already holds the plan.
+    /// `None` to leave the plan as it stands. `held(owner)` is true when a
+    /// home emergency, the capital that completes Domination or a running
+    /// war on an urgent rival clock other than `owner` already holds the
+    /// plan.
     pub(super) fn open_city_objective(
         &self,
         g: &Game,

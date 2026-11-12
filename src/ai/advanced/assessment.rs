@@ -1456,14 +1456,17 @@ impl AdvancedAi {
             .or(ranked_target_city);
         // `open-city-is-the-objective`: at war for any reason, an open city
         // our takers would take within a few turns is the objective, unless a
-        // home emergency, the finishing capital or another rival's urgent
-        // clock holds the plan. `None` with the gene off. See
+        // home emergency, the finishing capital or a war already running on
+        // another rival's urgent clock holds the plan. A counter still at
+        // peace waits the few turns. `None` with the gene off. See
         // `advanced/open_city_objective.rs`.
         let open_city_take = self.open_city_objective(g, pid, target_city, |rival| {
             emergency_objective.is_some()
                 || finishing_capital.is_some()
                 || actionable_denial.is_some_and(|(urgent, _)| {
-                    urgent != rival && self.urgent_victory_threat(g, urgent)
+                    urgent != rival
+                        && g.is_at_war(pid, urgent)
+                        && self.urgent_victory_threat(g, urgent)
                 })
         });
         let (target_player, target_city) = match &open_city_take {
