@@ -1265,9 +1265,9 @@ fn spawn_recruits(
 }
 
 /// Defenders the city's owner raises during the siege, as (kind, round at
-/// whose end it stands): its best land melee unit, bought on its first turn
-/// when its treasury covers the engine's price, then one each time the
-/// city's production finishes one. On 1,200 posed sieges with solvent seats
+/// whose end it stands): the strongest land soldier its treasury covers at
+/// the engine's price, bought on its first turn, then its best land melee
+/// unit each time the city's production finishes one. On 1,200 posed sieges with solvent seats
 /// the owner's new soldiers were the first cause of 27 of the 92 high
 /// readings not taken (#5207).
 fn reinforcements(g: &Game, cid: u32) -> Vec<(Name, u8)> {
@@ -1279,10 +1279,34 @@ fn reinforcements(g: &Game, cid: u32) -> Vec<(Name, u8)> {
         return Vec::new();
     };
     let mut plan = Vec::new();
-    if g.unit_purchase_cost(owner, cid, kind.as_str(), "gold")
-        .is_some_and(|price| price > 0.0 && g.players[owner].gold >= price)
-    {
-        plan.push((kind, 1));
+    // The strongest land soldier its treasury covers today.
+    let gold = g.players[owner].gold;
+    let fielded: BTreeSet<Name> = g
+        .units
+        .values()
+        .filter(|unit| unit.owner == owner)
+        .map(|unit| unit.kind)
+        .collect();
+    let bought = g
+        .rules
+        .units
+        .iter()
+        .filter(|(kind, spec)| {
+            spec.class == "military"
+                && !spec.siege
+                && (spec.is_melee_capable() || spec.has_ranged_attack())
+                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                && (fielded.contains(*kind) || buildable_now(g, owner, **kind, spec))
+                && g.unit_purchase_cost(owner, cid, kind.as_str(), "gold")
+                    .is_some_and(|price| price > 0.0 && gold >= price)
+        })
+        .max_by(|a, b| {
+            let power = |spec: &UnitSpec| spec.strength.max(spec.ranged_strength);
+            power(a.1).total_cmp(&power(b.1)).then_with(|| b.0.cmp(a.0))
+        })
+        .map(|(kind, _)| *kind);
+    if let Some(bought) = bought {
+        plan.push((bought, 1));
     }
     let cost = g.item_cost_for_city(owner, cid, &Item::Unit { unit: kind });
     let production = g.city_yields(cid).production;

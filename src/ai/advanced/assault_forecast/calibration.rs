@@ -429,6 +429,9 @@ struct Outcome {
     ideal: Vec<u32>,
     /// Player 1's land soldiers that were not on the board at the start.
     new_enemy: usize,
+    /// Each of them: the turn it stood, its kind, the owner's Gold before
+    /// and after that turn, and its distance from the city.
+    raised: Vec<(u32, String, f64, f64, i32)>,
     wall_max: (i32, i32),
     /// The first turn the stage-musters-out-of-reach muster closed.
     muster_closed: Option<u32>,
@@ -569,13 +572,15 @@ fn stage_rank(stage: SiegeStage) -> u8 {
 /// of deficit) disbands anything. A live seat's economy carries its army.
 const SOLVENT_TURNS: f64 = 7.0;
 const SOLVENT_MARGIN: f64 = 20.0;
+/// Under `solvent`, both seats start with at least this much Gold.
+const SOLVENT_FLOOR: f64 = 100.0;
 
 fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent: bool) -> Outcome {
     let clock = Instant::now();
     let mut g = w.g.clone();
     if solvent {
         for pid in 0..2 {
-            g.players[pid].gold = g.players[pid].gold.max(100.0);
+            g.players[pid].gold = g.players[pid].gold.max(SOLVENT_FLOOR);
         }
     }
     let combat_lost_at_start = g.combat_ledger(0).units_lost;
@@ -620,6 +625,7 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
     let mut gold_now = (0.0, 0.0);
     let mut struck_now = 0;
     let mut striking_dead = 0;
+    let mut owner_gold = 0.0;
     while g.winner.is_none() && g.turn < start + turns && steps < 64 * turns {
         steps += 1;
         let pid = g.current;
@@ -666,6 +672,7 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
                 .count();
             before = Some(pre);
         } else {
+            owner_gold = g.players[pid].gold;
             others[pid].take_turn(&mut g, pid);
         }
         if g.winner.is_none() && g.current == pid {
@@ -788,6 +795,13 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
                         round.enemy_units += 1;
                         if seen_enemy.insert(unit.id) {
                             out.new_enemy += 1;
+                            out.raised.push((
+                                out.rounds.len() as u32,
+                                unit.kind.as_str().to_string(),
+                                owner_gold,
+                                g.players[1].gold,
+                                g.wdist(unit.pos, TARGET),
+                            ));
                         }
                     }
                 }
@@ -842,6 +856,9 @@ struct CalibrationRow {
     /// The posed city's health and walls before our first move.
     start: (i32, i32),
     forecast_ms: f64,
+    /// The defenders the forecast has the owner raise (`reinforcements`):
+    /// how many, and whether the first is bought on round 1.
+    planned: (usize, bool),
     outcome: Outcome,
 }
 
@@ -869,7 +886,13 @@ enum Row {
 fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
     match job {
         Job::Calibrate(seed, family, solvent) => {
-            let w = world_of(*seed, false, *family);
+            let mut w = world_of(*seed, false, *family);
+            // The forecast reads the treasuries the game then plays with.
+            if *solvent {
+                for pid in 0..2 {
+                    w.g.players[pid].gold = w.g.players[pid].gold.max(SOLVENT_FLOOR);
+                }
+            }
             let start =
                 w.g.cities
                     .get(&w.cid)
@@ -879,6 +902,11 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
                 .assault_forecast(&w.g, 0, w.cid, &w.force)
                 .expect("a posed city at war reads");
             let forecast_ms = clock.elapsed().as_secs_f64() * 1000.0;
+            let plan = super::reinforcements(&w.g, w.cid);
+            let planned = (
+                plan.len(),
+                plan.first().is_some_and(|(_, round)| *round == 1),
+            );
             let variants = FORECASTS
                 .iter()
                 .map(|(_, knobs)| {
@@ -907,6 +935,7 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
                 variants,
                 start,
                 forecast_ms,
+                planned,
                 outcome,
             })
         }
@@ -1179,8 +1208,17 @@ fn classify(row: &CalibrationRow) -> (Cause, String) {
         return (
             Cause::Reinforced,
             format!(
-                "{} new soldiers, wall pool {} -> {}",
-                o.new_enemy, o.wall_max.0, o.wall_max.1
+                "{} new soldiers ({}), wall pool {} -> {}",
+                o.new_enemy,
+                o.raised
+                    .iter()
+                    .map(|(turn, kind, before, after, dist)| format!(
+                        "{kind} on turn {turn} at {dist}, Gold {before:.0} -> {after:.0}"
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("; "),
+                o.wall_max.0,
+                o.wall_max.1
             ),
         );
     }
@@ -1345,6 +1383,36 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
             .filter(|row| row.outcome.wall_max.1 > row.outcome.wall_max.0)
             .count()
     );
+    // Each soldier the owner raised in those sieges: when, what, and whether
+    // its treasury paid for it (a drop of 30 Gold or more on that turn).
+    let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
+    let mut by_turn = [0usize; HORIZON + 1];
+    let (mut bought, mut inside, mut all) = (0, 0, 0);
+    for row in &raised {
+        for (turn, kind, before, after, dist) in &row.outcome.raised {
+            all += 1;
+            *kinds.entry(kind.clone()).or_default() += 1;
+            by_turn[(*turn as usize).min(HORIZON)] += 1;
+            bought += usize::from(before - after >= 30.0);
+            inside += usize::from(*dist == 0);
+        }
+    }
+    let _ = writeln!(
+        out,
+        "Those {all} soldiers: {bought} bought (the owner's Gold fell 30 or more that turn), {inside} stood in the city; by turn {}; kinds {}\n",
+        by_turn
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| **n > 0)
+            .map(|(t, n)| format!("t{t} {n}"))
+            .collect::<Vec<_>>()
+            .join(", "),
+        kinds
+            .iter()
+            .map(|(k, n)| format!("{k} {n}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     // The forecast's press against the real train, turn by turn.
     let _ = writeln!(
         out,
@@ -1499,6 +1567,26 @@ fn funding(out: &mut String, unfunded: &[&CalibrationRow], solvent: &[&Calibrati
             "| {name} | {} | {brier:.3} | {} | {taken:.2} | {lost:.2} | {combat:.2} | {other:.2} |",
             rows.len(),
             high.len()
+        );
+    }
+    for (name, rows) in [("unfunded", unfunded), ("solvent", solvent)] {
+        let planned = rows.iter().filter(|row| row.planned.0 > 0).count();
+        let bought = rows.iter().filter(|row| row.planned.1).count();
+        let defenders: usize = rows.iter().map(|row| row.planned.0).sum();
+        let raised = rows.iter().filter(|row| row.outcome.new_enemy > 0).count();
+        let paid = rows
+            .iter()
+            .filter(|row| {
+                row.outcome
+                    .raised
+                    .iter()
+                    .any(|(_, _, before, after, _)| before - after >= 30.0)
+            })
+            .count();
+        let _ = writeln!(
+            out,
+            "\n{name}: the forecast had the owner raise {defenders} defenders in {planned} of {} sieges (one bought on round 1 in {bought}); the owner raised a soldier in {raised} (paid in Gold in {paid})",
+            rows.len()
         );
     }
     let reads: Vec<Read> = unfunded
