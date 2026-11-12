@@ -3028,9 +3028,9 @@ impl AdvancedAi {
         // `HOLD_P` does not abort, and `HOPELESS_STREAK` gathered readings
         // under `HOPELESS_P` stand it down. `None` and all false with both
         // genes off. See `advanced/assault_forecast.rs`.
-        let forecast = (self.siege_goes_on_the_forecast
-            || (self.assault_forecast_is_read
-                && self.journal().wants(crate::reasoning::Level::Decision)))
+        let forecast = (self.assault_forecast_read()
+            && (self.siege_goes_on_the_forecast
+                || self.journal().wants(crate::reasoning::Level::Decision)))
         .then(|| self.assault_forecast(g, pid, cid, &force))
         .flatten();
         if let Some(reading) = &forecast {
