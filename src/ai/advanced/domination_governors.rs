@@ -40,18 +40,26 @@
 //!
 //! The cost is Magnus arriving two titles later (his Provision spares a
 //! citizen per Settler trained in his city), so the gene is judged on cities
-//! at t60 as well as on Science at t60 and t100. Off, or for any other
-//! victory target, nothing changes.
+//! at t60 as well as on Science at t60 and t100. Off, or for any victory
+//! target but Domination and Score, nothing changes.
+//!
+//! **A Score seat too (live Deity Rome, 6-player Continents, Online, turn
+//! limit 170, from 2026-11-12 18:58Z).** The score counts 3 a civic, 5 a
+//! city, 2 a district, 1 a building, 1 a citizen and 2 a technology
+//! (`Game::score_parts`), and the Gran Colombia seat held 0.40 of the best
+//! rival's score at every mark from t25 to t170, so the economy this gene
+//! builds is the Score seat's aim as much as the Domination seat's. It reads
+//! [`AdvancedAi::conquest_or_score_seat`].
 
-use super::{AdvancedAi, GrandStrategy, VictoryTarget};
+use super::{AdvancedAi, GrandStrategy};
 use crate::game::Game;
 
 impl AdvancedAi {
     /// `domination-seat-appoints-pingala-first`: the gene is on and the seat
-    /// plays the Domination lane.
+    /// plays the Domination lane or aims at Score
+    /// ([`AdvancedAi::conquest_or_score_seat`]).
     pub(super) fn domination_seat_titles_pingala_first(&self, g: &Game) -> bool {
-        self.domination_seat_appoints_pingala_first
-            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+        self.domination_seat_appoints_pingala_first && self.conquest_or_score_seat(g)
     }
 
     /// `domination-seat-appoints-pingala-first`: whether this frame's titles
@@ -93,7 +101,8 @@ impl AdvancedAi {
     }
 
     pub(super) fn domination_needs_economic_governor(&self, g: &Game, pid: usize) -> bool {
-        self.active_victory_target(g) == Some(VictoryTarget::Domination)
+        // A Score seat too: see [`AdvancedAi::conquest_or_score_seat`].
+        self.conquest_or_score_seat(g)
             && g.players[pid]
                 .governor_roster
                 .get("moksha")

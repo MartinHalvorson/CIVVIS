@@ -69,7 +69,17 @@
 //! rear cities, and once `endgame-army-takes-the-queue`'s clock is open. The
 //! bound Granary claim, the deterrent and the governor's rescoring then leave
 //! the claimed Monument alone ([`AdvancedAi::domination_monument_holds`]).
-//! Off, or for another victory target, nothing changes.
+//! Off, or for a victory target but Domination and Score, nothing changes.
+//!
+//! **A Score seat too (live Deity Rome, 6-player Continents, Online, turn
+//! limit 170, from 2026-11-12 18:58Z).** The score counts 3 a civic, 5 a
+//! city, 2 a district, 1 a building, 1 a citizen and 2 a technology
+//! (`Game::score_parts`), and the Gran Colombia seat held 0.40 of the best
+//! rival's score at every mark from t25 to t170, so the economy this gene
+//! builds is the Score seat's aim as much as the Domination seat's. It reads
+//! [`AdvancedAi::conquest_or_score_seat`].
+//! Rome's Trajan's Column founds every city with its Monument: there the
+//! claim finds nothing to build, and Connoisseur still applies.
 //!
 //! Grep the journal for `domination-seat-raises-its-culture:`.
 
@@ -81,10 +91,10 @@ use super::*;
 pub(crate) const DOMINATION_MONUMENT_MIN_POP: i32 = 2;
 
 impl AdvancedAi {
-    /// The gene is on and the seat plays the Domination lane.
+    /// The gene is on and the seat plays the Domination lane or aims at
+    /// Score ([`AdvancedAi::conquest_or_score_seat`]).
     fn domination_culture_on(&self, g: &Game) -> bool {
-        self.domination_seat_raises_its_culture
-            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+        self.domination_seat_raises_its_culture && self.conquest_or_score_seat(g)
     }
 
     /// The Monument `cid` would claim, its build turns, and whether it may go
