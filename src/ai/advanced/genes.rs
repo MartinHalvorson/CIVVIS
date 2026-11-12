@@ -6044,6 +6044,13 @@ pub const GENES: &[Gene] = &[
     // unit-turns in reach of ours (116 Deity games, 11-11..12) it struck 25%,
     // never above ~70% in any cell. See `advanced/battle_solver/host_enemy.rs`.
     Gene { tag: "solver-plays-the-host", field: "solver_plays_the_host", kind: Kind::OptIn, enable: AdvancedAi::enable_solver_plays_the_host, disable: AdvancedAi::disable_solver_plays_the_host },
+    // Live Rome Score games, 11-12: 10, 9, 9 and 7 cities, sixth of six.
+    // `no-city-limit` priced cities in Science to 78% of the 170-turn limit,
+    // holdable land closed at t103 and the governor at t150. A Score seat
+    // settles every seat whose city pays its Settler back in points, until
+    // the last 15 turns. Rides `no-city-limit`. Opt-in; see
+    // `advanced/score_seat_settles_what_pays.rs`.
+    Gene { tag: "score-seat-settles-what-pays", field: "score_seat_settles_what_pays", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_settles_what_pays, disable: AdvancedAi::disable_score_seat_settles_what_pays },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

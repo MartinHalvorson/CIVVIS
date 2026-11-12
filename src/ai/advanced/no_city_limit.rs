@@ -259,23 +259,32 @@ impl AdvancedAi {
         if !self.no_city_limit {
             return 0.0;
         }
+        let Some(cost) = Self::cheapest_settler_cost(g, pid) else {
+            return f64::INFINITY;
+        };
+        // `score-seat-settles-what-pays`: a Score seat prices the city in
+        // points to the turn limit. `None` with that gene off. See
+        // `advanced/score_seat_settles_what_pays.rs`.
+        if let Some(floor) = self.score_seat_pay_floor(g, cost) {
+            return floor;
+        }
+        let end = f64::from(g.max_turns) * NO_CITY_LIMIT_EXPECTED_END_SHARE;
+        let standard_per_turn = 90.0 / f64::from(g.standard_duration(90).max(1));
+        Self::settler_pay_floor(end - f64::from(g.turn), standard_per_turn, cost)
+    }
+
+    /// The Production the next Settler of `pid` really costs where it is
+    /// cheapest: Colonization, the Ancestral Hall and the like make every
+    /// point count for more. `None` without a city.
+    pub(super) fn cheapest_settler_cost(g: &Game, pid: usize) -> Option<f64> {
         let settler = Self::early_settler_item();
-        // The Production a city really spends: Colonization, the Ancestral
-        // Hall and the like make every point count for more.
-        let Some(cost) = g
-            .player_city_ids(pid)
+        g.player_city_ids(pid)
             .into_iter()
             .map(|cid| {
                 g.item_cost_for_city(pid, cid, &settler)
                     / g.item_prod_mult(pid, cid, Some(&settler)).max(0.1)
             })
             .min_by(|a, b| a.total_cmp(b))
-        else {
-            return f64::INFINITY;
-        };
-        let end = f64::from(g.max_turns) * NO_CITY_LIMIT_EXPECTED_END_SHARE;
-        let standard_per_turn = 90.0 / f64::from(g.standard_duration(90).max(1));
-        Self::settler_pay_floor(end - f64::from(g.turn), standard_per_turn, cost)
     }
 
     /// The Settlers that may be walking or in production at once for an
@@ -357,6 +366,11 @@ impl AdvancedAi {
         let lifted = wanted.max(cities.len() + walkers + free);
         noted.cities = lifted;
         self.no_city_limit_target.set(noted);
+        // `score-seat-settles-what-pays`: the seats that pay in points, or why
+        // none does. Exact no-op with that gene off.
+        if counted.is_some() && g.turn.is_multiple_of(SETTLER_ADMISSION_JOURNAL_STRIDE) {
+            self.explain_score_seat_count(g, pid, cities.len(), walkers, free);
+        }
         if let Some((floor, best)) = counted {
             if lifted > wanted
                 && g.turn.is_multiple_of(SETTLER_ADMISSION_JOURNAL_STRIDE)

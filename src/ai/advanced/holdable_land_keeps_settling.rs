@@ -134,10 +134,18 @@ impl AdvancedAi {
     pub(super) fn holdable_land_window(&self, g: &Game) -> bool {
         // `no-city-limit`: open from the first turn, beside the opening
         // floor; the pay test closes it. See `advanced/no_city_limit.rs`.
+        // `score-seat-settles-what-pays`: a Score seat settles until its last
+        // turns; the pay test in points closes it sooner when no city pays.
+        let open_to_the_end = match self.score_seat_last_settler_turn(g) {
+            Some(last) => g.turn <= last,
+            None => {
+                g.turn + g.standard_duration(HOLDABLE_LAND_PAYBACK_STANDARD_TURNS) < g.max_turns
+            }
+        };
         (self.no_city_limit
             || (self.holdable_land_keeps_settling
                 && g.turn >= g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN)))
-            && g.turn + g.standard_duration(HOLDABLE_LAND_PAYBACK_STANDARD_TURNS) < g.max_turns
+            && open_to_the_end
     }
 
     /// Whether `cid`'s queued Settler is the floor's and should be kept: the
@@ -608,6 +616,8 @@ impl AdvancedAi {
                  {turns:.1} turns{}",
                 displaced.map_or(String::new(), |item| format!(
                     "; {} keeps its progress", Self::plain_item(&item))); site);
+            // `score-seat-settles-what-pays`: what the city is worth in points.
+            self.explain_score_seat_settler(g, pid, cid);
         }
     }
 }

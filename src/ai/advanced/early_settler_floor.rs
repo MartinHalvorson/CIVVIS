@@ -282,6 +282,8 @@ impl AdvancedAi {
                 g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN),
                 displaced.map_or(String::new(), |item| format!(
                     "; {} keeps its progress", Self::plain_item(&item))));
+            // `score-seat-settles-what-pays`: what the city is worth in points.
+            self.explain_score_seat_settler(g, pid, cid);
         }
     }
 }

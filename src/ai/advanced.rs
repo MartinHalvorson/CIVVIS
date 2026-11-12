@@ -10242,6 +10242,11 @@ pub struct AdvancedAi {
     /// instead of the greedy pick at a flat 0.5. Acts only with
     /// `battle-solver` on. Off by default.
     solver_plays_the_host: bool,
+    /// `score-seat-settles-what-pays`: a Score seat settles every seat whose
+    /// city pays its Settler back in points, until its last turns. Rides
+    /// `no-city-limit`. See `advanced/score_seat_settles_what_pays.rs`.
+    /// Opt-in.
+    score_seat_settles_what_pays: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11810,6 +11815,9 @@ mod science_suppression_pads;
 mod science_threat_denial;
 mod science_trade;
 mod science_victory_drive;
+/// `score-seat-settles-what-pays`: a Score seat settles every seat that pays
+/// in points. See `advanced/score_seat_settles_what_pays.rs`.
+mod score_seat_settles_what_pays;
 /// Diagnostic journal: why a city's menu passed a Settler over while the
 /// empire is short of its settlement target. Reads only. See
 /// `advanced/settler_admission_journal.rs`.
@@ -15469,6 +15477,11 @@ impl AdvancedAi {
         if self.production_settler_deadline {
             self.base.w.settler_stop_turn =
                 restore_stop.max(Self::stock_expansion_deadline(g) as f64);
+        }
+        // `score-seat-settles-what-pays`: a Score seat's governor trains
+        // Settlers until its last turns. `None` with that gene off.
+        if let Some(last) = self.score_seat_last_settler_turn(g) {
+            self.base.w.settler_stop_turn = self.base.w.settler_stop_turn.max(f64::from(last));
         }
         // ⚠ A call-local override with no arm until 2026-08-11. It raises the
         // genome's 0.5 by half again, is reachable only from inside this
