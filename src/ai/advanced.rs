@@ -10259,6 +10259,11 @@ pub struct AdvancedAi {
     /// `score-seat-plays-for-points`: what the gene's journal has already
     /// said, so each line is written once per change. Observation only.
     score_seat_journal: score_seat::ScoreSeatJournal,
+    /// `score-seat-founds-early`: on a Score seat, an early Settler past its
+    /// patience (or turned home by the corridor) founds on the best safe,
+    /// holdable site within reach. See `advanced/score_seat_founds_early.rs`.
+    /// Opt-in.
+    score_seat_founds_early: bool,
     /// `score-seat-trims-the-idle-army`: with `score-seat-plays-for-points`
     /// on, a Score seat at peace from turn 80 (Online), holding four cities
     /// and at least 0.8 of the strongest neighbour's military, trains no land
@@ -11357,6 +11362,8 @@ mod chop_for_expansion;
 /// `score-seat-plays-for-points`: a Score-target seat's production buys
 /// points. See `advanced/score_seat.rs`.
 mod score_seat;
+/// `score-seat-founds-early`: see `advanced/score_seat_founds_early.rs`.
+mod score_seat_founds_early;
 
 /// The player civvis.ai seats: the deployment genome plus the site's own
 /// experiment list. See `advanced/site_deployment.rs`.
