@@ -255,6 +255,9 @@ impl AdvancedAi {
         /// Opt-in `campus-and-library-before-the-claims`; see
         /// `advanced/campus_and_library_before_the_claims.rs`.
         campus_and_library_before_the_claims => enable_campus_and_library_before_the_claims, disable_campus_and_library_before_the_claims;
+        /// Opt-in `denial-spies-skip-the-upkeep-wait`; see
+        /// `advanced/denial_spies_skip_the_upkeep_wait.rs`.
+        denial_spies_skip_the_upkeep_wait => enable_denial_spies_skip_the_upkeep_wait, disable_denial_spies_skip_the_upkeep_wait;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

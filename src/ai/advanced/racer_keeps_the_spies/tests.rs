@@ -868,3 +868,101 @@ fn the_racers_unseen_cities_are_its_public_count_less_our_board() {
     assert_eq!(keeps().racer_spy_unseen_cities(&g, 0), Some((1, 3)));
     assert_eq!(stock().racer_spy_unseen_cities(&g, 0), None, "gene off");
 }
+
+/// The host's own operation menu for `spy`.
+fn host_offers(g: &mut Game, spy: u32, missions: &[&str]) {
+    Arc::make_mut(&mut g.host_unit_facts).insert(
+        spy,
+        HostUnitFacts {
+            spy_missions: Some(missions.iter().map(|mission| mission.to_string()).collect()),
+            ..Default::default()
+        },
+    );
+}
+
+/// The live arming: the gene with `science-denial-every-pad` beside it.
+fn keeps_every_pad() -> AdvancedAi {
+    let mut ai = keeps();
+    ai.enable_science_denial_every_pad();
+    ai
+}
+
+#[test]
+fn a_host_offer_the_board_cannot_run_does_not_hold_the_spy() {
+    // Live 075931Z t179-209: Byzantium (here Greece, seat 2) led; our last
+    // Spy stood in Australia's Melbourne (seat 1's capital), where the host
+    // offered Disrupt Rocketry on every pass while the only pad within reach
+    // read pillaged on our board from its turn-169 sighting. It ran nine
+    // Listening Posts and never moved.
+    let run = |stale: bool| {
+        let (mut g, capital, _, rival) = board();
+        greece_leads(&mut g);
+        let pad = give_pad(&mut g, capital);
+        g.map.tiles.get_mut(&pad).unwrap().pillaged = stale;
+        let spy = idle_spy(&mut g, capital);
+        host_offers(&mut g, spy, &["listening_post", "disrupt_rocketry"]);
+        let mut ai = keeps_every_pad();
+        ai.base.journal = crate::reasoning::Journal::recording();
+        ai.advanced_spies(&mut g, 0, &conquest_on(1));
+        let left = ai
+            .base
+            .journal
+            .since(0)
+            .thoughts
+            .iter()
+            .filter(|thought| thought.headline.starts_with("A Spy leaves"))
+            .map(|thought| format!("{} | {}", thought.headline, thought.detail))
+            .collect::<Vec<_>>();
+        (g.spies[&spy].city, mission(&g, spy), capital, rival, left)
+    };
+    let (city, _, _, rival, left) = run(true);
+    assert_eq!(city, Some(rival), "the stale offer: the Spy goes to Greece");
+    assert_eq!(left.len(), 1, "{left:?}");
+    assert!(
+        left[0].contains("racer-keeps-the-spies: ") && left[0].contains("reads pillaged"),
+        "{}",
+        left[0]
+    );
+    let (city, mission, capital, _, left) = run(false);
+    assert_eq!(city, Some(capital), "a standing pad: it stays");
+    assert_eq!(mission.as_deref(), Some("disrupt_rocketry"), "and disrupts");
+    assert!(left.is_empty());
+}
+
+#[test]
+fn a_host_offer_the_every_pad_filing_can_run_still_holds_the_spy() {
+    // The board filed the standing pad under the racer's second city; the
+    // host offers the disruption from its capital, where the Spy stands.
+    let (mut g, capital, second, _) = board();
+    greece_leads(&mut g);
+    let pad = give_pad(&mut g, capital);
+    g.cities
+        .get_mut(&capital)
+        .unwrap()
+        .districts
+        .remove(crate::name!("spaceport"));
+    g.cities
+        .get_mut(&second)
+        .unwrap()
+        .districts
+        .insert(crate::name!("spaceport"), pad);
+    g.map.tiles.get_mut(&pad).unwrap().owner_city = Some(second);
+    let spy = idle_spy(&mut g, capital);
+    host_offers(&mut g, spy, &["listening_post", "disrupt_rocketry"]);
+    let legal = g.legal_spy_actions(0, spy);
+    assert!(
+        !legal.iter().any(
+            |action| matches!(action, Action::SpyMission { mission, .. } if mission == "disrupt_rocketry")
+        ),
+        "the fixture board does not offer it from the capital"
+    );
+    let racers = BTreeSet::from([1, 2]);
+    assert!(AdvancedAi::racer_spy_disrupt_runnable(&g, spy, &legal, &racers));
+    assert!(
+        !AdvancedAi::racer_spy_disrupt_runnable(&g, spy, &legal, &BTreeSet::new()),
+        "with every-pad off nothing files it"
+    );
+    keeps_every_pad().advanced_spies(&mut g, 0, &conquest_on(1));
+    assert_eq!(g.spies[&spy].city, Some(capital));
+    assert_eq!(mission(&g, spy).as_deref(), Some("disrupt_rocketry"));
+}
