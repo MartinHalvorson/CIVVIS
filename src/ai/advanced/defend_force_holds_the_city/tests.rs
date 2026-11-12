@@ -284,12 +284,10 @@ fn version_two_turns_version_one_off_and_carries_its_reads() {
     assert!(ai.defend_hold_on());
     let (mut g, city) = front();
     let warrior = spawn(&mut g, "warrior", 0, city);
-    spawn(
-        &mut g,
-        "swordsman",
-        1,
-        ring_tile_toward(&g, city, at(12, 8)),
-    );
+    {
+        let beside = ring_tile_toward(&g, city, at(12, 8));
+        spawn(&mut g, "swordsman", 1, beside)
+    };
     ai.hold_the_cities(&mut g, 0, &BTreeSet::new());
     assert_eq!(ai.defend_hold_plan.posts[&warrior].role, HoldRole::Centre);
     assert!(ai.defend_hold_holds(g.city_at(city).unwrap()));
@@ -303,12 +301,10 @@ fn barbarians_form_no_hold_under_version_two() {
         let barbarian = g.barb_pid.expect("a barbarian seat");
         spawn(&mut g, "warrior", 0, city);
         spawn(&mut g, "spearman", 0, at(7, 9));
-        spawn(
-            &mut g,
-            "horseman",
-            barbarian,
-            ring_tile_toward(&g, city, at(12, 8)),
-        );
+        {
+            let beside = ring_tile_toward(&g, city, at(12, 8));
+            spawn(&mut g, "horseman", barbarian, beside)
+        };
         g
     };
     let mut g = build();
@@ -398,12 +394,10 @@ fn a_civilians_guard_keeps_guarding() {
     spawn(&mut g, "archer", 0, city);
     let guard = spawn(&mut g, "spearman", 0, at(7, 9));
     spawn(&mut g, "builder", 0, at(7, 9));
-    spawn(
-        &mut g,
-        "swordsman",
-        1,
-        ring_tile_toward(&g, city, at(12, 8)),
-    );
+    {
+        let beside = ring_tile_toward(&g, city, at(12, 8));
+        spawn(&mut g, "swordsman", 1, beside)
+    };
     let mut ai = v2_on();
     ai.hold_the_cities(&mut g, 0, &BTreeSet::new());
     assert!(!ai.defend_hold_plan.posts.contains_key(&guard));
@@ -414,12 +408,10 @@ fn a_civilians_guard_keeps_guarding() {
 fn the_positions_plan_leaves_this_turns_posts_alone() {
     let (mut g, city) = front();
     let warrior = spawn(&mut g, "warrior", 0, city);
-    spawn(
-        &mut g,
-        "swordsman",
-        1,
-        ring_tile_toward(&g, city, at(12, 8)),
-    );
+    {
+        let beside = ring_tile_toward(&g, city, at(12, 8));
+        spawn(&mut g, "swordsman", 1, beside)
+    };
     let mut ai = v2_on();
     ai.preview_hold_members(&g, 0);
     assert!(ai.defend_hold_member_v2(warrior));

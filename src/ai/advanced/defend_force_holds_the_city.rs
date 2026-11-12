@@ -120,6 +120,7 @@
 //!    outclassed, and whether it is quiet.
 
 use super::battle_solver::host_enemy::{strike_probability, HostClass, Owner, StrikeFeatures};
+use super::centre_keeps_its_garrison::CENTRE_THREAT_REACH;
 use super::objective_board::ObjectiveKey;
 use super::*;
 use crate::game::expected_damage;
