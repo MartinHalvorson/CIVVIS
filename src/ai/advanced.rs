@@ -7741,6 +7741,13 @@ pub struct AdvancedAi {
     /// `faith-war-before-the-flip-2`. See
     /// `advanced/faith_war_at_match_point.rs`. Opt-in.
     faith_war_at_match_point: bool,
+    /// `endgame-army-takes-the-queue`: once a Domination seat's clock is
+    /// short (60% of the game with no rival capital held, or a rival's
+    /// projected victory within 50 turns), idle queues and fresh long-payback
+    /// economy builds train the strongest land unit as far as the income
+    /// carries its upkeep, and purchases keep three turns of the unit bill.
+    /// See `advanced/endgame_army_takes_the_queue.rs`. Opt-in.
+    endgame_army_takes_the_queue: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -11428,6 +11435,11 @@ mod each_civ_draws_its_width;
 /// Settler in the queue while the empire is short of the band floor. One
 /// opt-in gene; see `advanced/early_settler_floor.rs`.
 mod early_settler_floor;
+/// `endgame-army-takes-the-queue`: once a Domination seat's clock is short,
+/// idle and fresh long-payback queues train the army as far as the income
+/// carries its upkeep. One opt-in gene; see
+/// `advanced/endgame_army_takes_the_queue.rs`.
+mod endgame_army_takes_the_queue;
 /// `expansion-scales-with-difficulty`: the measured 4-6 city opening band
 /// was read off a King-level field, and every rung above King hands the
 /// rivals a percentage of every yield and free Settlers. The city target,
@@ -15287,6 +15299,9 @@ impl AdvancedAi {
         // unchanged while the gene is off.
         let restore_reserve_floor = self.base.reserve_floor;
         self.base.reserve_floor = self.purchase_upkeep_floor(g, pid, restore_reserve_floor);
+        // `endgame-army-takes-the-queue`: inside the endgame window, three
+        // turns of the unit bill. Unchanged with the gene off.
+        self.base.reserve_floor = self.endgame_purchase_reserve(g, pid, self.base.reserve_floor);
         // `housing-bound-city-builds-its-granary`,
         // `commercial-hub-and-traders` and `industrial-zone-in-the-producers`:
         // the plan's threatened city keeps its stock defence order. Lent for
@@ -17840,6 +17855,10 @@ impl AdvancedAi {
         // turns of the army's bill. `stock` comes back unchanged while the
         // gene is off. See `advanced/gold_and_cards.rs`.
         let reserve = self.purchase_upkeep_floor(g, pid, reserve);
+        // `endgame-army-takes-the-queue`: inside the endgame window, three
+        // turns of the unit bill. `stock` comes back unchanged with the gene
+        // off. See `advanced/endgame_army_takes_the_queue.rs`.
+        let reserve = self.endgame_purchase_reserve(g, pid, reserve);
         // `threatened-city-reserve`: never below one emergency defender
         // while a city of ours is threatened or bleeding. `stock` comes back
         // unchanged while the gene is off. See `advanced/gold_and_cards.rs`.

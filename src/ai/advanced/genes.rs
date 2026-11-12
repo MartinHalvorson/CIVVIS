@@ -5790,6 +5790,17 @@ pub const GENES: &[Gene] = &[
     // `faith-war-before-the-flip-2`. Opt-in; see
     // `advanced/faith_war_at_match_point.rs`.
     Gene { tag: "faith-war-at-match-point", field: "faith_war_at_match_point", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_at_match_point, disable: AdvancedAi::disable_faith_war_at_match_point },
+    // Live Deity Gran Colombia 2026-11-12: every game past t150 lost to a
+    // rival Science victory at t184-210. civvis-20261112T075931Z reached tech
+    // parity and out-produced the field, but sent 31-50% of its Production to
+    // the army from t160 (54% to districts, buildings and projects) while the
+    // delegated governor read "a target of 1.0 each", and ended at 1,212
+    // military against 3,261. From 60% of the clock with no rival capital
+    // held, or a rival's victory projected within 50 turns, idle and fresh
+    // long-payback queues train the army while the income carries its
+    // upkeep, and purchases keep three turns of the unit bill. Opt-in; see
+    // `advanced/endgame_army_takes_the_queue.rs`.
+    Gene { tag: "endgame-army-takes-the-queue", field: "endgame_army_takes_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_endgame_army_takes_the_queue, disable: AdvancedAi::disable_endgame_army_takes_the_queue },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

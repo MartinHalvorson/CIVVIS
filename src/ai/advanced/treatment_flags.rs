@@ -300,6 +300,9 @@ impl AdvancedAi {
         /// Opt-in `faith-war-at-match-point`; see
         /// `advanced/faith_war_at_match_point.rs`.
         faith_war_at_match_point => enable_faith_war_at_match_point, disable_faith_war_at_match_point;
+        /// Opt-in `endgame-army-takes-the-queue`; see
+        /// `advanced/endgame_army_takes_the_queue.rs`.
+        endgame_army_takes_the_queue => enable_endgame_army_takes_the_queue, disable_endgame_army_takes_the_queue;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
