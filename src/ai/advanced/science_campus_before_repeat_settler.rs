@@ -88,6 +88,12 @@ impl AdvancedAi {
         if self.first_campus_holds_the_settler(g, pid, cid, plan) {
             return true;
         }
+        // `campus-and-library-before-the-claims`: from four cities, the first
+        // Campus or Library it holds keeps its queue against both Settler
+        // claims too. See `advanced/campus_and_library_before_the_claims.rs`.
+        if self.campus_and_library_holds_the_settler(g, pid, cid, plan) {
+            return true;
+        }
         self.science_campus_pause_safe(g, pid, cid, plan)
             && g.cities[&cid].queue.first().is_some_and(|item| {
                 self.free_slot_campus_holds(g, pid, cid, plan, item)

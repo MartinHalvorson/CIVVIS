@@ -26,7 +26,7 @@
 //!   buys Missionaries of the faith a city of ours does follow.
 //!
 //! Off, and on every other lane: unchanged.
-use super::{AdvancedAi, VictoryTarget};
+use super::{AdvancedAi, StrategicPlan, VictoryTarget};
 use crate::game::{Action, Game, Item};
 use crate::think;
 
@@ -86,7 +86,12 @@ impl AdvancedAi {
     /// Live Immortal 171157Z (diplomatic, 16 DVP at turn 160): Buddhism held
     /// Argos and Rhodes from turn 70 to the loss at 168, neither with a Holy
     /// Site, while 337-718 Faith sat in the bank and Islam took 8 of 10.
-    pub(super) fn counterweight_builds_its_source(&mut self, g: &mut Game, pid: usize) {
+    pub(super) fn counterweight_builds_its_source(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
         if !self.counterweight_builds_its_source
             || !matches!(
                 self.active_victory_target(g),
@@ -138,6 +143,12 @@ impl AdvancedAi {
             else {
                 continue;
             };
+            // `campus-and-library-before-the-claims`: the city's first Campus
+            // or Library goes first; the Holy Site waits for it here rather
+            // than starting a second one elsewhere.
+            if self.campus_and_library_holds_the_faith_writers(g, pid, cid, plan) {
+                return;
+            }
             let name = g.cities[&cid].name.clone();
             if let Item::District { district, pos } = item {
                 if g.apply(
