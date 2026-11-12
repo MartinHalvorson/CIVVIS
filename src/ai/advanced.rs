@@ -10212,6 +10212,12 @@ pub struct AdvancedAi {
     /// (a stall counted, or progress made), keyed by the Settler's stable
     /// Civ VI id so the live mirror's per-frame board ids cannot reset it.
     settler_stall_turn: BTreeMap<i64, u32>,
+    /// `solver-plays-the-host`: the battle solver's modelled enemy strikes,
+    /// picks its target and closes by tables fitted to the live host AI
+    /// (`advanced/battle_solver/host_enemy.rs`, `docs/HOST_ENEMY_MODEL.md`)
+    /// instead of the greedy pick at a flat 0.5. Acts only with
+    /// `battle-solver` on. Off by default.
+    solver_plays_the_host: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
