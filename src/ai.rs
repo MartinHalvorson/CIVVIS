@@ -1815,6 +1815,15 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `prod-tiles-call-the-builders`.
     pub(crate) prod_tiles_call_the_builders: bool,
+    /// With `builders_cover_the_worked_backlog`, the backlog step also wants a
+    /// Builder while the unimproved worked tiles run two or more ahead of the
+    /// charges in hand and queued (about one charge a tile), whatever the
+    /// 60% quota says. See
+    /// `ai/advanced/the_worked_backlog_gets_its_builder_first.rs`.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene
+    /// `the-worked-backlog-gets-its-builder-first`.
+    pub(crate) the_worked_backlog_gets_its_builder_first: bool,
     /// From turn 90 standard (t60 Online), ahead of the military floor: the
     /// Market of a standing Commercial Hub, then a Trader while the empire's
     /// routes and Traders leave a route slot open, then a Commercial Hub on
@@ -3996,6 +4005,7 @@ impl BasicAi {
             housing_cap_builds_the_aqueduct: false,
             builders_cover_the_worked_backlog: false,
             prod_tiles_call_the_builders: false,
+            the_worked_backlog_gets_its_builder_first: false,
             commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,
@@ -4453,6 +4463,7 @@ impl BasicAi {
             housing_cap_builds_the_aqueduct: false,
             builders_cover_the_worked_backlog: false,
             prod_tiles_call_the_builders: false,
+            the_worked_backlog_gets_its_builder_first: false,
             commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,

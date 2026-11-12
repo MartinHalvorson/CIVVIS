@@ -11795,6 +11795,11 @@ mod siege_response;
 /// A Settler past its walk allowance takes a safe site within reach. One
 /// opt-in gene; see `advanced/stalled_settler_site.rs`.
 mod stalled_settler_site;
+/// `the-worked-backlog-gets-its-builder-first`: a worked backlog two or more
+/// tiles ahead of the Builder charges calls a Builder ahead of the other
+/// idle-queue claims. See
+/// `advanced/the_worked_backlog_gets_its_builder_first.rs`.
+mod the_worked_backlog_gets_its_builder_first;
 /// `threatened-city-buys-its-defender`: the plan's threatened city buys
 /// its land defender while its menu sells one. See
 /// `advanced/threatened_city_purchase.rs`.
