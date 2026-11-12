@@ -8768,6 +8768,14 @@ pub struct AdvancedAi {
     /// capital opening still lacks a reachable target. Opt-in; see
     /// `advanced/first_capital_recon.rs`.
     land_recon_before_the_first_capital: bool,
+    /// `own-flip-faith-war-asks-no-power`: the small-world own-flip reading
+    /// (only the founder holds its faith, half our cities and at least two
+    /// of three leaning to it) no longer asks half the founder's steady
+    /// power, and the faith war that reading alone opens skips version 2's
+    /// power floor, the edge and the rout ratio while every other hold
+    /// stays. Rides `faith-war-on-a-small-world`. See
+    /// `advanced/own_flip_faith_war.rs`. Opt-in.
+    own_flip_faith_war_asks_no_power: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -11061,6 +11069,8 @@ mod faith_war_at_match_point;
 mod faith_war_before_the_flip;
 /// `faith-war-is-no-front`: see `advanced/faith_war_is_no_front.rs`.
 mod faith_war_is_no_front;
+/// `own-flip-faith-war-asks-no-power`: see `advanced/own_flip_faith_war.rs`.
+mod own_flip_faith_war;
 
 /// `open-city-draws-the-front`: see `advanced/open_city_front.rs`.
 mod open_city_front;
