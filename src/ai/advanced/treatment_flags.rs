@@ -363,6 +363,9 @@ impl AdvancedAi {
         /// `research-follows-the-first-capital`: see
         /// `advanced/first_capital_research.rs`.
         research_follows_the_first_capital => enable_research_follows_the_first_capital, disable_research_follows_the_first_capital;
+        /// `rear-cities-grow-through-the-war-hold`: see
+        /// `advanced/rear_cities_grow_through_the_war_hold.rs`.
+        rear_cities_grow_through_the_war_hold => enable_rear_cities_grow_through_the_war_hold, disable_rear_cities_grow_through_the_war_hold;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `sweden-builds-open-air-museums`; see
         /// `advanced/sweden_builds_open_air_museums.rs`.

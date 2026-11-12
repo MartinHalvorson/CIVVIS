@@ -394,6 +394,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `racer-spies-search-for-the-pad` | off (unmeasured) | Opt-in gene `racer-spies-search-for-the-pad`; see `Self::racer_spies_search_for_the_pad`. | 1 \| 1 |
 | `ranged-finish-on-the-mean` | off (unmeasured) | Opt-in gene `ranged-finish-on-the-mean`; see `Self::ranged_finish_on_the_mean`. | 1 \| 1 |
 | `ranged-kills-are-free` | off (unmeasured) | Opt-in gene `ranged-kills-are-free`; see `Self::ranged_kills_are_free`. | 1 \| 1 |
+| `rear-cities-grow-through-the-war-hold` | off (unmeasured) | `rear-cities-grow-through-the-war-hold`: see `advanced/rear_cities_grow_through_the_war_hold.rs`. | 1 \| 1 |
 | `religion-denial-needs-the-edge` | off (unmeasured) | Require the launcher counter's military edge for a Religion seat's separate science-denial declaration. | 1 \| 1 |
 | `religion-finishes-majorities` | off (unmeasured) | Opt-in `religion-finishes-majorities`; see `religion_majorities.rs`. | 1 \| 1 |
 | `religion-lane-hands-over` | off (unmeasured) | Opt-in gene `religion-lane-hands-over`; see `Self::religion_lane_hands_over`. | 1 \| 1 |

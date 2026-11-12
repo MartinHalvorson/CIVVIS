@@ -5858,6 +5858,12 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "peace-waits-for-the-host-minimum", field: "peace_waits_for_the_host_minimum", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_the_host_minimum, disable: AdvancedAi::disable_peace_waits_for_the_host_minimum },
     // Opt-in; see `advanced/first_capital_research.rs`.
     Gene { tag: "research-follows-the-first-capital", field: "research_follows_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_research_follows_the_first_capital, disable: AdvancedAi::disable_research_follows_the_first_capital },
+    // Gran Colombia Deity Domination 11-11/12: the war's hold held every city's
+    // growth claims for a median 36 turns a game, while the threat stood at one
+    // city. Rear cities keep the Granary, Aqueduct, Neighbourhood, backlog
+    // Builder, Campus building and Trader claims under the hold. Opt-in; see
+    // `advanced/rear_cities_grow_through_the_war_hold.rs`.
+    Gene { tag: "rear-cities-grow-through-the-war-hold", field: "rear_cities_grow_through_the_war_hold", kind: Kind::OptIn, enable: AdvancedAi::enable_rear_cities_grow_through_the_war_hold, disable: AdvancedAi::disable_rear_cities_grow_through_the_war_hold },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
