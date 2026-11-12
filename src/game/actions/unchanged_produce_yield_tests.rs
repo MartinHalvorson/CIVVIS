@@ -90,7 +90,7 @@ fn identical_but_illegal_production_still_refuses_and_drops_answers() {
         .get_mut(&ours)
         .unwrap()
         .buildings
-        .insert(crate::name!("monument"));
+        .push(crate::name!("monument"));
     assert!(!game.can_produce(0, ours, &item));
     game.cities.get_mut(&ours).unwrap().queue = vec![item.clone()];
     warm(&game, ours, theirs);
