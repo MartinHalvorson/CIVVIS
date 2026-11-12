@@ -117,6 +117,29 @@ pub mod trig {
 /// over a small shared table rather than a search of the map.
 const RING_RADIUS: i32 = 6;
 
+const SHORT_SIGHT_ARC_BYTES: usize = 16 * 1024 * 1024;
+
+/// Distinct samples of the original great-circle walk, including endpoints.
+/// Terrain is deliberately absent: the caller still reads every blocker live.
+pub(crate) struct ShortSightArc {
+    pub(crate) positions: [Pos; 4],
+    pub(crate) len: usize,
+}
+
+impl ShortSightArc {
+    pub(crate) fn interior(&self) -> &[Pos] {
+        &self.positions[1..self.len.saturating_sub(1).max(1)]
+    }
+}
+
+struct ShortSightArcEntry {
+    target: u32,
+    distance: u8,
+    arc: OnceLock<ShortSightArc>,
+}
+
+type ShortSightArcRows = Box<[OnceLock<Box<[ShortSightArcEntry]>>]>;
+
 /// Full distance rows are valuable when one tile is compared with many
 /// others, but one row per tile turns a frequency-76 globe into an all-pairs
 /// table of more than six gigabytes. The byte budget keeps large worlds
@@ -204,6 +227,9 @@ pub struct Sphere {
     distance_hits: Vec<AtomicU16>,
     /// Number of initialized rows, capped by [`DISTANCE_ROW_CACHE_BYTES`].
     distance_row_count: AtomicUsize,
+    /// Topology-only short rays, shared by cloned games. A large globe keeps
+    /// the scalar reader if its complete logical cache exceeds the budget.
+    short_sight_arcs: OnceLock<Option<ShortSightArcRows>>,
 }
 
 /// Full distance rows one thread has used lately, for a globe too big for the
@@ -385,6 +411,68 @@ impl Sphere {
 
     pub fn contains(&self, pos: Pos) -> bool {
         self.index_of(pos).is_some()
+    }
+
+    /// Reuse exactly the original ordered geometry for the common sight and
+    /// ranged-fire distances. No height, ownership, unit or visibility state
+    /// is retained here. Longer rays and oversized globes remain scalar.
+    pub(crate) fn short_sight_arc(
+        &self,
+        from: Pos,
+        to: Pos,
+        steps: i32,
+        build: impl FnOnce() -> ShortSightArc,
+    ) -> Option<&ShortSightArc> {
+        if !(2..=3).contains(&steps) {
+            return None;
+        }
+        let from_index = self.index_of(from)? as usize;
+        let target = self.index_of(to)?;
+        let rows = self
+            .short_sight_arcs
+            .get_or_init(|| self.short_sight_arc_rows(SHORT_SIGHT_ARC_BYTES))
+            .as_ref()?;
+        let row = rows[from_index].get_or_init(|| {
+            self.ring_indices[from_index]
+                .iter()
+                .filter(|(_, distance)| (2..=3).contains(distance))
+                .map(|&(target, distance)| ShortSightArcEntry {
+                    target,
+                    distance,
+                    arc: OnceLock::new(),
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice()
+        });
+        let entry = &row[row
+            .binary_search_by_key(&target, |entry| entry.target)
+            .ok()?];
+        if i32::from(entry.distance) != steps {
+            return None;
+        }
+        Some(entry.arc.get_or_init(build))
+    }
+
+    fn short_sight_arc_rows(&self, budget: usize) -> Option<ShortSightArcRows> {
+        let entries = self
+            .ring_indices
+            .iter()
+            .flat_map(|row| row.iter())
+            .filter(|(_, distance)| (2..=3).contains(distance))
+            .count();
+        let bytes = entries
+            .saturating_mul(std::mem::size_of::<ShortSightArcEntry>())
+            .saturating_add(
+                self.pos
+                    .len()
+                    .saturating_mul(std::mem::size_of::<OnceLock<Box<[ShortSightArcEntry]>>>()),
+            );
+        (bytes <= budget).then(|| {
+            (0..self.pos.len())
+                .map(|_| OnceLock::new())
+                .collect::<Vec<_>>()
+                .into_boxed_slice()
+        })
     }
 
     /// Every tile of the globe, in storage order.
@@ -1225,6 +1313,7 @@ fn build(frequency: i32) -> Sphere {
         distance_rows: (0..pos.len()).map(|_| OnceLock::new()).collect(),
         distance_hits: (0..pos.len()).map(|_| AtomicU16::new(0)).collect(),
         distance_row_count: AtomicUsize::new(0),
+        short_sight_arcs: OnceLock::new(),
         pos,
         around,
         adjacent,
@@ -1829,3 +1918,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod sight_arc_cache_tests;

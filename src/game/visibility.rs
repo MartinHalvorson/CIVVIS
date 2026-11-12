@@ -366,6 +366,84 @@ impl Game {
         target_height: i32,
         see_through_woods: bool,
     ) -> bool {
+        if let Some(arc) = self.map.sphere().and_then(|sphere| {
+            sphere.short_sight_arc(from, to, steps, || {
+                self.draw_short_sight_arc(sphere, from, to, steps)
+            })
+        }) {
+            return arc.interior().iter().all(|position| {
+                let blocker = self.blocker_height_via(heights, *position, see_through_woods);
+                !(blocker > viewer_height && blocker >= target_height)
+            });
+        }
+        self.arc_is_clear_uncached(
+            heights,
+            from,
+            to,
+            steps,
+            viewer_height,
+            target_height,
+            see_through_woods,
+        )
+    }
+
+    fn draw_short_sight_arc(
+        &self,
+        sphere: &crate::sphere::Sphere,
+        from: Pos,
+        to: Pos,
+        steps: i32,
+    ) -> crate::sphere::ShortSightArc {
+        let start = sphere.center(from).unwrap();
+        let end = sphere.center(to).unwrap();
+        // Keep the scalar reader's arithmetic and neighbour order verbatim.
+        let angle = start
+            .iter()
+            .zip(end)
+            .map(|(a, b)| a * b)
+            .sum::<f64>()
+            .clamp(-1.0, 1.0)
+            .acos();
+        let mut arc = crate::sphere::ShortSightArc {
+            positions: [(0, 0); 4],
+            len: 0,
+        };
+        let mut at = from;
+        for step in 0..=steps {
+            let t = step as f64 / steps as f64;
+            let (first, second) = if angle < 1e-9 {
+                (1.0 - t, t)
+            } else {
+                (
+                    ((1.0 - t) * angle).sin() / angle.sin(),
+                    (t * angle).sin() / angle.sin(),
+                )
+            };
+            let sample = [
+                start[0] * first + end[0] * second,
+                start[1] * first + end[1] * second,
+                start[2] * first + end[2] * second,
+            ];
+            at = self.tile_nearest(at, sample);
+            if arc.len == 0 || arc.positions[arc.len - 1] != at {
+                arc.positions[arc.len] = at;
+                arc.len += 1;
+            }
+        }
+        arc
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn arc_is_clear_uncached(
+        &self,
+        heights: &mut HeightField,
+        from: Pos,
+        to: Pos,
+        steps: i32,
+        viewer_height: i32,
+        target_height: i32,
+        see_through_woods: bool,
+    ) -> bool {
         let Some(sphere) = self.map.sphere() else {
             return true;
         };
@@ -1978,3 +2056,6 @@ impl Game {
         }
     }
 }
+
+#[cfg(test)]
+mod sight_arc_cache_tests;
