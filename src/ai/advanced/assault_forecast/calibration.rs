@@ -785,6 +785,7 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
             }
         }
         if pid != 0 {
+            let turn = out.rounds.len() as u32;
             if let (Some(round), Some(pre)) = (out.rounds.last_mut(), before.as_ref()) {
                 let city = g.cities.get(&w.cid).filter(|city| city.owner != 0);
                 round.end_hp = city.map_or(0, |city| city.hp.max(0));
@@ -796,7 +797,7 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
                         if seen_enemy.insert(unit.id) {
                             out.new_enemy += 1;
                             out.raised.push((
-                                out.rounds.len() as u32,
+                                turn,
                                 unit.kind.as_str().to_string(),
                                 owner_gold,
                                 g.players[1].gold,
