@@ -10259,10 +10259,11 @@ pub struct AdvancedAi {
     /// instead of the greedy pick at a flat 0.5. Acts only with
     /// `battle-solver` on. Off by default.
     solver_plays_the_host: bool,
-    /// `score-seat-plays-for-points`: a Score-target seat races wonders at
-    /// the live race's price, takes the Ancestral Hall over the Warlord's
-    /// Throne, and starts nothing in the last turns that cannot finish before
-    /// the tally. See `advanced/score_seat.rs`. Off by default.
+    /// `score-seat-plays-for-points`: a Score-target seat starts nothing in
+    /// the last turns that cannot finish before the tally (its wonder price
+    /// and Plaza choice were withdrawn; the wonders are
+    /// `score-seat-raises-wonders`'). See `advanced/score_seat.rs`. Off by
+    /// default.
     score_seat_plays_for_points: bool,
     /// `score-seat-plays-for-points`: what the gene's journal has already
     /// said, so each line is written once per change. Observation only.
@@ -26420,11 +26421,8 @@ impl AdvancedAi {
         self.base.obsolete_buys_read_our_techs = self.obsolete_buys_read_our_techs();
         // `plaza-serves-the-scientist` (and version 2, which carries it): the
         // Plaza's tier list reads this.
-        // `score-seat-plays-for-points` reads the same list: the Ancestral
-        // Hall, not the Warlord's Throne. See `advanced/score_seat.rs`.
-        self.base.plaza_serves_science = self.plaza_serves_science_on()
-            || self.native_culture_plaza_economy(g, pid)
-            || self.score_seat_on();
+        self.base.plaza_serves_science =
+            self.plaza_serves_science_on() || self.native_culture_plaza_economy(g, pid);
         self.refresh_campus_multiplier_constants(g);
         self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;

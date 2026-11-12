@@ -271,54 +271,6 @@ fn a_frontier_city_keeps_its_garrison() {
     assert!(!on.score_seat_trims_here(&g, 0, frontier, false));
 }
 
-/// The wonder race opens under the live race's development guards only.
-#[test]
-fn the_wonder_race_keeps_the_live_guards() {
-    let on = score_seat(true);
-    // Ten cities, five buildings, a wonder of the world's era, none racing,
-    // fifteen turns: open.
-    assert!(on.score_seat_wonder_race_opens(10, 5, 4, 4, 0, 15.0));
-    assert!(!score_seat(false).score_seat_wonder_race_opens(10, 5, 4, 4, 0, 15.0));
-    assert!(
-        !on.score_seat_wonder_race_opens(2, 5, 4, 4, 0, 15.0),
-        "two cities"
-    );
-    assert!(
-        !on.score_seat_wonder_race_opens(10, 2, 4, 4, 0, 15.0),
-        "two buildings"
-    );
-    assert!(
-        !on.score_seat_wonder_race_opens(10, 5, 1, 4, 0, 15.0),
-        "three eras behind"
-    );
-    assert!(
-        on.score_seat_wonder_race_opens(10, 5, 2, 4, 0, 15.0),
-        "two eras behind"
-    );
-    // One lane plus one per six cities: ten cities race two at once.
-    assert!(on.score_seat_wonder_race_opens(10, 5, 4, 4, 1, 15.0));
-    assert!(
-        !on.score_seat_wonder_race_opens(10, 5, 4, 4, 2, 15.0),
-        "lanes full"
-    );
-    assert!(
-        !on.score_seat_wonder_race_opens(10, 5, 4, 4, 0, CHEAPEST_WONDER_LANE_MAX_TURNS + 1.0),
-        "too slow a race"
-    );
-}
-
-/// The race's price is the live race's bonus, rising with the game.
-#[test]
-fn the_wonder_price_is_the_live_race_bonus() {
-    let (mut g, _) = one_city_with_a_warrior(1);
-    let early = AdvancedAi::score_seat_wonder_price(&g);
-    g.turn = 170;
-    let late = AdvancedAi::score_seat_wonder_price(&g);
-    assert!(early >= LIVE_WONDER_RACE_BONUS, "{early}");
-    assert!(late > early, "{late} > {early}");
-    assert!(early > 180.0 * 5.0, "far above the stock Score lane");
-}
-
 /// The last turns: an item finishing after the tally is priced out, a
 /// Settler also needs its walk, a Repair never is, and nothing is priced out
 /// before the window, off, or off a Score target.
