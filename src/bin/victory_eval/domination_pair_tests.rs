@@ -415,3 +415,154 @@ fn explicit_native_rung_reaches_player_and_barbarian_rules_and_provenance() {
         }
     }
 }
+
+/// ⭐ `one-owner-per-unit`'s evidence, played on CI: paired Domination games
+/// with the gene off and on at the focal seat, the live bundle's Gran
+/// Colombia on the default 4-player Pangaea, King. Prints the off arm's
+/// crossing table (owner x step), the unordered unit-turn share, and the
+/// paired combat ledgers. `cargo test --bin victory_eval -- --nocapture`
+/// shows it; it asserts only that the instrument read a war.
+#[test]
+fn one_owner_per_unit_paired_evidence() {
+    const SEEDS: std::ops::Range<u64> = 37_140_000..37_140_006;
+    const TURNS: &str = "200";
+    let config = parse(
+        &[
+            "--domination-pair",
+            "one-owner-per-unit",
+            "--out",
+            "/tmp/one-owner-per-unit-evidence.jsonl",
+            "--max-turns",
+            TURNS,
+        ]
+        .map(str::to_string),
+    )
+    .expect("the evidence configuration parses");
+    let jobs: Vec<(u64, bool)> = SEEDS
+        .flat_map(|seed| [(seed, false), (seed, true)])
+        .collect();
+    let mut trials: Vec<(u64, bool, Trial)> = Vec::new();
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = jobs
+            .chunks(jobs.len().div_ceil(4))
+            .map(|chunk| {
+                let config = &config;
+                std::thread::Builder::new()
+                    .stack_size(256 << 20)
+                    .spawn_scoped(scope, move || {
+                        chunk
+                            .iter()
+                            .map(|&(seed, on)| (seed, on, trial(seed, config, on)))
+                            .collect::<Vec<_>>()
+                    })
+                    .expect("a worker starts")
+            })
+            .collect();
+        for handle in handles {
+            trials.extend(handle.join().expect("a worker finishes"));
+        }
+    });
+    trials.sort_by_key(|(seed, on, _)| (*seed, *on));
+    let arm = |on: bool| trials.iter().filter(move |(_, o, _)| *o == on);
+    let mut table: BTreeMap<String, [u32; 3]> = BTreeMap::new();
+    let (mut unit_turns, mut unordered) = (0u32, 0u32);
+    for (_, _, trial) in arm(false) {
+        for (cell, counts) in &trial.outcome.focal_claim_crossings {
+            let total = table.entry(cell.clone()).or_default();
+            for (sum, n) in total.iter_mut().zip(counts) {
+                *sum += n;
+            }
+        }
+        unit_turns += trial.outcome.focal_unit_turns;
+        unordered += trial.outcome.focal_unordered_unit_turns;
+    }
+    let crossed: u32 = table.values().map(|cell| cell[0]).sum();
+    let deliberate: u32 = table.values().map(|cell| cell[1]).sum();
+    let mut report = format!(
+        "one-owner-per-unit evidence: focal Gran Colombia (live bundle + gene), 4p 60x38 \
+         Pangaea, 6 city-states, King, Online, barbarians, {TURNS} turns max, seeds {}..{}\n\
+         OFF crossing table (owner:step -> crossed, deliberate), {} unit-turns:\n",
+        SEEDS.start,
+        SEEDS.end - 1,
+        unit_turns
+    );
+    let mut cells: Vec<_> = table.iter().collect();
+    cells.sort_by(|a, b| (b.1[0], b.1[1]).cmp(&(a.1[0], a.1[1])).then(a.0.cmp(b.0)));
+    for (cell, counts) in cells {
+        report.push_str(&format!("  {cell:<40} {:>5} {:>5}\n", counts[0], counts[1]));
+    }
+    report.push_str(&format!(
+        "OFF totals: {crossed} crossings ({:.2} per 100 unit-turns), {deliberate} deliberate; \
+         unordered unit-turns {unordered} of {unit_turns} ({:.1}%)\n",
+        100.0 * f64::from(crossed) / f64::from(unit_turns.max(1)),
+        100.0 * f64::from(unordered) / f64::from(unit_turns.max(1)),
+    ));
+    let (mut refused, mut residual) = (0u32, 0u32);
+    for (_, _, trial) in arm(true) {
+        refused += trial
+            .outcome
+            .focal_claim_crossings
+            .values()
+            .map(|cell| cell[2])
+            .sum::<u32>();
+        residual += trial
+            .outcome
+            .focal_claim_crossings
+            .values()
+            .map(|cell| cell[0])
+            .sum::<u32>();
+    }
+    report.push_str(&format!(
+        "ON totals: {refused} refused, {residual} crossings left\n\
+         paired focal ledger (seed: off -> on): units killed, units lost, cities taken, \
+         cities lost, winner, turn\n"
+    ));
+    let mut sums = [[0i64; 4]; 2];
+    for seed in SEEDS {
+        let pick = |on: bool| {
+            &trials
+                .iter()
+                .find(|(s, o, _)| *s == seed && *o == on)
+                .expect("both arms played")
+                .2
+        };
+        let (off, on) = (pick(false), pick(true));
+        let read = |trial: &Trial| {
+            let outcome = &trial.outcome;
+            [
+                i64::from(outcome.focal_units.units_killed),
+                i64::from(outcome.focal_units.units_lost),
+                outcome.focal_cities_taken,
+                outcome.focal_cities_lost as i64,
+            ]
+        };
+        let (a, b) = (read(off), read(on));
+        for (index, values) in [a, b].iter().enumerate() {
+            for (sum, value) in sums[index].iter_mut().zip(values) {
+                *sum += value;
+            }
+        }
+        report.push_str(&format!(
+            "  {seed}: {a:?} -> {b:?}  winner {:?}/{:?} {:?}/{:?} turn {}/{}{}\n",
+            off.outcome.winner,
+            on.outcome.winner,
+            off.outcome.victory,
+            on.outcome.victory,
+            off.outcome.turn,
+            on.outcome.turn,
+            if off.actions == on.actions {
+                " (identical games)"
+            } else {
+                ""
+            }
+        ));
+    }
+    report.push_str(&format!("  sum: {:?} -> {:?}\n", sums[0], sums[1]));
+    eprintln!("{report}");
+    assert!(unit_turns > 0, "{report}");
+    assert!(
+        sums[0][0] + sums[0][1] > 0,
+        "the worlds must fight: {report}"
+    );
+    panic!("REPORT\n{report}");
+}

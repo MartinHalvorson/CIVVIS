@@ -60,10 +60,15 @@ pub enum OrderStep {
     Raids,
     Hunts,
     StandDown,
+    /// `one-owner-per-unit`: an owned unit held because every step that
+    /// would have ordered it crosses its claim.
+    Kept,
     /// `commitment-owner-acts`, after the unit pass.
     Commitment,
     Escort,
     Breaker,
+    /// The amphibious siege train's crossing in hand.
+    Amphibious,
     Condemn,
     SwapRotation,
     WoundedOutOfReach,
@@ -96,7 +101,7 @@ pub enum OrderStep {
 
 impl OrderStep {
     /// Every step, in the order the census prints them.
-    pub const ALL: [OrderStep; 45] = [
+    pub const ALL: [OrderStep; 47] = [
         OrderStep::Other,
         OrderStep::Unordered,
         OrderStep::TurnStart,
@@ -112,9 +117,11 @@ impl OrderStep {
         OrderStep::Raids,
         OrderStep::Hunts,
         OrderStep::StandDown,
+        OrderStep::Kept,
         OrderStep::Commitment,
         OrderStep::Escort,
         OrderStep::Breaker,
+        OrderStep::Amphibious,
         OrderStep::Condemn,
         OrderStep::SwapRotation,
         OrderStep::WoundedOutOfReach,
@@ -162,9 +169,11 @@ impl OrderStep {
             OrderStep::Raids => "raids",
             OrderStep::Hunts => "hunts",
             OrderStep::StandDown => "stand_down",
+            OrderStep::Kept => "kept",
             OrderStep::Commitment => "commitment",
             OrderStep::Escort => "escort",
             OrderStep::Breaker => "breaker",
+            OrderStep::Amphibious => "amphibious",
             OrderStep::Condemn => "condemn",
             OrderStep::SwapRotation => "swap_rotation",
             OrderStep::WoundedOutOfReach => "wounded_out_of_reach",
@@ -282,11 +291,26 @@ pub(super) struct UnitOrderBook {
     /// itself.
     naming: Option<OrderStep>,
     last: BTreeMap<u32, LastOrder>,
+    /// The unit of the ladder pass in progress and its owner read before the
+    /// pass (`advanced/unit_owner.rs`).
+    ladder: Option<(u32, Option<unit_owner::Owner>)>,
+    /// `one-owner-per-unit`'s rehearsal: the crossings it would refuse.
+    /// Only a rehearsal clone watches.
+    watching: bool,
+    crossings: Vec<(u32, unit_owner::Owner, OrderStep)>,
 }
 
 impl UnitOrderBook {
-    /// Read one of our applied actions.
-    fn read(&mut self, g: &Game, seat: usize, action: &Action, step: OrderStep) {
+    /// Read one of our applied actions, and return the military units it
+    /// ordered, each with whether the order was a ranged blow (which does not
+    /// move the unit).
+    fn read(
+        &mut self,
+        g: &Game,
+        seat: usize,
+        action: &Action,
+        step: OrderStep,
+    ) -> Vec<(u32, bool)> {
         let (unit, other, strike) = match action {
             Action::Move { unit, .. }
             | Action::MoveTo { unit, .. }
@@ -304,7 +328,7 @@ impl UnitOrderBook {
             | Action::CondemnHeretic { unit, .. } => (*unit, None, true),
             Action::DisbandUnit { unit } => {
                 self.last.remove(unit);
-                return;
+                return Vec::new();
             }
             Action::CombineUnits { unit, with } => {
                 for id in [unit, with] {
@@ -312,10 +336,15 @@ impl UnitOrderBook {
                         self.last.remove(id);
                     }
                 }
-                return;
+                return Vec::new();
             }
-            _ => return,
+            _ => return Vec::new(),
         };
+        let shot = matches!(
+            action,
+            Action::Ranged { .. } | Action::PriorityTarget { .. }
+        );
+        let mut ordered = Vec::new();
         let turn = g.turn;
         for uid in std::iter::once(unit).chain(other) {
             match g.units.get(&uid) {
@@ -333,6 +362,7 @@ impl UnitOrderBook {
                             within_two: false,
                         },
                     );
+                    ordered.push((uid, shot));
                 }
                 // Gone after its own strike: it died attacking, in contact.
                 None if strike && uid == unit => {
@@ -346,10 +376,12 @@ impl UnitOrderBook {
                             within_two: true,
                         },
                     );
+                    ordered.push((uid, shot));
                 }
                 _ => {}
             }
         }
+        ordered
     }
 }
 
@@ -371,12 +403,30 @@ impl AdvancedAi {
         // A shorter log is another game (the live mirror rebuilds it every
         // frame): nothing in it is ours to credit.
         let start = book.cursor.min(g.log.len());
+        // One entry per unit ordered in this window; a shot only when every
+        // order it took was a ranged blow.
+        let mut ordered: BTreeMap<u32, bool> = BTreeMap::new();
         for (actor, action) in g.log.since(start) {
             if *actor == seat {
-                book.read(g, seat, action, step);
+                for (uid, shot) in book.read(g, seat, action, step) {
+                    ordered
+                        .entry(uid)
+                        .and_modify(|all_shots| *all_shots &= shot)
+                        .or_insert(shot);
+                }
             }
         }
         book.cursor = g.log.len();
+        // Who owned each unit ordered: read before the pass for the ladder's
+        // unit, right after it for the rest. See `advanced/unit_owner.rs`.
+        let ladder = self.unit_orders.ladder;
+        for (uid, shot) in ordered {
+            let owner = match ladder {
+                Some((unit, owner)) if unit == uid => owner,
+                _ => self.owner_of(g, seat, uid),
+            };
+            self.note_claimed_order(g, uid, owner, step, shot);
+        }
     }
 
     /// One pass of the per-unit ladder, its orders credited to the branch
@@ -392,10 +442,55 @@ impl AdvancedAi {
     ) -> bool {
         self.credit_orders(g, OrderStep::Other);
         self.unit_orders.naming = None;
-        let acted = self.advanced_military_step_with_decline(g, pid, uid, plan, decline_settlers);
+        let owner = self.owner_of(g, pid, uid);
+        self.unit_orders.ladder = Some((uid, owner));
+        // `one-owner-per-unit`: a pass that would cross the claim is refused
+        // and the owner's step keeps the unit. See `advanced/unit_owner.rs`.
+        let acted = match owner.filter(|_| self.one_owner_per_unit) {
+            Some(owner) => self
+                .owned_ladder_pass(g, pid, uid, owner, plan, decline_settlers)
+                .unwrap_or_else(|| {
+                    self.advanced_military_step_with_decline(g, pid, uid, plan, decline_settlers)
+                }),
+            None => self.advanced_military_step_with_decline(g, pid, uid, plan, decline_settlers),
+        };
         let step = self.unit_orders.naming.take().unwrap_or(OrderStep::Other);
         self.credit_orders(g, step);
+        self.unit_orders.ladder = None;
         acted
+    }
+
+    /// `one-owner-per-unit`'s rehearsal hooks (`advanced/unit_owner.rs`).
+    pub(super) fn watch_crossings(&mut self) {
+        self.unit_orders.watching = true;
+        self.unit_orders.crossings.clear();
+    }
+
+    pub(super) fn watched_crossings(&self) -> Vec<(u32, unit_owner::Owner, OrderStep)> {
+        self.unit_orders.crossings.clone()
+    }
+
+    pub(super) fn note_crossing_for_the_gene(
+        &mut self,
+        uid: u32,
+        owner: unit_owner::Owner,
+        step: OrderStep,
+    ) {
+        if self.unit_orders.watching {
+            self.unit_orders.crossings.push((uid, owner, step));
+        }
+    }
+
+    pub(super) fn unit_orders_ladder(&mut self, ladder: Option<(u32, Option<unit_owner::Owner>)>) {
+        self.unit_orders.ladder = ladder;
+    }
+
+    pub(super) fn unit_orders_name(&mut self, step: Option<OrderStep>) {
+        self.unit_orders.naming = step;
+    }
+
+    pub(super) fn unit_orders_named(&self) -> Option<OrderStep> {
+        self.unit_orders.naming
     }
 
     /// The stand-down hold (`BasicAi::hold_stood_down_unit`), credited.
@@ -449,6 +544,16 @@ impl AdvancedAi {
             let unit = &g.units[&uid];
             if unit.levied_from.is_some() || g.rules.units[unit.kind].class != "military" {
                 continue;
+            }
+            // `advanced/unit_owner.rs`: the unit-turns no step ordered.
+            self.census.claims.unit_turns += 1;
+            if !self
+                .unit_orders
+                .last
+                .get(&uid)
+                .is_some_and(|order| order.turn == turn && order.step != OrderStep::Unordered)
+            {
+                self.census.claims.unordered_unit_turns += 1;
             }
             self.unit_orders.last.entry(uid).or_insert(LastOrder {
                 step: OrderStep::Unordered,

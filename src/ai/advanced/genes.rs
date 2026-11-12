@@ -5912,6 +5912,14 @@ pub const GENES: &[Gene] = &[
     // objective and the front, the war is kept while the capture stands, and
     // its siege goes. Opt-in; see `advanced/open_city_objective.rs`.
     Gene { tag: "open-city-is-the-objective", field: "open_city_is_the_objective", kind: Kind::OptIn, enable: AdvancedAi::enable_open_city_is_the_objective, disable: AdvancedAi::disable_open_city_is_the_objective },
+    // Each unit has one owner per turn, and a dozen claim sets each honoured
+    // by only some steps: the siege's taker was ordered by battle planner
+    // versions one and two and the immediate kills, a Settler's guard by the
+    // immediate kills and condemnation, the battle plan's units by every
+    // pre-pass after it. A step that would cross a claim does not order the
+    // unit; the owner's own step keeps it. Opt-in; see
+    // `advanced/unit_owner.rs`.
+    Gene { tag: "one-owner-per-unit", field: "one_owner_per_unit", kind: Kind::OptIn, enable: AdvancedAi::enable_one_owner_per_unit, disable: AdvancedAi::disable_one_owner_per_unit },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.

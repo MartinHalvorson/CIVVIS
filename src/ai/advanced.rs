@@ -1121,6 +1121,9 @@ pub struct StrategyCensus {
     /// Our military units that died, by the step that last ordered them.
     /// See `advanced/last_orders.rs`.
     pub last_orders: last_orders::LastOrderCensus,
+    /// Orders that crossed another claim on the unit, by (owner, step), and
+    /// the unit-turns no step ordered. See `advanced/unit_owner.rs`.
+    pub claims: unit_owner::ClaimCensus,
 }
 
 impl StrategyCensus {
@@ -1210,6 +1213,7 @@ impl StrategyCensus {
         self.hold_threatened += other.hold_threatened;
         self.hold_weak += other.hold_weak;
         self.last_orders.absorb(&other.last_orders);
+        self.claims.absorb(&other.claims);
     }
 }
 
@@ -8804,6 +8808,11 @@ pub struct AdvancedAi {
     /// taken while that capture stands, and its siege goes without the
     /// muster's bill. See `advanced/open_city_objective.rs`. Opt-in.
     open_city_is_the_objective: bool,
+    /// `one-owner-per-unit`: a step that would order a unit another claim
+    /// owns (a siege's taker or member, a Settler's guard, the battle plan,
+    /// a unit out to heal ...) does not; the owner's own step keeps it. See
+    /// `advanced/unit_owner.rs`. Opt-in.
+    one_owner_per_unit: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -11392,6 +11401,9 @@ mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;
 mod guru_walks_to_the_wounded;
 mod unique_unit_closes_the_age;
+/// `one-owner-per-unit`: which claim owns each military unit, the crossings
+/// census, and the gene that refuses them. See `advanced/unit_owner.rs`.
+mod unit_owner;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
