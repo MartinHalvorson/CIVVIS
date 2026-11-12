@@ -14,13 +14,20 @@
   noise.
 
 **Caveat, found after these runs (#5207): the posed seats were not funded.**
-When a seat's gold runs out, the engine disbands one unit per 10 gold of
+When a seat's gold runs out, the engine disbands one unit per 10 Gold of
 deficit each turn (`settle_gold_budget`). A pop-1 capital cannot pay for up
-to nine soldiers. Some sieges that read high and failed lost units this way
-rather than in combat: seed 5 lost 3 of 9 on turn 1, with no defender in
-reach. This hits both arms of the paired runs equally. It inflates the
-realized miss in the calibration, by an amount not yet measured. #5207
-re-measures with solvent seats.
+to nine soldiers. Most of the miss above was that: force members lost
+outside combat came to 2.11 a siege.
+
+With the seats kept solvent (#5207, CI run 43303003805), the same 1,200
+sieges read:
+
+- members lost outside combat 0.00;
+- the 473 readings of 0.8 or more realized 0.81;
+- Brier within 12 of 0.136, against the base rate's 0.238;
+- units lost: predicted 1.98, realized 0.61.
+
+#5207 is working through the rest of the gap.
 
 ## For callers
 
@@ -74,27 +81,26 @@ tower against Ancient or Medieval Walls.
 
 **Warning: a raw high reading is not a probability.** Readings of 0.8 or
 more were taken 44% of the time on the posed sieges as #5195 ran them
-(unfunded seats), and 67% when each seat started with 100 Gold (#5207). Use
+(unfunded seats), and 81% with the seats kept solvent (#5207). Use
 `calibrated_within` for an expected value.
 
 ### The high bin by wall pool (what `calibrated_within` reads)
 
-From the 1,200 mixed posed sieges with each seat starting at 100 Gold:
-#5207, CI run 43288840120 on 49f02f9681.
+From the 1,200 mixed posed sieges with solvent seats: #5207, CI run
+43303003805 on c908fea4c6.
 
-The harness also meant to cover each seat's deficit every turn. That top-up
-never ran (found in #5207 round 5): the agent ends its own turn, and the
-check sat after it. So seats with a deep deficit still ran dry after a few
-turns and lost units to the engine's bankruptcy disbanding. These rates are
-better funded than #5195's, not yet solvent. #5207 replaces them. A test
-holds the constants to these lines.
+Before each seat's turn its treasury is topped up to seven turns of its
+deficit plus 20 Gold. Neither the engine's bankruptcy (one unit disbanded
+per 10 Gold short) nor the agent's own `bankruptcy-exits-the-drain-2`
+disbands anything: force members lost outside combat fell from 2.11 a siege
+to 0.00. A test holds the constants to these lines.
 
 | walls | read >= 0.8 | taken within 12 | rate |
 |---|---|---|---|
-| 0 | 165 | 135 | 0.82 |
-| 100 | 113 | 78 | 0.69 |
-| 200 | 109 | 59 | 0.54 |
-| 400 | 86 | 44 | 0.51 |
+| 0 | 165 | 141 | 0.85 |
+| 100 | 113 | 94 | 0.83 |
+| 200 | 109 | 86 | 0.79 |
+| 400 | 86 | 60 | 0.70 |
 
 The same sieges with unfunded seats, as #5195 ran them: 99 / 165 (0.60),
 47 / 113 (0.42), 39 / 109 (0.36), 22 / 86 (0.26).

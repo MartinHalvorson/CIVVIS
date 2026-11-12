@@ -58,8 +58,8 @@
 //! would bring it beside the city), and promotions earned during the fight.
 //! Its enemy is the solver's greedy one. On 1,200 posed sieges
 //! (`docs/ASSAULT_FORECAST.md`) it is right where it reads under 20% (4%
-//! taken) and overconfident above 80% (44% taken as #5195 ran them, 67% with
-//! a 100-Gold start): read it as "this force could take this city", not
+//! taken) and overconfident above 80% (44% taken as #5195 ran them, 81% with
+//! the seats kept solvent): read it as "this force could take this city", not
 //! "this train will". The reading gene is there to calibrate it on live
 //! games.
 //!
@@ -251,12 +251,11 @@ impl AssaultForecast {
 /// `AssaultForecast::calibrated_within`: readings under this pass through.
 pub(crate) const CALIBRATED_FROM: f32 = 0.2;
 /// PROVISIONAL, `docs/ASSAULT_FORECAST.md`: of the 1,200 posed sieges with
-/// each seat starting at 100 Gold (#5207, CI run 43288840120 on
-/// 49f02f9681; not yet solvent, see the doc), per wall pool,
+/// solvent seats (#5207, CI run 43303003805 on c908fea4c6), per wall pool,
 /// the sieges read at P(capture within 12) >= 0.8 and how many were taken
 /// within 12 turns. A test holds these to the doc's table.
 pub(crate) const HIGH_BIN_TAKEN: [(i32, u32, u32); 4] =
-    [(0, 165, 135), (100, 113, 78), (200, 109, 59), (400, 86, 44)];
+    [(0, 165, 141), (100, 113, 94), (200, 109, 86), (400, 86, 60)];
 
 /// The turn's forecasts, by city tile and the force and hostile signature.
 #[derive(Clone, Default)]
