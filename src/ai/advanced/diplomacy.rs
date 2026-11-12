@@ -2229,6 +2229,12 @@ impl AdvancedAi {
         if self.soft_city_window_opening(g, pid, plan) {
             return;
         }
+        // `score-seat-takes-what-pays`: the war for a Score seat's paying
+        // city, once its takers stand there. The turn's one declaration.
+        // `false` with the gene off. See `advanced/score_takes_what_pays.rs`.
+        if self.score_take_opening(g, pid, plan) {
+            return;
+        }
         // `early-conquest-opening`: the assembled force's declaration, and the
         // terms it asks for once the war stops paying. A declaration here is
         // the turn's one declaration. Exact no-op while off. See
