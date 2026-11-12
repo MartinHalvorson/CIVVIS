@@ -442,6 +442,9 @@ impl AdvancedAi {
         /// Opt-in gene `solver-plays-the-host`; see
         /// `advanced/battle_solver/host_enemy.rs`.
         solver_plays_the_host => enable_solver_plays_the_host, disable_solver_plays_the_host;
+        /// Opt-in gene `score-seat-plays-for-points`; see
+        /// `advanced/score_seat.rs`.
+        score_seat_plays_for_points => enable_score_seat_plays_for_points, disable_score_seat_plays_for_points;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
