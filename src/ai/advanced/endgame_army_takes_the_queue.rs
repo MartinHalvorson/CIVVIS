@@ -49,11 +49,12 @@
 //! (`projected_culture_finish`). The clock's turns left are the nearer of
 //! the turn limit and that finish.
 //!
-//! **The claim** (`claim_endgame_army_queues`, in the idle-queue chain after
-//! the breaker, deterrence and idle-route Trader claims and ahead of every
-//! growth and economy claim). While the land army, counted as the delegated
-//! governor counts it (each unit the fraction of a current front-line unit
-//! it fields), is under the enemy-weighted target of
+//! **The claim** (`claim_endgame_army_queues`, last in the idle-queue chain,
+//! so it also answers live production hints under `hint-runs-the-claims`
+//! and no claim that defers a soldier at peace takes the queue back; the
+//! routine governors fill only what it leaves). While the land army,
+//! counted as the delegated governor counts it (each unit the fraction of a
+//! current front-line unit it fields), is under the enemy-weighted target of
 //! [`ENDGAME_ARMY_PER_CITY`] a city, each city, fastest producer first:
 //! - an idle queue trains `combined_arms_unit`'s pick (the delegated floor's
 //!   own chooser);
@@ -340,7 +341,7 @@ impl AdvancedAi {
         reserve
     }
 
-    /// Whether `item` in `cid` is an economy build whose return lands after
+    /// Whether `item` is an economy build whose return lands after
     /// the endgame's clock: a wonder, a district other than an Encampment or
     /// Aerodrome (or a Spaceport while the seat races), a building other than
     /// Walls, an Encampment or Aerodrome building or one that nets Gold, or a
