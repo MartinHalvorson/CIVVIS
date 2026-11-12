@@ -1262,27 +1262,30 @@ impl Game {
         if !tile.pillaged {
             if let Some(improvement) = tile.improvement.as_deref() {
                 let effects = &self.rules.improvements[improvement].effects;
+                // Fetch appeal only for a nonzero bonus, then share it with
+                // later bonuses without keeping every coefficient live.
+                let mut appeal = None;
+                let mut appeal_for = |coefficient: f64| {
+                    if coefficient == 0.0 {
+                        0.0
+                    } else {
+                        *appeal.get_or_insert_with(|| self.tile_appeal(pos).max(0) as f64)
+                    }
+                };
                 let science = effects
                     .get("appeal_science_percent")
                     .copied()
                     .unwrap_or(0.0);
+                yields.science += science / 100.0 * appeal_for(science);
                 let culture = effects
                     .get("appeal_culture_percent")
                     .copied()
                     .unwrap_or(0.0);
+                yields.culture += culture / 100.0 * appeal_for(culture);
                 let gold = effects.get("appeal_gold").copied().unwrap_or(0.0);
+                yields.gold += gold * appeal_for(gold);
                 let faith = effects.get("appeal_faith").copied().unwrap_or(0.0);
-                // Most improvements have no appeal-based yield. Otherwise
-                // all four bonuses use the same appeal of this unchanged tile.
-                let appeal = if science != 0.0 || culture != 0.0 || gold != 0.0 || faith != 0.0 {
-                    self.tile_appeal(pos).max(0) as f64
-                } else {
-                    0.0
-                };
-                yields.science += science / 100.0 * appeal;
-                yields.culture += culture / 100.0 * appeal;
-                yields.gold += gold * appeal;
-                yields.faith += faith * appeal;
+                yields.faith += faith * appeal_for(faith);
             }
         }
 
