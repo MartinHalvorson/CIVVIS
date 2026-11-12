@@ -701,6 +701,12 @@ impl AdvancedAi {
         {
             return Some(next);
         }
+        // `open-city-is-the-objective`: the enemy whose open city our takers
+        // can take, while the current front offers none. `None` with the gene
+        // off. See `advanced/open_city_objective.rs`.
+        if let Some(open) = self.open_city_front_swap(g, pid, current, enemies) {
+            return Some(open);
+        }
         if let Some(current) = current {
             return Some(current);
         }

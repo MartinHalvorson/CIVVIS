@@ -8784,6 +8784,12 @@ pub struct AdvancedAi {
     /// stays. Rides `faith-war-on-a-small-world`. See
     /// `advanced/own_flip_faith_war.rs`. Opt-in.
     own_flip_faith_war_asks_no_power: bool,
+    /// `open-city-is-the-objective`: at war with a major for any reason, an
+    /// open city our land melee in reach would take within a few turns is
+    /// the campaign's objective and the war's front, no peace is offered or
+    /// taken while that capture stands, and its siege goes without the
+    /// muster's bill. See `advanced/open_city_objective.rs`. Opt-in.
+    open_city_is_the_objective: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -11082,6 +11088,8 @@ mod own_flip_faith_war;
 
 /// `open-city-draws-the-front`: see `advanced/open_city_front.rs`.
 mod open_city_front;
+/// `open-city-is-the-objective`: see `advanced/open_city_objective.rs`.
+mod open_city_objective;
 
 /// `medina-quarter-houses-the-districts`: see `advanced/medina_quarter.rs`.
 mod medina_quarter;

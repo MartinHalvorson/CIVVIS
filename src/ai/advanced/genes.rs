@@ -5891,6 +5891,14 @@ pub const GENES: &[Gene] = &[
     // the rout ratio. Rides `faith-war-on-a-small-world`. Opt-in; see
     // `advanced/own_flip_faith_war.rs`.
     Gene { tag: "own-flip-faith-war-asks-no-power", field: "own_flip_faith_war_asks_no_power", kind: Kind::OptIn, enable: AdvancedAi::enable_own_flip_faith_war_asks_no_power, disable: AdvancedAi::disable_own_flip_faith_war_asks_no_power },
+    // Live Deity Domination 2026-11-12, 45 games: at war with a major owning
+    // an unwalled city near us on 408 war-turns (44 wars), one open city was
+    // taken. On 143 of them our land soldiers in reach would take it within
+    // five turns; the campaign aimed elsewhere on 84 and the seat offered
+    // that enemy peace on 105. At war for any reason, such a city is the
+    // objective and the front, the war is kept while the capture stands, and
+    // its siege goes. Opt-in; see `advanced/open_city_objective.rs`.
+    Gene { tag: "open-city-is-the-objective", field: "open_city_is_the_objective", kind: Kind::OptIn, enable: AdvancedAi::enable_open_city_is_the_objective, disable: AdvancedAi::disable_open_city_is_the_objective },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.

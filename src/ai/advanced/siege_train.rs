@@ -3009,6 +3009,15 @@ impl AdvancedAi {
         }
         // `capture-holds-the-ring`: see `dying_open_city`.
         let dying = self.dying_open_city(&city);
+        // `open-city-is-the-objective`: an open city the train's own melee
+        // take within a few turns goes now; neither the muster's bill nor the
+        // damage budget holds or aborts it. `None` with the gene off. See
+        // `advanced/open_city_objective.rs`.
+        let open_go = if arena {
+            None
+        } else {
+            self.open_city_siege_go(g, pid, cid, &force)
+        };
         // `phantom-capture-keeps-the-siege`: a Hold the host never executed
         // over a falling city (walls down, within its taker's blow) resumes
         // the siege it replaced: no regroup, no muster hold.
@@ -3080,7 +3089,12 @@ impl AdvancedAi {
             let weak_target = self.weak_target_skips_the_muster
                 && g.military_power(city.owner)
                     <= MUSTER_WEAK_TARGET_SHARE * g.military_power(pid).max(1.0);
-            let ready = dying || walls_answered || committed || weak_target || restored;
+            let ready = dying
+                || walls_answered
+                || committed
+                || weak_target
+                || restored
+                || open_go.is_some();
             // `siege-shortfall-claims-the-projects`: a held train whose whole
             // force is short of the bill asks the cities for soldiers.
             self.note_siege_shortfall(cid, turn, !ready && strength < bill);
@@ -3120,8 +3134,10 @@ impl AdvancedAi {
                     "dying"
                 } else if walls_answered || committed {
                     "ready"
-                } else {
+                } else if weak_target || restored {
                     "weak target"
+                } else {
+                    "open-city-is-the-objective"
                 };
                 let name = g
                     .cities
@@ -3157,6 +3173,9 @@ impl AdvancedAi {
                     city.pos);
             }
         }
+        // `open-city-is-the-objective`: whether the go order alone moved the
+        // train out of Stage this turn.
+        let mut open_go_order = false;
         let record = self.sieges.entry(cid).or_insert(Siege {
             stage: SiegeStage::Stage,
             taker: None,
@@ -3198,6 +3217,7 @@ impl AdvancedAi {
             };
             if invested
                 && !restored
+                && open_go.is_none()
                 && (strength < abort_share * bill
                     || (!damage_can_continue
                         && breach_taker.is_none()
@@ -3224,12 +3244,13 @@ impl AdvancedAi {
                     // rest of the train fills distant staging posts. Keep
                     // the whole-force bill and positive-damage gate, but let
                     // a healthy, reachable capturer exploit that breach.
-                    if ((arena && gathered) || staged >= bill || breach_taker.is_some())
+                    let stock = ((arena && gathered) || staged >= bill || breach_taker.is_some())
                         && (damage_entry_ready || opens_walls || grind)
-                        && !no_breaker
-                    {
+                        && !no_breaker;
+                    if stock || open_go.is_some() {
                         stage = SiegeStage::Invest;
                     }
+                    open_go_order = !stock && open_go.is_some();
                 }
                 SiegeStage::Invest => {
                     let patience = turn.saturating_sub(record.entered) >= INVEST_PATIENCE;
@@ -3305,6 +3326,19 @@ impl AdvancedAi {
         }
         if ring > 0 && sealed == ring && stage != SiegeStage::Hold {
             self.census.siege_rings_sealed += 1;
+        }
+        if let (true, Some(take)) = (open_go_order, &open_go) {
+            // `open-city-is-the-objective`: the go order.
+            let name = g
+                .cities
+                .get(&cid)
+                .map(|c| c.name.clone())
+                .unwrap_or_default();
+            think!(self.journal(), Military, Decision,
+                "Siege of {name}: the takers go";
+                "open-city-is-the-objective: no walls; {} taker(s) of the train take it in {} turn(s) against a centre of {:.0}, so neither the bill ({staged:.0} staged of {bill:.0}) nor the damage budget holds them",
+                take.takers, take.turns, take.defence;
+                city.pos);
         }
         if stage == SiegeStage::Hold && previous != SiegeStage::Hold {
             self.census.siege_captures += 1;
