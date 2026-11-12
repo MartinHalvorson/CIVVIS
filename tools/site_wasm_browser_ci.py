@@ -16,6 +16,7 @@ import json
 import math
 import os
 import platform
+import re
 import shutil
 import subprocess
 import time
@@ -29,6 +30,7 @@ import site_wasm_profile_ci as profile
 
 OBSERVER_JS = r"""
 (() => {
+  'use strict';
   const report = window.__civvisFullGame = {phase: 'waiting', frames: [], paints: [], error: null};
   const timer = setInterval(() => {
     if (typeof window.render !== 'function') return;
@@ -44,7 +46,8 @@ OBSERVER_JS = r"""
         const previous = report.frames.at(-1);
         if (previous && previous.sequence === painted.sequence && previous.seed === painted.seed)
           return result;
-        const frame = {...painted, atMs: performance.now(), pace: st.pace};
+        const frame = {...painted, atMs: performance.now(), pace: st.pace,
+                       winner: st.winner, victoryType: st.victory_type};
         if (!previous) {
           report.settings = {
             majors: st.players.filter(p => !p.is_minor && !p.is_barbarian).length,
@@ -133,9 +136,13 @@ def validate_observation(observation: dict, case: str, source: str) -> dict:
         if index and (frame['atMs'] < frames[index - 1]['atMs']
                       or paint['atMs'] < paints[index - 1]['atMs']):
             raise ValueError('browser clocks ran backwards')
+        if index:
+            advance = frame['turn'] - frames[index - 1]['turn']
+            if advance != 1 and not (frame.get('finished') and advance == 0):
+                raise ValueError('normal Lightning game skipped a round')
         if index < len(frames) - 1 and frame.get('finished'):
             raise ValueError('a successor game was included')
-    if frames[-1].get('finished') is not True or not 1 < frames[-1]['turn'] <= 250:
+    if frames[-1].get('finished') is not True or not 1 < frames[-1]['turn'] <= 251:
         raise ValueError('missing natural terminal frame')
     commit = observation.get('serverCommit', '')
     if not isinstance(commit, str) or len(commit) < 7 or not source.startswith(commit):
@@ -154,6 +161,15 @@ def validate_save(raw: bytes, observation: dict, case: str) -> dict:
     if (game.get('seed') != seed or game.get('turn') != terminal['turn']
             or game.get('game_speed') != 'online' or game.get('max_turns') != 250
             or game.get('human_seats')
+            or game.get('winner') != terminal.get('winner')
+            or game.get('victory_type') != terminal.get('victoryType')
+            or game.get('map_script') != observation['settings']['map']
+            or any(game['map'].get(key) != observation['settings'][key] for key in ('width', 'height'))
+            or not game['map'].get('topology', {}).get('globe')
+            or game.get('victory_conditions') != observation['settings']['victoryConditions']
+            or game.get('difficulty') != 'prince' or game.get('turn_structure') != 'sequential'
+            or sum(p['is_minor'] and not p.get('is_barbarian', False)
+                   for p in game['players']) != (9 if roster == 'six' else 6)
             or sum(not p['is_minor'] and not p.get('is_barbarian', False)
                    for p in game['players']) != expected):
         raise ValueError('stored raw save is not the measured complete normal game')
@@ -170,7 +186,8 @@ def verify_module(qualified: Path, source: str, run_id: int, repo: str) -> tuple
 
 def browser_game(qualified: Path, source: str, run_id: int, repo: str,
                  case: str, out: Path, seconds: float = 1200) -> dict:
-    if case not in profile.CASES or run_id <= 0 or not 0 < seconds <= 1800:
+    if (case not in profile.CASES or run_id <= 0 or not 0 < seconds <= 1800
+            or not re.fullmatch(r'[\w.-]+/[\w.-]+', repo)):
         raise ValueError('invalid normal case, qualification run or deadline')
     if out.exists():
         raise FileExistsError('inspect original browser evidence; output already exists')
@@ -191,6 +208,7 @@ def browser_game(qualified: Path, source: str, run_id: int, repo: str,
     result = {'phase': 'starting', 'source': source, 'qualification': qualification,
               'qualification_run': run_id, 'case': case, 'bundle_sha256': manifest,
               'tooling_source': os.environ.get('GITHUB_SHA'), 'platform': platform.platform(),
+              'settings_guard_sha256': hashlib.sha256(pair.DRIVER.read_bytes()).hexdigest(),
               'logical_cpus': os.cpu_count(), 'chrome': subprocess.check_output([chrome, '--version'], text=True).strip(),
               'scope': 'Exact qualified website bundle served locally on named remote CI host. '
                        'Natural normal Online game at offered Lightning pace, all publications rendered. '
@@ -260,12 +278,18 @@ def browser_game(qualified: Path, source: str, run_id: int, repo: str,
             raise ValueError('IndexedDB byte count differs from transferred raw save')
         (out / 'game.save.json').write_bytes(raw)
         saved = validate_save(raw, observation, case)
+        colours = dev.evaluate(verify.MAP_CANVAS_COLOURS_JS)
+        if not isinstance(colours, int) or colours < 8:
+            raise ValueError('terminal map did not produce the normal painted canvas')
+        problems = verify.map_delivery_problems(snapshot.get('delivery') or {})
+        if problems:
+            raise ValueError('browser map delivery failed: ' + '; '.join(problems))
         shot = dev.call('Page.captureScreenshot', {'format': 'png'})
         (out / 'terminal.png').write_bytes(base64.b64decode(shot['data']))
         if hashlib.sha256(module.read_bytes()).hexdigest() != qualification['engine']['wasm_sha256']:
             raise ValueError('served module changed during browser observation')
         result.update(phase='complete', timing=timing, raw_save=saved,
-                      console=dev.console, delivery=snapshot.get('delivery'))
+                      console=dev.console, delivery=snapshot.get('delivery'), terminal_canvas_colours=colours)
         record()
         return result
     except BaseException as error:
@@ -274,7 +298,10 @@ def browser_game(qualified: Path, source: str, run_id: int, repo: str,
         raise
     finally:
         if dev:
-            dev.call('Page.stopScreencast', wait=False)
+            try:
+                dev.call('Page.stopScreencast', wait=False)
+            except (OSError, RuntimeError):
+                pass
             dev.alive = False
         browser.terminate()
         try:
