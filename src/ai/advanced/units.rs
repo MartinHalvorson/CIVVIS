@@ -681,7 +681,12 @@ impl AdvancedAi {
                 .enumerate()
                 .filter_map(|(order, action)| {
                     let (uid, target) = Self::unit_strike_actor_and_target(action)?;
-                    (!spent.contains(&uid) && !self.builder_guard_reserved(uid))
+                    // `centre-keeps-its-garrison`: a threatened city's
+                    // garrison makes no melee blow, which would carry it out
+                    // of the City Center on a kill. `false` with the gene off.
+                    let keeper_melee = matches!(action, Action::Attack { .. })
+                        && self.keeps_the_centre(g, pid, uid);
+                    (!spent.contains(&uid) && !self.builder_guard_reserved(uid) && !keeper_melee)
                         .then(|| self.immediate_kill_value(g, pid, action, plan))
                         .flatten()
                         .map(|(value, eliminated)| (value, eliminated, target, uid, order, action))
@@ -1179,6 +1184,12 @@ impl AdvancedAi {
         // false with the gene off. See `advanced/battle_planner.rs`.
         if self.battle_planner_claims(uid) {
             return self.base.fortify_or_stop(g, pid, uid);
+        }
+        // `centre-keeps-its-garrison`: a threatened city's garrison keeps
+        // its City Center, and an empty one takes a soldier in reach. `None`
+        // with the gene off. See `advanced/centre_keeps_its_garrison.rs`.
+        if let Some(acted) = self.centre_garrison_step(g, pid, uid) {
+            return acted;
         }
         // `amphibious-siege-train`: a member of the crossing in hand takes
         // the train's orders before anything else can land it at home. `None`

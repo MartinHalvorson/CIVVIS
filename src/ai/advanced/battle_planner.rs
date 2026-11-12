@@ -1987,6 +1987,12 @@ impl AdvancedAi {
                 }
                 own.extend(found);
             }
+            // `centre-keeps-its-garrison`: a threatened city's garrison
+            // fires from its City Center or not at all; a melee blow that
+            // kills would carry it out. `false` with the gene off.
+            if self.keeps_the_centre(g, pid, uid) {
+                own.retain(|candidate| candidate.ranged && candidate.from == unit.pos);
+            }
             // `ranged-kills-are-free`: a recovering shooter, or a guard a
             // civilian holds, keeps only its ranged blows from its own tile,
             // kill-only: it stays the rotation's or the escort's otherwise,

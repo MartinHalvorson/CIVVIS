@@ -5697,6 +5697,15 @@ pub const GENES: &[Gene] = &[
     // Granary, an Aqueduct or a soldier at peace, and Connoisseur is
     // Pingala's second promotion. Opt-in; see `advanced/domination_culture.rs`.
     Gene { tag: "domination-seat-raises-its-culture", field: "domination_seat_raises_its_culture", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_seat_raises_its_culture, disable: AdvancedAi::disable_domination_seat_raises_its_culture },
+    // Live Deity Gran Colombia, 62 games of 2026-11-12, 100 cities lost (68
+    // to force): none of 4,918 enemy blows on our units landed on one in our
+    // City Centers, yet a garrison with an at-war soldier within 3 stepped
+    // out on 1,564 of 5,353 turns (1,109 left the centre empty, 105 died),
+    // and 32 of the 68 falls followed a step-out in the last three turns. Every threatened
+    // city's garrison keeps its post and fires from it; an empty threatened
+    // centre takes a soldier in reach. Opt-in; see
+    // `advanced/centre_keeps_its_garrison.rs`.
+    Gene { tag: "centre-keeps-its-garrison", field: "centre_keeps_its_garrison", kind: Kind::OptIn, enable: AdvancedAi::enable_centre_keeps_its_garrison, disable: AdvancedAi::disable_centre_keeps_its_garrison },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
