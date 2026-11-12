@@ -143,3 +143,144 @@ fn a_temple_keeps_titles_available_for_apostle_promotions() {
         .promotions
         .contains("patron_saint"));
 }
+
+/// `domination-seat-appoints-pingala-first`: a one-city opening with State
+/// Workforce in, so one Governor title is ready.
+fn opening_board(seed: u64) -> Game {
+    let mut game = Game::new_full(1, 18, 10, seed, 120, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    game.players[0]
+        .civics
+        .insert(crate::name!("state_workforce"));
+    game
+}
+
+fn opening_plan(game: &Game, strategy: GrandStrategy) -> StrategicPlan {
+    StrategicPlan {
+        strategy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    }
+}
+
+fn pingala_first_seat(target: VictoryTarget, gene: bool) -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(target);
+    if gene {
+        ai.enable_domination_seat_appoints_pingala_first();
+    }
+    ai
+}
+
+fn opening_roster(game: &Game) -> Vec<String> {
+    game.players[0]
+        .governor_roster
+        .keys()
+        .map(|name| name.to_string())
+        .collect()
+}
+
+#[test]
+fn a_domination_opening_appoints_pingala_with_the_gene_and_magnus_without() {
+    for strategy in [GrandStrategy::Expansion, GrandStrategy::Conquest] {
+        let mut game = opening_board(9_201);
+        let opening = opening_plan(&game, strategy);
+        pingala_first_seat(VictoryTarget::Domination, true)
+            .strategic_governors(&mut game, 0, &opening);
+        assert_eq!(opening_roster(&game), ["pingala"], "{strategy:?}");
+    }
+    let mut game = opening_board(9_201);
+    let opening = opening_plan(&game, GrandStrategy::Expansion);
+    pingala_first_seat(VictoryTarget::Domination, false)
+        .strategic_governors(&mut game, 0, &opening);
+    assert_eq!(opening_roster(&game), ["magnus"]);
+}
+
+#[test]
+fn pingala_first_leaves_other_targets_and_a_recovery_alone() {
+    let mut game = opening_board(9_202);
+    let opening = opening_plan(&game, GrandStrategy::Expansion);
+    pingala_first_seat(VictoryTarget::Science, true).strategic_governors(&mut game, 0, &opening);
+    assert_eq!(opening_roster(&game), ["magnus"]);
+
+    let mut game = opening_board(9_203);
+    let recovery = opening_plan(&game, GrandStrategy::Recovery);
+    pingala_first_seat(VictoryTarget::Domination, true)
+        .strategic_governors(&mut game, 0, &recovery);
+    assert_eq!(opening_roster(&game), ["victor"]);
+}
+
+/// Two cities and no units, so a second Governor has a seat.
+fn two_city_board(titles: i64) -> Game {
+    let mut game = Game::new_full(2, 32, 20, 366900, 500, 0, false);
+    for uid in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(uid);
+    }
+    game.found_city_for(0, (6, 8), None);
+    game.found_city_for(0, (12, 8), None);
+    game.players[0]
+        .counters
+        .insert("district_governor_titles".into(), titles);
+    game
+}
+
+#[test]
+fn researcher_is_the_second_title_and_magnus_the_third() {
+    // Two titles: an appointment and one promotion.
+    let mut game = two_city_board(2);
+    let opening = opening_plan(&game, GrandStrategy::Expansion);
+    let ai = pingala_first_seat(VictoryTarget::Domination, true);
+    ai.strategic_governors(&mut game, 0, &opening);
+    assert_eq!(game.governor_titles_available(0), 0);
+    assert_eq!(opening_roster(&game), ["pingala"]);
+    let pingala = &game.players[0].governor_roster["pingala"];
+    assert!(pingala.city.is_some());
+    assert!(
+        pingala.promotions.contains("researcher") && pingala.promotions.len() == 1,
+        "{:?}",
+        pingala.promotions
+    );
+    // Researcher completes her foundation: the plan's own roster returns,
+    // and the third title seats Magnus instead of her second promotion.
+    assert!(!ai.domination_titles_follow_science(&game, 0, GrandStrategy::Expansion));
+    game.players[0]
+        .counters
+        .insert("district_governor_titles".into(), 3);
+    ai.strategic_governors(&mut game, 0, &opening);
+    assert_eq!(game.governor_titles_available(0), 0);
+    assert!(game.players[0].governor_roster.contains_key("magnus"));
+    assert_eq!(
+        game.players[0].governor_roster["pingala"].promotions.len(),
+        1
+    );
+    // Without the gene the same three titles all go to Magnus.
+    let mut game = two_city_board(3);
+    pingala_first_seat(VictoryTarget::Domination, false)
+        .strategic_governors(&mut game, 0, &opening);
+    assert_eq!(opening_roster(&game), ["magnus"]);
+    assert_eq!(
+        game.players[0].governor_roster["magnus"].promotions.len(),
+        2
+    );
+}
+
+#[test]
+fn a_domination_pingala_stays_seated_with_the_gene() {
+    let game = opening_board(9_205);
+    let off = pingala_first_seat(VictoryTarget::Domination, false);
+    assert_eq!(off.culture_pingala_stays_home(&game), None);
+    let on = pingala_first_seat(VictoryTarget::Domination, true);
+    let (name, within) = on.culture_pingala_stays_home(&game).unwrap();
+    assert_eq!(name, "pingala");
+    assert!(within > 0.0);
+    let science = pingala_first_seat(VictoryTarget::Science, true);
+    assert_eq!(science.culture_pingala_stays_home(&game), None);
+}

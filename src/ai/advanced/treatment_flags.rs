@@ -134,6 +134,10 @@ impl AdvancedAi {
         /// `advanced/the_worked_backlog_gets_its_builder_first.rs`.
         base.the_worked_backlog_gets_its_builder_first => enable_the_worked_backlog_gets_its_builder_first, disable_the_worked_backlog_gets_its_builder_first;
         // ---- append: c-d --------------------------------------------
+        /// `domination-seat-appoints-pingala-first`: Pingala and Researcher
+        /// take a Domination seat's first Governor titles. See
+        /// `advanced/domination_governors.rs`.
+        domination_seat_appoints_pingala_first => enable_domination_seat_appoints_pingala_first, disable_domination_seat_appoints_pingala_first;
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
         corps_comes_home_alive => enable_corps_comes_home_alive, disable_corps_comes_home_alive;

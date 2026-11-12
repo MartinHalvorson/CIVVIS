@@ -5647,6 +5647,12 @@ pub struct AdvancedAi {
     /// stood, for the journal of its loss. `None` while the gene is off.
     breaker_shield_memory: Option<breaker_walks_under_a_shield::BreakerShieldMemory>,
     // ---- append: c-d ------------------------------------------------
+    /// `domination-seat-appoints-pingala-first`: a Domination target spends
+    /// its first Governor titles on Pingala in its largest city and her
+    /// Researcher promotion instead of the opening's Magnus, and keeps her
+    /// seated unless a city is about to flip. See
+    /// `advanced/domination_governors.rs`. Opt-in.
+    domination_seat_appoints_pingala_first: bool,
     /// `culture-pass-keeps-half-the-army`: the culture claims pass the
     /// near-rival deterrent only while our power is at least half the near
     /// neighbour's. See `advanced/culture_past_the_deterrent.rs`. Opt-in.

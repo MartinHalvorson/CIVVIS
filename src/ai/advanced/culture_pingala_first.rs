@@ -73,8 +73,11 @@ impl AdvancedAi {
     /// the runway inside which it still goes. `None` with the gene off or for
     /// another target.
     pub(super) fn culture_pingala_stays_home(&self, g: &Game) -> Option<(&'static str, f64)> {
-        (self.culture_keeps_pingala_home
+        // `domination-seat-appoints-pingala-first` keeps its Pingala seated
+        // the same way. See `advanced/domination_governors.rs`.
+        ((self.culture_keeps_pingala_home
             && self.active_victory_target(g) == Some(VictoryTarget::Culture))
+            || self.domination_seat_titles_pingala_first(g))
         .then(|| {
             (
                 "pingala",
@@ -87,10 +90,15 @@ impl AdvancedAi {
     pub(super) fn governor_title_strategy(
         &self,
         g: &Game,
+        pid: usize,
         strategy: GrandStrategy,
     ) -> GrandStrategy {
         if strategy == GrandStrategy::Expansion && self.culture_seat_titles_pingala_first(g) {
             GrandStrategy::Culture
+        } else if self.domination_titles_follow_science(g, pid, strategy) {
+            // `domination-seat-appoints-pingala-first`: see
+            // `advanced/domination_governors.rs`.
+            GrandStrategy::Science
         } else {
             strategy
         }
@@ -106,6 +114,13 @@ impl AdvancedAi {
     ) -> GrandStrategy {
         if governor == "pingala" && self.culture_seat_titles_pingala_first(g) {
             GrandStrategy::Culture
+        } else if governor == "pingala"
+            && strategy == GrandStrategy::Culture
+            && self.domination_seat_titles_pingala_first(g)
+        {
+            // `domination-seat-appoints-pingala-first`: Researcher before
+            // Connoisseur under any plan.
+            GrandStrategy::Science
         } else {
             strategy
         }
