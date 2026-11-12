@@ -957,7 +957,9 @@ fn a_host_offer_the_every_pad_filing_can_run_still_holds_the_spy() {
         "the fixture board does not offer it from the capital"
     );
     let racers = BTreeSet::from([1, 2]);
-    assert!(AdvancedAi::racer_spy_disrupt_runnable(&g, spy, &legal, &racers));
+    assert!(AdvancedAi::racer_spy_disrupt_runnable(
+        &g, spy, &legal, &racers
+    ));
     assert!(
         !AdvancedAi::racer_spy_disrupt_runnable(&g, spy, &legal, &BTreeSet::new()),
         "with every-pad off nothing files it"

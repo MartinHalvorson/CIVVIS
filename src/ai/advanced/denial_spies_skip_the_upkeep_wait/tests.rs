@@ -153,9 +153,7 @@ fn other_upkeep_still_waits() {
 #[test]
 fn the_waiver_needs_a_racer_past_its_moon_short_of_the_launch() {
     let (mut g, ours) = board();
-    g.players[1]
-        .science_projects
-        .remove("launch_moon_landing");
+    g.players[1].science_projects.remove("launch_moon_landing");
     assert!(
         waits(&skips(), &g, ours[0], &spy()),
         "the Earth Satellite alone: no decisive racer"
@@ -168,10 +166,11 @@ fn the_waiver_needs_a_racer_past_its_moon_short_of_the_launch() {
         waits(&skips(), &g, ours[0], &spy()),
         "after the launch no Disrupt Rocketry stops it"
     );
-    g.players[1]
-        .science_projects
-        .remove("exoplanet_expedition");
-    assert!(!waits(&skips(), &g, ours[0], &spy()), "Mars, short of the launch");
+    g.players[1].science_projects.remove("exoplanet_expedition");
+    assert!(
+        !waits(&skips(), &g, ours[0], &spy()),
+        "Mars, short of the launch"
+    );
 }
 
 #[test]
@@ -180,7 +179,10 @@ fn the_treasury_must_carry_the_spys_own_upkeep() {
     let upkeep = AdvancedAi::item_added_upkeep(&g, &spy());
     assert!(upkeep > 0.0, "the fixture Spy costs upkeep");
     g.players[0].gold = UPKEEP_RUNWAY_TURNS * upkeep - 1.0;
-    assert!(waits(&skips(), &g, ours[0], &spy()), "090241Z's empty treasury");
+    assert!(
+        waits(&skips(), &g, ours[0], &spy()),
+        "090241Z's empty treasury"
+    );
     g.players[0].gold = UPKEEP_RUNWAY_TURNS * upkeep;
     assert!(!waits(&skips(), &g, ours[0], &spy()));
 }
@@ -190,7 +192,10 @@ fn a_spy_the_denial_no_longer_wants_waits() {
     let (mut g, ours) = board();
     // A Spy at the head of another city's queue fills one of the two.
     g.cities.get_mut(&ours[1]).unwrap().queue.push(spy());
-    assert!(!waits(&skips(), &g, ours[0], &spy()), "one of two: still wanted");
+    assert!(
+        !waits(&skips(), &g, ours[0], &spy()),
+        "one of two: still wanted"
+    );
     g.cities.get_mut(&ours[2]).unwrap().queue.push(spy());
     assert!(
         waits(&skips(), &g, ours[0], &spy()),
@@ -199,7 +204,10 @@ fn a_spy_the_denial_no_longer_wants_waits() {
     let mut off = skips();
     off.disable_science_denial_trains_spies();
     let (g, ours) = board();
-    assert!(waits(&off, &g, ours[0], &spy()), "no denial claim: no waiver");
+    assert!(
+        waits(&off, &g, ours[0], &spy()),
+        "no denial claim: no waiver"
+    );
 }
 
 #[test]
