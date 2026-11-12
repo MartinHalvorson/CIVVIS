@@ -36,7 +36,9 @@
 mod dice;
 mod extract;
 pub mod host_enemy;
-mod model;
+/// `pub(super)` for `assault_forecast`, which plays a siege forward on the
+/// same board. Nothing here changes for it.
+pub(super) mod model;
 mod search;
 
 #[cfg(test)]

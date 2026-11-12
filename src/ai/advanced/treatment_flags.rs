@@ -80,6 +80,10 @@ impl AdvancedAi {
     // `tools/test_treatment_append_points.py` holds the block below to its size.
     toggles! {
         // ---- append: a-b --------------------------------------------
+        /// Opt-in gene `assault-forecast-is-read`: a capture forecast and one
+        /// journal line for every siege the train assesses; no decision
+        /// changes. See `advanced/assault_forecast.rs`.
+        assault_forecast_is_read => enable_assault_forecast_is_read, disable_assault_forecast_is_read;
         /// Opt-in gene `apostle-evangelizes-unspent`; see
         /// `advanced/apostle_evangelizes_unspent.rs`.
         apostle_evangelizes_unspent => enable_apostle_evangelizes_unspent, disable_apostle_evangelizes_unspent;
@@ -427,6 +431,11 @@ impl AdvancedAi {
         /// `advanced/policy_swap_keeps_the_army_paid.rs`.
         policy_swap_keeps_the_army_paid => enable_policy_swap_keeps_the_army_paid, disable_policy_swap_keeps_the_army_paid;
         // ---- append: s-s --------------------------------------------
+        /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
+        /// holds and stands down on the capture forecast, and Siege rows rank
+        /// by value x P / expected turns; implies the reading. See
+        /// `advanced/assault_forecast.rs`.
+        siege_goes_on_the_forecast => enable_siege_goes_on_the_forecast, disable_siege_goes_on_the_forecast;
         /// Opt-in gene `sweden-builds-open-air-museums`; see
         /// `advanced/sweden_builds_open_air_museums.rs`.
         sweden_builds_open_air_museums => enable_sweden_builds_open_air_museums, disable_sweden_builds_open_air_museums;
