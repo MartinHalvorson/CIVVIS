@@ -5767,14 +5767,28 @@ def setup_drift(event: dict, args: argparse.Namespace) -> list[str]:
     `MAPSIZE_TINY` everywhere and be a different game. Each count is checked
     only when the seat reported an integer: an older mod that reports nothing
     is unverified, not wrong, the same rule `ruleset_match` follows.
+
+    ★★★ A RELOADED GAME HAS HAD TURNS TO LOSE PLAYERS. The seat counts the
+    majors and city-states alive now, and a `--load-save` continuation joins
+    the game mid-way. Live Deity Gran Colombia civvis-20261112T092252Z (Tiny
+    Pangaea, four majors) stalled in a rival's turn at t116 holding 12 cities
+    and twice the best rival's production; one rival had been eliminated by
+    then, so the reload of AutoSave_0112 reported `players 3`, read as drift,
+    and the continuation was filed `wrong_game_configuration` and thrown
+    away. Fewer than the size's defaults is the game's own history on a
+    reload; more than the defaults cannot come from play, and a fresh game
+    must still match exactly.
     """
     expected = MAP_SIZE_DEFAULTS.get(str(event.get("size") or args.map_size))
     if expected is None:
         return []
+    reloaded = bool(getattr(args, "load_save", None))
     drift = []
     for field, want in (("players", expected[0]), ("city_states", expected[1])):
         have = event.get(field)
         if isinstance(have, int) and not isinstance(have, bool) and have != want:
+            if reloaded and 0 < have < want:
+                continue
             drift.append(f"{field} {have} != {want}")
     return drift
 
