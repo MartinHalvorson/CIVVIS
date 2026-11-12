@@ -6912,6 +6912,12 @@ pub struct AdvancedAi {
     city_state_stone_named: bool,
     /// The turn the last "none named" note was journalled.
     city_state_stone_noted: Option<u32>,
+    /// `commercial-hub-claims-a-peace-queue`: at peace, a Domination seat's
+    /// Commercial Hub city takes its Market, and the empire's first Hub is
+    /// claimed, ahead of a routine queue. Rides
+    /// `commercial-hub-in-the-strategic-queue`. See
+    /// `advanced/commercial_hub_claims_a_peace_queue.rs`. Opt-in.
+    commercial_hub_claims_a_peace_queue: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -9311,6 +9317,16 @@ pub struct AdvancedAi {
     /// army's breaker and unique melee research after the stepping stone ends.
     /// See `advanced/first_capital_research.rs`. Off by default.
     research_follows_the_first_capital: bool,
+    /// `rear-cities-grow-through-the-war-hold`: while
+    /// `threatened-war-holds-the-claims` holds the claims, the Granary,
+    /// Aqueduct, Neighbourhood, backlog Builder, Campus building, parallel
+    /// Library and idle-route Trader claims still run for the cities away
+    /// from the front. See `advanced/rear_cities_grow_through_the_war_hold.rs`.
+    /// Off by default.
+    rear_cities_grow_through_the_war_hold: bool,
+    /// The rear cities those claims may take during one idle-queue pass under
+    /// the hold. `None` outside such a pass, so every claim reads every city.
+    rear_cities_open_under_the_hold: Option<BTreeSet<u32>>,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
@@ -11131,6 +11147,9 @@ mod cold_war_before_conservation;
 /// `cold-war-then-heritage`: after Cold War, Conservation and then Cultural
 /// Heritage. See `advanced/cold_war_then_heritage.rs`.
 mod cold_war_then_heritage;
+/// `commercial-hub-claims-a-peace-queue`: see
+/// `advanced/commercial_hub_claims_a_peace_queue.rs`.
+mod commercial_hub_claims_a_peace_queue;
 mod culture_defensive_research;
 /// Two Deity habits: chase eurekas with Builders and with the production
 /// queue. Two opt-in genes; see `advanced/deity_habits.rs`.
@@ -11764,6 +11783,9 @@ mod early_conquest;
 /// Version two of rapid city expansion keeps the measured-positive opening
 /// pace and safety gates without version one's forced queues, sprawl, or war.
 pub(super) mod rapid_city_expansion;
+/// `rear-cities-grow-through-the-war-hold`: see
+/// `advanced/rear_cities_grow_through_the_war_hold.rs`.
+mod rear_cities_grow_through_the_war_hold;
 /// `settler-never-idles`: a Settler always has somewhere to go — exhaustion
 /// asks wider questions instead of holding, and a watchdog bounds every
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
@@ -26810,6 +26832,11 @@ impl AdvancedAi {
             // `space-people-call-the-projects`: the district projects that earn
             // a space-race person on offer. Exact no-op while the gene is off.
             self.claim_queues_for_the_space_people(g, pid, &plan);
+            // `commercial-hub-claims-a-peace-queue`: at peace, a Commercial
+            // Hub's Market, then the empire's first Hub, ahead of a routine
+            // queue. Exact no-op while the gene is off. See
+            // `advanced/commercial_hub_claims_a_peace_queue.rs`.
+            self.claim_peace_queue_for_the_commercial_hub(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and

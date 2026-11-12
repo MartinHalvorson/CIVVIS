@@ -240,6 +240,9 @@ impl AdvancedAi {
         /// `city-state-before-the-first-capital`: a Domination seat's early
         /// conquest opening takes one nearby city-state before the first capital.
         city_state_before_the_first_capital => enable_city_state_before_the_first_capital, disable_city_state_before_the_first_capital;
+        /// Opt-in `commercial-hub-claims-a-peace-queue`; see
+        /// `advanced/commercial_hub_claims_a_peace_queue.rs`.
+        commercial_hub_claims_a_peace_queue => enable_commercial_hub_claims_a_peace_queue, disable_commercial_hub_claims_a_peace_queue;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -367,6 +370,9 @@ impl AdvancedAi {
         /// `research-follows-the-first-capital`: see
         /// `advanced/first_capital_research.rs`.
         research_follows_the_first_capital => enable_research_follows_the_first_capital, disable_research_follows_the_first_capital;
+        /// `rear-cities-grow-through-the-war-hold`: see
+        /// `advanced/rear_cities_grow_through_the_war_hold.rs`.
+        rear_cities_grow_through_the_war_hold => enable_rear_cities_grow_through_the_war_hold, disable_rear_cities_grow_through_the_war_hold;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `sweden-builds-open-air-museums`; see
         /// `advanced/sweden_builds_open_air_museums.rs`.
