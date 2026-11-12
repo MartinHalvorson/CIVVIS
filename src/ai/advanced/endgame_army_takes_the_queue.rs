@@ -65,7 +65,12 @@
 //!   other queue heads add on completion (`committed_queue_upkeep`), plus the
 //!   treasury above the endgame reserve spread over the turns left;
 //! - and only where the unit is built within [`ENDGAME_ARRIVAL_SHARE`] of
-//!   the turns left, so it reaches the fight.
+//!   the turns left, so it reaches the fight;
+//! - and not at all while the plan's war target has walls nothing of ours
+//!   breaches (`walls_nothing_breaches`, the reading of
+//!   `hopeless-army-yields-the-queue`, which lowers the army target in that
+//!   case): this gene raises military production only while the army can
+//!   fight.
 //! A threatened city (the plan's, or one hit within four turns) and a city
 //! with a pillaged district to repair keep their queue for the governor's
 //! defence and repair steps. Walls, encampment and aerodrome buildings and
@@ -86,6 +91,7 @@
 //!
 //! With the gene off, or for any other target, nothing changes.
 
+use super::hopeless_army_yields_the_queue::HopelessWalls;
 use super::*;
 
 /// Percent of the game's length (the turn limit, or the speed's own if
@@ -382,6 +388,28 @@ impl AdvancedAi {
         }
     }
 
+    /// The plan's war target when nothing of ours breaches its walls
+    /// (`walls_nothing_breaches`, the reading `hopeless-army-yields-the-queue`
+    /// makes, read here whatever that gene's flag): the target city of a war,
+    /// or the city a Conquest plan names in its target's empire. That gene
+    /// lowers the army target while a siege cannot breach; this one raises
+    /// military production only while the army can fight.
+    pub(crate) fn endgame_offensive_hopeless(
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Option<HopelessWalls> {
+        let target = plan.target_city.and_then(|cid| g.cities.get(&cid))?;
+        if target.owner == pid
+            || !(g.is_at_war(pid, target.owner)
+                || (plan.strategy == GrandStrategy::Conquest
+                    && plan.target_player == Some(target.owner)))
+        {
+            return None;
+        }
+        Self::walls_nothing_breaches(g, pid, target.id)
+    }
+
     /// Whether `cid` keeps its queue for the governor: the plan's threatened
     /// city, one hit within [`ENDGAME_ATTACK_MEMORY`] turns, or one with a
     /// pillaged district or building to repair.
@@ -414,6 +442,13 @@ impl AdvancedAi {
         let target = self.endgame_army_target(g, pid, city_ids.len()) as f64;
         let mut army = EndgameArmy::of(g, pid, &city_ids);
         if army.force >= target {
+            return;
+        }
+        if let Some(walls) = Self::endgame_offensive_hopeless(g, pid, plan) {
+            think!(self.journal(), Military, Detail,
+                "The endgame army waits for a gun that breaches";
+                "endgame-army-takes-the-queue: {}; land army {:.1} of {target:.0}; {}",
+                walls.describe(), army.force, clock.describe(g));
             return;
         }
         let mut room = self.endgame_upkeep_room(g, pid, &clock);

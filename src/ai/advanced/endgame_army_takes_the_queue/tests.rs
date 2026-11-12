@@ -225,6 +225,22 @@ fn the_army_at_its_target_leaves_the_queues_alone() {
 }
 
 #[test]
+fn walls_nothing_breaches_stand_the_claim_down() {
+    let (mut g, plan, ours) = fixture();
+    let target = plan.target_city.unwrap();
+    // No tech: no gun, Ram or Tower of ours opens a walled city.
+    g.cities.get_mut(&target).unwrap().wall_hp = 100;
+    assert!(AdvancedAi::endgame_offensive_hopeless(&g, 0, &plan).is_some());
+    on().claim_endgame_army_queues(&mut g, 0, &plan);
+    assert!(ours.iter().all(|cid| g.cities[cid].queue.is_empty()));
+    // Unwalled, the army can fight and the claim runs.
+    g.cities.get_mut(&target).unwrap().wall_hp = 0;
+    assert!(AdvancedAi::endgame_offensive_hopeless(&g, 0, &plan).is_none());
+    on().claim_endgame_army_queues(&mut g, 0, &plan);
+    assert!(ours.iter().all(|cid| military_head(&g, *cid)));
+}
+
+#[test]
 fn long_payback_reads_the_economy_not_the_army() {
     let (g, _, _) = fixture();
     let ai = on();

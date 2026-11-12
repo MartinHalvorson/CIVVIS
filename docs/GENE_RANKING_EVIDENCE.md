@@ -292,6 +292,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `domination-charts-every-capital` | off (unmeasured) | `domination-charts-every-capital`: see `advanced/domination_charts_every_capital.rs`. | 1 \| 1 |
 | `domination-clock-every-rung` | off (unmeasured) | `domination-clock-every-rung`: an assigned Domination lane leaves its development half at 30% of the clock at every difficulty. | 1 \| 1 |
 | `domination-joins-the-race` | off (unmeasured) | Opt-in gene `domination-joins-the-race`; see `Self::domination_joins_the_race`. | 1 \| 1 |
+| `domination-seat-appoints-pingala-first` | off (unmeasured) | `domination-seat-appoints-pingala-first`: Pingala and Researcher take a Domination seat's first Governor titles. | 1 \| 1 |
 | `domination-spends-the-stock` | off (unmeasured) | `domination-spends-the-stock`: a Domination seat's delegated governor takes a resource-priced melee unit whenever a city can start one. | 1 \| 1 |
 | `domination-target-gets-its-breaker` | off (unmeasured) | `domination-target-gets-its-breaker`: see `advanced/domination_target_gets_its_breaker.rs`. | 1 \| 1 |
 | `domination-targets-land-first` | off (unmeasured) | Opt-in gene `domination-targets-land-first`; see `Self::domination_targets_land_first`. | 1 \| 1 |
@@ -346,6 +347,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `hidden-border-yields-to-our-pressure` | off (unmeasured) | Opt-in gene `hidden-border-yields-to-our-pressure`; see `Self::hidden_border_yields_to_our_pressure`. | 1 \| 1 |
 | `hint-runs-the-claims` | off (unmeasured) | Opt-in gene `hint-runs-the-claims`; see `Self::hint_runs_the_claims`. | 1 \| 1 |
 | `holdable-land-keeps-settling` | off (unmeasured) | Opt-in gene `holdable-land-keeps-settling`; see `advanced/holdable_land_keeps_settling.rs`. | 1 \| 1 |
+| `hopeless-army-yields-the-queue` | off (unmeasured) | Opt-in gene `hopeless-army-yields-the-queue`; see `advanced/hopeless_army_yields_the_queue.rs`. | 1 \| 1 |
 | `immortal-skips-the-prophet-race` | off (unmeasured) | Opt-in gene `immortal-skips-the-prophet-race`; see `Self::immortal_skips_the_prophet_race`. | 1 \| 1 |
 | `inquisition-answers-a-rival-majority` | off (unmeasured) | `inquisition-answers-a-rival-majority`. | 1 \| 1 |
 | `inquisition-defends-the-diplomat` | off (unmeasured) | `inquisition-defends-the-diplomat`. | 1 \| 1 |

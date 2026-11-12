@@ -134,6 +134,10 @@ impl AdvancedAi {
         /// `advanced/the_worked_backlog_gets_its_builder_first.rs`.
         base.the_worked_backlog_gets_its_builder_first => enable_the_worked_backlog_gets_its_builder_first, disable_the_worked_backlog_gets_its_builder_first;
         // ---- append: c-d --------------------------------------------
+        /// `domination-seat-appoints-pingala-first`: Pingala and Researcher
+        /// take a Domination seat's first Governor titles. See
+        /// `advanced/domination_governors.rs`.
+        domination_seat_appoints_pingala_first => enable_domination_seat_appoints_pingala_first, disable_domination_seat_appoints_pingala_first;
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
         corps_comes_home_alive => enable_corps_comes_home_alive, disable_corps_comes_home_alive;
@@ -311,6 +315,9 @@ impl AdvancedAi {
         /// Opt-in gene `great-works-never-wait`; see
         /// `advanced/great_works_never_wait.rs`.
         great_works_never_wait => enable_great_works_never_wait, disable_great_works_never_wait;
+        /// Opt-in gene `hopeless-army-yields-the-queue`; see
+        /// `advanced/hopeless_army_yields_the_queue.rs`.
+        hopeless_army_yields_the_queue => enable_hopeless_army_yields_the_queue, disable_hopeless_army_yields_the_queue;
         // ---- append: l-o --------------------------------------------
         /// Native land upgrade materials use a bounded host cash quote.
         land_army_asks_the_host_price => enable_land_army_asks_the_host_price, disable_land_army_asks_the_host_price;
