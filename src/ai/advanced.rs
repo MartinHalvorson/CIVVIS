@@ -14229,8 +14229,13 @@ impl AdvancedAi {
             .map(|city| g.city_yields(city).culture)
             .sum::<f64>();
         let bar = 0.0_f64.max(domestic + culture * left / 100.0);
-        if bar > 0.0 && ((100.0 * ours / bar).round() as i64).clamp(0, 100) < i64::from(minimum) {
-            return false;
+        if bar > 0.0 {
+            // For a positive threshold at most 100, the original rounding
+            // reaches it exactly at this half-step. NaN still scores zero.
+            let ratio = 100.0 * ours / bar;
+            if ratio.is_nan() || ratio < f64::from(minimum) - 0.5 {
+                return false;
+            }
         }
         self.culture_lane_forecast_score_with(g, pid, true) >= minimum
     }
