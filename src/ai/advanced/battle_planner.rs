@@ -207,6 +207,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use super::close_as_a_body::{BODY_PACE_SLACK, CONTACT_RANGE};
+use super::last_orders::OrderStep;
 use super::{AdvancedAi, AppliedAttack, ForceGroup, ForcePosture, ForceRole, StrategicPlan};
 use crate::game::{effective_strength, expected_damage, Action, Game};
 use crate::think;
@@ -1523,11 +1524,13 @@ impl AdvancedAi {
             return false;
         }
         self.battle_planner_ordered = self.withdraw_before_kill_prepass(g, pid, plan);
+        self.credit_orders(g, OrderStep::Withdraw);
         let withdrew = !self.battle_planner_ordered.is_empty();
         // `battle-solver`: the fights it can work out to the end are settled
         // here, and the planner below plays what it left. See
         // `advanced/battle_solver.rs`.
         let solved = self.run_battle_solver(g, pid, plan);
+        self.credit_orders(g, OrderStep::BattleSolver);
         self.battle_planner_recovering.retain(|uid| {
             g.units.get(uid).is_some_and(|unit| {
                 unit.owner == pid
@@ -1567,6 +1570,7 @@ impl AdvancedAi {
             self.journal_kill_plan(g, &verified);
             strikers.extend(verified.iter().map(|blow| blow.unit));
             struck = self.apply_blows(g, pid, &verified);
+            self.credit_orders(g, OrderStep::BattlePlanner);
         }
         if struck {
             field = DangerField::with_reach(g, pid, self.strike_reach);
@@ -1592,6 +1596,7 @@ impl AdvancedAi {
                  the rotation takes them as exposed and the ladder leaves them alone");
         }
         let rotations = self.rotate_wounded(g, pid, &mut field, &strikers, &doomed);
+        self.credit_orders(g, OrderStep::Rotation);
         self.census.battle_plan_rotations += rotations;
         // `battle-planner-2` (and three): the positions plan, on a force
         // picture that no longer holds the defenders the kill plan removed.

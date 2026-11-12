@@ -5905,8 +5905,12 @@ pub const GENES: &[Gene] = &[
     // the 18 faith wars opened under 0.7 times lost 0.22 cities in 30
     // turns and none of 17 decided games on Religion. The reading drops its
     // 0.5 power floor, and its war skips version 2's floor, the edge and
-    // the rout ratio. Rides `faith-war-on-a-small-world`. Opt-in; see
-    // `advanced/own_flip_faith_war.rs`.
+    // the rout ratio. Loosened after 3 Religious defeats in the 9 games
+    // that followed its arming: the reading applies from two cities (one
+    // leaning with a spreader at ours), a barbarian threat no longer holds
+    // a small-world war, and a faith war is kept while a city of ours
+    // follows or leans to its faith. Rides `faith-war-on-a-small-world`.
+    // Opt-in; see `advanced/own_flip_faith_war.rs`.
     Gene { tag: "own-flip-faith-war-asks-no-power", field: "own_flip_faith_war_asks_no_power", kind: Kind::OptIn, enable: AdvancedAi::enable_own_flip_faith_war_asks_no_power, disable: AdvancedAi::disable_own_flip_faith_war_asks_no_power },
     // Live Deity Domination 2026-11-12, 45 games: at war with a major owning
     // an unwalled city near us on 408 war-turns (44 wars), one open city was
