@@ -1121,6 +1121,9 @@ pub struct StrategyCensus {
     /// Our military units that died, by the step that last ordered them.
     /// See `advanced/last_orders.rs`.
     pub last_orders: last_orders::LastOrderCensus,
+    /// Orders that crossed another claim on the unit, by (owner, step), and
+    /// the unit-turns no step ordered. See `advanced/unit_owner.rs`.
+    pub claims: unit_owner::ClaimCensus,
 }
 
 impl StrategyCensus {
@@ -1210,6 +1213,7 @@ impl StrategyCensus {
         self.hold_threatened += other.hold_threatened;
         self.hold_weak += other.hold_weak;
         self.last_orders.absorb(&other.last_orders);
+        self.claims.absorb(&other.claims);
     }
 }
 
@@ -5141,6 +5145,13 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `assault-forecast-is-read`: the train's every assessed siege gets a
+    /// capture forecast and one journal line; no decision changes. See
+    /// `advanced/assault_forecast.rs`. Off by default.
+    assault_forecast_is_read: bool,
+    /// The turn's capture forecasts, by city tile and force signature, so a
+    /// turn pays once. Untouched while both forecast genes are off.
+    assault_forecast_frame: RefCell<assault_forecast::ForecastFrame>,
     /// `apostle-evangelizes-unspent`: an Apostle that has spent a charge
     /// stops asking to Evangelize. See
     /// `advanced/apostle_evangelizes_unspent.rs`. Off by default.
@@ -6959,6 +6970,14 @@ pub struct AdvancedAi {
     /// an empty threatened City Center takes a soldier in reach. See
     /// `advanced/centre_keeps_its_garrison.rs`. Opt-in.
     centre_keeps_its_garrison: bool,
+    /// `defend-force-holds-the-city`: every threatened city of ours is held
+    /// on posts (a shooter in the centre, melee blocking the ring tiles the
+    /// enemy melee can reach), and every soldier strikes from its post. See
+    /// `advanced/defend_force_holds_the_city.rs`. Opt-in.
+    defend_force_holds_the_city: bool,
+    /// `defend-force-holds-the-city`: this turn's posts. Empty with the gene
+    /// off.
+    defend_hold_plan: defend_force_holds_the_city::HoldPlan,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -8804,6 +8823,11 @@ pub struct AdvancedAi {
     /// taken while that capture stands, and its siege goes without the
     /// muster's bill. See `advanced/open_city_objective.rs`. Opt-in.
     open_city_is_the_objective: bool,
+    /// `one-owner-per-unit`: a step that would order a unit another claim
+    /// owns (a siege's taker or member, a Settler's guard, the battle plan,
+    /// a unit out to heal ...) does not; the owner's own step keeps it. See
+    /// `advanced/unit_owner.rs`. Opt-in.
+    one_owner_per_unit: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -9415,7 +9439,24 @@ pub struct AdvancedAi {
     /// below; the paying cards the base deck review gave up come back first.
     /// See `advanced/policy_swap_keeps_the_army_paid.rs`. Opt-in.
     policy_swap_keeps_the_army_paid: bool,
+    /// `risk-is-priced`: every pathed move of a land unit the battle planner
+    /// did not order reads one death chance (every visible hostile in strike
+    /// reach at the host's fitted odds, and every walled city strike, on the
+    /// exact dice), and a move over the allowance its
+    /// mission buys is refused unless it lowers the unit's current death
+    /// chance; the one-ply movers subtract `death chance x price`. Supersedes
+    /// `guns-stay-out-of-reach` for the units it reads. See
+    /// `advanced/priced_risk.rs`. Opt-in.
+    risk_is_priced: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `siege-goes-on-the-forecast`: the siege train goes, holds and stands
+    /// down on the capture forecast, and the Objective Board ranks Siege rows
+    /// by value x P / expected turns. Implies the reading. See
+    /// `advanced/assault_forecast.rs`. Off by default.
+    siege_goes_on_the_forecast: bool,
+    /// `siege-goes-on-the-forecast`: each city's run of hopeless forecasts,
+    /// by tile. Empty with the gene off.
+    siege_forecast_hopeless: BTreeMap<Pos, assault_forecast::HopelessRun>,
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
     /// Victory Points. See `advanced/diplo_statue_harbor.rs`.
@@ -11072,6 +11113,8 @@ mod war_target_walls;
 mod centre_keeps_its_garrison;
 /// `defence-holds-under-fire`: see `advanced/defence_holds.rs`.
 mod defence_holds;
+/// `defend-force-holds-the-city`: see `advanced/defend_force_holds_the_city.rs`.
+mod defend_force_holds_the_city;
 mod defense_formation;
 /// `early-route-feeds-production`: see `advanced/early_route_production.rs`.
 mod early_route_production;
@@ -11410,7 +11453,12 @@ mod battle_solver;
 mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;
 mod guru_walks_to_the_wounded;
+/// `risk-is-priced`: see `advanced/priced_risk.rs`.
+pub(super) mod priced_risk;
 mod unique_unit_closes_the_age;
+/// `one-owner-per-unit`: which claim owns each military unit, the crossings
+/// census, and the gene that refuses them. See `advanced/unit_owner.rs`.
+mod unit_owner;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
@@ -11423,6 +11471,11 @@ mod siege_production;
 /// `siege-at-the-walls-dies-first`: a gun at our walls is the first target.
 /// See `advanced/siege_at_the_walls_dies_first.rs`.
 mod siege_at_the_walls_dies_first;
+
+/// `assault-forecast-is-read` and `siege-goes-on-the-forecast`: the chance a
+/// siege force takes its city, turn by turn, on the battle solver's board.
+/// See `advanced/assault_forecast.rs`.
+mod assault_forecast;
 
 /// Opt-in routing from a Defend task force to its assigned city.
 mod anvil_assignment;
@@ -26299,6 +26352,7 @@ impl AdvancedAi {
         self.air_city_assault = None;
         self.base.gun_lethal_tiles.clear();
         self.base.unit_lethal_blows.clear();
+        self.clear_priced_risk();
         self.builder_support.clear();
         self.battlefront_frame = None;
         self.settlement_atlas.borrow_mut().clear();

@@ -497,6 +497,8 @@ pub(super) fn snapshot(
         reach0,
         los0,
         has_los: true,
+        march_on_objective: false,
+        melee_breach_share: 0.0,
         host,
     };
     let state = State::new(&board, units, city_state);
