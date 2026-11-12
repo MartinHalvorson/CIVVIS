@@ -140,15 +140,20 @@ impl AdvancedAi {
     pub(super) fn era_window(g: &Game) -> (u32, u32) {
         let first = g.standard_duration(FIRST_ERA_STANDARD);
         let later = g.standard_duration(LATER_ERA_STANDARD);
-        let start = if g.world_era == 0 || g.world_era_since > 0 {
+        let length = if g.world_era == 0 { first } else { later };
+        let mut start = if g.world_era == 0 || g.world_era_since > 0 {
             g.world_era_since
         } else {
             first.saturating_add(later.saturating_mul(g.world_era as u32 - 1))
         };
-        let length = if g.world_era == 0 { first } else { later };
         let end = g
             .world_era_countdown_end
             .unwrap_or_else(|| start.saturating_add(length));
+        // A world that reached this era early: the countdown is the fact, and
+        // the scheduled start moves back a whole era length from it.
+        if start >= end {
+            start = end.saturating_sub(length);
+        }
         (start, end.max(start.saturating_add(1)))
     }
 

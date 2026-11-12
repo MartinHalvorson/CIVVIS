@@ -158,8 +158,13 @@ fn a_mirrored_era_reads_the_schedule_until_the_countdown_runs() {
         AdvancedAi::era_window(&game),
         (first + later, first + 2 * later)
     );
-    game.world_era_countdown_end = Some(64);
-    assert_eq!(AdvancedAi::era_window(&game), (first + later, 64));
+    let late = first + 2 * later + 3;
+    game.world_era_countdown_end = Some(late);
+    assert_eq!(AdvancedAi::era_window(&game), (first + later, late));
+    // An era the world reached early starts a whole era before its countdown.
+    let early = first + later - 2;
+    game.world_era_countdown_end = Some(early);
+    assert_eq!(AdvancedAi::era_window(&game), (early - later, early));
 }
 
 /// A tied record (two Eurekas against two Inspirations) goes to the clause
@@ -268,6 +273,8 @@ fn two_paying_heads_are_the_cap() {
         .collect();
     sites.sort();
     let third = game.place_city(0, *sites.first().expect("fixture: a third site"), None);
+    // Founding may award its own Moments; the board stays at 32.
+    game.players[0].era_score = 32;
     {
         let city = game.cities.get_mut(&third).unwrap();
         city.pop = 2;
