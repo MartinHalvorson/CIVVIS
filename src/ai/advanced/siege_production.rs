@@ -562,6 +562,15 @@ impl AdvancedAi {
                 if self.counterweight_shrine_held(g, pid, cid) {
                     continue;
                 }
+                // `campus-and-library-before-the-claims`: the Library or
+                // University that gene put first is not routine either.
+                if g.cities[&cid]
+                    .queue
+                    .first()
+                    .is_some_and(|item| self.campus_and_library_holds(g, pid, cid, plan, item))
+                {
+                    continue;
+                }
                 let city = &g.cities[&cid];
                 // `breaker-supply-scales`: a building already under way, not
                 // a defence, may yield to the gun if the gun arrives soon.

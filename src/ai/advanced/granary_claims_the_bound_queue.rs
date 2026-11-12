@@ -165,6 +165,9 @@ impl AdvancedAi {
                     if self.charting_hull_holds(g, pid, cid, plan, item)
                         || self.first_capital_training_holds(g, pid, cid, item)
                         || self.culture_monument_finishes_first(g, pid, cid, plan, item)
+                        // `campus-and-library-before-the-claims`: its first
+                        // Campus, Library or University goes first.
+                        || self.campus_and_library_holds(g, pid, cid, plan, item)
                         || !Self::bound_granary_may_defer(g, pid, cid, item, at_major_war)
                     {
                         continue;
