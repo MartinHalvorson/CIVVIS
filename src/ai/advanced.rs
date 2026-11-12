@@ -1118,6 +1118,9 @@ pub struct StrategyCensus {
     /// can actually reach, counts as `hold_threatened`.
     pub hold_threatened: u32,
     pub hold_weak: u32,
+    /// Our military units that died, by the step that last ordered them.
+    /// See `advanced/last_orders.rs`.
+    pub last_orders: last_orders::LastOrderCensus,
 }
 
 impl StrategyCensus {
@@ -1206,6 +1209,7 @@ impl StrategyCensus {
         self.recover += other.recover;
         self.hold_threatened += other.hold_threatened;
         self.hold_weak += other.hold_weak;
+        self.last_orders.absorb(&other.last_orders);
     }
 }
 
@@ -1598,6 +1602,8 @@ struct UnitIntent {
     actions: Vec<Action>,
     took_a_turn: bool,
     base_state: BasicUnitPlanState,
+    /// The step the plan's last order came from (`advanced/last_orders.rs`).
+    step: last_orders::OrderStep,
 }
 
 #[derive(Clone, Copy)]
@@ -5135,6 +5141,13 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `assault-forecast-is-read`: the train's every assessed siege gets a
+    /// capture forecast and one journal line; no decision changes. See
+    /// `advanced/assault_forecast.rs`. Off by default.
+    assault_forecast_is_read: bool,
+    /// The turn's capture forecasts, by city tile and force signature, so a
+    /// turn pays once. Untouched while both forecast genes are off.
+    assault_forecast_frame: RefCell<assault_forecast::ForecastFrame>,
     /// `apostle-evangelizes-unspent`: an Apostle that has spent a charge
     /// stops asking to Evangelize. See
     /// `advanced/apostle_evangelizes_unspent.rs`. Off by default.
@@ -8782,12 +8795,15 @@ pub struct AdvancedAi {
     /// `advanced/first_capital_recon.rs`.
     land_recon_before_the_first_capital: bool,
     /// `own-flip-faith-war-asks-no-power`: the small-world own-flip reading
-    /// (only the founder holds its faith, half our cities and at least two
-    /// of three leaning to it) no longer asks half the founder's steady
-    /// power, and the faith war that reading alone opens skips version 2's
-    /// power floor, the edge and the rout ratio while every other hold
-    /// stays. Rides `faith-war-on-a-small-world`. See
-    /// `advanced/own_flip_faith_war.rs`. Opt-in.
+    /// (only the founder holds its faith) no longer asks half the founder's
+    /// steady power and applies from two cities, half of them leaning or
+    /// one leaning while a spreader of the faith stands at ours; the faith
+    /// war that reading alone opens skips version 2's power floor, the edge
+    /// and the rout ratio; barbarians and city-states no longer hold a
+    /// small-world war as a threat; and a faith war is kept while a city of
+    /// ours follows or leans to its faith. Rides
+    /// `faith-war-on-a-small-world`. See `advanced/own_flip_faith_war.rs`.
+    /// Opt-in.
     own_flip_faith_war_asks_no_power: bool,
     /// `open-city-is-the-objective`: at war with a major for any reason, an
     /// open city our land melee in reach would take within a few turns is
@@ -9411,7 +9427,24 @@ pub struct AdvancedAi {
     /// below; the paying cards the base deck review gave up come back first.
     /// See `advanced/policy_swap_keeps_the_army_paid.rs`. Opt-in.
     policy_swap_keeps_the_army_paid: bool,
+    /// `risk-is-priced`: every pathed move of a land unit the battle planner
+    /// did not order reads one death chance (every visible hostile in strike
+    /// reach at the host's fitted odds, and every walled city strike, on the
+    /// exact dice), and a move over the allowance its
+    /// mission buys is refused unless it lowers the unit's current death
+    /// chance; the one-ply movers subtract `death chance x price`. Supersedes
+    /// `guns-stay-out-of-reach` for the units it reads. See
+    /// `advanced/priced_risk.rs`. Opt-in.
+    risk_is_priced: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `siege-goes-on-the-forecast`: the siege train goes, holds and stands
+    /// down on the capture forecast, and the Objective Board ranks Siege rows
+    /// by value x P / expected turns. Implies the reading. See
+    /// `advanced/assault_forecast.rs`. Off by default.
+    siege_goes_on_the_forecast: bool,
+    /// `siege-goes-on-the-forecast`: each city's run of hopeless forecasts,
+    /// by tile. Empty with the gene off.
+    siege_forecast_hopeless: BTreeMap<Pos, assault_forecast::HopelessRun>,
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
     /// Victory Points. See `advanced/diplo_statue_harbor.rs`.
@@ -10200,6 +10233,12 @@ pub struct AdvancedAi {
     /// (a stall counted, or progress made), keyed by the Settler's stable
     /// Civ VI id so the live mirror's per-frame board ids cannot reset it.
     settler_stall_turn: BTreeMap<i64, u32>,
+    /// `solver-plays-the-host`: the battle solver's modelled enemy strikes,
+    /// picks its target and closes by tables fitted to the live host AI
+    /// (`advanced/battle_solver/host_enemy.rs`, `docs/HOST_ENEMY_MODEL.md`)
+    /// instead of the greedy pick at a flat 0.5. Acts only with
+    /// `battle-solver` on. Off by default.
+    solver_plays_the_host: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -10597,6 +10636,10 @@ pub struct AdvancedAi {
     /// before the era closes. See `advanced/unique_unit_closes_the_age.rs`.
     /// Opt-in.
     unique_unit_closes_the_dark_age: bool,
+    /// Which step last ordered each of our military units, for the census of
+    /// the ones that die. Read by nothing that decides; see
+    /// `advanced/last_orders.rs`.
+    unit_orders: last_orders::UnitOrderBook,
     /// `tribute-warms-the-neighbour`: the live bridge gifts Gold to the
     /// nearest stronger neighbour until it can be asked for a friendship.
     /// See `advanced/tribute_warms_the_neighbour.rs`. Off by default.
@@ -11082,6 +11125,9 @@ mod holdout_faith_war;
 
 /// `the-last-two-capitals-come-first`: see `advanced/last_two_capitals.rs`.
 mod last_civ_standing;
+/// Which step last ordered each military unit that died. Observes only; see
+/// `advanced/last_orders.rs`.
+mod last_orders;
 mod last_two_capitals;
 /// `launched-racer-yields-the-capital`: see `advanced/launched_racer.rs`.
 mod launched_racer;
@@ -11380,6 +11426,8 @@ mod battle_solver;
 mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;
 mod guru_walks_to_the_wounded;
+/// `risk-is-priced`: see `advanced/priced_risk.rs`.
+pub(super) mod priced_risk;
 mod unique_unit_closes_the_age;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
@@ -11393,6 +11441,11 @@ mod siege_production;
 /// `siege-at-the-walls-dies-first`: a gun at our walls is the first target.
 /// See `advanced/siege_at_the_walls_dies_first.rs`.
 mod siege_at_the_walls_dies_first;
+
+/// `assault-forecast-is-read` and `siege-goes-on-the-forecast`: the chance a
+/// siege force takes its city, turn by turn, on the battle solver's board.
+/// See `advanced/assault_forecast.rs`.
+mod assault_forecast;
 
 /// Opt-in routing from a Defend task force to its assigned city.
 mod anvil_assignment;
@@ -25479,7 +25532,7 @@ impl AdvancedAi {
             if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {
                 break;
             }
-            if !self.advanced_military_step_with_decline(g, pid, uid, plan, decline_settlers) {
+            if !self.credited_military_step(g, pid, uid, plan, decline_settlers) {
                 break;
             }
             took_a_turn = true;
@@ -25493,6 +25546,9 @@ impl AdvancedAi {
                 .collect(),
             took_a_turn,
             base_state: self.base.unit_plan_state(uid),
+            step: self
+                .last_order_step(uid)
+                .unwrap_or(last_orders::OrderStep::Other),
         }
     }
 
@@ -26250,6 +26306,7 @@ impl AdvancedAi {
         self.air_city_assault = None;
         self.base.gun_lethal_tiles.clear();
         self.base.unit_lethal_blows.clear();
+        self.clear_priced_risk();
         self.builder_support.clear();
         self.battlefront_frame = None;
         self.settlement_atlas.borrow_mut().clear();
@@ -27171,6 +27228,8 @@ impl AdvancedAi {
         // released with its reason. Exact no-op while the gene is off. See
         // `advanced/commitments.rs`.
         self.commitment_owners_act(g, pid);
+        // Observes only: see `advanced/last_orders.rs`.
+        self.close_unit_orders(g, pid);
         // A capture can end the appointment during movement. Re-read it now,
         // rather than leaving its floors and treasury reserve live until the
         // ordinary five-turn strategic cadence.

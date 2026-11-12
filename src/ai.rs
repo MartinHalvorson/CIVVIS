@@ -3034,6 +3034,11 @@ pub struct BasicAi {
     /// source no longer on the board stops counting. Empty with the gene
     /// off. See `advanced/guns_stay_out_of_reach.rs`.
     unit_lethal_blows: HashMap<u32, HashMap<Pos, Vec<(u32, f64)>>>,
+    /// `risk-is-priced`: per covered land unit, this frame's mission,
+    /// allowance and price, and its death chance on each tile it can reach.
+    /// Written by the advanced controller each frame; empty with the gene
+    /// off. See `advanced/priced_risk.rs`.
+    priced_risk: advanced::priced_risk::PricedRiskMap,
     /// Melee units the ancient-rush lane wants in hand, or 0 when no rush is
     /// running. Set once a turn by `AdvancedAi` from its strategic plan.
     ///
@@ -4147,6 +4152,7 @@ impl BasicAi {
             frame_own_tiles: HashMap::new(),
             gun_lethal_tiles: HashMap::new(),
             unit_lethal_blows: HashMap::new(),
+            priced_risk: Default::default(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -4606,6 +4612,7 @@ impl BasicAi {
             frame_own_tiles: HashMap::new(),
             gun_lethal_tiles: HashMap::new(),
             unit_lethal_blows: HashMap::new(),
+            priced_risk: Default::default(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -7482,6 +7489,13 @@ impl BasicAi {
         // last several movement points. A route that keeps proposing a tile
         // this unit has already been standing on all window is not a route.
         if !allow_livelock_retread && self.retreads_a_loop(uid, to) {
+            return false;
+        }
+        // `risk-is-priced`: a step whose death chance is over the unit's
+        // mission allowance, and no lower than where it stands, is refused
+        // with a journal line. Empty with the gene off. See
+        // `advanced/priced_risk.rs`.
+        if self.priced_risk_refuses(g, uid, from, to) {
             return false;
         }
         true

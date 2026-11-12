@@ -751,6 +751,44 @@ table prints a **religion census** from them, because conversion decided two
 thirds of games on the Pangaea instrument (28% at the screen's shape) and the
 rows could not say one thing about how the losing seat stood in that race.
 
+## ⭐ The unit ledger and who ordered the dead (2026-11-12)
+
+The rows carried a city ledger (`cities_taken`, `cities_lost`) and nothing
+for the army, because the engine kept no per-player loss counter. It does
+now: `Game::combat_ledger` (`src/game/combat_ledger.rs`) counts each unit at
+the line that removes it in combat — a melee or ranged kill either way, a
+city, encampment or district strike, an air strike or interception, the
+garrison of a taken encampment or city, a civilian captured or destroyed, a
+nuclear blast. Religious units, elimination, maintenance, fallout, disasters,
+loyalty flips, merges and disbands are not combat and are not counted. Every
+row carries the measured seat's ledger at the end of the game:
+
+| field | what |
+|---|---|
+| `units_killed` | enemy military units this seat's units, cities and districts removed |
+| `units_lost` | this seat's military units an enemy removed |
+| `units_lost_to_majors` | of `units_lost`, struck by a major civilization |
+| `units_lost_to_city_states` | of `units_lost`, struck by a city-state |
+| `units_lost_to_barbarians` | of `units_lost`, struck by the barbarian seat (the Free Cities' are in none of the three) |
+| `civilians_lost` | this seat's civilian and support units captured or destroyed |
+| `last_orders` | this seat's military units that died, by the step that last moved, held or struck with them: `{"coordinated": [within, beyond], …}`, where `within` ended its last turn within two tiles of a visible hostile; only steps that saw a death are written |
+
+Every one is absent from a row written before it, and `None` when read, so a
+reader tells "not recorded" from "lost none". `--trace` writes the first five
+at each mark. `--analyze` prints a **unit ledger** table — the on−off Δ of
+`cities_taken`, `cities_lost`, `units_killed` and `units_lost`, then
+`units_lost_to_majors`, `units_lost_to_barbarians` and `civilians_lost` — and
+the `--json` summary carries the same seven under each gene's `unit_ledger`.
+
+`last_orders` comes from the agent (`src/ai/advanced/last_orders.rs`): a
+pre-pass of the unit pass is followed by one line that credits the orders it
+applied, and each branch of the per-unit ladder names itself with one line.
+`other` is an order no step named and `unordered` a unit nobody ordered; the
+share of `other` is the part of the census still to be named. A unit the seat
+disbands or merges is not a death; one removed by maintenance or fallout is
+counted as one. Neither instrument changes a decision: the frozen anchor
+(`advanced_v1_plays_the_same_game_it_always_did`) is unchanged.
+
 ## ⭐ Science pace: `techs_150` and `science_end` (2026-09-01)
 
 The screen prices every gene by win share, and 52% of its games end on score

@@ -193,6 +193,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `apostle-evangelizes-unspent` | off (unmeasured) | Opt-in gene `apostle-evangelizes-unspent`; see `advanced/apostle_evangelizes_unspent.rs`. | 1 \| 1 |
 | `apostle-transit-keeps-the-cover` | off (unmeasured) | Opt-in gene `apostle-transit-keeps-the-cover`; see `Self::apostle_transit_keeps_the_cover`. | 1 \| 1 |
 | `artifact-before-more-museums` | off (unmeasured) | One digger for an owned person's missing Artifact, before more Museums. | 1 \| 1 |
+| `assault-forecast-is-read` | off (unmeasured) | Opt-in gene `assault-forecast-is-read`: a capture forecast and one journal line for every siege the train assesses; no decision changes. | 1 \| 1 |
 | `band-bank-bars-people-under-fire` | off (unmeasured) | Opt-in gene `band-bank-bars-people-under-fire`; see `advanced/culture_band_bank.rs`. | 1 \| 1 |
 | `band-buys-near-the-stage` | off (unmeasured) | Opt-in gene `band-buys-near-the-stage`; see `advanced/band_buys_near_the_stage.rs`. | 1 \| 1 |
 | `band-plays-at-level-three` | off (unmeasured) | Opt-in gene `band-plays-at-level-three`; see `advanced/band_plays_at_level_three.rs`. | 1 \| 1 |
@@ -441,6 +442,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `research-follows-the-first-capital` | off (unmeasured) | `research-follows-the-first-capital`: see `advanced/first_capital_research.rs`. | 1 \| 1 |
 | `retainers-garrison-the-short-cities` | off (unmeasured) | Opt-in gene `retainers-garrison-the-short-cities`; see `BasicAi::retainers_garrison_the_short_cities`. | 1 \| 1 |
 | `revealed-launch-tech-takes-the-slot` | off (unmeasured) | Replace an obsolete native research path with a revealed launch milestone. | 1 \| 1 |
+| `risk-is-priced` | off (unmeasured) | Opt-in gene `risk-is-priced`: one death chance per pathed move, refused over the mission's allowance; see `advanced/priced_risk.rs`. | 1 \| 1 |
 | `russia-settles-the-tundra` | off (unmeasured) | Opt-in gene `russia-settles-the-tundra`; see `advanced/russia_tundra.rs`. | 1 \| 1 |
 | `satellite-holds-the-pad` | off (unmeasured) | Opt-in gene `satellite-holds-the-pad`; see `Self::satellite_holds_the_pad`. | 1 \| 1 |
 | `saved-work-is-seen` | off (unmeasured) | Opt-in gene `saved-work-is-seen`; see `advanced/saved_work_is_seen.rs`. | 1 \| 1 |
@@ -467,10 +469,12 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `settler-shelters-from-the-war-2` | off (unmeasured) | Opt-in gene `settler-shelters-from-the-war-2`, version two of `settler-shelters-from-the-war`; see `advanced/settler_shelters_from_the_war.rs`. | — \| 2 |
 | `settler-stall-counts-turns` | off (unmeasured) | Opt-in gene `settler-stall-counts-turns`; see `advanced/settler_stall_counts_turns.rs`. | 1 \| 1 |
 | `siege-at-the-walls-dies-first` | off (unmeasured) | Opt-in gene `siege-at-the-walls-dies-first`; see `advanced/siege_at_the_walls_dies_first.rs`. | 1 \| 1 |
+| `siege-goes-on-the-forecast` | off (unmeasured) | Opt-in gene `siege-goes-on-the-forecast`: the siege train goes, holds and stands down on the capture forecast, and Siege rows rank by value x P / expected turns; implies the reading. | 1 \| 1 |
 | `siege-moves-under-the-wing` | off (unmeasured) | Opt-in gene `siege-moves-under-the-wing`; see `Self::siege_moves_under_the_wing`. | 1 \| 1 |
 | `siege-shortfall-claims-the-projects` | off (unmeasured) | Let a siege short of its bill take the repeatable-project queues. | 1 \| 1 |
 | `siege-tier-yields-to-the-bombers-2` | off (unmeasured) | Opt-in gene `siege-tier-yields-to-the-bombers-2`; see `Self::siege_tier_yields_to_the_bombers_2`. | 1 \| 2 |
 | `slots-survive-the-roll` | off (unmeasured) | Opt-in gene `slots-survive-the-roll`; see `Self::slots_survive_the_roll`. | 1 \| 1 |
+| `solver-plays-the-host` | off (unmeasured) | Opt-in gene `solver-plays-the-host`; see `advanced/battle_solver/host_enemy.rs`. | 1 \| 1 |
 | `space-denial-promotes-the-rocket-scientist` | off (unmeasured) | Opt-in gene `space-denial-promotes-the-rocket-scientist`; see `advanced/space_denial_rocket_scientist.rs`. | 1 \| 1 |
 | `space-denial-slots-the-spy-cards` | off (unmeasured) | Opt-in gene `space-denial-slots-the-spy-cards`; see `advanced/space_denial_spy_cards.rs`. | 1 \| 1 |
 | `space-people-call-the-projects` | off (unmeasured) | `space-people-call-the-projects`: while a Great Person who speeds the space race is on offer, a Science seat's district projects earn that class's points. | 1 \| 1 |
