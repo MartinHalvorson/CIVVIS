@@ -564,5 +564,4 @@ fn one_owner_per_unit_paired_evidence() {
         sums[0][0] + sums[0][1] > 0,
         "the worlds must fight: {report}"
     );
-    panic!("REPORT\n{report}");
 }
