@@ -10242,6 +10242,15 @@ pub struct AdvancedAi {
     /// instead of the greedy pick at a flat 0.5. Acts only with
     /// `battle-solver` on. Off by default.
     solver_plays_the_host: bool,
+    /// `score-seat-takes-what-pays`: a Score seat takes the open city of a
+    /// neighbour no stronger than us that buys more points per Production
+    /// than its queues: the plan turns to Conquest on that city, the war
+    /// opens once the takers stand there, and the Domination war machinery
+    /// answers it. See `advanced/score_takes_what_pays.rs`. Opt-in.
+    score_seat_takes_what_pays: bool,
+    /// `score-seat-takes-what-pays`: the city the plan names and the last
+    /// board line. Empty with the gene off.
+    score_take_state: score_takes_what_pays::ScoreTakeState,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -12042,6 +12051,9 @@ mod luxury_research;
 /// See `advanced/soft_city_window.rs`.
 mod soft_city_window;
 
+/// `score-seat-takes-what-pays`: see `advanced/score_takes_what_pays.rs`.
+mod score_takes_what_pays;
+
 /// `growth-prices-the-farm`: the Builder prices the Housing and Food a small
 /// city cannot grow without. One opt-in gene; see `advanced/growth_farm.rs`.
 mod growth_farm;
@@ -13262,6 +13274,10 @@ impl AdvancedAi {
         // `open-city-draws-the-front`: the open city the front turned to; exact
         // no-op with the gene off. See `advanced/open_city_front.rs`.
         self.open_city_observe(g, pid);
+        // `score-seat-takes-what-pays`: the paying city the plan names, the
+        // board line and a capture; exact no-op with the gene off. See
+        // `advanced/score_takes_what_pays.rs`.
+        self.score_take_observe(g, pid);
         // `war-policy-via-board`: the tide with every major at war and the
         // unserved-Defend clocks; exact no-op with the gene off. See
         // `advanced/war_policy.rs`.
