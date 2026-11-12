@@ -258,6 +258,9 @@ impl AdvancedAi {
         /// Opt-in `denial-spies-skip-the-upkeep-wait`; see
         /// `advanced/denial_spies_skip_the_upkeep_wait.rs`.
         denial_spies_skip_the_upkeep_wait => enable_denial_spies_skip_the_upkeep_wait, disable_denial_spies_skip_the_upkeep_wait;
+        /// Opt-in gene `deterrence-stops-at-a-garrison`; see
+        /// `advanced/deterrence_stops_at_a_garrison.rs`.
+        deterrence_stops_at_a_garrison => enable_deterrence_stops_at_a_garrison, disable_deterrence_stops_at_a_garrison;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
