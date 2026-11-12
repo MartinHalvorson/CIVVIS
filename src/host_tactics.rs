@@ -19,22 +19,24 @@
 //!
 //! **The switch** ([`HostTactics::gate`]) governs a chair's land fighters
 //! within [`MAX_GAP`] tiles of a measured seat's unit, at the start of the
-//! chair's turn, with a draw per unit per turn keyed by the game seed:
+//! chair's turn, with draws per unit per turn hashed from the game seed. The
+//! chair's AI may neither strike a measured seat's unit with a governed unit
+//! nor move it that turn; the harness plays the host's turn for it instead:
 //!
-//! - **Strike.** With a measured seat's unit in reach (exact reach: the
-//!   engine's own movement flood and line of sight), the unit strikes with
-//!   `host_enemy::strike_probability`. The harness plays that strike before
-//!   the chair's AI moves: the target is drawn on the fitted weights
-//!   (`host_enemy::target_utility`) among the units it can reach, from its
-//!   own tile when it can. A unit that draws no strike may not strike the
-//!   measured seat's units this turn.
-//! - **Close or hold.** A unit that struck nothing holds its ground (moves
-//!   refused) with `1 - host_enemy::advance_probability`; otherwise it moves
-//!   as the chair's own logic says, except that a unit at
-//!   [`WOUNDED_HP`] or less may not end a move farther from the measured
-//!   seat, beyond the host's own stepping-away rate ([`LIVE_AWAY`]).
-//! - **Untouched.** Strikes on cities and districts, city strikes, units
-//!   beyond [`MAX_GAP`], every other player, and the measured seat itself.
+//! - **Strike.** With a measured seat's unit in reach, it strikes with
+//!   `host_enemy::strike_probability` on the fit's own features (open-ground
+//!   reach), divided by the share of this chair's open-ground reach that was
+//!   exact so far ([`ReachShare`]), so the census reads the fitted rate back.
+//!   The target is drawn on the fitted weights (`host_enemy::target_utility`)
+//!   among the units in exact reach (the engine's movement flood and line of
+//!   sight), struck from its own tile when it can.
+//! - **Close, step away or hold.** A unit that struck nothing steps toward
+//!   the measured seat with `host_enemy::advance_probability` (a shooter stops
+//!   at its range), steps away at the live majors' rate ([`LIVE_AWAY`]), and
+//!   otherwise holds. There is no other retreat.
+//! - **Untouched.** Strikes on cities and districts (from where the unit
+//!   stands), city strikes, units beyond [`MAX_GAP`], every other player, and
+//!   the measured seat itself.
 //!
 //! The refusals are made by the engine (`Game::host_gate`, read in
 //! `Game::apply`) only while a governed chair plays its turn; with no seat
@@ -56,35 +58,59 @@ use crate::Pos;
 /// A chair's unit this far or farther from every unit of the measured seat is
 /// outside the fight: the fit's gap columns stop here.
 pub const MAX_GAP: i32 = 8;
-/// A unit at this many hit points or fewer is wounded for the no-retreat rule.
-pub const WOUNDED_HP: i32 = 50;
-/// The live host's rate of ending a turn farther from us after striking
-/// nothing: at 25 hp or less, and above. A wounded governed unit is left free
-/// to step back on this share of its turns.
-pub const LIVE_AWAY: [f64; 2] = [0.213, 0.121];
+/// The live host's majors' rate of ending a turn farther from us after
+/// striking nothing: at 25 hp or less, and above (`fit_host_enemy.py rates`
+/// on the majors' rows). A governed unit steps away at this rate; there is no
+/// other retreat.
+pub const LIVE_AWAY: [f64; 2] = [0.239, 0.128];
 /// Refusals of one unit in one turn before its moves and attacks are spent.
 pub const VALVE: u32 = 12;
 /// A siege gun's bombard strength against a land unit (`Game::ranged_pair_bases`).
 const SIEGE_VS_UNITS: f64 = 17.0;
 
 /// The live host's behaviour table, `tools/fit_host_enemy.py rates` on the
-/// 116 games of `docs/HOST_ENEMY_MODEL.md`: `(row, hits, rows)`.
-pub const LIVE: &[(&str, f64, u32)] = &[
-    ("strike | in reach", 4415.0, 17669),
-    ("strike | in reach without moving", 3324.0, 7738),
-    ("strike | must move first", 1091.0, 9931),
-    ("target: nearest", 2209.0, 2512),
-    ("target: nearest (chance)", 1220.55, 2512),
-    ("target: weakest", 1349.0, 2512),
-    ("target: weakest (chance)", 1265.19, 2512),
-    ("target: most damaged", 1263.0, 2512),
-    ("target: most damaged (chance)", 1216.92, 2512),
-    ("closes | struck nothing", 5769.0, 17563),
-    ("closes | declined", 3253.0, 9349),
-    ("closes | nothing in reach", 2516.0, 8214),
-    ("steps away | hp<=25, struck nothing", 279.0, 1309),
-    ("holds | hp<=25, struck nothing", 530.0, 1309),
-    ("steps away | hp>25, struck nothing", 1962.0, 16254),
+/// 116 games of `docs/HOST_ENEMY_MODEL.md`: `(row, hits, rows)` over every
+/// owner, then over majors only, which is what a rival chair is.
+pub const LIVE: &[(&str, f64, u32, f64, u32)] = &[
+    ("strike | in reach", 4415.0, 17669, 1601.0, 7821),
+    (
+        "strike | in reach without moving",
+        3324.0,
+        7738,
+        1093.0,
+        3179,
+    ),
+    ("strike | must move first", 1091.0, 9931, 508.0, 4642),
+    ("target: nearest", 2209.0, 2512, 897.0, 1048),
+    ("target: nearest (chance)", 1220.55, 2512, 461.615, 1048),
+    ("target: weakest", 1349.0, 2512, 571.0, 1048),
+    ("target: weakest (chance)", 1265.19, 2512, 532.57, 1048),
+    ("target: most damaged", 1263.0, 2512, 548.0, 1048),
+    (
+        "target: most damaged (chance)",
+        1216.92,
+        2512,
+        508.591,
+        1048,
+    ),
+    ("closes | struck nothing", 5769.0, 17563, 2913.0, 8598),
+    ("closes | declined", 3253.0, 9349, 1488.0, 4238),
+    ("closes | nothing in reach", 2516.0, 8214, 1425.0, 4360),
+    (
+        "steps away | hp<=25, struck nothing",
+        279.0,
+        1309,
+        109.0,
+        457,
+    ),
+    ("holds | hp<=25, struck nothing", 530.0, 1309, 180.0, 457),
+    (
+        "steps away | hp>25, struck nothing",
+        1962.0,
+        16254,
+        1045.0,
+        8141,
+    ),
 ];
 
 /// The switch for one chair: whom it fights and whether it is governed.
@@ -121,7 +147,8 @@ pub struct GateCounts {
     /// Drawn strikes the engine refused (a stand blocked, a shot unseen).
     pub strikes_failed: u32,
     pub held: u32,
-    pub no_retreat: u32,
+    pub closed: u32,
+    pub stepped_away: u32,
     /// Orders the gate refused, and units whose moves it spent at [`VALVE`].
     pub refusals: u32,
     pub valves: u32,
@@ -132,6 +159,8 @@ pub struct GateCounts {
 pub struct TacticsCensus {
     pub rows: BTreeMap<&'static str, Tally>,
     pub gate: GateCounts,
+    /// The switch's [`ReachShare`] at the end of the game.
+    pub reach: ReachShare,
 }
 
 impl TacticsCensus {
@@ -158,9 +187,14 @@ impl TacticsCensus {
         a.strikes_landed += b.strikes_landed;
         a.strikes_failed += b.strikes_failed;
         a.held += b.held;
-        a.no_retreat += b.no_retreat;
+        a.closed += b.closed;
+        a.stepped_away += b.stepped_away;
         a.refusals += b.refusals;
         a.valves += b.valves;
+        for (mine, theirs) in self.reach.iter_mut().zip(other.reach) {
+            mine[0] += theirs[0];
+            mine[1] += theirs[1];
+        }
     }
 
     /// The rows as `{row: [hits, rows]}`, and what the switch did as
@@ -179,11 +213,19 @@ impl TacticsCensus {
                 ("strikes landed", g.strikes_landed),
                 ("strikes failed", g.strikes_failed),
                 ("held", g.held),
-                ("no retreat", g.no_retreat),
+                ("closed", g.closed),
+                ("stepped away", g.stepped_away),
                 ("refusals", g.refusals),
                 ("valves", g.valves),
             ] {
                 out.insert(format!("gate: {name}"), [count as f64, units]);
+            }
+            for (still, name) in [(0, "must move first"), (1, "in reach without moving")] {
+                let [rows, exact] = self.reach[still];
+                out.insert(
+                    format!("gate: exact reach, {name}"),
+                    [exact as f64, rows as f64],
+                );
             }
         }
         out
@@ -193,16 +235,18 @@ impl TacticsCensus {
 /// The table beside the live host's: one line per [`LIVE`] row, then a column
 /// per census, each read from a [`TacticsCensus::report`].
 pub fn compare(columns: &[(&str, &BTreeMap<String, [f64; 2]>)]) -> String {
-    let mut out = format!("{:<38} {:>16}", "row", "live host");
+    let mut out = format!("{:<38} {:>16} {:>16}", "row", "live host", "live majors");
     for (name, _) in columns {
         out.push_str(&format!(" {name:>22}"));
     }
     out.push('\n');
-    for (key, hits, rows) in LIVE {
+    for (key, hits, rows, major_hits, major_rows) in LIVE {
         out.push_str(&format!(
-            "{key:<38} {:>6.3} ({:>6})",
+            "{key:<38} {:>6.3} ({:>6}) {:>6.3} ({:>6})",
             hits / *rows as f64,
-            rows
+            rows,
+            major_hits / *major_rows as f64,
+            major_rows
         ));
         for (_, report) in columns {
             let [hits, rows] = report.get(*key).copied().unwrap_or([0.0, 0.0]);
@@ -228,11 +272,6 @@ pub struct Gate {
     no_unit_strike: BTreeSet<u32>,
     /// Units that hold their ground this turn.
     hold: BTreeSet<u32>,
-    /// Wounded units that may not end a move farther from the measured seat
-    /// than the gap they started the turn at.
-    no_retreat: BTreeMap<u32, i32>,
-    /// Where the measured seat's units stood at the start of the turn.
-    victim_plots: Vec<Pos>,
     refused: BTreeMap<u32, u32>,
     refusals: u32,
     valves: u32,
@@ -257,20 +296,14 @@ pub(crate) fn gate_refuses(g: &mut Game, pid: usize, action: &Action) -> Option<
                     });
                 on_a_unit.then_some((*unit, "host tactics: this unit holds its blow this turn"))
             }
-            Action::Move { unit, to } | Action::MoveTo { unit, to } => {
-                if gate.hold.contains(unit) {
-                    Some((*unit, "host tactics: this unit holds its ground this turn"))
-                } else if let Some(&start) = gate.no_retreat.get(unit) {
-                    (gap(g, *to, &gate.victim_plots) > start)
-                        .then_some((*unit, "host tactics: a wounded unit does not fall back"))
-                } else {
-                    None
-                }
-            }
+            Action::Move { unit, .. } | Action::MoveTo { unit, .. } => gate
+                .hold
+                .contains(unit)
+                .then_some((*unit, "host tactics: this unit's move is the harness's")),
             Action::Swap { unit, .. } => gate
                 .hold
                 .contains(unit)
-                .then_some((*unit, "host tactics: this unit holds its ground this turn")),
+                .then_some((*unit, "host tactics: this unit's move is the harness's")),
             _ => None,
         }
     };
@@ -505,8 +538,100 @@ fn foes(g: &Game, pid: usize, victims: &[usize]) -> Vec<usize> {
         .collect()
 }
 
-/// Set the gate for `pid`'s turn and play the strikes it draws.
-fn govern(g: &mut Game, pid: usize, host: &HostTactics, counts: &mut GateCounts) {
+/// How often a chair's unit with a measured seat's unit in open-ground reach
+/// also has one in exact reach, counted as the game goes: `[[rows, exact];
+/// 2]`, indexed by "in reach without moving". The fit's strike rates are read
+/// on open-ground reach, which counts targets rough ground or a zone of
+/// control puts out of reach; the switch strikes only on exact reach, so it
+/// draws at the fitted rate divided by this share and the census reads the
+/// fitted rate back.
+pub type ReachShare = [[u32; 2]; 2];
+
+/// The open-ground targets of `unit` among `victims`, as the fit reads them.
+fn open_targets(g: &Game, unit: &Unit, victims: &[&Unit]) -> Vec<InReach> {
+    let mut out = Vec::new();
+    for other in victims {
+        let distance = g.wdist(unit.pos, other.pos);
+        let (reach, still) = open_ground(g, unit, distance);
+        if reach {
+            let (_, dealt) = blow(g, unit, other);
+            out.push((other.id, distance, other.hp, dealt, still));
+        }
+    }
+    out
+}
+
+/// Walk one step of the host's move: to the reachable tile that closes most
+/// on the measured seat (a shooter stops at its range), or, stepping away, to
+/// the one farthest from it. `false` when no tile does better than standing.
+fn step(g: &mut Game, pid: usize, uid: u32, plots: &[Pos], closer: bool) -> bool {
+    let Some(unit) = g.units.get(&uid) else {
+        return false;
+    };
+    let here = unit.pos;
+    let wanted = if shooter(g, unit) {
+        g.unit_attack_range(uid).max(1)
+    } else {
+        1
+    };
+    let now = gap(g, here, plots);
+    let tiles: Vec<Pos> = if unit.moves_left > 0.0 {
+        g.approach_arrivals(uid)
+            .into_iter()
+            .map(|(pos, _)| pos)
+            .filter(|pos| g.unit_ids_at(*pos).is_empty() && g.city_at(*pos).is_none())
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let pick = if closer {
+        tiles
+            .into_iter()
+            .filter(|t| gap(g, *t, plots) < now && gap(g, *t, plots) >= wanted)
+            .min_by(|a, b| {
+                (gap(g, *a, plots) - wanted)
+                    .abs()
+                    .cmp(&(gap(g, *b, plots) - wanted).abs())
+                    .then(
+                        g.tile_defense_bonus(*b)
+                            .total_cmp(&g.tile_defense_bonus(*a)),
+                    )
+                    .then(a.cmp(b))
+            })
+    } else {
+        tiles
+            .into_iter()
+            .filter(|t| gap(g, *t, plots) > now)
+            .max_by(|a, b| {
+                gap(g, *a, plots)
+                    .cmp(&gap(g, *b, plots))
+                    .then(
+                        g.tile_defense_bonus(*a)
+                            .total_cmp(&g.tile_defense_bonus(*b)),
+                    )
+                    .then(b.cmp(a))
+            })
+    };
+    let Some(to) = pick else {
+        return false;
+    };
+    g.apply(pid, &Action::MoveTo { unit: uid, to }).is_ok()
+        && g.units.get(&uid).is_some_and(|u| u.pos != here)
+}
+
+/// Set the gate for `pid`'s turn and play the strikes and steps it draws.
+///
+/// Every governed unit: its AI may not strike a measured seat's unit this
+/// turn, nor move it. The harness plays what the draws say instead: a
+/// strike, else a step toward the measured seat (`advance_probability`), a
+/// step away (the live host's rate, [`LIVE_AWAY`]), or nothing.
+fn govern(
+    g: &mut Game,
+    pid: usize,
+    host: &HostTactics,
+    counts: &mut GateCounts,
+    share: &mut ReachShare,
+) {
     let foes = foes(g, pid, &host.victims);
     if foes.is_empty() {
         return;
@@ -520,7 +645,6 @@ fn govern(g: &mut Game, pid: usize, host: &HostTactics, counts: &mut GateCounts)
     let mut gate = Gate {
         player: pid,
         victims: foes.clone(),
-        victim_plots: victim_plots.clone(),
         ..Gate::default()
     };
     let turn = g.turn;
@@ -539,40 +663,63 @@ fn govern(g: &mut Game, pid: usize, host: &HostTactics, counts: &mut GateCounts)
             continue;
         }
         counts.units += 1;
-        let victims: Vec<u32> = g
+        gate.no_unit_strike.insert(uid);
+        gate.hold.insert(uid);
+        let victim_units: Vec<Unit> = g
             .units
             .values()
             .filter(|u| foes.contains(&u.owner) && struck_unit_of(g, u))
-            .map(|u| u.id)
+            .cloned()
             .collect();
-        let targets = exact_targets(g, uid, &victims);
-        let situation = if targets.is_empty() {
+        let victim_refs: Vec<&Unit> = victim_units.iter().collect();
+        let open = open_targets(g, &unit, &victim_refs);
+        let ids: Vec<u32> = victim_units.iter().map(|u| u.id).collect();
+        let exact = exact_targets(g, uid, &ids);
+        let situation = if open.is_empty() && exact.is_empty() {
             Situation::Gap(start.clamp(0, 255) as u8)
         } else {
-            let home = g
-                .cities
-                .values()
-                .any(|c| c.owner == pid && g.wdist(c.pos, unit.pos) <= 1);
+            // The fit's features, read on open ground as the fit read them
+            // (exact reach where open ground saw none, a road's doing).
+            let still = if open.is_empty() {
+                exact.iter().any(|t| t.features.still)
+            } else {
+                open.iter().any(|t| t.4)
+            };
+            let edge = if open.is_empty() {
+                exact.iter().map(|t| t.edge).fold(f64::MIN, f64::max)
+            } else {
+                open.iter()
+                    .filter_map(|t| victim_units.iter().find(|u| u.id == t.0))
+                    .map(|other| blow(g, &unit, other).0)
+                    .fold(f64::MIN, f64::max)
+            };
             let features = StrikeFeatures {
                 class: host_class(g, &unit),
                 owner: Owner::Major,
                 hp: unit.hp as i16,
-                home,
-                edge: targets.iter().map(|t| t.edge).fold(f64::MIN, f64::max) as f32,
-                targets: targets.len(),
-                still: targets.iter().any(|t| t.features.still),
+                home: g
+                    .cities
+                    .values()
+                    .any(|c| c.owner == pid && g.wdist(c.pos, unit.pos) <= 1),
+                edge: edge as f32,
+                targets: open.len().max(exact.len()),
+                still,
             };
-            gate.no_unit_strike.insert(uid);
-            if draw(host.seed, turn, uid, 1) < strike_probability(&features) as f64 {
+            let row = &mut share[usize::from(still)];
+            row[0] += 1;
+            row[1] += u32::from(!exact.is_empty());
+            let reachable = (row[1] + 1) as f64 / (row[0] + 1) as f64;
+            let chance = (strike_probability(&features) as f64 / reachable).min(1.0);
+            if !exact.is_empty() && draw(host.seed, turn, uid, 1) < chance {
                 counts.strikes_drawn += 1;
-                let utility: Vec<f64> = targets
+                let utility: Vec<f64> = exact
                     .iter()
                     .map(|t| target_utility(&t.features) as f64)
                     .collect();
                 let top = utility.iter().copied().fold(f64::MIN, f64::max);
                 let total: f64 = utility.iter().map(|u| (u - top).exp()).sum();
                 let mut left = draw(host.seed, turn, uid, 2) * total;
-                let mut pick = targets.len() - 1;
+                let mut pick = exact.len() - 1;
                 for (k, u) in utility.iter().enumerate() {
                     left -= (u - top).exp();
                     if left < 0.0 {
@@ -580,7 +727,7 @@ fn govern(g: &mut Game, pid: usize, host: &HostTactics, counts: &mut GateCounts)
                         break;
                     }
                 }
-                if strike(g, pid, uid, &targets[pick], shooter(g, &unit)) {
+                if strike(g, pid, uid, &exact[pick], shooter(g, &unit)) {
                     counts.strikes_landed += 1;
                 } else {
                     counts.strikes_failed += 1;
@@ -589,15 +736,19 @@ fn govern(g: &mut Game, pid: usize, host: &HostTactics, counts: &mut GateCounts)
             }
             Situation::Declined
         };
-        if draw(host.seed, turn, uid, 3) >= advance_probability(unit.hp as i16, situation) as f64 {
-            gate.hold.insert(uid);
-            counts.held += 1;
-        } else if unit.hp <= WOUNDED_HP {
-            let free = LIVE_AWAY[usize::from(unit.hp > 25)];
-            if draw(host.seed, turn, uid, 4) >= free {
-                gate.no_retreat.insert(uid, start);
-                counts.no_retreat += 1;
+        let roll = draw(host.seed, turn, uid, 3);
+        let closes = advance_probability(unit.hp as i16, situation) as f64;
+        let away = LIVE_AWAY[usize::from(unit.hp > 25)];
+        if roll < closes {
+            if step(g, pid, uid, &victim_plots, true) {
+                counts.closed += 1;
             }
+        } else if roll < closes + away {
+            if step(g, pid, uid, &victim_plots, false) {
+                counts.stepped_away += 1;
+            }
+        } else {
+            counts.held += 1;
         }
     }
     g.host_gate = Some(Box::new(gate));
@@ -816,6 +967,8 @@ pub struct HostTacticsSeat<A> {
     pub inner: A,
     pub host: Option<HostTactics>,
     pub census: TacticsCensus,
+    /// What share of this chair's open-ground reach was exact, so far.
+    pub reach_share: ReachShare,
 }
 
 impl<A> HostTacticsSeat<A> {
@@ -824,6 +977,7 @@ impl<A> HostTacticsSeat<A> {
             inner,
             host,
             census: TacticsCensus::default(),
+            reach_share: [[0; 2]; 2],
         }
     }
 }
@@ -840,7 +994,8 @@ impl<A: Ai> Ai for HostTacticsSeat<A> {
         };
         let watch = Watch::begin(g, pid, &host);
         if host.gate {
-            govern(g, pid, &host, &mut self.census.gate);
+            govern(g, pid, &host, &mut self.census.gate, &mut self.reach_share);
+            self.census.reach = self.reach_share;
         }
         self.inner.take_turn(g, pid);
         if let Some(gate) = g.host_gate.take() {

@@ -25,17 +25,16 @@ fn field() -> Game {
     g
 }
 
-fn gate(player: usize, victims: Vec<usize>, plots: Vec<Pos>) -> Gate {
+fn gate(player: usize, victims: Vec<usize>) -> Gate {
     Gate {
         player,
         victims,
-        victim_plots: plots,
         ..Gate::default()
     }
 }
 
 /// The free neighbour of `from` nearest to, or farthest from, `of`.
-fn step(g: &Game, from: Pos, of: Pos, closer: bool) -> Pos {
+fn step_tile(g: &Game, from: Pos, of: Pos, closer: bool) -> Pos {
     let mut tiles: Vec<Pos> = g
         .nbrs(from)
         .into_iter()
@@ -55,7 +54,7 @@ fn the_gate_refuses_a_held_blow_and_nothing_else() {
     let ours = at(9, 6);
     g.spawn_unit("warrior", 0, ours);
     let theirs = g.spawn_unit("warrior", 1, at(10, 6));
-    let mut held = gate(1, vec![0], vec![ours]);
+    let mut held = gate(1, vec![0]);
     held.no_unit_strike.insert(theirs);
     g.host_gate = Some(Box::new(held));
     let blow = Action::Attack {
@@ -72,38 +71,44 @@ fn the_gate_refuses_a_held_blow_and_nothing_else() {
 }
 
 #[test]
-fn a_held_unit_does_not_move_and_a_wounded_one_does_not_fall_back() {
+fn a_governed_unit_is_moved_by_the_harness_not_its_ai() {
     let mut g = field();
     let ours = at(5, 6);
     g.spawn_unit("warrior", 0, ours);
     let held = g.spawn_unit("warrior", 1, at(9, 6));
-    let wounded = g.spawn_unit("warrior", 1, at(9, 9));
-    g.units.get_mut(&wounded).unwrap().hp = 30;
-    let start = g.wdist(at(9, 9), ours);
-    let mut rules = gate(1, vec![0], vec![ours]);
+    let free = g.spawn_unit("warrior", 1, at(9, 9));
+    let mut rules = gate(1, vec![0]);
     rules.hold.insert(held);
-    rules.no_retreat.insert(wounded, start);
     g.host_gate = Some(Box::new(rules));
-
     let walk = Action::Move {
         unit: held,
-        to: step(&g, at(9, 6), ours, true),
+        to: step_tile(&g, at(9, 6), ours, true),
     };
-    assert!(g.apply(1, &walk).unwrap_err().contains("holds its ground"));
+    let refused = g.apply(1, &walk).unwrap_err();
+    assert!(refused.contains("the harness's"), "{refused}");
+    // A unit the gate does not hold walks as its AI says.
+    let other = Action::Move {
+        unit: free,
+        to: step_tile(&g, at(9, 9), ours, false),
+    };
+    assert!(g.apply(1, &other).is_ok());
+}
 
-    let back = Action::Move {
-        unit: wounded,
-        to: step(&g, at(9, 9), ours, false),
-    };
-    assert!(g
-        .apply(1, &back)
-        .unwrap_err()
-        .contains("does not fall back"));
-    let forward = Action::Move {
-        unit: wounded,
-        to: step(&g, at(9, 9), ours, true),
-    };
-    assert!(g.apply(1, &forward).is_ok());
+#[test]
+fn the_harness_step_closes_and_backs_off() {
+    let mut g = field();
+    let ours = at(5, 6);
+    g.spawn_unit("warrior", 0, ours);
+    let walker = g.spawn_unit("warrior", 1, at(9, 6));
+    let before = g.wdist(at(9, 6), ours);
+    assert!(step(&mut g, 1, walker, &[ours], true));
+    let after = g.wdist(g.units[&walker].pos, ours);
+    assert!(after < before, "{before} -> {after}");
+    let mut g2 = field();
+    g2.spawn_unit("warrior", 0, ours);
+    let backer = g2.spawn_unit("warrior", 1, at(9, 6));
+    assert!(step(&mut g2, 1, backer, &[ours], false));
+    assert!(g2.wdist(g2.units[&backer].pos, ours) > before);
 }
 
 #[test]
@@ -112,12 +117,12 @@ fn a_unit_refused_again_and_again_is_spent_so_a_retry_loop_ends() {
     let ours = at(5, 6);
     g.spawn_unit("warrior", 0, ours);
     let held = g.spawn_unit("warrior", 1, at(9, 6));
-    let mut rules = gate(1, vec![0], vec![ours]);
+    let mut rules = gate(1, vec![0]);
     rules.hold.insert(held);
     g.host_gate = Some(Box::new(rules));
     let walk = Action::Move {
         unit: held,
-        to: step(&g, at(9, 6), ours, true),
+        to: step_tile(&g, at(9, 6), ours, true),
     };
     for _ in 0..VALVE {
         assert!(g.apply(1, &walk).is_err());
@@ -185,7 +190,7 @@ fn the_census_reads_a_unit_that_held_and_one_that_closed() {
     };
     let watch = Watch::begin(&g, 1, &host);
     assert_eq!(watch.rows.len(), 2, "both in sight");
-    let to = step(&g, at(5, 8), ours, true);
+    let to = step_tile(&g, at(5, 8), ours, true);
     g.apply(1, &Action::Move { unit: walker, to })
         .expect("a step");
     let mut census = TacticsCensus::default();
@@ -211,10 +216,11 @@ fn a_governed_turn_strikes_or_holds_by_the_draw_and_sets_the_gate() {
             gate: true,
         };
         let mut counts = GateCounts::default();
-        govern(&mut world, 1, &host, &mut counts);
+        let mut share: ReachShare = [[0; 2]; 2];
+        govern(&mut world, 1, &host, &mut counts, &mut share);
         assert_eq!(counts.units, 1);
         let set = world.host_gate.as_deref().expect("a gate for the turn");
-        assert!(set.no_unit_strike.contains(&theirs));
+        assert!(set.no_unit_strike.contains(&theirs) && set.hold.contains(&theirs));
         if counts.strikes_drawn == 1 {
             assert_eq!(counts.strikes_landed + counts.strikes_failed, 1);
             struck += counts.strikes_landed;
@@ -245,7 +251,7 @@ fn the_live_table_is_the_fit_tools_rates() {
     // `tools/fit_host_enemy.py rates`: a quarter of in-reach turns struck,
     // 43% without moving, 11% when it had to move first.
     let rate = |key: &str| {
-        let (_, hits, rows) = LIVE.iter().find(|row| row.0 == key).unwrap();
+        let (_, hits, rows, _, _) = LIVE.iter().find(|row| row.0 == key).unwrap();
         hits / *rows as f64
     };
     assert!((rate("strike | in reach") - 0.250).abs() < 0.001);

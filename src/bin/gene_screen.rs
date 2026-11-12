@@ -2952,13 +2952,12 @@ fn play_game(
     // inside `HostTacticsSeat`, which reads their turns and, with the switch,
     // governs their soldiers near a measured seat. Without either flag
     // nothing is wrapped and the game is byte for byte what it was.
-    let host_tactics = (profile.rival_host_tactics || profile.chair_tactics_census).then(|| {
-        HostTactics {
+    let host_tactics =
+        (profile.rival_host_tactics || profile.chair_tactics_census).then(|| HostTactics {
             seed,
             victims: measured.clone(),
             gate: profile.rival_host_tactics,
-        }
-    });
+        });
     let host_for = |pid: usize| host_tactics.clone().filter(|_| chairs.contains(&pid));
     let mut chair_tactics = TacticsCensus::default();
     if profile.rival_war_pace.is_some() || profile.rival_walls.is_some() {

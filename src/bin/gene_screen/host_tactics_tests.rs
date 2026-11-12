@@ -73,7 +73,7 @@ fn worlds() -> usize {
     std::env::var("CIVVIS_HOST_TACTICS_WORLDS")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(6)
+        .unwrap_or(8)
 }
 
 #[test]
