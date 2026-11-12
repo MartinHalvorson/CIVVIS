@@ -217,6 +217,12 @@ impl AdvancedAi {
                     .queue
                     .first()
                     .is_some_and(|head| self.campus_building_claim_holds(g, pid, cid, plan, head))
+                // `campus-and-library-before-the-claims`: its first Campus goes
+                // first too.
+                || g.cities[&cid]
+                    .queue
+                    .first()
+                    .is_some_and(|head| self.campus_and_library_holds(g, pid, cid, plan, head))
             {
                 continue;
             }

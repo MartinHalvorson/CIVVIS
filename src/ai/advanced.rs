@@ -6918,6 +6918,11 @@ pub struct AdvancedAi {
     /// `commercial-hub-in-the-strategic-queue`. See
     /// `advanced/commercial_hub_claims_a_peace_queue.rs`. Opt-in.
     commercial_hub_claims_a_peace_queue: bool,
+    /// `campus-and-library-before-the-claims`: a Domination seat's first
+    /// Campus and its Library (then a quick University) go ahead of the
+    /// routine claims that keep a city's queue. See
+    /// `advanced/campus_and_library_before_the_claims.rs`. Opt-in.
+    campus_and_library_before_the_claims: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11543,6 +11548,10 @@ mod bands_draw_from_the_bar;
 /// `advanced/bands_wait_at_the_door.rs`.
 mod bands_wait_at_the_door;
 mod campus_above_sea;
+/// `campus-and-library-before-the-claims`: a Domination seat's first Campus
+/// and its Library go ahead of the routine claims. See
+/// `advanced/campus_and_library_before_the_claims.rs`.
+mod campus_and_library_before_the_claims;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
 mod campus_building_claims_the_queue;
