@@ -236,6 +236,9 @@ impl AdvancedAi {
         /// `city-state-before-the-first-capital`: a Domination seat's early
         /// conquest opening takes one nearby city-state before the first capital.
         city_state_before_the_first_capital => enable_city_state_before_the_first_capital, disable_city_state_before_the_first_capital;
+        /// Opt-in `commercial-hub-claims-a-peace-queue`; see
+        /// `advanced/commercial_hub_claims_a_peace_queue.rs`.
+        commercial_hub_claims_a_peace_queue => enable_commercial_hub_claims_a_peace_queue, disable_commercial_hub_claims_a_peace_queue;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

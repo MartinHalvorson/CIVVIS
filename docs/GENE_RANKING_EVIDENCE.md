@@ -233,6 +233,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `city-strike-takes-the-gun` | off (unmeasured) | Opt-in gene `city-strike-takes-the-gun`; see `advanced/siege_at_the_walls_dies_first.rs`. | 1 \| 1 |
 | `cold-war-before-conservation` | off (unmeasured) | `cold-war-before-conservation`: see `advanced/cold_war_before_conservation.rs`. | 1 \| 1 |
 | `cold-war-then-heritage` | off (unmeasured) | `cold-war-then-heritage`: see `advanced/cold_war_then_heritage.rs`. | 1 \| 1 |
+| `commercial-hub-claims-a-peace-queue` | off (unmeasured) | Opt-in `commercial-hub-claims-a-peace-queue`; see `advanced/commercial_hub_claims_a_peace_queue.rs`. | 1 \| 1 |
 | `contact-fleet` | off (unmeasured) | While a living major is unmet or unlocated, or a city-state is unmet, the queued sea scout keeps its queue, ships route toward foreign landfall, and the faster hull is preferred. | 1 \| 1 |
 | `corps-comes-home-alive` | off (unmeasured) | Opt-in gene `corps-comes-home-alive`; see `advanced/apostle_army.rs`. | 1 \| 1 |
 | `counterweight-builds-its-source` | off (unmeasured) | Opt-in gene `counterweight-builds-its-source`; see `Self::counterweight_builds_its_source`. | 1 \| 1 |
