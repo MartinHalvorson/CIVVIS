@@ -276,6 +276,9 @@ impl AdvancedAi {
         /// `first-capital-walks-the-one-landmass`: see
         /// `advanced/first_capital_walks_the_one_landmass.rs`.
         first_capital_walks_the_one_landmass => enable_first_capital_walks_the_one_landmass, disable_first_capital_walks_the_one_landmass;
+        /// Opt-in `education-follows-the-library`; see
+        /// `advanced/research/domination_education.rs`.
+        education_follows_the_library => enable_education_follows_the_library, disable_education_follows_the_library;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its

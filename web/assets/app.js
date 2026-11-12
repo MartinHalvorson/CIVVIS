@@ -31225,6 +31225,17 @@ function beginCitizenPick(cityId, said) {
     if (!tile || key(pos) === center || tile.district || tile.wonder) continue;
     sites.set(key(pos), {pos});
   }
+  // A district with specialist slots is a site too. Its slots are
+  // interchangeable, so it is filled by a count: each press holds one more,
+  // and a press on a full district releases them all.
+  const seatedIn = family => (city.citizens.specialists || [])
+    .filter(name => name === family).length;
+  let inDistricts = 0;
+  for (const slot of city.citizens.specialist_slots || []) {
+    inDistricts += seatedIn(slot.family);
+    sites.set(key(slot.pos), {pos: slot.pos, specialist: slot.family, slots: slot.slots,
+      held: slot.placed, seated: seatedIn(slot.family)});
+  }
   const placed = new Set((city.citizens.locked || []).map(key));
   sitePick = {cityId, citizens: true, lens: sitePick ? sitePick.lens : mapLens, sites,
     worked: new Set(city.citizens.worked_tiles.map(key)), placed};
@@ -31232,8 +31243,10 @@ function beginCitizenPick(cityId, said) {
   sel = null; selCity = city;
   document.getElementById("site-pick-text").textContent = said ||
     `${city.name}: ${city.citizens.worked_tiles.length} of ${city.pop} citizens on the land` +
+    (inDistricts ? `, ${inDistricts} in districts` : "") +
     (placed.size ? `, ${placed.size} placed by hand (ringed)` : "") +
-    ` · press a tile to place a citizen there, or to release one`;
+    ` · press a tile to place a citizen there or release one` +
+    ((city.citizens.specialist_slots || []).length ? `, a district to seat a specialist` : "");
   document.getElementById("site-pick").hidden = false;
   document.body.classList.add("site-picking");
   if (arriving) centerOn(city.pos);
@@ -31243,11 +31256,14 @@ function beginCitizenPick(cityId, said) {
 async function toggleCitizenLock(cityId, pos) {
   const city = state.cities.find(candidate => candidate.id === cityId);
   const held = new Set(((city && city.citizens && city.citizens.locked) || []).map(key));
+  const site = sitePick && sitePick.sites.get(key(pos));
+  const ask = site && site.specialist
+    ? {city: cityId, specialist: site.specialist, count: site.held >= site.slots ? 0 : site.held + 1}
+    : {city: cityId, pos: [pos[0], pos[1]], lock: !held.has(key(pos))};
   let answer = null;
   try {
     answer = await fetchJSON("/city-citizen", {method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({city: cityId, pos: [pos[0], pos[1]], lock: !held.has(key(pos))})});
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(ask)});
   } catch (error) { answer = {error: "The citizen could not be placed."}; }
   if (answer && Array.isArray(answer.cities)) render(answer);
   // The mode stays up with the new assignment, or with the engine's reason.
@@ -31259,6 +31275,21 @@ async function toggleCitizenLock(cityId, pos) {
 // nobody works shows where a citizen could go.
 function markCitizenPick(site, x, y, size) {
   if (!sitePick.citizens) return;
+  const slot = sitePick.sites.get(site);
+  if (slot && slot.specialist) {
+    // A district reads as seated of slots, ringed while any are held by hand.
+    cx.save();
+    cx.beginPath(); cx.arc(x, y, size * .66, 0, Math.PI * 2);
+    cx.fillStyle = slot.seated ? "#f0d28c" : "#0b0f0ecc"; cx.fill();
+    cx.lineWidth = size * (slot.held ? .17 : .07);
+    cx.strokeStyle = slot.held ? "#ffffff" : "#f0d28c99"; cx.stroke();
+    cx.fillStyle = slot.seated ? "#10151d" : "#f0d28c";
+    cx.font = `800 ${size * .6}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+    cx.textAlign = "center"; cx.textBaseline = "middle";
+    cx.fillText(`${slot.seated}/${slot.slots}`, x, y + size * .03);
+    cx.restore();
+    return;
+  }
   const worked = sitePick.worked.has(site), placed = sitePick.placed.has(site);
   cx.save();
   cx.beginPath(); cx.arc(x, y, size * .5, 0, Math.PI * 2);
