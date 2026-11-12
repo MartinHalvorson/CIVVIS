@@ -554,7 +554,7 @@ fn stage_rank(stage: SiegeStage) -> u8 {
     }
 }
 
-/// Under `solvent`, each seat ends its turn holding this many turns of its
+/// Under `solvent`, each seat starts its turn holding this many turns of its
 /// deficit plus `SOLVENT_MARGIN`. That is enough that neither the engine's
 /// end of turn (`settle_gold_budget`, one unit disbanded per 10 Gold short)
 /// nor `bankruptcy-exits-the-drain-2` (under `DRAIN_RUNWAY_TURNS` = 5 turns
@@ -615,6 +615,15 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
     while g.winner.is_none() && g.turn < start + turns && steps < 64 * turns {
         steps += 1;
         let pid = g.current;
+        if solvent && pid < 2 {
+            // Cover the deficit with a runway before the seat plays: the
+            // agent ends its own turn, and the engine settles the treasury
+            // then, so a top-up after the turn never ran (#5207 round 5).
+            let need = SOLVENT_MARGIN + SOLVENT_TURNS * (-g.players[pid].gold_per_turn).max(0.0);
+            if g.players[pid].gold < need {
+                g.players[pid].gold = need;
+            }
+        }
         if pid == 1 {
             if let Some((turn, walls)) = w.wall_event {
                 if g.turn - start + 1 == turn {
@@ -652,14 +661,6 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
             others[pid].take_turn(&mut g, pid);
         }
         if g.winner.is_none() && g.current == pid {
-            if solvent && pid < 2 {
-                // Cover the deficit with a runway, so nothing is disbanded.
-                let need =
-                    SOLVENT_MARGIN + SOLVENT_TURNS * (-g.players[pid].gold_per_turn).max(0.0);
-                if g.players[pid].gold < need {
-                    g.players[pid].gold = need;
-                }
-            }
             let _ = g.apply(pid, &Action::EndTurn);
         }
         if pid == 0 {
