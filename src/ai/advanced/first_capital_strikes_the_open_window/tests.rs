@@ -907,3 +907,146 @@ fn an_unwalled_capital_strike_reserves_and_waits_for_its_ram() {
     assert!(ai.conquest_declaration(&mut game, 0));
     assert!(game.is_at_war(0, 1));
 }
+
+// ------------------------------------------- 7. the search combs the ring
+
+/// Our capital at (20, 15) with the ground within eight tiles of it charted,
+/// a rival's 30 tiles east and unmet, turn 8 at Online, a free Scout at
+/// `scout_at`.
+fn searching(gene: bool, scout_at: Pos) -> (Game, AdvancedAi, u32) {
+    let mut game = board(&[(20, 15), (50, 15)]);
+    game.turn = 8;
+    let near = game.wdisk((20, 15), 8);
+    game.players[0].explored.extend(near);
+    let scout = unit(&mut game, "scout", scout_at);
+    let mut ai = seat(gene);
+    ai.base.explore_commit = true;
+    (game, ai, scout)
+}
+
+/// Live 203522Z: Istanbul stood 14 tiles from Bogotá and was first seen at
+/// turn 93, while the lone Scout swept the frontier farthest from home. On,
+/// a free scout with no capital to name walks to the nearest unexplored
+/// ground on the ring, keeps a goal it holds there, and stops once the ring
+/// is charted.
+#[test]
+fn a_free_scout_combs_the_ring_while_no_capital_can_be_named() {
+    let (game, off, scout) = searching(false, (24, 15));
+    assert_eq!(
+        off.first_capital_search_goal(&game, 0, scout),
+        None,
+        "off: the shipped sweep"
+    );
+
+    let home = (20, 15);
+    let (mut game, on, scout) = searching(true, (24, 15));
+    let origin = game.units[&scout].pos;
+    let goal = on
+        .first_capital_search_goal(&game, 0, scout)
+        .expect("a goal on the ring");
+    let ring = game.wdist(home, goal);
+    assert!(
+        (FIRST_CAPITAL_SEARCH_INNER..=FIRST_CAPITAL_SEARCH_OUTER).contains(&ring),
+        "{goal:?} is {ring} tiles out"
+    );
+    assert!(!game.players[0].explored.contains(&goal));
+    let nearest = game
+        .wdisk(home, FIRST_CAPITAL_SEARCH_OUTER)
+        .into_iter()
+        .filter(|pos| game.wdist(home, *pos) >= FIRST_CAPITAL_SEARCH_INNER)
+        .map(|pos| game.wdist(origin, pos))
+        .min()
+        .unwrap();
+    assert_eq!(
+        game.wdist(origin, goal),
+        nearest,
+        "nearest ring ground first"
+    );
+
+    // A goal held on the far side of the ring is kept while it is fog.
+    let far = (20 - FIRST_CAPITAL_SEARCH_INNER, 15);
+    on.base
+        .explore_goal
+        .borrow_mut()
+        .insert(scout, (far, game.turn));
+    assert_eq!(on.first_capital_search_goal(&game, 0, scout), Some(far));
+
+    // The ring charted: nothing is left to comb.
+    let charted = game.wdisk(home, FIRST_CAPITAL_SEARCH_OUTER);
+    game.players[0].explored.extend(charted);
+    assert_eq!(on.first_capital_search_goal(&game, 0, scout), None);
+}
+
+/// Two scouts comb apart: the second leaves the first one's goal to it.
+#[test]
+fn a_second_scout_combs_apart_from_the_first() {
+    let (mut game, on, first) = searching(true, (24, 15));
+    let second = unit(&mut game, "scout", (24, 17));
+    let taken = on.first_capital_search_goal(&game, 0, first).unwrap();
+    on.base
+        .explore_goal
+        .borrow_mut()
+        .insert(first, (taken, game.turn));
+    let goal = on
+        .first_capital_search_goal(&game, 0, second)
+        .expect("ground of its own");
+    assert!(game.wdist(goal, taken) > FIRST_CAPITAL_SEARCH_SPACING);
+}
+
+/// No goal beside a visible hostile soldier: the explorer would drop it.
+#[test]
+fn the_search_keeps_clear_of_a_visible_hostile() {
+    let (mut game, on, scout) = searching(true, (29, 15));
+    let quiet = on.first_capital_search_goal(&game, 0, scout).unwrap();
+    at_war(&mut game, 0, 1);
+    // The goal itself is fog, so the soldier stands on the seen tile nearest it.
+    let visible = game.player_vision_frame(0);
+    let post = game
+        .wdisk((29, 15), 2)
+        .into_iter()
+        .filter(|pos| *pos != (29, 15) && game.sees(&visible, *pos))
+        .min_by_key(|pos| (game.wdist(*pos, quiet), *pos))
+        .expect("a seen tile beside the scout");
+    assert!(game.wdist(post, quiet) <= FIRST_CAPITAL_SEARCH_CLEARANCE);
+    game.spawn_test_unit("warrior", 1, post);
+    let goal = on.first_capital_search_goal(&game, 0, scout).unwrap();
+    assert!(game.wdist(goal, post) > FIRST_CAPITAL_SEARCH_CLEARANCE);
+}
+
+/// The search stops once a capital can be named, past its window, once the
+/// opening has closed, and off the Domination lane.
+#[test]
+fn the_search_ends_with_a_capital_to_name_the_window_or_the_lane() {
+    // A rival capital 15 tiles east, met and charted, one ring tile still
+    // fog: the opening can name the capital, so the scouts keep their sweep.
+    let mut game = board(&[(20, 15), (35, 15)]);
+    game.turn = 8;
+    meet_and_explore(&mut game, 1);
+    let fog = (20 - FIRST_CAPITAL_SEARCH_INNER - 1, 15);
+    game.players[0].explored.remove(&fog);
+    let scout = unit(&mut game, "scout", (24, 15));
+    let mut on = seat(true);
+    on.base.explore_commit = true;
+    assert!(on.first_capital_target(&game, 0).is_some());
+    assert_eq!(on.first_capital_search_goal(&game, 0, scout), None);
+
+    // Unmet, nothing can be named: the one fog tile on the ring is the goal.
+    game.players[0].met.remove(&1);
+    game.players[1].met.remove(&0);
+    assert!(on.first_capital_target(&game, 0).is_none());
+    assert_eq!(on.first_capital_search_goal(&game, 0, scout), Some(fog));
+
+    let mut culture = seat(true);
+    culture.base.explore_commit = true;
+    culture.victory_target = Some(VictoryTarget::Culture);
+    assert_eq!(culture.first_capital_search_goal(&game, 0, scout), None);
+
+    on.conquest_closed = true;
+    assert_eq!(on.first_capital_search_goal(&game, 0, scout), None);
+    on.conquest_closed = false;
+
+    game.turn = game.standard_duration(FIRST_CAPITAL_SEARCH_TURNS);
+    assert_eq!(on.first_capital_search_goal(&game, 0, scout), None);
+    game.turn -= 1;
+    assert_eq!(on.first_capital_search_goal(&game, 0, scout), Some(fog));
+}
