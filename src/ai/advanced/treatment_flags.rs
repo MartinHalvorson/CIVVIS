@@ -364,6 +364,8 @@ impl AdvancedAi {
         /// Opt-in `open-city-is-the-objective`; see
         /// `advanced/open_city_objective.rs`.
         open_city_is_the_objective => enable_open_city_is_the_objective, disable_open_city_is_the_objective;
+        /// Opt-in `no-era-ends-dark`; see `advanced/no_era_ends_dark.rs`.
+        no_era_ends_dark => enable_no_era_ends_dark, disable_no_era_ends_dark;
         // ---- append: p-r --------------------------------------------
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;
@@ -457,6 +459,8 @@ impl AdvancedAi {
         /// Opt-in gene `solver-plays-the-host`; see
         /// `advanced/battle_solver/host_enemy.rs`.
         solver_plays_the_host => enable_solver_plays_the_host, disable_solver_plays_the_host;
+        /// Opt-in `score-seat-banks-era-score`; see `advanced/no_era_ends_dark.rs`.
+        score_seat_banks_era_score => enable_score_seat_banks_era_score, disable_score_seat_banks_era_score;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

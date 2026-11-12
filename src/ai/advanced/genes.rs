@@ -5925,6 +5925,14 @@ pub const GENES: &[Gene] = &[
     // objective and the front, the war is kept while the capture stands, and
     // its siege goes. Opt-in; see `advanced/open_city_objective.rs`.
     Gene { tag: "open-city-is-the-objective", field: "open_city_is_the_objective", kind: Kind::OptIn, enable: AdvancedAi::enable_open_city_is_the_objective, disable: AdvancedAi::disable_open_city_is_the_objective },
+    // Live Deity Gran Colombia 2026-11-12, 38 games: Medieval and Industrial
+    // eras ended Dark in 23 of 37 and 18 of 31, a few Era Score short; the
+    // Dedication's clause paid 2.2 and 0.2 a era, the end-of-era closers had
+    // nothing affordable to buy, and 27 of 34 loyalty flips came in our Dark
+    // Age. From each era's first turn a budget (Normal +2) picks the
+    // Dedication by what the era can build and schedules the clause's
+    // cheapest building early. Opt-in; see `advanced/no_era_ends_dark.rs`.
+    Gene { tag: "no-era-ends-dark", field: "no_era_ends_dark", kind: Kind::OptIn, enable: AdvancedAi::enable_no_era_ends_dark, disable: AdvancedAi::disable_no_era_ends_dark },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
@@ -6044,6 +6052,14 @@ pub const GENES: &[Gene] = &[
     // unit-turns in reach of ours (116 Deity games, 11-11..12) it struck 25%,
     // never above ~70% in any cell. See `advanced/battle_solver/host_enemy.rs`.
     Gene { tag: "solver-plays-the-host", field: "solver_plays_the_host", kind: Kind::OptIn, enable: AdvancedAi::enable_solver_plays_the_host, disable: AdvancedAi::disable_solver_plays_the_host },
+    // Live Deity Rome Score lane 2026-11-12: our Era Score 86 and 151 at
+    // t171 against the winner's 269 and 275, and Era Score is score 1:1. On
+    // a Score seat every Dedication-clause building costing 40 Production a
+    // point or less is scheduled all game, Great People are patronised
+    // cheapest per point with Faith (no reserve in the last turns) and Gold
+    // above the reserve, and a Trader opens a route to each rival without
+    // our Trading Post. Opt-in; see `advanced/no_era_ends_dark.rs`.
+    Gene { tag: "score-seat-banks-era-score", field: "score_seat_banks_era_score", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_banks_era_score, disable: AdvancedAi::disable_score_seat_banks_era_score },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

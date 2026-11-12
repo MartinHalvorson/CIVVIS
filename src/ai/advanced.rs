@@ -8819,6 +8819,11 @@ pub struct AdvancedAi {
     /// taken while that capture stands, and its siege goes without the
     /// muster's bill. See `advanced/open_city_objective.rs`. Opt-in.
     open_city_is_the_objective: bool,
+    /// `no-era-ends-dark`: an Era Score budget from each era's first turn;
+    /// the Dedication whose clause pays most for what the era can build, and
+    /// the clause's cheapest building scheduled early. See
+    /// `advanced/no_era_ends_dark.rs`. Opt-in.
+    no_era_ends_dark: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -10242,6 +10247,13 @@ pub struct AdvancedAi {
     /// instead of the greedy pick at a flat 0.5. Acts only with
     /// `battle-solver` on. Off by default.
     solver_plays_the_host: bool,
+    /// `score-seat-banks-era-score`: on a Score-target seat, Era Score is
+    /// score 1:1, so every Dedication-clause building worth its Production
+    /// is scheduled all game, Great People are patronised cheapest per point
+    /// with Faith (and Gold above the reserve), and a Trader opens a route to
+    /// each rival civilization without our Trading Post. See
+    /// `advanced/no_era_ends_dark.rs`. Opt-in.
+    score_seat_banks_era_score: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11583,6 +11595,8 @@ mod near_done_work_finishes;
 /// out-guns us in the opening. One opt-in gene; see
 /// `advanced/near_rival_deterrence.rs`.
 mod near_rival_deterrence;
+/// `no-era-ends-dark`: see `advanced/no_era_ends_dark.rs`.
+mod no_era_ends_dark;
 /// `rival-pace`: a calibrated rival chair's city horizon follows the live
 /// Immortal field's city count by turn. Not a gene — set only by
 /// `gene_screen --rival-pace` on its rival chairs; see
@@ -17285,6 +17299,16 @@ impl AdvancedAi {
             + self.inquisition_faith_reserve(g, pid)
             // See `counterweight_bank_held` (`counterweight-finishes-one-shrine`).
             + self.counterweight_bank_held(g, pid);
+        // `score-seat-banks-era-score`: on a Score seat every offer is open to
+        // patronage, cheapest per point first, and the last turns spend the
+        // Faith reserve. Off, or on another target, nothing changes. See
+        // `advanced/no_era_ends_dark.rs`.
+        let score_patronage = self.score_era_on(g);
+        let faith_reserve = if score_patronage && Self::score_final_turns(g) {
+            0.0
+        } else {
+            faith_reserve
+        };
         let mut candidates = Vec::new();
         // Inside `age-closer-2`'s window: the cheapest priced Great Person,
         // so a window that closes nothing says what it would have cost.
@@ -17405,7 +17429,11 @@ impl AdvancedAi {
             // See `tally_great_people`: on the tally seat any Great Person the
             // bank can carry is worth its five points; the price still rises
             // with the missing points, so a near recruit stays the better buy.
-            let limit = self.patronage_close_limit(affinity);
+            let limit = if score_patronage {
+                1.0
+            } else {
+                self.patronage_close_limit(affinity)
+            };
             if affinity < 0.0 {
                 continue;
             }
@@ -17475,7 +17503,11 @@ impl AdvancedAi {
                     continue;
                 }
                 let opportunity = price / (bank - reserve).max(1.0);
-                let score = (affinity + effect_value) * (1.0 - opportunity.min(0.95));
+                let score = if score_patronage {
+                    -price / Self::score_patronage_points(g, pid, kind)
+                } else {
+                    (affinity + effect_value) * (1.0 - opportunity.min(0.95))
+                };
                 candidates.push((
                     closes_age,
                     score,
@@ -17526,9 +17558,17 @@ impl AdvancedAi {
                 let price = g
                     .great_person_patronage_price(pid, kind, currency)
                     .unwrap_or(0.0);
-                think!(self.journal(), Economy, Decision, "Buying out the {} race", plain(kind);
-                       "{price:.0} {currency}, worth {score:.0} to the {} plan",
-                       strategy.as_str());
+                if score_patronage {
+                    let points = Self::score_patronage_points(g, pid, kind);
+                    think!(self.journal(), Economy, Decision, "Buying out the {} race", plain(kind);
+                           "score-seat-banks-era-score: {price:.0} {currency} for {points:.0} \
+                            points (5 score and {:.0} Era Score), the cheapest per point offered",
+                           points - 5.0);
+                } else {
+                    think!(self.journal(), Economy, Decision, "Buying out the {} race", plain(kind);
+                           "{price:.0} {currency}, worth {score:.0} to the {} plan",
+                           strategy.as_str());
+                }
             }
             let _ = g.apply(pid, &action);
         }

@@ -381,6 +381,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `naval-crossing-keeps-going` | off (unmeasured) | Opt-in gene `naval-crossing-keeps-going`; see `Self::naval_crossing_keeps_going`. | 1 \| 1 |
 | `near-done-work-finishes` | off (unmeasured) | Opt-in gene `near-done-work-finishes`; see `advanced/near_done_work_finishes.rs`. | 1 \| 1 |
 | `no-city-limit` | off (unmeasured) | Opt-in gene `no-city-limit`; see `advanced/no_city_limit.rs`. | 1 \| 1 |
+| `no-era-ends-dark` | off (unmeasured) | Opt-in `no-era-ends-dark`; see `advanced/no_era_ends_dark.rs`. | 1 \| 1 |
 | `nuclear-goal-needs-a-launcher` | off (unmeasured) | Opt-in gene `nuclear-goal-needs-a-launcher`; see `Self::nuclear_goal_needs_a_launcher`. | 1 \| 1 |
 | `nusantara-reads-the-coast` | off (unmeasured) | Opt-in gene `nusantara-reads-the-coast`; see `Self::nusantara_reads_the_coast`. | 1 \| 1 |
 | `nusantara-settles-the-shore` | off (unmeasured) | Opt-in gene `nusantara-settles-the-shore`; see `advanced/nusantara_settles_the_shore.rs`. | 1 \| 1 |
@@ -462,6 +463,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-seat-races-the-congress` | off (unmeasured) | Opt-in gene `science-seat-races-the-congress`: a live-only ballot change; see `CivvisCongressRacer` in `CivvisControlAgent.lua`. | 1 \| 1 |
 | `science-specializes-earlier` | off (unmeasured) | Opt-in gene `science-specializes-earlier`; see `Self::science_specializes_earlier`. | 1 \| 1 |
 | `science-writing-before-the-luxury` | off (unmeasured) | Opt-in Science Writing priority before optional research detours. | 1 \| 1 |
+| `score-seat-banks-era-score` | off (unmeasured) | Opt-in `score-seat-banks-era-score`; see `advanced/no_era_ends_dark.rs`. | 1 \| 1 |
 | `sea-scout-claims-the-queue` | off (unmeasured) | Opt-in gene `sea-scout-claims-the-queue`; see `advanced/contact_fleet.rs`. | — \| 2 |
 | `sea-scout-claims-the-queue-2` | off (unmeasured) | Opt-in gene `space-people-call-the-projects`; see `advanced/space_people_call_the_projects.rs`. | — \| 2 |
 | `settler-founds-under-raiders` | off (unmeasured) | Opt-in gene `settler-founds-under-raiders`; see `Self::settler_founds_under_raiders`. | 1 \| 1 |
