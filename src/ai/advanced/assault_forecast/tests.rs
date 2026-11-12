@@ -402,9 +402,9 @@ fn hopeless_readings_stand_the_siege_down() {
     off.siege_forecast_hopeless.insert(
         TARGET,
         HopelessRun {
-            streak: 0,
             last: g.turn,
             down_until: g.turn + 5,
+            ..HopelessRun::default()
         },
     );
     assert!(!off.forecast_stood_down_at(&g, TARGET));

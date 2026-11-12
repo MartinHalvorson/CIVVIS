@@ -214,6 +214,27 @@ pub(crate) struct HopelessRun {
     pub(crate) last: u32,
     /// Stood down while the turn is under this.
     pub(crate) down_until: u32,
+    /// The city's health and walls at the last reading.
+    pub(crate) health: i32,
+}
+
+/// CI scaffolding: which variant of `siege-goes-on-the-forecast` this
+/// thread plays (0 as specified; 1 without the stand-down; 2 without the
+/// Siege-row ranking; 3 the stand-down only while the siege makes no
+/// progress). Always 0 outside tests.
+#[cfg(test)]
+thread_local! {
+    pub(crate) static VARIANT: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn variant() -> u8 {
+    VARIANT.with(|v| v.get())
+}
+
+#[cfg(not(test))]
+fn variant() -> u8 {
+    0
 }
 
 /// A land soldier the model plays: no ships, aircraft or embarked units, as
@@ -724,6 +745,8 @@ fn pose(
         reach0: vec![Vec::new(); n],
         los0: Vec::new(),
         has_los: false,
+        // A city with no soldier left beside it is still to be walked to.
+        march_on_objective: true,
     };
     let state = State::new(&board, units, city_state);
     let member_rounds = &enter[..member_count];
@@ -1195,7 +1218,11 @@ impl AdvancedAi {
         };
         let (pos, name) = (city.pos, city.name.clone());
         let falling = city.wall_hp <= 0 && city.hp <= FALLING_CITY_HP;
+        let health = city.hp.max(0) + city.wall_hp.max(0);
         let turn = g.turn;
+        if variant() == 1 {
+            return false;
+        }
         self.siege_forecast_hopeless
             .retain(|_, run| run.last + HOPELESS_STAND_DOWN_TURNS >= turn || turn < run.down_until);
         let hopeless = !falling && forecast.gathered() && forecast.p() < HOPELESS_P;
@@ -1203,7 +1230,11 @@ impl AdvancedAi {
         if turn < run.down_until {
             return false;
         }
-        if !hopeless {
+        let progress = run.last != 0 && run.last != turn && health < run.health;
+        if run.last != turn {
+            run.health = health;
+        }
+        if !hopeless || (variant() == 3 && progress) {
             run.streak = 0;
             run.last = turn;
             return false;
@@ -1237,6 +1268,9 @@ impl AdvancedAi {
         cid: u32,
         pool: &[u32],
     ) -> Option<f64> {
+        if variant() == 2 {
+            return None;
+        }
         self.assault_capture_curve(g, pid, cid, pool)
             .map(|forecast| forecast.rate())
     }

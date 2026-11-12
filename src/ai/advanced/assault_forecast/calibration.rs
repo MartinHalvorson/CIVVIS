@@ -40,9 +40,18 @@ use std::time::Instant;
 const LIVE_ARMS: &str = include_str!("live_force_on_20261112.txt");
 const TARGET: Pos = (18, 8);
 const HOME: Pos = (2, 8);
-const CALIBRATION_SEEDS: u64 = 160;
-const PAIRED_SEEDS: u64 = 96;
-const PAIRED_TURNS: u32 = 20;
+const CALIBRATION_SEEDS: u64 = 1200;
+const PAIRED_SEEDS: u64 = 400;
+const PAIRED_TURNS: u32 = 30;
+/// The paired arms: the live genome alone, then with the gene as specified
+/// and in its CI variants (`super::VARIANT`).
+const ARMS: [(&str, Option<u8>); 5] = [
+    ("off", None),
+    ("on", Some(0)),
+    ("on, no stand-down", Some(1)),
+    ("on, no row ranking", Some(2)),
+    ("on, stand-down needs a stall", Some(3)),
+];
 /// Seeds whose siege journal is printed, to show the harness plays a siege.
 const TRACED: u64 = 2;
 
@@ -287,6 +296,12 @@ struct Outcome {
     /// 4 take, 5 hold.
     stage: u8,
     seconds: f64,
+    /// The gene's journal lines: go orders, held aborts, stand-downs, and
+    /// board turns whose Siege row read no capture.
+    goes: u32,
+    holds: u32,
+    stand_downs: u32,
+    zero_rows: u32,
     trace: Vec<String>,
 }
 
@@ -304,11 +319,15 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool) -> Outco
     let clock = Instant::now();
     let mut g = w.g.clone();
     let journal = Journal::recording();
-    if trace {
-        ours.attach_journal(journal.handle());
-    }
+    ours.attach_journal(journal.handle());
+    let mut cursor = 0;
     let start = g.turn;
     let mut others: Vec<AdvancedAi> = (0..g.players.len()).map(|_| AdvancedAi::new()).collect();
+    // As `ai::run_game` plays a headless world.
+    g.set_fog_memory(
+        ours.uses_player_observation() || others.iter().any(Ai::uses_player_observation),
+    );
+    g.set_war_ledger(false);
     let mut out = Outcome::default();
     let mut steps = 0;
     while g.winner.is_none() && g.turn < start + turns && steps < 64 * turns {
@@ -323,6 +342,32 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool) -> Outco
             let _ = g.apply(pid, &Action::EndTurn);
         }
         if pid == 0 {
+            let delta = journal.since(cursor);
+            cursor = delta.cursor;
+            for thought in delta.thoughts.iter().filter(|t| t.player == 0) {
+                let head = &thought.headline;
+                if head.contains("the forecast goes") {
+                    out.goes += 1;
+                } else if head.contains("the forecast holds the train") {
+                    out.holds += 1;
+                } else if head.contains("the forecast reads it hopeless") {
+                    out.stand_downs += 1;
+                } else if head.starts_with("Siege rows rank on the forecast")
+                    && thought.detail.contains(" 0.00 a turn")
+                {
+                    out.zero_rows += 1;
+                }
+                if trace
+                    && out.trace.len() < 40
+                    && (head.starts_with("Siege")
+                        || head.starts_with("Assault forecast")
+                        || head.starts_with("Grand strategy"))
+                {
+                    let detail: String = thought.detail.chars().take(160).collect();
+                    out.trace
+                        .push(format!("t{} {} | {}", thought.turn, head, detail));
+                }
+            }
             if let Some(siege) = ours.sieges.get(&w.cid) {
                 out.stage = out.stage.max(stage_rank(siege.stage));
             }
@@ -345,21 +390,6 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool) -> Outco
         .filter(|uid| g.units.get(uid).is_none_or(|unit| unit.owner != 0))
         .count();
     out.seconds = clock.elapsed().as_secs_f64();
-    if trace {
-        for thought in journal.since(0).thoughts {
-            let head = &thought.headline;
-            if thought.player == 0
-                && (head.starts_with("Siege")
-                    || head.starts_with("Assault forecast")
-                    || head.starts_with("Grand strategy"))
-            {
-                let detail: String = thought.detail.chars().take(160).collect();
-                out.trace
-                    .push(format!("t{} {} | {}", thought.turn, head, detail));
-            }
-        }
-        out.trace.truncate(40);
-    }
     out
 }
 
@@ -375,8 +405,8 @@ struct CalibrationRow {
 struct PairRow {
     seed: u64,
     label: String,
-    off: Outcome,
-    on: Outcome,
+    /// One outcome per [`ARMS`] entry.
+    arms: Vec<Outcome>,
 }
 
 enum Job {
@@ -411,13 +441,20 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
         Job::Pair(seed) => {
             let w = world(*seed);
             let trace = *seed < 100_000 + TRACED;
-            let off = play_world(&w, live_seat(tags, false), PAIRED_TURNS, trace);
-            let on = play_world(&w, live_seat(tags, true), PAIRED_TURNS, trace);
+            let arms = ARMS
+                .iter()
+                .map(|(_, variant)| {
+                    super::VARIANT.with(|v| v.set(variant.unwrap_or(0)));
+                    let outcome =
+                        play_world(&w, live_seat(tags, variant.is_some()), PAIRED_TURNS, trace);
+                    super::VARIANT.with(|v| v.set(0));
+                    outcome
+                })
+                .collect();
             Row::Paired(PairRow {
                 seed: *seed,
                 label: w.label.clone(),
-                off,
-                on,
+                arms,
             })
         }
     }
@@ -439,6 +476,12 @@ fn paired(values: &[f64]) -> (f64, f64) {
     (m, (var / n).sqrt())
 }
 
+fn taken_by(outcome: &Outcome, k: usize) -> f64 {
+    f64::from(u8::from(
+        outcome.captured.is_some_and(|turn| turn as usize <= k),
+    ))
+}
+
 fn calibration_table(out: &mut String, rows: &[&CalibrationRow], k: usize) {
     let edges = [0.0, 0.2, 0.4, 0.6, 0.8, 1.000_001];
     let _ = writeln!(
@@ -455,11 +498,7 @@ fn calibration_table(out: &mut String, rows: &[&CalibrationRow], k: usize) {
             })
             .collect();
         let (predicted, n) = mean(inside.iter().map(|row| f64::from(row.forecast.within(k))));
-        let (realized, _) = mean(inside.iter().map(|row| {
-            f64::from(u8::from(
-                row.outcome.captured.is_some_and(|t| t as usize <= k),
-            ))
-        }));
+        let (realized, _) = mean(inside.iter().map(|row| taken_by(&row.outcome, k)));
         let (invested, _) = mean(
             inside
                 .iter()
@@ -472,26 +511,16 @@ fn calibration_table(out: &mut String, rows: &[&CalibrationRow], k: usize) {
             edges[bin + 1].min(1.0)
         );
     }
-    let brier = mean(rows.iter().map(|row| {
-        let p = f64::from(row.forecast.within(k));
-        let y = f64::from(u8::from(
-            row.outcome.captured.is_some_and(|t| t as usize <= k),
-        ));
-        (p - y).powi(2)
-    }))
+    let brier = mean(
+        rows.iter()
+            .map(|row| (f64::from(row.forecast.within(k)) - taken_by(&row.outcome, k)).powi(2)),
+    )
     .0;
-    let base = mean(rows.iter().map(|row| {
-        f64::from(u8::from(
-            row.outcome.captured.is_some_and(|t| t as usize <= k),
-        ))
-    }))
-    .0;
-    let climatology = mean(rows.iter().map(|row| {
-        let y = f64::from(u8::from(
-            row.outcome.captured.is_some_and(|t| t as usize <= k),
-        ));
-        (base - y).powi(2)
-    }))
+    let base = mean(rows.iter().map(|row| taken_by(&row.outcome, k))).0;
+    let climatology = mean(
+        rows.iter()
+            .map(|row| (base - taken_by(&row.outcome, k)).powi(2)),
+    )
     .0;
     let _ = writeln!(
         out,
@@ -512,7 +541,7 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
     let _ = writeln!(
         out,
         "## Calibration: {} posed sieges, {} left out for peace; forecast {ms:.0} ms mean, {max_ms:.0} ms max \
-         (with the short-of variants); {play_s:.1} s a siege played\n",
+         (with the short-of variants); {play_s:.2} s a siege played\n",
         calibrated.len(),
         calibrated.len() - kept.len()
     );
@@ -530,12 +559,26 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
     for walls in [0, 100, 200, 400] {
         let inside: Vec<&&CalibrationRow> = kept.iter().filter(|row| row.walls == walls).collect();
         let (p, n) = mean(inside.iter().map(|row| f64::from(row.forecast.p())));
-        let (r, _) = mean(
-            inside
-                .iter()
-                .map(|row| f64::from(u8::from(row.outcome.captured.is_some()))),
-        );
+        let (r, _) = mean(inside.iter().map(|row| taken_by(&row.outcome, HORIZON)));
         let _ = writeln!(out, "| {walls} | {n} | {p:.2} | {r:.2} |");
+    }
+    let _ = writeln!(
+        out,
+        "\n| stock train reached | sieges | mean P(12) | realized by 12 |"
+    );
+    let _ = writeln!(out, "|---|---|---|---|");
+    for (name, test) in [
+        ("stage only", 1u8..=1),
+        ("invest or further", 2u8..=5),
+        ("no siege", 0u8..=0),
+    ] {
+        let inside: Vec<&&CalibrationRow> = kept
+            .iter()
+            .filter(|row| test.contains(&row.outcome.stage))
+            .collect();
+        let (p, n) = mean(inside.iter().map(|row| f64::from(row.forecast.p())));
+        let (r, _) = mean(inside.iter().map(|row| taken_by(&row.outcome, HORIZON)));
+        let _ = writeln!(out, "| {name} | {n} | {p:.2} | {r:.2} |");
     }
     let mut short: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
     for row in &kept {
@@ -547,7 +590,7 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
     }
     let _ = writeln!(
         out,
-        "\nShort of (sieges, of them taken): {}\n",
+        "\nShort of (sieges, of them taken within {HORIZON}): {}\n",
         short
             .iter()
             .map(|(k, (n, t))| format!("{k} {n} ({t})"))
@@ -557,75 +600,60 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
 
     let kept_pairs: Vec<&PairRow> = pairs
         .iter()
-        .filter(|row| !row.off.peace && !row.on.peace)
+        .filter(|row| row.arms.iter().all(|arm| !arm.peace))
         .collect();
-    let taken = |o: &Outcome| u32::from(o.captured.is_some());
-    let off_taken: u32 = kept_pairs.iter().map(|row| taken(&row.off)).sum();
-    let on_taken: u32 = kept_pairs.iter().map(|row| taken(&row.on)).sum();
-    let on_only = kept_pairs
-        .iter()
-        .filter(|row| row.on.captured.is_some() && row.off.captured.is_none())
-        .count();
-    let off_only = kept_pairs
-        .iter()
-        .filter(|row| row.off.captured.is_some() && row.on.captured.is_none())
-        .count();
-    let lost: Vec<f64> = kept_pairs
-        .iter()
-        .map(|row| row.on.lost as f64 - row.off.lost as f64)
-        .collect();
-    let (lost_d, lost_se) = paired(&lost);
-    let (off_lost, _) = mean(kept_pairs.iter().map(|row| row.off.lost as f64));
-    let (on_lost, _) = mean(kept_pairs.iter().map(|row| row.on.lost as f64));
-    let (off_turn, off_n) = mean(
-        kept_pairs
-            .iter()
-            .filter_map(|row| row.off.captured.map(f64::from)),
-    );
-    let (on_turn, on_n) = mean(
-        kept_pairs
-            .iter()
-            .filter_map(|row| row.on.captured.map(f64::from)),
-    );
-    let both: Vec<f64> = kept_pairs
-        .iter()
-        .filter_map(|row| Some(f64::from(row.on.captured?) - f64::from(row.off.captured?)))
-        .collect();
-    let (both_d, both_se) = paired(&both);
-    let invested = |o: &Outcome| u32::from(o.stage >= 2);
-    let (off_s, _) = mean(kept_pairs.iter().map(|row| row.off.seconds));
-    let (on_s, _) = mean(kept_pairs.iter().map(|row| row.on.seconds));
     let _ = writeln!(
         out,
-        "## Paired: siege-goes-on-the-forecast on vs off, {} posed sieges x {PAIRED_TURNS} turns ({} left out for peace)\n",
+        "## Paired: the live genome with and without siege-goes-on-the-forecast, {} posed sieges x {PAIRED_TURNS} turns ({} left out for peace)\n",
         pairs.len(),
         pairs.len() - kept_pairs.len()
     );
-    let _ = writeln!(out, "| | off | on |");
-    let _ = writeln!(out, "|---|---|---|");
-    let _ = writeln!(out, "| cities taken | {off_taken} | {on_taken} |");
     let _ = writeln!(
         out,
-        "| sieges invested | {} | {} |",
-        kept_pairs.iter().map(|row| invested(&row.off)).sum::<u32>(),
-        kept_pairs.iter().map(|row| invested(&row.on)).sum::<u32>()
+        "| arm | cities taken | gained / lost vs off | invested | force units lost (vs off) | turns to capture | go orders | held aborts | stand-downs | zero-rate row turns | s a siege |"
     );
-    let _ = writeln!(
-        out,
-        "| force units lost, mean | {off_lost:.2} | {on_lost:.2} |"
-    );
-    let _ = writeln!(
-        out,
-        "| turns to capture, mean over captures | {off_turn:.1} ({off_n}) | {on_turn:.1} ({on_n}) |"
-    );
-    let _ = writeln!(out, "| seconds a siege | {off_s:.1} | {on_s:.1} |");
-    let _ = writeln!(
-        out,
-        "\nDiscordant pairs: taken only with the gene {on_only}, only without {off_only}. \
-         Units lost on - off: {lost_d:+.2} +/- {lost_se:.2} a siege. Turns to capture where both took it ({}): {both_d:+.2} +/- {both_se:.2}.\n",
-        both.len()
-    );
-    let _ = writeln!(out, "## Calibration rows\n");
+    let _ = writeln!(out, "|---|---|---|---|---|---|---|---|---|---|---|");
+    for (a, (name, _)) in ARMS.iter().enumerate() {
+        let taken = kept_pairs
+            .iter()
+            .filter(|row| row.arms[a].captured.is_some())
+            .count();
+        let gained = kept_pairs
+            .iter()
+            .filter(|row| row.arms[a].captured.is_some() && row.arms[0].captured.is_none())
+            .count();
+        let lost_caps = kept_pairs
+            .iter()
+            .filter(|row| row.arms[a].captured.is_none() && row.arms[0].captured.is_some())
+            .count();
+        let invested = kept_pairs
+            .iter()
+            .filter(|row| row.arms[a].stage >= 2)
+            .count();
+        let (lost, _) = mean(kept_pairs.iter().map(|row| row.arms[a].lost as f64));
+        let diffs: Vec<f64> = kept_pairs
+            .iter()
+            .map(|row| row.arms[a].lost as f64 - row.arms[0].lost as f64)
+            .collect();
+        let (lost_d, lost_se) = paired(&diffs);
+        let (turn, captures) = mean(
+            kept_pairs
+                .iter()
+                .filter_map(|row| row.arms[a].captured.map(f64::from)),
+        );
+        let sum =
+            |f: fn(&Outcome) -> u32| -> u32 { kept_pairs.iter().map(|row| f(&row.arms[a])).sum() };
+        let (secs, _) = mean(kept_pairs.iter().map(|row| row.arms[a].seconds));
+        let _ = writeln!(
+            out,
+            "| {name} | {taken} | +{gained} / -{lost_caps} | {invested} | {lost:.2} ({lost_d:+.2} +/- {lost_se:.2}) | {turn:.1} ({captures}) | {} | {} | {} | {} | {secs:.2} |",
+            sum(|o| o.goes),
+            sum(|o| o.holds),
+            sum(|o| o.stand_downs),
+            sum(|o| o.zero_rows)
+        );
+    }
+    let _ = writeln!(out, "\n## Calibration rows\n");
     for row in calibrated {
         let _ = writeln!(
             out,
@@ -643,20 +671,29 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
             row.label
         );
     }
-    let _ = writeln!(out, "\n## Paired rows\n");
+    let _ = writeln!(
+        out,
+        "\n## Paired rows (taken turn / units lost / stage, by arm)\n"
+    );
     for row in pairs {
+        let arms: Vec<String> = row
+            .arms
+            .iter()
+            .map(|o| {
+                format!(
+                    "{}/{}/{}{}",
+                    o.captured.map_or("-".to_string(), |t| t.to_string()),
+                    o.lost,
+                    o.stage,
+                    if o.peace { " peace" } else { "" }
+                )
+            })
+            .collect();
         let _ = writeln!(
             out,
-            "pair {} | off taken {:?} lost {} stage {} peace {} | on taken {:?} lost {} stage {} peace {} | {}",
+            "pair {} | {} | {}",
             row.seed,
-            row.off.captured,
-            row.off.lost,
-            row.off.stage,
-            row.off.peace,
-            row.on.captured,
-            row.on.lost,
-            row.on.stage,
-            row.on.peace,
+            arms.join(" | "),
             row.label
         );
     }
@@ -670,14 +707,12 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
             let _ = writeln!(out, "  {line}");
         }
     }
-    for row in pairs.iter().filter(|row| !row.on.trace.is_empty()) {
-        let _ = writeln!(out, "pair {} off: {}", row.seed, row.label);
-        for line in &row.off.trace {
-            let _ = writeln!(out, "  {line}");
-        }
-        let _ = writeln!(out, "pair {} on:", row.seed);
-        for line in &row.on.trace {
-            let _ = writeln!(out, "  {line}");
+    for row in pairs.iter().filter(|row| !row.arms[1].trace.is_empty()) {
+        for (a, (name, _)) in ARMS.iter().enumerate().take(2) {
+            let _ = writeln!(out, "pair {} {name}: {}", row.seed, row.label);
+            for line in &row.arms[a].trace {
+                let _ = writeln!(out, "  {line}");
+            }
         }
     }
     out
