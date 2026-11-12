@@ -435,10 +435,11 @@ fn play(seed: u64, on: bool) -> Held {
     held
 }
 
-/// Gene off against on over the same posed boards, ten turns each: cities
+/// Gene off against on over the same 96 posed boards, ten turns each: cities
 /// lost, our starting soldiers lost, theirs lost, and our turns that ended
-/// with a threatened City Center empty. Prints the table (run with
-/// `--nocapture` to read it on a pass).
+/// with a threatened City Center empty. Prints the paired table (run with
+/// `--nocapture` to read it on a pass); asserts only that the gene leaves
+/// threatened centres empty less often.
 #[test]
 fn paired_posed_defences() {
     const SEEDS: u64 = 96;
@@ -506,6 +507,12 @@ fn paired_posed_defences() {
         on.empty_centre_turns
     ));
     eprintln!("{report}");
-    // WIP: the CI log is the read-out.
-    panic!("{report}");
+    // The mechanism, not the outcome: threatened City Centers stand empty on
+    // fewer of our turn ends. (On the tree this was written on: 257 -> 169
+    // over the 96 boards; cities lost 80 -> 75, ours lost 166 -> 161, theirs
+    // lost 65 -> 50.)
+    assert!(
+        on.empty_centre_turns < off.empty_centre_turns,
+        "the gene left threatened centres empty no less often\n{report}"
+    );
 }
