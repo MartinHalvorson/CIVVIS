@@ -298,6 +298,9 @@ pub(super) struct UnitOrderBook {
     /// Only a rehearsal clone watches.
     watching: bool,
     crossings: Vec<(u32, unit_owner::Owner, OrderStep)>,
+    /// The last turn the battle plan credited an order: its claim set holds
+    /// the previous turn's units until the plan runs again.
+    plan_turn: Option<u32>,
 }
 
 impl UnitOrderBook {
@@ -400,6 +403,16 @@ impl AdvancedAi {
             return;
         };
         let book = &mut self.unit_orders;
+        if matches!(
+            step,
+            OrderStep::Withdraw
+                | OrderStep::BattleSolver
+                | OrderStep::BattlePlanner
+                | OrderStep::Rotation
+                | OrderStep::Positions
+        ) {
+            book.plan_turn = Some(g.turn);
+        }
         // A shorter log is another game (the live mirror rebuilds it every
         // frame): nothing in it is ours to credit.
         let start = book.cursor.min(g.log.len());
@@ -491,6 +504,14 @@ impl AdvancedAi {
 
     pub(super) fn unit_orders_named(&self) -> Option<OrderStep> {
         self.unit_orders.naming
+    }
+
+    /// Whether `battle_planner_ordered` is this turn's plan rather than the
+    /// last one's: the plan clears and refills it when it runs.
+    pub(super) fn battle_plan_is_current(&self, turn: u32) -> bool {
+        self.unit_orders
+            .plan_turn
+            .is_none_or(|planned| planned >= turn)
     }
 
     /// The stand-down hold (`BasicAi::hold_stood_down_unit`), credited.

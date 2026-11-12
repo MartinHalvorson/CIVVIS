@@ -33,7 +33,8 @@
 //! 6. `siege_member` — in a Domination siege force that is staging or
 //!    investing (`active_siege_member`, `staging_siege_member`).
 //! 7. `battle_plan` — the battle plan or solver ordered it this turn
-//!    (`battle_planner_ordered`).
+//!    (`battle_planner_ordered`; before this turn's plan runs the set still
+//!    holds last turn's units, which no longer count).
 //! 8. `recovering` — out to heal (`battle_planner_recovering`, the base
 //!    controller's `recovering_units`).
 //! 9. `wonder_clearance` — clearing a wonder site for a Settler.
@@ -369,7 +370,9 @@ impl AdvancedAi {
             Owner::SiegeMember => {
                 self.active_siege_member(g, pid, uid) || self.staging_siege_member(g, pid, uid)
             }
-            Owner::BattlePlan => self.battle_planner_claims(uid),
+            Owner::BattlePlan => {
+                self.battle_planner_claims(uid) && self.battle_plan_is_current(g.turn)
+            }
             Owner::Recovering => {
                 self.battle_planner_recovering.contains(&uid)
                     || self.base.recovering_units.contains(&uid)
@@ -457,7 +460,7 @@ impl AdvancedAi {
                    "Kept {kind} {uid} for its {}: `{}` would have ordered it",
                    owner.as_str(), crossing.as_str();
                    "one-owner-per-unit: a step that would cross a claim does not order the unit");
-            if let Some(unit) = g.units.get_mut(uid) {
+            if let Some(unit) = g.units.get_mut(uid).filter(|unit| unit.owner == pid) {
                 held.push((*uid, unit.moves_left, unit.attacks_left));
                 unit.moves_left = 0.0;
                 unit.attacks_left = 0;
