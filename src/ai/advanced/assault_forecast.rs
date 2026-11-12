@@ -775,6 +775,8 @@ fn pose(
         // A city with no soldier left beside it is still to be walked to.
         march_on_objective: true,
         melee_breach_share: knobs().melee_breach_share,
+        // No host traits: the forecast's enemy is the solver's greedy one.
+        host: Vec::new(),
     };
     let state = State::new(&board, units, city_state);
     let member_rounds = &enter[..member_count];

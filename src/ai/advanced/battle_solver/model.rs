@@ -7,6 +7,7 @@
 //! to the engine on real positions so the two cannot drift.
 
 use super::dice::{effective_strength, mean_damage};
+use super::host_enemy::{self, HostClass, Owner, Situation, StrikeFeatures, TargetFeatures};
 
 pub const NO_TILE: u16 = u16::MAX;
 pub const NO_UNIT: u16 = u16::MAX;
@@ -120,6 +121,10 @@ pub struct Board {
     /// breach (`siege_train::MELEE_WALL_FRACTION`). Zero, as every solver
     /// board has it, lets them swing at any wall.
     pub melee_breach_share: f32,
+    /// Each unit's class and owner as `host_enemy` reads them. Empty on a
+    /// board that does not carry them: the class is then read from the
+    /// flags, and the owner is a major.
+    pub host: Vec<(HostClass, Owner)>,
 }
 
 impl Board {
@@ -261,6 +266,10 @@ pub struct Weights {
     /// over 115 live Deity games it struck well under half the units it
     /// could reach.
     pub enemy_aggression: f32,
+    /// Gene `solver-plays-the-host`: the enemy strikes, picks its target and
+    /// closes by the tables fitted to the live host (`host_enemy`), not by
+    /// the greedy pick and `enemy_aggression`.
+    pub host_enemy: bool,
 }
 
 impl Default for Weights {
@@ -276,6 +285,7 @@ impl Default for Weights {
             siege_wall: 0.4,
             enemy_aggression: 0.5,
             tempo: 0.4,
+            host_enemy: false,
         }
     }
 }
@@ -300,6 +310,9 @@ pub struct Sim<'b> {
     order: Vec<u16>,
     /// Draws made by each unit so far: its own stream of dice.
     draws: Vec<u32>,
+    /// Scratch for `act_as_host`: each unit of ours in reach, the stand it
+    /// is struck from, and what the host's choice reads of it.
+    host_targets: Vec<(u16, u16, TargetFeatures)>,
 }
 
 impl<'b> Sim<'b> {
@@ -321,6 +334,7 @@ impl<'b> Sim<'b> {
             reach: Vec::with_capacity(b.tiles),
             order: Vec::with_capacity(s.units.len()),
             draws: vec![0; s.units.len()],
+            host_targets: Vec::new(),
         }
     }
 
@@ -808,6 +822,10 @@ impl<'b> Sim<'b> {
         if !me.alive() || me.mp == 0 {
             return;
         }
+        if me.side == THEIRS && self.w.host_enemy {
+            self.act_as_host(i);
+            return;
+        }
         self.flood(i);
         let side = me.side;
         let retreat_hp = if side == OURS {
@@ -1040,6 +1058,271 @@ impl<'b> Sim<'b> {
             }
         }
         let _ = dist;
+        if pick != me.tile {
+            self.play_line(
+                i,
+                Line {
+                    tile: pick,
+                    aim: Aim::None,
+                },
+            );
+        }
+    }
+
+    /// A uniform draw on `[0, 1)` from the unit's own dice.
+    #[inline]
+    fn uniform(&mut self, unit: usize) -> f32 {
+        ((self.roll(unit) - 0.8) / 0.4).clamp(0.0, 1.0)
+    }
+
+    /// Unit `i`'s class and owner as `host_enemy` reads them.
+    fn host_traits(&self, i: usize) -> (HostClass, Owner) {
+        if let Some(traits) = self.b.host.get(i) {
+            return *traits;
+        }
+        let unit = &self.s.units[i];
+        let class = if unit.has(F_SIEGE) {
+            HostClass::Siege
+        } else if unit.has(F_RANGED) {
+            HostClass::Ranged
+        } else {
+            HostClass::Melee
+        };
+        (class, Owner::Major)
+    }
+
+    /// Where unit `i` strikes unit `j` from this turn, if it can. A unit
+    /// that can strike from where it stands does (the host's habit, and what
+    /// the fit's "no move needed" reads); otherwise the stock enemy's stand
+    /// (`act`): the nearest tile in range with movement left for a shooter,
+    /// the free stand beside the target with the best cover for melee.
+    /// Reads `flood(i)`.
+    fn host_stand(&self, i: usize, j: usize) -> Option<u16> {
+        let me = self.s.units[i];
+        let other = self.s.units[j];
+        if me.shoots() {
+            if self.b.d(me.tile, other.tile) as i32 <= me.range as i32 {
+                return Some(me.tile);
+            }
+            if !me.fires_after_moving() {
+                return None;
+            }
+            return self
+                .reach
+                .iter()
+                .filter(|(t, kept)| {
+                    *kept > 0 && (self.b.d(*t, other.tile) as i32) <= me.range as i32
+                })
+                .min_by_key(|(t, _)| self.b.d(*t, me.tile))
+                .map(|(t, _)| *t);
+        }
+        if !me.has(F_MELEE) {
+            return None;
+        }
+        if self.b.d(me.tile, other.tile) == 1 {
+            return Some(me.tile);
+        }
+        let mut stand: Option<(u16, f32)> = None;
+        for t in self.b.nbrs[other.tile as usize] {
+            if t == NO_TILE || (self.s.occ[t as usize] != NO_UNIT && t != me.tile) {
+                continue;
+            }
+            let Some(kept) = self.reachable_with(t) else {
+                continue;
+            };
+            if kept == 0 && t != me.tile {
+                continue;
+            }
+            let score = self.b.defense[t as usize];
+            if stand.is_none_or(|(_, s)| score > s) {
+                stand = Some((t, score));
+            }
+        }
+        stand.map(|(t, _)| t)
+    }
+
+    /// The stock enemy's blow at a city of ours (`act`'s city half), for a
+    /// unit with no unit of ours in reach.
+    fn host_city_blow(&self, i: usize) -> Option<(u16, Aim)> {
+        let me = self.s.units[i];
+        if me.attacks == 0 {
+            return None;
+        }
+        let cities = self.b.cities.len();
+        let mut best_value = -12.0f32;
+        let mut best = None;
+        for c in 0..cities {
+            if self.s.city_side[c] == me.side {
+                continue;
+            }
+            let tile = self.b.cities[c].tile;
+            let range = self.b.d(me.tile, tile);
+            let ranged = self.b.city_ranged[i * cities + c];
+            let melee = self.b.city_melee[i * cities + c];
+            if me.shoots() && (range as i32) <= me.range as i32 {
+                let dealt = mean_damage(
+                    effective_strength(ranged, me.hp as i32),
+                    self.city_strength(c),
+                );
+                let v = dealt * 0.6 + self.city_pull(c, me.side);
+                if v > best_value {
+                    best_value = v;
+                    best = Some((me.tile, Aim::City(c as u8)));
+                }
+            } else if me.has(F_MELEE) {
+                let att = effective_strength(melee, me.hp as i32);
+                let taken = mean_damage(self.city_strength(c), att);
+                if (self.s.city_wall[c] > 0 && self.s.city_hp[c] > 30 && taken * 2.0 > me.hp as f32)
+                    || range > 3
+                {
+                    continue;
+                }
+                let stand = self.b.nbrs[tile as usize].into_iter().find(|t| {
+                    *t != NO_TILE
+                        && (self.s.occ[*t as usize] == NO_UNIT || *t == me.tile)
+                        && self
+                            .reachable_with(*t)
+                            .is_some_and(|k| k > 0 || *t == me.tile)
+                });
+                let Some(stand) = stand else { continue };
+                let dealt = mean_damage(att, self.city_strength(c));
+                let v = (dealt - taken) * 0.5 + self.city_pull(c, me.side);
+                if v > best_value {
+                    best_value = v;
+                    best = Some((stand, Aim::City(c as u8)));
+                }
+            }
+        }
+        best
+    }
+
+    /// The host's choice among the units in reach: a draw on the fitted
+    /// weights (`host_enemy::target_utility`), not the best trade.
+    fn host_pick(&mut self, i: usize, targets: &[(u16, u16, TargetFeatures)]) -> usize {
+        if targets.len() < 2 {
+            return 0;
+        }
+        let utility: Vec<f32> = targets
+            .iter()
+            .map(|t| host_enemy::target_utility(&t.2))
+            .collect();
+        let top = utility.iter().copied().fold(f32::MIN, f32::max);
+        let total: f32 = utility.iter().map(|u| (u - top).exp()).sum();
+        let mut left = self.uniform(i) * total;
+        for (k, u) in utility.iter().enumerate() {
+            left -= (u - top).exp();
+            if left < 0.0 {
+                return k;
+            }
+        }
+        targets.len() - 1
+    }
+
+    /// The enemy's turn as the live host plays it (gene
+    /// `solver-plays-the-host`, tables in `host_enemy`). With a unit of ours
+    /// in reach it strikes at the fitted chance and draws its target on the
+    /// fitted weights; with none, a city of ours in reach is struck at the
+    /// stock rate (the fit has no city model). A unit that struck nothing
+    /// closes on us at the fitted chance and otherwise holds. There is no
+    /// wounded retreat: the host's units at 25 hp or less that struck nothing
+    /// stepped back on about one turn in five and held on two in five.
+    fn act_as_host(&mut self, i: usize) {
+        let me = self.s.units[i];
+        self.flood(i);
+        let (class, owner) = self.host_traits(i);
+        let mut targets = std::mem::take(&mut self.host_targets);
+        targets.clear();
+        let mut edge = f32::MIN;
+        if me.attacks > 0 {
+            for j in 0..self.s.units.len() {
+                let other = self.s.units[j];
+                if !other.alive() || other.side == me.side || self.garrisoned(&other) {
+                    continue;
+                }
+                let distance = self.b.d(me.tile, other.tile);
+                if distance > 8 {
+                    continue;
+                }
+                let Some(stand) = self.host_stand(i, j) else {
+                    continue;
+                };
+                let (att, def) = if me.shoots() {
+                    self.ranged_strengths(i, j)
+                } else {
+                    self.melee_strengths(i, j)
+                };
+                edge = edge.max(att - def);
+                targets.push((
+                    j as u16,
+                    stand,
+                    TargetFeatures {
+                        hp: other.hp,
+                        dealt: mean_damage(att, def),
+                        shooter: other.shoots(),
+                        distance,
+                        still: stand == me.tile,
+                    },
+                ));
+            }
+        }
+        let situation = if targets.is_empty() {
+            if let Some((stand, aim)) = self.host_city_blow(i) {
+                if self.uniform(i) < self.w.enemy_aggression {
+                    self.host_targets = targets;
+                    self.play_line(i, Line { tile: stand, aim });
+                    return;
+                }
+            }
+            Situation::Gap(self.enemy_near(me.side, me.tile).1)
+        } else {
+            let home = self.b.cities.iter().enumerate().any(|(c, city)| {
+                self.s.city_side[c] == me.side && self.b.d(me.tile, city.tile) <= 1
+            });
+            let features = StrikeFeatures {
+                class,
+                owner,
+                hp: me.hp,
+                home,
+                edge,
+                targets: targets.len(),
+                still: targets.iter().any(|t| t.2.still),
+            };
+            if self.uniform(i) < host_enemy::strike_probability(&features) {
+                let (j, stand, _) = targets[self.host_pick(i, &targets)];
+                self.host_targets = targets;
+                self.play_line(
+                    i,
+                    Line {
+                        tile: stand,
+                        aim: Aim::Unit(j),
+                    },
+                );
+                return;
+            }
+            Situation::Declined
+        };
+        self.host_targets = targets;
+        if self.uniform(i) >= host_enemy::advance_probability(me.hp, situation) {
+            return;
+        }
+        // Close on us: the stock enemy's step toward the nearest unit of
+        // ours or the city it holds.
+        let (near, _) = self.enemy_near(me.side, me.tile);
+        if near == NO_TILE {
+            return;
+        }
+        let goal = self.goal(me.side, near);
+        let wanted = if me.shoots() { me.range as f32 } else { 1.0 };
+        let mut pick = me.tile;
+        let mut pick_score = f32::MIN;
+        for &(t, _) in &self.reach {
+            let score =
+                -(self.b.d(t, goal) as f32 - wanted).abs() + self.b.defense[t as usize] * 0.05;
+            if score > pick_score {
+                pick_score = score;
+                pick = t;
+            }
+        }
         if pick != me.tile {
             self.play_line(
                 i,
