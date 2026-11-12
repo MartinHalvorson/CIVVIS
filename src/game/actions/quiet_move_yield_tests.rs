@@ -212,7 +212,10 @@ fn other_moving_land_classes_reuse_the_same_guarded_path() {
     let (template, _, _, _, _) = fixture();
     let mut representatives = BTreeMap::new();
     for (kind, spec) in &template.rules.units {
-        if spec.class != "military" && spec.moves > 0.0 && spec.domain.as_deref() == Some("land") {
+        if spec.class != "military"
+            && spec.moves > 0.0
+            && spec.domain.as_deref().unwrap_or("land") == "land"
+        {
             representatives.entry(spec.class.clone()).or_insert(*kind);
         }
     }
