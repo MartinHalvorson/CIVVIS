@@ -592,7 +592,7 @@ impl UnitRisk {
 }
 
 /// A unit's strength as a fighter: the better of its melee and ranged.
-fn fighting_strength(g: &Game, uid: u32) -> f64 {
+pub(super) fn fighting_strength(g: &Game, uid: u32) -> f64 {
     let unit = &g.units[&uid];
     let spec = &g.rules.units[unit.kind];
     let melee = g.unit_strength(unit, false);

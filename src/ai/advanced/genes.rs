@@ -5878,6 +5878,13 @@ pub const GENES: &[Gene] = &[
     // the unit bill jumped. `buy_gold_unit` tests each city's own quote
     // against the reserve. Opt-in; see `BasicAi::buy_gold_unit`.
     Gene { tag: "gold-unit-buys-read-the-host-quote", field: "gold_unit_buys_read_the_host_quote", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_unit_buys_read_the_host_quote, disable: AdvancedAi::disable_gold_unit_buys_read_the_host_quote },
+    // PR #5211 (24 paired whole worlds a shape): hopeless sieges kill their
+    // units (138 of 168 read deaths under 0.1), and standing them down does
+    // not save them, because nothing tells them where to be. At war with a
+    // major, no siege worth pressing and outclassed in the field, the army
+    // goes home: empty centres first, then tiles no visible enemy reaches.
+    // Opt-in; see `advanced/hopeless_war_brings_the_army_home.rs`.
+    Gene { tag: "hopeless-war-brings-the-army-home", field: "hopeless_war_brings_the_army_home", kind: Kind::OptIn, enable: AdvancedAi::enable_hopeless_war_brings_the_army_home, disable: AdvancedAi::disable_hopeless_war_brings_the_army_home },
     // ---- append: l-o ------------------------------------------------
     // Native Deity Macedon 100029Z: model-priced horse/iron barter was
     // declined at51/55 and refused as barter_short at61. Ask the host for

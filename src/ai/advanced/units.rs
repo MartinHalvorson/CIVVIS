@@ -1195,6 +1195,14 @@ impl AdvancedAi {
             self.ordering(OrderStep::DefendHold);
             return acted;
         }
+        // `hopeless-war-brings-the-army-home`: a soldier with a home walks
+        // there, strikes only what the doctrine allows, and holds. `None`
+        // with the gene off, out of force, or without a home. See
+        // `advanced/hopeless_war_brings_the_army_home.rs`.
+        if let Some(acted) = self.army_home_step(g, pid, uid) {
+            self.ordering(OrderStep::ArmyHome);
+            return acted;
+        }
         // `centre-keeps-its-garrison`: a threatened city's garrison keeps
         // its City Center, and an empty one takes a soldier in reach. `None`
         // with the gene off. See `advanced/centre_keeps_its_garrison.rs`.
@@ -2806,6 +2814,16 @@ impl AdvancedAi {
             self.owned_pass(g, pid, OrderStep::DefendHold, |ai, g| {
                 ai.hold_the_cities(g, pid, &claimed)
             });
+        }
+        // `hopeless-war-brings-the-army-home`: in a war the field cannot
+        // win, every soldier nobody else holds gets a home, drawn after the
+        // hold's posts. Nothing with the gene off. See
+        // `advanced/hopeless_war_brings_the_army_home.rs`.
+        if self.hopeless_war_brings_the_army_home {
+            let mut claimed = withdrawn.clone();
+            claimed.extend(air_assault_units.iter().copied());
+            claimed.extend(opening_recon_warrior);
+            self.plan_army_home(g, pid, &claimed);
         }
         let mut ids = g.player_unit_ids(pid);
         ids.retain(|uid| {

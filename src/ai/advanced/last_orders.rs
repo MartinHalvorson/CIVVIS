@@ -88,6 +88,9 @@ pub enum OrderStep {
     /// `defend-force-holds-the-city`: a held city's posts and the blows
     /// struck from them.
     DefendHold,
+    /// `hopeless-war-brings-the-army-home`: a soldier sent home in a war
+    /// the field cannot win.
+    ArmyHome,
     Staging,
     Improver,
     Camp,
@@ -104,7 +107,7 @@ pub enum OrderStep {
 
 impl OrderStep {
     /// Every step, in the order the census prints them.
-    pub const ALL: [OrderStep; 48] = [
+    pub const ALL: [OrderStep; 49] = [
         OrderStep::Other,
         OrderStep::Unordered,
         OrderStep::TurnStart,
@@ -141,6 +144,7 @@ impl OrderStep {
         OrderStep::Garrison,
         OrderStep::CentreGarrison,
         OrderStep::DefendHold,
+        OrderStep::ArmyHome,
         OrderStep::Staging,
         OrderStep::Improver,
         OrderStep::Camp,
@@ -194,6 +198,7 @@ impl OrderStep {
             OrderStep::Garrison => "garrison",
             OrderStep::CentreGarrison => "centre_garrison",
             OrderStep::DefendHold => "defend_hold",
+            OrderStep::ArmyHome => "army_home",
             OrderStep::Staging => "staging",
             OrderStep::Improver => "improver",
             OrderStep::Camp => "camp",

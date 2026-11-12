@@ -8162,6 +8162,15 @@ pub struct AdvancedAi {
     /// or offensive bodies for a target whose walls nothing it can field
     /// will breach. See `advanced/hopeless_army_yields_the_queue.rs`. Opt-in.
     hopeless_army_yields_the_queue: bool,
+    /// `hopeless-war-brings-the-army-home`: at war with a major, with no
+    /// siege worth pressing and outclassed in the field, every land soldier
+    /// nobody else holds goes home (an empty centre, else a tile no visible
+    /// enemy reaches near the front cities) and holds there. See
+    /// `advanced/hopeless_war_brings_the_army_home.rs`. Opt-in.
+    hopeless_war_brings_the_army_home: bool,
+    /// `hopeless-war-brings-the-army-home`: the hysteresis and this turn's
+    /// homes. Empty with the gene off.
+    hopeless_war_home: hopeless_war_brings_the_army_home::ArmyHome,
     // ---- append: l-o ------------------------------------------------
     /// Ask the host for a cash price for a native land upgrade material bill.
     /// Opt-in; see `advanced/army_upgrade_materials.rs`.
@@ -11784,6 +11793,9 @@ mod holy_city_guard;
 /// `hopeless-army-yields-the-queue`: no soldiers for walls nothing breaches.
 /// See `advanced/hopeless_army_yields_the_queue.rs`.
 mod hopeless_army_yields_the_queue;
+/// `hopeless-war-brings-the-army-home`: see
+/// `advanced/hopeless_war_brings_the_army_home.rs`.
+mod hopeless_war_brings_the_army_home;
 /// `industrial-zone-claims-the-factory`: once Industrialization is known, the
 /// Factory that reaches the most new cities (then the Coal Power Plant that
 /// powers the most Factories) claims its city's queue. See
