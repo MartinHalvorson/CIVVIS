@@ -5481,6 +5481,11 @@ pub const GENES: &[Gene] = &[
     // walls only once it stands beside them. Opt-in; see
     // `advanced/breaker_walks_under_a_shield.rs`.
     Gene { tag: "breaker-walks-under-a-shield", field: "breaker_walks_under_a_shield", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_walks_under_a_shield, disable: AdvancedAi::disable_breaker_walks_under_a_shield },
+    // Live Deity 11-12, 62 games: 795 of 873 siege decisions were `stage`
+    // (631 "nothing to open the walls"), and no bill is a probability. Each
+    // assessed siege gets a capture forecast on the battle solver's board and
+    // one journal line; no decision changes. See `advanced/assault_forecast.rs`.
+    Gene { tag: "assault-forecast-is-read", field: "assault_forecast_is_read", kind: Kind::OptIn, enable: AdvancedAi::enable_assault_forecast_is_read, disable: AdvancedAi::disable_assault_forecast_is_read },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
@@ -6014,6 +6019,11 @@ pub const GENES: &[Gene] = &[
     // a live turn), so one held turn, or a Settler that ended its move short,
     // dropped its site silently. See `advanced/settler_stall_counts_turns.rs`.
     Gene { tag: "settler-stall-counts-turns", field: "settler_stall_counts_turns", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_stall_counts_turns, disable: AdvancedAi::disable_settler_stall_counts_turns },
+    // Live Deity 11-12, 45 games: at war with an unwalled city in reach on 408
+    // war-turns, one taken. The train goes at P(capture in 10) >= 0.55, holds
+    // at >= 0.4, stands down after 3 gathered readings under 0.1, and Siege
+    // rows rank by value x P / turns. See `advanced/assault_forecast.rs`.
+    Gene { tag: "siege-goes-on-the-forecast", field: "siege_goes_on_the_forecast", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_goes_on_the_forecast, disable: AdvancedAi::disable_siege_goes_on_the_forecast },
     // The battle solver's enemy plays as the live host does: over 17,669
     // unit-turns in reach of ours (116 Deity games, 11-11..12) it struck 25%,
     // never above ~70% in any cell. See `advanced/battle_solver/host_enemy.rs`.
