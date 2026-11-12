@@ -238,17 +238,30 @@ class MainCpuGuards(unittest.TestCase):
         cpu, metrics, value = cpu_evidence()
         result = browser.main_cpu_summary(cpu, metrics, value)
         self.assertEqual(result['sample_count'], 3)
-        self.assertEqual(result['sampled_interval_us'], 2000)
+        self.assertEqual(result['sampled_span_us'], 2000)
         self.assertEqual(result['thread_cpu_seconds']['ThreadTime'], 1)
         self.assertEqual(result['render_wall_ms']['total'], 40)
-        self.assertEqual([r['node'] for r in result['top_self_intervals']], [4, 3, 5])
+        self.assertEqual([r['node'] for r in result['top_self_samples']], [3, 4, 5])
         # Program samples are retained separately, never silently classified idle.
-        self.assertEqual(result['top_self_intervals'][2]['callFrame']['functionName'], '(program)')
+        self.assertEqual(result['top_self_samples'][2]['callFrame']['functionName'], '(program)')
+
+    def test_real_chrome_timestamp_inversions_are_preserved_and_reported(self):
+        cpu, metrics, value = cpu_evidence()
+        cpu['timeDeltas'] = [500, -12, 1000]
+        original = copy.deepcopy(cpu)
+        result = browser.main_cpu_summary(cpu, metrics, value)
+        self.assertEqual(cpu, original)
+        self.assertEqual(result['timestamp_inversions'], 1)
+        self.assertEqual(result['largest_backward_step_us'], 12)
+        self.assertEqual(result['sampled_span_us'], 1488)
+        self.assertEqual(sum(row['samples'] for row in result['top_self_samples']), 3)
 
     def test_malformed_profiles_fail(self):
         mutations = [lambda c: c.update(samples=[]),
                      lambda c: c.update(timeDeltas=[1]),
-                     lambda c: c.update(timeDeltas=[500, -1, 500]),
+                     lambda c: c.update(timeDeltas=[500, -501, 1000]),
+                     lambda c: c.update(timeDeltas=[500, 1000, 501]),
+                     lambda c: c.update(timeDeltas=[500, float('nan'), 500]),
                      lambda c: c.update(timeDeltas=[0, 0, 0]),
                      lambda c: c.update(endTime=0),
                      lambda c: c.update(startTime=float('nan')),

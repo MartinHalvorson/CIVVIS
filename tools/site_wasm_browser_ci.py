@@ -223,8 +223,18 @@ def main_cpu_summary(cpu: dict, metrics: dict, observation: dict) -> dict:
     if (not nodes or not samples or len(samples) != len(deltas)
             or not all(finite_number(cpu.get(k)) for k in ('startTime', 'endTime'))
             or cpu['endTime'] <= cpu['startTime']
-            or not all(finite_number(d) and d >= 0 for d in deltas) or sum(deltas) <= 0):
+            or not all(type(d) is int for d in deltas) or sum(deltas) <= 0):
         raise ValueError('invalid main-thread profile clocks or samples')
+    # CDP specifies integer deltas, without a nonnegative constraint. Chrome
+    # can deliver out-of-order samples (as in real run 43260140647). Keep every
+    # original sample/delta, validate absolute timestamps stay inside the window,
+    # report inversions and use sample counts for attribution, never signed
+    # interval weights or silently clamped/reordered timestamps.
+    offset = 0
+    for delta in deltas:
+        offset += delta
+        if not 0 <= offset <= cpu['endTime'] - cpu['startTime']:
+            raise ValueError('sample timestamp outside profile window')
     by_id = {node['id']: node for node in nodes}
     if len(by_id) != len(nodes) or any(type(i) is not int for i in by_id):
         raise ValueError('duplicate or invalid CPU node IDs')
@@ -253,9 +263,9 @@ def main_cpu_summary(cpu: dict, metrics: dict, observation: dict) -> dict:
     if not frontend.intersection(samples):
         raise ValueError('profile has no sampled frontend app stack')
     weights = {}
-    for identity, delta in zip(samples, deltas):
-        weights[identity] = weights.get(identity, 0) + delta
-    top = [dict(node=identity, interval_us=weight, callFrame=by_id[identity]['callFrame'])
+    for identity in samples:
+        weights[identity] = weights.get(identity, 0) + 1
+    top = [dict(node=identity, samples=weight, callFrame=by_id[identity]['callFrame'])
            for identity, weight in sorted(weights.items(), key=lambda item: -item[1])]
     duration = {}
     for key in DURATION_METRICS:
@@ -270,12 +280,13 @@ def main_cpu_summary(cpu: dict, metrics: dict, observation: dict) -> dict:
     ordered = sorted(renders)
     return dict(scope='Main renderer thread, startup through detection of terminal paint; '
                 'excludes engine worker and screenshot/save extraction. Sampling adds overhead; '
-                'interval shares include idle and are not CPU shares or a speed result.',
+                'sample shares include idle and are not CPU shares or a speed result.',
                 sample_count=len(samples), profile_interval_us=cpu['endTime'] - cpu['startTime'],
-                sampled_interval_us=sum(deltas), thread_cpu_seconds=duration,
+                sampled_span_us=sum(deltas), timestamp_inversions=sum(d < 0 for d in deltas),
+                largest_backward_step_us=-min(0, min(deltas)), thread_cpu_seconds=duration,
                 render_wall_ms=dict(total=sum(renders), median=statistics.median(ordered),
                                     p95=ordered[math.ceil(.95*len(ordered))-1], maximum=max(renders)),
-                top_self_intervals=top[:50])
+                top_self_samples=top[:50])
 
 
 def browser_game(qualified: Path, source: str, run_id: int, repo: str,
