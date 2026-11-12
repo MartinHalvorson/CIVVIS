@@ -5677,6 +5677,11 @@ pub const GENES: &[Gene] = &[
     // Campus and its Library (then a quick University) go ahead of those
     // claims. Opt-in; see `advanced/campus_and_library_before_the_claims.rs`.
     Gene { tag: "campus-and-library-before-the-claims", field: "campus_and_library_before_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_and_library_before_the_claims, disable: AdvancedAi::disable_campus_and_library_before_the_claims },
+    // Split out of hopeless-army-yields-the-queue (#5169) after the 11-12
+    // live arm: the cap lowered the seat's total power, which the faith-war
+    // and counter-war floors read. Opt-in, not armed; see
+    // `advanced/deterrence_stops_at_a_garrison.rs`.
+    Gene { tag: "deterrence-stops-at-a-garrison", field: "deterrence_stops_at_a_garrison", kind: Kind::OptIn, enable: AdvancedAi::enable_deterrence_stops_at_a_garrison, disable: AdvancedAi::disable_deterrence_stops_at_a_garrison },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5805,8 +5810,8 @@ pub const GENES: &[Gene] = &[
     // `advanced/great_works_never_wait.rs`.
     Gene { tag: "great-works-never-wait", field: "great_works_never_wait", kind: Kind::OptIn, enable: AdvancedAi::enable_great_works_never_wait, disable: AdvancedAi::disable_great_works_never_wait },
     // Live Deity Gran Colombia 11-12: 181 soldiers and guns ordered on war
-    // turns whose siege read the walls could not be opened, and 89
-    // near-rival deterrents at peace; 20 city hits in 396 such war turns.
+    // turns whose siege read the walls could not be opened; 20 city hits in
+    // 396 such war turns.
     // Opt-in; see `advanced/hopeless_army_yields_the_queue.rs`.
     Gene { tag: "hopeless-army-yields-the-queue", field: "hopeless_army_yields_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_hopeless_army_yields_the_queue, disable: AdvancedAi::disable_hopeless_army_yields_the_queue },
     // ---- append: l-o ------------------------------------------------

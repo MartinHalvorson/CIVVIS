@@ -6929,6 +6929,12 @@ pub struct AdvancedAi {
     /// routine claims that keep a city's queue. See
     /// `advanced/campus_and_library_before_the_claims.rs`. Opt-in.
     campus_and_library_before_the_claims: bool,
+    /// `deterrence-stops-at-a-garrison`: on the Domination lane,
+    /// `near-rival-deterrence` against a neighbour of twice our power or more
+    /// trains only a ranged garrison in a city that has none. Split out of
+    /// `hopeless-army-yields-the-queue`. See
+    /// `advanced/deterrence_stops_at_a_garrison.rs`. Opt-in.
+    deterrence_stops_at_a_garrison: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -8095,9 +8101,7 @@ pub struct AdvancedAi {
     great_works_never_wait: bool,
     /// `hopeless-army-yields-the-queue`: a Domination seat trains no guns
     /// or offensive bodies for a target whose walls nothing it can field
-    /// will breach, and stops its near-rival deterrent at a ranged garrison
-    /// once the neighbour fields twice its power. See
-    /// `advanced/hopeless_army_yields_the_queue.rs`. Opt-in.
+    /// will breach. See `advanced/hopeless_army_yields_the_queue.rs`. Opt-in.
     hopeless_army_yields_the_queue: bool,
     // ---- append: l-o ------------------------------------------------
     /// Ask the host for a cash price for a native land upgrade material bill.
@@ -11057,6 +11061,8 @@ mod denial_target_front;
 mod denial_war_needs_the_lane_edge;
 /// `denounce-only-to-declare`: see `advanced/denounce_only_to_declare.rs`.
 mod denounce_only_to_declare;
+/// `deterrence-stops-at-a-garrison`: see `advanced/deterrence_stops_at_a_garrison.rs`.
+mod deterrence_stops_at_a_garrison;
 /// `deterrence-trusts-a-friend`: see `advanced/deterrence_trusts_a_friend.rs`.
 mod deterrence_trusts_a_friend;
 mod runaway_expander;

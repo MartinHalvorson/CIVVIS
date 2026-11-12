@@ -1,6 +1,6 @@
 //! `hopeless-army-yields-the-queue`: a Domination seat stops training
-//! soldiers for an offensive whose walls nothing it can field will breach,
-//! and stops adding deterrents a rival twice its power will not notice.
+//! guns and offensive bodies for an offensive whose walls nothing it can
+//! field will breach.
 //!
 //! **Why (live Deity Gran Colombia, 4-player Pangaea, Online; the 17
 //! Domination games of 2026-11-12 00:01Z-06:48Z, turns 40-120).** The seat
@@ -62,18 +62,19 @@
 //!   gap closes and the economy's items are priced as at peace
 //!   ([`AdvancedAi::hopeless_army_target`]). The land-grab, barbarian and
 //!   rush floors still apply after it.
-//! - `near-rival-deterrence`, while the neighbour it reads fields
-//!   [`DETERRENCE_OUT_OF_REACH`] times our power or more, trains only a
-//!   ranged garrison, and only in a city with no ranged land unit of ours on
-//!   or beside it; and it holds a queue against the economy's claims only
-//!   for such a garrison.
 //!
 //! **What still trains**: a threatened, under-fire or freshly attacked city
 //! (`plan.threatened_city`, `last_attacked` within four turns, a barbarian
 //! alarm) keeps the scorer's full army target, and the defence writers
 //! (`redirect_unsafe_city_queue_for_defense`, the confirmed-defence queue,
 //! the surprise and capital garrison purchases, the barbarian floor) are
-//! untouched. Guns already queued keep their progress.
+//! untouched. Guns already queued keep their progress, and nothing here
+//! disbands or holds back a unit already standing.
+//!
+//! **The near-rival deterrence cap** that shipped with this gene in #5169
+//! (a ranged garrison only against a neighbour of twice our power) is its
+//! own opt-in gene since 11-12, `deterrence-stops-at-a-garrison`; see
+//! `advanced/deterrence_stops_at_a_garrison.rs` for why it was split out.
 //!
 //! Off, or on any other lane, nothing changes. Grep the journal for
 //! `hopeless-army-yields-the-queue:`.
@@ -82,14 +83,6 @@ use super::outclassed_siege::ONE_BLOW_GAP;
 use super::siege_production::{matched_guns, BREAKER_MATCH_MAX, BREAKER_MATCH_MAX_TURNS};
 use super::*;
 use crate::game::expected_damage;
-
-/// The neighbour's power against ours from which a deterrent cannot deter:
-/// half the rival's army is past what a city floor's queue can answer.
-pub(crate) const DETERRENCE_OUT_OF_REACH: f64 = 2.0;
-
-/// How far from its city a ranged land unit of ours stands as its garrison:
-/// the city tile, or beside it when a melee unit holds the tile.
-pub(crate) const GARRISON_REACH: i32 = 1;
 
 /// Why a city's walls cannot be opened by anything we field or can build.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -157,14 +150,6 @@ fn melee_taker(spec: &crate::rules::UnitSpec) -> bool {
         && !spec.siege
         && spec.is_melee_capable()
         && !spec.has_ranged_attack()
-        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
-}
-
-/// A land ranged unit that is not a siege gun: a city's garrison.
-fn garrison_shooter(spec: &crate::rules::UnitSpec) -> bool {
-    spec.class == "military"
-        && !spec.siege
-        && spec.has_ranged_attack()
         && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
 }
 
@@ -319,59 +304,6 @@ impl AdvancedAi {
             return desired;
         }
         city_count
-    }
-
-    /// Whether a deterrent against a neighbour of `theirs` power is out of
-    /// reach: the gene acts and the neighbour fields
-    /// [`DETERRENCE_OUT_OF_REACH`] times our power or more.
-    pub(super) fn deterrence_out_of_reach(&self, g: &Game, pid: usize, theirs: f64) -> bool {
-        self.hopeless_army_active(g)
-            && theirs > 0.0
-            && theirs >= DETERRENCE_OUT_OF_REACH * g.military_power(pid)
-    }
-
-    /// Whether a ranged land unit of ours (not a siege gun) stands on `cid`
-    /// or within [`GARRISON_REACH`] of it.
-    pub(super) fn city_has_ranged_garrison(g: &Game, pid: usize, cid: u32) -> bool {
-        let Some(city) = g.cities.get(&cid) else {
-            return false;
-        };
-        g.units.values().any(|unit| {
-            unit.owner == pid
-                && garrison_shooter(&g.rules.units[unit.kind])
-                && !g.is_embarked(unit)
-                && g.wdist(unit.pos, city.pos) <= GARRISON_REACH
-        })
-    }
-
-    /// The strongest ranged land unit (not a siege gun) `cid` can train: the
-    /// garrison an out-of-reach deterrence still asks for.
-    pub(super) fn garrison_shooter_for(g: &Game, pid: usize, cid: u32) -> Option<Name> {
-        g.rules
-            .units
-            .iter()
-            .filter(|(kind, spec)| {
-                garrison_shooter(spec) && g.can_produce(pid, cid, &Item::Unit { unit: **kind })
-            })
-            .max_by(|a, b| {
-                a.1.ranged_attack_strength()
-                    .total_cmp(&b.1.ranged_attack_strength())
-                    .then(b.0.cmp(a.0))
-            })
-            .map(|(kind, _)| *kind)
-    }
-
-    /// Whether `item` is the ranged garrison of a city of ours that has none
-    /// yet: the one deterrent an out-of-reach deterrence still holds.
-    pub(super) fn deterrence_garrison_head(g: &Game, pid: usize, item: &Item) -> bool {
-        let Item::Unit { unit } = item else {
-            return false;
-        };
-        g.rules.units.get(unit).is_some_and(garrison_shooter)
-            && g.player_city_ids(pid).into_iter().any(|cid| {
-                g.cities[&cid].queue.first() == Some(item)
-                    && !Self::city_has_ranged_garrison(g, pid, cid)
-            })
     }
 }
 
