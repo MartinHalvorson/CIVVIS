@@ -213,7 +213,7 @@ fn post_action_monopoly_moments_are_not_skipped_or_cached_stale() {
         tile.improvement = Some(crate::name!("plantation"));
     }
     game.players[0].techs.insert(crate::name!("currency"));
-    for player in &mut game.players {
+    for player in game.players.iter_mut() {
         player
             .counters
             .remove("historic_moment:first_luxury_monopoly");
