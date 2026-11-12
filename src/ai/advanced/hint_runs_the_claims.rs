@@ -66,7 +66,7 @@ impl AdvancedAi {
         let war_holds = self.threatened_war_holds_the_claims_holds(g, pid, plan);
         // `rear-cities-grow-through-the-war-hold`: under that hold, the growth
         // claims below (Granary, Trader, parallel Library, backlog Builder,
-        // Aqueduct, Neighbourhood, Campus building) still run, but only for
+        // Aqueduct, Neighbourhood, Campus building, free-slot Campus) still run, but only for
         // the cities away from the front. Each claim's city loop skips the
         // rest (`claim_open_behind_the_front`). Exact no-op while the gene is
         // off. See `advanced/rear_cities_grow_through_the_war_hold.rs`.
@@ -204,8 +204,9 @@ impl AdvancedAi {
         // `campus-claims-the-free-slot`: a free district slot's first
         // Campus, after the Campus building claim and ahead of the Prophet
         // race and the routine claims. Exact no-op while the gene is off.
-        // See `advanced/campus_claims_the_free_slot.rs`.
-        if !war_holds {
+        // See `advanced/campus_claims_the_free_slot.rs`. Under the war hold
+        // it runs for the rear cities alone (`rear-cities-grow-through-the-war-hold`).
+        if growth_claims {
             self.claim_free_slot_campus(g, pid, plan);
         }
         // `culture-seat-theater-first`: a Culture seat's first Theater
