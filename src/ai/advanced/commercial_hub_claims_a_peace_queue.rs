@@ -66,6 +66,10 @@ pub(crate) const PEACE_HUB_CLAIMS: usize = 1;
 /// production scorer's four-turn `threatened` window.
 const PEACE_HUB_ATTACK_MEMORY: u32 = 4;
 
+/// Unimproved worked tiles past the Builder charges in hand at which a queued
+/// Builder is left alone (the same test the worked-backlog Builder gene uses).
+const PEACE_HUB_BUILDER_BACKLOG: i64 = 2;
+
 /// Buildings that keep their queue: housing and the faith defence's.
 const PEACE_HUB_KEPT_BUILDINGS: [&str; 8] = [
     "walls",
@@ -91,7 +95,15 @@ impl AdvancedAi {
         }
         match head {
             Item::Unit { unit } => {
+                // A Builder the worked backlog is waiting on keeps its queue:
+                // `the-worked-backlog-gets-its-builder-first` put it there, and
+                // taking the head back would swap the two every turn.
+                let backlog_builder = *unit == "builder"
+                    && BasicAi::unimproved_worked_tiles(g, pid) as i64
+                        - i64::from(BasicAi::builder_charge_cover(g, pid))
+                        >= PEACE_HUB_BUILDER_BACKLOG;
                 *unit != "settler"
+                    && !backlog_builder
                     && (matches!(unit.as_str(), "builder" | "scout")
                         || g.rules
                             .units
