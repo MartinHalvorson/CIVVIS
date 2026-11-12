@@ -1180,6 +1180,12 @@ impl AdvancedAi {
         if self.battle_planner_claims(uid) {
             return self.base.fortify_or_stop(g, pid, uid);
         }
+        // `centre-keeps-its-garrison`: a threatened city's garrison keeps
+        // its City Center, and an empty one takes a soldier in reach. `None`
+        // with the gene off. See `advanced/centre_keeps_its_garrison.rs`.
+        if let Some(acted) = self.centre_garrison_step(g, pid, uid) {
+            return acted;
+        }
         // `amphibious-siege-train`: a member of the crossing in hand takes
         // the train's orders before anything else can land it at home. `None`
         // with the gene off. See `advanced/amphibious_siege_train.rs`.
