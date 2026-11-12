@@ -6065,6 +6065,10 @@ pub const GENES: &[Gene] = &[
     // units in a game with no war, 601 Production unfinished at the tally.
     // See `advanced/score_seat.rs`.
     Gene { tag: "score-seat-plays-for-points", field: "score_seat_plays_for_points", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_plays_for_points, disable: AdvancedAi::disable_score_seat_plays_for_points },
+    // Fifteen Rome Score games of 11-12 built 0.25 wonders a game against the
+    // rivals' 3-13 while the host offered them; a one-lane-plus-one program on
+    // the host's own quotes finished 7.7. See `advanced/score_wonders.rs`.
+    Gene { tag: "score-seat-raises-wonders", field: "score_seat_raises_wonders", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_raises_wonders, disable: AdvancedAi::disable_score_seat_raises_wonders },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

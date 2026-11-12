@@ -9449,6 +9449,14 @@ pub struct AdvancedAi {
     /// `advanced/priced_risk.rs`. Opt-in.
     risk_is_priced: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
+    /// capital from turn 40 (Online) and in a second city from turn 90, as a
+    /// queue claim with a race-risk rule. See `advanced/score_wonders.rs`.
+    /// Off by default.
+    score_seat_raises_wonders: bool,
+    /// `score-seat-raises-wonders`: the races standing, by the racing city's
+    /// tile (the live mirror renumbers cities between frames).
+    score_wonder_races: BTreeMap<Pos, Name>,
     /// `siege-goes-on-the-forecast`: the siege train goes, holds and stands
     /// down on the capture forecast, and the Objective Board ranks Siege rows
     /// by value x P / expected turns. Implies the reading. See
@@ -11352,6 +11360,9 @@ mod chop_for_expansion;
 /// `score-seat-plays-for-points`: a Score-target seat's production buys
 /// points. See `advanced/score_seat.rs`.
 mod score_seat;
+/// `score-seat-raises-wonders`: a Score seat's wonder program, a queue claim
+/// that acts natively and live. See `advanced/score_wonders.rs`.
+mod score_wonders;
 
 /// The player civvis.ai seats: the deployment genome plus the site's own
 /// experiment list. See `advanced/site_deployment.rs`.
@@ -27111,6 +27122,12 @@ impl AdvancedAi {
             // queue. Exact no-op while the gene is off. See
             // `advanced/commercial_hub_claims_a_peace_queue.rs`.
             self.claim_peace_queue_for_the_commercial_hub(g, pid, &plan);
+            // `score-seat-raises-wonders`: a Score seat's wonder lanes take the
+            // capital's (and later a second city's) routine queue, and its
+            // standing races are resolved. No new race while the war holds the
+            // claims. Exact no-op while the gene is off. See
+            // `advanced/score_wonders.rs`.
+            self.claim_queue_for_the_score_wonder(g, pid, &plan, !war_holds);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
@@ -27222,6 +27239,11 @@ impl AdvancedAi {
         // and before the pad holds and the defence handoffs below. Exact
         // no-op while the gene is off. See `advanced/near_done_work_finishes.rs`.
         self.claim_near_done_work_finishes(g, pid, &plan, &near_done_heads);
+        // `score-seat-raises-wonders`: a standing race a later writer displaced
+        // with routine work goes back to the head, before the defence handoffs
+        // below, which keep the last word. Starts nothing. Exact no-op while
+        // the gene is off. See `advanced/score_wonders.rs`.
+        self.claim_queue_for_the_score_wonder(g, pid, &plan, false);
         // `religion-seat-guards-the-race`: Prayers finishing this turn and a
         // pillaged Holy Site's repair, after every ordinary writer. See
         // `advanced/religion_seat_guards_the_race.rs`.

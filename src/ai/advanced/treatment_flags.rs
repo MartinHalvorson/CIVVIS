@@ -465,6 +465,9 @@ impl AdvancedAi {
         /// Opt-in gene `score-seat-plays-for-points`; see
         /// `advanced/score_seat.rs`.
         score_seat_plays_for_points => enable_score_seat_plays_for_points, disable_score_seat_plays_for_points;
+        /// Opt-in gene `score-seat-raises-wonders`; see
+        /// `advanced/score_wonders.rs`.
+        score_seat_raises_wonders => enable_score_seat_raises_wonders, disable_score_seat_raises_wonders;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
