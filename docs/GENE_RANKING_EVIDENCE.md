@@ -381,6 +381,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `nusantara-reads-the-coast` | off (unmeasured) | Opt-in gene `nusantara-reads-the-coast`; see `Self::nusantara_reads_the_coast`. | 1 \| 1 |
 | `nusantara-settles-the-shore` | off (unmeasured) | Opt-in gene `nusantara-settles-the-shore`; see `advanced/nusantara_settles_the_shore.rs`. | 1 \| 1 |
 | `old-techs-before-the-beeline` | off (unmeasured) | Opt-in gene `old-techs-before-the-beeline`; see `advanced/old_techs_before_the_beeline.rs`. | 1 \| 1 |
+| `open-city-is-the-objective` | off (unmeasured) | Opt-in `open-city-is-the-objective`; see `advanced/open_city_objective.rs`. | 1 \| 1 |
 | `opening-builder-after-the-first-settler` | off (unmeasured) | Opt-in gene `opening-builder-after-the-first-settler`; see `BasicAi::opening_builder_after_the_first_settler`. | 1 \| 1 |
 | `opening-ranged-support` | off (unmeasured) | Replace the capital's first opening slot with legal ranged support. | 1 \| 1 |
 | `opening-scout-comes-back` | off (unmeasured) | `opening-scout-comes-back`: the opening Scout the barbarian defence displaced is that city's next build, and a Scout lost early while no rival capital is charted is replaced at once. | 1 \| 1 |
