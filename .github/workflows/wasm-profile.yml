@@ -13,13 +13,21 @@ on:
         description: Normal benchmark case (default-7/8/9 or six-7311001/2/3)
         default: six-7311003
         required: true
+      mode:
+        description: CPU sampling or complete website render/paint observation
+        type: choice
+        options:
+          - cpu
+          - browser
+        default: cpu
+        required: true
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: wasm-profile-${{ github.ref }}-${{ inputs.qualified_run }}-${{ inputs.case }}
+  group: wasm-profile-${{ github.ref }}-${{ inputs.qualified_run }}-${{ inputs.case }}-${{ inputs.mode }}
   cancel-in-progress: false
 
 jobs:
@@ -33,6 +41,8 @@ jobs:
           node-version: '24.21.0'
       - name: Test profile provenance and completion guards without playing games
         run: python3 -m unittest discover -s tools -p test_site_wasm_profile_ci.py -v
+      - name: Test browser observation guards without playing games
+        run: python3 -m unittest discover -s tools -p test_site_wasm_browser_ci.py -v
       - name: Download the qualified engine
         uses: actions/download-artifact@v4
         with:
@@ -41,6 +51,7 @@ jobs:
           github-token: ${{ github.token }}
           path: qualified
       - name: Profile one full normal game from the exact qualified module
+        if: ${{ inputs.mode != 'browser' }}
         env:
           GH_TOKEN: ${{ github.token }}
           QUALIFIED_RUN: ${{ inputs.qualified_run }}
@@ -51,9 +62,27 @@ jobs:
             --qualified qualified --source "$PROFILE_SOURCE" --run "$QUALIFIED_RUN" \
             --repo "$GITHUB_REPOSITORY" --case "$PROFILE_CASE" --out profile
       - name: Preserve the bound module, CPU samples, raw save and frame hashes
-        if: always()
+        if: ${{ always() && inputs.mode != 'browser' }}
         uses: actions/upload-artifact@v4
         with:
           name: civvis-wasm-cpu-profile
           path: profile
+          if-no-files-found: warn
+      - name: Observe one complete normal website game and final paint
+        if: ${{ inputs.mode == 'browser' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFIED_RUN: ${{ inputs.qualified_run }}
+          PROFILE_SOURCE: ${{ inputs.source }}
+          PROFILE_CASE: ${{ inputs.case }}
+        run: |
+          python3 tools/site_wasm_browser_ci.py \
+            --qualified qualified --source "$PROFILE_SOURCE" --run "$QUALIFIED_RUN" \
+            --repo "$GITHUB_REPOSITORY" --case "$PROFILE_CASE" --out browser-game
+      - name: Preserve complete browser observations and original save bytes
+        if: ${{ always() && inputs.mode == 'browser' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: civvis-wasm-browser-game
+          path: browser-game
           if-no-files-found: warn

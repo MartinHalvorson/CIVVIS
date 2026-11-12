@@ -13,6 +13,12 @@ fn unit(name: &str) -> Item {
     }
 }
 
+fn granary() -> Item {
+    Item::Building {
+        building: crate::name!("granary"),
+    }
+}
+
 fn library() -> Item {
     Item::Building {
         building: crate::name!("library"),
@@ -68,14 +74,14 @@ fn journalled(
 
 /// A model of the live Gran Colombia seat at Online t45, not a native
 /// replay: three cities on flat grassland hills, the capital (5 citizens,
-/// 11 Production) training a Builder with 5 paid and a five-turn first
+/// 11 Production) building a Granary with 5 paid and a five-turn first
 /// Campus quoted there, the other two at one citizen. The gene is armed;
 /// `near-done-work-finishes` is off so only this gene decides.
 fn campus_board() -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
     campus_board_with(3)
 }
 
-/// [`campus_board`] with `cities` founded cities (three or four).
+/// [`campus_board`] with `cities` founded cities (three to six).
 fn campus_board_with(cities: usize) -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
     let mut g = Game::new_full(2, 36, 20, 95_345, 250, 0, false);
     g.units.clear();
@@ -89,7 +95,7 @@ fn campus_board_with(cities: usize) -> (Game, AdvancedAi, u32, StrategicPlan, It
     for tech in ["pottery", "writing", "mining", "masonry", "bronze_working"] {
         g.players[0].techs.insert(Name::new(tech));
     }
-    let ids: Vec<_> = [(5, 5), (15, 5), (25, 5), (15, 14)]
+    let ids: Vec<_> = [(5, 5), (15, 5), (25, 5), (15, 14), (5, 14), (25, 14)]
         .into_iter()
         .take(cities)
         .map(|pos| g.found_city_for(0, pos, None))
@@ -115,10 +121,16 @@ fn campus_board_with(cities: usize) -> (Game, AdvancedAi, u32, StrategicPlan, It
     let cid = ids[0];
     let capital = g.cities.get_mut(&cid).unwrap();
     capital.pop = 5;
-    capital.queue = vec![unit("builder")];
+    capital.queue = vec![granary()];
     capital.production = 5.0;
     let campus = BasicAi::first_campus_item(&g, 0, cid).unwrap();
     quote(&mut g, cid, &campus, 5.0, 56.0);
+    // The host's quote: a Granary is 65 Production at Online.
+    quote(&mut g, cid, &granary(), 6.0, 65.0);
+    assert!(
+        g.item_cost_for_city(0, cid, &granary()) - 5.0 > 2.0 * g.city_yields(cid).production,
+        "fixture: the Granary is turns from done"
+    );
     let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
     ai.enable_campus_claims_the_free_slot_2();
     ai.disable_near_done_work_finishes();
@@ -201,7 +213,7 @@ fn ships_off() {
 }
 
 #[test]
-fn first_campus_goes_ahead_of_a_builder_head_only_with_the_gene() {
+fn first_campus_goes_ahead_of_a_granary_head_only_with_the_gene() {
     let (g, mut ai, cid, plan, campus) = campus_board();
 
     let mut off = ai.clone();
@@ -210,8 +222,8 @@ fn first_campus_goes_ahead_of_a_builder_head_only_with_the_gene() {
     off.claim_free_slot_campus(&mut control, 0, &plan);
     assert_eq!(
         head(&control, cid),
-        Some(unit("builder")),
-        "off: the Builder keeps the queue"
+        Some(granary()),
+        "off: the Granary keeps the queue"
     );
 
     let mut on = g.clone();
@@ -219,15 +231,29 @@ fn first_campus_goes_ahead_of_a_builder_head_only_with_the_gene() {
         ai.claim_free_slot_campus(g, 0, &plan)
     });
     assert_eq!(head(&on, cid), Some(campus.clone()));
-    assert_eq!(on.item_invested_production(cid, &unit("builder")), 5.0);
+    assert_eq!(on.item_invested_production(cid, &granary()), 5.0);
     assert!(
         details.iter().any(|detail| detail.starts_with(TAG)
-            && detail.contains("first Campus goes ahead of the Builder")),
+            && detail.contains("first Campus goes ahead of the Granary")),
         "{details:?}"
     );
     // The writers that would take it back leave it alone.
     assert!(ai.campus_and_library_holds(&on, 0, cid, &plan, &campus));
     assert!(!off.campus_and_library_holds(&on, 0, cid, &plan, &campus));
+}
+
+#[test]
+fn a_builder_head_keeps_its_queue_against_the_first_campus() {
+    let (mut g, mut ai, cid, plan, _) = campus_board();
+    g.cities.get_mut(&cid).unwrap().queue = vec![unit("builder")];
+    let details = journalled(&mut ai, &mut g, |ai, g| {
+        ai.claim_free_slot_campus(g, 0, &plan)
+    });
+    assert_eq!(head(&g, cid), Some(unit("builder")));
+    assert!(
+        !details.iter().any(|detail| detail.starts_with(TAG)),
+        "{details:?}"
+    );
 }
 
 #[test]
@@ -239,7 +265,7 @@ fn a_settler_head_keeps_the_first_campus_waiting() {
 }
 
 #[test]
-fn a_threatened_or_attacked_city_or_another_target_keeps_its_builder() {
+fn a_threatened_or_attacked_city_or_another_target_keeps_its_granary() {
     let (base, armed, cid, base_plan, _) = campus_board();
     for case in ["threat", "recent attack", "science target", "walls"] {
         let mut g = base.clone();
@@ -248,15 +274,15 @@ fn a_threatened_or_attacked_city_or_another_target_keeps_its_builder() {
         let kept = match case {
             "threat" => {
                 plan.threatened_city = Some(cid);
-                unit("builder")
+                granary()
             }
             "recent attack" => {
                 g.cities.get_mut(&cid).unwrap().last_attacked = g.turn - 1;
-                unit("builder")
+                granary()
             }
             "science target" => {
                 ai.victory_target = Some(VictoryTarget::Science);
-                unit("builder")
+                granary()
             }
             "walls" => {
                 let walls = Item::Building {
@@ -273,7 +299,7 @@ fn a_threatened_or_attacked_city_or_another_target_keeps_its_builder() {
 }
 
 #[test]
-fn a_major_war_keeps_the_soldier_but_not_the_builder() {
+fn a_major_war_keeps_the_soldier_but_not_the_granary() {
     let (mut g, ai, cid, plan, campus) = campus_board();
     g.at_war.insert((0, 1));
     let mut soldier = g.clone();
@@ -285,7 +311,7 @@ fn a_major_war_keeps_the_soldier_but_not_the_builder() {
         "a rear city's soldier at war"
     );
     ai.claim_free_slot_campus(&mut g, 0, &plan);
-    assert_eq!(head(&g, cid), Some(campus), "a rear city's Builder at war");
+    assert_eq!(head(&g, cid), Some(campus), "a rear city's Granary at war");
 }
 
 #[test]
@@ -377,8 +403,9 @@ fn a_half_built_settler_and_a_threatened_city_keep_their_queue_against_the_libra
 }
 
 /// [`campus_board_with`]'s capital training the early floor's Settler, `paid`
-/// of 85 Production in, with the floor (six cities) open and
-/// `first-campus-before-the-settler` off.
+/// of 85 Production in, with `no-city-limit` armed as on the live seat (the
+/// floor reads the plan's nine cities) and `first-campus-before-the-settler`
+/// off.
 fn floor_settler_board(cities: usize, paid: f64) -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
     let (mut g, mut ai, cid, plan, campus) = campus_board_with(cities);
     let settler = AdvancedAi::early_settler_item();
@@ -387,15 +414,16 @@ fn floor_settler_board(cities: usize, paid: f64) -> (Game, AdvancedAi, u32, Stra
     capital.queue = vec![settler];
     capital.production = paid;
     ai.enable_early_settler_floor();
+    ai.enable_no_city_limit();
     assert!(ai.early_settler_floor_holds(&g, 0, cid, &plan));
     (g, ai, cid, plan, campus)
 }
 
 #[test]
-fn a_four_city_empire_puts_its_first_campus_ahead_of_a_fresh_floor_settler() {
+fn a_six_city_empire_puts_its_first_campus_ahead_of_a_fresh_floor_settler() {
     // No progress, and 20 of 85 paid (under half): the Settler keeps it.
     for paid in [0.0, 20.0] {
-        let (g, mut ai, cid, plan, campus) = floor_settler_board(4, paid);
+        let (g, mut ai, cid, plan, campus) = floor_settler_board(6, paid);
         let settler = AdvancedAi::early_settler_item();
 
         let mut off = ai.clone();
@@ -427,17 +455,155 @@ fn a_four_city_empire_puts_its_first_campus_ahead_of_a_fresh_floor_settler() {
 }
 
 #[test]
-fn a_three_city_empire_keeps_the_floor_settler_first() {
-    let (mut g, ai, cid, plan, _) = floor_settler_board(3, 0.0);
+fn a_five_city_empire_keeps_the_floor_settler_ahead_of_its_first_campus() {
+    for cities in [3, 4, 5] {
+        let (mut g, ai, cid, plan, _) = floor_settler_board(cities, 0.0);
+        ai.claim_free_slot_campus(&mut g, 0, &plan);
+        assert_eq!(
+            head(&g, cid),
+            Some(AdvancedAi::early_settler_item()),
+            "{cities} cities"
+        );
+        assert!(!ai.campus_and_library_holds_the_settler(&g, 0, cid, &plan));
+    }
+}
+
+#[test]
+fn a_half_built_floor_settler_keeps_the_queue() {
+    let (mut g, ai, cid, plan, _) = floor_settler_board(6, 50.0);
     ai.claim_free_slot_campus(&mut g, 0, &plan);
     assert_eq!(head(&g, cid), Some(AdvancedAi::early_settler_item()));
 }
 
 #[test]
-fn a_half_built_floor_settler_keeps_the_queue() {
-    let (mut g, ai, cid, plan, _) = floor_settler_board(4, 50.0);
-    ai.claim_free_slot_campus(&mut g, 0, &plan);
-    assert_eq!(head(&g, cid), Some(AdvancedAi::early_settler_item()));
+fn a_builder_keeps_its_queue_against_the_library() {
+    let (mut g, ranked, ai, plan) = library_board();
+    for cid in &ranked {
+        let city = g.cities.get_mut(cid).unwrap();
+        city.queue = vec![unit("builder")];
+        city.production = 0.0;
+    }
+    ai.claim_campus_building(&mut g, 0, &plan);
+    for cid in &ranked {
+        assert_eq!(head(&g, *cid), Some(unit("builder")));
+    }
+}
+
+fn university() -> Item {
+    Item::Building {
+        building: crate::name!("university"),
+    }
+}
+
+/// The six-city empire of `producer_empire` with its Libraries standing and
+/// Education in hand, every city making 15 Production (a University well
+/// inside ten Online turns), its queue set by `heads`.
+fn university_board() -> (Game, Vec<u32>, AdvancedAi, StrategicPlan) {
+    let (mut g, ranked) = producer_empire("CAMPUSUNIVERSITYFIRST", 94_133, 1);
+    for tech in ["education", "mathematics"] {
+        g.players[0].techs.insert(Name::new(tech));
+    }
+    for cid in &ranked {
+        let adjustment = Arc::make_mut(&mut g.observed_city_yield_adjustments)
+            .remove(cid)
+            .unwrap_or_default();
+        let base = g.city_yields(*cid).production;
+        Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
+            *cid,
+            Yields {
+                production: 15.0 - base,
+                ..adjustment
+            },
+        );
+        assert_eq!(
+            BasicAi::campus_building_item(&g, 0, *cid),
+            Some(university()),
+            "fixture: the University is buildable"
+        );
+        let turns = g.item_cost_for_city(0, *cid, &university()) / 15.0;
+        assert!(
+            AdvancedAi::campus_and_library_building(&g, 1, turns),
+            "fixture: the University is {turns} turns away"
+        );
+    }
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_campus_building_claims_the_queue();
+    ai.disable_near_done_work_finishes();
+    ai.enable_campus_and_library_before_the_claims();
+    let plan = calm_plan(&g);
+    (g, ranked, ai, plan)
+}
+
+/// A district head on a free tile of `cid` with `paid` Production in.
+fn district_head(g: &mut Game, cid: u32, family: &str, paid: f64) -> Item {
+    let center = g.cities[&cid].pos;
+    let site = g.cities[&cid]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|pos| *pos != center && g.map.tiles[pos].district.is_none())
+        .min()
+        .expect("a free tile");
+    let item = Item::District {
+        district: BasicAi::civ_district(g, 0, family),
+        pos: site,
+    };
+    let city = g.cities.get_mut(&cid).unwrap();
+    city.queue = vec![item.clone()];
+    city.production = paid;
+    item
+}
+
+#[test]
+fn the_university_passes_a_hub_but_not_a_builder_granary_aqueduct_zone_or_settler() {
+    let (mut g, ranked, mut ai, plan) = university_board();
+    // Every head is held by the claim's own rules: a Builder, Granary,
+    // Aqueduct, Industrial Zone and Settler are never deferred, a Hub with
+    // progress is not either.
+    let hub = district_head(&mut g, ranked[0], "commercial_hub", 2.0);
+    let builder = unit("builder");
+    let settler = AdvancedAi::early_settler_item();
+    let aqueduct = district_head(&mut g, ranked[3], "aqueduct", 0.0);
+    let zone = district_head(&mut g, ranked[4], "industrial_zone", 0.0);
+    for (cid, item) in [
+        (ranked[1], &builder),
+        (ranked[2], &granary()),
+        (ranked[5], &settler),
+    ] {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.queue = vec![item.clone()];
+        city.production = 0.0;
+    }
+    let kept: Vec<(u32, Item)> = vec![
+        (ranked[1], builder),
+        (ranked[2], granary()),
+        (ranked[3], aqueduct),
+        (ranked[4], zone),
+        (ranked[5], settler),
+    ];
+    for (cid, item) in &kept {
+        assert!(
+            g.item_cost_for_city(0, *cid, item) > g.city_yields(*cid).production,
+            "fixture: {item:?} is more than a turn from done"
+        );
+    }
+    let details = journalled(&mut ai, &mut g, |ai, g| {
+        ai.claim_campus_building(g, 0, &plan)
+    });
+    assert_eq!(head(&g, ranked[0]), Some(university()), "the Hub waits");
+    assert_eq!(g.item_invested_production(ranked[0], &hub), 2.0);
+    assert!(
+        details.iter().any(|detail| detail.starts_with(TAG)
+            && detail.contains("University goes ahead of the Commercial Hub")),
+        "{details:?}"
+    );
+    for (cid, item) in kept {
+        assert_eq!(
+            head(&g, cid),
+            Some(item.clone()),
+            "{item:?} keeps its queue"
+        );
+    }
 }
 
 #[test]
