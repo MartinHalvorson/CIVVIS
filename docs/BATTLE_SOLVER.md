@@ -64,10 +64,12 @@ The host struck one of ours on a quarter of the turns it had one in reach (43%
 when it need not move, 11% when it must), took the unit in front of it rather
 than the best trade, and did not retreat when wounded. The fitted target is
 the one struck on 76% of held-out strikes, against 37% for the greedy pick.
-On this page's mirror bench, whose opponent is this AI and not the host, the
-solver with the fitted enemy reads worse than with the stock one at horizon
-2 and 4 (pooled battle_bench −84 and −90, doctrine_arena −137 and −81); the
-stock enemy was tuned against that opponent.
+**On this page's mirror bench the gene reads negative at both horizons:**
+against this AI (not the host) the solver with the fitted enemy does worse
+than with the stock one, pooled battle_bench −84 and doctrine_arena −137 at
+horizon 2, −90 and −81 at horizon 4. The stock enemy was tuned against that
+opponent. **Only live games against the host can judge the gene**; none has
+been played with it, and it is not armed.
 
 ## Evidence
 

@@ -235,6 +235,10 @@ Off, the stock enemy plays exactly as before.
 
 ## Bench: a no-regression read, and it reads negative
 
+**The mirror bench reads negative at both horizons:** pooled battle_bench
+−84 and doctrine_arena −137 at horizon 2, −90 and −81 at horizon 4. **Only
+live games against the host can judge the gene.**
+
 The opponent on `battle_bench` and `doctrine_arena` is this repository's own
 AI, not the host. The evidence for the model is the held-out likelihood
 above; this bench can only say how a solver that assumes the host's habits
@@ -285,7 +289,8 @@ tuned on this bench against this AI (`docs/BATTLE_SOLVER.md`: a greedy enemy
 read −100, half-aggression +262); the fitted enemy strikes on about a quarter
 of its chances and is fitted to the host. This bench cannot tell "the host
 model is wrong" from "the host model describes the host and not this AI".
-Only a live or host-replay read can, and none was run.
+Only live games against the host can judge the gene, and none has been
+played with it.
 
 Run it with `cargo test --lib host_enemy_bench -- --ignored --nocapture`
 (`CIVVIS_HOST_BENCH_SEEDS` sets the skirmish seeds per row; positions get
