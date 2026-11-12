@@ -83,7 +83,7 @@ fn education_follows_the_library_waits_for_an_owned_campus_with_a_library() {
 }
 
 #[test]
-fn education_follows_the_library_is_opt_in_domination_only_and_ends_at_education() {
+fn education_follows_the_library_is_opt_in_for_conquest_or_score_and_ends_at_education() {
     let (mut g, mut ai, _, _) = equipped();
     assert!(!AdvancedAi::targeting(VictoryTarget::Domination).education_follows_the_library);
     assert_eq!(
@@ -92,7 +92,7 @@ fn education_follows_the_library_is_opt_in_domination_only_and_ends_at_education
     );
     for target in VictoryTarget::ALL
         .into_iter()
-        .filter(|t| *t != VictoryTarget::Domination)
+        .filter(|t| !matches!(t, VictoryTarget::Domination | VictoryTarget::Score))
     {
         let mut other = AdvancedAi::targeting(target);
         other.enable_education_follows_the_library();
@@ -337,4 +337,23 @@ fn education_ahead_of_modernization_still_yields_to_the_decisive_window() {
         "{picked} is not on the way to the window's {}",
         goal.as_str()
     );
+}
+
+/// `conquest_or_score_seat`: a Score seat researches Education behind its
+/// Library as a Domination seat does; a Culture, Science or Religion seat
+/// does not take this goal.
+#[test]
+fn a_score_seat_follows_the_library_and_other_targets_do_not() {
+    let (g, _, _, _) = equipped();
+    for (target, goal) in [
+        (VictoryTarget::Domination, Some("education")),
+        (VictoryTarget::Score, Some("education")),
+        (VictoryTarget::Culture, None),
+        (VictoryTarget::Science, None),
+        (VictoryTarget::Religion, None),
+    ] {
+        let mut ai = AdvancedAi::targeting(target);
+        ai.enable_education_follows_the_library();
+        assert_eq!(ai.domination_education_goal(&g, 0), goal, "{target:?}");
+    }
 }
