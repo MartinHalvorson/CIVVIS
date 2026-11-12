@@ -464,10 +464,11 @@ fn opened_next_door() -> (Game, AdvancedAi, u32) {
 }
 
 /// The live Pasargadae shape: an unwalled capital twelve tiles away reading
-/// 13. The reservation opens with our one city, the latch outlives a
-/// garrison that walks in, and the strike does not wait for a second city.
+/// 13. A bare capital is latched while it stays soft, but it waits for the
+/// second city like any soft capital: the first Settler is not deferred and
+/// no strike opens with one city.
 #[test]
-fn a_bare_capital_next_door_opens_the_reservation_at_one_city() {
+fn a_bare_capital_next_door_waits_for_the_second_city() {
     let (mut game, mut ai, capital) = opened_next_door();
     let home = capital_of(&game, 0);
     let counts = EmpireCounts::default();
@@ -476,23 +477,18 @@ fn a_bare_capital_next_door_opens_the_reservation_at_one_city() {
     game.turn += 1;
     ai.maintain_conquest_opening(&mut game, 0);
     assert_eq!(ai.first_capital_bare, Some(game.cities[&capital].pos));
+    assert_eq!(FIRST_CAPITAL_BARE_CITIES, FIRST_CAPITAL_SOFT_SETTLER_CITIES);
     assert_eq!(
         ai.conquest_first_settler_cities(),
         FIRST_CAPITAL_BARE_CITIES
     );
     assert!(
-        ai.conquest_defers_the_settler(&game, 0, home, &counts, 1, false),
-        "the force comes before the first Settler"
+        !ai.conquest_defers_the_settler(&game, 0, home, &counts, 1, false),
+        "the first Settler is never deferred"
     );
-    assert!(ai
-        .conquest_opening
-        .as_ref()
-        .unwrap()
-        .preparing_since
-        .is_some());
 
-    // Three Warriors at the rally, the owner at half our power: one city is
-    // no reason to hold, and the go stands.
+    // Three Warriors at the rally, the owner at half our power: with one
+    // city the strike holds; with two nothing holds it.
     let rally = ai.conquest_opening.as_ref().unwrap().rally;
     bodies(&mut game, "warrior", rally, 1, 3);
     game.turn += 1;
@@ -500,6 +496,9 @@ fn a_bare_capital_next_door_opens_the_reservation_at_one_city() {
     let ours = game.military_power(0);
     Arc::make_mut(&mut game.observed_military_power).insert(1, 0.5 * ours);
     let opening = ai.conquest_opening.clone().unwrap();
+    let why = ai.first_capital_outclassed(&game, 0, &opening).unwrap();
+    assert!(why.contains("1 city"), "{why}");
+    second_city(&mut game);
     assert_eq!(ai.first_capital_outclassed(&game, 0, &opening), None);
 
     // A garrison walks in: 28 is still soft, and the latch holds.
@@ -508,15 +507,12 @@ fn a_bare_capital_next_door_opens_the_reservation_at_one_city() {
     game.turn += 1;
     ai.maintain_conquest_opening(&mut game, 0);
     assert_eq!(ai.first_capital_bare, Some(game.cities[&capital].pos));
-    assert!(ai.conquest_defers_the_settler(&game, 0, home, &counts, 1, false));
 
-    // Hardened past soft: the latch drops and the shipped three return.
+    // Hardened past soft: the latch drops.
     set_strength(&mut game, capital, 38.0);
     game.turn += 1;
     ai.maintain_conquest_opening(&mut game, 0);
     assert_eq!(ai.first_capital_bare, None);
-    assert!(!ai.conquest_defers_the_settler(&game, 0, home, &counts, 1, false));
-    assert!(!ai.conquest_defers_the_settler(&game, 0, home, &counts, 2, false));
 
     // The edges: 21 is not bare, nor is any wall, nor fifteen tiles, nor an
     // owner whose army the reserved force would not bring within reach.
@@ -619,7 +615,7 @@ fn the_deadline_extends_a_covered_bill_and_nothing_else() {
 fn the_constants_are_the_ones_the_design_states() {
     assert_eq!(FIRST_CAPITAL_SOFT_STRENGTH, 30.0);
     assert_eq!(FIRST_CAPITAL_SOFT_SETTLER_CITIES, 2);
-    assert_eq!(FIRST_CAPITAL_BARE_CITIES, 1);
+    assert_eq!(FIRST_CAPITAL_BARE_CITIES, 2);
     assert!((FIRST_CAPITAL_BARE_STRENGTH - 20.0).abs() < 1e-9);
     assert_eq!(FIRST_CAPITAL_BARE_REACH, 14);
     assert_eq!(CAMPAIGN_MIN_BODIES, 3);
