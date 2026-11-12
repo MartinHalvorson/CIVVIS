@@ -398,6 +398,14 @@ impl AdvancedAi {
             // `education-follows-the-library`: `None` with the gene off. See
             // `research/domination_education.rs`.
             let domination_education_goal = self.domination_education_goal(g, pid);
+            // The same goal ahead of the wartime modernization chain once
+            // Education is at most two technologies short.
+            let education_before_modernization = Self::domination_education_ahead_of_modernization(
+                g,
+                pid,
+                domination_education_goal,
+                wartime_modernization_goal.as_deref(),
+            );
             let every_lane_campus_goal = self.every_lane_campus_unlock_goal(g, pid);
             let science_writing_goal = self.science_writing_before_the_luxury_goal(g, pid);
             let endgame_goal = self.science_endgame_research_goal(g, pid);
@@ -658,6 +666,10 @@ impl AdvancedAi {
                 // An owned Rocketry commits the first launch through Recovery
                 // and optional modernization; urgent defenses remain above.
                 _ if first_launch_goal.is_some() => first_launch_goal,
+                // `education-follows-the-library`: Education (or a step at
+                // most two short of it) takes the modernization's slot, behind
+                // every arm above. See `research/domination_education.rs`.
+                _ if education_before_modernization.is_some() => education_before_modernization,
                 _ if wartime_modernization_goal.is_some() => wartime_modernization_goal.as_deref(),
                 _ if domination_siege_goal.is_some() => domination_siege_goal.as_deref(),
                 // Once the late launch chain is committed, finish its remaining
@@ -1065,8 +1077,18 @@ impl AdvancedAi {
                                 "unlock campuses for the expanding domination economy".to_string()
                             } else if domination_education_goal == Some(goal) {
                                 let ready = Self::education_ready_campus_cities(g, pid);
+                                let ahead = match (
+                                    education_before_modernization,
+                                    wartime_modernization_goal.as_deref(),
+                                ) {
+                                    (Some(_), Some(chain)) => format!(
+                                        ", ahead of the wartime modernization chain toward {}",
+                                        plain(chain)
+                                    ),
+                                    _ => String::new(),
+                                };
                                 format!(
-                                    "education-follows-the-library: the {step} step toward {}, opening Universities for {ready} Campus {} with a Library",
+                                    "education-follows-the-library: the {step} step toward {}{ahead}, opening Universities for {ready} Campus {} with a Library",
                                     plain(goal),
                                     if ready == 1 { "city" } else { "cities" }
                                 )
