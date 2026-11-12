@@ -3039,7 +3039,9 @@ impl AdvancedAi {
         }
         let go_reading = forecast
             .as_ref()
-            .filter(|_| self.siege_goes_on_the_forecast)
+            .filter(|_| {
+                self.siege_goes_on_the_forecast && assault_forecast::forecast_goes_and_holds()
+            })
             .map(|reading| reading.within(assault_forecast::GO_HORIZON));
         let forecast_go = go_reading.is_some_and(|p| p >= assault_forecast::GO_P);
         let forecast_holds = go_reading.is_some_and(|p| p >= assault_forecast::HOLD_P);

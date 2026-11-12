@@ -1,0 +1,6 @@
+# SCAFFOLDING for the forecast stand-down experiment: print the driver's
+# report from CI. Removed before the PR leaves draft.
+[[profile.default.overrides]]
+filter = 'test(/forecast_worlds/)'
+success-output = "immediate"
+failure-output = "immediate"
