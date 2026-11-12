@@ -268,6 +268,9 @@ impl AdvancedAi {
         /// Opt-in gene `domination-seat-raises-its-culture`; see
         /// `advanced/domination_culture.rs`.
         domination_seat_raises_its_culture => enable_domination_seat_raises_its_culture, disable_domination_seat_raises_its_culture;
+        /// Opt-in gene `centre-keeps-its-garrison`; see
+        /// `advanced/centre_keeps_its_garrison.rs`.
+        centre_keeps_its_garrison => enable_centre_keeps_its_garrison, disable_centre_keeps_its_garrison;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
