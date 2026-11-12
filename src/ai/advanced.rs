@@ -11448,7 +11448,9 @@ mod fire_plan;
 /// the kill plan and the heal rotation — ahead of the per-unit ladder. One
 /// opt-in gene; see `advanced/battle_planner.rs`.
 mod battle_planner;
-mod battle_solver;
+/// `pub(super)` so `ai` can re-export `host_enemy` for the harness switch
+/// `--rival-host-tactics` (`src/host_tactics.rs`).
+pub(super) mod battle_solver;
 /// `defenders-hold-the-walls`: see `advanced/defenders_hold_the_walls.rs`.
 mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;

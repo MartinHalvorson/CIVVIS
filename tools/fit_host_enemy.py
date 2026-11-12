@@ -35,6 +35,7 @@ Usage::
 
     python3 tools/fit_host_enemy.py extract --out rows.jsonl [RUN_DIR ...]
     python3 tools/fit_host_enemy.py fit rows.jsonl [--json fit.json] [--doc] [--rust]
+    python3 tools/fit_host_enemy.py rates rows.jsonl   # the table host_tactics.rs prints
 
 With no run directories ``extract`` reads every non-continuation run under
 ``~/civvis-civ6-runs/control`` matching ``--glob`` (default
@@ -1003,6 +1004,58 @@ def doc_tables(fit: dict[str, Any]) -> str:
     return "\n".join(out)
 
 
+def rate_table(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """The behaviour table `src/host_tactics.rs` prints for simulated rival
+    chairs, read the same way from live rows, so the two sit side by side.
+
+    Each entry is `[numerator, denominator]`. Target choice reads the strikes
+    on a unit in reach with two or more in reach; a tie for the nearest,
+    weakest or most damaged counts as a hit, and `chance` is the share a
+    uniform pick would hit (tied best / alternatives, averaged)."""
+    t: dict[str, list[float]] = collections.defaultdict(lambda: [0.0, 0.0])
+
+    def add(key: str, hit: bool) -> None:
+        t[key][0] += 1 if hit else 0
+        t[key][1] += 1
+
+    for r in rows:
+        targets = r["targets"]
+        if targets:
+            still = any(x["still"] for x in targets)
+            add("strike | in reach", struck_us(r))
+            add("strike | in reach without moving" if still else "strike | must move first", struck_us(r))
+            ids = [x["id"] for x in targets]
+            if struck_us(r) and len(targets) >= 2 and r["struck"] in ids:
+                hit = targets[ids.index(r["struck"])]
+                n = len(targets)
+                for name, key, best in (
+                    ("nearest", "d", min),
+                    ("weakest", "hp", min),
+                    ("most damaged", "dealt", max),
+                ):
+                    top = best(x[key] for x in targets)
+                    tied = sum(1 for x in targets if x[key] == top)
+                    add(f"target: {name}", hit[key] == top)
+                    t[f"target: {name} (chance)"][0] += tied / n
+                    t[f"target: {name} (chance)"][1] += 1
+        if r["struck"] is None and r["moved"] and r["gap"] is not None and (targets or r["gap"] <= MAX_GAP):
+            add("closes | struck nothing", r["moved"] == "closer")
+            add("closes | declined" if targets else "closes | nothing in reach", r["moved"] == "closer")
+            if r["hp"] <= 25:
+                add("steps away | hp<=25, struck nothing", r["moved"] == "away")
+                add("holds | hp<=25, struck nothing", r["moved"] == "hold")
+            else:
+                add("steps away | hp>25, struck nothing", r["moved"] == "away")
+    return {k: [round(v[0], 3), int(v[1])] for k, v in sorted(t.items())}
+
+
+def cmd_rates(args: argparse.Namespace) -> int:
+    table = rate_table(load_rows(args.rows))
+    for key, (hit, n) in table.items():
+        print(f"{key:<40} {hit / max(1, n):.3f}  ({hit:g} of {n})")
+    return 0
+
+
 def cmd_fit(args: argparse.Namespace) -> int:
     rows = load_rows(args.rows)
     fit = fit_all(rows, args.folds, args.ridge)
@@ -1035,6 +1088,9 @@ def main(argv: list[str] | None = None) -> int:
     fi.add_argument("--doc", action="store_true")
     fi.add_argument("--rust", action="store_true")
     fi.set_defaults(func=cmd_fit)
+    ra = sub.add_parser("rates")
+    ra.add_argument("rows")
+    ra.set_defaults(func=cmd_rates)
     args = parser.parse_args(argv)
     return args.func(args)
 
