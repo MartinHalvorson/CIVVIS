@@ -5670,6 +5670,13 @@ pub const GENES: &[Gene] = &[
     // read 8-13 through t60 with a nine-citizen capital. Researcher is +1
     // Science per citizen there. Opt-in; see `advanced/domination_governors.rs`.
     Gene { tag: "domination-seat-appoints-pingala-first", field: "domination_seat_appoints_pingala_first", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_seat_appoints_pingala_first, disable: AdvancedAi::disable_domination_seat_appoints_pingala_first },
+    // Live Deity Gran Colombia civvis-20261112T064834Z: 22 techs at t100
+    // against 46. The capital's Campus stood at t55 and its Library started
+    // at t91; every other first Campus came at t81-99, held by the Builder,
+    // Granary, Aqueduct and deterrent claims. A Domination seat's first
+    // Campus and its Library (then a quick University) go ahead of those
+    // claims. Opt-in; see `advanced/campus_and_library_before_the_claims.rs`.
+    Gene { tag: "campus-and-library-before-the-claims", field: "campus_and_library_before_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_and_library_before_the_claims, disable: AdvancedAi::disable_campus_and_library_before_the_claims },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
