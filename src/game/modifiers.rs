@@ -54,6 +54,12 @@ impl Game {
         PolicyReadTrace { game: self }
     }
 
+    /// A traced sweep must preserve its questions as well as its answer.
+    #[inline]
+    pub(crate) fn is_tracing_policy_reads(&self) -> bool {
+        self.query_memo.policy_reads_on.get()
+    }
+
     #[inline]
     fn note_policy_effect_read(&self, effect: &str) {
         if !self.query_memo.policy_reads_on.get() {

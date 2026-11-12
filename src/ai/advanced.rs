@@ -11288,6 +11288,9 @@ mod guns_stay_out_of_reach;
 mod guru_walks_to_the_wounded;
 mod unique_unit_closes_the_age;
 mod unit_preservation;
+
+#[cfg(test)]
+mod culture_zero_tourism_tests;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
 /// Close as a body, and screen the shooters: two opt-in genes in the deployed
@@ -14105,6 +14108,18 @@ impl AdvancedAi {
         // Rival city yields and our tourism share empire-wide derivations.
         // Keep their read-only answers for this forecast's entire sweep.
         let _memo = g.query_memo();
+        // With no visitors and no current Tourism, the projected numerator
+        // is zero whatever bar the rivals set. Traces still ask every original
+        // question: their policy-dependency set is part of the result.
+        let early_tourism = if !g.is_tracing_policy_reads() && g.foreign_tourists(pid) == 0 {
+            let tourism = g.tourism_per_turn(pid);
+            if tourism == 0.0 {
+                return 0;
+            }
+            Some(tourism)
+        } else {
+            None
+        };
         let culture_per_turn = |seat: usize| {
             g.player_city_ids(seat)
                 .into_iter()
@@ -14134,7 +14149,7 @@ impl AdvancedAi {
             .count();
         let per_visitor = starting as f64 * crate::game::TOURISM_PER_VISITOR;
         let ours = if per_visitor > 0.0 {
-            let tourism = g.tourism_per_turn(pid);
+            let tourism = early_tourism.unwrap_or_else(|| g.tourism_per_turn(pid));
             let pressure = if self.culture_lane_forecast_2 && tourism > 0.0 {
                 let religious = g.religious_tourism_per_turn(pid).clamp(0.0, tourism);
                 let secular = tourism - religious;
