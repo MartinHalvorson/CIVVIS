@@ -6929,6 +6929,11 @@ pub struct AdvancedAi {
     /// routine claims that keep a city's queue. See
     /// `advanced/campus_and_library_before_the_claims.rs`. Opt-in.
     campus_and_library_before_the_claims: bool,
+    /// `denial-spies-skip-the-upkeep-wait`: a Spy the space denial still
+    /// wants against a racer past its Moon is not set aside by
+    /// `upkeep-waits-for-the-income` while the treasury carries its own
+    /// upkeep. See `advanced/denial_spies_skip_the_upkeep_wait.rs`. Opt-in.
+    denial_spies_skip_the_upkeep_wait: bool,
     /// `deterrence-stops-at-a-garrison`: on the Domination lane,
     /// `near-rival-deterrence` against a neighbour of twice our power or more
     /// trains only a ranged garrison in a city that has none. Split out of
@@ -11769,6 +11774,9 @@ mod denial_charts_the_racer;
 /// `denial-spies-fill-every-slot`: see
 /// `advanced/denial_spies_fill_every_slot.rs`.
 mod denial_spies_fill_every_slot;
+/// `denial-spies-skip-the-upkeep-wait`: see
+/// `advanced/denial_spies_skip_the_upkeep_wait.rs`.
+mod denial_spies_skip_the_upkeep_wait;
 /// `domination-charts-every-capital`: see
 /// `advanced/domination_charts_every_capital.rs`.
 mod domination_charts_every_capital;

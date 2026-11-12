@@ -278,6 +278,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `denial-charts-the-racer` | off (unmeasured) | `denial-charts-the-racer`: see `advanced/denial_charts_the_racer.rs`. | 1 \| 1 |
 | `denial-spies-count-their-losses` | off (unmeasured) | Opt-in gene `denial-spies-count-their-losses`; see `advanced/denial_spies_count_their_losses.rs`. | 1 \| 1 |
 | `denial-spies-fill-every-slot` | off (unmeasured) | `denial-spies-fill-every-slot`: see `advanced/denial_spies_fill_every_slot.rs`. | 1 \| 1 |
+| `denial-spies-skip-the-upkeep-wait` | off (unmeasured) | Opt-in `denial-spies-skip-the-upkeep-wait`; see `advanced/denial_spies_skip_the_upkeep_wait.rs`. | 1 \| 1 |
 | `denial-war-needs-the-lane-edge` | off (unmeasured) | `denial-war-needs-the-lane-edge`: see `advanced/denial_war_needs_the_lane_edge.rs`. | 1 \| 1 |
 | `denounce-only-to-declare` | off (unmeasured) | Opt-in gene `denounce-only-to-declare`; see `advanced/denounce_only_to_declare.rs`. | 1 \| 1 |
 | `deterrence-stops-at-a-garrison` | off (unmeasured) | Opt-in gene `deterrence-stops-at-a-garrison`; see `advanced/deterrence_stops_at_a_garrison.rs`. | 1 \| 1 |

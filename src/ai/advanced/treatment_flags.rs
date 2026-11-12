@@ -255,6 +255,9 @@ impl AdvancedAi {
         /// Opt-in `campus-and-library-before-the-claims`; see
         /// `advanced/campus_and_library_before_the_claims.rs`.
         campus_and_library_before_the_claims => enable_campus_and_library_before_the_claims, disable_campus_and_library_before_the_claims;
+        /// Opt-in `denial-spies-skip-the-upkeep-wait`; see
+        /// `advanced/denial_spies_skip_the_upkeep_wait.rs`.
+        denial_spies_skip_the_upkeep_wait => enable_denial_spies_skip_the_upkeep_wait, disable_denial_spies_skip_the_upkeep_wait;
         /// Opt-in gene `deterrence-stops-at-a-garrison`; see
         /// `advanced/deterrence_stops_at_a_garrison.rs`.
         deterrence_stops_at_a_garrison => enable_deterrence_stops_at_a_garrison, disable_deterrence_stops_at_a_garrison;

@@ -5677,6 +5677,13 @@ pub const GENES: &[Gene] = &[
     // Campus and its Library (then a quick University) go ahead of those
     // claims. Opt-in; see `advanced/campus_and_library_before_the_claims.rs`.
     Gene { tag: "campus-and-library-before-the-claims", field: "campus_and_library_before_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_and_library_before_the_claims, disable: AdvancedAi::disable_campus_and_library_before_the_claims },
+    // Live Deity Gran Colombia 11-12: four of five games that reached t150
+    // set every denial Spy claim aside on `upkeep-waits-for-the-income` for
+    // 15-25 turns while the winner raced (081824Z 75 of 92 claims, t173-197,
+    // 3-4 slots empty, Mapuche past its Moon). A Spy the denial still wants
+    // against a racer past its Moon is not held while the treasury carries
+    // its own upkeep. Opt-in; see `advanced/denial_spies_skip_the_upkeep_wait.rs`.
+    Gene { tag: "denial-spies-skip-the-upkeep-wait", field: "denial_spies_skip_the_upkeep_wait", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_skip_the_upkeep_wait, disable: AdvancedAi::disable_denial_spies_skip_the_upkeep_wait },
     // Split out of hopeless-army-yields-the-queue (#5169) after the 11-12
     // live arm: the cap lowered the seat's total power, which the faith-war
     // and counter-war floors read. Opt-in, not armed; see
