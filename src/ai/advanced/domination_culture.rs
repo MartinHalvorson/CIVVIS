@@ -111,6 +111,16 @@ impl AdvancedAi {
         {
             return None;
         }
+        let monument = BasicAi::civ_building(g, pid, cid, "monument")?;
+        let turns = g.host_production_turns(cid, &monument).unwrap_or_else(|| {
+            let remaining = g.item_cost_for_city(pid, cid, &monument)
+                - g.item_invested_production(cid, &monument);
+            remaining.max(0.0) / g.city_yields(cid).production.max(0.5)
+        });
+        if turns > g.standard_duration(CAPITAL_MONUMENT_MAX_STANDARD) as f64 {
+            return None;
+        }
+        // The rear-city test last: it reads the hostiles in reach.
         let at_major_war = g.players.iter().any(|other| {
             other.id != pid
                 && other.alive
@@ -119,20 +129,7 @@ impl AdvancedAi {
                 && g.is_at_war(pid, other.id)
         });
         let pressed = self.hint_city_in_reach_of_war(g, pid, cid);
-        if at_major_war && pressed {
-            return None;
-        }
-        let monument = BasicAi::civ_building(g, pid, cid, "monument")?;
-        let turns = g.host_production_turns(cid, &monument).unwrap_or_else(|| {
-            let remaining = g.item_cost_for_city(pid, cid, &monument)
-                - g.item_invested_production(cid, &monument);
-            remaining.max(0.0) / g.city_yields(cid).production.max(0.5)
-        });
-        (turns <= g.standard_duration(CAPITAL_MONUMENT_MAX_STANDARD) as f64).then_some((
-            monument,
-            turns,
-            !at_major_war && !pressed,
-        ))
+        (!(at_major_war && pressed)).then_some((monument, turns, !at_major_war && !pressed))
     }
 
     /// Whether `item` at the head of `cid` is the Monument this gene claims
@@ -147,8 +144,21 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
-        self.domination_monument_item(g, pid, cid, plan)
-            .is_some_and(|(monument, _, _)| monument == *item)
+        // Most heads are no Monument: answer those before the city's reach.
+        let monument_family = match item {
+            Item::Building { building } => {
+                *building == "monument"
+                    || g.rules
+                        .buildings
+                        .get(building)
+                        .is_some_and(|spec| spec.replaces == Some(crate::name!("monument")))
+            }
+            _ => false,
+        };
+        monument_family
+            && self
+                .domination_monument_item(g, pid, cid, plan)
+                .is_some_and(|(monument, _, _)| monument == *item)
     }
 
     /// The head `item` of `cid` the Monument goes ahead of, as the journal
