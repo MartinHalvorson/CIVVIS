@@ -170,7 +170,10 @@ fn the_exception_keeps_the_settler_without_its_conditions() {
                 install_test_district(&mut g, other, "campus");
             }
             "campus queued elsewhere" => {
-                let there = BasicAi::first_campus_item(&g, 0, other).unwrap();
+                let there = Item::District {
+                    district: crate::name!("campus"),
+                    pos: g.cities[&other].pos,
+                };
                 g.cities.get_mut(&other).unwrap().queue.push(there);
             }
             "eight turn campus" => quote(&mut g, cid, &campus, 8.0, 56.0),
