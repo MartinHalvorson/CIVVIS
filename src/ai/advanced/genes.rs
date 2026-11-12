@@ -6057,6 +6057,14 @@ pub const GENES: &[Gene] = &[
     // units in a game with no war, 601 Production unfinished at the tally.
     // See `advanced/score_seat.rs`.
     Gene { tag: "score-seat-plays-for-points", field: "score_seat_plays_for_points", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_plays_for_points, disable: AdvancedAi::disable_score_seat_plays_for_points },
+    // Live Deity Rome Score lane 2026-11-12, 11 games: Settlers were born at
+    // the same pace in the fast and the slow games, but took a mean 8.7
+    // turns from birth to founding in the three fastest against 23.8 in the
+    // slow ones (727 Settler-turns past the eighth turn out). On a Score
+    // seat a Settler past 8 Online turns, or turned home by the corridor,
+    // founds on the best safe, holdable site within four tiles. Opt-in; see
+    // `advanced/score_seat_founds_early.rs`.
+    Gene { tag: "score-seat-founds-early", field: "score_seat_founds_early", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_founds_early, disable: AdvancedAi::disable_score_seat_founds_early },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
