@@ -167,13 +167,18 @@ impl BasicAi {
                 };
                 let mut positions = vec![friend.pos];
                 positions.extend(g.reachable(friend.id));
+                // Reject out-of-range endpoints before ordering the survivors.
+                // The same (distance, position) order still reserves the same
+                // assault slots, without sorting every reachable travel tile.
+                positions.retain(|pos| {
+                    let distance = g.wdist(*pos, target);
+                    distance > 0 && distance <= range
+                });
                 positions.sort_by_key(|pos| (g.wdist(*pos, target), *pos));
                 let positions: Vec<_> = positions
                     .into_iter()
                     .filter(|pos| {
-                        g.wdist(*pos, target) > 0
-                            && g.wdist(*pos, target) <= range
-                            && Self::city_centre_strikes(g, pid, city, *pos)
+                        Self::city_centre_strikes(g, pid, city, *pos)
                             && g.city_at(*pos).is_none()
                             && g.defending_district_at(*pos).is_none()
                             && g.line_of_sight_from(*pos, target)
