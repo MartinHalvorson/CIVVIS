@@ -7706,6 +7706,11 @@ pub struct AdvancedAi {
     /// shared ten and its target walks two ahead of the cities it holds. See
     /// `advanced/each_civ_draws_its_width.rs`. Opt-in.
     each_civ_draws_its_width: bool,
+    /// `education-follows-the-library`: a Domination seat with a Campus and
+    /// a Library standing in one of its cities researches Education in the
+    /// Campus unlock's slot. See `advanced/research/domination_education.rs`.
+    /// Opt-in.
+    education_follows_the_library: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See

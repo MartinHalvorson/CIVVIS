@@ -13,6 +13,7 @@
 use super::*;
 
 mod culture_education;
+mod domination_education;
 mod walls_interrupt;
 
 /// `spies-steal-the-lead`: the civic value Diplomatic Service (Spy capacity)
@@ -394,6 +395,9 @@ impl AdvancedAi {
             let production_technology_goal = self.named_production_technology_goal(g, pid, plan);
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
             let domination_campus_goal = self.domination_campus_unlock_goal(g, pid);
+            // `education-follows-the-library`: `None` with the gene off. See
+            // `research/domination_education.rs`.
+            let domination_education_goal = self.domination_education_goal(g, pid);
             let every_lane_campus_goal = self.every_lane_campus_unlock_goal(g, pid);
             let science_writing_goal = self.science_writing_before_the_luxury_goal(g, pid);
             let endgame_goal = self.science_endgame_research_goal(g, pid);
@@ -709,6 +713,10 @@ impl AdvancedAi {
                 // Two founded cities can invest in campuses. Finish their
                 // unlock before optional bargains and generic branch scores.
                 _ if domination_campus_goal.is_some() => domination_campus_goal,
+                // `education-follows-the-library`: the Universities those
+                // campuses are ready for, in the same slot. See
+                // `research/domination_education.rs`.
+                _ if domination_education_goal.is_some() => domination_education_goal,
                 // `campus-unlock-every-lane`: the same unlock for a Culture,
                 // Religion or adaptive seat, which otherwise has no Writing
                 // goal at all. See `advanced/domination_research.rs`.
@@ -1055,6 +1063,13 @@ impl AdvancedAi {
                                 )
                             } else if domination_campus_goal == Some(goal) {
                                 "unlock campuses for the expanding domination economy".to_string()
+                            } else if domination_education_goal == Some(goal) {
+                                let ready = Self::education_ready_campus_cities(g, pid);
+                                format!(
+                                    "education-follows-the-library: the {step} step toward {}, opening Universities for {ready} Campus {} with a Library",
+                                    plain(goal),
+                                    if ready == 1 { "city" } else { "cities" }
+                                )
                             } else if let Some((_, civic)) =
                                 culture_road_tech.filter(|(tech, _)| *tech == goal)
                             {
