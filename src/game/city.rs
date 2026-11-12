@@ -1717,10 +1717,13 @@ impl Game {
     ///
     /// * **By every action,** at both ends of `apply`, successful or refused,
     ///   and it is never read or filled while one is in flight: the rules
-    ///   read yields half-way through changing the board. The one exception
+    ///   read yields half-way through changing the board. One exception
     ///   is `Action::Produce`, which names what one of the acting seat's own
     ///   cities builds next and reaches nothing of another seat's; `apply`
-    ///   carries the argument.
+    ///   carries the argument. A successful Fortify inside a visibility batch
+    ///   can retain both sides when the tile, player and city write witnesses
+    ///   and turn/era remain unchanged after all hooks. The eventual visibility
+    ///   flush clears both sides before and after publishing discoveries.
     /// * **By every tile write,** through the tile grid's epoch, which every
     ///   `get_mut` moves whoever calls it.
     /// * **By [`Game::board_written`],** which is what a caller that writes
@@ -1752,7 +1755,8 @@ impl Game {
     /// governor passes write the food bias and the city directives. So its
     /// own cities are kept on stricter terms:
     ///
-    /// * every action drops them, `Produce` included — a city's yields read
+    /// * every action drops them, `Produce` included, apart from a verified
+    ///   quiet Fortify — a city's yields read
     ///   its own queue (the citizen plan, a running project, the envoy bonus);
     /// * the seat's policy deck, food bias and directive count are folded
     ///   into a stamp that is read back on every lookup

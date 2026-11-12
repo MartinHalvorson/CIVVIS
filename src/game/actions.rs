@@ -22,6 +22,18 @@ mod diplomacy;
 /// quotes enumeration needs. See `game/actions/legal.rs`.
 mod legal;
 
+/// Cheap write witnesses for the post-action hooks a Fortify still runs.
+/// Fortifying itself changes only the unit's readiness, not a yield input.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct FortifyYieldStamp {
+    tiles: u64,
+    players: u64,
+    cities: u64,
+    turn: u32,
+    current: usize,
+    world_era: usize,
+}
+
 /// One band's concert at one venue, as a plan reads it before performing.
 struct RockConcertRead {
     host: usize,
@@ -423,16 +435,50 @@ impl Game {
         // the tile grid's epoch reports by itself. A city's own yields do read
         // its queue (the citizen plan, a running project, the envoy bonus),
         // so the acting seat's own cities are dropped as for any action.
-        // Everything else drops everything: nothing here reasons about what a
-        // purchase, a move, an envoy or a deal can touch.
+        // A quiet Fortify may retain both sides only after its post-action
+        // write witnesses match. All other orders still drop everything:
+        // nothing here reasons about what a move, purchase or deal can touch.
+        let quiet_fortify = self.quiet_fortify_yield_candidate(action);
         let reach = match action {
+            Action::Fortify { .. } if quiet_fortify.is_some() => ActionReach::Unchanged,
             Action::Produce { .. } => ActionReach::OwnCities,
             _ => ActionReach::Board,
         };
         self.query_memo.action_begins(reach);
         let result = self.apply_unbracketed(pid, action);
+        let reach = match quiet_fortify {
+            Some(before) if result.is_ok() && before == self.fortify_yield_stamp() => {
+                ActionReach::Unchanged
+            }
+            Some(_) => ActionReach::Board,
+            None => reach,
+        };
         self.query_memo.action_ends(reach);
         result
+    }
+
+    fn quiet_fortify_yield_candidate(&self, action: &Action) -> Option<FortifyYieldStamp> {
+        if !matches!(action, Action::Fortify { .. })
+            || !self.query_memo.keeps_rival_yields.get()
+            || self.query_memo.acting.get() != 0
+            || self.visibility_batch.depth == 0
+            || (self.query_memo.rival_yields.borrow().is_empty()
+                && self.query_memo.own_yields.borrow().is_empty())
+        {
+            return None;
+        }
+        Some(self.fortify_yield_stamp())
+    }
+
+    fn fortify_yield_stamp(&self) -> FortifyYieldStamp {
+        FortifyYieldStamp {
+            tiles: self.map.tiles.epoch(),
+            players: self.players.epoch(),
+            cities: self.cities.generation(),
+            turn: self.turn,
+            current: self.current,
+            world_era: self.world_era,
+        }
     }
 
     fn apply_unbracketed(&mut self, pid: usize, action: &Action) -> Result<(), String> {
@@ -6969,3 +7015,6 @@ mod ranged_visibility_tests;
 #[cfg(test)]
 #[path = "builder_operation_refusal_tests.rs"]
 mod builder_operation_refusal_tests;
+
+#[cfg(test)]
+mod fortify_yield_carry_tests;

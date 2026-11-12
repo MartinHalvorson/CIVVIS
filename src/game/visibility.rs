@@ -1209,10 +1209,15 @@ impl Game {
         let result = actions(self);
         self.visibility_batch.depth -= 1;
         if self.visibility_batch.depth == 0 {
+            // A quiet Fortify can retain economic answers until this boundary.
+            // Publishing discoveries/contacts may change those inputs; hide
+            // and clear answers for the whole flush just as during an action.
+            self.query_memo.action_begins(ActionReach::Board);
             match pool {
                 Some(pool) => self.flush_deferred_visibility_parallel(pool),
                 None => self.flush_deferred_visibility(),
             }
+            self.query_memo.action_ends(ActionReach::Board);
         }
         result
     }

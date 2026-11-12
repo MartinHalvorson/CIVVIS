@@ -1932,6 +1932,8 @@ enum ActionReach {
     OwnCities,
     /// Anything can.
     Board,
+    /// Provisional unit-readiness-only action, checked again after all hooks.
+    Unchanged,
 }
 
 impl QueryCache {
@@ -1950,7 +1952,7 @@ impl QueryCache {
     }
 
     fn drop_kept_yields(&self, reach: ActionReach) {
-        if !self.keeps_rival_yields.get() {
+        if !self.keeps_rival_yields.get() || reach == ActionReach::Unchanged {
             return;
         }
         self.own_yields.borrow_mut().clear();
