@@ -73,14 +73,23 @@ impl AdvancedAi {
 
     /// `domination-seat-appoints-pingala-first`: Researcher completes
     /// Pingala's foundation, so the next title seats the plan's own first
-    /// Governor instead of her second promotion.
-    pub(super) fn domination_pingala_founded(&self, g: &Game, pid: usize, governor: &str) -> bool {
+    /// Governor instead of her second promotion. Under
+    /// `domination-seat-raises-its-culture` Connoisseur completes it instead
+    /// (outside a Recovery `strategy`); see `advanced/domination_culture.rs`.
+    pub(super) fn domination_pingala_founded(
+        &self,
+        g: &Game,
+        pid: usize,
+        governor: &str,
+        strategy: GrandStrategy,
+    ) -> bool {
         governor == "pingala"
             && self.domination_seat_titles_pingala_first(g)
             && g.players[pid]
                 .governor_roster
                 .get("pingala")
                 .is_some_and(|state| state.promotions.contains("researcher"))
+            && !self.domination_pingala_owes_connoisseur(g, pid, strategy)
     }
 
     pub(super) fn domination_needs_economic_governor(&self, g: &Game, pid: usize) -> bool {

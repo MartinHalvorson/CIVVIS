@@ -1700,7 +1700,7 @@ impl AdvancedAi {
                 // completes Pingala's foundation on a Domination seat.
                 .filter(|(name, state)| {
                     state.promotions.len() < 2
-                        && !self.domination_pingala_founded(g, pid, name.as_str())
+                        && !self.domination_pingala_founded(g, pid, name.as_str(), plan.strategy)
                 })
                 .min_by_key(|(name, state)| (state.assigned_turn, name.as_str()))
                 .map(|(name, _)| *name)
@@ -1740,6 +1740,9 @@ impl AdvancedAi {
                     )
                     .is_ok()
                     {
+                        // `domination-seat-raises-its-culture`: journal the
+                        // Connoisseur it brought forward.
+                        self.explain_domination_connoisseur(g, pid, primary, &promotion);
                         continue;
                     }
                 }

@@ -168,6 +168,9 @@ impl AdvancedAi {
                         // `campus-and-library-before-the-claims`: its first
                         // Campus, Library or University goes first.
                         || self.campus_and_library_holds(g, pid, cid, plan, item)
+                        // `domination-seat-raises-its-culture`: its Monument
+                        // goes first.
+                        || self.domination_monument_holds(g, pid, cid, plan, item)
                         || !Self::bound_granary_may_defer(g, pid, cid, item, at_major_war)
                     {
                         continue;
