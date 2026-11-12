@@ -379,7 +379,10 @@ fn the_journal_records_the_army_hold_once() {
     let mut wonders_only = trimming_seat(false);
     wonders_only.journal_score_seat(&g, 0, &plan);
     assert!(wonders_only.score_seat_journal.army.is_none());
+    // The live seat carries `peacetime-deterrence` (a repair): the stock asks
+    // 1.2 a city against the neighbour's 360, five, where the trim holds four.
     let mut on = trimming_seat(true);
+    on.enable_peacetime_deterrence();
     on.journal_score_seat(&g, 0, &plan);
     let Some((target, stock, held, turn)) = on.score_seat_journal.army else {
         panic!("the hold is journalled");
