@@ -27,6 +27,8 @@ from pathlib import Path
 import site_wasm_pair as pair
 import site_wasm_profile_ci as profile
 
+PUBLISHED_HOST = 'browser-measurement.civvis.ai'
+
 
 OBSERVER_JS = r"""
 (() => {
@@ -73,6 +75,8 @@ OBSERVER_JS = r"""
 """
 
 READ_REPORT_JS = """(() => ({observation: window.__civvisFullGame || null,
+  runtime: {hostname: location.hostname, secure: window.isSecureContext,
+            publishedSite: window.CIVVIS_PUBLISHED_SITE === true},
   delivery: window.__civvisBeta ? {...window.__civvisBeta, seenTurns: undefined} : null}))()"""
 
 # POST /save calls ask(..., raw=true); read its stored bytes without ever
@@ -111,6 +115,18 @@ def case_url(origin: str, case: str) -> str:
                  map='continents' if roster == 'six' else 'tenins_ball',
                  shape='planet', speed='online', turns=250, mode='watch')
     return origin + '/?' + urllib.parse.urlencode(query)
+
+
+def browser_origin(port: int) -> str:
+    # The unmodified page selects public defaults by hostname. Chrome maps
+    # this isolated test hostname to our local server; no DNS or site changes.
+    return f'http://{PUBLISHED_HOST}:{port}'
+
+
+def validate_runtime(runtime: dict) -> None:
+    if (runtime.get('hostname') != PUBLISHED_HOST or runtime.get('secure') is not True
+            or runtime.get('publishedSite') is not True):
+        raise ValueError('browser did not select the normal secure public-site branch')
 
 
 def validate_observation(observation: dict, case: str, source: str) -> dict:
@@ -161,6 +177,7 @@ def validate_save(raw: bytes, observation: dict, case: str) -> dict:
     if (game.get('seed') != seed or game.get('turn') != terminal['turn']
             or game.get('game_speed') != 'online' or game.get('max_turns') != 250
             or game.get('human_seats')
+            or (game.get('winner') is None and game.get('victory_type') != 'draw')
             or game.get('winner') != terminal.get('winner')
             or game.get('victory_type') != terminal.get('victoryType')
             or game.get('map_script') != observation['settings']['map']
@@ -210,7 +227,7 @@ def browser_game(qualified: Path, source: str, run_id: int, repo: str,
               'tooling_source': os.environ.get('GITHUB_SHA'), 'platform': platform.platform(),
               'settings_guard_sha256': hashlib.sha256(pair.DRIVER.read_bytes()).hexdigest(),
               'logical_cpus': os.cpu_count(), 'chrome': subprocess.check_output([chrome, '--version'], text=True).strip(),
-              'scope': 'Exact qualified website bundle served locally on named remote CI host. '
+              'scope': 'Exact qualified website bundle served locally under a browser-mapped civvis.ai hostname on named remote CI host. '
                        'Natural normal Online game at offered Lightning pace, all publications rendered. '
                        'Headless Chrome, GPU disabled,1600x1000,CDP screencast. '
                        'Includes real renderer/worker work; excludes public network variability. '
@@ -224,11 +241,15 @@ def browser_game(qualified: Path, source: str, run_id: int, repo: str,
     browser_profile = verify.fresh_profile('civvis-full-browser-')
     debug_port = verify.free_port()
     command = [chrome, '--headless=new', f'--remote-debugging-port={debug_port}',
+               f'--host-resolver-rules=MAP {PUBLISHED_HOST} 127.0.0.1',
+               '--no-proxy-server', '--disable-features=HttpsUpgrades',
+               f'--unsafely-treat-insecure-origin-as-secure={browser_origin(port)}',
                f'--user-data-dir={browser_profile}', '--no-first-run', '--no-default-browser-check',
                '--disable-gpu', '--window-size=1600,1000', '--hide-scrollbars',
                '--autoplay-policy=no-user-gesture-required', 'about:blank']
     browser = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     verify.tether(browser)
+    result['browser_arguments'] = command
     dev = None
     try:
         deadline = time.monotonic() + 30
@@ -249,7 +270,7 @@ def browser_game(qualified: Path, source: str, run_id: int, repo: str,
         dev.call('Page.enable')
         dev.call('Page.addScriptToEvaluateOnNewDocument', {'source': OBSERVER_JS})
         dev.call('Page.startScreencast', {'format': 'jpeg', 'quality': 40, 'maxWidth': 800, 'maxHeight': 500})
-        url = case_url(f'http://127.0.0.1:{port}', case)
+        url = case_url(browser_origin(port), case)
         result.update(phase='observing normal game', url=url)
         record()
         dev.call('Page.navigate', {'url': url})
@@ -267,16 +288,21 @@ def browser_game(qualified: Path, source: str, run_id: int, repo: str,
         else:
             raise TimeoutError('natural finished paint not observed; partial evidence retained')
         observation = snapshot['observation']
-        timing = validate_observation(observation, case, source)
-        # Reuse the frozen driver's pure settings guard without executing its CLI.
-        subprocess.run(['node', '--input-type=module', '-e', profile.SETTINGS_CHECK,
-                        pair.DRIVER.resolve().as_uri(), json.dumps(timing['settings']), timing['roster']],
-                       check=True, text=True, capture_output=True)
+        # Preserve the terminal picture and raw world even when a settings or
+        # cadence guard rejects this observation afterward.
+        shot = dev.call('Page.captureScreenshot', {'format': 'png'})
+        (out / 'terminal.png').write_bytes(base64.b64decode(shot['data']))
         held = dev.evaluate(SAVE_JS)
         raw = base64.b64decode(held['base64'], validate=True)
         if len(raw) != held['bytes']:
             raise ValueError('IndexedDB byte count differs from transferred raw save')
         (out / 'game.save.json').write_bytes(raw)
+        validate_runtime(snapshot.get('runtime') or {})
+        timing = validate_observation(observation, case, source)
+        # Reuse the frozen driver's pure settings guard without executing its CLI.
+        subprocess.run(['node', '--input-type=module', '-e', profile.SETTINGS_CHECK,
+                        pair.DRIVER.resolve().as_uri(), json.dumps(timing['settings']), timing['roster']],
+                       check=True, text=True, capture_output=True)
         saved = validate_save(raw, observation, case)
         colours = dev.evaluate(verify.MAP_CANVAS_COLOURS_JS)
         if not isinstance(colours, int) or colours < 8:
@@ -284,12 +310,11 @@ def browser_game(qualified: Path, source: str, run_id: int, repo: str,
         problems = verify.map_delivery_problems(snapshot.get('delivery') or {})
         if problems:
             raise ValueError('browser map delivery failed: ' + '; '.join(problems))
-        shot = dev.call('Page.captureScreenshot', {'format': 'png'})
-        (out / 'terminal.png').write_bytes(base64.b64decode(shot['data']))
         if hashlib.sha256(module.read_bytes()).hexdigest() != qualification['engine']['wasm_sha256']:
             raise ValueError('served module changed during browser observation')
         result.update(phase='complete', timing=timing, raw_save=saved,
-                      console=dev.console, delivery=snapshot.get('delivery'), terminal_canvas_colours=colours)
+                      console=dev.console, delivery=snapshot.get('delivery'), runtime=snapshot.get('runtime'),
+                      terminal_canvas_colours=colours)
         record()
         return result
     except BaseException as error:

@@ -74,6 +74,49 @@ class BrowserGuards(unittest.TestCase):
         self.assertEqual(query, dict(game=['7311003'], players=['6'], map=['continents'],
                                      shape=['planet'], speed=['online'], turns=['250'], mode=['watch']))
 
+    def test_served_hostname_selects_the_actual_public_lightning_default(self):
+        # Regression for real failed run43218507411: localhost selected the
+        # desktop/Blitz branch for all2136frames. Exercise the frontend's own
+        # hostname classifier and restorePace implementation, not a replica.
+        root = Path(__file__).resolve().parents[1]
+        page = (root / 'web/index.html').read_text()
+        assignment = next(line.strip() for line in page.splitlines()
+                          if 'window.CIVVIS_PUBLISHED_SITE =' in line)
+        app = (root / 'web/assets/app.js').read_text()
+        default_pace = next(line.strip() for line in app.splitlines()
+                            if line.startswith('const PUBLISHED_SITE_PACE_MS ='))
+        start = app.index('function restorePace() {')
+        restore = app[start:app.index('\n}\n', start) + 2]
+        script = r"""
+const {default: assert} = await import('node:assert/strict');
+const hostname = new URL(process.argv[1]).hostname;
+const location = {hostname}, window = {};
+eval(process.argv[2]);
+assert.equal(window.CIVVIS_PUBLISHED_SITE, true);
+const PACE_KEY = 'civvis-watch-pace';
+const localStorage = {getItem: () => null};
+const select = {value: '500', options: [{value: '0'}, {value: '500'}]};
+const document = {getElementById: () => select};
+const paceOffered = (select, ms) => select.options.some(o => +o.value === ms);
+let paceChoice = null, pacePreference = null;
+eval(process.argv[4] + '\n' + process.argv[3] + '\nrestorePace();');
+assert.equal(paceChoice, 0);
+assert.equal(select.value, '0');
+"""
+        subprocess.run(['node', '--input-type=module', '-e', script,
+                        browser.browser_origin(12345), assignment, restore, default_pace],
+                       check=True, capture_output=True, text=True)
+        failed = subprocess.run(['node', '--input-type=module', '-e', script,
+                                 'http://127.0.0.1:12345', assignment, restore, default_pace], capture_output=True)
+        self.assertNotEqual(failed.returncode, 0)
+
+    def test_actual_browser_runtime_must_match_published_secure_context(self):
+        valid = dict(hostname=browser.PUBLISHED_HOST, secure=True, publishedSite=True)
+        browser.validate_runtime(valid)
+        for key, wrong in [('hostname', '127.0.0.1'), ('secure', False), ('publishedSite', False)]:
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                browser.validate_runtime(dict(valid, **{key: wrong}))
+
     def test_save_bytes_keep_all_u64_bits(self):
         raw = json.dumps(save_game()).encode()
         value = browser.validate_save(raw, observation(), 'default-7')
@@ -98,6 +141,11 @@ class BrowserGuards(unittest.TestCase):
             mutate(game['game'])
             with self.assertRaises((ValueError, AttributeError)):
                 browser.validate_save(json.dumps(game).encode(), observation(), 'default-7')
+        game, value = save_game(), observation()
+        game['game'].update(winner=None, victory_type=None)
+        value['frames'][-1].update(winner=None, victoryType=None)
+        with self.assertRaises(ValueError):
+            browser.validate_save(json.dumps(game).encode(), value, 'default-7')
 
     def test_existing_output_is_never_replayed(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(browser, 'verify_module') as verify:
