@@ -44,6 +44,11 @@
 //! The claim runs after `campus-building-claims-the-queue` and before the
 //! Prophet race's site and the routine claims. Off, nothing runs.
 //!
+//! `campus-and-library-before-the-claims` lets a Domination seat's first
+//! Campus pass the Builder, Granary, Aqueduct, Industrial Zone, Commercial
+//! Hub and, at peace, deterrent holds below. See
+//! `advanced/campus_and_library_before_the_claims.rs`.
+//!
 //! **Version 2** (`campus-claims-the-free-slot-2`) claims from
 //! [`FREE_SLOT_CAMPUS_MIN_POP_2`] citizens and in every eligible city each
 //! turn rather than one. Live, version one's claims began only around turn
@@ -395,6 +400,10 @@ impl AdvancedAi {
         // `first-campus-before-the-settler`: the cities whose first Campus
         // that gene put ahead of the Settler, for the journal.
         let mut first_campus_released: Vec<u32> = Vec::new();
+        // `campus-and-library-before-the-claims`: the cities whose first
+        // Campus that gene put ahead of a held head, and the head, for the
+        // journal.
+        let mut held_heads_passed: Vec<(u32, String)> = Vec::new();
         let mut best: Option<(f64, u32, Item)> = None;
         for cid in city_ids {
             // `rear-cities-grow-through-the-war-hold`: under the war hold only
@@ -499,8 +508,16 @@ impl AdvancedAi {
                         None
                     };
                     if let Some(reason) = hold {
-                        self.explain_free_slot_campus_hold(g, cid, turns, reason);
-                        continue;
+                        // `campus-and-library-before-the-claims`: a Domination
+                        // seat's first Campus passes the economy's holds and,
+                        // at peace, the deterrent. `None` with the gene off.
+                        match self.first_campus_passes_the_hold(g, pid, cid, plan, item) {
+                            Some(passed) => held_heads_passed.push((cid, passed)),
+                            None => {
+                                self.explain_free_slot_campus_hold(g, cid, turns, reason);
+                                continue;
+                            }
+                        }
                     }
                 }
                 // An idle city with a Settler due leaves its queue to the
@@ -549,6 +566,9 @@ impl AdvancedAi {
                    "{} (it keeps its progress)", Self::plain_item(&item))));
         if first_campus_released.contains(&cid) {
             self.explain_first_campus_before_the_settler(g, cid, turns);
+        }
+        if let Some((_, passed)) = held_heads_passed.iter().find(|(city, _)| *city == cid) {
+            self.explain_first_campus_passes(g, cid, turns, passed);
         }
         true
     }

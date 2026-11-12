@@ -248,6 +248,9 @@ impl AdvancedAi {
         /// Opt-in `commercial-hub-claims-a-peace-queue`; see
         /// `advanced/commercial_hub_claims_a_peace_queue.rs`.
         commercial_hub_claims_a_peace_queue => enable_commercial_hub_claims_a_peace_queue, disable_commercial_hub_claims_a_peace_queue;
+        /// Opt-in `campus-and-library-before-the-claims`; see
+        /// `advanced/campus_and_library_before_the_claims.rs`.
+        campus_and_library_before_the_claims => enable_campus_and_library_before_the_claims, disable_campus_and_library_before_the_claims;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
