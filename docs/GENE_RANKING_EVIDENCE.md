@@ -278,8 +278,10 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `denial-charts-the-racer` | off (unmeasured) | `denial-charts-the-racer`: see `advanced/denial_charts_the_racer.rs`. | 1 \| 1 |
 | `denial-spies-count-their-losses` | off (unmeasured) | Opt-in gene `denial-spies-count-their-losses`; see `advanced/denial_spies_count_their_losses.rs`. | 1 \| 1 |
 | `denial-spies-fill-every-slot` | off (unmeasured) | `denial-spies-fill-every-slot`: see `advanced/denial_spies_fill_every_slot.rs`. | 1 \| 1 |
+| `denial-spies-skip-the-upkeep-wait` | off (unmeasured) | Opt-in `denial-spies-skip-the-upkeep-wait`; see `advanced/denial_spies_skip_the_upkeep_wait.rs`. | 1 \| 1 |
 | `denial-war-needs-the-lane-edge` | off (unmeasured) | `denial-war-needs-the-lane-edge`: see `advanced/denial_war_needs_the_lane_edge.rs`. | 1 \| 1 |
 | `denounce-only-to-declare` | off (unmeasured) | Opt-in gene `denounce-only-to-declare`; see `advanced/denounce_only_to_declare.rs`. | 1 \| 1 |
+| `deterrence-stops-at-a-garrison` | off (unmeasured) | Opt-in gene `deterrence-stops-at-a-garrison`; see `advanced/deterrence_stops_at_a_garrison.rs`. | 1 \| 1 |
 | `deterrence-trusts-a-friend` | off (unmeasured) | Opt-in gene `deterrence-trusts-a-friend`; see `Self::deterrence_trusts_a_friend`. | 1 \| 1 |
 | `diplo-match-point-beelines-the-points` | off (unmeasured) | `diplo-match-point-beelines-the-points`. | 1 \| 1 |
 | `diplo-seat-statue-harbor` | off (unmeasured) | Opt-in gene `diplo-seat-statue-harbor`; see `Self::diplo_seat_statue_harbor`. | 1 \| 1 |
@@ -309,6 +311,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `faith-strike-fears-the-tech-lead` | off (unmeasured) | Opt-in `faith-strike-fears-the-tech-lead`; see `AdvancedAi::faith_strike_fears_the_tech_lead`. | 1 \| 1 |
 | `faith-strike-spares-the-stages` | off (unmeasured) | Opt-in `faith-strike-spares-the-stages`; see `AdvancedAi::faith_strike_spares_the_stages`. | 1 \| 1 |
 | `faith-strike-wipes-the-spreaders` | off (unmeasured) | Opt-in `faith-strike-wipes-the-spreaders`; see `AdvancedAi::faith_strike_wipes_the_spreaders`. | 1 \| 1 |
+| `faith-war-at-match-point` | off (unmeasured) | Opt-in `faith-war-at-match-point`; see `advanced/faith_war_at_match_point.rs`. | 1 \| 1 |
 | `faith-war-defends-the-diplomat` | off (unmeasured) | Opt-in gene `faith-war-defends-the-diplomat`; see `Self::faith_war_defends_the_diplomat`. | 1 \| 1 |
 | `faith-war-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-war-needs-the-edge`; see `Self::faith_war_needs_the_edge`. | 1 \| 1 |
 | `faith-war-on-a-small-world` | off (unmeasured) | Opt-in `faith-war-on-a-small-world`; see `AdvancedAi::faith_war_on_a_small_world`. | 1 \| 1 |
@@ -396,6 +399,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `plaza-serves-the-scientist` | off (unmeasured) | Opt-in gene `plaza-serves-the-scientist`; see `BasicAi::plaza_building_item_for`. | — \| 3 |
 | `plaza-serves-the-scientist-2` | off (unmeasured) | Opt-in gene `plaza-serves-the-scientist-2` (version 2 of `plaza-serves-the-scientist`, which it carries); see `advanced/plaza_serves_the_scientist_2.rs`. | — \| 3 |
 | `plaza-serves-the-scientist-3` | off (unmeasured) | Opt-in gene `plaza-serves-the-scientist-3` (version 3, carrying 1 and 2); see `advanced/plaza_serves_the_scientist_2.rs`. | — \| 3 |
+| `policy-swap-keeps-the-army-paid` | off (unmeasured) | Opt-in gene `policy-swap-keeps-the-army-paid`: no policy swap takes projected income to zero or below; see `advanced/policy_swap_keeps_the_army_paid.rs`. | 1 \| 1 |
 | `prey-waits-for-the-march` | off (unmeasured) | Opt-in gene `prey-waits-for-the-march`; see `Self::prey_waits_for_the_march`. | — \| 2 |
 | `prey-waits-for-the-march-2` | off (unmeasured) | Opt-in gene `prey-waits-for-the-march-2`; see `Self::prey_waits_for_the_march_2`. | — \| 2 |
 | `prod-tiles-call-the-builders` | off (unmeasured) | Opt-in gene `prod-tiles-call-the-builders`; acts through `builders-cover-the-worked-backlog`'s step. | 1 \| 1 |

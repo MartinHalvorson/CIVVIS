@@ -6929,6 +6929,17 @@ pub struct AdvancedAi {
     /// routine claims that keep a city's queue. See
     /// `advanced/campus_and_library_before_the_claims.rs`. Opt-in.
     campus_and_library_before_the_claims: bool,
+    /// `denial-spies-skip-the-upkeep-wait`: a Spy the space denial still
+    /// wants against a racer past its Moon is not set aside by
+    /// `upkeep-waits-for-the-income` while the treasury carries its own
+    /// upkeep. See `advanced/denial_spies_skip_the_upkeep_wait.rs`. Opt-in.
+    denial_spies_skip_the_upkeep_wait: bool,
+    /// `deterrence-stops-at-a-garrison`: on the Domination lane,
+    /// `near-rival-deterrence` against a neighbour of twice our power or more
+    /// trains only a ranged garrison in a city that has none. Split out of
+    /// `hopeless-army-yields-the-queue`. See
+    /// `advanced/deterrence_stops_at_a_garrison.rs`. Opt-in.
+    deterrence_stops_at_a_garrison: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -7732,6 +7743,15 @@ pub struct AdvancedAi {
     /// goes ahead of the early Settler floor's Settler once two cities stand.
     /// See `advanced/first_campus_before_the_settler.rs`. Opt-in.
     first_campus_before_the_settler: bool,
+    /// `faith-war-at-match-point`: a seat with no faith of its own opens the
+    /// defensive faith war on a founder whose faith holds every other living
+    /// major, a city of ours leaning to it, past the power, edge, rout,
+    /// threatened-city, falling-city, war-count and solvency gates (and the
+    /// counter war's floor), keeping only legality, version 2's cooldown and
+    /// a running war, and keeps that war while the match point holds. Rides
+    /// `faith-war-before-the-flip-2`. See
+    /// `advanced/faith_war_at_match_point.rs`. Opt-in.
+    faith_war_at_match_point: bool,
     /// `endgame-army-takes-the-queue`: once a Domination seat's clock is
     /// short (60% of the game with no rival capital held, or a rival's
     /// projected victory within 50 turns), idle queues and fresh long-payback
@@ -8102,9 +8122,7 @@ pub struct AdvancedAi {
     great_works_never_wait: bool,
     /// `hopeless-army-yields-the-queue`: a Domination seat trains no guns
     /// or offensive bodies for a target whose walls nothing it can field
-    /// will breach, and stops its near-rival deterrent at a ranged garrison
-    /// once the neighbour fields twice its power. See
-    /// `advanced/hopeless_army_yields_the_queue.rs`. Opt-in.
+    /// will breach. See `advanced/hopeless_army_yields_the_queue.rs`. Opt-in.
     hopeless_army_yields_the_queue: bool,
     // ---- append: l-o ------------------------------------------------
     /// Ask the host for a cash price for a native land upgrade material bill.
@@ -9355,6 +9373,12 @@ pub struct AdvancedAi {
     /// The rear cities those claims may take during one idle-queue pass under
     /// the hold. `None` outside such a pass, so every claim reads every city.
     rear_cities_open_under_the_hold: Option<BTreeSet<u32>>,
+    /// `policy-swap-keeps-the-army-paid`: the policy pass projects income
+    /// against the deck the turn began with and does not give up a card
+    /// (upkeep relief, priced Gold) whose loss would take it to zero or
+    /// below; the paying cards the base deck review gave up come back first.
+    /// See `advanced/policy_swap_keeps_the_army_paid.rs`. Opt-in.
+    policy_swap_keeps_the_army_paid: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
@@ -11031,6 +11055,8 @@ mod launched_racer;
 mod city_memory;
 /// `faith-strike-wipes-the-spreaders`: see `advanced/faith_strike.rs`.
 mod faith_strike;
+/// `faith-war-at-match-point`: see `advanced/faith_war_at_match_point.rs`.
+mod faith_war_at_match_point;
 /// `faith-war-before-the-flip`: see `advanced/faith_war_before_the_flip.rs`.
 mod faith_war_before_the_flip;
 /// `faith-war-is-no-front`: see `advanced/faith_war_is_no_front.rs`.
@@ -11064,6 +11090,8 @@ mod denial_target_front;
 mod denial_war_needs_the_lane_edge;
 /// `denounce-only-to-declare`: see `advanced/denounce_only_to_declare.rs`.
 mod denounce_only_to_declare;
+/// `deterrence-stops-at-a-garrison`: see `advanced/deterrence_stops_at_a_garrison.rs`.
+mod deterrence_stops_at_a_garrison;
 /// `deterrence-trusts-a-friend`: see `advanced/deterrence_trusts_a_friend.rs`.
 mod deterrence_trusts_a_friend;
 mod runaway_expander;
@@ -11746,6 +11774,9 @@ mod denial_charts_the_racer;
 /// `denial-spies-fill-every-slot`: see
 /// `advanced/denial_spies_fill_every_slot.rs`.
 mod denial_spies_fill_every_slot;
+/// `denial-spies-skip-the-upkeep-wait`: see
+/// `advanced/denial_spies_skip_the_upkeep_wait.rs`.
+mod denial_spies_skip_the_upkeep_wait;
 /// `domination-charts-every-capital`: see
 /// `advanced/domination_charts_every_capital.rs`.
 mod domination_charts_every_capital;
@@ -11947,6 +11978,9 @@ mod envoys_open_the_siege_road;
 mod forward_airfield_project;
 mod frontier_walls_before_the_surprise;
 mod modernization_prices_the_path;
+/// `policy-swap-keeps-the-army-paid`: see
+/// `advanced/policy_swap_keeps_the_army_paid.rs`.
+mod policy_swap_keeps_the_army_paid;
 /// The research turn: the tech and civic `AdvancedAi` studies next, and how
 /// it prices them. See `advanced/research.rs`.
 mod research;

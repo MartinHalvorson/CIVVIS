@@ -7221,7 +7221,8 @@ def _play(args: argparse.Namespace) -> int:
         stall_s=args.stall_seconds,
         frozen_s=args.frozen_seconds,
         pause_when=held_or_locked,
-        finish_turn=args.max_turns, ceiling_s=ceiling_s)
+        finish_turn=args.max_turns, ceiling_s=ceiling_s,
+        ai_stall_s=args.ai_stall_seconds or None)
     # ★★★ PHOTOGRAPH A STALL BEFORE KILLING IT. Stalls are now the dominant way runs
     # end — t87, t95, t106, t184 — and the event stream goes silent by definition, so
     # it cannot say what is on screen. One screen (`DiplomacyDealView`) was already
@@ -7267,6 +7268,14 @@ def _play(args: argparse.Namespace) -> int:
                   "attempt so the climb restarts or reloads it", flush=True)
             reason = "stalled: main menu"
             break
+        # A rival's turn hung in the game core has no screen to dismiss, and
+        # the sweep's clicks would land on a live map. See `ai_stall_s` in
+        # `watch.follow`.
+        if reason.startswith(watch.AI_PHASE_STALL_REASON):
+            print("a rival's turn is hung in the game core: there is no "
+                  "screen to dismiss, so the attempt ends here and the climb "
+                  "reloads an autosave", flush=True)
+            break
         # A queued desktop rescue may be driving the same screen right now.
         desktop_rescues.drain(30.0)
         dismiss_leader_dialogue()
@@ -7276,7 +7285,8 @@ def _play(args: argparse.Namespace) -> int:
                               stall_s=args.stall_seconds,
                               frozen_s=args.frozen_seconds,
                               pause_when=held_or_locked,
-                              finish_turn=args.max_turns, ceiling_s=ceiling_s)
+                              finish_turn=args.max_turns, ceiling_s=ceiling_s,
+                              ai_stall_s=args.ai_stall_seconds or None)
         if not reason.startswith("stalled"):
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
             consecutive = 0
@@ -7967,6 +7977,17 @@ def main(argv: list[str] | None = None) -> int:
     # 480s rather than the 420s of its sibling: a real turn can legitimately take a
     # while late in a large game (rival AI turns, a long animation), and this one
     # kills a run that is still emitting, so it must be the more patient of the two.
+    # A rival's turn the mod itself reported hung (`ai_phase_stall`, 30 s into
+    # a "PLEASE WAIT" with the core idle) is given this many more silent
+    # seconds, not the 420 of `--stall-seconds` plus a dialogue rescue: there
+    # is no screen to dismiss. 240 and not less: the climb reads a player that
+    # exits with its turn stale for `EXIT_WHILE_STALE_S` (240 s) as frozen and
+    # reloads the autosave; an earlier exit would be filed as a finished game.
+    # 0 turns the fast path off.
+    ap.add_argument("--ai-stall-seconds", type=float, default=240.0,
+                    help="after the game reports a hung rival turn, give up on "
+                         "the attempt once it has stayed silent this long "
+                         "(0 = wait for --stall-seconds as before)")
     ap.add_argument("--frozen-seconds", type=float, default=480.0,
                     help="give up on a run whose TURN has not advanced for this "
                          "long, even though it is still emitting events")

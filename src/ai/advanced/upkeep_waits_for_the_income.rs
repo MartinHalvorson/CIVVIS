@@ -158,6 +158,24 @@ impl AdvancedAi {
         threatened: bool,
         plan: &StrategicPlan,
     ) -> bool {
+        self.upkeep_shortfall_holds(g, pid, cid, item, threatened, plan)
+            // `denial-spies-skip-the-upkeep-wait`: a Spy the space denial
+            // still wants against a racer past its Moon. `None` with that
+            // gene off. See `advanced/denial_spies_skip_the_upkeep_wait.rs`.
+            && self.denial_spy_upkeep_racer(g, pid, cid, item).is_none()
+    }
+
+    /// The gate's own test (see [`Self::upkeep_waits_for`]) before the
+    /// `denial-spies-skip-the-upkeep-wait` waiver.
+    pub(super) fn upkeep_shortfall_holds(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+        threatened: bool,
+        plan: &StrategicPlan,
+    ) -> bool {
         if !self.upkeep_gate_open_season(g) {
             return false;
         }

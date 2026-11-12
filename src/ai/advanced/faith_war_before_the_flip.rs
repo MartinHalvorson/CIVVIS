@@ -96,6 +96,13 @@
 //! clear turns and no city converting) still ends it, as does a city of ours
 //! falling. Nothing changes on a world of five or more living majors.
 //!
+//! ## `faith-war-at-match-point`
+//!
+//! Riding version 2, a seat with no faith of its own opens the war on a
+//! founder whose faith holds every other living major past every gate here
+//! but legality and version 2's cooldown, and keeps it while that holds; see
+//! `advanced/faith_war_at_match_point.rs`.
+//!
 //! Off: unchanged.
 
 use super::*;
@@ -148,7 +155,7 @@ pub(crate) const FAITH_WAR_CLEAR_TURNS: u32 = 5;
 
 /// Standard turns between two "held" lines about one founder for the same
 /// gate.
-const FAITH_WAR_NOTE_TURNS: u32 = 5;
+pub(crate) const FAITH_WAR_NOTE_TURNS: u32 = 5;
 
 /// `faith-war-on-a-small-world`: a world of at most this many living majors,
 /// where a Religious Victory needs three conversions or fewer.
@@ -401,18 +408,35 @@ impl AdvancedAi {
             }
             return Some(("legal", "not a legal target".to_string()));
         }
+        self.faith_war_holds(g, pid, rival, small_world)
+            .into_iter()
+            .next()
+    }
+
+    /// Every gate after legality that holds the faith war on `rival`, in the
+    /// order [`Self::faith_war_gate`] reads them, as a gate key and its
+    /// journal reason; `small_world` lifts the power floor, the edge, the
+    /// rout ratio, the treasury reserve and the income gate.
+    /// `faith-war-at-match-point` journals each one it opens past.
+    pub(super) fn faith_war_holds(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+        small_world: bool,
+    ) -> Vec<(&'static str, String)> {
+        let mut holds = Vec::new();
         let enemies = self.one_war_enemies(g, pid).len();
         if self.faith_war_before_the_flip_2 && enemies + 1 >= FAITH_WAR_2_MAX_WARS {
-            return Some((
+            holds.push((
                 "wars",
                 format!(
                     "we would be at war with {} majors counting this one",
                     enemies + 1
                 ),
             ));
-        }
-        if enemies >= FAITH_WAR_MAX_ENEMIES {
-            return Some((
+        } else if enemies >= FAITH_WAR_MAX_ENEMIES {
+            holds.push((
                 "enemies",
                 format!("we are already at war with {enemies} majors"),
             ));
@@ -420,7 +444,7 @@ impl AdvancedAi {
         let ours = g.military_power(pid);
         let steady = self.steady_rival_power(g, rival).max(1.0);
         if !small_world && ours < FAITH_WAR_POWER_FLOOR * steady {
-            return Some((
+            holds.push((
                 "power",
                 format!(
                     "our {ours:.0} power against their steady {steady:.0} (needs {FAITH_WAR_POWER_FLOOR:.1}x)"
@@ -429,7 +453,7 @@ impl AdvancedAi {
         }
         // `faith-war-needs-the-edge`: see `FAITH_WAR_EDGE`.
         if !small_world && self.faith_war_needs_the_edge && steady > FAITH_WAR_EDGE * ours {
-            return Some((
+            holds.push((
                 "edge",
                 format!(
                     "their steady {steady:.0} power is over {FAITH_WAR_EDGE:.1} times our {ours:.0}"
@@ -438,7 +462,7 @@ impl AdvancedAi {
         }
         let theirs = g.military_power(rival);
         if !small_world && theirs >= FAITH_WAR_ROUT_RATIO * ours {
-            return Some((
+            holds.push((
                 "rout",
                 format!(
                     "their {theirs:.0} power is {FAITH_WAR_ROUT_RATIO:.1} times our {ours:.0} or more"
@@ -446,14 +470,14 @@ impl AdvancedAi {
             ));
         }
         if self.threatened_city(g, pid).is_some() {
-            return Some(("threatened", "a city of ours is threatened".to_string()));
+            holds.push(("threatened", "a city of ours is threatened".to_string()));
         }
         if Self::our_cities_falling(g, pid) {
-            return Some(("falling", "a city of ours is falling".to_string()));
+            holds.push(("falling", "a city of ours is falling".to_string()));
         }
         if !small_world && !self.war_is_affordable(g, pid) {
             let reserve = 100.0 + 25.0 * g.player_city_ids(pid).len() as f64;
-            return Some((
+            holds.push((
                 "treasury",
                 format!(
                     "the treasury reserve: {:.0} gold of {reserve:.0} needed",
@@ -463,9 +487,9 @@ impl AdvancedAi {
         }
         let per_turn = g.players[pid].gold_per_turn;
         if !small_world && per_turn < 0.0 {
-            return Some(("income", format!("our income is {per_turn:.1} gold a turn")));
+            holds.push(("income", format!("our income is {per_turn:.1} gold a turn")));
         }
-        None
+        holds
     }
 
     /// The declaration the faith war opens with: the shipped opening when it
@@ -528,16 +552,26 @@ impl AdvancedAi {
     pub(super) fn faith_war_before_the_flip_opening(&mut self, g: &mut Game, pid: usize) -> bool {
         if !self.faith_war_active()
             || !g.victory_conditions.religious
-            // `faith-war-defends-the-diplomat` opens the Diplomacy lane.
-            || !self.faith_war_lane(g)
             || self.faith_war_before_the_flip_war.is_some()
         {
+            return false;
+        }
+        // `faith-war-at-match-point`: a founder at match point against a
+        // faithless seat, on any lane. `false` with the gene off. See
+        // `advanced/faith_war_at_match_point.rs`.
+        if self.faith_war_at_match_point_opening(g, pid) {
+            return true;
+        }
+        // `faith-war-defends-the-diplomat` opens the Diplomacy lane.
+        if !self.faith_war_lane(g) {
             return false;
         }
         let mut candidates: Vec<(usize, (usize, usize))> = g
             .players
             .iter()
             .map(|player| player.id)
+            // `faith-war-at-match-point` decided these founders above.
+            .filter(|rival| self.faith_war_match_point(g, pid, *rival).is_none())
             .filter_map(|rival| self.faith_war_trigger(g, pid, rival).map(|t| (rival, t)))
             .collect();
         // Most spreaders at our cities first, then most cities of ours on the
@@ -682,15 +716,21 @@ impl AdvancedAi {
     /// `faith-war-on-a-small-world` also keeps it with no city converting
     /// while its race reading holds and a spreader of the faith stood at our
     /// cities within the exit's clear turns (`faith_war_small_world_keeps`).
+    ///
+    /// `faith-war-at-match-point` keeps it while the founder's faith stands
+    /// at match point against us and a spreader of it stood at our cities
+    /// within the exit's clear turns, a city of ours falling included
+    /// (`faith_war_match_point_keeps`).
     pub(crate) fn faith_war_keeps_the_war(&self, g: &Game, pid: usize, rival: usize) -> bool {
         self.faith_war_is_run()
             && self
                 .faith_war_before_the_flip_war
                 .is_some_and(|war| war.rival == rival)
             && g.is_at_war(pid, rival)
-            && (Self::faith_war_converting(g, pid, rival) > 0
-                || self.faith_war_small_world_keeps(g, pid, rival).is_some())
-            && !Self::our_cities_falling(g, pid)
+            && (self.faith_war_match_point_keeps(g, pid, rival).is_some()
+                || ((Self::faith_war_converting(g, pid, rival) > 0
+                    || self.faith_war_small_world_keeps(g, pid, rival).is_some())
+                    && !Self::our_cities_falling(g, pid)))
             && !self.faith_strike_war_spares_the_stages(g, pid, rival)
     }
 
@@ -731,7 +771,10 @@ impl AdvancedAi {
         rival: usize,
         refused: bool,
     ) {
-        if !self.journal().wants(crate::reasoning::Level::Decision) {
+        // `faith-war-at-match-point`: its own line while its keep holds.
+        if self.journal_match_point_keeps(g, pid, rival, refused)
+            || !self.journal().wants(crate::reasoning::Level::Decision)
+        {
             return;
         }
         let converting = Self::faith_war_converting(g, pid, rival);

@@ -107,7 +107,7 @@ impl AdvancedAi {
         }
         self.deterrence_threat(g, pid).is_some_and(|(_, theirs)| {
             g.military_power(pid) < DETERRENCE_RATIO * theirs
-                // `hopeless-army-yields-the-queue`: out of reach, only a
+                // `deterrence-stops-at-a-garrison`: out of reach, only a
                 // garrisonless city's ranged garrison is held.
                 && (!self.deterrence_out_of_reach(g, pid, theirs)
                     || Self::deterrence_garrison_head(g, pid, item))
@@ -193,7 +193,7 @@ impl AdvancedAi {
             .map(|city| city.pos)
             .collect();
         let max_turns = g.standard_duration(DETERRENCE_MAX_BUILD) as f64;
-        // `hopeless-army-yields-the-queue`: against twice our power or more,
+        // `deterrence-stops-at-a-garrison`: against twice our power or more,
         // a city with a ranged garrison trains no deterrent and one without
         // trains only that garrison.
         let out_of_reach = self.deterrence_out_of_reach(g, pid, theirs);
@@ -279,9 +279,9 @@ impl AdvancedAi {
             if out_of_reach && garrisoned > 0 {
                 think!(self.journal(), Military, Detail,
                     "No deterrent against {}: it is out of reach", g.players[rival].civ;
-                    "hopeless-army-yields-the-queue: {theirs:.0} power against our {ours:.0}, \
+                    "deterrence-stops-at-a-garrison: {theirs:.0} power against our {ours:.0}, \
                      {:.1}x or more; {garrisoned} of our cities already hold a ranged garrison",
-                    super::hopeless_army_yields_the_queue::DETERRENCE_OUT_OF_REACH);
+                    super::deterrence_stops_at_a_garrison::DETERRENCE_OUT_OF_REACH);
             }
             return;
         };
@@ -298,7 +298,7 @@ impl AdvancedAi {
             displaced.map_or(String::new(), |item| format!(
                 "; {} keeps its progress", Self::plain_item(&item))),
             if out_of_reach {
-                "; hopeless-army-yields-the-queue: out of reach, a ranged garrison only"
+                "; deterrence-stops-at-a-garrison: out of reach, a ranged garrison only"
             } else {
                 ""
             });

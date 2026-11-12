@@ -2464,6 +2464,16 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     # one-back from t89 would land on the board that froze at t88.
     # Callers that do not track episodes keep the historical stride sequence.
     episode_index = resumes_so_far if stride_index is None else max(0, stride_index)
+    # ⚠ ONE HANG IS RELOADED AT MOST `RESUME_EPISODE_MAX` TIMES. Live
+    # civvis-20261112T112009Z hung in the same rival's turn at t90, then at
+    # t89 after reloading one save back, then at t88 after three back: 40
+    # minutes for one game, with three more strides (8, 15, 24 saves back)
+    # still in the budget. A hang that survives three different turn
+    # boundaries is in the game, not in the boundary; the next game is worth
+    # more than a fourth reload. A freeze two or more turns later is a new
+    # episode (`resume_stride_index`) and gets its own reloads.
+    if stride_index is not None and episode_index >= RESUME_EPISODE_MAX:
+        return None
     step = RESUME_STEPS[min(episode_index, len(RESUME_STEPS) - 1)]
     index = min(step, len(saves) - 1)
     if not 0 <= index < len(saves):
@@ -2515,6 +2525,10 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
 # oldest autosave on disk clamps to the oldest rather than giving up: a short
 # list is still a different board from the one that parked.
 RESUME_STEPS: tuple[int, ...] = (0, 3, 8, 15, 24, 35)
+
+#: Reloads spent on one hang (freezes at the same turn or one turn earlier
+#: each time) before the game is given up. See `resume_from_autosave`.
+RESUME_EPISODE_MAX = 3
 
 
 def resume_stride_index(resumes: list[dict], frozen_turn: int | None) -> int:
