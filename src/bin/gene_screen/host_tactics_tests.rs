@@ -77,8 +77,8 @@ fn worlds() -> usize {
 }
 
 #[test]
-#[ignore = "whole Deity games: minutes; run with --ignored --nocapture"]
 fn host_tactics_table_and_paired_demonstration() {
+    // WIP: CI evidence run; the report rides the panic into the log.
     let genes = gene_table();
     let gene = genes
         .iter()
@@ -178,5 +178,5 @@ fn host_tactics_table_and_paired_demonstration() {
             ));
         }
     }
-    println!("{}", report.join("\n"));
+    panic!("{}", report.join("\n"));
 }
