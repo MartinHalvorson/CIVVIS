@@ -1358,6 +1358,19 @@ struct Row {
     /// absent — in files written before.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     last_orders: BTreeMap<String, [u32; 2]>,
+    /// ⭐ ONE OWNER PER UNIT: this seat's orders that crossed another claim
+    /// on the unit, as `owner:step: [crossed, deliberate, refused]` (refused
+    /// only under `one-owner-per-unit`). Only cells that saw anything are
+    /// written. See `ai/advanced/unit_owner.rs`. Empty — and absent — in
+    /// files written before.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    claim_crossings: BTreeMap<String, [u32; 3]>,
+    /// This seat's military unit-turns, counted at the end of each of its
+    /// turns, and those no step ordered. `None` in files written before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    unit_turns: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    unordered_unit_turns: Option<u32>,
     /// ⭐ THE OPENING BAND: cities held at the start of the turn equivalent to
     /// Standard turn `OPENING_BAND_STANDARD_TURN`, or the final count when the
     /// game ended before it. `None` in every file written before the field
@@ -2978,6 +2991,10 @@ fn play_game(
             // game is over, so nothing it decides can follow.
             ais[seat].settle_last_orders(&world, seat);
             row.last_orders = ais[seat].strategy_census().last_orders.map();
+            let claims = ais[seat].strategy_census().claims;
+            row.claim_crossings = claims.map();
+            row.unit_turns = Some(claims.unit_turns);
+            row.unordered_unit_turns = Some(claims.unordered_unit_turns);
             row.player_target = civvis::ai::player::target_for(seed, index, &profile.target_mix)
                 .map_or("civvis", |target| target.as_str())
                 .to_string();
@@ -3218,6 +3235,9 @@ fn row_for_seat(
         civilians_lost: Some(game.combat_ledger(seat).civilians_lost),
         // Filled in by `play_game`, which holds the seat's agent.
         last_orders: BTreeMap::new(),
+        claim_crossings: BTreeMap::new(),
+        unit_turns: None,
+        unordered_unit_turns: None,
         victories_off: Vec::new(),
         difficulty: String::new(),
         rival_mix: String::new(),
@@ -7944,6 +7964,9 @@ mod tests {
             units_lost_to_barbarians: None,
             civilians_lost: None,
             last_orders: BTreeMap::new(),
+            claim_crossings: BTreeMap::new(),
+            unit_turns: None,
+            unordered_unit_turns: None,
             science_end: None,
             wonders: 0,
             military: 0.0,
