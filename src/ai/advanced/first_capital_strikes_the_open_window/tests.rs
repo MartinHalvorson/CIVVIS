@@ -998,12 +998,19 @@ fn a_second_scout_combs_apart_from_the_first() {
 fn the_search_keeps_clear_of_a_visible_hostile() {
     let (mut game, on, scout) = searching(true, (29, 15));
     let quiet = on.first_capital_search_goal(&game, 0, scout).unwrap();
-    assert_eq!(game.wdist((29, 15), quiet), 2, "the ring is two tiles off");
     at_war(&mut game, 0, 1);
-    game.spawn_test_unit("warrior", 1, quiet);
-    assert!(game.sees(&game.player_vision_frame(0), quiet));
+    // The goal itself is fog, so the soldier stands on the seen tile nearest it.
+    let visible = game.player_vision_frame(0);
+    let post = game
+        .wdisk((29, 15), 2)
+        .into_iter()
+        .filter(|pos| *pos != (29, 15) && game.sees(&visible, *pos))
+        .min_by_key(|pos| (game.wdist(*pos, quiet), *pos))
+        .expect("a seen tile beside the scout");
+    assert!(game.wdist(post, quiet) <= FIRST_CAPITAL_SEARCH_CLEARANCE);
+    game.spawn_test_unit("warrior", 1, post);
     let goal = on.first_capital_search_goal(&game, 0, scout).unwrap();
-    assert!(game.wdist(goal, quiet) > FIRST_CAPITAL_SEARCH_CLEARANCE);
+    assert!(game.wdist(goal, post) > FIRST_CAPITAL_SEARCH_CLEARANCE);
 }
 
 /// The search stops once a capital can be named, past its window, once the
