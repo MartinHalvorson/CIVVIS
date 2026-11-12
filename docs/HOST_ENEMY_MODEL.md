@@ -296,6 +296,54 @@ Run it with `cargo test --lib host_enemy_bench -- --ignored --nocapture`
 (`CIVVIS_HOST_BENCH_SEEDS` sets the skirmish seeds per row; positions get
 half).
 
+## Rival chairs that fight like the host: `--rival-host-tactics`
+
+Every tactical gene is priced in `gene_screen` paired games whose rival
+chairs are this repository's own AI, and the bench above shows how differently
+that AI fights. The harness switch makes a simulated opponent fight at these
+rates instead (`src/host_tactics.rs`); `--chair-tactics-census` reads how the
+chairs fight without changing anything.
+
+**The census** reads a chair's turns with the definitions of this page:
+a row is a chair's land fighter at war with a measured seat and on a tile
+that seat sees, at the start of the chair's turn; reach is open ground; the
+strike is read from the game's action log; "closer" compares where it ended
+the turn with where the measured seat's units stood.
+`python3 tools/fit_host_enemy.py rates rows.jsonl` prints the same rows for
+the live host.
+
+**The switch** governs a chair's land fighters within 8 tiles of a measured
+seat's unit, once per unit per turn, with draws hashed from the game seed.
+The chair's AI may neither strike a measured seat's unit with a governed unit
+nor move it that turn; the harness plays the host's turn for it:
+
+- **Strike.** With a measured seat's unit in reach, it strikes with
+  `strike_probability` on this page's features, read on open-ground reach as
+  the fit read them, divided by the share of the chair's open-ground reach so
+  far that was exact (the engine's own movement flood and line of sight).
+  Open ground counts targets that rough ground or a zone of control puts out
+  of reach, and the fit's rates carry that; dividing by the share is what lets
+  the census read the fitted rate back. The target is drawn on the fitted
+  weights among the units in exact reach, struck from its own tile when it
+  can.
+- **Close, step away or hold.** A unit that struck nothing steps toward the
+  measured seat with `advance_probability` (a shooter stops at its range),
+  steps away at the live majors' rate (24% at 25 hp or less, 13% above), and
+  otherwise holds. There is no other retreat.
+- **Not made host-like:** what the chairs build and how many soldiers they
+  field, which cities they target, when they declare war, their units more
+  than 8 tiles from the measured seat, their strikes on cities and districts
+  (allowed, from where the unit stands) and their cities' own strikes, other
+  players, and fog: the switch governs every unit in range, seen or not, and
+  the census reads only what the measured seat sees. The measured seat's own
+  agent is untouched.
+
+The refusals are the engine's (`Game::host_gate`, read in `Game::apply`), set
+only for a governed chair's own turn; with no seat wrapped the field is never
+set and a game is byte for byte what it was. A unit refused 12 times in one
+turn has its moves and attacks spent, so an AI that retries a refused order
+still ends its turn.
+
 ## Reproduce
 
 ```bash

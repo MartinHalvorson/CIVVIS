@@ -216,7 +216,7 @@ fn a_governed_turn_strikes_or_holds_by_the_draw_and_sets_the_gate() {
             gate: true,
         };
         let mut counts = GateCounts::default();
-        let mut share: ReachShare = [[0; 2]; 2];
+        let mut share = ReachShare::default();
         govern(&mut world, 1, &host, &mut counts, &mut share);
         assert_eq!(counts.units, 1);
         let set = world.host_gate.as_deref().expect("a gate for the turn");

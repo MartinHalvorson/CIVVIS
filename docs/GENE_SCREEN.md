@@ -796,6 +796,55 @@ disbands or merges is not a death; one removed by maintenance or fallout is
 counted as one. Neither instrument changes a decision: the frozen anchor
 (`advanced_v1_plays_the_same_game_it_always_did`) is unchanged.
 
+## ⭐ Chairs that fight like the host: `--rival-host-tactics` (2026-11-12)
+
+The rival chairs are this repository's own AI, and it does not fight like the
+live host: over 116 live Deity games the host struck one of ours on a quarter
+of the turns it had one in reach (43% when it need not move, 11% when it
+must), took the unit in front of it, and did not retreat when wounded
+(`docs/HOST_ENEMY_MODEL.md`). A defence or tactics gene read against chairs
+that strike far more often is read against an opponent nobody meets live.
+
+```bash
+gene_screen --players 4 --width 60 --height 38 --city-states 6 --map pangaea \
+  --difficulty deity --rivals firaxis-faithful --handicap rivals --rival-chairs 3 \
+  --rival-rung -2 --rival-pace --target-mix domination \
+  --rival-host-tactics --genes <tag> --games N --start-seed S --out rows.jsonl
+```
+
+- **`--rival-host-tactics`** wraps every rival chair in
+  `civvis::host_tactics::HostTacticsSeat` with the switch on. The chair's AI
+  may neither strike a measured seat's unit with one of its land fighters
+  within 8 tiles of that seat nor move it; the harness plays that unit's turn
+  from draws hashed from the game seed: a strike at the fitted rate
+  (`host_enemy::strike_probability` on the fit's open-ground features, over the
+  share of open-ground reach that was exact) on a target drawn on the fitted
+  weights, else a step toward the measured seat
+  (`host_enemy::advance_probability`), a step away (the live majors' rate), or
+  nothing. The header records `rival_host_tactics: true` and `--analyze`
+  refuses to merge it with files played without the switch.
+- **`--chair-tactics-census`** wraps the chairs with the switch off: nothing
+  they do changes, and each measured row gets `chair_tactics`, the table
+  `tools/fit_host_enemy.py rates` prints for the live host
+  (`"strike | in reach without moving": [hits, rows]`, …). With the switch on
+  the rows carry it too, plus `gate: …` counts of what the switch did.
+- **Not made host-like:** production and army size, target cities, war
+  timing (`--rival-war-pace` is the knob for that), strikes on cities and
+  districts (allowed, from where a governed unit stands) and the cities' own
+  strikes, units more than 8 tiles away, other players, and fog (the switch
+  governs every unit in range, seen or not).
+- Without either flag no seat is wrapped and the game is byte for byte what
+  it was (the frozen anchor is unchanged). Both need `--rivals`.
+
+`victory_eval --domination-pair <tag> … --rival-host-tactics on` applies the
+same switch to the domination pair's rival majors and writes `rival_tactics`
+on each arm.
+
+`src/bin/gene_screen/host_tactics_tests.rs` (ignored; `--ignored
+--nocapture`) prints the chairs' table beside the live host's with the switch
+off and on, and `defend-force-holds-the-city` off and on under each; the
+first run is in `docs/HOST_ENEMY_MODEL.md`.
+
 ## ⭐ Science pace: `techs_150` and `science_end` (2026-09-01)
 
 The screen prices every gene by win share, and 52% of its games end on score

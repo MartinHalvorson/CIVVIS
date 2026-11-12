@@ -191,7 +191,19 @@ impl TacticsCensus {
         a.stepped_away += b.stepped_away;
         a.refusals += b.refusals;
         a.valves += b.valves;
-        for (mine, theirs) in self.reach.iter_mut().zip(other.reach) {
+        for (mine, theirs) in self
+            .reach
+            .strike
+            .iter_mut()
+            .chain(std::iter::once(&mut self.reach.close))
+            .zip(
+                other
+                    .reach
+                    .strike
+                    .iter()
+                    .chain(std::iter::once(&other.reach.close)),
+            )
+        {
             mine[0] += theirs[0];
             mine[1] += theirs[1];
         }
@@ -221,12 +233,17 @@ impl TacticsCensus {
                 out.insert(format!("gate: {name}"), [count as f64, units]);
             }
             for (still, name) in [(0, "must move first"), (1, "in reach without moving")] {
-                let [rows, exact] = self.reach[still];
+                let [rows, exact] = self.reach.strike[still];
                 out.insert(
                     format!("gate: exact reach, {name}"),
                     [exact as f64, rows as f64],
                 );
             }
+            let [rows, could] = self.reach.close;
+            out.insert(
+                "gate: could close, struck nothing".to_string(),
+                [could as f64, rows as f64],
+            );
         }
         out
     }
@@ -258,8 +275,35 @@ pub fn compare(columns: &[(&str, &BTreeMap<String, [f64; 2]>)]) -> String {
         }
         out.push('\n');
     }
+    out.push_str(
+        "\nthe same rows against what the fitted tables give the simulated units themselves (realized / fitted):\n",
+    );
+    for key in FITTED_ROWS {
+        out.push_str(&format!("{key:<38} {:>33}", ""));
+        for (_, report) in columns {
+            let [hits, rows] = report.get(*key).copied().unwrap_or([0.0, 0.0]);
+            let [fitted, _] = report
+                .get(&format!("fitted: {key}"))
+                .copied()
+                .unwrap_or([0.0, 0.0]);
+            out.push_str(&format!(
+                "    {:>6.3} / {:>6.3}",
+                hits / rows.max(1.0),
+                fitted / rows.max(1.0)
+            ));
+        }
+        out.push('\n');
+    }
     out
 }
+
+/// The rows the census also prices with the fitted tables.
+const FITTED_ROWS: [&str; 4] = [
+    "strike | in reach",
+    "strike | in reach without moving",
+    "strike | must move first",
+    "closes | struck nothing",
+];
 
 /// The engine's half of the switch: what a governed chair may not do this
 /// turn. Set on `Game::host_gate` by [`HostTacticsSeat`] for the chair's turn
@@ -538,24 +582,74 @@ fn foes(g: &Game, pid: usize, victims: &[usize]) -> Vec<usize> {
         .collect()
 }
 
-/// How often a chair's unit with a measured seat's unit in open-ground reach
-/// also has one in exact reach, counted as the game goes: `[[rows, exact];
-/// 2]`, indexed by "in reach without moving". The fit's strike rates are read
-/// on open-ground reach, which counts targets rough ground or a zone of
-/// control puts out of reach; the switch strikes only on exact reach, so it
-/// draws at the fitted rate divided by this share and the census reads the
-/// fitted rate back.
-pub type ReachShare = [[u32; 2]; 2];
+/// How often what the fit counted was possible on the board, counted as the
+/// game goes. The fit's rates are read on open-ground reach and on "closer",
+/// both of which count units that could not act: a target rough ground or a
+/// zone of control puts out of reach, a unit already beside us that cannot
+/// close. The switch acts only where the board allows, so it draws at the
+/// fitted rate divided by this share and the census reads the fitted rate
+/// back. Each entry is `[rows, possible]`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ReachShare {
+    /// Open-ground reach that was exact, indexed by "in reach without moving".
+    pub strike: [[u32; 2]; 2],
+    /// Units that struck nothing and had a tile that closed on us.
+    pub close: [u32; 2],
+}
 
-/// The open-ground targets of `unit` among `victims`, as the fit reads them.
-fn open_targets(g: &Game, unit: &Unit, victims: &[&Unit]) -> Vec<InReach> {
+impl ReachShare {
+    /// The share with one success and one row of prior, so the first rows
+    /// do not divide by zero.
+    fn share(row: [u32; 2]) -> f64 {
+        (row[1] + 1) as f64 / (row[0] + 1) as f64
+    }
+}
+
+/// The fitted chance this unit strikes, on the fit's own features, read on
+/// open-ground reach (exact reach where open ground saw none: a road's
+/// doing).
+fn fitted_strike(
+    g: &Game,
+    pid: usize,
+    unit: &Unit,
+    open: &[(InReach, f64)],
+    exact: &[Target],
+) -> (f64, bool) {
+    let still = if open.is_empty() {
+        exact.iter().any(|t| t.features.still)
+    } else {
+        open.iter().any(|t| t.0 .4)
+    };
+    let edge = if open.is_empty() {
+        exact.iter().map(|t| t.edge).fold(f64::MIN, f64::max)
+    } else {
+        open.iter().map(|t| t.1).fold(f64::MIN, f64::max)
+    };
+    let features = StrikeFeatures {
+        class: host_class(g, unit),
+        owner: Owner::Major,
+        hp: unit.hp as i16,
+        home: g
+            .cities
+            .values()
+            .any(|c| c.owner == pid && g.wdist(c.pos, unit.pos) <= 1),
+        edge: edge as f32,
+        targets: open.len().max(exact.len()),
+        still,
+    };
+    (strike_probability(&features) as f64, still)
+}
+
+/// The open-ground targets of `unit` among `victims`, as the fit reads them,
+/// each with its strength edge.
+fn open_targets(g: &Game, unit: &Unit, victims: &[&Unit]) -> Vec<(InReach, f64)> {
     let mut out = Vec::new();
     for other in victims {
         let distance = g.wdist(unit.pos, other.pos);
         let (reach, still) = open_ground(g, unit, distance);
         if reach {
-            let (_, dealt) = blow(g, unit, other);
-            out.push((other.id, distance, other.hp, dealt, still));
+            let (edge, dealt) = blow(g, unit, other);
+            out.push(((other.id, distance, other.hp, dealt, still), edge));
         }
     }
     out
@@ -565,9 +659,17 @@ fn open_targets(g: &Game, unit: &Unit, victims: &[&Unit]) -> Vec<InReach> {
 /// on the measured seat (a shooter stops at its range), or, stepping away, to
 /// the one farthest from it. `false` when no tile does better than standing.
 fn step(g: &mut Game, pid: usize, uid: u32, plots: &[Pos], closer: bool) -> bool {
-    let Some(unit) = g.units.get(&uid) else {
+    let here = g.units.get(&uid).map(|u| u.pos);
+    let Some(to) = step_to(g, uid, plots, closer) else {
         return false;
     };
+    g.apply(pid, &Action::MoveTo { unit: uid, to }).is_ok()
+        && g.units.get(&uid).map(|u| u.pos) != here
+}
+
+/// The tile [`step`] would walk to, if any does better than standing.
+fn step_to(g: &Game, uid: u32, plots: &[Pos], closer: bool) -> Option<Pos> {
+    let unit = g.units.get(&uid)?;
     let here = unit.pos;
     let wanted = if shooter(g, unit) {
         g.unit_attack_range(uid).max(1)
@@ -612,11 +714,7 @@ fn step(g: &mut Game, pid: usize, uid: u32, plots: &[Pos], closer: bool) -> bool
                     .then(b.cmp(a))
             })
     };
-    let Some(to) = pick else {
-        return false;
-    };
-    g.apply(pid, &Action::MoveTo { unit: uid, to }).is_ok()
-        && g.units.get(&uid).is_some_and(|u| u.pos != here)
+    pick
 }
 
 /// Set the gate for `pid`'s turn and play the strikes and steps it draws.
@@ -678,38 +776,11 @@ fn govern(
         let situation = if open.is_empty() && exact.is_empty() {
             Situation::Gap(start.clamp(0, 255) as u8)
         } else {
-            // The fit's features, read on open ground as the fit read them
-            // (exact reach where open ground saw none, a road's doing).
-            let still = if open.is_empty() {
-                exact.iter().any(|t| t.features.still)
-            } else {
-                open.iter().any(|t| t.4)
-            };
-            let edge = if open.is_empty() {
-                exact.iter().map(|t| t.edge).fold(f64::MIN, f64::max)
-            } else {
-                open.iter()
-                    .filter_map(|t| victim_units.iter().find(|u| u.id == t.0))
-                    .map(|other| blow(g, &unit, other).0)
-                    .fold(f64::MIN, f64::max)
-            };
-            let features = StrikeFeatures {
-                class: host_class(g, &unit),
-                owner: Owner::Major,
-                hp: unit.hp as i16,
-                home: g
-                    .cities
-                    .values()
-                    .any(|c| c.owner == pid && g.wdist(c.pos, unit.pos) <= 1),
-                edge: edge as f32,
-                targets: open.len().max(exact.len()),
-                still,
-            };
-            let row = &mut share[usize::from(still)];
+            let (fitted, still) = fitted_strike(g, pid, &unit, &open, &exact);
+            let row = &mut share.strike[usize::from(still)];
             row[0] += 1;
             row[1] += u32::from(!exact.is_empty());
-            let reachable = (row[1] + 1) as f64 / (row[0] + 1) as f64;
-            let chance = (strike_probability(&features) as f64 / reachable).min(1.0);
+            let chance = (fitted / ReachShare::share(*row)).min(1.0);
             if !exact.is_empty() && draw(host.seed, turn, uid, 1) < chance {
                 counts.strikes_drawn += 1;
                 let utility: Vec<f64> = exact
@@ -736,14 +807,19 @@ fn govern(
             }
             Situation::Declined
         };
-        let roll = draw(host.seed, turn, uid, 3);
-        let closes = advance_probability(unit.hp as i16, situation) as f64;
-        let away = LIVE_AWAY[usize::from(unit.hp > 25)];
-        if roll < closes {
+        // Close at the fitted rate over the share that could; else step away
+        // at the live rate among the rest; else hold.
+        let fitted_close = advance_probability(unit.hp as i16, situation) as f64;
+        let can_close = step_to(g, uid, &victim_plots, true).is_some();
+        share.close[0] += 1;
+        share.close[1] += u32::from(can_close);
+        let close = (fitted_close / ReachShare::share(share.close)).min(1.0);
+        let away = LIVE_AWAY[usize::from(unit.hp > 25)] / (1.0 - fitted_close).max(0.05);
+        if can_close && draw(host.seed, turn, uid, 3) < close {
             if step(g, pid, uid, &victim_plots, true) {
                 counts.closed += 1;
             }
-        } else if roll < closes + away {
+        } else if draw(host.seed, turn, uid, 4) < away {
             if step(g, pid, uid, &victim_plots, false) {
                 counts.stepped_away += 1;
             }
@@ -767,6 +843,10 @@ struct Watched {
     /// `(victim uid, distance, hp, expected damage, still)` per unit in
     /// open-ground reach.
     targets: Vec<InReach>,
+    /// What the fitted tables give this row: the strike chance (with a
+    /// target in reach) and the chance it closes if it strikes nothing.
+    fitted_strike: f64,
+    fitted_close: f64,
 }
 
 /// The census's view of a chair's turn: taken at the start, closed at the end.
@@ -833,22 +913,26 @@ impl Watch {
             {
                 continue;
             }
-            let mut targets = Vec::new();
-            for other in &struck {
-                let distance = g.wdist(unit.pos, other.pos);
-                let (reach, still) = open_ground(g, unit, distance);
-                if reach {
-                    let (_, dealt) = blow(g, unit, other);
-                    targets.push((other.id, distance, other.hp, dealt, still));
-                }
-            }
+            let open = open_targets(g, unit, &struck);
+            let fitted_strike = if open.is_empty() {
+                0.0
+            } else {
+                fitted_strike(g, pid, unit, &open, &[]).0
+            };
             let gap = (!victim_plots.is_empty()).then(|| gap(g, unit.pos, &victim_plots));
+            let situation = if open.is_empty() {
+                Situation::Gap(gap.unwrap_or(i32::MAX).clamp(0, 255) as u8)
+            } else {
+                Situation::Declined
+            };
             rows.push(Watched {
                 uid,
                 start: unit.pos,
                 hp: unit.hp,
                 gap,
-                targets,
+                targets: open.into_iter().map(|(t, _)| t).collect(),
+                fitted_strike,
+                fitted_close: advance_probability(unit.hp as i16, situation) as f64,
             });
         }
         Watch {
@@ -900,6 +984,15 @@ impl Watch {
                     },
                     on_ours.is_some(),
                 );
+                census.add_weight("fitted: strike | in reach", row.fitted_strike);
+                census.add_weight(
+                    if still {
+                        "fitted: strike | in reach without moving"
+                    } else {
+                        "fitted: strike | must move first"
+                    },
+                    row.fitted_strike,
+                );
                 if let Some(vid) = on_ours {
                     if row.targets.len() >= 2 {
                         if let Some(chosen) = row.targets.iter().find(|t| t.0 == vid) {
@@ -944,6 +1037,7 @@ impl Watch {
                 },
                 closer,
             );
+            census.add_weight("fitted: closes | struck nothing", row.fitted_close);
             if row.hp <= 25 {
                 census.add("steps away | hp<=25, struck nothing", away);
                 census.add("holds | hp<=25, struck nothing", now == row.start);
@@ -977,7 +1071,7 @@ impl<A> HostTacticsSeat<A> {
             inner,
             host,
             census: TacticsCensus::default(),
-            reach_share: [[0; 2]; 2],
+            reach_share: ReachShare::default(),
         }
     }
 }
