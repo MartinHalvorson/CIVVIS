@@ -12,10 +12,13 @@
 
 use super::{pace_abs_z, pace_cell, pace_json, GeneEstimate, Row};
 
+/// How a column is read off one row.
+type Read = fn(&Row) -> Option<f64>;
+
 /// The columns the read sets side by side: the city ledger the rows already
 /// carried, then the unit ledger. Each is `None` on a row written before it
 /// existed.
-pub(super) const COLUMNS: [(&str, fn(&Row) -> Option<f64>); 7] = [
+pub(super) const COLUMNS: [(&str, Read); 7] = [
     ("cities_taken", |row| row.cities_taken.map(|n| n as f64)),
     ("cities_lost", |row| row.cities_lost.map(|n| n as f64)),
     ("units_killed", |row| row.units_killed.map(f64::from)),

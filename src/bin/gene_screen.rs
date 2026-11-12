@@ -10907,7 +10907,9 @@ mod tests {
             .collect();
         let mut steps: BTreeMap<String, [u32; 2]> = BTreeMap::new();
         let (mut killed, mut lost) = (0u32, 0u32);
+        let mut seats = Vec::new();
         for &seat in &majors {
+            let before = ais[seat].strategy_census().last_orders.deaths();
             ais[seat].settle_last_orders(&world, seat);
             let row = row_for_seat(&world, 0, seed, seat, String::new(), 0.0);
             let ledger = world.combat_ledger(seat);
@@ -10916,7 +10918,21 @@ mod tests {
             assert_eq!(row.civilians_lost, Some(ledger.civilians_lost));
             killed += ledger.units_killed;
             lost += ledger.units_lost;
-            for (step, pair) in ais[seat].strategy_census().last_orders.map() {
+            let census = ais[seat].strategy_census().last_orders;
+            seats.push(format!(
+                "seat {seat} {} alive={} ledger={ledger:?} census {before}->{} disbands={}",
+                world.players[seat].civ,
+                world.players[seat].alive,
+                census.deaths(),
+                world
+                    .log
+                    .iter()
+                    .filter(|(actor, action)| {
+                        *actor == seat && matches!(action, civvis::game::Action::DisbandUnit { .. })
+                    })
+                    .count()
+            ));
+            for (step, pair) in census.map() {
                 let total = steps.entry(step).or_default();
                 total[0] += pair[0];
                 total[1] += pair[1];
@@ -10925,9 +10941,14 @@ mod tests {
         let deaths: u32 = steps.values().map(|pair| pair[0] + pair[1]).sum();
         let other = steps.get("other").map_or(0, |pair| pair[0] + pair[1]);
         let report = format!(
-            "majors killed {killed} and lost {lost} military units; the census counted \
-             {deaths} deaths, {other} of them `other` ({:.1}%); by step {steps:?}",
-            100.0 * f64::from(other) / f64::from(deaths.max(1))
+            "turn {} winner {:?} {:?}; majors killed {killed} and lost {lost} military units; \
+             the census counted {deaths} deaths, {other} of them `other` ({:.1}%); by step \
+             {steps:?}; {}",
+            world.turn,
+            world.winner,
+            world.victory_type,
+            100.0 * f64::from(other) / f64::from(deaths.max(1)),
+            seats.join("; ")
         );
         assert!(lost > 0, "the game has to have a fight in it: {report}");
         assert!(deaths > 0, "{report}");

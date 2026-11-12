@@ -462,9 +462,11 @@ impl AdvancedAi {
     }
 
     /// Count the deaths since our last turn without waiting for another one:
-    /// for a caller reading the census after the game has ended.
+    /// for a caller reading the census after the game has ended. A seat that
+    /// was eliminated has no next turn, and its army went with it, so
+    /// nothing is counted for it.
     pub fn settle_last_orders(&mut self, g: &Game, pid: usize) {
-        if self.unit_orders.seat == Some(pid) {
+        if self.unit_orders.seat == Some(pid) && g.players.get(pid).is_some_and(|p| p.alive) {
             self.open_unit_orders(g, pid);
         }
     }
