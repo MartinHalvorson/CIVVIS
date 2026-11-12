@@ -1,37 +1,33 @@
 # The assault forecast
 
-**Verdict.**
+**Verdict** (1,200 posed sieges with both seats kept solvent; #5207, CI
+runs 43303003805 and 43315093796).
 
-- The forecast is reliable when it reads low: 655 posed sieges read under
-  0.2, predicted 0.01, and 0.04 were taken.
-- It is overconfident when it reads high: 473 sieges read 0.8 or more,
-  predicted 0.99, and 0.44 were taken. By wall pool, the high bin was taken
-  0.60 of the time with no walls, 0.42 at 100, 0.36 at 200 and 0.26 at 400.
-  Across all readings the realized rates are 0.37, 0.21, 0.15 and 0.09.
-- Its Brier score is worse than giving every siege the base rate: 0.252
-  against 0.162 within 12 turns.
-- The go gene took 134 cities to 132 on 400 paired posed sieges, which is
-  noise.
+- **Low readings are right.** 655 sieges read under 0.2, predicted 0.01,
+  and 0.09 were taken.
+- **High readings run 0.18 hot.**
+  - 473 sieges read 0.8 or more, predicted 0.99, and 0.81 were taken.
+  - By wall pool, the high bin was taken 0.85 with no walls, 0.83 at 100,
+    0.79 at 200 and 0.70 at 400.
+- **It beats the base rate.** Brier within 12 turns is 0.136, against
+  0.238 for giving every siege the base rate.
+- **The gap is the train's, not the model's.** Of the 92 high readings not
+  taken:
+  - 65 are execution: the train did not do what the forecast's press does;
+  - 3 are the model: the owner raised something the forecast does not see;
+  - 24 are undetermined.
 
-**Caveat, found after these runs (#5207): the posed seats were not funded.**
-When a seat's gold runs out, the engine disbands one unit per 10 Gold of
-deficit each turn (`settle_gold_budget`). A pop-1 capital cannot pay for up
-to nine soldiers. Most of the miss above was that: force members lost
-outside combat came to 2.11 a siege.
+  See [Why high readings fail](#why-high-readings-fail-5207).
+- **The go gene does not close it.** On the high readings it gained
+  +0.006 +/- 0.008 captures (paired, same sieges).
 
-With the seats kept solvent (#5207, CI run 43303003805), the same 1,200
-sieges read:
-
-- members lost outside combat 0.00;
-- the 473 readings of 0.8 or more realized 0.81;
-- Brier within 12 of 0.136, against the base rate's 0.238;
-- units lost: predicted 1.98, realized 0.61.
-
-#5207 traced the rest of the gap to the train, not the model. Of the 92
-solvent readings of 0.8 or more not taken, 3 trace to something the
-forecast does not see, 65 to the train not doing what the forecast's press
-does, and 24 are undetermined. The go gene does not close the gap. See
-[Why high readings fail](#why-high-readings-fail-5207).
+**Superseded: #5195's first numbers.** #5195 first reported 0.44 taken for
+the high bin and a Brier of 0.252, worse than the base rate's 0.162. Those
+seats were not funded. When a seat's gold runs out, the engine disbands
+one unit per 10 Gold of deficit each turn (`settle_gold_budget`), and a
+pop-1 capital cannot pay for up to nine soldiers. Force members lost
+outside combat came to 2.11 a siege; with solvent seats, 0.00. Do not quote
+0.44.
 
 ## For callers
 
@@ -84,10 +80,17 @@ tower against Ancient or Medieval Walls.
   few hundred ms per city, once a turn for each (city, pool, chance,
   horizon).
 
-**Warning: a raw high reading is not a probability.** Readings of 0.8 or
-more were taken 44% of the time on the posed sieges as #5195 ran them
-(unfunded seats), and 81% with the seats kept solvent (#5207). Use
-`calibrated_within` for an expected value.
+**Warning: a raw high reading is not a probability.**
+
+- **The numbers.** Readings of 0.8 or more were taken 0.81 of the time
+  against 0.99 predicted, on 1,200 posed sieges with solvent seats (#5207).
+  The forecast's Brier within 12 turns is 0.136, against 0.238 for the base
+  rate.
+- **Where the gap comes from.** Of the 92 high readings not taken, 65 are
+  the train's execution, 3 the model's, and 24 undetermined.
+- **What to use.** Use `calibrated_within` for an expected value.
+- **The superseded figure.** The 0.44 #5195 first reported came from
+  unfunded seats.
 
 ### The high bin by wall pool (what `calibrated_within` reads)
 
@@ -301,8 +304,25 @@ third (106 against 334). The worked examples show three patterns:
 On these posed sieges, keeping the objective while its forecast holds would
 reach at most the two-city misses that switched (6 of 30, 5 of them in
 Stage). The guard line that separates misses from takes is the muster's
-hold, not a safe-step guard. Most held members write no line at all; to
-name their guard, the gun-danger and post checks would need to journal.
+hold, not a safe-step guard.
+
+**Two candidate fixes (not built).** No execution class dominates, so
+#5207 adds no gene. Both of these are follow-ups.
+
+1. **The muster hold yields to a train the forecast reads high.**
+   - Motivation: "the mustered train holds" is the one hold line the misses
+     over-represent: 0.23 a miss against 0.04 a taken siege (0.67 against
+     0.13 with two cities).
+   - Meanwhile the train has done 25 of damage by turn 4, against the
+     forecast's 113.
+2. **The gun-danger and post checks write a journal line when they hold a
+   member.**
+   - Motivation: members more than two tiles out that end our turn no
+     nearer come to 10.3 unit-turns a miss against 3.3 a taken siege.
+   - Most of those write no line, so no guard can be named. The Stage
+     march's gun-danger checks are one of the checks that write none.
+   - Once the lines exist, the guard to make yield can be measured instead
+     of guessed.
 
 The driver prints two worked examples per cause, turn by turn: `cargo test
 --profile ci --lib -- --ignored assault_forecast_calibration --nocapture`.
@@ -452,8 +472,23 @@ sides. They do not forecast live play.
 
 ## Calibration: 1,200 posed sieges, 12 turns each
 
-Forecast against whether the stock train took the city (no seed ended in
-peace).
+**Solvent seats (#5207, CI run 43315093796): the current read.** Forecast
+against whether the stock train took the city (no seed ended in peace).
+
+| P(capture within 12) | sieges | mean predicted | realized | stock train invested |
+|---|---|---|---|---|
+| 0.0-0.2 | 655 | 0.01 | 0.09 | 0.72 |
+| 0.2-0.4 | 26 | 0.30 | 0.38 | 1.00 |
+| 0.4-0.6 | 18 | 0.51 | 0.67 | 1.00 |
+| 0.6-0.8 | 28 | 0.71 | 0.29 | 0.96 |
+| 0.8-1.0 | 473 | 0.99 | 0.81 | 1.00 |
+
+Brier score within 12: 0.136. The base rate (0.39) for every siege scores
+0.238.
+
+**Superseded: unfunded seats, as #5195 first ran them.** Everything below
+in this section is that run. Its misses are mostly units the bankrupt seat
+disbanded (see the verdict).
 
 | P(capture within 12) | sieges | mean predicted | realized | stock train invested |
 |---|---|---|---|---|
