@@ -205,9 +205,9 @@ fn the_bench_control_reads_zero_with_the_gene_on_and_off() {
 
 /// Fitted-enemy solver (seat A) against stock-enemy solver (seat B).
 #[test]
-#[ignore = "a bench: minutes of play; run with --ignored --nocapture"]
 fn host_enemy_bench() {
-    let skirmish_seeds = seeds(24);
+    // WIP: CI evidence run; the report rides the panic into the log.
+    let skirmish_seeds = seeds(8);
     let position_seeds = (skirmish_seeds / 2).max(2);
     let mut report = vec![format!(
         "solver-plays-the-host bench: A = live tactical stack + battle-solver + solver-plays-the-host, \
@@ -245,7 +245,5 @@ fn host_enemy_bench() {
         }
     }
     TEST_HORIZON.store(0, std::sync::atomic::Ordering::Relaxed);
-    for text in &report {
-        println!("{text}");
-    }
+    panic!("HOST-BENCH-REPORT\n{}", report.join("\n"));
 }
