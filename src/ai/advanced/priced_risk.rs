@@ -36,9 +36,12 @@
 //!
 //! **The allowance** ([`Mission`]): what the unit is for this frame, read from
 //! its Objective Board row when the board holds it and from the shipped force
-//! group otherwise. A Defend or Relieve member, an active siege post, or any
-//! unit standing by a city of ours with a visible hostile at it, may buy up to
-//! [`HOLD_ALLOWANCE`]; a Destroy, Escort or engaged unit [`FIGHT_ALLOWANCE`];
+//! group otherwise. A Defend or Relieve member, an active siege post (the
+//! siege train's, or an engaged group's unit within [`ASSAULT_RING_RADIUS`]
+//! of the enemy city it is aimed at), or any unit within
+//! [`HOME_RELIEF_RADIUS`] of a city of ours with a visible hostile at it, may
+//! buy up to [`HOLD_ALLOWANCE`]; a Destroy, Escort or engaged unit
+//! [`FIGHT_ALLOWANCE`];
 //! marching, staging, mustering, Reserve, Deter, Recon, ClearCamp, healing and
 //! exploring units [`MARCH_ALLOWANCE`]; a scout [`SCOUT_ALLOWANCE`].
 //!
@@ -97,6 +100,13 @@ pub(crate) const HEALING_HP: i32 = 50;
 /// A city of ours is contested when a visible at-war hostile stands within
 /// this of it, and a unit within this of a contested city is defending it.
 pub(crate) const HOME_THREAT_RADIUS: i32 = 3;
+/// A unit beyond [`HOME_THREAT_RADIUS`] and within this of a contested city
+/// of ours is relieving it: `THREAT_RELIEF_RADIUS`, inside which the shipped
+/// layer counts a group part of the defence rather than a column marching.
+pub(crate) const HOME_RELIEF_RADIUS: i32 = super::THREAT_RELIEF_RADIUS;
+/// A unit of an engaged group within this of the enemy city its group is
+/// aimed at is on the assault ring: an active siege post without the train.
+pub(crate) const ASSAULT_RING_RADIUS: i32 = 3;
 /// The city id under the structure tags (`STRUCTURE_SOURCE` and the
 /// Encampment bit below it); city ids stay below both.
 const CITY_ID_MASK: u32 = (1 << 30) - 1;
@@ -450,6 +460,18 @@ impl AdvancedAi {
                 {
                     Mission::Relieve
                 }
+                // Engaged on the ring of the enemy city it is aimed at: the
+                // assault holds its posts as the train's would.
+                Some(group)
+                    if group.posture == ForcePosture::Engage
+                        && g.wdist(unit.pos, group.objective) <= ASSAULT_RING_RADIUS
+                        && g.city_at(group.objective).is_some_and(|cid| {
+                            let owner = g.cities[&cid].owner;
+                            owner != pid && g.is_at_war(pid, owner)
+                        }) =>
+                {
+                    Mission::SiegePost
+                }
                 Some(group) => match group.posture {
                     ForcePosture::Engage => Mission::Engaged,
                     ForcePosture::Recover => Mission::Healing,
@@ -460,13 +482,19 @@ impl AdvancedAi {
             },
         };
         // A unit standing by a city of ours with the attacker at it is
-        // defending that city, whatever row it serves.
-        let mission = if mission.allowance() < HOLD_ALLOWANCE
-            && contested
-                .iter()
-                .any(|city| g.wdist(*city, unit.pos) <= HOME_THREAT_RADIUS)
-        {
+        // defending that city, and one within the relief radius is relieving
+        // it, whatever row it serves.
+        let home = contested
+            .iter()
+            .map(|city| g.wdist(*city, unit.pos))
+            .min()
+            .unwrap_or(i32::MAX);
+        let mission = if mission.allowance() >= HOLD_ALLOWANCE {
+            mission
+        } else if home <= HOME_THREAT_RADIUS {
             Mission::Defend
+        } else if home <= HOME_RELIEF_RADIUS {
+            Mission::Relieve
         } else {
             mission
         };

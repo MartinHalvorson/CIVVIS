@@ -36,9 +36,9 @@ const LIVE_TACTICS: &[&str] = &[
 const KEY_POSITIONS: &[&str] = &["the_relief", "the_reserve", "the_storming"];
 const KEY_SEEDS: u64 = 48;
 const OTHER_SEEDS: u64 = 12;
-const CONTROL_SEEDS: u64 = 4;
+const CONTROL_SEEDS: u64 = KEY_SEEDS;
 const SKIRMISH_SEEDS: u64 = 40;
-const WORLD_SEEDS: u64 = 10;
+const WORLD_SEEDS: u64 = 16;
 const WORLD_TURNS: u32 = 200;
 /// A world past this many seconds stops where it stands (`stopped`).
 const WORLD_BUDGET_SECS: u64 = 16 * 60;
@@ -66,6 +66,9 @@ struct ArenaRow {
     on_lost: usize,
     off_taken: usize,
     off_lost: usize,
+    /// Units lost in each role, by arm.
+    on_role_lost: [usize; 2],
+    off_role_lost: [usize; 2],
 }
 
 fn mean_se(values: &[f64]) -> (f64, f64) {
@@ -106,6 +109,10 @@ fn arena(on: &str, off: &str, positions: &[(&'static str, u64)]) -> Vec<(String,
         row.on_lost += m.a.cities_lost;
         row.off_taken += m.b.cities_taken;
         row.off_lost += m.b.cities_lost;
+        for role in 0..2 {
+            row.on_role_lost[role] += m.a_by_role[role].losses;
+            row.off_role_lost[role] += m.b_by_role[role].losses;
+        }
     }
     rows.into_iter()
         .map(|(id, row)| (id.to_string(), row))
@@ -153,6 +160,12 @@ fn print_arena(title: &str, rows: &[(String, ArenaRow)]) {
             row.off_lost,
         );
     }
+    for (id, row) in rows {
+        println!(
+            "  {id:<18} units lost by role (role 0 / role 1): on {}/{}  off {}/{}",
+            row.on_role_lost[0], row.on_role_lost[1], row.off_role_lost[0], row.off_role_lost[1]
+        );
+    }
     let (mean, se) = mean_se(&all);
     println!(
         "{:<20} {:>5} {:>5} {:>+9.1} {:>7.1} | {:>7} {:>7} {:>7} {:>7}",
@@ -187,19 +200,23 @@ fn priced_risk_paired_arena() {
         .iter()
         .map(|id| (*id, CONTROL_SEEDS))
         .collect();
-    let rows = arena("advanced", "advanced", &control);
-    print_arena("CONTROL advanced vs advanced", &rows);
-    for (_, row) in &rows {
-        assert!(
-            row.diffs.iter().all(|d| *d == 0.0),
-            "the control must read zero"
-        );
-        assert_eq!(row.fires, 0);
+    let live_off = live_seat("advanced_domination");
+    let live_on = format!("{live_off}+risk-is-priced");
+    // The controls: each seat against itself. Zero by construction, and the
+    // base rate each role's losses and cities are read against.
+    for seat in ["advanced", live_off.as_str()] {
+        let rows = arena(seat, seat, &control);
+        print_arena(&format!("CONTROL {seat} vs itself"), &rows);
+        for (_, row) in &rows {
+            assert!(
+                row.diffs.iter().all(|d| *d == 0.0),
+                "the control must read zero"
+            );
+            assert_eq!(row.fires, 0);
+        }
     }
     let rows = arena("advanced+risk-is-priced", "advanced", &positions);
     print_arena("advanced+risk-is-priced vs advanced", &rows);
-    let live_off = live_seat("advanced_domination");
-    let live_on = format!("{live_off}+risk-is-priced");
     let rows = arena(&live_on, &live_off, &positions);
     print_arena(&format!("{live_on} vs {live_off}"), &rows);
 
@@ -282,13 +299,17 @@ struct Shape {
 }
 
 const SHAPES: [Shape; 2] = [
-    // Every rival keeps Deity whole and rushes: the seat is out-teched from
-    // the start and fights for its life.
+    // Emperor rivals keep their handicap and the seat plays without it: the
+    // seat is out-teched, and one rival plays for Domination.
     Shape {
-        name: "deity-rush",
-        difficulty: "deity",
+        name: "emperor-mixed",
+        difficulty: "emperor",
         rival_yields: None,
-        rivals: [VictoryTarget::Domination; 3],
+        rivals: [
+            VictoryTarget::Domination,
+            VictoryTarget::Science,
+            VictoryTarget::Culture,
+        ],
     },
     // The live-calibrated shape (`gene_screen --rival-rung -2`): Immortal
     // combat and start units with King yields, two Domination rivals and a

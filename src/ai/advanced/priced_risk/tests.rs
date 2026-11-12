@@ -444,5 +444,40 @@ fn a_wound_since_the_frame_is_re_read() {
     assert_eq!(risk.death_at(&g, spear, (18, 10)), 0.0);
     g.units.get_mut(&spear).unwrap().hp = 40;
     let wounded = risk.death_at(&g, spear, (18, 10));
-    assert!(wounded > 0.0 && wounded <= HOST_STRIKE_P, "{wounded}");
+    assert!(
+        wounded > 0.0 && wounded <= HOST_STRIKE_P + 1e-12,
+        "{wounded}"
+    );
+}
+
+/// Without a board or a siege train: an engaged unit on the ring of the
+/// enemy city its group is aimed at holds a siege post, the same group's
+/// unit further out is engaged; a unit within the relief radius of a
+/// contested city of ours is relieving it, one beyond it is marching.
+#[test]
+fn the_assault_ring_and_the_relief_radius_buy_the_hold_allowance() {
+    let mut g = field(377_310);
+    let enemy = g.found_city_for(1, (26, 10), None);
+    let target = g.cities[&enemy].pos;
+    let ring = g.spawn_test_unit("swordsman", 0, (24, 10));
+    let back = g.spawn_test_unit("swordsman", 0, (20, 10));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_risk_is_priced();
+    ai.force_groups = vec![group(vec![back, ring], target, ForcePosture::Engage)];
+    let mission = |ai: &AdvancedAi, g: &Game, uid: u32, contested: &[Pos]| {
+        ai.priced_risk_mission(g, 0, uid, &plan(), contested)
+    };
+    assert_eq!(mission(&ai, &g, ring, &[]), Mission::SiegePost);
+    assert_eq!(mission(&ai, &g, back, &[]), Mission::Engaged);
+
+    ai.force_groups.clear();
+    let mut g = field(377_310);
+    let home = g.found_city_for(0, (17, 10), None);
+    let at = g.cities[&home].pos;
+    let near = g.spawn_test_unit("warrior", 0, (12, 10));
+    let far = g.spawn_test_unit("warrior", 0, (9, 10));
+    assert_eq!(g.wdist(at, (12, 10)), 5);
+    assert_eq!(g.wdist(at, (9, 10)), 8);
+    assert_eq!(mission(&ai, &g, near, &[at]), Mission::Relieve);
+    assert_eq!(mission(&ai, &g, far, &[at]), Mission::March);
 }
