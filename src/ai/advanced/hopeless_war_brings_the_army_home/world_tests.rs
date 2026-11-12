@@ -284,13 +284,13 @@ fn mean_se(values: &[f64]) -> (f64, f64) {
 }
 
 #[test]
-// WIP-CI-RUN #[ignore = "plays the Emperor army-home worlds; run with --ignored --nocapture"]
+#[ignore = "plays the Emperor army-home worlds; run with --ignored --nocapture"]
 fn army_home_worlds_emperor() {
     worlds(EMPEROR);
 }
 
 #[test]
-// WIP-CI-RUN #[ignore = "plays the Immortal army-home worlds; run with --ignored --nocapture"]
+#[ignore = "plays the Immortal army-home worlds; run with --ignored --nocapture"]
 fn army_home_worlds_immortal() {
     worlds(IMMORTAL);
 }

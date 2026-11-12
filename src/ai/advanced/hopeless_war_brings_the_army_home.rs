@@ -1,6 +1,15 @@
 //! `hopeless-war-brings-the-army-home`: when the war cannot be won in the
 //! field, the army goes home and holds there.
 //!
+//! **Measured (PR #5216, 24 paired whole worlds a shape, both arms with
+//! `defend-force-holds-the-city`): it fails its bar.** On the out-teched
+//! Immortal shape units lost moved +1.67 ± 3.80 a world (+0.50 ± 4.13 with
+//! `siege-goes-on-the-forecast`), cities lost +0.08 ± 0.13, cities taken
+//! +0.12 ± 0.09, units killed +2.96 ± 1.25. It was in force 63 turns a world.
+//! The brought-home units that died, died on the way: 26 of 29 (38 of 40
+//! with the stand-down), mostly within two tiles of an enemy. Opt-in, not
+//! armed.
+//!
 //! **Why (PR #5211, 24 paired whole worlds a shape).**
 //! - Hopeless sieges kill their units. On the out-teched Immortal shape, 138
 //!   of the 168 deaths last ordered by `siege_doctrine` that had a forecast
@@ -111,6 +120,9 @@ impl WarReading {
         self.at_war && self.best < HOPELESS_P && self.theirs - self.ours >= OBSOLETE_STRENGTH_GAP
     }
 }
+
+/// How a blow from home ranks: a kill, the damage, then the tile.
+type BlowRank = (bool, i64, std::cmp::Reverse<Pos>);
 
 /// A land tile one of our soldiers may stand on: passable, and no soldier
 /// on it but `uid`.
@@ -504,7 +516,7 @@ impl AdvancedAi {
                     && espec.domain.as_deref() != Some("air")
             })
         };
-        let mut best: Option<((bool, i64, std::cmp::Reverse<Pos>), Action)> = None;
+        let mut best: Option<(BlowRank, Action)> = None;
         if spec.has_ranged_attack() {
             let frame = g.player_vision_frame(pid);
             let viewers = g.visibility_viewers(pid);

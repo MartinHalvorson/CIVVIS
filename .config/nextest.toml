@@ -1,6 +1,0 @@
-# SCAFFOLDING for hopeless-war-brings-the-army-home: print the paired
-# driver's report from CI. Removed before the PR leaves draft.
-[[profile.default.overrides]]
-filter = 'test(/army_home_worlds/)'
-success-output = "immediate"
-failure-output = "immediate"
