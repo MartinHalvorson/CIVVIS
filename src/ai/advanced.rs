@@ -7732,6 +7732,15 @@ pub struct AdvancedAi {
     /// goes ahead of the early Settler floor's Settler once two cities stand.
     /// See `advanced/first_campus_before_the_settler.rs`. Opt-in.
     first_campus_before_the_settler: bool,
+    /// `faith-war-at-match-point`: a seat with no faith of its own opens the
+    /// defensive faith war on a founder whose faith holds every other living
+    /// major, a city of ours leaning to it, past the power, edge, rout,
+    /// threatened-city, falling-city, war-count and solvency gates (and the
+    /// counter war's floor), keeping only legality, version 2's cooldown and
+    /// a running war, and keeps that war while the match point holds. Rides
+    /// `faith-war-before-the-flip-2`. See
+    /// `advanced/faith_war_at_match_point.rs`. Opt-in.
+    faith_war_at_match_point: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -11024,6 +11033,8 @@ mod launched_racer;
 mod city_memory;
 /// `faith-strike-wipes-the-spreaders`: see `advanced/faith_strike.rs`.
 mod faith_strike;
+/// `faith-war-at-match-point`: see `advanced/faith_war_at_match_point.rs`.
+mod faith_war_at_match_point;
 /// `faith-war-before-the-flip`: see `advanced/faith_war_before_the_flip.rs`.
 mod faith_war_before_the_flip;
 /// `faith-war-is-no-front`: see `advanced/faith_war_is_no_front.rs`.

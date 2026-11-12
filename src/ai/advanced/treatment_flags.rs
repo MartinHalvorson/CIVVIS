@@ -297,6 +297,9 @@ impl AdvancedAi {
         /// Opt-in `first-campus-before-the-settler`; see
         /// `advanced/first_campus_before_the_settler.rs`.
         first_campus_before_the_settler => enable_first_campus_before_the_settler, disable_first_campus_before_the_settler;
+        /// Opt-in `faith-war-at-match-point`; see
+        /// `advanced/faith_war_at_match_point.rs`.
+        faith_war_at_match_point => enable_faith_war_at_match_point, disable_faith_war_at_match_point;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
