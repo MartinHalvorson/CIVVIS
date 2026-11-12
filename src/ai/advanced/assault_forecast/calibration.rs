@@ -781,7 +781,7 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
                     .filter(|(uid, was)| {
                         **was > 2
                             && g.units
-                                .get(*uid)
+                                .get(uid)
                                 .filter(|unit| unit.owner == 0)
                                 .is_some_and(|unit| g.wdist(unit.pos, pos) >= **was)
                     })
