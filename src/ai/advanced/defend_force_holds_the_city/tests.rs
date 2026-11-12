@@ -987,6 +987,4 @@ fn paired_posed_defences_four_arms() {
         raider_posts_v2, 0,
         "version two formed a hold against raiders\n{report}"
     );
-    // WIP: the CI log is the read-out.
-    panic!("{report}");
 }
