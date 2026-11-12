@@ -2385,8 +2385,10 @@ impl AdvancedAi {
         }
         // See `one_war::COUNTER_WAR_POWER_FLOOR`: against a faith, urgency
         // waives the war ratio but not the floor under it, and a staged bill
-        // does not stand in for it either.
-        let below_counter_floor = urgent_denial && self.counter_war_hopeless(g, pid, target);
+        // does not stand in for it either. `faith-war-at-match-point`: never
+        // against a founder whose faith stands at match point against us; see
+        // `advanced/faith_war_at_match_point.rs`.
+        let below_counter_floor = self.counter_floor_holds(g, pid, target, urgent_denial);
         // See `urgent_denial_has_the_edge`: under the gene an urgent clock
         // waives the war ratio and the edge only at 1.5 times the rival's
         // steady power; short of it the declaration holds like an elective war.

@@ -5780,6 +5780,16 @@ pub const GENES: &[Gene] = &[
     // goes ahead of that Settler. Opt-in; see
     // `advanced/first_campus_before_the_settler.rs`.
     Gene { tag: "first-campus-before-the-settler", field: "first_campus_before_the_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_first_campus_before_the_settler, disable: AdvancedAi::disable_first_campus_before_the_settler },
+    // Live Deity Gran Colombia (no faith founded), 2026-11-12: three of seven
+    // games lost to a rival Religious Victory at t76, t88 and t90 while the
+    // journal held the war on the founder on power ("a war at under 70% of
+    // their power cannot stop it; 116 power against their 448"). Once a
+    // faith holds every other living major our flip ends the game, so the
+    // defensive faith war on its founder opens at any power and past the
+    // threatened-city hold, and is kept while the match point holds. Rides
+    // `faith-war-before-the-flip-2`. Opt-in; see
+    // `advanced/faith_war_at_match_point.rs`.
+    Gene { tag: "faith-war-at-match-point", field: "faith_war_at_match_point", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_at_match_point, disable: AdvancedAi::disable_faith_war_at_match_point },
     // Live Deity Gran Colombia 2026-11-12: every game past t150 lost to a
     // rival Science victory at t184-210. civvis-20261112T075931Z reached tech
     // parity and out-produced the field, but sent 31-50% of its Production to
