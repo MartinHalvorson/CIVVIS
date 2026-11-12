@@ -3026,8 +3026,9 @@ impl AdvancedAi {
         // the train goes at `GO_P` within `GO_HORIZON` turns whatever the
         // bill, the breaker and the damage budget say, an invested train at
         // `HOLD_P` does not abort, and `HOPELESS_STREAK` gathered readings
-        // under `HOPELESS_P` stand it down. `None` and all false with both
-        // genes off. See `advanced/assault_forecast.rs`.
+        // under `HOPELESS_P` that no one more unit lifts stand it down.
+        // `None` and all false with both genes off. See
+        // `advanced/assault_forecast.rs`.
         let forecast = (self.assault_forecast_read()
             && (self.siege_goes_on_the_forecast
                 || self.journal().wants(crate::reasoning::Level::Decision)))

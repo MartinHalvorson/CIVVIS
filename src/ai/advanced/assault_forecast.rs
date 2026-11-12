@@ -12,9 +12,10 @@
 //!   [`GO_HORIZON`]) reaches [`GO_P`] whatever the bill, the breaker and the
 //!   damage budget say; a forecast at or above [`HOLD_P`] vetoes the invested
 //!   train's abort; [`HOPELESS_STREAK`] gathered assessments in a row under
-//!   [`HOPELESS_P`] stand the siege down for [`HOPELESS_STAND_DOWN_TURNS`]
-//!   (the train does not muster for it and the Objective Board leaves its row
-//!   out); and the board ranks Siege rows by value × P / expected turns.
+//!   [`HOPELESS_P`] that no one more unit would lift stand the siege down for
+//!   [`HOPELESS_STAND_DOWN_TURNS`] (the train does not muster for it and the
+//!   Objective Board leaves its row out); and the board ranks Siege rows by
+//!   value × P / expected turns.
 //!
 //! Why: over 62 live Deity games on 2026-11-12 the siege planner made 873
 //! decisions, 795 of them `stage` (631 reading "nothing to open the walls"),
@@ -214,8 +215,6 @@ pub(crate) struct HopelessRun {
     pub(crate) last: u32,
     /// Stood down while the turn is under this.
     pub(crate) down_until: u32,
-    /// The city's health and walls at the last reading.
-    pub(crate) health: i32,
 }
 
 /// The forecast's own settings on the solver's board.
@@ -252,26 +251,6 @@ fn knobs() -> Knobs {
 #[cfg(not(test))]
 fn knobs() -> Knobs {
     KNOBS
-}
-
-// CI scaffolding: which variant of `siege-goes-on-the-forecast` this
-// thread plays, as bits (0 as specified; 1 no stand-down; 2 no Siege-row
-// ranking; 4 the stand-down only while the siege makes no progress; 8 only
-// when no one more unit would help; 16 only under 2% six readings running).
-// Always 0 outside tests.
-#[cfg(test)]
-thread_local! {
-    pub(crate) static VARIANT: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
-}
-
-#[cfg(test)]
-fn variant() -> u8 {
-    VARIANT.with(|v| v.get())
-}
-
-#[cfg(not(test))]
-fn variant() -> u8 {
-    0
 }
 
 /// A land soldier the model plays: no ships, aircraft or embarked units, as
@@ -1247,8 +1226,16 @@ impl AdvancedAi {
 
     /// `siege-goes-on-the-forecast`: one assessment's reading of the
     /// hopeless streak. True on the assessment that stands the siege down.
-    /// An assessment whose force has not gathered, or a falling city, resets
-    /// the streak.
+    /// A reading is hopeless when the force has gathered, P(capture within
+    /// [`HORIZON`]) is under [`HOPELESS_P`], and no one more taker, breaker
+    /// or body would lift it by [`SHORT_OF_GAIN`]: a siege short of one
+    /// unit is waiting for it, not hopeless. Anything else, or a falling
+    /// city, resets the streak.
+    ///
+    /// The last clause is the evidence's: as first specified (any reading
+    /// under [`HOPELESS_P`]), the stand-down cost cities on both posed sets
+    /// (`docs/ASSAULT_FORECAST.md`, 132 against 119 and 123), every one of
+    /// them taken after the twelfth turn.
     pub(super) fn note_forecast_hopeless(
         &mut self,
         g: &Game,
@@ -1260,31 +1247,18 @@ impl AdvancedAi {
         };
         let (pos, name) = (city.pos, city.name.clone());
         let falling = city.wall_hp <= 0 && city.hp <= FALLING_CITY_HP;
-        let health = city.hp.max(0) + city.wall_hp.max(0);
         let turn = g.turn;
-        if variant() & 1 != 0 {
-            return false;
-        }
         self.siege_forecast_hopeless
             .retain(|_, run| run.last + HOPELESS_STAND_DOWN_TURNS >= turn || turn < run.down_until);
-        let (hopeless_p, streak_needed) = if variant() & 16 != 0 {
-            (0.02, 6)
-        } else {
-            (HOPELESS_P, HOPELESS_STREAK)
-        };
         let hopeless = !falling
             && forecast.gathered()
-            && forecast.p() < hopeless_p
-            && (variant() & 8 == 0 || forecast.short_of == Some(ShortOf::Nothing));
+            && forecast.p() < HOPELESS_P
+            && forecast.short_of == Some(ShortOf::Nothing);
         let run = self.siege_forecast_hopeless.entry(pos).or_default();
         if turn < run.down_until {
             return false;
         }
-        let progress = run.last != 0 && run.last != turn && health < run.health;
-        if run.last != turn {
-            run.health = health;
-        }
-        if !hopeless || (variant() & 4 != 0 && progress) {
+        if !hopeless {
             run.streak = 0;
             run.last = turn;
             return false;
@@ -1293,7 +1267,7 @@ impl AdvancedAi {
             run.streak += 1;
             run.last = turn;
         }
-        if run.streak < streak_needed {
+        if run.streak < HOPELESS_STREAK {
             return false;
         }
         run.down_until = turn + HOPELESS_STAND_DOWN_TURNS;
@@ -1301,9 +1275,8 @@ impl AdvancedAi {
         think!(self.journal(), Military, Decision,
             "Siege of {} stands down: the forecast reads it hopeless", name;
             "siege-goes-on-the-forecast: {} gathered assessments in a row under {:.0}% within {HORIZON} turns \
-             (now {:.0}%, {} members, short of {}); down for {HOPELESS_STAND_DOWN_TURNS} turns",
-            HOPELESS_STREAK, HOPELESS_P * 100.0, forecast.p() * 100.0, forecast.members(),
-            forecast.short_of.map_or("unread", ShortOf::as_str);
+             that no one more taker, breaker or body lifts (now {:.0}%, {} members); down for {HOPELESS_STAND_DOWN_TURNS} turns",
+            HOPELESS_STREAK, HOPELESS_P * 100.0, forecast.p() * 100.0, forecast.members();
             pos);
         true
     }
@@ -1318,9 +1291,6 @@ impl AdvancedAi {
         cid: u32,
         pool: &[u32],
     ) -> Option<f64> {
-        if variant() & 2 != 0 {
-            return None;
-        }
         self.assault_capture_curve(g, pid, cid, pool)
             .map(|forecast| forecast.rate())
     }

@@ -43,22 +43,8 @@ const HOME: Pos = (2, 8);
 const CALIBRATION_SEEDS: u64 = 1200;
 const PAIRED_SEEDS: u64 = 400;
 const PAIRED_TURNS: u32 = 30;
-/// The paired arms: the live genome alone, then with the gene as specified
-/// and in its CI variants (`super::VARIANT` bits).
-const ARMS: [(&str, Option<u8>, Knobs); 8] = [
-    ("off", None, KNOBS),
-    ("on", Some(0), KNOBS),
-    ("on, no stand-down", Some(1), KNOBS),
-    ("on, stand-down only when no one unit helps", Some(8), KNOBS),
-    (
-        "on, stand-down under 2% six readings running",
-        Some(16),
-        KNOBS,
-    ),
-    ("on, stand-down needs both", Some(8 | 16), KNOBS),
-    ("on, no stand-down, no row ranking", Some(1 | 2), KNOBS),
-    ("on, forecast enemy acts half its turns", Some(0), HALF),
-];
+/// The paired arms: the live genome alone, and with the go gene.
+const ARMS: [(&str, bool); 2] = [("off", false), ("on", true)];
 /// Forecast settings the calibration reads side by side.
 const HALF: Knobs = Knobs {
     enemy_aggression: 0.5,
@@ -558,15 +544,7 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
             let trace = *seed < 100_000 + TRACED;
             let arms = ARMS
                 .iter()
-                .map(|(_, variant, knobs)| {
-                    super::VARIANT.with(|v| v.set(variant.unwrap_or(0)));
-                    super::FORECAST_KNOBS.with(|k| k.set(Some(*knobs)));
-                    let outcome =
-                        play_world(&w, live_seat(tags, variant.is_some()), PAIRED_TURNS, trace);
-                    super::VARIANT.with(|v| v.set(0));
-                    super::FORECAST_KNOBS.with(|k| k.set(None));
-                    outcome
-                })
+                .map(|(_, go)| play_world(&w, live_seat(tags, *go), PAIRED_TURNS, trace))
                 .collect();
             Row::Paired(PairRow {
                 seed: *seed,
@@ -656,7 +634,7 @@ fn paired_table(out: &mut String, title: &str, kept_pairs: &[&PairRow]) {
         "| arm | cities taken | pairs ahead / behind off | invested | force units lost (vs off) | turns to first capture | go orders | held aborts | stand-downs | zero-rate row turns | s a siege |"
     );
     let _ = writeln!(out, "|---|---|---|---|---|---|---|---|---|---|---|");
-    for (a, (name, _, _)) in ARMS.iter().enumerate() {
+    for (a, (name, _)) in ARMS.iter().enumerate() {
         let taken: usize = kept_pairs.iter().map(|row| row.arms[a].cities).sum();
         let gained = kept_pairs
             .iter()
@@ -883,7 +861,7 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
         }
     }
     for row in pairs.iter().filter(|row| !row.arms[1].trace.is_empty()) {
-        for (a, (name, _, _)) in ARMS.iter().enumerate().take(2) {
+        for (a, (name, _)) in ARMS.iter().enumerate().take(2) {
             let _ = writeln!(out, "pair {} {name}: {}", row.seed, row.label);
             for line in &row.arms[a].trace {
                 let _ = writeln!(out, "  {line}");
