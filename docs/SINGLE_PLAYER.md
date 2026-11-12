@@ -124,8 +124,8 @@ the action from the UI without a debugger.
 | Auto-play | `POST /autoplay` | yes — a built-in agent and a turn count under the End Turn button |
 
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
-value to a player. What is left in the city is assigning specialists to
-district slots by hand; the governor does that.
+value to a player. Nothing a Civilization VI player decides in a city is
+missing from the page now.
 
 ## The arrangement
 
@@ -562,9 +562,12 @@ one game it belongs to.
 **The focus.** Each yield on the city panel is also its focus: press it to
 favour it, again to disfavour it, again to leave it to the governor. The
 governor is the engine's own (`citizen_strategy`); `POST /city-focus` writes
-the seat's wish into the same per-city directive an agent writes, and the
-citizens are reassigned at once. A focus tilts appetites and cannot starve a
-city.
+the seat's wish into `Player::citizen_focus` and the citizens are reassigned
+at once. That is kept apart from the per-city directive an agent writes,
+which an agent rebuilds on every turn it plays: a focus set by hand outlives
+handing the seat to auto-play. A favoured yield outranks every appetite the
+governor reaches by itself, the panel says what each press did, and a focus
+cannot starve a city.
 
 **Placing a citizen.** Manage citizens, on the city panel, shows the city's
 land with a citizen on every worked tile. Pressing a tile places a citizen
@@ -573,7 +576,13 @@ releases them. The engine seats placed citizens first and its governor
 arranges everyone else around them (`Player::citizen_locks`, written only by
 `POST /city-citizen`). A placed citizen is not moved even to cover
 consumption, as in Civilization VI, and a city cannot have more placed than
-it has citizens. Specialists in districts are still the governor's to assign.
+it has citizens.
+
+A district with specialist slots is part of the same mode. It shows how many
+of its slots are filled, and each press seats one more specialist there and
+holds them (`Player::specialist_locks`); a press on a full district releases
+them. Placed citizens and seated specialists together cannot outnumber the
+city's citizens.
 
 ## Endings
 
