@@ -249,8 +249,17 @@ fn a_race_is_kept_finished_or_lost() {
     let Some(Item::Wonder { wonder, .. }) = head(&g, capital).cloned() else {
         panic!("a race starts");
     };
-    // A later writer puts a Monument back; the late pass restores the race.
-    g.cities.get_mut(&capital).unwrap().queue = vec![monument.clone()];
+    // A later writer puts a Monument back (through the action, which banks
+    // the wonder's progress); the late pass restores the race.
+    g.apply(
+        0,
+        &Action::Produce {
+            city: capital,
+            item: monument.clone(),
+        },
+    )
+    .unwrap();
+    assert_eq!(head(&g, capital), Some(&monument));
     ai.claim_queue_for_the_score_wonder(&mut g, 0, &plan(60), false);
     assert!(
         matches!(head(&g, capital), Some(Item::Wonder { wonder: w, .. }) if *w == wonder),
