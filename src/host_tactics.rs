@@ -195,14 +195,8 @@ impl TacticsCensus {
             .reach
             .strike
             .iter_mut()
-            .chain(std::iter::once(&mut self.reach.close))
-            .zip(
-                other
-                    .reach
-                    .strike
-                    .iter()
-                    .chain(std::iter::once(&other.reach.close)),
-            )
+            .chain(self.reach.close.iter_mut())
+            .zip(other.reach.strike.iter().chain(other.reach.close.iter()))
         {
             mine[0] += theirs[0];
             mine[1] += theirs[1];
@@ -239,11 +233,16 @@ impl TacticsCensus {
                     [exact as f64, rows as f64],
                 );
             }
-            let [rows, could] = self.reach.close;
-            out.insert(
-                "gate: could close, struck nothing".to_string(),
-                [could as f64, rows as f64],
-            );
+            for (k, name) in ["declined", "gap<=3", "gap4-5", "gap6-8"]
+                .iter()
+                .enumerate()
+            {
+                let [rows, could] = self.reach.close[k];
+                out.insert(
+                    format!("gate: could close, {name}"),
+                    [could as f64, rows as f64],
+                );
+            }
         }
         out
     }
@@ -298,11 +297,13 @@ pub fn compare(columns: &[(&str, &BTreeMap<String, [f64; 2]>)]) -> String {
 }
 
 /// The rows the census also prices with the fitted tables.
-const FITTED_ROWS: [&str; 4] = [
+const FITTED_ROWS: [&str; 6] = [
     "strike | in reach",
     "strike | in reach without moving",
     "strike | must move first",
     "closes | struck nothing",
+    "closes | declined",
+    "closes | nothing in reach",
 ];
 
 /// The engine's half of the switch: what a governed chair may not do this
@@ -593,8 +594,20 @@ fn foes(g: &Game, pid: usize, victims: &[usize]) -> Vec<usize> {
 pub struct ReachShare {
     /// Open-ground reach that was exact, indexed by "in reach without moving".
     pub strike: [[u32; 2]; 2],
-    /// Units that struck nothing and had a tile that closed on us.
-    pub close: [u32; 2],
+    /// Units that struck nothing and had a tile that closed on us, by the
+    /// advance table's column: declined, then nothing in reach at a gap of 3
+    /// or less, 4 to 5, 6 or more.
+    pub close: [[u32; 2]; 4],
+}
+
+/// The advance table's column for a situation (`host_enemy::ADVANCE`).
+fn column(situation: Situation) -> usize {
+    match situation {
+        Situation::Declined => 0,
+        Situation::Gap(gap) if gap <= 3 => 1,
+        Situation::Gap(gap) if gap <= 5 => 2,
+        Situation::Gap(_) => 3,
+    }
 }
 
 impl ReachShare {
@@ -686,7 +699,7 @@ fn step_to(g: &Game, uid: u32, plots: &[Pos], closer: bool) -> Option<Pos> {
     } else {
         Vec::new()
     };
-    let pick = if closer {
+    if closer {
         tiles
             .into_iter()
             .filter(|t| gap(g, *t, plots) < now && gap(g, *t, plots) >= wanted)
@@ -713,8 +726,7 @@ fn step_to(g: &Game, uid: u32, plots: &[Pos], closer: bool) -> Option<Pos> {
                     )
                     .then(b.cmp(a))
             })
-    };
-    pick
+    }
 }
 
 /// Set the gate for `pid`'s turn and play the strikes and steps it draws.
@@ -811,9 +823,10 @@ fn govern(
         // at the live rate among the rest; else hold.
         let fitted_close = advance_probability(unit.hp as i16, situation) as f64;
         let can_close = step_to(g, uid, &victim_plots, true).is_some();
-        share.close[0] += 1;
-        share.close[1] += u32::from(can_close);
-        let close = (fitted_close / ReachShare::share(share.close)).min(1.0);
+        let row = &mut share.close[column(situation)];
+        row[0] += 1;
+        row[1] += u32::from(can_close);
+        let close = (fitted_close / ReachShare::share(*row)).min(1.0);
         let away = LIVE_AWAY[usize::from(unit.hp > 25)] / (1.0 - fitted_close).max(0.05);
         if can_close && draw(host.seed, turn, uid, 3) < close {
             if step(g, pid, uid, &victim_plots, true) {
@@ -1038,6 +1051,14 @@ impl Watch {
                 closer,
             );
             census.add_weight("fitted: closes | struck nothing", row.fitted_close);
+            census.add_weight(
+                if row.targets.is_empty() {
+                    "fitted: closes | nothing in reach"
+                } else {
+                    "fitted: closes | declined"
+                },
+                row.fitted_close,
+            );
             if row.hp <= 25 {
                 census.add("steps away | hp<=25, struck nothing", away);
                 census.add("holds | hp<=25, struck nothing", now == row.start);
