@@ -464,6 +464,13 @@ struct Round {
     deaths: usize,
     /// Our military units an enemy removed this turn (`CombatLedger`).
     combat_deaths: usize,
+    /// Force members gone by the end of our own turn: nothing of the
+    /// owner's acts then, so they fell striking.
+    died_striking: usize,
+    /// Our melee beside the city with an attack at the start of our turn,
+    /// and of those, the ones that spent it.
+    melee_ready: usize,
+    melee_struck: usize,
 }
 
 fn land_soldier(g: &Game, unit: &crate::game::Unit) -> bool {
@@ -476,6 +483,7 @@ fn land_soldier(g: &Game, unit: &crate::game::Unit) -> bool {
 /// The siege as it stood before our turn.
 struct Before {
     health: i32,
+    ready_melee: Vec<u32>,
     walled: bool,
     enemy_hp: BTreeMap<u32, i32>,
     ready_shooters: Vec<u32>,
@@ -514,6 +522,18 @@ fn before_our_turn(g: &Game, w: &World) -> Before {
             .iter()
             .copied()
             .filter(|uid| g.units.get(uid).is_some_and(|unit| unit.owner == 0))
+            .collect(),
+        ready_melee: g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == 0
+                    && land_soldier(g, unit)
+                    && !g.rules.units[unit.kind].has_ranged_attack()
+                    && unit.attacks_left > 0
+                    && g.wdist(unit.pos, pos) == 1
+            })
+            .map(|unit| unit.id)
             .collect(),
     }
 }
@@ -582,6 +602,8 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
     let mut before: Option<Before> = None;
     // Read before our end of turn, which may hand the moves back.
     let mut fired_now = 0;
+    let mut struck_now = 0;
+    let mut striking_dead = 0;
     while g.winner.is_none() && g.turn < start + turns && steps < 64 * turns {
         steps += 1;
         let pid = g.current;
@@ -605,6 +627,16 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
                 .ready_shooters
                 .iter()
                 .filter(|uid| g.units.get(uid).is_none_or(|unit| unit.attacks_left <= 0))
+                .count();
+            struck_now = pre
+                .ready_melee
+                .iter()
+                .filter(|uid| g.units.get(uid).is_none_or(|unit| unit.attacks_left <= 0))
+                .count();
+            striking_dead = pre
+                .alive
+                .iter()
+                .filter(|uid| g.units.get(uid).is_none_or(|unit| unit.owner != 0))
                 .count();
             before = Some(pre);
         } else {
@@ -696,6 +728,9 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
                 .count();
             round.shooters_in_range = pre.ready_shooters.len();
             round.shooters_fired = fired_now;
+            round.melee_ready = pre.ready_melee.len();
+            round.melee_struck = struck_now;
+            round.died_striking = striking_dead;
             round.city_damage = pre.health - (round.hp + round.wall);
             round.unit_damage = pre
                 .enemy_hp
@@ -1102,8 +1137,13 @@ fn classify(row: &CalibrationRow) -> (Cause, String) {
         return (
             Cause::DiedBeforeBreach,
             format!(
-                "{walled_deaths} of {n} members died while the walls stood ({deaths} died in all, {} of our units in combat)",
-                rounds.iter().map(|r| r.combat_deaths).sum::<usize>()
+                "{walled_deaths} of {n} members died while the walls stood ({deaths} died in all; {} on our own turn, striking; melee struck the walled city {} times; the train fell back to Stage {})",
+                rounds.iter().map(|r| r.died_striking).sum::<usize>(),
+                rounds.iter().map(|r| r.melee_struck).sum::<usize>(),
+                rounds
+                    .windows(2)
+                    .position(|w| w[0].stage >= 2 && w[1].stage <= 1)
+                    .map_or("never".to_string(), |k| format!("on turn {}", k + 2))
             ),
         );
     }
@@ -1212,6 +1252,46 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
         by_walls(200),
         by_walls(400)
     );
+    // Where the force died, in the sieges read high and not taken.
+    let striking: usize = missed
+        .iter()
+        .map(|(row, _, _)| {
+            row.outcome
+                .rounds
+                .iter()
+                .map(|r| r.died_striking)
+                .sum::<usize>()
+        })
+        .sum();
+    let all_deaths: usize = missed
+        .iter()
+        .map(|(row, _, _)| row.outcome.rounds.iter().map(|r| r.deaths).sum::<usize>())
+        .sum();
+    let walled_strikes: usize = missed
+        .iter()
+        .map(|(row, _, _)| {
+            row.outcome
+                .rounds
+                .iter()
+                .filter(|r| r.wall > 0)
+                .map(|r| r.melee_struck)
+                .sum::<usize>()
+        })
+        .sum();
+    let fell_back = missed
+        .iter()
+        .filter(|(row, _, _)| {
+            row.outcome
+                .rounds
+                .windows(2)
+                .any(|w| w[0].stage >= 2 && w[1].stage <= 1)
+        })
+        .count();
+    let _ = writeln!(
+        out,
+        "\nIn the {} missed: {all_deaths} force members died, {striking} of them on our own turn (striking); our melee struck a walled city {walled_strikes} times; the train fell back from Invest or later to Stage in {fell_back} sieges\n",
+        missed.len()
+    );
     // The forecast's press against the real train, turn by turn.
     let _ = writeln!(
         out,
@@ -1296,7 +1376,7 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
             for (k, r) in row.outcome.rounds.iter().enumerate().take(8) {
                 let _ = writeln!(
                     out,
-                    "    t{}: stage {}, city {}/{} -> {}/{} (model {:.0}), near {}/{} alive, melee beside {}, shooters {}/{} fired, dealt city {} units {}, ring {}/{}, enemy {}, died {} ({} in combat)",
+                    "    t{}: stage {}, city {}/{} -> {}/{} (model {:.0}), near {}/{} alive, melee beside {} ({}/{} struck), shooters {}/{} fired, dealt city {} units {}, ring {}/{}, enemy {}, died {} ({} striking)",
                     k + 1,
                     r.stage,
                     r.hp,
@@ -1307,6 +1387,8 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
                     r.near,
                     r.alive,
                     r.melee_adjacent,
+                    r.melee_struck,
+                    r.melee_ready,
                     r.shooters_fired,
                     r.shooters_in_range,
                     r.city_damage,
@@ -1315,7 +1397,7 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
                     r.ring,
                     r.enemy_units,
                     r.deaths,
-                    r.combat_deaths
+                    r.died_striking
                 );
             }
         }
