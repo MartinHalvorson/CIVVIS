@@ -1295,6 +1295,41 @@ impl AdvancedAi {
                 }
             }
         }
+        // `siege-goes-on-the-forecast`: Siege rows rank by value x P /
+        // expected turns, read with the board's pool. The cities are put in
+        // that order first, since each Siege row depends on the one before
+        // it. Empty with the gene off. See `advanced/assault_forecast.rs`.
+        let mut siege_rates: BTreeMap<u32, f64> = BTreeMap::new();
+        if self.siege_goes_on_the_forecast && !arena {
+            for cid in &siege_cities {
+                if let Some(rate) = self.forecast_siege_rate(g, pid, *cid, pool) {
+                    siege_rates.insert(*cid, rate);
+                }
+            }
+            let weight = |cid: &u32| {
+                siege_rates
+                    .get(cid)
+                    .map_or(0.0, |rate| city_value(g, *cid, lane).max(POP_VALUE) * rate)
+            };
+            siege_cities.sort_by(|a, b| weight(b).total_cmp(&weight(a)));
+            if !siege_rates.is_empty() {
+                let read: Vec<String> = siege_cities
+                    .iter()
+                    .filter_map(|cid| {
+                        let rate = siege_rates.get(cid)?;
+                        Some(format!(
+                            "{} {:.2} a turn x {:.0}",
+                            g.cities[cid].name,
+                            rate,
+                            city_value(g, *cid, lane).max(POP_VALUE)
+                        ))
+                    })
+                    .collect();
+                think!(self.journal(), Military, Detail,
+                    "Siege rows rank on the forecast";
+                    "siege-goes-on-the-forecast: captures a turn x value: {}", read.join(", "));
+            }
+        }
         let mut previous_siege: Option<ObjectiveKey> = None;
         // `siege-at-the-walls-dies-first`: while a gun or a taker stands at
         // our walls, outside a Conquest plan, no Siege row is raised and the
@@ -1333,6 +1368,12 @@ impl AdvancedAi {
                 stood_down.push(city_pos);
                 continue;
             }
+            // `siege-goes-on-the-forecast`: a hopeless siege stands down the
+            // same way. False with the gene off.
+            if self.forecast_stood_down_at(g, city_pos) {
+                stood_down.push(city_pos);
+                continue;
+            }
             let Some(city) = g.cities.get(&cid) else {
                 continue;
             };
@@ -1355,11 +1396,17 @@ impl AdvancedAi {
             if self.breakers_match_the_walls && plan.target_city == Some(cid) {
                 requirement.siege = self.breakers_match_the_row(g, pid, cid, requirement.siege);
             }
+            // `siege-goes-on-the-forecast`: a row whose score is value x P /
+            // expected turns (`score` divides by `NO_DEADLINE_HORIZON`).
+            let value = city_value(g, cid, lane).max(POP_VALUE);
+            let value = siege_rates
+                .get(&cid)
+                .map_or(value, |rate| value * rate * NO_DEADLINE_HORIZON);
             rows.push(Objective {
                 kind: ObjectiveKind::Siege,
                 key,
                 at: city.pos,
-                value: city_value(g, cid, lane).max(POP_VALUE),
+                value,
                 requirement,
                 deadline: None,
                 state,
