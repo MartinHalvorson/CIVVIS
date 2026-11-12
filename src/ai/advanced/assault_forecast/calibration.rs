@@ -462,6 +462,8 @@ struct Round {
     /// taker's share.
     deaths_walled: usize,
     deaths: usize,
+    /// Our military units an enemy removed this turn (`CombatLedger`).
+    combat_deaths: usize,
 }
 
 fn land_soldier(g: &Game, unit: &crate::game::Unit) -> bool {
@@ -526,9 +528,12 @@ fn stage_rank(stage: SiegeStage) -> u8 {
     }
 }
 
-/// Gold kept above a seat's deficit under `solvent`: enough that the
-/// engine's end of turn (`settle_gold_budget`, one unit disbanded per 10
-/// Gold short) disbands nothing, too little to buy with.
+/// Under `solvent`, each seat ends its turn holding this many turns of its
+/// deficit plus `SOLVENT_MARGIN`. That is enough that neither the engine's
+/// end of turn (`settle_gold_budget`, one unit disbanded per 10 Gold short)
+/// nor `bankruptcy-exits-the-drain-2` (under `DRAIN_RUNWAY_TURNS` = 5 turns
+/// of deficit) disbands anything. A live seat's economy carries its army.
+const SOLVENT_TURNS: f64 = 7.0;
 const SOLVENT_MARGIN: f64 = 20.0;
 
 fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent: bool) -> Outcome {
@@ -540,6 +545,7 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
         }
     }
     let combat_lost_at_start = g.combat_ledger(0).units_lost;
+    let mut combat_seen = combat_lost_at_start as usize;
     let journal = Journal::recording();
     ours.attach_journal(journal.handle());
     let mut cursor = 0;
@@ -606,9 +612,9 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
         }
         if g.winner.is_none() && g.current == pid {
             if solvent && pid < 2 {
-                // Cover last turn's deficit, so the end of turn disbands
-                // nothing; the seat starts its next turn near empty.
-                let need = SOLVENT_MARGIN - g.players[pid].gold_per_turn;
+                // Cover the deficit with a runway, so nothing is disbanded.
+                let need =
+                    SOLVENT_MARGIN + SOLVENT_TURNS * (-g.players[pid].gold_per_turn).max(0.0);
                 if g.players[pid].gold < need {
                     g.players[pid].gold = need;
                 }
@@ -730,6 +736,9 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
                         }
                     }
                 }
+                let ledger = g.combat_ledger(0).units_lost as usize;
+                round.combat_deaths = ledger.saturating_sub(combat_seen);
+                combat_seen = ledger;
                 round.deaths = pre
                     .alive
                     .iter()
@@ -1093,7 +1102,8 @@ fn classify(row: &CalibrationRow) -> (Cause, String) {
         return (
             Cause::DiedBeforeBreach,
             format!(
-                "{walled_deaths} of {n} members died while the walls stood ({deaths} died in all)"
+                "{walled_deaths} of {n} members died while the walls stood ({deaths} died in all, {} of our units in combat)",
+                rounds.iter().map(|r| r.combat_deaths).sum::<usize>()
             ),
         );
     }
@@ -1286,7 +1296,7 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
             for (k, r) in row.outcome.rounds.iter().enumerate().take(8) {
                 let _ = writeln!(
                     out,
-                    "    t{}: stage {}, city {}/{} -> {}/{} (model {:.0}), near {}/{} alive, melee beside {}, shooters {}/{} fired, dealt city {} units {}, ring {}/{}, enemy {}, died {}",
+                    "    t{}: stage {}, city {}/{} -> {}/{} (model {:.0}), near {}/{} alive, melee beside {}, shooters {}/{} fired, dealt city {} units {}, ring {}/{}, enemy {}, died {} ({} in combat)",
                     k + 1,
                     r.stage,
                     r.hp,
@@ -1304,7 +1314,8 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
                     r.sealed,
                     r.ring,
                     r.enemy_units,
-                    r.deaths
+                    r.deaths,
+                    r.combat_deaths
                 );
             }
         }
@@ -1317,7 +1328,7 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
 fn funding(out: &mut String, unfunded: &[&CalibrationRow], solvent: &[&CalibrationRow]) {
     let _ = writeln!(
         out,
-        "## Funding: the same mixed sieges, seats left to their treasury (as #5195 ran them) and kept solvent\n"
+        "## Funding: the same mixed sieges, seats left to their treasury (as #5195 ran them) and funded (7 turns of deficit kept)\n"
     );
     let _ = writeln!(
         out,
