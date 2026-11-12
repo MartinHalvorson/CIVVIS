@@ -6966,6 +6966,14 @@ pub struct AdvancedAi {
     /// an empty threatened City Center takes a soldier in reach. See
     /// `advanced/centre_keeps_its_garrison.rs`. Opt-in.
     centre_keeps_its_garrison: bool,
+    /// `defend-force-holds-the-city`: every threatened city of ours is held
+    /// on posts (a shooter in the centre, melee blocking the ring tiles the
+    /// enemy melee can reach), and every soldier strikes from its post. See
+    /// `advanced/defend_force_holds_the_city.rs`. Opt-in.
+    defend_force_holds_the_city: bool,
+    /// `defend-force-holds-the-city`: this turn's posts. Empty with the gene
+    /// off.
+    defend_hold_plan: defend_force_holds_the_city::HoldPlan,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -9422,6 +9430,15 @@ pub struct AdvancedAi {
     /// below; the paying cards the base deck review gave up come back first.
     /// See `advanced/policy_swap_keeps_the_army_paid.rs`. Opt-in.
     policy_swap_keeps_the_army_paid: bool,
+    /// `risk-is-priced`: every pathed move of a land unit the battle planner
+    /// did not order reads one death chance (every visible hostile in strike
+    /// reach at the host's fitted odds, and every walled city strike, on the
+    /// exact dice), and a move over the allowance its
+    /// mission buys is refused unless it lowers the unit's current death
+    /// chance; the one-ply movers subtract `death chance x price`. Supersedes
+    /// `guns-stay-out-of-reach` for the units it reads. See
+    /// `advanced/priced_risk.rs`. Opt-in.
+    risk_is_priced: bool,
     // ---- append: s-s ------------------------------------------------
     /// `siege-goes-on-the-forecast`: the siege train goes, holds and stands
     /// down on the capture forecast, and the Objective Board ranks Siege rows
@@ -11078,6 +11095,8 @@ mod war_target_walls;
 mod centre_keeps_its_garrison;
 /// `defence-holds-under-fire`: see `advanced/defence_holds.rs`.
 mod defence_holds;
+/// `defend-force-holds-the-city`: see `advanced/defend_force_holds_the_city.rs`.
+mod defend_force_holds_the_city;
 mod defense_formation;
 /// `early-route-feeds-production`: see `advanced/early_route_production.rs`.
 mod early_route_production;
@@ -11412,6 +11431,8 @@ mod battle_solver;
 mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;
 mod guru_walks_to_the_wounded;
+/// `risk-is-priced`: see `advanced/priced_risk.rs`.
+pub(super) mod priced_risk;
 mod unique_unit_closes_the_age;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
@@ -26288,6 +26309,7 @@ impl AdvancedAi {
         self.air_city_assault = None;
         self.base.gun_lethal_tiles.clear();
         self.base.unit_lethal_blows.clear();
+        self.clear_priced_risk();
         self.builder_support.clear();
         self.battlefront_frame = None;
         self.settlement_atlas.borrow_mut().clear();

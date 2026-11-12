@@ -275,6 +275,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `deck-follows-the-queue` | off (unmeasured) | Opt-in gene `deck-follows-the-queue`; the behaviour lives on `BasicAi::deck_follows_the_queue`, see `ai/deck_queue.rs`. | 1 \| 1 |
 | `deck-prices-growth` | off (unmeasured) | Opt-in gene `deck-prices-growth`; see `BasicAi::deck_prices_growth`. | 1 \| 1 |
 | `defence-holds-under-fire` | off (unmeasured) | Opt-in gene `defence-holds-under-fire`; see `Self::defence_holds_under_fire`. | 1 \| 1 |
+| `defend-force-holds-the-city` | off (unmeasured) | Opt-in gene `defend-force-holds-the-city`; see `advanced/defend_force_holds_the_city.rs`. | 1 \| 1 |
 | `defenders-hold-the-walls` | off (unmeasured) | Opt-in gene `defenders-hold-the-walls`; see `Self::defenders_hold_the_walls`. | 1 \| 1 |
 | `defenders-keep-the-city-in-reach` | off (unmeasured) | Keep defensive formations near their assigned threatened city. | 1 \| 1 |
 | `denial-charts-the-racer` | off (unmeasured) | `denial-charts-the-racer`: see `advanced/denial_charts_the_racer.rs`. | 1 \| 1 |
@@ -441,6 +442,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `research-follows-the-first-capital` | off (unmeasured) | `research-follows-the-first-capital`: see `advanced/first_capital_research.rs`. | 1 \| 1 |
 | `retainers-garrison-the-short-cities` | off (unmeasured) | Opt-in gene `retainers-garrison-the-short-cities`; see `BasicAi::retainers_garrison_the_short_cities`. | 1 \| 1 |
 | `revealed-launch-tech-takes-the-slot` | off (unmeasured) | Replace an obsolete native research path with a revealed launch milestone. | 1 \| 1 |
+| `risk-is-priced` | off (unmeasured) | Opt-in gene `risk-is-priced`: one death chance per pathed move, refused over the mission's allowance; see `advanced/priced_risk.rs`. | 1 \| 1 |
 | `russia-settles-the-tundra` | off (unmeasured) | Opt-in gene `russia-settles-the-tundra`; see `advanced/russia_tundra.rs`. | 1 \| 1 |
 | `satellite-holds-the-pad` | off (unmeasured) | Opt-in gene `satellite-holds-the-pad`; see `Self::satellite_holds_the_pad`. | 1 \| 1 |
 | `saved-work-is-seen` | off (unmeasured) | Opt-in gene `saved-work-is-seen`; see `advanced/saved_work_is_seen.rs`. | 1 \| 1 |

@@ -275,6 +275,9 @@ impl AdvancedAi {
         /// Opt-in gene `centre-keeps-its-garrison`; see
         /// `advanced/centre_keeps_its_garrison.rs`.
         centre_keeps_its_garrison => enable_centre_keeps_its_garrison, disable_centre_keeps_its_garrison;
+        /// Opt-in gene `defend-force-holds-the-city`; see
+        /// `advanced/defend_force_holds_the_city.rs`.
+        defend_force_holds_the_city => enable_defend_force_holds_the_city, disable_defend_force_holds_the_city;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -427,6 +430,9 @@ impl AdvancedAi {
         /// projected income to zero or below; see
         /// `advanced/policy_swap_keeps_the_army_paid.rs`.
         policy_swap_keeps_the_army_paid => enable_policy_swap_keeps_the_army_paid, disable_policy_swap_keeps_the_army_paid;
+        /// Opt-in gene `risk-is-priced`: one death chance per pathed move,
+        /// refused over the mission's allowance; see `advanced/priced_risk.rs`.
+        risk_is_priced => enable_risk_is_priced, disable_risk_is_priced;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
