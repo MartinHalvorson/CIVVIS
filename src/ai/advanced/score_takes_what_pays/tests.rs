@@ -292,7 +292,9 @@ fn a_named_city_lifts_the_peacetime_army_hold_while_the_corps_musters() {
         ai.score_seat_holds_the_army(false),
         "the hold stands at peace"
     );
-    assert_eq!(ai.score_seat_army_target(4, false, 8), 4);
+    // `score-seat-trims-the-idle-army` (#5219): the second argument is now
+    // "the trim acts", not "a major is at war with us".
+    assert_eq!(ai.score_seat_army_target(4, true, 8), 4);
     ai.plan = Some(conquest_plan(forward));
     ai.score_take_observe(&game, 0);
     assert!(!game.is_at_war(0, 1), "still at peace: the muster stage");
