@@ -135,6 +135,11 @@ impl AdvancedAi {
             0
         };
         let cover = BasicAi::builder_charge_cover(g, pid) - own;
+        // `the-worked-backlog-gets-its-builder-first`: the gene's quota, so
+        // the Builder it called is held too. Always false with the gene off.
+        if self.base.worked_backlog_runs_ahead(backlog, cover) {
+            return true;
+        }
         // `prod-tiles-call-the-builders`: the quota the claim was made under,
         // so a Builder claimed for the production ground is held too. Off,
         // `wanted` is the stock `backlog x WORKED_BACKLOG_COVER`.
@@ -255,6 +260,10 @@ impl AdvancedAi {
             if let Some(note) = self.base.production_tile_quota_note(g, pid) {
                 think!(self.journal(), Economy, Detail,
                        "{name}'s Builder answers the production ground"; "{note}");
+            }
+            if let Some(note) = self.worked_backlog_first_note(backlog, cover) {
+                think!(self.journal(), Economy, Detail,
+                       "{name}'s Builder answers the whole worked backlog"; "{note}");
             }
         }
     }

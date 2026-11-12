@@ -470,6 +470,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `sweden-builds-open-air-museums` | off (unmeasured) | Opt-in gene `sweden-builds-open-air-museums`; see `advanced/sweden_builds_open_air_museums.rs`. | 1 \| 1 |
 | `the-giant-gets-the-peace-offer` | off (unmeasured) | Opt-in gene `the-giant-gets-the-peace-offer`; see `Self::the_giant_gets_the_peace_offer`. | 1 \| 1 |
 | `the-last-two-capitals-come-first` | off (unmeasured) | Opt-in gene `the-last-two-capitals-come-first`; see `Self::the_last_two_capitals_come_first`. | 1 \| 1 |
+| `the-worked-backlog-gets-its-builder-first` | off (unmeasured) | Opt-in gene `the-worked-backlog-gets-its-builder-first`; acts through `builders-cover-the-worked-backlog`'s step and `backlog-builder-takes-the-queue`'s claim. | 1 \| 1 |
 | `theology-fights-count-the-host-edge` | off (unmeasured) | Opt-in gene `theology-fights-count-the-host-edge`; see `advanced/theology_fights.rs`. | 1 \| 1 |
 | `threatened-lane-lends-the-army` | off (unmeasured) | Opt-in gene `threatened-lane-lends-the-army`; see `advanced/threatened_lane_lends_the_army.rs`. | 1 \| 1 |
 | `threatened-war-holds-the-claims` | off (unmeasured) | Opt-in gene `threatened-war-holds-the-claims`; see `advanced/threatened_war_holds_the_claims.rs`. | 1 \| 1 |

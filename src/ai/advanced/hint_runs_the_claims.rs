@@ -101,6 +101,15 @@ impl AdvancedAi {
                     .first()
                     .is_some_and(|item| self.first_capital_training_holds(g, pid, cid, item))
             });
+        // `the-worked-backlog-gets-its-builder-first`: while the worked
+        // backlog runs two or more tiles ahead of the Builder charges, the
+        // backlog Builder's claim is asked here too, ahead of the Monument,
+        // Granary, breaker, deterrent and Trader claims. Exact no-op while
+        // the gene is off. See
+        // `advanced/the_worked_backlog_gets_its_builder_first.rs`.
+        if !war_holds {
+            self.claim_worked_backlog_builder_first(g, pid, plan);
+        }
         // `capital-monument-after-the-second-city`: the capital's Monument,
         // once the second city stands, after the floor's Settler and ahead
         // of the routine claims. Exact no-op while the gene is off. See

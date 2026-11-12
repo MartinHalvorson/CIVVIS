@@ -128,6 +128,11 @@ impl AdvancedAi {
         /// displaced is that city's next build, and a Scout lost early while no
         /// rival capital is charted is replaced at once. See `ai/scout_first.rs`.
         base.opening_scout_comes_back => enable_opening_scout_comes_back, disable_opening_scout_comes_back;
+        /// Opt-in gene `the-worked-backlog-gets-its-builder-first`; acts
+        /// through `builders-cover-the-worked-backlog`'s step and
+        /// `backlog-builder-takes-the-queue`'s claim. See
+        /// `advanced/the_worked_backlog_gets_its_builder_first.rs`.
+        base.the_worked_backlog_gets_its_builder_first => enable_the_worked_backlog_gets_its_builder_first, disable_the_worked_backlog_gets_its_builder_first;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
