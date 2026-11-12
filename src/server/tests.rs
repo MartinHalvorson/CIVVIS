@@ -16551,6 +16551,11 @@ fn the_leaders_a_player_has_met_ride_the_top_of_the_map() {
     // a record, not a name, and printing it as one stopped the page drawing
     // the turn an alliance was signed.
     assert!(EMBEDDED_APP_JS.contains("try { html = leaderRibbonMarkup(); }"));
+    // A leader is a drawn bust in the civilization's colours with its
+    // monogram as the name tag. The drawing is the page's own.
+    assert!(ribbon
+        .contains("`<svg class=\"ribbon-bust\" viewBox=\"0 0 36 36\" aria-hidden=\"true\">` +"));
+    assert!(EMBEDDED_INDEX.contains("fill: var(--civ-trim); clip-path: circle(50%);"));
     assert!(EMBEDDED_APP_JS
         .contains("const kind = held && typeof held === \"object\" ? held.kind : held;"));
     assert_eq!(EMBEDDED_APP_JS.matches("allianceWord(player)").count(), 3);

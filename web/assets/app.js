@@ -30288,6 +30288,13 @@ function leaderRibbonMarkup() {
         `style="--civ:${pcol(player.id)};--civ-trim:${pcol2(player.id)}" ` +
         `title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}" ` +
         `onclick="openDiplomacyWith(${player.id})">` +
+        // A drawn bust in the civilization's own two colours, with its
+        // monogram as the name tag: Civilization VI's ribbon is a row of
+        // heads, and a row of letters did not read as people. The drawing is
+        // this page's own; no portrait is borrowed.
+        `<svg class="ribbon-bust" viewBox="0 0 36 36" aria-hidden="true">` +
+        `<circle cx="18" cy="13.2" r="6.4"/>` +
+        `<path d="M4.5 36c0-9.4 6-14 13.5-14s13.5 4.6 13.5 14z"/></svg>` +
         `<span class="ribbon-crest">${escapeAttr(fdMonogram(player.civ))}</span>` +
         (stance.mark ? `<span class="ribbon-mark">${stance.mark}</span>` : "") + `</button>`;
     }).join("");
