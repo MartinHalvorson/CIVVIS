@@ -287,6 +287,9 @@ pub(crate) struct Knobs {
     pub(crate) melee_breach_share: f32,
     /// `Weights::enemy_aggression`.
     pub(crate) enemy_aggression: f32,
+    /// The city's owner raises defenders during the siege
+    /// (`reinforcements`).
+    pub(crate) reinforce: bool,
 }
 
 /// What the forecast plays: our melee wait for the breach as the train's
@@ -296,6 +299,7 @@ pub(crate) struct Knobs {
 pub(crate) const KNOBS: Knobs = Knobs {
     melee_breach_share: super::siege_train::MELEE_WALL_FRACTION as f32,
     enemy_aggression: 1.0,
+    reinforce: true,
 };
 
 // CI scaffolding: the forecast settings this thread reads, `KNOBS` unless
@@ -1260,6 +1264,74 @@ fn spawn_recruits(
     spawned
 }
 
+/// Defenders the city's owner raises during the siege, as (kind, round at
+/// whose end it stands): its best land melee unit, bought on its first turn
+/// when its treasury covers the engine's price, then one each time the
+/// city's production finishes one. On 1,200 posed sieges with solvent seats
+/// the owner's new soldiers were the first cause of 27 of the 92 high
+/// readings not taken (#5207).
+fn reinforcements(g: &Game, cid: u32) -> Vec<(Name, u8)> {
+    let Some(city) = g.cities.get(&cid) else {
+        return Vec::new();
+    };
+    let owner = city.owner;
+    let Some(kind) = best_kind(g, owner, melee_taker, |spec| spec.strength) else {
+        return Vec::new();
+    };
+    let mut plan = Vec::new();
+    if g.unit_purchase_cost(owner, cid, kind.as_str(), "gold")
+        .is_some_and(|price| price > 0.0 && g.players[owner].gold >= price)
+    {
+        plan.push((kind, 1));
+    }
+    let cost = g.item_cost_for_city(owner, cid, &Item::Unit { unit: kind });
+    let production = g.city_yields(cid).production;
+    if production > 0.0 && cost > 0.0 {
+        let every = (cost / production).ceil().max(1.0) as usize;
+        for round in (every..=HORIZON).step_by(every) {
+            plan.push((kind, round as u8));
+        }
+    }
+    plan
+}
+
+/// Spawn `plan`'s defenders on `board` on free land beside the city (never
+/// in it: a garrison would raise the city's defence from round 0), with the
+/// owner's "strongest built" counters put back, so nothing the board reads
+/// today changes. Their entry rounds go in `arrive`.
+fn spawn_reinforcements(
+    board: &mut Game,
+    cid: u32,
+    plan: &[(Name, u8)],
+    arrive: &mut BTreeMap<u32, u8>,
+) -> Vec<u32> {
+    let Some(city) = board.cities.get(&cid) else {
+        return Vec::new();
+    };
+    let (owner, pos) = (city.owner, city.pos);
+    let mut spots: Vec<Pos> =
+        board
+            .wring(pos, 1)
+            .into_iter()
+            .filter(|at| {
+                board.map.get(*at).is_some_and(|tile| {
+                    board.rules.is_passable(tile) && !board.rules.is_water(tile)
+                }) && board.city_at(*at).is_none()
+                    && board.unit_ids_at(*at).is_empty()
+            })
+            .collect();
+    spots.sort_unstable();
+    let counters = board.players[owner].counters.clone();
+    let mut spawned = Vec::new();
+    for ((kind, round), spot) in plan.iter().zip(spots) {
+        let uid = board.spawn_unit(kind.as_str(), owner, spot);
+        arrive.insert(uid, *round);
+        spawned.push(uid);
+    }
+    board.players[owner].counters = counters;
+    spawned
+}
+
 /// The curve alone.
 #[allow(clippy::too_many_arguments)]
 fn forecast_curve(
@@ -1469,8 +1541,17 @@ impl AdvancedAi {
         let center = target.pos;
         let mut owned = war_board(g, pid, target.owner);
         let declared = owned.is_some();
-        let hostiles = hostiles_of(owned.as_ref().unwrap_or(g), pid, center);
+        let mut hostiles = hostiles_of(owned.as_ref().unwrap_or(g), pid, center);
         let mut arrive = BTreeMap::new();
+        let raised = if knobs().reinforce {
+            reinforcements(owned.as_ref().unwrap_or(g), city)
+        } else {
+            Vec::new()
+        };
+        if !raised.is_empty() {
+            let board = owned.get_or_insert_with(|| g.clone());
+            hostiles.extend(spawn_reinforcements(board, city, &raised, &mut arrive));
+        }
         let mut force: Vec<u32> = force.to_vec();
         if !recruits.is_empty() {
             let board = owned.get_or_insert_with(|| g.clone());
@@ -1594,9 +1675,24 @@ impl AdvancedAi {
             };
         };
         let center = target.pos;
-        let owned = war_board(g, pid, target.owner);
+        let mut owned = war_board(g, pid, target.owner);
+        let mut hostiles = hostiles_of(owned.as_ref().unwrap_or(g), pid, center);
+        let mut raised_arrive = BTreeMap::new();
+        let raised = if knobs().reinforce {
+            reinforcements(owned.as_ref().unwrap_or(g), city)
+        } else {
+            Vec::new()
+        };
+        if !raised.is_empty() {
+            let board = owned.get_or_insert_with(|| g.clone());
+            hostiles.extend(spawn_reinforcements(
+                board,
+                city,
+                &raised,
+                &mut raised_arrive,
+            ));
+        }
         let board = owned.as_ref().unwrap_or(g);
-        let hostiles = hostiles_of(board, pid, center);
         let fighters = members_of(board, pid, center, pool);
         let supports: Vec<u32> = SUPPORT_KINDS
             .iter()
@@ -1634,7 +1730,6 @@ impl AdvancedAi {
                 return hit.clone();
             }
         }
-        let empty = BTreeMap::new();
         let seed = seed_for(center, g.turn);
         let reading = |set: &[u32], rollouts: u32| -> Option<AssaultForecast> {
             let soldiers: Vec<u32> = set
@@ -1643,7 +1738,7 @@ impl AdvancedAi {
                 .filter(|uid| fighters.contains(uid))
                 .collect();
             let support = support_rounds(board, pid, city, center, set, &[]);
-            let mut posed = pose(board, pid, city, &soldiers, &hostiles, &[], &empty)?;
+            let mut posed = pose(board, pid, city, &soldiers, &hostiles, &[], &raised_arrive)?;
             posed.support = support;
             Some(play_out(&posed, None, seed, rollouts).forecast(&posed))
         };

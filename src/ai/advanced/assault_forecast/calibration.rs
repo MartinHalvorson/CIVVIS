@@ -53,10 +53,17 @@ const HALF: Knobs = Knobs {
     enemy_aggression: 0.5,
     ..KNOBS
 };
-const FORECASTS: [(&str, Knobs); 5] = [
+const FORECASTS: [(&str, Knobs); 6] = [
     (
-        "melee wait for the breach, enemy always acts (shipped)",
+        "melee wait for the breach, enemy always acts, the owner raises defenders (shipped)",
         KNOBS,
+    ),
+    (
+        "the same without the owner's new defenders",
+        Knobs {
+            reinforce: false,
+            ..KNOBS
+        },
     ),
     (
         "melee wait for the breach, enemy acts three turns in four",
@@ -78,6 +85,7 @@ const FORECASTS: [(&str, Knobs); 5] = [
         Knobs {
             melee_breach_share: 0.0,
             enemy_aggression: 0.5,
+            ..KNOBS
         },
     ),
 ];
@@ -1311,6 +1319,31 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
         out,
         "\nIn the {} missed: {all_deaths} force members died, {striking} of them on our own turn (striking); our melee struck a walled city {walled_strikes} times; the train fell back from Invest or later to Stage in {fell_back} sieges\n",
         missed.len()
+    );
+    // What the owner raised, in the sieges whose first cause it was.
+    let raised: Vec<&&&CalibrationRow> = missed
+        .iter()
+        .filter(|(_, c, _)| *c == Cause::Reinforced)
+        .map(|(row, _, _)| *row)
+        .collect();
+    let soldiers = |n: usize| {
+        raised
+            .iter()
+            .filter(|row| row.outcome.new_enemy == n)
+            .count()
+    };
+    let _ = writeln!(
+        out,
+        "The owner raised (first cause, {} sieges): 0 new soldiers {} (walls only), 1 {}, 2 {}, 3 or more {}; walls raised in {}\n",
+        raised.len(),
+        soldiers(0),
+        soldiers(1),
+        soldiers(2),
+        raised.iter().filter(|row| row.outcome.new_enemy >= 3).count(),
+        raised
+            .iter()
+            .filter(|row| row.outcome.wall_max.1 > row.outcome.wall_max.0)
+            .count()
     );
     // The forecast's press against the real train, turn by turn.
     let _ = writeln!(
