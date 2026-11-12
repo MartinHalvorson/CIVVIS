@@ -43,6 +43,8 @@ const TARGET: Pos = (18, 8);
 const HOME: Pos = (2, 8);
 const CALIBRATION_SEEDS: u64 = 1200;
 const PAIRED_SEEDS: u64 = 0;
+/// Seeds of the tempo family (`Family::Tempo`), reported on their own.
+const TEMPO_SEEDS: u64 = 400;
 const PAIRED_TURNS: u32 = 30;
 /// The paired arms: the live genome alone, and with the go gene.
 const ARMS: [(&str, bool); 2] = [("off", false), ("on", true)];
@@ -131,6 +133,19 @@ struct World {
     force: Vec<u32>,
     label: String,
     walls: i32,
+    /// `Family::Tempo`: the turn the owner raises the walls, and to what.
+    wall_event: Option<(u32, i32)>,
+}
+
+/// Which posed sieges a seed draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Family {
+    /// The calibration's mix.
+    Mixed,
+    /// The live tempo case (2026-11-12, Warsaw and Poznan): an open or
+    /// lightly walled city, the force 6-12 tiles out, and the owner
+    /// raising the walls to 200 eight to twelve turns in.
+    Tempo,
 }
 
 fn free_land(g: &Game, pos: Pos) -> bool {
@@ -155,10 +170,22 @@ fn pick_ring(g: &Game, rng: &mut Rng, distance: i32) -> Option<Pos> {
 /// tiles beyond the first, so a siege stood down has somewhere to go. Its
 /// draws come from their own stream: the first city's siege is the same.
 fn world(seed: u64, second: bool) -> World {
+    world_of(seed, second, Family::Mixed)
+}
+
+fn world_of(seed: u64, second: bool, family: Family) -> World {
     let mut rng = Rng::new(seed ^ 0x51e6_e0f0_7ca5_7001);
+    // The tempo family's own draws, so the mix's stream is untouched.
+    let mut tempo = Rng::new(seed ^ 0x7e3b_0c1a_5ee4_1d07);
+    let tempo_on = family == Family::Tempo;
     let era = rng.below(ERAS.len());
     let enemy_era = (era as i32 + [-1, 0, 0, 1][rng.below(4)]).clamp(0, 3) as usize;
     let walls = [0, 100, 200, 400][rng.below(4)];
+    let walls = if tempo_on {
+        [0, 0, 100][tempo.below(3)]
+    } else {
+        walls
+    };
     let mut g = Game::new_full(2, 36, 22, seed.wrapping_add(17), 400, 0, false);
     let ids: Vec<_> = g.units.keys().copied().collect();
     for id in ids {
@@ -263,6 +290,11 @@ fn world(seed: u64, second: bool) -> World {
         } else {
             8 + rng.below(3) as i32
         };
+        let distance = if tempo_on {
+            6 + tempo.below(7) as i32
+        } else {
+            distance
+        };
         if let Some(pos) = pick_ring(&g, &mut rng, distance) {
             force.push(g.spawn_test_unit(kind, 0, pos));
             kinds.push(format!("{kind}@{distance}"));
@@ -316,6 +348,11 @@ fn world(seed: u64, second: bool) -> World {
         defenders.join(" "),
         kinds.join(" ")
     );
+    let wall_event = tempo_on.then(|| (8 + tempo.below(5) as u32, 200));
+    let label = match wall_event {
+        Some((turn, to)) => format!("{label}; walls rise to {to} on turn {turn}"),
+        None => label,
+    };
     World {
         g,
         cid,
@@ -323,6 +360,7 @@ fn world(seed: u64, second: bool) -> World {
         force,
         label,
         walls,
+        wall_event,
     }
 }
 
@@ -384,6 +422,8 @@ struct Outcome {
     /// Player 1's land soldiers that were not on the board at the start.
     new_enemy: usize,
     wall_max: (i32, i32),
+    /// The first turn the stage-musters-out-of-reach muster closed.
+    muster_closed: Option<u32>,
 }
 
 /// One turn of the posed city's siege, read around our turn and the
@@ -413,8 +453,9 @@ struct Round {
     /// lost on our turn.
     city_damage: i32,
     unit_damage: i32,
-    /// Player 1's land soldiers after its turn.
+    /// Player 1's land soldiers after its turn, and the city's wall pool.
     enemy_units: usize,
+    wall_max: i32,
     /// Force members that died this turn while the walls stood above the
     /// taker's share.
     deaths_walled: usize,
@@ -525,6 +566,19 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool) -> Outco
     while g.winner.is_none() && g.turn < start + turns && steps < 64 * turns {
         steps += 1;
         let pid = g.current;
+        if pid == 1 {
+            if let Some((turn, walls)) = w.wall_event {
+                if g.turn - start + 1 == turn {
+                    if let Some(city) = g.cities.get_mut(&w.cid).filter(|city| city.owner == 1) {
+                        if !city.buildings.contains(&crate::name!("walls")) {
+                            city.buildings.push(crate::name!("walls"));
+                        }
+                        city.wall_hp = city.wall_hp.max(walls);
+                        Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(w.cid, walls);
+                    }
+                }
+            }
+        }
         if pid == 0 {
             let pre = before_our_turn(&g, w);
             ours.take_turn(&mut g, 0);
@@ -545,6 +599,9 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool) -> Outco
             cursor = delta.cursor;
             for thought in delta.thoughts.iter().filter(|t| t.player == 0) {
                 let head = &thought.headline;
+                if head.contains("the mustered train closes") && out.muster_closed.is_none() {
+                    out.muster_closed = Some(g.turn - start + 1);
+                }
                 if head.contains("the forecast goes") {
                     out.goes += 1;
                 } else if head.contains("the forecast holds the train") {
@@ -661,6 +718,7 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool) -> Outco
                     round.deaths_walled = round.deaths;
                 }
                 out.wall_max.1 = city.map_or(out.wall_max.0, |city| g.city_max_wall_hp(city));
+                round.wall_max = out.wall_max.1;
             }
         }
         if !g.is_at_war(0, 1) {
@@ -679,6 +737,7 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool) -> Outco
 
 struct CalibrationRow {
     seed: u64,
+    family: Family,
     label: String,
     walls: i32,
     /// The shipped forecast with its short-of reading, then the curve
@@ -701,7 +760,7 @@ struct PairRow {
 }
 
 enum Job {
-    Calibrate(u64),
+    Calibrate(u64, Family),
     Pair(u64),
 }
 
@@ -712,8 +771,8 @@ enum Row {
 
 fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
     match job {
-        Job::Calibrate(seed) => {
-            let w = world(*seed, false);
+        Job::Calibrate(seed, family) => {
+            let w = world_of(*seed, false, *family);
             let start =
                 w.g.cities
                     .get(&w.cid)
@@ -737,6 +796,7 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
             let outcome = play_world(&w, live_seat(tags, false), HORIZON as u32, *seed < TRACED);
             Row::Calibrated(CalibrationRow {
                 seed: *seed,
+                family: *family,
                 label: w.label.clone(),
                 walls: w.walls,
                 forecast,
@@ -839,6 +899,7 @@ fn calibration_table(out: &mut String, rows: &[Read], k: usize) {
 enum Cause {
     Peace,
     Stage,
+    Tempo,
     Piecemeal,
     Taker,
     DiedBeforeBreach,
@@ -850,9 +911,10 @@ enum Cause {
 }
 
 impl Cause {
-    const ALL: [Cause; 10] = [
+    const ALL: [Cause; 11] = [
         Cause::Peace,
         Cause::Stage,
+        Cause::Tempo,
         Cause::Piecemeal,
         Cause::Taker,
         Cause::DiedBeforeBreach,
@@ -867,6 +929,9 @@ impl Cause {
         match self {
             Cause::Peace => "peace: the war ended",
             Cause::Stage => "the train never left Stage, or left it on turn 4 or later",
+            Cause::Tempo => {
+                "the first blow came 3+ turns after the forecast's press made its first"
+            }
             Cause::Piecemeal => "the force arrived piecemeal",
             Cause::Taker => "the city fell low and no taker took it",
             Cause::DiedBeforeBreach => "our units died before the walls opened",
@@ -889,6 +954,40 @@ fn start_of(row: &CalibrationRow, k: usize) -> (i32, i32) {
     }
 }
 
+/// The first turn the forecast's press takes 10 or more off the city's
+/// health and walls, and the first turn the real train does.
+fn first_blows(row: &CalibrationRow) -> (Option<u32>, Option<u32>) {
+    let start = row.start.0 + row.start.1;
+    let dent = row
+        .forecast
+        .city_health
+        .iter()
+        .position(|h| *h < (start - 10) as f32)
+        .map(|k| k as u32 + 1);
+    let blow = row
+        .outcome
+        .rounds
+        .iter()
+        .position(|r| r.city_damage >= 10)
+        .map(|k| k as u32 + 1);
+    (dent, blow)
+}
+
+/// Whether the walls rose before turn `blow` (or at all, with none).
+fn walls_rose_before(row: &CalibrationRow, blow: Option<u32>) -> bool {
+    let until = blow.map_or(row.outcome.rounds.len(), |b| b as usize - 1);
+    let mut wall = row.start.1;
+    let mut max = row.outcome.wall_max.0;
+    for r in row.outcome.rounds.iter().take(until) {
+        if r.end_wall > wall || r.wall_max > max {
+            return true;
+        }
+        wall = r.end_wall;
+        max = r.wall_max;
+    }
+    false
+}
+
 fn classify(row: &CalibrationRow) -> (Cause, String) {
     let o = &row.outcome;
     let rounds = &o.rounds;
@@ -900,6 +999,23 @@ fn classify(row: &CalibrationRow) -> (Cause, String) {
         None => return (Cause::Stage, "never left Stage".to_string()),
         Some(turn) if turn >= 4 => return (Cause::Stage, format!("left Stage on turn {turn}")),
         _ => {}
+    }
+    let (dent, blow) = first_blows(row);
+    if let Some(dent) = dent {
+        if blow.is_none_or(|blow| blow >= dent + 3) {
+            let arrived: Vec<u32> = o.arrivals.iter().flatten().copied().collect();
+            let spread = arrived.iter().max().unwrap_or(&0) - arrived.iter().min().unwrap_or(&0);
+            return (
+                Cause::Tempo,
+                format!(
+                    "first blow {}, the press's on turn {dent}; invested on turn {}, muster closed {}; arrival spread {spread}; walls rose before the first blow: {}",
+                    blow.map_or("never".to_string(), |b| format!("on turn {b}")),
+                    first_invest.map_or("-".to_string(), |t| t.to_string()),
+                    o.muster_closed.map_or("-".to_string(), |t| t.to_string()),
+                    walls_rose_before(row, blow)
+                ),
+            );
+        }
     }
     let n = o.ideal.len();
     let late: Vec<i64> = o
@@ -1217,7 +1333,19 @@ fn paired_table(out: &mut String, title: &str, kept_pairs: &[&PairRow]) {
 fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "ASSAULT FORECAST REPORT ({seconds:.0} s wall)\n");
-    let kept: Vec<&CalibrationRow> = calibrated.iter().filter(|row| !row.outcome.peace).collect();
+    let tempo_rows: Vec<&CalibrationRow> = calibrated
+        .iter()
+        .filter(|row| row.family == Family::Tempo && !row.outcome.peace)
+        .collect();
+    let calibrated: Vec<&CalibrationRow> = calibrated
+        .iter()
+        .filter(|row| row.family == Family::Mixed)
+        .collect();
+    let kept: Vec<&CalibrationRow> = calibrated
+        .iter()
+        .copied()
+        .filter(|row| !row.outcome.peace)
+        .collect();
     let (ms, _) = mean(calibrated.iter().map(|row| row.forecast_ms));
     let max_ms = calibrated
         .iter()
@@ -1253,6 +1381,32 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
         let _ = writeln!(out, "| {walls} | {n} | {p:.2} | {r:.2} |");
     }
     taxonomy(&mut out, &kept);
+    let _ = writeln!(
+        out,
+        "## The tempo family: {} sieges (open or 100 walls, the force 6-12 tiles out, walls to 200 on turn 8-12)\n",
+        tempo_rows.len()
+    );
+    let reads: Vec<Read> = tempo_rows
+        .iter()
+        .map(|row| (&row.forecast, &row.outcome))
+        .collect();
+    calibration_table(&mut out, &reads, HORIZON);
+    let blows: Vec<(Option<u32>, Option<u32>, bool)> = tempo_rows
+        .iter()
+        .map(|row| {
+            let (dent, blow) = first_blows(row);
+            (dent, blow, walls_rose_before(row, blow))
+        })
+        .collect();
+    let (dent, dn) = mean(blows.iter().filter_map(|(d, _, _)| d.map(f64::from)));
+    let (blow, bn) = mean(blows.iter().filter_map(|(_, b, _)| b.map(f64::from)));
+    let rose = blows.iter().filter(|(_, _, r)| *r).count();
+    let _ = writeln!(
+        out,
+        "First dent, mean: the forecast's press turn {dent:.1} ({dn} sieges), the real train turn {blow:.1} ({bn} sieges); walls rose before the real first blow in {rose} of {}\n",
+        blows.len()
+    );
+    taxonomy(&mut out, &tempo_rows);
     let _ = writeln!(
         out,
         "\n| forecast settings | Brier within 12 | within 10 | within 5 | mean P(12) | sieges over 0.8, taken |"
@@ -1348,7 +1502,7 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
         }
     }
     let _ = writeln!(out, "\n## Calibration rows\n");
-    for row in calibrated {
+    for row in &calibrated {
         let _ = writeln!(
             out,
             "cal {} | P12 {:.2} P10 {:.2} P5 {:.2} lost {:.1} short {} | taken {:?} lost {} stage {} peace {} | {}",
@@ -1422,7 +1576,8 @@ fn assault_forecast_calibration() {
     let mut jobs: Vec<Job> = (0..PAIRED_SEEDS)
         .map(|seed| Job::Pair(100_000 + seed))
         .collect();
-    jobs.extend((0..CALIBRATION_SEEDS).map(Job::Calibrate));
+    jobs.extend((0..TEMPO_SEEDS).map(|seed| Job::Calibrate(200_000 + seed, Family::Tempo)));
+    jobs.extend((0..CALIBRATION_SEEDS).map(|seed| Job::Calibrate(seed, Family::Mixed)));
     let next = AtomicUsize::new(0);
     let rows: Mutex<Vec<(usize, Row)>> = Mutex::new(Vec::new());
     let threads = std::thread::available_parallelism()
