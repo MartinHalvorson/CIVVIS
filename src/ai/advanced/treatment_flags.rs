@@ -391,6 +391,10 @@ impl AdvancedAi {
         /// `rear-cities-grow-through-the-war-hold`: see
         /// `advanced/rear_cities_grow_through_the_war_hold.rs`.
         rear_cities_grow_through_the_war_hold => enable_rear_cities_grow_through_the_war_hold, disable_rear_cities_grow_through_the_war_hold;
+        /// Opt-in gene `policy-swap-keeps-the-army-paid`: no policy swap takes
+        /// projected income to zero or below; see
+        /// `advanced/policy_swap_keeps_the_army_paid.rs`.
+        policy_swap_keeps_the_army_paid => enable_policy_swap_keeps_the_army_paid, disable_policy_swap_keeps_the_army_paid;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `sweden-builds-open-air-museums`; see
         /// `advanced/sweden_builds_open_air_museums.rs`.

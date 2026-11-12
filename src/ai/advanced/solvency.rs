@@ -135,7 +135,7 @@ impl AdvancedAi {
     }
 
     /// The Gold a turn a card's unit maintenance discount saves on our army.
-    fn upkeep_card_value(g: &Game, pid: usize, card: &str) -> f64 {
+    pub(super) fn upkeep_card_value(g: &Game, pid: usize, card: &str) -> f64 {
         let discount = g
             .rules
             .policies
