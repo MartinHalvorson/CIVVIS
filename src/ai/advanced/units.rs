@@ -681,7 +681,12 @@ impl AdvancedAi {
                 .enumerate()
                 .filter_map(|(order, action)| {
                     let (uid, target) = Self::unit_strike_actor_and_target(action)?;
-                    (!spent.contains(&uid) && !self.builder_guard_reserved(uid))
+                    // `centre-keeps-its-garrison`: a threatened city's
+                    // garrison makes no melee blow, which would carry it out
+                    // of the City Center on a kill. `false` with the gene off.
+                    let keeper_melee = matches!(action, Action::Attack { .. })
+                        && self.keeps_the_centre(g, pid, uid);
+                    (!spent.contains(&uid) && !self.builder_guard_reserved(uid) && !keeper_melee)
                         .then(|| self.immediate_kill_value(g, pid, action, plan))
                         .flatten()
                         .map(|(value, eliminated)| (value, eliminated, target, uid, order, action))

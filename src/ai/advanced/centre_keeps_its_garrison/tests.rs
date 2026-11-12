@@ -162,21 +162,40 @@ fn the_shooter_keeper_fires_from_the_centre_and_stays() {
     );
 }
 
-#[test]
-fn the_melee_keeper_holds_through_a_whole_turn() {
-    // A wounded swordsman beside the walls: a blow that kills it would carry
-    // the warrior out of the City Center.
+/// Where the warrior garrison of a city stands after our whole turn, with a
+/// wounded swordsman beside the walls: a blow that kills it would carry the
+/// warrior out of the City Center.
+fn melee_garrison_after_a_turn(on: bool, planner: bool) -> (Option<Pos>, Pos) {
     let (mut g, city) = front();
     let warrior = spawn(&mut g, "warrior", 0, city);
     let enemy = spawn(&mut g, "swordsman", 1, at(9, 8));
     g.units.get_mut(&enemy).unwrap().hp = 8;
-    let mut ai = gene_on();
+    let mut ai = AdvancedAi::new();
+    if planner {
+        ai.enable_battle_planner_2();
+    }
+    if on {
+        ai.enable_centre_keeps_its_garrison();
+    }
     ai.take_turn(&mut g, 0);
+    (g.units.get(&warrior).map(|unit| unit.pos), city)
+}
+
+#[test]
+fn the_melee_keeper_holds_through_a_whole_turn() {
+    // The kill prepass (no battle planner): off, the warrior takes the kill
+    // and steps out; on, it holds.
+    let (off, city) = melee_garrison_after_a_turn(false, false);
+    assert_ne!(off, Some(city), "off, the kill carries the warrior out");
+    let (on, city) = melee_garrison_after_a_turn(true, false);
     assert_eq!(
-        g.units.get(&warrior).map(|unit| unit.pos),
+        on,
         Some(city),
-        "the warrior ends its turn in the City Center"
+        "on, the warrior ends its turn in the City Center"
     );
+    // The battle planner offers it no melee blow either.
+    let (on, city) = melee_garrison_after_a_turn(true, true);
+    assert_eq!(on, Some(city), "on, under the battle planner too");
 }
 
 #[test]
@@ -422,7 +441,7 @@ fn play(seed: u64, on: bool) -> Held {
 /// `--nocapture` to read it on a pass).
 #[test]
 fn paired_posed_defences() {
-    const SEEDS: u64 = 24;
+    const SEEDS: u64 = 96;
     let seeds: Vec<u64> = (1..=SEEDS).collect();
     let workers = 4;
     let rows: Vec<(u64, String, Held, Held)> = std::thread::scope(|scope| {

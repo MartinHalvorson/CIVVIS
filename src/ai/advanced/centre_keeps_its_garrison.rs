@@ -11,14 +11,14 @@
 //!
 //! **Why (live Deity Gran Colombia, 62 games of 2026-11-12, 100 cities
 //! lost).** Census over `events.jsonl` state frames and `combat` rows:
-//! - Not one of 2,646 enemy blows on our units in 40 of those games landed on
-//!   a unit standing in one of our City Centers.
+//! - Not one of 4,918 enemy blows on our units landed on a unit standing in
+//!   one of our City Centers.
 //! - Our land soldiers started a turn in a City Center with an at-war soldier
-//!   within three tiles 5,230 times. They stepped out on 1,507 of them (29%),
-//!   left the centre empty on 1,062, and 104 of those who stepped out died in
-//!   the enemy phase that followed. The 3,658 who stayed lost none except
-//!   with the city itself (61).
-//! - Of the 67 cities taken by force, 32 saw a soldier leave the centre in
+//!   within three tiles 5,353 times. They stepped out on 1,564 of them (29%),
+//!   left the centre empty on 1,109, and 105 of those who stepped out died in
+//!   the enemy phase that followed. Of the 3,723 who stayed, 50 went with
+//!   their city and 13 others were gone the next turn.
+//! - Of the 68 cities taken by force, 32 saw a soldier leave the centre in
 //!   the last three turns, 10 fell with the centre empty at the end of our
 //!   last turn, and 30 fell with a melee soldier rather than a shooter in it.
 //!   civvis-20261112T010242Z: Bogotá's only garrison, a full-health

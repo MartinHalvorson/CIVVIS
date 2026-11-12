@@ -5697,11 +5697,11 @@ pub const GENES: &[Gene] = &[
     // Granary, an Aqueduct or a soldier at peace, and Connoisseur is
     // Pingala's second promotion. Opt-in; see `advanced/domination_culture.rs`.
     Gene { tag: "domination-seat-raises-its-culture", field: "domination_seat_raises_its_culture", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_seat_raises_its_culture, disable: AdvancedAi::disable_domination_seat_raises_its_culture },
-    // Live Deity Gran Colombia, 62 games of 2026-11-12, 100 cities lost (67
-    // to force): no enemy blow landed on a unit in one of our City Centers,
-    // yet a garrison with an at-war soldier within 3 stepped out on 1,507 of
-    // 5,230 turns (1,062 left the centre empty, 104 died), and 32 of the 67
-    // falls followed a step-out in the last three turns. Every threatened
+    // Live Deity Gran Colombia, 62 games of 2026-11-12, 100 cities lost (68
+    // to force): none of 4,918 enemy blows on our units landed on one in our
+    // City Centers, yet a garrison with an at-war soldier within 3 stepped
+    // out on 1,564 of 5,353 turns (1,109 left the centre empty, 105 died),
+    // and 32 of the 68 falls followed a step-out in the last three turns. Every threatened
     // city's garrison keeps its post and fires from it; an empty threatened
     // centre takes a soldier in reach. Opt-in; see
     // `advanced/centre_keeps_its_garrison.rs`.
