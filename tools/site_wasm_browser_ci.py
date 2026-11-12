@@ -202,7 +202,7 @@ def verify_module(qualified: Path, source: str, run_id: int, repo: str) -> tuple
 
 
 def browser_game(qualified: Path, source: str, run_id: int, repo: str,
-                 case: str, out: Path, seconds: float = 1200) -> dict:
+                 case: str, out: Path, seconds: float = 1200, chrome: Path | None = None) -> dict:
     if (case not in profile.CASES or run_id <= 0 or not 0 < seconds <= 1800
             or not re.fullmatch(r'[\w.-]+/[\w.-]+', repo)):
         raise ValueError('invalid normal case, qualification run or deadline')
@@ -212,7 +212,7 @@ def browser_game(qualified: Path, source: str, run_id: int, repo: str,
     spec = importlib.util.spec_from_file_location('civvis_beta_verify', Path(__file__).resolve().parents[1] / 'beta/verify.py')
     verify = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(verify)
-    chrome = verify.find_chrome()
+    chrome = str(chrome.resolve()) if chrome is not None else verify.find_chrome()
     if not Path(chrome).exists():
         raise FileNotFoundError('Chrome required; no browser check may silently skip')
     out.mkdir(parents=True)
@@ -227,6 +227,7 @@ def browser_game(qualified: Path, source: str, run_id: int, repo: str,
               'tooling_source': os.environ.get('GITHUB_SHA'), 'platform': platform.platform(),
               'settings_guard_sha256': hashlib.sha256(pair.DRIVER.read_bytes()).hexdigest(),
               'logical_cpus': os.cpu_count(), 'chrome': subprocess.check_output([chrome, '--version'], text=True).strip(),
+              'chrome_executable_sha256': hashlib.sha256(Path(chrome).read_bytes()).hexdigest(),
               'scope': 'Exact qualified website bundle served locally under a browser-mapped civvis.ai hostname on named remote CI host. '
                        'Natural normal Online game at offered Lightning pace, all publications rendered. '
                        'Headless Chrome, GPU disabled,1600x1000,CDP screencast. '
@@ -312,6 +313,9 @@ def browser_game(qualified: Path, source: str, run_id: int, repo: str,
             raise ValueError('browser map delivery failed: ' + '; '.join(problems))
         if hashlib.sha256(module.read_bytes()).hexdigest() != qualification['engine']['wasm_sha256']:
             raise ValueError('served module changed during browser observation')
+        if (hashlib.sha256(Path(chrome).read_bytes()).hexdigest() != result['chrome_executable_sha256']
+                or subprocess.check_output([chrome, '--version'], text=True).strip() != result['chrome']):
+            raise ValueError('browser changed during observation')
         result.update(phase='complete', timing=timing, raw_save=saved,
                       console=dev.console, delivery=snapshot.get('delivery'), runtime=snapshot.get('runtime'),
                       terminal_canvas_colours=colours)
