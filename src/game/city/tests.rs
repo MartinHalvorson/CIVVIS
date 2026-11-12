@@ -218,6 +218,79 @@ fn a_citizen_placed_by_hand_stays_where_it_was_put() {
     assert_eq!(game.city_citizen_plan(city), before);
 }
 
+/// A campus with a library on land the test city owns, for the two tests
+/// below: one specialist slot the governor would not fill by itself.
+fn campus_city() -> (Game, u32, Pos) {
+    let (mut game, city) = settler_city();
+    let center = game.cities[&city].pos;
+    let site = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|pos| *pos != center)
+        .expect("land beside the city");
+    game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
+    let held = game.cities.get_mut(&city).unwrap();
+    held.queue.clear();
+    held.districts.insert(crate::name!("campus"), site);
+    held.buildings.push(crate::name!("library"));
+    game.board_written();
+    (game, city, site)
+}
+
+/// Civilization VI lets a player seat a specialist in a district. The governor
+/// leaves a slot empty while there is land to work; a specialist placed by
+/// hand takes the slot and keeps it.
+#[test]
+fn a_specialist_placed_by_hand_takes_its_slot() {
+    let (mut game, city, site) = campus_city();
+    let slots = game.city_specialist_slots(city);
+    assert_eq!(slots.len(), 1, "{slots:?}");
+    assert_eq!((slots[0].0.as_str(), slots[0].1), ("campus", site));
+    assert!(slots[0].2 >= 1);
+
+    let before = game.city_citizen_plan(city);
+    assert!(before.specialists.is_empty(), "{before:?}");
+    game.players[0]
+        .specialist_locks
+        .entry(city)
+        .or_default()
+        .insert("campus".to_string(), 1);
+    game.board_written();
+    let held = game.city_citizen_plan(city);
+    assert_eq!(held.specialists, vec!["campus".to_string()]);
+    assert_eq!(held.worked_tiles.len() + held.specialists.len(), 3);
+
+    // Released, the governor's own plan comes back exactly.
+    game.players[0].specialist_locks.clear();
+    game.board_written();
+    assert_eq!(game.city_citizen_plan(city), before);
+}
+
+/// An agent rebuilds every city directive on the turns it plays. A focus a
+/// person set used to live there and was erased by handing the seat to
+/// auto-play; it is the seat's own now.
+#[test]
+fn a_seats_focus_outlives_the_directives_an_agent_rewrites() {
+    let (mut game, city, _) = campus_city();
+    let before = game.citizen_strategy(city).weights;
+    game.players[0].citizen_focus.insert(
+        city,
+        Yields {
+            gold: 4.0,
+            ..Yields::default()
+        },
+    );
+    assert_eq!(game.citizen_strategy(city).weights.gold, before.gold + 4.0);
+    game.players[0].city_directives.clear();
+    game.players[0]
+        .city_directives
+        .insert(city, CityDirective::default());
+    game.board_written();
+    assert_eq!(game.citizen_strategy(city).weights.gold, before.gold + 4.0);
+    assert_eq!(game.citizen_strategy(city).weights.food, before.food);
+}
+
 #[test]
 fn citizen_job_keys_order_exactly_as_their_text_did() {
     let values = [

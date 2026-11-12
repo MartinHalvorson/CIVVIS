@@ -16092,7 +16092,12 @@ fn a_played_seat_sets_its_citys_yield_focus() {
     // state the write produced.
     let favoured = ask(&mut session, "food", 1);
     assert!(favoured["error"].is_null(), "{}", favoured["error"]);
-    assert!(session.game.players[0].city_directives[&city].emphasis.food > 0.0);
+    assert!(session.game.players[0].citizen_focus[&city].food > 0.0);
+    // An agent that takes the seat rebuilds every directive. The seat's own
+    // focus is not one of them, so auto-play does not erase it.
+    session.game.players[0].city_directives.clear();
+    session.game.board_written();
+    assert!(citizens(&session.state())["emphasis"]["food"].as_f64() > Some(0.0));
     let after = citizens(&favoured);
     assert!(after["emphasis"]["food"].as_f64() > Some(0.0));
     assert!(after["weights"]["food"].as_f64() > before["weights"]["food"].as_f64());
@@ -16284,14 +16289,126 @@ fn a_played_seat_places_a_citizen_by_hand() {
     assert!(EMBEDDED_APP_JS
         .contains("if (sitePick.citizens) { toggleCitizenLock(sitePick.cityId, pos); return; }"));
     assert!(EMBEDDED_APP_JS.contains("(city.citizens && Array.isArray(city.citizens.locked)"));
-    assert!(EMBEDDED_APP_JS.contains(
-        "body: JSON.stringify({city: cityId, pos: [pos[0], pos[1]], lock: !held.has(key(pos))})"
-    ));
+    assert!(EMBEDDED_APP_JS
+        .contains(": {city: cityId, pos: [pos[0], pos[1]], lock: !held.has(key(pos))};"));
     assert_eq!(
         EMBEDDED_APP_JS
             .matches("    markCitizenPick(site, ")
             .count(),
         2
+    );
+}
+
+/// Civilization VI lets a player seat a specialist in a district. The route
+/// that places a citizen on a tile seats one in a district's slots too, by a
+/// count, and the page shows each district as seated of slots.
+#[test]
+fn a_played_seat_seats_a_specialist_by_hand() {
+    let mut params = current();
+    params.spectate = false;
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_014;
+    let mut session = Session::new(params);
+    let settler = session
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "settler")
+        .map(|unit| unit.pos)
+        .expect("seat 0 opens with a settler");
+    session.game.found_city_for(0, settler, None);
+    let (city, center) = session
+        .game
+        .cities
+        .values()
+        .find(|city| city.owner == 0)
+        .map(|city| (city.id, city.pos))
+        .expect("the city just founded");
+    // A campus with a library on land the city owns, and two citizens.
+    let site = session.game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|pos| *pos != center)
+        .expect("land beside the city");
+    session.game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
+    {
+        let held = session.game.cities.get_mut(&city).unwrap();
+        held.pop = 2;
+        held.districts.insert(crate::name!("campus"), site);
+        held.buildings.push(crate::name!("library"));
+    }
+    session.game.board_written();
+    let citizens = |state: &Value| {
+        state["cities"]
+            .as_array()
+            .expect("cities")
+            .iter()
+            .find(|seen| seen["id"] == json!(city))
+            .expect("the seat's own city")["citizens"]
+            .clone()
+    };
+    let before = citizens(&session.state());
+    let slots = before["specialist_slots"]
+        .as_array()
+        .expect("slots")
+        .clone();
+    assert_eq!(slots.len(), 1, "{before}");
+    assert_eq!(slots[0]["family"], json!("campus"));
+    assert_eq!(slots[0]["pos"], json!([site.0, site.1]));
+    assert_eq!(slots[0]["placed"], json!(0));
+    let offered = slots[0]["slots"].as_u64().expect("a slot count");
+    assert!(offered >= 1);
+    assert_eq!(before["specialists"], json!([]));
+
+    let ask = |session: &mut Session, family: &str, count: u64| {
+        crate::routes::city_citizen(
+            session,
+            &json!({"city": city, "specialist": family, "count": count}),
+        )
+    };
+    // Seated: one citizen leaves the land for the campus and is held there.
+    let seated = ask(&mut session, "campus", 1);
+    assert!(seated["error"].is_null(), "{}", seated["error"]);
+    let after = citizens(&seated);
+    assert_eq!(after["specialists"], json!(["campus"]));
+    assert_eq!(after["specialist_slots"][0]["placed"], json!(1));
+    assert_eq!(after["worked_tiles"].as_array().map(Vec::len), Some(1));
+
+    // More than the district has, a district the city lacks, and more
+    // citizens than the city has are each refused.
+    assert!(ask(&mut session, "campus", offered + 1)["error"].is_string());
+    assert!(ask(&mut session, "holy_site", 1)["error"].is_string());
+    let land = session.game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|pos| *pos != center && *pos != site)
+        .take(2)
+        .collect::<Vec<_>>();
+    let place = |session: &mut Session, pos: (i32, i32)| {
+        crate::routes::city_citizen(session, &json!({"city": city, "pos": [pos.0, pos.1]}))
+    };
+    assert!(place(&mut session, land[0])["error"].is_null());
+    assert!(place(&mut session, land[1])["error"].is_string());
+
+    // Released, the governor has the citizen back.
+    let released = ask(&mut session, "campus", 0);
+    assert_eq!(
+        citizens(&released)["specialist_slots"][0]["placed"],
+        json!(0)
+    );
+    assert!(session.game.players[0].specialist_locks.is_empty());
+
+    // The page seats by the district's own count and shows seated of slots.
+    assert!(EMBEDDED_APP_JS.contains(
+        "? {city: cityId, specialist: site.specialist, count: site.held >= site.slots ? 0 : site.held + 1}"
+    ));
+    assert!(
+        EMBEDDED_APP_JS.contains("cx.fillText(`${slot.seated}/${slot.slots}`, x, y + size * .03);")
     );
 }
 

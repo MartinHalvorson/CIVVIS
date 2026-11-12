@@ -274,8 +274,8 @@ impl Game {
         for neighbor in self.nbrs(pos) {
             if let Some(spec) = self.map.tiles[&neighbor]
                 .feature
-                .as_deref()
-                .and_then(|feature| self.rules.features.get(feature))
+                .as_ref()
+                .and_then(|feature| self.rules.features.get_interned(*feature))
             {
                 yields.add(spec.adjacent_yields);
             }
@@ -290,7 +290,7 @@ impl Game {
             .and_then(|city| self.cities.get(&city))
             .is_some_and(|city| self.city_disaster_protected(city, "drought_protection"))
             || (!tile.pillaged
-                && tile.improvement.as_deref().is_some_and(|improvement| {
+                && tile.improvement.as_ref().is_some_and(|improvement| {
                     self.rules.improvements[improvement]
                         .effects
                         .get("drought_food_protection")
@@ -673,7 +673,7 @@ impl Game {
                                 .is_some_and(|resource| {
                                     self.rules
                                         .resources
-                                        .get(resource.as_str())
+                                        .get_interned(*resource)
                                         .is_some_and(|spec| spec.class == class)
                                 })
                         })
@@ -753,7 +753,7 @@ impl Game {
                             .resource
                             .as_ref()
                             .filter(|resource| self.resource_visible_to(pid, resource))
-                            .and_then(|resource| self.rules.resources.get(resource.as_str()))
+                            .and_then(|resource| self.rules.resources.get_interned(*resource))
                             .is_some_and(|resource| resource.class == "bonus")
                     })
                     .count() as f64;
@@ -3074,7 +3074,7 @@ impl Game {
                             .resource
                             .as_ref()
                             .filter(|resource| self.resource_visible_to(pid, resource))
-                            .and_then(|resource| self.rules.resources.get(resource.as_str()))
+                            .and_then(|resource| self.rules.resources.get_interned(*resource))
                             .is_some_and(|resource| {
                                 spec.requires_adjacent_resource_classes
                                     .iter()
@@ -3288,12 +3288,12 @@ impl Game {
         let researched_techs = self.players[pid]
             .techs
             .iter()
-            .filter(|technology| self.rules.techs.contains_key(technology))
+            .filter(|technology| self.rules.techs.contains_name(**technology))
             .count();
         let researched_civics = self.players[pid]
             .civics
             .iter()
-            .filter(|civic| self.rules.civics.contains_key(civic))
+            .filter(|civic| self.rules.civics.contains_name(**civic))
             .count();
         let progress = (researched_techs as f64 / self.rules.techs.len().max(1) as f64)
             .max(researched_civics as f64 / self.rules.civics.len().max(1) as f64);
