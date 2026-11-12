@@ -6953,6 +6953,14 @@ pub struct AdvancedAi {
     /// an empty threatened City Center takes a soldier in reach. See
     /// `advanced/centre_keeps_its_garrison.rs`. Opt-in.
     centre_keeps_its_garrison: bool,
+    /// `defend-force-holds-the-city`: every threatened city of ours is held
+    /// on posts (a shooter in the centre, melee blocking the ring tiles the
+    /// enemy melee can reach), and every soldier strikes from its post. See
+    /// `advanced/defend_force_holds_the_city.rs`. Opt-in.
+    defend_force_holds_the_city: bool,
+    /// `defend-force-holds-the-city`: this turn's posts. Empty with the gene
+    /// off.
+    defend_hold_plan: defend_force_holds_the_city::HoldPlan,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11044,6 +11052,8 @@ mod war_target_walls;
 mod centre_keeps_its_garrison;
 /// `defence-holds-under-fire`: see `advanced/defence_holds.rs`.
 mod defence_holds;
+/// `defend-force-holds-the-city`: see `advanced/defend_force_holds_the_city.rs`.
+mod defend_force_holds_the_city;
 mod defense_formation;
 /// `early-route-feeds-production`: see `advanced/early_route_production.rs`.
 mod early_route_production;

@@ -5706,6 +5706,14 @@ pub const GENES: &[Gene] = &[
     // centre takes a soldier in reach. Opt-in; see
     // `advanced/centre_keeps_its_garrison.rs`.
     Gene { tag: "centre-keeps-its-garrison", field: "centre_keeps_its_garrison", kind: Kind::OptIn, enable: AdvancedAi::enable_centre_keeps_its_garrison, disable: AdvancedAi::disable_centre_keeps_its_garrison },
+    // Live Deity Gran Colombia, 62 games of 2026-11-12 (the #5198 census): the
+    // Defend force was in Engage, not Hold, at 53 of the 62 falls that had
+    // one; 9 cities fell with the force within 8 tiles but not at the walls,
+    // and the Anvil holds only `plan.threatened_city`. Every threatened city
+    // is held on posts: a shooter in the centre, melee blocking the ring
+    // tiles the enemy melee can reach, every soldier striking from its post.
+    // Opt-in; see `advanced/defend_force_holds_the_city.rs`.
+    Gene { tag: "defend-force-holds-the-city", field: "defend_force_holds_the_city", kind: Kind::OptIn, enable: AdvancedAi::enable_defend_force_holds_the_city, disable: AdvancedAi::disable_defend_force_holds_the_city },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

@@ -1185,6 +1185,12 @@ impl AdvancedAi {
         if self.battle_planner_claims(uid) {
             return self.base.fortify_or_stop(g, pid, uid);
         }
+        // `defend-force-holds-the-city`: a posted soldier strikes from its
+        // post and holds it. `None` with the gene off or without a post. See
+        // `advanced/defend_force_holds_the_city.rs`.
+        if let Some(acted) = self.defend_hold_step(g, pid, uid) {
+            return acted;
+        }
         // `centre-keeps-its-garrison`: a threatened city's garrison keeps
         // its City Center, and an empty one takes a soldier in reach. `None`
         // with the gene off. See `advanced/centre_keeps_its_garrison.rs`.
@@ -2688,6 +2694,15 @@ impl AdvancedAi {
         // once from the same board and for the same reason. Nothing is read
         // with the gene off. See `advanced/chokepoints.rs`.
         self.chokepoint_gate_plan(g, pid);
+        // `defend-force-holds-the-city`: every threatened city's posts, drawn
+        // after every other claim of the turn. Nothing with the gene off. See
+        // `advanced/defend_force_holds_the_city.rs`.
+        if self.defend_force_holds_the_city {
+            let mut claimed = withdrawn.clone();
+            claimed.extend(air_assault_units.iter().copied());
+            claimed.extend(opening_recon_warrior);
+            self.hold_the_cities(g, pid, &claimed);
+        }
         let mut ids = g.player_unit_ids(pid);
         ids.retain(|uid| {
             !settled_first.contains(uid)

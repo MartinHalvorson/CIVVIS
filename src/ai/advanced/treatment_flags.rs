@@ -271,6 +271,9 @@ impl AdvancedAi {
         /// Opt-in gene `centre-keeps-its-garrison`; see
         /// `advanced/centre_keeps_its_garrison.rs`.
         centre_keeps_its_garrison => enable_centre_keeps_its_garrison, disable_centre_keeps_its_garrison;
+        /// Opt-in gene `defend-force-holds-the-city`; see
+        /// `advanced/defend_force_holds_the_city.rs`.
+        defend_force_holds_the_city => enable_defend_force_holds_the_city, disable_defend_force_holds_the_city;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
