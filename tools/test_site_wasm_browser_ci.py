@@ -1,6 +1,8 @@
 """Synthetic completion/identity/paint/raw-byte guards; no browser games."""
+import copy
 import hashlib
 import json
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -174,6 +176,7 @@ const ctx = {window: {}, paintedFrame: null,
  requestAnimationFrame: fn => raf.push(fn), performance: {now: () => clock}};
 ctx.window.render = function(st, ...args) {
  calls.push({self: this, st, args});
+ clock += 7;
  ctx.paintedFrame = {seed: st.seed, turn: st.turn, sequence: st.frame_sequence, finished: st.finished};
  return returned;
 };
@@ -199,12 +202,134 @@ assert.equal(ctx.window.__civvisFullGame.phase, 'observing');
 clock = 1516; raf.shift()();
 assert.equal(ctx.window.__civvisFullGame.phase, 'complete');
 assert.equal(calls.length, 3);
+for (const frame of ctx.window.__civvisFullGame.frames) {
+ if (ctx.window.__civvisProfileMainCpu) assert.equal(frame.renderMs, 7);
+ else assert.equal('renderMs' in frame, false);
+}
 assert.equal(ctx.window.__civvisFullGame.paints.length, 2);
 """
         st = dict(seed=7, turn=1, frame_sequence=0, finished=False, pace=500,
                   players=[dict(is_minor=False)], map=dict(script='tenins_ball', shape='planet', width=75, height=32))
-        subprocess.run(['node', '--input-type=module', '-e', script,
-                        browser.OBSERVER_JS, json.dumps(st)], check=True, capture_output=True, text=True)
+        for prefix in ['', 'window.__civvisProfileMainCpu = true;']:
+            subprocess.run(['node', '--input-type=module', '-e', script,
+                            prefix + browser.OBSERVER_JS, json.dumps(st)],
+                           check=True, capture_output=True, text=True)
+
+
+
+
+def cpu_evidence():
+    nodes = [dict(id=1, callFrame=dict(functionName='(root)', url=''), children=[2, 4, 5]),
+             dict(id=2, callFrame=dict(functionName='render', url='http://example/assets/app.js'), children=[3]),
+             dict(id=3, callFrame=dict(functionName='(garbage collector)', url='')),
+             dict(id=4, callFrame=dict(functionName='(idle)', url='')),
+             dict(id=5, callFrame=dict(functionName='(program)', url=''))]
+    cpu = dict(nodes=nodes, samples=[3, 4, 5], timeDeltas=[500, 1000, 500], startTime=100, endTime=2100)
+    metrics = {phase: dict(metrics=[dict(name=key, value=value) for key in browser.DURATION_METRICS])
+               for phase, value in [('before', 1), ('after', 2)]}
+    value = observation()
+    for frame in value['frames']:
+        frame['renderMs'] = 20
+    return cpu, metrics, value
+
+
+class MainCpuGuards(unittest.TestCase):
+    def test_native_leaf_with_frontend_ancestor_is_attributed_without_idle_correction(self):
+        cpu, metrics, value = cpu_evidence()
+        result = browser.main_cpu_summary(cpu, metrics, value)
+        self.assertEqual(result['sample_count'], 3)
+        self.assertEqual(result['sampled_span_us'], 2000)
+        self.assertEqual(result['thread_cpu_seconds']['ThreadTime'], 1)
+        self.assertEqual(result['render_wall_ms']['total'], 40)
+        self.assertEqual([r['node'] for r in result['top_self_samples']], [3, 4, 5])
+        # Program samples are retained separately, never silently classified idle.
+        self.assertEqual(result['top_self_samples'][2]['callFrame']['functionName'], '(program)')
+
+    def test_real_chrome_timestamp_inversions_are_preserved_and_reported(self):
+        cpu, metrics, value = cpu_evidence()
+        cpu['timeDeltas'] = [500, -12, 1000]
+        original = copy.deepcopy(cpu)
+        result = browser.main_cpu_summary(cpu, metrics, value)
+        self.assertEqual(cpu, original)
+        self.assertEqual(result['timestamp_inversions'], 1)
+        self.assertEqual(result['largest_backward_step_us'], 12)
+        self.assertEqual(result['sampled_span_us'], 1488)
+        self.assertEqual(sum(row['samples'] for row in result['top_self_samples']), 3)
+
+    def test_malformed_profiles_fail(self):
+        mutations = [lambda c: c.update(samples=[]),
+                     lambda c: c.update(timeDeltas=[1]),
+                     lambda c: c.update(timeDeltas=[500, -501, 1000]),
+                     lambda c: c.update(timeDeltas=[500, 1000, 501]),
+                     lambda c: c.update(timeDeltas=[500, float('nan'), 500]),
+                     lambda c: c.update(timeDeltas=[0, 0, 0]),
+                     lambda c: c.update(endTime=0),
+                     lambda c: c.update(startTime=float('nan')),
+                     lambda c: c['samples'].__setitem__(0, 99),
+                     lambda c: c['nodes'].append(copy.deepcopy(c['nodes'][0])),
+                     lambda c: c['nodes'][0]['children'].append(99),
+                     lambda c: c['nodes'][1]['children'].append(4),
+                     lambda c: c['nodes'][2].update(children=[2]),
+                     lambda c: c['nodes'][1]['callFrame'].update(url='http://example/other.js')]
+        for mutate in mutations:
+            cpu, metrics, value = cpu_evidence()
+            mutate(cpu)
+            with self.subTest(mutation=mutate), self.assertRaises(ValueError):
+                browser.main_cpu_summary(cpu, metrics, value)
+
+    def test_cpu_metrics_require_thread_counters_but_heap_gauges_may_fall(self):
+        cpu, metrics, value = cpu_evidence()
+        metrics['before']['metrics'].append(dict(name='JSHeapUsedSize', value=100))
+        metrics['after']['metrics'].append(dict(name='JSHeapUsedSize', value=1))
+        browser.main_cpu_summary(cpu, metrics, value)
+        for wrong in [-1, 0, True, float('inf')]:
+            altered = copy.deepcopy(metrics)
+            altered['after']['metrics'][0]['value'] = wrong
+            with self.subTest(value=wrong), self.assertRaises(ValueError):
+                browser.main_cpu_summary(cpu, altered, value)
+        metrics['after']['metrics'].pop(0)
+        with self.assertRaises(ValueError):
+            browser.main_cpu_summary(cpu, metrics, value)
+
+    def test_complete_render_durations_cannot_be_missing_or_nonfinite(self):
+        for wrong in [None, -1, True, float('nan')]:
+            cpu, metrics, value = cpu_evidence()
+            value['frames'][0]['renderMs'] = wrong
+            with self.subTest(value=wrong), self.assertRaises(ValueError):
+                browser.main_cpu_summary(cpu, metrics, value)
+        cpu, metrics, value = cpu_evidence()
+        value['frames'][0]['renderMs'] = 0
+        browser.main_cpu_summary(cpu, metrics, value)
+
+    def test_cli_passes_explicit_browser_and_only_opt_in_profiling(self):
+        common = ['observer', '--qualified', '.', '--source', SOURCE, '--run', '1',
+                  '--repo', 'o/r', '--case', 'default-7', '--out', 'out']
+        for extra, expected in [([], dict(chrome=None, main_cpu_profile=False)),
+                                (['--chrome', '/fixed-chrome', '--main-cpu-profile'],
+                                 dict(chrome=Path('/fixed-chrome'), main_cpu_profile=True))]:
+            with patch('sys.argv', common + extra), patch.object(browser, 'browser_game', return_value={}) as game, \
+                    patch('builtins.print'):
+                browser.main()
+            self.assertEqual(game.call_args.kwargs, expected)
+
+    def test_browser_cpu_workflow_runs_one_browser_game_and_preserves_evidence(self):
+        # Match actual step conditions: an accidentally included CPU step would
+        # silently play an additional game, so inspect both execution and upload.
+        workflow = (Path(__file__).resolve().parents[1] /
+                    '.github/workflows/wasm-profile.yml').read_text()
+        steps = re.split(r'\n      - ', workflow)[1:]
+        engine_steps = [step for step in steps if 'tools/site_wasm_profile_ci.py ' in step
+                        or 'name: civvis-wasm-cpu-profile' in step]
+        self.assertEqual(len(engine_steps), 2)
+        for step in engine_steps:
+            self.assertIn("inputs.mode != 'browser-cpu'", step)
+        profiled = [step for step in steps if '--main-cpu-profile' in step]
+        self.assertEqual(len(profiled), 1)
+        self.assertIn("if: ${{ inputs.mode == 'browser-cpu' }}", profiled[0])
+        self.assertIn('--chrome "$CIVVIS_BROWSER_EXECUTABLE"', profiled[0])
+        upload = next(step for step in steps if 'name: civvis-wasm-browser-game' in step)
+        self.assertIn("inputs.mode == 'browser-cpu'", upload)
+
 
 
 if __name__ == '__main__':
