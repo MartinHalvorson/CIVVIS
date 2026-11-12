@@ -82,6 +82,12 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> bool {
+        // `first-campus-before-the-settler`: a Domination seat's committed
+        // first Campus keeps its queue against the same two Settler claims.
+        // See `advanced/first_campus_before_the_settler.rs`.
+        if self.first_campus_holds_the_settler(g, pid, cid, plan) {
+            return true;
+        }
         self.science_campus_pause_safe(g, pid, cid, plan)
             && g.cities[&cid].queue.first().is_some_and(|item| {
                 self.free_slot_campus_holds(g, pid, cid, plan, item)

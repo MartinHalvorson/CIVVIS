@@ -287,6 +287,9 @@ impl AdvancedAi {
         /// Opt-in `education-follows-the-library`; see
         /// `advanced/research/domination_education.rs`.
         education_follows_the_library => enable_education_follows_the_library, disable_education_follows_the_library;
+        /// Opt-in `first-campus-before-the-settler`; see
+        /// `advanced/first_campus_before_the_settler.rs`.
+        first_campus_before_the_settler => enable_first_campus_before_the_settler, disable_first_campus_before_the_settler;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its

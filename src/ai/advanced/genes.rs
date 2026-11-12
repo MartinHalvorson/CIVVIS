@@ -5758,6 +5758,15 @@ pub const GENES: &[Gene] = &[
     // Campus unlock's slot, behind every military goal. Opt-in; see
     // `advanced/research/domination_education.rs`.
     Gene { tag: "education-follows-the-library", field: "education_follows_the_library", kind: Kind::OptIn, enable: AdvancedAi::enable_education_follows_the_library, disable: AdvancedAi::disable_education_follows_the_library },
+    // Live Deity Gran Colombia, 38 games of 2026-11-11 19:57Z to 11-12 02:00Z:
+    // Writing at a median t32, the first Campus queued at t46 and finished at
+    // t55; Science 11.4 at t50 against the best rival's 71.5. At peace the
+    // early Settler floor held the quickest first Campus for 139 turns, the
+    // largest single cause, 136 of them with two or more cities standing. A
+    // Domination seat's first Campus (at most 7 Online turns, the best site)
+    // goes ahead of that Settler. Opt-in; see
+    // `advanced/first_campus_before_the_settler.rs`.
+    Gene { tag: "first-campus-before-the-settler", field: "first_campus_before_the_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_first_campus_before_the_settler, disable: AdvancedAi::disable_first_campus_before_the_settler },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

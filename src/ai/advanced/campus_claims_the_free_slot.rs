@@ -392,6 +392,9 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let n_cities = city_ids.len();
         let settlers = self.counts(g, pid).settlers;
+        // `first-campus-before-the-settler`: the cities whose first Campus
+        // that gene put ahead of the Settler, for the journal.
+        let mut first_campus_released: Vec<u32> = Vec::new();
         let mut best: Option<(f64, u32, Item)> = None;
         for cid in city_ids {
             let Some((campus, turns)) = self.free_slot_campus_item(g, pid, cid, plan) else {
@@ -419,6 +422,15 @@ impl AdvancedAi {
                     .is_some_and(|remaining| remaining.is_finite() && remaining > turns))
                 || (floor_holds
                     && self.science_campus_precedes_repeat_settler(g, pid, cid, plan, &campus));
+            // `first-campus-before-the-settler`: a Domination seat's first
+            // Campus once two cities stand. See
+            // `advanced/first_campus_before_the_settler.rs`.
+            let released = floor_holds
+                && self.first_campus_precedes_the_settler(g, pid, cid, plan, &campus, turns);
+            if released {
+                first_campus_released.push(cid);
+            }
+            let campus_before_settler = campus_before_settler || released;
             // The standalone Science gene supplies only its narrow exception,
             // not the ordinary idle/deferrable-queue Campus claims.
             if !self.campus_claims_the_free_slot
@@ -530,6 +542,9 @@ impl AdvancedAi {
                "campus-claims-the-free-slot: {turns:.1} turns, ahead of {}",
                head.map_or_else(|| "an idle queue".to_string(), |item| format!(
                    "{} (it keeps its progress)", Self::plain_item(&item))));
+        if first_campus_released.contains(&cid) {
+            self.explain_first_campus_before_the_settler(g, cid, turns);
+        }
         true
     }
 

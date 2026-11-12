@@ -7717,6 +7717,10 @@ pub struct AdvancedAi {
     /// Campus unlock's slot. See `advanced/research/domination_education.rs`.
     /// Opt-in.
     education_follows_the_library: bool,
+    /// `first-campus-before-the-settler`: a Domination seat's first Campus
+    /// goes ahead of the early Settler floor's Settler once two cities stand.
+    /// See `advanced/first_campus_before_the_settler.rs`. Opt-in.
+    first_campus_before_the_settler: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -11606,6 +11610,9 @@ mod industrial_zone_claims_the_factory;
 mod industrial_zone_claims_the_producer_queue;
 
 mod barbarian_research_prices_the_field;
+/// `first-campus-before-the-settler`: see
+/// `advanced/first_campus_before_the_settler.rs`.
+mod first_campus_before_the_settler;
 /// `launch-commits-the-endgame`: see `advanced/launch_commits_endgame.rs`.
 mod launch_commits_endgame;
 mod launcher_war;
