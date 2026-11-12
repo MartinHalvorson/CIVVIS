@@ -1778,6 +1778,9 @@ pub struct QueryCache {
     // once per effect key. The scope is what makes this safe: callers cannot
     // mutate a city or transfer a wonder while the guard is alive.
     wonder_effects: std::cell::RefCell<Option<WonderEffectsByPlayer>>,
+    /// Requested building effects of actual board cities within one immutable
+    /// query sweep. Edited city copies must still be evaluated independently.
+    building_effects: std::cell::RefCell<Option<BTreeMap<u32, BTreeMap<String, f64>>>>,
     /// `tourism_components_per_turn` per player. A Culture seat's Trader prices
     /// every origin and destination pair, and each pair asks for the whole
     /// empire's Tourism.
@@ -2079,6 +2082,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.national_parks.borrow_mut() = None;
             *self.game.query_memo.regional_slots.borrow_mut() = None;
             *self.game.query_memo.wonder_effects.borrow_mut() = None;
+            *self.game.query_memo.building_effects.borrow_mut() = None;
             *self.game.query_memo.tourism.borrow_mut() = None;
             *self.game.query_memo.domestic_tourists.borrow_mut() = None;
         }
@@ -11711,7 +11715,30 @@ impl Game {
         if !self.rules.effect_index.buildings(effect) {
             return 0.0;
         }
-        city.buildings
+        // Callers also price edited city copies with the same id. Only the
+        // exact city held by this immutable board can share an id-keyed answer.
+        // Tracing keeps the original questions even when a value is cached.
+        let cacheable = !self.query_memo.policy_reads_on.get()
+            && !city.buildings.is_empty()
+            && self.query_memo.building_effects.borrow().is_some()
+            && self
+                .cities
+                .get(&city.id)
+                .is_some_and(|current| std::ptr::eq(current, city));
+        if cacheable {
+            if let Some(value) = self
+                .query_memo
+                .building_effects
+                .borrow()
+                .as_ref()
+                .and_then(|cities| cities.get(&city.id))
+                .and_then(|effects| effects.get(effect))
+            {
+                return *value;
+            }
+        }
+        let value = city
+            .buildings
             .iter()
             .filter_map(|building| {
                 // Ask what a building grants before asking whether it is
@@ -11727,7 +11754,16 @@ impl Game {
                     && self.building_district_is_active(city, building))
                 .then_some(value)
             })
-            .sum()
+            .sum();
+        if cacheable {
+            if let Some(cities) = self.query_memo.building_effects.borrow_mut().as_mut() {
+                cities
+                    .entry(city.id)
+                    .or_default()
+                    .insert(effect.to_owned(), value);
+            }
+        }
+        value
     }
 
     fn empire_wonder_effect(&self, pid: usize, effect: &str) -> f64 {
@@ -13775,3 +13811,6 @@ mod mongolia_combat_tests;
 
 #[cfg(test)]
 mod ranged_handicap_tests;
+
+#[cfg(test)]
+mod city_building_effect_memo_tests;
