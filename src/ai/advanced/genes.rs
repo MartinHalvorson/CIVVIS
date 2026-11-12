@@ -5842,6 +5842,12 @@ pub const GENES: &[Gene] = &[
     // 396 such war turns.
     // Opt-in; see `advanced/hopeless_army_yields_the_queue.rs`.
     Gene { tag: "hopeless-army-yields-the-queue", field: "hopeless_army_yields_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_hopeless_army_yields_the_queue, disable: AdvancedAi::disable_hopeless_army_yields_the_queue },
+    // Live Deity Gran Colombia 2026-11-12 (`civvis-20261112T075931Z`) t192:
+    // `spend_gold` bought a Builder the host quoted at 400 against the list
+    // price 200, passed a 200 + 162 reserve test and left 20 Gold the frame
+    // the unit bill jumped. `buy_gold_unit` tests each city's own quote
+    // against the reserve. Opt-in; see `BasicAi::buy_gold_unit`.
+    Gene { tag: "gold-unit-buys-read-the-host-quote", field: "gold_unit_buys_read_the_host_quote", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_unit_buys_read_the_host_quote, disable: AdvancedAi::disable_gold_unit_buys_read_the_host_quote },
     // ---- append: l-o ------------------------------------------------
     // Native Deity Macedon 100029Z: model-priced horse/iron barter was
     // declined at51/55 and refused as barter_short at61. Ask the host for
@@ -5865,6 +5871,18 @@ pub const GENES: &[Gene] = &[
     // that city, and a Scout lost before turn 25 Online while no rival capital
     // is charted is replaced at once, once a game. See `ai/scout_first.rs`.
     Gene { tag: "opening-scout-comes-back", field: "opening_scout_comes_back", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_scout_comes_back, disable: AdvancedAi::disable_opening_scout_comes_back },
+    // Live Deity Gran Colombia, 62 games of 2026-11-11 19:57Z to 11-12
+    // 11:00Z: 8 of the 10 Religious defeats ran through the small-world
+    // own-flip reading (only the founder on its faith, half our cities
+    // leaning) to our own flip, the war held on power at 0.21-0.37 times
+    // the founder. Of the 43 decided games in that reading, 1 of 14 with a
+    // faith war before our flip lost on Religion against 7 of 29 without;
+    // the 18 faith wars opened under 0.7 times lost 0.22 cities in 30
+    // turns and none of 17 decided games on Religion. The reading drops its
+    // 0.5 power floor, and its war skips version 2's floor, the edge and
+    // the rout ratio. Rides `faith-war-on-a-small-world`. Opt-in; see
+    // `advanced/own_flip_faith_war.rs`.
+    Gene { tag: "own-flip-faith-war-asks-no-power", field: "own_flip_faith_war_asks_no_power", kind: Kind::OptIn, enable: AdvancedAi::enable_own_flip_faith_war_asks_no_power, disable: AdvancedAi::disable_own_flip_faith_war_asks_no_power },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.

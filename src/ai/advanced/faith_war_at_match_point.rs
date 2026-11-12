@@ -136,7 +136,8 @@ impl AdvancedAi {
     /// `faith-war-at-match-point`: whether the counter war's power floor
     /// (`counter_war_hopeless`) holds the declaration desk's war on `target`
     /// on an `urgent_denial` clock. Never on a founder whose faith stands at
-    /// match point against us under the gene; unchanged with it off.
+    /// match point against us under the gene, nor on a founder on the
+    /// `own-flip-faith-war-asks-no-power` reading; unchanged with both off.
     pub(super) fn counter_floor_holds(
         &self,
         g: &Game,
@@ -147,6 +148,9 @@ impl AdvancedAi {
         urgent_denial
             && self.counter_war_hopeless(g, pid, target)
             && self.faith_war_match_point(g, pid, target).is_none()
+            // `own-flip-faith-war-asks-no-power`: nor on a founder on its
+            // reading. See `advanced/own_flip_faith_war.rs`.
+            && !self.own_flip_reading(g, pid, target)
     }
 
     /// `faith-war-at-match-point`: the reading that keeps the faith war on
@@ -251,8 +255,8 @@ impl AdvancedAi {
     }
 
     /// When the host allows no war on `rival` yet, denounce it, so a Formal
-    /// War is legal once the denouncement's five turns have passed. `true`
-    /// when the denouncement was made.
+    /// War is legal once the denouncement's five turns have passed
+    /// (`faith_war_denounce`). `true` when the denouncement was made.
     fn match_point_denounce(
         &mut self,
         g: &mut Game,
@@ -260,21 +264,11 @@ impl AdvancedAi {
         rival: usize,
         reading: MatchPoint,
     ) -> bool {
-        let Some(denounce) = g
-            .legal_actions_within(pid, ActionFamilies::DIPLOMACY)
-            .into_iter()
-            .find(|action| matches!(action, Action::Denounce { player } if *player == rival))
-        else {
-            return false;
-        };
-        if g.apply(pid, &denounce).is_err() {
-            return false;
-        }
-        think!(self.journal(), Military, Strategy,
-               "Denouncing {} for the faith war", g.players[rival].civ;
-               "faith-war-at-match-point: its faith stands at match point ({}% of {} living majors) and {} of our {} cities lean to it, but the host allows no war on it yet; a Formal War opens once the denouncement's five turns have passed",
-               reading.race, reading.majors, reading.leaning, reading.cities);
-        true
+        let why = format!(
+            "faith-war-at-match-point: its faith stands at match point ({}% of {} living majors) and {} of our {} cities lean to it, but the host allows no war on it yet; a Formal War opens once the denouncement's five turns have passed",
+            reading.race, reading.majors, reading.leaning, reading.cities
+        );
+        self.faith_war_denounce(g, pid, rival, &why)
     }
 
     /// `faith-war-at-match-point`: open the defensive war on a founder whose

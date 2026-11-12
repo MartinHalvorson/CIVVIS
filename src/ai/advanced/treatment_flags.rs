@@ -133,6 +133,10 @@ impl AdvancedAi {
         /// `backlog-builder-takes-the-queue`'s claim. See
         /// `advanced/the_worked_backlog_gets_its_builder_first.rs`.
         base.the_worked_backlog_gets_its_builder_first => enable_the_worked_backlog_gets_its_builder_first, disable_the_worked_backlog_gets_its_builder_first;
+        /// Opt-in gene `gold-unit-buys-read-the-host-quote`: the Builder,
+        /// Trader and Settler Gold buys test each city's own quote against
+        /// the reserve. See `BasicAi::buy_gold_unit`.
+        base.gold_unit_buys_read_the_host_quote => enable_gold_unit_buys_read_the_host_quote, disable_gold_unit_buys_read_the_host_quote;
         // ---- append: c-d --------------------------------------------
         /// `domination-seat-appoints-pingala-first`: Pingala and Researcher
         /// take a Domination seat's first Governor titles. See
@@ -341,6 +345,9 @@ impl AdvancedAi {
         /// claims an idle queue before optional economy work on an early
         /// Domination seat without a reachable capital.
         land_recon_before_the_first_capital => enable_land_recon_before_the_first_capital, disable_land_recon_before_the_first_capital;
+        /// Opt-in `own-flip-faith-war-asks-no-power`; see
+        /// `advanced/own_flip_faith_war.rs`.
+        own_flip_faith_war_asks_no_power => enable_own_flip_faith_war_asks_no_power, disable_own_flip_faith_war_asks_no_power;
         // ---- append: p-r --------------------------------------------
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;

@@ -339,6 +339,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `gold-buys-the-backlog-builder` | off (unmeasured) | Opt-in gene `gold-buys-the-backlog-builder`; see `advanced/gold_buys_the_backlog_builder.rs`. | 1 \| 1 |
 | `gold-buys-the-opening-builder` | off (unmeasured) | Opt-in gene `gold-buys-the-opening-builder`; see `Self::gold_buys_the_opening_builder`. | 1 \| 1 |
 | `gold-buys-the-production-tile` | off (unmeasured) | Opt-in gene `gold-buys-the-production-tile`; see `Self::gold_buys_the_production_tile`. | 1 \| 1 |
+| `gold-unit-buys-read-the-host-quote` | off (unmeasured) | Opt-in gene `gold-unit-buys-read-the-host-quote`: the Builder, Trader and Settler Gold buys test each city's own quote against the reserve. | 1 \| 1 |
 | `good-land-lifts-the-city-target` | off (unmeasured) | Opt-in gene `good-land-lifts-the-city-target`; see `advanced/good_land_lifts_the_city_target.rs`. | 1 \| 1 |
 | `government-reach-pays-the-switch` | off (unmeasured) | Opt-in gene `government-reach-pays-the-switch`; see `advanced/government_reach.rs`. | 1 \| 1 |
 | `great-works-never-wait` | off (unmeasured) | Opt-in gene `great-works-never-wait`; see `advanced/great_works_never_wait.rs`. | 1 \| 1 |
@@ -385,6 +386,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `opening-scout-comes-back` | off (unmeasured) | `opening-scout-comes-back`: the opening Scout the barbarian defence displaced is that city's next build, and a Scout lost early while no rival capital is charted is replaced at once. | 1 \| 1 |
 | `outclassed-siege-stands-down` | off (unmeasured) | Opt-in gene `outclassed-siege-stands-down`; see `Self::outclassed_siege_stands_down`. | 1 \| 1 |
 | `outmatched-war-prices-the-army` | off (unmeasured) | Opt-in gene `outmatched-war-prices-the-army`; see `advanced/outmatched_war_prices_the_army.rs`. | 1 \| 1 |
+| `own-flip-faith-war-asks-no-power` | off (unmeasured) | Opt-in `own-flip-faith-war-asks-no-power`; see `advanced/own_flip_faith_war.rs`. | 1 \| 1 |
 | `parallel-library-backlog` | off (unmeasured) | Coordinate a quoted opening Library and backlog Builder. | 1 \| 1 |
 | `parity-upgrades-before-it-buys` | off (unmeasured) | Opt-in gene `parity-upgrades-before-it-buys`; see `advanced/parity_upgrades_before_it_buys.rs`. | — \| 3 |
 | `parity-upgrades-before-it-buys-2` | off (unmeasured) | Opt-in gene `parity-upgrades-before-it-buys-2`; see `advanced/parity_upgrades_before_it_buys.rs`. | — \| 3 |
