@@ -1404,6 +1404,13 @@ pub struct BasicAi {
     pub(crate) reserve_floor: f64,
     /// Preserve pre-repair defender buying only in the frozen advanced_v1 control.
     legacy_defender_purchases: bool,
+    /// `gold-unit-buys-read-the-host-quote`: `buy_gold_unit` (the Builder,
+    /// Trader and Settler buys of `spend_gold`) tests each city's own Gold
+    /// quote (`Game::unit_purchase_cost`) against the reserve, not the list
+    /// price `cost * 4`. Live Deity civvis-20261112T075931Z t192: a Builder
+    /// the host quoted at 400 passed a 200 + 162 reserve test and left 20
+    /// Gold. Set through `AdvancedAi::enable_gold_unit_buys_read_the_host_quote`.
+    pub(crate) gold_unit_buys_read_the_host_quote: bool,
     /// Scale each district family by how much of the empire still lacks it.
     pub(crate) district_coverage: bool,
     /// Version 2 of `district_coverage`: the same coverage term with a
@@ -3965,6 +3972,7 @@ impl BasicAi {
             garrison_under_fire: false,
             reserve_floor: 0.0,
             legacy_defender_purchases: false,
+            gold_unit_buys_read_the_host_quote: false,
             district_coverage: false,
             district_coverage_2: false,
             slot_kind_tiebreak: false,
@@ -4423,6 +4431,7 @@ impl BasicAi {
             garrison_under_fire: false,
             reserve_floor: 0.0,
             legacy_defender_purchases: false,
+            gold_unit_buys_read_the_host_quote: false,
             district_coverage: false,
             district_coverage_2: false,
             slot_kind_tiebreak: false,
@@ -8574,6 +8583,9 @@ impl BasicAi {
 
 #[cfg(test)]
 mod military_purchase_tests;
+
+#[cfg(test)]
+mod gold_spending_quote_tests;
 
 #[cfg(test)]
 mod tests;

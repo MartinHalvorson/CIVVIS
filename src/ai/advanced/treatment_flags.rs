@@ -133,6 +133,10 @@ impl AdvancedAi {
         /// `backlog-builder-takes-the-queue`'s claim. See
         /// `advanced/the_worked_backlog_gets_its_builder_first.rs`.
         base.the_worked_backlog_gets_its_builder_first => enable_the_worked_backlog_gets_its_builder_first, disable_the_worked_backlog_gets_its_builder_first;
+        /// Opt-in gene `gold-unit-buys-read-the-host-quote`: the Builder,
+        /// Trader and Settler Gold buys test each city's own quote against
+        /// the reserve. See `BasicAi::buy_gold_unit`.
+        base.gold_unit_buys_read_the_host_quote => enable_gold_unit_buys_read_the_host_quote, disable_gold_unit_buys_read_the_host_quote;
         // ---- append: c-d --------------------------------------------
         /// `domination-seat-appoints-pingala-first`: Pingala and Researcher
         /// take a Domination seat's first Governor titles. See
