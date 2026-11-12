@@ -1807,6 +1807,11 @@ impl AdvancedAi {
         if let Some(why) = self.settle_site_frontier_loyalty_verdict(g, pid, site) {
             return Some(why);
         }
+        // `score-seat-settles-what-pays`: a Score seat's city must hold to the
+        // tally through a Dark Age. `None` with that gene off.
+        if let Some(why) = self.score_seat_seat_refusal(g, pid, site) {
+            return Some(why);
+        }
         // `exhaustion-loyalty-guard` and an explicit Science lane: the
         // forecast below sums the rival cities the mirror can see, and
         // under-reads the ones it cannot.

@@ -310,7 +310,9 @@ impl AdvancedAi {
     /// `frontier_loyalty`, and no forecast at all otherwise.
     pub(super) fn holdable_land_loyalty_refuses(&self, g: &Game, pid: usize, site: Pos) -> bool {
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
-        if self.base.loyalty_rate_alarm || science_targeted {
+        // `score-seat-settles-what-pays`: a Score seat asks the full forecast,
+        // its Dark Age test included. False with that gene off.
+        if self.base.loyalty_rate_alarm || science_targeted || self.score_seat_settles(g) {
             self.settle_site_loyalty_verdict(g, pid, site).is_some()
         } else if self.frontier_loyalty {
             self.settle_site_frontier_loyalty_verdict(g, pid, site)

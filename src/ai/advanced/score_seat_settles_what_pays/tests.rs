@@ -155,3 +155,50 @@ fn a_trained_settler_writes_its_points() {
         "{details:?}"
     );
 }
+
+/// A seat four tiles from a rival city of twelve citizens and eight from our
+/// four-citizen capital would revolt before the tally in a Dark Age: the gene
+/// refuses it, and the walker's verdict says so. A seat beside our capital
+/// with no rival near holds. Off, nothing is refused for this reason.
+#[test]
+fn a_seat_that_would_revolt_before_the_tally_in_a_dark_age_is_refused() {
+    let mut game = Game::new_full(2, 40, 24, 936_223, 170, 0, false);
+    for uid in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(uid);
+    }
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.hills = false;
+        tile.feature = None;
+        tile.resource = None;
+    }
+    game.game_speed = GameSpeed::Online;
+    game.victory_conditions.score = true;
+    game.turn = 100;
+    let home = (8, 10);
+    let capital = game.found_city_for(0, home, None);
+    game.cities.get_mut(&capital).unwrap().pop = 4;
+    let frontier = (16, 10);
+    let rival_at = (20, 10);
+    let rival = game.found_city_for(1, rival_at, None);
+    game.cities.get_mut(&rival).unwrap().pop = 12;
+    assert_eq!(game.wdist(frontier, rival_at), 4);
+    let near_home = (4, 10);
+
+    let ai = armed();
+    let why = ai.score_seat_seat_refusal(&game, 0, frontier);
+    assert!(
+        why.as_deref()
+            .is_some_and(|why| why.starts_with(TAG) && why.contains("Dark Age")),
+        "{why:?}"
+    );
+    assert!(ai
+        .settle_site_loyalty_verdict(&game, 0, frontier)
+        .is_some_and(|why| why.starts_with(TAG)));
+    assert!(ai.holdable_land_loyalty_refuses(&game, 0, frontier));
+    assert_eq!(ai.score_seat_seat_refusal(&game, 0, near_home), None);
+
+    let mut off = ai.clone();
+    off.disable_score_seat_settles_what_pays();
+    assert_eq!(off.score_seat_seat_refusal(&game, 0, frontier), None);
+}

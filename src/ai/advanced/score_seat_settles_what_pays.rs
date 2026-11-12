@@ -45,7 +45,17 @@
 //!    turns `score-seat-plays-for-points` keeps for things that finish. Until
 //!    then `holdable-land-keeps-settling`'s window stays open and the
 //!    delegated governor's Settler gate runs to that turn.
-//! 3. Everything else is `no-city-limit`'s: the free seats it counts (clear
+//! 3. **The city must hold to the tally.** A seat is refused when a city
+//!    founded there would revolt before the turn limit in a Dark Age
+//!    ([`AdvancedAi::score_seat_seat_refusal`]: the forecast with our own
+//!    cities pressing at half strength, and the worse of it and the live
+//!    reading). The Settler gates, the free-seat count and the walker all ask
+//!    it, through `settle_site_loyalty_verdict`. The first cut without it
+//!    founded 0.67 more cities a game in the paired Rome/Score simulation (60
+//!    seeds) and lost 0.37 more, all after t100 and mostly with no major's
+//!    soldier lost (no war): score -8.9 (z -1.0). Live the seat was in a Dark
+//!    Age 23-47% of every game.
+//! 4. Everything else is `no-city-limit`'s: the free seats it counts (clear
 //!    of charted rival cities, outside their sphere, inside the walker's own
 //!    Loyalty forecast, apart from each other), the Settlers in flight at
 //!    once (one, plus one for every two cities while there is a soldier for
@@ -168,6 +178,44 @@ impl AdvancedAi {
             } else {
                 0.0
             }
+        })
+    }
+
+    /// `score-seat-settles-what-pays`: why a city founded on `site` would not
+    /// hold to the tally, if it would not. The forecast founds it on a copy of
+    /// the board with our age set Dark (our own cities press at half
+    /// strength) and takes the worse of that and the live reading; the city
+    /// fails when it would revolt before the turn limit. `None` with the gene
+    /// off or for another target.
+    pub(super) fn score_seat_seat_refusal(
+        &self,
+        g: &Game,
+        pid: usize,
+        site: Pos,
+    ) -> Option<String> {
+        if !self.score_seat_settles(g) {
+            return None;
+        }
+        let mut forecast = g.speculative_clone();
+        forecast.players[pid].age = "dark".to_string();
+        let cid = forecast.found_city_for(pid, site, None);
+        let city = &forecast.cities[&cid];
+        let per_turn = forecast
+            .city_loyalty_per_turn(city)
+            .min(forecast.settlement_loyalty_per_turn(city));
+        if per_turn >= 0.0 {
+            return None;
+        }
+        let turns_to_flip = city.loyalty / -per_turn;
+        let turns_left = f64::from(g.max_turns.saturating_sub(g.turn));
+        (turns_to_flip <= turns_left).then(|| {
+            format!(
+                "score-seat-settles-what-pays: in a Dark Age the city would lose {:.1} Loyalty a \
+                 turn and revolt in about {:.0} turns, before the tally at t{}",
+                -per_turn,
+                turns_to_flip.ceil(),
+                g.max_turns
+            )
         })
     }
 
