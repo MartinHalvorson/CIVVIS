@@ -1667,9 +1667,8 @@ impl AdvancedAi {
             // `risk-is-priced`: the chance the unit dies here times its
             // price, in this score's units. Zero with the gene off. See
             // `advanced/priced_risk.rs`.
-            value -= self
-                .base
-                .priced_risk_cost(g, uid, tile, self.base.w.mv_threat * threat_caution);
+            let per_hp = self.base.w.mv_threat * threat_caution;
+            value -= self.base.priced_risk_cost(g, uid, tile, per_hp);
 
             // Walking into the sea costs most of the unit; the score has no
             // other term that notices. Sized to outweigh the few tiles of

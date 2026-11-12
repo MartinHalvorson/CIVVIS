@@ -137,7 +137,7 @@ fn print_arena(title: &str, rows: &[(String, ArenaRow)]) {
         ok += row.on_kills;
         fk += row.off_kills;
         println!(
-            "{:<20} {:>5} {:>5} {:>+9.1} {:>7.1} | {:>7} {:>7} {:>7} {:>7} | {:>4}/{:<4} {:>4}/{:<4}",
+            "{:<20} {:>5} {:>5} {:>+9.1} {:>7.1} | {:>7} {:>7} {:>7} {:>7} |    +{}/-{}      +{}/-{}",
             id,
             row.seeds,
             row.fires,
@@ -147,10 +147,10 @@ fn print_arena(title: &str, rows: &[(String, ArenaRow)]) {
             row.off_losses,
             row.on_kills,
             row.off_kills,
-            format!("+{}", row.on_taken),
-            format!("-{}", row.on_lost),
-            format!("+{}", row.off_taken),
-            format!("-{}", row.off_lost),
+            row.on_taken,
+            row.on_lost,
+            row.off_taken,
+            row.off_lost,
         );
     }
     let (mean, se) = mean_se(&all);

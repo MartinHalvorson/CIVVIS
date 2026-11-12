@@ -161,7 +161,7 @@ fn the_board_reading_is_the_kill_probability_of_the_engines_pair() {
     assert_eq!(*field.contributions((18, 10), warrior), centre);
     assert_eq!(
         pairs,
-        vec![(Some(hostile), BlowPair::Strike { att, def })],
+        [(Some(hostile), BlowPair::Strike { att, def })],
         "one strike, the engine's pair"
     );
 }
