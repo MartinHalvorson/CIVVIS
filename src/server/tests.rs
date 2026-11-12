@@ -9637,10 +9637,11 @@ fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         !planet_grain.contains("MAPH"),
         "the chart's paper grain must not be measured off the window"
     );
-    assert!(EMBEDDED_INDEX.contains(
-        "drawPlanetChartFibres(camera, scale, centerX, centerY);\n      \
-         drawPlanetChartMarginalia(camera, scale, centerX, centerY);"
-    ));
+    let compact_source = EMBEDDED_INDEX.lines().map(str::trim).collect::<String>();
+    assert!(compact_source.contains(concat!(
+        "drawPlanetChartFibres(camera, scale, centerX, centerY);",
+        "drawPlanetChartMarginalia(camera, scale, centerX, centerY);"
+    )));
     assert!(EMBEDDED_INDEX
         .contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
     assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
