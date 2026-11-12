@@ -18,7 +18,10 @@
 //! rear cities: the Granary (`claim_bound_granaries`), the Aqueduct
 //! (`claim_capped_aqueduct`), the Neighbourhood (`claim_capped_neighborhood`),
 //! the backlog Builder (`claim_backlog_builder`), the Campus building
-//! (`claim_campus_building`), the parallel Library beside the backlog
+//! (`claim_campus_building`), a free slot's first Campus district
+//! (`claim_free_slot_campus`, added after the live city-loss read: the
+//! seat's first Campus came at a median t55 and its science ran 40 against
+//! the best rival's 191 at t100), the parallel Library beside the backlog
 //! Builder (`claim_parallel_library_backlog`), and the idle-route Trader
 //! (`claim_trader_for_idle_route`). For the Trader, the rear city is the one
 //! that would train it. A city is rear when the plan does not name it as the
@@ -87,7 +90,7 @@ impl AdvancedAi {
         think!(self.journal(), Cities, Detail,
                "Rear cities grow through the war hold";
                "{} of {} cities are away from the front; \
-                Granary/Aqueduct/Neighbourhood/Builder/Campus/Trader claims stay open there",
+                Granary/Aqueduct/Neighbourhood/Builder/Campus/Trader claims stay open there, first Campus included",
                rear.len(), g.player_city_ids(pid).len());
         self.rear_cities_open_under_the_hold = Some(rear);
         true
