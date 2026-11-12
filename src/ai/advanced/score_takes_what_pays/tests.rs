@@ -383,14 +383,32 @@ fn each_version_caps_the_owners_military_at_its_grade() {
 #[test]
 fn each_local_circumstance_holds_the_graded_versions() {
     let ai = graded(3);
-    // The owner's soldiers near the city outweigh the corps.
-    let (mut game, _) = graded_board();
+    // The owner's soldiers in sight within six tiles of the city (and out
+    // of the garrison's two) outweigh the corps.
+    let (mut game, forward) = graded_board();
     rivals_at(&mut game, 2.0);
-    for pos in [(15, 12), (15, 13), (16, 11), (16, 13), (14, 14), (16, 14)] {
+    let ours: Vec<Pos> = [(10, 12), (9, 12), (10, 11)].to_vec();
+    let mut tiles: Vec<Pos> = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| (3..=SCORE_TAKE_LOCAL_REACH).contains(&game.wdist(*pos, FORWARD)))
+        .filter(|pos| ours.iter().any(|at| game.wdist(*at, *pos) <= 2))
+        .filter(|pos| game.unit_ids_at(*pos).is_empty() && game.city_at(*pos).is_none())
+        .collect();
+    tiles.sort_unstable();
+    assert!(tiles.len() >= 6, "{tiles:?}");
+    for pos in tiles.into_iter().take(6) {
         game.spawn_test_unit("swordsman", 1, pos);
     }
-    let reason = ai.score_take_circumstances(&game, 0, &ai.score_take_board(&game, 0)[0], false);
-    assert!(reason.is_err(), "local picture");
+    let take = ai
+        .score_take_price(&game, 0, forward)
+        .expect("still priced: the centre is unchanged");
+    let reason = ai
+        .score_take_circumstances(&game, 0, &take, false)
+        .unwrap_err();
+    assert!(reason.contains("outweigh the corps"), "{reason}");
     // A city of ours in the owner's reach without Walls.
     let (mut game, forward) = graded_board();
     rivals_at(&mut game, 2.0);
