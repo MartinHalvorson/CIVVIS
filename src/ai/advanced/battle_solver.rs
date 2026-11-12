@@ -33,7 +33,9 @@
 //! solver cannot model (ships, aircraft, embarked units) stays with the
 //! planner and the ladder.
 
-mod dice;
+/// `pub(super)` for `risk-is-priced` (`priced_risk.rs`), which reads a
+/// volley's exact kill chance from the same arithmetic.
+pub(super) mod dice;
 mod extract;
 pub mod host_enemy;
 /// `pub(super)` for `assault_forecast`, which plays a siege forward on the

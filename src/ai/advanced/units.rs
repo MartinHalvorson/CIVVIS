@@ -2546,6 +2546,9 @@ impl AdvancedAi {
         // Observes only: see `advanced/last_orders.rs`.
         self.open_unit_orders(g, pid);
         self.builder_support.clear();
+        // `risk-is-priced`: the last frame's reading goes before anything
+        // moves; this frame's is read below, once the kills are settled.
+        self.clear_priced_risk();
         self.base.begin_movement_turn(g, pid);
         self.refresh_wonder_clearance(g, pid);
         // In a native game a Trader has walking movement and the ordinary unit
@@ -2708,8 +2711,16 @@ impl AdvancedAi {
         // read once the turn's kills are settled, and a gun already standing
         // on one steps off it. Nothing with the gene off. See
         // `advanced/guns_stay_out_of_reach.rs`.
+        //
+        // `risk-is-priced` reads its frame first: each covered unit's
+        // mission, allowance, price and death chance on every tile it can
+        // reach, which the guns' veto then leaves alone; a siege gun over its
+        // allowance steps out (credited with the guns' own step-out).
+        // Nothing with the gene off. See `advanced/priced_risk.rs`.
+        self.mark_priced_risk(g, pid, plan);
         self.mark_gun_lethal_tiles(g, pid);
         self.guns_step_out_of_reach(g, pid);
+        self.priced_risk_guns_step_out(g, pid);
         self.credit_orders(g, OrderStep::GunsOutOfReach);
         let mut air_assault_units = self.plan_air_city_assault(g, pid, plan);
         self.credit_orders(g, OrderStep::Air);

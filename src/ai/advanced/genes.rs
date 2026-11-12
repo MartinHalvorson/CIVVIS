@@ -5997,6 +5997,14 @@ pub const GENES: &[Gene] = &[
     // stays while losing it takes the projection to zero or below. Opt-in;
     // see `advanced/policy_swap_keeps_the_army_paid.rs`.
     Gene { tag: "policy-swap-keeps-the-army-paid", field: "policy_swap_keeps_the_army_paid", kind: Kind::OptIn, enable: AdvancedAi::enable_policy_swap_keeps_the_army_paid, disable: AdvancedAi::disable_policy_swap_keeps_the_army_paid },
+    // 62 live Deity games 2026-11-12 lost 1,295 units, 63% of the defenders
+    // killed at 50+ hp; 580 of an earlier 765 losses died to one hit, mostly a
+    // healthy out-teched unit beside a visible stronger enemy. One death
+    // chance (exact dice, each hostile at the host's fitted odds) and a price
+    // in hammers per move, with a refusal over the allowance the unit's
+    // mission buys (Defend/Relieve/siege post 0.6, Destroy/Escort 0.3, march
+    // 0.1, scout 0.05). Opt-in; see `advanced/priced_risk.rs`.
+    Gene { tag: "risk-is-priced", field: "risk_is_priced", kind: Kind::OptIn, enable: AdvancedAi::enable_risk_is_priced, disable: AdvancedAi::disable_risk_is_priced },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and

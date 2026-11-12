@@ -427,6 +427,9 @@ impl AdvancedAi {
         /// projected income to zero or below; see
         /// `advanced/policy_swap_keeps_the_army_paid.rs`.
         policy_swap_keeps_the_army_paid => enable_policy_swap_keeps_the_army_paid, disable_policy_swap_keeps_the_army_paid;
+        /// Opt-in gene `risk-is-priced`: one death chance per pathed move,
+        /// refused over the mission's allowance; see `advanced/priced_risk.rs`.
+        risk_is_priced => enable_risk_is_priced, disable_risk_is_priced;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
