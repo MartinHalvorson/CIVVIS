@@ -24,6 +24,14 @@ pub const F_RANGED: u8 = 8;
 pub const F_SIEGE: u8 = 16;
 pub const F_MOVE_AND_FIRE: u8 = 32;
 pub const F_CAPTURES: u8 = 64;
+/// A melee or anti-cavalry unit: the class a Battering Ram or Siege Tower
+/// beside a city works for (`Game::siege_support_effects`). Only
+/// `assault_forecast` sets it.
+pub const F_WALL_SUPPORTED: u8 = 128;
+/// `State::city_support` bits: our Battering Ram, our Siege Tower beside
+/// the city.
+pub const SUPPORT_RAM: u8 = 1;
+pub const SUPPORT_TOWER: u8 = 2;
 
 pub const OURS: u8 = 0;
 pub const THEIRS: u8 = 1;
@@ -193,6 +201,9 @@ pub struct State {
     pub city_hp: Vec<i16>,
     pub city_wall: Vec<i16>,
     pub city_side: Vec<u8>,
+    /// Per city, the `SUPPORT_*` bits of our support units beside it. Zero
+    /// on every solver board.
+    pub city_support: Vec<u8>,
 }
 
 impl State {
@@ -209,6 +220,7 @@ impl State {
             city_hp: cities.iter().map(|c| c.0).collect(),
             city_wall: cities.iter().map(|c| c.1).collect(),
             city_side: cities.iter().map(|c| c.2).collect(),
+            city_support: vec![0; cities.len()],
         }
     }
 
@@ -223,6 +235,8 @@ impl State {
         self.city_wall.extend_from_slice(&other.city_wall);
         self.city_side.clear();
         self.city_side.extend_from_slice(&other.city_side);
+        self.city_support.clear();
+        self.city_support.extend_from_slice(&other.city_support);
     }
 }
 
@@ -545,12 +559,25 @@ impl<'b> Sim<'b> {
         }
     }
 
-    /// `city_take_damage`.
-    fn city_takes(&mut self, c: usize, dmg: i16, wall_mult: f32) {
+    /// The Battering Ram and Siege Tower working for unit `i` against city
+    /// `c`, as `Game::siege_support_effects` reads them.
+    #[inline]
+    fn wall_support(&self, i: usize, c: usize) -> (bool, bool) {
+        if !self.s.units[i].has(F_WALL_SUPPORTED) {
+            return (false, false);
+        }
+        let bits = self.s.city_support.get(c).copied().unwrap_or(0);
+        (bits & SUPPORT_RAM != 0, bits & SUPPORT_TOWER != 0)
+    }
+
+    /// `city_take_damage`: a Siege Tower's blow (`bypass`) passes the walls.
+    fn city_takes(&mut self, c: usize, dmg: i16, wall_mult: f32, bypass: bool) {
         let (wall, max) = (self.s.city_wall[c], self.b.cities[c].wall_max);
         if wall > 0 && max > 0 {
             let frac = wall as f32 / max as f32;
-            let through = if frac >= 0.8 {
+            let through = if bypass {
+                dmg
+            } else if frac >= 0.8 {
                 1
             } else if frac >= 0.2 {
                 dmg / 2
@@ -595,7 +622,9 @@ impl<'b> Sim<'b> {
         let def = self.city_strength(c);
         let out = self.damage(att, def, i);
         let back = self.damage(def, att, i);
-        self.city_takes(c, out, 0.15);
+        // A Battering Ram beside the city: full damage to the walls.
+        let (ram, tower) = self.wall_support(i, c);
+        self.city_takes(c, out, if ram { 1.0 } else { 0.15 }, tower);
         self.s.units[i].hp -= back;
         self.spend_attack(i);
         if self.s.units[i].hp <= 0 {
@@ -618,7 +647,7 @@ impl<'b> Sim<'b> {
         let was = self.s.city_hp[c];
         let dmg = self.damage(att, def, i);
         let siege = self.s.units[i].has(F_SIEGE);
-        self.city_takes(c, dmg, if siege { 1.0 } else { 0.5 });
+        self.city_takes(c, dmg, if siege { 1.0 } else { 0.5 }, false);
         self.s.city_hp[c] = if was <= 0 || (self.s.city_hp[c] <= 0 && siege) {
             0
         } else {
@@ -965,6 +994,7 @@ impl<'b> Sim<'b> {
                         && side == OURS
                         && f32::from(self.s.city_wall[c])
                             > self.b.melee_breach_share * f32::from(self.b.cities[c].wall_max)
+                        && self.wall_support(i, c) == (false, false)
                     {
                         continue;
                     }

@@ -5,20 +5,107 @@
 - The forecast is reliable when it reads low: 655 posed sieges read under
   0.2, predicted 0.01, and 0.04 were taken.
 - It is overconfident when it reads high: 473 sieges read 0.8 or more,
-  predicted 0.99, and 0.44 were taken (0.37 with no walls, 0.09 at 400).
+  predicted 0.99, and 0.44 were taken. By wall pool, the high bin was taken
+  0.60 of the time with no walls, 0.42 at 100, 0.36 at 200 and 0.26 at 400.
+  Across all readings the realized rates are 0.37, 0.21, 0.15 and 0.09.
 - Its Brier score is worse than giving every siege the base rate: 0.252
   against 0.162 within 12 turns.
 - The go gene took 134 cities to 132 on 400 paired posed sieges, which is
   noise.
 
 **Caveat, found after these runs (#5207): the posed seats were not funded.**
-When a seat's gold runs out, the engine disbands one unit per 10 gold of
+When a seat's gold runs out, the engine disbands one unit per 10 Gold of
 deficit each turn (`settle_gold_budget`). A pop-1 capital cannot pay for up
-to nine soldiers. Some sieges that read high and failed lost units this way
-rather than in combat: seed 5 lost 3 of 9 on turn 1, with no defender in
-reach. This hits both arms of the paired runs equally. It inflates the
-realized miss in the calibration, by an amount not yet measured. #5207
-re-measures with solvent seats.
+to nine soldiers. Most of the miss above was that: force members lost
+outside combat came to 2.11 a siege.
+
+With the seats kept solvent (#5207, CI run 43303003805), the same 1,200
+sieges read:
+
+- members lost outside combat 0.00;
+- the 473 readings of 0.8 or more realized 0.81;
+- Brier within 12 of 0.136, against the base rate's 0.238;
+- units lost: predicted 1.98, realized 0.61.
+
+#5207 is working through the rest of the gap.
+
+## For callers
+
+These entry points are all `pub(crate)` on `AdvancedAi`, in
+`src/ai/advanced/assault_forecast.rs`. They read with both genes off, are
+cached for the turn, and change no decision.
+
+- `assault_forecast(g, pid, city, force) -> Option<AssaultForecast>`: at war
+  only. `None` means the city is ours, gone, or not at war with us.
+- `assault_forecast_at_peace(g, pid, city, force) -> Option<AssaultForecast>`:
+  the same reading as if the war with the city's owner (a major or a
+  city-state) began this turn. The owner's units in sight are hostiles and
+  its borders open. `None` only means the city is ours or gone. At war it
+  equals `assault_forecast`.
+- `assault_forecast_recruiting(g, pid, city, force, recruits) -> Option<AssaultForecast>`:
+  the at-peace reading with `Recruit { kind, count, turns }` added. Each
+  recruit arrives at the board's edge nearest our cities `turns` from now.
+  A Battering Ram or Siege Tower among them stands beside the city when its
+  walk in from that edge ends.
+- `assault_corps_for(g, pid, city, pool, want_p, horizon) -> Option<AssaultCorps>`:
+  the smallest greedy subset of `pool` whose reading reaches `want_p` within
+  `horizon` turns (1-12), at war or as if at war. `pool` can hold soldiers
+  and support units, up to 20 soldiers. `None` means the whole pool falls
+  short, or no city reads.
+- `assault_corps_best(g, pid, city, pool, want_p, horizon) -> Option<AssaultCorps>`:
+  from the same cached search, the corps that reaches, or else the best the
+  pool reached, for the caller to log. `None` only when no city reads.
+- `AssaultForecast::calibrated_within(turns, walls) -> f32`, **provisional**:
+  a conservative chance for turning a reading into an expected value.
+  - Readings under 0.2 pass through; low readings were right.
+  - Above 0.2 the reading is pulled down linearly to the high bin's realized
+    rate for the city's wall pool (table below), and is never raised.
+  - It will be replaced when #5207 fixes the cause of the gap.
+
+A Battering Ram or Siege Tower in the force or among the recruits works as
+the engine works it (`Game::siege_support_effects`). From the turn after it
+stands beside the city, our melee and anti-cavalry hits do full damage to
+the walls (ram) or pass them (tower). That holds only where
+`Game::city_allows_siege_support` lets it: a ram against Ancient Walls, a
+tower against Ancient or Medieval Walls.
+
+**Cost.**
+
+- A reading with the short-of reruns takes 10-11 ms on average, 50-100 ms
+  at most, on the 36x22 posed map on a CI runner.
+- Reading at peace, or with recruits, adds one copy of the board.
+- The corps search makes up to about n²/2 quick readings of 24 rollouts each
+  (n is at most 22), plus a full reading near the target. Expect up to a
+  few hundred ms per city, once a turn for each (city, pool, chance,
+  horizon).
+
+**Warning: a raw high reading is not a probability.** Readings of 0.8 or
+more were taken 44% of the time on the posed sieges as #5195 ran them
+(unfunded seats), and 81% with the seats kept solvent (#5207). Use
+`calibrated_within` for an expected value.
+
+### The high bin by wall pool (what `calibrated_within` reads)
+
+From the 1,200 mixed posed sieges with solvent seats: #5207, CI run
+43303003805 on c908fea4c6.
+
+Before each seat's turn its treasury is topped up to seven turns of its
+deficit plus 20 Gold. Neither the engine's bankruptcy (one unit disbanded
+per 10 Gold short) nor the agent's own `bankruptcy-exits-the-drain-2`
+disbands anything: force members lost outside combat fell from 2.11 a siege
+to 0.00. A test holds the constants to these lines.
+
+| walls | read >= 0.8 | taken within 12 | rate |
+|---|---|---|---|
+| 0 | 165 | 141 | 0.85 |
+| 100 | 113 | 94 | 0.83 |
+| 200 | 109 | 86 | 0.79 |
+| 400 | 86 | 60 | 0.70 |
+
+The same sieges with unfunded seats, as #5195 ran them: 99 / 165 (0.60),
+47 / 113 (0.42), 39 / 109 (0.36), 22 / 86 (0.26).
+
+## The genes
 
 Genes `assault-forecast-is-read` and `siege-goes-on-the-forecast` (both
 opt-in, off and byte-identical when off). Code in
@@ -343,5 +430,7 @@ as shipped (enemy acts every turn).
   several fronts. The two-city worlds are the smallest version of that, and
   the evidence there is a null.
 - **What the forecast cannot see:** units the owner builds or brings from
-  out of sight, ships and aircraft, Battering Rams and Siege Towers, and
-  promotions earned in the fight.
+  out of sight, ships and aircraft, a Battering Ram or Siege Tower killed on
+  its way, and promotions earned in the fight. Rams and towers themselves
+  are modelled since #5212 (above, "For callers"); the calibration tables
+  predate that.
