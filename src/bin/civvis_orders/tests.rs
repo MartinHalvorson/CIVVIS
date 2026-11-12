@@ -7033,6 +7033,103 @@ fn a_drained_treasury_sells_its_favor_past_the_vote_hold() {
     );
 }
 
+/// Live Deity Gran Colombia, 2026-11-12, civvis-20261112T043248Z: 142 Favor
+/// at t100 on 36 Gold and -7.5 a turn that the treasury still covered, 87 at
+/// t80 on 65 Gold, a rival past the vote hold from the middle of the game.
+/// A Domination plan sells that bank on the cadence, down to twenty, until a
+/// rival reaches the count at which Favor is bought back for the session.
+#[test]
+fn a_domination_plan_sells_its_favor_past_the_vote_hold() {
+    let rival = |player: usize, gold: f64, dvp: i64| StateRival {
+        player,
+        gold,
+        dvp: Some(dvp),
+        ..StateRival::default()
+    };
+    let banked = StateSnapshot {
+        turn: 81,
+        favor: Some(87.0),
+        gold: 65,
+        gold_per_turn: Some(3.0),
+        rivals: vec![rival(1, 190.0, 5), rival(2, 120.0, 2), rival(3, 90.0, 6)],
+        ..StateSnapshot::default()
+    };
+    assert_eq!(banked.turn % FAVOR_SALE_CADENCE, FAVOR_SALE_PHASE);
+    assert!(favor_banked_for_votes(&banked));
+    assert!(!treasury_drained(&banked));
+    let conquest = Some(("conquest", Some("domination")));
+    let science = Some(("conquest", Some("science")));
+
+    // Any other lane holds this bank for the votes, as before.
+    let mut orders = Vec::new();
+    assert_eq!(
+        append_favor_sale_order(science, &banked, &mut orders, 2.0),
+        Some("favor_hold:contender")
+    );
+    assert!(orders.is_empty());
+
+    // The Domination plan sells 67 of the 87 to the richest rival at peace.
+    assert_eq!(
+        append_favor_sale_order(conquest, &banked, &mut orders, 2.0),
+        None
+    );
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].kind, "sell");
+    assert_eq!(orders[0].subject, Some(1));
+    assert_eq!(orders[0].verb.as_deref(), Some("FAVOR=67"));
+    assert_eq!(orders[0].pos, Some((134, 0)));
+    // The planner's own favor quote crosses too.
+    let quote = || {
+        vec![Order {
+            kind: "sell",
+            subject: Some(1),
+            verb: Some("FAVOR=10".to_string()),
+            pos: Some((10, 0)),
+        }]
+    };
+    let mut quoted = quote();
+    assert_eq!(hold_planner_favor_sales(conquest, &banked, &mut quoted), 0);
+    assert_eq!(quoted.len(), 1);
+    let mut struck = quote();
+    assert_eq!(hold_planner_favor_sales(science, &banked, &mut struck), 1);
+
+    // It keeps the cadence: a solvent conquest does not sell every turn.
+    let mut off_cadence = banked.clone();
+    off_cadence.turn = 82;
+    let mut none = Vec::new();
+    assert_eq!(
+        append_favor_sale_order(conquest, &off_cadence, &mut none, 2.0),
+        Some("favor_hold:cadence")
+    );
+    // The reserve is twenty: 35 Favor has too little above it to sell.
+    let mut thin = banked.clone();
+    thin.favor = Some(35.0);
+    assert_eq!(
+        append_favor_sale_order(conquest, &thin, &mut none, 2.0),
+        Some("favor_hold:reserve")
+    );
+    // A rival at war with us buys nothing; the next richest is asked.
+    let mut at_war = banked.clone();
+    at_war.rivals[0].at_war = true;
+    let mut second = Vec::new();
+    assert_eq!(
+        append_favor_sale_order(conquest, &at_war, &mut second, 2.0),
+        None
+    );
+    assert_eq!(second[0].subject, Some(2));
+
+    // A rival at ten points makes the bank votes again, for this plan too.
+    let mut contender = banked.clone();
+    contender.rivals[2].dvp = Some(FAVOR_BUY_LEADER_DVP);
+    assert_eq!(
+        append_favor_sale_order(conquest, &contender, &mut none, 2.0),
+        Some("favor_hold:contender")
+    );
+    let mut held = quote();
+    assert_eq!(hold_planner_favor_sales(conquest, &contender, &mut held), 1);
+    assert!(none.is_empty());
+}
+
 #[test]
 fn idle_favor_sells_on_every_plan_that_reports_one() {
     // The bank the live seat actually holds: 300 favor at t141 with three
