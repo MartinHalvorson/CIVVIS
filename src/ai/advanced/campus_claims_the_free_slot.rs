@@ -47,7 +47,8 @@
 //! `campus-and-library-before-the-claims` lets a Domination seat's first
 //! Campus pass the Builder, Granary, Aqueduct, Industrial Zone, Commercial
 //! Hub, uninvested Holy Site or Shrine and, at peace, deterrent holds below,
-//! and from four cities the floor's Settler. See
+//! and from six cities the floor's Settler; a housing-bound city's Granary
+//! keeps the head at the cap while the Campus is unpaid. See
 //! `advanced/campus_and_library_before_the_claims.rs`.
 //!
 //! **Version 2** (`campus-claims-the-free-slot-2`) claims from
@@ -63,6 +64,7 @@
 //! rush and threatened plans retain the Settler. The six-city floor remains;
 //! the brief Campus commitment is protected through zero-progress replans.
 
+use super::campus_and_library_before_the_claims::ScienceFirstItem;
 use super::*;
 
 /// The fewest citizens a city holds before its free slot goes to a Campus:
@@ -527,7 +529,29 @@ impl AdvancedAi {
                         // `campus-and-library-before-the-claims`: a Domination
                         // seat's first Campus passes the economy's holds and,
                         // at peace, the deterrent. `None` with the gene off.
-                        match self.first_campus_passes_the_hold(g, pid, cid, plan, item) {
+                        // A housing-bound city's Granary keeps the head
+                        // at or over the cap while the Campus is unpaid.
+                        let passed = match self.campus_and_library_housing_keeps(
+                            g,
+                            pid,
+                            cid,
+                            plan,
+                            item,
+                            ScienceFirstItem::FirstCampus,
+                            &campus,
+                        ) {
+                            Some(kept) => {
+                                self.explain_housing_keeps_the_head(
+                                    g,
+                                    cid,
+                                    kept,
+                                    ScienceFirstItem::FirstCampus,
+                                );
+                                None
+                            }
+                            None => self.first_campus_passes_the_hold(g, pid, cid, plan, item),
+                        };
+                        match passed {
                             Some(passed) => held_heads_passed.push((cid, passed)),
                             None => {
                                 self.explain_free_slot_campus_hold(g, cid, turns, reason);

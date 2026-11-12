@@ -147,14 +147,15 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         exclude: Option<u32>,
     ) -> Option<(u8, f64, u32, Item)> {
-        self.campus_building_claim_pick(g, pid, plan, exclude, false)
+        self.campus_building_claim_pick(g, pid, plan, exclude, false, false)
             .map(|(rank, turns, cid, item, _)| (rank, turns, cid, item))
     }
 
     /// The claim's pick, and the head it passes when
     /// `campus-and-library-before-the-claims` let it pass one the claim's own
     /// rules hold. `science_first_only` keeps to the gene's Library and quick
-    /// University (its extra claims each turn).
+    /// University (its extra claims each turn). `journal_holds` writes the
+    /// gene's housing-head line, once a turn.
     fn campus_building_claim_pick(
         &self,
         g: &Game,
@@ -162,6 +163,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         exclude: Option<u32>,
         science_first_only: bool,
+        journal_holds: bool,
     ) -> Option<(u8, f64, u32, Item, Option<String>)> {
         if !self.campus_building_claims_the_queue && !self.campus_and_library_before_the_claims {
             return None;
@@ -237,6 +239,16 @@ impl AdvancedAi {
                         || !Self::capped_aqueduct_may_defer(g, pid, cid, item, at_major_war)
                     {
                         passed = reach.and_then(|reach| {
+                            // A housing-bound city's Granary and a capped
+                            // city's Aqueduct keep the head.
+                            if let Some(kept) = self.campus_and_library_housing_keeps(
+                                g, pid, cid, plan, item, what, &building,
+                            ) {
+                                if journal_holds {
+                                    self.explain_housing_keeps_the_head(g, cid, kept, what);
+                                }
+                                return None;
+                            }
                             self.campus_and_library_passes(g, pid, cid, plan, item, reach, what)
                         });
                         if passed.is_none() {
@@ -278,7 +290,7 @@ impl AdvancedAi {
         for round in 0..rounds {
             // This gene's own claim is the first; the rest are the other gene's.
             let science_first_only = round > 0 || !self.campus_building_claims_the_queue;
-            if !self.claim_one_campus_building(g, pid, plan, science_first_only) {
+            if !self.claim_one_campus_building(g, pid, plan, science_first_only, round == 0) {
                 return;
             }
         }
@@ -292,8 +304,10 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
         science_first_only: bool,
+        journal_holds: bool,
     ) -> bool {
-        let best = self.campus_building_claim_pick(g, pid, plan, None, science_first_only);
+        let best =
+            self.campus_building_claim_pick(g, pid, plan, None, science_first_only, journal_holds);
         let Some((_, turns, cid, building, passed)) = best else {
             return false;
         };

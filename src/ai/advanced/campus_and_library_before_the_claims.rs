@@ -66,6 +66,19 @@
 //! **A Builder always keeps its queue** against all three: the worked
 //! backlog's Builder is what turns land into Production.
 //!
+//! **A housing-bound city's Granary keeps its queue** too. In a city within
+//! one of its housing, the bound Granary `granary-claims-the-bound-queue`
+//! claims ([`AdvancedAi::bound_granary_holds`], the same reading as
+//! `housing-bound-city-builds-its-granary`) keeps the head against the
+//! Library and the University, and against the first Campus when the city is
+//! at or over its housing and the Campus has nothing paid (a Campus already
+//! started goes on). The capped city's Aqueduct
+//! (`aqueduct-claims-the-capped-queue`, [`AdvancedAi::capped_aqueduct_holds`])
+//! keeps its head against the Library and the University. The Granary claim
+//! runs before both Campus claims, so it takes an idle bound queue first; it
+//! leaves a Campus or Library already at the head alone, so the two never
+//! trade the head. A city that is not housing-bound is unchanged.
+//!
 //! **Why points 4 and 5 (live `civvis-20261112T085526Z`, the gene not yet armed,
 //! `no-city-limit` armed).** The seat held 5, 7 and 9 cities at t50, t75 and
 //! t100 but 0, 0 and 2 Campuses, and 40 Science from 61 citizens at t100. The
@@ -97,8 +110,19 @@
 //! University ahead of the Builder 32. 63% of worked tiles were unimproved at
 //! t40.
 //!
+//! **Why the Granary (17 live games since 11:00Z against 11 before the
+//! gene).** Cities with a Granary fell from 23 / 46 / 70% to 2 / 12 / 54% at
+//! t40 / t60 / t80, cities within one of their housing rose from 58 to 62% at
+//! t60 and 50 to 63% at t80, and Aqueducts from 14 to 4% of cities at t80.
+//! Housing averaged 5.2 at t60 against 3.9 citizens, with a mean growth
+//! multiplier of 0.66, and 26% of cities stood at or over the cap. The paired
+//! simulation read -1.6 citizens at t60 and -4.6 at t100. A Granary is about
+//! 33 Production at Online for +2 Housing and +1 Food; a capped city gains
+//! nothing from Campus citizens it cannot grow.
+//!
 //! A Builder, a Settler (below the city count, more than half paid, or before
-//! a University), Walls, a wonder (but an unpaid one before a University), a
+//! a University), a housing-bound Granary and a capped Aqueduct (above),
+//! Walls, a wonder (but an unpaid one before a University), a
 //! project, a Trader, a Ram or Siege Tower, a ship, the first capital's
 //! reserved soldier and Scout, and anything finishing this turn keep their
 //! queue. So does saved work within two turns of done while
@@ -330,6 +354,52 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether `cid` stands at or over its housing.
+    pub(super) fn campus_and_library_at_the_cap(g: &Game, cid: u32) -> bool {
+        g.cities
+            .get(&cid)
+            .is_some_and(|city| city.pop as f64 >= g.city_housing(city))
+    }
+
+    /// The housing head `item` of `cid` that keeps its queue against `what`
+    /// (`science`, the first Campus or the Campus building), as the journal
+    /// names it: the bound Granary ([`Self::bound_granary_holds`]) against
+    /// the Library and University, and against a first Campus with nothing
+    /// paid in a city at or over its housing; the capped Aqueduct
+    /// ([`Self::capped_aqueduct_holds`]) against the Library and University.
+    /// Always `None` with the gene off.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn campus_and_library_housing_keeps(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        item: &Item,
+        what: ScienceFirstItem,
+        science: &Item,
+    ) -> Option<&'static str> {
+        if !self.campus_and_library_before_the_claims {
+            return None;
+        }
+        match item {
+            Item::Building { .. } if self.bound_granary_holds(g, pid, cid, plan, item) => {
+                let keeps = what != ScienceFirstItem::FirstCampus
+                    || (Self::campus_and_library_at_the_cap(g, cid)
+                        && g.item_invested_production(cid, science) <= 0.0);
+                keeps.then_some("Granary")
+            }
+            Item::District { district, .. }
+                if what != ScienceFirstItem::FirstCampus
+                    && g.district_family(*district) == "aqueduct"
+                    && self.capped_aqueduct_holds(g, pid, cid, plan, item) =>
+            {
+                Some("Aqueduct")
+            }
+            _ => None,
+        }
+    }
+
     /// `campus-and-library-before-the-claims`: the head of `cid` that its
     /// first Campus goes ahead of though a claim or the deferral rule holds
     /// it. Always `None` with the gene off.
@@ -432,6 +502,28 @@ impl AdvancedAi {
                 .get(&cid)
                 .and_then(|city| city.queue.first())
                 .is_some_and(|item| self.campus_and_library_holds(g, pid, cid, plan, item))
+    }
+
+    /// The journal line for a housing head that keeps its queue against
+    /// `what` ([`Self::campus_and_library_housing_keeps`]).
+    pub(super) fn explain_housing_keeps_the_head(
+        &self,
+        g: &Game,
+        cid: u32,
+        kept: &str,
+        what: ScienceFirstItem,
+    ) {
+        let city = &g.cities[&cid];
+        let name = &city.name;
+        let what = match what {
+            ScienceFirstItem::FirstCampus => "first Campus",
+            ScienceFirstItem::Library => "Library",
+            ScienceFirstItem::University => "University",
+        };
+        think!(self.journal(), Cities, Detail,
+               "{name}'s {kept} keeps its queue at its housing";
+               "campus-and-library-before-the-claims: {name}'s {kept} keeps the queue ahead of its \
+                {what}; population {} against housing {:.0}", city.pop, g.city_housing(city));
     }
 
     /// The journal line for a first Campus the gene put ahead of `passed`.

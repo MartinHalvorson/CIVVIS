@@ -651,3 +651,85 @@ fn a_counterweight_holy_site_yields_with_nothing_paid_but_not_with_progress() {
         );
     }
 }
+
+/// Set `cid`'s housing to `housing` through the host's observed adjustment.
+fn set_housing(g: &mut Game, cid: u32, housing: f64) {
+    Arc::make_mut(&mut g.observed_city_housing_adjustments).remove(&cid);
+    let base = g.city_housing(&g.cities[&cid]);
+    Arc::make_mut(&mut g.observed_city_housing_adjustments).insert(cid, housing - base);
+    assert_eq!(g.city_housing(&g.cities[&cid]), housing, "fixture: housing");
+}
+
+#[test]
+fn a_housing_bound_citys_granary_keeps_its_queue_against_the_library() {
+    let (mut g, ranked, mut ai, plan) = library_board();
+    ai.enable_granary_claims_the_bound_queue();
+    let (bound, unbound) = (ranked[0], ranked[1]);
+    for cid in [bound, unbound] {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.buildings.retain(|building| *building != "granary");
+        city.queue = vec![granary()];
+        city.production = 0.0;
+        set_housing(&mut g, cid, 8.0);
+        assert!(
+            g.item_cost_for_city(0, cid, &granary()) > g.city_yields(cid).production,
+            "fixture: the Granary is more than a turn from done"
+        );
+    }
+    // Seven citizens against eight housing: within one of it.
+    g.cities.get_mut(&bound).unwrap().pop = 7;
+    assert!(ai.bound_granary_holds(&g, 0, bound, &plan, &granary()));
+    assert!(!ai.bound_granary_holds(&g, 0, unbound, &plan, &granary()));
+
+    let details = journalled(&mut ai, &mut g, |ai, g| {
+        ai.claim_campus_building(g, 0, &plan)
+    });
+    assert_eq!(head(&g, bound), Some(granary()), "the bound city's Granary");
+    assert_eq!(
+        head(&g, unbound),
+        Some(library()),
+        "an unbound city: unchanged"
+    );
+    assert_eq!(
+        details
+            .iter()
+            .filter(|detail| detail.starts_with(TAG)
+                && detail.contains("Granary keeps the queue ahead of its Library"))
+            .count(),
+        1,
+        "one line a turn: {details:?}"
+    );
+    // The Library keeps a head it already holds: the Granary claim leaves it.
+    g.cities.get_mut(&bound).unwrap().queue = vec![library()];
+    assert!(ai.campus_and_library_holds(&g, 0, bound, &plan, &library()));
+}
+
+#[test]
+fn an_at_cap_citys_granary_keeps_its_queue_against_an_unstarted_first_campus_only() {
+    for (housing, paid, keeps) in [(5.0, 0.0, true), (5.0, 10.0, false), (6.0, 0.0, false)] {
+        let (mut g, mut ai, cid, plan, campus) = campus_board();
+        ai.enable_granary_claims_the_bound_queue();
+        set_housing(&mut g, cid, housing);
+        if paid > 0.0 {
+            g.cities
+                .get_mut(&cid)
+                .unwrap()
+                .production_progress
+                .insert(Game::item_progress_key(&campus), paid);
+        }
+        assert_eq!(g.item_invested_production(cid, &campus), paid);
+        assert!(ai.bound_granary_holds(&g, 0, cid, &plan, &granary()));
+        let details = journalled(&mut ai, &mut g, |ai, g| {
+            ai.claim_free_slot_campus(g, 0, &plan)
+        });
+        let case = format!("housing {housing}, Campus {paid} paid");
+        let expected = if keeps { granary() } else { campus.clone() };
+        assert_eq!(head(&g, cid), Some(expected), "{case}");
+        assert_eq!(
+            details.iter().any(|detail| detail.starts_with(TAG)
+                && detail.contains("Granary keeps the queue ahead of its first Campus")),
+            keeps,
+            "{case}: {details:?}"
+        );
+    }
+}
