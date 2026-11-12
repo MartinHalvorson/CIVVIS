@@ -40,12 +40,13 @@
 //!    next turn (`threat_reach`), or already stands beside, gets a melee or
 //!    anti-cavalry soldier, nearest-threat first, the strongest that can reach
 //!    it. Cavalry fills in after them.
-//!    The fitted host (#5197 `host_enemy.rs`, not yet merged, so the two
-//!    rates are constants here) strikes a target in reach without moving 43%
-//!    of the time and one it must walk to 11%. A post's
-//!    expected cost is the sum over the enemy melee that reach it of that
-//!    chance times the expected blow. A soldier is not posted where that sum
-//!    meets its health.
+//!    A post's expected cost is the sum, over the enemy melee that reach
+//!    it, of the fitted host's chance to strike
+//!    (`battle_solver::host_enemy::strike_probability`, #5197: by its class,
+//!    owner, health, home ground, the strength edge over the post's holder,
+//!    and whether it strikes without moving, which alone multiplies the odds
+//!    about six-fold) times the expected blow. A soldier is not posted where
+//!    that sum meets its health.
 //! 3. **Shooters.** The others stand within two tiles of the centre, on the
 //!    tile with the least such cost: off the enemy melee's reach first, then
 //!    nearest the city.
@@ -81,6 +82,7 @@
 //! One journal line a city a turn names the posts. Off, nothing changes: the
 //! plan is cleared and every reading returns before it looks at the board.
 
+use super::battle_solver::host_enemy::{strike_probability, HostClass, Owner, StrikeFeatures};
 use super::objective_board::ObjectiveKey;
 use super::*;
 use crate::game::expected_damage;
@@ -90,13 +92,6 @@ use crate::game::expected_damage;
 pub(crate) const HOLD_RADIUS: i32 = 3;
 /// Visible enemy soldiers this close to a held city shape its ring.
 pub(crate) const HOLD_ENEMY_RADIUS: i32 = 6;
-/// The fitted host (#5197, `host_enemy.rs`): the share of turns it strikes a
-/// target in reach without moving. #5197 had not merged when this gene
-/// shipped, so the two rates are carried here; read them from
-/// `battle_solver/host_enemy.rs` once it lands.
-pub(crate) const HOST_STRIKES_IN_PLACE: f64 = 0.43;
-/// The same fit: the share when it must move first.
-pub(crate) const HOST_STRIKES_AFTER_A_MOVE: f64 = 0.11;
 
 /// What a post is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -177,6 +172,11 @@ struct Threat {
     melee: bool,
     strength: f64,
     reach: BTreeSet<Pos>,
+    /// What the fitted host's strike decision reads about the unit.
+    hp: i32,
+    class: HostClass,
+    owner: Owner,
+    home: bool,
 }
 
 impl AdvancedAi {
@@ -209,6 +209,30 @@ impl AdvancedAi {
                     pos: enemy.pos,
                     melee,
                     strength: g.unit_strength(enemy, false),
+                    hp: enemy.hp,
+                    class: match spec.promotion_class.as_str() {
+                        "light_cavalry" | "heavy_cavalry" => HostClass::Cavalry,
+                        _ if spec.siege => HostClass::Siege,
+                        _ if spec.has_ranged_attack() => HostClass::Ranged,
+                        _ => HostClass::Melee,
+                    },
+                    owner: {
+                        // As the solver reads it (`battle_solver/extract.rs`).
+                        let player = &g.players[enemy.owner];
+                        if player.is_minor || player.is_free_city {
+                            Owner::CityState
+                        } else if player.is_barbarian {
+                            Owner::Barbarian
+                        } else {
+                            Owner::Major
+                        }
+                    },
+                    home: std::iter::once(enemy.pos)
+                        .chain(g.nbrs(enemy.pos))
+                        .any(|tile| {
+                            g.city_at(tile)
+                                .is_some_and(|cid| g.cities[&cid].owner == enemy.owner)
+                        }),
                     reach: if melee {
                         g.threat_reach(*id).into_iter().collect()
                     } else {
@@ -229,21 +253,30 @@ impl AdvancedAi {
             return f64::INFINITY;
         };
         let defence = g.unit_strength(unit, true);
+        let held = crate::game::effective_strength(defence, unit.hp);
         threats
             .iter()
             .filter(|threat| threat.melee)
             .filter_map(|threat| {
-                let odds = if g.wdist(threat.pos, tile) <= 1 {
-                    HOST_STRIKES_IN_PLACE
-                } else if threat
-                    .reach
-                    .iter()
-                    .any(|reached| g.wdist(*reached, tile) <= 1)
+                let still = g.wdist(threat.pos, tile) <= 1;
+                if !still
+                    && !threat
+                        .reach
+                        .iter()
+                        .any(|reached| g.wdist(*reached, tile) <= 1)
                 {
-                    HOST_STRIKES_AFTER_A_MOVE
-                } else {
                     return None;
-                };
+                }
+                let edge = crate::game::effective_strength(threat.strength, threat.hp) - held;
+                let odds = f64::from(strike_probability(&StrikeFeatures {
+                    class: threat.class,
+                    owner: threat.owner,
+                    hp: threat.hp.clamp(0, 100) as i16,
+                    home: threat.home,
+                    edge: edge as f32,
+                    targets: 1,
+                    still,
+                }));
                 Some(odds * expected_damage(threat.strength, defence))
             })
             .sum()
