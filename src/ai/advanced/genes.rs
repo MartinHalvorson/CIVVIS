@@ -5930,6 +5930,14 @@ pub const GENES: &[Gene] = &[
     // Builder, Campus building and Trader claims under the hold. Opt-in; see
     // `advanced/rear_cities_grow_through_the_war_hold.rs`.
     Gene { tag: "rear-cities-grow-through-the-war-hold", field: "rear_cities_grow_through_the_war_hold", kind: Kind::OptIn, enable: AdvancedAi::enable_rear_cities_grow_through_the_war_hold, disable: AdvancedAi::disable_rear_cities_grow_through_the_war_hold },
+    // Live Deity Gran Colombia 2026-11-12 (`civvis-20261112T075931Z`) t192: a
+    // free policy window at +40.8 Gold a turn re-seated the deck without
+    // Levée en Masse and Economic Union; income read -29.8 the next frame,
+    // the treasury sat at 0 from t193 and the host disbanded the army.
+    // Income is projected against the turn's starting deck and a paying card
+    // stays while losing it takes the projection to zero or below. Opt-in;
+    // see `advanced/policy_swap_keeps_the_army_paid.rs`.
+    Gene { tag: "policy-swap-keeps-the-army-paid", field: "policy_swap_keeps_the_army_paid", kind: Kind::OptIn, enable: AdvancedAi::enable_policy_swap_keeps_the_army_paid, disable: AdvancedAi::disable_policy_swap_keeps_the_army_paid },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and

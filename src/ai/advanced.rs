@@ -9368,6 +9368,12 @@ pub struct AdvancedAi {
     /// The rear cities those claims may take during one idle-queue pass under
     /// the hold. `None` outside such a pass, so every claim reads every city.
     rear_cities_open_under_the_hold: Option<BTreeSet<u32>>,
+    /// `policy-swap-keeps-the-army-paid`: the policy pass projects income
+    /// against the deck the turn began with and does not give up a card
+    /// (upkeep relief, priced Gold) whose loss would take it to zero or
+    /// below; the paying cards the base deck review gave up come back first.
+    /// See `advanced/policy_swap_keeps_the_army_paid.rs`. Opt-in.
+    policy_swap_keeps_the_army_paid: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
@@ -11964,6 +11970,9 @@ mod envoys_open_the_siege_road;
 mod forward_airfield_project;
 mod frontier_walls_before_the_surprise;
 mod modernization_prices_the_path;
+/// `policy-swap-keeps-the-army-paid`: see
+/// `advanced/policy_swap_keeps_the_army_paid.rs`.
+mod policy_swap_keeps_the_army_paid;
 /// The research turn: the tech and civic `AdvancedAi` studies next, and how
 /// it prices them. See `advanced/research.rs`.
 mod research;
