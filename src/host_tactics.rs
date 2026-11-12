@@ -281,7 +281,7 @@ pub fn compare(columns: &[(&str, &BTreeMap<String, [f64; 2]>)]) -> String {
     for key in FITTED_ROWS {
         out.push_str(&format!("{key:<38} {:>33}", ""));
         for (_, report) in columns {
-            let [hits, rows] = report.get(*key).copied().unwrap_or([0.0, 0.0]);
+            let [hits, rows] = report.get(key).copied().unwrap_or([0.0, 0.0]);
             let [fitted, _] = report
                 .get(&format!("fitted: {key}"))
                 .copied()
