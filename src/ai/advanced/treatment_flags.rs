@@ -124,6 +124,10 @@ impl AdvancedAi {
         /// Opt-in gene `breaker-walks-under-a-shield`; see
         /// `advanced/breaker_walks_under_a_shield.rs`.
         breaker_walks_under_a_shield => enable_breaker_walks_under_a_shield, disable_breaker_walks_under_a_shield;
+        /// `opening-scout-comes-back`: the opening Scout the barbarian defence
+        /// displaced is that city's next build, and a Scout lost early while no
+        /// rival capital is charted is replaced at once. See `ai/scout_first.rs`.
+        base.opening_scout_comes_back => enable_opening_scout_comes_back, disable_opening_scout_comes_back;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.

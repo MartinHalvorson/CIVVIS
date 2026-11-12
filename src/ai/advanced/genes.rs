@@ -5801,6 +5801,10 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "no-city-limit", field: "no_city_limit", kind: Kind::OptIn, enable: AdvancedAi::enable_no_city_limit, disable: AdvancedAi::disable_no_city_limit },
     // A missing land eye precedes economy claims until an early Domination target is charted.
     Gene { tag: "land-recon-before-the-first-capital", field: "land_recon_before_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_land_recon_before_the_first_capital, disable: AdvancedAi::disable_land_recon_before_the_first_capital },
+    // The opening Scout the barbarian defence displaced is the next build in
+    // that city, and a Scout lost before turn 25 Online while no rival capital
+    // is charted is replaced at once, once a game. See `ai/scout_first.rs`.
+    Gene { tag: "opening-scout-comes-back", field: "opening_scout_comes_back", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_scout_comes_back, disable: AdvancedAi::disable_opening_scout_comes_back },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
