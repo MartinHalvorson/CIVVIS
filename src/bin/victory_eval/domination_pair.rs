@@ -21,7 +21,7 @@ use civvis::ai::{gene, run_game_observed, AdvancedAi, Ai, Gene, VictoryTarget};
 use civvis::game::{Action, Game, GameOptions, LeaderPool};
 use civvis::setup::MapScript;
 use serde::Serialize;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
@@ -234,6 +234,14 @@ struct Outcome {
     /// Turns the focal seat spent bankrupt (its bankruptcy Amenity penalty
     /// above zero), so a treasury policy is read on the failure it guards.
     bankrupt_turns: u32,
+    /// Schema 7: the focal seat's units killed and lost in combat, and its
+    /// civilians taken and lost (`game/combat_ledger.rs`), so a tactics
+    /// policy is read on the exchange as well as on the cities.
+    focal_units: civvis::game::CombatLedger,
+    /// Schema 7: the focal seat's military units that died, by the step that
+    /// last ordered them, `[ended within two tiles of a visible hostile,
+    /// beyond]` (`ai/advanced/last_orders.rs`).
+    focal_last_orders: BTreeMap<String, [u32; 2]>,
 }
 
 /// Turns at which [`EconomySnapshot`] is taken: the live ladder's own
@@ -601,6 +609,7 @@ fn trial(seed: u64, config: &Config, enabled: bool) -> Trial {
     };
     run_game_observed(&mut game, &mut ais, &mut observe);
     observe(&game);
+    ais[0].settle_last_orders(&game, 0);
     if let Some(dir) = explain_dir {
         let path = dir.join(format!(
             "{seed}-{}.why.log",
@@ -629,6 +638,8 @@ fn trial(seed: u64, config: &Config, enabled: bool) -> Trial {
         air_surge: ais[0].air_surge_census_summary(),
         economy,
         bankrupt_turns,
+        focal_units: game.combat_ledger(0),
+        focal_last_orders: ais[0].strategy_census().last_orders.map(),
     };
     Trial {
         outcome,
@@ -668,7 +679,7 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
             domination[i] += usize::from(arm.outcome.focal_domination_won);
         }
         let row = serde_json::json!({
-            "schema": 6, "kind": "simulator_domination_policy_pair",
+            "schema": 7, "kind": "simulator_domination_policy_pair",
             "policy": config.policy.tag, "seed": seed,
             "execution_order": if index % 2 == 0 { "off,on" } else { "on,off" },
             "profile": profile(seed, config.difficulty, config.max_turns, config.setup), "civilizations": off.civs,

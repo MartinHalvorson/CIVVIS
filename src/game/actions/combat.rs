@@ -469,6 +469,7 @@ impl Game {
             .copied()
             .collect();
         for id in garrison {
+            self.tally_combat_death(self.units[&uid].owner, id);
             self.remove_unit(id);
             self.on_unit_lost(defender);
         }
@@ -524,6 +525,7 @@ impl Game {
         self.units.get_mut(&uid).unwrap().hp -= received;
         self.consume_melee_attack(uid, target);
         if self.units[&uid].hp <= 0 {
+            self.tally_combat_death(defender, uid);
             self.remove_unit(uid);
             self.on_unit_lost(pid);
             let mut state = self.defending_district_state(cid, target).unwrap();
@@ -875,6 +877,7 @@ impl Game {
                 self.city_take_damage(pid, cid, dmg_out, mult, tower);
                 self.units.get_mut(&uid).unwrap().hp -= dmg_in;
                 if self.units[&uid].hp <= 0 {
+                    self.tally_combat_death(defender, uid);
                     self.remove_unit(uid);
                     self.on_unit_lost(pid);
                     let c = self.cities.get_mut(&cid).unwrap();
@@ -1342,6 +1345,7 @@ impl Game {
                 self.apply_unit_damage(attacker_id, interceptor_id, counter);
                 if self.units[&interceptor_id].hp <= 0 {
                     let owner = self.units[&interceptor_id].owner;
+                    self.tally_combat_death(attacker.owner, interceptor_id);
                     self.remove_unit(interceptor_id);
                     self.on_unit_lost(owner);
                 }
@@ -1349,6 +1353,7 @@ impl Game {
 
             self.apply_unit_damage(interceptor_id, attacker_id, incoming);
             if self.units[&attacker_id].hp <= 0 {
+                self.tally_combat_death(interceptor.owner, attacker_id);
                 self.remove_unit(attacker_id);
                 self.on_unit_lost(attacker.owner);
                 return (true, fighter_engaged);

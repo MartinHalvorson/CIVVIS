@@ -1118,6 +1118,9 @@ pub struct StrategyCensus {
     /// can actually reach, counts as `hold_threatened`.
     pub hold_threatened: u32,
     pub hold_weak: u32,
+    /// Our military units that died, by the step that last ordered them.
+    /// See `advanced/last_orders.rs`.
+    pub last_orders: last_orders::LastOrderCensus,
 }
 
 impl StrategyCensus {
@@ -1206,6 +1209,7 @@ impl StrategyCensus {
         self.recover += other.recover;
         self.hold_threatened += other.hold_threatened;
         self.hold_weak += other.hold_weak;
+        self.last_orders.absorb(&other.last_orders);
     }
 }
 
@@ -1598,6 +1602,8 @@ struct UnitIntent {
     actions: Vec<Action>,
     took_a_turn: bool,
     base_state: BasicUnitPlanState,
+    /// The step the plan's last order came from (`advanced/last_orders.rs`).
+    step: last_orders::OrderStep,
 }
 
 #[derive(Clone, Copy)]
@@ -10592,6 +10598,10 @@ pub struct AdvancedAi {
     /// before the era closes. See `advanced/unique_unit_closes_the_age.rs`.
     /// Opt-in.
     unique_unit_closes_the_dark_age: bool,
+    /// Which step last ordered each of our military units, for the census of
+    /// the ones that die. Read by nothing that decides; see
+    /// `advanced/last_orders.rs`.
+    unit_orders: last_orders::UnitOrderBook,
     /// `tribute-warms-the-neighbour`: the live bridge gifts Gold to the
     /// nearest stronger neighbour until it can be asked for a friendship.
     /// See `advanced/tribute_warms_the_neighbour.rs`. Off by default.
@@ -11077,6 +11087,9 @@ mod holdout_faith_war;
 
 /// `the-last-two-capitals-come-first`: see `advanced/last_two_capitals.rs`.
 mod last_civ_standing;
+/// Which step last ordered each military unit that died. Observes only; see
+/// `advanced/last_orders.rs`.
+mod last_orders;
 mod last_two_capitals;
 /// `launched-racer-yields-the-capital`: see `advanced/launched_racer.rs`.
 mod launched_racer;
@@ -25472,7 +25485,7 @@ impl AdvancedAi {
             if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {
                 break;
             }
-            if !self.advanced_military_step_with_decline(g, pid, uid, plan, decline_settlers) {
+            if !self.credited_military_step(g, pid, uid, plan, decline_settlers) {
                 break;
             }
             took_a_turn = true;
@@ -25486,6 +25499,9 @@ impl AdvancedAi {
                 .collect(),
             took_a_turn,
             base_state: self.base.unit_plan_state(uid),
+            step: self
+                .last_order_step(uid)
+                .unwrap_or(last_orders::OrderStep::Other),
         }
     }
 
@@ -27164,6 +27180,8 @@ impl AdvancedAi {
         // released with its reason. Exact no-op while the gene is off. See
         // `advanced/commitments.rs`.
         self.commitment_owners_act(g, pid);
+        // Observes only: see `advanced/last_orders.rs`.
+        self.close_unit_orders(g, pid);
         // A capture can end the appointment during movement. Re-read it now,
         // rather than leaving its floors and treasury reserve live until the
         // ordinary five-turn strategic cadence.
