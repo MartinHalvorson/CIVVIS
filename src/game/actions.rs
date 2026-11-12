@@ -1151,6 +1151,7 @@ impl Game {
                     "captured"
                 };
                 bump(&mut self.players[owner], &format!("{key}:{kind}"));
+                self.tally_combat_death(owner, oid);
                 self.transfer_unit_owner(oid, owner);
             } else if matches!(class, "civilian" | "support") {
                 let old = self.units[&oid].owner;
@@ -1158,6 +1159,7 @@ impl Game {
                 if mover_is_barbarian {
                     bump(&mut self.players[old], "civilians_lost_to_barbarians");
                 }
+                self.tally_combat_death(owner, oid);
                 self.remove_unit(oid);
             }
         }
@@ -3135,6 +3137,7 @@ impl Game {
         self.award_unit_combat_xp(uid, &defender, true, true, killed);
         if killed {
             bump(&mut self.players[pid], "kills");
+            self.tally_combat_death(pid, defender_id);
             self.remove_unit(defender_id);
             self.on_unit_lost(defender.owner);
         }

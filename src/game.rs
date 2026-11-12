@@ -528,6 +528,10 @@ mod city_states;
 mod combat;
 mod combat_forecast;
 pub use combat_forecast::CombatForecast;
+/// Combat ledger: units each player killed and lost in combat, civilians it
+/// took and lost. See `game/combat_ledger.rs`.
+mod combat_ledger;
+pub use combat_ledger::CombatLedger;
 /// Completion: finishing a city's item, wonder effects, and placing new
 /// units. See `game/completion.rs`.
 mod completion;
@@ -5497,6 +5501,10 @@ pub struct Player {
     /// [`Game::unit_lifetime_stats`].
     #[serde(default)]
     pub unit_lifetimes: BTreeMap<Name, UnitLifetimeStats>,
+    /// Units killed and lost in combat, civilians taken and lost. Observes
+    /// only; absent from a save while empty. See `game/combat_ledger.rs`.
+    #[serde(default, skip_serializing_if = "CombatLedger::is_empty")]
+    pub combat_ledger: CombatLedger,
     /// Every great work as an object with its creating era and creator, kept
     /// in lockstep with the ``great_work:*`` counters. Theming reads these.
     #[serde(default)]
@@ -5623,6 +5631,7 @@ impl Player {
             envoys: Vec::new(),
             counters: BTreeMap::new(),
             unit_lifetimes: BTreeMap::new(),
+            combat_ledger: CombatLedger::default(),
             great_work_pieces: Vec::new(),
             quests: BTreeMap::new(),
             boosted_techs: BTreeSet::new(),
@@ -13586,6 +13595,7 @@ impl Game {
     }
 
     fn record_kill(&mut self, pid: usize, weapon: Option<&str>, victim: &Unit) {
+        self.tally_combat_removal(pid, victim.owner, victim.kind);
         bump(&mut self.players[pid], "kills");
         if let Some(kind) = weapon {
             *self.players[pid]
