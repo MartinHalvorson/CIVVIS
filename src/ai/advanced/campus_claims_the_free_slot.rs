@@ -397,6 +397,11 @@ impl AdvancedAi {
         let mut first_campus_released: Vec<u32> = Vec::new();
         let mut best: Option<(f64, u32, Item)> = None;
         for cid in city_ids {
+            // `rear-cities-grow-through-the-war-hold`: under the war hold only
+            // the cities away from the front may claim. Always true otherwise.
+            if !self.claim_open_behind_the_front(cid) {
+                continue;
+            }
             let Some((campus, turns)) = self.free_slot_campus_item(g, pid, cid, plan) else {
                 continue;
             };
