@@ -467,6 +467,9 @@ impl AdvancedAi {
         score_seat_plays_for_points => enable_score_seat_plays_for_points, disable_score_seat_plays_for_points;
         /// Opt-in `score-seat-founds-early`; see `advanced/score_seat_founds_early.rs`.
         score_seat_founds_early => enable_score_seat_founds_early, disable_score_seat_founds_early;
+        /// Opt-in gene `score-seat-trims-the-idle-army`; see
+        /// `advanced/score_seat.rs`.
+        score_seat_trims_the_idle_army => enable_score_seat_trims_the_idle_army, disable_score_seat_trims_the_idle_army;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

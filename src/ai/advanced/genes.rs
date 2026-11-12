@@ -6073,6 +6073,11 @@ pub const GENES: &[Gene] = &[
     // founds on the best safe, holdable site within four tiles. Opt-in; see
     // `advanced/score_seat_founds_early.rs`.
     Gene { tag: "score-seat-founds-early", field: "score_seat_founds_early", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_founds_early, disable: AdvancedAi::disable_score_seat_founds_early },
+    // Split out of score-seat-plays-for-points after its live arm lost the
+    // capital (civvis-20261112T211954Z, t24 declaration at 0.46 of the
+    // declarer). Eleven Rome games: every city lost followed a declaration
+    // at under 0.55 of the declarer. See `advanced/score_seat.rs`.
+    Gene { tag: "score-seat-trims-the-idle-army", field: "score_seat_trims_the_idle_army", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_trims_the_idle_army, disable: AdvancedAi::disable_score_seat_trims_the_idle_army },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
