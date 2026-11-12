@@ -42,8 +42,8 @@ const LIVE_TACTICS: &[&str] = &[
     "anvil",
 ];
 const SEED_BASE: u64 = 9_100;
-const FIRST_SEED: u64 = 16;
-const SEEDS: u64 = 8;
+const FIRST_SEED: u64 = 0;
+const SEEDS: u64 = 24;
 const TURNS: u32 = 200;
 /// A world past this many seconds stops where it stands (`stopped`).
 const BUDGET_SECS: u64 = 16 * 60;
@@ -338,13 +338,13 @@ fn mean_se(values: &[f64]) -> (f64, f64) {
 }
 
 #[test]
-// WIP-CI-RUN #[ignore = "plays the Emperor forecast worlds; run with --ignored --nocapture"]
+#[ignore = "plays the Emperor forecast worlds; run with --ignored --nocapture"]
 fn forecast_worlds_emperor() {
     worlds(EMPEROR);
 }
 
 #[test]
-// WIP-CI-RUN #[ignore = "plays the Immortal forecast worlds; run with --ignored --nocapture"]
+#[ignore = "plays the Immortal forecast worlds; run with --ignored --nocapture"]
 fn forecast_worlds_immortal() {
     worlds(IMMORTAL);
 }
