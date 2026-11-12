@@ -18,6 +18,7 @@ import os
 import platform
 import re
 import shutil
+import statistics
 import subprocess
 import time
 import urllib.parse
@@ -39,6 +40,7 @@ OBSERVER_JS = r"""
     clearInterval(timer);
     const original = window.render;
     window.render = function(st, ...args) {
+      const renderStarted = window.__civvisProfileMainCpu ? performance.now() : null;
       const result = Reflect.apply(original, this, [st, ...args]);
       try {
         if (!st || st.turn === undefined || st.seed === undefined) return result;
@@ -50,6 +52,7 @@ OBSERVER_JS = r"""
           return result;
         const frame = {...painted, atMs: performance.now(), pace: st.pace,
                        winner: st.winner, victoryType: st.victory_type};
+        if (renderStarted !== null) frame.renderMs = frame.atMs - renderStarted;
         if (!previous) {
           report.settings = {
             majors: st.players.filter(p => !p.is_minor && !p.is_barbarian).length,
@@ -201,8 +204,94 @@ def verify_module(qualified: Path, source: str, run_id: int, repo: str) -> tuple
     return module, receipt
 
 
+DURATION_METRICS = ('ThreadTime', 'TaskDuration', 'ScriptDuration', 'LayoutDuration',
+                    'RecalcStyleDuration')
+
+
+def finite_number(value) -> bool:
+    return type(value) in (int, float) and math.isfinite(value)
+
+
+def main_cpu_summary(cpu: dict, metrics: dict, observation: dict) -> dict:
+    """Validate main-thread evidence; sampling intervals are not CPU seconds.
+
+    CDP Profiler timestamps/deltas are microseconds. Performance durations use
+    threadTicks (CPU seconds), including native work absent from JS samples.
+    The renderer process's engine worker is outside both measurements.
+    """
+    nodes, samples, deltas = cpu.get('nodes', []), cpu.get('samples', []), cpu.get('timeDeltas', [])
+    if (not nodes or not samples or len(samples) != len(deltas)
+            or not all(finite_number(cpu.get(k)) for k in ('startTime', 'endTime'))
+            or cpu['endTime'] <= cpu['startTime']
+            or not all(type(d) is int for d in deltas) or sum(deltas) <= 0):
+        raise ValueError('invalid main-thread profile clocks or samples')
+    # CDP specifies integer deltas, without a nonnegative constraint. Chrome
+    # can deliver out-of-order samples (as in real run 43260140647). Keep every
+    # original sample/delta, validate absolute timestamps stay inside the window,
+    # report inversions and use sample counts for attribution, never signed
+    # interval weights or silently clamped/reordered timestamps.
+    offset = 0
+    for delta in deltas:
+        offset += delta
+        if not 0 <= offset <= cpu['endTime'] - cpu['startTime']:
+            raise ValueError('sample timestamp outside profile window')
+    by_id = {node['id']: node for node in nodes}
+    if len(by_id) != len(nodes) or any(type(i) is not int for i in by_id):
+        raise ValueError('duplicate or invalid CPU node IDs')
+    parents = {}
+    for node in nodes:
+        for child in node.get('children', []):
+            if child not in by_id or child in parents:
+                raise ValueError('invalid CPU profile tree')
+            parents[child] = node['id']
+    if len(set(by_id) - parents.keys()) != 1:
+        raise ValueError('CPU profile must have one root')
+    frontend = set()
+    for identity in by_id:
+        visited, current, in_app = set(), identity, False
+        while current is not None:
+            if current in visited:
+                raise ValueError('cycle in CPU profile')
+            visited.add(current)
+            frame = by_id[current].get('callFrame', {})
+            in_app |= urllib.parse.urlparse(frame.get('url', '')).path == '/assets/app.js'
+            current = parents.get(current)
+        if in_app:
+            frontend.add(identity)
+    if any(type(i) is not int or i not in by_id for i in samples):
+        raise ValueError('sample refers to unknown CPU node')
+    if not frontend.intersection(samples):
+        raise ValueError('profile has no sampled frontend app stack')
+    weights = {}
+    for identity in samples:
+        weights[identity] = weights.get(identity, 0) + 1
+    top = [dict(node=identity, samples=weight, callFrame=by_id[identity]['callFrame'])
+           for identity, weight in sorted(weights.items(), key=lambda item: -item[1])]
+    duration = {}
+    for key in DURATION_METRICS:
+        before, after = [dict((m['name'], m['value']) for m in metrics[phase]['metrics']).get(key)
+                         for phase in ('before', 'after')]
+        if not finite_number(before) or not finite_number(after) or before < 0 or after < before:
+            raise ValueError('missing or invalid thread CPU duration: ' + key)
+        duration[key] = after - before
+    renders = [frame.get('renderMs') for frame in observation['frames']]
+    if not renders or not all(finite_number(value) and value >= 0 for value in renders):
+        raise ValueError('missing or invalid complete-render durations')
+    ordered = sorted(renders)
+    return dict(scope='Main renderer thread, startup through detection of terminal paint; '
+                'excludes engine worker and screenshot/save extraction. Sampling adds overhead; '
+                'sample shares include idle and are not CPU shares or a speed result.',
+                sample_count=len(samples), profile_interval_us=cpu['endTime'] - cpu['startTime'],
+                sampled_span_us=sum(deltas), timestamp_inversions=sum(d < 0 for d in deltas),
+                largest_backward_step_us=-min(0, min(deltas)), thread_cpu_seconds=duration,
+                render_wall_ms=dict(total=sum(renders), median=statistics.median(ordered),
+                                    p95=ordered[math.ceil(.95*len(ordered))-1], maximum=max(renders)),
+                top_self_samples=top[:50])
+
+
 def browser_game(qualified: Path, source: str, run_id: int, repo: str,
-                 case: str, out: Path, seconds: float = 1200, chrome: Path | None = None) -> dict:
+                 case: str, out: Path, seconds: float = 1200, chrome: Path | None = None,
+                 main_cpu_profile: bool = False) -> dict:
     if (case not in profile.CASES or run_id <= 0 or not 0 < seconds <= 1800
             or not re.fullmatch(r'[\w.-]+/[\w.-]+', repo)):
         raise ValueError('invalid normal case, qualification run or deadline')
@@ -269,11 +358,19 @@ def browser_game(qualified: Path, source: str, run_id: int, repo: str,
         dev = verify.Devtools(target['webSocketDebuggerUrl'])
         dev.call('Runtime.enable')
         dev.call('Page.enable')
-        dev.call('Page.addScriptToEvaluateOnNewDocument', {'source': OBSERVER_JS})
+        observer = ('window.__civvisProfileMainCpu = true;\n' if main_cpu_profile else '') + OBSERVER_JS
+        dev.call('Page.addScriptToEvaluateOnNewDocument', {'source': observer})
         dev.call('Page.startScreencast', {'format': 'jpeg', 'quality': 40, 'maxWidth': 800, 'maxHeight': 500})
         url = case_url(browser_origin(port), case)
         result.update(phase='observing normal game', url=url)
         record()
+        metrics = {}
+        if main_cpu_profile:
+            dev.call('Performance.enable', {'timeDomain': 'threadTicks'})
+            dev.call('Profiler.enable')
+            dev.call('Profiler.setSamplingInterval', {'interval': 500})
+            metrics['before'] = dev.call('Performance.getMetrics')
+            dev.call('Profiler.start')
         dev.call('Page.navigate', {'url': url})
         deadline = time.monotonic() + seconds
         snapshot = {}
@@ -289,6 +386,11 @@ def browser_game(qualified: Path, source: str, run_id: int, repo: str,
         else:
             raise TimeoutError('natural finished paint not observed; partial evidence retained')
         observation = snapshot['observation']
+        if main_cpu_profile:
+            cpu = dev.call('Profiler.stop')['profile']
+            (out / 'main.cpuprofile').write_text(json.dumps(cpu) + '\n')
+            metrics['after'] = dev.call('Performance.getMetrics')
+            (out / 'main-thread-metrics.json').write_text(json.dumps(metrics, indent=2) + '\n')
         # Preserve the terminal picture and raw world even when a settings or
         # cadence guard rejects this observation afterward.
         shot = dev.call('Page.captureScreenshot', {'format': 'png'})
@@ -298,6 +400,8 @@ def browser_game(qualified: Path, source: str, run_id: int, repo: str,
         if len(raw) != held['bytes']:
             raise ValueError('IndexedDB byte count differs from transferred raw save')
         (out / 'game.save.json').write_bytes(raw)
+        if main_cpu_profile:
+            result['main_cpu'] = main_cpu_summary(cpu, metrics, observation)
         validate_runtime(snapshot.get('runtime') or {})
         timing = validate_observation(observation, case, source)
         # Reuse the frozen driver's pure settings guard without executing its CLI.
@@ -351,9 +455,12 @@ def main():
     parser.add_argument('--repo', required=True)
     parser.add_argument('--case', choices=sorted(profile.CASES), required=True)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--chrome', type=Path)
+    parser.add_argument('--main-cpu-profile', action='store_true')
     args = parser.parse_args()
     print(json.dumps(browser_game(args.qualified.resolve(), args.source, args.run,
-                                  args.repo, args.case, args.out.resolve())))
+                                  args.repo, args.case, args.out.resolve(),
+                                  chrome=args.chrome, main_cpu_profile=args.main_cpu_profile)))
 
 
 if __name__ == '__main__':
