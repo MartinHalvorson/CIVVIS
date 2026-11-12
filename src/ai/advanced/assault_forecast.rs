@@ -36,9 +36,14 @@
 //! off the board walks in: it enters on the edge tile its cheapest route
 //! reaches, at the end of the turn that route takes (movement costs from
 //! `Game::battle_step_cost`, a reverse search from the edge), and is never
-//! dropped while it can arrive inside the horizon. Nothing in the model
-//! changes for this; the forecast drives `Sim::side_turn` itself and places
-//! arrivals on its state.
+//! dropped while it can arrive inside the horizon. The forecast drives
+//! `Sim::side_turn` itself and places arrivals on its state. Two switches
+//! on the board are its own and off on every solver board, so the solver's
+//! play is unchanged: `march_on_objective` (our side walks to the city when
+//! no enemy soldier is left; without it nobody moved on an empty city) and
+//! `melee_breach_share` (our melee wait for the walls to fall to the train's
+//! `MELEE_WALL_FRACTION`, as the taker does). The enemy acts every turn, not
+//! on the solver's half ([`KNOBS`]).
 //!
 //! **What it is short of** is found by running the same rollouts again with
 //! one hypothetical unit added, spawned on a clone of the board so the engine
@@ -50,9 +55,11 @@
 //! **What it does not see:** units the city's owner will build or bring from
 //! out of reach, units out of sight, ships and aircraft, Battering Rams and
 //! Siege Towers (support units the model does not play), and promotions
-//! earned during the fight. Its enemy is the solver's: greedy, and acting on
-//! half its turns. A 12-turn forecast on that model is biased, which is why
-//! the reading gene and `docs/ASSAULT_FORECAST.md`'s calibration exist.
+//! earned during the fight. Its enemy is the solver's greedy one. On 1,200
+//! posed sieges (`docs/ASSAULT_FORECAST.md`) it is right where it reads
+//! under 20% (4% taken) and overconfident above 80% (44% taken, falling
+//! with the walls): read it as "this force could take this city", not "this
+//! train will". The reading gene is there to calibrate it on live games.
 //!
 //! A forecast is cached for the turn by the city's tile and the signature of
 //! the force and the hostiles (kind, tile, health), so a turn pays once; the
@@ -1232,10 +1239,11 @@ impl AdvancedAi {
     /// unit is waiting for it, not hopeless. Anything else, or a falling
     /// city, resets the streak.
     ///
-    /// The last clause is the evidence's: as first specified (any reading
-    /// under [`HOPELESS_P`]), the stand-down cost cities on both posed sets
-    /// (`docs/ASSAULT_FORECAST.md`, 132 against 119 and 123), every one of
-    /// them taken after the twelfth turn.
+    /// The last clause is the evidence's: as first specified (any gathered
+    /// reading under [`HOPELESS_P`]), the stand-down cost cities on both
+    /// posed sets (`docs/ASSAULT_FORECAST.md`: 132 to 119 with one enemy
+    /// city, every lost one taken after the twelfth turn; 132 to 123 with
+    /// two), and with the clause it read 134 against 132.
     pub(super) fn note_forecast_hopeless(
         &mut self,
         g: &Game,

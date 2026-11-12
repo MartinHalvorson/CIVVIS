@@ -6,20 +6,21 @@
 //! already damaged), its owner one era behind, level or ahead of ours (its
 //! city defence follows its best unit), a garrison and field defenders or
 //! none, and a force of 2-9 of our era's melee, shooters and guns between 2
-//! and 10 tiles out. Our seat is the live genome
-//! (`live_force_on_20261112.txt`, the arms of 2026-11-12, seated as
-//! `gene_screen --deployment-genome --live-genome` seats it) aimed at
-//! player 1 on the Domination lane; player 1 is the stock agent.
+//! and 10 tiles out. Our seat is the live genome as `siege_replay` seats it
+//! (`live_seat`: the operator's arms of 2026-11-12 in
+//! `live_force_on_20261112.txt` forced onto the deployment genome), aimed
+//! at player 1 on the Domination lane; player 1 is the stock agent.
 //!
 //! - **Calibration**: the forecast is read before our first move, then the
 //!   game plays [`HORIZON`] turns. Predicted P against the realized capture,
-//!   in five bins, with the Brier score.
-//! - **Paired**: the same seed played [`PAIRED_TURNS`] turns twice, the live
-//!   genome with and without `siege-goes-on-the-forecast`.
+//!   in five bins, with the Brier score, under every [`FORECASTS`] setting.
+//! - **Paired**: the seed with a second city of player 1's beyond the first,
+//!   played [`PAIRED_TURNS`] turns twice, the live genome with and without
+//!   `siege-goes-on-the-forecast`. A war that ends in peace takes nothing;
+//!   the table is printed again over the pairs no arm made peace in.
 //!
-//! A seed whose war ends in peace is reported and left out. The rows are a
-//! fixed, repeatable problem set for this codebase's AI on both sides, not a
-//! forecast of live play.
+//! The rows are a fixed, repeatable problem set for this codebase's AI on
+//! both sides, not a forecast of live play.
 //!
 //! ```text
 //! cargo test --profile ci --lib -- --ignored assault_forecast_calibration --nocapture
@@ -871,7 +872,10 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
     out
 }
 
+/// The report `docs/ASSAULT_FORECAST.md` quotes: about ten minutes on four
+/// cores, so it runs only when asked for.
 #[test]
+#[ignore = "the calibration driver: run with --ignored (docs/ASSAULT_FORECAST.md)"]
 fn assault_forecast_calibration() {
     let clock = Instant::now();
     let tags = live_tags();
@@ -909,6 +913,5 @@ fn assault_forecast_calibration() {
     calibrated.sort_by_key(|row| row.seed);
     pairs.sort_by_key(|row| row.seed);
     let text = report(&calibrated, &pairs, clock.elapsed().as_secs_f64());
-    // CI compute round: the report reaches the log only through a failure.
-    panic!("\n{text}");
+    println!("{text}");
 }
