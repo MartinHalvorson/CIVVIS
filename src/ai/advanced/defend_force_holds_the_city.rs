@@ -112,7 +112,13 @@
 //!    [`OUTCLASSED_RADIUS`] is at least [`OUTCLASSED_EDGE`] stronger than
 //!    our strongest candidate, a ring post needs a death chance under
 //!    [`OUTCLASSED_RING_DEATH_LIMIT`]; otherwise under [`RING_DEATH_LIMIT`].
-//!    A soldier that dies to one blow blocks nothing.
+//!    A soldier that dies to one blow blocks little. The exception is a full
+//!    ring: when enough ring soldiers can reach the threatened tiles to fill
+//!    them all, none is refused for its odds, because a full ring stops a
+//!    capture this turn (each blocker absorbs a blow, and a killer that
+//!    advances has spent its attack). The live Rome census motivates this:
+//!    Puteoli fell from full health in one enemy turn to two Cuirassiers
+//!    while eight Heavy Chariots stood within eight tiles.
 //! 4. **The positions plan leaves the posts alone.** The soldiers this
 //!    turn's posts may take are read before the battle planner
 //!    (`preview_hold_members`) and left out of its positions plan.
@@ -1322,11 +1328,12 @@ impl AdvancedAi {
             .map(|threat| threat.attack)
             .fold(0.0, f64::max);
         let outclassed = theirs >= ours + OUTCLASSED_EDGE;
-        let limit = if outclassed {
+        let mut limit = if outclassed {
             OUTCLASSED_RING_DEATH_LIMIT
         } else {
             RING_DEATH_LIMIT
         };
+        let mut full_ring = false;
 
         // 2. The ring, only when blocking matters.
         let mut threatened = 0usize;
@@ -1359,6 +1366,29 @@ impl AdvancedAi {
                 .collect();
             ring.sort();
             threatened = ring.len();
+            // A full ring stops a capture this turn whatever each blocker's
+            // odds: a blocker absorbs a blow, and the killer that advances
+            // into its tile has spent its attack. So when enough ring
+            // soldiers can reach the threatened tiles to fill them all, no
+            // post is refused for its death chance. (Live Rome
+            // civvis-20261112T221330Z t120: Puteoli, unwalled and at full
+            // health, fell in one enemy turn to two Cuirassiers while eight
+            // Heavy Chariots stood within eight tiles; each would die to one
+            // blow.)
+            let fillers = candidates
+                .iter()
+                .filter(|uid| !posted.contains(*uid) && ring_rank(g, **uid).is_some())
+                .filter(|uid| {
+                    let here = g.units[*uid].pos;
+                    let reach = g.reachable(**uid);
+                    ring.iter()
+                        .any(|(_, tile)| *tile == here || reach.contains(tile))
+                })
+                .count();
+            full_ring = threatened > 0 && fillers >= threatened;
+            if full_ring {
+                limit = f64::INFINITY;
+            }
             for (_, tile) in ring {
                 if let Some(holder) = g.unit_ids_at(tile).iter().copied().find(|id| {
                     let unit = &g.units[id];
@@ -1525,7 +1555,11 @@ impl AdvancedAi {
                 threatened;
                 "defend-force-holds-the-city-2: {}; {}{}; ring [{}]; ready [{}]; marching [{}]",
                 if soon { "the city can fall within two enemy turns" } else { "no fall within two enemy turns, so no ring posts" },
-                if outclassed { "outclassed, " } else { "" },
+                match (outclassed, full_ring) {
+                    (_, true) => "a full ring, so no post is refused for its odds, ",
+                    (true, false) => "outclassed, ",
+                    (false, false) => "",
+                },
                 if quiet { "no capturer reaches the city next turn" } else { "a capturer reaches the city next turn" },
                 of(HoldRole::Ring).join(", "),
                 of(HoldRole::Shooter).join(", "),
