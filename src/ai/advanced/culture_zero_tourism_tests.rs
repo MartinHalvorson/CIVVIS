@@ -97,14 +97,20 @@ fn existing_visitors_are_not_discarded_when_the_current_rate_is_zero() {
 }
 
 #[test]
-fn policy_traces_preserve_all_rival_sweep_card_classifications() {
+fn policy_traces_preserve_all_original_forecast_card_classifications() {
     for revised in [false, true] {
         let game = world(0.0);
         let reference = game.trace_policy_reads(0);
-        for rival in 1..4 {
-            for city in game.player_city_ids(rival) {
-                game.city_yields(city);
+        {
+            let _memo = game.query_memo();
+            for rival in 1..4 {
+                game.domestic_tourists(rival);
+                for city in game.player_city_ids(rival) {
+                    game.city_yields(city);
+                }
             }
+            game.tourism_per_turn(0);
+            game.foreign_tourists(0);
         }
         let expected = reference.finish();
         drop(reference);
