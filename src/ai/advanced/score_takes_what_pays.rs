@@ -34,10 +34,15 @@
 //!   table), and the fewest land melee bodies — our standing ones within the
 //!   reach first, then the best melee class a city can train — that bring it
 //!   to nothing within [`SCORE_TAKE_TURNS`] turns (`open_city_take_turns`).
-//!   It pays at [`SCORE_TAKE_MIN_POINTS`] points or more, at most
-//!   [`SCORE_TAKE_MAX_PRODUCTION`] Production of new bodies, and at least
-//!   [`SCORE_TAKE_PER_HUNDRED`] points a hundred Production; the best pays
-//!   most a hundred, wonder cities first on a tie.
+//!   Its expected points are those points times a conservative reading of
+//!   the capture ([`SCORE_TAKE_OPEN_READING`]: raw near-certain readings on
+//!   open cities were realized 37% of the time on 1,200 posed sieges). It
+//!   pays at [`SCORE_TAKE_MIN_POINTS`] points or more, at most
+//!   [`SCORE_TAKE_MAX_PRODUCTION`] Production of new bodies, and expected
+//!   points of at least [`SCORE_TAKE_PER_HUNDRED`] a hundred Production
+//!   (what the seat's queues buy). Cities our takers reach within
+//!   [`SCORE_TAKE_MUSTER_TURNS`] come first (the nearest open city, not the
+//!   capital), then the most expected points a hundred, then wonders.
 //! - **The circumstances.** The owner's military at most
 //!   [`SCORE_TAKE_POWER_RATIO`] times ours; no city of ours threatened or
 //!   falling; no war on another major; a legal target; a city-state only
@@ -48,11 +53,17 @@
 //!   plan is Conquest with that city as its objective, so the shipped army
 //!   sizing, staging march, Siege row and siege train work on it; the war
 //!   machinery gated on Domination answers too (`conquest_gates_open`).
-//! - **The declaration.** Once the takers within [`SCORE_TAKE_STAGE_REACH`]
-//!   tiles take it within the turns and outweigh the owner's soldiers in
-//!   sight, the war opens through the shipped opening (a denouncement, then
-//!   the Formal War) with the treasury, the one-war rule and the peace
-//!   treaty still holding it.
+//! - **Muster first, declare second.** The plan names the city at peace;
+//!   its staging march walks the corps in. A rival walls an open city about
+//!   seven turns after a war on it begins (live `183602Z`: Warsaw open t41-47,
+//!   walls 100 at t48), and the clock starts only with the war. So the war
+//!   opens only when our takers within [`SCORE_TAKE_STAGE_REACH`] tiles,
+//!   each at most [`SCORE_TAKE_MUSTER_TURNS`] turns from the city, take it —
+//!   march included — within [`SCORE_TAKE_WALL_WINDOW`] turns and outweigh
+//!   the owner's soldiers in sight. It opens through the shipped opening (a
+//!   denouncement, then the Formal War), with the treasury, the one-war rule
+//!   and the peace treaty still holding it; the Formal War re-reads the
+//!   window when it is due.
 //! - **After.** A capture is journalled with its points; the board then
 //!   names the next paying city or none, and the shipped peace desk decides.
 
@@ -72,9 +83,18 @@ pub(crate) const SCORE_TAKE_MAX_BODIES: usize = 6;
 pub(crate) const SCORE_TAKE_MIN_POINTS: f64 = 15.0;
 /// The most Production the new bodies may cost.
 pub(crate) const SCORE_TAKE_MAX_PRODUCTION: f64 = 400.0;
-/// Points a hundred Production the capture must buy: twice what the
+/// Expected points a hundred Production the capture must buy: what the
 /// seat's queues buy (`score-seat-plays-for-points` prices them at two).
-pub(crate) const SCORE_TAKE_PER_HUNDRED: f64 = 4.0;
+pub(crate) const SCORE_TAKE_PER_HUNDRED: f64 = 2.0;
+/// The conservative reading of a capture of an open city that the
+/// arithmetic says falls within the turns: the assault forecast's posed
+/// sieges realized a near-certain reading 37% of the time at walls 0.
+pub(crate) const SCORE_TAKE_OPEN_READING: f64 = 0.4;
+/// The most turns a taker may stand from the city for the declaration.
+pub(crate) const SCORE_TAKE_MUSTER_TURNS: u32 = 5;
+/// Turns after the war begins before an open city's walls stand: the
+/// capture, march included, must land within them.
+pub(crate) const SCORE_TAKE_WALL_WINDOW: u32 = 7;
 /// The most the owner's military may be, as a multiple of ours.
 pub(crate) const SCORE_TAKE_POWER_RATIO: f64 = 1.0;
 /// Tiles from the city within which the takers count for the declaration.
@@ -109,8 +129,12 @@ pub(crate) struct ScoreTake {
     pub(crate) production: f64,
     /// Turns the force takes it in, once it stands there.
     pub(crate) turns: u32,
-    /// Its swing a hundred Production.
+    /// Its expected swing (times [`SCORE_TAKE_OPEN_READING`]) a hundred
+    /// Production.
     pub(crate) per_hundred: f64,
+    /// Turns our nearest taker (or a body trained in our nearest city)
+    /// walks to the city.
+    pub(crate) march: u32,
     /// Its wonders.
     pub(crate) wonders: usize,
     /// Whether its owner is a city-state.
@@ -124,6 +148,8 @@ pub(crate) struct ScoreTakeState {
     pub(crate) named: Option<(usize, u32, f64)>,
     /// The last board line: its key and turn.
     pub(crate) line: Option<(Option<u32>, String, u32)>,
+    /// The last turn the declaration said it was holding for the muster.
+    pub(crate) muster_line: Option<u32>,
 }
 
 impl AdvancedAi {
@@ -333,6 +359,11 @@ impl AdvancedAi {
             if let Some(turns) = Self::score_take_turns(&force, defence, city.hp, SCORE_TAKE_TURNS)
             {
                 let production = new as f64 * trainable.map_or(0.0, |(_, cost)| cost);
+                let march = standing
+                    .first()
+                    .map(|(_, _, _, first)| *first)
+                    .unwrap_or(u32::MAX)
+                    .min((near as u32).div_ceil(2));
                 return Some(ScoreTake {
                     rival: city.owner,
                     city: cid,
@@ -342,7 +373,8 @@ impl AdvancedAi {
                     standing: held,
                     production,
                     turns,
-                    per_hundred: 100.0 * swing / production.max(1.0),
+                    per_hundred: 100.0 * SCORE_TAKE_OPEN_READING * swing / production.max(1.0),
+                    march,
                     wonders: city.wonders.len(),
                     minor: owner.is_minor,
                 });
@@ -365,9 +397,11 @@ impl AdvancedAi {
             .filter_map(|city| self.score_take_price(g, pid, city.id))
             .collect();
         board.sort_by(|a, b| {
-            b.per_hundred
-                .total_cmp(&a.per_hundred)
+            (a.march > SCORE_TAKE_MUSTER_TURNS)
+                .cmp(&(b.march > SCORE_TAKE_MUSTER_TURNS))
+                .then(b.per_hundred.total_cmp(&a.per_hundred))
                 .then(b.wonders.cmp(&a.wonders))
+                .then(a.march.cmp(&b.march))
                 .then(a.city.cmp(&b.city))
         });
         board
@@ -510,7 +544,7 @@ impl AdvancedAi {
         let describe = |take: &ScoreTake| {
             let city = &g.cities[&take.city];
             format!(
-                "{} {} {:.0} pts{} for {:.0} Production ({} bodies, {} standing, {} turns; {:.1} a hundred)",
+                "{} {} {:.0} pts{} for {:.0} Production ({} bodies, {} standing, {} turns to it, {} to take it; {:.1} expected a hundred)",
                 g.players[take.rival].civ,
                 city.name,
                 take.points,
@@ -518,6 +552,7 @@ impl AdvancedAi {
                 take.production,
                 take.bodies,
                 take.standing,
+                take.march,
                 take.turns,
                 take.per_hundred
             )
@@ -536,7 +571,7 @@ impl AdvancedAi {
                             .to_string()
                     }
                     None => format!(
-                        "no city pays: the best buys {:.1} points a hundred Production, the bar is {SCORE_TAKE_PER_HUNDRED:.0} at {SCORE_TAKE_MIN_POINTS:.0} points or more and at most {SCORE_TAKE_MAX_PRODUCTION:.0} Production",
+                        "no city pays: the best buys {:.1} expected points a hundred Production, the bar is {SCORE_TAKE_PER_HUNDRED:.0} at {SCORE_TAKE_MIN_POINTS:.0} points or more and at most {SCORE_TAKE_MAX_PRODUCTION:.0} Production",
                         board[0].per_hundred
                     ),
                     Some(take) => format!(
@@ -578,11 +613,13 @@ impl AdvancedAi {
     }
 
     /// The turn's one declaration: the war for the plan's paying city, once
-    /// the takers stand within [`SCORE_TAKE_STAGE_REACH`] tiles, take it
-    /// within the turns and outweigh the owner's soldiers in sight. The
-    /// shipped opening (a denouncement, then the Formal War) with the
-    /// treasury, the one-war rule and a peace treaty still holding it.
-    /// `false` with the gene off.
+    /// the corps is mustered. Our takers within [`SCORE_TAKE_STAGE_REACH`]
+    /// tiles and at most [`SCORE_TAKE_MUSTER_TURNS`] turns from the city must
+    /// take it, march included, within [`SCORE_TAKE_WALL_WINDOW`] turns (the
+    /// walls an open city raises after the war begins) and outweigh the
+    /// owner's soldiers in sight. The shipped opening (a denouncement, then
+    /// the Formal War) with the treasury, the one-war rule and a peace
+    /// treaty still holding it. `false` with the gene off.
     pub(super) fn score_take_opening(
         &mut self,
         g: &mut Game,
@@ -610,7 +647,11 @@ impl AdvancedAi {
         if city.wall_hp > 0 {
             return false;
         }
-        let takers = self.score_take_standing(g, pid, city.pos, SCORE_TAKE_STAGE_REACH);
+        let takers: Vec<(u32, f64, i32, u32)> = self
+            .score_take_standing(g, pid, city.pos, SCORE_TAKE_STAGE_REACH)
+            .into_iter()
+            .filter(|(_, _, _, first)| *first <= SCORE_TAKE_MUSTER_TURNS)
+            .collect();
         let force: Vec<(f64, i32, u32)> = takers
             .iter()
             .map(|(_, strength, hp, first)| (*strength, *hp, *first))
@@ -618,13 +659,31 @@ impl AdvancedAi {
         let (defence, theirs) = self.score_take_defence(g, pid, cid);
         let ids: Vec<u32> = takers.iter().map(|taker| taker.0).collect();
         let ours = Self::campaign_strength_of(g, &ids);
-        let Some(turns) = Self::score_take_turns(&force, defence, city.hp, SCORE_TAKE_TURNS + 1)
-        else {
+        let reach = takers
+            .iter()
+            .map(|(_, _, _, first)| *first)
+            .max()
+            .unwrap_or(0);
+        let capture = Self::score_take_turns(&force, defence, city.hp, SCORE_TAKE_WALL_WINDOW);
+        let Some(turns) = capture.filter(|_| theirs <= ours) else {
+            // Still mustering: say so at most every five turns.
+            let due = self
+                .score_take_state
+                .muster_line
+                .is_none_or(|turn| g.turn.saturating_sub(turn) >= 5);
+            if due && self.journal().wants(crate::reasoning::Level::Detail) {
+                self.score_take_state.muster_line = Some(g.turn);
+                let civ = g.players[rival].civ.clone();
+                think!(self.journal(), Military, Detail,
+                       "Mustering for {} before the war on {civ}", city.name;
+                       "score-seat-takes-what-pays: {} taker(s) within {} tiles and {} turns of it ({ours:.0} strength against {theirs:.0} in sight) {}; the war waits, since its walls come about {} turns after it begins",
+                       takers.len(), SCORE_TAKE_STAGE_REACH, SCORE_TAKE_MUSTER_TURNS,
+                       if theirs > ours { "are outweighed".to_string() } else { format!("do not take it within the {SCORE_TAKE_WALL_WINDOW}-turn window") },
+                       SCORE_TAKE_WALL_WINDOW;
+                       city.pos);
+            }
             return false;
         };
-        if theirs > ours {
-            return false;
-        }
         let Some(action) = self.preferred_war_opening(g, pid, rival) else {
             return false;
         };
@@ -642,9 +701,9 @@ impl AdvancedAi {
         };
         think!(self.journal(), Military, Strategy,
                "{what} {civ} for {}", city.name;
-               "score-seat-takes-what-pays: {} is worth {points:.0} points; {} taker(s) within {} tiles take it in {turns} turn(s) against a centre of {defence:.0} ({ours:.0} strength against {theirs:.0} in sight); {power:.0} power against their {their_power:.0}{}",
-               city.name, takers.len(), SCORE_TAKE_STAGE_REACH,
-               if denounce { "; the Formal War opens once the denouncement's five turns have passed" } else { "" };
+               "score-seat-takes-what-pays: {} is worth {points:.0} points; {} taker(s) stand within {reach} turn(s) of it and take it by turn +{turns} against a centre of {defence:.0} ({ours:.0} strength against {theirs:.0} in sight), inside the {SCORE_TAKE_WALL_WINDOW}-turn window before its walls; {power:.0} power against their {their_power:.0}{}",
+               city.name, takers.len(),
+               if denounce { "; the Formal War opens once the denouncement's five turns have passed, and the window is read again then" } else { "" };
                city.pos);
         true
     }

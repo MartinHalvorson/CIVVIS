@@ -205,7 +205,11 @@ fn the_plan_turns_to_conquest_on_the_paying_city() {
     swordsmen(&mut game);
     weak_rivals(&mut game);
     let off = seat(false).assess(&game, 0);
-    assert_ne!(off.target_city, Some(forward), "off: not this objective");
+    assert_ne!(
+        off.strategy,
+        GrandStrategy::Conquest,
+        "off: the Score lane's plan, which never declares"
+    );
     let on = seat(true).assess(&game, 0);
     assert_eq!(on.strategy, GrandStrategy::Conquest);
     assert_eq!(on.target_player, Some(1));
