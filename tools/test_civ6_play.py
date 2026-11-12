@@ -2090,6 +2090,29 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertEqual(civ6_play.setup_drift({**event, "players": True}, args()), [])
         self.assertEqual(civ6_play.setup_drift({"size": "MAPSIZE_UNKNOWN", "players": 99}, args()), [])
 
+    def test_a_reloaded_game_may_have_lost_players(self) -> None:
+        """A `--load-save` continuation reports the majors and city-states
+        alive at the save (civvis-20261112T092252Z-cont1 reported 3 of Tiny's
+        4 after a rival was eliminated and was refused). Fewer is history;
+        more is still drift, and a fresh game must match exactly."""
+        seat = {
+            "difficulty": "DIFFICULTY_SETTLER", "size": "MAPSIZE_TINY",
+            "speed": "GAMESPEED_ONLINE", "map": "Continents.lua",
+            "leader": "LEADER_TRAJAN", "modes": [],
+            "ruleset": "RULESET_EXPANSION_2", "players": 3, "city_states": 5,
+        }
+        fresh = args(map_size="MAPSIZE_TINY")
+        reload = args(map_size="MAPSIZE_TINY", load_save="/saves/auto/AutoSave_0112.Civ6Save")
+        self.assertEqual(civ6_play.setup_drift(seat, fresh),
+                         ["players 3 != 4", "city_states 5 != 6"])
+        self.assertEqual(civ6_play.seat_matches_requested(seat, fresh), (False, True, True))
+        self.assertEqual(civ6_play.setup_drift(seat, reload), [])
+        self.assertEqual(civ6_play.seat_matches_requested(seat, reload), (True, True, True))
+        self.assertEqual(civ6_play.setup_drift({**seat, "players": 6}, reload), ["players 6 != 4"])
+        self.assertEqual(civ6_play.setup_drift({**seat, "players": 0}, reload), ["players 0 != 4"])
+        self.assertEqual(civ6_play.setup_drift({**seat, "city_states": 9}, reload),
+                         ["city_states 9 != 6"])
+
     def test_the_live_lane_seat_passes(self) -> None:
         """The seat every 2026-10-04 game reported (G61-G65)."""
         live = {"players": 4, "size": "MAPSIZE_TINY", "map": "Pangaea.lua", "city_states": 6}

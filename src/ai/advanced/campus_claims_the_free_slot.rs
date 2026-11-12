@@ -46,7 +46,8 @@
 //!
 //! `campus-and-library-before-the-claims` lets a Domination seat's first
 //! Campus pass the Builder, Granary, Aqueduct, Industrial Zone, Commercial
-//! Hub and, at peace, deterrent holds below. See
+//! Hub, uninvested Holy Site or Shrine and, at peace, deterrent holds below,
+//! and from four cities the floor's Settler. See
 //! `advanced/campus_and_library_before_the_claims.rs`.
 //!
 //! **Version 2** (`campus-claims-the-free-slot-2`) claims from
@@ -452,6 +453,21 @@ impl AdvancedAi {
                 && !campus_before_settler
             {
                 continue;
+            }
+            // `campus-and-library-before-the-claims`: from four cities the
+            // first Campus also passes the floor's Settler while at most half
+            // of it is paid. `None` with the gene off.
+            let floor_settler_passed = if floor_holds && !campus_before_settler {
+                g.cities[&cid]
+                    .queue
+                    .first()
+                    .and_then(|item| self.first_campus_passes_the_hold(g, pid, cid, plan, item))
+            } else {
+                None
+            };
+            let campus_before_settler = campus_before_settler || floor_settler_passed.is_some();
+            if let Some(passed) = floor_settler_passed {
+                held_heads_passed.push((cid, passed));
             }
             if floor_holds && !campus_before_settler {
                 self.explain_free_slot_campus_hold(g, cid, turns, "early Settler floor");

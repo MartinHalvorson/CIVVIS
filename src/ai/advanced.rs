@@ -26773,7 +26773,7 @@ impl AdvancedAi {
                 self.holy_site_where_the_threat_is(g, pid);
                 // …and, with no faith of our own, the Holy Site a counterweight
                 // Missionary is bought in. See `counterweight_builds_its_source`.
-                self.counterweight_builds_its_source(g, pid);
+                self.counterweight_builds_its_source(g, pid, &plan);
             }
             if self.victory_planning
                 && g.victory_conditions.religious

@@ -47,13 +47,42 @@
 //!    outside the Prophet race's site city. At peace and with no hostile
 //!    near, they also go ahead of any soldier, a siege reservation's gun
 //!    included. Every such city claims each turn, not one city a turn.
+//! 3. **From four cities** (founded cities plus Settlers walking,
+//!    [`CAMPUS_AND_LIBRARY_SETTLER_MIN_CITIES`]) the first Campus and the
+//!    Library also go ahead of a Settler (the early floor's and
+//!    `holdable-land-keeps-settling`'s included) that has at most half its
+//!    cost paid. The Settler keeps its progress and resumes after them. With
+//!    fewer cities the Settler stays first; `first-campus-before-the-settler`
+//!    still covers the empire's very first Campus.
+//! 4. The first Campus goes ahead of a Holy Site or Shrine with nothing paid
+//!    outside the Prophet race's site city: the counterweight's and the
+//!    adopted faith's sanctuary. A Holy Site with progress finishes first.
 //!
-//! A Settler, Walls, a wonder, a project, a Trader, a Ram or Siege Tower, a
-//! ship, the first capital's reserved soldier and Scout, and anything
-//! finishing this turn keep their queue. So
-//! does saved work within two turns of done while `near-done-work-finishes`
-//! would put it back. A front city at war and a threatened or freshly
-//! attacked city keep their queue. The displaced item keeps its progress.
+//! **Why points 3 and 4 (live `civvis-20261112T085526Z`, the gene not yet armed,
+//! `no-city-limit` armed).** The seat held 5, 7 and 9 cities at t50, t75 and
+//! t100 but 0, 0 and 2 Campuses, and 40 Science from 61 citizens at t100. The
+//! free-slot claim's holds there, in journal lines (several frames a turn):
+//! the early Settler floor 213, a head it may not defer 188 (Holy Site 80,
+//! Walls 59, Shrine 27, Trader 6, Siege Tower 6, Monument 4, Settler 2,
+//! others 4; by city-turn 33 Holy Site, 17 Walls, 10 Shrine of 70), the
+//! backlog Builder 89, the bound Granary 72. The capital trained Settlers at t37, 44, 52, 54, 55 and
+//! 56 and a Holy Site at t59 before its Campus at t64. Under `no-city-limit`
+//! the sixth Settler costs about 115 Production, more than a Campus and its
+//! Library together (about 85). The Holy Sites came from
+//! `counterweight-builds-its-source` and the adopted faith's sanctuary, which
+//! run before the claims and re-place their item at the head every frame;
+//! the free-slot claim's deferral rule never defers a Holy Site or Shrine.
+//! Both now leave a city alone while its first Campus or Library holds the
+//! head ([`AdvancedAi::campus_and_library_holds`]), as do both Settler
+//! claims from four cities.
+//!
+//! A Settler (below four cities, or more than half paid), Walls, a wonder, a
+//! project, a Trader, a Ram or Siege Tower, a ship, the first capital's
+//! reserved soldier and Scout, and anything finishing this turn keep their
+//! queue. So does saved work within two turns of done while
+//! `near-done-work-finishes` would put it back. A front city at war and a
+//! threatened or freshly attacked city keep their queue. The displaced item
+//! keeps its progress.
 //! The Granary, backlog Builder, deterrent and siege-reservation writers and
 //! the governor's rescoring then leave the claimed Campus or Library alone
 //! ([`AdvancedAi::campus_and_library_holds`]). Off, nothing changes.
@@ -66,6 +95,21 @@ use super::*;
 /// A Library is 45 Production at Online and always qualifies; a University is
 /// 125, so a city making less than about 12 a turn keeps the old order.
 pub(crate) const CAMPUS_AND_LIBRARY_UNIVERSITY_ONLINE_TURNS: f64 = 10.0;
+
+/// Founded cities plus Settlers walking from which the first Campus and the
+/// Library go ahead of a Settler. Below it the Settler stays first.
+pub(crate) const CAMPUS_AND_LIBRARY_SETTLER_MIN_CITIES: usize = 4;
+
+/// What the gene puts first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ScienceFirstItem {
+    /// The city's first Campus district.
+    FirstCampus,
+    /// The standing Campus's Library.
+    Library,
+    /// The standing Campus's University (only when quick).
+    University,
+}
 
 /// How far the gene may reach into a city's queue this turn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,6 +172,13 @@ impl AdvancedAi {
             / crate::setup::GameSpeed::Online.cost_percent() as f64
     }
 
+    /// Whether the empire holds [`CAMPUS_AND_LIBRARY_SETTLER_MIN_CITIES`]:
+    /// founded cities plus Settlers walking.
+    pub(super) fn campus_and_library_passes_settlers(g: &Game, pid: usize) -> bool {
+        g.player_city_ids(pid).len() + Self::early_settler_census(g, pid).0
+            >= CAMPUS_AND_LIBRARY_SETTLER_MIN_CITIES
+    }
+
     /// Whether a Campus building of `rank` (0 the Library, 1 the University;
     /// see `campus_building_rank`) `turns` from done is one the gene puts
     /// first.
@@ -138,9 +189,8 @@ impl AdvancedAi {
                 && turns <= Self::campus_and_library_university_turns(g))
     }
 
-    /// The head `item` of `cid` that the gene's Campus (`library` false) or
-    /// Campus building (`library` true) goes ahead of, as the journal names
-    /// it; `None` when the head keeps its queue. `reach` is
+    /// The head `item` of `cid` that the gene's `what` goes ahead of, as the
+    /// journal names it; `None` when the head keeps its queue. `reach` is
     /// [`Self::campus_and_library_reach`] for the city.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn campus_and_library_passes(
@@ -151,8 +201,9 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
         reach: ScienceFirstReach,
-        library: bool,
+        what: ScienceFirstItem,
     ) -> Option<String> {
+        let library = what != ScienceFirstItem::FirstCampus;
         let remaining =
             g.item_cost_for_city(pid, cid, item) - g.item_invested_production(cid, item);
         if remaining <= g.city_yields(cid).production {
@@ -167,6 +218,7 @@ impl AdvancedAi {
         {
             return None;
         }
+        let invested = g.item_invested_production(cid, item);
         let army = reach == ScienceFirstReach::EconomyAndArmy;
         let race_site = || {
             self.base
@@ -177,6 +229,17 @@ impl AdvancedAi {
             Item::Unit { unit } => {
                 if *unit == "builder" {
                     return Some("the Builder".to_string());
+                }
+                // From four cities a Settler with at most half its cost paid
+                // waits for the first Campus or the Library.
+                if *unit == "settler" {
+                    let cost = g.item_cost_for_city(pid, cid, item);
+                    return (what != ScienceFirstItem::University
+                        && Self::campus_and_library_passes_settlers(g, pid)
+                        && invested * 2.0 <= cost)
+                        .then(|| {
+                            format!("the Settler ({invested:.0} of {cost:.0} Production paid)")
+                        });
                 }
                 let spec = g.rules.units.get(unit)?;
                 if !army
@@ -204,7 +267,10 @@ impl AdvancedAi {
                 match spec.replaces.unwrap_or(*building).as_str() {
                     "granary" => Some("the Granary".to_string()),
                     "market" => Some("the Market".to_string()),
-                    "shrine" if library && !race_site() => Some("the Shrine".to_string()),
+                    // A Campus passes only a Shrine with nothing paid.
+                    "shrine" if (library || invested <= 0.0) && !race_site() => {
+                        Some("the Shrine".to_string())
+                    }
                     _ => None,
                 }
             }
@@ -212,7 +278,11 @@ impl AdvancedAi {
                 "commercial_hub" => Some("the Commercial Hub".to_string()),
                 "aqueduct" => Some("the Aqueduct".to_string()),
                 "industrial_zone" => Some("the Industrial Zone".to_string()),
-                "holy_site" if library && !race_site() => Some("the Holy Site".to_string()),
+                // A Campus passes only a Holy Site with nothing paid: one
+                // with progress finishes first.
+                "holy_site" if (library || invested <= 0.0) && !race_site() => {
+                    Some("the Holy Site".to_string())
+                }
                 _ => None,
             },
             _ => None,
@@ -231,7 +301,15 @@ impl AdvancedAi {
         item: &Item,
     ) -> Option<String> {
         let reach = self.campus_and_library_reach(g, pid, cid, plan)?;
-        self.campus_and_library_passes(g, pid, cid, plan, item, reach, false)
+        self.campus_and_library_passes(
+            g,
+            pid,
+            cid,
+            plan,
+            item,
+            reach,
+            ScienceFirstItem::FirstCampus,
+        )
     }
 
     /// Whether `item` at the head of `cid` is the first Campus, Library or
@@ -264,6 +342,53 @@ impl AdvancedAi {
                 }),
             _ => false,
         }
+    }
+
+    /// Whether `cid`'s head is the first Campus or Library the gene holds and,
+    /// from four cities, both Settler claims leave it alone too. Always false
+    /// with the gene off.
+    pub(super) fn campus_and_library_holds_the_settler(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> bool {
+        self.campus_and_library_before_the_claims
+            && Self::campus_and_library_passes_settlers(g, pid)
+            && g.cities
+                .get(&cid)
+                .and_then(|city| city.queue.first())
+                .is_some_and(|item| {
+                    let first_campus_or_library = match item {
+                        Item::District { .. } => true,
+                        Item::Building { .. } => {
+                            super::campus_building_claims_the_queue::campus_building_rank(g, item)
+                                == Some(0)
+                        }
+                        _ => false,
+                    };
+                    first_campus_or_library
+                        && self.campus_and_library_holds(g, pid, cid, plan, item)
+                })
+    }
+
+    /// Whether the faith writers (`counterweight-builds-its-source`, the
+    /// adopted faith's sanctuary) leave `cid` alone this frame: its head is
+    /// the first Campus, Library or University the gene holds. Always false
+    /// with the gene off.
+    pub(super) fn campus_and_library_holds_the_faith_writers(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> bool {
+        self.campus_and_library_before_the_claims
+            && g.cities
+                .get(&cid)
+                .and_then(|city| city.queue.first())
+                .is_some_and(|item| self.campus_and_library_holds(g, pid, cid, plan, item))
     }
 
     /// The journal line for a first Campus the gene put ahead of `passed`.
