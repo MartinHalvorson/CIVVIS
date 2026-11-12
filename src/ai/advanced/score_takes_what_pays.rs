@@ -175,9 +175,12 @@ impl AdvancedAi {
 
     /// For `score-seat-plays-for-points` (the hook its peacetime army cap
     /// reads, beside `active_major_war`): whether the cap is lifted because
-    /// the plan names a paying city. `false` with the gene off.
-    pub(crate) fn score_take_lifts_the_cap(&self, g: &Game) -> bool {
-        self.score_take_names_a_city(g)
+    /// the plan names a paying city, from the turn it is named at peace, so
+    /// the corps is raised and walked in before the war. `false` with the
+    /// gene off; the name is only ever held on the Score lane
+    /// (`score_take_observe` clears it elsewhere).
+    pub(crate) fn score_take_lifts_the_cap(&self) -> bool {
+        self.score_seat_takes_what_pays && self.score_take_state.named.is_some()
     }
 
     /// The city's score to its holder: 5, its citizens, 2 a district (4 a
@@ -602,7 +605,7 @@ impl AdvancedAi {
         } else {
             top.join("; ")
         };
-        let cap = if self.score_take_lifts_the_cap(g) {
+        let cap = if self.score_take_lifts_the_cap() {
             "; the plan names it, so the peacetime army cap is lifted"
         } else {
             ""
@@ -676,7 +679,7 @@ impl AdvancedAi {
                 let civ = g.players[rival].civ.clone();
                 think!(self.journal(), Military, Detail,
                        "Mustering for {} before the war on {civ}", city.name;
-                       "score-seat-takes-what-pays: {} taker(s) within {} tiles and {} turns of it ({ours:.0} strength against {theirs:.0} in sight) {}; the war waits, since its walls come about {} turns after it begins",
+                       "score-seat-takes-what-pays: {} taker(s) within {} tiles and {} turns of it ({ours:.0} strength against {theirs:.0} in sight) {}; the war waits, since its walls come about {} turns after it begins; the city is named, so the peacetime army cap is lifted while the corps is raised and walks in",
                        takers.len(), SCORE_TAKE_STAGE_REACH, SCORE_TAKE_MUSTER_TURNS,
                        if theirs > ours { "are outweighed".to_string() } else { format!("do not take it within the {SCORE_TAKE_WALL_WINDOW}-turn window") },
                        SCORE_TAKE_WALL_WINDOW;

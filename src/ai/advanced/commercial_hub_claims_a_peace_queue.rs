@@ -31,7 +31,9 @@
 //!   Settlers (13), other districts (11), Builders (11) and Campuses (10.5),
 //!   and on 82 of the 95 the empire held no Hub at all.
 //!
-//! **The gene.** Each turn, while the active victory target is Domination,
+//! **The gene.** Each turn, while the active victory target is Domination or
+//! Score ([`AdvancedAi::conquest_or_score_seat`]: a Hub is two score and its
+//! Market one),
 //! `commercial-hub-in-the-strategic-queue` is on, its window is open
 //! (Currency, Foreign Trade, Online t60), and we are at war with no major:
 //!
@@ -192,7 +194,8 @@ impl AdvancedAi {
     ) {
         if !self.commercial_hub_claims_a_peace_queue
             || !self.commercial_hub_in_the_strategic_queue
-            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            // A Score seat too: see [`AdvancedAi::conquest_or_score_seat`].
+            || !self.conquest_or_score_seat(g)
             || !self.base.commercial_hub_window_open(g)
             || g.players.iter().any(|other| {
                 other.id != pid

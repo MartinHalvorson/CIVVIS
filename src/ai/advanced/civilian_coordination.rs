@@ -12,6 +12,15 @@ pub(super) struct BuilderSupport {
     destination: Pos,
 }
 
+/// A guard reservation posed by a test elsewhere in the controller (see
+/// `advanced/unit_owner/tests.rs`).
+#[cfg(test)]
+impl BuilderSupport {
+    pub(super) fn posed(guard: u32, destination: Pos) -> Self {
+        BuilderSupport { guard, destination }
+    }
+}
+
 impl AdvancedAi {
     pub(super) fn builder_guard_reserved(&self, guard: u32) -> bool {
         self.builder_support

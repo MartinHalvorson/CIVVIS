@@ -230,13 +230,13 @@ fn the_named_city_opens_the_domination_gates() {
         Some((1, forward))
     );
     assert!(ai.conquest_gates_open(&game));
-    assert!(ai.score_take_lifts_the_cap(&game));
+    assert!(ai.score_take_lifts_the_cap());
     // Off, the gate is the Domination test alone.
     let mut off = seat(false);
     off.plan = Some(conquest_plan(forward));
     off.score_take_observe(&game, 0);
     assert!(!off.conquest_gates_open(&game));
-    assert!(!off.score_take_lifts_the_cap(&game));
+    assert!(!off.score_take_lifts_the_cap());
 }
 
 #[test]
@@ -279,4 +279,32 @@ fn the_takers_at_the_city_open_the_war_and_every_hold_keeps_it() {
         .get(&1)
         .is_some_and(|until| *until > game.turn);
     assert!(denounced || game.is_at_war(0, 1));
+}
+
+#[test]
+fn a_named_city_lifts_the_peacetime_army_hold_while_the_corps_musters() {
+    let (mut game, forward) = board();
+    swordsmen(&mut game);
+    weak_rivals(&mut game);
+    let mut ai = seat(true);
+    ai.enable_score_seat_plays_for_points();
+    assert!(
+        ai.score_seat_holds_the_army(false),
+        "the hold stands at peace"
+    );
+    assert_eq!(ai.score_seat_army_target(4, false, 8), 4);
+    ai.plan = Some(conquest_plan(forward));
+    ai.score_take_observe(&game, 0);
+    assert!(!game.is_at_war(0, 1), "still at peace: the muster stage");
+    assert!(
+        !ai.score_seat_holds_the_army(false),
+        "named: lifted at peace"
+    );
+    assert_eq!(ai.score_seat_army_target(4, false, 8), 8);
+    // Off, the hold is the shipped one.
+    let mut off = seat(false);
+    off.enable_score_seat_plays_for_points();
+    off.plan = Some(conquest_plan(forward));
+    off.score_take_observe(&game, 0);
+    assert!(off.score_seat_holds_the_army(false));
 }

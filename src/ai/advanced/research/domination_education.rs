@@ -19,7 +19,9 @@
 //! the lane does not weigh. A University is 125 Production at Online speed
 //! for +4 Science and +1 Housing; Education cost 156-195 Science.
 //!
-//! **The gene.** While the active victory target is Domination, Education is
+//! **The gene.** While the active victory target is Domination or Score
+//! ([`AdvancedAi::conquest_or_score_seat`]: a technology is two score, and
+//! the University a building and its Science), Education is
 //! not known, and at least [`EDUCATION_READY_CAMPUS_CITIES`] owned city holds a
 //! Campus with a Library (everything a University needs but the technology),
 //! Education is the research goal in the Campus unlock's slot: behind every
@@ -81,13 +83,14 @@ impl AdvancedAi {
             .count()
     }
 
-    /// `education-follows-the-library`: Education while a Domination seat
-    /// holds a Campus with a Library and does not know it. `None` with the
-    /// gene off, on any other victory target, once Education is known, and
-    /// before a Library stands beside a Campus.
+    /// `education-follows-the-library`: Education while a Domination or Score
+    /// seat holds a Campus with a Library and does not know it. `None` with
+    /// the gene off, on any other victory target, once Education is known,
+    /// and before a Library stands beside a Campus.
     pub(super) fn domination_education_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        // A Score seat too: see [`AdvancedAi::conquest_or_score_seat`].
         if !self.education_follows_the_library
-            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !self.conquest_or_score_seat(g)
             || g.players[pid].techs.contains(&crate::name!("education"))
         {
             return None;

@@ -5925,6 +5925,14 @@ pub const GENES: &[Gene] = &[
     // objective and the front, the war is kept while the capture stands, and
     // its siege goes. Opt-in; see `advanced/open_city_objective.rs`.
     Gene { tag: "open-city-is-the-objective", field: "open_city_is_the_objective", kind: Kind::OptIn, enable: AdvancedAi::enable_open_city_is_the_objective, disable: AdvancedAi::disable_open_city_is_the_objective },
+    // Each unit has one owner per turn, and a dozen claim sets each honoured
+    // by only some steps: the siege's taker was ordered by battle planner
+    // versions one and two and the immediate kills, a Settler's guard by the
+    // immediate kills and condemnation, the battle plan's units by every
+    // pre-pass after it. A step that would cross a claim does not order the
+    // unit; the owner's own step keeps it. Opt-in; see
+    // `advanced/unit_owner.rs`.
+    Gene { tag: "one-owner-per-unit", field: "one_owner_per_unit", kind: Kind::OptIn, enable: AdvancedAi::enable_one_owner_per_unit, disable: AdvancedAi::disable_one_owner_per_unit },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
@@ -6052,6 +6060,11 @@ pub const GENES: &[Gene] = &[
     // on the best paying city and the war opens once its takers stand there.
     // Opt-in; see `advanced/score_takes_what_pays.rs`.
     Gene { tag: "score-seat-takes-what-pays", field: "score_seat_takes_what_pays", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_takes_what_pays, disable: AdvancedAi::disable_score_seat_takes_what_pays },
+    // Rome Score seat civvis-20261112T190022Z (t170 tally 529 against 1,531):
+    // no wonder (the Score lane priced one at +180 raw), 27% of production on
+    // units in a game with no war, 601 Production unfinished at the tally.
+    // See `advanced/score_seat.rs`.
+    Gene { tag: "score-seat-plays-for-points", field: "score_seat_plays_for_points", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_plays_for_points, disable: AdvancedAi::disable_score_seat_plays_for_points },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
