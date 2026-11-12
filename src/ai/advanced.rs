@@ -8777,12 +8777,15 @@ pub struct AdvancedAi {
     /// `advanced/first_capital_recon.rs`.
     land_recon_before_the_first_capital: bool,
     /// `own-flip-faith-war-asks-no-power`: the small-world own-flip reading
-    /// (only the founder holds its faith, half our cities and at least two
-    /// of three leaning to it) no longer asks half the founder's steady
-    /// power, and the faith war that reading alone opens skips version 2's
-    /// power floor, the edge and the rout ratio while every other hold
-    /// stays. Rides `faith-war-on-a-small-world`. See
-    /// `advanced/own_flip_faith_war.rs`. Opt-in.
+    /// (only the founder holds its faith) no longer asks half the founder's
+    /// steady power and applies from two cities, half of them leaning or
+    /// one leaning while a spreader of the faith stands at ours; the faith
+    /// war that reading alone opens skips version 2's power floor, the edge
+    /// and the rout ratio; barbarians and city-states no longer hold a
+    /// small-world war as a threat; and a faith war is kept while a city of
+    /// ours follows or leans to its faith. Rides
+    /// `faith-war-on-a-small-world`. See `advanced/own_flip_faith_war.rs`.
+    /// Opt-in.
     own_flip_faith_war_asks_no_power: bool,
     /// `open-city-is-the-objective`: at war with a major for any reason, an
     /// open city our land melee in reach would take within a few turns is
