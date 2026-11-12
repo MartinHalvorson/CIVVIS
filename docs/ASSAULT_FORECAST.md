@@ -232,6 +232,60 @@ the force 6-12 tiles out, and the owner raising walls to 200 on turn 8-12.
 - Tempo in the sense of a slow march to the walls is not the gap; what the
   train does once there is.
 
+**Objective switches and guard holds on the walk** (CI run 43320853600 on
+b90df60568, the same sieges). The walk is counted up to the first blow, or
+all 12 turns when none came.
+
+- *Target switches*: turns on which the campaign's `target_city` changed.
+- *Held*: force members more than two tiles out that ended our turn no
+  nearer, in unit-turns. This includes members holding a staging post by
+  design.
+- *Hold lines*: the train's own journal lines, grouped by the guard that
+  wrote them.
+
+The mix has one city of the owner's, so its campaign has nothing to switch
+to. A two-city family (400 of the mix's seeds with a second city of the
+owner's about eight tiles beyond the first) gives it one. That family's
+high bin realized 0.79 against 0.99 predicted: 111 of 141 taken.
+
+| sieges | n | target switches (sieges with any) | held | hold lines | arrival spread | first blow turn (never) | muster close to first blow (n) |
+|---|---|---|---|---|---|---|---|
+| mix, read high, taken | 381 | 0.01 (2) | 3.3 | mustered train 14, short of its post 737 | 2.4 | 2.2 (0) | 1.0 (10) |
+| mix, read high, not taken | 92 | 0.00 (0) | 10.3 | mustered train 21, short of its post 149 | 3.5 | 3.9 (7) | 1.1 (13) |
+| of them, never left Stage | 8 | 0.00 (0) | 25.8 | mustered train 5, short of its post 6 | 3.1 | 4.7 (2) | 3.0 (2) |
+| of them, the late first blow | 19 | 0.00 (0) | 19.1 | mustered train 13, short of its post 41 | 4.0 | 7.2 (5) | 3.0 (2) |
+| two cities, read high, taken | 111 | 0.02 (2) | 3.8 | mustered train 14, short of its post 197 | 2.6 | 2.3 (0) | 0.9 (7) |
+| two cities, read high, not taken | 30 | 0.27 (6) | 19.6 | fog hostile 2, mustered train 20, short of its post 74 | 3.4 | 4.1 (7) | 1.8 (6) |
+| of them, never left Stage | 8 | 0.88 (5) | 46.9 | fog hostile 2, mustered train 3, short of its post 37 | 3.2 | 6.5 (6) | - (0) |
+| of them, the late first blow | 6 | 0.17 (1) | 19.0 | mustered train 15, short of its post 9 | 3.3 | 6.6 (1) | 9.0 (1) |
+
+- **Switching** explains little.
+  - It never happens with one city.
+  - With two, 6 of the 30 misses switched against 2 of the 111 taken. Five
+    of the six are among the 8 misses that never left Stage, where the
+    campaign spent 3.2 turns a siege on another target or none.
+- **The guards** that hold a Settler (the fog hostile, closed borders,
+  water and dry road holds on the train) wrote 2 lines across all the
+  misses.
+  - "Stops short of its post" is as common in the taken sieges as in the
+    missed: 1.9 against 1.6 a siege in the mix.
+  - The over-represented line is the muster's ("the mustered train holds"):
+    0.23 a miss against 0.04 a taken siege in the mix, and 0.67 against
+    0.13 with two cities.
+- **What separates misses from takes** is members not walking. In the mix,
+  10.3 held unit-turns a miss against 3.3 a taken siege. With two cities,
+  19.6 against 3.8. The holds sit in the Stage and late-blow classes. Most
+  of these unit-turns have no hold line: about 10 held unit-turns a miss
+  against about 2 lines. The Stage march's gun-danger checks, for one,
+  write none.
+- The tempo family agrees: no switches, 13.4 held unit-turns a miss against
+  4.6 a taken siege, and hold lines of muster 8 and post 126 against 2 and
+  717.
+
+The posed walks are short: the force stands 2-12 tiles out on open ground.
+A live walk of 6-11 turns gives switching and guards more turns to act
+than these do.
+
 **Where a train fix would start.** Execution misses have no single
 dominant class: the late first blow is 19, walls held with shooters out of
 range 13, healing with the ring open 11. What cuts across them is the
@@ -243,6 +297,12 @@ third (106 against 334). The worked examples show three patterns:
   fired).
 - Melee beside a walled city not striking while the walls stand.
 - A knight spending its attacks on field units while the city heals.
+
+On these posed sieges, keeping the objective while its forecast holds would
+reach at most the two-city misses that switched (6 of 30, 5 of them in
+Stage). The guard line that separates misses from takes is the muster's
+hold, not a safe-step guard. Most held members write no line at all; to
+name their guard, the gun-danger and post checks would need to journal.
 
 The driver prints two worked examples per cause, turn by turn: `cargo test
 --profile ci --lib -- --ignored assault_forecast_calibration --nocapture`.
