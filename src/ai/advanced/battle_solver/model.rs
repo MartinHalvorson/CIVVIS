@@ -111,6 +111,16 @@ pub struct Board {
     pub los0: Vec<(u16, u16)>,
     /// Whether `los0` is populated; a test board with none skips the check.
     pub has_los: bool,
+    /// Our side walks on a city it is to take when no enemy soldier is left
+    /// on the board. Off for the solver, whose fights always start with one;
+    /// `assault_forecast` sets it, since a siege of an empty city is the
+    /// march. Off, `act` returns as it always did.
+    pub march_on_objective: bool,
+    /// Our melee strike a walled city only once its walls are at or under
+    /// this share of their pool, as the siege train's taker waits for the
+    /// breach (`siege_train::MELEE_WALL_FRACTION`). Zero, as every solver
+    /// board has it, lets them swing at any wall.
+    pub melee_breach_share: f32,
     /// Each unit's class and owner as `host_enemy` reads them. Empty on a
     /// board that does not carry them: the class is then read from the
     /// flags, and the owner is a major.
@@ -951,6 +961,13 @@ impl<'b> Sim<'b> {
                     {
                         continue;
                     }
+                    if self.b.melee_breach_share > 0.0
+                        && side == OURS
+                        && f32::from(self.s.city_wall[c])
+                            > self.b.melee_breach_share * f32::from(self.b.cities[c].wall_max)
+                    {
+                        continue;
+                    }
                     if self.b.d(me.tile, tile) > 3 {
                         continue;
                     }
@@ -1013,7 +1030,7 @@ impl<'b> Sim<'b> {
         }
         // Nothing to strike: move.
         let (near, dist) = self.enemy_near(side, me.tile);
-        if near == NO_TILE {
+        if near == NO_TILE && !self.marches_on(side, low || breaking) {
             return;
         }
         let goal = if low || breaking {
@@ -1323,6 +1340,16 @@ impl<'b> Sim<'b> {
     pub fn garrisoned(&self, unit: &Unit) -> bool {
         let c = self.b.city_at[unit.tile as usize];
         c != NO_CITY && self.s.city_side[c as usize] == unit.side && self.s.city_hp[c as usize] > 0
+    }
+
+    /// [`Board::march_on_objective`]: our side, not falling back, with a
+    /// city to take.
+    #[inline]
+    fn marches_on(&self, side: u8, falling_back: bool) -> bool {
+        self.b.march_on_objective
+            && side == OURS
+            && !falling_back
+            && matches!(self.objective, Objective::Capture(_))
     }
 
     #[inline]
