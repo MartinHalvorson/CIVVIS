@@ -117,14 +117,14 @@ impl AdvancedAi {
             return None;
         }
         let at = unit.pos;
-        let visible = g.player_vision_now(pid);
+        let frame = g.player_vision_frame(pid);
         let viewers = g.visibility_viewers(pid);
         let reading =
             |enemy: &crate::game::Unit| effective_strength(g.unit_strength(enemy, true), enemy.hp);
         g.wdisk(at, g.unit_attack_range(uid))
             .into_iter()
             .filter(|tile| g.city_at(*tile).is_none())
-            .filter(|tile| g.ranged_order_is_legal(pid, uid, *tile, &visible, &viewers))
+            .filter(|tile| g.ranged_order_is_legal(pid, uid, *tile, frame.as_ref(), &viewers))
             .filter_map(|tile| {
                 let defender = g
                     .unit_ids_at(tile)
@@ -200,10 +200,11 @@ impl AdvancedAi {
             .map(|(_, cid, at)| (cid, at))
     }
 
-    /// The unit's step under the gene: a keeper fires from the centre (if it
-    /// can) and fortifies there; a soldier in reach of an empty threatened
-    /// centre steps onto it. `None` with the gene off, or when neither
-    /// applies, and the unit's ordinary step runs.
+    /// The unit's step under the gene: a keeper fires from the centre if it
+    /// can (`Some(true)`, and its next pass fortifies) or else fortifies there
+    /// (`Some(false)`, its turn is over); a soldier in reach of an empty
+    /// threatened centre steps onto it (`Some(true)`). `None` with the gene
+    /// off, or when neither applies, and the unit's ordinary step runs.
     pub(super) fn centre_garrison_step(
         &mut self,
         g: &mut Game,
@@ -227,21 +228,29 @@ impl AdvancedAi {
                 )
                 .is_ok()
             });
-            if shot.is_some() {
+            let city = city.unwrap_or_default();
+            if let Some(target) = shot {
+                // The next pass of the unit's turn fortifies it in place.
                 self.force_groups_dirty = true;
+                think!(self.journal(), Military, Decision,
+                    "Centre keeps its garrison: the {} holds {} and fires", plain(kind.as_str()), city;
+                    "centre-keeps-its-garrison: a soldier at war stands within {CENTRE_THREAT_REACH}; \
+                     a blow at a City Center lands on the city, so the post costs nothing; it fires \
+                     from the centre at {target:?}");
+                return Some(true);
+            }
+            let fired = g.units.get(&uid).is_none_or(|unit| unit.attacks_left <= 0);
+            if !fired {
+                think!(self.journal(), Military, Decision,
+                    "Centre keeps its garrison: the {} holds {}", plain(kind.as_str()), city;
+                    "centre-keeps-its-garrison: a soldier at war stands within {CENTRE_THREAT_REACH}; \
+                     a blow at a City Center lands on the city, so the post costs nothing; it makes \
+                     no blow that would carry it out");
             }
             if g.units.contains_key(&uid) {
                 self.base.fortify_or_stop(g, pid, uid);
             }
-            think!(self.journal(), Military, Decision,
-            "Centre keeps its garrison: the {} holds {}", plain(kind.as_str()), city.unwrap_or_default();
-            "centre-keeps-its-garrison: a soldier at war stands within {CENTRE_THREAT_REACH}; \
-             a blow at a City Center lands on the city, so the post costs nothing; {}",
-            match shot {
-                Some(target) => format!("it fires from the centre at {target:?}"),
-                None => "it makes no blow that would carry it out".to_string(),
-            });
-            return Some(true);
+            return Some(false);
         }
         let (cid, at) = self.centre_to_fill(g, pid, uid)?;
         let from = g.units[&uid].pos;
