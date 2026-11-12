@@ -10965,6 +10965,7 @@ mod tests {
             f64::from(other) <= 0.25 * f64::from(deaths),
             "most deaths are credited to a named step: {report}"
         );
-        panic!("REPORT {report}\nSAMPLE {sample}");
+        // `cargo test -- --nocapture` prints what this game counted.
+        eprintln!("{report}\nsample row: {sample}");
     }
 }
