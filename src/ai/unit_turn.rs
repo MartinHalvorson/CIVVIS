@@ -665,6 +665,10 @@ impl BasicAi {
             if prefer_dry && g.map.get(tile).is_some_and(|t| g.rules.is_water(t)) {
                 s -= WATER_MARCH_PENALTY;
             }
+            // `risk-is-priced`: the chance the unit dies here times its
+            // price, in this score's units. Zero with the gene off. See
+            // `advanced/priced_risk.rs`.
+            s -= self.priced_risk_cost(g, uid, tile, self.w.mv_threat * threat_caution);
             s + self.livelock_penalty(uid, tile)
         };
         let stay = score(g, upos);
@@ -676,13 +680,30 @@ impl BasicAi {
                     .is_some_and(|home| g.wdist(home, position) <= MINOR_DEFENSE_RADIUS)
         };
         let mut best: Option<(f64, Pos)> = None;
+        // `risk-is-priced`: the best tile its refusal took away, for the
+        // journal. `None` with the gene off.
+        let mut refused: Option<(f64, Pos, advanced::priced_risk::Refusal)> = None;
         for n in g.nbrs(upos) {
             if !within_minor_front(n) || !g.can_move(uid, n) {
                 continue;
             }
             let sc = score(g, n);
+            if let Some(refusal) = self.priced_risk_refusal(g, uid, upos, n) {
+                if refused
+                    .as_ref()
+                    .is_none_or(|(b, bp, _)| (sc, n) > (*b, *bp))
+                {
+                    refused = Some((sc, n, refusal));
+                }
+                continue;
+            }
             if best.map(|(b, bp)| (sc, n) > (b, bp)).unwrap_or(true) {
                 best = Some((sc, n));
+            }
+        }
+        if let Some((sc, n, refusal)) = refused {
+            if best.is_none_or(|(b, _)| sc > b) {
+                self.note_priced_risk_refusal(g, uid, n, &refusal);
             }
         }
         match best {
@@ -719,6 +740,10 @@ impl BasicAi {
                     Some(n) if within_minor_front(n) && g.can_move(uid, n) => n,
                     _ => return false,
                 };
+                // `risk-is-priced`: never with the gene off.
+                if self.priced_risk_refuses(g, uid, upos, n) {
+                    return false;
+                }
                 let routed = score(g, n) + 2.5;
                 if !self.move_beats_holding(g, uid, routed, stay) {
                     return false;

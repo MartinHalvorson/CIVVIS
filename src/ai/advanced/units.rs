@@ -1188,6 +1188,13 @@ impl AdvancedAi {
             self.ordering(OrderStep::BattlePlanner);
             return self.base.fortify_or_stop(g, pid, uid);
         }
+        // `defend-force-holds-the-city`: a posted soldier strikes from its
+        // post and holds it. `None` with the gene off or without a post. See
+        // `advanced/defend_force_holds_the_city.rs`.
+        if let Some(acted) = self.defend_hold_step(g, pid, uid) {
+            self.ordering(OrderStep::DefendHold);
+            return acted;
+        }
         // `centre-keeps-its-garrison`: a threatened city's garrison keeps
         // its City Center, and an empty one takes a soldier in reach. `None`
         // with the gene off. See `advanced/centre_keeps_its_garrison.rs`.
@@ -2546,6 +2553,9 @@ impl AdvancedAi {
         // Observes only: see `advanced/last_orders.rs`.
         self.open_unit_orders(g, pid);
         self.builder_support.clear();
+        // `risk-is-priced`: the last frame's reading goes before anything
+        // moves; this frame's is read below, once the kills are settled.
+        self.clear_priced_risk();
         self.base.begin_movement_turn(g, pid);
         self.refresh_wonder_clearance(g, pid);
         // In a native game a Trader has walking movement and the ordinary unit
@@ -2714,9 +2724,17 @@ impl AdvancedAi {
         // read once the turn's kills are settled, and a gun already standing
         // on one steps off it. Nothing with the gene off. See
         // `advanced/guns_stay_out_of_reach.rs`.
+        //
+        // `risk-is-priced` reads its frame first: each covered unit's
+        // mission, allowance, price and death chance on every tile it can
+        // reach, which the guns' veto then leaves alone; a siege gun over its
+        // allowance steps out (credited with the guns' own step-out).
+        // Nothing with the gene off. See `advanced/priced_risk.rs`.
+        self.mark_priced_risk(g, pid, plan);
         self.mark_gun_lethal_tiles(g, pid);
         self.owned_pass(g, pid, OrderStep::GunsOutOfReach, |ai, g| {
-            ai.guns_step_out_of_reach(g, pid)
+            ai.guns_step_out_of_reach(g, pid);
+            ai.priced_risk_guns_step_out(g, pid);
         });
         let mut air_assault_units = self.owned_pass(g, pid, OrderStep::Air, |ai, g| {
             ai.plan_air_city_assault(g, pid, plan)
@@ -2778,6 +2796,17 @@ impl AdvancedAi {
         // once from the same board and for the same reason. Nothing is read
         // with the gene off. See `advanced/chokepoints.rs`.
         self.chokepoint_gate_plan(g, pid);
+        // `defend-force-holds-the-city`: every threatened city's posts, drawn
+        // after every other claim of the turn. Nothing with the gene off. See
+        // `advanced/defend_force_holds_the_city.rs`.
+        if self.defend_force_holds_the_city {
+            let mut claimed = withdrawn.clone();
+            claimed.extend(air_assault_units.iter().copied());
+            claimed.extend(opening_recon_warrior);
+            self.owned_pass(g, pid, OrderStep::DefendHold, |ai, g| {
+                ai.hold_the_cities(g, pid, &claimed)
+            });
+        }
         let mut ids = g.player_unit_ids(pid);
         ids.retain(|uid| {
             !settled_first.contains(uid)

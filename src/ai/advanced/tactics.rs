@@ -292,6 +292,11 @@ impl AdvancedAi {
                 }
             }
         }
+        // `risk-is-priced`: the router's single step is refused like any
+        // other. Never with the gene off.
+        if self.base.priced_risk_refuses(g, uid, current, next) {
+            return Some(self.base.fortify_or_stop(g, pid, uid));
+        }
         Some(
             g.apply(
                 pid,
@@ -476,6 +481,10 @@ impl AdvancedAi {
                     advance from here",
                    objective, g.wdist(here, objective);
                    objective);
+        }
+        // `risk-is-priced`: as in `campaign_staging_step`.
+        if self.base.priced_risk_refuses(g, uid, here, next) {
+            return Some(self.base.fortify_or_stop(g, pid, uid));
         }
         Some(
             g.apply(
@@ -1655,6 +1664,11 @@ impl AdvancedAi {
                     }
                 }
             }
+            // `risk-is-priced`: the chance the unit dies here times its
+            // price, in this score's units. Zero with the gene off. See
+            // `advanced/priced_risk.rs`.
+            let per_hp = self.base.w.mv_threat * threat_caution;
+            value -= self.base.priced_risk_cost(g, uid, tile, per_hp);
 
             // Walking into the sea costs most of the unit; the score has no
             // other term that notices. Sized to outweigh the few tiles of
@@ -1744,6 +1758,8 @@ impl AdvancedAi {
         {
             g.route_step(uid, target, stop_range)
                 .filter(|pos| g.can_move(uid, *pos))
+                // `risk-is-priced`: never with the gene off.
+                .filter(|pos| !self.base.priced_risk_refuses(g, uid, upos, *pos))
                 .filter(|pos| {
                     !(decline_settlers
                         && g.unit_ids_at(*pos).iter().any(|other| {
@@ -1785,6 +1801,9 @@ impl AdvancedAi {
             }
         }
         let mut best: Option<(f64, Pos)> = None;
+        // `risk-is-priced`: the best tile its refusal took away, for the
+        // journal. `None` with the gene off.
+        let mut refused: Option<(f64, Pos, super::priced_risk::Refusal)> = None;
         for pos in g.nbrs(upos).into_iter().filter(|pos| {
             g.can_move(uid, *pos)
                 && !(decline_settlers
@@ -1796,11 +1815,24 @@ impl AdvancedAi {
                     }))
         }) {
             let candidate = score(g, pos);
+            if let Some(refusal) = self.base.priced_risk_refusal(g, uid, upos, pos) {
+                if refused.as_ref().is_none_or(|(old, old_pos, _)| {
+                    candidate > *old || (candidate == *old && pos < *old_pos)
+                }) {
+                    refused = Some((candidate, pos, refusal));
+                }
+                continue;
+            }
             if best
                 .map(|(old, old_pos)| candidate > old || (candidate == old && pos < old_pos))
                 .unwrap_or(true)
             {
                 best = Some((candidate, pos));
+            }
+        }
+        if let Some((candidate, pos, refusal)) = refused {
+            if best.is_none_or(|(chosen, _)| candidate > chosen) {
+                self.base.note_priced_risk_refusal(g, uid, pos, &refusal);
             }
         }
         if let Some((candidate, pos)) = best {
@@ -1850,6 +1882,8 @@ impl AdvancedAi {
             if let Some(pos) = g
                 .route_step(uid, target, stop_range)
                 .filter(|pos| g.can_move(uid, *pos))
+                // `risk-is-priced`: never with the gene off.
+                .filter(|pos| !self.base.priced_risk_refuses(g, uid, upos, *pos))
                 .filter(|pos| {
                     !(decline_settlers
                         && g.unit_ids_at(*pos).iter().any(|other| {

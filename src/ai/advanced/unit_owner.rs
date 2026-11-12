@@ -27,19 +27,21 @@
 //! 2. `amphibious` — a member of the crossing in hand (`amphibious_member`).
 //! 3. `centre_keeper` — the soldier keeping a threatened City Center of ours
 //!    (`keeps_the_centre`; only with `centre-keeps-its-garrison`).
-//! 4. `settler_guard` — bound to a Settler (`settler_guards`,
+//! 4. `defend_post` — posted this turn on a threatened city's centre or ring
+//!    (`defend_hold_plan.posts`; only with `defend-force-holds-the-city`).
+//! 5. `settler_guard` — bound to a Settler (`settler_guards`,
 //!    `settler_sea_guards`).
-//! 5. `civilian_guard` — reserved to cover a Builder (`builder_support`).
-//! 6. `siege_member` — in a Domination siege force that is staging or
+//! 6. `civilian_guard` — reserved to cover a Builder (`builder_support`).
+//! 7. `siege_member` — in a Domination siege force that is staging or
 //!    investing (`active_siege_member`, `staging_siege_member`).
-//! 7. `battle_plan` — the battle plan or solver ordered it this turn
+//! 8. `battle_plan` — the battle plan or solver ordered it this turn
 //!    (`battle_planner_ordered`; before this turn's plan runs the set still
 //!    holds last turn's units, which no longer count).
-//! 8. `recovering` — out to heal (`battle_planner_recovering`, the base
+//! 9. `recovering` — out to heal (`battle_planner_recovering`, the base
 //!    controller's `recovering_units`).
-//! 9. `wonder_clearance` — clearing a wonder site for a Settler.
-//! 10. `camp_bounty` — this turn's barbarian-camp errand (`camp_bounty_claims`).
-//! 11. `retainers_garrison` — garrisoning an Amenity-short city under
+//! 10. `wonder_clearance` — clearing a wonder site for a Settler.
+//! 11. `camp_bounty` — this turn's barbarian-camp errand (`camp_bounty_claims`).
+//! 12. `retainers_garrison` — garrisoning an Amenity-short city under
 //!     Retainers (`retainers_garrison_claims`).
 //!
 //! **Who acts for whom** ([`Owner::acts_for`]). A step that orders a unit
@@ -48,7 +50,8 @@
 //!   a rush siege and the falling-city takers. Members are also ordered by
 //!   the breakers and the amphibious train.
 //! - `amphibious` is ordered by its train and the siege doctrine.
-//! - `centre_keeper` is ordered by the centre and garrison steps.
+//! - `centre_keeper` is ordered by the centre and garrison steps, and
+//!   `defend_post` by the defend-hold pre-pass and step as well as those.
 //! - Guards (`settler_guard`, `civilian_guard`, `wonder_clearance`) are
 //!   ordered by the escort steps.
 //! - `battle_plan` is ordered by the planner's own sub-steps: withdraw,
@@ -66,7 +69,7 @@
 //! refused:
 //! - *A shot from its post.* A ranged blow does not move the unit, so the
 //!   tile its claim holds is still held. This covers recovering units,
-//!   guards and centre keepers. Two genes already allow it on purpose:
+//!   guards, centre keepers and posted defenders. Two genes already allow it on purpose:
 //!   `ranged-kills-are-free` lets a recovering shooter or a civilian's guard
 //!   take a ranged kill from its own tile, and `centre-keeps-its-garrison`
 //!   lets a keeper fire from the centre.
@@ -101,7 +104,25 @@
 //!   it would cross, the unit is handed to its owner's own step, or is held
 //!   (`kept`) when that step has nothing for it.
 //! - Each refusal writes one journal line and is counted as `refused`.
-//! - With the gene off nothing is cloned and nothing is held.
+//! - With the gene off nothing is cloned and nothing is held. With it on,
+//!   every pre-pass runs twice (the rehearsal, then the real pass), and so
+//!   does every ladder pass of an owned unit; that cost is unmeasured.
+//!
+//! **What it found** (CI driver `one_owner_per_unit_paired_evidence` in
+//! `src/bin/victory_eval/domination_pair_tests.rs`: six paired Domination
+//! games, the live bundle's Gran Colombia on 4-player Pangaea, King, 200
+//! turns at most):
+//! - With the gene off there were 632 crossings in 40,765 unit-turns, 1.55
+//!   per 100.
+//! - They are concentrated: the battle planner and the coordinated step
+//!   ordered siege members 274 times, and the healing step ordered the
+//!   siege's taker 30 times.
+//! - On 21.9% of unit-turns no step ordered the unit.
+//! - The six paired seeds moved both ways. Summed, units killed went 384 to
+//!   259, units lost 214 to 138, cities taken 11 to 7 and cities lost 14 to
+//!   17. Three games ended earlier with the gene on, and one seed's losses
+//!   went from 6 to 42.
+//! - That is a finding, not a lever: the gene is a guard and ships unarmed.
 
 use super::last_orders::OrderStep;
 use super::*;
@@ -113,6 +134,7 @@ pub enum Owner {
     SiegeTaker,
     Amphibious,
     CentreKeeper,
+    DefendPost,
     SettlerGuard,
     CivilianGuard,
     SiegeMember,
@@ -125,10 +147,11 @@ pub enum Owner {
 
 impl Owner {
     /// Every owner, most binding first: the precedence `owner_of` reads.
-    pub const ALL: [Owner; 11] = [
+    pub const ALL: [Owner; 12] = [
         Owner::SiegeTaker,
         Owner::Amphibious,
         Owner::CentreKeeper,
+        Owner::DefendPost,
         Owner::SettlerGuard,
         Owner::CivilianGuard,
         Owner::SiegeMember,
@@ -144,6 +167,7 @@ impl Owner {
             Owner::SiegeTaker => "siege_taker",
             Owner::Amphibious => "amphibious",
             Owner::CentreKeeper => "centre_keeper",
+            Owner::DefendPost => "defend_post",
             Owner::SettlerGuard => "settler_guard",
             Owner::CivilianGuard => "civilian_guard",
             Owner::SiegeMember => "siege_member",
@@ -177,6 +201,9 @@ impl Owner {
             ),
             Owner::Amphibious => matches!(step, S::Amphibious | S::SiegeDoctrine),
             Owner::CentreKeeper => matches!(step, S::CentreGarrison | S::Garrison),
+            Owner::DefendPost => {
+                matches!(step, S::DefendHold | S::CentreGarrison | S::Garrison)
+            }
             Owner::SettlerGuard | Owner::CivilianGuard | Owner::WonderClearance => {
                 matches!(step, S::Escort)
             }
@@ -220,7 +247,11 @@ pub fn deliberate_crossing(
 ) -> Option<Deliberate> {
     use OrderStep as S;
     match owner {
-        Owner::Recovering | Owner::SettlerGuard | Owner::CivilianGuard | Owner::CentreKeeper
+        Owner::Recovering
+        | Owner::SettlerGuard
+        | Owner::CivilianGuard
+        | Owner::CentreKeeper
+        | Owner::DefendPost
             if shot =>
         {
             Some(Deliberate::ShotFromItsPost)
@@ -365,6 +396,11 @@ impl AdvancedAi {
             Owner::SiegeTaker => self.unit_is_reserved(uid),
             Owner::Amphibious => self.amphibious_member(uid),
             Owner::CentreKeeper => self.keeps_the_centre(g, pid, uid),
+            Owner::DefendPost => {
+                self.defend_force_holds_the_city
+                    && self.defend_hold_plan.turn == g.turn
+                    && self.defend_hold_plan.posts.contains_key(&uid)
+            }
             Owner::SettlerGuard => self.guard_is_bound_to_any_settler(uid),
             Owner::CivilianGuard => self.builder_guard_reserved(uid),
             Owner::SiegeMember => {
@@ -530,6 +566,9 @@ impl AdvancedAi {
             Owner::CentreKeeper => self
                 .centre_garrison_step(g, pid, uid)
                 .map(|acted| (OrderStep::CentreGarrison, acted)),
+            Owner::DefendPost => self
+                .defend_hold_step(g, pid, uid)
+                .map(|acted| (OrderStep::DefendHold, acted)),
             Owner::SettlerGuard => self
                 .stacked_guard_step(g, pid, uid)
                 .or_else(|| self.settler_escort_step(g, pid, uid, plan))

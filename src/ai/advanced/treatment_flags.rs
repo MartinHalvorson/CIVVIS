@@ -80,6 +80,10 @@ impl AdvancedAi {
     // `tools/test_treatment_append_points.py` holds the block below to its size.
     toggles! {
         // ---- append: a-b --------------------------------------------
+        /// Opt-in gene `assault-forecast-is-read`: a capture forecast and one
+        /// journal line for every siege the train assesses; no decision
+        /// changes. See `advanced/assault_forecast.rs`.
+        assault_forecast_is_read => enable_assault_forecast_is_read, disable_assault_forecast_is_read;
         /// Opt-in gene `apostle-evangelizes-unspent`; see
         /// `advanced/apostle_evangelizes_unspent.rs`.
         apostle_evangelizes_unspent => enable_apostle_evangelizes_unspent, disable_apostle_evangelizes_unspent;
@@ -271,6 +275,9 @@ impl AdvancedAi {
         /// Opt-in gene `centre-keeps-its-garrison`; see
         /// `advanced/centre_keeps_its_garrison.rs`.
         centre_keeps_its_garrison => enable_centre_keeps_its_garrison, disable_centre_keeps_its_garrison;
+        /// Opt-in gene `defend-force-holds-the-city`; see
+        /// `advanced/defend_force_holds_the_city.rs`.
+        defend_force_holds_the_city => enable_defend_force_holds_the_city, disable_defend_force_holds_the_city;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -425,7 +432,15 @@ impl AdvancedAi {
         /// projected income to zero or below; see
         /// `advanced/policy_swap_keeps_the_army_paid.rs`.
         policy_swap_keeps_the_army_paid => enable_policy_swap_keeps_the_army_paid, disable_policy_swap_keeps_the_army_paid;
+        /// Opt-in gene `risk-is-priced`: one death chance per pathed move,
+        /// refused over the mission's allowance; see `advanced/priced_risk.rs`.
+        risk_is_priced => enable_risk_is_priced, disable_risk_is_priced;
         // ---- append: s-s --------------------------------------------
+        /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
+        /// holds and stands down on the capture forecast, and Siege rows rank
+        /// by value x P / expected turns; implies the reading. See
+        /// `advanced/assault_forecast.rs`.
+        siege_goes_on_the_forecast => enable_siege_goes_on_the_forecast, disable_siege_goes_on_the_forecast;
         /// Opt-in gene `sweden-builds-open-air-museums`; see
         /// `advanced/sweden_builds_open_air_museums.rs`.
         sweden_builds_open_air_museums => enable_sweden_builds_open_air_museums, disable_sweden_builds_open_air_museums;
@@ -441,6 +456,9 @@ impl AdvancedAi {
         /// Opt-in gene `settler-stall-counts-turns`; see
         /// `advanced/settler_stall_counts_turns.rs`.
         settler_stall_counts_turns => enable_settler_stall_counts_turns, disable_settler_stall_counts_turns;
+        /// Opt-in gene `solver-plays-the-host`; see
+        /// `advanced/battle_solver/host_enemy.rs`.
+        solver_plays_the_host => enable_solver_plays_the_host, disable_solver_plays_the_host;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

@@ -81,6 +81,21 @@ fn owner_of_names_each_claim_on_a_posed_board() {
     ai.centre_keeps_its_garrison = true;
     checks.push((Owner::CentreKeeper, ai, keeper));
 
+    let uid = unit(&mut g, (11, 13));
+    let mut ai = agent();
+    ai.defend_force_holds_the_city = true;
+    ai.defend_hold_plan.turn = g.turn;
+    ai.defend_hold_plan.cities.push(our_city);
+    ai.defend_hold_plan.posts.insert(
+        uid,
+        defend_force_holds_the_city::HoldPost {
+            city: our_city,
+            at: (11, 13),
+            role: defend_force_holds_the_city::HoldRole::Ring,
+        },
+    );
+    checks.push((Owner::DefendPost, ai, uid));
+
     let uid = unit(&mut g, (14, 7));
     let settler = g.spawn_test_unit("settler", 0, (14, 7));
     let mut ai = agent();

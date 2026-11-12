@@ -85,6 +85,9 @@ pub enum OrderStep {
     Garrison,
     /// `centre-keeps-its-garrison`: a threatened City Center's garrison.
     CentreGarrison,
+    /// `defend-force-holds-the-city`: a held city's posts and the blows
+    /// struck from them.
+    DefendHold,
     Staging,
     Improver,
     Camp,
@@ -101,7 +104,7 @@ pub enum OrderStep {
 
 impl OrderStep {
     /// Every step, in the order the census prints them.
-    pub const ALL: [OrderStep; 47] = [
+    pub const ALL: [OrderStep; 48] = [
         OrderStep::Other,
         OrderStep::Unordered,
         OrderStep::TurnStart,
@@ -137,6 +140,7 @@ impl OrderStep {
         OrderStep::DoctrineAction,
         OrderStep::Garrison,
         OrderStep::CentreGarrison,
+        OrderStep::DefendHold,
         OrderStep::Staging,
         OrderStep::Improver,
         OrderStep::Camp,
@@ -189,6 +193,7 @@ impl OrderStep {
             OrderStep::DoctrineAction => "doctrine_action",
             OrderStep::Garrison => "garrison",
             OrderStep::CentreGarrison => "centre_garrison",
+            OrderStep::DefendHold => "defend_hold",
             OrderStep::Staging => "staging",
             OrderStep::Improver => "improver",
             OrderStep::Camp => "camp",

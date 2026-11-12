@@ -5481,6 +5481,11 @@ pub const GENES: &[Gene] = &[
     // walls only once it stands beside them. Opt-in; see
     // `advanced/breaker_walks_under_a_shield.rs`.
     Gene { tag: "breaker-walks-under-a-shield", field: "breaker_walks_under_a_shield", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_walks_under_a_shield, disable: AdvancedAi::disable_breaker_walks_under_a_shield },
+    // Live Deity 11-12, 62 games: 795 of 873 siege decisions were `stage`
+    // (631 "nothing to open the walls"), and no bill is a probability. Each
+    // assessed siege gets a capture forecast on the battle solver's board and
+    // one journal line; no decision changes. See `advanced/assault_forecast.rs`.
+    Gene { tag: "assault-forecast-is-read", field: "assault_forecast_is_read", kind: Kind::OptIn, enable: AdvancedAi::enable_assault_forecast_is_read, disable: AdvancedAi::disable_assault_forecast_is_read },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
@@ -5706,6 +5711,14 @@ pub const GENES: &[Gene] = &[
     // centre takes a soldier in reach. Opt-in; see
     // `advanced/centre_keeps_its_garrison.rs`.
     Gene { tag: "centre-keeps-its-garrison", field: "centre_keeps_its_garrison", kind: Kind::OptIn, enable: AdvancedAi::enable_centre_keeps_its_garrison, disable: AdvancedAi::disable_centre_keeps_its_garrison },
+    // Live Deity Gran Colombia, 62 games of 2026-11-12 (the #5198 census): the
+    // Defend force was in Engage, not Hold, at 53 of the 62 falls that had
+    // one; 9 cities fell with the force within 8 tiles but not at the walls,
+    // and the Anvil holds only `plan.threatened_city`. Every threatened city
+    // is held on posts: a shooter in the centre, melee blocking the ring
+    // tiles the enemy melee can reach, every soldier striking from its post.
+    // Opt-in; see `advanced/defend_force_holds_the_city.rs`.
+    Gene { tag: "defend-force-holds-the-city", field: "defend_force_holds_the_city", kind: Kind::OptIn, enable: AdvancedAi::enable_defend_force_holds_the_city, disable: AdvancedAi::disable_defend_force_holds_the_city },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -6000,6 +6013,14 @@ pub const GENES: &[Gene] = &[
     // stays while losing it takes the projection to zero or below. Opt-in;
     // see `advanced/policy_swap_keeps_the_army_paid.rs`.
     Gene { tag: "policy-swap-keeps-the-army-paid", field: "policy_swap_keeps_the_army_paid", kind: Kind::OptIn, enable: AdvancedAi::enable_policy_swap_keeps_the_army_paid, disable: AdvancedAi::disable_policy_swap_keeps_the_army_paid },
+    // 62 live Deity games 2026-11-12 lost 1,295 units, 63% of the defenders
+    // killed at 50+ hp; 580 of an earlier 765 losses died to one hit, mostly a
+    // healthy out-teched unit beside a visible stronger enemy. One death
+    // chance (exact dice, each hostile at the host's fitted odds) and a price
+    // in hammers per move, with a refusal over the allowance the unit's
+    // mission buys (Defend/Relieve/siege post 0.6, Destroy/Escort 0.3, march
+    // 0.1, scout 0.05). Opt-in; see `advanced/priced_risk.rs`.
+    Gene { tag: "risk-is-priced", field: "risk_is_priced", kind: Kind::OptIn, enable: AdvancedAi::enable_risk_is_priced, disable: AdvancedAi::disable_risk_is_priced },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
@@ -6022,6 +6043,15 @@ pub const GENES: &[Gene] = &[
     // a live turn), so one held turn, or a Settler that ended its move short,
     // dropped its site silently. See `advanced/settler_stall_counts_turns.rs`.
     Gene { tag: "settler-stall-counts-turns", field: "settler_stall_counts_turns", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_stall_counts_turns, disable: AdvancedAi::disable_settler_stall_counts_turns },
+    // Live Deity 11-12, 45 games: at war with an unwalled city in reach on 408
+    // war-turns, one taken. The train goes at P(capture in 10) >= 0.55, holds
+    // at >= 0.4, stands down after 3 gathered readings under 0.1, and Siege
+    // rows rank by value x P / turns. See `advanced/assault_forecast.rs`.
+    Gene { tag: "siege-goes-on-the-forecast", field: "siege_goes_on_the_forecast", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_goes_on_the_forecast, disable: AdvancedAi::disable_siege_goes_on_the_forecast },
+    // The battle solver's enemy plays as the live host does: over 17,669
+    // unit-turns in reach of ours (116 Deity games, 11-11..12) it struck 25%,
+    // never above ~70% in any cell. See `advanced/battle_solver/host_enemy.rs`.
+    Gene { tag: "solver-plays-the-host", field: "solver_plays_the_host", kind: Kind::OptIn, enable: AdvancedAi::enable_solver_plays_the_host, disable: AdvancedAi::disable_solver_plays_the_host },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
