@@ -260,3 +260,32 @@ fn the_siege_goes_on_the_trains_own_takers() {
         "one Swordsman alone does not take a centre of 25 in time"
     );
 }
+
+/// `conquest_or_score_seat`: a Score seat at war takes the open city as a
+/// Domination seat does; a Culture, Science or Religion seat does not, and
+/// at peace a Score seat finds no capture (the gene declares no war).
+#[test]
+fn a_score_seat_takes_the_open_city_and_other_targets_do_not() {
+    let (mut g, _, open) = front();
+    takers(&mut g);
+    for (target, takes) in [
+        (VictoryTarget::Domination, true),
+        (VictoryTarget::Score, true),
+        (VictoryTarget::Culture, false),
+        (VictoryTarget::Science, false),
+        (VictoryTarget::Religion, false),
+    ] {
+        let mut ai = AdvancedAi::targeting(target);
+        ai.enable_open_city_is_the_objective();
+        let take = ai.open_city_take_of(&g, 0, 1);
+        assert_eq!(take.is_some(), takes, "{target:?}");
+        if takes {
+            assert_eq!(take.unwrap().city, open, "{target:?}");
+        }
+    }
+    let mut peace = g.clone();
+    peace.at_war.clear();
+    let mut score = AdvancedAi::targeting(VictoryTarget::Score);
+    score.enable_open_city_is_the_objective();
+    assert_eq!(score.open_city_take_best(&peace, 0), None, "at peace");
+}

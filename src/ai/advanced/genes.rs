@@ -5711,6 +5711,14 @@ pub const GENES: &[Gene] = &[
     // centre takes a soldier in reach. Opt-in; see
     // `advanced/centre_keeps_its_garrison.rs`.
     Gene { tag: "centre-keeps-its-garrison", field: "centre_keeps_its_garrison", kind: Kind::OptIn, enable: AdvancedAi::enable_centre_keeps_its_garrison, disable: AdvancedAi::disable_centre_keeps_its_garrison },
+    // Live Deity Gran Colombia, 62 games of 2026-11-12 (the #5198 census): the
+    // Defend force was in Engage, not Hold, at 53 of the 62 falls that had
+    // one; 9 cities fell with the force within 8 tiles but not at the walls,
+    // and the Anvil holds only `plan.threatened_city`. Every threatened city
+    // is held on posts: a shooter in the centre, melee blocking the ring
+    // tiles the enemy melee can reach, every soldier striking from its post.
+    // Opt-in; see `advanced/defend_force_holds_the_city.rs`.
+    Gene { tag: "defend-force-holds-the-city", field: "defend_force_holds_the_city", kind: Kind::OptIn, enable: AdvancedAi::enable_defend_force_holds_the_city, disable: AdvancedAi::disable_defend_force_holds_the_city },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5917,6 +5925,14 @@ pub const GENES: &[Gene] = &[
     // objective and the front, the war is kept while the capture stands, and
     // its siege goes. Opt-in; see `advanced/open_city_objective.rs`.
     Gene { tag: "open-city-is-the-objective", field: "open_city_is_the_objective", kind: Kind::OptIn, enable: AdvancedAi::enable_open_city_is_the_objective, disable: AdvancedAi::disable_open_city_is_the_objective },
+    // Each unit has one owner per turn, and a dozen claim sets each honoured
+    // by only some steps: the siege's taker was ordered by battle planner
+    // versions one and two and the immediate kills, a Settler's guard by the
+    // immediate kills and condemnation, the battle plan's units by every
+    // pre-pass after it. A step that would cross a claim does not order the
+    // unit; the owner's own step keeps it. Opt-in; see
+    // `advanced/unit_owner.rs`.
+    Gene { tag: "one-owner-per-unit", field: "one_owner_per_unit", kind: Kind::OptIn, enable: AdvancedAi::enable_one_owner_per_unit, disable: AdvancedAi::disable_one_owner_per_unit },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
@@ -5997,6 +6013,14 @@ pub const GENES: &[Gene] = &[
     // stays while losing it takes the projection to zero or below. Opt-in;
     // see `advanced/policy_swap_keeps_the_army_paid.rs`.
     Gene { tag: "policy-swap-keeps-the-army-paid", field: "policy_swap_keeps_the_army_paid", kind: Kind::OptIn, enable: AdvancedAi::enable_policy_swap_keeps_the_army_paid, disable: AdvancedAi::disable_policy_swap_keeps_the_army_paid },
+    // 62 live Deity games 2026-11-12 lost 1,295 units, 63% of the defenders
+    // killed at 50+ hp; 580 of an earlier 765 losses died to one hit, mostly a
+    // healthy out-teched unit beside a visible stronger enemy. One death
+    // chance (exact dice, each hostile at the host's fitted odds) and a price
+    // in hammers per move, with a refusal over the allowance the unit's
+    // mission buys (Defend/Relieve/siege post 0.6, Destroy/Escort 0.3, march
+    // 0.1, scout 0.05). Opt-in; see `advanced/priced_risk.rs`.
+    Gene { tag: "risk-is-priced", field: "risk_is_priced", kind: Kind::OptIn, enable: AdvancedAi::enable_risk_is_priced, disable: AdvancedAi::disable_risk_is_priced },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
@@ -6028,6 +6052,11 @@ pub const GENES: &[Gene] = &[
     // unit-turns in reach of ours (116 Deity games, 11-11..12) it struck 25%,
     // never above ~70% in any cell. See `advanced/battle_solver/host_enemy.rs`.
     Gene { tag: "solver-plays-the-host", field: "solver_plays_the_host", kind: Kind::OptIn, enable: AdvancedAi::enable_solver_plays_the_host, disable: AdvancedAi::disable_solver_plays_the_host },
+    // Rome Score seat civvis-20261112T190022Z (t170 tally 529 against 1,531):
+    // no wonder (the Score lane priced one at +180 raw), 27% of production on
+    // units in a game with no war, 601 Production unfinished at the tally.
+    // See `advanced/score_seat.rs`.
+    Gene { tag: "score-seat-plays-for-points", field: "score_seat_plays_for_points", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_plays_for_points, disable: AdvancedAi::disable_score_seat_plays_for_points },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

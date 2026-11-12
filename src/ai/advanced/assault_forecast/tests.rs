@@ -445,3 +445,252 @@ fn the_siege_row_ranks_on_the_forecast() {
     let want = off * rate * crate::ai::advanced::objective_board::NO_DEADLINE_HORIZON;
     assert!((on - want).abs() < 1e-6, "on {on}, off {off}, rate {rate}");
 }
+
+// ---- For callers: at peace, recruits, the corps, rams and towers, the
+// provisional calibration.
+
+/// [`front`] at peace with player 1.
+fn front_at_peace(walls: i32, defence: f64) -> (Game, u32) {
+    let (mut g, cid) = front(walls, defence);
+    g.at_war.clear();
+    assert!(!g.is_at_war(0, 1));
+    (g, cid)
+}
+
+/// A city of player 1's behind Medieval Walls (pool 200): a ram's immunity.
+fn medieval_front(defence: f64) -> (Game, u32) {
+    let (mut g, cid) = front(200, defence);
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .push(crate::name!("medieval_walls"));
+    (g, cid)
+}
+
+#[test]
+fn at_peace_reads_as_at_war_once_declared() {
+    let (mut war, cid) = front(0, 25.0);
+    war.spawn_test_unit("spearman", 1, TARGET);
+    let force = army(&mut war, &["swordsman"; 4], 3);
+    let (mut peace, peace_cid) = front_at_peace(0, 25.0);
+    peace.spawn_test_unit("spearman", 1, TARGET);
+    let peace_force = army(&mut peace, &["swordsman"; 4], 3);
+    assert_eq!(force, peace_force, "the same board");
+    let at_war = AdvancedAi::new().assault_forecast(&war, 0, cid, &force);
+    let read = AdvancedAi::new().assault_forecast_at_peace(&peace, 0, peace_cid, &peace_force);
+    assert!(at_war.is_some());
+    assert_eq!(at_war, read, "at peace reads the war that would begin");
+    // At peace the at-war reading keeps its None, and at war the at-peace
+    // reading is the at-war one.
+    assert_eq!(
+        AdvancedAi::new().assault_forecast(&peace, 0, peace_cid, &peace_force),
+        None
+    );
+    assert_eq!(
+        AdvancedAi::new().assault_forecast_at_peace(&war, 0, cid, &force),
+        at_war
+    );
+}
+
+#[test]
+fn recruits_raise_the_forecast_and_late_ones_less() {
+    let (mut g, cid) = front_at_peace(0, 35.0);
+    g.spawn_test_unit("spearman", 1, TARGET);
+    let force = army(&mut g, &["swordsman"], 3);
+    let legions = |count: u32, turns: u32| Recruit {
+        kind: crate::name!("legion"),
+        count,
+        turns,
+    };
+    let mut last = -1.0f32;
+    let mut reads = Vec::new();
+    for count in 0..=4 {
+        let p = AdvancedAi::new()
+            .assault_forecast_recruiting(&g, 0, cid, &force, &[legions(count, 2)])
+            .expect("reads at peace")
+            .p();
+        assert!(
+            p + 0.03 >= last,
+            "{count} Legions read {p} after {last}: {reads:?}"
+        );
+        last = last.max(p);
+        reads.push(p);
+    }
+    assert!(reads[4] >= reads[0] + 0.3, "four Legions help: {reads:?}");
+    let soon = AdvancedAi::new()
+        .assault_forecast_recruiting(&g, 0, cid, &force, &[legions(4, 2)])
+        .unwrap()
+        .within(8);
+    let late = AdvancedAi::new()
+        .assault_forecast_recruiting(&g, 0, cid, &force, &[legions(4, 7)])
+        .unwrap()
+        .within(8);
+    assert!(
+        late <= soon + 0.03,
+        "later Legions read {late} against {soon}"
+    );
+}
+
+/// Legions alone wait for the breach; a Battering Ram beside Ancient Walls
+/// lets them hit the walls in full; Medieval Walls are immune to it, and a
+/// Siege Tower passes them.
+#[test]
+fn a_ram_opens_ancient_walls_for_legions_and_a_tower_medieval_ones() {
+    let read = |g: &Game, cid: u32, force: &[u32]| {
+        AdvancedAi::new()
+            .assault_forecast(g, 0, cid, force)
+            .expect("at war")
+            .p()
+    };
+    let (mut g, cid) = front(100, 30.0);
+    let force = army(&mut g, &["legion"; 4], 2);
+    let alone = read(&g, cid, &force);
+    let ram = g.spawn_test_unit("battering_ram", 0, ring(&g, 1)[0]);
+    let mut with_ram = force.clone();
+    with_ram.push(ram);
+    let rammed = read(&g, cid, &with_ram);
+    assert!(alone <= 0.05, "Legions alone before Ancient Walls: {alone}");
+    assert!(rammed >= 0.5, "with a ram beside them: {rammed}");
+
+    let (mut g, cid) = medieval_front(30.0);
+    let force = army(&mut g, &["legion"; 4], 2);
+    let ram = g.spawn_test_unit("battering_ram", 0, ring(&g, 1)[0]);
+    let mut with_ram = force.clone();
+    with_ram.push(ram);
+    let medieval_rammed = read(&g, cid, &with_ram);
+    assert!(
+        medieval_rammed <= 0.05,
+        "Medieval Walls are immune to the ram: {medieval_rammed}"
+    );
+
+    let (mut g, cid) = medieval_front(30.0);
+    let force = army(&mut g, &["legion"; 4], 2);
+    let tower = g.spawn_test_unit("siege_tower", 0, ring(&g, 1)[0]);
+    let mut with_tower = force.clone();
+    with_tower.push(tower);
+    let towered = read(&g, cid, &with_tower);
+    assert!(towered >= 0.5, "a tower passes Medieval Walls: {towered}");
+}
+
+#[test]
+fn a_ram_among_the_recruits_arrives_and_works() {
+    let (mut g, cid) = front_at_peace(100, 30.0);
+    let force = army(&mut g, &["legion"; 4], 3);
+    let ram = |turns: u32| Recruit {
+        kind: crate::name!("battering_ram"),
+        count: 1,
+        turns,
+    };
+    let none = AdvancedAi::new()
+        .assault_forecast_recruiting(&g, 0, cid, &force, &[])
+        .unwrap()
+        .p();
+    let soon = AdvancedAi::new()
+        .assault_forecast_recruiting(&g, 0, cid, &force, &[ram(1)])
+        .unwrap()
+        .p();
+    let late = AdvancedAi::new()
+        .assault_forecast_recruiting(&g, 0, cid, &force, &[ram(9)])
+        .unwrap()
+        .p();
+    assert!(none <= 0.05, "no ram: {none}");
+    assert!(soon >= 0.5, "a ram in a turn: {soon}");
+    assert!(late <= soon + 0.03, "a ram in nine: {late} against {soon}");
+}
+
+#[test]
+fn the_corps_is_the_smallest_set_that_reaches() {
+    let (mut g, cid) = front_at_peace(0, 20.0);
+    let mut pool = army(&mut g, &["swordsman"; 4], 2);
+    pool.extend(army(&mut g, &["swordsman"; 4], 4));
+    let ai = AdvancedAi::new();
+    let corps = ai
+        .assault_corps_for(&g, 0, cid, &pool, 0.8, HORIZON)
+        .expect("eight Swordsmen take an empty open city");
+    assert!(corps.forecast.within(HORIZON) >= 0.8, "{corps:?}");
+    assert!(corps.members.len() < pool.len(), "a subset: {corps:?}");
+    assert!(corps.members.iter().all(|uid| pool.contains(uid)));
+    // Asked again the same turn, the same answer from the one search.
+    assert_eq!(
+        ai.assault_corps_for(&g, 0, cid, &pool, 0.8, HORIZON),
+        Some(corps.clone())
+    );
+    assert_eq!(
+        ai.assault_corps_best(&g, 0, cid, &pool, 0.8, HORIZON),
+        Some(corps)
+    );
+
+    let (mut g, cid) = front_at_peace(400, 60.0);
+    g.spawn_test_unit("musketman", 1, TARGET);
+    let pool = army(&mut g, &["warrior"; 4], 3);
+    let ai = AdvancedAi::new();
+    assert_eq!(
+        ai.assault_corps_for(&g, 0, cid, &pool, 0.5, HORIZON),
+        None,
+        "400 walls before Warriors fall short"
+    );
+    let best = ai
+        .assault_corps_best(&g, 0, cid, &pool, 0.5, HORIZON)
+        .expect("the best the pool reached is read");
+    assert!(best.forecast.within(HORIZON) < 0.5, "{best:?}");
+    assert!(!best.members.is_empty());
+
+    let (g, _) = front(0, 20.0);
+    let ours = g.player_city_ids(0)[0];
+    let ai = AdvancedAi::new();
+    assert_eq!(ai.assault_corps_for(&g, 0, ours, &pool, 0.5, HORIZON), None);
+    assert_eq!(
+        ai.assault_corps_best(&g, 0, ours, &pool, 0.5, HORIZON),
+        None
+    );
+}
+
+#[test]
+fn the_calibrated_reading_discounts_high_and_passes_low() {
+    let at = |p: f32| AssaultForecast {
+        by_turn: [p; HORIZON],
+        units_lost: 0.0,
+        mean_turn: None,
+        short_of: None,
+        present: 1,
+        arriving: 0,
+        gathered: 1,
+        hostiles: 0,
+        rollouts: ROLLOUTS,
+    };
+    // Low readings pass through.
+    for walls in [0, 100, 200, 400] {
+        assert_eq!(at(0.1).calibrated_within(HORIZON, walls), 0.1);
+    }
+    // A sure reading falls to the high bin's realized rate, by wall pool.
+    for (walls, read_high, taken) in HIGH_BIN_TAKEN {
+        let want = taken as f32 / read_high as f32;
+        let got = at(1.0).calibrated_within(HORIZON, walls);
+        assert!(
+            (got - want).abs() < 1e-6,
+            "walls {walls}: {got} against {want}"
+        );
+    }
+    // Monotone in the raw reading, never above it, lower behind more walls.
+    let mut last = 0.0;
+    for raw in [0.0, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0] {
+        let got = at(raw).calibrated_within(HORIZON, 0);
+        assert!(got >= last && got <= raw, "{raw} -> {got}");
+        last = got;
+    }
+    assert!(at(1.0).calibrated_within(HORIZON, 400) < at(1.0).calibrated_within(HORIZON, 0));
+}
+
+/// The constants are the doc's table, line for line.
+#[test]
+fn the_calibration_constants_are_the_docs_table() {
+    let doc = include_str!("../../../../docs/ASSAULT_FORECAST.md");
+    for (walls, read_high, taken) in HIGH_BIN_TAKEN {
+        let line = format!(
+            "| {walls} | {read_high} | {taken} | {:.2} |",
+            taken as f32 / read_high as f32
+        );
+        assert!(doc.contains(&line), "the doc's table holds `{line}`");
+    }
+}

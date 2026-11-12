@@ -34,7 +34,9 @@
 //! `FIRST_CAPITAL_CITY_HEAL` a turn. It also needs the centre within
 //! `OPEN_CITY_TIER_MARGIN` of our best taker, and the owner's soldiers in
 //! sight within [`OPEN_CITY_DEFENDER_REACH`] tiles no stronger than the
-//! takers. With the gene on, on the Domination lane:
+//! takers. With the gene on, on the Domination lane or a Score seat (a
+//! captured city is five score with its citizens, districts and buildings;
+//! the gene reads only wars already in hand and declares none):
 //!
 //! - **The objective.** The best such city is the campaign's objective,
 //!   ahead of a walled committed or ranked city or a rival at peace (a
@@ -58,7 +60,7 @@
 use super::first_capital_strikes_the_open_window::FIRST_CAPITAL_CITY_HEAL;
 use super::open_city_front::{OPEN_CITY_MARCH, OPEN_CITY_ROAD_STEPS, OPEN_CITY_TIER_MARGIN};
 use super::soft_city_window::SOFT_CITY_GARRISON_BONUS;
-use super::{one_war, AdvancedAi, VictoryTarget, CITY_MAX_HP};
+use super::{one_war, AdvancedAi, CITY_MAX_HP};
 use crate::game::{effective_strength, expected_damage, Game};
 use crate::think;
 
@@ -132,10 +134,12 @@ pub(crate) fn open_city_take_turns(
 }
 
 impl AdvancedAi {
-    /// Whether the gene acts for this seat: on, and on the Domination lane.
+    /// Whether the gene acts for this seat: on, and on the Domination lane or
+    /// a Score seat ([`AdvancedAi::conquest_or_score_seat`]: a captured city
+    /// is five score and its citizens, districts and buildings). It only
+    /// reads wars already in hand.
     fn open_city_objective_on(&self, g: &Game) -> bool {
-        self.open_city_is_the_objective
-            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+        self.open_city_is_the_objective && self.conquest_or_score_seat(g)
     }
 
     /// The capture reading of `cid` by our takers within the march, or by

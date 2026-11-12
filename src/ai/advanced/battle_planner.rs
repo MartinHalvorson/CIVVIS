@@ -319,7 +319,7 @@ fn death_value(cost: f64) -> f64 {
 /// recover a strength's base from the engine's effective reading, so the
 /// same base can be re-read at a planned hit-point total through
 /// `effective_strength` itself.
-fn wounded_penalty(hp: i32) -> f64 {
+pub(super) fn wounded_penalty(hp: i32) -> f64 {
     (10.0 - hp.clamp(0, 100) as f64 / 10.0).round()
 }
 
@@ -462,6 +462,25 @@ fn strikes_from_stands(g: &Game, pid: usize, uid: u32, stands: Vec<(Pos, f64)>) 
 /// its blow out; a City Center or Encampment strike is named by its city id
 /// tagged with [`STRUCTURE_SOURCE`], so `shared-danger` can split it too.
 type Blows = Arc<Vec<(Option<u32>, f64)>>;
+
+/// One source's blow before the roll (`DangerField::blow_pairs_at_hp`): a
+/// movement hazard's planning damage, or a strike's two strengths as the
+/// engine resolves it, each already through its own side's wound penalty.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum BlowPair {
+    Hazard(f64),
+    Strike { att: f64, def: f64 },
+}
+
+impl BlowPair {
+    /// The blow at the centre of its roll: what the field reads.
+    pub(super) fn expected(self) -> f64 {
+        match self {
+            BlowPair::Hazard(damage) => damage,
+            BlowPair::Strike { att, def } => expected_damage(att, def),
+        }
+    }
+}
 
 /// The tag on a structure's blow source: a city id with this bit set is its
 /// City Center's strike, and with [`ENCAMPMENT_SOURCE`] set as well, its
@@ -730,13 +749,38 @@ impl DangerField {
         if let Some(hit) = self.cache.get(&(tile, uid, hp)) {
             return Arc::clone(hit);
         }
-        let Some(saved) = self.probe.units.get(&uid).cloned() else {
+        if !self.probe.units.contains_key(&uid) {
             return Arc::new(Vec::new());
+        }
+        let out: Vec<(Option<u32>, f64)> = self
+            .blow_pairs_at_hp(tile, uid, hp)
+            .into_iter()
+            .map(|(source, pair)| (source, pair.expected()))
+            .collect();
+        let out = Arc::new(out);
+        self.cache.insert((tile, uid, hp), Arc::clone(&out));
+        out
+    }
+
+    /// Every blow [`Self::contributions_at_hp`] reads, before the roll: a
+    /// movement hazard's planning damage, or each strike's two strengths as
+    /// the engine resolves them (the striker's through its own wound, ours
+    /// through the wound at `hp`). Same sources, same order. Uncached; the
+    /// `risk-is-priced` reading (`priced_risk.rs`) takes the whole damage
+    /// distribution from these pairs where the field takes the centre.
+    pub(super) fn blow_pairs_at_hp(
+        &mut self,
+        tile: Pos,
+        uid: u32,
+        hp: i32,
+    ) -> Vec<(Option<u32>, BlowPair)> {
+        let Some(saved) = self.probe.units.get(&uid).cloned() else {
+            return Vec::new();
         };
         let mut out = Vec::new();
         let hazard = crate::ai::BasicAi::movement_hazard_damage(&self.probe, self.pid, tile);
         if hazard > 0.0 {
-            out.push((None, hazard));
+            out.push((None, BlowPair::Hazard(hazard)));
         }
         // A garrison is not a combat target: blows on a City Center or an
         // Encampment damage the district, not the unit inside it.
@@ -764,7 +808,7 @@ impl DangerField {
                     self.probe.melee_exchange_strengths(*enemy, uid)
                 };
                 if let Some((att, def)) = pair {
-                    out.push((Some(*enemy), expected_damage(att, def)));
+                    out.push((Some(*enemy), BlowPair::Strike { att, def }));
                 }
             }
             // A walled city or a standing defending district strikes within
@@ -790,7 +834,10 @@ impl DangerField {
                     {
                         out.push((
                             Some(STRUCTURE_SOURCE | cid),
-                            expected_damage(self.probe.city_ranged_strength(cid), defence),
+                            BlowPair::Strike {
+                                att: self.probe.city_ranged_strength(cid),
+                                def: defence,
+                            },
                         ));
                     }
                 }
@@ -809,7 +856,10 @@ impl DangerField {
                     {
                         out.push((
                             Some(STRUCTURE_SOURCE | ENCAMPMENT_SOURCE | cid),
-                            expected_damage(self.probe.city_ranged_strength(cid), defence),
+                            BlowPair::Strike {
+                                att: self.probe.city_ranged_strength(cid),
+                                def: defence,
+                            },
                         ));
                     }
                 }
@@ -819,8 +869,6 @@ impl DangerField {
                 *unit = saved;
             }
         }
-        let out = Arc::new(out);
-        self.cache.insert((tile, uid, hp), Arc::clone(&out));
         out
     }
 

@@ -275,6 +275,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `deck-follows-the-queue` | off (unmeasured) | Opt-in gene `deck-follows-the-queue`; the behaviour lives on `BasicAi::deck_follows_the_queue`, see `ai/deck_queue.rs`. | 1 \| 1 |
 | `deck-prices-growth` | off (unmeasured) | Opt-in gene `deck-prices-growth`; see `BasicAi::deck_prices_growth`. | 1 \| 1 |
 | `defence-holds-under-fire` | off (unmeasured) | Opt-in gene `defence-holds-under-fire`; see `Self::defence_holds_under_fire`. | 1 \| 1 |
+| `defend-force-holds-the-city` | off (unmeasured) | Opt-in gene `defend-force-holds-the-city`; see `advanced/defend_force_holds_the_city.rs`. | 1 \| 1 |
 | `defenders-hold-the-walls` | off (unmeasured) | Opt-in gene `defenders-hold-the-walls`; see `Self::defenders_hold_the_walls`. | 1 \| 1 |
 | `defenders-keep-the-city-in-reach` | off (unmeasured) | Keep defensive formations near their assigned threatened city. | 1 \| 1 |
 | `denial-charts-the-racer` | off (unmeasured) | `denial-charts-the-racer`: see `advanced/denial_charts_the_racer.rs`. | 1 \| 1 |
@@ -384,6 +385,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `nusantara-reads-the-coast` | off (unmeasured) | Opt-in gene `nusantara-reads-the-coast`; see `Self::nusantara_reads_the_coast`. | 1 \| 1 |
 | `nusantara-settles-the-shore` | off (unmeasured) | Opt-in gene `nusantara-settles-the-shore`; see `advanced/nusantara_settles_the_shore.rs`. | 1 \| 1 |
 | `old-techs-before-the-beeline` | off (unmeasured) | Opt-in gene `old-techs-before-the-beeline`; see `advanced/old_techs_before_the_beeline.rs`. | 1 \| 1 |
+| `one-owner-per-unit` | off (unmeasured) | Opt-in `one-owner-per-unit`; see `advanced/unit_owner.rs`. | 1 \| 1 |
 | `open-city-is-the-objective` | off (unmeasured) | Opt-in `open-city-is-the-objective`; see `advanced/open_city_objective.rs`. | 1 \| 1 |
 | `opening-builder-after-the-first-settler` | off (unmeasured) | Opt-in gene `opening-builder-after-the-first-settler`; see `BasicAi::opening_builder_after_the_first_settler`. | 1 \| 1 |
 | `opening-ranged-support` | off (unmeasured) | Replace the capital's first opening slot with legal ranged support. | 1 \| 1 |
@@ -441,6 +443,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `research-follows-the-first-capital` | off (unmeasured) | `research-follows-the-first-capital`: see `advanced/first_capital_research.rs`. | 1 \| 1 |
 | `retainers-garrison-the-short-cities` | off (unmeasured) | Opt-in gene `retainers-garrison-the-short-cities`; see `BasicAi::retainers_garrison_the_short_cities`. | 1 \| 1 |
 | `revealed-launch-tech-takes-the-slot` | off (unmeasured) | Replace an obsolete native research path with a revealed launch milestone. | 1 \| 1 |
+| `risk-is-priced` | off (unmeasured) | Opt-in gene `risk-is-priced`: one death chance per pathed move, refused over the mission's allowance; see `advanced/priced_risk.rs`. | 1 \| 1 |
 | `russia-settles-the-tundra` | off (unmeasured) | Opt-in gene `russia-settles-the-tundra`; see `advanced/russia_tundra.rs`. | 1 \| 1 |
 | `satellite-holds-the-pad` | off (unmeasured) | Opt-in gene `satellite-holds-the-pad`; see `Self::satellite_holds_the_pad`. | 1 \| 1 |
 | `saved-work-is-seen` | off (unmeasured) | Opt-in gene `saved-work-is-seen`; see `advanced/saved_work_is_seen.rs`. | 1 \| 1 |
@@ -460,6 +463,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-seat-races-the-congress` | off (unmeasured) | Opt-in gene `science-seat-races-the-congress`: a live-only ballot change; see `CivvisCongressRacer` in `CivvisControlAgent.lua`. | 1 \| 1 |
 | `science-specializes-earlier` | off (unmeasured) | Opt-in gene `science-specializes-earlier`; see `Self::science_specializes_earlier`. | 1 \| 1 |
 | `science-writing-before-the-luxury` | off (unmeasured) | Opt-in Science Writing priority before optional research detours. | 1 \| 1 |
+| `score-seat-plays-for-points` | off (unmeasured) | Opt-in gene `score-seat-plays-for-points`; see `advanced/score_seat.rs`. | 1 \| 1 |
 | `sea-scout-claims-the-queue` | off (unmeasured) | Opt-in gene `sea-scout-claims-the-queue`; see `advanced/contact_fleet.rs`. | — \| 2 |
 | `sea-scout-claims-the-queue-2` | off (unmeasured) | Opt-in gene `space-people-call-the-projects`; see `advanced/space_people_call_the_projects.rs`. | — \| 2 |
 | `settler-founds-under-raiders` | off (unmeasured) | Opt-in gene `settler-founds-under-raiders`; see `Self::settler_founds_under_raiders`. | 1 \| 1 |

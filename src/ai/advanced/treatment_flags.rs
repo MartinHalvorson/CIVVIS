@@ -275,6 +275,9 @@ impl AdvancedAi {
         /// Opt-in gene `centre-keeps-its-garrison`; see
         /// `advanced/centre_keeps_its_garrison.rs`.
         centre_keeps_its_garrison => enable_centre_keeps_its_garrison, disable_centre_keeps_its_garrison;
+        /// Opt-in gene `defend-force-holds-the-city`; see
+        /// `advanced/defend_force_holds_the_city.rs`.
+        defend_force_holds_the_city => enable_defend_force_holds_the_city, disable_defend_force_holds_the_city;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -361,6 +364,8 @@ impl AdvancedAi {
         /// Opt-in `open-city-is-the-objective`; see
         /// `advanced/open_city_objective.rs`.
         open_city_is_the_objective => enable_open_city_is_the_objective, disable_open_city_is_the_objective;
+        /// Opt-in `one-owner-per-unit`; see `advanced/unit_owner.rs`.
+        one_owner_per_unit => enable_one_owner_per_unit, disable_one_owner_per_unit;
         // ---- append: p-r --------------------------------------------
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;
@@ -427,6 +432,9 @@ impl AdvancedAi {
         /// projected income to zero or below; see
         /// `advanced/policy_swap_keeps_the_army_paid.rs`.
         policy_swap_keeps_the_army_paid => enable_policy_swap_keeps_the_army_paid, disable_policy_swap_keeps_the_army_paid;
+        /// Opt-in gene `risk-is-priced`: one death chance per pathed move,
+        /// refused over the mission's allowance; see `advanced/priced_risk.rs`.
+        risk_is_priced => enable_risk_is_priced, disable_risk_is_priced;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
@@ -451,6 +459,9 @@ impl AdvancedAi {
         /// Opt-in gene `solver-plays-the-host`; see
         /// `advanced/battle_solver/host_enemy.rs`.
         solver_plays_the_host => enable_solver_plays_the_host, disable_solver_plays_the_host;
+        /// Opt-in gene `score-seat-plays-for-points`; see
+        /// `advanced/score_seat.rs`.
+        score_seat_plays_for_points => enable_score_seat_plays_for_points, disable_score_seat_plays_for_points;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

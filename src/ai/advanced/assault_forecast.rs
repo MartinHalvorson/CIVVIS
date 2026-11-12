@@ -53,13 +53,23 @@
 //! by at least [`SHORT_OF_GAIN`], is named.
 //!
 //! **What it does not see:** units the city's owner will build or bring from
-//! out of reach, units out of sight, ships and aircraft, Battering Rams and
-//! Siege Towers (support units the model does not play), and promotions
-//! earned during the fight. Its enemy is the solver's greedy one. On 1,200
-//! posed sieges (`docs/ASSAULT_FORECAST.md`) it is right where it reads
-//! under 20% (4% taken) and overconfident above 80% (44% taken, falling
-//! with the walls): read it as "this force could take this city", not "this
-//! train will". The reading gene is there to calibrate it on live games.
+//! out of reach, units out of sight, ships and aircraft, a Battering Ram or
+//! Siege Tower being killed on its way (it works from the turn its walk
+//! would bring it beside the city), and promotions earned during the fight.
+//! Its enemy is the solver's greedy one. On 1,200 posed sieges
+//! (`docs/ASSAULT_FORECAST.md`) it is right where it reads under 20% (4%
+//! taken) and overconfident above 80% (44% taken as #5195 ran them, 81% with
+//! the seats kept solvent): read it as "this force could take this city", not
+//! "this train will". The reading gene is there to calibrate it on live
+//! games.
+//!
+//! **For callers** (`docs/ASSAULT_FORECAST.md`, all callable with both genes
+//! off): `assault_forecast` (at war), `assault_forecast_at_peace` (as if the
+//! war began this turn), `assault_forecast_recruiting` (plus hypothetical
+//! units arriving at the board's edge), `assault_corps_for` (the smallest
+//! subset of a pool that reaches a chance), and the provisional
+//! `AssaultForecast::calibrated_within`. A Battering Ram or Siege Tower in
+//! the force works the engine's way (`Game::siege_support_effects`).
 //!
 //! A forecast is cached for the turn by the city's tile and the signature of
 //! the force and the hostiles (kind, tile, health), so a turn pays once; the
@@ -71,8 +81,8 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use super::battle_solver::model::{
     Board, CitySpec, Objective, Posture, Sim, State, Unit, Weights, F_CAPTURES, F_IGNORES_ZOC,
-    F_MELEE, F_MOVE_AND_FIRE, F_RANGED, F_SIEGE, F_ZOC, IMPASSABLE, MP, NO_CITY, NO_TILE, NO_UNIT,
-    OURS, THEIRS,
+    F_MELEE, F_MOVE_AND_FIRE, F_RANGED, F_SIEGE, F_WALL_SUPPORTED, F_ZOC, IMPASSABLE, MP, NO_CITY,
+    NO_TILE, NO_UNIT, OURS, SUPPORT_RAM, SUPPORT_TOWER, THEIRS,
 };
 use super::AdvancedAi;
 use crate::game::{Game, Item};
@@ -194,6 +204,38 @@ impl AssaultForecast {
         }
     }
 
+    /// PROVISIONAL. A conservative P(capture within `turns`) for a caller
+    /// that turns the chance into an expected value, against a city whose
+    /// wall pool is `walls`. A raw reading under [`CALIBRATED_FROM`] passes
+    /// through: low readings were right. Above it the reading is pulled
+    /// down, linearly, to the rate the high bin was realized at for that
+    /// wall tier ([`HIGH_BIN_TAKEN`], `docs/ASSAULT_FORECAST.md`), and never
+    /// raised. To be replaced once #5207 fixes the cause of the gap.
+    #[allow(
+        dead_code,
+        reason = "an entry point for the Score lane's target board; no caller in this tree yet"
+    )]
+    pub(crate) fn calibrated_within(&self, turns: usize, walls: i32) -> f32 {
+        let raw = self.within(turns);
+        if raw < CALIBRATED_FROM {
+            return raw;
+        }
+        let tier = if walls < 50 {
+            0
+        } else if walls < 150 {
+            1
+        } else if walls < 250 {
+            2
+        } else {
+            3
+        };
+        let (_, read_high, taken) = HIGH_BIN_TAKEN[tier];
+        let top = taken as f32 / read_high as f32;
+        let calibrated = CALIBRATED_FROM
+            + (raw - CALIBRATED_FROM) / (1.0 - CALIBRATED_FROM) * (top - CALIBRATED_FROM);
+        calibrated.min(raw)
+    }
+
     /// The first turn by which nine tenths of the horizon's chance is in.
     pub(crate) fn turn_by(&self) -> usize {
         let p = self.p();
@@ -206,11 +248,21 @@ impl AssaultForecast {
     }
 }
 
+/// `AssaultForecast::calibrated_within`: readings under this pass through.
+pub(crate) const CALIBRATED_FROM: f32 = 0.2;
+/// PROVISIONAL, `docs/ASSAULT_FORECAST.md`: of the 1,200 posed sieges with
+/// solvent seats (#5207, CI run 43303003805 on c908fea4c6), per wall pool,
+/// the sieges read at P(capture within 12) >= 0.8 and how many were taken
+/// within 12 turns. A test holds these to the doc's table.
+pub(crate) const HIGH_BIN_TAKEN: [(i32, u32, u32); 4] =
+    [(0, 165, 141), (100, 113, 94), (200, 109, 86), (400, 86, 60)];
+
 /// The turn's forecasts, by city tile and the force and hostile signature.
 #[derive(Clone, Default)]
 pub(crate) struct ForecastFrame {
     turn: u32,
     entries: BTreeMap<(Pos, u64), AssaultForecast>,
+    corps: BTreeMap<(Pos, u64), CorpsSearch>,
     /// Forecasts computed (not served from the cache) this turn.
     pub(crate) computed: u32,
 }
@@ -506,6 +558,9 @@ struct Posed {
     members: usize,
     /// The hypothetical units, by index.
     extras: Vec<(ShortOf, usize)>,
+    /// The round at whose end our Battering Ram, and our Siege Tower, stand
+    /// beside the city; [`NEVER`] without one (`support_rounds`).
+    support: [u8; 2],
     present: usize,
     arriving: usize,
     gathered: usize,
@@ -521,6 +576,7 @@ fn pose(
     members: &[u32],
     hostiles: &[u32],
     extras: &[(ShortOf, u32)],
+    arrive: &BTreeMap<u32, u8>,
 ) -> Option<Posed> {
     let target = g.cities.get(&cid)?;
     let center = target.pos;
@@ -548,7 +604,13 @@ fn pose(
     let mut routing: BTreeMap<(Name, u8), Vec<usize>> = BTreeMap::new();
     for (k, (uid, side)) in candidates.iter().enumerate() {
         let unit = &g.units[uid];
-        if let Some(tile) = index.get(&unit.pos) {
+        if let (Some(round), Some(tile)) = (arrive.get(uid), index.get(&unit.pos)) {
+            // A recruit: it stands on its entry tile and walks in on its
+            // round.
+            if *round <= HORIZON as u8 {
+                arrival[k] = Some((*round, *tile));
+            }
+        } else if let Some(tile) = index.get(&unit.pos) {
             arrival[k] = Some((0, *tile));
         } else {
             routing.entry((unit.kind, *side)).or_default().push(k);
@@ -648,6 +710,9 @@ fn pose(
         }
         if g.siege_may_attack_after_moving(u) {
             flags |= F_MOVE_AND_FIRE;
+        }
+        if sides[i] == OURS && matches!(spec.promotion_class.as_str(), "melee" | "anti_cavalry") {
+            flags |= F_WALL_SUPPORTED;
         }
         let here = enter[i] == 0;
         let max_mp = (g.unit_max_moves(*uid) * f64::from(MP)).round() as u16;
@@ -867,6 +932,7 @@ fn pose(
         standable,
         members: member_count,
         extras: extra_index,
+        support: [NEVER; 2],
         present,
         arriving: member_count - present,
         gathered,
@@ -949,7 +1015,7 @@ fn place(sim: &mut Sim, posed: &Posed, i: usize) -> bool {
 
 /// [`ROLLOUTS`] sieges played forward from `posed`, with `extra` (a
 /// hypothetical's index and its entry round) on the board too.
-fn play_out(posed: &Posed, extra: Option<(usize, u8)>, seed: u64) -> Tally {
+fn play_out(posed: &Posed, extra: Option<(usize, u8)>, seed: u64, rollouts: u32) -> Tally {
     let objective = Objective::Capture(posed.city as u8);
     let weights = Weights {
         enemy_aggression: knobs().enemy_aggression,
@@ -963,7 +1029,7 @@ fn play_out(posed: &Posed, extra: Option<(usize, u8)>, seed: u64) -> Tally {
     }
     let mut on_board = vec![false; n];
     let mut tally = Tally::default();
-    for run in 0..ROLLOUTS {
+    for run in 0..rollouts {
         sim.reset(
             &posed.state,
             mix(seed ^ u64::from(run + 1).wrapping_mul(0xA24B_AED4_963E_E407)),
@@ -979,6 +1045,13 @@ fn play_out(posed: &Posed, extra: Option<(usize, u8)>, seed: u64) -> Tally {
         }
         let mut taken = None;
         for round in 1..=HORIZON as u8 {
+            // Our Battering Ram and Siege Tower work from the turn after
+            // they stand beside the city.
+            for (k, bit) in [SUPPORT_RAM, SUPPORT_TOWER].into_iter().enumerate() {
+                if posed.support[k] < round {
+                    sim.s.city_support[posed.city] |= bit;
+                }
+            }
             if round == 1 {
                 // This turn's moves are still ours; the heal came at its start.
                 for unit in sim.s.units.iter_mut() {
@@ -1091,17 +1164,186 @@ fn body_kind(g: &Game, members: &[u32]) -> Option<Name> {
         .map(|(kind, _)| kind)
 }
 
+/// Rollouts per candidate in the corps search's ranking; the corps it
+/// settles on is read with the full [`ROLLOUTS`].
+const SEARCH_ROLLOUTS: u32 = 24;
+/// The corps search reads a candidate set in full once its quick reading is
+/// within this of the chance asked for.
+const SEARCH_MARGIN: f32 = 0.15;
+
+/// The support units a reading counts: a Battering Ram works on walls under
+/// Medieval Walls, a Siege Tower under Renaissance Walls
+/// (`Game::city_allows_siege_support`).
+const SUPPORT_KINDS: [&str; 2] = ["battering_ram", "siege_tower"];
+
+/// Hypothetical units a reading adds to the force: `count` of `kind`,
+/// arriving `turns` from now at the edge of the board nearest our cities.
+/// A Battering Ram or Siege Tower among them stands beside the city on the
+/// turn its walk from that edge brings it there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Recruit {
+    pub(crate) kind: Name,
+    pub(crate) count: u32,
+    pub(crate) turns: u32,
+}
+
+/// What one corps search found: the corps it ended with, and whether its
+/// reading reached the chance asked for.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct CorpsSearch {
+    reached: bool,
+    corps: Option<AssaultCorps>,
+}
+
+/// The smallest corps a pool offers against a city, and its reading.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct AssaultCorps {
+    /// Land soldiers and support units of the pool, in the order the search
+    /// took them.
+    pub(crate) members: Vec<u32>,
+    pub(crate) forecast: AssaultForecast,
+}
+
+/// The board a reading plays: `g` itself at war, or a copy with the war
+/// declared.
+fn war_board(g: &Game, pid: usize, owner: usize) -> Option<Game> {
+    if g.is_at_war(pid, owner) {
+        return None;
+    }
+    let mut board = g.clone();
+    board.at_war.insert((pid.min(owner), pid.max(owner)));
+    Some(board)
+}
+
+/// Turns for a support unit standing at `pos` to stand beside the city:
+/// its route to the board's edge, then the walk in.
+fn support_turns(g: &Game, uid: u32, center: Pos) -> Option<u32> {
+    let unit = g.units.get(&uid)?;
+    let moves = g.unit_max_moves(uid).max(1.0);
+    let walk_in = |tiles: i32| (f64::from(tiles.max(0)) / moves).ceil() as u32;
+    let d = g.wdist(unit.pos, center);
+    if d <= GROUND_RADIUS {
+        return Some(walk_in(d - 1));
+    }
+    let routes = routes_in(g, uid, center, &[unit.pos], (d + 1).min(ROUTE_REACH));
+    let (cost, _) = routes.get(&unit.pos)?;
+    let to_edge = (f64::from(*cost) / (moves * f64::from(MP))).ceil() as u32;
+    Some(to_edge + walk_in(GROUND_RADIUS - 1))
+}
+
+/// The round at whose end our Battering Ram, and our Siege Tower, stand
+/// beside city `cid`, from the support units in `units` and `recruits`;
+/// [`NEVER`] without one, or where the city's walls are beyond it.
+fn support_rounds(
+    g: &Game,
+    pid: usize,
+    cid: u32,
+    center: Pos,
+    units: &[u32],
+    recruits: &[Recruit],
+) -> [u8; 2] {
+    let mut rounds = [NEVER; 2];
+    for (k, kind) in SUPPORT_KINDS.iter().enumerate() {
+        if !g.city_allows_siege_support(cid, kind) {
+            continue;
+        }
+        let name = Name::new(kind);
+        let fielded = units
+            .iter()
+            .filter(|uid| {
+                g.units
+                    .get(uid)
+                    .is_some_and(|unit| unit.owner == pid && unit.kind == name)
+            })
+            .filter_map(|uid| support_turns(g, *uid, center));
+        let moves = g
+            .rules
+            .units
+            .get(kind)
+            .map_or(2.0, |spec| spec.moves.max(1.0));
+        let walk_in = (f64::from(GROUND_RADIUS - 1) / moves).ceil() as u32;
+        let recruited = recruits
+            .iter()
+            .filter(|recruit| recruit.kind == name && recruit.count > 0)
+            .map(|recruit| recruit.turns + walk_in);
+        if let Some(turns) = fielded.chain(recruited).min() {
+            if turns <= HORIZON as u32 {
+                rounds[k] = turns as u8;
+            }
+        }
+    }
+    rounds
+}
+
+/// Spawn the fighting recruits on `board` at free tiles of the board's edge
+/// nearest our cities; their entry rounds go in `arrive`.
+fn spawn_recruits(
+    board: &mut Game,
+    pid: usize,
+    center: Pos,
+    recruits: &[Recruit],
+    arrive: &mut BTreeMap<u32, u8>,
+) -> Vec<u32> {
+    let anchor = board
+        .player_city_ids(pid)
+        .into_iter()
+        .map(|id| board.cities[&id].pos)
+        .min_by_key(|pos| (board.wdist(*pos, center), *pos))
+        .unwrap_or(center);
+    let free = |g: &Game, pos: Pos| {
+        g.map
+            .get(pos)
+            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            && g.city_at(pos).is_none()
+            && g.unit_ids_at(pos).is_empty()
+    };
+    let mut spots: Vec<Pos> = [GROUND_RADIUS, GROUND_RADIUS - 1]
+        .into_iter()
+        .flat_map(|r| board.wring(center, r))
+        .filter(|pos| free(board, *pos))
+        .collect();
+    spots.sort_by_key(|pos| (board.wdist(*pos, anchor), *pos));
+    spots.dedup();
+    let mut spots = spots.into_iter();
+    let mut spawned = Vec::new();
+    for recruit in recruits {
+        let Some(spec) = board.rules.units.get(recruit.kind.as_str()) else {
+            continue;
+        };
+        let fights = spec.class == "military"
+            && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            && (spec.is_melee_capable() || spec.has_ranged_attack());
+        if !fights || recruit.turns > HORIZON as u32 {
+            continue;
+        }
+        for _ in 0..recruit.count {
+            let Some(spot) = spots.next() else {
+                return spawned;
+            };
+            let uid = board.spawn_unit(recruit.kind.as_str(), pid, spot);
+            arrive.insert(uid, recruit.turns as u8);
+            spawned.push(uid);
+        }
+    }
+    spawned
+}
+
 /// The curve alone.
+#[allow(clippy::too_many_arguments)]
 fn forecast_curve(
     g: &Game,
     pid: usize,
     cid: u32,
     members: &[u32],
     hostiles: &[u32],
+    arrive: &BTreeMap<u32, u8>,
+    support: [u8; 2],
+    rollouts: u32,
 ) -> Option<AssaultForecast> {
-    let posed = pose(g, pid, cid, members, hostiles, &[])?;
+    let mut posed = pose(g, pid, cid, members, hostiles, &[], arrive)?;
+    posed.support = support;
     let seed = seed_for(g.cities[&cid].pos, g.turn);
-    Some(play_out(&posed, None, seed).forecast(&posed))
+    Some(play_out(&posed, None, seed, rollouts).forecast(&posed))
 }
 
 /// The curve and what the force is short of: the same rollouts again with
@@ -1112,6 +1354,8 @@ fn forecast_short_of(
     cid: u32,
     members: &[u32],
     hostiles: &[u32],
+    arrive: &BTreeMap<u32, u8>,
+    support: [u8; 2],
 ) -> Option<AssaultForecast> {
     let center = g.cities.get(&cid)?.pos;
     let wanted = [
@@ -1173,9 +1417,10 @@ fn forecast_short_of(
         let uid = board.spawn_unit(kind.as_str(), pid, spot);
         extras.push((what, uid));
     }
-    let posed = pose(&board, pid, cid, members, hostiles, &extras)?;
+    let mut posed = pose(&board, pid, cid, members, hostiles, &extras, arrive)?;
+    posed.support = support;
     let seed = seed_for(center, g.turn);
-    let base = play_out(&posed, None, seed);
+    let base = play_out(&posed, None, seed, ROLLOUTS);
     let mut forecast = base.forecast(&posed);
     // A hypothetical arrives with the force: on the median member's round.
     let mut rounds: Vec<u8> = posed.enter[..posed.members].to_vec();
@@ -1184,7 +1429,7 @@ fn forecast_short_of(
     let mut short_of = (ShortOf::Nothing, 0.0f32);
     if base.p() < 1.0 {
         for (what, i) in &posed.extras {
-            let gain = play_out(&posed, Some((*i, with_the_force)), seed).p() - base.p();
+            let gain = play_out(&posed, Some((*i, with_the_force)), seed, ROLLOUTS).p() - base.p();
             if gain >= SHORT_OF_GAIN && gain > short_of.1 {
                 short_of = (*what, gain);
             }
@@ -1233,19 +1478,106 @@ impl AdvancedAi {
         force: &[u32],
         short_of: bool,
     ) -> Option<AssaultForecast> {
+        self.read(g, pid, city, force, &[], short_of, false)
+    }
+
+    /// The reading `assault_forecast` gives, read as if the war with the
+    /// city's owner (a major or a city-state) began this turn when it has
+    /// not: the owner's units in sight are hostiles, and its borders open.
+    /// At war, exactly `assault_forecast`. `None` for a city of ours or one
+    /// gone.
+    #[allow(
+        dead_code,
+        reason = "an entry point for the Score lane's target board; no caller in this tree yet"
+    )]
+    pub(crate) fn assault_forecast_at_peace(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: u32,
+        force: &[u32],
+    ) -> Option<AssaultForecast> {
+        self.read(g, pid, city, force, &[], true, true)
+    }
+
+    /// [`Self::assault_forecast_at_peace`] with `recruits` added to `force`:
+    /// "the force plus 4 Legions and a Battering Ram arriving in 8 turns".
+    #[allow(
+        dead_code,
+        reason = "an entry point for the Score lane's target board; no caller in this tree yet"
+    )]
+    pub(crate) fn assault_forecast_recruiting(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: u32,
+        force: &[u32],
+        recruits: &[Recruit],
+    ) -> Option<AssaultForecast> {
+        self.read(g, pid, city, force, recruits, true, true)
+    }
+
+    /// Every reading: `assume_war` reads a city we are at peace with as if
+    /// the war began this turn.
+    #[allow(clippy::too_many_arguments)]
+    fn read(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: u32,
+        force: &[u32],
+        recruits: &[Recruit],
+        short_of: bool,
+        assume_war: bool,
+    ) -> Option<AssaultForecast> {
         let target = g.cities.get(&city)?;
-        if target.owner == pid || !g.is_at_war(pid, target.owner) {
+        if target.owner == pid || (!assume_war && !g.is_at_war(pid, target.owner)) {
             return None;
         }
         let center = target.pos;
-        let members = members_of(g, pid, center, force);
-        let hostiles = hostiles_of(g, pid, center);
-        let key = (center, signature(g, pid, &members, &hostiles));
+        let mut owned = war_board(g, pid, target.owner);
+        let declared = owned.is_some();
+        let hostiles = hostiles_of(owned.as_ref().unwrap_or(g), pid, center);
+        let mut arrive = BTreeMap::new();
+        let mut force: Vec<u32> = force.to_vec();
+        if !recruits.is_empty() {
+            let board = owned.get_or_insert_with(|| g.clone());
+            force.extend(spawn_recruits(board, pid, center, recruits, &mut arrive));
+        }
+        let board = owned.as_ref().unwrap_or(g);
+        let members = members_of(board, pid, center, &force);
+        let support = support_rounds(board, pid, city, center, &force, recruits);
+        // The at-war reading of a force with no support unit keeps the key
+        // it always had.
+        let variant = if !declared && recruits.is_empty() && support == [NEVER; 2] {
+            0
+        } else {
+            fnv([
+                u64::from(declared),
+                u64::from(support[0]),
+                u64::from(support[1]),
+            ]
+            .into_iter()
+            .chain(recruits.iter().flat_map(|r| {
+                [
+                    u64::from(r.kind.id()),
+                    u64::from(r.count),
+                    u64::from(r.turns),
+                ]
+            }))
+            .chain(
+                arrive
+                    .iter()
+                    .map(|(uid, round)| (u64::from(*uid) << 8) | u64::from(*round)),
+            ))
+        };
+        let key = (center, signature(board, pid, &members, &hostiles) ^ variant);
         {
             let mut frame = self.assault_forecast_frame.borrow_mut();
             if frame.turn != g.turn {
                 frame.turn = g.turn;
                 frame.entries.clear();
+                frame.corps.clear();
                 frame.computed = 0;
             }
             if let Some(hit) = frame.entries.get(&key) {
@@ -1255,14 +1587,193 @@ impl AdvancedAi {
             }
         }
         let forecast = if short_of {
-            forecast_short_of(g, pid, city, &members, &hostiles)?
+            forecast_short_of(board, pid, city, &members, &hostiles, &arrive, support)?
         } else {
-            forecast_curve(g, pid, city, &members, &hostiles)?
+            forecast_curve(
+                board, pid, city, &members, &hostiles, &arrive, support, ROLLOUTS,
+            )?
         };
         let mut frame = self.assault_forecast_frame.borrow_mut();
         frame.computed += 1;
         frame.entries.insert(key, forecast.clone());
         Some(forecast)
+    }
+
+    /// The smallest set of `pool` whose reading reaches `want_p` within
+    /// `horizon` turns (1..=[`HORIZON`]), at war or as if the war began this
+    /// turn; `None` when the whole pool falls short, or no city reads (one
+    /// of ours, or gone). [`Self::assault_corps_best`] then gives the best
+    /// the pool reached, from the same search. Greedy: each step takes the
+    /// land soldier or support unit of the pool that raises the chance most
+    /// (a quick reading of [`SEARCH_ROLLOUTS`]), the dearer then the nearer
+    /// on a tie, up to [`MAX_MEMBERS`] soldiers; the first set whose full
+    /// reading reaches `want_p` is the answer. One search a turn per city,
+    /// pool, chance and horizon, cached like the readings.
+    #[allow(
+        dead_code,
+        reason = "an entry point for the Score lane's target board; no caller in this tree yet"
+    )]
+    pub(crate) fn assault_corps_for(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: u32,
+        pool: &[u32],
+        want_p: f32,
+        horizon: usize,
+    ) -> Option<AssaultCorps> {
+        let search = self.corps_search(g, pid, city, pool, want_p, horizon);
+        search.corps.filter(|_| search.reached)
+    }
+
+    /// The corps [`Self::assault_corps_for`]'s search ended with: the corps
+    /// that reaches `want_p`, or else the best reading the pool reached, for
+    /// the caller to log. `None` only when no city reads.
+    #[allow(
+        dead_code,
+        reason = "an entry point for the Score lane's target board; no caller in this tree yet"
+    )]
+    pub(crate) fn assault_corps_best(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: u32,
+        pool: &[u32],
+        want_p: f32,
+        horizon: usize,
+    ) -> Option<AssaultCorps> {
+        self.corps_search(g, pid, city, pool, want_p, horizon).corps
+    }
+
+    fn corps_search(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: u32,
+        pool: &[u32],
+        want_p: f32,
+        horizon: usize,
+    ) -> CorpsSearch {
+        let horizon = horizon.clamp(1, HORIZON);
+        let Some(target) = g.cities.get(&city).filter(|city| city.owner != pid) else {
+            return CorpsSearch {
+                reached: false,
+                corps: None,
+            };
+        };
+        let center = target.pos;
+        let owned = war_board(g, pid, target.owner);
+        let board = owned.as_ref().unwrap_or(g);
+        let hostiles = hostiles_of(board, pid, center);
+        let fighters = members_of(board, pid, center, pool);
+        let supports: Vec<u32> = SUPPORT_KINDS
+            .iter()
+            .filter_map(|kind| {
+                let name = Name::new(kind);
+                pool.iter()
+                    .copied()
+                    .filter(|uid| {
+                        board.units.get(uid).is_some_and(|unit| {
+                            unit.owner == pid
+                                && unit.kind == name
+                                && board.wdist(unit.pos, center) <= ROUTE_REACH
+                        })
+                    })
+                    .min_by_key(|uid| (board.wdist(board.units[uid].pos, center), *uid))
+            })
+            .collect();
+        let key = (
+            center,
+            signature(board, pid, &fighters, &hostiles)
+                ^ fnv(supports
+                    .iter()
+                    .map(|uid| u64::from(*uid))
+                    .chain([u64::from(want_p.to_bits()), horizon as u64])),
+        );
+        {
+            let mut frame = self.assault_forecast_frame.borrow_mut();
+            if frame.turn != g.turn {
+                frame.turn = g.turn;
+                frame.entries.clear();
+                frame.corps.clear();
+                frame.computed = 0;
+            }
+            if let Some(hit) = frame.corps.get(&key) {
+                return hit.clone();
+            }
+        }
+        let empty = BTreeMap::new();
+        let seed = seed_for(center, g.turn);
+        let reading = |set: &[u32], rollouts: u32| -> Option<AssaultForecast> {
+            let soldiers: Vec<u32> = set
+                .iter()
+                .copied()
+                .filter(|uid| fighters.contains(uid))
+                .collect();
+            let support = support_rounds(board, pid, city, center, set, &[]);
+            let mut posed = pose(board, pid, city, &soldiers, &hostiles, &[], &empty)?;
+            posed.support = support;
+            Some(play_out(&posed, None, seed, rollouts).forecast(&posed))
+        };
+        let mut chosen: Vec<u32> = Vec::new();
+        let mut left: Vec<u32> = fighters.iter().chain(&supports).copied().collect();
+        let mut best: Option<AssaultCorps> = None;
+        let mut found = None;
+        while !left.is_empty()
+            && chosen.iter().filter(|uid| fighters.contains(uid)).count() < MAX_MEMBERS
+        {
+            let mut pick: Option<(f32, f64, i32, u32, usize)> = None;
+            for (k, uid) in left.iter().enumerate() {
+                let mut set = chosen.clone();
+                set.push(*uid);
+                let p = reading(&set, SEARCH_ROLLOUTS).map_or(0.0, |f| f.within(horizon));
+                let unit = &board.units[uid];
+                let cost = board.rules.units[unit.kind].cost;
+                let near = -board.wdist(unit.pos, center);
+                let better = pick.is_none_or(|(bp, bc, bn, bu, _)| {
+                    (p, cost, near, std::cmp::Reverse(*uid))
+                        .partial_cmp(&(bp, bc, bn, std::cmp::Reverse(bu)))
+                        .is_some_and(|o| o == std::cmp::Ordering::Greater)
+                });
+                if better {
+                    pick = Some((p, cost, near, *uid, k));
+                }
+            }
+            let Some((quick, _, _, _, k)) = pick else {
+                break;
+            };
+            chosen.push(left.remove(k));
+            let last = left.is_empty()
+                || chosen.iter().filter(|uid| fighters.contains(uid)).count() >= MAX_MEMBERS;
+            if quick + SEARCH_MARGIN < want_p && !last {
+                continue;
+            }
+            let Some(full) = reading(&chosen, ROLLOUTS) else {
+                break;
+            };
+            let corps = AssaultCorps {
+                members: chosen.clone(),
+                forecast: full,
+            };
+            if corps.forecast.within(horizon) >= want_p {
+                found = Some(corps);
+                break;
+            }
+            if best
+                .as_ref()
+                .is_none_or(|b| corps.forecast.within(horizon) > b.forecast.within(horizon))
+            {
+                best = Some(corps);
+            }
+        }
+        let answer = CorpsSearch {
+            reached: found.is_some(),
+            corps: found.or(best),
+        };
+        let mut frame = self.assault_forecast_frame.borrow_mut();
+        frame.computed += 1;
+        frame.corps.insert(key, answer.clone());
+        answer
     }
 
     /// Forecasts computed this turn, not served from the cache.
