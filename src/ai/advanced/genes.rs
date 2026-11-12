@@ -5689,6 +5689,14 @@ pub const GENES: &[Gene] = &[
     // and counter-war floors read. Opt-in, not armed; see
     // `advanced/deterrence_stops_at_a_garrison.rs`.
     Gene { tag: "deterrence-stops-at-a-garrison", field: "deterrence_stops_at_a_garrison", kind: Kind::OptIn, enable: AdvancedAi::enable_deterrence_stops_at_a_garrison, disable: AdvancedAi::disable_deterrence_stops_at_a_garrison },
+    // Live Deity Gran Colombia, the 20 games of 2026-11-12 08:55Z-12:42Z:
+    // Culture 9 / 16 / 22 a turn at t50 / t75 / t100 against the best rival's
+    // 67 / 142 / 227, civics 7 / 13 / 18 against 15 / 22 / 29. A median one
+    // Monument stood at t50-t100 in 4-9 cities, and no Pingala took
+    // Connoisseur. Every city of two citizens raises its Monument ahead of a
+    // Granary, an Aqueduct or a soldier at peace, and Connoisseur is
+    // Pingala's second promotion. Opt-in; see `advanced/domination_culture.rs`.
+    Gene { tag: "domination-seat-raises-its-culture", field: "domination_seat_raises_its_culture", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_seat_raises_its_culture, disable: AdvancedAi::disable_domination_seat_raises_its_culture },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

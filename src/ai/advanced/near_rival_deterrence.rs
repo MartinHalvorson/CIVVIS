@@ -233,6 +233,12 @@ impl AdvancedAi {
                     .queue
                     .first()
                     .is_some_and(|head| self.campus_and_library_holds(g, pid, cid, plan, head))
+                // `domination-seat-raises-its-culture`: its Monument goes first
+                // at peace.
+                || g.cities[&cid]
+                    .queue
+                    .first()
+                    .is_some_and(|head| self.domination_monument_holds(g, pid, cid, plan, head))
             {
                 continue;
             }

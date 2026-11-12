@@ -265,6 +265,9 @@ impl AdvancedAi {
         /// Opt-in gene `deterrence-stops-at-a-garrison`; see
         /// `advanced/deterrence_stops_at_a_garrison.rs`.
         deterrence_stops_at_a_garrison => enable_deterrence_stops_at_a_garrison, disable_deterrence_stops_at_a_garrison;
+        /// Opt-in gene `domination-seat-raises-its-culture`; see
+        /// `advanced/domination_culture.rs`.
+        domination_seat_raises_its_culture => enable_domination_seat_raises_its_culture, disable_domination_seat_raises_its_culture;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

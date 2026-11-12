@@ -38,6 +38,9 @@ mod defensive_apostle;
 /// The diplomatic turn: deals, alliances, war openings, the World Congress,
 /// envoys and spies. See `advanced/diplomacy.rs`.
 mod diplomacy;
+/// `domination-seat-raises-its-culture`: a Domination seat's Monuments and
+/// Pingala's Connoisseur. See `advanced/domination_culture.rs`.
+mod domination_culture;
 mod domination_governors;
 mod domination_land_first;
 mod domination_modernization;
@@ -6940,6 +6943,11 @@ pub struct AdvancedAi {
     /// `hopeless-army-yields-the-queue`. See
     /// `advanced/deterrence_stops_at_a_garrison.rs`. Opt-in.
     deterrence_stops_at_a_garrison: bool,
+    /// `domination-seat-raises-its-culture`: a Domination seat puts a Monument
+    /// at the head of a city's idle or routine queue from two citizens, and
+    /// Pingala takes Connoisseur as her second promotion. See
+    /// `advanced/domination_culture.rs`. Opt-in.
+    domination_seat_raises_its_culture: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -20685,8 +20693,11 @@ impl AdvancedAi {
             // `culture-seat-monuments`: the claimed Monument finishes.
             // `culture-digs-every-site` and `great-works-never-wait`: the
             // claimed Archaeologist and slot building finish too.
+            // `domination-seat-raises-its-culture`: so does a Domination
+            // seat's claimed Monument.
             let culture_monument_commitment = committed.as_ref().is_some_and(|(_, item)| {
                 self.culture_monument_holds(g, pid, cid, plan, item)
+                    || self.domination_monument_holds(g, pid, cid, plan, item)
                     || self.dig_archaeologist_holds(g, pid, cid, plan, item)
                     || self.great_work_slot_building_holds(g, pid, cid, plan, item)
             });

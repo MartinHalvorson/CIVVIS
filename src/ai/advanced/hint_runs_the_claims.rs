@@ -209,6 +209,14 @@ impl AdvancedAi {
         if growth_claims {
             self.claim_free_slot_campus(g, pid, plan);
         }
+        // `domination-seat-raises-its-culture`: a Domination seat's Monuments,
+        // after the Campus claims (whose heads they leave alone) and ahead of
+        // the Prophet race and the routine claims. Under the war's hold, the
+        // rear cities alone. Exact no-op while the gene is off. See
+        // `advanced/domination_culture.rs`.
+        if growth_claims {
+            self.claim_domination_monuments(g, pid, plan);
+        }
         // `culture-seat-theater-first`: a Culture seat's first Theater
         // Squares, after the Campus claims (which yield those cities) and
         // ahead of the Prophet race and the routine claims. Exact no-op
