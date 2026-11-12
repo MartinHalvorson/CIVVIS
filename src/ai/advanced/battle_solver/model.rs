@@ -115,6 +115,11 @@ pub struct Board {
     /// `assault_forecast` sets it, since a siege of an empty city is the
     /// march. Off, `act` returns as it always did.
     pub march_on_objective: bool,
+    /// Our melee strike a walled city only once its walls are at or under
+    /// this share of their pool, as the siege train's taker waits for the
+    /// breach (`siege_train::MELEE_WALL_FRACTION`). Zero, as every solver
+    /// board has it, lets them swing at any wall.
+    pub melee_breach_share: f32,
 }
 
 impl Board {
@@ -935,6 +940,13 @@ impl<'b> Sim<'b> {
                     if self.s.city_wall[c] > 0
                         && self.s.city_hp[c] > 30
                         && taken * 2.0 > me.hp as f32
+                    {
+                        continue;
+                    }
+                    if self.b.melee_breach_share > 0.0
+                        && side == OURS
+                        && f32::from(self.s.city_wall[c])
+                            > self.b.melee_breach_share * f32::from(self.b.cities[c].wall_max)
                     {
                         continue;
                     }

@@ -212,14 +212,17 @@ fn the_forecast_grows_with_the_force() {
     );
 }
 
+/// One gun and four Swordsmen: every 100 of wall is about three more shots
+/// before the melee may go in, so the chance within eight turns falls as
+/// the walls rise.
 #[test]
 fn the_forecast_falls_with_the_walls() {
     let mut reads = Vec::new();
     for walls in [0, 100, 200, 400] {
-        let (mut g, cid) = front(walls, 28.0);
+        let (mut g, cid) = front(walls, 30.0);
         let mut force = army(&mut g, &["swordsman"; 4], 2);
-        force.extend(army(&mut g, &["catapult", "catapult"], 3));
-        reads.push((walls, forecast(&g, cid, &force).p()));
+        force.extend(army(&mut g, &["catapult"], 3));
+        reads.push((walls, forecast(&g, cid, &force).within(8)));
     }
     for pair in reads.windows(2) {
         assert!(
@@ -330,14 +333,14 @@ fn the_reading_changes_no_decision() {
     assert!(on_lines >= 3, "a line a turn: {on_lines}");
 }
 
-/// Walls 100 before six Swordsmen and no gun: `siege-needs-a-breaker`
-/// holds the stock train in Stage, and the forecast reads the melee taking
-/// it, so the gene goes.
+/// Three Swordsmen seven tiles from an open, empty city: nothing is staged,
+/// so the bill holds the stock train in Stage, and the forecast reads them
+/// walking in and taking it, so the gene goes.
 #[test]
-fn the_forecast_goes_where_the_breaker_hold_stages() {
+fn the_forecast_goes_where_the_bill_holds() {
     let stage_after = |gene: bool| {
-        let (mut g, cid) = front(100, 20.0);
-        army(&mut g, &["swordsman"; 6], 2);
+        let (mut g, cid) = front(0, 20.0);
+        army(&mut g, &["swordsman"; 3], 7);
         let mut ai = siege_seat();
         if gene {
             ai.enable_siege_goes_on_the_forecast();

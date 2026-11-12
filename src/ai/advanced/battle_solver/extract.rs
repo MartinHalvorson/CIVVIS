@@ -467,6 +467,7 @@ pub(super) fn snapshot(
         los0,
         has_los: true,
         march_on_objective: false,
+        melee_breach_share: 0.0,
     };
     let state = State::new(&board, units, city_state);
     let objective = choose_objective(g, pid, &board, &state, &city_ids, plan);

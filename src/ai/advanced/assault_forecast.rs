@@ -218,6 +218,40 @@ pub(crate) struct HopelessRun {
     pub(crate) health: i32,
 }
 
+/// The forecast's own settings on the solver's board.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Knobs {
+    /// `Board::melee_breach_share`.
+    pub(crate) melee_breach_share: f32,
+    /// `Weights::enemy_aggression`.
+    pub(crate) enemy_aggression: f32,
+}
+
+/// What the forecast plays: our melee wait for the breach as the train's
+/// taker does (`siege_train::MELEE_WALL_FRACTION`), and the solver's enemy.
+pub(crate) const KNOBS: Knobs = Knobs {
+    melee_breach_share: super::siege_train::MELEE_WALL_FRACTION as f32,
+    enemy_aggression: 0.5,
+};
+
+// CI scaffolding: the forecast settings this thread reads, `KNOBS` unless
+// set.
+#[cfg(test)]
+thread_local! {
+    pub(crate) static FORECAST_KNOBS: std::cell::Cell<Option<Knobs>> =
+        const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn knobs() -> Knobs {
+    FORECAST_KNOBS.with(|k| k.get()).unwrap_or(KNOBS)
+}
+
+#[cfg(not(test))]
+fn knobs() -> Knobs {
+    KNOBS
+}
+
 // CI scaffolding: which variant of `siege-goes-on-the-forecast` this
 // thread plays (0 as specified; 1 without the stand-down; 2 without the
 // Siege-row ranking; 3 the stand-down only while the siege makes no
@@ -747,6 +781,7 @@ fn pose(
         has_los: false,
         // A city with no soldier left beside it is still to be walked to.
         march_on_objective: true,
+        melee_breach_share: knobs().melee_breach_share,
     };
     let state = State::new(&board, units, city_state);
     let member_rounds = &enter[..member_count];
@@ -849,7 +884,11 @@ fn place(sim: &mut Sim, posed: &Posed, i: usize) -> bool {
 /// hypothetical's index and its entry round) on the board too.
 fn play_out(posed: &Posed, extra: Option<(usize, u8)>, seed: u64) -> Tally {
     let objective = Objective::Capture(posed.city as u8);
-    let mut sim = Sim::new(&posed.board, &posed.state, Weights::default(), objective);
+    let weights = Weights {
+        enemy_aggression: knobs().enemy_aggression,
+        ..Weights::default()
+    };
+    let mut sim = Sim::new(&posed.board, &posed.state, weights, objective);
     let n = posed.state.units.len();
     let mut enter = posed.enter.clone();
     if let Some((i, round)) = extra {

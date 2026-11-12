@@ -45,12 +45,45 @@ const PAIRED_SEEDS: u64 = 400;
 const PAIRED_TURNS: u32 = 30;
 /// The paired arms: the live genome alone, then with the gene as specified
 /// and in its CI variants (`super::VARIANT`).
-const ARMS: [(&str, Option<u8>); 5] = [
-    ("off", None),
-    ("on", Some(0)),
-    ("on, no stand-down", Some(1)),
-    ("on, no row ranking", Some(2)),
-    ("on, stand-down needs a stall", Some(3)),
+const ARMS: [(&str, Option<u8>, Knobs); 7] = [
+    ("off", None, KNOBS),
+    ("on", Some(0), KNOBS),
+    ("on, no stand-down", Some(1), KNOBS),
+    ("on, stand-down needs a stall", Some(3), KNOBS),
+    ("on, enemy always acts", Some(0), ALWAYS),
+    ("on, enemy always acts, no stand-down", Some(1), ALWAYS),
+    ("on, melee chips any wall", Some(0), CHIPS),
+];
+/// Forecast settings the calibration reads side by side.
+const ALWAYS: Knobs = Knobs {
+    enemy_aggression: 1.0,
+    ..KNOBS
+};
+const CHIPS: Knobs = Knobs {
+    melee_breach_share: 0.0,
+    ..KNOBS
+};
+const FORECASTS: [(&str, Knobs); 5] = [
+    (
+        "melee wait for the breach, enemy acts half its turns (shipped)",
+        KNOBS,
+    ),
+    (
+        "melee wait for the breach, enemy acts three turns in four",
+        Knobs {
+            enemy_aggression: 0.75,
+            ..KNOBS
+        },
+    ),
+    ("melee wait for the breach, enemy always acts", ALWAYS),
+    ("melee chip any wall, enemy acts half its turns", CHIPS),
+    (
+        "melee chip any wall, enemy always acts",
+        Knobs {
+            melee_breach_share: 0.0,
+            enemy_aggression: 1.0,
+        },
+    ),
 ];
 /// Seeds whose siege journal is printed, to show the harness plays a siege.
 const TRACED: u64 = 2;
@@ -263,25 +296,20 @@ fn live_tags() -> BTreeSet<&'static str> {
         .collect()
 }
 
-/// The live genome as `gene_screen --deployment-genome --live-genome`
-/// seats it, on the Domination lane, aimed at player 1.
+/// The live seat as `siege_replay` seats it: the Domination lane aimed at
+/// player 1, the live-bridge universe, then the deployment genome with the
+/// live arms forced on (`apply_gene_ledger_with_forced_live`), and the go
+/// gene forced on top for the `go` arm.
 fn live_seat(tags: &BTreeSet<&'static str>, go: bool) -> AdvancedAi {
-    let mut ai = AdvancedAi::new();
-    ai.enable_engine_repairs_universe();
-    for gene in super::super::genes::screenable_genes() {
-        let on = tags.contains(gene.tag) || (go && gene.tag == "siege-goes-on-the-forecast");
-        if on != gene.universe_on() {
-            if on {
-                (gene.enable)(&mut ai);
-            } else {
-                (gene.disable)(&mut ai);
-            }
-        }
-    }
-    if go {
-        ai.enable_siege_goes_on_the_forecast();
-    }
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
     ai.retarget_against(VictoryTarget::Domination, 1);
+    ai.enable_live_bridge_universe();
+    let mut forced: Vec<&str> = tags.iter().copied().collect();
+    if go {
+        forced.push("siege-goes-on-the-forecast");
+    }
+    ai.apply_gene_ledger_with_forced_live(&forced);
+    assert_eq!(ai.siege_goes_on_the_forecast, go, "the arm seats the gene");
     ai
 }
 
@@ -397,7 +425,10 @@ struct CalibrationRow {
     seed: u64,
     label: String,
     walls: i32,
+    /// The shipped forecast with its short-of reading, then the curve
+    /// under each [`FORECASTS`] entry.
     forecast: AssaultForecast,
+    variants: Vec<AssaultForecast>,
     forecast_ms: f64,
     outcome: Outcome,
 }
@@ -405,6 +436,8 @@ struct CalibrationRow {
 struct PairRow {
     seed: u64,
     label: String,
+    /// The forecast before our first move, as the calibration reads it.
+    forecast: AssaultForecast,
     /// One outcome per [`ARMS`] entry.
     arms: Vec<Outcome>,
 }
@@ -428,32 +461,50 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
                 .assault_forecast(&w.g, 0, w.cid, &w.force)
                 .expect("a posed city at war reads");
             let forecast_ms = clock.elapsed().as_secs_f64() * 1000.0;
+            let variants = FORECASTS
+                .iter()
+                .map(|(_, knobs)| {
+                    super::FORECAST_KNOBS.with(|k| k.set(Some(*knobs)));
+                    let read = AdvancedAi::new()
+                        .assault_capture_curve(&w.g, 0, w.cid, &w.force)
+                        .expect("a posed city at war reads");
+                    super::FORECAST_KNOBS.with(|k| k.set(None));
+                    read
+                })
+                .collect();
             let outcome = play_world(&w, live_seat(tags, false), HORIZON as u32, *seed < TRACED);
             Row::Calibrated(CalibrationRow {
                 seed: *seed,
                 label: w.label.clone(),
                 walls: w.walls,
                 forecast,
+                variants,
                 forecast_ms,
                 outcome,
             })
         }
         Job::Pair(seed) => {
             let w = world(*seed);
+            let forecast = AdvancedAi::new()
+                .assault_forecast(&w.g, 0, w.cid, &w.force)
+                .expect("a posed city at war reads");
             let trace = *seed < 100_000 + TRACED;
             let arms = ARMS
                 .iter()
-                .map(|(_, variant)| {
+                .map(|(_, variant, knobs)| {
                     super::VARIANT.with(|v| v.set(variant.unwrap_or(0)));
+                    super::FORECAST_KNOBS.with(|k| k.set(Some(*knobs)));
                     let outcome =
                         play_world(&w, live_seat(tags, variant.is_some()), PAIRED_TURNS, trace);
                     super::VARIANT.with(|v| v.set(0));
+                    super::FORECAST_KNOBS.with(|k| k.set(None));
                     outcome
                 })
                 .collect();
             Row::Paired(PairRow {
                 seed: *seed,
                 label: w.label.clone(),
+                forecast,
                 arms,
             })
         }
@@ -482,7 +533,10 @@ fn taken_by(outcome: &Outcome, k: usize) -> f64 {
     ))
 }
 
-fn calibration_table(out: &mut String, rows: &[&CalibrationRow], k: usize) {
+/// One forecast and what the seat it was read for did.
+type Read<'a> = (&'a AssaultForecast, &'a Outcome);
+
+fn calibration_table(out: &mut String, rows: &[Read], k: usize) {
     let edges = [0.0, 0.2, 0.4, 0.6, 0.8, 1.000_001];
     let _ = writeln!(
         out,
@@ -490,19 +544,19 @@ fn calibration_table(out: &mut String, rows: &[&CalibrationRow], k: usize) {
     );
     let _ = writeln!(out, "|---|---|---|---|---|");
     for bin in 0..5 {
-        let inside: Vec<&&CalibrationRow> = rows
+        let inside: Vec<&Read> = rows
             .iter()
             .filter(|row| {
-                let p = f64::from(row.forecast.within(k));
+                let p = f64::from(row.0.within(k));
                 p >= edges[bin] && p < edges[bin + 1]
             })
             .collect();
-        let (predicted, n) = mean(inside.iter().map(|row| f64::from(row.forecast.within(k))));
-        let (realized, _) = mean(inside.iter().map(|row| taken_by(&row.outcome, k)));
+        let (predicted, n) = mean(inside.iter().map(|row| f64::from(row.0.within(k))));
+        let (realized, _) = mean(inside.iter().map(|row| taken_by(row.1, k)));
         let (invested, _) = mean(
             inside
                 .iter()
-                .map(|row| f64::from(u8::from(row.outcome.stage >= 2))),
+                .map(|row| f64::from(u8::from(row.1.stage >= 2))),
         );
         let _ = writeln!(
             out,
@@ -513,107 +567,29 @@ fn calibration_table(out: &mut String, rows: &[&CalibrationRow], k: usize) {
     }
     let brier = mean(
         rows.iter()
-            .map(|row| (f64::from(row.forecast.within(k)) - taken_by(&row.outcome, k)).powi(2)),
+            .map(|row| (f64::from(row.0.within(k)) - taken_by(row.1, k)).powi(2)),
     )
     .0;
-    let base = mean(rows.iter().map(|row| taken_by(&row.outcome, k))).0;
-    let climatology = mean(
-        rows.iter()
-            .map(|row| (base - taken_by(&row.outcome, k)).powi(2)),
-    )
-    .0;
+    let base = mean(rows.iter().map(|row| taken_by(row.1, k))).0;
+    let climatology = mean(rows.iter().map(|row| (base - taken_by(row.1, k)).powi(2))).0;
     let _ = writeln!(
         out,
         "\nBrier score within {k}: {brier:.3} (the base rate {base:.2} for every siege scores {climatology:.3})\n"
     );
 }
 
-fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> String {
-    let mut out = String::new();
-    let _ = writeln!(out, "ASSAULT FORECAST REPORT ({seconds:.0} s wall)\n");
-    let kept: Vec<&CalibrationRow> = calibrated.iter().filter(|row| !row.outcome.peace).collect();
-    let (ms, _) = mean(calibrated.iter().map(|row| row.forecast_ms));
-    let max_ms = calibrated
-        .iter()
-        .map(|row| row.forecast_ms)
-        .fold(0.0, f64::max);
-    let (play_s, _) = mean(calibrated.iter().map(|row| row.outcome.seconds));
+fn paired_table(out: &mut String, title: &str, kept_pairs: &[&PairRow]) {
     let _ = writeln!(
         out,
-        "## Calibration: {} posed sieges, {} left out for peace; forecast {ms:.0} ms mean, {max_ms:.0} ms max \
-         (with the short-of variants); {play_s:.2} s a siege played\n",
-        calibrated.len(),
-        calibrated.len() - kept.len()
-    );
-    for k in [HORIZON, GO_HORIZON, 5] {
-        calibration_table(&mut out, &kept, k);
-    }
-    let (lost_p, _) = mean(kept.iter().map(|row| f64::from(row.forecast.units_lost)));
-    let (lost_r, _) = mean(kept.iter().map(|row| row.outcome.lost as f64));
-    let _ = writeln!(
-        out,
-        "Units lost within {HORIZON} turns: predicted {lost_p:.2}, realized {lost_r:.2} a siege (realized counts the posed force only)\n"
-    );
-    let _ = writeln!(out, "| walls | sieges | mean P(12) | realized by 12 |");
-    let _ = writeln!(out, "|---|---|---|---|");
-    for walls in [0, 100, 200, 400] {
-        let inside: Vec<&&CalibrationRow> = kept.iter().filter(|row| row.walls == walls).collect();
-        let (p, n) = mean(inside.iter().map(|row| f64::from(row.forecast.p())));
-        let (r, _) = mean(inside.iter().map(|row| taken_by(&row.outcome, HORIZON)));
-        let _ = writeln!(out, "| {walls} | {n} | {p:.2} | {r:.2} |");
-    }
-    let _ = writeln!(
-        out,
-        "\n| stock train reached | sieges | mean P(12) | realized by 12 |"
-    );
-    let _ = writeln!(out, "|---|---|---|---|");
-    for (name, test) in [
-        ("stage only", 1u8..=1),
-        ("invest or further", 2u8..=5),
-        ("no siege", 0u8..=0),
-    ] {
-        let inside: Vec<&&CalibrationRow> = kept
-            .iter()
-            .filter(|row| test.contains(&row.outcome.stage))
-            .collect();
-        let (p, n) = mean(inside.iter().map(|row| f64::from(row.forecast.p())));
-        let (r, _) = mean(inside.iter().map(|row| taken_by(&row.outcome, HORIZON)));
-        let _ = writeln!(out, "| {name} | {n} | {p:.2} | {r:.2} |");
-    }
-    let mut short: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
-    for row in &kept {
-        let entry = short
-            .entry(row.forecast.short_of.map_or("unread", ShortOf::as_str))
-            .or_default();
-        entry.0 += 1;
-        entry.1 += usize::from(row.outcome.captured.is_some());
-    }
-    let _ = writeln!(
-        out,
-        "\nShort of (sieges, of them taken within {HORIZON}): {}\n",
-        short
-            .iter()
-            .map(|(k, (n, t))| format!("{k} {n} ({t})"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-
-    let kept_pairs: Vec<&PairRow> = pairs
-        .iter()
-        .filter(|row| row.arms.iter().all(|arm| !arm.peace))
-        .collect();
-    let _ = writeln!(
-        out,
-        "## Paired: the live genome with and without siege-goes-on-the-forecast, {} posed sieges x {PAIRED_TURNS} turns ({} left out for peace)\n",
-        pairs.len(),
-        pairs.len() - kept_pairs.len()
+        "## Paired, {title}: {} posed sieges x {PAIRED_TURNS} turns\n",
+        kept_pairs.len()
     );
     let _ = writeln!(
         out,
         "| arm | cities taken | gained / lost vs off | invested | force units lost (vs off) | turns to capture | go orders | held aborts | stand-downs | zero-rate row turns | s a siege |"
     );
     let _ = writeln!(out, "|---|---|---|---|---|---|---|---|---|---|---|");
-    for (a, (name, _)) in ARMS.iter().enumerate() {
+    for (a, (name, _, _)) in ARMS.iter().enumerate() {
         let taken = kept_pairs
             .iter()
             .filter(|row| row.arms[a].captured.is_some())
@@ -652,6 +628,140 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
             sum(|o| o.stand_downs),
             sum(|o| o.zero_rows)
         );
+    }
+}
+
+fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "ASSAULT FORECAST REPORT ({seconds:.0} s wall)\n");
+    let kept: Vec<&CalibrationRow> = calibrated.iter().filter(|row| !row.outcome.peace).collect();
+    let (ms, _) = mean(calibrated.iter().map(|row| row.forecast_ms));
+    let max_ms = calibrated
+        .iter()
+        .map(|row| row.forecast_ms)
+        .fold(0.0, f64::max);
+    let (play_s, _) = mean(calibrated.iter().map(|row| row.outcome.seconds));
+    let _ = writeln!(
+        out,
+        "## Calibration: {} posed sieges, {} left out for peace; forecast {ms:.0} ms mean, {max_ms:.0} ms max \
+         (with the short-of variants); {play_s:.2} s a siege played\n",
+        calibrated.len(),
+        calibrated.len() - kept.len()
+    );
+    let reads: Vec<Read> = kept
+        .iter()
+        .map(|row| (&row.forecast, &row.outcome))
+        .collect();
+    for k in [HORIZON, GO_HORIZON, 5] {
+        calibration_table(&mut out, &reads, k);
+    }
+    let (lost_p, _) = mean(kept.iter().map(|row| f64::from(row.forecast.units_lost)));
+    let (lost_r, _) = mean(kept.iter().map(|row| row.outcome.lost as f64));
+    let _ = writeln!(
+        out,
+        "Units lost within {HORIZON} turns: predicted {lost_p:.2}, realized {lost_r:.2} a siege (realized counts the posed force only)\n"
+    );
+    let _ = writeln!(out, "| walls | sieges | mean P(12) | realized by 12 |");
+    let _ = writeln!(out, "|---|---|---|---|");
+    for walls in [0, 100, 200, 400] {
+        let inside: Vec<&&CalibrationRow> = kept.iter().filter(|row| row.walls == walls).collect();
+        let (p, n) = mean(inside.iter().map(|row| f64::from(row.forecast.p())));
+        let (r, _) = mean(inside.iter().map(|row| taken_by(&row.outcome, HORIZON)));
+        let _ = writeln!(out, "| {walls} | {n} | {p:.2} | {r:.2} |");
+    }
+    let _ = writeln!(
+        out,
+        "\n| forecast settings | Brier within 12 | within 10 | within 5 | mean P(12) | sieges over 0.8, taken |"
+    );
+    let _ = writeln!(out, "|---|---|---|---|---|---|");
+    for (v, (name, _)) in FORECASTS.iter().enumerate() {
+        let reads: Vec<Read> = kept
+            .iter()
+            .map(|row| (&row.variants[v], &row.outcome))
+            .collect();
+        let brier = |k: usize| {
+            mean(
+                reads
+                    .iter()
+                    .map(|(f, o)| (f64::from(f.within(k)) - taken_by(o, k)).powi(2)),
+            )
+            .0
+        };
+        let (p, _) = mean(reads.iter().map(|(f, _)| f64::from(f.p())));
+        let high: Vec<&Read> = reads.iter().filter(|(f, _)| f.p() >= 0.8).collect();
+        let (high_taken, high_n) = mean(high.iter().map(|(_, o)| taken_by(o, HORIZON)));
+        let _ = writeln!(
+            out,
+            "| {name} | {:.3} | {:.3} | {:.3} | {p:.2} | {high_n}, {high_taken:.2} |",
+            brier(HORIZON),
+            brier(GO_HORIZON),
+            brier(5)
+        );
+    }
+    let _ = writeln!(
+        out,
+        "\n| stock train reached | sieges | mean P(12) | realized by 12 |"
+    );
+    let _ = writeln!(out, "|---|---|---|---|");
+    for (name, test) in [
+        ("stage only", 1u8..=1),
+        ("invest or further", 2u8..=5),
+        ("no siege", 0u8..=0),
+    ] {
+        let inside: Vec<&&CalibrationRow> = kept
+            .iter()
+            .filter(|row| test.contains(&row.outcome.stage))
+            .collect();
+        let (p, n) = mean(inside.iter().map(|row| f64::from(row.forecast.p())));
+        let (r, _) = mean(inside.iter().map(|row| taken_by(&row.outcome, HORIZON)));
+        let _ = writeln!(out, "| {name} | {n} | {p:.2} | {r:.2} |");
+    }
+    let mut short: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
+    for row in &kept {
+        let entry = short
+            .entry(row.forecast.short_of.map_or("unread", ShortOf::as_str))
+            .or_default();
+        entry.0 += 1;
+        entry.1 += usize::from(row.outcome.captured.is_some());
+    }
+    let _ = writeln!(
+        out,
+        "\nShort of (sieges, of them taken within {HORIZON}): {}\n",
+        short
+            .iter()
+            .map(|(k, (n, t))| format!("{k} {n} ({t})"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
+    let peaceful: Vec<&PairRow> = pairs
+        .iter()
+        .filter(|row| row.arms.iter().all(|arm| !arm.peace))
+        .collect();
+    let everyone: Vec<&PairRow> = pairs.iter().collect();
+    paired_table(
+        &mut out,
+        "every pair; a war that ends in peace takes nothing",
+        &everyone,
+    );
+    paired_table(&mut out, "the pairs no arm made peace in", &peaceful);
+    let kept_pairs = peaceful;
+    for (a, title) in [
+        (0, "the live genome alone"),
+        (1, "the live genome with siege-goes-on-the-forecast"),
+    ] {
+        let reads: Vec<Read> = kept_pairs
+            .iter()
+            .map(|row| (&row.forecast, &row.arms[a]))
+            .collect();
+        let _ = writeln!(
+            out,
+            "\n### The paired sieges' forecasts against {title} ({} sieges)\n",
+            reads.len()
+        );
+        for k in [HORIZON, GO_HORIZON] {
+            calibration_table(&mut out, &reads, k);
+        }
     }
     let _ = writeln!(out, "\n## Calibration rows\n");
     for row in calibrated {
@@ -708,7 +818,7 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
         }
     }
     for row in pairs.iter().filter(|row| !row.arms[1].trace.is_empty()) {
-        for (a, (name, _)) in ARMS.iter().enumerate().take(2) {
+        for (a, (name, _, _)) in ARMS.iter().enumerate().take(2) {
             let _ = writeln!(out, "pair {} {name}: {}", row.seed, row.label);
             for line in &row.arms[a].trace {
                 let _ = writeln!(out, "  {line}");
