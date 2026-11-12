@@ -235,7 +235,7 @@ fn the_race_passes_only_routine_heads() {
     assert!(ai.score_wonder_may_pass(&g, 0, capital), "an idle queue");
 }
 
-/// A standing race: a writer's Monument is displaced again; the finished
+/// A standing race: a writer's Builder is displaced again; the finished
 /// wonder is counted and dropped; a wonder a rival finished is a lost race.
 #[test]
 fn a_race_is_kept_finished_or_lost() {
@@ -249,17 +249,20 @@ fn a_race_is_kept_finished_or_lost() {
     let Some(Item::Wonder { wonder, .. }) = head(&g, capital).cloned() else {
         panic!("a race starts");
     };
-    // A later writer puts a Monument back (through the action, which banks
-    // the wonder's progress); the late pass restores the race.
+    // A later writer puts a Builder at the head (through the action, which
+    // banks the wonder's progress); the late pass restores the race.
+    let builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
     g.apply(
         0,
         &Action::Produce {
             city: capital,
-            item: monument.clone(),
+            item: builder.clone(),
         },
     )
     .unwrap();
-    assert_eq!(head(&g, capital), Some(&monument));
+    assert_eq!(head(&g, capital), Some(&builder));
     ai.claim_queue_for_the_score_wonder(&mut g, 0, &plan(60), false);
     assert!(
         matches!(head(&g, capital), Some(Item::Wonder { wonder: w, .. }) if *w == wonder),
