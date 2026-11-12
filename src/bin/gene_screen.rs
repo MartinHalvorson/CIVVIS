@@ -10908,10 +10908,11 @@ mod tests {
         let mut steps: BTreeMap<String, [u32; 2]> = BTreeMap::new();
         let (mut killed, mut lost) = (0u32, 0u32);
         let mut seats = Vec::new();
+        let mut sample = String::new();
         for &seat in &majors {
             let before = ais[seat].strategy_census().last_orders.deaths();
             ais[seat].settle_last_orders(&world, seat);
-            let row = row_for_seat(&world, 0, seed, seat, String::new(), 0.0);
+            let mut row = row_for_seat(&world, 0, seed, seat, String::new(), 0.0);
             let ledger = world.combat_ledger(seat);
             assert_eq!(row.units_killed, Some(ledger.units_killed));
             assert_eq!(row.units_lost, Some(ledger.units_lost));
@@ -10937,6 +10938,14 @@ mod tests {
                 total[0] += pair[0];
                 total[1] += pair[1];
             }
+            row.last_orders = census.map();
+            let text = serde_json::to_string(&row).unwrap();
+            let back: Row = serde_json::from_str(&text).unwrap();
+            assert_eq!(back.units_lost, row.units_lost);
+            assert_eq!(back.last_orders, row.last_orders);
+            if world.players[seat].alive {
+                sample = text;
+            }
         }
         let deaths: u32 = steps.values().map(|pair| pair[0] + pair[1]).sum();
         let other = steps.get("other").map_or(0, |pair| pair[0] + pair[1]);
@@ -10952,6 +10961,10 @@ mod tests {
         );
         assert!(lost > 0, "the game has to have a fight in it: {report}");
         assert!(deaths > 0, "{report}");
-        panic!("REPORT {report}");
+        assert!(
+            f64::from(other) <= 0.25 * f64::from(deaths),
+            "most deaths are credited to a named step: {report}"
+        );
+        panic!("REPORT {report}\nSAMPLE {sample}");
     }
 }
