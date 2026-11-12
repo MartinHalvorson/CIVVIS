@@ -797,6 +797,10 @@ MIRROR_URL = f"http://127.0.0.1:{PORT}/"
 # display, and `tools/ops/civvis-display-keeper.mjs` places it.
 MIRROR_ENUM_CACHE_SECONDS = 5.0
 _MIRROR_ENUM_CACHE_AT = 0.0
+# What Chrome last listed, and how many of its tabs were the mirror: the log
+# line for a restore quotes the first, the duplicate check reads the second.
+_MIRROR_LAST_LISTING = ""
+_MIRROR_TAB_COUNT = 0
 _MIRROR_ENUM_CACHE_VALUE = None
 BROWSER_INTENT = os.environ.get(
     "CIVVIS_MIRROR_BROWSER_INTENT_FILE",
@@ -844,7 +848,12 @@ def chrome(script):
         # for this process's whole life. One line makes it observable.
         log(f"chrome scripting failed (status {done.returncode}): "
             f"{(done.stderr or done.stdout).strip()[:200]}")
-    return (done.stdout or done.stderr).strip()
+        # A failed call says nothing about the browser. Returning its error
+        # text made `mirror_on_screen` read "Application isn't running (-600)"
+        # as a tab list with no mirror in it, and a new window was opened over
+        # the one already there (2026-11-12: five windows in sixteen minutes).
+        return ""
+    return (done.stdout or "").strip()
 
 
 def mirror_target_url():
@@ -882,6 +891,7 @@ def mirror_on_screen(*, fresh=True):
     that repair or refresh a tab use the default fresh read.
     """
     global _MIRROR_ENUM_CACHE_AT, _MIRROR_ENUM_CACHE_VALUE
+    global _MIRROR_LAST_LISTING, _MIRROR_TAB_COUNT
     if not browser_management_enabled():
         forget_mirror_presence()
         return None
@@ -897,6 +907,8 @@ def mirror_on_screen(*, fresh=True):
     else:
         answer = chrome('tell application "Google Chrome" to get URL of tabs of every window')
         value = None if not answer else f":{PORT}" in answer
+        if answer:
+            _MIRROR_LAST_LISTING, _MIRROR_TAB_COUNT = answer, answer.count(f":{PORT}")
     _MIRROR_ENUM_CACHE_AT, _MIRROR_ENUM_CACHE_VALUE = now, value
     return value
 
@@ -944,18 +956,90 @@ def ensure_on_screen(misses):
     window exists to show (civvis-civ6-computer-control).
     """
     shown = mirror_on_screen(fresh=False)
-    if shown is None or shown:
+    if shown:
+        close_duplicate_mirror_windows()
+        return 0
+    if shown is None:
         return 0
     misses += 1
     if misses < 3:                      # ~24s of agreement before acting
         return misses
-    log("mirror window is not on screen; restoring it")
-    chrome(f'''tell application "Google Chrome"
+    # The listing that said "absent" and the window that answers it are two
+    # separate calls, and on 2026-11-12 the listing was wrong four times in
+    # one game while the page was painting. So the script that opens the
+    # window looks for a mirror tab itself first, in the same call, and the
+    # log keeps what Chrome had listed.
+    log(f"mirror window is not on screen; restoring it "
+        f"(Chrome listed: {_MIRROR_LAST_LISTING[:160]!r})")
+    answer = chrome(f'''tell application "Google Chrome"
+      repeat with thisWindow in every window
+        repeat with thisTab in every tab of thisWindow
+          if (URL of thisTab) contains ":{PORT}" then return "present"
+        end repeat
+      end repeat
       make new window
       set URL of active tab of window 1 to "{mirror_target_url()}"
+      return "opened"
     end tell''')
+    if answer == "present":
+        log("a mirror tab was there after all; no window opened")
     forget_mirror_presence()
     return 0
+
+
+# Closing is rare and cheap, but it is still desktop automation beside a game
+# that needs its frames: at most once a minute.
+DEDUPE_HOLDOFF_SECONDS = 60.0
+_MIRROR_DEDUPED_AT = 0.0
+
+
+def close_duplicate_mirror_windows():
+    """Keep one mirror window: close the other single-tab mirror windows.
+
+    The follower opens a window when it believes the mirror is gone, and when
+    that belief was wrong the windows piled up, each one a second page polling
+    the same server (2026-11-12, operator: "many civvis windows are popping
+    up ... we roughly just want the ongoing verification civvis window
+    showing"). The oldest window, the lowest id, is the one the operator
+    placed beside the game, so it is the one kept. Only a window whose single
+    tab is the mirror is ever closed: a mirror tab inside a window with other
+    tabs is somebody's browsing window and is left alone.
+    """
+    global _MIRROR_DEDUPED_AT
+    if _MIRROR_TAB_COUNT < 2 or not browser_management_enabled():
+        return 0
+    now = time.monotonic()
+    if _MIRROR_DEDUPED_AT and now - _MIRROR_DEDUPED_AT < DEDUPE_HOLDOFF_SECONDS:
+        return 0
+    _MIRROR_DEDUPED_AT = now
+    answer = chrome(f'''tell application "Google Chrome"
+      set mirrorIds to {{}}
+      repeat with thisWindow in every window
+        if (count of tabs of thisWindow) is 1 then
+          if (URL of active tab of thisWindow) contains ":{PORT}" then
+            set end of mirrorIds to (id of thisWindow)
+          end if
+        end if
+      end repeat
+      if (count of mirrorIds) < 2 then return "0"
+      set keepId to (item 1 of mirrorIds) as integer
+      repeat with windowId in mirrorIds
+        if (windowId as integer) < keepId then set keepId to (windowId as integer)
+      end repeat
+      set closed to 0
+      repeat with windowId in mirrorIds
+        if (windowId as integer) is not keepId then
+          close (first window whose id is (windowId as integer))
+          set closed to closed + 1
+        end if
+      end repeat
+      return closed as text
+    end tell''')
+    closed = int(answer) if answer.isdigit() else 0
+    if closed:
+        log(f"closed {closed} duplicate mirror window(s); one stays on screen")
+        forget_mirror_presence()
+    return closed
 
 
 # A visible healthy tab re-attaches within a couple of seconds of any of this
@@ -1025,15 +1109,20 @@ def ensure_watching(watch):
         log("mirror tab still not painting after re-pointing; replacing the tab")
         chrome(f'''tell application "Google Chrome"
           set doomed to {{}}
+          set oldBounds to missing value
           repeat with thisWindow in every window
             repeat with thisTab in every tab of thisWindow
-              if (URL of thisTab) contains ":{PORT}" then set end of doomed to thisTab
+              if (URL of thisTab) contains ":{PORT}" then
+                set end of doomed to thisTab
+                if oldBounds is missing value then set oldBounds to bounds of thisWindow
+              end if
             end repeat
           end repeat
           repeat with thisTab in doomed
             close thisTab
           end repeat
           make new window
+          if oldBounds is not missing value then set bounds of window 1 to oldBounds
           set URL of active tab of window 1 to "{target}"
         end tell''')
         return
