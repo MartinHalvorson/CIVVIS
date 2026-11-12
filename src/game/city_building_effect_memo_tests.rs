@@ -14,7 +14,7 @@ fn fixture() -> (Game, u32) {
     let city = game.place_city(0, position, None);
     let buildings = &mut game.cities.get_mut(&city).unwrap().buildings;
     buildings.clear();
-    buildings.insert(crate::name!("water_mill"));
+    buildings.push(crate::name!("water_mill"));
     (game, city)
 }
 
@@ -118,13 +118,7 @@ fn building_effect_memo_keeps_all_ruleset_effects_equal_with_inactive_buildings(
         .values()
         .flat_map(|spec| spec.effects.keys().cloned())
         .collect::<BTreeSet<_>>();
-    for building in buildings {
-        game.cities
-            .get_mut(&cid)
-            .unwrap()
-            .buildings
-            .insert(building);
-    }
+    game.cities.get_mut(&cid).unwrap().buildings = buildings;
     let position = game.nbrs(game.cities[&cid].pos)[0];
     game.cities
         .get_mut(&cid)
@@ -165,28 +159,28 @@ fn building_effect_memo_preserves_signed_zero_nonfinite_values_and_sum_order() {
         .get_mut(&cid)
         .unwrap()
         .buildings
-        .insert(crate::name!("granary"));
-    for (first, second) in [
-        (0.0, -0.0),
-        (-0.0, -0.0),
-        (f64::NAN, 1.0),
-        (f64::INFINITY, f64::NEG_INFINITY),
-        (1e16, 1.0),
-        (-1e16, 1e16),
+        .extend([crate::name!("granary"), crate::name!("monument")]);
+    for (first, second, third) in [
+        (0.0, -0.0, -0.0),
+        (-0.0, -0.0, -0.0),
+        (f64::NAN, 1.0, 0.0),
+        (f64::INFINITY, f64::NEG_INFINITY, 2.0),
+        (1e16, 1.0, -1e16),
+        (-1e16, 1e16, 1.0),
     ] {
         let rules = Arc::make_mut(&mut game.rules);
-        rules
-            .buildings
-            .get_mut("granary")
-            .unwrap()
-            .effects
-            .insert(EFFECT.to_string(), first);
-        rules
-            .buildings
-            .get_mut("water_mill")
-            .unwrap()
-            .effects
-            .insert(EFFECT.to_string(), second);
+        for (building, coefficient) in [
+            ("water_mill", first),
+            ("granary", second),
+            ("monument", third),
+        ] {
+            rules
+                .buildings
+                .get_mut(building)
+                .unwrap()
+                .effects
+                .insert(EFFECT.to_string(), coefficient);
+        }
         let expected = original(&game, &game.cities[&cid], EFFECT).to_bits();
         let _memo = game.query_memo();
         for _ in 0..2 {
