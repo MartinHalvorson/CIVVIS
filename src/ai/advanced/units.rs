@@ -1206,7 +1206,7 @@ impl AdvancedAi {
         // the train's orders before anything else can land it at home. `None`
         // with the gene off. See `advanced/amphibious_siege_train.rs`.
         if let Some(acted) = self.amphibious_member_step(g, pid, uid) {
-            self.ordering(OrderStep::Breaker);
+            self.ordering(OrderStep::Amphibious);
             return acted;
         }
         // `breaker-walks-under-a-shield`: the early conquest opening's breaker
@@ -2686,25 +2686,31 @@ impl AdvancedAi {
         // `war-kills-the-bands-2`: the band hunt claims its bodies before the
         // battle is planned. Nothing with the version off. See
         // `advanced/band_hunt.rs`.
-        let early_band_hunters = if self.war_kills_the_bands_2 {
-            self.plan_band_hunt(g, pid, plan, &BTreeSet::new())
-        } else {
-            BTreeSet::new()
-        };
-        self.credit_orders(g, OrderStep::Hunts);
+        // `owned_pass`: each pre-pass below runs under `one-owner-per-unit`
+        // and credits its orders; with the gene off it is the pass and the
+        // credit. See `advanced/unit_owner.rs`.
+        let early_band_hunters = self.owned_pass(g, pid, OrderStep::Hunts, |ai, g| {
+            if ai.war_kills_the_bands_2 {
+                ai.plan_band_hunt(g, pid, plan, &BTreeSet::new())
+            } else {
+                BTreeSet::new()
+            }
+        });
         if self.battle_planner_on() {
-            if self.plan_battle(g, pid, plan) {
+            if self.owned_pass(g, pid, OrderStep::Positions, |ai, g| {
+                ai.plan_battle(g, pid, plan)
+            }) {
                 self.rebuild_force_groups(g, pid, plan);
                 self.force_groups_dirty = false;
             }
-            self.credit_orders(g, OrderStep::Positions);
             self.fire_plan_orders = fire_plan::FirePlan::default();
         } else {
-            withdrawn = self.withdraw_before_kill_prepass(g, pid, plan);
-            self.credit_orders(g, OrderStep::Withdraw);
-            let killed = self.victory_planning
-                && self.prioritize_immediate_kills(g, pid, plan, &withdrawn) > 0;
-            self.credit_orders(g, OrderStep::ImmediateKills);
+            withdrawn = self.owned_pass(g, pid, OrderStep::Withdraw, |ai, g| {
+                ai.withdraw_before_kill_prepass(g, pid, plan)
+            });
+            let killed = self.owned_pass(g, pid, OrderStep::ImmediateKills, |ai, g| {
+                ai.victory_planning && ai.prioritize_immediate_kills(g, pid, plan, &withdrawn) > 0
+            });
             if killed || !withdrawn.is_empty() {
                 self.rebuild_force_groups(g, pid, plan);
                 self.force_groups_dirty = false;
@@ -2726,11 +2732,13 @@ impl AdvancedAi {
         // Nothing with the gene off. See `advanced/priced_risk.rs`.
         self.mark_priced_risk(g, pid, plan);
         self.mark_gun_lethal_tiles(g, pid);
-        self.guns_step_out_of_reach(g, pid);
-        self.priced_risk_guns_step_out(g, pid);
-        self.credit_orders(g, OrderStep::GunsOutOfReach);
-        let mut air_assault_units = self.plan_air_city_assault(g, pid, plan);
-        self.credit_orders(g, OrderStep::Air);
+        self.owned_pass(g, pid, OrderStep::GunsOutOfReach, |ai, g| {
+            ai.guns_step_out_of_reach(g, pid);
+            ai.priced_risk_guns_step_out(g, pid);
+        });
+        let mut air_assault_units = self.owned_pass(g, pid, OrderStep::Air, |ai, g| {
+            ai.plan_air_city_assault(g, pid, plan)
+        });
         for (uid, moves, attacks) in held_readiness {
             if let Some(unit) = g.units.get_mut(&uid) {
                 unit.moves_left = moves;
@@ -2741,37 +2749,43 @@ impl AdvancedAi {
         // `falling-city-calls-the-takers`: a falling city is taken, or its
         // nearest fit bodies close in. Nothing with the gene off. See
         // `advanced/falling_city_takers.rs`.
-        let falling_takers = self.plan_falling_city_takers(g, pid, plan, &air_assault_units);
-        self.credit_orders(g, OrderStep::FallingCity);
+        let falling_takers = self.owned_pass(g, pid, OrderStep::FallingCity, |ai, g| {
+            ai.plan_falling_city_takers(g, pid, plan, &air_assault_units)
+        });
         air_assault_units.extend(falling_takers);
         // `air-surge-2` raiders: spare surge cavalry pillage behind the wing.
         // Nothing is read outside a Domination surge at war. See
         // `advanced/air_surge/raids.rs`.
         // `invest-keeps-its-cavalry`: see `assess_sieges_before_the_raids`.
         self.assess_sieges_before_the_raids(g, pid, plan);
-        let raiders = self.plan_air_surge_raids(g, pid, plan, &air_assault_units);
-        self.credit_orders(g, OrderStep::Raids);
+        let raiders = self.owned_pass(g, pid, OrderStep::Raids, |ai, g| {
+            ai.plan_air_surge_raids(g, pid, plan, &air_assault_units)
+        });
         air_assault_units.extend(raiders);
         // A faithless Domination seat condemns the spreaders converting it.
         // See `advanced/air_surge/heretic_hunt.rs`.
-        let hunters = self.plan_heretic_hunt(g, pid, &air_assault_units);
-        self.credit_orders(g, OrderStep::Hunts);
+        let hunters = self.owned_pass(g, pid, OrderStep::Hunts, |ai, g| {
+            ai.plan_heretic_hunt(g, pid, &air_assault_units)
+        });
         air_assault_units.extend(hunters);
         // `war-kills-the-bands`: an enemy Rock Band in reach is run down.
         // Nothing with the gene off. See `advanced/band_hunt.rs`.
         // Version two hunted before the battle (`early_band_hunters`).
         let band_hunters = if self.war_kills_the_bands_2 {
+            self.credit_orders(g, OrderStep::Hunts);
             early_band_hunters
         } else {
-            self.plan_band_hunt(g, pid, plan, &air_assault_units)
+            self.owned_pass(g, pid, OrderStep::Hunts, |ai, g| {
+                ai.plan_band_hunt(g, pid, plan, &air_assault_units)
+            })
         };
-        self.credit_orders(g, OrderStep::Hunts);
         air_assault_units.extend(band_hunters);
         // `war-raids-the-pads`: a decisive space racer's standing pads are
         // pillaged from the air or on foot. Nothing with the gene off. See
         // `advanced/launcher_war.rs`.
-        let pad_raiders = self.plan_pad_raids(g, pid, plan, &air_assault_units);
-        self.credit_orders(g, OrderStep::Raids);
+        let pad_raiders = self.owned_pass(g, pid, OrderStep::Raids, |ai, g| {
+            ai.plan_pad_raids(g, pid, plan, &air_assault_units)
+        });
         air_assault_units.extend(pad_raiders);
         // `pass-picket`: this turn's recon orders, drawn once from the
         // start-of-turn board so units planned in parallel agree on them.
@@ -2789,8 +2803,9 @@ impl AdvancedAi {
             let mut claimed = withdrawn.clone();
             claimed.extend(air_assault_units.iter().copied());
             claimed.extend(opening_recon_warrior);
-            self.hold_the_cities(g, pid, &claimed);
-            self.credit_orders(g, OrderStep::DefendHold);
+            self.owned_pass(g, pid, OrderStep::DefendHold, |ai, g| {
+                ai.hold_the_cities(g, pid, &claimed)
+            });
         }
         let mut ids = g.player_unit_ids(pid);
         ids.retain(|uid| {

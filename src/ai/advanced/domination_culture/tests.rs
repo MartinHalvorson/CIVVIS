@@ -13,9 +13,28 @@ fn domination_seat_raises_its_culture_is_opt_in() {
 /// so it finishes inside the cap. Returns the game, the two cities and the
 /// Monument item.
 fn two_cities() -> (Game, Vec<u32>, Item) {
-    let mut game = Game::new_full(2, 32, 20, 936_431, 200, 0, false);
     // Rome's Trajan's Column founds every city with a Monument.
-    game.players[0].civ = "Gran Colombia".to_string();
+    let (mut game, cities) = two_cities_of("Gran Colombia");
+    let monument = Item::Building {
+        building: crate::name!("monument"),
+    };
+    for cid in &cities {
+        let city = game.cities.get_mut(cid).unwrap();
+        city.production_progress
+            .insert(Game::item_progress_key(&monument), 50.0);
+        assert!(
+            game.can_produce(0, *cid, &monument),
+            "fixture: every city can build its Monument"
+        );
+    }
+    (game, cities, monument)
+}
+
+/// [`two_cities`] for `civ`, with nothing banked: two cities of two
+/// citizens with empty queues, turn 30.
+fn two_cities_of(civ: &str) -> (Game, Vec<u32>) {
+    let mut game = Game::new_full(2, 32, 20, 936_431, 200, 0, false);
+    game.players[0].civ = civ.to_string();
     let settler = game
         .player_unit_ids(0)
         .into_iter()
@@ -45,21 +64,12 @@ fn two_cities() -> (Game, Vec<u32>, Item) {
     assert_eq!(cities.len(), 2, "fixture: two cities");
     game.turn = 30;
     game.current = 0;
-    let monument = Item::Building {
-        building: crate::name!("monument"),
-    };
     for cid in &cities {
         let city = game.cities.get_mut(cid).unwrap();
         city.pop = 2;
         city.queue.clear();
-        city.production_progress
-            .insert(Game::item_progress_key(&monument), 50.0);
-        assert!(
-            game.can_produce(0, *cid, &monument),
-            "fixture: every city can build its Monument"
-        );
     }
-    (game, cities, monument)
+    (game, cities)
 }
 
 fn seat(target: VictoryTarget, gene: bool) -> AdvancedAi {
@@ -306,7 +316,11 @@ fn titles(game: &mut Game, ai: &AdvancedAi, plan: &StrategicPlan, count: i64) {
 }
 
 fn pingala_seat(gene: bool) -> AdvancedAi {
-    let mut ai = seat(VictoryTarget::Domination, gene);
+    pingala_seat_for(VictoryTarget::Domination, gene)
+}
+
+fn pingala_seat_for(target: VictoryTarget, gene: bool) -> AdvancedAi {
+    let mut ai = seat(target, gene);
     ai.enable_domination_seat_appoints_pingala_first();
     ai
 }
@@ -365,4 +379,87 @@ fn a_recovery_plan_keeps_victor_ahead_of_connoisseur() {
         game.players[0].governor_roster["pingala"].promotions.len(),
         1
     );
+}
+
+/// `conquest_or_score_seat`: a Score seat raises its Monuments as a
+/// Domination seat does; a Culture, Science or Religion seat claims nothing.
+#[test]
+fn a_score_seat_raises_its_monuments_and_other_targets_claim_nothing() {
+    let (game, cities, monument) = two_cities();
+    let plan = quiet_plan(&game);
+    let heads = [unit("warrior"), building("granary")];
+    let score = seat(VictoryTarget::Score, true);
+    let on = claim_over(&score, &game, &plan, heads.clone());
+    for cid in &cities {
+        assert_eq!(on.cities[cid].queue.first(), Some(&monument));
+        assert!(score.domination_monument_holds(&on, 0, *cid, &plan, &monument));
+    }
+    for target in [
+        VictoryTarget::Culture,
+        VictoryTarget::Science,
+        VictoryTarget::Religion,
+    ] {
+        let kept = claim_over(&seat(target, true), &game, &plan, heads.clone());
+        for (cid, head) in cities.iter().zip(&heads) {
+            assert_eq!(kept.cities[cid].queue.first(), Some(head), "{target:?}");
+        }
+    }
+}
+
+/// Rome's Trajan's Column founds every city with its Monument: a Rome Score
+/// seat's claim finds nothing to build and holds nothing, and every head
+/// keeps its queue.
+#[test]
+fn a_rome_score_seat_has_its_monuments_and_claims_none() {
+    let (game, cities) = two_cities_of("Rome");
+    let monument = Item::Building {
+        building: crate::name!("monument"),
+    };
+    for cid in &cities {
+        assert!(
+            game.cities[cid]
+                .buildings
+                .contains(&crate::name!("monument")),
+            "fixture: Trajan's Column"
+        );
+    }
+    let plan = quiet_plan(&game);
+    let ai = seat(VictoryTarget::Score, true);
+    let heads = [unit("warrior"), building("granary")];
+    let kept = claim_over(&ai, &game, &plan, heads.clone());
+    for (cid, head) in cities.iter().zip(&heads) {
+        assert_eq!(kept.cities[cid].queue.first(), Some(head));
+        assert!(ai.domination_monument_item(&kept, 0, *cid, &plan).is_none());
+        assert!(!ai.domination_monument_holds(&kept, 0, *cid, &plan, &monument));
+    }
+    let mut idle = game.clone();
+    ai.claim_domination_monuments(&mut idle, 0, &plan);
+    for cid in &cities {
+        assert!(
+            idle.cities[cid].queue.is_empty(),
+            "an idle queue stays idle"
+        );
+    }
+}
+
+/// A Score seat's Pingala takes Connoisseur with the third title, as a
+/// Domination seat's does; a Science seat's does not.
+#[test]
+fn a_score_seats_pingala_takes_connoisseur_third() {
+    let mut game = two_city_board(2);
+    let plan = quiet_plan(&game);
+    let ai = pingala_seat_for(VictoryTarget::Score, true);
+    titles(&mut game, &ai, &plan, 2);
+    titles(&mut game, &ai, &plan, 3);
+    let pingala = &game.players[0].governor_roster["pingala"];
+    assert!(
+        pingala.promotions.contains("researcher") && pingala.promotions.contains("connoisseur"),
+        "{:?}",
+        pingala.promotions
+    );
+    assert!(!game.players[0].governor_roster.contains_key("magnus"));
+
+    let game = two_city_board(2);
+    let science = pingala_seat_for(VictoryTarget::Science, true);
+    assert!(!science.domination_pingala_owes_connoisseur(&game, 0, plan.strategy));
 }

@@ -1121,6 +1121,9 @@ pub struct StrategyCensus {
     /// Our military units that died, by the step that last ordered them.
     /// See `advanced/last_orders.rs`.
     pub last_orders: last_orders::LastOrderCensus,
+    /// Orders that crossed another claim on the unit, by (owner, step), and
+    /// the unit-turns no step ordered. See `advanced/unit_owner.rs`.
+    pub claims: unit_owner::ClaimCensus,
 }
 
 impl StrategyCensus {
@@ -1210,6 +1213,7 @@ impl StrategyCensus {
         self.hold_threatened += other.hold_threatened;
         self.hold_weak += other.hold_weak;
         self.last_orders.absorb(&other.last_orders);
+        self.claims.absorb(&other.claims);
     }
 }
 
@@ -8819,6 +8823,11 @@ pub struct AdvancedAi {
     /// taken while that capture stands, and its siege goes without the
     /// muster's bill. See `advanced/open_city_objective.rs`. Opt-in.
     open_city_is_the_objective: bool,
+    /// `one-owner-per-unit`: a step that would order a unit another claim
+    /// owns (a siege's taker or member, a Settler's guard, the battle plan,
+    /// a unit out to heal ...) does not; the owner's own step keeps it. See
+    /// `advanced/unit_owner.rs`. Opt-in.
+    one_owner_per_unit: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -10242,6 +10251,15 @@ pub struct AdvancedAi {
     /// instead of the greedy pick at a flat 0.5. Acts only with
     /// `battle-solver` on. Off by default.
     solver_plays_the_host: bool,
+    /// `score-seat-plays-for-points`: a Score-target seat races wonders at
+    /// the live race's price, holds its peacetime army at one body a city,
+    /// takes the Ancestral Hall over the Warlord's Throne, and starts nothing
+    /// in the last turns that cannot finish before the tally. See
+    /// `advanced/score_seat.rs`. Off by default.
+    score_seat_plays_for_points: bool,
+    /// `score-seat-plays-for-points`: what the gene's journal has already
+    /// said, so each line is written once per change. Observation only.
+    score_seat_journal: score_seat::ScoreSeatJournal,
     /// `score-seat-settles-what-pays`: a Score seat settles every seat whose
     /// city pays its Settler back in points, until its last turns. Rides
     /// `no-city-limit`. See `advanced/score_seat_settles_what_pays.rs`.
@@ -11327,6 +11345,10 @@ mod chop_feeds_the_long_build;
 /// one. See `advanced/chop_for_expansion.rs`.
 mod chop_for_expansion;
 
+/// `score-seat-plays-for-points`: a Score-target seat's production buys
+/// points. See `advanced/score_seat.rs`.
+mod score_seat;
+
 /// The player civvis.ai seats: the deployment genome plus the site's own
 /// experiment list. See `advanced/site_deployment.rs`.
 mod site_deployment;
@@ -11439,6 +11461,9 @@ mod guru_walks_to_the_wounded;
 /// `risk-is-priced`: see `advanced/priced_risk.rs`.
 pub(super) mod priced_risk;
 mod unique_unit_closes_the_age;
+/// `one-owner-per-unit`: which claim owns each military unit, the crossings
+/// census, and the gene that refuses them. See `advanced/unit_owner.rs`.
+mod unit_owner;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
@@ -13139,6 +13164,20 @@ impl AdvancedAi {
                 // played on to its last civilization has no other lane.
                 || (*target == VictoryTarget::Domination && g.plays_to_the_last_civ())
         })
+    }
+
+    /// The seats the Domination lane's economy genes serve: the Domination
+    /// target and a Score target, whose score counts the techs, civics,
+    /// citizens, cities, districts and buildings those genes raise
+    /// (`Game::score_parts`). It gates the governor, Campus, Monument and
+    /// first-Campus claims and the open-city capture of a war already in
+    /// hand; no gene that declares a war, raises an army or retires the lane
+    /// reads it.
+    fn conquest_or_score_seat(&self, g: &Game) -> bool {
+        matches!(
+            self.active_victory_target(g),
+            Some(VictoryTarget::Domination | VictoryTarget::Score)
+        )
     }
 
     fn victory_strategy_enabled(g: &Game, strategy: GrandStrategy) -> bool {
@@ -22750,6 +22789,12 @@ impl AdvancedAi {
         // and can reject a build that actually fits the remaining clock.
         // The pinned pre-victory-planning controller keeps its old stream.
         let turns = self.production_build_turns(g, pid, cid, item);
+        // `score-seat-plays-for-points`: in the last turns before the tally an
+        // item that cannot finish is worth no points. Exact no-op off, and
+        // off a Score target. See `advanced/score_seat.rs`.
+        if self.score_seat_misses_the_tally(g, item, turns) {
+            return -10_000.0;
+        }
         let remaining_turns = g.max_turns.saturating_sub(g.turn).max(1) as f64;
         let barbarian_tactics = self.base.barbarian_tactics_enabled();
         let barbarian_pressure = if barbarian_tactics {
@@ -22837,6 +22882,12 @@ impl AdvancedAi {
         // `advanced/hopeless_army_yields_the_queue.rs`.
         let desired_military =
             self.hopeless_army_target(g, pid, plan, threatened, city_count, desired_military);
+        // `score-seat-plays-for-points`: at peace with every major, a Score
+        // seat's land army stops at one body a city; the Settler escorts and
+        // the barbarian floor below still add theirs. See
+        // `advanced/score_seat.rs`.
+        let desired_military =
+            self.score_seat_army_target(city_count, active_major_war, desired_military);
         // ★★★★ EVERY WALKER GETS A GUARD AND EVERY CLAIM A GARRISON. See
         // `land_grab`: the peacetime land army wants one body per city plus
         // one per Settler in flight, so a wider pipeline never marches alone
@@ -23217,14 +23268,20 @@ impl AdvancedAi {
                     // keep every unit weakly positive forever, so a rejected Library
                     // could expose another Warrior on every turn. Threatened cities
                     // bypass the ceiling, and naval/air have independent targets.
-                    let ceiling_buffer =
-                        if plan.strategy == GrandStrategy::Conquest && !offensive_conquest {
-                            0
-                        } else {
-                            2
-                        };
+                    // `score-seat-plays-for-points`: a Score seat at peace
+                    // keeps no composition buffer above its targets, land or
+                    // sea; a unit buys no points. See `advanced/score_seat.rs`.
+                    let score_seat_holds = self.score_seat_holds_the_army(active_major_war);
+                    let ceiling_buffer = if (plan.strategy == GrandStrategy::Conquest
+                        && !offensive_conquest)
+                        || score_seat_holds
+                    {
+                        0
+                    } else {
+                        2
+                    };
                     let domain_ceiling = if naval {
-                        desired_naval.saturating_add(2)
+                        desired_naval.saturating_add(if score_seat_holds { 0 } else { 2 })
                     } else if aircraft {
                         desired_aircraft.saturating_add(2)
                     } else {
@@ -23265,7 +23322,7 @@ impl AdvancedAi {
                         self.conquest_reservation(g, pid, cid, spec, counts, threatened);
                     let missing_siege =
                         self.missing_domination_siege(g, pid, cid, plan, counts, spec);
-                    if self.victory_planning
+                    if (self.victory_planning || score_seat_holds)
                         && domain_saturated
                         && domain_count >= domain_ceiling
                         && !threatened
@@ -26340,8 +26397,11 @@ impl AdvancedAi {
         self.base.obsolete_buys_read_our_techs = self.obsolete_buys_read_our_techs();
         // `plaza-serves-the-scientist` (and version 2, which carries it): the
         // Plaza's tier list reads this.
-        self.base.plaza_serves_science =
-            self.plaza_serves_science_on() || self.native_culture_plaza_economy(g, pid);
+        // `score-seat-plays-for-points` reads the same list: the Ancestral
+        // Hall, not the Warlord's Throne. See `advanced/score_seat.rs`.
+        self.base.plaza_serves_science = self.plaza_serves_science_on()
+            || self.native_culture_plaza_economy(g, pid)
+            || self.score_seat_on();
         self.refresh_campus_multiplier_constants(g);
         self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;
@@ -27198,6 +27258,10 @@ impl AdvancedAi {
             &wall_breaker_claims,
             confirmed_defense_queue.as_ref(),
         );
+        // `score-seat-plays-for-points`: observes the queues every writer
+        // above has settled and journals what the gene changed. Exact no-op
+        // off. See `advanced/score_seat.rs`.
+        self.journal_score_seat(g, pid, &plan);
         // A delegating lane has already spent through the baseline governor.
         if active_victory_target.is_some()
             && !lane_delegating

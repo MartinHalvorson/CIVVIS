@@ -242,6 +242,16 @@ struct Outcome {
     /// last ordered them, `[ended within two tiles of a visible hostile,
     /// beyond]` (`ai/advanced/last_orders.rs`).
     focal_last_orders: BTreeMap<String, [u32; 2]>,
+    /// Schema 8: the focal seat's orders that crossed another claim on the
+    /// unit, `owner:step: [crossed, deliberate, refused]`, and its military
+    /// unit-turns with those no step ordered (`ai/advanced/unit_owner.rs`).
+    focal_claim_crossings: BTreeMap<String, [u32; 3]>,
+    focal_unit_turns: u32,
+    focal_unordered_unit_turns: u32,
+    /// Schema 8: cities the focal seat captured (its `captures` counter) and
+    /// cities it founded that another seat holds at the end.
+    focal_cities_taken: i64,
+    focal_cities_lost: usize,
 }
 
 /// Turns at which [`EconomySnapshot`] is taken: the live ladder's own
@@ -640,6 +650,19 @@ fn trial(seed: u64, config: &Config, enabled: bool) -> Trial {
         bankrupt_turns,
         focal_units: game.combat_ledger(0),
         focal_last_orders: ais[0].strategy_census().last_orders.map(),
+        focal_claim_crossings: ais[0].strategy_census().claims.map(),
+        focal_unit_turns: ais[0].strategy_census().claims.unit_turns,
+        focal_unordered_unit_turns: ais[0].strategy_census().claims.unordered_unit_turns,
+        focal_cities_taken: game.players[0]
+            .counters
+            .get("captures")
+            .copied()
+            .unwrap_or(0),
+        focal_cities_lost: game
+            .cities
+            .values()
+            .filter(|city| city.original_owner == 0 && city.owner != 0)
+            .count(),
     };
     Trial {
         outcome,
@@ -679,7 +702,7 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
             domination[i] += usize::from(arm.outcome.focal_domination_won);
         }
         let row = serde_json::json!({
-            "schema": 7, "kind": "simulator_domination_policy_pair",
+            "schema": 8, "kind": "simulator_domination_policy_pair",
             "policy": config.policy.tag, "seed": seed,
             "execution_order": if index % 2 == 0 { "off,on" } else { "on,off" },
             "profile": profile(seed, config.difficulty, config.max_turns, config.setup), "civilizations": off.civs,
