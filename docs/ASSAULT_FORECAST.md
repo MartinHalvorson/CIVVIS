@@ -1,5 +1,16 @@
 # The assault forecast
 
+**Verdict.**
+
+- The forecast is reliable when it reads low: 655 posed sieges read under
+  0.2, predicted 0.01, and 0.04 were taken.
+- It is overconfident when it reads high: 473 sieges read 0.8 or more,
+  predicted 0.99, and 0.44 were taken (0.37 with no walls, 0.09 at 400).
+- Its Brier score is worse than giving every siege the base rate: 0.252
+  against 0.162 within 12 turns.
+- The go gene took 134 cities to 132 on 400 paired posed sieges, which is
+  noise.
+
 Genes `assault-forecast-is-read` and `siege-goes-on-the-forecast` (both
 opt-in, off and byte-identical when off). Code in
 `src/ai/advanced/assault_forecast.rs`; the train's hooks are in

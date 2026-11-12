@@ -319,7 +319,10 @@ impl Game {
                     continue;
                 };
                 if unit.owner == old {
-                    if matches!(unit.kind.as_str(), "builder" | "settler") {
+                    if conquest {
+                        self.tally_combat_death(new_owner, oid);
+                    }
+                    if matches!(self.units[&oid].kind.as_str(), "builder" | "settler") {
                         self.transfer_unit_owner(oid, new_owner);
                     } else {
                         self.remove_unit(oid);

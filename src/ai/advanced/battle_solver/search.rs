@@ -691,6 +691,7 @@ pub(super) mod tests {
             has_los: false,
             march_on_objective: false,
             melee_breach_share: 0.0,
+            host: Vec::new(),
         };
         board.city_melee = vec![0.0; 0];
         board.city_ranged = vec![0.0; 0];
