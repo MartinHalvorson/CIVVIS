@@ -6052,6 +6052,14 @@ pub const GENES: &[Gene] = &[
     // unit-turns in reach of ours (116 Deity games, 11-11..12) it struck 25%,
     // never above ~70% in any cell. See `advanced/battle_solver/host_enemy.rs`.
     Gene { tag: "solver-plays-the-host", field: "solver_plays_the_host", kind: Kind::OptIn, enable: AdvancedAi::enable_solver_plays_the_host, disable: AdvancedAi::disable_solver_plays_the_host },
+    // Live Deity Rome Score games of 2026-11-12: sixth of six at 529-726
+    // against 1,361-1,531, no war declared. In 3 of 4 a neighbour at or
+    // under our military held an open city worth 15-38 points that 1-6
+    // melee bodies (110-390 Production) take in five turns: 4-17 points a
+    // hundred Production against the queues' 2. The plan turns to Conquest
+    // on the best paying city and the war opens once its takers stand there.
+    // Opt-in; see `advanced/score_takes_what_pays.rs`.
+    Gene { tag: "score-seat-takes-what-pays", field: "score_seat_takes_what_pays", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_takes_what_pays, disable: AdvancedAi::disable_score_seat_takes_what_pays },
     // Rome Score seat civvis-20261112T190022Z (t170 tally 529 against 1,531):
     // no wonder (the Score lane priced one at +180 raw), 27% of production on
     // units in a game with no war, 601 Production unfinished at the tally.

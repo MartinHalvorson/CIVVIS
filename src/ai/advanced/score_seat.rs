@@ -100,7 +100,10 @@ impl AdvancedAi {
     /// Whether the peacetime army hold applies: the gene acts and no major is
     /// at war with us.
     pub(super) fn score_seat_holds_the_army(&self, active_major_war: bool) -> bool {
-        self.score_seat_on() && !active_major_war
+        // `score-seat-takes-what-pays`: a paying city the plan names lifts the
+        // hold as a war does, from the mustering stage on. `false` with that
+        // gene off. See `advanced/score_takes_what_pays.rs`.
+        self.score_seat_on() && !(active_major_war || self.score_take_lifts_the_cap())
     }
 
     /// The land army target under the hold: one body a city, never above the
