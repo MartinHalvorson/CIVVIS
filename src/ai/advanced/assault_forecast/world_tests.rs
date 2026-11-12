@@ -42,8 +42,8 @@ const LIVE_TACTICS: &[&str] = &[
     "anvil",
 ];
 const SEED_BASE: u64 = 9_100;
-const FIRST_SEED: u64 = 0;
-const SEEDS: u64 = 16;
+const FIRST_SEED: u64 = 16;
+const SEEDS: u64 = 8;
 const TURNS: u32 = 200;
 /// A world past this many seconds stops where it stands (`stopped`).
 const BUDGET_SECS: u64 = 16 * 60;
