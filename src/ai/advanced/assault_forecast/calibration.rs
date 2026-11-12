@@ -53,17 +53,10 @@ const HALF: Knobs = Knobs {
     enemy_aggression: 0.5,
     ..KNOBS
 };
-const FORECASTS: [(&str, Knobs); 6] = [
+const FORECASTS: [(&str, Knobs); 5] = [
     (
-        "melee wait for the breach, enemy always acts, the owner raises defenders (shipped)",
+        "melee wait for the breach, enemy always acts (shipped)",
         KNOBS,
-    ),
-    (
-        "the same without the owner's new defenders",
-        Knobs {
-            reinforce: false,
-            ..KNOBS
-        },
     ),
     (
         "melee wait for the breach, enemy acts three turns in four",
@@ -85,7 +78,6 @@ const FORECASTS: [(&str, Knobs); 6] = [
         Knobs {
             melee_breach_share: 0.0,
             enemy_aggression: 0.5,
-            ..KNOBS
         },
     ),
 ];
@@ -857,10 +849,10 @@ struct CalibrationRow {
     /// The posed city's health and walls before our first move.
     start: (i32, i32),
     forecast_ms: f64,
-    /// The defenders the forecast has the owner raise (`reinforcements`):
-    /// how many, and whether the first is bought on round 1.
-    planned: (usize, bool),
     outcome: Outcome,
+    /// The same world played with `siege-goes-on-the-forecast` on (mixed
+    /// solvent sieges only).
+    go: Option<Outcome>,
 }
 
 struct PairRow {
@@ -903,11 +895,6 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
                 .assault_forecast(&w.g, 0, w.cid, &w.force)
                 .expect("a posed city at war reads");
             let forecast_ms = clock.elapsed().as_secs_f64() * 1000.0;
-            let plan = super::reinforcements(&w.g, w.cid);
-            let planned = (
-                plan.len(),
-                plan.first().is_some_and(|(_, round)| *round == 1),
-            );
             let variants = FORECASTS
                 .iter()
                 .map(|(_, knobs)| {
@@ -926,6 +913,8 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
                 *seed < TRACED,
                 *solvent,
             );
+            let go = (*solvent && *family == Family::Mixed)
+                .then(|| play_world(&w, live_seat(tags, true), HORIZON as u32, false, true));
             Row::Calibrated(CalibrationRow {
                 seed: *seed,
                 family: *family,
@@ -936,8 +925,8 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
                 variants,
                 start,
                 forecast_ms,
-                planned,
                 outcome,
+                go,
             })
         }
         Job::Pair(seed) => {
@@ -1107,6 +1096,22 @@ fn first_blows(row: &CalibrationRow) -> (Option<u32>, Option<u32>) {
     (dent, blow)
 }
 
+/// The turn the forecast's press takes the city in half its rollouts, or
+/// the horizon: a soldier or wall the owner raises after it cannot be why
+/// the train did not take the city.
+fn fell_back(row: &CalibrationRow) -> bool {
+    row.outcome
+        .rounds
+        .windows(2)
+        .any(|w| w[0].stage >= 2 && w[1].stage <= 1)
+}
+
+fn press_turn(row: &CalibrationRow) -> u32 {
+    (1..=HORIZON)
+        .find(|k| row.forecast.within(*k) >= 0.5)
+        .unwrap_or(HORIZON) as u32
+}
+
 /// Whether the walls rose before turn `blow` (or at all, with none).
 fn walls_rose_before(row: &CalibrationRow, blow: Option<u32>) -> bool {
     let until = blow.map_or(row.outcome.rounds.len(), |b| b as usize - 1);
@@ -1205,11 +1210,13 @@ fn classify(row: &CalibrationRow) -> (Cause, String) {
             ),
         );
     }
-    if o.new_enemy > 0 || o.wall_max.1 > o.wall_max.0 {
+    let press = press_turn(row);
+    let soldier_in_time = o.raised.iter().any(|(turn, ..)| *turn <= press);
+    if soldier_in_time || walls_rose_before(row, Some(press + 1)) {
         return (
             Cause::Reinforced,
             format!(
-                "{} new soldiers ({}), wall pool {} -> {}",
+                "before the press's capture turn {press}: {} new soldiers ({}), wall pool {} -> {}",
                 o.new_enemy,
                 o.raised
                     .iter()
@@ -1281,8 +1288,11 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
         high.len() - missed.len(),
         missed.len()
     );
-    let _ = writeln!(out, "| first cause | all | walls 0 | 100 | 200 | 400 |");
-    let _ = writeln!(out, "|---|---|---|---|---|---|");
+    let _ = writeln!(
+        out,
+        "| first cause | all | walls 0 | 100 | 200 | 400 | of them, the train fell back to Stage |"
+    );
+    let _ = writeln!(out, "|---|---|---|---|---|---|---|");
     for cause in Cause::ALL {
         let count = |walls: Option<i32>| {
             missed
@@ -1290,9 +1300,13 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
                 .filter(|(row, c, _)| *c == cause && walls.is_none_or(|w| row.walls == w))
                 .count()
         };
+        let fell = missed
+            .iter()
+            .filter(|(row, c, _)| *c == cause && fell_back(row))
+            .count();
         let _ = writeln!(
             out,
-            "| {} | {} | {} | {} | {} | {} |",
+            "| {} | {} | {} | {} | {} | {} | {fell} |",
             cause.name(),
             count(None),
             count(Some(0)),
@@ -1311,7 +1325,7 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
     };
     let _ = writeln!(
         out,
-        "| (taken / read high) | {}/{} | {} | {} | {} | {} |\n",
+        "| (taken / read high) | {}/{} | {} | {} | {} | {} | |\n",
         high.len() - missed.len(),
         high.len(),
         by_walls(0),
@@ -1345,18 +1359,10 @@ fn taxonomy(out: &mut String, rows: &[&CalibrationRow]) {
                 .sum::<usize>()
         })
         .sum();
-    let fell_back = missed
-        .iter()
-        .filter(|(row, _, _)| {
-            row.outcome
-                .rounds
-                .windows(2)
-                .any(|w| w[0].stage >= 2 && w[1].stage <= 1)
-        })
-        .count();
+    let fell = missed.iter().filter(|(row, _, _)| fell_back(row)).count();
     let _ = writeln!(
         out,
-        "\nIn the {} missed: {all_deaths} force members died, {striking} of them on our own turn (striking); our melee struck a walled city {walled_strikes} times; the train fell back from Invest or later to Stage in {fell_back} sieges\n",
+        "\nIn the {} missed: {all_deaths} force members died, {striking} of them on our own turn (striking); our melee struck a walled city {walled_strikes} times; the train fell back from Invest or later to Stage in {fell} sieges\n",
         missed.len()
     );
     // What the owner raised, in the sieges whose first cause it was.
@@ -1571,9 +1577,6 @@ fn funding(out: &mut String, unfunded: &[&CalibrationRow], solvent: &[&Calibrati
         );
     }
     for (name, rows) in [("unfunded", unfunded), ("solvent", solvent)] {
-        let planned = rows.iter().filter(|row| row.planned.0 > 0).count();
-        let bought = rows.iter().filter(|row| row.planned.1).count();
-        let defenders: usize = rows.iter().map(|row| row.planned.0).sum();
         let raised = rows.iter().filter(|row| row.outcome.new_enemy > 0).count();
         let paid = rows
             .iter()
@@ -1586,7 +1589,7 @@ fn funding(out: &mut String, unfunded: &[&CalibrationRow], solvent: &[&Calibrati
             .count();
         let _ = writeln!(
             out,
-            "\n{name}: the forecast had the owner raise {defenders} defenders in {planned} of {} sieges (one bought on round 1 in {bought}); the owner raised a soldier in {raised} (paid in Gold in {paid})",
+            "\n{name}: the owner raised a soldier in {raised} of {} sieges (paid in Gold in {paid})",
             rows.len()
         );
     }
@@ -1648,6 +1651,78 @@ fn paired_table(out: &mut String, title: &str, kept_pairs: &[&PairRow]) {
     }
 }
 
+/// The go gene on the calibration's own solvent sieges, paired seed by seed:
+/// does the train it drives realize the high readings the stock train does
+/// not?
+fn go_arm(out: &mut String, rows: &[&CalibrationRow]) {
+    let rows: Vec<(&CalibrationRow, &Outcome)> = rows
+        .iter()
+        .filter_map(|row| row.go.as_ref().map(|go| (*row, go)))
+        .collect();
+    let _ = writeln!(
+        out,
+        "## `siege-goes-on-the-forecast` on the same {} solvent sieges, 12 turns, paired\n",
+        rows.len()
+    );
+    let _ = writeln!(
+        out,
+        "| sieges | n | taken off | taken on | on - off (+/- se) | fell back to Stage off / on | force lost off / on |"
+    );
+    let _ = writeln!(out, "|---|---|---|---|---|---|---|");
+    let line = |out: &mut String, name: &str, set: &[&(&CalibrationRow, &Outcome)]| {
+        let off: Vec<f64> = set
+            .iter()
+            .map(|(row, _)| taken_by(&row.outcome, HORIZON))
+            .collect();
+        let on: Vec<f64> = set.iter().map(|(_, go)| taken_by(go, HORIZON)).collect();
+        let diffs: Vec<f64> = on.iter().zip(&off).map(|(a, b)| a - b).collect();
+        let (d, se) = paired(&diffs);
+        let falls = |o: &Outcome| {
+            o.rounds
+                .windows(2)
+                .any(|w| w[0].stage >= 2 && w[1].stage <= 1)
+        };
+        let fell_off = set.iter().filter(|(row, _)| falls(&row.outcome)).count();
+        let fell_on = set.iter().filter(|(_, go)| falls(go)).count();
+        let (lost_off, _) = mean(set.iter().map(|(row, _)| row.outcome.lost as f64));
+        let (lost_on, _) = mean(set.iter().map(|(_, go)| go.lost as f64));
+        let _ = writeln!(
+            out,
+            "| {name} | {} | {:.2} | {:.2} | {d:+.3} +/- {se:.3} | {fell_off} / {fell_on} | {lost_off:.2} / {lost_on:.2} |",
+            set.len(),
+            mean(off.iter().copied()).0,
+            mean(on.iter().copied()).0,
+        );
+    };
+    let all: Vec<&(&CalibrationRow, &Outcome)> = rows.iter().collect();
+    line(out, "all", &all);
+    let high: Vec<&(&CalibrationRow, &Outcome)> = rows
+        .iter()
+        .filter(|(row, _)| row.forecast.p() >= 0.8)
+        .collect();
+    line(out, "read >= 0.8", &high);
+    for walls in [0, 100, 200, 400] {
+        let set: Vec<&(&CalibrationRow, &Outcome)> = high
+            .iter()
+            .copied()
+            .filter(|(row, _)| row.walls == walls)
+            .collect();
+        line(out, &format!("read >= 0.8, walls {walls}"), &set);
+    }
+    let low: Vec<&(&CalibrationRow, &Outcome)> = rows
+        .iter()
+        .filter(|(row, _)| row.forecast.p() < 0.8)
+        .collect();
+    line(out, "read < 0.8", &low);
+    let goes: u32 = rows.iter().map(|(_, go)| go.goes).sum();
+    let holds: u32 = rows.iter().map(|(_, go)| go.holds).sum();
+    let downs: u32 = rows.iter().map(|(_, go)| go.stand_downs).sum();
+    let _ = writeln!(
+        out,
+        "\nWith the gene: {goes} goes, {holds} holds (an abort vetoed), {downs} stand-downs\n"
+    );
+}
+
 fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "ASSAULT FORECAST REPORT ({seconds:.0} s wall)\n");
@@ -1704,6 +1779,7 @@ fn report(calibrated: &[CalibrationRow], pairs: &[PairRow], seconds: f64) -> Str
         let _ = writeln!(out, "| {walls} | {n} | {p:.2} | {r:.2} |");
     }
     taxonomy(&mut out, &kept);
+    go_arm(&mut out, &kept);
     let _ = writeln!(
         out,
         "## The tempo family: {} sieges (open or 100 walls, the force 6-12 tiles out, walls to 200 on turn 8-12)\n",
