@@ -14081,25 +14081,6 @@ impl AdvancedAi {
     /// published curves whether Culture is still a winnable use of Faith
     /// without making that forecast choose the whole grand strategy.
     fn culture_lane_forecast_score_with(&self, g: &Game, pid: usize, enabled: bool) -> i32 {
-        self.culture_lane_forecast_score_until(g, pid, enabled, None)
-    }
-
-    /// A rival can already rule out a threshold before the remaining rivals
-    /// are priced: their maximum can only raise the bar and lower our score.
-    fn culture_lane_forecast_reaches(&self, g: &Game, pid: usize, minimum: i32) -> bool {
-        self.culture_lane_forecast_score_until(g, pid, true, Some(minimum)) >= minimum
-    }
-
-    /// A threshold request may return any score below that threshold once
-    /// the decision is settled. Full scores and policy traces retain the
-    /// complete rival sweep and its original query order.
-    fn culture_lane_forecast_score_until(
-        &self,
-        g: &Game,
-        pid: usize,
-        enabled: bool,
-        stop_below: Option<i32>,
-    ) -> i32 {
         if !enabled || !g.victory_conditions.culture {
             return 0;
         }
@@ -14127,81 +14108,131 @@ impl AdvancedAi {
         // Rival city yields and our tourism share empire-wide derivations.
         // Keep their read-only answers for this forecast's entire sweep.
         let _memo = g.query_memo();
-        // With no visitors and no current Tourism, the projected numerator
-        // is zero whatever bar the rivals set. Traces still ask every original
-        // question: their policy-dependency set is part of the result.
-        let early_tourism = if !g.is_tracing_policy_reads() && g.foreign_tourists(pid) == 0 {
-            let tourism = g.tourism_per_turn(pid);
-            if tourism == 0.0 {
-                return 0;
-            }
-            Some(tourism)
-        } else {
-            None
-        };
         let culture_per_turn = |seat: usize| {
             g.player_city_ids(seat)
                 .into_iter()
                 .map(|city| g.city_yields(city).culture)
                 .sum::<f64>()
         };
+        // The bar every rival sets, carried to the clock at its own culture.
+        let bar = majors
+            .iter()
+            .filter(|other| **other != pid)
+            .map(|other| {
+                g.domestic_tourists(*other) as f64 + culture_per_turn(*other) * left / 100.0
+            })
+            .fold(0.0_f64, f64::max);
+        if bar <= 0.0 {
+            return 0;
+        }
+
         // `starting_major_count` is private to the engine, so count the same
         // set here: `foreign_tourists` divides by the STARTING majors, not the
         // living ones, and an eliminated civilization must not shrink the
         // price of a visitor.
-        let projected_ours = || {
-            let starting = g
-                .players
-                .iter()
-                .filter(|player| !player.is_minor && !player.is_barbarian)
-                .count();
-            let per_visitor = starting as f64 * crate::game::TOURISM_PER_VISITOR;
-            if per_visitor > 0.0 {
-                let tourism = early_tourism.unwrap_or_else(|| g.tourism_per_turn(pid));
-                let pressure = if self.culture_lane_forecast_2 && tourism > 0.0 {
-                    let religious = g.religious_tourism_per_turn(pid).clamp(0.0, tourism);
-                    let secular = tourism - religious;
-                    majors
-                        .iter()
-                        .filter(|other| **other != pid)
-                        .map(|other| {
-                            secular * g.international_tourism_multiplier(pid, *other, false)
-                                + religious * g.international_tourism_multiplier(pid, *other, true)
-                        })
-                        .sum::<f64>()
-                } else {
-                    rivals as f64 * tourism
-                };
-                g.foreign_tourists(pid) as f64 + pressure * left / per_visitor
+        let starting = g
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .count();
+        let per_visitor = starting as f64 * crate::game::TOURISM_PER_VISITOR;
+        let ours = if per_visitor > 0.0 {
+            let tourism = g.tourism_per_turn(pid);
+            let pressure = if self.culture_lane_forecast_2 && tourism > 0.0 {
+                let religious = g.religious_tourism_per_turn(pid).clamp(0.0, tourism);
+                let secular = tourism - religious;
+                majors
+                    .iter()
+                    .filter(|other| **other != pid)
+                    .map(|other| {
+                        secular * g.international_tourism_multiplier(pid, *other, false)
+                            + religious * g.international_tourism_multiplier(pid, *other, true)
+                    })
+                    .sum::<f64>()
             } else {
-                g.foreign_tourists(pid) as f64
-            }
+                rivals as f64 * tourism
+            };
+            g.foreign_tourists(pid) as f64 + pressure * left / per_visitor
+        } else {
+            g.foreign_tourists(pid) as f64
         };
-        let score =
-            |ours: f64, bar: f64| ((100.0 * ours / bar).round() as i64).clamp(0, 100) as i32;
-        let threshold = stop_below.filter(|_| !g.is_tracing_policy_reads());
-        let early_ours = threshold.map(|_| projected_ours());
-        // The bar every rival sets, carried to the clock at its own culture.
-        // Each actual term participates in the original maximum, including
-        // negative and nonfinite yields. No sign assumption about culture is
-        // needed to stop once that maximum makes the threshold unreachable.
-        let mut bar = 0.0_f64;
-        for other in majors.iter().filter(|other| **other != pid) {
-            bar = bar
-                .max(g.domestic_tourists(*other) as f64 + culture_per_turn(*other) * left / 100.0);
-            if let (Some(minimum), Some(ours)) = (threshold, early_ours) {
-                if bar > 0.0 {
-                    let partial = score(ours, bar);
-                    if partial < minimum {
-                        return partial;
-                    }
-                }
-            }
+        ((100.0 * ours / bar).round() as i64).clamp(0, 100) as i32
+    }
+
+    /// Rule out the threshold against one actual rival before asking for the
+    /// complete forecast. Keep the full-score implementation unchanged, and
+    /// keep the first rival's paid derivations if the complete sweep is needed.
+    fn culture_lane_forecast_reaches(&self, g: &Game, pid: usize, minimum: i32) -> bool {
+        if g.is_tracing_policy_reads() {
+            return self.culture_lane_forecast_score_with(g, pid, true) >= minimum;
         }
-        if bar <= 0.0 {
-            return 0;
+        if minimum <= 0 {
+            return true;
         }
-        score(early_ours.unwrap_or_else(projected_ours), bar)
+        if minimum > 100 || !g.victory_conditions.culture || g.max_turns == 0 {
+            return false;
+        }
+        let mut majors: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        if self.culture_lane_forecast_2 {
+            majors.retain(|other| *other == pid || !g.same_team(pid, *other));
+        }
+        let Some(&first) = majors.iter().find(|other| **other != pid) else {
+            return false;
+        };
+        let rivals = majors.iter().filter(|other| **other != pid).count();
+        let left = f64::from(g.max_turns.saturating_sub(g.turn));
+        let _memo = g.query_memo();
+
+        // The numerator uses the full forecast's exact operations. Equivalence
+        // tests cover both curves, modifiers, rounding boundaries and nonfinite
+        // readings; a changed projection must update both calculations.
+        let starting = g
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .count();
+        let per_visitor = starting as f64 * crate::game::TOURISM_PER_VISITOR;
+        let ours = if per_visitor > 0.0 {
+            let tourism = g.tourism_per_turn(pid);
+            let pressure = if self.culture_lane_forecast_2 && tourism > 0.0 {
+                let religious = g.religious_tourism_per_turn(pid).clamp(0.0, tourism);
+                let secular = tourism - religious;
+                majors
+                    .iter()
+                    .filter(|other| **other != pid)
+                    .map(|other| {
+                        secular * g.international_tourism_multiplier(pid, *other, false)
+                            + religious * g.international_tourism_multiplier(pid, *other, true)
+                    })
+                    .sum::<f64>()
+            } else {
+                rivals as f64 * tourism
+            };
+            g.foreign_tourists(pid) as f64 + pressure * left / per_visitor
+        } else {
+            g.foreign_tourists(pid) as f64
+        };
+        // The full score is zero for these numerators at any positive bar,
+        // and also when no rival sets a positive bar. NaN casts to zero too.
+        if ours <= 0.0 || ours.is_nan() {
+            return false;
+        }
+        let domestic = g.domestic_tourists(first) as f64;
+        let culture = g
+            .player_city_ids(first)
+            .into_iter()
+            .map(|city| g.city_yields(city).culture)
+            .sum::<f64>();
+        let bar = 0.0_f64.max(domestic + culture * left / 100.0);
+        if bar > 0.0 && ((100.0 * ours / bar).round() as i64).clamp(0, 100) < i64::from(minimum) {
+            return false;
+        }
+        self.culture_lane_forecast_score_with(g, pid, true) >= minimum
     }
 
     fn rocketry_readiness(&self, g: &Game, pid: usize) -> i32 {

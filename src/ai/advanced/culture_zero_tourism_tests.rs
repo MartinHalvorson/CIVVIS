@@ -44,7 +44,7 @@ fn zero_visitors_and_zero_rate_avoid_rival_yield_derivations() {
             let ai = forecaster(revised);
             assert_eq!(full_score(&ai, &game), 0);
             assert_eq!(game.rival_yields_reused(), (0, 0));
-            assert_eq!(ai.culture_lane_forecast_score_with(&game, 0, true), 0);
+            assert!(!ai.culture_lane_forecast_reaches(&game, 0, 60));
             assert_eq!(
                 game.rival_yields_reused(),
                 (0, 0),
@@ -55,7 +55,7 @@ fn zero_visitors_and_zero_rate_avoid_rival_yield_derivations() {
 }
 
 #[test]
-fn finite_and_nonfinite_rates_match_the_full_traced_calculation() {
+fn full_score_callers_retain_the_original_complete_rival_sweep() {
     for revised in [false, true] {
         for tourism in [0.0, -0.0, 3.0, -4.0, f64::INFINITY, f64::NAN] {
             let game = world(tourism);
@@ -66,12 +66,7 @@ fn finite_and_nonfinite_rates_match_the_full_traced_calculation() {
                 expected,
                 "forecast version {revised}, tourism {tourism}"
             );
-            if tourism != 0.0 {
-                assert!(
-                    game.rival_yields_reused().1 > 0,
-                    "nonzero and NaN rates retain the complete rival calculation"
-                );
-            }
+            assert_eq!(game.rival_yields_reused().1, 3);
         }
     }
 }
@@ -83,16 +78,13 @@ fn existing_visitors_are_not_discarded_when_the_current_rate_is_zero() {
         let per_visitor = 4.0 * crate::game::TOURISM_PER_VISITOR;
         game.players[0]
             .tourism_pressure
-            .insert(1, per_visitor * 5.0);
+            .insert(1, per_visitor * 100.0);
         assert!(game.foreign_tourists(0) > 0);
         let ai = forecaster(revised);
         let expected = full_score(&ai, &game);
-        assert!(expected > 0);
-        assert_eq!(
-            ai.culture_lane_forecast_score_with(&game, 0, true),
-            expected
-        );
-        assert!(game.rival_yields_reused().1 > 0);
+        assert!(expected >= 60);
+        assert!(ai.culture_lane_forecast_reaches(&game, 0, 60));
+        assert_eq!(game.rival_yields_reused().1, 3);
     }
 }
 
@@ -116,10 +108,7 @@ fn policy_traces_preserve_all_original_forecast_card_classifications() {
         drop(reference);
 
         let trace = game.trace_policy_reads(0);
-        assert_eq!(
-            forecaster(revised).culture_lane_forecast_score_with(&game, 0, true),
-            0
-        );
+        assert!(!forecaster(revised).culture_lane_forecast_reaches(&game, 0, 60));
         let actual = trace.finish();
         drop(trace);
         assert_eq!(actual.is_opaque(), expected.is_opaque());
@@ -145,15 +134,13 @@ fn a_new_rate_is_recomputed_after_a_zero_forecast() {
     for revised in [false, true] {
         let mut game = world(0.0);
         let ai = forecaster(revised);
-        assert_eq!(ai.culture_lane_forecast_score_with(&game, 0, true), 0);
+        assert!(!ai.culture_lane_forecast_reaches(&game, 0, 60));
         assert_eq!(game.rival_yields_reused(), (0, 0));
-        std::sync::Arc::make_mut(&mut game.observed_tourism_per_turn).insert(0, 10.0);
+        std::sync::Arc::make_mut(&mut game.observed_tourism_per_turn).insert(0, 10_000.0);
         game.board_written();
         let expected = full_score(&ai, &game);
-        assert_eq!(
-            ai.culture_lane_forecast_score_with(&game, 0, true),
-            expected
-        );
+        assert!(expected >= 60);
+        assert!(ai.culture_lane_forecast_reaches(&game, 0, 60));
         assert!(game.rival_yields_reused().1 > 0);
     }
 }
@@ -165,9 +152,11 @@ fn existing_disabled_and_unbounded_clock_guards_still_skip_the_sweep() {
     assert_eq!(ai.culture_lane_forecast_score_with(&game, 0, false), 0);
     game.max_turns = 0;
     assert_eq!(ai.culture_lane_forecast_score_with(&game, 0, true), 0);
+    assert!(!ai.culture_lane_forecast_reaches(&game, 0, 60));
     game.max_turns = 250;
     game.victory_conditions.culture = false;
     assert_eq!(ai.culture_lane_forecast_score_with(&game, 0, true), 0);
+    assert!(!ai.culture_lane_forecast_reaches(&game, 0, 60));
     assert_eq!(game.rival_yields_reused(), (0, 0));
 }
 
@@ -325,6 +314,63 @@ fn threshold_traces_ask_every_question_of_the_full_score() {
                     expected.card_is_inert(&game.rules, *card),
                     "same policy dependencies for {card} at Tourism {tourism}"
                 );
+            }
+        }
+    }
+}
+
+#[test]
+fn first_rival_bound_preserves_religion_borders_and_team_rules() {
+    for kind in ["relic", "writing"] {
+        let mut game = Game::new(2, 24, 16, 9_136_200, 250, 0);
+        game.turn = 150;
+        for pid in 0..2 {
+            game.players[pid].civ = "Rome".to_string();
+            game.players[pid].religion = Some("Home Faith".to_string());
+            game.players[pid].culture_lifetime = 1_000.0;
+            let position = game
+                .units
+                .values()
+                .find(|unit| unit.owner == pid && unit.kind == "settler")
+                .unwrap()
+                .pos;
+            game.found_city_for(pid, position, None);
+        }
+        game.grant_great_work(0, kind, 0, "first rival fixture");
+        assert_eq!(game.religious_tourism_per_turn(0) > 0.0, kind == "relic");
+        for phase in 0..6 {
+            match phase {
+                1 => game.players[1].religion = Some("Other Faith".to_string()),
+                2 => {
+                    game.players[1]
+                        .civics
+                        .insert(crate::name!("the_enlightenment"));
+                }
+                3 => {
+                    game.players[1]
+                        .open_borders_until
+                        .insert(0, game.turn + 100);
+                }
+                4 => {
+                    game.players[1].open_borders_until.insert(0, game.turn);
+                }
+                5 => {
+                    game.players[0].team = Some(7);
+                    game.players[1].team = Some(7);
+                }
+                _ => {}
+            }
+            game.board_written();
+            for revised in [false, true] {
+                let ai = forecaster(revised);
+                let expected = full_score(&ai, &game);
+                for minimum in [1, expected - 1, expected, expected + 1, 60, 100] {
+                    assert_eq!(
+                        ai.culture_lane_forecast_reaches(&game, 0, minimum),
+                        expected >= minimum,
+                        "work {kind}, market phase {phase}, curve {revised}, threshold {minimum}"
+                    );
+                }
             }
         }
     }
