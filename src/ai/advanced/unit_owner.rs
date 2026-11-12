@@ -28,7 +28,8 @@
 //! 3. `centre_keeper` — the soldier keeping a threatened City Center of ours
 //!    (`keeps_the_centre`; only with `centre-keeps-its-garrison`).
 //! 4. `defend_post` — posted this turn on a threatened city's centre or ring
-//!    (`defend_hold_plan.posts`; only with `defend-force-holds-the-city`).
+//!    (`defend_hold_plan.posts`; only with `defend-force-holds-the-city` or
+//!    its version two).
 //! 5. `settler_guard` — bound to a Settler (`settler_guards`,
 //!    `settler_sea_guards`).
 //! 6. `civilian_guard` — reserved to cover a Builder (`builder_support`).
