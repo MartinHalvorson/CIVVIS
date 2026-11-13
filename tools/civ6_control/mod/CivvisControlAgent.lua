@@ -18982,6 +18982,47 @@ CivvisRacerResolutionVotes = function(rtype, favor, costs, config, cap)
 	return need, price;
 end
 
+-- ★★ THE RACER NAMES THE TARGET THAT USUALLY WINS, NOT THE FIRST ONE LISTED.
+--
+-- A Congress Participation point needs our vote to match the winning option
+-- AND target. On the resolutions with no branch of their own the ballot votes
+-- option A on `PossibleTargets[1]`, and for three of them the first target is
+-- one the field almost never picks. `wc_outcome`, 105 live games of
+-- 2026-11-12/13, the rivals' recorded votes held fixed and a tie counted as
+-- a loss:
+--   * Military Advisory (86, 0.82 a game): as cast (A on Recon, the first
+--     listed) our vote matched 3. The free vote on Melee matches 78 (91%) and
+--     the three votes the racer buys 86 (100%).
+--   * Patronage (82): as cast (A on the Great General) 0. The free vote on
+--     the Great Scientist matches 20 (24%).
+--   * World Ideology (37): as cast (A on Autocracy) 0. The free vote on
+--     Fascism matches 16 (43%).
+-- That is 1.1 points a game, on a Diplomatic seat that ended 1 to 4 short of
+-- twenty in three of four games. With the three targets learned on the first
+-- half of those games and tested on the second: 100% (92% with the free
+-- vote), 19% and 41%.
+--
+-- Only a Diplomatic racer (`CivvisDiploRacer`): another seat's participation
+-- points buy nothing. Only option A, which is what the ballot already cast;
+-- only when the target is offered; the vote count is still
+-- `CivvisRacerResolutionVotes`'s. Off with `RacerUsualWinner = false`.
+-- Returns `option, selection` (1-based), unchanged when it does not apply.
+CivvisRacerUsualWinner = function(rtype, targets, config, option, selection)
+	if not CivvisDiploRacer(config) or config.RacerUsualWinner == false then
+		return option, selection;
+	end
+	local want = ({
+		WC_RES_MILITARY_ADVISORY = "LOC_PROMOTION_CLASS_MELEE_NAME",
+		WC_RES_PATRONAGE = "LOC_GREAT_PERSON_CLASS_SCIENTIST_NAME",
+		WC_RES_WORLD_IDEOLOGY = "LOC_GOVERNMENT_FASCISM_NAME",
+	})[tostring(rtype)];
+	if want == nil then return option, selection; end
+	for idx, target in pairs(type(targets) == "table" and targets or {}) do
+		if type(idx) == "number" and target == want then return 1, idx; end
+	end
+	return option, selection;
+end
+
 -- ★★ HERITAGE ORGANIZATION: NO TOURISM FROM THE CULTURE LEADER'S GREAT WORKS.
 --
 -- WC_RES_HERITAGE_ORG targets a great-work object type (Expansion2_Congress.xml:
@@ -25826,6 +25867,11 @@ local function tick()
 						end
 					elseif BAN_FIRST[rtype] then
 						option = 2;
+					end
+					-- See `CivvisRacerUsualWinner`: Melee, the Great Scientist and
+					-- Fascism in place of the first target listed.
+					if not racerSlowed then
+						option, selection = CivvisRacerUsualWinner(rtype, targets, cfg, option, selection);
 					end
 					-- See `CivvisParticipationDenialOption`: against a leader on
 					-- the denial floor, the option its own vote is predicted
