@@ -55,15 +55,15 @@ fn asked(game: &Game) -> Vec<usize> {
 fn the_lease_is_a_score_seats_with_the_gene() {
     let game = three_majors();
     assert_eq!(
-        seat(VictoryTarget::Score, true).score_seat_keeps_friends_lease(&game),
-        Some(None)
+        seat(VictoryTarget::Score, true).score_seat_keeps_friends_lease(&game, 0),
+        Some(vec![])
     );
     for ai in [
         seat(VictoryTarget::Score, false),
         seat(VictoryTarget::Domination, true),
         seat(VictoryTarget::Culture, true),
     ] {
-        assert_eq!(ai.score_seat_keeps_friends_lease(&game), None);
+        assert_eq!(ai.score_seat_keeps_friends_lease(&game, 0), None);
     }
 }
 
@@ -105,13 +105,66 @@ fn the_campaigns_target_and_a_war_are_never_asked() {
     let mut ai = seat(VictoryTarget::Score, true);
     ai.enable_score_seat_takes_what_pays();
     let target_city = game.player_city_ids(1)[0];
-    ai.score_take_state.named = Some((1, target_city, 10.0));
+    ai.score_take_state.named = Some((
+        game.cities[&target_city].pos,
+        game.players[1].civ.clone(),
+        10.0,
+    ));
     assert_eq!(ai.score_keeps_friends_spares(&game), Some(1));
-    assert_eq!(ai.score_seat_keeps_friends_lease(&game), Some(Some(1)));
+    assert_eq!(ai.score_seat_keeps_friends_lease(&game, 0), Some(vec![1]));
     game.at_war.insert((0, 2));
     for _ in 0..3 {
         ai.propose_protective_friendship(&mut game, 0);
         game.turn += 1;
     }
     assert!(asked(&game).is_empty(), "{:?}", asked(&game));
+}
+
+/// Major 1 founded a faith that its own city follows (so it leads every
+/// founded faith and `friendship-spares-the-converter` reads it as the
+/// converter); with `others`, major 2's city follows it too.
+fn converter_board(others: bool) -> Game {
+    let mut game = three_majors();
+    game.players[1].religion = Some("faith_theirs".into());
+    let mut followers = vec![1];
+    if others {
+        followers.push(2);
+    }
+    for pid in followers {
+        let cid = game.player_city_ids(pid)[0];
+        let city = game.cities.get_mut(&cid).unwrap();
+        city.pressure.insert("faith_theirs".into(), 400.0);
+        city.atheist_pressure = 0.0;
+    }
+    game
+}
+
+fn converter_seat(gene: bool) -> AdvancedAi {
+    let mut ai = seat(VictoryTarget::Score, gene);
+    ai.enable_friendship_spares_the_converter();
+    ai
+}
+
+/// Below match point a Score seat with the gene offers the converter its
+/// friendship and accepts its offer; without the gene the exclusion holds.
+#[test]
+fn below_match_point_the_converter_is_a_friend() {
+    let game = converter_board(false);
+    let ai = converter_seat(true);
+    assert!(ai.friendship_would_shield_the_converter(&game, 0, 1));
+    assert!(!ai.score_friend_faith_at_match_point(&game, 0, 1));
+    assert!(!ai.score_friends_spare_the_converter(&game, 0, 1));
+    assert_eq!(ai.score_seat_keeps_friends_lease(&game, 0), Some(vec![]));
+    assert!(converter_seat(false).score_friends_spare_the_converter(&game, 0, 1));
+}
+
+/// At match point (we are its last holdout) the converter is neither offered
+/// nor accepted.
+#[test]
+fn at_match_point_the_converter_is_spared() {
+    let game = converter_board(true);
+    let ai = converter_seat(true);
+    assert!(ai.score_friend_faith_at_match_point(&game, 0, 1));
+    assert!(ai.score_friends_spare_the_converter(&game, 0, 1));
+    assert_eq!(ai.score_seat_keeps_friends_lease(&game, 0), Some(vec![1]));
 }

@@ -10318,6 +10318,19 @@ pub struct AdvancedAi {
     /// `score-seat-takes-what-pays`: the city the plan names and the last
     /// board line. Empty with the gene off.
     score_take_state: score_takes_what_pays::ScoreTakeState,
+    /// `score-seat-takes-what-pays-2`: version two, the owner's military at
+    /// most 1.5 times ours, with the local picture, the home front and the
+    /// treasury read, a garrison in the city taken and peace after it. See
+    /// `advanced/score_takes_what_pays.rs`. Opt-in.
+    score_seat_takes_what_pays_2: bool,
+    /// `score-seat-takes-what-pays-3`: version three, as version two at
+    /// most 2.5 times ours. Opt-in.
+    score_seat_takes_what_pays_3: bool,
+    /// `score-seat-grabs-what-pays`: the grab: as `score-seat-takes-what-pays-2`
+    /// at any ratio when the capture lands within three turns of the
+    /// declaration, and peace asked the turn after it. Overrides any version
+    /// of the family it is played beside. Opt-in.
+    score_seat_grabs_what_pays: bool,
     /// `score-seat-keeps-friends`: a Score seat accepts every friendship a
     /// major offers and offers one to every met major the host allows,
     /// nearest first. See `advanced/score_keeps_friends.rs`. Opt-in.

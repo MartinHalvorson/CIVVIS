@@ -420,14 +420,19 @@ end
 -- each order batch renews like the no-war lease, a major's offer is answered
 -- with its CHOICE_POSITIVE (DiplomacyStatements_DeclareFriendship.xml:82-83,
 -- LOC_DIPLO_DECLARE_FRIEND_CHOICE_POSITIVE), unless it comes from the player
--- the batch names as spared (the campaign's target). Without a lease nothing
+-- the batch names as spared (the campaign's target, or a converter whose faith
+-- stands at match point; a comma list). Without a lease nothing
 -- below changes.
-local keepsFriendsTurn, keepsFriendsSpared = nil, nil;
+local keepsFriendsTurn, keepsFriendsSpared = nil, {};
 if NAME == "DiplomacyActionView" then
     pcall(function()
         LuaEvents.CivvisDialogueKeepsFriends.Add(function(turn, spared)
             keepsFriendsTurn = tonumber(turn);
-            keepsFriendsSpared = tonumber(spared);
+            -- A comma list of host players (a lone number reads the same).
+            keepsFriendsSpared = {};
+            for id in string.gmatch(tostring(spared or ""), "%d+") do
+                keepsFriendsSpared[tonumber(id)] = true;
+            end
         end);
     end);
 end
@@ -436,7 +441,7 @@ local function keepsFriendsFrom(player)
     if keepsFriendsTurn == nil then return nil; end
     local ok, now = pcall(function() return Game.GetCurrentGameTurn(); end);
     if not ok or type(now) ~= "number" or now > keepsFriendsTurn + 1 then return nil; end
-    if keepsFriendsSpared ~= nil and player == keepsFriendsSpared then return "spared"; end
+    if keepsFriendsSpared[player] then return "spared"; end
     return "accept";
 end
 local dialogueKeepsFriends = nil;

@@ -6446,13 +6446,21 @@ fn decide(
     // offered friendship under a one-turn lease, which every batch renews. The
     // subject is the host player the campaign names, whose offer keeps the
     // refusal.
-    if let Some(spared) = ai.score_seat_keeps_friends_lease(&mirror_state.game) {
-        orders.push(Order {
-            kind: "combat_policy",
-            subject: spared.and_then(|player| host_player_target(mirror_state, state, player)),
-            verb: Some("SCORE_SEAT_KEEPS_FRIENDS".to_string()),
-            pos: None,
-        });
+    if let Some(spared) = ai.score_seat_keeps_friends_lease(&mirror_state.game, 0) {
+        let hosts: Vec<Option<i64>> = spared
+            .into_iter()
+            .filter_map(|player| host_player_target(mirror_state, state, player))
+            .map(Some)
+            .collect();
+        // One order per spared player; one with no subject when none is.
+        for subject in if hosts.is_empty() { vec![None] } else { hosts } {
+            orders.push(Order {
+                kind: "combat_policy",
+                subject,
+                verb: Some("SCORE_SEAT_KEEPS_FRIENDS".to_string()),
+                pos: None,
+            });
+        }
     }
     if ai.dialogue_never_declares_war_enabled() {
         orders.push(Order {
