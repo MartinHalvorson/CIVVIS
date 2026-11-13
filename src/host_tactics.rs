@@ -610,17 +610,17 @@ fn column(situation: Situation) -> usize {
     }
 }
 
-/// The shares a chair starts from, pooled over the lane recipe's governed
-/// unit-turns (CI, 2026-11-12, 8 worlds, 1,091 unit-turns): exact reach of
-/// an open-ground target that must move first 68 of 151, in reach without
+/// The shares a chair starts from, pooled over every governed unit-turn of
+/// the lane recipe (CI, 2026-11-12, 8 worlds, 1,091 unit-turns): exact reach
+/// of an open-ground target that must move first 68 of 151, in reach without
 /// moving 72 of 77; a tile to close to when declining 75 of 190, at a gap of
 /// 3 or less 98 of 228, 4 to 5 222 of 234, 6 or more 368 of 401. A chair
-/// meets a handful of such turns a game, so its own count alone would sit
-/// near the prior and draw too seldom.
+/// meets a handful of such turns a game, so its own count is shrunk toward
+/// these.
 const STRIKE_SHARE_PRIOR: [f64; 2] = [0.450, 0.935];
 const CLOSE_SHARE_PRIOR: [f64; 4] = [0.395, 0.430, 0.949, 0.918];
 /// The prior's weight, in unit-turns.
-const SHARE_PRIOR_ROWS: f64 = 20.0;
+const SHARE_PRIOR_ROWS: f64 = 8.0;
 
 impl ReachShare {
     /// The chair's own share, shrunk toward the pooled one.
@@ -768,6 +768,9 @@ fn govern(
         victims: foes.clone(),
         ..Gate::default()
     };
+    // The shares are counted on the units the measured seat sees, the rows
+    // the fit and the census read; they apply to every governed unit.
+    let seen: BTreeSet<Pos> = foes.iter().flat_map(|&v| g.player_visibility(v)).collect();
     let turn = g.turn;
     let mut ours: Vec<u32> = g
         .player_unit_ids(pid)
@@ -801,8 +804,10 @@ fn govern(
         } else {
             let (fitted, still) = fitted_strike(g, pid, &unit, &open, &exact);
             let row = &mut share.strike[usize::from(still)];
-            row[0] += 1;
-            row[1] += u32::from(!exact.is_empty());
+            if seen.contains(&unit.pos) {
+                row[0] += 1;
+                row[1] += u32::from(!exact.is_empty());
+            }
             let chance =
                 (fitted / ReachShare::share(*row, STRIKE_SHARE_PRIOR[usize::from(still)])).min(1.0);
             if !exact.is_empty() && draw(host.seed, turn, uid, 1) < chance {
@@ -837,8 +842,10 @@ fn govern(
         let can_close = step_to(g, uid, &victim_plots, true).is_some();
         let col = column(situation);
         let row = &mut share.close[col];
-        row[0] += 1;
-        row[1] += u32::from(can_close);
+        if seen.contains(&unit.pos) {
+            row[0] += 1;
+            row[1] += u32::from(can_close);
+        }
         let close = (fitted_close / ReachShare::share(*row, CLOSE_SHARE_PRIOR[col])).min(1.0);
         let away = LIVE_AWAY[usize::from(unit.hp > 25)] / (1.0 - fitted_close).max(0.05);
         if can_close && draw(host.seed, turn, uid, 3) < close {
