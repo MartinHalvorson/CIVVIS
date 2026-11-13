@@ -1,0 +1,114 @@
+name: one-upgrade-lifts-every-city
+
+# ⚠ TEMPORARY experiment scaffolding for PR #5251, removed in its final
+# commit: the paired CI rounds of `one-upgrade-lifts-every-city`
+# (`src/bin/gene_screen/one_upgrade_lifts_every_city_tests.rs`). One build,
+# the worlds sharded by seed over runners (both arms of a seed in one process,
+# so no pair crosses a shard), then one report over every shard's worlds.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: one-upgrade-lifts-every-city-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  CIVVIS_ONE_UPGRADE_WORLDS: "32"
+
+jobs:
+  build:
+    if: github.event.pull_request.number == 5251
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_INCREMENTAL: 0
+      RUSTFLAGS: -C link-arg=-fuse-ld=lld
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install lld
+        run: bash .github/scripts/install-apt-packages.sh lld
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-ci-deps-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-ci-deps-${{ runner.os }}-
+      - name: Build the gene_screen test binary
+        run: |
+          set -euo pipefail
+          cargo test --profile ci --locked --features developer-tools --bin gene_screen --no-run --message-format=json > build.jsonl
+          exe=$(jq -r 'select(.reason == "compiler-artifact" and .target.name == "gene_screen" and .profile.test == true) | .executable // empty' build.jsonl | tail -n 1)
+          test -n "$exe"
+          cp "$exe" gene-screen-tests
+          ./gene-screen-tests one_upgrade_lifts_every_city --nocapture
+      - uses: actions/upload-artifact@v4
+        with:
+          name: driver
+          path: gene-screen-tests
+          retention-days: 3
+
+  play:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { recipe: gran-colombia, seed: "64760000", shard: 0, of: 4 }
+          - { recipe: gran-colombia, seed: "64760000", shard: 1, of: 4 }
+          - { recipe: gran-colombia, seed: "64760000", shard: 2, of: 4 }
+          - { recipe: gran-colombia, seed: "64760000", shard: 3, of: 4 }
+          - { recipe: rome, seed: "64770000", shard: 0, of: 4 }
+          - { recipe: rome, seed: "64770000", shard: 1, of: 4 }
+          - { recipe: rome, seed: "64770000", shard: 2, of: 4 }
+          - { recipe: rome, seed: "64770000", shard: 3, of: 4 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: driver
+      - name: Play ${{ matrix.recipe }} shard ${{ matrix.shard }} of ${{ matrix.of }}
+        env:
+          CIVVIS_ONE_UPGRADE_GENOME: src/bin/gene_screen/one_upgrade_live_genome.txt
+          CIVVIS_ONE_UPGRADE_RECIPE: ${{ matrix.recipe }}
+          CIVVIS_ONE_UPGRADE_SEED: ${{ matrix.seed }}
+          CIVVIS_ONE_UPGRADE_SHARD: ${{ matrix.shard }}/${{ matrix.of }}
+          CIVVIS_ONE_UPGRADE_OUT: worlds-${{ matrix.recipe }}-${{ matrix.shard }}.jsonl
+        run: |
+          chmod +x gene-screen-tests
+          ./gene-screen-tests one_upgrade_lifts_every_city_driver --ignored --nocapture
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: worlds-${{ matrix.recipe }}-${{ matrix.shard }}
+          path: worlds-${{ matrix.recipe }}-${{ matrix.shard }}.jsonl
+          retention-days: 14
+
+  report:
+    needs: [build, play]
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: driver
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: worlds-*
+          path: worlds
+          merge-multiple: true
+      - name: Report over every shard's worlds
+        run: |
+          chmod +x gene-screen-tests
+          ls -l worlds
+          CIVVIS_ONE_UPGRADE_ROWS=$(ls worlds/*.jsonl | paste -sd, -) ./gene-screen-tests one_upgrade_lifts_every_city_driver --ignored --nocapture
