@@ -198,6 +198,13 @@ pub(super) fn print(genes: &[GeneEstimate], rows: &[Row]) {
     let measured: Vec<&Row> = rows.iter().filter(|row| row.kind == "game").collect();
     if let Some(tables) = render(&measured) {
         println!("\nedge ledger, pooled over the measured rows (docs/EDGE_LEDGER.md)\n{tables}");
+        println!(
+            "edge metrics, the list `tools/civ6_edge_ledger.py --metrics` prints for a live lane:"
+        );
+        for (name, value) in metrics(&measured) {
+            let value = value.map_or_else(|| "-".to_string(), |v| format!("{v:.3}"));
+            println!("    {name:<34} {value}");
+        }
     }
     if !genes
         .iter()

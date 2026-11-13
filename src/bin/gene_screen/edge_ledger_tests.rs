@@ -183,6 +183,14 @@ fn armed_genome(genes: &mut [Gene]) -> (Vec<bool>, String) {
     (genome, note)
 }
 
+/// One line straight to the process's stderr, past the test harness's
+/// capture: a run cut short (a CI job's time limit) still shows every world
+/// it finished, row and all.
+fn progress(line: &str) {
+    use std::io::Write as _;
+    let _ = writeln!(std::io::stderr().lock(), "{line}");
+}
+
 fn cell(value: Option<f64>) -> String {
     match value {
         Some(v) if v.is_finite() => format!("{v:>9.3}"),
@@ -238,6 +246,12 @@ fn edge_ledger_driver() {
                         .into_iter()
                         .find(|row| row.kind == "game")
                         .expect("one measured seat");
+                    progress(&format!(
+                        "EDGE-ROW {} {} {}",
+                        lanes[lane].key,
+                        chosen[setting].key,
+                        serde_json::to_string(&measured).expect("a row serializes")
+                    ));
                     results
                         .lock()
                         .unwrap()
@@ -317,11 +331,13 @@ fn edge_ledger_driver() {
             }
         }
     }
-    panic!("{}", report.join("\n"));
+    progress(&report.join("\n"));
 }
 
 /// `tools/civ6_edge_ledger.py --since 20261112 --until 20261113T0420 --metrics`
 /// (108 runs), the Gran Colombia lane (68 runs).
+// Measured values, not constants: clippy reads a share of 0.318 as 1/pi.
+#[allow(clippy::approx_constant)]
 const LIVE_GRAN_COLOMBIA: &[(&str, f64)] = &[
     ("major_blows_per_game", 21.632),
     ("major_share_ge10", 0.706),
@@ -368,6 +384,8 @@ const LIVE_GRAN_COLOMBIA: &[(&str, f64)] = &[
 ];
 
 /// The same, the Rome lane (40 runs).
+// Measured values, not constants: clippy reads a share of 0.318 as 1/pi.
+#[allow(clippy::approx_constant)]
 const LIVE_ROME: &[(&str, f64)] = &[
     ("major_blows_per_game", 11.275),
     ("major_share_ge10", 0.690),
