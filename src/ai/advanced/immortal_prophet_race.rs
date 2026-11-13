@@ -34,10 +34,11 @@
 //! 72 of the 73 by t40. The second religion stood at a median t29 and the
 //! third at t36. None of the 73 founded a religion. The two
 //! Diplomatic-target games both entered the race from the capital:
-//! `175230Z` researched Astrology at t30 "which diplomacy needs", placed the
-//! Holy Site at t28-35 and held 7.7 Prophet points of the 30 a Prophet costs
-//! when the class ran out at t40 (1.1 a turn; 52 by t80, for nothing);
-//! `182344Z` held 2.3 at t40, built its Shrine at t42 and reached 133 by t80.
+//! `175230Z` placed its Holy Site at t28 and held 7.7 Prophet points of the
+//! 30 a Prophet costs when the class ran out at t40 (1.1 a turn; 52 by t80,
+//! for nothing); `182344Z` researched Astrology from t30 ("which diplomacy
+//! needs"), placed its Holy Site at t35, held 2.3 at t40, built its Shrine at
+//! t42 and reached 133 by t80.
 //! Their capitals placed a Campus at t59 and t77 against a median t41 for the
 //! day's other capitals. So the Mahabodhi points and the founder's defence
 //! this exemption was kept for are not on offer at Deity, and the capital
