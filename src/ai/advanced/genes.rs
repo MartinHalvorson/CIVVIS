@@ -6128,7 +6128,8 @@ pub const GENES: &[Gene] = &[
     // friendship stood (94 declarations), yet the control mod refused 52
     // friendships the AI offered in one night, and the seat asked one rival
     // every third turn. Accept every offer, ask every met major nearest
-    // first. Opt-in; see `advanced/score_keeps_friends.rs`.
+    // first. Every target but Domination since 11-13 15:55Z (the name is the
+    // Score seat it was written for). Opt-in; see `advanced/score_keeps_friends.rs`.
     Gene { tag: "score-seat-keeps-friends", field: "score_seat_keeps_friends", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_keeps_friends, disable: AdvancedAi::disable_score_seat_keeps_friends },
     // Live Rome Score 11-12/13 (52 games): 30 faith strikes took nothing,
     // lost 3 cities to the target and 8 to others, 78 units for 37 killed;

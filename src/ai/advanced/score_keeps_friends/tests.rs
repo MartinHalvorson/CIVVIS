@@ -50,21 +50,66 @@ fn asked(game: &Game) -> Vec<usize> {
         .collect()
 }
 
-/// The lease reaches the live closer only for a Score seat with the gene.
+/// The lease reaches the live closer for every target but Domination with
+/// the gene, and for none without it.
 #[test]
-fn the_lease_is_a_score_seats_with_the_gene() {
+fn the_lease_is_every_seats_but_a_conquest_one() {
     let game = three_majors();
-    assert_eq!(
-        seat(VictoryTarget::Score, true).score_seat_keeps_friends_lease(&game, 0),
-        Some(vec![])
-    );
-    for ai in [
-        seat(VictoryTarget::Score, false),
-        seat(VictoryTarget::Domination, true),
-        seat(VictoryTarget::Culture, true),
+    for target in [
+        VictoryTarget::Score,
+        VictoryTarget::Science,
+        VictoryTarget::Culture,
+        VictoryTarget::Diplomacy,
+        VictoryTarget::Religion,
     ] {
-        assert_eq!(ai.score_seat_keeps_friends_lease(&game, 0), None);
+        assert_eq!(
+            seat(target, true).score_seat_keeps_friends_lease(&game, 0),
+            Some(vec![]),
+            "{target:?}"
+        );
+        assert_eq!(
+            seat(target, false).score_seat_keeps_friends_lease(&game, 0),
+            None
+        );
     }
+    assert_eq!(
+        seat(VictoryTarget::Domination, true).score_seat_keeps_friends_lease(&game, 0),
+        None
+    );
+}
+
+/// An untargeted seat keeps friends unless its plan is Conquest.
+#[test]
+fn an_untargeted_seat_keeps_friends_off_a_conquest_plan() {
+    let game = three_majors();
+    let mut ai = AdvancedAi::new();
+    ai.enable_score_seat_keeps_friends();
+    assert!(ai.score_keeps_friends_on(&game), "no plan yet");
+    for (strategy, on) in [
+        (GrandStrategy::Science, true),
+        (GrandStrategy::Expansion, true),
+        (GrandStrategy::Conquest, false),
+    ] {
+        ai.plan = Some(StrategicPlan {
+            strategy,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 6,
+            assessed_turn: game.turn,
+            rush: false,
+        });
+        assert_eq!(ai.score_keeps_friends_on(&game), on, "{strategy:?}");
+    }
+}
+
+/// A Science seat with the gene asks every turn, nearest first.
+#[test]
+fn a_science_seat_asks_every_turn() {
+    let mut game = three_majors();
+    let ai = seat(VictoryTarget::Science, true);
+    ai.propose_protective_friendship(&mut game, 0);
+    assert_eq!(asked(&game).len(), 1, "turn 31 is off the old cadence");
 }
 
 /// Off the cadence turn, a Score seat with the gene asks the nearest major
@@ -74,7 +119,7 @@ fn the_lease_is_a_score_seats_with_the_gene() {
 fn a_score_seat_asks_every_turn_nearest_first() {
     for ai in [
         seat(VictoryTarget::Score, false),
-        seat(VictoryTarget::Science, true),
+        seat(VictoryTarget::Domination, true),
     ] {
         let mut game = three_majors();
         ai.propose_protective_friendship(&mut game, 0);
@@ -216,4 +261,18 @@ fn a_score_seat_holds_its_denouncements_but_the_campaigns() {
     ] {
         assert!(!off.score_friends_hold_the_denouncement(&game, 2));
     }
+}
+
+/// On a Religious target the converter exclusion holds below match point,
+/// as it did before the gene relaxed it.
+#[test]
+fn a_religious_seat_keeps_the_converter_exclusion() {
+    let game = converter_board(false);
+    let mut religion = seat(VictoryTarget::Religion, true);
+    religion.enable_friendship_spares_the_converter();
+    assert!(!religion.score_friend_faith_at_match_point(&game, 0, 1));
+    assert!(religion.score_friends_spare_the_converter(&game, 0, 1));
+    let mut science = seat(VictoryTarget::Science, true);
+    science.enable_friendship_spares_the_converter();
+    assert!(!science.score_friends_spare_the_converter(&game, 0, 1));
 }

@@ -421,8 +421,8 @@ end
 -- with its CHOICE_POSITIVE (DiplomacyStatements_DeclareFriendship.xml:82-83,
 -- LOC_DIPLO_DECLARE_FRIEND_CHOICE_POSITIVE), unless it comes from the player
 -- the batch names as spared (the campaign's target, or a converter whose faith
--- stands at match point; a comma list). Without a lease nothing
--- below changes.
+-- stands at match point; a comma list). The bridge sends the lease on every
+-- seat but a Domination one. Without a lease nothing below changes.
 local keepsFriendsTurn, keepsFriendsSpared = nil, {};
 if NAME == "DiplomacyActionView" then
     pcall(function()
