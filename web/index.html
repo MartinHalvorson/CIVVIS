@@ -1316,6 +1316,7 @@
   .diplomacy-civ { color: #f1f4ed; }
   .diplomacy-rank { margin-right: 4px; color: var(--gold-bright); font: 700 var(--type-secondary)/1.1 var(--font-display); }
   .diplomacy-elo-delta { flex: 0 0 auto; color: #c1d0c8; font-weight: 800; }
+  .diplomacy-elo { flex: 0 0 auto; color: #ecd37e; font-weight: 800; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
   /* Start, trend and Now are three columns of their own; the shared classes
      below keep the opening estimate dimmed against the current one. */
@@ -3672,6 +3673,9 @@
        label floor only. */
     --hud-ident-min: 30px; --hud-ident-num-min: 60px;
     --hud-odds-min: 27px; --hud-odds-trend-min: 13px;
+    /* A player's rating is four digits, and like every figure here it is
+       shown whole or not at all. */
+    --hud-elo-min: 30px;
     /* Closest victory reads "science-39": the road's name may ellipsize, the
        turns may not. 48px keeps a four-digit count and the road's first
        letter whole at the fitter's floor, and like the Elo floor it holds at
@@ -4068,13 +4072,14 @@
   #playerhud .diplomacy-leader-name { color: var(--muted); font-weight: 650; }
   #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 750; }
   #playerhud .diplomacy-civ, #playerhud .diplomacy-leader-name,
-  #playerhud .diplomacy-player, #playerhud .diplomacy-elo-delta-value,
+  #playerhud .diplomacy-player, #playerhud .diplomacy-elo-value,
+  #playerhud .diplomacy-elo-delta-value,
   #playerhud .diplomacy-age .civ-age,
   #playerhud .diplomacy-strategy .ai-plan,
   #playerhud .diplomacy-closest-victory .ai-plan {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  #playerhud .diplomacy-elo-delta, #playerhud .diplomacy-expected {
+  #playerhud .diplomacy-elo, #playerhud .diplomacy-elo-delta, #playerhud .diplomacy-expected {
     justify-content: flex-end; text-align: right; font-variant-numeric: tabular-nums;
   }
   #playerhud .diplomacy-odds-trend { justify-content: center; text-align: center; }
@@ -4223,6 +4228,7 @@
     padding: 1px 2px; font-size: var(--type-small); white-space: nowrap;
   }
   .sim-stat-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #dce6e1; }
+  .sim-stat-elo { margin-left: 6px; color: #94a59e; font-variant-numeric: tabular-nums; }
   .sim-stat-record { flex: 0 0 auto; color: #ecd37e; font-weight: 700; font-variant-numeric: tabular-nums; }
   .sim-stats-empty { color: #94a59e; font-size: var(--type-small); line-height: 1.35; }
   /* The divider between the two sections: the turn plate's seam turned on

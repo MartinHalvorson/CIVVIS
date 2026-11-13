@@ -2117,6 +2117,11 @@ const PLAYER_HUD_COLUMNS = [
   {key:"leader", label:"Leader", block:"identity", min:"--hud-ident-min", width:1.85},
   {key:"watch", label:"Watch as", block:"identity", min:"--hud-watch-column", width:0, fixed:true},
   {key:"player", label:"Player", block:"identity", min:"--hud-ident-min", width:1.85},
+  // The rating the player in this seat sat down with. A watched table seats a
+  // rated Civ AI Agent at every civilization; a table with nobody rated has
+  // no such fact, so the column is not part of it.
+  {key:"elo", label:"Player Elo", block:"identity", min:"--hud-elo-min", width:.6,
+   exists:ratedTableInPlay},
   {key:"elo_delta", label:"Elo delta", block:"identity", min:"--hud-ident-num-min", width:.85},
   // One movement, three columns: the odds this seat started with, the trend
   // between them, and the odds it holds now — each separately sortable,
@@ -2208,6 +2213,7 @@ try {
   // default with it — the new column right after Plan, and Plan checked out —
   // rather than keeping Plan and gaining the column at the far end.
   let predatesClosestVictory = false;
+  let predatesPlayerElo = false;
   if (Array.isArray(saved.order)) {
     // Saved keys keep their saved places; columns this build has that the
     // save does not know join at the end rather than being lost.
@@ -2241,6 +2247,15 @@ try {
       rest.splice(at < 0 ? rest.length : at, 0, "units");
       merged = rest;
     }
+    // Player Elo joined right after Player, which is where it goes in a
+    // layout saved before it existed, wherever that viewer has put Player.
+    predatesPlayerElo = !known.includes("elo");
+    if (predatesPlayerElo) {
+      const rest = merged.filter(key => key !== "elo");
+      const at = rest.indexOf("player");
+      rest.splice(at < 0 ? rest.length : at + 1, 0, "elo");
+      merged = rest;
+    }
     predatesClosestVictory = !known.includes("closest_victory");
     if (predatesClosestVictory) {
       const rest = merged.filter(key => key !== "closest_victory");
@@ -2264,6 +2279,11 @@ try {
     playerHudHiddenColumns = new Set(
       saved.hidden.filter(key => PLAYER_HUD_COLUMN_BY_KEY.has(key)));
     if (predatesClosestVictory) playerHudHiddenColumns.add("plan");
+    // Player named a handle generated for the one game when that layout was
+    // saved. It names the Civ AI Agent competing in the seat now, which is
+    // the fact its rating belongs to, so a save that checked Player out gets
+    // it back once; unchecking it again is remembered like any other choice.
+    if (predatesPlayerElo) playerHudHiddenColumns.delete("player");
   }
   if (saved.min && typeof saved.min === "object")
     for (const [key, value] of Object.entries(saved.min)) {
@@ -2300,6 +2320,22 @@ function worldStandingsInPlay() {
   // battlefield says otherwise.
   if (typeof watchingBattlefield !== "function") return true;
   return !watchingBattlefield();
+}
+
+// The published rating of the Civ AI Agent in this seat, or null where there
+// is none to read: a seat somebody is playing, the house fleet, an unmet
+// rival. Null is checked by hand because Number(null) is a rating of zero.
+function playerHudEloValue(player) {
+  if (!player || player.player_username) return null;
+  if (player.ai_elo === null || player.ai_elo === undefined) return null;
+  const value = Number(player.ai_elo);
+  return Number.isFinite(value) ? value : null;
+}
+
+// A rating is a fact of a table that seats rated Civ AI Agents: the watched
+// table every AI-only world deals, or the rivals a person asked for.
+function ratedTableInPlay() {
+  return Boolean(state?.players?.some(player => playerHudEloValue(player) !== null));
 }
 
 // Both classes of device, as one arsenal.
@@ -2343,8 +2379,16 @@ const PLAYER_HUD_SHED_ORDER = [
   "wonders", "closest_victory", "food", "population", "rank", "tourism", "faith", "gold",
   "culture", "units",
 ];
+// At a table of rated Civ AI Agents the players are the contest: which agent
+// holds each civilization, and what it is rated. There the two columns are
+// the last to step aside, the rating before the name it belongs to. At any
+// other table a player's name is the first to go, as the list above says.
+function playerHudShedOrder() {
+  if (!ratedTableInPlay()) return PLAYER_HUD_SHED_ORDER;
+  return [...PLAYER_HUD_SHED_ORDER.filter(key => key !== "player"), "elo", "player"];
+}
 const PLAYER_HUD_READABLE_WIDTH = {
-  lock:11, watch:70, rank:26, civ:70, leader:62, player:66, elo_delta:40,
+  lock:11, watch:70, rank:26, civ:70, leader:62, player:66, elo:30, elo_delta:40,
   win_start:24, win_delta:16, win:26, plan:70, closest_victory:60, age:40,
   military:36, score:38,
 };
@@ -2370,7 +2414,7 @@ function syncPlayerHudShedColumns() {
   let need = PLAYER_HUD_TABLE_CHROME + PLAYER_HUD_READABLE_GAP * Math.max(0, wanted.length - 1) +
     wanted.reduce((sum, column) => sum + playerHudSeatWidth(column, style), 0);
   const shed = new Set();
-  for (const key of PLAYER_HUD_SHED_ORDER) {
+  for (const key of playerHudShedOrder()) {
     if (need <= tableWidth) break;
     const column = wanted.find(candidate => candidate.key === key);
     if (!column) continue;
@@ -2447,6 +2491,7 @@ function playerHudSortValue(player, key, stats, rankById) {
   if (key === "civ") return player.civ || null;
   if (key === "leader") return player.leader || null;
   if (key === "player") return player.player_username || player.ai_username || player.ai_name || "AI player";
+  if (key === "elo") return playerHudEloValue(player);
   if (key === "elo_delta") {
     // Sort by the model's numeric Elo position, not by the signed label shown
     // in the cell. Missing odds keep the delta unavailable under fog.
@@ -2666,6 +2711,7 @@ function playerHudSortHead(key, label, title, classes = "", attrs = "") {
 const PLAYER_HUD_HEAD_LABELS = {
   rank:["RANK", "Score rank"], civ:["CIV", "Civilization"],
   leader:["LEADER", "Leader"], player:["PLAYER", "Player"],
+  elo:["ELO", "Player's Elo rating", "numeric"],
   elo_delta:["Δ", "Live Elo position against the living field", "numeric"],
   win_start:["START", "Win odds at the start of the game", "numeric"],
   win_delta:["Δ", "Change in win odds", "odds-trend-head"],
@@ -3215,9 +3261,10 @@ let playerHudExistingColumns = "";
 function syncHudColumnRoster() {
   const existing = PLAYER_HUD_COLUMNS.filter(playerHudColumnExists)
     .map(column => column.key).join(",");
-  if (existing === playerHudExistingColumns) return;
+  if (existing === playerHudExistingColumns) return false;
   playerHudExistingColumns = existing;
   renderHudColumnList();
+  return true;
 }
 
 function finishPlayerHudReorderGesture(event) {
@@ -3322,6 +3369,7 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .diplomacy-civ", min:9, max:13, exact:true},
   {selector:"#playerhud .diplomacy-leader-name", min:9, max:13, exact:true},
   {selector:"#playerhud .diplomacy-player", min:9, max:13, exact:true},
+  {selector:"#playerhud .diplomacy-elo-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
   {selector:"#playerhud .diplomacy-elo-delta-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
   {selector:"#playerhud .diplomacy-expected span", min:9, max:13},
   {selector:"#playerhud .diplomacy-age .civ-age", min:9, max:12},
@@ -5461,16 +5509,23 @@ function hudFoldButton(name, label, extraClass = "") {
 
 // ------------------------------------------------------- simulation stats
 // The record that persists between simulations: every finished game bumps a
-// win–loss–draw ledger per civilization and per controlling player or AI
-// profile, plus a count of wins by victory type. It stays per mode so a
-// Tactics record never mixes into a Civ one.
+// win–loss–draw ledger per civilization and per player strategy, plus a
+// count of wins by victory type. It stays per mode so a Tactics record never
+// mixes into a Civ one.
+//
+// A player strategy is a named player: a Civ AI Agent by its handle, or a
+// person. Those records live under `agents`. The older `strategies` table
+// was keyed by whatever each seat printed, which for the house fleet is a
+// name generated for the one game, so it filled with rows no later game
+// could add to. Nothing reads it any more and nothing deletes it.
 // Aggregates only — the ledger stays a few hundred bytes however many games
 // it has seen.
 const SIMULATION_STATS_KEY = "civvis-simulation-stats-v1";
 const SIM_STATS_VIEW_KEY = "civvis-sim-stats-view-v1";
 const SIM_STATS_VIEWS = {
   civs: {label: "Civs", title: "Win–loss record by civilization"},
-  strategies: {label: "Strategies", title: "Win–loss record by controlling player or AI profile"},
+  strategies: {label: "Strategies", table: "agents",
+    title: "Win–loss record by player strategy: each Civ AI Agent, and anyone who sat down to play"},
   victories: {label: "Victory types", title: "Wins by victory type"},
 };
 let simulationStats = (() => {
@@ -5501,14 +5556,15 @@ function simulationStatsBucket(mode) {
   bucket.games ??= 0;
   bucket.turns ??= 0;
   bucket.civs ??= {};
-  bucket.strategies ??= {};
+  bucket.agents ??= {};
   bucket.victories ??= {};
   return bucket;
 }
-// The seat's controller, the same preference order the standings print:
-// a registered person, then the league handle, then the plain AI name.
-function simulationSeatName(p) {
-  return p.player_username || p.ai_username || p.ai_name || "AI player";
+// The player strategy in a seat: a registered person, else the Civ AI Agent
+// seated there by its handle. The house fleet's generated name is nobody's
+// record, so a seat with only that has no strategy to credit.
+function simulationStrategyName(p) {
+  return p.player_username || p.ai_username || null;
 }
 function bumpSimulationRecord(table, key, column) {
   const row = table[key] ?? (table[key] = {w:0, l:0, d:0});
@@ -5536,7 +5592,8 @@ function recordSimulationResult(st, signature, winnerIds) {
     if (p.is_minor || p.is_barbarian) continue;
     const column = winnerSeats.size === 0 ? "d" : winnerSeats.has(p.id) ? "w" : "l";
     bumpSimulationRecord(bucket.civs, p.civ || "Unknown civilization", column);
-    bumpSimulationRecord(bucket.strategies, simulationSeatName(p), column);
+    const strategy = simulationStrategyName(p);
+    if (strategy) bumpSimulationRecord(bucket.agents, strategy, column);
   }
   saveSimulationStats();
   if (state) drawPlayerHud();
@@ -8872,6 +8929,13 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     const winnerIds = Array.isArray(st.winners) && st.winners.length ? st.winners : [st.winner];
     const winnerCivs = winnerIds.map(id => st.players[id]).filter(Boolean).map(player => player.civ);
     const winnerName = winnerCivs.length > 1 ? "Team " + winnerCivs.join(" + ") : p.civ;
+    // A watched table is a contest between Civ AI Agents, so its result says
+    // which of them won it, and at what rating.
+    const winnerPlayers = SPEC
+      ? winnerIds.map(id => st.players[id]).filter(player => player?.ai_username)
+        .map(player => player.ai_username +
+          (playerHudEloValue(player) === null ? "" : ` (${playerEloLabel(player)})`))
+      : [];
     // A normal supervised victory needs the same resilient handoff watcher as
     // the explicit restart buttons. The regular viewer poll can be caught in
     // a request to the process that is being replaced, leaving the completed
@@ -8913,6 +8977,8 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         <span class="winner-mark" aria-hidden="true">✦</span>
         <strong class="winner-title">${winnerName}${!SPEC && !winnerIds.includes(0) ? " wins" : ""}</strong>
         <span class="winner-verdict">${verdict}</span>
+        ${winnerPlayers.length
+          ? `<span class="winner-meta winner-player">Played by ${winnerPlayers.join(" + ")}</span>` : ``}
         <span class="winner-meta">Turn ${reportedTurn(st)} · History remembers</span>
         ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
         ${reignSummary(st)}
@@ -27744,9 +27810,8 @@ function compareSimulationRecords([aName, a], [bName, b]) {
     || aName.localeCompare(bName);
 }
 // The persistent record above the victory tracker: this mode's games and
-// average length, then the win–loss ledger by civilization or by controlling
-// player or AI profile, or its wins by victory type — whichever view was
-// chosen last.
+// average length, then the win–loss ledger by civilization or by player
+// strategy, or its wins by victory type — whichever view was chosen last.
 function simulationStatsSection() {
   const mode = simulationStatsMode();
   const bucket = simulationStats[mode];
@@ -27755,7 +27820,13 @@ function simulationStatsSection() {
   const summary = games
     ? `${games} game${games === 1 ? "" : "s"}, avg ${Math.round(bucket.turns / games)} turns`
     : "No finished games yet";
-  const table = bucket?.[simStatsView] || {};
+  const table = bucket?.[SIM_STATS_VIEWS[simStatsView].table || simStatsView] || {};
+  // A Civ AI Agent's row carries the rating it plays at beside its record.
+  const ratingByHandle = simStatsView !== "strategies" ? null
+    : new Map((Array.isArray(RULES?.strategies) ? RULES.strategies : [])
+      .filter(entry => entry.elo !== null && entry.elo !== undefined)
+      .map(entry => [entry.username, Math.round(Number(entry.elo))]));
+  const strategyRating = name => ratingByHandle?.get(name) ?? null;
   const rows = simStatsView === "victories"
     ? Object.entries(table)
       .sort(([aName, a], [bName, b]) => Number(b) - Number(a) || aName.localeCompare(bName))
@@ -27769,10 +27840,14 @@ function simulationStatsSection() {
       .join("")
     : Object.entries(table)
       .sort(compareSimulationRecords)
-      .map(([name, row]) =>
-        `<div class="sim-stat-row" title="${escapeAttr(`${name} — ${describeSimulationRecord(row)}`)}">` +
-        `<span class="sim-stat-name">${name}</span>` +
-        `<span class="sim-stat-record">${formatSimulationRecord(row)}</span></div>`)
+      .map(([name, row]) => {
+        const rating = strategyRating(name);
+        return `<div class="sim-stat-row" title="${escapeAttr(`${name}` +
+          `${rating === null ? "" : ` (Elo ${rating})`} — ${describeSimulationRecord(row)}`)}">` +
+          `<span class="sim-stat-name">${name}` +
+          `${rating === null ? "" : `<span class="sim-stat-elo">${rating}</span>`}</span>` +
+          `<span class="sim-stat-record">${formatSimulationRecord(row)}</span></div>`;
+      })
       .join("");
   const viewButton = view =>
     `<button class="sim-stats-view${simStatsView === view ? " active" : ""}" type="button" ` +
@@ -27795,7 +27870,11 @@ function simulationStatsSection() {
     (games ? `<div class="sim-stats-controls" role="group" aria-label="Arena Stats record view">` +
       viewButton("civs") + viewButton("strategies") + viewButton("victories") +
       `</div>` +
-      `<div class="sim-stats-rows">${rows}</div>` : ``) +
+      // Games on record and no player strategy among them: every one was
+      // played by the house fleet, whose seats are nobody's record.
+      `<div class="sim-stats-rows">${rows ||
+        (simStatsView === "strategies"
+          ? `<div class="sim-stats-empty">No player strategy has finished a game here yet</div>` : ``)}</div>` : ``) +
     `</div></section>`;
 }
 
@@ -28223,6 +28302,29 @@ function signedEloDelta(value) {
   return "0";
 }
 
+// A rating is printed whole or not at all.
+function playerEloLabel(player) {
+  const elo = playerHudEloValue(player);
+  return elo === null ? "—" : String(Math.round(elo));
+}
+
+// What the rating is and how far to trust it: the spread it was measured
+// with, how many tables it rests on, and the Civilization VI level whose AI
+// rates nearest it. Prince, the unhandicapped level, is the 1000 it is all
+// counted from.
+function playerEloTitle(player) {
+  const elo = playerHudEloValue(player);
+  if (elo === null) return "No Elo rating: nothing has rated the player in this seat";
+  const spread = Number(player.ai_elo_sd);
+  const tables = Number(player.ai_elo_tables);
+  return `${player.ai_username || "This player"}: Elo ${Math.round(elo)}` +
+    `${Number.isFinite(spread) && spread > 0 ? ` ± ${Math.round(spread)}` : ""}` +
+    `${Number.isFinite(tables) && tables > 0 ? ` over ${tables} rated tables` : ""}` +
+    `${player.ai_elo_provisional ? " (provisional)" : ""}` +
+    `${player.ai_civ6_level ? ` · nearest Civilization VI level: ${player.ai_civ6_level}` : ""}` +
+    ` · Prince is 1000`;
+}
+
 function eloDeltaTitle(player) {
   const delta = playerHudEloDeltaValue(player);
   return delta === null
@@ -28572,14 +28674,16 @@ function drawPlayerHud() {
       // registered a new one for it rather than lending it an agent's name,
       // so the row says who you are and what you are defending.
       const playerName = p.player_username || p.ai_username || p.ai_name || "AI player";
-      // Nothing rates a seat: the column beside the name is the live odds
-      // position, and the tooltip says who is here and what they are doing.
+      // A Civ AI Agent brings its published rating to the seat and nothing
+      // rates a person, so the tooltip says who is here and, for an agent,
+      // what it is rated and what that was worth when the table sat down.
       const isPerson = Boolean(p.player_username);
       const playerEloDelta = signedEloDelta(playerHudEloDeltaValue(p));
       const leagueTitle = isPerson
         ? `You · ${p.player_username} · this game rates nobody`
         : p.ai_username
         ? `${p.ai_username} (${p.ai_strat_label || p.ai_username})` +
+          `${playerHudEloValue(p) === null ? "" : ` · Elo ${playerEloLabel(p)}`}` +
           `${startPct === null ? "" : ` · ${startPct}% to win this table when it sat down`}`
         : `${p.ai_name || "AI player"}` +
           ` · ${strategy ? `${titleCase(strategy)} active strategy` : "no active strategy"}`;
@@ -28632,6 +28736,10 @@ function drawPlayerHud() {
           case "player":
             return `<button class="diplomacy-identity" data-hud-col="player" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field" title="${leagueTitle}"><span class="diplomacy-player">${playerName}</span></span></button>`;
+          case "elo":
+            return `<button class="diplomacy-identity" data-hud-col="elo" ${dossierAttrs}>` +
+              `<span class="diplomacy-identity-field diplomacy-elo" title="${escapeAttr(playerEloTitle(p))}">` +
+              `<span class="diplomacy-elo-value">${playerEloLabel(p)}</span></span></button>`;
           case "elo_delta":
             return `<button class="diplomacy-identity" data-hud-col="elo_delta" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-elo-delta" title="${escapeAttr(eloDeltaTitle(p))}">` +
@@ -28758,7 +28866,7 @@ function drawPlayerHud() {
   // bars alone the new cell would land in an implicit track outside the list.
   // This is a string comparison on every other frame.
   syncPlayerHudColumns();
-  syncHudColumnRoster();
+  const rosterChanged = syncHudColumnRoster();
   const playerStandings = hud.querySelector(".player-standings");
   if (playerStandings && playerScrollLeft) playerStandings.scrollLeft = playerScrollLeft;
   // The patch strips what the markup does not name, the plate seam's range
@@ -28766,7 +28874,10 @@ function drawPlayerHud() {
   syncTurnPlateWidth();
   // The very first paint had no table to measure, and nothing else would ask
   // again until the panel changed size.
-  if (!standingsExisted) refreshPlayerHudShedColumns();
+  // A column that arrives or leaves with the world (a table of rated agents
+  // has Player Elo, a battlefield has no empire columns) changes what the
+  // table has room for, and which columns give way first.
+  if (!standingsExisted || rosterChanged) refreshPlayerHudShedColumns();
   // The masthead is as tall as the table it holds, so a civilization met or
   // destroyed moves the map area's top edge as surely as dragging it does.
   refitMapAreaToChrome();
@@ -29300,11 +29411,19 @@ function civDossier(p, rank, relation) {
   const startOdds = oddsPct(p.odds_start);
   const nowOdds = oddsPct(p.odds_now);
   const noVictoryPath = !anyVictoryEnabled();
+  // The server prices a table by its ratings only when every seat has one.
+  // This seat's prior with the difficulty bargain taken back out is then the
+  // rating it shows, and at any other table it is the flat 1500.
+  const ratedPrior = playerHudEloValue(p) !== null &&
+    Math.round(+p.odds_prior_elo - (Number.isFinite(dossierHandicap) ? dossierHandicap : 0)) ===
+      Math.round(playerHudEloValue(p));
   const oddsRows = startOdds === null ? "" :
     row("Win odds at start", `${startOdds}% of this table`,
         noVictoryPath
           ? "No victory condition was enabled, so no seat could win when the game began"
-          : "Judged before a tile was drawn: the size of this table, the " +
+          : "Judged before a tile was drawn: " +
+            (ratedPrior ? "the Elo each player sat down with, " : "") +
+            "the size of this table, the " +
             "civilizations drawn and what the difficulty setting hands each seat. " +
             "Nothing on the board moves it, so the finished game can be scored against it" +
             (Number.isFinite(dossierHandicap) && dossierHandicap !== 0
@@ -29329,6 +29448,8 @@ function civDossier(p, rank, relation) {
     : p.ai_username
     ? row("Agent", `${p.ai_username} (${p.ai_strat_label || p.ai_username})`,
         "Which built-in agent is playing this civilization") +
+      (playerHudEloValue(p) === null ? ""
+        : row("Elo", playerEloLabel(p), escapeAttr(playerEloTitle(p)))) +
       oddsRows
     : p.ai_name
     ? row("AI player", p.ai_name,
@@ -32311,7 +32432,7 @@ function strategyPlanHtml(p) {
     ? `${reasonEscape(plan.target_city.name)}${plan.target_civ ? ` (${reasonEscape(plan.target_civ)})` : ""}`
     : plan?.target_civ ? reasonEscape(plan.target_civ) : "";
   return `<div class="strategy-plan">` +
-    (state.spectate ? row("Agent", "CIVVIS Advanced AI", SITE_AGENT_STORY) : "") +
+    (state.spectate ? row("Agent", siteAgentName(p), SITE_AGENT_STORY) : "") +
     (plan ? row("Victory lane", plan.victory_target ? titleCase(plan.victory_target) : "Adaptive",
       plan.victory_target
         ? "The victory this seat was assigned. Every row below serves it"
@@ -32345,11 +32466,19 @@ function strategyRow(label, value, title) {
       `<span>${label}</span><b>${value}</b></div>`;
 }
 
-// `AdvancedAi` is what `Session::ai_fleet` seats on every major of a watched
-// game, and `the_strategy_panel_names_the_agent_the_site_seats` holds this
-// sentence to it. docs/AI_GUIDE.md is the longer account.
+// Every major of a watched game is a Civ AI Agent off the roster
+// (`Session::deal_watched_table`), each built on one of the rule-based
+// chassis, and `the_strategy_panel_names_the_agent_the_site_seats` holds
+// this sentence to it. docs/AI_GUIDE.md is the longer account.
 const SITE_AGENT_STORY = "CIVVIS's own rule-based agent, written in Rust and running on this page's game. " +
   "It uses no language model and no neural network: every move comes from the rules in the gene program below";
+// The seat's Civ AI Agent by its handle and tilt, or the house agent where
+// the table dealt it none.
+function siteAgentName(p) {
+  return p?.ai_username
+    ? `${reasonEscape(p.ai_username)}${p.ai_strat_label ? ` · ${reasonEscape(p.ai_strat_label)}` : ""}`
+    : "CIVVIS Advanced AI";
+}
 const LIVE_SEAT_STORY = "CIVVIS's rule-based agent gives every order for this seat inside a real game of Civilization VI";
 
 // What each doctrine asks of the empire, in the terms the assessment that
