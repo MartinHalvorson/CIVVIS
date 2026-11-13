@@ -5736,6 +5736,12 @@ pub const GENES: &[Gene] = &[
     // forecast capture by the soldiers in reach. See
     // `advanced/declaration_needs_a_capture.rs`.
     Gene { tag: "declaration-needs-a-capture", field: "declaration_needs_a_capture", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_needs_a_capture, disable: AdvancedAi::disable_declaration_needs_a_capture },
+    // Live Deity Rome 11-13, five Diplomatic games ending on 11-19 of twenty
+    // points: Civil Engineering came 36 and 41 turns after Mercantilism, last
+    // of the seven steps toward Class Struggle, and the Statue of Liberty (four
+    // points) at t152 and t166. A Diplomatic seat with the Statue's Harbor
+    // takes Civil Engineering first. See `advanced/diplo_statue_harbor.rs`.
+    Gene { tag: "diplo-seat-statue-civic-first", field: "diplo_seat_statue_civic_first", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_statue_civic_first, disable: AdvancedAi::disable_diplo_seat_statue_civic_first },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
