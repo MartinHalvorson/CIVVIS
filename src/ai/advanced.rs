@@ -10277,6 +10277,12 @@ pub struct AdvancedAi {
     /// `score-seat-plays-for-points`: what the gene's journal has already
     /// said, so each line is written once per change. Observation only.
     score_seat_journal: score_seat::ScoreSeatJournal,
+    /// `score-seat-expands-hard`: with `no-city-limit` on, a Score seat's
+    /// Settler claim stays open past the opening and takes more queues in
+    /// every city, the pipeline widens to one more than the cities, Magnus
+    /// takes Provision before Pingala is seated, and the Plaza takes the
+    /// Ancestral Hall first. See `advanced/score_expands_hard.rs`. Opt-in.
+    score_seat_expands_hard: bool,
     /// `score-seat-founds-early`: on a Score seat, an early Settler past its
     /// patience (or turned home by the corridor) founds on the best safe,
     /// holdable site within reach. See `advanced/score_seat_founds_early.rs`.
@@ -11377,6 +11383,9 @@ mod chop_feeds_the_long_build;
 /// one. See `advanced/chop_for_expansion.rs`.
 mod chop_for_expansion;
 
+/// `score-seat-expands-hard`: a Score seat's Settlers take the queue in every
+/// city. See `advanced/score_expands_hard.rs`.
+mod score_expands_hard;
 /// `score-seat-plays-for-points`: a Score-target seat's production buys
 /// points. See `advanced/score_seat.rs`.
 mod score_seat;
@@ -26441,6 +26450,9 @@ impl AdvancedAi {
         // Plaza's tier list reads this.
         self.base.plaza_serves_science =
             self.plaza_serves_science_on() || self.native_culture_plaza_economy(g, pid);
+        // `score-seat-expands-hard`: the Ancestral Hall, then the Chapel. See
+        // `advanced/score_expands_hard.rs`.
+        self.base.plaza_hall_first = self.score_expands_hard();
         self.refresh_campus_multiplier_constants(g);
         self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;

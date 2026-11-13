@@ -86,8 +86,12 @@ impl AdvancedAi {
     /// above the plan's own target. Zero with the gene off and past the band
     /// turn.
     pub(super) fn early_settler_floor(&self, g: &Game, plan: &StrategicPlan) -> usize {
+        // `score-seat-expands-hard`: the floor stays open past the band turn
+        // for as long as a new city still pays. See
+        // `advanced/score_expands_hard.rs`.
         if !(self.early_settler_floor || self.no_city_limit)
-            || g.turn >= g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN)
+            || (g.turn >= g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN)
+                && !self.score_expands_hard_now(g))
         {
             return 0;
         }
@@ -189,7 +193,10 @@ impl AdvancedAi {
         if n_cities == 0 || full {
             return;
         }
-        if walkers > 0 && n_cities < 2 {
+        // `score-seat-expands-hard`: the capital queues its next Settler while
+        // the first still walks.
+        let hard = self.score_expands_hard_now(g);
+        if walkers > 0 && n_cities < 2 && !hard {
             return;
         }
         // A home city under threat answers first; so does an army short of a
@@ -229,6 +236,9 @@ impl AdvancedAi {
             .flatten();
         let item = Self::early_settler_item();
         let max_turns = g.standard_duration(EARLY_SETTLER_MAX_BUILD) as f64;
+        // `score-seat-expands-hard`: a soldier's queue gives way only while
+        // no major is at war with us and the army stands at a body a city.
+        let army_stands = hard && !at_major_war && self.counts(g, pid).military >= n_cities;
         let mut best: Option<(f64, u32)> = None;
         for &cid in &city_ids {
             let city = &g.cities[&cid];
@@ -249,7 +259,9 @@ impl AdvancedAi {
                 || city.queue.first().is_some_and(|head| {
                     self.first_capital_land_recon_holds(g, pid, cid, plan, head)
                 })
-                || !Self::early_settler_may_displace(g, pid, cid)
+                || (hard && Self::score_expands_keeps_the_hall(g, cid))
+                || !(Self::early_settler_may_displace(g, pid, cid)
+                    || (hard && Self::score_expands_may_displace(g, pid, cid, army_stands)))
                 || !g.can_produce(pid, cid, &item)
             {
                 continue;
@@ -275,6 +287,15 @@ impl AdvancedAi {
         };
         let displaced = g.cities[&cid].queue.first().cloned();
         if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
+            if hard {
+                think!(self.journal(), Expansion, Decision,
+                    "{} starts a Settler for the land still free", g.cities[&cid].name;
+                    "score-seat-expands-hard: {n_cities} cities, {walkers} walking and {queued} \
+                     in production against {floor} seats that pay, {turns:.1} turns{}",
+                    displaced.as_ref().map_or(String::new(), |item| format!(
+                        "; {} keeps its progress", Self::plain_item(item))));
+                return;
+            }
             think!(self.journal(), Expansion, Decision,
                 "{} starts a Settler for the early city floor", g.cities[&cid].name;
                 "early-settler-floor: {n_cities} cities and {walkers} walking against a floor of \
