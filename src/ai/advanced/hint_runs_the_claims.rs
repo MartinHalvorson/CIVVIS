@@ -281,6 +281,13 @@ impl AdvancedAi {
         if !war_holds {
             self.claim_diplo_wonder(g, pid, plan);
         }
+        // `diplo-seat-claims-the-competition`: one scored competition's
+        // project in the city that finishes it soonest, after the
+        // Diplomatic-point wonder. Exact no-op while the gene is off. See
+        // `advanced/diplo_competition_claim.rs`.
+        if !war_holds {
+            self.claim_diplo_competition(g, pid, plan);
+        }
         // `prophet-builds-its-site`: the Holy Site a Prophet founds on
         // goes first. Exact no-op while the gene is off.
         self.reserve_prophet_site(g, pid, plan);

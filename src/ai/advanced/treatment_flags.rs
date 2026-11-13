@@ -281,6 +281,12 @@ impl AdvancedAi {
         /// Opt-in gene `declaration-needs-a-capture`; see
         /// `advanced/declaration_needs_a_capture.rs`.
         declaration_needs_a_capture => enable_declaration_needs_a_capture, disable_declaration_needs_a_capture;
+        /// Opt-in gene `diplo-seat-claims-the-competition`; see
+        /// `advanced/diplo_competition_claim.rs`.
+        diplo_seat_claims_the_competition => enable_diplo_seat_claims_the_competition, disable_diplo_seat_claims_the_competition;
+        /// Opt-in gene `diplo-seat-statue-civic-first`; see
+        /// `advanced/diplo_statue_harbor.rs`.
+        diplo_seat_statue_civic_first => enable_diplo_seat_statue_civic_first, disable_diplo_seat_statue_civic_first;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

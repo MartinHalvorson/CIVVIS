@@ -215,6 +215,76 @@ fn a_built_statue_claims_nothing() {
     assert!(ai.statue_harbor_item(&game, 0, &plan).is_none());
 }
 
+/// `diplo-seat-statue-civic-first`: a Diplomatic seat that holds a tier-two
+/// government civic and whose Statue Harbor is queued names Civil Engineering
+/// as its civic goal until it is adopted; off, without the civic, without
+/// the Harbor, with the Statue gone, on a lost lane or another target it
+/// names nothing.
+#[test]
+fn a_diplomatic_seat_with_the_statues_harbor_goes_for_civil_engineering() {
+    let (mut game, _) = coastal_empire();
+    let mut ai = seat(VictoryTarget::Diplomacy, true);
+    ai.enable_diplo_seat_statue_civic_first();
+    game.players[0].civics.insert(crate::name!("divine_right"));
+    assert_eq!(
+        ai.diplo_statue_civic_goal(&game, 0),
+        None,
+        "no Harbor for the Statue stands or is queued yet"
+    );
+    claim(&ai, &mut game);
+    assert_eq!(
+        ai.diplo_statue_civic_goal(&game, 0),
+        Some("civil_engineering"),
+        "the Harbor is queued and Divine Right is in hand"
+    );
+
+    let off = seat(VictoryTarget::Diplomacy, true);
+    assert_eq!(off.diplo_statue_civic_goal(&game, 0), None, "off");
+
+    // The ladder's first rung comes first: any tier-two government civic.
+    let mut early = game.clone();
+    early.players[0]
+        .civics
+        .remove(&crate::name!("divine_right"));
+    assert_eq!(ai.diplo_statue_civic_goal(&early, 0), None);
+    for civic in ["exploration", "reformed_church"] {
+        let mut other = early.clone();
+        other.players[0].civics.insert(Name::new(civic));
+        assert_eq!(
+            ai.diplo_statue_civic_goal(&other, 0),
+            Some("civil_engineering"),
+            "{civic}"
+        );
+    }
+
+    // Adopted, the goal is done.
+    let mut adopted = game.clone();
+    adopted.players[0]
+        .civics
+        .insert(crate::name!("civil_engineering"));
+    assert_eq!(ai.diplo_statue_civic_goal(&adopted, 0), None);
+
+    // The Statue standing anywhere, or ruled out by the host, ends it.
+    let mut built = game.clone();
+    let city = built.player_city_ids(0)[0];
+    let pos = built.cities[&city].pos;
+    built
+        .cities
+        .get_mut(&city)
+        .unwrap()
+        .wonders
+        .insert(crate::name!("statue_of_liberty"), pos);
+    assert_eq!(ai.diplo_statue_civic_goal(&built, 0), None);
+
+    // A lost lane and another target never.
+    let mut lost = ai.clone();
+    lost.lane_lost = true;
+    assert_eq!(lost.diplo_statue_civic_goal(&game, 0), None);
+    let mut science = seat(VictoryTarget::Science, true);
+    science.enable_diplo_seat_statue_civic_first();
+    assert_eq!(science.diplo_statue_civic_goal(&game, 0), None);
+}
+
 /// A Harbor whose coast neighbours are all taken leaves the Statue no site:
 /// the claim looks for one that does.
 #[test]
