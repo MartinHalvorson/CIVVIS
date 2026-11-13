@@ -159,56 +159,46 @@ on turn 1: Rome's Legion; a generic Swordsman or Horseman does not qualify):
 
 ## Version 2, from the first live game (PR #5292)
 
-`civvis-20261113T205538Z`, Rome with both flags (`why.log`, the `state`
-rows of `events.jsonl`, `decisions.jsonl`). Bronze Working at turn 19 found
-no Iron in reach and the opening stood down; Iron was in stock from about
-turn 23 (14 at 30, 25 at 40). The window opened at 27 on Mbamba of Kongo
-(defence 17, unwalled, 8 tiles); Iron Working about 32. Legions owned: 1 at
-36 (the upgraded Warrior, 75 of 76 Gold at +6 a turn, at 50 health and
-walking until 48), 2 at 51, 3 at 54, 4 at 57, 5 at 75; none queued from 33
-to 44. Kongo was denounced at 54, and at 56 the window closed "past the
-naming turn the named city is no longer soft": defence 17 / 24 / 32 / 34 at
-27 / 33 / 39 / 56 (edge +6), 41-51 to 69, walls 0 on every row to turn 81.
-No war; the denouncement bought nothing.
+`civvis-20261113T205538Z` (Rome, both flags; `why.log`, `events.jsonl`,
+`decisions.jsonl`): no Iron in reach at Bronze Working (turn 19), so the
+opening stood down, yet Iron was in stock from about 23. The window opened
+at 27 on Mbamba of Kongo (defence 17, unwalled, 8 tiles); Iron Working
+about 32. Legions owned: 1 at 36 (the Warrior upgraded for 75 of 76 Gold,
+walking at 50 health to 48), 2 at 51, 3 at 54, 5 at 75; none queued from
+33 to 44. Denounced at 54; closed at 56 "no longer soft" at edge +6
+(defence 17 / 24 / 32 / 34 at 27 / 33 / 39 / 56), never walled to 81.
 
-**Why nothing was queued from 33 to 44.** The claim filled only an idle
-queue, in the capital and one other city (Antium). The claim chain
-(`run_idle_queue_claims`) runs only after the opening book, which held the
-capital to turn 37 and gave its idle turns to an Archer (34) and a Builder
-(37); the early Settler floor, ahead of the claim in the chain, took Rome at
-39 and Antium (walled to 39) at 40. Once queued, the Granary claim, after it
-in the chain, put a Granary ahead of the Legion (Rome 45, Antium 50).
+**Why nothing was queued from 33 to 44.** The claim took only an idle queue
+in two cities (Rome, Antium). The claim chain runs only after the opening
+book, which held Rome to 37 (an Archer at 34, a Builder at 37); the early
+Settler floor, ahead of the claim, took Rome at 39 and Antium at 40; the
+Granary claim, after it, put Granaries ahead of queued Legions (45, 50).
 
-The changes (same two tags, still opt-in):
+Changes (same two tags, still opt-in):
 
-1. **Unwalled target on the forecast.** Past naming, an unwalled named city
-   below +8 stays the target (muster, denouncement, declaration) while the
-   declaration's forecast, read with every edge unit owned posed beside it
-   at its current health, takes it within 4 turns at 0.5 or more; before 3
-   are owned, while the edge is -4 or better. Walled: the old rule. Lines
-   `kept:` and `closed: ... no longer the target: <why>`.
-2. **Force.** Once the window is open and the unit trainable, the capital
-   and the two cities nearest the target train it at once, ahead of a
-   deferrable item (not one finishing this turn, a soldier, Walls, a wonder,
-   a project, a District with work in it, or a city's first Settler: only
-   the capital's Settler gives way). The Granary, backlog Builder and
-   Campus claims leave it queued (`first_capital_training_holds`), and
-   during the opening book the window fills idle queues at the turn start.
-3. **Gold.** The upgrade bill (up to 3 bodies) is held from other purchases
-   whenever the window is open, not only from the start.
-4. **Denounce** with the first edge unit owned, never before one exists.
-5. **Heal.** An edge unit under 70 health (above the withdraw line) holds
-   fortified, or steps into a city of ours within 2 tiles, before it walks
-   (`heal:`); the unit pass's staging hook holds it too.
+1. **Unwalled target on the forecast.** Past naming, an unwalled city below
+   +8 stays the target while the declaration's forecast, with every edge
+   unit owned posed beside it at its health, takes it within 4 turns at
+   0.5+; before 3 are owned, while the edge is -4 or better (`kept:`).
+   Walled: the old rule. The close names why.
+2. **Force.** The capital and the two cities nearest the target train it at
+   once, ahead of a deferrable item (never one finishing this turn, a
+   soldier, Walls, a wonder, a project, a District with work in it, or a
+   city's first Settler: only the capital's gives way); the claims that
+   respect a reserved army build leave it queued; during the opening book
+   the window fills idle queues at the turn start.
+3. **Gold** for the upgrades is held whenever the window is open.
+4. **Denounce** with the first edge unit, never before one exists.
+5. **Heal.** Under 70 health (above the withdraw line) an edge unit holds,
+   or steps into a city of ours within 2 tiles, before it walks (`heal:`).
 6. **Recheck.** From the start, no source at the revealing technology is
-   checked again every turn for 10 Online turns (`start: recheck:`); a
-   source or a supply in that time commits the opening.
-7. **Upgrade passes.** The edge pass (`maintain_edge_unit_window`) runs first
-   in the turn, ahead of `upgrade_units_preserving_air_wing`, whose first
-   step is `one-upgrade-lifts-every-city`. While Gold is held, that pass
-   takes only an upgrade into the edge unit or one that leaves the held Gold;
-   a Warrior-to-Legion upgrade is bought once, by whichever pass reaches it,
-   and the edge force counts the Legion (it counts units owned).
+   checked every turn for 10 Online turns (`start: recheck:`) first.
+7. **Upgrade passes.** The edge pass (`maintain_edge_unit_window`) runs
+   first in the turn, before `upgrade_units_preserving_air_wing`, whose
+   first step is `one-upgrade-lifts-every-city`; while Gold is held that
+   pass takes only an upgrade into the edge unit or one that leaves the
+   held Gold. A Warrior-to-Legion upgrade is bought once, by whichever pass
+   reaches it, and the edge force counts the Legion either way.
 
 SANITY_ROUND_PLACEHOLDER
 

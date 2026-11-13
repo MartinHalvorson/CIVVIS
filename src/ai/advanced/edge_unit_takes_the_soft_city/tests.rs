@@ -638,9 +638,15 @@ fn from_the_start_with_iron_in_reach_trains_bodies_and_holds_the_gold() {
         .0;
     assert!(held > 0.0 && (held - price).abs() < 1e-6, "{held} {price}");
     assert!(ai.purchase_upkeep_floor(&g, 0, 0.0) >= held);
-    // The capital trains a second body to upgrade, with no city named.
-    ai.claim_edge_unit_queue(&mut g, 0);
+    // The turn start trains nothing while the opening book runs and no
+    // city is named (the sanity round's first version of #5292 trained
+    // Warriors from turn 1 in place of the book's Scout and Settlers).
     let capital = g.city_at(CAPITAL).unwrap();
+    assert!(ai.base.book_pos < 4);
+    assert!(g.cities[&capital].queue.is_empty());
+    // The claim chain's capital trains a second body to upgrade, with no
+    // city named.
+    ai.claim_edge_unit_queue(&mut g, 0);
     assert_eq!(
         g.cities[&capital].queue.first(),
         Some(&Item::Unit {

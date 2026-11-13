@@ -789,9 +789,17 @@ impl AdvancedAi {
         self.edge_unit_window = Some(window);
         // Version 2: the claim chain (`run_idle_queue_claims`) runs only once
         // the opening book is done, and live 205538Z's book held the capital
-        // to turn 37. While it runs, the window claims idle queues here, at
-        // the start of the turn; the book fills only an idle queue.
-        if self.base.book_pos < 4 {
+        // to turn 37. While it runs and a city is named, the window claims
+        // idle queues for the edge unit here, at the start of the turn; the
+        // book fills only an idle queue. Never before a city is named: the
+        // sanity round's first version trained Warriors from turn 1 in place
+        // of the book's Scout and Settlers.
+        if self.base.book_pos < 4
+            && self
+                .edge_unit_window
+                .as_ref()
+                .is_some_and(|w| w.live() && w.target.is_some())
+        {
             self.edge_claim_queues(g, pid, false);
         }
     }
@@ -2117,8 +2125,9 @@ impl AdvancedAi {
     }
 
     /// The claim. `preempt` lets the edge unit take the head of a queue
-    /// from a deferrable item; off, only idle queues are filled (the turn
-    /// start while the opening book runs, whose own items are left alone).
+    /// from a deferrable item; off (the turn start while the opening book
+    /// runs, whose own items are left alone), only idle queues are filled,
+    /// and only with the edge unit or its breaker, never a feeder body.
     fn edge_claim_queues(&mut self, g: &mut Game, pid: usize, preempt: bool) {
         if !self.edge_unit_takes_the_soft_city {
             return;
@@ -2196,8 +2205,8 @@ impl AdvancedAi {
             }
             // `edge-unit-opens-from-the-start`: while the edge unit cannot be
             // trained, bodies that upgrade into it, up to the muster's three,
-            // in an idle queue only.
-            if item.is_none() && from_the_start && displaced.is_none() {
+            // in an idle queue only and never at the turn start in the book.
+            if item.is_none() && from_the_start && preempt && displaced.is_none() {
                 let feeders = Self::edge_feeders(g, pid, unit);
                 if owned + queued + feeders.0 + feeders.1 < EDGE_MUSTER_BODIES {
                     if let Some(feeder) = Self::edge_feeder_kind(g, pid, cid, unit) {
