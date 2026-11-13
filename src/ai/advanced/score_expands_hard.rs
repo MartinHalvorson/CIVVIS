@@ -1,6 +1,7 @@
-//! `score-seat-expands-hard`: a Score seat puts its early Production into
-//! Settlers in every city that can train one, not only the capital, and takes
-//! the Settler bonuses first: Magnus with Provision, then the Ancestral Hall.
+//! `score-seat-expands-hard`: a Score seat keeps its Settler claim open past
+//! the opening and lets a Settler take more queues, in every city that can
+//! train one and not only the capital, and its Plaza takes the Ancestral Hall
+//! first.
 //!
 //! ## Why (38 live Deity Rome Score games, 2026-11-12 19:00Z to 11-13 04:30Z)
 //!
@@ -50,24 +51,29 @@
 //!    `no-city-limit`'s: every free seat that pays.
 //! 2. **More may give way to the Settler**
 //!    ([`AdvancedAi::score_expands_may_displace`]): a district at most half
-//!    paid (its progress is kept; never the empire's first Campus), a Builder
-//!    at most half paid, and a soldier while no major is at war with us, the
-//!    army already stands at one body a city, and no charted rival city lies
-//!    within [`SCORE_EXPANDS_FRONTIER_TILES`] of the city. Walls, wonders,
-//!    the Ancestral Hall and anything finishing next turn keep their queue.
+//!    paid (its progress is kept; never the empire's first Campus) and a
+//!    Builder at most half paid. A soldier, Walls, wonders, the Ancestral
+//!    Hall and anything finishing next turn keep their queue.
 //! 3. **A wider pipeline** ([`AdvancedAi::score_expands_width_for`]): one
 //!    Settler more than the empire has cities, to six, walking or in
 //!    production; two while the army is short of a body a city. The capital
 //!    queues its next Settler while the first still walks.
-//! 4. **Magnus first.** The first two Governor titles seat Magnus and give
-//!    him Provision; Pingala's Librarian and Researcher follow. Magnus's seat
-//!    already favours the city with a Settler in its queue.
-//! 5. **The Ancestral Hall first.** The Plaza's tier list reads the Hall,
+//! 4. **The Ancestral Hall first.** The Plaza's tier list reads the Hall,
 //!    then the Grand Master's Chapel, and the Hall takes the head of its
 //!    city's queue once the Plaza stands
 //!    ([`AdvancedAi::claim_score_expansion_hall`]).
 //!
 //! Journal reasons start `score-seat-expands-hard:`.
+//!
+//! ⚠ Tried and withdrawn (paired sim, 60 seeds each):
+//! - **Magnus and his Provision before Pingala's titles.** With it, cities
+//!   at turn 50 +0.33 and population +1.6, but Science at turn 50 -4.8
+//!   (-21%), techs -1.2, military at turn 75 -14% and cities lost +0.48.
+//!   With that part off the gene kept cities at turn 100 +0.72 and lost no
+//!   more cities than the base.
+//! - **A soldier's queue giving way to a Settler** (at peace, with a body a
+//!   city). It was worth +0.15 cities at turn 50 and cost 12 of the 32
+//!   points of military lost at turn 75.
 //!
 //! ⚠ Not here: where a Settler walks and how long it shelters (the walker's
 //! own rules and `score-seat-founds-early`), seats within nine tiles of a
@@ -96,11 +102,6 @@ pub(crate) const SCORE_EXPANDS_HALL_OVER_SETTLER_SHARE: f64 = 0.25;
 /// A city attacked within this many turns keeps its queue.
 const SCORE_EXPANDS_ATTACK_MEMORY: u32 = 4;
 
-/// A charted rival major's city this near one of ours makes it a frontier
-/// city: its soldier never gives way to a Settler. Rome fell in 5 of 14 live
-/// games, each after a neighbour declared (session -c2).
-pub(crate) const SCORE_EXPANDS_FRONTIER_TILES: i32 = 8;
-
 impl AdvancedAi {
     /// The gene is on, `no-city-limit` carries it, and the seat aims at
     /// Score.
@@ -128,15 +129,8 @@ impl AdvancedAi {
     }
 
     /// Whether `cid`'s queue head may give way to a Settler beyond what
-    /// `early_settler_may_displace` already allows. `army_stands`: no major is
-    /// at war with us and the army holds one body a city. See the module,
-    /// item 2.
-    pub(super) fn score_expands_may_displace(
-        g: &Game,
-        pid: usize,
-        cid: u32,
-        army_stands: bool,
-    ) -> bool {
+    /// `early_settler_may_displace` already allows. See the module, item 2.
+    pub(super) fn score_expands_may_displace(g: &Game, pid: usize, cid: u32) -> bool {
         let Some(item) = g.cities[&cid].queue.first() else {
             return true;
         };
@@ -160,22 +154,8 @@ impl AdvancedAi {
             Item::Unit { unit } if *unit == "builder" => {
                 invested <= SCORE_EXPANDS_BUILDER_SHARE * cost
             }
-            Item::Unit { unit } => {
-                army_stands
-                    && g.rules.units.get(unit).is_some_and(|spec| {
-                        spec.class == "military" && spec.domain.as_deref() != Some("sea")
-                    })
-            }
             _ => false,
         }
-    }
-
-    /// Whether a city at `pos` stands within [`SCORE_EXPANDS_FRONTIER_TILES`]
-    /// of a charted rival major's city (`holdable_land_threats`' list).
-    pub(super) fn score_expands_on_the_frontier(g: &Game, rival_cities: &[Pos], pos: Pos) -> bool {
-        rival_cities
-            .iter()
-            .any(|rival| g.wdist(*rival, pos) <= SCORE_EXPANDS_FRONTIER_TILES)
     }
 
     /// Whether the head of `cid`'s queue is the Ancestral Hall, which no
@@ -187,17 +167,7 @@ impl AdvancedAi {
         )
     }
 
-    /// Whether the next Governor titles seat Magnus and give him Provision
-    /// before Pingala's. See the module, item 4.
-    pub(super) fn score_expands_wants_magnus(&self, g: &Game, pid: usize) -> bool {
-        self.score_expands_hard_now(g)
-            && !g.players[pid]
-                .governor_roster
-                .get("magnus")
-                .is_some_and(|state| state.promotions.contains("provision"))
-    }
-
-    /// See the module, item 5: once the Plaza stands, the Ancestral Hall takes
+    /// See the module, item 4: once the Plaza stands, the Ancestral Hall takes
     /// the head of its city's queue, ahead of routine work and of a Settler
     /// at most a quarter paid. Exact no-op with the gene off.
     pub(super) fn claim_score_expansion_hall(
@@ -236,7 +206,7 @@ impl AdvancedAi {
             }
             Some(_) => {
                 Self::early_settler_may_displace(g, pid, cid)
-                    || Self::score_expands_may_displace(g, pid, cid, true)
+                    || Self::score_expands_may_displace(g, pid, cid)
             }
         };
         if !gives_way {

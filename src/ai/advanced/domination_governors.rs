@@ -71,11 +71,8 @@ impl AdvancedAi {
         pid: usize,
         strategy: GrandStrategy,
     ) -> bool {
-        // `score-seat-expands-hard`: Magnus and his Provision come first on
-        // a Score seat still settling. See `advanced/score_expands_hard.rs`.
         matches!(strategy, GrandStrategy::Expansion | GrandStrategy::Conquest)
             && self.domination_seat_titles_pingala_first(g)
-            && !self.score_expands_wants_magnus(g, pid)
             && !g.players[pid]
                 .governor_roster
                 .get("pingala")

@@ -10279,9 +10279,9 @@ pub struct AdvancedAi {
     score_seat_journal: score_seat::ScoreSeatJournal,
     /// `score-seat-expands-hard`: with `no-city-limit` on, a Score seat's
     /// Settler claim stays open past the opening and takes more queues in
-    /// every city, the pipeline widens to one more than the cities, Magnus
-    /// takes Provision before Pingala is seated, and the Plaza takes the
-    /// Ancestral Hall first. See `advanced/score_expands_hard.rs`. Opt-in.
+    /// every city, the pipeline widens to one more than the cities, and the
+    /// Plaza takes the Ancestral Hall first. See
+    /// `advanced/score_expands_hard.rs`. Opt-in.
     score_seat_expands_hard: bool,
     /// `score-seat-founds-early`: on a Score seat, an early Settler past its
     /// patience (or turned home by the corridor) founds on the best safe,

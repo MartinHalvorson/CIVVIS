@@ -126,22 +126,23 @@ fn the_pipeline_is_one_wider_than_the_empire() {
     );
 }
 
-/// The blocked case: two garrisoned cities at peace, each training an
-/// Archer. Stock, both keep the Archer. With the gene a Settler takes each
-/// queue, and the routine claims' hold keeps it.
+/// The blocked case: two garrisoned cities, each with an unstarted Builder
+/// at the head of its queue. Stock, both keep the Builder. With the gene a
+/// Settler takes each queue, and the routine claims' hold keeps it. A
+/// soldier's queue is left alone.
 #[test]
-fn a_soldiers_queue_gives_way_while_the_army_stands() {
+fn a_builders_queue_gives_way_and_a_soldiers_does_not() {
     let (mut game, capital, second) = two_idle_cities();
     garrison(&mut game);
     for cid in [capital, second] {
-        head(&mut game, cid, unit("archer"));
+        head(&mut game, cid, unit("builder"));
     }
     let stock = seat(VictoryTarget::Score, false);
     let plan = stock.assess(&game, 0);
     let mut off = game.clone();
     stock.claim_early_settler_floor(&mut off, 0, &plan);
     stock.claim_early_settler_floor(&mut off, 0, &plan);
-    assert!(settlers_queued(&off).is_empty(), "stock keeps the Archers");
+    assert!(settlers_queued(&off).is_empty(), "stock keeps the Builders");
 
     let ai = seat(VictoryTarget::Score, true);
     let plan = ai.assess(&game, 0);
@@ -163,24 +164,30 @@ fn a_soldiers_queue_gives_way_while_the_army_stands() {
     let mut elsewhere = game.clone();
     other.claim_early_settler_floor(&mut elsewhere, 0, &plan);
     assert!(settlers_queued(&elsewhere).is_empty());
+
+    // Soldiers keep their queues, with the gene too.
+    let mut armed = game.clone();
+    for cid in [capital, second] {
+        head(&mut armed, cid, unit("archer"));
+    }
+    let plan = ai.assess(&armed, 0);
+    ai.claim_early_settler_floor(&mut armed, 0, &plan);
+    assert!(settlers_queued(&armed).is_empty(), "the Archers stay");
 }
 
-/// Without a body a city the Archers stay; Walls, a wonder and work that
-/// finishes next turn stay whatever the army.
+/// A soldier, Walls, a wonder and the Hall keep their queue; an unstarted
+/// Builder gives way.
 #[test]
 fn what_keeps_its_queue() {
     let (mut game, capital, _) = two_idle_cities();
     head(&mut game, capital, unit("archer"));
     assert!(
-        !AdvancedAi::score_expands_may_displace(&game, 0, capital, false),
-        "a thin army keeps its Archer"
+        !AdvancedAi::score_expands_may_displace(&game, 0, capital),
+        "a soldier keeps its queue"
     );
-    assert!(AdvancedAi::score_expands_may_displace(
-        &game, 0, capital, true
-    ));
     head(&mut game, capital, unit("builder"));
     assert!(
-        AdvancedAi::score_expands_may_displace(&game, 0, capital, false),
+        AdvancedAi::score_expands_may_displace(&game, 0, capital),
         "an unstarted Builder gives way"
     );
     for kept in ["walls", "ancestral_hall"] {
@@ -192,7 +199,7 @@ fn what_keeps_its_queue() {
             },
         );
         assert!(
-            !AdvancedAi::score_expands_may_displace(&game, 0, capital, true),
+            !AdvancedAi::score_expands_may_displace(&game, 0, capital),
             "{kept} keeps its queue"
         );
     }
@@ -206,38 +213,6 @@ fn what_keeps_its_queue() {
     assert!(AdvancedAi::score_expands_keeps_the_hall(&game, capital));
     game.cities.get_mut(&capital).unwrap().queue.clear();
     assert!(!AdvancedAi::score_expands_keeps_the_hall(&game, capital));
-}
-
-/// A city within eight tiles of a charted rival city is a frontier city.
-#[test]
-fn a_frontier_city_is_one_near_a_rival_city() {
-    let (game, capital, _) = two_idle_cities();
-    let home = game.cities[&capital].pos;
-    let near = game
-        .map
-        .tiles
-        .keys()
-        .copied()
-        .find(|pos| game.wdist(*pos, home) == SCORE_EXPANDS_FRONTIER_TILES)
-        .expect("fixture: a tile eight away");
-    let far = game
-        .map
-        .tiles
-        .keys()
-        .copied()
-        .find(|pos| game.wdist(*pos, home) == SCORE_EXPANDS_FRONTIER_TILES + 1)
-        .expect("fixture: a tile nine away");
-    assert!(AdvancedAi::score_expands_on_the_frontier(
-        &game,
-        &[far, near],
-        home
-    ));
-    assert!(!AdvancedAi::score_expands_on_the_frontier(
-        &game,
-        &[far],
-        home
-    ));
-    assert!(!AdvancedAi::score_expands_on_the_frontier(&game, &[], home));
 }
 
 /// Past the band turn the stock floor is shut; the gene keeps it open while
@@ -300,38 +275,6 @@ fn the_capital_trains_back_to_back() {
         ai.claim_early_settler_floor(&mut on, 0, &plan);
         assert_eq!(settlers_queued(&on), vec![capital]);
     }
-}
-
-/// Magnus and Provision come before Pingala's titles; once he holds
-/// Provision the Science roster orders the titles again.
-#[test]
-fn magnus_takes_provision_before_pingala_is_seated() {
-    let (game, _, _) = two_idle_cities();
-    let mut stock = seat(VictoryTarget::Score, false);
-    stock.enable_domination_seat_appoints_pingala_first();
-    assert_eq!(
-        stock.governor_title_strategy(&game, 0, GrandStrategy::Expansion),
-        GrandStrategy::Science,
-        "stock: Pingala first"
-    );
-    let mut ai = seat(VictoryTarget::Score, true);
-    ai.enable_domination_seat_appoints_pingala_first();
-    assert!(ai.score_expands_wants_magnus(&game, 0));
-    assert_eq!(
-        ai.governor_title_strategy(&game, 0, GrandStrategy::Expansion),
-        GrandStrategy::Expansion,
-        "the Expansion roster opens with Magnus"
-    );
-    assert_eq!(
-        AdvancedAi::governor_priority(GrandStrategy::Expansion)[0],
-        "magnus"
-    );
-    assert_eq!(
-        ai.preferred_governor_promotion(&game, 0, GrandStrategy::Expansion, "magnus")
-            .as_deref(),
-        None,
-        "nothing to promote before he is appointed"
-    );
 }
 
 /// The Plaza's tier list under the gene: the Ancestral Hall, then the Grand

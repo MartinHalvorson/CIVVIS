@@ -6096,8 +6096,8 @@ pub const GENES: &[Gene] = &[
     // at turn 60 against the met rivals' 4.7 and 5.5, and 56 points at the
     // tally for each city held at turn 60. The capital started 27 of the 28
     // Settlers journalled in turns 10-80; the wide claims passed the other
-    // cities over for "its queue keeps its item" 243 times, and Rome sat at
-    // population 2-4 while Provision waited for turn 53. See
+    // cities over for "its queue keeps its item" 243 times, and the Plaza
+    // took the Warlord's Throne, never the Ancestral Hall. See
     // `advanced/score_expands_hard.rs`.
     Gene { tag: "score-seat-expands-hard", field: "score_seat_expands_hard", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_expands_hard, disable: AdvancedAi::disable_score_seat_expands_hard },
     // ---- append: t-z ------------------------------------------------
