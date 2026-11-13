@@ -96,6 +96,23 @@ fn owner_of_names_each_claim_on_a_posed_board() {
     );
     checks.push((Owner::DefendPost, ai, uid));
 
+    // `defend-force-holds-the-city-2` carries version one's reads: its posts
+    // are the same plan, claimed the same way.
+    let uid = unit(&mut g, (9, 13));
+    let mut ai = agent();
+    ai.enable_defend_force_holds_the_city_2();
+    ai.defend_hold_plan.turn = g.turn;
+    ai.defend_hold_plan.cities.push(our_city);
+    ai.defend_hold_plan.posts.insert(
+        uid,
+        defend_force_holds_the_city::HoldPost {
+            city: our_city,
+            at: (9, 13),
+            role: defend_force_holds_the_city::HoldRole::Ring,
+        },
+    );
+    checks.push((Owner::DefendPost, ai, uid));
+
     let uid = unit(&mut g, (14, 7));
     let settler = g.spawn_test_unit("settler", 0, (14, 7));
     let mut ai = agent();

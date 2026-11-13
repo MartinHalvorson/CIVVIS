@@ -3088,6 +3088,10 @@ impl AdvancedAi {
                     && !self.battle_planner_ordered.contains(uid)
                     && !self.battle_planner_recovering.contains(uid)
                     && !armed.contains(uid)
+                    // `defend-force-holds-the-city-2`: a soldier this turn's
+                    // posts may take is not the positions plan's. `false`
+                    // with the version off.
+                    && !self.defend_hold_member_v2(*uid)
                     && matches!(spec.class.as_str(), "military" | "support")
                     && spec.domain.as_deref() != Some("air")
                     && unit.linked_to.is_none()

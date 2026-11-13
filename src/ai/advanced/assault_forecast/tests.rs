@@ -658,6 +658,7 @@ fn the_calibrated_reading_discounts_high_and_passes_low() {
         gathered: 1,
         hostiles: 0,
         rollouts: ROLLOUTS,
+        city_health: [0.0; HORIZON],
     };
     // Low readings pass through.
     for walls in [0, 100, 200, 400] {

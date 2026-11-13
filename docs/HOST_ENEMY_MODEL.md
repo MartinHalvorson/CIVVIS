@@ -296,6 +296,153 @@ Run it with `cargo test --lib host_enemy_bench -- --ignored --nocapture`
 (`CIVVIS_HOST_BENCH_SEEDS` sets the skirmish seeds per row; positions get
 half).
 
+## Rival chairs that fight like the host: `--rival-host-tactics`
+
+Every tactical gene is priced in `gene_screen` paired games whose rival
+chairs are this repository's own AI, and the bench above shows how differently
+that AI fights. The harness switch makes a simulated opponent fight at these
+rates instead (`src/host_tactics.rs`); `--chair-tactics-census` reads how the
+chairs fight without changing anything.
+
+**The census** reads a chair's turns with the definitions of this page:
+a row is a chair's land fighter at war with a measured seat and on a tile
+that seat sees, at the start of the chair's turn; reach is open ground; the
+strike is read from the game's action log; "closer" compares where it ended
+the turn with where the measured seat's units stood.
+`python3 tools/fit_host_enemy.py rates rows.jsonl` prints the same rows for
+the live host.
+
+**The switch** governs a chair's land fighters within 8 tiles of a measured
+seat's unit, once per unit per turn, with draws hashed from the game seed.
+The chair's AI may neither strike a measured seat's unit with a governed unit
+nor move it that turn; the harness plays the host's turn for it:
+
+- **Strike.** With a measured seat's unit in reach, it strikes with
+  `strike_probability` on this page's features, read on open-ground reach as
+  the fit read them, divided by the share of the chair's open-ground reach so
+  far that was exact (the engine's own movement flood and line of sight).
+  Open ground counts targets that rough ground or a zone of control puts out
+  of reach, and the fit's rates carry that; dividing by the share is what lets
+  the census read the fitted rate back. The target is drawn on the fitted
+  weights among the units in exact reach, struck from its own tile when it
+  can.
+- **Close, step away or hold.** A unit that struck nothing steps toward the
+  measured seat with `advance_probability` (a shooter stops at its range),
+  divided by the share of units in the same column of the advance table that
+  had a tile to close to (one already beside us cannot, and the fit's rate
+  counts those too); else it steps away at the live majors' rate (24% at
+  25 hp or less, 13% above); else it holds. There is no other retreat.
+- **Not made host-like:** what the chairs build and how many soldiers they
+  field, which cities they target, when they declare war, their units more
+  than 8 tiles from the measured seat, their strikes on cities and districts
+  (allowed, from where the unit stands) and their cities' own strikes, other
+  players, and fog: the switch governs every unit in range, seen or not, and
+  the census reads only what the measured seat sees. The measured seat's own
+  agent is untouched.
+
+Both shares are counted on the units the measured seat sees (the rows the fit
+and the census read) and shrunk toward values pooled over the lane recipe
+(`STRIKE_SHARE_PRIOR`, `CLOSE_SHARE_PRIOR`), because a chair meets only a
+handful of such turns a game.
+
+### The first reading (CI, 2026-11-12)
+
+The lane recipe (`--players 4 --width 60 --height 38 --city-states 6 --map
+pangaea --difficulty deity --rivals firaxis-faithful --handicap rivals
+--rival-chairs 3 --rival-rung -2 --rival-pace --target-mix domination`), seeds
+63100000-63100007, the measured seat on the deployment genome, run by
+`src/bin/gene_screen/host_tactics_tests.rs` on the PR's CI (cargo-test run
+43338413481, head c1931ab761 on main). "live majors" is the host's rows for
+major civilizations only, which is what a chair is. The second block prices
+the same simulated rows with the fitted tables.
+
+```
+row                                           live host      live majors     chairs, switch off      chairs, switch on
+strike | in reach                       0.250 ( 17669)  0.205 (  7821)        0.318 (   107)        0.194 (   155)
+strike | in reach without moving        0.430 (  7738)  0.344 (  3179)        0.500 (    46)        0.310 (    87)
+strike | must move first                0.110 (  9931)  0.109 (  4642)        0.180 (    61)        0.044 (    68)
+target: nearest                         0.879 (  2512)  0.856 (  1048)        0.773 (    22)        0.893 (    28)
+target: nearest (chance)                0.486 (  2512)  0.440 (  1048)        0.387 (    22)        0.359 (    28)
+target: weakest                         0.537 (  2512)  0.545 (  1048)        0.591 (    22)        0.500 (    28)
+target: weakest (chance)                0.504 (  2512)  0.508 (  1048)        0.560 (    22)        0.335 (    28)
+target: most damaged                    0.503 (  2512)  0.523 (  1048)        0.409 (    22)        0.321 (    28)
+target: most damaged (chance)           0.484 (  2512)  0.485 (  1048)        0.484 (    22)        0.469 (    28)
+closes | struck nothing                 0.328 ( 17563)  0.339 (  8598)        0.290 (   176)        0.304 (   184)
+closes | declined                       0.348 (  9349)  0.351 (  4238)        0.209 (    67)        0.287 (   122)
+closes | nothing in reach               0.306 (  8214)  0.327 (  4360)        0.339 (   109)        0.339 (    62)
+steps away | hp<=25, struck nothing     0.213 (  1309)  0.239 (   457)        0.286 (     7)        0.200 (     5)
+holds | hp<=25, struck nothing          0.405 (  1309)  0.394 (   457)        0.714 (     7)        0.800 (     5)
+steps away | hp>25, struck nothing      0.121 ( 16254)  0.128 (  8141)        0.142 (   169)        0.106 (   179)
+
+the same rows against what the fitted tables give the simulated units themselves (realized / fitted):
+strike | in reach                                                            0.318 /  0.220     0.194 /  0.263
+strike | in reach without moving                                             0.500 /  0.384     0.310 /  0.399
+strike | must move first                                                     0.180 /  0.096     0.044 /  0.088
+closes | struck nothing                                                      0.290 /  0.322     0.304 /  0.340
+closes | declined                                                            0.209 /  0.352     0.287 /  0.353
+closes | nothing in reach                                                    0.339 /  0.304     0.339 /  0.315
+
+What the switch did (count, governed unit-turns):
+  gate: closed                 272 of 766
+  gate: could close, declined      36 of 123
+  gate: could close, gap4-5       5 of 6
+  gate: could close, gap6-8       6 of 6
+  gate: could close, gap<=3      20 of 57
+  gate: exact reach, in reach without moving      82 of 84
+  gate: exact reach, must move first      31 of 72
+  gate: held                   395 of 766
+  gate: refusals                 0 of 766
+  gate: stepped away            56 of 766
+  gate: strikes drawn           38 of 766
+  gate: strikes failed           4 of 766
+  gate: strikes landed          34 of 766
+  gate: valves                   0 of 766
+
+Paired: the measured seat with defend-force-holds-the-city off and on (sums over the worlds):
+  switch off: gene off killed  282 lost   70 (kill:loss 4.03) cities lost  15 taken   0 | gene on killed  306 lost  186 (kill:loss 1.65) cities lost  19 taken   4
+    seed 63100000: off 45/8 lost 0 city | on 33/33 lost 0 city
+    seed 63100001: off 21/13 lost 2 city | on 38/21 lost 2 city
+    seed 63100002: off 65/27 lost 0 city | on 114/24 lost 0 city
+    seed 63100003: off 39/0 lost 0 city | on 13/33 lost 2 city
+    seed 63100004: off 42/10 lost 4 city | on 33/47 lost 3 city
+    seed 63100005: off 32/4 lost 0 city | on 38/1 lost 1 city
+    seed 63100006: off 8/6 lost 8 city | on 10/23 lost 10 city
+    seed 63100007: off 30/2 lost 1 city | on 27/4 lost 1 city
+  switch on : gene off killed  288 lost   67 (kill:loss 4.30) cities lost  10 taken   0 | gene on killed  330 lost  181 (kill:loss 1.82) cities lost  17 taken   2
+    seed 63100000: off 45/8 lost 0 city | on 34/24 lost 0 city
+    seed 63100001: off 21/9 lost 0 city | on 42/27 lost 3 city
+    seed 63100002: off 70/26 lost 0 city | on 130/31 lost 0 city
+    seed 63100003: off 39/0 lost 0 city | on 13/27 lost 0 city
+    seed 63100004: off 43/12 lost 1 city | on 36/40 lost 1 city
+    seed 63100005: off 32/4 lost 0 city | on 38/1 lost 1 city
+    seed 63100006: off 8/6 lost 8 city | on 10/27 lost 11 city
+    seed 63100007: off 30/2 lost 1 city | on 27/4 lost 1 city
+```
+
+**Before** (the chairs as they are), the chairs struck one of ours on 32% of
+the turns they had one in reach against 21% for the live majors: 50% against
+34% without moving and 18% against 11% when they had to move first.
+**After** (the switch on): 19.4% in reach (live majors 20.5%), 31.0% without
+moving (34.4%), 4.4% when they must move first (10.9%; the fitted tables give
+these rows 8.8%), closing 30.4% (33.9%), stepping away 10.6% above 25 hp
+(12.8%), and the target the nearest 89% (86%), the weakest 50% (55%), the most
+damaged 32% (52%, against 47% by chance in this sample). The strike rows are
+small (155 rows in reach, 68 that must move); "must move first" is the one row
+still well under the host. The switch played 34 strikes over 766 governed
+unit-turns with no refusals reaching the real game and no valve trip.
+
+`defend-force-holds-the-city` off and on for the measured seat, the same
+eight worlds: with the chairs as they are, killed/lost 282/70 (4.03) against
+306/186 (1.65) and 15 against 19 cities lost; with the switch on, 288/67
+(4.30) against 330/181 (1.82) and 10 against 17. The gene loses more units
+against both oppositions in these eight worlds; the lane runs the 60 seeds.
+
+The refusals are the engine's (`Game::host_gate`, read in `Game::apply`), set
+only for a governed chair's own turn; with no seat wrapped the field is never
+set and a game is byte for byte what it was. A unit refused 12 times in one
+turn has its moves and attacks spent, so an AI that retries a refused order
+still ends its turn.
+
 ## Reproduce
 
 ```bash

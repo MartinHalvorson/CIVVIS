@@ -37,14 +37,14 @@
 //! Only on a seat whose assigned target is `VictoryTarget::Score`; an exact
 //! no-op off and on every other target.
 //!
-//! 1. **Wonders.** Where the Score lane prices a wonder at +180, it prices it
-//!    at the live race's `LIVE_WONDER_RACE_BONUS` scaled by the game's
-//!    progress (x1 at the start, x3 at the tally), under the live race's own
-//!    development guards: three cities, three buildings in the racing city,
-//!    the wonder at most two eras behind the world, one lane plus one per six
-//!    cities, and done within `CHEAPEST_WONDER_LANE_MAX_TURNS`. Every refusal
-//!    the arm already makes (a wonder queued elsewhere, a threatened city, a
-//!    race taking more than 65% of the turns left) still refuses.
+//! 1. **Wonders: moved to `score-seat-raises-wonders`.** This gene first
+//!    priced a Score lane's wonder at the live race's bonus instead of +180.
+//!    It never fired live (the ranking that reads it runs only on an idle
+//!    queue) and, in the coordinator's 60-seed paired sim, built 0.10 wonders
+//!    a game against 0.08 while costing 0.40 cities (z -2.0): at that price a
+//!    ten-turn wonder in a city with three buildings out-bids a Settler. The
+//!    price is withdrawn; the wonder program is a queue claim in
+//!    `advanced/score_wonders.rs`.
 //! 2. **The army: its own gene, `score-seat-trims-the-idle-army`** (opt-in;
 //!    acts only with this gene on too). Armed live at 21:04Z on 2026-11-12
 //!    as part of this gene, the trim held one body a city from turn 1:
@@ -61,8 +61,11 @@
 //!    pricing. A threatened city, a barbarian alarm, the Settler escorts and
 //!    every claim that names a unit (walls, frontier defence, the contact
 //!    fleet, the land eye, the deterrent) are untouched.
-//! 3. **The Plaza.** The Plaza's tier list is `plaza-serves-the-scientist`'s:
-//!    the Ancestral Hall, then the Intelligence Agency.
+//! 3. **The Plaza: withdrawn.** It took the Ancestral Hall and then the
+//!    Intelligence Agency, which left the Grand Master's Chapel out: the
+//!    Chapel is what lets Faith buy land units (`faith_purchase_land_units`
+//!    in `data/buildings.json`), and the same sim read 40 less military at the
+//!    end and 0.22 more cities lost. The stock list stands.
 //! 4. **The last turns.** Within [`SCORE_SPRINT_TURNS`] of the turn limit an
 //!    item that cannot finish before the tally is priced out (a Settler must
 //!    also walk to its site), so the queues go to what still scores.
@@ -119,11 +122,6 @@ pub(super) const SCORE_TRIM_NEIGHBOUR_TILES: i32 = 10;
 pub(super) struct ScoreSeatJournal {
     /// The last army line: (target, stock target, held, turn written).
     army: Option<(usize, usize, usize, u32)>,
-    /// Wonders already reported, by the racing city's tile and the wonder.
-    /// Tiles, not city ids: the live mirror renumbers cities between frames.
-    wonders: BTreeSet<(Pos, String)>,
-    /// The Plaza building already reported.
-    plaza: Option<String>,
     /// The turn limit whose last-turns line has been written.
     sprint: Option<u32>,
 }
@@ -260,32 +258,6 @@ impl AdvancedAi {
             })
     }
 
-    /// Whether a city may race a wonder at the live race's price: the gene
-    /// acts and the live race's development guards hold. The caller has
-    /// already established that the Score lane is open.
-    pub(super) fn score_seat_wonder_race_opens(
-        &self,
-        city_count: usize,
-        city_buildings: usize,
-        wonder_era: usize,
-        world_era: usize,
-        wonders_in_flight: usize,
-        turns: f64,
-    ) -> bool {
-        self.score_seat_on()
-            && city_count >= 3
-            && city_buildings >= 3
-            && wonder_era + 2 >= world_era
-            && wonders_in_flight < Self::live_wonder_race_lanes(city_count)
-            && turns <= CHEAPEST_WONDER_LANE_MAX_TURNS
-    }
-
-    /// The wonder's price on the open race, in the arm's raw units: the live
-    /// race's bonus at this point of the game.
-    pub(super) fn score_seat_wonder_price(g: &Game) -> f64 {
-        LIVE_WONDER_RACE_BONUS * Self::live_wonder_race_scale(g)
-    }
-
     /// Turns left in which a finished item still counts at the tally: the
     /// turn limit's own end-of-turn completions are scored (the live tally
     /// row is written the turn after the limit).
@@ -348,13 +320,11 @@ impl AdvancedAi {
 
     /// Journal what the gene changed this turn. Observation only, after every
     /// production writer has settled the queues. Exact no-op off.
-    pub(super) fn journal_score_seat(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
+    pub(super) fn journal_score_seat(&mut self, g: &Game, pid: usize, _plan: &StrategicPlan) {
         if !self.score_seat_on() || pid >= g.players.len() {
             return;
         }
         self.journal_score_seat_army(g, pid);
-        self.journal_score_seat_wonders(g, pid, plan);
-        self.journal_score_seat_plaza(g, pid);
         self.journal_score_seat_sprint(g);
     }
 
@@ -415,92 +385,6 @@ impl AdvancedAi {
                 districts, Settlers and wonders instead, about {:.0} points at \
                 {SCORE_POINTS_PER_HUNDRED_PRODUCTION:.0} a hundred; a unit is 0 points",
                freed * SCORE_POINTS_PER_HUNDRED_PRODUCTION / 100.0);
-    }
-
-    fn journal_score_seat_wonders(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
-        if plan.strategy == GrandStrategy::Recovery {
-            return;
-        }
-        let cities = g.player_city_ids(pid);
-        let city_count = cities.len();
-        let racing: Vec<u32> = cities
-            .iter()
-            .copied()
-            .filter(|cid| matches!(g.cities[cid].queue.first(), Some(Item::Wonder { .. })))
-            .collect();
-        for cid in &racing {
-            let city = &g.cities[cid];
-            let Some(item @ Item::Wonder { wonder, .. }) = city.queue.first() else {
-                continue;
-            };
-            let key = (city.pos, wonder.as_str().to_string());
-            if self.score_seat_journal.wonders.contains(&key) {
-                continue;
-            }
-            let Some(spec) = g.rules.wonders.get(wonder) else {
-                continue;
-            };
-            let wonder_era = spec
-                .tech
-                .as_deref()
-                .and_then(|tech| g.rules.techs.get(tech).map(|node| node.era))
-                .or_else(|| {
-                    spec.civic
-                        .as_deref()
-                        .and_then(|civic| g.rules.civics.get(civic).map(|node| node.era))
-                })
-                .unwrap_or(0);
-            let others = racing.len().saturating_sub(1);
-            let turns = self.production_build_turns(g, pid, *cid, item);
-            if !self.score_seat_wonder_race_opens(
-                city_count,
-                city.buildings.len(),
-                wonder_era,
-                g.world_era,
-                others,
-                turns,
-            ) {
-                continue;
-            }
-            self.score_seat_journal.wonders.insert(key);
-            let cost = g.item_remaining_cost_for_city(pid, *cid, item);
-            let moment = if wonder_era >= g.world_era { 4 } else { 3 };
-            think!(self.journal(), Cities, Decision,
-                   "{} races {} for the tally", city.name, Self::plain_item(item);
-                   "score-seat-plays-for-points: 15 points and a {moment} Era Score moment for \
-                    {cost:.0} Production, about {turns:.0} turns; priced at {:.0} raw where \
-                    the stock Score lane priced every wonder at 180, below a Library's ~960, \
-                    and built none in civvis-20261112T190022Z",
-                   Self::score_seat_wonder_price(g));
-        }
-    }
-
-    fn journal_score_seat_plaza(&mut self, g: &Game, pid: usize) {
-        for cid in g.player_city_ids(pid) {
-            let Some(ours) = BasicAi::plaza_building_item_for(g, pid, cid, true) else {
-                continue;
-            };
-            let stock = BasicAi::plaza_building_item_for(g, pid, cid, false);
-            if stock.as_ref() == Some(&ours) {
-                continue;
-            }
-            let ours_name = Self::plain_item(&ours);
-            if self.score_seat_journal.plaza.as_deref() == Some(ours_name.as_str()) {
-                return;
-            }
-            let stock_name = stock
-                .as_ref()
-                .map(Self::plain_item)
-                .unwrap_or_else(|| "nothing".to_string());
-            think!(self.journal(), Cities, Decision,
-                   "The Government Plaza in {} takes the {ours_name}, not the {stock_name}",
-                   g.cities[&cid].name;
-                   "score-seat-plays-for-points: either is 1 point; the Warlord's Throne pays \
-                    only on a capture, the Ancestral Hall gives +50% Production toward Settlers \
-                    in its city (5 points a city) and a Builder to every new one");
-            self.score_seat_journal.plaza = Some(ours_name);
-            return;
-        }
     }
 
     fn journal_score_seat_sprint(&mut self, g: &Game) {
