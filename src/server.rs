@@ -589,6 +589,28 @@ pub struct Params {
     pub supervised: bool,
 }
 
+/// A game of Civilization VI this session repaints (`civvis play --mirror`,
+/// and every frame `tools/follow.py` publishes through `/load`). Nothing here
+/// plays it: the host's one human slot is our live decider, a separate
+/// process, and every other major is Civilization VI's own AI.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MirrorTable {
+    /// The seat our decider plays, by player index.
+    pub seat: usize,
+    /// The lane it is playing, once the follower has said which.
+    pub lane: Option<crate::strategies::LiveLane>,
+}
+
+/// The world a server opens on.
+pub enum Opening {
+    /// One generated from the launch parameters.
+    Generated,
+    /// A checkpoint, resumed in the mode the launch asked for (`--resume`).
+    Resumed(Game),
+    /// A game of Civilization VI rebuilt for repainting (`--mirror`).
+    Mirror(Game),
+}
+
 pub struct Session {
     pub params: Params,
     pub game: Game,
@@ -628,6 +650,10 @@ pub struct Session {
     /// Who is playing each human seat: a player registered when this game
     /// began, never one of the agents already in the roster.
     human_players: BTreeMap<usize, SeatPlayer>,
+    /// Set when this session repaints a game of Civilization VI. The seats
+    /// then name who is really playing them (`name_ai_players`), not an
+    /// agent of this process.
+    mirror: Option<MirrorTable>,
     /// What every agent at this table decided, and why.
     ///
     /// One journal for the whole session, handed to each seat, so a turn is
@@ -2307,6 +2333,7 @@ impl Session {
             keeps_rival_yields: true,
             keeps_own_yields: true,
             human_players,
+            mirror: None,
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
             simultaneous_jobs: 1,
@@ -2324,7 +2351,20 @@ impl Session {
 
     /// Restore an interrupted match and rebuild only the AIs' transient plans.
     /// The serialized game retains the authoritative RNG and world state.
-    pub fn from_game(mut params: Params, game: Game) -> Session {
+    pub fn from_game(params: Params, game: Game) -> Session {
+        Self::restore(params, game, None)
+    }
+
+    /// Repaint a game of Civilization VI. The board is restored as
+    /// `from_game` restores one, and the table is not dealt: a watched world
+    /// of our own seats our top-rated agents, and this one was labelling
+    /// Civilization VI's Deity rivals SwingVote, JackOfAllTrades and
+    /// TouristTrap at their site ratings (live, 2026-11-13).
+    pub fn from_mirror(params: Params, game: Game, table: MirrorTable) -> Session {
+        Self::restore(params, game, Some(table))
+    }
+
+    fn restore(mut params: Params, game: Game, mirror: Option<MirrorTable>) -> Session {
         // Launch flags may already carry setup selected for the next world.
         // Preserve that intent while the checkpoint below restores the active
         // world's authoritative parameters.
@@ -2374,7 +2414,11 @@ impl Session {
         let mut ais = Self::ai_fleet(&game);
         // The deal is a function of the seed and the seats, so a watched
         // table resumes with every agent back in the seat it was playing.
-        let seat_strategies = Self::deal_watched_table(params.spectate, &game, &mut ais);
+        // A mirrored table is somebody else's game: no agent of ours sits.
+        let seat_strategies = match mirror {
+            Some(_) => vec![None; game.players.len()],
+            None => Self::deal_watched_table(params.spectate, &game, &mut ais),
+        };
         // A save carries the world, not what anyone was thinking while they
         // played it. The restored table starts a fresh record from the turn it
         // resumes.
@@ -2409,6 +2453,7 @@ impl Session {
             keeps_rival_yields: true,
             keeps_own_yields: true,
             human_players,
+            mirror,
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
             simultaneous_jobs: 1,
@@ -2743,6 +2788,21 @@ impl Session {
                     .get(id)
                     .is_some_and(|seat| !seat.is_minor && !seat.is_barbarian)
             {
+                continue;
+            }
+            // A mirrored game says who is really at each seat: the lane our
+            // decider is playing at ours, Civilization VI's own AI at its
+            // level everywhere else. No name is generated for either, since
+            // nothing in this process is playing them.
+            if let Some(table) = self.mirror {
+                let seat = if id == table.seat {
+                    crate::strategies::live_seat_json(table.lane)
+                } else {
+                    crate::strategies::civ6_ai_seat_json(&self.game.difficulty)
+                };
+                if let (Some(player), Value::Object(seat)) = (player.as_object_mut(), seat) {
+                    player.extend(seat);
+                }
                 continue;
             }
             let strategy = self.ais.get(id).and_then(|ai| ai.strategy_label());
@@ -5494,13 +5554,29 @@ pub fn serve_with_game(
     game: Option<Game>,
     initially_paused: bool,
 ) {
+    let opening = game.map_or(Opening::Generated, Opening::Resumed);
+    serve_opening(port, open_browser, params, opening, initially_paused);
+}
+
+/// Serve the world `opening` names. `serve_with_game` is this for a world
+/// that is generated or resumed; a mirror has no other way in.
+pub fn serve_opening(
+    port: u16,
+    open_browser: bool,
+    params: Params,
+    opening: Opening,
+    initially_paused: bool,
+) {
     let listener = TcpListener::bind(("127.0.0.1", port))
         .unwrap_or_else(|e| panic!("cannot bind port {port}: {e}"));
     let actual = listener.local_addr().unwrap().port();
     let url = format!("http://127.0.0.1:{actual}/");
-    let mut session = match game {
-        Some(game) => Session::from_game(params, game),
-        None => Session::new(params),
+    let mut session = match opening {
+        Opening::Generated => Session::new(params),
+        Opening::Resumed(game) => Session::from_game(params, game),
+        // The seat is the host's human slot, which the rebuild always puts
+        // first; the follower names the lane with its first frame.
+        Opening::Mirror(game) => Session::from_mirror(params, game, MirrorTable::default()),
     };
     session.spectator_paused = initially_paused;
     println!("Martin Halvorson's Civilization VIS — playing at {url}");

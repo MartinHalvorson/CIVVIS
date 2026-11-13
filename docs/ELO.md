@@ -148,6 +148,17 @@ What the page shows of it:
 - **Arena Stats → Strategies** keeps a win–loss record per handle in the
   viewer's own browser. It is a tally of the games that browser watched, not a
   rating: it moves no number in `data/strategy_elo.json`.
+
+A mirrored game of Civilization VI (`civvis play --mirror`, the page beside a
+validation game) is not a watched table and is dealt nobody. PLAYER there says
+who is really at each seat: every rival reads **Civ 6 Deity AI**, or whatever
+level the host reports (`strategies::civ6_ai_seat_json`), and our own seat reads
+the lane the live decider is playing, **CIVVIS Diplomatic** for
+`--victory diplomatic` (`strategies::live_seat_json`). `tools/follow.py` reads
+the lane from the decider's own first record in `why.log` and sends it with
+each frame as `mirror_strategy`. Neither is a roster agent, so neither carries
+a rating and the table has no ELO column: the rung ratings above were measured
+on our stand-in for Civilization VI's AI, not on that AI.
 - The result card names the agent that won.
 
 ## Where a person sees it

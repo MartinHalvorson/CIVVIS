@@ -36,6 +36,20 @@ fn params() -> Params {
     }
 }
 
+/// The players of a frame without who is said to be playing them. A mirrored
+/// frame names its seats for the Civilization VI game it repaints, which is
+/// the one thing it does not share with the board it was rebuilt from.
+fn without_seat_names(players: &Value) -> Value {
+    let mut players = players.clone();
+    for player in players.as_array_mut().unwrap() {
+        let player = player.as_object_mut().unwrap();
+        for key in ["ai_name", "ai_username", "ai_strat_label"] {
+            player.remove(key);
+        }
+    }
+    players
+}
+
 #[test]
 fn mirror_load_never_publishes_an_unseated_frame() {
     let mut session = Session::new(params());
@@ -49,9 +63,108 @@ fn mirror_load_never_publishes_an_unseated_frame() {
         assert_eq!(frame["view_player"], 0);
         assert_eq!(frame["spectator_paused"], true);
         assert!(session.params.spectate);
-        assert_eq!(frame["players"], expected["players"]);
+        assert_eq!(
+            without_seat_names(&frame["players"]),
+            without_seat_names(&expected["players"])
+        );
         assert_eq!(frame["map"], expected["map"]);
         assert_eq!(frame["visible"], expected["visible"]);
+    }
+}
+
+/// A mirrored game is Civilization VI's table, not ours. The live mirror was
+/// dealing its rivals our top-rated site agents, so a Deity game read
+/// SwingVote 1192, JackOfAllTrades 1211 and TouristTrap 1178 beside a seat of
+/// ours called StrategicArchitect (2026-11-13). Operator, the same day: "for
+/// validation games, the player should just be something like "Civ 6 Deity
+/// AI" or whatever the level is. for self-play games where we control the
+/// player ai strategy, then we should list out the actual strategy being
+/// used."
+#[test]
+fn a_mirrored_table_names_civilization_vis_ai_and_the_lane_we_play() {
+    let mut setup = params();
+    setup.num_players = 4;
+    let mut session = Session::new(setup);
+    // The board `mirror::rebuild_from_state` hands over: the host's level,
+    // our seat in the human slot, and rivals the seat has met.
+    session.game.difficulty = "deity".to_string();
+    assert!(session.game.human_seats.contains(&0));
+    for rival in 1..4 {
+        session.game.players[0].met.insert(rival);
+    }
+    let game = serde_json::to_value(&session.game).unwrap();
+    let majors = |state: &Value| -> Vec<Value> {
+        state["players"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| p["is_minor"] != json!(true) && p["is_barbarian"] != json!(true))
+            .cloned()
+            .collect()
+    };
+
+    load_uploaded(
+        &mut session,
+        &json!({"game": game, "mirror_player": 0, "mirror_strategy": "diplomatic"}),
+    )
+    .unwrap();
+    let seats = majors(&session.state());
+    assert_eq!(seats.len(), 4);
+    for seat in &seats {
+        if seat["id"] == json!(0) {
+            assert_eq!(seat["ai_username"], json!("CIVVIS Diplomatic"));
+        } else {
+            assert_eq!(seat["ai_username"], json!("Civ 6 Deity AI"));
+            assert_eq!(seat["ai_strat_label"], json!("Civilization VI's own AI"));
+        }
+        // Nobody at this table is one of our rated agents, and nothing in
+        // this process is playing a seat for a name to be generated from.
+        assert!(seat["ai_agent"].is_null(), "{seat}");
+        assert!(seat["ai_elo"].is_null(), "{seat}");
+        assert!(seat["ai_name"].is_null(), "{seat}");
+    }
+
+    // The level is the host's own, whatever it is.
+    session.game.difficulty = "immortal".to_string();
+    let game = serde_json::to_value(&session.game).unwrap();
+    load_uploaded(
+        &mut session,
+        &json!({"game": game, "mirror_player": 0, "mirror_strategy": "civvis"}),
+    )
+    .unwrap();
+    let seats = majors(&session.state());
+    assert_eq!(seats[0]["ai_username"], json!("CIVVIS Adaptive"));
+    assert_eq!(seats[1]["ai_username"], json!("Civ 6 Immortal AI"));
+
+    // A follower that names no lane, or one the decider would refuse, still
+    // publishes its frame: our seat is then our agent without a lane.
+    for body in [
+        json!({"game": game, "mirror_player": 0}),
+        json!({"game": game, "mirror_player": 0, "mirror_strategy": "SwingVote"}),
+        json!({"game": game, "mirror_player": 0, "mirror_strategy": 7}),
+    ] {
+        load_uploaded(&mut session, &body).unwrap();
+        let seats = majors(&session.state());
+        assert_eq!(seats[0]["ai_username"], json!("CIVVIS Advanced AI"));
+        assert_eq!(seats[1]["ai_username"], json!("Civ 6 Immortal AI"));
+    }
+
+    // The same board as a world of our own is still dealt our agents: the
+    // names above belong to the mirror, not to the save.
+    let mut watched = params();
+    watched.num_players = 4;
+    watched.spectate = true;
+    let mut watched = Session::new(watched);
+    let mut save = session.game.clone();
+    save.human_seats.clear();
+    load_uploaded(
+        &mut watched,
+        &json!({"game": serde_json::to_value(&save).unwrap()}),
+    )
+    .unwrap();
+    for seat in majors(&watched.state()) {
+        let agent = seat["ai_agent"].as_str().expect("a rated agent");
+        assert!(crate::strategies::find(agent).is_some());
     }
 }
 
