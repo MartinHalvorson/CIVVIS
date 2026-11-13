@@ -7814,6 +7814,11 @@ pub struct AdvancedAi {
     /// carries its upkeep, and purchases keep three turns of the unit bill.
     /// See `advanced/endgame_army_takes_the_queue.rs`. Opt-in.
     endgame_army_takes_the_queue: bool,
+    /// `faithless-seat-holds-its-faith-strikes`: a seat that founded no
+    /// religion (and is not playing for a Religious Victory) holds the faith
+    /// strike unless the rival's faith stands at match point. See
+    /// `advanced/faithless_seat_holds_its_faith_strikes.rs`. Off by default.
+    faithless_seat_holds_its_faith_strikes: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -8845,6 +8850,12 @@ pub struct AdvancedAi {
     /// a unit out to heal ...) does not; the owner's own step keeps it. See
     /// `advanced/unit_owner.rs`. Opt-in.
     one_owner_per_unit: bool,
+    /// `one-upgrade-lifts-every-city`: a Gold upgrade that lifts every
+    /// city's defence or ranged strike by 5 or more (the first unit into a
+    /// tier) is taken ahead of the treasury floor, down to an empty treasury
+    /// while the income holds. See `advanced/one_upgrade_lifts_every_city.rs`.
+    /// Off by default.
+    one_upgrade_lifts_every_city: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -10292,6 +10303,10 @@ pub struct AdvancedAi {
     /// `score-seat-plays-for-points`: what the gene's journal has already
     /// said, so each line is written once per change. Observation only.
     score_seat_journal: score_seat::ScoreSeatJournal,
+    /// `score-seat-builds-the-bath`: a Score seat whose civilization has a
+    /// unique Aqueduct (Rome's Bath) claims it in every city that can hold
+    /// one. See `advanced/score_builds_the_bath.rs`. Opt-in.
+    score_seat_builds_the_bath: bool,
     /// `score-seat-fills-its-district-slots`: a Score seat's city with a
     /// free district slot claims the cheapest specialty district it can
     /// place. See `advanced/score_fills_its_slots.rs`. Opt-in.
@@ -10335,9 +10350,10 @@ pub struct AdvancedAi {
     /// declaration, and peace asked the turn after it. Overrides any version
     /// of the family it is played beside. Opt-in.
     score_seat_grabs_what_pays: bool,
-    /// `score-seat-keeps-friends`: a Score seat accepts every friendship a
-    /// major offers and offers one to every met major the host allows,
-    /// nearest first. See `advanced/score_keeps_friends.rs`. Opt-in.
+    /// `score-seat-keeps-friends`: every seat but a Domination one (the name
+    /// is the Score seat it was written for) accepts every friendship a major
+    /// offers and offers one to every met major the host allows, nearest
+    /// first. See `advanced/score_keeps_friends.rs`. Opt-in.
     score_seat_keeps_friends: bool,
     /// `score-seat-holds-its-faith-strikes`: a seat whose victory target is
     /// Score holds the faith strike unless the rival's faith stands at match
@@ -11253,6 +11269,9 @@ mod faith_war_at_match_point;
 mod faith_war_before_the_flip;
 /// `faith-war-is-no-front`: see `advanced/faith_war_is_no_front.rs`.
 mod faith_war_is_no_front;
+/// `faithless-seat-holds-its-faith-strikes`: see
+/// `advanced/faithless_seat_holds_its_faith_strikes.rs`.
+mod faithless_seat_holds_its_faith_strikes;
 /// `own-flip-faith-war-asks-no-power`: see `advanced/own_flip_faith_war.rs`.
 mod own_flip_faith_war;
 
@@ -11429,6 +11448,9 @@ mod chop_feeds_the_long_build;
 /// one. See `advanced/chop_for_expansion.rs`.
 mod chop_for_expansion;
 
+/// `score-seat-builds-the-bath`: a Score seat's unique Aqueduct in every city.
+/// See `advanced/score_builds_the_bath.rs`.
+mod score_builds_the_bath;
 /// `score-seat-expands-hard`: a Score seat's Settlers take the queue in every
 /// city. See `advanced/score_expands_hard.rs`.
 mod score_expands_hard;
@@ -11934,6 +11956,9 @@ mod nusantara_settles_the_shore;
 /// `old-techs-before-the-beeline`: the army's upgrade techs and the old-era
 /// backlog ahead of the beeline. See `advanced/old_techs_before_the_beeline.rs`.
 mod old_techs_before_the_beeline;
+/// `one-upgrade-lifts-every-city`: see
+/// `advanced/one_upgrade_lifts_every_city.rs`.
+mod one_upgrade_lifts_every_city;
 mod peacetime_republic;
 mod revealed_launch_research;
 /// `satellite-holds-the-pad`: see `advanced/satellite_holds_the_pad.rs`.

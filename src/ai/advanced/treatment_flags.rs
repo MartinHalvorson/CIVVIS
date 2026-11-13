@@ -329,6 +329,9 @@ impl AdvancedAi {
         /// Opt-in `endgame-army-takes-the-queue`; see
         /// `advanced/endgame_army_takes_the_queue.rs`.
         endgame_army_takes_the_queue => enable_endgame_army_takes_the_queue, disable_endgame_army_takes_the_queue;
+        /// Opt-in gene `faithless-seat-holds-its-faith-strikes`; see
+        /// `advanced/faithless_seat_holds_its_faith_strikes.rs`.
+        faithless_seat_holds_its_faith_strikes => enable_faithless_seat_holds_its_faith_strikes, disable_faithless_seat_holds_its_faith_strikes;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
@@ -369,6 +372,9 @@ impl AdvancedAi {
         open_city_is_the_objective => enable_open_city_is_the_objective, disable_open_city_is_the_objective;
         /// Opt-in `one-owner-per-unit`; see `advanced/unit_owner.rs`.
         one_owner_per_unit => enable_one_owner_per_unit, disable_one_owner_per_unit;
+        /// Opt-in gene `one-upgrade-lifts-every-city`; see
+        /// `advanced/one_upgrade_lifts_every_city.rs`.
+        one_upgrade_lifts_every_city => enable_one_upgrade_lifts_every_city, disable_one_upgrade_lifts_every_city;
         // ---- append: p-r --------------------------------------------
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;
@@ -485,6 +491,9 @@ impl AdvancedAi {
         /// Opt-in gene `score-seat-trims-the-idle-army`; see
         /// `advanced/score_seat.rs`.
         score_seat_trims_the_idle_army => enable_score_seat_trims_the_idle_army, disable_score_seat_trims_the_idle_army;
+        /// Opt-in gene `score-seat-builds-the-bath`; see
+        /// `advanced/score_builds_the_bath.rs`.
+        score_seat_builds_the_bath => enable_score_seat_builds_the_bath, disable_score_seat_builds_the_bath;
         /// Opt-in gene `score-seat-expands-hard`; see
         /// `advanced/score_expands_hard.rs`.
         score_seat_expands_hard => enable_score_seat_expands_hard, disable_score_seat_expands_hard;
@@ -2800,7 +2809,7 @@ impl AdvancedAi {
     }
 
     /// Withholding twin for `enable_live_trader_route_adapter`, so the live bundle can be
-    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    /// priced by taking this one treatment out of it. See `genes::GENES`.
     pub fn disable_live_trader_route_adapter(&mut self) {
         self.live_trader_route_adapter = false;
     }
@@ -2870,7 +2879,7 @@ impl AdvancedAi {
     }
 
     /// Withholding twin for `enable_live_religious_purchase_guard`, so the live bundle can be
-    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    /// priced by taking this one treatment out of it. See `genes::GENES`.
     pub fn disable_live_religious_purchase_guard(&mut self) {
         self.base.live_religious_purchase_guard = false;
     }
@@ -2917,13 +2926,13 @@ impl AdvancedAi {
     }
 
     /// Withholding twin for `enable_whole_turn_backtrack_guard`. See
-    /// `LIVE_TREATMENTS`.
+    /// `genes::GENES`.
     pub fn disable_whole_turn_backtrack_guard(&mut self) {
         self.base.whole_turn_backtrack_guard = false;
     }
 
     /// Withholding twin for `enable_recorded_tactical_step`, so the live bundle can be
-    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    /// priced by taking this one treatment out of it. See `genes::GENES`.
     pub fn disable_recorded_tactical_step(&mut self) {
         self.base.recorded_tactical_step = false;
     }
@@ -3188,7 +3197,7 @@ impl AdvancedAi {
     }
 
     /// Withholding twin for `enable_strike_opening`, so the live bundle can be
-    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    /// priced by taking this one treatment out of it. See `genes::GENES`.
     pub fn disable_strike_opening(&mut self) {
         self.strike_opening = false;
     }
@@ -3533,7 +3542,7 @@ impl AdvancedAi {
     }
 
     /// Withholding twin for `enable_strategic_wonders`, so the arm can be
-    /// priced by taking this one treatment out. See `LIVE_TREATMENTS`.
+    /// priced by taking this one treatment out. See `genes::GENES`.
     pub fn disable_strategic_wonders(&mut self) {
         self.strategic_wonders = false;
     }

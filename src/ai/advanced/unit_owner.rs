@@ -348,10 +348,6 @@ impl ClaimCensus {
         self.crossed.iter().flatten().sum()
     }
 
-    pub fn deliberate_crossings(&self) -> u32 {
-        self.deliberate.iter().flatten().sum()
-    }
-
     pub fn refusals(&self) -> u32 {
         self.refused.iter().flatten().sum()
     }

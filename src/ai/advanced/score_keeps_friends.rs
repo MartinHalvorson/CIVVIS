@@ -1,6 +1,16 @@
-//! `score-seat-keeps-friends` (opt-in): a Score seat accepts every declared
-//! friendship a major offers it and offers one to every met major the host
-//! lets it, nearest first.
+//! `score-seat-keeps-friends` (opt-in): every seat but a Domination one
+//! accepts every declared friendship a major offers it and offers one to
+//! every met major the host lets it, nearest first. The tag keeps the name
+//! of the Score seat it was written for.
+//!
+//! **Every lane but Domination** (operator, 2026-11-13 15:55Z: the Rome lane
+//! plays the Science target to turn 250 and "whatever win condition works").
+//! The gene acts on a Science, Culture, Diplomatic, Religious or Score
+//! target, and on an untargeted seat whose plan is not Conquest
+//! ([`AdvancedAi::score_keeps_friends_on`]). A friendship forgoes only the
+//! freedom to declare, which a conquest seat needs and no other does. On a
+//! Religious target `friendship-spares-the-converter` holds as it always did:
+//! the faith we must fight there is the race itself.
 //!
 //! **Why (live Deity Rome, Score target, 6-player Continents, Online).** A
 //! census of 94 live declarations on our seats found none while a declared
@@ -17,7 +27,7 @@
 //! `befriend-the-strongest` asks one rival every third turn, the strongest
 //! first.
 //!
-//! **The gene.** While the active victory target is Score:
+//! **The gene.** On those seats:
 //!
 //! 1. **Accept.** Every order batch renews a one-turn lease in the dialogue
 //!    closer (`LuaEvents.CivvisDialogueKeepsFriends`, carried by a
@@ -59,15 +69,25 @@
 //! on those nights all came from `launcher-war-serves-every-lane` before its
 //! counter to a rival's space launch, which this gene leaves alone.
 //!
-//! Off, or for another victory target, nothing changes. Grep the journal
-//! for `score-seat-keeps-friends:`.
+//! Off, or for a Domination target (or an untargeted Conquest plan), nothing
+//! changes. Grep the journal for `score-seat-keeps-friends:`.
 
 use super::*;
 
 impl AdvancedAi {
-    /// The gene is on and the seat's active target is Score.
+    /// The gene is on and the seat does not play for conquest: any active
+    /// victory target but Domination, or no target and a plan that is not
+    /// Conquest.
     pub(super) fn score_keeps_friends_on(&self, g: &Game) -> bool {
-        self.score_seat_keeps_friends && self.active_victory_target(g) == Some(VictoryTarget::Score)
+        self.score_seat_keeps_friends
+            && match self.active_victory_target(g) {
+                Some(VictoryTarget::Domination) => false,
+                Some(_) => true,
+                None => self
+                    .plan
+                    .as_ref()
+                    .is_none_or(|plan| plan.strategy != GrandStrategy::Conquest),
+            }
     }
 
     /// The rival whose city `score-seat-takes-what-pays` names as the
@@ -112,13 +132,16 @@ impl AdvancedAi {
         self.friendship_spares_the_converter
             && self.friendship_would_shield_the_converter(g, pid, rival)
             && (!self.score_keeps_friends_on(g)
+                // A Religious target keeps the exclusion as it was.
+                || self.active_victory_target(g) == Some(VictoryTarget::Religion)
                 || self.score_friend_faith_at_match_point(g, pid, rival))
     }
 
-    /// Whether this gene holds a denouncement of `target`: on a Score seat,
-    /// every one but the denouncement of the rival the seat's own Score
-    /// campaign names (`score-seat-takes-what-pays`). False with the gene off
-    /// or for another target.
+    /// Whether this gene holds a denouncement of `target`: on every seat it
+    /// acts for ([`Self::score_keeps_friends_on`]), every one but the
+    /// denouncement of the rival the seat's own Score campaign names
+    /// (`score-seat-takes-what-pays`). False with the gene off or for a
+    /// Domination target.
     pub(crate) fn score_friends_hold_the_denouncement(&self, g: &Game, target: usize) -> bool {
         self.score_keeps_friends_on(g) && self.score_keeps_friends_spares(g) != Some(target)
     }

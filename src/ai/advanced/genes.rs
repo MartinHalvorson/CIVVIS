@@ -5860,6 +5860,13 @@ pub const GENES: &[Gene] = &[
     // upkeep, and purchases keep three turns of the unit bill. Opt-in; see
     // `advanced/endgame_army_takes_the_queue.rs`.
     Gene { tag: "endgame-army-takes-the-queue", field: "endgame_army_takes_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_endgame_army_takes_the_queue, disable: AdvancedAi::disable_endgame_army_takes_the_queue },
+    // Live Rome 11-12/13 (52 games, no faith founded in any): 30 faith strikes
+    // took nothing, lost 3 cities to the target and 8 to others, 78 units for
+    // 37 killed. The Score hold has since held one in 31 of 32 games, and is
+    // inert on the lane's new Science target. A seat with no religion of its
+    // own strikes only a faith at match point, whatever its target but
+    // Religion. See `advanced/faithless_seat_holds_its_faith_strikes.rs`.
+    Gene { tag: "faithless-seat-holds-its-faith-strikes", field: "faithless_seat_holds_its_faith_strikes", kind: Kind::OptIn, enable: AdvancedAi::enable_faithless_seat_holds_its_faith_strikes, disable: AdvancedAi::disable_faithless_seat_holds_its_faith_strikes },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
@@ -5950,6 +5957,13 @@ pub const GENES: &[Gene] = &[
     // unit; the owner's own step keeps it. Opt-in; see
     // `advanced/unit_owner.rs`.
     Gene { tag: "one-owner-per-unit", field: "one_owner_per_unit", kind: Kind::OptIn, enable: AdvancedAi::enable_one_owner_per_unit, disable: AdvancedAi::disable_one_owner_per_unit },
+    // Live Deity 11-12/13, 115 games: a city's strike is the best ranged
+    // strength its owner ever owned (93% of 12,374 rows, upgrades count), yet
+    // from turn 30 the best melee ever owned sat 10+ below what was unlocked on
+    // 38.6% of turns and the best ranged on 19.5%, because the upgrade pass
+    // keeps 120 Gold at peace. The first unit into a tier upgrades ahead of
+    // that floor. See `advanced/one_upgrade_lifts_every_city.rs`.
+    Gene { tag: "one-upgrade-lifts-every-city", field: "one_upgrade_lifts_every_city", kind: Kind::OptIn, enable: AdvancedAi::enable_one_upgrade_lifts_every_city, disable: AdvancedAi::disable_one_upgrade_lifts_every_city },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
@@ -6116,6 +6130,12 @@ pub const GENES: &[Gene] = &[
     // declarer). Eleven Rome games: every city lost followed a declaration
     // at under 0.55 of the declarer. See `advanced/score_seat.rs`.
     Gene { tag: "score-seat-trims-the-idle-army", field: "score_seat_trims_the_idle_army", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_trims_the_idle_army, disable: AdvancedAi::disable_score_seat_trims_the_idle_army },
+    // Eight live Deity Rome Score games, 11-13: a Bath is four points for 23
+    // Production (17 a hundred, against the queues' two) and a city that
+    // built one waited a median 30 turns after the host first offered it; 11
+    // of 78 cities had it on offer and never built it. See
+    // `advanced/score_builds_the_bath.rs`.
+    Gene { tag: "score-seat-builds-the-bath", field: "score_seat_builds_the_bath", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_builds_the_bath, disable: AdvancedAi::disable_score_seat_builds_the_bath },
     // 38 live Deity Rome Score games, 11-12/13: 3.9 cities at turn 50 and 4.7
     // at turn 60 against the met rivals' 4.7 and 5.5, and 56 points at the
     // tally for each city held at turn 60. The capital started 27 of the 28
@@ -6133,7 +6153,8 @@ pub const GENES: &[Gene] = &[
     // friendship stood (94 declarations), yet the control mod refused 52
     // friendships the AI offered in one night, and the seat asked one rival
     // every third turn. Accept every offer, ask every met major nearest
-    // first. Opt-in; see `advanced/score_keeps_friends.rs`.
+    // first. Every target but Domination since 11-13 15:55Z (the name is the
+    // Score seat it was written for). Opt-in; see `advanced/score_keeps_friends.rs`.
     Gene { tag: "score-seat-keeps-friends", field: "score_seat_keeps_friends", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_keeps_friends, disable: AdvancedAi::disable_score_seat_keeps_friends },
     // Live Rome Score 11-12/13 (52 games): 30 faith strikes took nothing,
     // lost 3 cities to the target and 8 to others, 78 units for 37 killed;
