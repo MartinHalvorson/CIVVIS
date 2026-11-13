@@ -10900,6 +10900,15 @@ local function exportState(player, pid, turn, frame, eventKind)
 								required_district = info.ActionRequiresCompletedDistrictType,
 								required_missing_building = info.ActionRequiresMissingBuildingType,
 								required_great_work = info.ActionRequiresCityGreatWorkObjectType,
+								-- The host's own patronage quotes for this
+								-- individual, as GreatPeoplePopup.lua reads
+								-- them (lines 735-738). `nil` when the host
+								-- does not answer; the planner then keeps its
+								-- own price.
+								patron_gold = CivvisLedger.patronQuote(greatPeople, pid, entry, "GOLD"),
+								patron_faith = CivvisLedger.patronQuote(greatPeople, pid, entry, "FAITH"),
+								can_patron_gold = CivvisLedger.patronAllowed(greatPeople, pid, entry, "GOLD"),
+								can_patron_faith = CivvisLedger.patronAllowed(greatPeople, pid, entry, "FAITH"),
 							};
 							any = true;
 						end
@@ -13248,6 +13257,28 @@ CivvisLedger.greatPersonAvailable = function(greatPeople, pid, entry)
 	return try(function()
 		return greatPeople:CanRecruitPerson(pid, entry.Individual);
 	end, false) == true;
+end;
+
+-- The host's patronage quote for one timeline entry in Gold or Faith
+-- (`yield` is "GOLD" or "FAITH"), and whether the host would accept the
+-- purchase now. Base/Assets/UI/Popups/GreatPeoplePopup.lua:735-738:
+--   canPatronizeWithGold = pGreatPeople:CanPatronizePerson(displayPlayerID, entry.Individual, YieldTypes.GOLD);
+--   patronizeWithGoldCost = pGreatPeople:GetPatronizeCost(displayPlayerID, entry.Individual, YieldTypes.GOLD);
+-- Both answer nil when the host throws or the call is missing.
+CivvisLedger.patronQuote = function(greatPeople, pid, entry, yield)
+	return try(function()
+		local cost = greatPeople:GetPatronizeCost(pid, entry.Individual, YieldTypes[yield]);
+		if type(cost) ~= "number" then return nil; end
+		return cost;
+	end, nil);
+end;
+
+CivvisLedger.patronAllowed = function(greatPeople, pid, entry, yield)
+	return try(function()
+		local allowed = greatPeople:CanPatronizePerson(pid, entry.Individual, YieldTypes[yield]);
+		if type(allowed) ~= "boolean" then return nil; end
+		return allowed;
+	end, nil);
 end;
 
 CivvisLedger.componentKey = function(id)
@@ -22696,7 +22727,7 @@ local function applyOrders(player, pid, turn, rows)
 	local dialogueNoWar = false;
 	-- `score-seat-keeps-friends` (opt-in): the batch renews the dialogue
 	-- closer's lease; `subject` is the host player whose offer is refused.
-	local keepsFriends, keepsFriendsSpared = false, nil;
+	local keepsFriends, keepsFriendsSpared = false, {};
 	for i = #rows, 1, -1 do
 		local row = rows[i];
 		if row.kind == "combat_policy" and row.verb == "DOOMED_BLOW_VETO" then
@@ -22707,7 +22738,8 @@ local function applyOrders(player, pid, turn, rows)
 			table.remove(rows, i);
 		elseif row.kind == "combat_policy" and row.verb == "SCORE_SEAT_KEEPS_FRIENDS" then
 			keepsFriends = true;
-			keepsFriendsSpared = tonumber(row.subject);
+			local spared = tonumber(row.subject);
+			if spared ~= nil then keepsFriendsSpared[#keepsFriendsSpared + 1] = spared; end
 			table.remove(rows, i);
 		elseif row.kind == "combat_policy" and row.verb == "CONGRESS_GUARDS_THE_LEADER" then
 			-- `congress-guards-the-leader` (opt-in): the ballot reads it at the
@@ -22794,11 +22826,12 @@ local function applyOrders(player, pid, turn, rows)
 	-- one-turn lease there (CivvisControlAutoClose.lua) instead of a row flag.
 	if keepsFriends then
 		local leased = CivvisK.attempt(function()
-			LuaEvents.CivvisDialogueKeepsFriends(turn, keepsFriendsSpared);
+			LuaEvents.CivvisDialogueKeepsFriends(turn, table.concat(keepsFriendsSpared, ","));
 		end);
 		emit("combat_policy_applied", {
 			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
-			policy = "SCORE_SEAT_KEEPS_FRIENDS", leased = leased, spared = keepsFriendsSpared,
+			policy = "SCORE_SEAT_KEEPS_FRIENDS", leased = leased,
+			spared = table.concat(keepsFriendsSpared, ","),
 		});
 	end
 	if dialogueNoWar then

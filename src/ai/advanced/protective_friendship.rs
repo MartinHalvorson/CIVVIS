@@ -307,9 +307,8 @@ impl AdvancedAi {
         }
         // `friendship-spares-the-converter`: the founder whose faith we must
         // fight is not made an illegal target.
-        if self.friendship_spares_the_converter
-            && self.friendship_would_shield_the_converter(g, pid, other)
-        {
+        // `score-seat-keeps-friends`: on a Score seat only at match point.
+        if self.score_friends_spare_the_converter(g, pid, other) {
             return Some("friendship-spares-the-converter: their faith is the one we must fight");
         }
         if g.pending_deals.iter().any(|deal| {

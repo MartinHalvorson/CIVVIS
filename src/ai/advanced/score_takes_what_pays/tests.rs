@@ -225,9 +225,11 @@ fn the_named_city_opens_the_domination_gates() {
     assert!(!ai.conquest_gates_open(&game), "nothing named yet");
     ai.plan = Some(conquest_plan(forward));
     ai.score_take_observe(&game, 0);
+    assert_eq!(ai.score_take_named_city(&game, 0), Some((1, forward)));
     assert_eq!(
-        ai.score_take_state.named.map(|(r, c, _)| (r, c)),
-        Some((1, forward))
+        ai.score_take_state.named.as_ref().map(|(pos, _, _)| *pos),
+        Some(FORWARD),
+        "named by its tile"
     );
     assert!(ai.conquest_gates_open(&game));
     assert!(ai.score_take_lifts_the_cap());
@@ -309,4 +311,180 @@ fn a_named_city_lifts_the_peacetime_army_hold_while_the_corps_musters() {
     off.plan = Some(conquest_plan(forward));
     off.score_take_observe(&game, 0);
     assert!(off.score_seat_holds_the_army(false));
+}
+
+// ---- The graded versions (`-2`, `-3`, `-4`).
+
+fn graded(version: u8) -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Score);
+    match version {
+        1 => ai.enable_score_seat_takes_what_pays(),
+        2 => ai.enable_score_seat_takes_what_pays_2(),
+        3 => ai.enable_score_seat_takes_what_pays_3(),
+        4 => ai.enable_score_seat_grabs_what_pays(),
+        _ => {}
+    }
+    ai
+}
+
+/// The board with our capital walled and garrisoned and a funded treasury:
+/// every local circumstance holds.
+fn graded_board() -> (Game, u32) {
+    let (mut game, forward) = board();
+    swordsmen(&mut game);
+    let home = game.city_at((6, 12)).unwrap();
+    game.cities.get_mut(&home).unwrap().wall_hp = 100;
+    game.spawn_test_unit("warrior", 0, (6, 12));
+    game.players[0].gold = 500.0;
+    game.players[0].gold_per_turn = 10.0;
+    (game, forward)
+}
+
+/// Every rival's military at `ratio` times ours.
+fn rivals_at(game: &mut Game, ratio: f64) {
+    let ours = game.military_power(0).max(10.0);
+    let power = Arc::make_mut(&mut game.observed_military_power);
+    power.insert(1, ratio * ours);
+    power.insert(2, 0.1 * ours);
+}
+
+#[test]
+fn graded_versions_ship_off() {
+    opt_in_off_in_both_controllers("score-seat-takes-what-pays-2", |ai| {
+        ai.score_seat_takes_what_pays_2
+    });
+    opt_in_off_in_both_controllers("score-seat-takes-what-pays-3", |ai| {
+        ai.score_seat_takes_what_pays_3
+    });
+    opt_in_off_in_both_controllers("score-seat-grabs-what-pays", |ai| {
+        ai.score_seat_grabs_what_pays
+    });
+}
+
+#[test]
+fn each_version_caps_the_owners_military_at_its_grade() {
+    for (ratio, takes) in [
+        (0.9, [true, true, true, true]),
+        (1.3, [false, true, true, true]),
+        (2.0, [false, false, true, true]),
+        (4.0, [false, false, false, true]),
+    ] {
+        let (mut game, forward) = graded_board();
+        rivals_at(&mut game, ratio);
+        for (version, expected) in (1..=4).zip(takes) {
+            let pick = graded(version).score_take_pick(&game, 0, false);
+            assert_eq!(
+                pick.map(|take| take.city),
+                expected.then_some(forward),
+                "version {version} at {ratio} times our military"
+            );
+        }
+    }
+}
+
+#[test]
+fn each_local_circumstance_holds_the_graded_versions() {
+    let ai = graded(3);
+    // The owner's soldiers in sight within six tiles of the city (and out
+    // of the garrison's two) outweigh the corps.
+    let (mut game, forward) = graded_board();
+    rivals_at(&mut game, 2.0);
+    let ours: Vec<Pos> = [(10, 12), (9, 12), (10, 11)].to_vec();
+    let mut tiles: Vec<Pos> = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| (3..=SCORE_TAKE_LOCAL_REACH).contains(&game.wdist(*pos, FORWARD)))
+        .filter(|pos| ours.iter().any(|at| game.wdist(*at, *pos) <= 2))
+        .filter(|pos| game.unit_ids_at(*pos).is_empty() && game.city_at(*pos).is_none())
+        .collect();
+    tiles.sort_unstable();
+    assert!(tiles.len() >= 6, "{tiles:?}");
+    for pos in tiles.into_iter().take(6) {
+        game.spawn_test_unit("swordsman", 1, pos);
+    }
+    let take = ai
+        .score_take_price(&game, 0, forward)
+        .expect("still priced: the centre is unchanged");
+    let reason = ai
+        .score_take_circumstances(&game, 0, &take, false)
+        .unwrap_err();
+    assert!(reason.contains("outweigh the corps"), "{reason}");
+    // A city of ours in the owner's reach without Walls.
+    let (mut game, forward) = graded_board();
+    rivals_at(&mut game, 2.0);
+    let home = game.city_at((6, 12)).unwrap();
+    game.cities.get_mut(&home).unwrap().wall_hp = 0;
+    let take = ai.score_take_price(&game, 0, forward).unwrap();
+    let reason = ai
+        .score_take_circumstances(&game, 0, &take, false)
+        .unwrap_err();
+    assert!(reason.contains("without Walls"), "{reason}");
+    // ... or without a garrison.
+    let (mut game, forward) = board();
+    swordsmen(&mut game);
+    let home = game.city_at((6, 12)).unwrap();
+    game.cities.get_mut(&home).unwrap().wall_hp = 100;
+    game.players[0].gold = 500.0;
+    game.players[0].gold_per_turn = 10.0;
+    rivals_at(&mut game, 2.0);
+    let take = ai.score_take_price(&game, 0, forward).unwrap();
+    let reason = ai
+        .score_take_circumstances(&game, 0, &take, false)
+        .unwrap_err();
+    assert!(reason.contains("a garrison"), "{reason}");
+    // A treasury that would not carry the corps.
+    let (mut game, forward) = graded_board();
+    rivals_at(&mut game, 2.0);
+    game.players[0].gold = 0.0;
+    game.players[0].gold_per_turn = -5.0;
+    let take = ai.score_take_price(&game, 0, forward).unwrap();
+    let reason = ai
+        .score_take_circumstances(&game, 0, &take, false)
+        .unwrap_err();
+    assert!(reason.contains("treasury"), "{reason}");
+    // Version one reads none of these.
+    let (mut game, forward) = board();
+    swordsmen(&mut game);
+    weak_rivals(&mut game);
+    let v1 = graded(1);
+    let take = v1.score_take_price(&game, 0, forward).unwrap();
+    assert!(v1.score_take_circumstances(&game, 0, &take, false).is_ok());
+}
+
+#[test]
+fn a_capture_is_held_and_peace_follows_when_nothing_else_pays() {
+    let (mut game, forward) = graded_board();
+    rivals_at(&mut game, 2.0);
+    let mut ai = graded(3);
+    ai.plan = Some(conquest_plan(forward));
+    ai.score_take_observe(&game, 0);
+    assert_eq!(ai.score_take_named_city(&game, 0), Some((1, forward)));
+    // The war, then the capture.
+    game.at_war.insert((0, 1));
+    ai.score_take_observe(&game, 0);
+    assert!(
+        ai.score_take_state.war_base.is_some(),
+        "the war's ledger is read when it begins"
+    );
+    game.cities.get_mut(&forward).unwrap().owner = 0;
+    ai.score_take_observe(&game, 0);
+    assert!(
+        ai.score_take_state.held.contains_key(&FORWARD),
+        "the centre is held"
+    );
+    assert!(
+        ai.score_take_peace_due(&game, 0, 1),
+        "nothing else of theirs pays"
+    );
+    // A soldier on the held centre keeps it.
+    let keeper = game.spawn_test_unit("swordsman", 0, FORWARD);
+    assert!(ai.score_take_garrison_step(&mut game, 0, keeper).is_some());
+    // Version one asks no peace and holds no centre.
+    let mut v1 = graded(1);
+    v1.score_take_state
+        .took_from
+        .insert(game.players[1].civ.clone(), game.turn);
+    assert!(!v1.score_take_peace_due(&game, 0, 1));
 }

@@ -467,12 +467,15 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-writing-before-the-luxury` | off (unmeasured) | Opt-in Science Writing priority before optional research detours. | 1 \| 1 |
 | `score-seat-expands-hard` | off (unmeasured) | Opt-in gene `score-seat-expands-hard`; see `advanced/score_expands_hard.rs`. | 1 \| 1 |
 | `score-seat-founds-early` | off (unmeasured) | Opt-in `score-seat-founds-early`; see `advanced/score_seat_founds_early.rs`. | 1 \| 1 |
+| `score-seat-grabs-what-pays` | off (unmeasured) | Opt-in `score-seat-grabs-what-pays`; see `advanced/score_takes_what_pays.rs`. | 1 \| 1 |
 | `score-seat-holds-its-faith-strikes` | off (unmeasured) | Opt-in gene `score-seat-holds-its-faith-strikes`; see `advanced/score_seat_holds_its_faith_strikes.rs`. | 1 \| 1 |
 | `score-seat-keeps-friends` | off (unmeasured) | Opt-in gene `score-seat-keeps-friends`; see `advanced/score_keeps_friends.rs`. | 1 \| 1 |
 | `score-seat-plays-for-points` | off (unmeasured) | Opt-in gene `score-seat-plays-for-points`; see `advanced/score_seat.rs`. | 1 \| 1 |
 | `score-seat-raises-wonders` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders`; see `advanced/score_wonders.rs`. | — \| 2 |
 | `score-seat-raises-wonders-2` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders-2`; version two of the family, so version one is turned off. | — \| 2 |
-| `score-seat-takes-what-pays` | off (unmeasured) | Opt-in `score-seat-takes-what-pays`; see `advanced/score_takes_what_pays.rs`. | 1 \| 1 |
+| `score-seat-takes-what-pays` | off (unmeasured) | Opt-in `score-seat-takes-what-pays`; see `advanced/score_takes_what_pays.rs`. | — \| 3 |
+| `score-seat-takes-what-pays-2` | off (unmeasured) | Opt-in `score-seat-takes-what-pays-2`; see `advanced/score_takes_what_pays.rs`. | — \| 3 |
+| `score-seat-takes-what-pays-3` | off (unmeasured) | Opt-in `score-seat-takes-what-pays-3`; see `advanced/score_takes_what_pays.rs`. | — \| 3 |
 | `score-seat-trims-the-idle-army` | off (unmeasured) | Opt-in gene `score-seat-trims-the-idle-army`; see `advanced/score_seat.rs`. | 1 \| 1 |
 | `sea-scout-claims-the-queue` | off (unmeasured) | Opt-in gene `sea-scout-claims-the-queue`; see `advanced/contact_fleet.rs`. | — \| 2 |
 | `sea-scout-claims-the-queue-2` | off (unmeasured) | Opt-in gene `space-people-call-the-projects`; see `advanced/space_people_call_the_projects.rs`. | — \| 2 |
