@@ -85,34 +85,6 @@ fn urban_planning_fills_an_empty_economic_slot() {
 }
 
 #[test]
-fn urban_planning_leaves_a_live_builder_window_to_serfdom() {
-    let (mut game, mut ai) = peaceful_capital();
-    game.players[0].policies.insert(crate::name!("serfdom"));
-    ai.enable_builder_charge_window();
-    ai.enable_urban_planning_fills_the_slot();
-    // A Builder one production short of done reopens the window.
-    let cid = game.player_city_ids(0)[0];
-    let builder = Item::Unit {
-        unit: crate::name!("builder"),
-    };
-    game.cities
-        .get_mut(&cid)
-        .unwrap()
-        .queue
-        .push(builder.clone());
-    let cost = game.item_remaining_cost_for_city(0, cid, &builder);
-    game.cities.get_mut(&cid).unwrap().production = (cost - 1.0).max(0.0);
-    assert_eq!(
-        ai.builder_charge_window_card(&game, 0),
-        Some("serfdom"),
-        "fixture: the Builder window is open"
-    );
-    ai.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
-    assert!(holds(&game, "serfdom"), "a live window keeps Serfdom");
-    assert!(!holds(&game, "urban_planning"));
-}
-
-#[test]
 fn urban_planning_never_evicts_a_card_that_is_not_a_timed_one() {
     let (mut game, mut ai) = peaceful_capital();
     game.players[0]

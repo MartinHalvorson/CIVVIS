@@ -2238,15 +2238,6 @@ pub const GENES: &[Gene] = &[
     // the same Conquest answer on the same urgency bar, and aims
     // `victory_suppression_city` at the Theatre Square.
     Gene { tag: "counter-culture-by-conquest", field: "counter_culture_by_conquest", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_culture_by_conquest, disable: AdvancedAi::disable_counter_culture_by_conquest },
-    // `boost-planner` can only ever make an objective of three trigger
-    // families — `improvement*`, `units_of:` and `district:`. `building:` is
-    // the LARGEST family in the two trees, 21 of the 115 boost rows, and it is
-    // classed as strategic spending beside wonders, war and religion, so the
-    // planner never plans one. An ordinary building in a city that already has
-    // its district is the same kind of decision as the next district, which is
-    // planned. This admits exactly that case; `building_near_mountain:` and
-    // `themed_buildings` keep their Expensive reading.
-    Gene { tag: "boost-planner-builds", field: "boost_planner_builds", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_planner_builds, disable: AdvancedAi::disable_boost_planner_builds },
     // `denial-outranks-expansion` (2026-09-10): `actionable_denial` — a rival
     // close to winning and a counter this seat can execute — was ranked BELOW
     // the assigned lane in the strategy chain, and that lane answers
@@ -2304,8 +2295,6 @@ pub const GENES: &[Gene] = &[
     // A one-turn boosted technology interrupts a peaceful lane beeline that is
     // not about to land its target; see `boosted_bargain_tech_3`.
     Gene { tag: "boosted-bargain-first-3", field: "boosted_bargain_first_3", kind: Kind::OptIn, enable: AdvancedAi::enable_boosted_bargain_first_3, disable: AdvancedAi::disable_boosted_bargain_first_3 },
-    // Competitive economy hypotheses; see competitive_economy.rs.
-    Gene { tag: "builder-charge-window", field: "builder_charge_window", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_charge_window, disable: AdvancedAi::disable_builder_charge_window },
     Gene { tag: "trade-growth-to-district", field: "trade_growth_to_district", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_growth_to_district, disable: AdvancedAi::disable_trade_growth_to_district },
     Gene { tag: "culture-lane-forecast-2", field: "culture_lane_forecast_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_lane_forecast_2, disable: AdvancedAi::disable_culture_lane_forecast_2 },
     Gene { tag: "trade-production-to-launch", field: "trade_production_to_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_production_to_launch, disable: AdvancedAi::disable_trade_production_to_launch },
@@ -2655,16 +2644,9 @@ pub const GENES: &[Gene] = &[
     // pressure alone; game 70 left two religion slots open. See
     // `advanced/faith_veto.rs`.
     Gene { tag: "found-against-a-rival-faith", field: "found_against_a_rival_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_found_against_a_rival_faith, disable: AdvancedAi::disable_found_against_a_rival_faith },
-    // 19 of 29 live "Declaring war" lines on 2026-10-04 sent a denouncement;
-    // the staged army waited. See `strike_when_staged`.
-    Gene { tag: "domination-strikes-when-staged", field: "domination_strikes_when_staged", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_strikes_when_staged, disable: AdvancedAi::disable_domination_strikes_when_staged },
     // Live King 174103Z stood down six Dutch objectives in 95 turns with the
     // army still on the road. See `advanced/capture_march.rs`.
     Gene { tag: "capture-waits-on-the-march", field: "capture_waits_on_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_waits_on_the_march, disable: AdvancedAi::disable_capture_waits_on_the_march },
-    // Live King 014503Z offered the Inca, its only war, Recovery peace at 321
-    // power against 202 with Qusqu the objective. See
-    // `one_war::recovery_keeps_the_war`.
-    Gene { tag: "recovery-keeps-a-winning-war", field: "recovery_keeps_a_winning_war", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_keeps_a_winning_war, disable: AdvancedAi::disable_recovery_keeps_a_winning_war },
     // Live King 160213Z fought Germany for 92 turns without a capture while
     // the at-war Maori held the capital it needed. See
     // `one_war::stalled_front_swap`.
@@ -6469,7 +6451,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("boost-first-research", [Some(13), Some(1), Some(-10)]),
     ("boost-first-research-2", [Some(-4), Some(-6), Some(-11)]),
     ("boost-planner", [Some(5), Some(-18), Some(12)]),
-    ("boost-planner-builds", [Some(-4), Some(-21), Some(-25)]),
     ("boost-unlock-research", [Some(9), Some(-9), Some(-7)]),
     ("boost-wait-research-2", [Some(-1), Some(-1), Some(4)]),
     ("boosted-bargain-first", [Some(-9), Some(-17), Some(6)]),
@@ -6499,7 +6480,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("builder-before-the-army", [Some(-11), Some(-1), None]),
     ("builder-before-the-army-2", [Some(-9), Some(9), None]),
     ("builder-before-the-army-3", [Some(1), Some(2), None]),
-    ("builder-charge-window", [Some(-3), Some(-6), Some(-22)]),
     ("builder-supply-floor", [Some(23), Some(-4), Some(24)]),
     ("builder-tries-the-next-tile", [Some(-5), Some(-13), Some(13)]),
     ("builder-workforce-recovery", [Some(8), Some(6), Some(2)]),
@@ -6655,7 +6635,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("domination-siege-research", [Some(-5), Some(3), Some(24)]),
     ("domination-siege-research-2", [Some(-2), Some(-14), None]),
     ("domination-specializes-earlier", [Some(-3), Some(-12), Some(5)]),
-    ("domination-strikes-when-staged", [Some(-8), Some(-4), None]),
     ("doomed-blow-veto", [Some(-1), Some(5), Some(16)]),
     ("doomed-blow-veto-2", [Some(-6), Some(11), Some(-13)]),
     ("dry-road-outlasts-a-blocked-step", [Some(14), Some(-25), None]),
@@ -6892,7 +6871,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("raze-a-doomed-capture", [Some(8), Some(-17), None]),
     ("recon-replacement", [Some(9), Some(-15), Some(-38)]),
     ("recorded-tactical-step", [Some(3), Some(9), Some(-6)]),
-    ("recovery-keeps-a-winning-war", [Some(-11), Some(-13), None]),
     ("recovery-needs-the-deficit", [Some(11), Some(-18), None]),
     ("recovery-peace-waits", [Some(-7), Some(-4), None]),
     ("recovery-reads-the-war", [Some(-5), Some(9), Some(-10)]),

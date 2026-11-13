@@ -851,12 +851,6 @@ impl AdvancedAi {
             desired.splice(0..0, nobel_peace_direct_favor_cards.iter().copied());
         }
 
-        let builder_window_card = self.builder_charge_window_card(g, pid);
-        if let Some(card) = builder_window_card {
-            desired.retain(|wanted| *wanted != card);
-            desired.insert(0, card);
-        }
-
         // Tourism defense must enter the protected set before ordinary cards
         // are considered, including when the empire targets another victory.
         let culture_defense_cards = self.culture_defense_cards(g, pid);
@@ -981,7 +975,6 @@ impl AdvancedAi {
                 || drain_cards.iter().any(|(gold_card, _)| *gold_card == card)
                 || religion_upkeep.is_some_and(|(relief, _)| relief == card)
                 || upgrade_card == Some(card)
-                || builder_window_card == Some(card)
                 || race_card == Some(card)
                 || matches!(card, "praetorium" | "limitanei")
         };
@@ -1141,7 +1134,6 @@ impl AdvancedAi {
                         return !culture_defense_cards.contains(&current.as_str())
                             && !nobel_peace_direct_favor_cards.contains(&current.as_str())
                             && upgrade_card != Some(current.as_str())
-                            && builder_window_card != Some(current.as_str())
                             && race_card != Some(current.as_str())
                             && Self::religion_upkeep_may_displace(g, pid, current.as_str(), saving);
                     }
@@ -1153,7 +1145,6 @@ impl AdvancedAi {
                         return Self::medina_quarter_may_displace(g, current)
                             && !culture_defense_cards.contains(&current)
                             && !nobel_peace_direct_favor_cards.contains(&current)
-                            && builder_window_card != Some(current)
                             && upgrade_card != Some(current)
                             && race_card != Some(current);
                     }
@@ -1177,13 +1168,6 @@ impl AdvancedAi {
                     if urban_planning_tail && card == "urban_planning" {
                         return URBAN_PLANNING_ORPHANED_TIMED_CARDS.contains(&current.as_str())
                             && !desired_set.contains(current.as_str());
-                    }
-                    if builder_window_card == Some(card) {
-                        // Protection applies even when the current card is
-                        // absent from this strategy's ordinary portfolio.
-                        return !culture_defense_cards.contains(&current.as_str())
-                            && !nobel_peace_direct_favor_cards.contains(&current.as_str())
-                            && self.builder_window_can_replace(g, pid, current);
                     }
                     // With `policy-deck-hysteresis-2` the same holds for the
                     // maintenance emergency: a wanted card's rank does not
@@ -1298,7 +1282,6 @@ impl AdvancedAi {
                             && !culture_defense_cards.contains(&current.as_str())
                             && !nobel_peace_direct_favor_cards.contains(&current.as_str())
                             && upgrade_card != Some(current.as_str())
-                            && builder_window_card != Some(current.as_str())
                             && !matches!(current.as_str(), "limitanei" | "praetorium")
                             && !(maintenance_emergency
                                 && matches!(current.as_str(), "conscription" | "levee_en_masse")))
@@ -1379,11 +1362,7 @@ impl AdvancedAi {
                     {
                         self.drain_card_turn.set(Some(g.turn));
                     }
-                    if builder_window_card == Some(card) {
-                        think!(self.journal(), Policies, Decision,
-                               "Slotted {} over {}", plain(card), plain(&current);
-                               "a Builder is almost finished; Serfdom adds two build charges");
-                    } else if flower_power_card == Some(card) {
+                    if flower_power_card == Some(card) {
                         self.journal_flower_power_slotted(flower_power.as_ref(), Some(&current));
                     } else if let (true, Some(qualifying)) =
                         (card == "medina_quarter", medina_quarter)

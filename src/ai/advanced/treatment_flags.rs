@@ -1454,9 +1454,6 @@ impl AdvancedAi {
         /// instead of waiting for a growing city target. Opt-in gene
         /// `domination-lane-hands-over`.
         domination_lane_hands_over => enable_domination_lane_hands_over, disable_domination_lane_hands_over;
-        /// `boost-planner-builds`: the boost planner serves `building:` triggers.
-        /// See `advanced/boost_planner.rs`.
-        boost_planner_builds => enable_boost_planner_builds, disable_boost_planner_builds;
         /// The army's turn planned from a ranked Objective Board — rows valued in
         /// hammers with a requirement and a deadline — and served by persistent
         /// task forces, in place of proximity force groups and the posture
@@ -1532,7 +1529,6 @@ impl AdvancedAi {
         domination_capital_focus => enable_domination_capital_focus, disable_domination_capital_focus;
         /// See `AdvancedAi::expansion_hall_district`.
         expansion_hall_district => enable_expansion_hall_district, disable_expansion_hall_district;
-        builder_charge_window => enable_builder_charge_window, disable_builder_charge_window;
         trade_growth_to_district => enable_trade_growth_to_district, disable_trade_growth_to_district;
         /// `builders-work-through-raiders`: the live capture lessons' reach holds
         /// keep Settlers only. See `AdvancedAi::builder_reach_safety_on`.
@@ -1641,15 +1637,9 @@ impl AdvancedAi {
         /// Opt-in gene `found-against-a-rival-faith`; see
         /// [`Self::found_against_a_rival_faith`].
         found_against_a_rival_faith => enable_found_against_a_rival_faith, disable_found_against_a_rival_faith;
-        /// Opt-in gene `domination-strikes-when-staged`; see
-        /// [`Self::domination_strikes_when_staged`].
-        domination_strikes_when_staged => enable_domination_strikes_when_staged, disable_domination_strikes_when_staged;
         /// Opt-in gene `capture-waits-on-the-march`; see
         /// [`Self::capture_waits_on_the_march`].
         capture_waits_on_the_march => enable_capture_waits_on_the_march, disable_capture_waits_on_the_march;
-        /// Opt-in gene `recovery-keeps-a-winning-war`; see
-        /// [`Self::recovery_keeps_a_winning_war`].
-        recovery_keeps_a_winning_war => enable_recovery_keeps_a_winning_war, disable_recovery_keeps_a_winning_war;
         /// Opt-in gene `one-war-swaps-a-stalled-front`; see
         /// [`Self::one_war_swaps_a_stalled_front`].
         one_war_swaps_a_stalled_front => enable_one_war_swaps_a_stalled_front, disable_one_war_swaps_a_stalled_front;

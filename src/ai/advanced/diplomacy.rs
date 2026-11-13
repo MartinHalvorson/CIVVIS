@@ -2,8 +2,8 @@
 //!
 //! `advanced_diplomacy` runs it: deals in and out (`incoming_deal_value`,
 //! `strategic_bilateral_trade`), alliances (`propose_strategic_alliance`),
-//! and when to open a war (`timed_war_opening`, `preferred_war_opening`,
-//! `strike_when_staged` and the staging checks behind them).
+//! and when to open a war (`timed_war_opening`, `preferred_war_opening`
+//! and the staging checks behind them).
 //! `congress_choice` votes in the World Congress, `advanced_envoys` places
 //! envoys with city-states, and `advanced_spies` runs the spy corps.
 //!
@@ -1288,41 +1288,6 @@ impl AdvancedAi {
         }
     }
 
-    /// `domination-strikes-when-staged`: the surprise war to open with in
-    /// place of `opening`, when `opening` is a denouncement, the army is
-    /// `staged`, the seat targets Domination and holds
-    /// [`STRIKE_WHEN_STAGED_RATIO`] times the target's power. Live King games
-    /// on 2026-10-04: 19 of 29 "Declaring war" lines sent only a
-    /// denouncement, and the Formal War followed 3 to 66 turns later (5 to
-    /// 16 typically). A staged army sat idle while the target reinforced.
-    /// The surprise war costs grievances and favor (game 63 drained its favor
-    /// to zero in ten turns of war), which is what the gene measures.
-    pub(super) fn strike_when_staged(
-        &self,
-        g: &Game,
-        pid: usize,
-        target: usize,
-        opening: &Action,
-        staged: bool,
-    ) -> Option<Action> {
-        if !self.domination_strikes_when_staged
-            || !staged
-            || !matches!(opening, Action::Denounce { .. })
-            // See `favor_spares_surprise`.
-            || self.favor_spares_surprise(g, pid, target)
-            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
-            || g.military_power(pid) < STRIKE_WHEN_STAGED_RATIO * g.military_power(target).max(1.0)
-            // `declaration-needs-a-capture`: the surprise war in place of a
-            // denouncement is a declaration too.
-            || self.declaration_lacks_a_capture(g, pid, target)
-        {
-            return None;
-        }
-        g.legal_actions_within(pid, ActionFamilies::DIPLOMACY)
-            .into_iter()
-            .find(|action| matches!(action, Action::DeclareWar { player } if *player == target))
-    }
-
     pub(super) fn staged_campaign_units(
         &self,
         g: &Game,
@@ -1959,9 +1924,6 @@ impl AdvancedAi {
                         // Nor with a beaten rival in the fog. See
                         // `unseen_prey`.
                         && !self.unseen_prey(g, pid, *other)
-                        // Nor a war we are winning when the Recovery plan
-                        // fights no other. See `recovery_keeps_the_war`.
-                        && !self.recovery_keeps_the_war(g, pid, *other, plan)
                         // Nor on a Recovery that has not stood. See
                         // `recovery_peace_ready`.
                         && self.recovery_peace_ready(g))
@@ -2783,11 +2745,7 @@ impl AdvancedAi {
                 }
                 opening => opening,
             };
-            if let Some(mut action) = opening {
-                // See `STRIKE_WHEN_STAGED_RATIO`.
-                if let Some(surprise) = self.strike_when_staged(g, pid, target, &action, staged) {
-                    action = surprise;
-                }
+            if let Some(action) = opening {
                 let denounce_first = matches!(action, Action::Denounce { .. });
                 // `score-seat-keeps-friends`: no denouncement of our own on a
                 // Score seat, but on the campaign's own target.

@@ -2,8 +2,7 @@
 //! See docs/eval/2026-09-10-competitive-economy.md for sources and boundaries.
 
 use super::AdvancedAi;
-use crate::game::{Game, Item};
-use crate::name::Name;
+use crate::game::Game;
 use crate::rules::Yields;
 
 impl AdvancedAi {
@@ -59,50 +58,6 @@ impl AdvancedAi {
         // A bounded tie-break on the existing per-route yield score. Speed
         // normalization keeps the same economic weight on Online and Standard.
         ((without_route - with_route).max(0.0) / g.game_speed.scale(1.0) * 2.0).min(24.0)
-    }
-
-    /// The completion half of the Feudalism wave. The base portfolio can
-    /// protect a previously slotted economic card forever; a ready Builder
-    /// needs Serfdom now. No speculative Builder queues or paid research delay.
-    pub(super) fn builder_charge_window_card(&self, g: &Game, pid: usize) -> Option<&'static str> {
-        if !self.builder_charge_window
-            || (!g.has_policy(pid, "serfdom")
-                && !g.available_policies(pid).contains(&crate::name!("serfdom")))
-        {
-            return None;
-        }
-        g.player_city_ids(pid)
-            .into_iter()
-            .any(|cid| {
-                let Some(item @ Item::Unit { unit }) = g.cities[&cid].queue.first() else {
-                    return false;
-                };
-                if unit != "builder" {
-                    return false;
-                }
-                let rate = g.city_yields(cid).production * g.item_prod_mult(pid, cid, Some(item));
-                rate > 0.0
-                    && g.item_remaining_cost_for_city(pid, cid, item) / rate
-                        <= g.game_speed.scale(3.0)
-            })
-            .then_some("serfdom")
-    }
-
-    pub(super) fn builder_window_can_replace(&self, g: &Game, pid: usize, current: &Name) -> bool {
-        if g.rules.policies[current].slot != "economic"
-            || matches!(
-                current.as_str(),
-                "serfdom" | "public_works" | "liberalism" | "civil_prestige" | "new_deal"
-            )
-        {
-            return false;
-        }
-        // Do not finance the Builder wave by removing a live Settler wave's
-        // production card. Typed slot legality remains the policy desk's job.
-        !matches!(current.as_str(), "colonization" | "expropriation")
-            || !g.player_city_ids(pid).into_iter().any(|cid| {
-                matches!(g.cities[&cid].queue.first(), Some(Item::Unit { unit }) if unit == "settler")
-            })
     }
 }
 

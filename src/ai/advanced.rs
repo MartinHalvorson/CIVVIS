@@ -593,10 +593,6 @@ const TOURISM_LEADER_MARGIN: f64 = 1.25;
 /// the capital march consumes the whole war. The diplomatic opening gate is
 /// wider; it does not mean an 18-tile capital is the best first siege.
 const DOMINATION_FIRST_CAPTURE_MARCH: i32 = 8;
-/// `domination-strikes-when-staged`: our power over the target at which a
-/// staged Domination army takes the surprise war instead of denouncing and
-/// waiting five turns for a Formal War. See `strike_when_staged`.
-const STRIKE_WHEN_STAGED_RATIO: f64 = 2.0;
 
 /// The capital whose capture completes Domination is a first objective out
 /// to this march when we hold [`FINISHING_CAPITAL_POWER`] times its owner's
@@ -5347,12 +5343,6 @@ pub struct AdvancedAi {
     /// jobs under the native Builder safety instead. See
     /// `AdvancedAi::builder_reach_safety_on`.
     builders_work_through_raiders: bool,
-    /// Slot Serfdom while a queued Builder is close to completion.
-    builder_charge_window: bool,
-    /// `boost-planner-builds`: the boost planner may make a side objective of a
-    /// `building:` trigger, the largest family in the two trees, which it
-    /// otherwise reads as strategic spending and never plans.
-    boost_planner_builds: bool,
     /// Plan the next six technologies' and four civics' boosts: classify each
     /// trigger by what it costs the plan and turn the cheap ones into at most
     /// three deadlined side objectives, each a 15 percent premium on the one
@@ -6062,10 +6052,6 @@ pub struct AdvancedAi {
     /// defender and opens its wall tier, the civilization's unique unit
     /// preferred. See `advanced/decisive_window.rs`.
     decisive_window: bool,
-    /// `domination-strikes-when-staged`: a staged Domination army at
-    /// `STRIKE_WHEN_STAGED_RATIO` times the target's power takes the surprise
-    /// war rather than denounce first. See `strike_when_staged`. Off by default.
-    domination_strikes_when_staged: bool,
     /// `capture-waits-on-the-march`: a declared capture whose nearest land
     /// soldier keeps closing in is not stood down as "nobody went". See
     /// `advanced/capture_march.rs`. Off by default.
@@ -9145,11 +9131,6 @@ pub struct AdvancedAi {
     /// will revolt before any rescue can establish. See
     /// `DOOMED_CAPTURE_TURNS`. Off by default.
     raze_doomed_capture: bool,
-    /// `recovery-keeps-a-winning-war`: the Recovery plan's "this is not the
-    /// war the recovery plan is fighting" peace spares a war we are winning
-    /// when the plan fights no other. See `one_war::recovery_keeps_the_war`.
-    /// Off by default.
-    recovery_keeps_a_winning_war: bool,
     /// The policy deck keeps the maintenance relief the host held at the
     /// turn's start and the Amenity repair card while it is what keeps a city
     /// content. Opt-in gene `policy-deck-hysteresis`; see
