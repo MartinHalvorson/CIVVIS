@@ -1,7 +1,21 @@
-//! `score-seat-founds-early`: on a Score-target seat, an early Settler that
-//! has walked past its patience, or that the live home corridor would send
-//! back to the capital, takes the best safe, holdable site within reach and
-//! founds there instead of chasing its ranked site.
+//! `score-seat-founds-early`: on every seat but a Domination one, an early
+//! Settler that has walked past its patience, or that the live home corridor
+//! would send back to the capital, takes the best safe, holdable site within
+//! reach and founds there instead of chasing its ranked site.
+//!
+//! **Every target but Domination** (2026-11-13: the Rome lane left the Score
+//! target for Science and Diplomatic games of 250 turns, and this gene, armed
+//! for Score, went inert with the target). The first six Science games
+//! (`civvis-20261113T160115Z` to `T171033Z`) held 10, 3, 5, 8, 5 and 10
+//! cities at turn 100. `T161411Z` sat at three cities from turn 30 to turn
+//! 135 without a war while its Settlers stood unfounded: two at turn 45, four
+//! at turn 75, seven from turn 105 on, under "HELD short of", "keeps (0, 37)
+//! through a blocked approach" and "holds for a naval escort" for 85 turns.
+//! `T165456Z` held five cities from turn 60 to turn 180 with two or three
+//! Settlers on the board throughout. Over 88 Rome games a Settler first seen
+//! by turn 30 outlived twenty turns 4% of the time. A Settler that walks is
+//! the same loss on any peaceful lane; a Domination seat keeps its own
+//! settling (its Settlers follow the conquest opening).
 //!
 //! ## What the live games say
 //!
@@ -33,8 +47,10 @@
 //!
 //! ## What the gene does
 //!
-//! On a Score seat, in the first [`SCORE_FOUNDS_EARLY_UNTIL_STANDARD`]
-//! standard turns (80 at Online), before the ordinary Settler step:
+//! On every seat but a Domination one
+//! ([`AdvancedAi::score_seat_founds_early_on`]), in the first
+//! [`SCORE_FOUNDS_EARLY_UNTIL_STANDARD`] standard turns (80 at Online),
+//! before the ordinary Settler step:
 //!
 //! - The Settler's clock is the turns since it was first stepped
 //!   (`settler_walk_started`), which a return home does not reset.
@@ -50,8 +66,9 @@
 //!   to it and takes a safe step. When nothing qualifies the ordinary step
 //!   runs untouched: a Settler captured is worse than a Settler late.
 //!
-//! Off, on another target, after the early window or embarked, it returns
-//! before reading the board. Grep the journal for `score-seat-founds-early:`.
+//! Off, on a Domination target, after the early window or embarked, it
+//! returns before reading the board. Grep the journal for
+//! `score-seat-founds-early:`.
 
 use super::*;
 
@@ -62,6 +79,13 @@ pub(super) const SCORE_FOUNDS_EARLY_PATIENCE_STANDARD: u32 = 10;
 pub(super) const SCORE_FOUNDS_EARLY_UNTIL_STANDARD: u32 = 120;
 
 impl AdvancedAi {
+    /// The gene is on and the seat's victory target is not Domination. See
+    /// the module.
+    pub(super) fn score_seat_founds_early_on(&self, g: &Game) -> bool {
+        self.score_seat_founds_early
+            && self.active_victory_target(g) != Some(VictoryTarget::Domination)
+    }
+
     /// `score-seat-founds-early`: the Settler's turn when its patience has
     /// run out (or the corridor would send it home) and a safe site is in
     /// reach: `Some(acted)`. `None` leaves the ordinary step untouched.
@@ -71,8 +95,7 @@ impl AdvancedAi {
         pid: usize,
         uid: u32,
     ) -> Option<bool> {
-        if !self.score_seat_founds_early
-            || self.active_victory_target(g) != Some(VictoryTarget::Score)
+        if !self.score_seat_founds_early_on(g)
             || g.turn > g.standard_duration(SCORE_FOUNDS_EARLY_UNTIL_STANDARD)
         {
             return None;
