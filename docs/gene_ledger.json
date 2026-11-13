@@ -5521,6 +5521,15 @@
           "science-victory-drive-2": null
         }
       },
+      "score-seat-raises-wonders": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "score-seat-raises-wonders": null,
+          "score-seat-raises-wonders-2": null
+        }
+      },
       "sea-scout-claims-the-queue": {
         "rule_on": [],
         "head": null,
