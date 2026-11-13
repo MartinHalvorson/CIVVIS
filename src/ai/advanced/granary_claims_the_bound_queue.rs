@@ -166,8 +166,9 @@ impl AdvancedAi {
                         || self.first_capital_training_holds(g, pid, cid, item)
                         || self.culture_monument_finishes_first(g, pid, cid, plan, item)
                         // `campus-and-library-before-the-claims`: its first
-                        // Campus, Library or University goes first.
-                        || self.campus_and_library_holds(g, pid, cid, plan, item)
+                        // Campus, Library or University goes first (not on a
+                        // Science or Diplomatic seat).
+                        || self.campus_and_library_holds_the_growth_writers(g, pid, cid, plan, item)
                         // `domination-seat-raises-its-culture`: its Monument
                         // goes first.
                         || self.domination_monument_holds(g, pid, cid, plan, item)

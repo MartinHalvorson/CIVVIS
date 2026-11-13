@@ -14,11 +14,9 @@
 //! 136 of the 142 floor-held turns two or more cities already stood, and the
 //! held Campus was a median 5 turns away (4 to 7 for 80% of them).
 //!
-//! **The gene.** While the active victory target is Domination, Score,
-//! Science or Diplomacy ([`AdvancedAi::campus_first_seat`]: the score counts
-//! the techs a Campus brings as much as a city, and the Science seat went
-//! without this exception from the day the lane left the Score target; see
-//! `campus_and_library_before_the_claims.rs`), the empire
+//! **The gene.** While the active victory target is Domination or Score
+//! ([`AdvancedAi::conquest_or_score_seat`]: the score counts the techs a
+//! Campus brings as much as a city), the empire
 //! holds no Campus (standing, a foundation, or queued), at least
 //! [`FIRST_CAMPUS_BEFORE_THE_SETTLER_MIN_CITIES`] cities stand and no major is
 //! at war with us, the free-slot claim's Campus goes ahead of the floor's
@@ -70,9 +68,8 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> bool {
         self.first_campus_before_the_settler
-            // A Score, Science or Diplomatic seat too: see
-            // [`AdvancedAi::campus_first_seat`].
-            && self.campus_first_seat(g)
+            // A Score seat too: see [`AdvancedAi::conquest_or_score_seat`].
+            && self.conquest_or_score_seat(g)
             && g.player_city_ids(pid).len() >= FIRST_CAMPUS_BEFORE_THE_SETTLER_MIN_CITIES
             && !plan.rush
             && plan.threatened_city.is_none()
