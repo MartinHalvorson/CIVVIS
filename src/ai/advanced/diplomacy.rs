@@ -1183,7 +1183,32 @@ impl AdvancedAi {
             })
     }
 
+    /// The opening a war on `target` starts with: a casus belli, a surprise
+    /// war, or the denouncement that licenses a Formal War. Under
+    /// `declaration-needs-a-capture` a declaration on a major is held
+    /// (`None`) unless the soldiers in reach forecast a capture; see
+    /// `advanced/declaration_needs_a_capture.rs`. A denouncement is never
+    /// held.
     pub(super) fn preferred_war_opening(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+    ) -> Option<Action> {
+        let opening = self.preferred_war_opening_ungated(g, pid, target)?;
+        let declares = matches!(
+            opening,
+            Action::DeclareWar { .. } | Action::DeclareWarWithCasusBelli { .. }
+        );
+        if declares && self.declaration_lacks_a_capture(g, pid, target) {
+            return None;
+        }
+        Some(opening)
+    }
+
+    /// [`Self::preferred_war_opening`] without the capture gate: the road of
+    /// the faith wars, whose point is the spreaders rather than a city.
+    pub(super) fn preferred_war_opening_ungated(
         &self,
         g: &Game,
         pid: usize,
@@ -1287,6 +1312,9 @@ impl AdvancedAi {
             || self.favor_spares_surprise(g, pid, target)
             || self.active_victory_target(g) != Some(VictoryTarget::Domination)
             || g.military_power(pid) < STRIKE_WHEN_STAGED_RATIO * g.military_power(target).max(1.0)
+            // `declaration-needs-a-capture`: the surprise war in place of a
+            // denouncement is a declaration too.
+            || self.declaration_lacks_a_capture(g, pid, target)
         {
             return None;
         }

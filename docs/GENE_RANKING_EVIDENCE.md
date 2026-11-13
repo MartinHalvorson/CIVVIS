@@ -17,21 +17,21 @@ Of 72 priced genes the interval clears zero for **20 upward** and **0 downward**
 | `air-surge` | +101 [+76, +125] | 100.0% | 2 | off | **on** |
 | `barbarian-scouts-are-scouts` | +30 [+8, +51] | 99.6% | 5 | off | **on** |
 | `bounded-recovery` | +31 [+14, +48] | 100.0% | 5 | on | **on** |
-| `buildings-before-projects` | +28 [+5, +51] | 99.2% | 5 | on | **on** |
+| `buildings-before-projects` | +28 [+5, +51] | 99.2% | 5 | off | **on** |
 | `culture-building-debt` | +26 [+1, +51] | 97.8% | 2 | off | **on** |
 | `engine-faith-price` | +63 [+25, +101] | 99.9% | 1 | off | **on** |
-| `escort-unstick` | +32 [+8, +57] | 99.5% | 5 | on | **on** |
+| `escort-unstick` | +32 [+8, +57] | 99.5% | 5 | off | **on** |
 | `founder-temple` | +19 [+1, +38] | 97.8% | 4 | on | **on** |
 | `great-person-housing` | +84 [+64, +105] | 100.0% | 3 | on | **on** |
 | `idle-faith-patronage` | +26 [+11, +40] | 100.0% | 4 | off | **on** |
 | `loyalty-rate-alarm` | +40 [+22, +58] | 100.0% | 5 | off | **on** |
 | `maintenance-aware-deck` | +61 [+24, +99] | 99.9% | 1 | on | **on** |
 | `opportunistic-war` | +48 [+20, +76] | 100.0% | 3 | off | **on** |
-| `peacetime-deterrence` | +18 [+1, +35] | 98.2% | 5 | on | **on** |
-| `price-the-suzerainty` | +56 [+18, +93] | 99.8% | 1 | on | **on** |
+| `peacetime-deterrence` | +18 [+1, +35] | 98.2% | 5 | off | **on** |
+| `price-the-suzerainty` | +56 [+18, +93] | 99.8% | 1 | off | **on** |
 | `raid-pillage-prizes` | +54 [+25, +83] | 100.0% | 3 | on | **on** |
 | `recon-replacement` | +51 [+30, +72] | 100.0% | 5 | off | **on** |
-| `recorded-tactical-step` | +17 [+0, +33] | 97.5% | 5 | on | **on** |
+| `recorded-tactical-step` | +17 [+0, +33] | 97.5% | 5 | off | **on** |
 | `settle-sooner` | +35 [+14, +55] | 100.0% | 3 | on | **on** |
 | `wide-map-capacity` | +61 [+28, +93] | 100.0% | 5 | on | **on** |
 
@@ -115,42 +115,42 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `whole-turn-backtrack-guard` | +12 [-8, +31] | 88.2% | off | +11.8 | 96,625 |
 | `one-launch-pad` | +11 [-5, +28] | 91.6% | off | +11.4 | 81,761 |
 | `barbarian-ranged-answer` | +11 [-10, +32] | 85.1% | off | +10.9 | 126,996 |
+| `blind-objective-strength` | +11 [-10, +31] | 84.9% | off | +10.8 | 131,056 |
+| `research-tier-premium` | +10 [-24, +43] | 71.2% | off | +10.3 | 208,314 |
 | `relief-targets-the-siege` | +10 [-7, +26] | 87.0% | off | +9.6 | 153,392 |
+| `slot-kind-tiebreak` | +9 [-7, +26] | 87.4% | off | +9.4 | 156,019 |
 | `religious-units-heal-first` | +9 [-14, +33] | 78.0% | off | +9.3 | 208,321 |
 | `promote-when-wounded` | +7 [-31, +45] | 64.5% | off | +8.9 | 396,852 |
+| `strategic-wonders` | +9 [-7, +25] | 85.6% | off | +8.8 | 192,886 |
 | `lane-culture-spending` | +9 [-15, +32] | 75.9% | off | +8.6 | 250,826 |
+| `early-contact-window` | +8 [-16, +31] | 73.8% | off | +7.8 | 318,670 |
 | `pantheon-board` | +5 [-32, +43] | 61.0% | off | +7.5 | 728,917 |
 | `come-ashore` | +7 [-10, +24] | 79.3% | off | +7.0 | 353,593 |
+| `religion-sues-peace` | +7 [-11, +24] | 77.2% | off | +6.6 | 421,343 |
 | `army-target-weighs-enemy` | +5 [-16, +25] | 67.3% | off | +4.9 | 903,207 |
 | `campus-adjacency-threshold` | +0 [-38, +38] | 50.3% | off | +4.5 | 829,756,465 |
 | `coordinated-finish` | -0 [-38, +37] | 49.1% | off | +4.1 | 110,743,705 |
 | `holy-site-where-the-threat-is` | -1 [-38, +36] | 47.7% | off | +3.8 | 17,424,370 |
+| `builder-barbarian-safety` | +3 [-16, +23] | 62.9% | off | +3.6 | 1,859,339 |
 | `enhancer-for-the-corps` | +3 [-21, +26] | 58.6% | off | +3.6 | 2,978,891 |
+| `settler-guard-holds` | +3 [-13, +19] | 65.5% | off | +3.4 | 1,871,682 |
+| `lane-space-race` | +1 [-22, +25] | 54.3% | off | +2.7 | 12,292,990 |
 | `power-the-laboratory` | +1 [-23, +24] | 52.0% | off | +2.2 | 57,902,647 |
 | `housing-research` | +0 [-22, +23] | 51.6% | off | +1.9 | 97,478,820 |
 | `amenity-project-preemption` | -1 [-26, +25] | 48.2% | off | +1.9 | 62,802,848 |
 | `religious-defence-scales` | -0 [-24, +24] | 49.1% | off | +1.8 | 290,353,107 |
 | `district-coverage` | +0 [-20, +20] | 50.8% | off | +1.5 | 558,338,216 |
-| `lane-space-race` | +1 [-22, +25] | 54.3% | on | +1.4 | 12,292,990 |
 | `one-shot-recovery` | -2 [-25, +22] | 43.7% | off | +1.1 | 5,846,162 |
 | `unit-objective-memory` | +10 [-28, +47] | 69.7% | on | +1.1 | 201,764 |
 | `science-multiplier-payoff` | +6 [-24, +35] | 64.5% | on | +0.9 | 639,181 |
 | `settler-target-hysteresis` | +0 [-16, +16] | 50.7% | on | +0.9 | 1,036,197,883 |
 | `blind-objective-units` | +0 [-16, +16] | 51.4% | on | +0.8 | 245,127,417 |
-| `research-tier-premium` | +10 [-24, +43] | 71.2% | on | +0.7 | 208,314 |
 | `lane-great-people` | +13 [-22, +48] | 77.0% | on | +0.4 | 103,314 |
-| `builder-barbarian-safety` | +3 [-16, +23] | 62.9% | on | +0.3 | 1,859,339 |
 | `siege-commitment` | -2 [-18, +14] | 40.5% | off | +0.3 | 5,199,392 |
 | `unit-cost-efficiency` | +17 [-20, +55] | 81.7% | on | +0.3 | 55,043 |
-| `early-contact-window` | +8 [-16, +31] | 73.8% | on | +0.1 | 318,670 |
 | `naval-recon` | -3 [-19, +13] | 35.6% | off | +0.1 | 2,174,265 |
 | `apostle-promotion-by-role` | +6 [-15, +27] | 71.4% | on | +0.1 | 520,461 |
-| `settler-guard-holds` | +3 [-13, +19] | 65.5% | on | +0.1 | 1,871,682 |
-| `religion-sues-peace` | +7 [-11, +24] | 77.2% | on | +0.0 | 421,343 |
-| `blind-objective-strength` | +11 [-10, +31] | 84.9% | on | +0.0 | 131,056 |
-| `strategic-wonders` | +9 [-7, +25] | 85.6% | on | +0.0 | 192,886 |
 | `barbarian-bargain` | +16 [-5, +38] | 93.3% | on | +0.0 | 32,522 |
-| `slot-kind-tiebreak` | +9 [-7, +26] | 87.4% | on | +0.0 | 156,019 |
 | `amenity-district-path` | +12 [-5, +28] | 91.2% | on | +0.0 | 83,886 |
 | `stranded-settler-discount` | +11 [-5, +27] | 90.8% | on | +0.0 | 93,635 |
 | `strike-opening` | +12 [-4, +29] | 92.5% | on | +0.0 | 65,525 |
@@ -174,7 +174,7 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 | `lane-great-people` | **on** | +33 | +0.10 (z +1.26) ~ | +13 [-22, +48] | unresolved |
 | `lane-policy-deck` | off | +29 | +0.08 (z +1.07) ~ | +13 [-16, +42] | unresolved |
 | `lane-culture-spending` | off | +9 | -0.01 (z -0.13) ~ | +9 [-15, +32] | unresolved |
-| `lane-space-race` | **on** | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
+| `lane-space-race` | off | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
 | `competition-victory-points` | off | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
 | `victory-portfolio` | off | – | – | – | awaiting its first screen |
 
@@ -274,6 +274,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `curator-sits-with-the-works` | off (unmeasured) | Opt-in gene `curator-sits-with-the-works`; see `advanced/curator_sits_with_the_works.rs`. | 1 \| 1 |
 | `deck-follows-the-queue` | off (unmeasured) | Opt-in gene `deck-follows-the-queue`; the behaviour lives on `BasicAi::deck_follows_the_queue`, see `ai/deck_queue.rs`. | 1 \| 1 |
 | `deck-prices-growth` | off (unmeasured) | Opt-in gene `deck-prices-growth`; see `BasicAi::deck_prices_growth`. | 1 \| 1 |
+| `declaration-needs-a-capture` | off (unmeasured) | Opt-in gene `declaration-needs-a-capture`; see `advanced/declaration_needs_a_capture.rs`. | 1 \| 1 |
 | `defence-holds-under-fire` | off (unmeasured) | Opt-in gene `defence-holds-under-fire`; see `Self::defence_holds_under_fire`. | 1 \| 1 |
 | `defend-force-holds-the-city` | off (unmeasured) | Opt-in gene `defend-force-holds-the-city`; see `advanced/defend_force_holds_the_city.rs`. | — \| 2 |
 | `defend-force-holds-the-city-2` | off (unmeasured) | Opt-in gene `defend-force-holds-the-city-2`; version two of the family, so version one is turned off. | — \| 2 |
@@ -625,6 +626,18 @@ Every screenable heuristic gene on the Advanced controller, ranked by the displa
 Regenerate with `python3 tools/genes.py write` after every screen enters the ledger; `tools/test_genes.py` fails when this file is older than the ledger's sources.
 
 ## Follow-ups
+
+## 2026-11-12 operator review: every default clears the +3 bar on its own
+
+Operator, 2026-11-12: include every beneficial gene, exclude every gene that hurts, and omit the questionable ones for now. The selection was re-run from the same three reporting batches (11,644 games, 69,864 total seats; published in #4050, #4130 and #4805) with no incumbents, so the hysteresis band held nothing: a gene is on only when its seat-weighted three-batch average is strictly above +3 wins per 10,000 total seats, the bar an off gene already had to clear. The 288 defaults became 220.
+
+- **Off: the 68 genes that were on by incumbency alone** (the previous ledger's `rules.hysteresis_held`). Over those 69,864 total seats their pooled on-minus-off win differences run from -0.15 pp to +0.17 pp with standard errors of 0.28 to 0.40 pp: 27 negative, 41 positive, none past |z| 0.52. The table's P(>0) for them was 34.8% to 69.4%, and every one of the 22 defaults under 50% was among them. None is a measured loss and none is a measured gain.
+- **On: nothing new.** Each of the 8 off genes whose average clears +3 over the same 69,864 total seats is a sibling of a shipped version with a higher average: `connect-the-luxury`, `battle-planner`, `battle-planner-2`, `naval-recon`, `amenity-project-preemption`, `trade-building-before-bankruptcy`, `industry-before-the-army` and `first-luxury-first-2`.
+- **Not judged by this review.** The 329 screenable genes that no reporting batch has priced stay off until one does. The newest batch ended 2 of its 5,000 games by domination, so a war or siege gene reads near zero on this screen whatever it does in a war; nine of the 68 are engine repairs or production treatments of that kind (`blind-objective-strength`, `buildings-before-projects`, `escort-unstick`, `peacetime-deterrence`, `recorded-tactical-step`, `religion-sues-peace`, `settler-guard-holds`, `slot-kind-tiebreak`, `strategic-wonders`), and a live seat that wants one keeps it through its force-on list.
+
+- **One family changes the version it plays.** `siege-is-progress-2` and `siege-is-progress-3` are exclusive at runtime but not a family to this tool, so both were listed and the later row played. Over the same 69,864 total seats `siege-is-progress-2` averages +4.6 wins per 10,000 total seats and `siege-is-progress-3` +0.4; with the held `-3` off, `-2` is the version a default seat plays.
+
+The next reselection applies the ordinary hysteresis against these 220: a default leaves only strictly below -3, and an omitted gene returns when its average clears +3.
 
 ## Historical screen evidence and current selection
 
