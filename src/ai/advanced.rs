@@ -7823,6 +7823,11 @@ pub struct AdvancedAi {
     edge_unit_takes_the_soft_city: bool,
     /// The window of `edge-unit-takes-the-soft-city`; `None` with it off.
     edge_unit_window: Option<edge_unit_takes_the_soft_city::EdgeWindow>,
+    /// `faithless-seat-holds-its-faith-strikes`: a seat that founded no
+    /// religion (and is not playing for a Religious Victory) holds the faith
+    /// strike unless the rival's faith stands at match point. See
+    /// `advanced/faithless_seat_holds_its_faith_strikes.rs`. Off by default.
+    faithless_seat_holds_its_faith_strikes: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -10350,9 +10355,10 @@ pub struct AdvancedAi {
     /// declaration, and peace asked the turn after it. Overrides any version
     /// of the family it is played beside. Opt-in.
     score_seat_grabs_what_pays: bool,
-    /// `score-seat-keeps-friends`: a Score seat accepts every friendship a
-    /// major offers and offers one to every met major the host allows,
-    /// nearest first. See `advanced/score_keeps_friends.rs`. Opt-in.
+    /// `score-seat-keeps-friends`: every seat but a Domination one (the name
+    /// is the Score seat it was written for) accepts every friendship a major
+    /// offers and offers one to every met major the host allows, nearest
+    /// first. See `advanced/score_keeps_friends.rs`. Opt-in.
     score_seat_keeps_friends: bool,
     /// `score-seat-holds-its-faith-strikes`: a seat whose victory target is
     /// Score holds the faith strike unless the rival's faith stands at match
@@ -11268,6 +11274,9 @@ mod faith_war_at_match_point;
 mod faith_war_before_the_flip;
 /// `faith-war-is-no-front`: see `advanced/faith_war_is_no_front.rs`.
 mod faith_war_is_no_front;
+/// `faithless-seat-holds-its-faith-strikes`: see
+/// `advanced/faithless_seat_holds_its_faith_strikes.rs`.
+mod faithless_seat_holds_its_faith_strikes;
 /// `own-flip-faith-war-asks-no-power`: see `advanced/own_flip_faith_war.rs`.
 mod own_flip_faith_war;
 

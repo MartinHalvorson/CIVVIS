@@ -5868,6 +5868,13 @@ pub const GENES: &[Gene] = &[
     // stops when the edge is gone. Opt-in; see
     // `advanced/edge_unit_takes_the_soft_city.rs`.
     Gene { tag: "edge-unit-takes-the-soft-city", field: "edge_unit_takes_the_soft_city", kind: Kind::OptIn, enable: AdvancedAi::enable_edge_unit_takes_the_soft_city, disable: AdvancedAi::disable_edge_unit_takes_the_soft_city },
+    // Live Rome 11-12/13 (52 games, no faith founded in any): 30 faith strikes
+    // took nothing, lost 3 cities to the target and 8 to others, 78 units for
+    // 37 killed. The Score hold has since held one in 31 of 32 games, and is
+    // inert on the lane's new Science target. A seat with no religion of its
+    // own strikes only a faith at match point, whatever its target but
+    // Religion. See `advanced/faithless_seat_holds_its_faith_strikes.rs`.
+    Gene { tag: "faithless-seat-holds-its-faith-strikes", field: "faithless_seat_holds_its_faith_strikes", kind: Kind::OptIn, enable: AdvancedAi::enable_faithless_seat_holds_its_faith_strikes, disable: AdvancedAi::disable_faithless_seat_holds_its_faith_strikes },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
@@ -6149,7 +6156,8 @@ pub const GENES: &[Gene] = &[
     // friendship stood (94 declarations), yet the control mod refused 52
     // friendships the AI offered in one night, and the seat asked one rival
     // every third turn. Accept every offer, ask every met major nearest
-    // first. Opt-in; see `advanced/score_keeps_friends.rs`.
+    // first. Every target but Domination since 11-13 15:55Z (the name is the
+    // Score seat it was written for). Opt-in; see `advanced/score_keeps_friends.rs`.
     Gene { tag: "score-seat-keeps-friends", field: "score_seat_keeps_friends", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_keeps_friends, disable: AdvancedAi::disable_score_seat_keeps_friends },
     // Live Rome Score 11-12/13 (52 games): 30 faith strikes took nothing,
     // lost 3 cities to the target and 8 to others, 78 units for 37 killed;
