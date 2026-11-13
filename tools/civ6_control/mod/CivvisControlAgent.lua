@@ -12367,6 +12367,29 @@ CivvisTrade = { pending = {}, asked = {}, sessions = {}, unanswered = 0, disable
 -- sessions cleanly, and one peace session froze it at t150: the rival
 -- refused, then left `MAKE_DEAL, POSITIVE` pending to us after the session
 -- closed (DiplomacyManager.csv).
+-- ★★ THE COUNTER AFTER A REFUSAL IS WAITED FOR AS LONG AS THE ANSWER IS.
+-- The wait was 4 seconds. Live, 105 games of 2026-11-12..13: the counter to
+-- a refused peace or alliance came 406 times, every one inside 0.62 s (327
+-- inside 50 ms), and 29 times it had not come when the 4 seconds ran out.
+-- Every one of those 29 closes (`counter_not_sent`) was followed by a hung
+-- turn of that same rival; of the 3,172 sessions that closed any other way
+-- (answered 2,635, counter answered 406, enacted 115) the only ones that
+-- hung were 4 trade asks closed unanswered. So the short wait saves nothing
+-- where the counter comes and ends the game where it does not. The same
+-- bound as `DealAnswerHoldSeconds` costs 26 seconds on a turn that was
+-- going to cost a reload, and the next games' logs say
+-- whether a counter ever arrives between 4 and 30 seconds (`counter_answered`
+-- carries `waited`). `PeaceCounterHoldSeconds` / `AllianceCounterHoldSeconds`
+-- still override it, and 0 still closes at the refusal.
+CivvisTrade.COUNTER_HOLD_SECONDS = 30;
+-- The end turn is held from `reply_at` (`CivvisTrade.holdsEndTurn`). A
+-- refusal that took its time must not leave the counter wait outliving the
+-- turn's hold, so the window restarts when the refusal lands. An unreadable
+-- clock leaves the window where it was.
+CivvisTrade.restartReplyWindow = function(session)
+	local now = try(function() return CivvisClock.now(); end, nil);
+	if type(now) == "number" then session.reply_at = now; end
+end;
 CivvisTrade.ask = function(pid, subject, action, kind, turn)
 	local trade = CivvisTrade;
 	if cfg.DealSessions == false
@@ -12397,6 +12420,38 @@ CivvisTrade.close = function(pid, subject, why, already_closed)
 		target = subject, phase = "closed", why = why,
 		kind = session and session.kind or nil,
 	});
+end;
+
+-- An ask that never reached the rival must not start its retry wait. The
+-- peace and alliance arms note the marker they replaced
+-- (`CivvisK.askMarkerBefore`); this puts it back, so the next turn's order
+-- asks again and a first ask of a war is still the first.
+CivvisTrade.noteAskMarker = function(kind, subject, was)
+	CivvisK.askMarkerBefore = CivvisK.askMarkerBefore or {};
+	local before = CivvisK.askMarkerBefore[kind];
+	if before == nil then
+		before = {};
+		CivvisK.askMarkerBefore[kind] = before;
+	end
+	-- `false` stands for "never asked": nil would read as no note at all.
+	if was == nil then before[subject] = false; else before[subject] = was; end
+end;
+CivvisTrade.restoreAskMarker = function(kind, subject)
+	local before = CivvisK.askMarkerBefore and CivvisK.askMarkerBefore[kind];
+	if type(before) ~= "table" or before[subject] == nil then return false; end
+	local was = before[subject];
+	before[subject] = nil;
+	if was == false then was = nil; end
+	-- (Spelled this way round because `peace_submission_test.lua` finds the
+	-- order arm by the first `kind == "peace"` test in this file.)
+	if "alliance" == kind then
+		if type(CivvisK.allianceAsked) == "table" then CivvisK.allianceAsked[subject] = was; end
+	elseif "peace" == kind then
+		peaceAsked[subject] = was;
+	else
+		return false;
+	end
+	return true;
 end;
 
 -- `SendWorkingDeal(ACCEPTED)` is an asynchronous request.  A successful Lua
@@ -12641,6 +12696,7 @@ CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
 		end) == false then
 			return nil, "alliance_not_offered";
 		end
+		CivvisTrade.noteAskMarker("alliance", subject, asked);
 		CivvisK.allianceAsked[subject] = turn;
 		return "alliance", "alliance";
 	end
@@ -12696,6 +12752,40 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 				return;
 			end
 		end
+		-- ★★★ A PEACE OR ALLIANCE SESSION THAT OPENS AFTER THE END TURN IS
+		-- CLOSED, NOT ASKED. A session still queued when its opening hold
+		-- runs out (`CivvisTrade.holdsEndTurn`, `opening_unasked`) opens the
+		-- moment the end turn goes through, and until now its question went
+		-- out anyway. Live, 105 games of 2026-11-12..13 (3,201 sessions): 33 of
+		-- the 34 "hung rival turn" stalls followed a session with that same
+		-- rival that turn, and 16 of them were this case. A proposal asked
+		-- after the release and refused hung the game 16 times in 42 (as an
+		-- alliance, 12 in 13); asked inside the hold and refused, 13 in 396.
+		-- DiplomacyManager.csv ends each one on
+		-- the rival's "MAKE_DEAL, POSITIVE, POSITIVE, Adding to pending": its
+		-- counter is never processed once our turn is over, and its own turn
+		-- then never ends. The shipped deal screen does not negotiate past the
+		-- turn either: `OnLocalPlayerTurnEnd` calls `OnRefuseDeal(true)`, which
+		-- for a session we opened is `DiplomacyManager.CloseSession(sessionID)`
+		-- (DLC/Expansion2/UI/Replacements/DiplomacyDealView.lua:3120-3127,
+		-- :624-627). So no question is put; the session is closed on the
+		-- rival's opening acknowledgement, when nothing of its is in flight,
+		-- and the ask's retry marker goes back to what it was so the next
+		-- turn asks first in the queue. Trade asks keep their late question:
+		-- none of 161 hung.
+		if session.end_turn_hold_expired
+				and (session.kind == "peace" or session.kind == "alliance") then
+			session.sent = true;
+			session.unasked = { turn = turn };
+			CivvisTrade.restoreAskMarker(session.kind, other);
+			emit("deal_session", { turn = turn, target = other, kind = session.kind,
+				action = session.action, session = sessionID or -1, phase = "unasked",
+				why = "opened_after_end_turn" });
+			if fromPlayer == other then
+				CivvisTrade.close(pid, other, "opened_after_end_turn");
+			end
+			return;
+		end
 		-- The session is live: put the question. `sent` goes first so an
 		-- answer delivered from inside the send is read as the answer.
 		session.sent = true;
@@ -12734,6 +12824,12 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		return;
 	end
 	if fromPlayer ~= other then return; end
+	-- The rival's acknowledgement of a session we will not ask in (see
+	-- "CLOSED, NOT ASKED" above): nothing of its is in flight now.
+	if session.unasked ~= nil then
+		CivvisTrade.close(pid, other, "opened_after_end_turn");
+		return;
+	end
 	-- ACCEPTED is outstanding until the host applies it. Duplicate verdicts
 	-- and follow-up proposals must not adjust or reject that same treaty.
 	-- SendWorkingDeal can dispatch these statements before returning.
@@ -12772,6 +12868,9 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		end);
 		emit("counter_answered", { turn = turn, target = other, kind = session.kind,
 			session = session.sessionID or -1, rejected = rejected,
+			waited = try(function()
+				return math.floor((CivvisClock.now() - session.reply_at) * 100 + 0.5) / 100;
+			end, nil),
 			deal_action = kVariants.DealAction ~= nil and tostring(kVariants.DealAction) or nil,
 			statement = try(function()
 				return DiplomacyManager.GetKeyName(kVariants.StatementSubType);
@@ -12853,9 +12952,11 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 			-- or the bounded closer ends the wait; closing under the following
 			-- statement bypasses the shared counter handler above. This does
 			-- not enable peace sessions in the operator's trade-only mode.
-			local counterHold = tonumber(cfg.PeaceCounterHoldSeconds) or 4;
+			local counterHold = tonumber(cfg.PeaceCounterHoldSeconds)
+				or CivvisTrade.COUNTER_HOLD_SECONDS;
 			if counterHold > 0 then
 				session.counter_wait = { turn = turn };
+				CivvisTrade.restartReplyWindow(session);
 				pcall(function() LuaEvents.CivvisDealSession(other, true, counterHold); end);
 				emit("deal_session", { turn = turn, target = other, kind = session.kind,
 					phase = "counter_wait", session = session.sessionID or -1, hold = counterHold });
@@ -12880,9 +12981,11 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		-- See the counter above: a refusal waits for the rival's counter
 		-- instead of closing under it. `AllianceCounterHoldSeconds = 0`
 		-- restores the immediate close.
-		local counterHold = tonumber(cfg.AllianceCounterHoldSeconds) or 4;
+		local counterHold = tonumber(cfg.AllianceCounterHoldSeconds)
+			or CivvisTrade.COUNTER_HOLD_SECONDS;
 		if not accepted and counterHold > 0 then
 			session.counter_wait = { turn = turn };
+			CivvisTrade.restartReplyWindow(session);
 			pcall(function() LuaEvents.CivvisDealSession(other, true, counterHold); end);
 			emit("deal_session", { turn = turn, target = other, kind = session.kind,
 				phase = "counter_wait", session = session.sessionID or -1, hold = counterHold });
@@ -12907,6 +13010,11 @@ CivvisOnDealSessionClosed = function(sessionID)
 				-- accepted. Closing that screen is not evidence of a treaty and
 				-- must not produce a synthetic accepted peace result.
 				CivvisTrade.close(pid, subject, "session_closed", true);
+			elseif session.unasked ~= nil then
+				-- Closed under us before the rival's acknowledgement: no
+				-- question went out, so nothing is unanswered and no turn is
+				-- held for a verdict.
+				CivvisTrade.close(pid, subject, "opened_after_end_turn", true);
 			elseif session.counter_wait ~= nil then
 				-- A refused offer whose counter never came: the rival did
 				-- answer, so this is no unanswered ask and holds no turn.
@@ -14941,7 +15049,10 @@ local function applyOrder(player, pid, row, turn)
 		if not ok then concession = 0; end
 		-- A pending offer is already inside the engine.  Retrying it on every
 		-- turn cannot improve its chance and only muddies the action ledger.
-		if ok or reason == "pending" then peaceAsked[subject] = turn; end
+		if ok or reason == "pending" then
+			CivvisTrade.noteAskMarker("peace", subject, asked);
+			peaceAsked[subject] = turn;
+		end
 		emit("peace_request", {
 			turn = turn, target = subject,
 			major = major and true or false, concession = concession,
