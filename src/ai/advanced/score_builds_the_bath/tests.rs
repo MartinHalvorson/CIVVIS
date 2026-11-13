@@ -117,7 +117,10 @@ fn an_idle_city_takes_its_bath() {
     let plan = science.assess(&game, 0);
     let mut elsewhere = game.clone();
     science.claim_score_bath(&mut elsewhere, 0, &plan);
-    assert!(elsewhere.cities[&city].queue.is_empty(), "only a Score seat");
+    assert!(
+        elsewhere.cities[&city].queue.is_empty(),
+        "only a Score seat"
+    );
 
     let ai = seat(true);
     let plan = ai.assess(&game, 0);
