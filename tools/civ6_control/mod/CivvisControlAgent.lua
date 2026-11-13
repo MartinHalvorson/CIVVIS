@@ -11009,7 +11009,8 @@ local function exportState(player, pid, turn, frame, eventKind)
 					sources[#sources + 1] = tostring(line);
 				end
 				out[#out + 1] = {
-					type = tostring(crisis.EmergencyType),
+					-- The row's NAME: see `CivvisEmergencyTypeName`.
+					type = CivvisEmergencyTypeName(crisis.EmergencyType),
 					name = tostring(crisis.NameText or ""),
 					target = tonumber(crisis.TargetID) or -1,
 					target_city = tostring(crisis.TargetCityName or ""),
@@ -26942,6 +26943,35 @@ local function onPlayerDefeat(player, defeat, eventID)
 		player = player, defeat = defeat, local_player = pid,
 		ours = (player == pid),
 	});
+end
+
+-- ★★★★ THE TRACKER'S `EmergencyType` IS A ROW NUMBER, AND CIVVIS READS A NAME.
+--
+-- `GetEmergencyInfoTable` gives each crisis its `EmergencyType` as the row
+-- index of `GameInfo.EmergencyAlliances`; the shipped tracker turns it into
+-- the name with `GameInfo.EmergencyAlliances[crisis.EmergencyType].EmergencyType`
+-- (DLC/Expansion2/UI/Additions/WorldCrisisTracker.lua:65). The state export
+-- wrote `tostring()` of the number. Nobody saw it, because the seat was in no
+-- competition and the list was always empty; the first game to join one
+-- (civvis-20261113T204218Z, t115, after `CivvisCongressJoin`) exported
+-- `"type": "11"` for the World's Fair and `"14"` for the World Games. The
+-- mirror matches `EMERGENCY_WORLD_GAMES` (`apply_host_competitions`,
+-- `Game::host_competition`), so the competition it was finally a member of
+-- still did not exist for the planner: no Training Athletes project was
+-- offered or priced.
+--
+-- A name passes through; a number the table does not know stays the number,
+-- as text, so the row still says what the host said. Bare global for the
+-- offline regression.
+CivvisEmergencyTypeName = function(raw)
+	if raw == nil then return tostring(raw); end
+	if type(raw) == "string" and raw:find("^EMERGENCY_") ~= nil then return raw; end
+	local name = try(function()
+		local row = GameInfo.EmergencyAlliances[raw];
+		return row and row.EmergencyType or nil;
+	end, nil);
+	if type(name) == "string" and name ~= "" then return name; end
+	return tostring(raw);
 end
 
 -- ★★★★★ A SCORED COMPETITION IS JOINED BY VOTING FOR IT, AND THE SEAT NEVER DID.
