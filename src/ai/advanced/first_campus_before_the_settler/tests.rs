@@ -134,7 +134,7 @@ fn the_exception_keeps_the_settler_without_its_conditions() {
     let (base, armed, cid, base_plan, campus) = board();
     for case in [
         "off",
-        "science target",
+        "culture target",
         "war",
         "rush",
         "threat",
@@ -152,7 +152,7 @@ fn the_exception_keeps_the_settler_without_its_conditions() {
         let other = other_city(&g, cid);
         match case {
             "off" => ai.disable_first_campus_before_the_settler(),
-            "science target" => ai.victory_target = Some(VictoryTarget::Science),
+            "culture target" => ai.victory_target = Some(VictoryTarget::Culture),
             "war" => {
                 g.at_war.insert((0, 1));
             }

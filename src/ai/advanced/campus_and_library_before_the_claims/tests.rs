@@ -302,7 +302,7 @@ fn a_settler_head_keeps_the_first_campus_waiting() {
 #[test]
 fn a_threatened_or_attacked_city_or_another_target_keeps_its_granary() {
     let (base, armed, cid, base_plan, _) = campus_board();
-    for case in ["threat", "recent attack", "science target", "walls"] {
+    for case in ["threat", "recent attack", "culture target", "walls"] {
         let mut g = base.clone();
         let mut ai = armed.clone();
         let mut plan = base_plan.clone();
@@ -315,8 +315,8 @@ fn a_threatened_or_attacked_city_or_another_target_keeps_its_granary() {
                 g.cities.get_mut(&cid).unwrap().last_attacked = g.turn - 1;
                 granary()
             }
-            "science target" => {
-                ai.victory_target = Some(VictoryTarget::Science);
+            "culture target" => {
+                ai.victory_target = Some(VictoryTarget::Culture);
                 granary()
             }
             "walls" => {
