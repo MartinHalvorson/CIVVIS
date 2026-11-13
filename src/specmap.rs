@@ -21,11 +21,24 @@ use crate::name::Name;
 
 const EMPTY: u32 = u32::MAX;
 
+#[derive(Clone, Copy, Debug)]
+struct LookupSlot {
+    index: u32,
+    fingerprint: u32,
+}
+
+const EMPTY_SLOT: LookupSlot = LookupSlot {
+    index: EMPTY,
+    fingerprint: 0,
+};
+
 #[derive(Clone, Debug)]
 pub struct SpecMap<T> {
     keys: Vec<Name>,
     values: Vec<T>,
-    table: Vec<u32>,
+    // Reject a different hash before following an interned name to its text.
+    // Fingerprints only filter probes; a possible match still compares text.
+    table: Vec<LookupSlot>,
     /// Entry index by [`Name::id`], so a caller holding an interned name
     /// answers its lookup with one array read — no hash, no string compare.
     /// Sized to the largest id this table holds; an id past the end simply
@@ -83,14 +96,18 @@ impl<T> SpecMap<T> {
     /// never during play.
     fn reindex(&mut self) {
         let capacity = (self.keys.len() * 2).next_power_of_two().max(8);
-        self.table = vec![EMPTY; capacity];
+        self.table = vec![EMPTY_SLOT; capacity];
         let mask = capacity - 1;
         for (index, key) in self.keys.iter().enumerate() {
-            let mut slot = hash_key(key) as usize & mask;
-            while self.table[slot] != EMPTY {
+            let hash = hash_key(key);
+            let mut slot = hash as usize & mask;
+            while self.table[slot].index != EMPTY {
                 slot = (slot + 1) & mask;
             }
-            self.table[slot] = index as u32;
+            self.table[slot] = LookupSlot {
+                index: index as u32,
+                fingerprint: (hash >> 32) as u32,
+            };
         }
         // Interning every key here is what lets `Index<Name>` skip the hash
         // entirely. It costs one registry lock per entry, and reindexing
@@ -134,13 +151,18 @@ impl<T> SpecMap<T> {
             return None;
         }
         let mask = self.table.len() - 1;
-        let mut slot = hash_key(key) as usize & mask;
+        let hash = hash_key(key);
+        let fingerprint = (hash >> 32) as u32;
+        let mut slot = hash as usize & mask;
         loop {
-            let index = self.table[slot];
+            let LookupSlot {
+                index,
+                fingerprint: stored_fingerprint,
+            } = self.table[slot];
             if index == EMPTY {
                 return None;
             }
-            if self.keys[index as usize] == *key {
+            if stored_fingerprint == fingerprint && self.keys[index as usize] == *key {
                 return Some(index as usize);
             }
             slot = (slot + 1) & mask;
@@ -373,42 +395,4 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for SpecMap<T> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{Name, SpecMap};
-
-    #[test]
-    fn keeps_entries_in_key_order() {
-        let mut map = SpecMap::new();
-        map.insert("warrior".to_string(), 1);
-        map.insert("archer".to_string(), 2);
-        map.insert("slinger".to_string(), 3);
-        let keys: Vec<&str> = map.keys().map(|name| name.as_str()).collect();
-        assert_eq!(keys, ["archer", "slinger", "warrior"]);
-        assert_eq!(map.values().copied().collect::<Vec<_>>(), [2, 3, 1]);
-    }
-
-    #[test]
-    fn finds_replaces_and_removes() {
-        let mut map = SpecMap::new();
-        for name in ["a", "bb", "ccc", "dddddddd", "eeeeeeeee", "f"] {
-            map.insert(name.to_string(), name.len());
-        }
-        for name in ["a", "bb", "ccc", "dddddddd", "eeeeeeeee", "f"] {
-            assert_eq!(map.get(name), Some(&name.len()));
-            assert_eq!(
-                map.get_key_value(name),
-                Some((&Name::new(name), &name.len()))
-            );
-            assert!(map.contains_key(name));
-        }
-        assert_eq!(map.get("missing"), None);
-        assert_eq!(map.get_key_value("missing"), None);
-        assert_eq!(map.insert("bb".to_string(), 99), Some(2));
-        assert_eq!(map["bb"], 99);
-        assert_eq!(map.get_key_value("bb"), Some((&Name::new("bb"), &99)));
-        assert_eq!(map.remove("bb"), Some(99));
-        assert_eq!(map.get("bb"), None);
-        assert_eq!(map.get_key_value("bb"), None);
-        assert_eq!(map.len(), 5);
-    }
-}
+mod tests;
