@@ -468,6 +468,8 @@ impl AdvancedAi {
         /// Opt-in gene `score-seat-raises-wonders`; see
         /// `advanced/score_wonders.rs`.
         score_seat_raises_wonders => enable_score_seat_raises_wonders, disable_score_seat_raises_wonders;
+        /// Opt-in `score-seat-founds-early`; see `advanced/score_seat_founds_early.rs`.
+        score_seat_founds_early => enable_score_seat_founds_early, disable_score_seat_founds_early;
         /// Opt-in gene `score-seat-trims-the-idle-army`; see
         /// `advanced/score_seat.rs`.
         score_seat_trims_the_idle_army => enable_score_seat_trims_the_idle_army, disable_score_seat_trims_the_idle_army;

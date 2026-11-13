@@ -6069,6 +6069,14 @@ pub const GENES: &[Gene] = &[
     // rivals' 3-13 while the host offered them; a one-lane-plus-one program on
     // the host's own quotes finished 7.7. See `advanced/score_wonders.rs`.
     Gene { tag: "score-seat-raises-wonders", field: "score_seat_raises_wonders", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_raises_wonders, disable: AdvancedAi::disable_score_seat_raises_wonders },
+    // Live Deity Rome Score lane 2026-11-12, 11 games: Settlers were born at
+    // the same pace in the fast and the slow games, but took a mean 8.7
+    // turns from birth to founding in the three fastest against 23.8 in the
+    // slow ones (727 Settler-turns past the eighth turn out). On a Score
+    // seat a Settler past 8 Online turns, or turned home by the corridor,
+    // founds on the best safe, holdable site within four tiles. Opt-in; see
+    // `advanced/score_seat_founds_early.rs`.
+    Gene { tag: "score-seat-founds-early", field: "score_seat_founds_early", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_founds_early, disable: AdvancedAi::disable_score_seat_founds_early },
     // Split out of score-seat-plays-for-points after its live arm lost the
     // capital (civvis-20261112T211954Z, t24 declaration at 0.46 of the
     // declarer). Eleven Rome games: every city lost followed a declaration
