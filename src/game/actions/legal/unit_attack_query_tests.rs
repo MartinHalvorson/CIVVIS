@@ -159,6 +159,18 @@ fn active_traces_keep_all_original_effect_card_and_inertness_reads() {
     g.players[0]
         .policies
         .extend(g.rules.policies.keys().copied());
+    let host = g.player_city_ids(1)[0];
+    let centre = g.cities[&host].pos;
+    let position = g
+        .wdisk(centre, 3)
+        .into_iter()
+        .find(|p| g.wdist(*p, centre) == 3)
+        .unwrap();
+    for pos in g.wdisk(centre, 3) {
+        g.map.tiles.get_mut(&pos).unwrap().owner_city = Some(host);
+    }
+    g.spawn_test_unit("rock_band", 0, position);
+    g.reveal(0, position, 3);
     for uid in own {
         let (old_actions, old) = traced(&g, uid, false);
         let (new_actions, new) = traced(&g, uid, true);
@@ -167,8 +179,8 @@ fn active_traces_keep_all_original_effect_card_and_inertness_reads() {
         assert_eq!(old.cards, new.cards);
         assert_eq!(old.opaque, new.opaque);
         assert!(
-            !old.effects.is_empty(),
-            "the full trace must read real policy effects"
+            old.effects.contains("block_foreign_rock_bands"),
+            "the full trace must retain an unselected rock band's cross-seat policy read"
         );
         for card in g.rules.policies.keys() {
             assert_eq!(
@@ -206,7 +218,7 @@ fn visibility_terrain_clone_and_save_load_keep_identical_ordered_attacks() {
     let (mut g, own, enemy) = board();
     let position = g.units[&enemy].pos;
     g.map.tiles.get_mut(&position).unwrap().hills = true;
-    g.map.tiles.get_mut(&position).unwrap().feature = Some(crate::name!("woods"));
+    g.map.tiles.get_mut(&position).unwrap().feature = Some(crate::name!("forest"));
     g.relocate(enemy, (13, 8));
     for &uid in &own {
         same(&g, uid);
@@ -221,4 +233,22 @@ fn visibility_terrain_clone_and_save_load_keep_identical_ordered_attacks() {
             restored.legal_survival_attack_actions(0, uid)
         );
     }
+}
+
+#[test]
+fn an_enclosing_query_roster_keeps_its_order_and_duplicate_entries() {
+    let (g, own, _) = board();
+    let _scope = g.query_memo();
+    *g.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::from([(
+        0,
+        Arc::new(vec![own[0], own[1], own[0]]),
+    )]));
+    let expected = original(&g, 0, own[0]);
+    assert!(
+        expected.len() >= 2,
+        "the repeated roster entry must contribute its attacks twice"
+    );
+    assert_eq!(g.legal_survival_attack_actions(0, own[0]), expected);
+    same(&g, own[1]);
+    same(&g, own[2]);
 }
