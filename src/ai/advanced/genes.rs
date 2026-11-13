@@ -6093,6 +6093,12 @@ pub const GENES: &[Gene] = &[
     // the research scorer priced Iron Working at 23 behind Astrology's 33.
     // See `advanced/score_unique_unit.rs`.
     Gene { tag: "score-seat-fields-its-unique-unit", field: "score_seat_fields_its_unique_unit", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_fields_its_unique_unit, disable: AdvancedAi::disable_score_seat_fields_its_unique_unit },
+    // Assault census of 40 live Rome games (690 game-frames): a rival major's
+    // city read takeable in 0-5% of games at turns 30-60 with the army held,
+    // 33-40% with six Legions and a Ram, 57-68% with eight, a Ram and two
+    // Catapults. The shipped board mustered Warriors. See
+    // `advanced/score_unique_unit.rs`.
+    Gene { tag: "score-seat-raises-its-unique-corps", field: "score_seat_raises_its_unique_corps", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_raises_its_unique_corps, disable: AdvancedAi::disable_score_seat_raises_its_unique_corps },
     // Split out of score-seat-plays-for-points after its live arm lost the
     // capital (civvis-20261112T211954Z, t24 declaration at 0.46 of the
     // declarer). Eleven Rome games: every city lost followed a declaration

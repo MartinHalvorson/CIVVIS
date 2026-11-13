@@ -114,6 +114,11 @@ impl AdvancedAi {
         if self.holdable_land_settler_holds(g, pid, cid, plan) {
             return true;
         }
+        // `score-seat-raises-its-unique-corps`: so is a corps unit still
+        // wanted. See `advanced/score_unique_unit.rs`.
+        if self.score_unique_corps_holds(g, pid, cid) {
+            return true;
+        }
         let floor = self.early_settler_floor(g, plan);
         if floor == 0
             || !matches!(

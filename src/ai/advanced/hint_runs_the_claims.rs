@@ -83,6 +83,10 @@ impl AdvancedAi {
         // Exact no-op while the gene is off. See
         // `advanced/holdable_land_keeps_settling.rs`.
         self.claim_holdable_land_settler(g, pid, plan);
+        // `score-seat-raises-its-unique-corps`: a Score seat's unique
+        // soldiers, behind the Settler claims above. Exact no-op while the
+        // gene is off. See `advanced/score_unique_unit.rs`.
+        self.claim_score_unique_corps(g, pid, plan);
         // `first-capital-before-the-walls`: the utility governor's army
         // reservation must also reach idle queues consumed by these claims
         // and by live hints. The helper preserves the first expansion and

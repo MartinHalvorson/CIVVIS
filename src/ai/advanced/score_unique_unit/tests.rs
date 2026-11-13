@@ -103,3 +103,134 @@ fn the_goal_ends_when_known_or_when_the_window_shuts() {
     shut.players[0].techs.insert(upgrade);
     assert_eq!(ai.score_unique_unit_research_goal(&shut, 0), None);
 }
+
+#[test]
+fn score_seat_raises_its_unique_corps_is_opt_in() {
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "score-seat-raises-its-unique-corps",
+        |ai| ai.score_seat_raises_its_unique_corps,
+    );
+}
+
+/// [`two_cities`] with a third city founded, Iron Working known.
+fn three_cities_with_iron_working() -> Game {
+    let mut game = two_cities("Rome");
+    let taken: Vec<Pos> = game
+        .player_city_ids(0)
+        .into_iter()
+        .map(|cid| game.cities[&cid].pos)
+        .collect();
+    let sites: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    for site in sites {
+        if taken.iter().any(|pos| game.wdist(*pos, site) < 4)
+            || taken.iter().all(|pos| game.wdist(*pos, site) > 7)
+        {
+            continue;
+        }
+        let settler = game.spawn_unit("settler", 0, site);
+        if game.apply(0, &Action::FoundCity { unit: settler }).is_ok() {
+            break;
+        }
+        game.remove_unit(settler);
+    }
+    assert_eq!(game.player_city_ids(0).len(), 3, "fixture: a third city");
+    for uid in game.player_unit_ids(0) {
+        game.remove_unit(uid);
+    }
+    game.players[0].techs.insert(crate::name!("iron_working"));
+    game
+}
+
+fn corps_seat(target: VictoryTarget, gene: bool) -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(target);
+    if gene {
+        ai.enable_score_seat_raises_its_unique_corps();
+    }
+    ai
+}
+
+/// The corps is one unit a city, four at least; it needs the technology,
+/// three cities, the gene and a Score target. Legions held count.
+#[test]
+fn the_corps_is_one_a_city_and_four_at_least() {
+    let game = three_cities_with_iron_working();
+    let ai = corps_seat(VictoryTarget::Score, true);
+    assert_eq!(
+        ai.score_unique_corps_census(&game, 0),
+        Some((crate::name!("legion"), 0, 0, SCORE_UNIQUE_CORPS_MIN))
+    );
+    assert_eq!(
+        corps_seat(VictoryTarget::Score, false).score_unique_corps_census(&game, 0),
+        None
+    );
+    assert_eq!(
+        corps_seat(VictoryTarget::Domination, true).score_unique_corps_census(&game, 0),
+        None
+    );
+    let mut unknown = game.clone();
+    unknown.players[0]
+        .techs
+        .remove(&crate::name!("iron_working"));
+    assert_eq!(ai.score_unique_corps_census(&unknown, 0), None);
+    assert_eq!(
+        ai.score_unique_corps_census(&two_cities("Rome"), 0),
+        None,
+        "two cities: the Settlers come first"
+    );
+    let mut fielded = game.clone();
+    let home = fielded.cities[&fielded.player_city_ids(0)[0]].pos;
+    fielded.spawn_unit("legion", 0, home);
+    assert_eq!(
+        ai.score_unique_corps_census(&fielded, 0),
+        Some((crate::name!("legion"), 1, 0, SCORE_UNIQUE_CORPS_MIN))
+    );
+}
+
+/// A corps unit takes the queue of a weaker soldier, a Scout or routine
+/// work; a Settler, Walls and a stronger soldier keep theirs. The unit at
+/// the head is held while the corps is short.
+#[test]
+fn what_gives_way_to_a_corps_unit() {
+    let mut game = three_cities_with_iron_working();
+    let capital = game.player_city_ids(0)[0];
+    let strength = game.rules.units[&crate::name!("legion")].strength;
+    let head = |game: &mut Game, item: Item| {
+        let city = game.cities.get_mut(&capital).unwrap();
+        city.queue.clear();
+        city.queue.push(item);
+    };
+    let unit = |name: &str| Item::Unit {
+        unit: Name::new(name),
+    };
+    let building = |name: &str| Item::Building {
+        building: Name::new(name),
+    };
+    assert!(AdvancedAi::score_unique_corps_may_displace(
+        &game, 0, capital, strength
+    ));
+    for gives in [
+        unit("warrior"),
+        unit("archer"),
+        unit("scout"),
+        building("granary"),
+    ] {
+        head(&mut game, gives.clone());
+        assert!(
+            AdvancedAi::score_unique_corps_may_displace(&game, 0, capital, strength),
+            "{gives:?} gives way"
+        );
+    }
+    for keeps in [unit("settler"), building("walls"), unit("man_at_arms")] {
+        head(&mut game, keeps.clone());
+        assert!(
+            !AdvancedAi::score_unique_corps_may_displace(&game, 0, capital, strength),
+            "{keeps:?} keeps its queue"
+        );
+    }
+    let ai = corps_seat(VictoryTarget::Score, true);
+    head(&mut game, unit("legion"));
+    assert!(ai.score_unique_corps_holds(&game, 0, capital));
+    assert!(!corps_seat(VictoryTarget::Score, false).score_unique_corps_holds(&game, 0, capital));
+    head(&mut game, unit("archer"));
+    assert!(!ai.score_unique_corps_holds(&game, 0, capital));
+}

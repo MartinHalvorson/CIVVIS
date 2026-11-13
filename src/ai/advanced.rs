@@ -10281,6 +10281,10 @@ pub struct AdvancedAi {
     /// Ancient or Classical unique land soldier's technology as a goal from
     /// its second city. See `advanced/score_unique_unit.rs`. Opt-in.
     score_seat_fields_its_unique_unit: bool,
+    /// `score-seat-raises-its-unique-corps`: a Score seat keeps a corps of
+    /// its early unique soldier, one a city (four to eight), as a queue
+    /// claim. See `advanced/score_unique_unit.rs`. Opt-in.
+    score_seat_raises_its_unique_corps: bool,
     /// `score-seat-founds-early`: on a Score seat, an early Settler past its
     /// patience (or turned home by the corridor) founds on the best safe,
     /// holdable site within reach. See `advanced/score_seat_founds_early.rs`.
