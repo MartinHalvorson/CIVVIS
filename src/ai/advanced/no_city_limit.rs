@@ -293,10 +293,15 @@ impl AdvancedAi {
     /// off.
     pub(super) fn no_city_limit_width(&self, g: &Game, pid: usize) -> Option<usize> {
         self.no_city_limit.then(|| {
-            Self::no_city_limit_width_for(
-                g.player_city_ids(pid).len(),
-                self.counts(g, pid).military,
-            )
+            let cities = g.player_city_ids(pid).len();
+            let soldiers = self.counts(g, pid).military;
+            // `score-seat-expands-hard`: one Settler more than the cities.
+            // See `advanced/score_expands_hard.rs`.
+            if self.score_expands_hard_now(g) {
+                Self::score_expands_width_for(cities, soldiers)
+            } else {
+                Self::no_city_limit_width_for(cities, soldiers)
+            }
         })
     }
 

@@ -2923,6 +2923,11 @@ pub struct BasicAi {
     /// instead of the Warlord's Throne and the Grand Master's Chapel. See
     /// `BasicAi::plaza_building_item_for`. False on a bare `BasicAi`.
     pub(crate) plaza_serves_science: bool,
+    /// `score-seat-expands-hard`: set by `AdvancedAi` each turn while the gene
+    /// acts; the Government Plaza's tier buildings are then the Ancestral Hall
+    /// and the Grand Master's Chapel. See `BasicAi::plaza_hall_first_item`.
+    /// False on a bare `BasicAi`.
+    pub(crate) plaza_hall_first: bool,
     /// `launch-pad-keeps-its-rung`: an idle city resumes its own placed,
     /// unfinished Spaceport foundation while no pad of ours stands. See
     /// `launch_pad_resume.rs`. Set by the Advanced gene; off by default.
@@ -4128,6 +4133,7 @@ impl BasicAi {
             obsolete_military_buys_barred: false,
             obsolete_buys_read_our_techs: false,
             plaza_serves_science: false,
+            plaza_hall_first: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             dig_museums_wanted: 0,
@@ -4588,6 +4594,7 @@ impl BasicAi {
             obsolete_military_buys_barred: false,
             obsolete_buys_read_our_techs: false,
             plaza_serves_science: false,
+            plaza_hall_first: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             dig_museums_wanted: 0,

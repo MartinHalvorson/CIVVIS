@@ -6104,6 +6104,14 @@ pub const GENES: &[Gene] = &[
     // declarer). Eleven Rome games: every city lost followed a declaration
     // at under 0.55 of the declarer. See `advanced/score_seat.rs`.
     Gene { tag: "score-seat-trims-the-idle-army", field: "score_seat_trims_the_idle_army", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_trims_the_idle_army, disable: AdvancedAi::disable_score_seat_trims_the_idle_army },
+    // 38 live Deity Rome Score games, 11-12/13: 3.9 cities at turn 50 and 4.7
+    // at turn 60 against the met rivals' 4.7 and 5.5, and 56 points at the
+    // tally for each city held at turn 60. The capital started 27 of the 28
+    // Settlers journalled in turns 10-80; the wide claims passed the other
+    // cities over for "its queue keeps its item" 243 times, and the Plaza
+    // took the Warlord's Throne, never the Ancestral Hall. See
+    // `advanced/score_expands_hard.rs`.
+    Gene { tag: "score-seat-expands-hard", field: "score_seat_expands_hard", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_expands_hard, disable: AdvancedAi::disable_score_seat_expands_hard },
     // Live Deity Rome, Score target: no rival declared on us while a declared
     // friendship stood (94 declarations), yet the control mod refused 52
     // friendships the AI offered in one night, and the seat asked one rival
