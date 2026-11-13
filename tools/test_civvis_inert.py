@@ -97,6 +97,76 @@ class EffectReads(unittest.TestCase):
         self.assertEqual(self.reads('g.policy_effect(0, "{} bonus")'), [])
 
 
+class InternedEffectArguments(unittest.TestCase):
+    DECLARED = "fn policy_effect_named(&self, pid: usize, effect: Name) -> f64 {}\n"
+
+    def reads(self, text):
+        return inert.effect_reads({"src/x.rs": self.DECLARED + text})
+
+    def names(self, text):
+        return inert.name_literals({"src/x.rs": self.DECLARED + text})
+
+    def test_an_interned_effect_argument_is_read(self):
+        self.assertEqual(sorted(self.reads('g.policy_effect_named(0, crate::name!("gold_pct"))')), ["gold_pct"])
+
+    def test_a_new_accessor_is_discovered_from_its_parameter(self):
+        text = 'fn new_lookup(&self, effect_key: Name) {} g.new_lookup(name!("food"));'
+        self.assertEqual(sorted(self.reads(text)), ["food"])
+        self.assertEqual(self.names(text), {})
+
+    def test_effect_and_ordinary_uses_of_the_same_name_keep_separate_audits(self):
+        text = 'g.policy_effect_named(0, crate::name!("waived_effect")); let id = name!("waived_effect");'
+        self.assertEqual(len(self.names(text)["waived_effect"]), 1)
+        self.assertEqual(inert.audit_names("effects", self.reads(text), set(), {"waived_effect": "deliberate extension"}), [])
+        self.assertEqual(inert.audit_names("names", self.names(text), set(), {}), ["waived_effect"])
+
+    def test_a_named_effect_typo_is_still_rejected(self):
+        text = 'g.policy_effect_named(0, crate::name!("foood"));'
+        self.assertEqual(self.names(text), {})
+        self.assertEqual(inert.audit_names("effects", self.reads(text), {"food"}, {}), ["foood"])
+
+    def test_an_interned_unit_selector_does_not_replace_the_text_effect(self):
+        text = 'fn unit_effect_for_kind(&self, pid: usize, kind: Name, effect: &str) {} g.unit_effect_for_kind(0, name!("warrior"), "gold_pct");'
+        self.assertEqual(sorted(self.reads(text)), ["gold_pct"])
+        self.assertEqual(sorted(self.names(text)), ["warrior"])
+
+    def test_an_interned_unit_and_interned_effect_have_distinct_roles(self):
+        text = 'fn kind_effect(&self, kind: Name, effect: Name) {} g.kind_effect(name!("warrior"), name!("gold_pct"));'
+        self.assertEqual(sorted(self.reads(text)), ["gold_pct"])
+        self.assertEqual(sorted(self.names(text)), ["warrior"])
+
+    def test_a_nested_name_is_not_the_effect_key(self):
+        text = 'g.policy_effect_named(lookup(crate::name!("warrior")), dynamic_key);'
+        self.assertEqual(self.reads(text), {})
+        self.assertEqual(sorted(self.names(text)), ["warrior"])
+
+    def test_a_non_effect_parameter_keeps_ordinary_name_validation(self):
+        text = 'fn apply_effect(&self, project: Name) {} g.apply_effect(name!("waived_effect"));'
+        self.assertEqual(self.reads(text), {})
+        self.assertEqual(sorted(self.names(text)), ["waived_effect"])
+
+    def test_an_invalid_effect_key_is_not_dropped_from_both_audits(self):
+        text = 'g.policy_effect_named(0, name!("bad-key"));'
+        self.assertEqual(self.reads(text), {})
+        self.assertEqual(sorted(self.names(text)), ["bad-key"])
+
+    def test_ambiguous_overloads_do_not_borrow_an_effect_waiver(self):
+        text = 'fn project_effect(&self, effect: Name) {} fn project_effect(&self, project: Name) {} g.project_effect(name!("waived_effect"));'
+        self.assertEqual(self.reads(text), {})
+        self.assertEqual(sorted(self.names(text)), ["waived_effect"])
+
+    def test_non_key_text_arguments_are_not_recorded_as_effects(self):
+        text = 'fn labeled_effect(&self, label: &str, effect: Name) {} g.labeled_effect("selector", name!("gold_pct"));'
+        self.assertEqual(sorted(self.reads(text)), ["gold_pct"])
+        self.assertEqual(self.names(text), {})
+
+    def test_mutable_and_typed_receivers_do_not_shift_key_positions(self):
+        for receiver in ["mut self", "self: Box<Self>", "&'a mut self"]:
+            text = f'fn receiver_effect({receiver}, effect: Name) {{}} g.receiver_effect(name!("gold_pct"));'
+            self.assertEqual(sorted(self.reads(text)), ["gold_pct"])
+            self.assertEqual(self.names(text), {})
+
+
 class AuditNames(unittest.TestCase):
     def test_an_unknown_name_is_a_problem(self):
         self.assertEqual(

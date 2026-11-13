@@ -301,7 +301,7 @@ impl Game {
     }
 
     pub(super) fn city_local_amenities_uncached(&self, city: &City) -> i64 {
-        let mut supply = self.policy_effect(city.owner, "city_amenities");
+        let mut supply = self.policy_effect_named(city.owner, crate::name!("city_amenities"));
         supply += if self.city_has_palace(city) {
             self.rules.buildings["palace"].amenity
         } else {
@@ -328,7 +328,7 @@ impl Game {
             {
                 supply += spec.amenity;
                 if b == "stadium" {
-                    supply += self.policy_effect(city.owner, "stadium_amenity");
+                    supply += self.policy_effect_named(city.owner, crate::name!("stadium_amenity"));
                 }
                 if let Some(&powered_amenity) = spec.effects.get("powered_amenity") {
                     if self.city_is_powered(city) {
@@ -529,7 +529,7 @@ impl Game {
             }
         }
         if city.pop >= 10 {
-            supply += self.policy_effect(city.owner, "large_city_amenity");
+            supply += self.policy_effect_named(city.owner, crate::name!("large_city_amenity"));
         }
         let government = self.gov_effects(city.owner);
         supply += government.amenity;
@@ -541,17 +541,17 @@ impl Game {
             o.owner == city.owner && self.rules.units[o.kind].class == "military"
         });
         if garrison {
-            supply += self.policy_effect(city.owner, "garrison_amenity");
+            supply += self.policy_effect_named(city.owner, crate::name!("garrison_amenity"));
         }
         let specialty_districts = self.city_specialty_district_count(city);
         if specialty_districts >= 2 {
-            supply += self.policy_effect(city.owner, "amenity_at_2_districts");
+            supply += self.policy_effect_named(city.owner, crate::name!("amenity_at_2_districts"));
         }
         if specialty_districts >= 3 {
-            supply += self.policy_effect(city.owner, "amenity_at_3_districts");
+            supply += self.policy_effect_named(city.owner, crate::name!("amenity_at_3_districts"));
         }
         if self.city_governor_active(city.owner, city.id) {
-            supply += self.policy_effect(city.owner, "governor_amenity");
+            supply += self.policy_effect_named(city.owner, crate::name!("governor_amenity"));
         }
         // War Weariness "is applied to every city you own as a negative
         // Amenity" — it is empire-wide, not a property of the cities doing

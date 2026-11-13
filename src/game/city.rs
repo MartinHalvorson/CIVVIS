@@ -95,7 +95,7 @@ impl Game {
             .iter()
             .map(|building| self.rules.buildings[building].outer_defense)
             .sum();
-        if self.tree_effect(city.owner, "urban_defenses") > 0.0 {
+        if self.tree_effect_named(city.owner, crate::name!("urban_defenses")) > 0.0 {
             built.max(400)
         } else {
             built
@@ -121,7 +121,7 @@ impl Game {
             .map(|v| *v as f64)
             .unwrap_or(current)
             .max(3.0);
-        base + self.policy_effect(owner, "city_ranged")
+        base + self.policy_effect_named(owner, crate::name!("city_ranged"))
     }
 
     pub fn city_strength(&self, cid: u32) -> f64 {
@@ -165,7 +165,7 @@ impl Game {
         if self.city_has_palace(city) {
             s += 3.0;
         }
-        s += self.policy_effect(city.owner, "city_defense");
+        s += self.policy_effect_named(city.owner, crate::name!("city_defense"));
         s += self.governor_effect(city.owner, city.id, "garrison_strength");
         s += city_state_bonus;
         let damaged_penalty = (10.0 - city.hp.clamp(0, 200) as f64 / 20.0).round();
@@ -323,15 +323,20 @@ impl Game {
         // their techs, their civics, their improvements.
         let mut yields = self.ground_tile_yields(pos, tile);
         match tile.improvement.as_deref() {
-            Some("mine") => yields.production += self.tree_effect(pid, "mine_production"),
-            Some("pasture") => {
-                yields.food += self.tree_effect(pid, "pasture_food");
-                yields.production += self.tree_effect(pid, "pasture_production");
+            Some("mine") => {
+                yields.production += self.tree_effect_named(pid, crate::name!("mine_production"))
             }
-            Some("quarry") => yields.production += self.tree_effect(pid, "quarry_production"),
+            Some("pasture") => {
+                yields.food += self.tree_effect_named(pid, crate::name!("pasture_food"));
+                yields.production +=
+                    self.tree_effect_named(pid, crate::name!("pasture_production"));
+            }
+            Some("quarry") => {
+                yields.production += self.tree_effect_named(pid, crate::name!("quarry_production"))
+            }
             Some("plantation") => {
-                yields.food += self.tree_effect(pid, "plantation_food");
-                yields.gold += self.tree_effect(pid, "plantation_gold");
+                yields.food += self.tree_effect_named(pid, crate::name!("plantation_food"));
+                yields.gold += self.tree_effect_named(pid, crate::name!("plantation_gold"));
                 let hacienda = &self.rules.improvements["hacienda"].effects;
                 let adjacent_haciendas = self
                     .nbrs(pos)
@@ -359,17 +364,18 @@ impl Game {
                 };
             }
             Some("camp") => {
-                yields.food += self.tree_effect(pid, "camp_food");
-                yields.production += self.tree_effect(pid, "camp_production");
-                yields.gold += self.tree_effect(pid, "camp_gold");
+                yields.food += self.tree_effect_named(pid, crate::name!("camp_food"));
+                yields.production += self.tree_effect_named(pid, crate::name!("camp_production"));
+                yields.gold += self.tree_effect_named(pid, crate::name!("camp_gold"));
             }
             Some("fishing_boats") => {
-                yields.food += self.tree_effect(pid, "fishing_boats_food");
-                yields.gold += self.tree_effect(pid, "fishing_boats_gold");
+                yields.food += self.tree_effect_named(pid, crate::name!("fishing_boats_food"));
+                yields.gold += self.tree_effect_named(pid, crate::name!("fishing_boats_gold"));
                 // Colonialism's +1 Production (Improvement_BonusYieldChanges,
                 // the row a duplicate Id hid from the audit — see
                 // civ6_fidelity.py TABLE_KEYS).
-                yields.production += self.tree_effect(pid, "fishing_boats_production");
+                yields.production +=
+                    self.tree_effect_named(pid, crate::name!("fishing_boats_production"));
                 // Each adjacent Seastead lifts its neighbouring Fishing Boats.
                 yields.production += self
                     .nbrs(pos)
@@ -409,10 +415,12 @@ impl Game {
                     adjacent_reefs * effects.get("adjacent_reef_culture").copied().unwrap_or(0.0);
             }
             Some("lumber_mill") => {
-                yields.production += self.tree_effect(pid, "lumber_mill_production");
+                yields.production +=
+                    self.tree_effect_named(pid, crate::name!("lumber_mill_production"));
             }
             Some("oil_well" | "offshore_oil_rig") => {
-                yields.production += self.tree_effect(pid, "oil_improvement_production");
+                yields.production +=
+                    self.tree_effect_named(pid, crate::name!("oil_improvement_production"));
             }
             Some("farm") => {
                 let adjacent_farms = self
@@ -428,12 +436,12 @@ impl Game {
                 // TECH_REPLACEABLE_PARTS; Farms_MechanizedAdjacency then pays
                 // +1 per Farm. The second replaces the first rather than
                 // stacking with it, exactly as Stirrups does to the Kurgan.
-                let mechanized = self.tree_effect(pid, "farm_adjacency_food");
+                let mechanized = self.tree_effect_named(pid, crate::name!("farm_adjacency_food"));
                 if mechanized > 0.0 {
                     yields.food += adjacent_farms * mechanized;
                 } else {
                     yields.food += (adjacent_farms / 2.0).floor()
-                        * self.tree_effect(pid, "farm_pair_adjacency_food");
+                        * self.tree_effect_named(pid, crate::name!("farm_pair_adjacency_food"));
                 }
             }
             Some("pairidaeza") => {
@@ -478,7 +486,7 @@ impl Game {
             }
             Some("sphinx") => {
                 let effects = &self.rules.improvements["sphinx"].effects;
-                yields.culture += self.tree_effect(pid, "sphinx_culture");
+                yields.culture += self.tree_effect_named(pid, crate::name!("sphinx_culture"));
                 if matches!(
                     tile.feature.as_deref(),
                     Some("floodplains" | "grassland_floodplains" | "plains_floodplains")
@@ -801,7 +809,7 @@ impl Game {
                         .unwrap_or(0.0);
             }
             Some("ziggurat") => {
-                yields.culture += self.tree_effect(pid, "ziggurat_culture");
+                yields.culture += self.tree_effect_named(pid, crate::name!("ziggurat_culture"));
                 if tile.has_river() {
                     yields.culture += self.rules.improvements["ziggurat"]
                         .effects
@@ -819,7 +827,8 @@ impl Game {
                             && !self.map.tiles[neighbor].pillaged
                     })
                     .count() as f64;
-                yields.culture += adjacent * self.tree_effect(pid, "great_wall_culture_adjacency");
+                yields.culture += adjacent
+                    * self.tree_effect_named(pid, crate::name!("great_wall_culture_adjacency"));
                 yields.gold += adjacent
                     * self.rules.improvements["great_wall"]
                         .effects
@@ -2010,7 +2019,7 @@ impl Game {
         let employed = citizen_plan.worked_tiles.len() + citizen_plan.specialists.len();
         // Collectivism's COLLECTIVISM_FARM_FOOD_MODIFIER is a plot yield on
         // Farm plots, so it is paid where a citizen works one.
-        let farm_food = self.policy_effect(city.owner, "farm_food");
+        let farm_food = self.policy_effect_named(city.owner, crate::name!("farm_food"));
         for pos in citizen_plan.worked_tiles {
             ys.add(self.workable_tile_yields(pos));
             if farm_food != 0.0 {
@@ -2119,10 +2128,10 @@ impl Game {
         ys.culture += 0.3 * city.pop as f64;
         if self.city_has_palace(city) {
             ys.add(self.rules.buildings["palace"].yields);
-            ys.gold += self.policy_effect(city.owner, "capital_gold");
-            ys.faith += self.policy_effect(city.owner, "capital_faith");
+            ys.gold += self.policy_effect_named(city.owner, crate::name!("capital_gold"));
+            ys.faith += self.policy_effect_named(city.owner, crate::name!("capital_faith"));
         }
-        ys.production += self.policy_effect(city.owner, "city_production");
+        ys.production += self.policy_effect_named(city.owner, crate::name!("city_production"));
         // A civilization whose signature ability is a flat yield in every city
         // pays it here, once per city, alongside the policy that does the same.
         ys.food += self.civ_effect(city.owner, "city_food");
@@ -2181,16 +2190,22 @@ impl Game {
             {
                 continue;
             }
-            ys.gold += self.policy_effect(city.owner, "neighborhood_gold");
+            ys.gold += self.policy_effect_named(city.owner, crate::name!("neighborhood_gold"));
             let appeal = self.tile_appeal(*position);
             if appeal >= 2 {
-                ys.food += self.policy_effect(city.owner, "neighborhood_food");
-                ys.production += self.policy_effect(city.owner, "neighborhood_production");
+                ys.food += self.policy_effect_named(city.owner, crate::name!("neighborhood_food"));
+                ys.production +=
+                    self.policy_effect_named(city.owner, crate::name!("neighborhood_production"));
             }
             if appeal >= 4 {
-                ys.food += self.policy_effect(city.owner, "neighborhood_breathtaking_food");
-                ys.production +=
-                    self.policy_effect(city.owner, "neighborhood_breathtaking_production");
+                ys.food += self.policy_effect_named(
+                    city.owner,
+                    crate::name!("neighborhood_breathtaking_food"),
+                );
+                ys.production += self.policy_effect_named(
+                    city.owner,
+                    crate::name!("neighborhood_breathtaking_production"),
+                );
             }
         }
         // Merchant Confederation's Gold per Envoy, an Emergency's Gold per
@@ -2236,9 +2251,12 @@ impl Game {
                 iys.food += government.allied_suzerain_trade_food;
                 iys.production += government.allied_suzerain_trade_production;
                 // ...and the destination half, paid to the city receiving it.
-                iys.food += self.policy_effect(route.owner, "allied_suzerain_trade_food");
-                iys.production +=
-                    self.policy_effect(route.owner, "allied_suzerain_trade_production");
+                iys.food += self
+                    .policy_effect_named(route.owner, crate::name!("allied_suzerain_trade_food"));
+                iys.production += self.policy_effect_named(
+                    route.owner,
+                    crate::name!("allied_suzerain_trade_production"),
+                );
             }
             if let Some(alliance) = self.alliance_with(city.owner, route.owner) {
                 match alliance.kind.as_str() {
@@ -2560,14 +2578,15 @@ impl Game {
         pct.science += self.governor_effect(city.owner, city.id, "science_pct");
         pct.culture += self.governor_effect(city.owner, city.id, "culture_pct");
         // Dark Age cards buy their strength with an empire-wide penalty.
-        pct.science += self.policy_effect(city.owner, "city_science_pct");
-        pct.culture += self.policy_effect(city.owner, "city_culture_pct");
+        pct.science += self.policy_effect_named(city.owner, crate::name!("city_science_pct"));
+        pct.culture += self.policy_effect_named(city.owner, crate::name!("city_culture_pct"));
         // Monasticism (shipped GS `PolicyModifiers`): MONASTICISM_HOLYSITE_SCIENCE
         // is +75% Science under CITY_HAS_HOLY_SITE; MONASTICISM_CULTURE_MODIFIER
         // is -25% Culture with NO requirement set — every city, Holy Site or
         // not — and so rides the plain `city_culture_pct` term above.
         if self.city_has_active_district_family(city, crate::name!("holy_site")) {
-            pct.science += self.policy_effect(city.owner, "holy_site_city_science_pct");
+            pct.science +=
+                self.policy_effect_named(city.owner, crate::name!("holy_site_city_science_pct"));
         }
         // Robber Barons, as the shipped rows read: ROBBERBARONS_STOCKEXCHANGE_GOLD
         // (+50% Gold) requires BUILDING_IS_STOCK_EXCHANGE and
@@ -2575,10 +2594,12 @@ impl Game {
         // BUILDING_IS_FACTORY. There is no Bank-or-Shipyard set anywhere in
         // the Expansion data; the note this code used to carry was wrong.
         if self.city_has_active_building_family(city, crate::name!("stock_exchange")) {
-            pct.gold += self.policy_effect(city.owner, "stock_exchange_city_gold_pct");
+            pct.gold +=
+                self.policy_effect_named(city.owner, crate::name!("stock_exchange_city_gold_pct"));
         }
         if self.city_has_active_building_family(city, crate::name!("factory")) {
-            pct.production += self.policy_effect(city.owner, "factory_city_production_pct");
+            pct.production +=
+                self.policy_effect_named(city.owner, crate::name!("factory_city_production_pct"));
         }
         let local_wonder_effect = |effect: &str| {
             city.wonders
@@ -2656,8 +2677,10 @@ impl Game {
             pct.production += capture_pct;
         }
         if self.on_foreign_continent(city.owner, city.pos) {
-            pct.gold += self.policy_effect(city.owner, "foreign_continent_gold_pct");
-            pct.production += self.policy_effect(city.owner, "foreign_continent_production_pct");
+            pct.gold +=
+                self.policy_effect_named(city.owner, crate::name!("foreign_continent_gold_pct"));
+            pct.production += self
+                .policy_effect_named(city.owner, crate::name!("foreign_continent_production_pct"));
         }
         let suzerains = self
             .players
@@ -2668,8 +2691,10 @@ impl Game {
                     && self.suzerain_of(minor.id) == Some(city.owner)
             })
             .count() as f64;
-        pct.science += suzerains * self.policy_effect(city.owner, "science_pct_per_suzerain");
-        pct.culture += suzerains * self.policy_effect(city.owner, "culture_pct_per_suzerain");
+        pct.science += suzerains
+            * self.policy_effect_named(city.owner, crate::name!("science_pct_per_suzerain"));
+        pct.culture += suzerains
+            * self.policy_effect_named(city.owner, crate::name!("culture_pct_per_suzerain"));
         let economic_yields = self.city_resource_industry_effects(city).city_yield_pct;
         pct.add(economic_yields);
         // No age multiplies yields. Gathering Storm's `Modifiers` carry no
@@ -2985,7 +3010,7 @@ impl Game {
                 continue;
             }
             if name == "national_park" {
-                if self.tree_effect(pid, "national_parks") > 0.0
+                if self.tree_effect_named(pid, crate::name!("national_parks")) > 0.0
                     && self.national_park_site_at(pid, pos).is_some()
                 {
                     out.push(*name);
@@ -3085,7 +3110,8 @@ impl Game {
                 || (spec.requires_flat
                     && t.hills
                     && !seaside_volcanic
-                    && !(name == "farm" && self.tree_effect(pid, "hill_farms") > 0.0))
+                    && !(name == "farm"
+                        && self.tree_effect_named(pid, crate::name!("hill_farms")) > 0.0))
                 || (spec.removes_feature
                     && !feature_route
                     && t.feature
@@ -3283,7 +3309,7 @@ impl Game {
         let city_multiplier = 1.0 + self.governor_effect(pid, cid, "great_people_pct") / 100.0;
         let empire_multiplier = 1.0
             + (self.gov_effects(pid).great_people_pct
-                + self.policy_effect(pid, "great_people_pct"))
+                + self.policy_effect_named(pid, crate::name!("great_people_pct")))
                 / 100.0;
         spec.completion_gpp
             .iter()

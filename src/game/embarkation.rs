@@ -65,9 +65,9 @@ impl Game {
             return true;
         }
         match kind {
-            "builder" => self.tree_effect(owner, "builder_embark") > 0.0,
-            "trader" => self.tree_effect(owner, "trader_embark") > 0.0,
-            _ => self.tree_effect(owner, "land_unit_embark") > 0.0,
+            "builder" => self.tree_effect_named(owner, crate::name!("builder_embark")) > 0.0,
+            "trader" => self.tree_effect_named(owner, crate::name!("trader_embark")) > 0.0,
+            _ => self.tree_effect_named(owner, crate::name!("land_unit_embark")) > 0.0,
         }
     }
 
@@ -175,13 +175,15 @@ impl Game {
                 .is_some_and(|city| city.owner == u.owner)
         });
         if friendly {
-            s += self.policy_effect(u.owner, "friendly_combat");
+            s += self.policy_effect_named(u.owner, crate::name!("friendly_combat"));
         }
         let wounded_penalty = (10.0 - u.hp.clamp(0, 100) as f64 / 10.0).round();
         if self.promotion_effect(u, "no_wounded_penalty") > 0.0 {
             s += wounded_penalty;
         }
-        s += wounded_penalty * self.policy_effect(u.owner, "wounded_penalty_reduction_pct") / 100.0;
+        s += wounded_penalty
+            * self.policy_effect_named(u.owner, crate::name!("wounded_penalty_reduction_pct"))
+            / 100.0;
         s
     }
 

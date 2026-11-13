@@ -173,6 +173,20 @@ impl Game {
         // comes from is swapped in after the ruleset is indexed, so the
         // index only settles this for a seat carrying no attachments.
         let granted = self.rules.effect_index.policies(effect);
+        self.policy_effect_from_index(pid, effect, granted)
+    }
+
+    /// The same policy/attachment reads with an interned presence-index key.
+    pub fn policy_effect_named(&self, pid: usize, effect: Name) -> f64 {
+        let granted = self.rules.effect_index.policies_named(effect);
+        // A missing key without attachments needs no string resolution.
+        if !granted && self.has_no_attachments(pid) {
+            return 0.0;
+        }
+        self.policy_effect_from_index(pid, effect.as_str(), granted)
+    }
+
+    fn policy_effect_from_index(&self, pid: usize, effect: &str, granted: bool) -> f64 {
         if granted {
             // A key no card in the ruleset grants cannot be a card's key, so
             // a trace loses nothing by recording only the ones that are.

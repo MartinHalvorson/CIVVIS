@@ -1842,6 +1842,11 @@ impl EffectIndex {
     pub fn policies(&self, effect: &str) -> bool {
         self.policies.contains_key(effect)
     }
+    /// Presence lookup for an effect key the caller already interned.
+    #[inline]
+    pub fn policies_named(&self, effect: Name) -> bool {
+        self.policies.contains_name(effect)
+    }
     #[inline]
     pub fn civs(&self, effect: &str) -> bool {
         self.civs.contains_key(effect)

@@ -216,8 +216,9 @@ impl Game {
             return terms;
         }
         let terms = NavalMoveTerms {
-            naval_movement_tree: self.tree_effect(unit.owner, "naval_movement"),
-            embarked_movement_tree: self.tree_effect(unit.owner, "embarked_movement"),
+            naval_movement_tree: self.tree_effect_named(unit.owner, crate::name!("naval_movement")),
+            embarked_movement_tree: self
+                .tree_effect_named(unit.owner, crate::name!("embarked_movement")),
             mana: self.has_ability(unit.owner, "mana"),
             naval_movement_wonder: self.empire_wonder_effect(unit.owner, "naval_movement"),
         };
@@ -240,7 +241,7 @@ impl Game {
         // Ocean from the opening turn.
         let ocean = wading_giant
             || self.has_ability(unit.owner, "mana")
-            || self.tree_effect(unit.owner, "ocean_navigation") > 0.0
+            || self.tree_effect_named(unit.owner, crate::name!("ocean_navigation")) > 0.0
             || (sea
                 && self.has_ability(unit.owner, "knarr")
                 && self.players[unit.owner]
@@ -505,7 +506,7 @@ impl Game {
             moves += self.empire_wonder_effect(u.owner, "guru_adjacent_religious_movement");
         }
         if u.kind == "giant_death_robot" {
-            moves += self.tree_effect(u.owner, "gdr_movement");
+            moves += self.tree_effect_named(u.owner, crate::name!("gdr_movement"));
         }
         if spec.clear_terrain_start_movement > 0.0
             && self.map.get(u.pos).is_some_and(|tile| {
@@ -750,7 +751,7 @@ impl Game {
     /// rival's policies.
     pub(crate) fn bars_foreign_rock_bands(&self, host: usize, owner: usize) -> bool {
         host != owner
-            && (self.policy_effect(host, "block_foreign_rock_bands") > 0.0
+            && (self.policy_effect_named(host, crate::name!("block_foreign_rock_bands")) > 0.0
                 || self.rock_band_barred_hosts.contains(&(owner, host)))
     }
 

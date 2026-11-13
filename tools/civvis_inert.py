@@ -262,12 +262,122 @@ def _where(path: str, text: str, offset: int) -> str:
     return f"{path}:{text.count(chr(10), 0, offset) + 1}"
 
 
-def name_literals(sources: dict[str, str]) -> dict[str, list[str]]:
-    """Every ``name!("x")`` in shipping code, with where it is."""
-    found: dict[str, list[str]] = collections.defaultdict(list)
+
+RUST_FUNCTION = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+NAME_ARGUMENT = re.compile(r"(?:&\s*)?(?:[A-Za-z_][A-Za-z0-9_]*::)*" + NAME_MACRO.pattern)
+
+
+def _arguments(text: str, start: int, signature: bool = False) -> list[tuple[int, int]] | None:
+    """Bounded top-level argument spans, excluding the enclosing parentheses."""
+    spans = []
+    begin = start
+    nested = []
+    index = start
+    limit = min(len(text), start + 1000)
+    while index < limit:
+        char = text[index]
+        if char == '"':
+            index += 1
+            while index < limit and text[index] != '"':
+                index += 2 if text[index] == "\\" else 1
+            index += 1
+            continue
+        if char in "([{":
+            nested.append(char)
+        elif signature and char == "<":
+            nested.append(char)
+        elif signature and char == ">" and nested and nested[-1] == "<":
+            nested.pop()
+        elif char == ")" and not nested:
+            if text[begin:index].strip():
+                spans.append((begin, index))
+            return spans
+        elif char in ")]}":
+            if not nested or "([{<"[")]}>".index(char)] != nested[-1]:
+                return None
+            nested.pop()
+        elif char == "," and not nested:
+            spans.append((begin, index))
+            begin = index + 1
+        index += 1
+    return None
+
+
+def _named_effect_roles(sources: dict[str, str]) -> dict[str, frozenset[int]]:
+    """Unambiguous argument positions declared as Name effect keys.
+
+    A Name selector elsewhere in an effect-related call is still an ordinary
+    identifier. Ambiguous overloads fail closed rather than guessing a role.
+    """
+    definitions: dict[str, list[frozenset[int]]] = collections.defaultdict(list)
+    name_type = re.compile(r"(?:&\s*(?:'\w+\s*)?)?(?:[A-Za-z_][A-Za-z0-9_]*::)*Name")
+    for text in sources.values():
+        for match in RUST_FUNCTION.finditer(text):
+            function = match.group(1)
+            spans = _arguments(text, match.end(), signature=True)
+            roles = set()
+            position = 0
+            for first, last in spans or []:
+                argument = text[first:last].strip()
+                receiver = argument.split(":", 1)[0].strip()
+                if re.fullmatch(r"(?:&\s*(?:'\w+\s*)?(?:mut\s+)?)?(?:mut\s+)?self", receiver):
+                    continue
+                if ":" in argument:
+                    parameter, type_ = argument.split(":", 1)
+                    effect_key = parameter.strip() in {"effect", "effect_key"} or (
+                        parameter.strip() == "key" and "effect" in function
+                    )
+                    if effect_key and name_type.fullmatch(type_.strip()):
+                        roles.add(position)
+                position += 1
+            definitions[function].append(frozenset(roles))
+    roles = {
+        name: variants[0]
+        for name, variants in definitions.items()
+        if variants[0] and all(variant == variants[0] for variant in variants)
+    }
+    return roles
+
+
+def _named_effects(
+    sources: dict[str, str], roles: dict[str, frozenset[int]] | None = None
+) -> dict[str, list[tuple[str, int, int]]]:
+    """Literal occurrences in unambiguous declared Name effect-key arguments."""
+    if roles is None:
+        roles = _named_effect_roles(sources)
+    found: dict[str, list[tuple[str, int, int]]] = collections.defaultdict(list)
+    if not roles:
+        return found
+    calls = re.compile(r"\b(fn\s+)?(" + "|".join(re.escape(name) for name in sorted(roles)) + r")\s*\(")
     for path, text in sources.items():
+        for call in calls.finditer(text):
+            definition, name = call.groups()
+            if definition:
+                continue
+            arguments = _arguments(text, call.end())
+            if arguments is None:
+                continue
+            for position in roles[name]:
+                if position >= len(arguments):
+                    continue
+                first, last = arguments[position]
+                argument = text[first:last]
+                leading = len(argument) - len(argument.lstrip())
+                match = NAME_ARGUMENT.fullmatch(argument.strip())
+                if match and re.fullmatch(r"[a-z][a-z0-9_]*", match.group(1)):
+                    macro = first + leading + match.group(0).rfind("name!")
+                    found[path].append((match.group(1), call.start(), macro))
+    return found
+
+def name_literals(sources: dict[str, str]) -> dict[str, list[str]]:
+    """Ordinary identifiers; declared Name effect-key arguments use the effect audit."""
+    found: dict[str, list[str]] = collections.defaultdict(list)
+    effect_arguments = _named_effects(sources)
+    for path, text in sources.items():
+        effect_names = {macro for _, _, macro in effect_arguments.get(path, [])}
         for match in NAME_MACRO.finditer(text):
-            found[match.group(1)].append(_where(path, text, match.start()))
+            if match.start() not in effect_names:
+                found[match.group(1)].append(_where(path, text, match.start()))
     return found
 
 
@@ -301,19 +411,24 @@ def effect_reads(sources: dict[str, str]) -> dict[str, list[str]]:
 
     Two shapes: ``effects.get("key")``, and a call to anything named for an
     effect with the key as its first text argument. Discovered from the name
-    rather than listed, so a new accessor is covered the day it is written.
+    rather than listed. Name literals also follow declared effect-key parameters,
+    so an interned selector is never mistaken for the effect itself.
     """
     found: dict[str, list[str]] = collections.defaultdict(list)
+    roles = _named_effect_roles(sources)
     for path, text in sources.items():
         for match in EFFECTS_LOOKUP.finditer(text):
             found[match.group(1)].append(_where(path, text, match.start()))
         for match in EFFECT_ACCESSOR.finditer(text):
             definition, accessor = match.groups()
-            if definition or accessor in NOT_EFFECT_ACCESSORS:
+            if definition or accessor in NOT_EFFECT_ACCESSORS or accessor in roles:
                 continue
             key = _first_text_argument(text, match.end())
             if key and re.fullmatch(r"[a-z][a-z0-9_]*", key):
                 found[key].append(_where(path, text, match.start()))
+    for path, arguments in _named_effects(sources, roles).items():
+        for key, call, _ in arguments:
+            found[key].append(_where(path, sources[path], call))
     return found
 
 
