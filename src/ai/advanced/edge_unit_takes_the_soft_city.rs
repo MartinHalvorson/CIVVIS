@@ -776,15 +776,20 @@ impl AdvancedAi {
             self.edge_hold(g, pid, window, "held_breaker", why);
             return;
         }
-        if let Some(other) = g.players.iter().find(|player| {
-            player.id != pid
-                && player.id != soft.rival
-                && player.alive
-                && !player.is_minor
-                && !player.is_barbarian
-                && g.is_at_war(pid, player.id)
-        }) {
-            let why = format!("at war with {}", other.civ);
+        let other_war = g
+            .players
+            .iter()
+            .find(|player| {
+                player.id != pid
+                    && player.id != soft.rival
+                    && player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && g.is_at_war(pid, player.id)
+            })
+            .map(|player| player.civ.clone());
+        if let Some(other) = other_war {
+            let why = format!("at war with {other}");
             self.edge_hold(g, pid, window, "held_war", why);
             return;
         }
