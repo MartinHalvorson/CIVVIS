@@ -18,6 +18,10 @@ on:
         description: Accept an old baseline that predates compact map patches
         type: boolean
         default: false
+      experimental_simd128:
+        description: Opt-in SIMD qualification only; never changes deployment defaults
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -25,17 +29,23 @@ permissions:
 # Independent of deployments and of other source refs. Never cancel another
 # manual build merely because a new experiment was requested.
 concurrency:
-  group: wasm-qualify-${{ github.ref }}-${{ inputs.source_ref || github.event.pull_request.number || github.sha }}
+  group: wasm-qualify-${{ github.ref }}-${{ inputs.source_ref || github.event.pull_request.number || github.sha }}-${{ inputs.experimental_simd128 || false }}
   cancel-in-progress: false
 
 jobs:
   wasm-qualify:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # Exercise both recipes in this PR; manual runs build exactly one arm.
+        simd128: ${{ fromJSON(github.event_name == 'pull_request' && '[false,true]' || (inputs.experimental_simd128 && '[true]' || '[false]')) }}
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       QUAL_SOURCE_REF: ${{ inputs.source_ref || github.event.pull_request.base.sha }}
       QUAL_ALLOW_LEGACY: ${{ inputs.allow_legacy_full_map }}
+      QUAL_SIMD128: ${{ matrix.simd128 }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,8 +79,8 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: wasm-qualify-${{ runner.os }}-${{ steps.compiler.outputs.version }}-${{ hashFiles('beta/publish.sh') }}-${{ steps.source.outputs.sha }}
-          restore-keys: wasm-qualify-${{ runner.os }}-${{ steps.compiler.outputs.version }}-
+          key: wasm-qualify-${{ runner.os }}-${{ steps.compiler.outputs.version }}-simd${{ matrix.simd128 }}-${{ hashFiles('beta/publish.sh') }}-${{ steps.source.outputs.sha }}
+          restore-keys: wasm-qualify-${{ runner.os }}-${{ steps.compiler.outputs.version }}-simd${{ matrix.simd128 }}-
       - name: Install the normal publishing tools
         run: |
           bash .github/scripts/install-apt-packages.sh binaryen brotli
@@ -78,7 +88,12 @@ jobs:
           rustc --version
           wasm-opt --version
       - name: Build one lane with its function map
-        run: ./beta/publish.sh --commit "${{ steps.source.outputs.sha }}" --out "$PWD/qualification" --symbols-out "$PWD/wasm-symbols"
+        run: |
+          args=()
+          if [ "$QUAL_SIMD128" = true ]; then
+            args+=(--experimental-simd128)
+          fi
+          ./beta/publish.sh --commit "${{ steps.source.outputs.sha }}" --out "$PWD/qualification" --symbols-out "$PWD/wasm-symbols" "${args[@]}"
       - name: Read back the source and engine identity
         env:
           QUAL_EXPECTED_SHA: ${{ steps.source.outputs.sha }}
@@ -87,15 +102,20 @@ jobs:
           import json, os, pathlib, subprocess, sys
           sys.path.insert(0, 'tools')
           import site_wasm_symbols
+          import site_wasm_features
           _, manifest = site_wasm_symbols.load(pathlib.Path('wasm-symbols'), pathlib.Path('qualification/civvis.wasm'))
           build = json.loads(pathlib.Path('qualification/build.json').read_text())
           assert build['commit'] == manifest['source_commit'] == os.environ['QUAL_EXPECTED_SHA']
+          experimental = os.environ['QUAL_SIMD128'] == 'true'
+          assert build.get('experimental_target_features', []) == (['simd128'] if experimental else [])
           receipt = {
               'source_commit': build['commit'],
               'publisher_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
               'rustc': subprocess.check_output(['rustc', '--version'], text=True).strip(),
               'binaryen': subprocess.check_output(['wasm-opt', '--version'], text=True).strip(),
               'engine': manifest,
+              'build_variant': site_wasm_features.qualification_features(
+                  pathlib.Path('qualification/civvis.wasm').read_bytes(), experimental),
           }
           pathlib.Path('qualification-info.json').write_text(json.dumps(receipt, indent=2) + '\n')
           PY
@@ -110,7 +130,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: civvis-wasm-qualification
+          name: ${{ github.event_name == 'pull_request' && format('civvis-wasm-qualification-simd{0}', matrix.simd128) || 'civvis-wasm-qualification' }}
           path: |
             qualification
             wasm-symbols
