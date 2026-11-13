@@ -140,6 +140,11 @@ struct ShortSightArcEntry {
 
 type ShortSightArcRows = Box<[OnceLock<Box<[ShortSightArcEntry]>>]>;
 
+// Complete exact distances fit in one byte on an admitted globe. The
+// optional representation has a fixed byte budget; all larger topologies
+// retain the original lazy rows, rings and point-to-point searches.
+const COMPACT_DISTANCE_TABLE_BYTES: usize = 16 * 1024 * 1024;
+
 /// Full distance rows are valuable when one tile is compared with many
 /// others, but one row per tile turns a frequency-76 globe into an all-pairs
 /// table of more than six gigabytes. The byte budget keeps large worlds
@@ -215,6 +220,10 @@ pub struct Sphere {
     /// queries can binary-search integers without making disk iteration pay
     /// an index-to-position indirection.
     ring_indices: Vec<Box<[(u32, u8)]>>,
+    /// Exact graph distances, in source/target storage-index order, when the
+    /// complete byte table fits its budget. Derived once from this immutable
+    /// topology; None keeps the original lazy-distance implementation.
+    compact_distances: Option<Box<[u8]>>,
     /// Exact rows from the twelve evenly distributed pentagons. Their triangle
     /// inequalities are an admissible A* heuristic for any other pair.
     landmarks: Vec<Box<[u16]>>,
@@ -558,6 +567,9 @@ impl Sphere {
         let (Some(from), Some(to)) = (self.index_of(a), self.index_of(b)) else {
             return hex::wdistance(a, b, self.width);
         };
+        if let Some(distance) = self.compact_distance(from, to) {
+            return distance;
+        }
         if from == to {
             return 0;
         }
@@ -619,6 +631,9 @@ impl Sphere {
         let (Some(from), Some(to)) = (self.index_of(a), self.index_of(b)) else {
             return hex::wdistance(a, b, self.width).min(beyond);
         };
+        if let Some(distance) = self.compact_distance(from, to) {
+            return distance.min(beyond);
+        }
         if from == to {
             return 0.min(beyond);
         }
@@ -631,6 +646,32 @@ impl Sphere {
             return beyond;
         }
         self.distance(a, b).min(beyond)
+    }
+
+    /// Compile the same exact BFS rows used by the original distance cache,
+    /// without retaining their two-byte representation as well. Setup work is
+    /// part of the normal game's measured cost. Overflow or a distance wider
+    /// than one byte leaves the original implementation in place.
+    fn build_compact_distances(&self, byte_budget: usize) -> Option<Box<[u8]>> {
+        let cells = self.len().checked_mul(self.len())?;
+        if cells > byte_budget {
+            return None;
+        }
+        let mut distances = Vec::with_capacity(cells);
+        for source in 0..self.len() {
+            let row = self.search_all(source as u32);
+            for distance in row.iter() {
+                distances.push(u8::try_from(*distance).ok()?);
+            }
+        }
+        Some(distances.into_boxed_slice())
+    }
+
+    #[inline]
+    fn compact_distance(&self, from: u32, to: u32) -> Option<i32> {
+        self.compact_distances
+            .as_ref()
+            .map(|distances| i32::from(distances[from as usize * self.len() + to as usize]))
     }
 
     /// One exact, caller-owned distance row for algorithms that deliberately
@@ -1322,6 +1363,7 @@ fn build(frequency: i32) -> Sphere {
         slot,
         rings: Vec::new(),
         ring_indices: Vec::new(),
+        compact_distances: None,
     };
     sphere.landmarks = sphere
         .degree
@@ -1349,6 +1391,7 @@ fn build(frequency: i32) -> Sphere {
                 .collect()
         })
         .collect();
+    sphere.compact_distances = sphere.build_compact_distances(COMPACT_DISTANCE_TABLE_BYTES);
     sphere
 }
 
@@ -1921,3 +1964,6 @@ mod tests {
 
 #[cfg(test)]
 mod sight_arc_cache_tests;
+
+#[cfg(test)]
+mod compact_distance_tests;
