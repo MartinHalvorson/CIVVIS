@@ -172,6 +172,10 @@ pub(crate) struct AssaultForecast {
     pub(crate) gathered: usize,
     pub(crate) hostiles: usize,
     pub(crate) rollouts: u32,
+    /// The city's health and walls at the end of each turn (after its
+    /// owner's), averaged over the rollouts; a taken city counts zero. What
+    /// a press on this board does to the city, turn by turn.
+    pub(crate) city_health: [f32; HORIZON],
 }
 
 impl AssaultForecast {
@@ -948,6 +952,7 @@ struct Tally {
     turn_sum: u32,
     taken: u32,
     runs: u32,
+    health: [f32; HORIZON],
 }
 
 impl Tally {
@@ -975,6 +980,7 @@ impl Tally {
             gathered: posed.gathered,
             hostiles: posed.hostiles,
             rollouts: self.runs,
+            city_health: self.health.map(|sum| sum / runs),
         }
     }
 }
@@ -1080,6 +1086,8 @@ fn play_out(posed: &Posed, extra: Option<(usize, u8)>, seed: u64, rollouts: u32)
                     }
                 }
             }
+            tally.health[round as usize - 1] +=
+                f32::from(sim.s.city_hp[posed.city].max(0) + sim.s.city_wall[posed.city].max(0));
         }
         let ours = (0..posed.members).chain(extra.map(|(i, _)| i));
         tally.lost += ours
