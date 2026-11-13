@@ -7,6 +7,7 @@
 
 use super::*;
 use crate::ai::advanced::test_support::opt_in_off_in_both_controllers;
+use crate::ai::Ai;
 use crate::game::{Action, ObservedWarTypes};
 use crate::reasoning::Journal;
 use std::sync::Arc;
