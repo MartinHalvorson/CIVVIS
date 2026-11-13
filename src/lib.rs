@@ -55,6 +55,9 @@ pub mod game;
 pub mod hex;
 pub mod historical_scenarios;
 pub mod historical_terrain;
+/// Rival chairs that fight like the live host: the harness switch
+/// `--rival-host-tactics` and the census that reads any opponent's tactics.
+pub mod host_tactics;
 pub mod idmap;
 pub mod leader_roster;
 pub mod mapgen;

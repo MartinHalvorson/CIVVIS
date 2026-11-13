@@ -7785,6 +7785,11 @@ pub struct Game {
     /// `docs/ELO_REPINS.md` for what promoting it costs.
     #[serde(default)]
     pub native_competitions: bool,
+    /// ⭐ The harness switch `--rival-host-tactics` (`host_tactics.rs`): what
+    /// a governed rival chair may not do this turn, set only for that chair's
+    /// own turn and read by `apply`. Never saved, never set outside the
+    /// harness, so every other game is byte for byte what it was.
+    pub(crate) host_gate: Option<Box<crate::host_tactics::Gate>>,
     /// Turn the last Special Session was seated. Shipped
     /// `WORLD_CONGRESS_MIN_TIME_BETWEEN_SPECIAL_SESSIONS` holds the next one
     /// off for 15 standard-scaled turns. Saves from before this field start
@@ -8370,6 +8375,7 @@ impl From<GameSer> for Game {
             competition: s.competition,
             competition_lockout_until: s.competition_lockout_until,
             native_competitions: s.native_competitions,
+            host_gate: None,
             last_special_session: s.last_special_session,
             pending_emergencies: s.pending_emergencies,
             active_emergencies: s.active_emergencies,
@@ -9157,6 +9163,7 @@ impl Game {
             competition: None,
             competition_lockout_until: BTreeMap::new(),
             native_competitions: false,
+            host_gate: None,
             last_special_session: 0,
             pending_emergencies: Vec::new(),
             active_emergencies: Vec::new(),

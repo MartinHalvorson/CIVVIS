@@ -470,6 +470,7 @@ mod walls_under_fire;
 mod weights;
 
 mod slinger_first;
+pub use advanced::battle_solver::host_enemy;
 pub use advanced::commitments::{CommitmentCensus, CommitmentLedger};
 pub use advanced::victory_portfolio::{
     DevelopmentPhase, PortfolioReport, PortfolioTrace, VictoryEstimate,

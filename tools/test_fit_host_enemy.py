@@ -324,5 +324,34 @@ class Fitting(unittest.TestCase):
             self.assertIn(const, rust)
 
 
+
+class Rates(unittest.TestCase):
+    def test_the_rate_table_reads_strikes_targets_and_moves(self):
+        def target(tid, d, hp, dealt):
+            return {"id": tid, "d": d, "hp": hp, "dealt": dealt, "still": d == 1}
+
+        rows = [
+            # Struck the nearest of two, which is not the weakest.
+            {"targets": [target(1, 1, 100, 30), target(2, 2, 40, 30)], "struck": 1, "moved": None, "gap": 1, "hp": 90},
+            # Declined from a distance, then closed.
+            {"targets": [target(3, 2, 100, 30)], "struck": None, "moved": "closer", "gap": 2, "hp": 90},
+            # Nothing in reach, wounded, stepped away.
+            {"targets": [], "struck": None, "moved": "away", "gap": 4, "hp": 20},
+            # Struck a city: not a strike on ours, not a closing row.
+            {"targets": [target(4, 1, 100, 30)], "struck": "city", "moved": "hold", "gap": 1, "hp": 90},
+        ]
+        table = F.rate_table(rows)
+        self.assertEqual(table["strike | in reach"], [1, 3])
+        self.assertEqual(table["strike | in reach without moving"], [1, 2])
+        self.assertEqual(table["strike | must move first"], [0, 1])
+        self.assertEqual(table["target: nearest"], [1, 1])
+        self.assertEqual(table["target: weakest"], [0, 1])
+        self.assertEqual(table["target: most damaged"], [1, 1])
+        self.assertEqual(table["target: most damaged (chance)"], [1.0, 1])
+        self.assertEqual(table["target: nearest (chance)"], [0.5, 1])
+        self.assertEqual(table["closes | struck nothing"], [1, 2])
+        self.assertEqual(table["closes | declined"], [1, 1])
+        self.assertEqual(table["steps away | hp<=25, struck nothing"], [1, 1])
+
 if __name__ == "__main__":
     unittest.main()

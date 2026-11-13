@@ -108,6 +108,7 @@
 //! the pairing. Only the sampling changed.
 use civvis::ai::{run_game_observed, AdvancedAi, Ai, VictoryTarget};
 use civvis::game::{Game, GameOptions, DIPLOMATIC_VICTORY_POINTS};
+use civvis::host_tactics::{HostTactics, HostTacticsSeat, TacticsCensus};
 use civvis::reasoning::{Journal, Level, Topic};
 use civvis::rng::Rng;
 use civvis::setup::{GameSpeed, MapScript};
@@ -116,6 +117,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, Write};
 use std::time::Instant;
 
+#[cfg(test)]
+#[path = "gene_screen/host_tactics_tests.rs"]
+mod host_tactics_tests;
 #[path = "gene_screen/rival_war_pace.rs"]
 mod rival_war_pace;
 #[path = "gene_screen/unit_ledger.rs"]
@@ -1365,6 +1369,12 @@ struct Row {
     /// files written before.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     claim_crossings: BTreeMap<String, [u32; 3]>,
+    /// ⭐ `--rival-host-tactics` / `--chair-tactics-census`: how this game's
+    /// rival chairs fought the measured seat, `row: [hits, rows]` in the
+    /// table `tools/fit_host_enemy.py rates` prints for the live host, and
+    /// what the switch did (`gate: ...`). Empty — and absent — otherwise.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    chair_tactics: BTreeMap<String, [f64; 2]>,
     /// This seat's military unit-turns, counted at the end of each of its
     /// turns, and those no step ordered. `None` in files written before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2098,6 +2108,11 @@ struct Header {
     /// file played. See [`rival_war_pace::veto_walls`].
     #[serde(default, skip_serializing_if = "is_zero_u32")]
     rival_walls: u32,
+    /// ⭐ `--rival-host-tactics` (2026-11-12): the rival chairs' land fighters
+    /// strike, pick targets and hold at the live host's fitted rates
+    /// (`src/host_tactics.rs`). False — and absent — in every earlier file.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    rival_host_tactics: bool,
     /// ⭐ `--seat-civ` (2026-11-05): the civilization every measured seat
     /// plays, or empty for the shuffled draw, which every earlier file played.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -2518,6 +2533,14 @@ struct Profile {
     /// ⭐ `--rival-walls`: the share of a chair's cities that may raise walls
     /// ([`rival_war_pace::veto_walls`]). `None` is no knob.
     rival_walls: Option<u32>,
+    /// ⭐ `--rival-host-tactics`: the rival chairs' land fighters near a
+    /// measured seat strike, pick targets and hold at the live host's fitted
+    /// rates (`civvis::host_tactics`). Off: no seat is wrapped.
+    rival_host_tactics: bool,
+    /// ⭐ `--chair-tactics-census`: read how the chairs fight (the same table
+    /// as `tools/fit_host_enemy.py rates`) onto each measured row, without
+    /// changing anything they do.
+    chair_tactics_census: bool,
     /// ⭐ `--seat-civ`: the civilization every measured seat plays
     /// ([`seated_civs`]). `None` keeps the shuffled draw.
     seat_civ: Option<String>,
@@ -2925,6 +2948,18 @@ fn play_game(
         }
     };
     let mut rival_war_turns: Vec<Vec<u32>> = vec![Vec::new(); world.players.len()];
+    // ⭐ `--rival-host-tactics` / `--chair-tactics-census`: the chairs play
+    // inside `HostTacticsSeat`, which reads their turns and, with the switch,
+    // governs their soldiers near a measured seat. Without either flag
+    // nothing is wrapped and the game is byte for byte what it was.
+    let host_tactics =
+        (profile.rival_host_tactics || profile.chair_tactics_census).then(|| HostTactics {
+            seed,
+            victims: measured.clone(),
+            gate: profile.rival_host_tactics,
+        });
+    let host_for = |pid: usize| host_tactics.clone().filter(|_| chairs.contains(&pid));
+    let mut chair_tactics = TacticsCensus::default();
     if profile.rival_war_pace.is_some() || profile.rival_walls.is_some() {
         let pct = profile.rival_war_pace.unwrap_or(0);
         let mut paced: Vec<rival_war_pace::PacedSeat> = ais
@@ -2940,13 +2975,37 @@ fn play_game(
                 rival_war_pace::PacedSeat::new(ai, pace)
             })
             .collect();
-        run_game_observed(&mut world, &mut paced, &mut observe);
+        if host_tactics.is_some() {
+            let mut wrapped: Vec<HostTacticsSeat<rival_war_pace::PacedSeat>> = paced
+                .into_iter()
+                .enumerate()
+                .map(|(pid, seat)| HostTacticsSeat::new(seat, host_for(pid)))
+                .collect();
+            run_game_observed(&mut world, &mut wrapped, &mut observe);
+            for seat in &wrapped {
+                chair_tactics.absorb(&seat.census);
+            }
+            paced = wrapped.into_iter().map(|seat| seat.inner).collect();
+        } else {
+            run_game_observed(&mut world, &mut paced, &mut observe);
+        }
         for seat in &mut paced {
             for &(turn, _, target) in &seat.declared {
                 rival_war_turns[target].push(turn);
             }
         }
         ais = paced.into_iter().map(|seat| seat.ai).collect();
+    } else if host_tactics.is_some() {
+        let mut wrapped: Vec<HostTacticsSeat<AdvancedAi>> = ais
+            .drain(..)
+            .enumerate()
+            .map(|(pid, ai)| HostTacticsSeat::new(ai, host_for(pid)))
+            .collect();
+        run_game_observed(&mut world, &mut wrapped, &mut observe);
+        for seat in &wrapped {
+            chair_tactics.absorb(&seat.census);
+        }
+        ais = wrapped.into_iter().map(|seat| seat.inner).collect();
     } else {
         run_game_observed(&mut world, &mut ais, &mut observe);
     }
@@ -3070,7 +3129,12 @@ fn play_game(
                         row.rival_target = faithful_lane_name(seed, offset).to_string();
                     }
                 }
-                None if profile.rivals => row.rival_mix = "measured".to_string(),
+                None if profile.rivals => {
+                    row.rival_mix = "measured".to_string();
+                    if host_tactics.is_some() {
+                        row.chair_tactics = chair_tactics.report();
+                    }
+                }
                 None => {}
             }
             row
@@ -3236,6 +3300,7 @@ fn row_for_seat(
         // Filled in by `play_game`, which holds the seat's agent.
         last_orders: BTreeMap::new(),
         claim_crossings: BTreeMap::new(),
+        chair_tactics: BTreeMap::new(),
         unit_turns: None,
         unordered_unit_turns: None,
         victories_off: Vec::new(),
@@ -5430,6 +5495,7 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.rival_space_floor != found.rival_space_floor
                                 || first.rival_war_pace != found.rival_war_pace
                                 || first.rival_walls != found.rival_walls
+                                || first.rival_host_tactics != found.rival_host_tactics
                                 || first.seat_civ != found.seat_civ
                                 || first.all_seats != found.all_seats
                                 || first.design != found.design
@@ -6364,6 +6430,9 @@ fn calibration_read(header: &Header) -> String {
             header.rival_walls
         ));
     }
+    if header.rival_host_tactics {
+        line.push_str(", the chairs' soldiers strike and hold at the live host's rates");
+    }
     if header.rival_war_pace > 0 {
         line.push_str(&format!(
             ", wars on the measured seats at {}% of the live declaration odds",
@@ -7226,6 +7295,18 @@ fn main() {
         );
         std::process::exit(2);
     }
+    // ⭐ `--rival-host-tactics`: the chairs' land fighters near a measured
+    // seat strike, pick targets and hold at the live host's fitted rates
+    // (`civvis::host_tactics`). `--chair-tactics-census` reads how the chairs
+    // fight onto each measured row and changes nothing.
+    let rival_host_tactics = present(&args, "--rival-host-tactics");
+    let chair_tactics_census = present(&args, "--chair-tactics-census");
+    if (rival_host_tactics || chair_tactics_census) && !rivals {
+        eprintln!(
+            "--rival-host-tactics and --chair-tactics-census act on the rival chairs, so they need --rivals"
+        );
+        std::process::exit(2);
+    }
     if (rival_war_pace.is_some() || rival_walls.is_some()) && !rivals {
         eprintln!(
             "--rival-war-pace and --rival-walls act on the rival chairs, so they need --rivals"
@@ -7590,6 +7671,7 @@ fn main() {
         rival_space_floor: rival_space_floor.unwrap_or(0),
         rival_war_pace: rival_war_pace.unwrap_or(0),
         rival_walls: rival_walls.unwrap_or(0),
+        rival_host_tactics,
         seat_civ: seat_civ.clone().unwrap_or_default(),
         deployment_genome,
         design: "independent".to_string(),
@@ -7656,6 +7738,8 @@ fn main() {
         rival_space_floor,
         rival_war_pace,
         rival_walls,
+        rival_host_tactics,
+        chair_tactics_census,
         seat_civ,
         rival_chairs,
         handicap_rivals,
@@ -7903,6 +7987,7 @@ mod tests {
             rival_space_floor: 0,
             rival_war_pace: 0,
             rival_walls: 0,
+            rival_host_tactics: false,
             seat_civ: String::new(),
             design: "independent".into(),
             prior: vec![0.5; genes.len()],
@@ -7965,6 +8050,7 @@ mod tests {
             civilians_lost: None,
             last_orders: BTreeMap::new(),
             claim_crossings: BTreeMap::new(),
+            chair_tactics: BTreeMap::new(),
             unit_turns: None,
             unordered_unit_turns: None,
             science_end: None,

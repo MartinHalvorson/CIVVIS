@@ -442,6 +442,13 @@ impl Game {
         if self.current != pid {
             return Err("not your turn".into());
         }
+        // ⭐ `--rival-host-tactics` (`host_tactics.rs`): set only while a
+        // harness-governed rival chair plays its turn; never otherwise.
+        if self.host_gate.is_some() {
+            if let Some(reason) = crate::host_tactics::gate_refuses(self, pid, action) {
+                return Err(reason.into());
+            }
+        }
         let capture_actions = self.pending_city_capture_actions(pid);
         if !capture_actions.is_empty() && !capture_actions.contains(action) {
             return Err("resolve the captured city's fate first".into());
