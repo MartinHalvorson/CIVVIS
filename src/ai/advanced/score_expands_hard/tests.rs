@@ -276,6 +276,34 @@ fn the_gene_waits_out_a_war() {
     assert!(settlers_queued(&late).is_empty(), "no Settler at war");
 }
 
+/// A city within eight tiles of a charted rival city is a frontier city.
+#[test]
+fn a_frontier_city_is_one_near_a_rival_city() {
+    let (game, capital, _) = two_idle_cities();
+    let home = game.cities[&capital].pos;
+    let at = |tiles: i32| {
+        game.map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| game.wdist(*pos, home) == tiles)
+            .expect("fixture: a tile that far")
+    };
+    let near = at(SCORE_EXPANDS_FRONTIER_TILES);
+    let far = at(SCORE_EXPANDS_FRONTIER_TILES + 1);
+    assert!(AdvancedAi::score_expands_on_the_frontier(
+        &game,
+        &[far, near],
+        home
+    ));
+    assert!(!AdvancedAi::score_expands_on_the_frontier(
+        &game,
+        &[far],
+        home
+    ));
+    assert!(!AdvancedAi::score_expands_on_the_frontier(&game, &[], home));
+}
+
 /// Past the band turn the stock floor is shut; the gene keeps it open while
 /// a new city still has its payback turns, and no longer.
 #[test]
