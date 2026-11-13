@@ -120,10 +120,33 @@ use std::time::Instant;
 #[cfg(test)]
 #[path = "gene_screen/host_tactics_tests.rs"]
 mod host_tactics_tests;
+#[cfg(test)]
+#[path = "gene_screen/war_gate_tests.rs"]
+mod war_gate_tests;
 #[path = "gene_screen/rival_war_pace.rs"]
 mod rival_war_pace;
 #[path = "gene_screen/unit_ledger.rs"]
 mod unit_ledger;
+
+// Test scaffolding (`war_gate_tests`): a per-thread observer `play_game`
+// hands every turn's board and the last one. Outside tests it is a no-op.
+#[cfg(test)]
+thread_local! {
+    static GAME_OBSERVER: std::cell::RefCell<Option<Box<dyn FnMut(&Game)>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn test_observe(g: &Game) {
+    GAME_OBSERVER.with(|observer| {
+        if let Some(observe) = observer.borrow_mut().as_mut() {
+            observe(g);
+        }
+    });
+}
+
+#[cfg(not(test))]
+fn test_observe(_: &Game) {}
 
 /// ⭐ THE SCREEN. One shape, so two batches are comparable without an argument
 /// about which regime read which gene (operator, 2026-08-22). Six majors on
@@ -2870,6 +2893,7 @@ fn play_game(
         .map(|(_, &pid)| pid)
         .collect();
     let mut observe = |g: &Game| {
+        test_observe(g);
         if war_census {
             for &seat in &measured {
                 for &other in &majors {
@@ -3009,6 +3033,7 @@ fn play_game(
     } else {
         run_game_observed(&mut world, &mut ais, &mut observe);
     }
+    test_observe(&world);
     if let Some(journal) = &journal {
         drain_journal(journal, journal_cursor, &mut journal_lines);
         let path = format!("{}.journal.{seed}.txt", profile.journal_base);

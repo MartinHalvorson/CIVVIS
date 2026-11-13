@@ -5729,6 +5729,12 @@ pub const GENES: &[Gene] = &[
     // reach, and keeps the positions plan off the posts. Opt-in; see
     // `advanced/defend_force_holds_the_city.rs`.
     Gene { tag: "defend-force-holds-the-city-2", field: "defend_force_holds_the_city_2", kind: Kind::OptIn, enable: AdvancedAi::enable_defend_force_holds_the_city_2, disable: AdvancedAi::disable_defend_force_holds_the_city_2 },
+    // Live 11-12/13 (108 Deity games): 48 wars our seat declared on a major
+    // outside the faith wars took no city within 30 turns and lost 13 to the
+    // target; every one the reader saw read under 0.1. A declaration on a
+    // major (any opener but the faith wars) waits for a forecast capture by
+    // the soldiers in reach. See `advanced/declaration_needs_a_capture.rs`.
+    Gene { tag: "declaration-needs-a-capture", field: "declaration_needs_a_capture", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_needs_a_capture, disable: AdvancedAi::disable_declaration_needs_a_capture },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

@@ -278,6 +278,9 @@ impl AdvancedAi {
         /// Opt-in gene `defend-force-holds-the-city`; see
         /// `advanced/defend_force_holds_the_city.rs`.
         defend_force_holds_the_city => enable_defend_force_holds_the_city, disable_defend_force_holds_the_city;
+        /// Opt-in gene `declaration-needs-a-capture`; see
+        /// `advanced/declaration_needs_a_capture.rs`.
+        declaration_needs_a_capture => enable_declaration_needs_a_capture, disable_declaration_needs_a_capture;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
