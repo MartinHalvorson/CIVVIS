@@ -11523,6 +11523,10 @@ mod siege_production;
 /// See `advanced/siege_at_the_walls_dies_first.rs`.
 mod siege_at_the_walls_dies_first;
 
+/// The assault census: what a named corps reads against every foreign city
+/// in reach, for `civvis_orders --explain-assault`. Read-only. See
+/// `advanced/assault_census.rs`.
+mod assault_census;
 /// `assault-forecast-is-read` and `siege-goes-on-the-forecast`: the chance a
 /// siege force takes its city, turn by turn, on the battle solver's board.
 /// See `advanced/assault_forecast.rs`.
