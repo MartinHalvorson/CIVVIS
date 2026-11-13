@@ -7033,6 +7033,56 @@ fn a_drained_treasury_sells_its_favor_past_the_vote_hold() {
     );
 }
 
+/// Live Deity Rome, Score target, 2026-11-13: a median 79 Favor at t75 on
+/// 94 Gold and 10 a turn, a rival past the vote hold. A Score plan sells
+/// that bank exactly as a Domination plan does, and stops at the same count.
+#[test]
+fn a_score_plan_sells_its_favor_past_the_vote_hold() {
+    let rival = |player: usize, gold: f64, dvp: i64| StateRival {
+        player,
+        gold,
+        dvp: Some(dvp),
+        ..StateRival::default()
+    };
+    let banked = StateSnapshot {
+        turn: 81,
+        favor: Some(87.0),
+        gold: 65,
+        gold_per_turn: Some(3.0),
+        rivals: vec![rival(1, 190.0, 5), rival(2, 120.0, 2), rival(3, 90.0, 6)],
+        ..StateSnapshot::default()
+    };
+    assert_eq!(banked.turn % FAVOR_SALE_CADENCE, FAVOR_SALE_PHASE);
+    assert!(favor_banked_for_votes(&banked));
+    assert!(!treasury_drained(&banked));
+    let score = Some(("expansion", Some("score")));
+    let culture = Some(("expansion", Some("culture")));
+
+    // Another lane on the same plan holds the bank for the votes.
+    let mut orders = Vec::new();
+    assert_eq!(
+        append_favor_sale_order(culture, &banked, &mut orders, 2.0),
+        Some("favor_hold:contender")
+    );
+    assert!(orders.is_empty());
+
+    // The Score plan sells 67 of the 87 to the richest rival at peace.
+    assert_eq!(
+        append_favor_sale_order(score, &banked, &mut orders, 2.0),
+        None
+    );
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].kind, "sell");
+    assert_eq!(orders[0].subject, Some(1));
+    assert_eq!(orders[0].verb.as_deref(), Some("FAVOR=67"));
+
+    // A rival at the buy-back count stops it, as on the Domination lane.
+    let mut late = banked.clone();
+    late.rivals[0].dvp = Some(FAVOR_BUY_LEADER_DVP);
+    assert!(!conquest_sells_the_bank(score, &late));
+    assert!(conquest_sells_the_bank(score, &banked));
+}
+
 /// Live Deity Gran Colombia, 2026-11-12, civvis-20261112T043248Z: 142 Favor
 /// at t100 on 36 Gold and -7.5 a turn that the treasury still covered, 87 at
 /// t80 on 65 Gold, a rival past the vote hold from the middle of the game.

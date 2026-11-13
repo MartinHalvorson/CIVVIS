@@ -3422,11 +3422,20 @@ fn drain_sells_the_bank(state: &civvis::mirror::StateSnapshot) -> bool {
 /// A seat that wins by taking capitals casts no vote that decides its game
 /// before then, and the bank is the one income it was leaving unsold. It
 /// keeps the cadence and the drained treasury's reserve.
+///
+/// ★ A SCORE SEAT BANKS IT THE SAME WAY, AND ITS GAME ENDS AT THE TURN
+/// LIMIT. Live Deity Rome, Score target, 6 players, limit 160, sixteen to
+/// eighteen games of 2026-11-13: the bank read a median 20 Favor at t50, 79
+/// at t75, 154 at t100 and 250 at t150 while net Gold read 10 a turn to t75
+/// and 25 at t100, with 94 to 138 in hand; the richest met rival made 46
+/// Gold a turn at t75, 129 at t100 and 574 at t150. Not one sale was
+/// journalled. A seat that wins on points at the limit casts no deciding
+/// vote either, so it sells on the same reading, to the same stop.
 fn conquest_sells_the_bank(
     plan: Option<(&str, Option<&str>)>,
     state: &civvis::mirror::StateSnapshot,
 ) -> bool {
-    plan.is_some_and(|(_, victory)| victory == Some("domination"))
+    plan.is_some_and(|(_, victory)| matches!(victory, Some("domination" | "score")))
         && !state
             .rivals
             .iter()
