@@ -1,5 +1,5 @@
-//! Diagnostic commands of the orders bridge: `--explain-settler` and
-//! `--dump-mirror`.
+//! Diagnostic commands of the orders bridge: `--explain-settler`,
+//! `--explain-assault` and `--dump-mirror`.
 //!
 //! Both load one turn of the host's export, build the mirror, print what they
 //! find and exit, without deciding anything. Moved verbatim out of `main` in
@@ -594,4 +594,97 @@ pub(super) fn dump_mirror(
         game.observed_appeal.len(),
         game.host_observed.len(),
     );
+}
+
+/// `--explain-assault CORPS [--reach N] [--arrive T] [--turn N]`: the assault
+/// census of one recorded turn.
+///
+/// `CORPS` is `kind:count[,kind:count...]`, for example
+/// `legion:4,battering_ram:1`; every recruit reaches the board's edge nearest
+/// our cities `--arrive` turns from now (default 4). For each charted city of
+/// a living major or city-state within `--reach` tiles (default 12) of one of
+/// our cities it prints the forecast's raw chance of capture within 4, 8 and
+/// 12 turns of a war that began this turn, with the land soldiers the seat
+/// holds and again with the recruits added. One tab-separated line a city,
+/// best first; it decides nothing. See `ai/advanced/assault_census.rs`.
+pub(super) fn explain_assault(
+    args: Vec<String>,
+    players: usize,
+    max_turns: u32,
+    frontier: u32,
+    load: &impl Fn(Option<u32>) -> Option<(civvis::mirror::Snapshot, civvis::mirror::StateSnapshot)>,
+) {
+    let want_turn: Option<u32> = arg_text(&args, "--turn").and_then(|v| v.parse().ok());
+    let Some((snapshot, state)) = load(want_turn) else {
+        println!("no revealed terrain or no state yet");
+        return;
+    };
+    let reach: i32 = arg_text(&args, "--reach")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(12);
+    let arrive: u32 = arg_text(&args, "--arrive")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4);
+    let recruits: Vec<(String, u32, u32)> = arg_text(&args, "--explain-assault")
+        .unwrap_or_default()
+        .split(',')
+        .filter_map(|part| {
+            let (kind, count) = part.split_once(':')?;
+            Some((kind.trim().to_string(), count.trim().parse().ok()?, arrive))
+        })
+        .collect();
+    let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
+    let live = civvis::mirror::LiveMirror::new(
+        &snapshot,
+        &state,
+        mirror_players,
+        1,
+        mirror_turns,
+        frontier,
+    );
+    let g = &live.game;
+    let pid = 0usize;
+    let ai = civvis::ai::AdvancedAi::new();
+    let ours = g.player_city_ids(pid).len();
+    let soldiers = g
+        .player_unit_ids(pid)
+        .into_iter()
+        .filter(|uid| g.rules.units[g.units[uid].kind].class == "military")
+        .count();
+    println!(
+        "assault-census\tturn {}\tour cities {ours}\tour military units {soldiers}\trecruits {}\tarrive {arrive}\treach {reach}",
+        g.turn,
+        recruits
+            .iter()
+            .map(|(kind, count, _)| format!("{kind}:{count}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    println!(
+        "city\towner\tkind\tcapital\tpop\tdist\tstrength\twalls\thostiles\theld4\theld8\theld12\trec4\trec8\trec12\tcal8\tlost\tshort"
+    );
+    for row in ai.assault_census(g, pid, reach, &recruits) {
+        println!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{:.0}\t{}/{}\t{}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.1}\t{}",
+            row.city,
+            row.owner,
+            if row.city_state { "city-state" } else { "major" },
+            row.capital,
+            row.pop,
+            row.distance,
+            row.strength,
+            row.walls,
+            row.max_walls,
+            row.hostiles,
+            row.held[0],
+            row.held[1],
+            row.held[2],
+            row.recruited[0],
+            row.recruited[1],
+            row.recruited[2],
+            row.calibrated,
+            row.units_lost,
+            row.short_of
+        );
+    }
 }
