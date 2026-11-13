@@ -1314,8 +1314,8 @@ fn launches_name_their_civ_and_a_satellite_hands_over_to_its_orbit() {
 
 /// A launch is a flight through the world rather than a line drawn on the
 /// picture: it leaves the real Spaceport, goes east the way the planet turns,
-/// and is hidden by the planet for as long as the planet is in the way. Whoever
-/// is watching still gets to see it, from any camera.
+/// and is hidden by the planet for as long as the planet is in the way. A
+/// camera that can see none of that flight is shown none of it.
 #[test]
 fn launches_climb_from_their_spaceports_and_come_round_the_planet() {
     let app = include_str!("../../web/assets/app.js");
@@ -1341,10 +1341,16 @@ fn launches_climb_from_their_spaceports_and_come_round_the_planet() {
     );
     assert!(app.contains("if (limb && at.z < 0) {"));
 
-    // Nobody misses one: a film opens where the rocket comes into sight, a
-    // launch nowhere in the picture crosses it, and a chart still shows them.
+    // A film opens where the rocket comes into sight, and a chart still shows
+    // them. A launch nowhere in the picture is not drawn: flown across it from
+    // the edge of the frame instead, it was a rocket from no Spaceport at all,
+    // and a satellite's craft then appeared somewhere its rocket never went.
     assert!(app.contains("const law = skyThrustLaw(from, from > 0 ? SKY_ROLLING_START : 0);"));
-    assert!(app.contains("launch.route = {kind:\"crossing\"};"));
+    assert!(app.contains("launch.route = {kind:\"unseen\"};"));
+    assert!(app.contains("return shape ? {kind:\"ascent\", shape} : {kind:\"unseen\"};"));
+    assert!(app.contains("if (route.kind === \"unseen\") return null;"));
+    assert!(!app.contains("function skyLaunchCrossing("));
+    assert!(!app.contains("launch.passing"));
     assert!(app.contains("if (camera.chart) drawChartLaunches(camera, radius, centerX, centerY);"));
 }
 
@@ -1398,8 +1404,9 @@ fn a_launch_flies_one_curve_on_one_clock() {
     // Never stops in the frame: what is left at the end of its film goes out.
     assert!(painter.contains(": 1 - skySmooth((clock - .9) / .1);"));
 
-    // A crossing goes through the picture, not along the edge of it.
-    assert!(app.contains("const through = Math.atan2(-inY, -inX);"));
+    // Going by is for a camera parked at another world. With home in the
+    // picture nothing crosses it.
+    assert!(flight.contains("if (skyHomeInPicture(radius, centerX, centerY, stage)) return null;"));
 
     // A satellite is a gravity turn that cannot overrun its orbit and brake.
     assert!(app.contains("const steep = Math.log(orbit.ring) /"));
