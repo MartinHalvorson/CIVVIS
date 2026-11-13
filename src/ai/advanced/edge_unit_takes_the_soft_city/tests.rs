@@ -608,3 +608,28 @@ fn from_the_start_stands_down_when_no_soft_city_is_named_by_turn_45() {
     assert_eq!(counter(&g, "closed"), 1);
     assert_eq!(ai.edge_unit_research_goal(&g, 0), None);
 }
+
+#[test]
+fn at_war_the_force_strikes_the_city() {
+    let (mut g, mut ai, city) = at_war(3, None);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(counter(&g, "assault") >= 1);
+    assert!(
+        g.cities[&city].hp < 200 || g.cities[&city].owner == 0,
+        "health {}",
+        g.cities[&city].hp
+    );
+}
+
+#[test]
+fn a_declaration_that_never_reached_the_board_is_asked_again() {
+    let (mut g, mut ai, _) = at_war(3, None);
+    g.at_war.remove(&(0, 1));
+    assert!(!g.is_at_war(0, 1));
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let w = window(&ai);
+    assert!(!w.spent);
+    assert_eq!(w.declared, None);
+    assert_eq!(w.redeclared, 1);
+    assert_eq!(counter(&g, "declare_lost"), 1);
+}

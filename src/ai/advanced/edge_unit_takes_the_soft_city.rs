@@ -134,6 +134,10 @@ pub(crate) const EDGE_CONTINUE_TILES: i32 = 8;
 pub(crate) const EDGE_START_NAME_TURN: u32 = 45;
 /// See [`EDGE_START_NAME_TURN`].
 pub(crate) const EDGE_START_MUSTER_TURN: u32 = 60;
+/// Declarations that never reached the board the window asks again.
+pub(crate) const EDGE_REDECLARE_MAX: u32 = 3;
+/// Health below which an edge unit beside the city does not strike it.
+pub(crate) const EDGE_STRIKE_MIN_HP: i32 = 35;
 /// War turns without a capture before peace is asked.
 pub(crate) const EDGE_WAR_PATIENCE: u32 = 20;
 /// Edge units below which the war asks for peace.
@@ -206,6 +210,8 @@ pub(crate) struct EdgeWindow {
     pub(crate) start_supplied: bool,
     /// The turn three edge units first stood at the city.
     pub(crate) mustered: Option<u32>,
+    /// Declarations that never reached the board, asked again.
+    pub(crate) redeclared: u32,
 }
 
 impl EdgeWindow {
@@ -1299,9 +1305,32 @@ impl AdvancedAi {
             self.edge_close(g, pid, window, "the rival is gone");
             return;
         }
-        if g.turn > declared && !g.is_at_war(pid, rival) {
-            self.edge_close(g, pid, window, "the war has ended");
-            return;
+        if !g.is_at_war(pid, rival) {
+            // A declaration logged on the seat's decision view can miss the
+            // board (round 3: three of eight, the batch cut short by an
+            // earlier refused order); with no war on record since, the
+            // window asks again.
+            let began = g.wars.values().any(|war| {
+                war.started >= declared
+                    && ((war.aggressor == pid && war.defender == rival)
+                        || (war.aggressor == rival && war.defender == pid))
+            });
+            if !began && window.redeclared < EDGE_REDECLARE_MAX {
+                window.redeclared += 1;
+                window.declared = None;
+                window.held = None;
+                Self::edge_count(g, pid, "declare_lost");
+                think!(self.journal(), Military, Strategy,
+                       "Edge unit declaration did not reach the board";
+                       "{TAG}: hold: the declaration of turn {declared} on {} is not on the board; asking again ({} of {})",
+                       target.owner_civ, window.redeclared, EDGE_REDECLARE_MAX);
+                self.plan = None;
+                return;
+            }
+            if g.turn > declared {
+                self.edge_close(g, pid, window, "the war has ended");
+                return;
+            }
         }
         let force: Vec<u32> = g
             .player_unit_ids(pid)
@@ -1327,15 +1356,34 @@ impl AdvancedAi {
                 self.edge_sue(g, pid, window, rival, &why);
                 return;
             }
+            // The assault: breakers and edge units step beside the city and
+            // the edge units strike it (round 3: five declared wars stood
+            // 10-20 turns within four tiles with no unit beside the city).
+            let (blows, before, after) = self.edge_press_the_assault(g, pid, unit, target.city);
+            if blows > 0 {
+                Self::edge_count(g, pid, "assault");
+                think!(self.journal(), Military, Decision,
+                       "Edge unit strikes {}", name;
+                       "{TAG}: assault: {blows} blow(s) on {name}, health {before} to {after}";
+                       target.pos);
+            }
             // One line a turn of what the assault does to the city.
             if let Some(city) = g.cities.get(&target.city) {
                 let beside = force
                     .iter()
-                    .filter(|uid| g.wdist(g.units[uid].pos, target.pos) <= 1)
+                    .filter(|uid| {
+                        g.units
+                            .get(uid)
+                            .is_some_and(|body| g.wdist(body.pos, target.pos) <= 1)
+                    })
                     .count();
                 let close = force
                     .iter()
-                    .filter(|uid| g.wdist(g.units[uid].pos, target.pos) <= EDGE_MUSTER_TILES)
+                    .filter(|uid| {
+                        g.units
+                            .get(uid)
+                            .is_some_and(|body| g.wdist(body.pos, target.pos) <= EDGE_MUSTER_TILES)
+                    })
                     .count();
                 think!(self.journal(), Military, Decision,
                        "Edge unit siege at {}", name;
@@ -1401,6 +1449,97 @@ impl AdvancedAi {
             window.last_capture = Some(g.turn);
         }
         self.plan = None;
+    }
+
+    /// Press the assault on `cid` at the start of the turn: each breaker of
+    /// ours steps to a free tile beside the city, then each edge unit with a
+    /// move steps beside it and, at [`EDGE_STRIKE_MIN_HP`] or more, strikes
+    /// it. Returns the blows struck and the city's health before and after.
+    fn edge_press_the_assault(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        unit: Name,
+        cid: u32,
+    ) -> (usize, i32, i32) {
+        let Some(city) = g.cities.get(&cid) else {
+            return (0, 0, 0);
+        };
+        let (pos, before) = (city.pos, city.hp);
+        let mut bodies: Vec<(bool, i32, u32)> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|uid| {
+                let body = &g.units[&uid];
+                let breaker = is_breaker(body.kind.as_str());
+                (body.kind == unit || breaker).then_some((!breaker, -body.hp, uid))
+            })
+            .collect();
+        // Breakers first, then the healthiest.
+        bodies.sort_unstable();
+        let mut blows = 0;
+        for (striker, _, uid) in bodies {
+            for _ in 0..6 {
+                let Some(body) = g.units.get(&uid) else {
+                    break;
+                };
+                if body.moves_left <= 0.0 || g.is_embarked(body) {
+                    break;
+                }
+                if !g.cities.get(&cid).is_some_and(|city| city.owner != pid) {
+                    break;
+                }
+                let here = body.pos;
+                if g.wdist(here, pos) <= 1 {
+                    if striker && body.hp >= EDGE_STRIKE_MIN_HP {
+                        if g.apply(
+                            pid,
+                            &Action::Attack {
+                                unit: uid,
+                                target: pos,
+                            },
+                        )
+                        .is_ok()
+                        {
+                            blows += 1;
+                        }
+                    }
+                    break;
+                }
+                let beside: HashSet<Pos> = g
+                    .wring(pos, 1)
+                    .into_iter()
+                    .filter(|tile| {
+                        g.map
+                            .get(*tile)
+                            .is_some_and(|t| !g.rules.is_water(t) && g.rules.is_passable(t))
+                            && g.city_at(*tile).is_none()
+                            && g.unit_ids_at(*tile)
+                                .iter()
+                                .all(|other| g.units[other].owner == pid)
+                    })
+                    .collect();
+                let Some(next) = g
+                    .route_step_to_any(uid, &beside)
+                    .filter(|next| g.can_move(uid, *next))
+                else {
+                    break;
+                };
+                if g.apply(
+                    pid,
+                    &Action::Move {
+                        unit: uid,
+                        to: next,
+                    },
+                )
+                .is_err()
+                {
+                    break;
+                }
+            }
+        }
+        let after = g.cities.get(&cid).map_or(0, |city| city.hp);
+        (blows, before, after)
     }
 
     /// Ask `rival` for peace and close the window.

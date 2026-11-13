@@ -420,6 +420,7 @@ fn stage_of(detail: &str) -> Option<&'static str> {
         "force" if rest.starts_with("upgraded") => "upgraded",
         "force" if rest.ends_with("before this one") => "trained",
         "force" => "force",
+        "hold" if rest.contains("not on the board") => "declare_lost",
         "hold" if rest.contains("the others at") => "held_bodies",
         "hold" if rest.contains("shipped opening") || rest.contains("denounced") => "held_opening",
         "hold" if rest.contains("short of") => "held_forecast",
@@ -430,6 +431,7 @@ fn stage_of(detail: &str) -> Option<&'static str> {
         "denounced" => "denounced",
         "muster" => "mustered",
         "siege" => "siege",
+        "assault" => "assault",
         "start" if rest.starts_with("research goes") => "start",
         "start" if rest.starts_with("no ") => "start_closed",
         "start" => "start_supplied",
@@ -882,6 +884,7 @@ fn fidelity(side: &[&World]) -> Vec<String> {
 /// with the city below full health or an edge unit beside it, or a capture.
 fn assault_pressed(w: &World) -> bool {
     counter(w, "captured") > 0
+        || counter(w, "assault") > 0
         || w.events.iter().any(|(_, event)| {
             let Some(rest) = event.strip_prefix("siege: ") else {
                 return false;
