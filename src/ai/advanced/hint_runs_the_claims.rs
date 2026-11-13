@@ -77,6 +77,10 @@ impl AdvancedAi {
         // goes first, ahead of the Prophet race and the routine claims
         // below. Exact no-op while the gene is off. See
         // `advanced/early_settler_floor.rs`.
+        // `score-seat-expands-hard`: the Ancestral Hall first, once the Plaza
+        // stands. Exact no-op while the gene is off. See
+        // `advanced/score_expands_hard.rs`.
+        self.claim_score_expansion_hall(g, pid, plan);
         self.claim_early_settler_floor(g, pid, plan);
         // `holdable-land-keeps-settling`: past the opening floor, a
         // Settler for a holdable seat, ahead of the routine claims below.

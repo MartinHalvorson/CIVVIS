@@ -526,6 +526,12 @@ impl AdvancedAi {
             {
                 continue;
             }
+            // `score-seat-holds-its-faith-strikes`: a Score seat strikes only
+            // a faith at match point. `false` with the gene off. See
+            // `advanced/score_seat_holds_its_faith_strikes.rs`.
+            if self.score_seat_holds_the_strike(g, pid, rival) {
+                continue;
+            }
             if let Some((gate, reason)) = self.faith_strike_gate(g, pid, rival) {
                 self.journal_faith_strike_held(g, rival, gate, &reason);
                 continue;
