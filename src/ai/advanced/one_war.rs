@@ -1178,15 +1178,6 @@ impl AdvancedAi {
             .filter(|leader| self.diplomatic_contender(g, pid, *leader))
     }
 
-    /// `recovery-keeps-a-winning-war`: the Recovery plan offers "this is not
-    /// the war the recovery plan is fighting" peace to every war but its
-    /// target's. When that target is no war of ours, there is no other war
-    /// it fights, and a war we outgun [`ONE_WAR_SECOND_FRONT_RATIO`] times
-    /// over is kept. Forty such offers on 2026-10-04/05, sixteen to the only
-    /// war we had, four of them at 1.5 times its power or more: live King
-    /// civvis-20261005T014503Z (game 92) offered the Inca that peace at turn
-    /// 85 at 321 power against 202 with Qusqu, their capital, the campaign's
-    /// objective, and they took it at 86.
     /// `recovery-peace-waits`: whether the Recovery plan has stood for
     /// [`RECOVERY_PEACE_PATIENCE`] turns (always, with the gene off). A
     /// threatened city flips the grand strategy to Recovery for a turn or
@@ -1234,6 +1225,15 @@ impl AdvancedAi {
         contender && !clock_out
     }
 
+    /// `recovery-keeps-a-winning-war`: the Recovery plan offers "this is not
+    /// the war the recovery plan is fighting" peace to every war but its
+    /// target's. When that target is no war of ours, there is no other war
+    /// it fights, and a war we outgun [`ONE_WAR_SECOND_FRONT_RATIO`] times
+    /// over is kept. Forty such offers on 2026-10-04/05, sixteen to the only
+    /// war we had, four of them at 1.5 times its power or more: live King
+    /// civvis-20261005T014503Z (game 92) offered the Inca that peace at turn
+    /// 85 at 321 power against 202 with Qusqu, their capital, the campaign's
+    /// objective, and they took it at 86.
     pub(crate) fn recovery_keeps_the_war(
         &self,
         g: &Game,
