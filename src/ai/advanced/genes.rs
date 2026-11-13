@@ -6135,10 +6135,12 @@ pub const GENES: &[Gene] = &[
     // Live Deity Rome Score lane 2026-11-12, 11 games: Settlers were born at
     // the same pace in the fast and the slow games, but took a mean 8.7
     // turns from birth to founding in the three fastest against 23.8 in the
-    // slow ones (727 Settler-turns past the eighth turn out). On a Score
-    // seat a Settler past 8 Online turns, or turned home by the corridor,
-    // founds on the best safe, holdable site within four tiles. Opt-in; see
-    // `advanced/score_seat_founds_early.rs`.
+    // slow ones (727 Settler-turns past the eighth turn out). On every seat
+    // but a Domination one (Score-only until 2026-11-13, when the lane moved
+    // to Science and Diplomatic games and one of them held seven unfounded
+    // Settlers at three cities) a Settler past 8 Online turns, or turned
+    // home by the corridor, founds on the best safe, holdable site within
+    // four tiles. Opt-in; see `advanced/score_seat_founds_early.rs`.
     Gene { tag: "score-seat-founds-early", field: "score_seat_founds_early", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_founds_early, disable: AdvancedAi::disable_score_seat_founds_early },
     // Split out of score-seat-plays-for-points after its live arm lost the
     // capital (civvis-20261112T211954Z, t24 declaration at 0.46 of the
