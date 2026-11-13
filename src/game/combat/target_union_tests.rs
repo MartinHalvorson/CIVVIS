@@ -184,9 +184,11 @@ fn original_policy_reads_and_opaque_attachments_remain_identical() {
         let original_trace = g.trace_policy_reads(0);
         let expected = g.original_attack_reach_from_flood(uid);
         let old = original_trace.finish();
+        drop(original_trace);
         let new_trace = g.trace_policy_reads(0);
         let actual = g.attack_reach_from_flood(uid);
         let new = new_trace.finish();
+        drop(new_trace);
         assert_eq!(actual, expected);
         assert_eq!(old.effects, new.effects);
         assert_eq!(old.cards, new.cards);
