@@ -40,8 +40,8 @@
 //!
 //! The cost is Magnus arriving two titles later (his Provision spares a
 //! citizen per Settler trained in his city), so the gene is judged on cities
-//! at t60 as well as on Science at t60 and t100. Off, or for any victory
-//! target but Domination and Score, nothing changes.
+//! at t60 as well as on Science at t60 and t100. Off, or for a Culture or
+//! Religion target, nothing changes.
 //!
 //! **A Score seat too (live Deity Rome, 6-player Continents, Online, turn
 //! limit 170, from 2026-11-12 18:58Z).** The score counts 3 a civic, 5 a
@@ -50,16 +50,46 @@
 //! rival's score at every mark from t25 to t170, so the economy this gene
 //! builds is the Score seat's aim as much as the Domination seat's. It reads
 //! [`AdvancedAi::conquest_or_score_seat`].
+//!
+//! **A Science and a Diplomatic seat too (2026-11-13, the Rome lane's
+//! targets since 15:57Z).** Those games open on an Expansion plan as well, so
+//! the gene went inert with the Score target and Magnus came back first.
+//! Same day, Rome, Deity: on the Score target (25 games reaching turn 100)
+//! Pingala was the first Governor in 24, appointed at a median turn 19; on
+//! the Science target (the first 8 games) Magnus was first in 8 of 8 and
+//! Pingala came at a median turn 47.5. At turn 50, with the same cities
+//! (4.0), citizens (15.5) and Production (32), the Score games made 23
+//! Science and held 13 techs and the Science games 14 and 10. The paired sim
+//! that shaped `score-seat-expands-hard` had measured the same order the
+//! other way round: Magnus before Pingala cost 21% of Science at turn 50. A
+//! seat that races a launch or a vote needs the techs and civics sooner than
+//! a seat that counts them. Title order and the stay-home rule read
+//! [`AdvancedAi::pingala_first_seat`]; the Moksha interplay below keeps the
+//! narrower gate. A Culture and a Religion seat are unchanged (they have
+//! their own Pingala rules).
 
-use super::{AdvancedAi, GrandStrategy};
+use super::{AdvancedAi, GrandStrategy, VictoryTarget};
 use crate::game::Game;
 
 impl AdvancedAi {
+    /// The seats whose first titles go to Pingala under the gene: a
+    /// Domination, Score, Science or Diplomatic target. See the module.
+    pub(super) fn pingala_first_seat(&self, g: &Game) -> bool {
+        matches!(
+            self.active_victory_target(g),
+            Some(
+                VictoryTarget::Domination
+                    | VictoryTarget::Score
+                    | VictoryTarget::Science
+                    | VictoryTarget::Diplomacy
+            )
+        )
+    }
+
     /// `domination-seat-appoints-pingala-first`: the gene is on and the seat
-    /// plays the Domination lane or aims at Score
-    /// ([`AdvancedAi::conquest_or_score_seat`]).
+    /// is one of [`AdvancedAi::pingala_first_seat`]'s.
     pub(super) fn domination_seat_titles_pingala_first(&self, g: &Game) -> bool {
-        self.domination_seat_appoints_pingala_first && self.conquest_or_score_seat(g)
+        self.domination_seat_appoints_pingala_first && self.pingala_first_seat(g)
     }
 
     /// `domination-seat-appoints-pingala-first`: whether this frame's titles
