@@ -1,4 +1,5 @@
 use super::super::early_settler_floor::EARLY_SETTLER_FLOOR_STANDARD_TURN;
+use super::super::holdable_land_keeps_settling::HOLDABLE_LAND_PAYBACK_STANDARD_TURNS;
 use super::*;
 
 #[test]
@@ -246,6 +247,9 @@ fn the_floor_stays_open_past_the_band_turn() {
     let (mut game, _, _) = two_idle_cities();
     garrison(&mut game);
     game.turn = game.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN) + 10;
+    // A limit far enough out that a city founded now still has its payback
+    // turns, whatever speed the fixture plays.
+    game.max_turns = game.turn + game.standard_duration(HOLDABLE_LAND_PAYBACK_STANDARD_TURNS) + 40;
     let stock = seat(VictoryTarget::Score, false);
     let plan = stock.assess(&game, 0);
     assert_eq!(stock.early_settler_floor(&game, &plan), 0, "stock: shut");
