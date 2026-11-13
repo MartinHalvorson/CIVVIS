@@ -7033,6 +7033,52 @@ fn a_drained_treasury_sells_its_favor_past_the_vote_hold() {
     );
 }
 
+/// Live Deity Rome, Science target, 2026-11-13: four of fourteen seats sold
+/// 25 to 119 Favor between turns 60 and 111, before any rival reached four
+/// points, and came to the first Diplomatic Victory session on 120 to 187
+/// Favor. Under `science-seat-races-the-congress` the Favor desks read the
+/// seat as the Diplomatic lane: nothing is quoted and the planner's own
+/// quote is struck. Without the tag, and with no plan, nothing changes.
+#[test]
+fn a_science_seat_racing_the_congress_keeps_its_favor() {
+    let science = Some(("science", Some("science")));
+    assert_eq!(favor_desk_plan(science, false), science);
+    let racer = favor_desk_plan(science, true);
+    assert_eq!(racer, Some(("science", Some("diplomatic"))));
+    assert!(plan_races_diplomacy(racer));
+    assert!(!plan_races_diplomacy(science));
+    assert_eq!(favor_desk_plan(None, true), None);
+
+    // No rival at the vote hold yet: the plain Science seat's quote stands,
+    // the racer's is struck, and the racer's own desk quotes nothing.
+    let early = StateSnapshot {
+        turn: 80,
+        favor: Some(117.0),
+        ..StateSnapshot::default()
+    };
+    assert!(!favor_banked_for_votes(&early));
+    let quote = || {
+        vec![Order {
+            kind: "sell",
+            subject: Some(2),
+            verb: Some("FAVOR=25".to_string()),
+            pos: Some((25, 0)),
+        }]
+    };
+    let mut plain = quote();
+    assert_eq!(hold_planner_favor_sales(science, &early, &mut plain), 0);
+    assert_eq!(plain.len(), 1);
+    let mut held = quote();
+    assert_eq!(hold_planner_favor_sales(racer, &early, &mut held), 1);
+    assert!(held.is_empty());
+    let mut none = Vec::new();
+    assert_eq!(
+        append_favor_sale_order(racer, &early, &mut none, 2.0),
+        Some("favor_hold:diplomatic_lane")
+    );
+    assert!(none.is_empty());
+}
+
 /// Live Deity Rome, Score target, 2026-11-13: a median 79 Favor at t75 on
 /// 94 Gold and 10 a turn, a rival past the vote hold. A Score plan sells
 /// that bank exactly as a Domination plan does, and stops at the same count.
