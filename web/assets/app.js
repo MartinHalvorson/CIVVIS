@@ -2380,12 +2380,16 @@ const PLAYER_HUD_SHED_ORDER = [
   "culture", "units",
 ];
 // At a table of rated Civ AI Agents the players are the contest: which agent
-// holds each civilization, and what it is rated. There the two columns are
-// the last to step aside, the rating before the name it belongs to. At any
-// other table a player's name is the first to go, as the list above says.
+// holds each civilization, what it is rated, and the odds that rating gave
+// it. Those four columns are the last to step aside there, the name last of
+// all, and everything else gives way in the order above (so the leader's
+// name goes first). At any other table a player's name is a handle generated
+// for the one game and is the first to go, as that list says.
+const PLAYER_HUD_RATED_TABLE_HOLDS = ["win_delta", "win_start", "elo", "player"];
 function playerHudShedOrder() {
   if (!ratedTableInPlay()) return PLAYER_HUD_SHED_ORDER;
-  return [...PLAYER_HUD_SHED_ORDER.filter(key => key !== "player"), "elo", "player"];
+  return [...PLAYER_HUD_SHED_ORDER.filter(key => !PLAYER_HUD_RATED_TABLE_HOLDS.includes(key)),
+    ...PLAYER_HUD_RATED_TABLE_HOLDS];
 }
 const PLAYER_HUD_READABLE_WIDTH = {
   lock:11, watch:70, rank:26, civ:70, leader:62, player:66, elo:30, elo_delta:40,
@@ -5507,103 +5511,10 @@ function hudFoldButton(name, label, extraClass = "") {
     `aria-expanded="${!folded}" aria-label="${verb} the ${label}" title="${verb} the ${label}">${folded ? "▸" : "▾"}</button>`;
 }
 
-// ------------------------------------------------------- simulation stats
-// The record that persists between simulations: every finished game bumps a
-// win–loss–draw ledger per civilization and per player strategy, plus a
-// count of wins by victory type. It stays per mode so a Tactics record never
-// mixes into a Civ one.
-//
-// A player strategy is a named player: a Civ AI Agent by its handle, or a
-// person. Those records live under `agents`. The older `strategies` table
-// was keyed by whatever each seat printed, which for the house fleet is a
-// name generated for the one game, so it filled with rows no later game
-// could add to. Nothing reads it any more and nothing deletes it.
-// Aggregates only — the ledger stays a few hundred bytes however many games
-// it has seen.
-const SIMULATION_STATS_KEY = "civvis-simulation-stats-v1";
-const SIM_STATS_VIEW_KEY = "civvis-sim-stats-view-v1";
-const SIM_STATS_VIEWS = {
-  civs: {label: "Civs", title: "Win–loss record by civilization"},
-  strategies: {label: "Strategies", table: "agents",
-    title: "Win–loss record by player strategy: each Civ AI Agent, and anyone who sat down to play"},
-  victories: {label: "Victory types", title: "Wins by victory type"},
-};
-let simulationStats = (() => {
-  try {
-    const saved = JSON.parse(localStorage.getItem(SIMULATION_STATS_KEY) || "{}");
-    if (saved && typeof saved === "object" && !Array.isArray(saved)) return saved;
-  } catch (_) {}
-  return {};
-})();
-let simStatsView = (() => {
-  try {
-    const saved = localStorage.getItem(SIM_STATS_VIEW_KEY);
-    return SIM_STATS_VIEWS[saved] ? saved : "civs";
-  } catch (_) { return "civs"; }
-})();
-function saveSimulationStats() {
-  try { localStorage.setItem(SIMULATION_STATS_KEY, JSON.stringify(simulationStats)); } catch (_) {}
-}
-function rememberSimStatsView(view) {
-  simStatsView = SIM_STATS_VIEWS[view] ? view : "civs";
-  try { localStorage.setItem(SIM_STATS_VIEW_KEY, simStatsView); } catch (_) {}
-}
-function simulationStatsMode(st = state) {
-  return st && isBattlefieldMapScript(st.map?.script) ? "tactics" : "civ";
-}
-function simulationStatsBucket(mode) {
-  const bucket = simulationStats[mode] ?? (simulationStats[mode] = {});
-  bucket.games ??= 0;
-  bucket.turns ??= 0;
-  bucket.civs ??= {};
-  bucket.agents ??= {};
-  bucket.victories ??= {};
-  return bucket;
-}
-// The player strategy in a seat: a registered person, else the Civ AI Agent
-// seated there by its handle. The house fleet's generated name is nobody's
-// record, so a seat with only that has no strategy to credit.
-function simulationStrategyName(p) {
-  return p.player_username || p.ai_username || null;
-}
-function bumpSimulationRecord(table, key, column) {
-  const row = table[key] ?? (table[key] = {w:0, l:0, d:0});
-  row[column] += 1;
-}
-function bumpSimulationVictory(table, victory) {
-  table[victory] = (Number(table[victory]) || 0) + 1;
-}
-// Called from the result screens, whose signature guard already runs once per
-// distinct result; the stored key repeats that guard across reloads so a page
-// reopened over a finished world cannot count the same game twice.
-function recordSimulationResult(st, signature, winnerIds) {
-  const key = `${st.server_instance ?? ""}|${signature}`;
-  if (simulationStats.last === key) return;
-  simulationStats.last = key;
-  const bucket = simulationStatsBucket(simulationStatsMode(st));
-  bucket.games += 1;
-  bucket.turns += Number(reportedTurn(st)) || 0;
-  const winnerSeats = new Set(winnerIds
-    .map(id => st.players[id]?.id)
-    .filter(id => id !== undefined));
-  if (winnerSeats.size)
-    bumpSimulationVictory(bucket.victories, victoryVerdict(st.victory_type, st.victory_label));
-  for (const p of st.players) {
-    if (p.is_minor || p.is_barbarian) continue;
-    const column = winnerSeats.size === 0 ? "d" : winnerSeats.has(p.id) ? "w" : "l";
-    bumpSimulationRecord(bucket.civs, p.civ || "Unknown civilization", column);
-    const strategy = simulationStrategyName(p);
-    if (strategy) bumpSimulationRecord(bucket.agents, strategy, column);
-  }
-  saveSimulationStats();
-  if (state) drawPlayerHud();
-}
-function clearSimulationStats(mode) {
-  delete simulationStats[mode];
-  saveSimulationStats();
-  if (state) drawPlayerHud();
-}
-
+// The record between simulations (the ledger, its three views and the Arena
+// Stats section that prints them) lives in app_arena.js, loaded ahead of this
+// script. What stays here is the section's seam and its pointer handling,
+// which belong to the panel the section sits in.
 // -------------------------------------------------- simulation stats seam
 // The divider between the simulation stats and the victory tracker: the turn
 // plate's seam turned on its side. Without a preference the top section takes
@@ -27786,98 +27697,6 @@ function syncVictoryLeaderCapacity(victoryHud = document.getElementById("victory
 // The turn plate is the standings' left cell: the world's age and turn first,
 // then the handful of setup and display choices a viewer needs at a glance.
 // The whole observer sentence remains on its tooltip.
-// The record row a name has earned: wins–losses, with draws only once one
-// exists — a Tactics arena full of decisive battles never prints a zero.
-function formatSimulationRecord(row) {
-  return row.d ? `${row.w}–${row.l}–${row.d}` : `${row.w}–${row.l}`;
-}
-function describeSimulationRecord(row) {
-  const parts = [`${row.w} win${row.w === 1 ? "" : "s"}`, `${row.l} loss${row.l === 1 ? "" : "es"}`];
-  if (row.d) parts.push(`${row.d} draw${row.d === 1 ? "" : "s"}`);
-  return parts.join(", ");
-}
-// Best record first: win rate, then the most wins at that rate, so an
-// undefeated name with ten wins stands above one with a single win. The rates
-// are cross-multiplied so 1–1 and 2–2 tie exactly. Equal rates and wins can
-// still differ in losses against draws, and every winless row ties at zero, so
-// the fewer losses read better.
-function compareSimulationRecords([aName, a], [bName, b]) {
-  const aGames = a.w + a.l + a.d;
-  const bGames = b.w + b.l + b.d;
-  return b.w * aGames - a.w * bGames
-    || b.w - a.w
-    || a.l - b.l
-    || aName.localeCompare(bName);
-}
-// The persistent record above the victory tracker: this mode's games and
-// average length, then the win–loss ledger by civilization or by player
-// strategy, or its wins by victory type — whichever view was chosen last.
-function simulationStatsSection() {
-  const mode = simulationStatsMode();
-  const bucket = simulationStats[mode];
-  const games = bucket?.games || 0;
-  const modeLabel = mode === "tactics" ? "Tactics" : "Civvis";
-  const summary = games
-    ? `${games} game${games === 1 ? "" : "s"}, avg ${Math.round(bucket.turns / games)} turns`
-    : "No finished games yet";
-  const table = bucket?.[SIM_STATS_VIEWS[simStatsView].table || simStatsView] || {};
-  // A Civ AI Agent's row carries the rating it plays at beside its record.
-  const ratingByHandle = simStatsView !== "strategies" ? null
-    : new Map((Array.isArray(RULES?.strategies) ? RULES.strategies : [])
-      .filter(entry => entry.elo !== null && entry.elo !== undefined)
-      .map(entry => [entry.username, Math.round(Number(entry.elo))]));
-  const strategyRating = name => ratingByHandle?.get(name) ?? null;
-  const rows = simStatsView === "victories"
-    ? Object.entries(table)
-      .sort(([aName, a], [bName, b]) => Number(b) - Number(a) || aName.localeCompare(bName))
-      .map(([name, wins]) => {
-        const count = Math.max(0, Math.round(Number(wins) || 0));
-        const label = `${count} win${count === 1 ? "" : "s"}`;
-        return `<div class="sim-stat-row" title="${escapeAttr(`${name} — ${label}`)}">` +
-          `<span class="sim-stat-name">${name}</span>` +
-          `<span class="sim-stat-record">${label}</span></div>`;
-      })
-      .join("")
-    : Object.entries(table)
-      .sort(compareSimulationRecords)
-      .map(([name, row]) => {
-        const rating = strategyRating(name);
-        return `<div class="sim-stat-row" title="${escapeAttr(`${name}` +
-          `${rating === null ? "" : ` (Elo ${rating})`} — ${describeSimulationRecord(row)}`)}">` +
-          `<span class="sim-stat-name">${name}` +
-          `${rating === null ? "" : `<span class="sim-stat-elo">${rating}</span>`}</span>` +
-          `<span class="sim-stat-record">${formatSimulationRecord(row)}</span></div>`;
-      })
-      .join("");
-  const viewButton = view =>
-    `<button class="sim-stats-view${simStatsView === view ? " active" : ""}" type="button" ` +
-    `data-sim-stats-view="${view}" aria-pressed="${simStatsView === view}" ` +
-    `title="${SIM_STATS_VIEWS[view].title}">${SIM_STATS_VIEWS[view].label}</button>`;
-  return `<section class="hud-region sim-stats-region" data-key="sim-stats" aria-labelledby="sim-stats-title">` +
-    `<div class="hud-region-bar">` +
-    `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
-    `aria-label="Move Arena Stats; use arrow keys or drag" title="Drag to move · arrow keys also move" id="sim-stats-title">` +
-    `<span>Arena Stats</span></div>` +
-    hudFoldButton("simstats", "Arena Stats") +
-    `</div>` +
-    `<div class="sim-stats-body">` +
-    `<div class="sim-stats-summary-row"><div class="sim-stats-summary">${summary}</div>` +
-    (games ? `<button class="sim-stats-clear" type="button" data-sim-stats-clear ` +
-      `title="Reset the saved ${modeLabel} record" aria-label="Reset the saved ${modeLabel} record">Reset</button>` : ``) +
-    `</div>` +
-    // A ledger with nothing in it has no views to choose between, and the panel
-    // gives the whole section up until the first game finishes (`sim-stats-none`).
-    (games ? `<div class="sim-stats-controls" role="group" aria-label="Arena Stats record view">` +
-      viewButton("civs") + viewButton("strategies") + viewButton("victories") +
-      `</div>` +
-      // Games on record and no player strategy among them: every one was
-      // played by the house fleet, whose seats are nobody's record.
-      `<div class="sim-stats-rows">${rows ||
-        (simStatsView === "strategies"
-          ? `<div class="sim-stats-empty">No player strategy has finished a game here yet</div>` : ``)}</div>` : ``) +
-    `</div></section>`;
-}
-
 // A difficulty's rung on the ruleset's ladder, counted from one the way the
 // verification lane names its games ("Lv 6" is Emperor, sixth of eight).
 function difficultyLevel(id) {

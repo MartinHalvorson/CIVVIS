@@ -7609,9 +7609,10 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains("predatesPlayerElo = !known.includes(\"elo\");"));
     assert!(EMBEDDED_INDEX
         .contains("if (predatesPlayerElo) playerHudHiddenColumns.delete(\"player\");"));
-    // At a table of rated agents the two columns are the last to give way.
+    // At a table of rated agents the player, its rating and the odds that
+    // rating gave it are the last columns to give way.
     assert!(EMBEDDED_INDEX.contains(
-        "return [...PLAYER_HUD_SHED_ORDER.filter(key => key !== \"player\"), \"elo\", \"player\"];"
+        "const PLAYER_HUD_RATED_TABLE_HOLDS = [\"win_delta\", \"win_start\", \"elo\", \"player\"];"
     ));
     assert!(EMBEDDED_INDEX.contains("for (const key of playerHudShedOrder()) {"));
     // Arena Stats keeps a record per player strategy: a Civ AI Agent by its
@@ -9371,6 +9372,17 @@ fn a_game_has_a_start_a_pause_and_its_payoffs() {
     assert!(EMBEDDED_APP_MOMENTS_JS.starts_with("\"use strict\";"));
     let served = String::from_utf8(index_with_app_instance(EMBEDDED_INDEX_HTML, 7)).unwrap();
     assert!(served.contains(r#"<script src="/assets/app_moments.js?instance=7"></script>"#));
+    // Arena Stats is a script of its own, ahead of the renderer that calls
+    // it, and a replaced server hands it out under its own instance like the
+    // rest.
+    assert!(super::EMBEDDED_APP_ARENA_JS.starts_with("\"use strict\";"));
+    let arena = served
+        .find(r#"<script src="/assets/app_arena.js?instance=7"></script>"#)
+        .expect("the Arena Stats script is served under the instance");
+    let renderer = served
+        .find(r#"<script src="/assets/app.js?instance=7"></script>"#)
+        .expect("the renderer is served under the instance");
+    assert!(arena < renderer, "app_arena.js loads before app.js");
     for id in [
         "moments",
         "fd-pause",
@@ -16799,6 +16811,7 @@ fn no_two_page_scripts_declare_the_same_function() {
     // failed, because audio stays suspended until a real click.
     let scripts = [
         ("app_palette.js", super::EMBEDDED_APP_PALETTE_JS),
+        ("app_arena.js", super::EMBEDDED_APP_ARENA_JS),
         ("app.js", EMBEDDED_APP_JS),
         ("app_setup.js", EMBEDDED_APP_SETUP_JS),
         ("app_moments.js", EMBEDDED_APP_MOMENTS_JS),

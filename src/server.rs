@@ -513,12 +513,14 @@ static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(||
     );
     page.push_str(EMBEDDED_INDEX_HTML);
     page.push_str(EMBEDDED_APP_PALETTE_JS);
+    page.push_str(EMBEDDED_APP_ARENA_JS);
     page.push_str(EMBEDDED_APP_JS);
     page.push_str(EMBEDDED_APP_SETUP_JS);
     page.push_str(EMBEDDED_APP_MOMENTS_JS);
     page.push_str(EMBEDDED_APP_FRONTDOOR_JS);
     page
 });
+const EMBEDDED_APP_ARENA_JS: &str = include_str!("../web/assets/app_arena.js");
 const EMBEDDED_APP_SETUP_JS: &str = include_str!("../web/assets/app_setup.js");
 const EMBEDDED_APP_FRONTDOOR_JS: &str = include_str!("../web/assets/app_frontdoor.js");
 const EMBEDDED_APP_MOMENTS_JS: &str = include_str!("../web/assets/app_moments.js");
@@ -3327,6 +3329,7 @@ impl Session {
 }
 
 const APP_PALETTE_JS_TAG: &str = r#"<script src="/assets/app_palette.js"></script>"#;
+const APP_ARENA_JS_TAG: &str = r#"<script src="/assets/app_arena.js"></script>"#;
 const APP_JS_TAG: &str = r#"<script src="/assets/app.js"></script>"#;
 const APP_SETUP_JS_TAG: &str = r#"<script src="/assets/app_setup.js"></script>"#;
 const APP_FRONTDOOR_JS_TAG: &str = r#"<script src="/assets/app_frontdoor.js"></script>"#;
@@ -3341,6 +3344,7 @@ const APP_MOMENTS_JS_TAG: &str = r#"<script src="/assets/app_moments.js"></scrip
 fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
     let palette_tag =
         format!(r#"<script src="/assets/app_palette.js?instance={instance}"></script>"#);
+    let arena_tag = format!(r#"<script src="/assets/app_arena.js?instance={instance}"></script>"#);
     let app_tag = format!(r#"<script src="/assets/app.js?instance={instance}"></script>"#);
     let setup_tag = format!(r#"<script src="/assets/app_setup.js?instance={instance}"></script>"#);
     let frontdoor_tag =
@@ -3348,6 +3352,7 @@ fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
     let moments_tag =
         format!(r#"<script src="/assets/app_moments.js?instance={instance}"></script>"#);
     page.replacen(APP_PALETTE_JS_TAG, &palette_tag, 1)
+        .replacen(APP_ARENA_JS_TAG, &arena_tag, 1)
         .replacen(APP_JS_TAG, &app_tag, 1)
         .replacen(APP_SETUP_JS_TAG, &setup_tag, 1)
         .replacen(APP_FRONTDOOR_JS_TAG, &frontdoor_tag, 1)
@@ -3380,6 +3385,11 @@ fn app_palette_js() -> Vec<u8> {
         }
     }
     EMBEDDED_APP_PALETTE_JS.as_bytes().to_vec()
+}
+
+fn app_arena_js() -> Vec<u8> {
+    std::fs::read("web/assets/app_arena.js")
+        .unwrap_or_else(|_| EMBEDDED_APP_ARENA_JS.as_bytes().to_vec())
 }
 
 fn app_moments_js() -> Vec<u8> {
@@ -4670,6 +4680,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 "200 OK",
                 "text/javascript; charset=utf-8",
                 &app_palette_js(),
+            );
+        }
+        ("GET", "/assets/app_arena.js") => {
+            respond(
+                stream,
+                "200 OK",
+                "text/javascript; charset=utf-8",
+                &app_arena_js(),
             );
         }
         ("GET", "/assets/app.js") => {
