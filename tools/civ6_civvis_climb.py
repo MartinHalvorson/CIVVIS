@@ -2233,12 +2233,15 @@ def write_attempt_record(record: dict, diagnostic: dict | None, tag: str) -> Non
 
 
 def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
-                 load_save: Path | None = None) -> list[str]:
+                 load_save: Path | None = None,
+                 quarantine: dict[int, int] | None = None) -> list[str]:
     """The `civ6_play` command line for one attempt — or its continuation.
 
     One builder for both, so a resumed game is driven by exactly the flags the
-    original was: the ONLY differences are the run tag (`<tag>-contN`) and
-    `--load-save`, which swaps the Create Game flow for the Load Game flow.
+    original was: the ONLY differences are the run tag (`<tag>-contN`),
+    `--load-save`, which swaps the Create Game flow for the Load Game flow,
+    and `--deal-session-quarantine` for a rival whose turn hung this game
+    (`hung_rival_quarantine`).
     """
     return (
         [sys.executable, "-u", str(HERE / "civ6_play.py"),
@@ -2278,6 +2281,8 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
            if getattr(args, "restart_below_leader_ratio", None) is not None else [])
         + (["--no-peace-deterrence"] if args.no_peace_deterrence else [])
         + DEAL_SESSION_FLAGS.get(getattr(args, "deal_sessions", None) or "off", [])
+        + [word for player, last_turn in sorted((quarantine or {}).items())
+           for word in ("--deal-session-quarantine", f"{player}:{last_turn}")]
         + (["--no-counter-resolutions"] if args.no_counter_resolutions else [])
         + [flag for treatment in args.with_
            for flag in ("--civvis-with", treatment)]
@@ -2365,6 +2370,76 @@ def preserve_crash_evidence(run_tag: str, segment_started_at: float) -> None:
     else:
         print(f"[resume] native crash report: {', '.join(copied) or 'none found'}",
               flush=True)
+
+
+#: Game turns past the hung turn during which a continuation opens no deal
+#: session with the rival whose turn hung. The peace and alliance asks retry
+#: every five turns, so this skips three of them: long enough to leave the
+#: board that hung, short enough that a war is not left without a peace ask.
+HUNG_RIVAL_QUARANTINE_TURNS = 15
+
+#: How much of a frozen run's `events.jsonl` is read back for the stall: the
+#: stall is the last thing the agent wrote, and one late turn is well under
+#: this many bytes.
+_STALL_TAIL_BYTES = 4_000_000
+
+
+def hung_rival_quarantine(run_dir: Path) -> tuple[int, int] | None:
+    """The rival a frozen run's continuation must not ask, and the last turn
+    of that hold: `(player, turn)`, or None when the freeze names no one.
+
+    ★★ A HUNG RIVAL TURN FOLLOWS A DEAL SESSION WITH THAT RIVAL, AND THE
+    RELOAD PLAYS INTO IT AGAIN. Over 105 live games (2026-11-12 18:01Z to
+    11-13 18:07Z) 33 of 34 `ai_phase_stall` records named a rival the seat
+    held a deal session with that same turn: a refused peace or alliance
+    proposal whose counter never came (`counter_not_sent`, 29 closes, 29
+    hung) or a trade ask closed unanswered (4 of 5). Eighteen of the 34 were
+    the same game hanging again after its reload: `civvis-20261113T012816Z`
+    six times at t69-75 on one alliance ask, `022036Z` five, `171033Z` four.
+    A different autosave does not help, because the continuation asks the
+    same rival the same question a few turns later.
+
+    So the continuation is told who: the one player the stall says was
+    active, when the run held a deal session with that player on the stalled
+    turn. Anything else (no stall record, several active players, no session
+    that turn) returns None and the reload is what it always was.
+    """
+    events = run_dir / "events.jsonl"
+    try:
+        with events.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            handle.seek(max(0, handle.tell() - _STALL_TAIL_BYTES))
+            tail = handle.read().decode("utf-8", "replace").splitlines()
+    except OSError:
+        return None
+    stall = None
+    sessions: set[tuple[int, int]] = set()
+    for line in tail:
+        if '"ai_phase_stall"' not in line and '"deal_session"' not in line:
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        if row.get("kind") == "ai_phase_stall":
+            stall = row
+        elif row.get("kind") == "deal_session":
+            turn, target = row.get("turn"), row.get("target")
+            if isinstance(turn, int) and isinstance(target, int):
+                sessions.add((turn, target))
+    if stall is None:
+        return None
+    turn, active = stall.get("turn"), stall.get("active_players")
+    if (not isinstance(turn, int) or isinstance(turn, bool)
+            or not isinstance(active, list) or len(active) != 1
+            or not isinstance(active[0], int) or isinstance(active[0], bool)
+            or active[0] < 0):
+        return None
+    if (turn, active[0]) not in sessions:
+        return None
+    return active[0], turn + HUNG_RIVAL_QUARANTINE_TURNS
 
 
 def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, args,
@@ -3428,6 +3503,9 @@ def main() -> int:
         # the last `<tag>-contN` it was resumed under. See `resume_from_autosave`.
         run_tag = tag
         resumes: list[dict] = []
+        # Rivals this game's continuations open no deal session with, and the
+        # last turn of each hold (`hung_rival_quarantine`).
+        quarantine: dict[int, int] = {}
         torn_down = False
         record: dict = {}
         # The frozen run's own row, kept in case the reload never reaches a turn:
@@ -3516,6 +3594,14 @@ def main() -> int:
                       f"of {args.max_resumes})", flush=True)
                 resumes.append({"tag": cont, "from_turn": record.get("last_turn"),
                                 "save": save.name})
+                # The rival whose turn hung is not asked again for a while;
+                # earlier holds of this game stand until their own last turn.
+                hung = hung_rival_quarantine(RUN_ROOT / run_tag) if why == "frozen" else None
+                if hung is not None:
+                    quarantine[hung[0]] = max(quarantine.get(hung[0], 0), hung[1])
+                    print(f"[resume] player {hung[0]}'s turn hung after a deal session; "
+                          f"no deal session with that player through turn {hung[1]}",
+                          flush=True)
                 # The player's terminal recorder runs before this loop returns.
                 # Give it explicit ancestry now, while the climb owns the reload,
                 # so it can reconstruct ownership without guessing from tag names.
@@ -3534,7 +3620,7 @@ def main() -> int:
                 segment_started_at = time.time()
                 play = subprocess.Popen(
                     play_command(args, cont, RUN_ROOT / cont / "orders.sqlite",
-                                 attempt_bin, load_save=save),
+                                 attempt_bin, load_save=save, quarantine=quarantine),
                     stdout=play_log, stderr=subprocess.STDOUT,
                 )
                 player_pid = getattr(play, "pid", None)

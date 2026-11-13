@@ -12390,9 +12390,40 @@ CivvisTrade.restartReplyWindow = function(session)
 	local now = try(function() return CivvisClock.now(); end, nil);
 	if type(now) == "number" then session.reply_at = now; end
 end;
+-- ★★ A RIVAL WHOSE TURN HUNG IS NOT ASKED AGAIN AFTER THE RELOAD. A hung
+-- rival turn follows a deal session with that rival (33 of 34 live stalls,
+-- 105 games of 2026-11-12..13), and the reload plays the same board into the
+-- same session: `civvis-20261113T012816Z` hung six times at t69-75 on one
+-- alliance ask, `022036Z` five, `171033Z` four; 18 of the 34 stalls were such
+-- repeats. The climb names the rival and a last turn when it reloads
+-- (`--deal-session-quarantine PLAYER:TURN` to civ6_play, baked here as
+-- `DealSessionQuarantine = "5:164,1:150"`), and through that turn every ask to
+-- that rival takes the direct send, the lane's own no-session path
+-- (`DealSessions = false`): no screen opens and the rival evaluates nothing.
+-- Other rivals keep their sessions. Unset, nothing changes.
+CivvisTrade.quarantinedUntil = function(subject)
+	local spec = cfg.DealSessionQuarantine;
+	if type(spec) ~= "string" or spec == "" then return nil; end
+	local cache = CivvisTrade.quarantine;
+	if cache == nil or cache.spec ~= spec then
+		cache = { spec = spec, last = {} };
+		for player, last in string.gmatch(spec, "(%d+):(%d+)") do
+			cache.last[tonumber(player)] = tonumber(last);
+		end
+		CivvisTrade.quarantine = cache;
+	end
+	return cache.last[subject];
+end;
 CivvisTrade.ask = function(pid, subject, action, kind, turn)
 	local trade = CivvisTrade;
-	if cfg.DealSessions == false
+	local lastQuarantined = CivvisTrade.quarantinedUntil(subject);
+	local quarantined = lastQuarantined ~= nil and type(turn) == "number"
+		and turn <= lastQuarantined;
+	if quarantined then
+		emit("deal_session", { turn = turn, target = subject, kind = kind, action = action,
+			phase = "quarantined", until_turn = lastQuarantined });
+	end
+	if quarantined or cfg.DealSessions == false
 			or (cfg.DealSessions == "peace" and kind ~= "peace")
 			or (cfg.DealSessions == "trade" and kind == "peace")
 			or trade.disabled then
