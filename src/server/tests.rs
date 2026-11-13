@@ -7247,7 +7247,8 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // the head has to rewrite them, or the new cell lands in an implicit
     // track outside the list.
     assert!(
-        EMBEDDED_INDEX.contains("  syncPlayerHudColumns();\n  syncHudColumnRoster();"),
+        EMBEDDED_INDEX
+            .contains("  syncPlayerHudColumns();\n  const rosterChanged = syncHudColumnRoster();"),
         "a repaint restates the tracks and the roster the arriving column changed"
     );
     assert!(
@@ -7569,6 +7570,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "civ",
         "leader",
         "player",
+        "elo",
         "elo_delta",
         "win_start",
         "win_delta",
@@ -7581,6 +7583,57 @@ fn browser_orders_controls_interface_setup_and_logs() {
             "the {key} heading should carry a sortable label"
         );
     }
+    // The player and the rating it sat down with stand together, after
+    // Watch as and before the odds they explain (operator, 2026-11-13: "add
+    // player and elo to the player hud. after the watch as col and before
+    // start win odds").
+    let column_at = |key: &str| {
+        EMBEDDED_INDEX
+            .find(&format!("{{key:\"{key}\", label:"))
+            .unwrap_or_else(|| panic!("no {key} column in the model"))
+    };
+    assert!(
+        column_at("watch") < column_at("player")
+            && column_at("player") < column_at("elo")
+            && column_at("elo") < column_at("win_start"),
+        "Watch as, Player, Player Elo, then the odds"
+    );
+    assert!(EMBEDDED_INDEX.contains(
+        "{key:\"elo\", label:\"Player Elo\", block:\"identity\", min:\"--hud-elo-min\", width:.6,\n   exists:ratedTableInPlay},"
+    ));
+    assert!(EMBEDDED_INDEX.contains("elo:[\"ELO\", \"Player's Elo rating\", \"numeric\"],"));
+    assert!(EMBEDDED_INDEX.contains("if (key === \"elo\") return playerHudEloValue(player);"));
+    // Neither the handle nor its rating may end in an ellipsis: each column
+    // is held to its widest content, measured when the table changes rather
+    // than on every repaint.
+    assert!(EMBEDDED_INDEX.contains("--hud-player-min: var(--hud-ident-min); --hud-elo-min: 30px;"));
+    assert!(EMBEDDED_INDEX.contains(
+        "{key:\"player\", label:\"Player\", block:\"identity\", min:\"--hud-player-min\", width:1.85},"
+    ));
+    assert!(EMBEDDED_INDEX.contains("let moved = syncRatedPlayerFloors(hud);"));
+    assert!(EMBEDDED_INDEX.contains(
+        "if (key === ratedPlayerFloorKey || (!names.length && !ratings.length)) return false;"
+    ));
+    // A layout saved before the column existed takes it right after Player,
+    // and gets Player itself back once: it names the competing agent now.
+    assert!(EMBEDDED_INDEX.contains("predatesPlayerElo = !known.includes(\"elo\");"));
+    assert!(EMBEDDED_INDEX
+        .contains("if (predatesPlayerElo) playerHudHiddenColumns.delete(\"player\");"));
+    // At a table of rated agents the player, its rating and the odds that
+    // rating gave it are the last columns to give way.
+    assert!(EMBEDDED_INDEX.contains(
+        "const PLAYER_HUD_RATED_TABLE_HOLDS = [\"win_delta\", \"win_start\", \"elo\", \"player\"];"
+    ));
+    assert!(EMBEDDED_INDEX.contains("for (const key of playerHudShedOrder()) {"));
+    // Arena Stats keeps a record per player strategy: a Civ AI Agent by its
+    // handle or a person, never the house fleet's per-game generated name.
+    assert!(EMBEDDED_INDEX.contains("strategies: {label: \"Strategies\", table: \"agents\","));
+    assert!(EMBEDDED_INDEX.contains("return p.player_username || p.ai_username || null;"));
+    assert!(EMBEDDED_INDEX
+        .contains("if (strategy) bumpSimulationRecord(bucket.agents, strategy, column);"));
+    assert!(EMBEDDED_INDEX.contains(
+        "const table = bucket?.[SIM_STATS_VIEWS[simStatsView].table || simStatsView] || {};"
+    ));
     assert!(
         EMBEDDED_INDEX
             .contains("return playerHudSortHead(column.key, label, title, classes, attrs);"),
@@ -9329,6 +9382,17 @@ fn a_game_has_a_start_a_pause_and_its_payoffs() {
     assert!(EMBEDDED_APP_MOMENTS_JS.starts_with("\"use strict\";"));
     let served = String::from_utf8(index_with_app_instance(EMBEDDED_INDEX_HTML, 7)).unwrap();
     assert!(served.contains(r#"<script src="/assets/app_moments.js?instance=7"></script>"#));
+    // Arena Stats is a script of its own, ahead of the renderer that calls
+    // it, and a replaced server hands it out under its own instance like the
+    // rest.
+    assert!(super::EMBEDDED_APP_ARENA_JS.starts_with("\"use strict\";"));
+    let arena = served
+        .find(r#"<script src="/assets/app_arena.js?instance=7"></script>"#)
+        .expect("the Arena Stats script is served under the instance");
+    let renderer = served
+        .find(r#"<script src="/assets/app.js?instance=7"></script>"#)
+        .expect("the renderer is served under the instance");
+    assert!(arena < renderer, "app_arena.js loads before app.js");
     for id in [
         "moments",
         "fd-pause",
@@ -13130,6 +13194,7 @@ fn a_new_game_seats_the_rivals_a_person_asked_for() {
         .expect("a registered agent can be seated");
     assert_eq!(session.rival_strategy_name(), Some("siege"));
     assert_eq!(session.seated_strategy_name(0), Some("player"));
+    assert_eq!(session.seated_strategy_name(1), Some("siege"));
     let rules = crate::routes::rules(&session, false);
     assert_eq!(rules["rival_strategy"], json!("siege"));
     let ladder = rules["civ6_ladder"].as_array().expect("a ladder");
@@ -13227,15 +13292,17 @@ fn a_player_can_hand_their_seat_to_a_named_strategy() {
     assert_eq!(session.game.turn, before + 3);
 }
 
-/// Every major on screen carries its odds of winning, whether or not this
-/// game rates anybody — and nothing does: every seat sits down at the same
-/// provisional prior, so the start odds are the table and the difficulty.
+/// A table nobody is playing is a contest between our strongest Civ AI
+/// Agents (operator, 2026-11-13: "lets have our top 4 (or however many)
+/// player strategies compete. each gets a civ"). Every major is dealt a
+/// different one off the top of the published ranking, says which in the
+/// observation, and sits down at its rating.
 #[test]
-fn every_major_carries_odds_without_a_rating() {
+fn a_watched_table_seats_the_top_rated_agents_one_to_a_civ() {
     let mut params = current();
     params.spectate = true;
     params.num_players = 4;
-    let session = Session::new(params);
+    let session = Session::new(params.clone());
 
     let state = session.state();
     let majors: Vec<&Value> = state["players"]
@@ -13245,23 +13312,51 @@ fn every_major_carries_odds_without_a_rating() {
         .filter(|p| p["is_minor"] != json!(true) && p["is_barbarian"] != json!(true))
         .collect();
     assert_eq!(majors.len(), 4);
+    let top: std::collections::BTreeSet<&str> = crate::strategies::ranked()
+        .iter()
+        .take(4)
+        .map(|row| row.id)
+        .collect();
+    let mut seated = std::collections::BTreeSet::new();
+    let mut rated_odds: Vec<(i64, f64)> = Vec::new();
     let mut shares = 0.0;
     let mut now_shares = 0.0;
     for player in &majors {
-        assert!(player["ai_elo"].is_null(), "nothing rates a seat any more");
-        shares += player["odds_start"]
+        let seat = player["id"].as_u64().unwrap() as usize;
+        let agent = player["ai_agent"]
+            .as_str()
+            .expect("every watched major names its agent");
+        let row = crate::strategies::find(agent).expect("a roster agent");
+        assert_eq!(session.seated_strategy_name(seat), Some(row.id));
+        assert_eq!(player["ai_username"], json!(row.handle));
+        assert_eq!(player["ai_strat_label"], json!(row.tilt));
+        let published = crate::strategies::published()
+            .ratings
+            .get(row.id)
+            .expect("the top of the ranking is rated");
+        let elo = published.elo.round() as i64;
+        assert_eq!(player["ai_elo"], json!(elo));
+        // The seat sits down at that rating: its prior with the difficulty
+        // bargain taken back out is the number the standings print.
+        let prior = player["odds_prior_elo"].as_i64().expect("a prior")
+            - player["odds_handicap_elo"].as_i64().expect("a handicap");
+        assert!(
+            (prior - elo).abs() <= 1,
+            "{agent}: prior {prior}, rated {elo}"
+        );
+        let start = player["odds_start"]
             .as_f64()
             .expect("every major has start odds");
+        rated_odds.push((elo, start));
+        shares += start;
         now_shares += player["odds_now"].as_f64().expect("and now odds");
-        assert!(player["odds_prior_elo"].as_i64().is_some());
-        // Nobody chose these seats, so the one agent behind all of them
-        // does not get to put its handle on four different civilizations.
-        assert!(
-            player["ai_username"].is_null(),
-            "an unseated table keeps its per-seat names"
-        );
         assert!(player["ai_name"].as_str().is_some_and(|n| !n.is_empty()));
+        assert!(
+            seated.insert(row.id),
+            "{agent} holds two civilizations at a four-seat table"
+        );
     }
+    assert_eq!(seated, top, "the table is the top of the ranking");
     assert!(
         (shares - 1.0).abs() < 0.02,
         "one table, one winner: start odds summed to {shares}"
@@ -13270,6 +13365,103 @@ fn every_major_carries_odds_without_a_rating() {
         (now_shares - 1.0).abs() < 0.02,
         "and so does the live answer: now odds summed to {now_shares}"
     );
+    // A higher rating is a better chance before a tile is drawn.
+    rated_odds.sort_by_key(|(elo, _)| *elo);
+    assert!(
+        rated_odds.windows(2).all(|pair| pair[0].1 <= pair[1].1),
+        "start odds follow the ratings: {rated_odds:?}"
+    );
+    let (lowest, highest) = (rated_odds[0], rated_odds[rated_odds.len() - 1]);
+    assert!(
+        lowest.0 == highest.0 || lowest.1 < highest.1,
+        "{rated_odds:?}"
+    );
+
+    // The deal belongs to the world: the same table resumed puts every
+    // agent back in the seat it was playing.
+    let resumed = Session::from_game(params.clone(), session.game.clone());
+    for seat in 0..session.game.players.len() {
+        assert_eq!(
+            resumed.seated_strategy_name(seat),
+            session.seated_strategy_name(seat)
+        );
+    }
+    // And it is dealt, not fixed: across worlds every agent draws seat 0.
+    let mut first_seat = std::collections::BTreeSet::new();
+    for seed in 1..40 {
+        let mut other = params.clone();
+        other.seed = seed;
+        first_seat.insert(
+            Session::new(other)
+                .seated_strategy_name(0)
+                .unwrap()
+                .to_string(),
+        );
+    }
+    assert_eq!(
+        first_seat.len(),
+        4,
+        "seat 0 went to the same agents: {first_seat:?}"
+    );
+
+    // A person who asks to watch one agent at every seat still gets that.
+    let mut chosen = Session::new(params);
+    chosen
+        .start_new_game(&json!({
+            "seed": 21, "spectate": true, "force": true, "rival_strategy": "siege",
+        }))
+        .expect("a registered agent can be seated");
+    for player in chosen.state()["players"].as_array().unwrap() {
+        if player["is_minor"] != json!(true) && player["is_barbarian"] != json!(true) {
+            assert_eq!(player["ai_username"], json!("SiegeTheDay"));
+        }
+    }
+}
+
+/// Across the table from a person sits the house fleet, as it always has.
+/// Nobody there is rated, so no seat claims a rating and every seat sits
+/// down at the same provisional prior: a measured 1200 beside a person's
+/// provisional 1500 would be two scales in one table.
+#[test]
+fn a_played_table_keeps_the_house_fleet_and_the_flat_prior() {
+    let mut params = current();
+    params.num_players = 4;
+    let mut session = Session::new(params.clone());
+    assert_eq!(session.seated_strategy_name(0), Some("player"));
+    for seat in 1..4 {
+        assert_eq!(session.seated_strategy_name(seat), Some("advanced"));
+    }
+    for player in session.state()["players"].as_array().unwrap() {
+        assert!(player["ai_elo"].is_null(), "nothing rates the house fleet");
+        assert!(
+            player["ai_username"].is_null(),
+            "the house fleet keeps its per-seat names"
+        );
+    }
+    assert!(session.rated_table().is_none());
+    // Rivals a person asked for are rated, and the person still is not, so
+    // the table keeps the one prior for everybody.
+    session.seat_rivals("siege").expect("a registered agent");
+    assert_eq!(session.seated_strategy_name(1), Some("siege"));
+    assert_eq!(session.seated_strategy_name(0), Some("player"));
+    assert!(session.rated_table().is_none());
+
+    // A battlefield nobody is playing keeps the house fleet too: the
+    // ratings were measured on whole games.
+    let arena = new_game_params(
+        &params,
+        &json!({
+            "num_players": 2, "map_script": "battlefield", "width": 11, "height": 10,
+            "spectate": true,
+        }),
+    );
+    assert!(arena.spectate && arena.map_script.is_battlefield());
+    let arena = Session::new(arena);
+    for (seat, player) in arena.game.players.iter().enumerate() {
+        if !player.is_minor && !player.is_barbarian {
+            assert_eq!(arena.seated_strategy_name(seat), Some("advanced"));
+        }
+    }
 }
 
 /// A seated player is told their own odds, and an unmet rival's are withheld
@@ -15868,15 +16060,25 @@ fn browser_covers_every_empire_decision() {
 /// constructor to `enable_native_deployment` plus the list.
 #[test]
 fn the_strategy_panel_names_the_agent_the_site_seats() {
-    // The panel's Agent row tells a viewer every major is the rule-based
-    // CIVVIS agent and that no model is playing. Both halves are facts about
-    // this tree, so they are held here rather than left as copy.
+    // The panel's Agent row names the Civ AI Agent in the seat and tells a
+    // viewer it is a rule-based CIVVIS agent with no model playing. Both
+    // halves are facts about this tree, so they are held here rather than
+    // left as copy: every watched major is a roster row, and a roster row
+    // can only be built on one of the rule-based chassis.
     let mut params = current();
     params.spectate = true;
     let session = Session::new(params);
     for (seat, player) in session.game.players.iter().enumerate() {
         if !player.is_minor && !player.is_barbarian {
-            assert_eq!(session.seated_strategy_name(seat), Some("advanced"));
+            let name = session.seated_strategy_name(seat).expect("a seated agent");
+            let row = crate::strategies::find(name).expect("a roster row");
+            assert!(matches!(
+                row.chassis,
+                crate::strategies::Chassis::Deployment
+                    | crate::strategies::Chassis::Stock
+                    | crate::strategies::Chassis::Legacy
+                    | crate::strategies::Chassis::Basic
+            ));
         }
     }
     let embedded = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data");
@@ -15885,7 +16087,8 @@ fn the_strategy_panel_names_the_agent_the_site_seats() {
         "a shipped value net makes the panel's \"no neural network\" untrue"
     );
     assert!(EMBEDDED_INDEX.contains("It uses no language model and no neural network"));
-    assert!(EMBEDDED_INDEX.contains("row(\"Agent\", \"CIVVIS Advanced AI\", SITE_AGENT_STORY)"));
+    assert!(EMBEDDED_INDEX.contains("row(\"Agent\", siteAgentName(p), SITE_AGENT_STORY)"));
+    assert!(EMBEDDED_INDEX.contains(": \"CIVVIS Advanced AI\";"));
 }
 
 #[test]
@@ -16618,6 +16821,7 @@ fn no_two_page_scripts_declare_the_same_function() {
     // failed, because audio stays suspended until a real click.
     let scripts = [
         ("app_palette.js", super::EMBEDDED_APP_PALETTE_JS),
+        ("app_arena.js", super::EMBEDDED_APP_ARENA_JS),
         ("app.js", EMBEDDED_APP_JS),
         ("app_setup.js", EMBEDDED_APP_SETUP_JS),
         ("app_moments.js", EMBEDDED_APP_MOMENTS_JS),
