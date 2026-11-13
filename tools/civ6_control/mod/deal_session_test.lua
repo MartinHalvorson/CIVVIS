@@ -880,6 +880,47 @@ check("trade-only peace retains its direct proposal", directPeace.sends[1] and d
 check("trade-only peace opens no session", #sessions.requested, requestedBeforeTradeOnly)
 check("trade-only peace registers no counter wait", trade.sessions[20], nil)
 
+-- ── A rival whose turn hung is not asked in a session again after the reload ──
+-- Live civvis-20261113T012816Z hung six times at t69-75 on one alliance ask
+-- to the same rival: every reload asked again. The climb bakes the rival and
+-- the last turn of the hold into the config.
+CivvisControlConfig.DealSessions = true
+CivvisControlConfig.DealSessionQuarantine = "41:95,42:88"
+TURN = 87
+local requestedBeforeQuarantine = #sessions.requested
+local held, heldSeller = fixture()
+applyOrder(heldSeller, 7, { kind = "sell", subject = "41", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
+check("a quarantined rival's ask takes the direct send", held.sends[1] and held.sends[1][1], "equalize")
+check("a quarantined rival opens no session", #sessions.requested, requestedBeforeQuarantine)
+check("a quarantined ask owns no session", trade.sessions[41], nil)
+check("the quarantine is in the ledger", eventField(lastEvent("deal_session"), "phase"), "quarantined")
+check("…with its last turn", eventField(lastEvent("deal_session"), "until_turn"), "95")
+check("the quarantine is read per rival", trade.quarantinedUntil(42), 88)
+check("a rival not named is not quarantined", trade.quarantinedUntil(6), nil)
+local heldPeace, heldPeacePlayer = fixture({ atWar = true })
+applyOrder(heldPeacePlayer, 7, { kind = "peace", subject = "42" }, TURN)
+check("a quarantined peace opens no session", #sessions.requested, requestedBeforeQuarantine)
+check("a quarantined peace registers no counter wait", trade.sessions[42], nil)
+-- Another rival keeps its session.
+local free, freePlayer = fixture({ atWar = true })
+applyOrder(freePlayer, 7, { kind = "peace", subject = "43" }, TURN)
+check("a rival outside the quarantine still gets its session", #sessions.requested,
+	requestedBeforeQuarantine + 1)
+trade.close(7, 43, "test_quarantine_other")
+-- The hold ends after its last turn.
+TURN = 96
+local released, releasedSeller = fixture()
+applyOrder(releasedSeller, 7, { kind = "sell", subject = "41", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
+check("after the last turn the rival is asked in a session again", #sessions.requested,
+	requestedBeforeQuarantine + 2)
+check("…and nothing is sent before the session opens", #released.sends, 0)
+trade.close(7, 41, "test_quarantine_over")
+-- A changed or cleared setting is read again.
+CivvisControlConfig.DealSessionQuarantine = ""
+check("an empty quarantine holds nobody", trade.quarantinedUntil(41), nil)
+CivvisControlConfig.DealSessionQuarantine = nil
+check("no quarantine holds nobody", trade.quarantinedUntil(42), nil)
+
 -- ── Peace-only mode keeps trade asks direct but still opens a peace session ──
 CivvisControlConfig.DealSessions = "peace"
 TURN = 90
