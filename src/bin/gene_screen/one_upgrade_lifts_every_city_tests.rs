@@ -10,13 +10,16 @@
 //! on. A pair plays one seed and game index in one process, so it never
 //! crosses a shard or a build.
 //!
-//! What a world records, besides the measured seat's gene-screen row: the turn
-//! of every upgrade the new pass took (its journal lines), and what an
-//! observer saw at the start of every turn: the seat's upgrades (a unit that
-//! changed kind), the ones among them that lifted its best melee or ranged
-//! strength ever owned by 5 or more, the turns from turn 30 on which that best
-//! sat 10 or more below what it had unlocked with the material in stock (the
-//! live gap), and the kills no unit made (city and district strikes).
+//! What a world records, besides the measured seat's gene-screen row: what an
+//! observer saw at the start of every turn (the seat's upgrades, as units that
+//! changed kind; the ones among them that lifted its best melee or ranged
+//! strength ever owned by 5 or more; the turns from turn 30 on which that best
+//! sat 10 or more below what it had unlocked with the material in stock, the
+//! live gap; and the kills no unit made, its city and district strikes), and
+//! the upgrades the new pass planned, from its journal lines. The simulated
+//! seat replans its turn after a surprise and every frame journals again, so
+//! a planned upgrade counts as carried out only when the next turn's look saw
+//! a unit go from that kind to that successor.
 //!
 //! `cargo test --profile ci --features developer-tools --bin gene_screen
 //! one_upgrade_lifts_every_city_driver -- --ignored --nocapture`, with
@@ -164,6 +167,21 @@ struct Watch {
     first_tier_lift: Option<u32>,
     /// Kills no unit made: the seat's city and district strikes.
     strike_kills: i64,
+    /// Every upgrade seen: the turn of the look that saw it (the turn after
+    /// the one it was taken on), and the kinds it went from and to.
+    #[serde(default)]
+    seen: Vec<(u32, String, String)>,
+}
+
+/// One upgrade the new pass planned, from its journal line.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+struct Planned {
+    turn: u32,
+    from: String,
+    to: String,
+    gold: f64,
+    defence: f64,
+    strike: f64,
 }
 
 /// One arm of one world.
@@ -174,10 +192,18 @@ struct World {
     world: usize,
     seed: u64,
     fingerprint: u64,
-    /// The turn of every upgrade the new pass took (its journal lines).
+    /// The turn of every upgrade the new pass planned that the board then
+    /// carried out (a planned upgrade the observer saw happen).
     pass: Vec<u32>,
-    /// The first few of those lines' details.
-    pass_lines: Vec<String>,
+    /// The Gold those cost.
+    #[serde(default)]
+    pass_gold: f64,
+    /// Every distinct upgrade the pass planned. The simulated seat replans
+    /// its turn after a surprise (`ai::player::take_turn`), and each frame
+    /// journals again, so a line can repeat and need not have been carried
+    /// out.
+    #[serde(default)]
+    planned: Vec<Planned>,
     watch: Watch,
     row: Row,
 }
@@ -252,6 +278,9 @@ fn unlocked(g: &Game, pid: usize) -> (f64, f64) {
 struct Seen {
     kinds: BTreeMap<u32, &'static str>,
     basis: (f64, f64),
+    /// The turn of the last look, so a second look at the final board does
+    /// not count its turn twice.
+    turn: Option<u32>,
     watch: Watch,
 }
 
@@ -277,6 +306,9 @@ fn look(g: &Game, players: usize, seen: &mut BTreeMap<usize, Seen>) {
                 continue;
             }
             seat.watch.upgrades += 1;
+            seat.watch
+                .seen
+                .push((g.turn, before.to_string(), kind.to_string()));
             let to = &g.rules.units[*kind];
             if to.strength - running.0 >= TIER_LIFT || to.ranged_strength - running.1 >= TIER_LIFT {
                 seat.watch.tier_lifts += 1;
@@ -287,7 +319,10 @@ fn look(g: &Game, players: usize, seen: &mut BTreeMap<usize, Seen>) {
                 running.1.max(to.ranged_strength),
             );
         }
-        if g.turn >= GAP_FROM_TURN && !g.player_city_ids(pid).is_empty() {
+        if g.turn >= GAP_FROM_TURN
+            && seat.turn != Some(g.turn)
+            && !g.player_city_ids(pid).is_empty()
+        {
             let open = unlocked(g, pid);
             let defence = open.0 - now.0 >= SHORT;
             let strike = open.1 - now.1 >= SHORT;
@@ -305,15 +340,26 @@ fn look(g: &Game, players: usize, seen: &mut BTreeMap<usize, Seen>) {
         seat.watch.strike_kills = counters.get("kills").copied().unwrap_or(0) - by_units;
         seat.kinds = kinds;
         seat.basis = now;
+        seat.turn = Some(g.turn);
     }
 }
 
-/// The turns and details of the new pass's journal lines for `seat`.
-fn pass_lines(path: &str, seat: usize) -> (Vec<u32>, Vec<String>) {
+/// The number after `key` in `text`, up to the next comma, space or `)`.
+fn number_after(text: &str, key: &str) -> Option<f64> {
+    let rest = &text[text.find(key)? + key.len()..];
+    let end = rest
+        .find(|c: char| c == ',' || c == ' ' || c == ')')
+        .unwrap_or(rest.len());
+    rest[..end].parse().ok()
+}
+
+/// The distinct upgrades the new pass planned for `seat`, from the seat's
+/// journal file (removed once read): one per turn, unit kind and successor,
+/// however many frames journaled it.
+fn planned_upgrades(path: &str, seat: usize) -> Vec<Planned> {
     let text = std::fs::read_to_string(path).unwrap_or_default();
     let _ = std::fs::remove_file(path);
-    let mut turns = Vec::new();
-    let mut lines = Vec::new();
+    let mut planned: Vec<Planned> = Vec::new();
     for line in text.lines() {
         let mut words = line.splitn(4, ' ');
         let (Some(turn), Some(player), Some(topic), Some(rest)) =
@@ -327,14 +373,55 @@ fn pass_lines(path: &str, seat: usize) -> (Vec<u32>, Vec<String>) {
         {
             continue;
         }
-        if let Some(turn) = turn.strip_prefix('t').and_then(|t| t.parse().ok()) {
-            turns.push(turn);
-            if lines.len() < 4 {
-                lines.push(line.to_string());
-            }
+        let Some(turn) = turn.strip_prefix('t').and_then(|t| t.parse().ok()) else {
+            continue;
+        };
+        let Some((_, detail)) = rest.split_once(&format!("{TAG}: ")) else {
+            continue;
+        };
+        let Some((units, bill)) = detail.split_once(" for ") else {
+            continue;
+        };
+        let Some((from, to)) = units.split_once(" to ") else {
+            continue;
+        };
+        let upgrade = Planned {
+            turn,
+            from: from.to_string(),
+            to: to.to_string(),
+            gold: number_after(bill, "").unwrap_or(0.0),
+            defence: number_after(bill, "defence +").unwrap_or(0.0),
+            strike: number_after(bill, "ranged strike +").unwrap_or(0.0),
+        };
+        if !planned
+            .iter()
+            .any(|p| p.turn == turn && p.from == upgrade.from && p.to == upgrade.to)
+        {
+            planned.push(upgrade);
         }
     }
-    (turns, lines)
+    planned
+}
+
+/// The planned upgrades the board carried out: each matched to an upgrade
+/// of the same kinds the observer saw on the next turn's look, which no
+/// other planned upgrade has claimed.
+fn carried_out<'a>(planned: &'a [Planned], seen: &[(u32, String, String)]) -> Vec<&'a Planned> {
+    let mut used = vec![false; seen.len()];
+    let mut done = Vec::new();
+    for upgrade in planned {
+        let found = seen.iter().enumerate().position(|(i, (turn, from, to))| {
+            !used[i]
+                && *turn == upgrade.turn + 1
+                && civvis::reasoning::plain(from) == upgrade.from
+                && civvis::reasoning::plain(to) == upgrade.to
+        });
+        if let Some(i) = found {
+            used[i] = true;
+            done.push(upgrade);
+        }
+    }
+    done
 }
 
 /// Play one arm of one world.
@@ -373,7 +460,14 @@ fn play(
         .find(|row| row.kind == "game")
         .expect("one measured seat");
     let (mut seen, log_len) = std::mem::take(&mut *book.borrow_mut());
-    let (pass, pass_lines) = pass_lines(&format!("{base}.journal.{seed}.txt"), row.seat);
+    let watch = seen
+        .remove(&row.seat)
+        .map(|seat| seat.watch)
+        .unwrap_or_default();
+    let planned = planned_upgrades(&format!("{base}.journal.{seed}.txt"), row.seat);
+    let done = carried_out(&planned, &watch.seen);
+    let pass: Vec<u32> = done.iter().map(|upgrade| upgrade.turn).collect();
+    let pass_gold: f64 = done.iter().map(|upgrade| upgrade.gold).sum();
     let mut bare = row.clone();
     bare.secs = 0.0;
     bare.genome = String::new();
@@ -389,8 +483,9 @@ fn play(
         seed,
         fingerprint: hasher.finish(),
         pass,
-        pass_lines,
-        watch: seen.remove(&row.seat).map(|s| s.watch).unwrap_or_default(),
+        pass_gold,
+        planned,
+        watch,
         row,
     }
 }
@@ -456,6 +551,13 @@ const COLUMNS: &[Column] = &[
     ("city-strike kills", |w| w.watch.strike_kills as f64, true),
     ("score", |w| w.row.score as f64, true),
     ("last turn", |w| f64::from(w.row.turn), false),
+    (
+        "alive at the end",
+        |w| f64::from(u8::from(w.row.alive)),
+        true,
+    ),
+    ("pass upgrades carried out", |w| w.pass.len() as f64, false),
+    ("pass Gold", |w| w.pass_gold, false),
     ("upgrades seen", |w| f64::from(w.watch.upgrades), true),
     (
         "tier-lift upgrades",
@@ -535,9 +637,15 @@ fn report(worlds: &[World], note: &str) -> String {
             .iter()
             .filter_map(|(_, o)| o.pass.first().map(|t| f64::from(*t)))
             .collect();
-        let control_leaks = pairs.iter().filter(|(c, _)| !c.pass.is_empty()).count();
+        let control_leaks = pairs.iter().filter(|(c, _)| !c.planned.is_empty()).count();
+        let (planned, planned_se) = mean_se(
+            &pairs
+                .iter()
+                .map(|(_, o)| o.planned.len() as f64)
+                .collect::<Vec<_>>(),
+        );
         out.push(format!(
-            "   the new pass (gene on, its journal): fired in {fired}/{} worlds, {taken:.2}±{taken_se:.2} upgrades a world, first at turn median {} (range {}..{}); control journal lines in {control_leaks} worlds",
+            "   the new pass (gene on): carried out in {fired}/{} worlds, {taken:.2}±{taken_se:.2} upgrades a world (planned {planned:.2}±{planned_se:.2}), first at turn median {} (range {}..{}); control journal lines in {control_leaks} worlds",
             pairs.len(),
             median(firsts.clone()).map_or("-".to_string(), |m| format!("{m:.0}")),
             firsts.iter().copied().reduce(f64::min).map_or("-".to_string(), |m| format!("{m:.0}")),
@@ -655,15 +763,37 @@ fn report(worlds: &[World], note: &str) -> String {
                 }
             ));
         }
-        let examples: Vec<&String> = pairs
-            .iter()
-            .flat_map(|(_, o)| o.pass_lines.iter())
-            .take(8)
-            .collect();
-        if !examples.is_empty() {
-            out.push(format!("== {recipe}: the pass's first journal lines"));
-            for line in examples {
-                out.push(format!("   {line}"));
+        // What the pass upgraded, summed over the gene arm's worlds.
+        let mut kinds: BTreeMap<String, [f64; 5]> = BTreeMap::new();
+        for (_, o) in &pairs {
+            let done = carried_out(&o.planned, &o.watch.seen);
+            for upgrade in &o.planned {
+                let cell = kinds
+                    .entry(format!("{} to {}", upgrade.from, upgrade.to))
+                    .or_default();
+                cell[1] += 1.0;
+                if done.iter().any(|d| std::ptr::eq(*d, upgrade)) {
+                    cell[0] += 1.0;
+                    cell[2] += upgrade.gold;
+                    cell[3] += upgrade.defence;
+                    cell[4] += upgrade.strike;
+                }
+            }
+        }
+        if !kinds.is_empty() {
+            let mut kinds: Vec<(String, [f64; 5])> = kinds.into_iter().collect();
+            kinds.sort_by(|a, b| b.1[0].total_cmp(&a.1[0]).then(a.0.cmp(&b.0)));
+            out.push(format!(
+                "== {recipe}: the pass's upgrades over the gene arm's worlds (carried out / planned; mean Gold, defence and strike lift of those carried out)"
+            ));
+            for (kind, [done, planned, gold, defence, strike]) in kinds.iter().take(16) {
+                let per = done.max(1.0);
+                out.push(format!(
+                    "   {kind:<40} {done:>3.0} / {planned:<3.0} {:>5.0} Gold  defence +{:.1}  strike +{:.1}",
+                    gold / per,
+                    defence / per,
+                    strike / per
+                ));
             }
         }
     }
@@ -766,12 +896,13 @@ fn one_upgrade_lifts_every_city_driver() {
                     let seed = first_seed + world as u64;
                     let played = play(recipe, name, world, seed, &genes, genome);
                     progress(&format!(
-                        "ONE-UPGRADE-WORLD {} {} seed {} pass {} {:?} lost {} killed {} cities_lost {} strike_kills {} score {} turn {} short {}/{}/{} of {} fp {:016x} secs {:.0}",
+                        "ONE-UPGRADE-WORLD {} {} seed {} pass {} {:?} (planned {}) lost {} killed {} cities_lost {} strike_kills {} score {} turn {} short {}/{}/{} of {} fp {:016x} secs {:.0}",
                         played.recipe,
                         played.arm,
                         played.seed,
                         played.pass.len(),
                         played.pass,
+                        played.planned.len(),
                         played.row.units_lost.unwrap_or(0),
                         played.row.units_killed.unwrap_or(0),
                         played.row.cities_lost.unwrap_or(0),
@@ -831,7 +962,8 @@ fn the_report_pairs_the_arms_by_seed() {
         seed,
         fingerprint,
         pass,
-        pass_lines: Vec::new(),
+        pass_gold: 0.0,
+        planned: Vec::new(),
         watch: Watch {
             turns: 10,
             defence_short: 4,
@@ -849,7 +981,7 @@ fn the_report_pairs_the_arms_by_seed() {
     let text = report(&worlds, "note");
     assert!(text.contains("2 pairs, seeds 100..101"), "{text}");
     assert!(text.contains("pairs diverged 1/2"), "{text}");
-    assert!(text.contains("fired in 1/2 worlds"), "{text}");
+    assert!(text.contains("carried out in 1/2 worlds"), "{text}");
     assert!(text.contains("first at turn median 41"), "{text}");
     // Units lost 6-10 and 12-12: a mean of -2.00, a standard error of 2.00.
     let line = text
@@ -860,24 +992,61 @@ fn the_report_pairs_the_arms_by_seed() {
     assert!(text.contains("defence 10+ short 40.0%"), "{text}");
 }
 
-/// The journal reader keeps the gene's lines for the measured seat only.
+/// The journal reader keeps the gene's lines for the measured seat only,
+/// once per turn and kinds however many frames journaled them, and an
+/// upgrade counts as carried out only when the next turn's look saw it.
 #[test]
-fn the_pass_is_read_from_the_seat_journal() {
+fn the_pass_is_read_from_the_seat_journal_and_matched_to_the_board() {
     let path = std::env::temp_dir().join(format!(
         "one-upgrade-journal-test-{}.txt",
         std::process::id()
     ));
-    std::fs::write(
-        &path,
-        "t40 p1 Military One upgrade lifts every city | one-upgrade-lifts-every-city: Archer to Crossbowman\n\
-         t41 p2 Military One upgrade lifts every city | another seat\n\
-         t42 p1 Strategy One upgrade lifts every city | another topic\n\
-         t57 p1 Military One upgrade lifts every city | one-upgrade-lifts-every-city: Spearman to Pikeman\n\
-         t58 p1 Military Modernizing the army before the treasury is spent\n",
-    )
-    .unwrap();
-    let (turns, lines) = pass_lines(path.to_str().unwrap(), 1);
-    assert_eq!(turns, vec![40, 57]);
-    assert_eq!(lines.len(), 2);
+    let line = |turn: u32, player: usize, topic: &str, units: &str| {
+        format!(
+            "t{turn} p{player} {topic} One upgrade lifts every city | {TAG}: {units} for 120 Gold \
+             of 137 (+3 a turn); every city's defence +15, ranged strike +0"
+        )
+    };
+    let text = [
+        line(40, 1, "Military", "hoplite to pikeman"),
+        line(40, 1, "Military", "hoplite to pikeman"),
+        line(41, 2, "Military", "slinger to archer"),
+        line(42, 1, "Strategy", "slinger to archer"),
+        line(57, 1, "Military", "saka horse archer to crossbowman"),
+        line(90, 1, "Military", "archer to crossbowman"),
+        "t58 p1 Military Modernizing the army before the treasury is spent".to_string(),
+    ]
+    .join("\n");
+    std::fs::write(&path, text).unwrap();
+    let planned = planned_upgrades(path.to_str().unwrap(), 1);
     assert!(!path.exists(), "the journal file is removed once read");
+    assert_eq!(planned.len(), 3, "{planned:?}");
+    assert_eq!(
+        planned[0],
+        Planned {
+            turn: 40,
+            from: "hoplite".to_string(),
+            to: "pikeman".to_string(),
+            gold: 120.0,
+            defence: 15.0,
+            strike: 0.0,
+        }
+    );
+    assert_eq!(planned[1].from, "saka horse archer");
+    // The Pikeman and the Crossbowman were seen on the next turn's look; the
+    // turn-90 plan was not carried out (no upgrade seen on turn 91).
+    let seen = vec![
+        (41, "hoplite".to_string(), "pikeman".to_string()),
+        (
+            58,
+            "saka_horse_archer".to_string(),
+            "crossbowman".to_string(),
+        ),
+        (95, "archer".to_string(), "crossbowman".to_string()),
+    ];
+    let done: Vec<u32> = carried_out(&planned, &seen)
+        .iter()
+        .map(|upgrade| upgrade.turn)
+        .collect();
+    assert_eq!(done, vec![40, 57]);
 }
