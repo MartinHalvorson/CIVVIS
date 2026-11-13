@@ -273,6 +273,67 @@ pub fn seat_json(row: &PlayerStrategy) -> Value {
     })
 }
 
+/// The lane our own seat plays in a mirrored game of Civilization VI, as the
+/// live decider is launched with it (`civvis-orders --victory`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LiveLane {
+    /// `civvis`: no contract, the agent follows whichever victory is open.
+    Adaptive,
+    /// Contracted to one victory for the whole game.
+    Target(VictoryTarget),
+}
+
+impl LiveLane {
+    /// A lane by the id the decider takes. An id it would refuse is no lane.
+    pub fn from_id(id: &str) -> Option<LiveLane> {
+        if id == "civvis" {
+            return Some(LiveLane::Adaptive);
+        }
+        id.parse().ok().map(LiveLane::Target)
+    }
+}
+
+/// What a seat says when Civilization VI's own AI is playing it: every rival
+/// of a mirrored game (operator, 2026-11-13: "for validation games, the
+/// player should just be something like "Civ 6 Deity AI" or whatever the
+/// level is"). `difficulty` is the rung id the host reported. Nothing of ours
+/// plays the seat, so it carries no agent id and no rating: the published
+/// rung ratings were measured on our stand-in for that AI, not on it.
+pub fn civ6_ai_seat_json(difficulty: &str) -> Value {
+    let rung = CIV6_RUNGS.iter().find(|(id, _)| *id == difficulty);
+    json!({
+        "ai_username": match rung {
+            Some((_, name)) => format!("Civ 6 {name} AI"),
+            None => "Civ 6 AI".to_string(),
+        },
+        "ai_strat_label": "Civilization VI's own AI",
+    })
+}
+
+/// What our own seat in a mirrored game says: the strategy the live decider
+/// is actually playing (same instruction: "where we control the player ai
+/// strategy, then we should list out the actual strategy being used"). The
+/// live genome is no roster row, so it borrows no handle and no rating.
+/// `None` is a follower that has not said which lane the decider is on.
+pub fn live_seat_json(lane: Option<LiveLane>) -> Value {
+    let (handle, tilt) = match lane {
+        None => ("CIVVIS Advanced AI".to_string(), "Live agent".to_string()),
+        Some(LiveLane::Adaptive) => (
+            "CIVVIS Adaptive".to_string(),
+            "Live agent · whichever victory is open".to_string(),
+        ),
+        Some(LiveLane::Target(target)) => {
+            let id = target.as_str();
+            let lane = format!("{}{}", id[..1].to_ascii_uppercase(), &id[1..]);
+            (
+                format!("CIVVIS {lane}"),
+                format!("Live agent · {lane} victory"),
+            )
+        }
+    };
+    json!({ "ai_username": handle, "ai_strat_label": tilt })
+}
+
 /// The ledger key of a Civilization VI rung's rivals.
 pub fn rung_key(rung: &str) -> String {
     format!("civ6:{rung}")
@@ -572,6 +633,52 @@ mod tests {
             .get("jack")
             .map(|r| r.elo.round() as i64);
         assert_eq!(seat["ai_elo"].as_i64(), published);
+    }
+
+    #[test]
+    fn a_mirrored_rival_is_named_for_civilization_vis_own_ai() {
+        let deity = civ6_ai_seat_json("deity");
+        assert_eq!(deity["ai_username"], json!("Civ 6 Deity AI"));
+        assert_eq!(deity["ai_strat_label"], json!("Civilization VI's own AI"));
+        // Nothing of ours is in the seat: no roster id and no rating.
+        assert!(deity["ai_agent"].is_null());
+        assert!(deity["ai_elo"].is_null());
+        for (id, name) in CIV6_RUNGS {
+            assert_eq!(
+                civ6_ai_seat_json(id)["ai_username"],
+                json!(format!("Civ 6 {name} AI"))
+            );
+        }
+        // A level the ladder does not hold still says whose AI it is.
+        assert_eq!(civ6_ai_seat_json("")["ai_username"], json!("Civ 6 AI"));
+    }
+
+    #[test]
+    fn our_mirrored_seat_names_the_lane_it_plays() {
+        // Every id the live decider accepts names a lane.
+        for (id, handle) in [
+            ("science", "CIVVIS Science"),
+            ("culture", "CIVVIS Culture"),
+            ("religious", "CIVVIS Religious"),
+            ("diplomatic", "CIVVIS Diplomatic"),
+            ("domination", "CIVVIS Domination"),
+            ("score", "CIVVIS Score"),
+            ("civvis", "CIVVIS Adaptive"),
+        ] {
+            let lane = LiveLane::from_id(id).unwrap_or_else(|| panic!("{id} is a lane"));
+            let seat = live_seat_json(Some(lane));
+            assert_eq!(seat["ai_username"], json!(handle));
+            assert!(seat["ai_elo"].is_null(), "the live genome is unrated");
+        }
+        assert_eq!(
+            live_seat_json(LiveLane::from_id("diplomatic"))["ai_strat_label"],
+            json!("Live agent · Diplomatic victory")
+        );
+        assert_eq!(LiveLane::from_id(""), None);
+        assert_eq!(
+            live_seat_json(None)["ai_username"],
+            json!("CIVVIS Advanced AI")
+        );
     }
 
     #[test]

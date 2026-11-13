@@ -734,7 +734,8 @@ def start_visible_server(run_dir, players, keep_reporting=None):
             if any(b'"victory"' in line for line in lines or []):
                 game, _ = rebuild(run_dir, players)
                 if game is not None:
-                    http_post(PORT, "/load", mirror_frame_body(game))
+                    http_post(PORT, "/load",
+                              mirror_frame_body(game, decider_lane(run_dir)))
             hold_the_frame()
             refresh_mirror_page(process.pid)
             # Chrome reconnects after the server answers and may restore its
@@ -768,9 +769,55 @@ def start_visible_server(run_dir, players, keep_reporting=None):
     return False
 
 
-def mirror_frame_body(game):
-    """Publish the board and its restricted, paused view in one transaction."""
-    return json.dumps({"game": game, "mirror_player": 0}).encode()
+# The lane each run's decider said it is playing, once read: the record is
+# the first line of a log that only grows, so a found answer never changes.
+_DECIDER_LANES = {}
+
+
+def decider_lane(run_dir):
+    """The victory lane the live decider is playing, from its own record.
+
+    `civvis_orders` opens `why.log` with a `{"kind": "genome", ...}` line whose
+    `victory` is the lane it was launched on. The page prints it as our seat's
+    player ("CIVVIS Diplomatic"): the operator asked that a seat we control
+    names the strategy actually being played (2026-11-13). Read from the
+    decider's own first record, not from the supervisor's arguments, for the
+    reason `civ6_ladder.decider_genome` gives: what was asked for is not
+    always what was played. None until the decider has written it.
+    """
+    if run_dir in _DECIDER_LANES:
+        return _DECIDER_LANES[run_dir]
+    try:
+        with open(os.path.join(run_dir, "why.log"), encoding="utf-8") as handle:
+            for _ in range(20):
+                line = handle.readline()
+                if not line:
+                    break
+                if not line.startswith("{"):
+                    continue
+                try:
+                    record = json.loads(line)
+                except ValueError:
+                    continue
+                lane = record.get("victory")
+                if record.get("kind") == "genome" and isinstance(lane, str) and lane:
+                    _DECIDER_LANES[run_dir] = lane
+                    return lane
+    except OSError:
+        pass
+    return None
+
+
+def mirror_frame_body(game, lane=None):
+    """Publish the board and its restricted, paused view in one transaction.
+
+    `lane` rides along as `mirror_strategy` so the frame also says what our
+    seat is playing. A server that predates the field ignores it.
+    """
+    body = {"game": game, "mirror_player": 0}
+    if lane:
+        body["mirror_strategy"] = lane
+    return json.dumps(body).encode()
 
 
 def hold_the_frame():
@@ -1397,7 +1444,7 @@ def main():
             continue
 
         try:
-            body = mirror_frame_body(game)
+            body = mirror_frame_body(game, decider_lane(run_dir))
             answer = json.loads(http_post(PORT, "/load", body))
         except Exception as error:
             log(f"could not publish: {error}")
