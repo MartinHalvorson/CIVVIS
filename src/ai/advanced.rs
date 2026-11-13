@@ -9521,9 +9521,9 @@ pub struct AdvancedAi {
     science_seat_builds_the_statue: bool,
     /// `science-seat-races-the-congress`: a Science seat's Diplomatic Victory
     /// ballot runs the racer. Live only: `tools/civ6_play.py` reads the armed
-    /// tag and the agent's `CivvisCongressRacer` casts the ballot, so the
-    /// simulator never reads this field.
-    #[allow(dead_code)]
+    /// tag and the agent's `CivvisCongressRacer` casts the ballot, and the
+    /// live orders binary keeps the seat's Favor for it
+    /// (`science_congress_racer_armed`); the simulator never reads this field.
     science_seat_races_the_congress: bool,
     /// `science-seat-allies-2`: version one, and a Military Alliance asked
     /// before Diplomatic Service. See `advanced/culture_seat_allies.rs`.

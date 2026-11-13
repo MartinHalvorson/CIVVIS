@@ -3486,6 +3486,27 @@ fn plan_races_diplomacy(plan: Option<(&str, Option<&str>)>) -> bool {
     plan.is_some_and(|(_, victory)| victory == Some("diplomatic"))
 }
 
+/// The plan the Favor desks read. `science-seat-races-the-congress`: a
+/// Science seat whose ballot runs the racer spends its bank in the World
+/// Congress exactly as a Diplomatic seat does, so its Favor desks read it as
+/// that lane ([`plan_races_diplomacy`]): nothing is quoted for sale, the
+/// planner's own quote is struck and no ransom is paid in Favor. Live Deity
+/// Rome, Science target, 2026-11-13 (fourteen games): four sold 25, 29, 63
+/// and 119 Favor between turns 60 and 111, for 0 to 221 Gold and 5 to 28 Gold
+/// a turn, before any rival reached [`FAVOR_HOLD_DVP`], and came to the first
+/// Diplomatic Victory session (turn 111) on 120 to 187 Favor, where nine
+/// votes cost 144 and thirteen 312. Every other plan is read as it is.
+fn favor_desk_plan<'a>(
+    plan: Option<(&'a str, Option<&'a str>)>,
+    congress_racer: bool,
+) -> Option<(&'a str, Option<&'a str>)> {
+    if congress_racer {
+        plan.map(|(strategy, _)| (strategy, Some("diplomatic")))
+    } else {
+        plan
+    }
+}
+
 /// Drop the planner's alliance orders unless the seat is assigned the
 /// Diplomatic lane ([`plan_races_diplomacy`]): an alliance forbids a war on
 /// the ally, and the domination campaign planner does not price that. The
@@ -5345,14 +5366,17 @@ fn decide(
     if held_alliances > 0 {
         note_bits.push(format!("alliance_hold:off_lane={held_alliances}"));
     }
-    let held_favor_sales = hold_planner_favor_sales(plan_facts, state, &mut orders);
+    // `science-seat-races-the-congress`: a racing Science seat's Favor is its
+    // ballot's. See `favor_desk_plan`.
+    let favor_plan = favor_desk_plan(plan_facts, ai.science_congress_racer_armed());
+    let held_favor_sales = hold_planner_favor_sales(favor_plan, state, &mut orders);
     if held_favor_sales > 0 {
         note_bits.push(format!(
             "favor_hold:planner_sales_dropped={held_favor_sales}"
         ));
     }
     let favor_value = mirror_state.game.favor_gold_value(0);
-    match append_favor_sale_order(plan_facts, state, &mut orders, favor_value) {
+    match append_favor_sale_order(favor_plan, state, &mut orders, favor_value) {
         None => note_bits.push("favor_sale=1".to_string()),
         Some(why) => {
             // Only the holds worth a glance in the ledger: a bank sitting on
@@ -5453,7 +5477,7 @@ fn decide(
             };
             let favor = (ai.captives_come_home_pays_favor()
                 && top_dvp < RANSOM_FAVOR_DVP_CEILING
-                && !plan_races_diplomacy(plan_facts))
+                && !plan_races_diplomacy(favor_plan))
             .then(|| state.favor.unwrap_or(0.0).floor() as i64 - reserve)
             .filter(|points| *points >= RANSOM_FAVOR_MIN)
             .map(|points| points.min(RANSOM_FAVOR_CAP) as u32);
