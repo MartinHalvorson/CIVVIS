@@ -403,7 +403,11 @@ fn play(seed: u64, on: bool) -> Held {
     let mut held = Held::default();
     while g.winner.is_none() && g.turn < start + POSED_TURNS && g.players[0].alive {
         let pid = g.current;
-        ais[pid].take_turn(&mut g, pid);
+        // A revolt wakes the Free Cities seat, which has no agent here: its
+        // turn only ends.
+        if let Some(ai) = ais.get_mut(pid) {
+            ai.take_turn(&mut g, pid);
+        }
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
         }
