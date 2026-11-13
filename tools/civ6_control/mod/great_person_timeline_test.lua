@@ -44,6 +44,8 @@ local function compile(text)
 	local fn = assert(loadstring(text)); setfenv(fn, env); return fn()
 end
 compile(assert(source:match("(CivvisLedger%.greatPersonAvailable = function.-\nend;)")))
+compile(assert(source:match("(CivvisLedger%.patronQuote = function.-\nend;)")))
+compile(assert(source:match("(CivvisLedger%.patronAllowed = function.-\nend;)")))
 local exports = {}
 for _, name in ipairs({ "great_person_exhausted", "great_person_costs", "great_person_offers" }) do
 	local expression = assert(source:match(name .. " = (try%(function%(%).-\n\t\tend, nil%)),"))
@@ -76,4 +78,32 @@ scenario("already recruited", 0, false, false)
 scenario("other player's claim", 1, false, false)
 scenario("eligibility unavailable", 0, "throw", false)
 scenario("eligibility unknown", 0, nil, false)
+-- Patronage quotes: absent while the host has no such call (the fixture
+-- above), exported verbatim once it answers, and nil again when it throws.
+timeline = { { Individual = 1, Claimant = nil, Cost = 30 } }
+eligible = { [1] = true }
+local bare = exports.great_person_offers(0).SCIENTIST
+check("no quote without the host call", bare.patron_gold, nil)
+check("no permission without the host call", bare.can_patron_faith, nil)
+env.YieldTypes = { GOLD = "gold", FAITH = "faith" }
+greatPeople.GetPatronizeCost = function(_, pid, id, yield)
+	assert(pid == 0 and id == 1)
+	if yield == "gold" then return 455 end
+	if yield == "faith" then return 310 end
+	error("unknown yield")
+end
+greatPeople.CanPatronizePerson = function(_, pid, id, yield)
+	assert(pid == 0 and id == 1)
+	return yield == "faith"
+end
+local quoted = exports.great_person_offers(0).SCIENTIST
+check("gold quote", quoted.patron_gold, 455)
+check("faith quote", quoted.patron_faith, 310)
+check("gold refused", quoted.can_patron_gold, false)
+check("faith allowed", quoted.can_patron_faith, true)
+check("the offer itself is unchanged", quoted.individual, "HYPATIA")
+greatPeople.GetPatronizeCost = function() error("host threw") end
+local thrown = exports.great_person_offers(0).SCIENTIST
+check("a throwing host leaves no quote", thrown.patron_gold, nil)
+check("permission still read", thrown.can_patron_faith, true)
 print("all Great Person timeline checks passed")
