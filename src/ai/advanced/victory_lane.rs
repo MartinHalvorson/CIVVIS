@@ -261,14 +261,19 @@ impl AdvancedAi {
     /// `Recovery` still refuses: an empire losing ground at home has better
     /// uses for its Faith than a Rock Band, and `military_faith_spending`
     /// runs after this.
-    fn adaptive_culture_spending_signal(&self, g: &Game, pid: usize) -> bool {
+    fn adaptive_culture_spending_signal(
+        &self,
+        g: &Game,
+        pid: usize,
+        forecast: Option<i32>,
+    ) -> bool {
         self.victory_planning
             && self.victory_target.is_none()
             // The opening and midgame already have the baseline Faith
             // priorities. Delay the city-wide projection until the late pass
             // where a posture switch can otherwise strand the Culture sink.
             && g.turn >= g.standard_duration(100)
-            && self.culture_lane_forecast_score_with(g, pid, true)
+            && forecast.unwrap_or_else(|| self.culture_lane_forecast_score_with(g, pid, true))
                 >= ADAPTIVE_CULTURE_SPENDING_SCORE
     }
 
@@ -278,11 +283,12 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
         culture_focus: bool,
+        forecast: Option<i32>,
     ) -> bool {
         self.victory_planning
             && self.victory_target.is_none()
             && plan.strategy != GrandStrategy::Recovery
-            && (culture_focus || self.adaptive_culture_spending_signal(g, pid))
+            && (culture_focus || self.adaptive_culture_spending_signal(g, pid, forecast))
     }
 
     fn recovery_faith_has_only_culture_units(g: &Game, pid: usize) -> bool {
@@ -315,7 +321,14 @@ impl AdvancedAi {
         // The victory focus and the adaptive forecast below each project the
         // culture race from every major's city yields; one memo shares them.
         let _memo = g.query_memo();
-        let culture_focus = self.victory_focus(g, pid).strategy == GrandStrategy::Culture;
+        // Both readers use this same Game borrow. Carry an actually computed
+        // forecast forward instead of deriving it again; no value survives
+        // this decision, and disabled forecasts retain the original fallback.
+        let mut forecast = None;
+        let culture_focus = self
+            .victory_focus_recording_culture_forecast(g, pid, Some(&mut forecast))
+            .strategy
+            == GrandStrategy::Culture;
         // Recovery keeps its reserve unless complete host menus confirm that
         // the named Culture seat cannot spend Faith on any other unit.
         let named_culture = self.active_victory_target(g) == Some(VictoryTarget::Culture);
@@ -327,7 +340,7 @@ impl AdvancedAi {
                     || self.culture_recovery_bank_overflows(g, pid)))
             && (named_culture
                 || culture_focus && self.lane_culture_spending
-                || self.adaptive_culture_lane_spends(g, pid, plan, culture_focus))
+                || self.adaptive_culture_lane_spends(g, pid, plan, culture_focus, forecast))
     }
 
     /// The lane the Culture Faith reserve is sized for: `Culture` when this
@@ -592,7 +605,7 @@ mod tests {
             projected >= ADAPTIVE_CULTURE_SPENDING_SCORE,
             "fixture must clear the adaptive floor ({projected})"
         );
-        assert!(adaptive.adaptive_culture_spending_signal(&g, 0));
+        assert!(adaptive.adaptive_culture_spending_signal(&g, 0, None));
         assert!(adaptive.culture_lane_spends(&g, 0, &plan));
         assert_eq!(
             adaptive.culture_faith_lane(&g, 0, &plan),
@@ -601,7 +614,7 @@ mod tests {
 
         let mut weak = g.clone();
         Arc::make_mut(&mut weak.observed_tourism_per_turn).insert(0, 20.0);
-        assert!(!adaptive.adaptive_culture_spending_signal(&weak, 0));
+        assert!(!adaptive.adaptive_culture_spending_signal(&weak, 0, None));
         assert!(!adaptive.culture_lane_spends(&weak, 0, &plan));
 
         let targeted = AdvancedAi::targeting(VictoryTarget::Science);
@@ -908,3 +921,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod forecast_reuse_tests;

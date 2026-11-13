@@ -14547,6 +14547,17 @@ impl AdvancedAi {
     }
 
     fn lane_progress_table_uncached(&self, g: &Game, pid: usize) -> [i32; 4] {
+        self.lane_progress_table_recording_culture_forecast(g, pid, None)
+    }
+
+    /// Optionally carry the exact forecast into the same read-only spending
+    /// decision. The ordinary lane readers retain their original interface.
+    fn lane_progress_table_recording_culture_forecast(
+        &self,
+        g: &Game,
+        pid: usize,
+        forecast: Option<&mut Option<i32>>,
+    ) -> [i32; 4] {
         let player = &g.players[pid];
         let living_majors: Vec<usize> = g
             .players
@@ -14590,8 +14601,14 @@ impl AdvancedAi {
         // `culture_lane_forecast` reads the same race projected to the turn
         // limit instead of at today's ratio, and folds in with `max` so it can
         // only ever raise the reading.
-        let culture = ((100 * g.foreign_tourists(pid) / culture_target).clamp(0, 100) as i32)
-            .max(self.culture_lane_forecast_score(g, pid));
+        let culture = (100 * g.foreign_tourists(pid) / culture_target).clamp(0, 100) as i32;
+        let culture_forecast = self.culture_lane_forecast_score(g, pid);
+        let culture = culture.max(culture_forecast);
+        if self.culture_lane_forecast || self.culture_lane_forecast_2 {
+            if let Some(forecast) = forecast {
+                *forecast = Some(culture_forecast);
+            }
+        }
 
         let (converted, living_religious_rivals) = self.religious_conversion_tally(g, pid);
         let religion = if player.religion.is_some() {
@@ -14647,6 +14664,15 @@ impl AdvancedAi {
     }
 
     fn victory_focus(&self, g: &Game, pid: usize) -> VictoryFocus {
+        self.victory_focus_recording_culture_forecast(g, pid, None)
+    }
+
+    fn victory_focus_recording_culture_forecast(
+        &self,
+        g: &Game,
+        pid: usize,
+        forecast: Option<&mut Option<i32>>,
+    ) -> VictoryFocus {
         // The lane table and the preferences below read the same empires;
         // one memo for all of it. See `Game::query_memo`.
         let _memo = g.query_memo();
@@ -14693,7 +14719,15 @@ impl AdvancedAi {
             };
         }
         let player = &g.players[pid];
-        let [science, culture, religion, diplomacy] = self.lane_progress_table(g, pid);
+        // Capture only when the original lane reader would recompute. A
+        // battlefront cache hit follows its original path and leaves None,
+        // so its value never becomes a fresh forecast for another purpose.
+        let [science, culture, religion, diplomacy] =
+            if let Some(forecast) = forecast.filter(|_| self.battlefront_frame.is_none()) {
+                self.lane_progress_table_recording_culture_forecast(g, pid, Some(forecast))
+            } else {
+                self.lane_progress_table(g, pid)
+            };
         let science = science.max((!self.civ_blind && player.civ == "China") as i32 * 45);
 
         let candidates = [
