@@ -6118,6 +6118,12 @@ pub const GENES: &[Gene] = &[
     // every third turn. Accept every offer, ask every met major nearest
     // first. Opt-in; see `advanced/score_keeps_friends.rs`.
     Gene { tag: "score-seat-keeps-friends", field: "score_seat_keeps_friends", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_keeps_friends, disable: AdvancedAi::disable_score_seat_keeps_friends },
+    // Live Rome Score 11-12/13 (52 games): 30 faith strikes took nothing,
+    // lost 3 cities to the target and 8 to others, 78 units for 37 killed;
+    // the seat founded no faith in any game, no strike met a faith at match
+    // point and no rival won a Religious Victory. A Score seat strikes only a
+    // faith at match point. See `advanced/score_seat_holds_its_faith_strikes.rs`.
+    Gene { tag: "score-seat-holds-its-faith-strikes", field: "score_seat_holds_its_faith_strikes", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_holds_its_faith_strikes, disable: AdvancedAi::disable_score_seat_holds_its_faith_strikes },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

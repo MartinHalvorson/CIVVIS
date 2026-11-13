@@ -10322,6 +10322,11 @@ pub struct AdvancedAi {
     /// major offers and offers one to every met major the host allows,
     /// nearest first. See `advanced/score_keeps_friends.rs`. Opt-in.
     score_seat_keeps_friends: bool,
+    /// `score-seat-holds-its-faith-strikes`: a seat whose victory target is
+    /// Score holds the faith strike unless the rival's faith stands at match
+    /// point. See `advanced/score_seat_holds_its_faith_strikes.rs`. Off by
+    /// default.
+    score_seat_holds_its_faith_strikes: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11417,6 +11422,9 @@ mod score_keeps_friends;
 mod score_seat;
 /// `score-seat-founds-early`: see `advanced/score_seat_founds_early.rs`.
 mod score_seat_founds_early;
+/// `score-seat-holds-its-faith-strikes`: see
+/// `advanced/score_seat_holds_its_faith_strikes.rs`.
+mod score_seat_holds_its_faith_strikes;
 /// `score-seat-raises-wonders`: a Score seat's wonder program, a queue claim
 /// that acts natively and live. See `advanced/score_wonders.rs`.
 mod score_wonders;
