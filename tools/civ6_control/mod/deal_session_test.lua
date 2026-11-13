@@ -837,7 +837,7 @@ check("the refusal is in the ledger", eventField(lastEvent("peace_response"), "a
 check("a refused peace keeps its session for the counter", trade.sessions[6] ~= nil, true)
 check("a peace refusal does not close under its counter", #sessions.closed, closedBeforePeaceRefusal)
 check("the peace counter wait is recorded", eventField(lastEvent("deal_session"), "phase"), "counter_wait")
-check("the peace counter hold is bounded", holds[#holds] and holds[#holds].seconds, 4)
+check("the peace counter hold is the answer's bound", holds[#holds] and holds[#holds].seconds, 30)
 onStatement(6, 7, { StatementType = "MAKE_DEAL", SessionID = 9999, StatementSubType = "POSITIVE" })
 onStatement(6, 7, { StatementType = "GREETING", SessionID = 904, StatementSubType = "POSITIVE" })
 onStatement(7, 6, { StatementType = "MAKE_DEAL", SessionID = 904, StatementSubType = "POSITIVE" })
@@ -1070,6 +1070,114 @@ do
 	check("a question asked at the bound still gets its full reply window",
 		trade.holdsEndTurn(TURN), true)
 	trade.close(7, 3, "test_late_ask")
+
+	-- ── A peace or alliance session that opens after the release is closed, not asked ──
+	-- Live civvis-20261113T171033Z-cont3 t149: the third peace ask of the
+	-- turn was still queued at 8 s, the end turn went out, the session
+	-- opened 1 ms later, the rival refused, its counter stayed "Adding to
+	-- pending" and its turn never ended. 16 of 33 hangs in 105 games.
+	TURN = 608
+	local late, latePlayer = fixture({ atWar = true })
+	applyOrder(latePlayer, 7, { kind = "peace", subject = "31" }, TURN)
+	check("the queued peace waits for its session", #late.sends, 0)
+	check("the queued peace owns a session", trade.sessions[31] ~= nil, true)
+	activeClock = activeClock + 8.1
+	check("the queued peace opening stops holding the turn", trade.holdsEndTurn(TURN), false)
+	local closedBeforeLate, unansweredBeforeLate = #sessions.closed, trade.unanswered
+	onStatement(7, 31, { StatementType = "MAKE_DEAL", SessionID = 1403 })
+	check("a peace session opening after the release puts no question", #late.sends, 0)
+	check("…and says so", eventField(lastEvent("deal_session"), "phase"), "unasked")
+	check("…naming why", eventField(lastEvent("deal_session"), "why"), "opened_after_end_turn")
+	check("…it stays owned until the rival acknowledges", trade.sessions[31] ~= nil, true)
+	check("…and is not closed under the acknowledgement", #sessions.closed, closedBeforeLate)
+	onStatement(7, 31, { StatementType = "MAKE_DEAL", SessionID = 1403 })
+	check("a repeated opening statement still puts no question", #late.sends, 0)
+	onStatement(31, 7, { StatementType = "MAKE_DEAL", SessionID = 1403,
+		StatementSubType = "NONE", ResponseType = DiplomacyResponseTypes.ACKNOWLEDGE })
+	check("the acknowledgement closes the unasked session", sessions.closed[#sessions.closed], 1403)
+	check("…with its own reason", eventField(lastEvent("deal_session"), "why"), "opened_after_end_turn")
+	check("…leaving no session", trade.sessions[31], nil)
+	check("…no unanswered ask", trade.unanswered, unansweredBeforeLate)
+	check("…no held turn", trade.turnHold, nil)
+	check("…and the closer is released", holds[#holds].open, false)
+	-- The question never reached the rival, so the retry wait never started.
+	TURN = 609
+	local requestedBeforeRetry = #sessions.requested
+	applyOrder(latePlayer, 7, { kind = "peace", subject = "31" }, TURN)
+	check("the unasked peace is asked again the next turn", #sessions.requested, requestedBeforeRetry + 1)
+	onStatement(7, 31, { StatementType = "MAKE_DEAL", SessionID = 1404 })
+	check("…and asked inside its hold it does put the question",
+		late.sends[1] and late.sends[1][1], "proposed")
+	trade.close(7, 31, "test_late_retry")
+	-- An asked peace keeps its retry wait: only the unasked one is given back.
+	TURN = 610
+	local requestedBeforeCooldown = #sessions.requested
+	applyOrder(latePlayer, 7, { kind = "peace", subject = "31" }, TURN)
+	check("an asked peace still waits out its retry turns", #sessions.requested, requestedBeforeCooldown)
+
+	-- The alliance arm the same, and its marker goes back to the turn before.
+	TURN = 611
+	local lateAlly = fixture()
+	CivvisK.allianceAsked = CivvisK.allianceAsked or {}
+	trade.noteAskMarker("alliance", 32, 600)
+	CivvisK.allianceAsked[32] = TURN
+	trade.ask(7, 32, "PROPOSED", "alliance", TURN)
+	activeClock = activeClock + 8.1
+	check("the queued alliance opening stops holding the turn", trade.holdsEndTurn(TURN), false)
+	-- The rival's statement can be the first one this context sees.
+	onStatement(32, 7, { StatementType = "MAKE_DEAL", SessionID = 1405,
+		StatementSubType = "NONE", ResponseType = DiplomacyResponseTypes.ACKNOWLEDGE })
+	check("a late alliance puts no question", #lateAlly.sends, 0)
+	check("a late alliance seen first from the rival closes at once", sessions.closed[#sessions.closed], 1405)
+	check("…leaving no session", trade.sessions[32], nil)
+	check("the alliance retry marker is the one before this ask", CivvisK.allianceAsked[32], 600)
+	check("a marker is given back once", trade.restoreAskMarker("alliance", 32), false)
+
+	-- The closer can hide the view before the acknowledgement arrives.
+	TURN = 612
+	trade.ask(7, 33, "PROPOSED", "alliance", TURN)
+	activeClock = activeClock + 8.1
+	check("a second queued alliance stops holding", trade.holdsEndTurn(TURN), false)
+	onStatement(7, 33, { StatementType = "MAKE_DEAL", SessionID = 1406 })
+	local unansweredBeforeHidden = trade.unanswered
+	onClosed(1406)
+	check("an unasked session closed under us is not an unanswered ask",
+		trade.unanswered, unansweredBeforeHidden)
+	check("…closes with the unasked reason", eventField(lastEvent("deal_session"), "why"),
+		"opened_after_end_turn")
+	check("…holds no turn", trade.turnHold, nil)
+	check("…and leaves no session", trade.sessions[33], nil)
+
+	-- A trade ask keeps its late question: none of 161 hung.
+	TURN = 613
+	local lateTrade = fixture()
+	trade.ask(7, 34, "EQUALIZE", "trade", TURN)
+	activeClock = activeClock + 8.1
+	check("a queued trade opening stops holding", trade.holdsEndTurn(TURN), false)
+	onStatement(7, 34, { StatementType = "MAKE_DEAL", SessionID = 1407 })
+	check("a late trade session still puts its question",
+		lateTrade.sends[1] and lateTrade.sends[1][1], "equalize")
+	trade.close(7, 34, "test_late_trade")
+
+	-- ── The counter after a refusal is waited for as long as the answer ──
+	-- 406 counters came inside 0.62 s; all 29 closes at the old 4-second
+	-- bound were followed by a hung rival turn.
+	TURN = 614
+	local slow = fixture()
+	trade.ask(7, 35, "PROPOSED", "alliance", TURN)
+	onStatement(7, 35, { StatementType = "MAKE_DEAL", SessionID = 1408 })
+	activeClock = activeClock + 20
+	onStatement(35, 7, { StatementType = "MAKE_DEAL", SessionID = 1408,
+		DealAction = DealProposalAction.REJECTED })
+	check("a refused alliance waits for its counter", trade.sessions[35].counter_wait ~= nil, true)
+	check("the counter wait is the answer's bound", holds[#holds].seconds, 30)
+	activeClock = activeClock + 25
+	check("the refusal restarts the reply window", trade.holdsEndTurn(TURN), true)
+	onStatement(35, 7, { StatementType = "MAKE_DEAL", SessionID = 1408, StatementSubType = "POSITIVE" })
+	check("a counter arriving late in the wait is still refused",
+		slow.sends[2] and slow.sends[2][1], "rejected")
+	check("…and says how long it took", eventField(lastEvent("counter_answered"), "waited"), "25")
+	check("…and the session closes", sessions.closed[#sessions.closed], 1408)
 	TURN = 602
 	trade.ask(7, 3, "EQUALIZE", "trade", TURN)
 	TURN = 603
