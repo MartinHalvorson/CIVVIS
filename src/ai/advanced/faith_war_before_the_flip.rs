@@ -559,11 +559,12 @@ impl AdvancedAi {
     /// else a surprise war. The shipped opening answers a non-urgent rival
     /// with a denouncement and five turns of preparation; the window before
     /// the flip was 3 to 51 turns, and in a quarter of the losses no more
-    /// than 7.
+    /// than 7. Not held by `declaration-needs-a-capture`: a faith war is
+    /// fought for the spreaders, not a city.
     pub(super) fn faith_war_opening(&self, g: &Game, pid: usize, rival: usize) -> Option<Action> {
         if let Some(
             opening @ (Action::DeclareWar { .. } | Action::DeclareWarWithCasusBelli { .. }),
-        ) = self.preferred_war_opening(g, pid, rival)
+        ) = self.preferred_war_opening_ungated(g, pid, rival)
         {
             return Some(opening);
         }

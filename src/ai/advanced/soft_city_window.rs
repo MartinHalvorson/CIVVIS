@@ -241,6 +241,11 @@ impl AdvancedAi {
         let Some(opening) = self.faith_war_opening(g, pid, soft.rival) else {
             return false;
         };
+        // `declaration-needs-a-capture`: `faith_war_opening` is the faith
+        // wars' ungated road, and this war is for a city.
+        if self.declaration_lacks_a_capture(g, pid, soft.rival) {
+            return false;
+        }
         let (name, pos) = match g.cities.get(&soft.city) {
             Some(city) => (city.name.clone(), city.pos),
             None => return false,

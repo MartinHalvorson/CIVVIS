@@ -388,6 +388,10 @@ impl AdvancedAi {
         target: usize,
         my_power: f64,
     ) -> Option<Action> {
+        // `declaration-needs-a-capture`.
+        if self.declaration_lacks_a_capture(g, pid, target) {
+            return None;
+        }
         let surprise = g
             .legal_actions_within(pid, ActionFamilies::DIPLOMACY)
             .into_iter()

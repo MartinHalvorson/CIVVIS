@@ -6987,6 +6987,14 @@ pub struct AdvancedAi {
     /// take, read by the battle planner's positions plan. Empty with the
     /// version off.
     defend_hold_members: BTreeSet<u32>,
+    /// `declaration-needs-a-capture`: a declaration of war on a major waits
+    /// until the soldiers in reach of one of its cities forecast a capture
+    /// within the window its walls leave. See
+    /// `advanced/declaration_needs_a_capture.rs`. Off by default.
+    declaration_needs_a_capture: bool,
+    /// `declaration-needs-a-capture`: the turn's verdicts by target, so a
+    /// turn reads and journals once. Untouched while the gene is off.
+    declaration_capture_memo: RefCell<declaration_needs_a_capture::CaptureMemo>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11545,6 +11553,11 @@ mod assault_census;
 /// siege force takes its city, turn by turn, on the battle solver's board.
 /// See `advanced/assault_forecast.rs`.
 mod assault_forecast;
+
+/// `declaration-needs-a-capture`: a declaration on a major needs the capture
+/// forecast of the soldiers in reach. See
+/// `advanced/declaration_needs_a_capture.rs`.
+mod declaration_needs_a_capture;
 
 /// Opt-in routing from a Defend task force to its assigned city.
 mod anvil_assignment;
