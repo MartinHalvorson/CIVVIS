@@ -278,6 +278,9 @@ impl AdvancedAi {
         /// Opt-in gene `defend-force-holds-the-city`; see
         /// `advanced/defend_force_holds_the_city.rs`.
         defend_force_holds_the_city => enable_defend_force_holds_the_city, disable_defend_force_holds_the_city;
+        /// Opt-in gene `declaration-needs-a-capture`; see
+        /// `advanced/declaration_needs_a_capture.rs`.
+        declaration_needs_a_capture => enable_declaration_needs_a_capture, disable_declaration_needs_a_capture;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -483,6 +486,9 @@ impl AdvancedAi {
         /// `unique-unit-closes-the-dark-age`: see
         /// `advanced/unique_unit_closes_the_age.rs`.
         unique_unit_closes_the_dark_age => enable_unique_unit_closes_the_dark_age, disable_unique_unit_closes_the_dark_age;
+        /// Opt-in gene `upgrade-card-for-the-backlog`; see
+        /// `advanced/upgrade_card_for_the_backlog.rs`.
+        upgrade_card_for_the_backlog => enable_upgrade_card_for_the_backlog, disable_upgrade_card_for_the_backlog;
     }
 
     toggles! {
@@ -5797,6 +5803,18 @@ impl AdvancedAi {
     /// The twin of `enable_defend_force_holds_the_city_2`.
     pub fn disable_defend_force_holds_the_city_2(&mut self) {
         self.defend_force_holds_the_city_2 = false;
+    }
+
+    /// Opt-in gene `score-seat-raises-wonders-2`; version two of the family,
+    /// so version one is turned off. See `advanced/score_wonders.rs`.
+    pub fn enable_score_seat_raises_wonders_2(&mut self) {
+        self.score_seat_raises_wonders = false;
+        self.score_seat_raises_wonders_2 = true;
+    }
+
+    /// The twin of `enable_score_seat_raises_wonders_2`.
+    pub fn disable_score_seat_raises_wonders_2(&mut self) {
+        self.score_seat_raises_wonders_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------

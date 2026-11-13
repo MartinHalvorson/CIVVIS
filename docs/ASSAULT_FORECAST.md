@@ -722,3 +722,92 @@ In the tables below, rows B to D are paired against A: mean and standard error o
 - Standing those sieges down cuts that bin's deaths by about 30 over 24 worlds (B and D). It does not cut units lost: the same units then die under rotation, healing and the battle planner. The aggressive variant (C) costs cities.
 - No change to this gene's constants follows.
 - On whole worlds the forecast is reliable when low and overconfident when high, as on the posed sieges.
+
+## Declarations: `declaration-needs-a-capture` (PR #5236, 2026-11-13)
+
+**The question.** Our seat declares wars on majors that take nothing. Which
+openers declare them, what did the forecast say, and does a forecast gate
+on the declaration stop the ones that cannot pay?
+
+**The census.** 108 live Deity games of 2026-11-12/13 (70 Gran Colombia
+Domination, 4 players Pangaea; 38 Rome Score, 6 players Continents, turn
+limit 170). A war is ours when a `war` event of `source: civvis` names a
+major at peace on the state before and at war within two turns; segments of
+one game (`-contN`) are chained, a later segment replacing the turns it
+replays. The opener is the seat's own `why.log` line on the declaration
+turn. Outcomes within 30 turns: cities of the target that became ours
+(by tile), our cities lost (`city_occupation`) and to whom, and units lost to
+and killed of the target (`combat` events).
+
+| lane | opener | wars | took a city | cities lost to the target | to others | units lost / killed (target) |
+|---|---|---|---|---|---|---|
+| Domination | faith war (`faith-war-before-the-flip` family) | 99 | 5 | 3 | 19 | 211 / 132 |
+| Domination | science denial | 32 | 0 | 13 | 6 | 128 / 56 |
+| Domination | faith strike | 20 | 1 | 0 | 13 | 109 / 68 |
+| Domination | main path (staged 5, culture counter 5, religion counter 1) | 11 | 0 | 0 | 4 | 46 / 8 |
+| Domination | religious interception | 4 | 1 | 0 | 0 | 27 / 37 |
+| Domination | no opener line | 2 | 2 | 0 | 0 | 20 / 23 |
+| Score | faith strike | 20 | 0 | 3 | 6 | 43 / 19 |
+| Score | science denial 2, open-city front 2, launcher war 1 | 5 | 0 | 0 | 0 | 15 / 8 |
+| Score | no opener line | 2 | 1 | 1 | 0 | 13 / 35 |
+
+- **The wars that take nothing are faith wars.** 143 of 195; their point
+  is the spreaders. They hold the conversion: our cities on the target's
+  faith fell 0.66 (Domination, 106 wars) and 1.13 (Score, 15) in the 15
+  turns after one, and rose 1.46 (123) and 1.42 (78) after a faith war the
+  seat wanted and held ("Holding the faith war / heretic strike", no war on
+  that rival within 10 turns). They lost 6 cities to their target. Exempt.
+- **The cities lost to the declared target come from the science denial
+  wars**: 13 of the 20. None took a city, and the racer won the Science
+  victory in 17 of the 31 decided games anyway.
+- **Most cities lost within 30 turns of our declaration go to someone else**
+  (49 of 69): a rival already at war with us, or one that declared later.
+- **What the forecast said.** The reader (`assault-forecast-is-read`) is in
+  the Score games only. The three gated wars it saw read 0% (science
+  denial), 6% (the open-city front; 98% two turns later, and it took
+  nothing) and 0% (launcher war). 14 of the 15 wars it saw read 0% on the
+  first reading.
+- **What a gate on the 48 non-faith declarations would have cost:** no
+  capture (none took a city); it would have spared 13 cities and 189 units
+  lost to the targets, against 72 of theirs killed.
+
+**The gene.** `declaration-needs-a-capture` (opt-in) holds a declaration
+of war on a major unless the soldiers in reach forecast a capture. It reads
+the corps search (`assault_corps_best`) as if the war began this turn:
+- the pool is our land soldiers, Rams and Towers within 5 turns of their
+  moves of one of the target's cities;
+- the window is 7 turns for an open city and 10 for a walled one;
+- it needs `calibrated_within` of at least 0.5, and a breaker in the corps
+  for a walled city.
+
+A hold writes "Holding the war on X for a capture" with the best city's
+reading and what it is short of. The faith openers are exempt (they take
+`preferred_war_opening_ungated`). See
+`src/ai/advanced/declaration_needs_a_capture.rs`.
+
+**The sim cannot judge it.** The paired driver
+`src/bin/gene_screen/war_gate_tests.rs` (ignored by default) plays both live
+lane recipes with `--rival-host-tactics` and the armed set of 2026-11-13
+(522 tags), the gene off and on, 16 paired worlds each. CI on efb5a80a61
+(cargo-test run 43375217113, Domination; speed-job run 43375217273, Score):
+
+| recipe | wars we declared on a major, off / on | of them faith wars | gate: held turns / passed (on) | every other column, on - off |
+|---|---|---|---|---|
+| Gran Colombia Domination, 4p Pangaea, seeds 63400000-15 | 16 / 16 | 16 | 10 / 2 | 0.00 +/- 0.00 |
+| Rome Score, 6p Continents, t170, seeds 63500000-15 | 0 / 0 | - | 0 / 0 | 0.00 +/- 0.00 |
+
+"Every other column" is wars that took a city, cities those wars took and
+lost, capitals taken, cities taken and lost, units killed and lost, score,
+placement, score share and wins. Every one of the 32 pairs played the same
+game.
+
+- **The sim seat declares far less than the live seat.** Live: 2.4 wars a
+  game (Domination) and 0.7 (Score). Sim: 1.0 and 0.0.
+- **The sim never makes a war the gate governs.** All 16 sim declarations
+  were faith wars. Live, 48 of 195 were not.
+- **The gate did read.** It held 10 declaration turns and passed 2 on the
+  Domination recipe. The games stayed identical, so none of those roads
+  would have declared anyway.
+- **The evidence for this gene is the live census above.** The sim
+  confirms only that the gene changes nothing where nobody asks for a war
+  it governs.
