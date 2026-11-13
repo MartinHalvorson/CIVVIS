@@ -9397,6 +9397,10 @@ fn main() {
         diagnostics::explain_settler(args, players, max_turns, frontier, &load);
         return;
     }
+    if args.iter().any(|a| a == "--explain-assault") {
+        diagnostics::explain_assault(args, players, max_turns, frontier, &load);
+        return;
+    }
     if args.iter().any(|a| a == "--dump-mirror") {
         diagnostics::dump_mirror(args, players, max_turns, frontier, &load);
         return;
