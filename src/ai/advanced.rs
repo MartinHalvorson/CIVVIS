@@ -9458,6 +9458,14 @@ pub struct AdvancedAi {
     /// `advanced/priced_risk.rs`. Opt-in.
     risk_is_priced: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
+    /// capital from turn 40 (Online) and in a second city from turn 90, as a
+    /// queue claim with a race-risk rule. See `advanced/score_wonders.rs`.
+    /// Off by default.
+    score_seat_raises_wonders: bool,
+    /// `score-seat-raises-wonders`: the races standing, by the racing city's
+    /// tile (the live mirror renumbers cities between frames).
+    score_wonder_races: BTreeMap<Pos, Name>,
     /// `siege-goes-on-the-forecast`: the siege train goes, holds and stands
     /// down on the capture forecast, and the Objective Board ranks Siege rows
     /// by value x P / expected turns. Implies the reading. See
@@ -10260,10 +10268,11 @@ pub struct AdvancedAi {
     /// instead of the greedy pick at a flat 0.5. Acts only with
     /// `battle-solver` on. Off by default.
     solver_plays_the_host: bool,
-    /// `score-seat-plays-for-points`: a Score-target seat races wonders at
-    /// the live race's price, takes the Ancestral Hall over the Warlord's
-    /// Throne, and starts nothing in the last turns that cannot finish before
-    /// the tally. See `advanced/score_seat.rs`. Off by default.
+    /// `score-seat-plays-for-points`: a Score-target seat starts nothing in
+    /// the last turns that cannot finish before the tally (its wonder price
+    /// and Plaza choice were withdrawn; the wonders are
+    /// `score-seat-raises-wonders`'). See `advanced/score_seat.rs`. Off by
+    /// default.
     score_seat_plays_for_points: bool,
     /// `score-seat-plays-for-points`: what the gene's journal has already
     /// said, so each line is written once per change. Observation only.
@@ -11373,6 +11382,9 @@ mod chop_for_expansion;
 mod score_seat;
 /// `score-seat-founds-early`: see `advanced/score_seat_founds_early.rs`.
 mod score_seat_founds_early;
+/// `score-seat-raises-wonders`: a Score seat's wonder program, a queue claim
+/// that acts natively and live. See `advanced/score_wonders.rs`.
+mod score_wonders;
 
 /// The player civvis.ai seats: the deployment genome plus the site's own
 /// experiment list. See `advanced/site_deployment.rs`.
@@ -26425,11 +26437,8 @@ impl AdvancedAi {
         self.base.obsolete_buys_read_our_techs = self.obsolete_buys_read_our_techs();
         // `plaza-serves-the-scientist` (and version 2, which carries it): the
         // Plaza's tier list reads this.
-        // `score-seat-plays-for-points` reads the same list: the Ancestral
-        // Hall, not the Warlord's Throne. See `advanced/score_seat.rs`.
-        self.base.plaza_serves_science = self.plaza_serves_science_on()
-            || self.native_culture_plaza_economy(g, pid)
-            || self.score_seat_on();
+        self.base.plaza_serves_science =
+            self.plaza_serves_science_on() || self.native_culture_plaza_economy(g, pid);
         self.refresh_campus_multiplier_constants(g);
         self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;
@@ -27136,6 +27145,12 @@ impl AdvancedAi {
             // queue. Exact no-op while the gene is off. See
             // `advanced/commercial_hub_claims_a_peace_queue.rs`.
             self.claim_peace_queue_for_the_commercial_hub(g, pid, &plan);
+            // `score-seat-raises-wonders`: a Score seat's wonder lanes take the
+            // capital's (and later a second city's) routine queue, and its
+            // standing races are resolved. No new race while the war holds the
+            // claims. Exact no-op while the gene is off. See
+            // `advanced/score_wonders.rs`.
+            self.claim_queue_for_the_score_wonder(g, pid, &plan, !war_holds);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
@@ -27247,6 +27262,11 @@ impl AdvancedAi {
         // and before the pad holds and the defence handoffs below. Exact
         // no-op while the gene is off. See `advanced/near_done_work_finishes.rs`.
         self.claim_near_done_work_finishes(g, pid, &plan, &near_done_heads);
+        // `score-seat-raises-wonders`: a standing race a later writer displaced
+        // with routine work goes back to the head, before the defence handoffs
+        // below, which keep the last word. Starts nothing. Exact no-op while
+        // the gene is off. See `advanced/score_wonders.rs`.
+        self.claim_queue_for_the_score_wonder(g, pid, &plan, false);
         // `religion-seat-guards-the-race`: Prayers finishing this turn and a
         // pillaged Holy Site's repair, after every ordinary writer. See
         // `advanced/religion_seat_guards_the_race.rs`.

@@ -6075,6 +6075,10 @@ pub const GENES: &[Gene] = &[
     // units in a game with no war, 601 Production unfinished at the tally.
     // See `advanced/score_seat.rs`.
     Gene { tag: "score-seat-plays-for-points", field: "score_seat_plays_for_points", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_plays_for_points, disable: AdvancedAi::disable_score_seat_plays_for_points },
+    // Fifteen Rome Score games of 11-12 built 0.25 wonders a game against the
+    // rivals' 3-13 while the host offered them; a one-lane-plus-one program on
+    // the host's own quotes finished 7.7. See `advanced/score_wonders.rs`.
+    Gene { tag: "score-seat-raises-wonders", field: "score_seat_raises_wonders", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_raises_wonders, disable: AdvancedAi::disable_score_seat_raises_wonders },
     // Live Deity Rome Score lane 2026-11-12, 11 games: Settlers were born at
     // the same pace in the fast and the slow games, but took a mean 8.7
     // turns from birth to founding in the three fastest against 23.8 in the
