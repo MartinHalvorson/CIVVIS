@@ -3020,7 +3020,10 @@ def main() -> int:
     # `RESUME_STEPS`), so the extra budget costs only the ~13 minutes a
     # genuinely dead park wastes per attempt plus the turns it replays, against
     # losing a live game's whole remaining arc.
-    ap.add_argument("--max-resumes", type=int, default=6,
+    # 3, not 6: on 2026-11-13 the Rome lane lost 33 and 30 minutes to two games
+    # that hung again after every reload (`civvis-20261113T012816Z` -cont1..5,
+    # `022036Z` -cont1..4); each reload is about six minutes of lane.
+    ap.add_argument("--max-resumes", type=int, default=3,
                     help="how many times a frozen attempt is reloaded from its "
                          "latest autosave under <tag>-contN before it is scored "
                          "as it stands (0 disables)")

@@ -2383,6 +2383,10 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
             saves[2],
         )
 
+    def test_the_default_reload_budget_is_three(self):
+        source = Path(climb.__file__).read_text()
+        self.assertIn('ap.add_argument("--max-resumes", type=int, default=3,', source)
+
     def test_one_hang_is_reloaded_at_most_three_times(self):
         """civvis-20261112T112009Z hung at t90, t89 and t88 across two reloads
         (40 minutes); a fourth stride back is not taken. A caller that does
