@@ -65,13 +65,22 @@ pub fn validate_request(value: &Value) -> Result<(), String> {
 
 /// Serialize a game in the durable save format.
 pub fn save_value(game: &Game) -> serde_json::Result<Value> {
+    // Keep durable Game encoding out of the browser request handler.
+    // Binaryen can inline single-caller helpers past Rust's inline(never),
+    // so retain this boundary with a safe function-pointer identity barrier.
+    let encode = std::hint::black_box(serialize_game as fn(&Game) -> serde_json::Result<Value>);
     Ok(json!({
         "format": SAVE_FORMAT_NAME,
         "protocol": PROTOCOL_NAME,
         "protocol_version": PROTOCOL_VERSION,
         "save_format_version": SAVE_FORMAT_VERSION,
-        "game": serde_json::to_value(game)?,
+        "game": encode(game)?,
     }))
+}
+
+#[inline(never)]
+fn serialize_game(game: &Game) -> serde_json::Result<Value> {
+    serde_json::to_value(game)
 }
 
 fn version_field(object: &Map<String, Value>, field: &str, expected: u32) -> Result<(), String> {
