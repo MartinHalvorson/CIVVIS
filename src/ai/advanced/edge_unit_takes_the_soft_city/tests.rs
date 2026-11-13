@@ -1,5 +1,8 @@
 use super::super::*;
-use super::{edge_candidate, edge_unit, EdgeTarget, EdgeWindow, EDGE_LAST_TURN, EDGE_WAR_PATIENCE};
+use super::{
+    edge_candidate, edge_unit, EdgeTarget, EdgeWindow, EDGE_LAST_TURN, EDGE_MUSTER_LAST_TURN,
+    EDGE_WAR_PATIENCE,
+};
 
 /// Our capital, our second city, and the rival's city eight tiles east.
 const CAPITAL: Pos = (4, 8);
@@ -230,17 +233,32 @@ fn the_window_needs_two_cities_and_closes_after_its_last_turn() {
     assert_eq!(window(&ai).opened, None);
     assert_eq!(ai.edge_unit_research_goal(&g, 0), None);
 
-    let (mut g, _) = fixture(&["mining", "bronze_working"]);
+    let (mut g, city) = fixture(&["mining", "bronze_working"]);
     with_iron(&mut g);
     let mut ai = gene_on();
     ai.maintain_edge_unit_window(&mut g, 0);
     assert!(window(&ai).opened.is_some());
+    // Past the naming turn the named city, still soft, stays the target.
     g.turn = EDGE_LAST_TURN + 1;
     ai.maintain_edge_unit_window(&mut g, 0);
     let w = window(&ai);
-    assert!(w.spent);
+    assert!(!w.spent);
+    assert_eq!(w.target.map(|target| target.city), Some(city));
+    // Past the muster's last turn the window closes.
+    g.turn = EDGE_MUSTER_LAST_TURN + 1;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(window(&ai).spent);
     assert_eq!(counter(&g, "closed"), 1);
     assert_eq!(ai.edge_unit_research_goal(&g, 0), None);
+
+    // A window that named nothing by the naming turn never opens.
+    let (mut g, _) = fixture(&["mining", "bronze_working"]);
+    with_iron(&mut g);
+    g.turn = EDGE_LAST_TURN + 1;
+    let mut ai = gene_on();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let w = window(&ai);
+    assert!(w.spent && w.opened.is_none());
 }
 
 #[test]
@@ -307,19 +325,46 @@ fn the_force_walks_to_a_stand_and_holds_it() {
     let far = g.spawn_test_unit("legion", 0, (5, 9));
     let stood = g.spawn_test_unit("legion", 0, (9, 8));
     let warrior = g.spawn_test_unit("warrior", 0, CAPITAL);
+    let before = g.wdist(g.units[&far].pos, RIVAL);
     let mut ai = gene_on();
+    // The turn-start walk: the far Legion steps toward a stand with every
+    // move, the one already on a stand holds it with no move left.
     ai.maintain_edge_unit_window(&mut g, 0);
     assert!(window(&ai).opened.is_some());
     assert!(ai.edge_unit_force_member(&g, far));
     assert!(ai.edge_unit_staging_rally(&g, 0).is_some_and(|rally| {
         (super::EDGE_STAND_MIN_TILES..=super::EDGE_MUSTER_TILES).contains(&g.wdist(rally, RIVAL))
     }));
-    let before = g.wdist(g.units[&far].pos, RIVAL);
-    assert_eq!(ai.edge_unit_staging_step(&mut g, 0, far), Some(true));
     assert!(g.wdist(g.units[&far].pos, RIVAL) < before);
-    assert_eq!(ai.edge_unit_staging_step(&mut g, 0, stood), Some(false));
     assert_eq!(g.units[&stood].pos, (9, 8));
+    assert!(g.units[&stood].fortified && g.units[&stood].moves_left <= 0.0);
+    assert_eq!(g.units[&warrior].pos, CAPITAL);
+    // The unit pass's staging hook takes the next step with a fresh move.
+    g.units.get_mut(&far).unwrap().moves_left = 2.0;
+    let walked = g.wdist(g.units[&far].pos, RIVAL);
+    assert!(ai.edge_unit_staging_step(&mut g, 0, far).is_some());
+    assert!(g.wdist(g.units[&far].pos, RIVAL) <= walked);
     assert_eq!(ai.edge_unit_staging_step(&mut g, 0, warrior), None);
+}
+
+#[test]
+fn a_raised_force_denounces_so_the_formal_war_is_ready() {
+    let (mut g, _) = fixture(&["mining", "bronze_working", "iron_working"]);
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 40.0);
+    for pos in [(10, 8), (10, 9), (10, 7)] {
+        g.spawn_test_unit("legion", 0, pos);
+    }
+    let mut ai = gene_on();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(!g.is_at_war(0, 1));
+    assert!(g.players[0]
+        .denounced_until
+        .get(&1)
+        .is_some_and(|until| *until > g.turn));
+    assert_eq!(counter(&g, "denounced"), 1);
+    assert_eq!(window(&ai).declared, None);
 }
 
 #[test]
@@ -331,6 +376,9 @@ fn three_legions_at_the_city_declare_on_the_forecast() {
     for pos in [(10, 8), (10, 9), (10, 7)] {
         g.spawn_test_unit("legion", 0, pos);
     }
+    // Denounced ten turns ago: the Formal War is legal.
+    g.players[0].denounced_until.insert(1, 70);
+    g.players[0].denounced_since.insert(1, 30);
     let mut ai = gene_on();
     let journal = crate::reasoning::Journal::recording();
     ai.base.journal = journal.handle();

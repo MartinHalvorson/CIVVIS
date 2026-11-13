@@ -83,7 +83,7 @@ const EVENTS_KEPT: usize = 60;
 
 /// The recipe's profile for `turns`, recording the measured seat's journal
 /// for `seed` to `journal_base`.
-fn profile(turns: u32, seed: u64, journal_base: String) -> Profile {
+fn profile(turns: u32, seed: u64, walls: Option<u32>, journal_base: String) -> Profile {
     let speed = GameSpeed::Online;
     Profile {
         target_mix: civvis::ai::player::parse_targets("science").expect("a lane"),
@@ -112,7 +112,7 @@ fn profile(turns: u32, seed: u64, journal_base: String) -> Profile {
         rival_late_science: None,
         rival_space_floor: None,
         rival_war_pace: Some(100),
-        rival_walls: None,
+        rival_walls: walls,
         rival_host_tactics: true,
         chair_tactics_census: false,
         seat_civ: Some(SEAT_CIV.to_string()),
@@ -165,7 +165,8 @@ struct Watch {
     lost: Vec<(u32, usize)>,
     /// (started, aggressor, defender) for every war with a major.
     wars: Vec<(u32, usize, usize)>,
-    /// `edge_unit:<stage>` -> (turn first seen, final count).
+    /// The gene's stages from the seat's journal: stage -> (first turn,
+    /// lines). See [`stage_of`].
     counters: BTreeMap<String, (u32, i64)>,
     #[serde(skip)]
     owners: BTreeMap<u32, usize>,
@@ -174,6 +175,9 @@ struct Watch {
 /// One arm of one world.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct World {
+    /// `lane` (the coordinator's recipe) or `walls-PCT` (`--rival-walls PCT`).
+    #[serde(default = "lane")]
+    recipe: String,
     arm: String,
     world: usize,
     seed: u64,
@@ -183,6 +187,22 @@ struct World {
     /// The seat's journal: the gene's stages and the early-conquest lines.
     events: Vec<(u32, String)>,
     row: Row,
+}
+
+fn lane() -> String {
+    "lane".to_string()
+}
+
+/// `CIVVIS_EDGE_RIVAL_WALLS`: the share of a chair's cities that may raise
+/// walls (`--rival-walls`); unset, the lane recipe.
+fn rival_walls() -> Option<u32> {
+    std::env::var("CIVVIS_EDGE_RIVAL_WALLS")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+}
+
+fn recipe_key(walls: Option<u32>) -> String {
+    walls.map_or_else(lane, |pct| format!("walls-{pct}"))
 }
 
 fn env_number(name: &str, default: u64) -> u64 {
@@ -350,15 +370,6 @@ fn look(g: &Game, w: &mut Watch) {
             w.wars.push(key);
         }
     }
-    for (key, value) in &g.players[seat].counters {
-        if let Some(stage) = key.strip_prefix("edge_unit:") {
-            let entry = w
-                .counters
-                .entry(stage.to_string())
-                .or_insert((turn, *value));
-            entry.1 = *value;
-        }
-    }
 }
 
 fn clip(text: &str, chars: usize) -> String {
@@ -367,7 +378,46 @@ fn clip(text: &str, chars: usize) -> String {
 
 /// The seat's gene stages and early-conquest lines from its journal file
 /// (removed once read), consecutive repeats dropped.
-fn journal_events(path: &str, seat: usize) -> Vec<(u32, String)> {
+/// The gene's stage a journal detail (after the tag) names, for the stage
+/// counts. The seat plans on a decision view (`ai::player::take_turn`) and
+/// only its logged actions reach the board, so the gene's `edge_unit:*`
+/// counters never reach the observed game; the journal does.
+fn stage_of(detail: &str) -> Option<&'static str> {
+    let (head, rest) = detail.split_once(": ")?;
+    Some(match head {
+        "unit" => "unit",
+        "opened" => "opened",
+        "research" => "goal",
+        "waiting" if rest.starts_with("no ") && rest.contains(" source ") => "no_source",
+        "waiting" => "waiting",
+        "resource" if rest.starts_with("bought") => "tile_bought",
+        "resource" if rest.contains(" improves ") => "improved",
+        "resource" => "builder_walks",
+        "force" if rest.starts_with("upgraded") => "upgraded",
+        "force" if rest.ends_with("before this one") => "trained",
+        "force" => "force",
+        "hold" if rest.contains("the others at") => "held_bodies",
+        "hold" if rest.contains("shipped opening") || rest.contains("denounced") => "held_opening",
+        "hold" if rest.contains("short of") => "held_forecast",
+        "hold" if rest.starts_with("at war with") => "held_war",
+        "hold" if rest.contains("no breaker") => "held_breaker",
+        "hold" if rest.contains("refused") => "held_refused",
+        "hold" => "held_other",
+        "denounced" => "denounced",
+        "declared" => "declared",
+        "captured" => "captured",
+        "lost the target" => "lost_target",
+        "continue" => "continued",
+        "peace" => "peace",
+        "closed" => "closed",
+        _ => return None,
+    })
+}
+
+/// [`journal_events`] and the stage counts: stage -> (first turn, lines).
+type Stages = BTreeMap<String, (u32, i64)>;
+
+fn journal_events(path: &str, seat: usize) -> (Vec<(u32, String)>, Stages) {
     let text = std::fs::read_to_string(path).unwrap_or_default();
     let _ = std::fs::remove_file(path);
     let conquest = [
@@ -379,6 +429,7 @@ fn journal_events(path: &str, seat: usize) -> Vec<(u32, String)> {
         "The conquest",
     ];
     let mut events: Vec<(u32, String)> = Vec::new();
+    let mut stages: Stages = BTreeMap::new();
     for line in text.lines() {
         let mut words = line.splitn(4, ' ');
         let (Some(turn), Some(player), Some(_topic), Some(rest)) =
@@ -402,6 +453,9 @@ fn journal_events(path: &str, seat: usize) -> Vec<(u32, String)> {
         if events.last().is_some_and(|(_, last)| *last == event) {
             continue;
         }
+        if let Some(stage) = stage_of(&event) {
+            stages.entry(stage.to_string()).or_insert((turn, 0)).1 += 1;
+        }
         events.push((turn, event));
     }
     if events.len() > EVENTS_KEPT {
@@ -411,7 +465,7 @@ fn journal_events(path: &str, seat: usize) -> Vec<(u32, String)> {
         events.push((0, format!("... {skipped} more")));
         events.extend(tail.into_iter().skip(skipped));
     }
-    events
+    (events, stages)
 }
 
 /// The Legion trains and upgrades with no Iron on this world.
@@ -425,12 +479,20 @@ fn waive_legion_iron(g: &mut Game) {
 }
 
 /// Play one arm of one world.
-fn play(arm: &str, world: usize, seed: u64, turns: u32, genes: &[Gene], genome: &[bool]) -> World {
+fn play(
+    arm: &str,
+    world: usize,
+    seed: u64,
+    turns: u32,
+    walls: Option<u32>,
+    genes: &[Gene],
+    genome: &[bool],
+) -> World {
     let base = std::env::temp_dir()
         .join(format!("edge-unit-{arm}-{seed}-{}", std::process::id()))
         .to_string_lossy()
         .into_owned();
-    let profile = profile(turns, seed, base.clone());
+    let profile = profile(turns, seed, walls, base.clone());
     let genomes = vec![genome.to_vec(); profile.players];
     let book: Rc<RefCell<(Watch, usize)>> = Rc::default();
     let sink = Rc::clone(&book);
@@ -453,7 +515,9 @@ fn play(arm: &str, world: usize, seed: u64, turns: u32, genes: &[Gene], genome: 
         .find(|row| row.kind == "game")
         .expect("one measured seat");
     let (watch, log_len) = std::mem::take(&mut *book.borrow_mut());
-    let events = journal_events(&format!("{base}.journal.{seed}.txt"), row.seat);
+    let (events, stages) = journal_events(&format!("{base}.journal.{seed}.txt"), row.seat);
+    let mut watch = watch;
+    watch.counters = stages;
     let mut bare = row.clone();
     bare.secs = 0.0;
     bare.genome = String::new();
@@ -463,6 +527,7 @@ fn play(arm: &str, world: usize, seed: u64, turns: u32, genes: &[Gene], genome: 
         .hash(&mut hasher);
     log_len.hash(&mut hasher);
     World {
+        recipe: recipe_key(walls),
         arm: arm.to_string(),
         world,
         seed,
@@ -857,7 +922,24 @@ fn fmt_cell(m: f64, se: f64) -> String {
 /// fidelity to the live census; each arm minus the control, paired by seed;
 /// and every pair in one line.
 fn report(worlds: &[World], note: &str) -> String {
+    let recipes: BTreeSet<String> = worlds.iter().map(|w| w.recipe.clone()).collect();
     let mut out = vec![note.to_string()];
+    for recipe in recipes {
+        let side: Vec<World> = worlds
+            .iter()
+            .filter(|w| w.recipe == recipe)
+            .cloned()
+            .collect();
+        out.push(String::new());
+        out.push(format!("######## recipe {recipe}: {} worlds", side.len()));
+        out.push(report_recipe(&side));
+    }
+    out.join("\n")
+}
+
+/// [`report`] over the worlds of one recipe.
+fn report_recipe(worlds: &[World]) -> String {
+    let mut out: Vec<String> = Vec::new();
     let of = |arm: &str| -> BTreeMap<u64, &World> {
         worlds
             .iter()
@@ -970,8 +1052,23 @@ fn report(worlds: &[World], note: &str) -> String {
                     ""
                 }
             ));
-            for (turn, event) in o.events.iter().take(12) {
-                out.push(format!("      t{turn} {event}"));
+            let key = o
+                .events
+                .iter()
+                .filter(|(_, event)| {
+                    stage_of(event).is_some_and(|stage| {
+                        !matches!(
+                            stage,
+                            "unit" | "waiting" | "goal" | "force" | "trained" | "builder_walks"
+                        )
+                    }) || event.starts_with("conquest: Opening")
+                        || event.starts_with("conquest: Declaring")
+                        || event.starts_with("conquest: Releasing")
+                        || event.starts_with("conquest: The conquest")
+                })
+                .take(10);
+            for (turn, event) in key {
+                out.push(format!("      t{turn} {}", clip(event, 200)));
             }
         }
     }
@@ -1002,6 +1099,7 @@ fn edge_unit_takes_the_soft_city_driver() {
         return;
     }
     let turns = env_number("CIVVIS_EDGE_TURNS", 150) as u32;
+    let walls = rival_walls();
     let n = env_number("CIVVIS_EDGE_WORLDS", 16) as usize;
     let first_seed = env_number("CIVVIS_EDGE_SEED", SEED);
     let (shard, shards) = std::env::var("CIVVIS_EDGE_SHARD")
@@ -1105,9 +1203,10 @@ fn edge_unit_takes_the_soft_city_driver() {
                     };
                     let (name, genome) = &genomes[arm];
                     let seed = first_seed + world as u64;
-                    let played = play(name, world, seed, turns, &genes, genome);
+                    let played = play(name, world, seed, turns, walls, &genes, genome);
                     progress(&format!(
-                        "EDGE-UNIT-WORLD {} seed {} opened {:?} declared {:?} taken {} lost {} wars-ours {} legions@50 {:?} iw {:?} sci@100 {} score {} turn {} winner {:?} {} fp {:016x} secs {:.0}",
+                        "EDGE-UNIT-WORLD {} {} seed {} opened {:?} declared {:?} taken {} lost {} wars-ours {} legions@50 {:?} iw {:?} sci@100 {} score {} turn {} winner {:?} {} fp {:016x} secs {:.0}",
+                        played.recipe,
                         played.arm,
                         played.seed,
                         counter_turn(&played, "opened"),
@@ -1140,7 +1239,8 @@ fn edge_unit_takes_the_soft_city_driver() {
     results.sort_by_key(|(world, arm, _)| (*world, *arm));
     let worlds: Vec<World> = results.into_iter().map(|(_, _, w)| w).collect();
     let note = format!(
-        "EDGE-UNIT-REPORT: worlds {n} from seed {first_seed}, {turns} turns, arms {arms:?}, shard {shard}/{shards}, {:.0}s, build {}\n{genome_note}",
+        "EDGE-UNIT-REPORT: {} recipe, worlds {n} from seed {first_seed}, {turns} turns, arms {arms:?}, shard {shard}/{shards}, {:.0}s, build {}\n{genome_note}",
+        recipe_key(walls),
         started.elapsed().as_secs_f64(),
         std::env::var("GITHUB_SHA").unwrap_or_else(|_| "local".to_string()),
     );
@@ -1184,6 +1284,7 @@ fn the_report_pairs_each_arm_with_the_control() {
             },
         );
         World {
+            recipe: lane(),
             arm: arm.to_string(),
             world: (seed - 100) as usize,
             seed,
@@ -1233,15 +1334,15 @@ fn the_journal_keeps_the_seat_s_stages() {
     let text = [
         "t35 p1 Military Edge unit window opens on Memphis | edge-unit-takes-the-soft-city: opened: legion (40) against Memphis",
         "t36 p1 Research Edge unit research goal: iron working | edge-unit-takes-the-soft-city: research: iron working toward legion",
-        "t40 p1 Military Edge unit holds the declaration | edge-unit-takes-the-soft-city: hold: the forecast reads 20%",
-        "t40 p1 Military Edge unit holds the declaration | edge-unit-takes-the-soft-city: hold: the forecast reads 20%",
+        "t40 p1 Military Edge unit holds the declaration | edge-unit-takes-the-soft-city: hold: 3 at Memphis; the forecast reads 20% within 4 turns (raw 30%), short of breaker",
+        "t40 p1 Military Edge unit holds the declaration | edge-unit-takes-the-soft-city: hold: 3 at Memphis; the forecast reads 20% within 4 turns (raw 30%), short of breaker",
         "t41 p2 Military Edge unit window opens on Thebes | edge-unit-takes-the-soft-city: opened: legion (40) against Thebes",
         "t42 p1 Military Opening a conquest against Egypt | Memphis is 7 tiles from the capital",
         "t43 p1 Military Something else entirely",
     ]
     .join("\n");
     std::fs::write(&path, text).unwrap();
-    let events = journal_events(path.to_str().unwrap(), 1);
+    let (events, stages) = journal_events(path.to_str().unwrap(), 1);
     assert!(!path.exists(), "the journal file is removed once read");
     assert_eq!(events.len(), 4, "{events:?}");
     assert_eq!(
@@ -1249,6 +1350,10 @@ fn the_journal_keeps_the_seat_s_stages() {
         (35, "opened: legion (40) against Memphis".to_string())
     );
     assert_eq!(events[2].0, 40);
+    assert_eq!(stages.get("opened"), Some(&(35, 1)));
+    assert_eq!(stages.get("goal"), Some(&(36, 1)));
+    assert_eq!(stages.get("held_forecast"), Some(&(40, 1)));
+    assert!(!stages.contains_key("declared"), "{stages:?}");
     assert!(events[3]
         .1
         .starts_with("conquest: Opening a conquest against Egypt"));

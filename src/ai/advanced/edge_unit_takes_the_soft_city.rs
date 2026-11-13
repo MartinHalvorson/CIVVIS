@@ -34,10 +34,14 @@
 //!    (`Game::city_strength`) is at least [`EDGE_MIN`]. Behind standing walls
 //!    it also needs a breaker the walls admit that we can train; without one
 //!    it is not soft.
-//! 3. **Window**: open while a soft city exists, up to turn [`EDGE_LAST_TURN`]
-//!    on Online (scaled by speed as `city_state_harvest::harvest_floor`
-//!    scales), with at least [`EDGE_MIN_CITIES`] cities, until this game's one
-//!    attempt is spent. While it is open:
+//! 3. **Window**: opens on a soft city up to turn [`EDGE_LAST_TURN`] on Online
+//!    (scaled by speed as `city_state_harvest::harvest_floor` scales), with at
+//!    least [`EDGE_MIN_CITIES`] cities, until this game's one attempt is spent.
+//!    A city named by then stays the target while it stays soft, up to turn
+//!    [`EDGE_MUSTER_LAST_TURN`]: in round 0 (16 paired worlds with the Legion's
+//!    Iron waived) 13 worlds held 3-6 Legions only by turns 44-55, and a
+//!    window shut at 55 closed on every one of them still walking. While it
+//!    is open:
 //!    - **Research** ([`AdvancedAi::edge_unit_research_goal`]): when the edge
 //!      unit needs a strategic resource we neither hold nor earn, the
 //!      technology that reveals it comes first (Bronze Working for Iron). The
@@ -55,13 +59,24 @@
 //!      unit goes ahead of the treasury floor, down to 0 Gold while income is
 //!      not negative. The window needs two cities, so the first Settler is
 //!      never deferred.
-//!    - **Muster and declare**: once [`EDGE_MUSTER_BODIES`] edge units at
+//!    - **Muster**: at the start of each turn the edge units (and the
+//!      breaker) walk with every move to a free stand
+//!      [`EDGE_STAND_MIN_TILES`]-[`EDGE_MUSTER_TILES`] tiles from the city and
+//!      hold it fortified, so no later step of the turn walks them home (round
+//!      0: with the unit pass's staging step alone no muster formed in any
+//!      world). The objective board's Reserve gathers there too, as it does
+//!      at the shipped opening's rally.
+//!    - **Declare**: once [`EDGE_MUSTER_BODIES`] edge units at
 //!      [`EDGE_MUSTER_HP`] or more stand within [`EDGE_MUSTER_TILES`] of the
-//!      city (and a breaker behind walls), and the capture forecast
-//!      (`assault_forecast_at_peace`, calibrated) reads the city taken within
-//!      [`EDGE_FORECAST_TURNS`] turns at `DECLARE_P` or more, the seat declares
-//!      through the shipped `preferred_war_opening`. From then the plan's
-//!      target is that city ([`AdvancedAi::apply_edge_unit_to_strategy`]).
+//!      city (and a breaker behind walls), no other major is at war with us,
+//!      and the capture forecast (`assault_forecast_at_peace`, calibrated)
+//!      reads the city taken within [`EDGE_FORECAST_TURNS`] turns at
+//!      `DECLARE_P` or more, the seat declares through the shipped
+//!      `preferred_war_opening`. On a major with no casus belli that opening
+//!      denounces first and offers the Formal War five standard turns later,
+//!      so the denouncement goes out as soon as [`EDGE_MUSTER_BODIES`] edge
+//!      units are owned. From the declaration the plan's target is the city
+//!      ([`AdvancedAi::apply_edge_unit_to_strategy`]).
 //!    - **After a capture**: on to the same owner's next city if it is within
 //!      [`EDGE_CONTINUE_TILES`] of the force and the edge is still
 //!      [`EDGE_CONTINUE_MIN`]; otherwise peace is asked. Peace is also asked
@@ -69,11 +84,8 @@
 //!      fewer than [`EDGE_FORCE_FLOOR`] edge units remain.
 //! 4. **Journal**: every stage writes a `Military` (or `Research`) line whose
 //!    detail begins `edge-unit-takes-the-soft-city: <stage>:`, and bumps an
-//!    `edge_unit:<stage>` counter on the seat.
-//!
-//! Before the war the edge units walk to a stand 3-4 tiles from the city
-//! ([`AdvancedAi::edge_unit_staging_step`]), and the objective board's
-//! Reserve gathers there too, as the shipped opening's rally does.
+//!    `edge_unit:<stage>` counter on the seat (on the board the seat plans on;
+//!    a simulated seat plans on a decision view, so read the journal).
 //!
 //! Off, every entry point returns before it reads the board.
 
@@ -91,8 +103,13 @@ pub(crate) const EDGE_CONTINUE_MIN: f64 = 5.0;
 pub(crate) const EDGE_REACH_TILES: i32 = 10;
 /// Technologies the edge unit may still be away.
 pub(crate) const EDGE_TECHS_AHEAD: usize = 3;
-/// The last Online turn the window opens or musters on.
+/// The last Online turn the window names a soft city on.
 pub(crate) const EDGE_LAST_TURN: u32 = 55;
+/// The last Online turn a city named by [`EDGE_LAST_TURN`] is mustered on
+/// and declared on, while it stays soft. Round 0 (16 paired worlds, the Iron
+/// waived): 13 worlds held 3-6 Legions by turn 44-55, none had three at the
+/// city when the window shut at turn 56.
+pub(crate) const EDGE_MUSTER_LAST_TURN: u32 = 70;
 /// Cities the seat holds before the window opens.
 pub(crate) const EDGE_MIN_CITIES: usize = 2;
 /// Edge units owned and queued that the window trains up to.
@@ -574,10 +591,23 @@ impl AdvancedAi {
 
     /// The window before the war.
     fn edge_peace(&mut self, g: &mut Game, pid: usize, window: &mut EdgeWindow) {
-        let last = harvest_floor(g, EDGE_LAST_TURN);
-        if g.turn > last {
+        let naming_last = harvest_floor(g, EDGE_LAST_TURN);
+        let muster_last = harvest_floor(g, EDGE_MUSTER_LAST_TURN);
+        let naming = g.turn <= naming_last;
+        let named = window.opened.is_some() && window.target.is_some();
+        if g.turn > muster_last || (!naming && !named) {
             if window.opened.is_some() {
-                let why = format!("turn {} is past the window's last turn, {last}", g.turn);
+                let why = if g.turn > muster_last {
+                    format!(
+                        "turn {} is past the muster's last turn, {muster_last}",
+                        g.turn
+                    )
+                } else {
+                    format!(
+                        "turn {} is past the window's last turn to name a city, {naming_last}, and none is named",
+                        g.turn
+                    )
+                };
                 self.edge_close(g, pid, window, &why);
             } else {
                 window.spent = true;
@@ -618,17 +648,31 @@ impl AdvancedAi {
                 self.edge_read_city(g, pid, edge.strength, cid, &ours, EDGE_REACH_TILES)
             })
             .filter(|soft| soft.edge + 1e-9 >= EDGE_MIN);
+        // Past the naming turn only the city already named is mustered on.
         let Some(soft) = kept.or_else(|| {
-            self.edge_soft_city(
-                g,
-                pid,
-                edge.strength,
-                EDGE_MIN,
-                &ours,
-                EDGE_REACH_TILES,
-                None,
-            )
+            naming
+                .then(|| {
+                    self.edge_soft_city(
+                        g,
+                        pid,
+                        edge.strength,
+                        EDGE_MIN,
+                        &ours,
+                        EDGE_REACH_TILES,
+                        None,
+                    )
+                })
+                .flatten()
         }) else {
+            if !naming {
+                self.edge_close(
+                    g,
+                    pid,
+                    window,
+                    "past the naming turn the named city is no longer soft",
+                );
+                return;
+            }
             self.edge_wait(window, "no soft city in reach".to_string());
             return;
         };
@@ -715,7 +759,104 @@ impl AdvancedAi {
         }
         if edge.missing.is_empty() {
             self.edge_muster(g, pid, window, &soft, edge.unit);
+            if window.declared.is_none() {
+                let city_pos = g.cities[&soft.city].pos;
+                self.edge_walk_the_force(g, pid, edge.unit, city_pos);
+            }
         }
+    }
+
+    /// The force walks to its stand at the start of the turn, with every
+    /// move it has, and holds it fortified (a fortified unit has no moves
+    /// left, so no later step of the turn walks it home). Round 0: with the
+    /// staging step alone, 13 worlds held 3-6 Legions by turn 44-55 and no
+    /// muster formed in any. Not while a city of ours is threatened or a
+    /// major is at war with us.
+    fn edge_walk_the_force(&mut self, g: &mut Game, pid: usize, unit: Name, city: Pos) {
+        let at_war = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && g.is_at_war(pid, player.id)
+        });
+        if at_war || self.threatened_city(g, pid).is_some() {
+            return;
+        }
+        let guards = self.all_reserved_civilian_guards();
+        let withdraw = self.base.w.withdraw_hp;
+        let force: Vec<u32> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| {
+                let body = &g.units[uid];
+                (body.kind == unit || is_breaker(body.kind.as_str()))
+                    && !guards.contains(uid)
+                    && !g.is_embarked(body)
+                    && body.hp as f64 > withdraw
+            })
+            .collect();
+        for uid in force {
+            // One step a call; a body has at most a few moves.
+            for _ in 0..6 {
+                if Self::edge_stage_unit(g, pid, uid, city) != Some(true) {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// One step of a force body toward a free stand
+    /// [`EDGE_STAND_MIN_TILES`]-[`EDGE_MUSTER_TILES`] tiles from `city`
+    /// (outside a border closed to us; 3-6 tiles when none is free), or, on
+    /// the stand, fortify. `Some(true)` when it stepped, `Some(false)` when it
+    /// holds, `None` when it has no move or no stand is reachable.
+    fn edge_stage_unit(g: &mut Game, pid: usize, uid: u32, city: Pos) -> Option<bool> {
+        let body = g.units.get(&uid)?;
+        if body.moves_left <= 0.0 {
+            return None;
+        }
+        let here = body.pos;
+        let stands = |g: &Game, far: i32| -> HashSet<Pos> {
+            g.wdisk(city, far)
+                .into_iter()
+                .filter(|pos| {
+                    g.wdist(*pos, city) >= EDGE_STAND_MIN_TILES
+                        && edge_stand(g, pid, Some(uid), *pos)
+                        && (*pos == here || g.unit_ids_at(*pos).is_empty())
+                })
+                .collect()
+        };
+        let mut goals = stands(&*g, EDGE_MUSTER_TILES);
+        if goals.is_empty() {
+            goals = stands(&*g, EDGE_MUSTER_TILES + 2);
+        }
+        if goals.contains(&here) {
+            let _ = g.apply(pid, &Action::Fortify { unit: uid });
+            return Some(false);
+        }
+        let next = g
+            .route_step_to_any(uid, &goals)
+            .filter(|next| g.can_move(uid, *next))?;
+        Some(
+            g.apply(
+                pid,
+                &Action::Move {
+                    unit: uid,
+                    to: next,
+                },
+            )
+            .is_ok(),
+        )
+    }
+
+    fn edge_journal_denounce(&mut self, g: &mut Game, pid: usize, rival: usize) {
+        Self::edge_count(g, pid, "denounced");
+        let wait = g.standard_duration(5);
+        think!(self.journal(), Military, Strategy,
+               "Edge unit denounces {}", g.players[rival].civ;
+               "{TAG}: denounced: {} so the Formal War is legal in {} turns",
+               g.players[rival].civ, wait);
     }
 
     /// Journal a hold at the muster once for each new reason.
@@ -746,6 +887,30 @@ impl AdvancedAi {
         unit: Name,
     ) {
         let city_pos = g.cities[&soft.city].pos;
+        // Once the force is raised, the shipped opening's denouncement goes
+        // out, so the Formal War is legal by the time the force musters
+        // (`preferred_war_opening` on a major with no casus belli denounces
+        // and waits five standard turns). A war action it offers now is left
+        // for the muster.
+        let raised = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| g.units[uid].kind == unit)
+            .count()
+            >= EDGE_MUSTER_BODIES;
+        let denounced = g.players[pid]
+            .denounced_until
+            .get(&soft.rival)
+            .is_some_and(|until| *until > g.turn);
+        if raised && !denounced && !g.is_at_war(pid, soft.rival) {
+            if let Some(action @ Action::Denounce { .. }) =
+                self.preferred_war_opening(g, pid, soft.rival)
+            {
+                if g.apply(pid, &action).is_ok() {
+                    self.edge_journal_denounce(g, pid, soft.rival);
+                }
+            }
+        }
         let near: Vec<u32> = g
             .player_unit_ids(pid)
             .into_iter()
@@ -759,6 +924,33 @@ impl AdvancedAi {
             .filter(|&&uid| g.units[&uid].kind == unit && g.units[&uid].hp >= EDGE_MUSTER_HP)
             .count();
         if bodies < EDGE_MUSTER_BODIES {
+            let owned: Vec<u32> = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .filter(|uid| g.units[uid].kind == unit)
+                .collect();
+            if owned.len() >= EDGE_MUSTER_BODIES {
+                // Where the rest of the force stands, so a muster that never
+                // forms says why.
+                let mut away: Vec<(i32, i32)> = owned
+                    .iter()
+                    .filter(|uid| !near.contains(uid) || g.units[uid].hp < EDGE_MUSTER_HP)
+                    .map(|uid| (g.wdist(g.units[uid].pos, city_pos), g.units[uid].hp))
+                    .collect();
+                away.sort_unstable();
+                let why = format!(
+                    "{bodies} of {} {} at {} with {}+ health; the others at {}",
+                    owned.len(),
+                    plain(unit.as_str()),
+                    g.cities[&soft.city].name,
+                    EDGE_MUSTER_HP,
+                    away.iter()
+                        .map(|(tiles, hp)| format!("{tiles} tiles {hp} hp"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                self.edge_hold(g, pid, window, "held_bodies", why);
+            }
             return;
         }
         let breakers = near
@@ -828,13 +1020,27 @@ impl AdvancedAi {
         let name = city.name.clone();
         let Some(action) = self.preferred_war_opening(g, pid, soft.rival) else {
             let why = format!(
-                "the forecast reads {:.0}% at {name}, and the shipped opening offers no declaration on {}",
+                "the forecast reads {:.0}% at {name}, and the shipped opening offers no declaration on {} yet (a denouncement waits out its Formal War)",
                 chance * 100.0,
                 g.players[soft.rival].civ
             );
             self.edge_hold(g, pid, window, "held_opening", why);
             return;
         };
+        if matches!(action, Action::Denounce { .. }) {
+            // The shipped opening on a major with no casus belli: denounce
+            // now, declare the Formal War when it is legal.
+            if g.apply(pid, &action).is_ok() {
+                self.edge_journal_denounce(g, pid, soft.rival);
+            }
+            let why = format!(
+                "the forecast reads {:.0}% at {name}; denounced {} at the muster, the Formal War follows",
+                chance * 100.0,
+                g.players[soft.rival].civ
+            );
+            self.edge_hold(g, pid, window, "held_opening", why);
+            return;
+        }
         if g.apply(pid, &action).is_err() || !g.is_at_war(pid, soft.rival) {
             let why = format!(
                 "the declaration on {} was refused",
@@ -1314,37 +1520,7 @@ impl AdvancedAi {
             return None;
         }
         let (_, city) = self.edge_staging_target(g, pid, uid)?;
-        let here = g.units[&uid].pos;
-        let stands = |g: &Game, far: i32| -> HashSet<Pos> {
-            g.wdisk(city, far)
-                .into_iter()
-                .filter(|pos| {
-                    g.wdist(*pos, city) >= EDGE_STAND_MIN_TILES
-                        && edge_stand(g, pid, Some(uid), *pos)
-                        && (*pos == here || g.unit_ids_at(*pos).is_empty())
-                })
-                .collect()
-        };
-        let mut goals = stands(&*g, EDGE_MUSTER_TILES);
-        if goals.is_empty() {
-            goals = stands(&*g, EDGE_MUSTER_TILES + 2);
-        }
-        if goals.contains(&here) {
-            return Some(self.base.fortify_or_stop(g, pid, uid));
-        }
-        let next = g
-            .route_step_to_any(uid, &goals)
-            .filter(|next| g.can_move(uid, *next))?;
-        Some(
-            g.apply(
-                pid,
-                &Action::Move {
-                    unit: uid,
-                    to: next,
-                },
-            )
-            .is_ok(),
-        )
+        Self::edge_stage_unit(g, pid, uid, city)
     }
 
     /// `edge-unit-takes-the-soft-city`: where the objective board's Reserve
