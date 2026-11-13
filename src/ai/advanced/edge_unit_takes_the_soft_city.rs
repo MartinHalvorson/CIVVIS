@@ -1491,8 +1491,9 @@ impl AdvancedAi {
                 }
                 let here = body.pos;
                 if g.wdist(here, pos) <= 1 {
-                    if striker && body.hp >= EDGE_STRIKE_MIN_HP {
-                        if g.apply(
+                    let strikes = striker && body.hp >= EDGE_STRIKE_MIN_HP;
+                    if strikes
+                        && g.apply(
                             pid,
                             &Action::Attack {
                                 unit: uid,
@@ -1500,9 +1501,8 @@ impl AdvancedAi {
                             },
                         )
                         .is_ok()
-                        {
-                            blows += 1;
-                        }
+                    {
+                        blows += 1;
                     }
                     break;
                 }
