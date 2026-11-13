@@ -257,9 +257,9 @@ units lost or cities lost), five genes and the genome contrast:
 - `shared-danger`: off, -4.21 ± 2.88 units lost (1.46 standard errors): the
   gene may cost units; with it off, 123 fewer deaths were last ordered by
   the finishing volley.
-- `alternative-genome` (the force-on list alone, i.e. the live genome minus
-  its 101 unrepeated ledger defaults): -5.92 ± 3.27 units lost and -1.04 ±
-  0.58 cities lost against the live genome.
+- `alternative-genome` (the force-on list alone: roughly the live genome
+  without the 101 ledger defaults the list does not repeat): -5.92 ± 3.27
+  units lost and -1.04 ± 0.58 cities lost against the live genome.
 
 Everything else is inside 1.5 standard errors on both loss columns. The
 largest of those, `anvil` (-4.21 ± 3.22 units) and `recon-replacement`
