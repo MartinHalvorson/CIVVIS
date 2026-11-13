@@ -5950,6 +5950,13 @@ pub const GENES: &[Gene] = &[
     // unit; the owner's own step keeps it. Opt-in; see
     // `advanced/unit_owner.rs`.
     Gene { tag: "one-owner-per-unit", field: "one_owner_per_unit", kind: Kind::OptIn, enable: AdvancedAi::enable_one_owner_per_unit, disable: AdvancedAi::disable_one_owner_per_unit },
+    // Live Deity 11-12/13, 115 games: a city's strike is the best ranged
+    // strength its owner ever owned (93% of 12,374 rows, upgrades count), yet
+    // from turn 30 the best melee ever owned sat 10+ below what was unlocked on
+    // 38.6% of turns and the best ranged on 19.5%, because the upgrade pass
+    // keeps 120 Gold at peace. The first unit into a tier upgrades ahead of
+    // that floor. See `advanced/one_upgrade_lifts_every_city.rs`.
+    Gene { tag: "one-upgrade-lifts-every-city", field: "one_upgrade_lifts_every_city", kind: Kind::OptIn, enable: AdvancedAi::enable_one_upgrade_lifts_every_city, disable: AdvancedAi::disable_one_upgrade_lifts_every_city },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
@@ -6116,6 +6123,12 @@ pub const GENES: &[Gene] = &[
     // declarer). Eleven Rome games: every city lost followed a declaration
     // at under 0.55 of the declarer. See `advanced/score_seat.rs`.
     Gene { tag: "score-seat-trims-the-idle-army", field: "score_seat_trims_the_idle_army", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_trims_the_idle_army, disable: AdvancedAi::disable_score_seat_trims_the_idle_army },
+    // Eight live Deity Rome Score games, 11-13: a Bath is four points for 23
+    // Production (17 a hundred, against the queues' two) and a city that
+    // built one waited a median 30 turns after the host first offered it; 11
+    // of 78 cities had it on offer and never built it. See
+    // `advanced/score_builds_the_bath.rs`.
+    Gene { tag: "score-seat-builds-the-bath", field: "score_seat_builds_the_bath", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_builds_the_bath, disable: AdvancedAi::disable_score_seat_builds_the_bath },
     // 38 live Deity Rome Score games, 11-12/13: 3.9 cities at turn 50 and 4.7
     // at turn 60 against the met rivals' 4.7 and 5.5, and 56 points at the
     // tally for each city held at turn 60. The capital started 27 of the 28

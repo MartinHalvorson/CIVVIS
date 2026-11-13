@@ -125,12 +125,28 @@ On a socket, a spectated turn is played by a stepper thread and *delivered* to
 viewers, and a great deal of machinery exists to stop a turn being simulated
 before every viewer has painted the last one.
 
-In the browser there is no stepper. The page's request for the next turn **is**
-the step, and the viewer only issues that request after `render()` has
-finished. A turn nobody painted therefore cannot be simulated at all: the
-frame-per-turn contract holds here by construction rather than by enforcement.
-`verify.py` still measures it, because a property you never check is a property
-you are guessing about.
+In the browser there is no stepper. A request that names the frame the page
+holds **is** the step, and the viewer only issues that request after `render()`
+has finished.
+
+Left at that, a watched turn costs the engine's time plus the page's, each idle
+while the other works, and in the opening turns the two are about the same
+size. So at Lightning `shim.js` asks for the next frame itself, the moment it
+hands the page the one before: the page's own next request, made early, so the
+engine plays while the page paints. It is one frame and never two — a second is
+not asked for until the page has taken the first — so the engine is never more
+than one frame past the glass, and frames reach the page one at a time, in
+order. The frame-per-turn contract still holds by construction rather than by
+enforcement. The read-ahead is only a guess at a request: anything that changes
+the world or what a state says about it (a pause, a pace, a seat to watch as, a
+new game) drops it, and the engine answers what the page actually asks.
+`shim_test.py` holds it to all of that against a scripted engine, and `?ahead=0`
+turns it off for a side-by-side measurement.
+
+The same file sends the viewer's opening pace and between-game hold ahead of
+the page's first read, so the first state already agrees with the viewer and
+nothing is posted, parsed and drawn again on the first frame; `shim_test.py`
+pins those values to the viewer's own.
 
 ## Publishing
 

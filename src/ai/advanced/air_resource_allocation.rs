@@ -222,6 +222,10 @@ impl AdvancedAi {
         if g.players[pid].is_barbarian {
             return;
         }
+        // `one-upgrade-lifts-every-city`: the first unit into a new tier goes
+        // ahead of the floor below, since it lifts every city. Nothing while
+        // the gene is off. See `advanced/one_upgrade_lifts_every_city.rs`.
+        self.upgrades_that_lift_every_city(g, pid);
         let at_war = g
             .players
             .iter()
