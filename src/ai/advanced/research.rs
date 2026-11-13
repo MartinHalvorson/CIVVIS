@@ -383,6 +383,10 @@ impl AdvancedAi {
             // `research-follows-the-first-capital`: the same army's research
             // survives a stepping stone's release when a major capital is named.
             let first_capital_army_goal = self.first_capital_army_research_goal(g, pid);
+            // `edge-unit-takes-the-soft-city`: the technology that reveals the
+            // edge unit's resource, then its own, while its window is open.
+            // `None` with the gene off.
+            let edge_unit_goal = self.edge_unit_research_goal(g, pid);
             let defensive_walls_goal = self
                 .frontier_walls_research_goal(g, pid)
                 .or_else(|| self.defensive_walls_research_goal(g, pid, plan));
@@ -497,6 +501,10 @@ impl AdvancedAi {
                 _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
                 _ if stone_research_goal.is_some() => stone_research_goal.as_deref(),
                 _ if first_capital_army_goal.is_some() => first_capital_army_goal.as_deref(),
+                // `edge-unit-takes-the-soft-city`: behind the walls, the
+                // opening Archery and the openings above, ahead of every lane
+                // beeline. See `advanced/edge_unit_takes_the_soft_city.rs`.
+                _ if edge_unit_goal.is_some() => edge_unit_goal.as_deref(),
                 // `diplo-match-point-beelines-the-points`: from match point the
                 // last points in the tree, whatever the plan reads, ahead of
                 // every war and lane arm below. Live Immortal
@@ -842,6 +850,15 @@ impl AdvancedAi {
                     }
                 }
             }
+            // `edge-unit-takes-the-soft-city`: every legal step toward the
+            // edge unit's technology while it owns the forced goal.
+            if let Some(goal) = edge_unit_goal.filter(|goal| forced_goal == Some(goal.as_str())) {
+                for tech in g.available_techs(pid) {
+                    if self.tech_leads_to(g, &tech, goal.as_str()) && !available.contains(&tech) {
+                        available.push(tech);
+                    }
+                }
+            }
             // `siege-tier-before-the-beeline`: Metal Casting and Ballistics sit
             // a Renaissance step beyond a Medieval backlog the rolling window
             // still holds; admit every legal step toward the siege technology
@@ -1018,6 +1035,8 @@ impl AdvancedAi {
                                 }
                             } else if first_capital_army_goal.as_deref() == Some(goal) {
                                 format!("research-follows-the-first-capital: the {step} step toward {}, keeping the named capital's breaker and unique melee line ahead of the economic beeline", plain(goal))
+                            } else if edge_unit_goal.as_deref() == Some(goal) {
+                                format!("edge-unit-takes-the-soft-city: the {step} step toward {}, which the edge unit outclassing a nearby rival city needs", plain(goal))
                             } else if barbarian_military_goal.as_deref() == Some(goal) {
                                 format!(
                                     "the {step} step toward {}, needed to catch a nearby barbarian army",

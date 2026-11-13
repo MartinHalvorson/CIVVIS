@@ -86,6 +86,11 @@ impl AdvancedAi {
         // `advanced/score_builds_the_bath.rs`.
         self.claim_score_bath(g, pid, plan);
         self.claim_early_settler_floor(g, pid, plan);
+        // `edge-unit-takes-the-soft-city`: the capital and the city nearest
+        // the soft city train the edge force (and a breaker for walls) while
+        // its window is open. Exact no-op while the gene is off. See
+        // `advanced/edge_unit_takes_the_soft_city.rs`.
+        self.claim_edge_unit_queue(g, pid);
         // `holdable-land-keeps-settling`: past the opening floor, a
         // Settler for a holdable seat, ahead of the routine claims below.
         // Exact no-op while the gene is off. See
