@@ -1803,6 +1803,15 @@ impl BasicAi {
         let mut radius = 1;
         let mut examined = 0;
         let _memo = g.query_memo();
+        // Every candidate must be both unexplored and on the map: traversal
+        // rejects missing tiles. Equal sets therefore prove the ring walk
+        // cannot find a goal. Compare the positions too, since a loaded save
+        // can contain off-map explored entries with the same count.
+        if g.players[pid].explored.len() == g.map.tiles.len()
+            && g.players[pid].explored.iter().eq(g.map.tiles.keys())
+        {
+            return None;
+        }
         let mut globe_rings = g
             .map
             .sphere()
@@ -3353,3 +3362,6 @@ impl BasicAi {
         }
     }
 }
+
+#[cfg(test)]
+mod fully_charted_tests;
