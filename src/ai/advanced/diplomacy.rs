@@ -2789,6 +2789,15 @@ impl AdvancedAi {
                     action = surprise;
                 }
                 let denounce_first = matches!(action, Action::Denounce { .. });
+                // `score-seat-keeps-friends`: no denouncement of our own on a
+                // Score seat, but on the campaign's own target.
+                if denounce_first && self.score_friends_hold_the_denouncement(g, target) {
+                    think!(self.journal(), Diplomacy, Decision,
+                        "Not denouncing {}", g.players[target].civ;
+                        "score-seat-keeps-friends: a denouncement ends the friendship that keeps \
+                         the peace, and the Score seat's own campaign does not name them");
+                    return;
+                }
                 // `prey-waits-for-the-march`: a war the prey waiver alone
                 // opens waits for the field army's march; a denouncement's
                 // five turns run meanwhile. See `advanced/prey_declaration.rs`.

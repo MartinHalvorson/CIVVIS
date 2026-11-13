@@ -168,3 +168,52 @@ fn at_match_point_the_converter_is_spared() {
     assert!(ai.score_friends_spare_the_converter(&game, 0, 1));
     assert_eq!(ai.score_seat_keeps_friends_lease(&game, 0), Some(vec![1]));
 }
+
+/// A rival racing to win (major 2, ten Diplomatic Victory points) is
+/// befriended by a Score seat with the gene; without it,
+/// `friendship-ends-at-the-race` passes it over. Major 1 is at war with us,
+/// so the racer is the only candidate.
+#[test]
+fn a_score_seat_befriends_a_racer() {
+    let mut game = three_majors();
+    game.players[2].dvp = 10;
+    game.at_war.insert((0, 1));
+    game.turn = 30;
+    let mut off = seat(VictoryTarget::Score, false);
+    off.enable_befriend_the_strongest();
+    off.enable_friendship_ends_at_the_race();
+    let mut board = game.clone();
+    off.propose_protective_friendship(&mut board, 0);
+    assert!(
+        asked(&board).is_empty(),
+        "off: the racer is left to the counter"
+    );
+    let mut on = seat(VictoryTarget::Score, true);
+    on.enable_friendship_ends_at_the_race();
+    on.propose_protective_friendship(&mut game, 0);
+    assert_eq!(asked(&game), [2], "on: the racer is asked");
+}
+
+/// The Score seat holds its own denouncements, but not of the rival its own
+/// Score campaign names; off, or for another target, it holds none.
+#[test]
+fn a_score_seat_holds_its_denouncements_but_the_campaigns() {
+    let game = three_majors();
+    let mut ai = seat(VictoryTarget::Score, true);
+    assert!(ai.score_friends_hold_the_denouncement(&game, 1));
+    ai.enable_score_seat_takes_what_pays();
+    let target_city = game.player_city_ids(1)[0];
+    ai.score_take_state.named = Some((
+        game.cities[&target_city].pos,
+        game.players[1].civ.clone(),
+        10.0,
+    ));
+    assert!(!ai.score_friends_hold_the_denouncement(&game, 1));
+    assert!(ai.score_friends_hold_the_denouncement(&game, 2));
+    for off in [
+        seat(VictoryTarget::Score, false),
+        seat(VictoryTarget::Domination, true),
+    ] {
+        assert!(!off.score_friends_hold_the_denouncement(&game, 2));
+    }
+}

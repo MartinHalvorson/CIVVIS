@@ -2775,7 +2775,11 @@ impl AdvancedAi {
             // Denounce while the wing is being built, so the Formal War clock
             // and the buildout run together. The casus belli itself is never
             // exercised before the package is ready.
-            if plan.phase == AirSurgePhase::Arm {
+            // `score-seat-keeps-friends`: not on a Score seat, but on the
+            // campaign's own target.
+            if plan.phase == AirSurgePhase::Arm
+                && !self.score_friends_hold_the_denouncement(g, target)
+            {
                 if let Some(action @ Action::Denounce { .. }) =
                     self.preferred_war_opening(g, pid, target)
                 {
