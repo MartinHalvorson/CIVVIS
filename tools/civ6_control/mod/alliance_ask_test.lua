@@ -300,7 +300,8 @@ check("a refusal is in the ledger", eventField(lastEvent("alliance_response"), "
 check("a refused session stays open for the counter", #sessions.closed, closedBefore)
 check("the session is still ours", trade.sessions[3] and trade.sessions[3].kind, "alliance")
 check("the wait is in the ledger", eventField(lastEvent("deal_session"), "phase"), "counter_wait")
-check("the closer holds for the counter", holds[#holds] and holds[#holds].seconds, 4)
+-- For as long as an answer is waited for: `CivvisTrade.COUNTER_HOLD_SECONDS`.
+check("the closer holds for the counter", holds[#holds] and holds[#holds].seconds, 30)
 -- The counter: refused as the shipped deal view refuses, then closed.
 onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 951, StatementSubType = "POSITIVE" })
 check("the counter is refused", refused.sends[2] and refused.sends[2][1], "rejected")
