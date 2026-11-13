@@ -215,6 +215,67 @@ fn what_keeps_its_queue() {
     assert!(!AdvancedAi::score_expands_keeps_the_hall(&game, capital));
 }
 
+/// At war with a major the gene adds nothing: the width is the stock one,
+/// a Builder keeps its queue, and past the band turn no Settler is queued.
+#[test]
+fn the_gene_waits_out_a_war() {
+    let mut game = Game::new_full(2, 32, 20, 936_221, 200, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("each player opens with a settler");
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+        for uid in game.player_unit_ids(pid) {
+            game.remove_unit(uid);
+        }
+    }
+    game.current = 0;
+    let capital = game.player_city_ids(0)[0];
+    {
+        let city = game.cities.get_mut(&capital).unwrap();
+        city.pop = 4;
+        city.queue.clear();
+    }
+    let home = game.cities[&capital].pos;
+    game.spawn_unit("warrior", 0, home);
+    game.turn = 40;
+    let ai = seat(VictoryTarget::Score, true);
+    assert!(!AdvancedAi::score_expands_war_holds(&game, 0));
+    assert!(ai.score_expands_hard_at_peace(&game, 0));
+    assert_eq!(
+        ai.no_city_limit_width(&game, 0),
+        Some(AdvancedAi::score_expands_width_for(1, 1))
+    );
+
+    game.at_war.insert((0, 1));
+    assert!(AdvancedAi::score_expands_war_holds(&game, 0));
+    assert!(!ai.score_expands_hard_at_peace(&game, 0));
+    assert_eq!(
+        ai.no_city_limit_width(&game, 0),
+        Some(AdvancedAi::no_city_limit_width_for(1, 1)),
+        "the stock width at war"
+    );
+    // A Builder's queue is the stock rule's at war: it stays.
+    head(&mut game, capital, unit("builder"));
+    let plan = ai.assess(&game, 0);
+    let mut warring = game.clone();
+    ai.claim_early_settler_floor(&mut warring, 0, &plan);
+    assert!(settlers_queued(&warring).is_empty(), "the Builder stays");
+    // Past the band turn, where only the gene keeps the floor open, nothing
+    // is queued at war, idle queue or not.
+    let mut late = game.clone();
+    late.cities.get_mut(&capital).unwrap().queue.clear();
+    late.turn = late.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN) + 5;
+    late.max_turns = late.turn + late.standard_duration(HOLDABLE_LAND_PAYBACK_STANDARD_TURNS) + 40;
+    let plan = ai.assess(&late, 0);
+    ai.claim_early_settler_floor(&mut late, 0, &plan);
+    assert!(settlers_queued(&late).is_empty(), "no Settler at war");
+}
+
 /// Past the band turn the stock floor is shut; the gene keeps it open while
 /// a new city still has its payback turns, and no longer.
 #[test]

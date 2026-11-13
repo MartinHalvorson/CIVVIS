@@ -199,8 +199,13 @@ impl AdvancedAi {
             return;
         }
         // `score-seat-expands-hard`: the capital queues its next Settler while
-        // the first still walks.
-        let hard = self.score_expands_hard_now(g);
+        // the first still walks. The gene waits out a war with a major: it
+        // adds nothing then, and past the band turn, where only the gene
+        // keeps this floor open, the claim queues no Settler.
+        let hard = self.score_expands_hard_at_peace(g, pid);
+        if g.turn >= g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN) && !hard {
+            return;
+        }
         if walkers > 0 && n_cities < 2 && !hard {
             return;
         }

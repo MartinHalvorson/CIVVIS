@@ -63,6 +63,16 @@
 //!    city's queue once the Plaza stands
 //!    ([`AdvancedAi::claim_score_expansion_hall`]).
 //!
+//! **It waits out a war.** While a living major is at war with us the gene
+//! adds nothing to the Settler claims: past the band turn the floor's claim
+//! queues no Settler, and the stock rules decide the rest. Its first live
+//! carrier (`civvis-20261113T090930Z`) was at war with Indonesia and
+//! Phoenicia from turn 56 to turn 97; the three Settlers the gene had
+//! trained at turns 51-59 and the next at turn 84 sheltered in Rome and
+//! Aquileia ("Settler shelters in Rome" on 447 journal lines) and founded
+//! 10, 27 and 20 turns after they were born, one was lost, and the empire
+//! stood at four cities from turn 60 to turn 80. The Hall keeps its claim.
+//!
 //! Journal reasons start `score-seat-expands-hard:`.
 //!
 //! ⚠ Tried and withdrawn (paired sim, 60 seeds each):
@@ -114,6 +124,24 @@ impl AdvancedAi {
     /// [`Self::score_expands_hard`] inside the settling window.
     pub(super) fn score_expands_hard_now(&self, g: &Game) -> bool {
         self.score_expands_hard() && self.holdable_land_window(g)
+    }
+
+    /// Whether a living major is at war with `pid`. While one is, the gene
+    /// stands down: a Settler trained then only shelters (see the module).
+    pub(super) fn score_expands_war_holds(g: &Game, pid: usize) -> bool {
+        g.players.iter().any(|other| {
+            other.id != pid
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && g.is_at_war(pid, other.id)
+        })
+    }
+
+    /// [`Self::score_expands_hard_now`] while no major is at war with `pid`:
+    /// the gate of everything the gene adds to the Settler claims.
+    pub(super) fn score_expands_hard_at_peace(&self, g: &Game, pid: usize) -> bool {
+        self.score_expands_hard_now(g) && !Self::score_expands_war_holds(g, pid)
     }
 
     /// The Settlers that may be walking or in production at once. See the
