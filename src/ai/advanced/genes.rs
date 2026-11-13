@@ -6087,6 +6087,12 @@ pub const GENES: &[Gene] = &[
     // founds on the best safe, holdable site within four tiles. Opt-in; see
     // `advanced/score_seat_founds_early.rs`.
     Gene { tag: "score-seat-founds-early", field: "score_seat_founds_early", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_founds_early, disable: AdvancedAi::disable_score_seat_founds_early },
+    // 33 live Deity Rome Score games, 11-12/13: five ever held a Legion and
+    // none more than one. Iron Working landed at a median turn 48 with no
+    // Iron banked, and Apprenticeship hid the Legion about ten turns later;
+    // the research scorer priced Iron Working at 23 behind Astrology's 33.
+    // See `advanced/score_unique_unit.rs`.
+    Gene { tag: "score-seat-fields-its-unique-unit", field: "score_seat_fields_its_unique_unit", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_fields_its_unique_unit, disable: AdvancedAi::disable_score_seat_fields_its_unique_unit },
     // Split out of score-seat-plays-for-points after its live arm lost the
     // capital (civvis-20261112T211954Z, t24 declaration at 0.46 of the
     // declarer). Eleven Rome games: every city lost followed a declaration

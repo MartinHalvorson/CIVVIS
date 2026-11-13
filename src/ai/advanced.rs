@@ -10277,6 +10277,10 @@ pub struct AdvancedAi {
     /// `score-seat-plays-for-points`: what the gene's journal has already
     /// said, so each line is written once per change. Observation only.
     score_seat_journal: score_seat::ScoreSeatJournal,
+    /// `score-seat-fields-its-unique-unit`: a Score seat researches its
+    /// Ancient or Classical unique land soldier's technology as a goal from
+    /// its second city. See `advanced/score_unique_unit.rs`. Opt-in.
+    score_seat_fields_its_unique_unit: bool,
     /// `score-seat-founds-early`: on a Score seat, an early Settler past its
     /// patience (or turned home by the corridor) founds on the best safe,
     /// holdable site within reach. See `advanced/score_seat_founds_early.rs`.
@@ -11382,6 +11386,9 @@ mod chop_for_expansion;
 mod score_seat;
 /// `score-seat-founds-early`: see `advanced/score_seat_founds_early.rs`.
 mod score_seat_founds_early;
+/// `score-seat-fields-its-unique-unit`: the early unique soldier's
+/// technology is a research goal. See `advanced/score_unique_unit.rs`.
+mod score_unique_unit;
 /// `score-seat-raises-wonders`: a Score seat's wonder program, a queue claim
 /// that acts natively and live. See `advanced/score_wonders.rs`.
 mod score_wonders;

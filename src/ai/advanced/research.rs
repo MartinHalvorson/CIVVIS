@@ -420,6 +420,10 @@ impl AdvancedAi {
             let decisive_window = self.decisive_window(g, pid, plan);
             let decisive_window_goal =
                 self.decisive_window_research_goal(g, pid, decisive_window.as_ref());
+            // `score-seat-fields-its-unique-unit`: the early unique soldier's
+            // technology while its window can still open. `None` with the
+            // gene off. See `advanced/score_unique_unit.rs`.
+            let unique_unit_goal = self.score_unique_unit_research_goal(g, pid);
             // Say what the window reads when it does not take the slot, so a
             // live readout can tell "already armed" from "nothing in reach".
             if self.decisive_window
@@ -495,6 +499,9 @@ impl AdvancedAi {
                 }
                 _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
                 _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
+                // `score-seat-fields-its-unique-unit`: behind the defensive
+                // goals above, ahead of every economic beeline.
+                _ if unique_unit_goal.is_some() => unique_unit_goal.map(Name::as_str),
                 _ if stone_research_goal.is_some() => stone_research_goal.as_deref(),
                 _ if first_capital_army_goal.is_some() => first_capital_army_goal.as_deref(),
                 // `diplo-match-point-beelines-the-points`: from match point the
@@ -992,6 +999,8 @@ impl AdvancedAi {
                                 format!("science-foundation-before-backlog: the {step} step toward {}, opening usable labs and the first Spaceport before advanced backlog", plain(goal))
                             } else if opening_archery_goal.as_deref() == Some(goal) {
                                 format!("the first range-two defender is needed against nearby barbarians; unlock {} before the economic beeline", plain(goal))
+                            } else if unique_unit_goal.map(Name::as_str) == Some(goal) {
+                                format!("score-seat-fields-its-unique-unit: the {step} step toward {}, which unlocks this civilization's unique soldier while it is still the strongest on the board", plain(goal))
                             } else if stone_breaker_goal.as_deref() == Some(goal)
                                 || (defensive_walls_goal.as_deref() != Some(goal)
                                     && stone_research_goal.as_deref() == Some(goal))
