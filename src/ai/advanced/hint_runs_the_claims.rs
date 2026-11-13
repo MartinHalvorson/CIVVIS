@@ -222,6 +222,13 @@ impl AdvancedAi {
         if growth_claims {
             self.claim_free_slot_campus(g, pid, plan);
         }
+        // `score-seat-fills-its-district-slots`: a Score seat's free slot
+        // takes the cheapest district it can place, after the Campus claims
+        // (whose heads it leaves alone). Exact no-op while the gene is off.
+        // See `advanced/score_fills_its_slots.rs`.
+        if growth_claims {
+            self.claim_score_slots(g, pid, plan);
+        }
         // `domination-seat-raises-its-culture`: a Domination seat's Monuments,
         // after the Campus claims (whose heads they leave alone) and ahead of
         // the Prophet race and the routine claims. Under the war's hold, the
