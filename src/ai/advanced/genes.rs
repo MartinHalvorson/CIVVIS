@@ -6124,6 +6124,11 @@ pub const GENES: &[Gene] = &[
     // took the Warlord's Throne, never the Ancestral Hall. See
     // `advanced/score_expands_hard.rs`.
     Gene { tag: "score-seat-expands-hard", field: "score_seat_expands_hard", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_expands_hard, disable: AdvancedAi::disable_score_seat_expands_hard },
+    // Ten live Deity Rome Score games, 11-13: 22.9 district slots against
+    // 12.7 specialty districts at turn 100 and nine or ten free to the tally,
+    // with a district on offer on 424 city-turns a game while the city built
+    // a University or a Research Lab. See `advanced/score_fills_its_slots.rs`.
+    Gene { tag: "score-seat-fills-its-district-slots", field: "score_seat_fills_its_district_slots", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_fills_its_district_slots, disable: AdvancedAi::disable_score_seat_fills_its_district_slots },
     // Live Deity Rome, Score target: no rival declared on us while a declared
     // friendship stood (94 declarations), yet the control mod refused 52
     // friendships the AI offered in one night, and the seat asked one rival

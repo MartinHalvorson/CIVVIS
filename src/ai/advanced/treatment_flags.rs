@@ -488,6 +488,9 @@ impl AdvancedAi {
         /// Opt-in gene `score-seat-expands-hard`; see
         /// `advanced/score_expands_hard.rs`.
         score_seat_expands_hard => enable_score_seat_expands_hard, disable_score_seat_expands_hard;
+        /// Opt-in gene `score-seat-fills-its-district-slots`; see
+        /// `advanced/score_fills_its_slots.rs`.
+        score_seat_fills_its_district_slots => enable_score_seat_fills_its_district_slots, disable_score_seat_fills_its_district_slots;
         /// Opt-in gene `score-seat-keeps-friends`; see
         /// `advanced/score_keeps_friends.rs`.
         score_seat_keeps_friends => enable_score_seat_keeps_friends, disable_score_seat_keeps_friends;

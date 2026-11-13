@@ -10292,6 +10292,10 @@ pub struct AdvancedAi {
     /// `score-seat-plays-for-points`: what the gene's journal has already
     /// said, so each line is written once per change. Observation only.
     score_seat_journal: score_seat::ScoreSeatJournal,
+    /// `score-seat-fills-its-district-slots`: a Score seat's city with a
+    /// free district slot claims the cheapest specialty district it can
+    /// place. See `advanced/score_fills_its_slots.rs`. Opt-in.
+    score_seat_fills_its_district_slots: bool,
     /// `score-seat-expands-hard`: with `no-city-limit` on, a Score seat's
     /// Settler claim stays open past the opening and takes more queues in
     /// every city, the pipeline widens to one more than the cities, and the
@@ -11428,6 +11432,9 @@ mod chop_for_expansion;
 /// `score-seat-expands-hard`: a Score seat's Settlers take the queue in every
 /// city. See `advanced/score_expands_hard.rs`.
 mod score_expands_hard;
+/// `score-seat-fills-its-district-slots`: a Score seat's free district
+/// slots. See `advanced/score_fills_its_slots.rs`.
+mod score_fills_its_slots;
 /// `score-seat-keeps-friends`: see `advanced/score_keeps_friends.rs`.
 mod score_keeps_friends;
 /// `score-seat-plays-for-points`: a Score-target seat's production buys
