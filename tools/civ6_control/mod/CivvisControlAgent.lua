@@ -18954,18 +18954,33 @@ CivvisCongressRacer = function(config)
 		and config.DiploRacer ~= false);
 end
 
+-- ★ FOUR COUNTS RE-READ ON THE DEITY LANE (106 live games, 2026-11-12/13;
+-- option A on ourselves, the rivals' recorded votes held fixed, a tie a loss;
+-- Favor at the Online price 2k(k-1)). The October table priced two of the
+-- player-target resolutions out of the 60 cap, so the racer cast the free
+-- vote on them, and under-bought two more:
+--   * Public Relations (0.94 a game): 2 votes carried 54%, 3 carry 93% for
+--     8 Favor more.
+--   * Arms Control (0.40): 3 carried 88%, 4 carry 100% for 12 more.
+--   * Trade Treaty (1.05): 8 votes are 112 Favor, over the cap, so the free
+--     vote stood (25%); 6 votes are 60 and carry 63%.
+--   * Migration Treaty (0.60): 11 votes are 220, over the cap (14%); 6 are
+--     60 and carry 59%. civvis-20261113T195128Z stood on 19 points at t193
+--     with 125 Favor left and lost this one to four blocks of 3.
+-- Together +1.08 points a game for 111 Favor a game; the seat ended its
+-- Diplomatic games with 130 to 350 unspent. Border Control stays at 2 (97%).
 CivvisRacerResolutionVotes = function(rtype, favor, costs, config, cap)
 	config = type(config) == "table" and config or {};
 	if type(costs) ~= "table" then return 1, 0; end
 	local need = ({
 		WC_RES_MERCENARY_COMPANIES = 2, WC_RES_WORLD_RELIGION = 2,
-		WC_RES_BORDER_CONTROL = 2, WC_RES_PUBLIC_RELATIONS = 2,
+		WC_RES_BORDER_CONTROL = 2, WC_RES_PUBLIC_RELATIONS = 3,
 		WC_RES_SOVEREIGNTY = 3, WC_RES_URBAN_DEVELOPMENT = 3,
 		WC_RES_MILITARY_ADVISORY = 3, WC_RES_ESPIONAGE_PACT = 3,
-		WC_RES_ARMS_CONTROL = 3, WC_RES_HERITAGE_ORG = 4,
+		WC_RES_ARMS_CONTROL = 4, WC_RES_HERITAGE_ORG = 4,
 		WC_RES_GLOBAL_ENERGY_TREATY = 4, WC_RES_DEFORESTATION_TREATY = 4,
-		WC_RES_TRADE_TREATY = 8, WC_RES_PATRONAGE = 10,
-		WC_RES_MIGRATION_TREATY = 11, WC_RES_PUBLIC_WORKS = 13,
+		WC_RES_TRADE_TREATY = 6, WC_RES_PATRONAGE = 10,
+		WC_RES_MIGRATION_TREATY = 6, WC_RES_PUBLIC_WORKS = 13,
 		WC_RES_WORLD_IDEOLOGY = 15, WC_RES_LUXURY = 16,
 	})[tostring(rtype)] or 4;
 	-- See `CivvisHeritageDenial`: a racer's tourism is worth nothing, so it
