@@ -372,6 +372,9 @@ impl AdvancedAi {
         open_city_is_the_objective => enable_open_city_is_the_objective, disable_open_city_is_the_objective;
         /// Opt-in `one-owner-per-unit`; see `advanced/unit_owner.rs`.
         one_owner_per_unit => enable_one_owner_per_unit, disable_one_owner_per_unit;
+        /// Opt-in gene `one-upgrade-lifts-every-city`; see
+        /// `advanced/one_upgrade_lifts_every_city.rs`.
+        one_upgrade_lifts_every_city => enable_one_upgrade_lifts_every_city, disable_one_upgrade_lifts_every_city;
         // ---- append: p-r --------------------------------------------
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;
@@ -488,6 +491,9 @@ impl AdvancedAi {
         /// Opt-in gene `score-seat-trims-the-idle-army`; see
         /// `advanced/score_seat.rs`.
         score_seat_trims_the_idle_army => enable_score_seat_trims_the_idle_army, disable_score_seat_trims_the_idle_army;
+        /// Opt-in gene `score-seat-builds-the-bath`; see
+        /// `advanced/score_builds_the_bath.rs`.
+        score_seat_builds_the_bath => enable_score_seat_builds_the_bath, disable_score_seat_builds_the_bath;
         /// Opt-in gene `score-seat-expands-hard`; see
         /// `advanced/score_expands_hard.rs`.
         score_seat_expands_hard => enable_score_seat_expands_hard, disable_score_seat_expands_hard;

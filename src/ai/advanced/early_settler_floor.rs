@@ -123,6 +123,11 @@ impl AdvancedAi {
         if self.score_expands_hard_now(g) && Self::score_expands_keeps_the_hall(g, cid) {
             return true;
         }
+        // `score-seat-builds-the-bath`: so is the Bath its claim raised. See
+        // `advanced/score_builds_the_bath.rs`.
+        if self.score_bath_holds(g, pid, cid) {
+            return true;
+        }
         let floor = self.early_settler_floor(g, plan);
         if floor == 0
             || !matches!(
@@ -274,6 +279,7 @@ impl AdvancedAi {
                     self.first_capital_land_recon_holds(g, pid, cid, plan, head)
                 })
                 || (hard && Self::score_expands_keeps_the_hall(g, cid))
+                || self.score_bath_holds(g, pid, cid)
                 || Self::score_expands_on_the_frontier(g, &frontier, city.pos)
                 || !(Self::early_settler_may_displace(g, pid, cid)
                     || (hard && Self::score_expands_may_displace(g, pid, cid)))
