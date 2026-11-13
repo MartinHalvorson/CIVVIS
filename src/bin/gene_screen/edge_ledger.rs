@@ -341,12 +341,16 @@ pub(super) struct MarkSummary {
 }
 
 pub(super) fn mark_summary(marks: &[&EdgeMark]) -> MarkSummary {
-    let with_army = || marks.iter().filter(|m| m.army > 0);
-    let share = |part: fn(&EdgeMark) -> u32| {
-        mean(with_army().map(|m| f64::from(part(m)) / f64::from(m.army)))
-    };
+    let with_army: Vec<&EdgeMark> = marks.iter().copied().filter(|m| m.army > 0).collect();
     let ours = |m: &EdgeMark| m.our_strength_sum / f64::from(m.army);
     let rivals = |m: &EdgeMark| m.rival_strength_sum / f64::from(m.rival_units);
+    let share = |part: fn(&EdgeMark) -> u32| {
+        mean(
+            with_army
+                .iter()
+                .map(|&m| f64::from(part(m)) / f64::from(m.army)),
+        )
+    };
     MarkSummary {
         games: marks.len(),
         army: mean(marks.iter().map(|m| f64::from(m.army))),
@@ -361,12 +365,18 @@ pub(super) fn mark_summary(marks: &[&EdgeMark]) -> MarkSummary {
         ),
         gold: median(marks.iter().map(|m| m.gold)),
         gold_per_turn: median(marks.iter().map(|m| m.gold_per_turn)),
-        ours: mean(with_army().map(ours)),
-        rivals: mean(marks.iter().filter(|m| m.rival_units > 0).map(rivals)),
-        gap: mean(
-            with_army()
+        ours: mean(with_army.iter().map(|&m| ours(m))),
+        rivals: mean(
+            marks
+                .iter()
                 .filter(|m| m.rival_units > 0)
-                .map(|m| rivals(m) - ours(m)),
+                .map(|&m| rivals(m)),
+        ),
+        gap: mean(
+            with_army
+                .iter()
+                .filter(|m| m.rival_units > 0)
+                .map(|&m| rivals(m) - ours(m)),
         ),
     }
 }
