@@ -10298,6 +10298,10 @@ pub struct AdvancedAi {
     /// `score-seat-plays-for-points`: what the gene's journal has already
     /// said, so each line is written once per change. Observation only.
     score_seat_journal: score_seat::ScoreSeatJournal,
+    /// `score-seat-builds-the-bath`: a Score seat whose civilization has a
+    /// unique Aqueduct (Rome's Bath) claims it in every city that can hold
+    /// one. See `advanced/score_builds_the_bath.rs`. Opt-in.
+    score_seat_builds_the_bath: bool,
     /// `score-seat-expands-hard`: with `no-city-limit` on, a Score seat's
     /// Settler claim stays open past the opening and takes more queues in
     /// every city, the pipeline widens to one more than the cities, and the
@@ -11431,6 +11435,9 @@ mod chop_feeds_the_long_build;
 /// one. See `advanced/chop_for_expansion.rs`.
 mod chop_for_expansion;
 
+/// `score-seat-builds-the-bath`: a Score seat's unique Aqueduct in every city.
+/// See `advanced/score_builds_the_bath.rs`.
+mod score_builds_the_bath;
 /// `score-seat-expands-hard`: a Score seat's Settlers take the queue in every
 /// city. See `advanced/score_expands_hard.rs`.
 mod score_expands_hard;
