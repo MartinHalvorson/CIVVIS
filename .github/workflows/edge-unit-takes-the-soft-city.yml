@@ -17,12 +17,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Round 2 (confirmation): fresh seeds, 48 pairs, 250 turns, the lane
-  # recipe; the control, the gene and the stack (both took no city in round
-  # 1), and the gene with the Iron waived for the upper bound.
-  CIVVIS_EDGE_TURNS: "250"
-  CIVVIS_EDGE_SEED: "52670200"
-  CIVVIS_EDGE_ARMS: "control,gene,stack,gene-free-iron"
+  # Walls calibration: the control alone, 16 worlds, 71 turns, at three
+  # `--rival-walls` shares, read against the live share of walled nearest
+  # rival cities (13 / 16 / 38 / 49% at turns 40 / 50 / 60 / 70).
+  CIVVIS_EDGE_TURNS: "71"
+  CIVVIS_EDGE_SEED: "52670300"
+  CIVVIS_EDGE_ARMS: "control"
 
 jobs:
   build:
@@ -68,18 +68,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { recipe: lane, walls: "", worlds: "48", shard: 0, of: 12 }
-          - { recipe: lane, walls: "", worlds: "48", shard: 1, of: 12 }
-          - { recipe: lane, walls: "", worlds: "48", shard: 2, of: 12 }
-          - { recipe: lane, walls: "", worlds: "48", shard: 3, of: 12 }
-          - { recipe: lane, walls: "", worlds: "48", shard: 4, of: 12 }
-          - { recipe: lane, walls: "", worlds: "48", shard: 5, of: 12 }
-          - { recipe: lane, walls: "", worlds: "48", shard: 6, of: 12 }
-          - { recipe: lane, walls: "", worlds: "48", shard: 7, of: 12 }
-          - { recipe: lane, walls: "", worlds: "48", shard: 8, of: 12 }
-          - { recipe: lane, walls: "", worlds: "48", shard: 9, of: 12 }
-          - { recipe: lane, walls: "", worlds: "48", shard: 10, of: 12 }
-          - { recipe: lane, walls: "", worlds: "48", shard: 11, of: 12 }
+          - { recipe: walls-0, walls: "0", worlds: "16", shard: 0, of: 2 }
+          - { recipe: walls-0, walls: "0", worlds: "16", shard: 1, of: 2 }
+          - { recipe: walls-5, walls: "5", worlds: "16", shard: 0, of: 2 }
+          - { recipe: walls-5, walls: "5", worlds: "16", shard: 1, of: 2 }
+          - { recipe: walls-10, walls: "10", worlds: "16", shard: 0, of: 2 }
+          - { recipe: walls-10, walls: "10", worlds: "16", shard: 1, of: 2 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
