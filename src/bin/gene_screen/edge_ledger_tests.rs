@@ -169,6 +169,7 @@ fn armed_genome(genes: &mut [Gene]) -> (Vec<bool>, String) {
     let candidates: Vec<String> = std::env::var("CIVVIS_LIVE_GENOME")
         .ok()
         .into_iter()
+        .chain(Some(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bin/gene_screen/edge_armed_set.txt").to_string()))
         .chain(
             std::env::var("HOME")
                 .ok()
@@ -212,7 +213,6 @@ fn cell(value: Option<f64>) -> String {
 }
 
 #[test]
-#[ignore = "whole Deity games on both lanes: run with --ignored --nocapture"]
 fn edge_ledger_driver() {
     let lanes = [&GRAN_COLOMBIA, &ROME];
     let chosen: Vec<&Setting> = match std::env::var("CIVVIS_EDGE_SETTINGS") {
@@ -220,10 +220,10 @@ fn edge_ledger_driver() {
             .iter()
             .filter(|setting| list.split(',').any(|key| key.trim() == setting.key))
             .collect(),
-        Err(_) => SETTINGS.iter().collect(),
+        Err(_) => SETTINGS.iter().filter(|s| "rung-1,seat-pace,no-rung-war".split(',').any(|k| k == s.key)).collect(),
     };
     let n = env_number("CIVVIS_EDGE_WORLDS", 8);
-    let minutes = env_number("CIVVIS_EDGE_MINUTES", 0);
+    let minutes = env_number("CIVVIS_EDGE_MINUTES", 16);
     let mut genes = gene_table();
     let (genome, note) = armed_genome(&mut genes);
     // World by world, the longer lane first, so a deadline leaves every arm
@@ -352,7 +352,7 @@ fn edge_ledger_driver() {
             }
         }
     }
-    println!("{}", report.join("\n"));
+    progress(&report.join("\n"));
 }
 
 /// `tools/civ6_edge_ledger.py --since 20261112 --until 20261113T0420 --metrics`
