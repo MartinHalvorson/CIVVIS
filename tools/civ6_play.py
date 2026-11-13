@@ -6346,9 +6346,11 @@ def _play(args: argparse.Namespace) -> int:
         # Measured before the launch, so placing the window as it appears pays no
         # AppKit compile (~1.5 s) while it shows full screen.
         desktop_size()
-        setup_clock_start()
+        # The detector's second signature is read from this log; see
+        # `view_bridge_fault`.
         global GAME_STDOUT_LOG
         GAME_STDOUT_LOG = run_dir / "stdout.log"
+        setup_clock_start()
         game_process = launcher.launch(stdout=GAME_STDOUT_LOG)
         owned_launch["process"] = game_process
         setup_mark("launched")

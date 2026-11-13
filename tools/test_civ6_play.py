@@ -4230,8 +4230,8 @@ class UnseenGameWindowTest(unittest.TestCase):
 
     def test_the_launch_names_the_log_the_detector_reads(self) -> None:
         source = Path(civ6_play.__file__).read_text()
-        self.assertIn('GAME_STDOUT_LOG = run_dir / "stdout.log"\n'
-                      '        game_process = launcher.launch(stdout=GAME_STDOUT_LOG)', source)
+        self.assertIn('GAME_STDOUT_LOG = run_dir / "stdout.log"\n', source)
+        self.assertIn("game_process = launcher.launch(stdout=GAME_STDOUT_LOG)", source)
 
     def test_both_bootstraps_count_strikes_and_stop_on_the_fault(self) -> None:
         source = Path(civ6_play.__file__).read_text()
