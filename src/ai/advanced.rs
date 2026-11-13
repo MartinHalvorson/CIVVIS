@@ -9466,6 +9466,13 @@ pub struct AdvancedAi {
     /// `score-seat-raises-wonders`: the races standing, by the racing city's
     /// tile (the live mirror renumbers cities between frames).
     score_wonder_races: BTreeMap<Pos, Name>,
+    /// `score-seat-raises-wonders-2`: version 2, carrying version 1. The lanes
+    /// hold for expansion before turn 80 (Online), at war, and beside a
+    /// neighbour with 1.5 times our military, and never race in a city with a
+    /// Settler queued. See `advanced/score_wonders.rs`. Off by default.
+    score_seat_raises_wonders_2: bool,
+    /// `score-seat-raises-wonders-2`: the hold last journalled.
+    score_wonder_hold: Option<String>,
     /// `siege-goes-on-the-forecast`: the siege train goes, holds and stands
     /// down on the capture forecast, and the Objective Board ranks Siege rows
     /// by value x P / expected turns. Implies the reading. See
@@ -10710,6 +10717,11 @@ pub struct AdvancedAi {
     /// nearest stronger neighbour until it can be asked for a friendship.
     /// See `advanced/tribute_warms_the_neighbour.rs`. Off by default.
     tribute_warms_the_neighbour: bool,
+    /// `upgrade-card-for-the-backlog`: a seat whose target is not Domination
+    /// slots the half-price upgrade card while two or more land units hold an
+    /// unlocked successor the treasury cannot pay for. See
+    /// `advanced/upgrade_card_for_the_backlog.rs`. Off by default.
+    upgrade_card_for_the_backlog: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -11527,6 +11539,10 @@ mod siege_production;
 /// See `advanced/siege_at_the_walls_dies_first.rs`.
 mod siege_at_the_walls_dies_first;
 
+/// The assault census: what a named corps reads against every foreign city
+/// in reach, for `civvis_orders --explain-assault`. Read-only. See
+/// `advanced/assault_census.rs`.
+mod assault_census;
 /// `assault-forecast-is-read` and `siege-goes-on-the-forecast`: the chance a
 /// siege force takes its city, turn by turn, on the battle solver's board.
 /// See `advanced/assault_forecast.rs`.
@@ -11938,6 +11954,9 @@ mod tribute_buys_the_friendship;
 /// `advanced/tribute_warms_the_neighbour.rs`.
 mod tribute_warms_the_neighbour;
 mod universities_before_the_forge;
+/// `upgrade-card-for-the-backlog`: see
+/// `advanced/upgrade_card_for_the_backlog.rs`.
+mod upgrade_card_for_the_backlog;
 pub use science_victory_drive::ScienceDrive;
 
 /// `capital-campus-before-the-plaza`: the capital's Campus and Library

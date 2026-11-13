@@ -293,3 +293,171 @@ fn a_race_is_kept_finished_or_lost() {
     assert!(ai.score_wonder_races.is_empty());
     assert_eq!(counter(&g, "score_wonder_losses"), 1);
 }
+
+// ---- version 2 ----------------------------------------------------------
+
+fn seat_v2() -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Score);
+    ai.enable_score_seat_raises_wonders();
+    ai.enable_score_seat_raises_wonders_2();
+    ai
+}
+
+fn plan_wanting(turn: u32, cities: usize) -> StrategicPlan {
+    StrategicPlan {
+        desired_cities: cities,
+        ..plan(turn)
+    }
+}
+
+/// A met rival city eight tiles from our capital; ours fields 100 military,
+/// the rival `rival_power`.
+fn rival_beside(g: &mut Game, capital: u32, rival_power: f64) {
+    let centre = g.cities[&capital].pos;
+    let occupied: Vec<Pos> = g.cities.values().map(|city| city.pos).collect();
+    let mut land: Vec<Pos> = g
+        .map
+        .tiles
+        .iter()
+        .filter(|(_, tile)| !g.rules.is_water(tile))
+        .map(|(pos, _)| *pos)
+        .collect();
+    land.sort();
+    let site = *land
+        .iter()
+        .find(|pos| {
+            g.wdist(**pos, centre) == 8 && occupied.iter().all(|other| g.wdist(**pos, *other) >= 4)
+        })
+        .expect("a rival site eight tiles out");
+    g.place_city(1, site, None);
+    g.players[0].met.insert(1);
+    g.players[1].met.insert(0);
+    std::sync::Arc::make_mut(&mut g.observed_military_power).insert(0, 100.0);
+    std::sync::Arc::make_mut(&mut g.observed_military_power).insert(1, rival_power);
+}
+
+#[test]
+fn score_seat_raises_wonders_2_is_opt_in_and_replaces_version_1() {
+    opt_in_off_in_both_controllers("score-seat-raises-wonders-2", |ai| {
+        ai.score_seat_raises_wonders_2
+    });
+    let ai = seat_v2();
+    assert!(!ai.score_seat_raises_wonders && ai.score_seat_raises_wonders_2);
+    assert!(ai.score_wonders_on());
+}
+
+/// ★ Expansion first: before turn 80 (Online) under the city target, or with
+/// a Settler queued anywhere, the lanes hold; at the target with none queued,
+/// or from turn 80, they do not. Version 1 never holds.
+#[test]
+fn version_2_holds_the_lanes_for_expansion_before_turn_80() {
+    let v2 = seat_v2();
+    let (mut g, capital) = three_cities(60);
+    assert!(v2
+        .score_wonder_v2_hold(&g, 0, &plan_wanting(60, 8))
+        .is_some_and(|why| why.contains("3 cities of the 8")));
+    assert_eq!(v2.score_wonder_v2_hold(&g, 0, &plan_wanting(60, 3)), None);
+    assert_eq!(
+        seat(true).score_wonder_v2_hold(&g, 0, &plan_wanting(60, 8)),
+        None
+    );
+    let other = *g
+        .player_city_ids(0)
+        .iter()
+        .find(|cid| **cid != capital)
+        .unwrap();
+    g.cities.get_mut(&other).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("settler"),
+    }];
+    assert!(v2
+        .score_wonder_v2_hold(&g, 0, &plan_wanting(60, 3))
+        .is_some_and(|why| why.contains("Settler")));
+    g.turn = 80;
+    assert_eq!(v2.score_wonder_v2_hold(&g, 0, &plan_wanting(80, 8)), None);
+
+    // The claim itself: held at t60 under the target, the capital keeps its
+    // Monument; version 1 races.
+    let monument = Item::Building {
+        building: crate::name!("monument"),
+    };
+    for (mut ai, races) in [(seat_v2(), false), (seat(true), true)] {
+        let (mut g, capital) = three_cities(60);
+        g.cities.get_mut(&capital).unwrap().queue = vec![monument.clone()];
+        ai.claim_queue_for_the_score_wonder(&mut g, 0, &plan_wanting(60, 8), true);
+        assert_eq!(
+            matches!(head(&g, capital), Some(Item::Wonder { .. })),
+            races,
+            "version 1 races: {races}"
+        );
+    }
+}
+
+/// ★ Safety first: at war, or beside a neighbour with 1.5 times our military,
+/// the lanes hold; at 1.4 times they do not.
+#[test]
+fn version_2_holds_the_lanes_at_war_and_beside_a_stronger_neighbour() {
+    let v2 = seat_v2();
+    let (mut g, capital) = three_cities(90);
+    rival_beside(&mut g, capital, 150.0);
+    assert!(v2
+        .score_wonder_v2_hold(&g, 0, &plan_wanting(90, 3))
+        .is_some_and(|why| why.contains("military")));
+    std::sync::Arc::make_mut(&mut g.observed_military_power).insert(1, 140.0);
+    assert_eq!(v2.score_wonder_v2_hold(&g, 0, &plan_wanting(90, 3)), None);
+    g.at_war.insert((0, 1));
+    assert!(v2
+        .score_wonder_v2_hold(&g, 0, &plan_wanting(90, 3))
+        .is_some_and(|why| why.contains("at war")));
+}
+
+/// ★ Never in the city that trains the Settlers, and a held race is not put
+/// back at its head.
+#[test]
+fn version_2_spares_the_settler_city_and_pauses_a_held_race() {
+    let monument = Item::Building {
+        building: crate::name!("monument"),
+    };
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    // Turn 90, target met: the capital, a Settler queued behind its Monument,
+    // is skipped by version 2 and raced by version 1.
+    for (mut ai, races) in [(seat_v2(), false), (seat(true), true)] {
+        let (mut g, capital) = three_cities(90);
+        g.cities.get_mut(&capital).unwrap().queue = vec![monument.clone(), settler.clone()];
+        ai.claim_queue_for_the_score_wonder(&mut g, 0, &plan_wanting(90, 3), true);
+        assert_eq!(
+            matches!(head(&g, capital), Some(Item::Wonder { .. })),
+            races,
+            "version 1 races: {races}"
+        );
+    }
+    // A race started with the lanes open; then a war: a Builder put at the
+    // head by a later writer stays there.
+    let (mut g, capital) = three_cities(90);
+    g.cities.get_mut(&capital).unwrap().queue = vec![monument.clone()];
+    let mut ai = seat_v2();
+    ai.claim_queue_for_the_score_wonder(&mut g, 0, &plan_wanting(90, 3), true);
+    assert!(matches!(head(&g, capital), Some(Item::Wonder { .. })));
+    let builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    g.apply(
+        0,
+        &Action::Produce {
+            city: capital,
+            item: builder.clone(),
+        },
+    )
+    .unwrap();
+    g.players[0].met.insert(1);
+    g.players[1].met.insert(0);
+    g.at_war.insert((0, 1));
+    ai.claim_queue_for_the_score_wonder(&mut g, 0, &plan_wanting(90, 3), false);
+    assert_eq!(
+        head(&g, capital),
+        Some(&builder),
+        "the race waits for the war"
+    );
+    assert_eq!(ai.score_wonder_races.len(), 1, "and stays on the books");
+}
