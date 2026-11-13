@@ -164,8 +164,10 @@ end)(), "10x180")
 check("below match point: unchanged", mp("WC_RES_MIGRATION_TREATY", TREATY, 209, 17, nil, 6, 60), "6x60")
 check("a raised match point is honoured",
     mp("WC_RES_MIGRATION_TREATY", TREATY, 209, 18, { VictoryLane = "diplomatic", DiploVictoryMatchPoint = 19 }, 6, 60), "6x60")
-check("a Science seat: unchanged",
-    mp("WC_RES_MIGRATION_TREATY", TREATY, 209, 19, { VictoryLane = "science", ScienceCongressRacer = true }, 1, 0), "1x0")
+check("a Science seat not racing: unchanged",
+    mp("WC_RES_MIGRATION_TREATY", TREATY, 209, 19, { VictoryLane = "science" }, 1, 0), "1x0")
+check("a Science seat racing the Congress spends its bank too",
+    mp("WC_RES_MIGRATION_TREATY", TREATY, 209, 19, { VictoryLane = "science", ScienceCongressRacer = true }, 1, 0), "10x180")
 check("switched off: unchanged",
     mp("WC_RES_MIGRATION_TREATY", TREATY, 209, 19, { VictoryLane = "diplomatic", RacerMatchPointBank = false }, 6, 60), "6x60")
 check("the Heritage vote stays the denial's",
