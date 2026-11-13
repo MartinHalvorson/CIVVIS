@@ -30,6 +30,11 @@ const LIVE_ARMS: &str = include_str!("war_gate_live_force_on_20261113.txt");
 const SEEDS: [u64; 2] = [63_400_000, 63_500_000];
 const WINDOW: u32 = 30;
 
+/// Every war record the board carried at any turn, by conflict, front and
+/// start, the latest copy kept.
+type WarBook = BTreeMap<(u32, usize, usize, u32), WarRecord>;
+type Metric = Box<dyn Fn(&World) -> f64>;
+
 fn worlds() -> usize {
     std::env::var("CIVVIS_WAR_GATE_WORLDS")
         .ok()
@@ -175,7 +180,7 @@ fn play(score: bool, on: bool, world: usize, genes: &[Gene], base: &[bool], dir:
     );
     let profile = recipe(score, &journal_base, seed);
     // Every war record the board carried at any turn, latest copy kept.
-    let book: Rc<RefCell<BTreeMap<(u32, usize, usize, u32), WarRecord>>> = Rc::default();
+    let book: Rc<RefCell<WarBook>> = Rc::default();
     let sink = Rc::clone(&book);
     GAME_OBSERVER.with(|o| {
         *o.borrow_mut() = Some(Box::new(move |g: &Game| {
@@ -356,7 +361,7 @@ fn war_gate_paired_on_the_two_lanes() {
         ));
         let sum =
             |rows: &[&World], f: &dyn Fn(&World) -> f64| rows.iter().map(|r| f(r)).sum::<f64>();
-        let metrics: Vec<(&str, Box<dyn Fn(&World) -> f64>)> = vec![
+        let metrics: Vec<(&str, Metric)> = vec![
             (
                 "wars declared on a major",
                 Box::new(|r| f64::from(r.declared)),

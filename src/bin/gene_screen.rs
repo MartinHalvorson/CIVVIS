@@ -120,19 +120,22 @@ use std::time::Instant;
 #[cfg(test)]
 #[path = "gene_screen/host_tactics_tests.rs"]
 mod host_tactics_tests;
-#[cfg(test)]
-#[path = "gene_screen/war_gate_tests.rs"]
-mod war_gate_tests;
 #[path = "gene_screen/rival_war_pace.rs"]
 mod rival_war_pace;
 #[path = "gene_screen/unit_ledger.rs"]
 mod unit_ledger;
+#[cfg(test)]
+#[path = "gene_screen/war_gate_tests.rs"]
+mod war_gate_tests;
 
 // Test scaffolding (`war_gate_tests`): a per-thread observer `play_game`
 // hands every turn's board and the last one. Outside tests it is a no-op.
 #[cfg(test)]
+type GameObserver = Box<dyn FnMut(&Game)>;
+
+#[cfg(test)]
 thread_local! {
-    static GAME_OBSERVER: std::cell::RefCell<Option<Box<dyn FnMut(&Game)>>> =
+    static GAME_OBSERVER: std::cell::RefCell<Option<GameObserver>> =
         const { std::cell::RefCell::new(None) };
 }
 

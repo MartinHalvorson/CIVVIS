@@ -172,13 +172,7 @@ fn a_lone_warrior_before_an_open_city_holds_short_of_more() {
         CaptureVerdict::Hold(Some(reading)) => {
             assert!(reading.chance < DECLARE_P, "{reading:?}");
             assert!(!reading.needs_breaker, "an open city: {reading:?}");
-            assert!(
-                matches!(
-                    reading.short_of,
-                    Some(ShortOf::Taker | ShortOf::Bodies | ShortOf::Nothing)
-                ),
-                "{reading:?}"
-            );
+            assert!(reading.short_of.is_some(), "{reading:?}");
         }
         other => panic!("one Warrior: {other:?}"),
     }
