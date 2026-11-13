@@ -17,8 +17,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CIVVIS_COMBAT_WORLDS: "32"
-  CIVVIS_COMBAT_GENES: ranged-finish-on-the-mean,siege-needs-a-breaker,safest-stand,capital-defense-holds,shared-danger
+  CIVVIS_COMBAT_WORLDS: "48"
+  CIVVIS_COMBAT_GENES: safest-stand,capital-defense-holds,shared-danger
 
 jobs:
   build:
@@ -64,16 +64,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { recipe: gran-colombia, seed: "64720000", shard: 0, of: 4 }
-          - { recipe: gran-colombia, seed: "64720000", shard: 1, of: 4 }
-          - { recipe: gran-colombia, seed: "64720000", shard: 2, of: 4 }
-          - { recipe: gran-colombia, seed: "64720000", shard: 3, of: 4 }
-          - { recipe: rome, seed: "64730000", shard: 0, of: 6 }
-          - { recipe: rome, seed: "64730000", shard: 1, of: 6 }
-          - { recipe: rome, seed: "64730000", shard: 2, of: 6 }
-          - { recipe: rome, seed: "64730000", shard: 3, of: 6 }
-          - { recipe: rome, seed: "64730000", shard: 4, of: 6 }
-          - { recipe: rome, seed: "64730000", shard: 5, of: 6 }
+          - { recipe: gran-colombia, seed: "64740000", shard: 0, of: 4 }
+          - { recipe: gran-colombia, seed: "64740000", shard: 1, of: 4 }
+          - { recipe: gran-colombia, seed: "64740000", shard: 2, of: 4 }
+          - { recipe: gran-colombia, seed: "64740000", shard: 3, of: 4 }
+          - { recipe: rome, seed: "64750000", shard: 0, of: 4 }
+          - { recipe: rome, seed: "64750000", shard: 1, of: 4 }
+          - { recipe: rome, seed: "64750000", shard: 2, of: 4 }
+          - { recipe: rome, seed: "64750000", shard: 3, of: 4 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -82,7 +80,6 @@ jobs:
       - name: Play ${{ matrix.recipe }} shard ${{ matrix.shard }} of ${{ matrix.of }}
         env:
           CIVVIS_LIVE_GENOME: src/bin/gene_screen/combat_genes_live_genome.txt
-          CIVVIS_COMBAT_ALT: src/bin/gene_screen/combat_genes_armed_set.txt
           CIVVIS_COMBAT_RECIPE: ${{ matrix.recipe }}
           CIVVIS_COMBAT_SEED: ${{ matrix.seed }}
           CIVVIS_COMBAT_SHARD: ${{ matrix.shard }}/${{ matrix.of }}
