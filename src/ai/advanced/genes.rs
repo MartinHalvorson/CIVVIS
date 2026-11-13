@@ -5736,6 +5736,13 @@ pub const GENES: &[Gene] = &[
     // forecast capture by the soldiers in reach. See
     // `advanced/declaration_needs_a_capture.rs`.
     Gene { tag: "declaration-needs-a-capture", field: "declaration_needs_a_capture", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_needs_a_capture, disable: AdvancedAi::disable_declaration_needs_a_capture },
+    // Live Deity Rome 11-13: the first World Games the seat was a member of
+    // was won with 60 points (a Training Athletes project is 50) and it was
+    // the only member of an Aid Request for which the planner named Send Aid
+    // thirty times and no city built it; the delegated governor fills the
+    // queue. A Diplomatic seat lends one city to the competition's project.
+    // See `advanced/diplo_competition_claim.rs`.
+    Gene { tag: "diplo-seat-claims-the-competition", field: "diplo_seat_claims_the_competition", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_claims_the_competition, disable: AdvancedAi::disable_diplo_seat_claims_the_competition },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
