@@ -10341,9 +10341,10 @@ pub struct AdvancedAi {
     /// declaration, and peace asked the turn after it. Overrides any version
     /// of the family it is played beside. Opt-in.
     score_seat_grabs_what_pays: bool,
-    /// `score-seat-keeps-friends`: a Score seat accepts every friendship a
-    /// major offers and offers one to every met major the host allows,
-    /// nearest first. See `advanced/score_keeps_friends.rs`. Opt-in.
+    /// `score-seat-keeps-friends`: every seat but a Domination one (the name
+    /// is the Score seat it was written for) accepts every friendship a major
+    /// offers and offers one to every met major the host allows, nearest
+    /// first. See `advanced/score_keeps_friends.rs`. Opt-in.
     score_seat_keeps_friends: bool,
     /// `score-seat-holds-its-faith-strikes`: a seat whose victory target is
     /// Score holds the faith strike unless the rival's faith stands at match
