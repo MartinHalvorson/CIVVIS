@@ -69,6 +69,10 @@ impl BasicAi {
     /// the gene, else [`BasicAi::plaza_building_item_for`].
     pub(crate) fn plaza_tier_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
         if !self.kristina_builds_here(g, pid) {
+            // `score-seat-expands-hard`: the Hall, then the Chapel.
+            if self.plaza_hall_first {
+                return Self::plaza_hall_first_item(g, pid, cid);
+            }
             return Self::plaza_building_item_for(g, pid, cid, self.plaza_serves_science);
         }
         if !g.city_has_district_family(&g.cities[&cid], crate::name!("government_plaza")) {
