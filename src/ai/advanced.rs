@@ -6978,6 +6978,15 @@ pub struct AdvancedAi {
     /// `defend-force-holds-the-city`: this turn's posts. Empty with the gene
     /// off.
     defend_hold_plan: defend_force_holds_the_city::HoldPlan,
+    /// `defend-force-holds-the-city-2`: capturers only, the ring only when
+    /// the city can fall within two enemy turns, and the positions plan
+    /// leaves the posts alone. See `advanced/defend_force_holds_the_city.rs`.
+    /// Opt-in.
+    defend_force_holds_the_city_2: bool,
+    /// `defend-force-holds-the-city-2`: the soldiers this turn's posts may
+    /// take, read by the battle planner's positions plan. Empty with the
+    /// version off.
+    defend_hold_members: BTreeSet<u32>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
