@@ -19,7 +19,7 @@ use super::edge_ledger::{metrics, render};
 use super::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-const SEED: u64 = 64_300_000;
+const SEED: u64 = 64_310_000;
 
 /// One lane recipe, as its command line spells it.
 struct Lane {
@@ -220,10 +220,10 @@ fn edge_ledger_driver() {
             .iter()
             .filter(|setting| list.split(',').any(|key| key.trim() == setting.key))
             .collect(),
-        Err(_) => SETTINGS.iter().filter(|s| "rung-1,seat-pace,no-rung-war".split(',').any(|k| k == s.key)).collect(),
+        Err(_) => SETTINGS.iter().filter(|s| "recipe,no-rung".split(',').any(|k| k == s.key)).collect(),
     };
     let n = env_number("CIVVIS_EDGE_WORLDS", 8);
-    let minutes = env_number("CIVVIS_EDGE_MINUTES", 16);
+    let minutes = env_number("CIVVIS_EDGE_MINUTES", 15);
     let mut genes = gene_table();
     let (genome, note) = armed_genome(&mut genes);
     // World by world, the longer lane first, so a deadline leaves every arm
