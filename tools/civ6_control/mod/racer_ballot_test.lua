@@ -174,6 +174,19 @@ check("claim least from block 5", CivvisRacerClaimVotes(120, 6, 5, costs, 20, {}
 check("claim tops up a quarter", CivvisRacerClaimVotes(300, 6, 5, costs, 20, {}), 10)
 check("short of least but over the block, all in", CivvisRacerClaimVotes(100, 6, 5, costs, 20, {}), 7)
 check("live t181: 10 votes beat a block of 9", CivvisRacerClaimVotes(190, 10, 9, costs, 20, {}), 10)
+-- The claim floor (Deity lane, 2026-11-13): a bank that buys nine votes
+-- claims with all of it though it is not over the last block. 182344Z t134
+-- (151 Favor, last block 9; the rivals' largest that session was 8), 193612Z
+-- t134 (144, 9; 5) and 204218Z t134 (249, 12; 6) each sat out a session that
+-- was theirs.
+check("151 Favor claims nine against a last block of 9", CivvisRacerClaimVotes(151, 8, 9, costs, 20, {}), 9)
+check("144 Favor claims nine against a last block of 9", CivvisRacerClaimVotes(144, 8, 9, costs, 20, {}), 9)
+check("249 Favor claims eleven against a last block of 12", CivvisRacerClaimVotes(249, 4, 12, costs, 20, {}), 11)
+check("eight votes are under the floor", CivvisRacerClaimVotes(143, 8, 9, costs, 20, {}), nil)
+check("a raised floor sits the session out",
+    CivvisRacerClaimVotes(249, 4, 12, costs, 20, { DiploRacerClaimFloor = 12 }), nil)
+check("the floor does not shrink a claim that reaches its count",
+    CivvisRacerClaimVotes(300, 6, 5, costs, 20, {}), 10)
 check("no more than the block, no claim", CivvisRacerClaimVotes(30, 6, 5, costs, 20, {}), nil)
 check("claim first block 8", CivvisRacerClaimVotes(1000, 6, nil, costs, 20, {}), 13)
 check("claim all in at match point", CivvisRacerClaimVotes(300, 18, 9, costs, 20, {}), 12)
@@ -202,6 +215,21 @@ check("border control bought", requests[2].votes, 2)
 check("public relations A on us (not the ban)", requests[3].option, 1)
 check("public relations bought", requests[3].votes, 3)
 check("race spend", spent, 180 + 4 + 12)
+
+-- The claim floor in the ballot: 151 Favor after a contested session, the
+-- rivals' last block 9. Nine votes (144) claim A on us; the 7 left buy
+-- Border Control its two and Public Relations nothing.
+spent, mode = run(151, 8, 6, 9)
+check("floor claim mode", mode, "race")
+check("floor claim is A on us", requests[1].option .. "/" .. requests[1].selection, "1/0")
+check("floor claim votes", requests[1].votes, 9)
+check("floor claim leaves border control its two", requests[2].votes, 2)
+check("floor claim leaves public relations the free vote", requests[3].votes, 1)
+check("floor claim spend", spent, 144 + 4)
+-- One Favor less buys eight votes: under the floor, the session is sat out.
+spent, mode = run(143, 8, 6, 9)
+check("under the floor mode", mode, "free")
+check("under the floor the Diplomatic Victory vote is free", requests[1].votes, 1)
 
 -- A small bank cannot reach the claim: the probe stands down to the free
 -- vote and the participation votes are still bought.
