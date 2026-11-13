@@ -4184,6 +4184,55 @@ class UnseenGameWindowTest(unittest.TestCase):
         self.assertIn("-1728", evidence)
         self.assertEqual(record.call_args.kwargs["tag"], "civvis-x")
 
+    VIEW_BRIDGE = ("2026-11-13 15:25:58.042 Civ6_Exe_Child[89016:59924444] "
+                   "+[NSXPCSharedListener endpointForReply:withListenerName:replyErrorCode:]: "
+                   "an error occurred while attempting to obtain endpoint for listener "
+                   "'com.apple.view-bridge': Connection interrupted\n")
+    HEALTHY = ("[S_API] SteamAPI_Init(): Loaded steamclient.dylib OK.\n"
+               "Setting breakpad minidump AppID = 289070\n")
+
+    def note_with_log(self, strikes: int, text: str | None):
+        """A probe System Events ANSWERED (no window), with the game's stdout."""
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "stdout.log"
+            if text is not None:
+                log.write_text(text)
+            with patch.object(civ6_play, "GAME_STDOUT_LOG", log):
+                return self.note(strikes, None, [])
+
+    def test_the_games_own_log_names_the_fault_when_system_events_answers(self) -> None:
+        """2026-11-13: System Events counted 0 windows for two whole launches."""
+        faulted = self.HEALTHY + self.VIEW_BRIDGE * 3
+        result, record = self.note_with_log(0, faulted)
+        self.assertEqual(result, 1)
+        record.assert_not_called()
+        result, record = self.note_with_log(1, faulted)
+        self.assertEqual(result, 2)
+        result, record = self.note_with_log(2, faulted + self.VIEW_BRIDGE * 4)
+        self.assertEqual(result, -1)
+        evidence = record.call_args.args[0]
+        self.assertIn("com.apple.view-bridge", evidence)
+        self.assertIn("7 ", evidence)
+        self.assertEqual(record.call_args.kwargs["tag"], "civvis-x")
+
+    def test_a_healthy_short_or_missing_log_is_not_a_strike(self) -> None:
+        for text in (self.HEALTHY, self.HEALTHY + self.VIEW_BRIDGE * 2, "", None):
+            result, record = self.note_with_log(2, text)
+            self.assertEqual(result, 0, text)
+            record.assert_not_called()
+
+    def test_no_launch_of_ours_means_no_log_to_read(self) -> None:
+        with patch.object(civ6_play, "GAME_STDOUT_LOG", None):
+            self.assertIsNone(civ6_play.view_bridge_fault())
+            result, record = self.note(2, None, [])
+        self.assertEqual(result, 0)
+        record.assert_not_called()
+
+    def test_the_launch_names_the_log_the_detector_reads(self) -> None:
+        source = Path(civ6_play.__file__).read_text()
+        self.assertIn('GAME_STDOUT_LOG = run_dir / "stdout.log"\n'
+                      '        game_process = launcher.launch(stdout=GAME_STDOUT_LOG)', source)
+
     def test_both_bootstraps_count_strikes_and_stop_on_the_fault(self) -> None:
         source = Path(civ6_play.__file__).read_text()
         for name in ("def bootstrap_game(", "def bootstrap_saved_game("):

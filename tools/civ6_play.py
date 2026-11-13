@@ -2193,16 +2193,57 @@ def game_window() -> tuple[int, int, int, int] | None:
 UNSEEN_WINDOW_STRIKES = 3
 
 
+#: The stdout of the game this process launched, set at the launch. The host
+#: fault's second signature is read from it (`view_bridge_fault`). None for a
+#: game someone else started.
+GAME_STDOUT_LOG: Path | None = None
+
+#: `com.apple.view-bridge ... Connection interrupted` lines in the game's own
+#: stdout from which the host fault is named. The faulted game writes one about
+#: every ten seconds from its first second; a healthy one writes none (0 lines
+#: in 122 played runs of 2026-11-12/13, against 40 and 21 in the two launches
+#: of the 11-13 episode that never drew a window).
+VIEW_BRIDGE_FAULT_LINES = 3
+
+
+def view_bridge_fault(log: Path | None = None) -> str | None:
+    """The host fault as the game's own log shows it, or None.
+
+    The 11-04 detector needs System Events' probe to FAIL. On 2026-11-09 and
+    again on 11-13 System Events answered, with no window, for as long as the
+    fault lasted, so nothing struck: 11-13 spent two launches of seven minutes
+    each with no event written and no marker. What every episode has had
+    (09-27, 10-16, 10-27, 11-04, 11-09, 11-13) is this line in Civ VI's stdout
+    from the first second.
+    """
+    log = GAME_STDOUT_LOG if log is None else log
+    if log is None:
+        return None
+    try:
+        with open(log, errors="replace") as handle:
+            lines = sum(1 for line in handle
+                        if "com.apple.view-bridge" in line and "Connection interrupted" in line)
+    except OSError:
+        return None
+    if lines < VIEW_BRIDGE_FAULT_LINES:
+        return None
+    return (f"Civ VI's own log has {lines} 'com.apple.view-bridge: Connection interrupted' "
+            "errors since it launched (a healthy game logs none) and System Events "
+            "counts no game window")
+
+
 def unseen_game_window() -> str | None:
     """Evidence that the game is on screen but System Events cannot see it.
 
-    Call it right after `game_window` returned None. Only a FAILED System Events
-    probe counts. An answer with no window in it is the ordinary "not drawn
-    yet" or "on another Space", and is never evidence. See `host_health`.
+    Call it right after `game_window` returned None. A FAILED System Events
+    probe with the window on screen counts. An answer with no window in it is
+    the ordinary "not drawn yet" or "on another Space" and is not evidence by
+    itself; it is when the game's own log shows the fault
+    (`view_bridge_fault`). See `host_health`.
     """
     error = macos_window.window_probe_error()
     if error is None:
-        return None
+        return view_bridge_fault()
     windows = macos_window.cg_windows(env.game_pids())
     if not windows:
         return None
@@ -6306,7 +6347,9 @@ def _play(args: argparse.Namespace) -> int:
         # AppKit compile (~1.5 s) while it shows full screen.
         desktop_size()
         setup_clock_start()
-        game_process = launcher.launch(stdout=run_dir / "stdout.log")
+        global GAME_STDOUT_LOG
+        GAME_STDOUT_LOG = run_dir / "stdout.log"
+        game_process = launcher.launch(stdout=GAME_STDOUT_LOG)
         owned_launch["process"] = game_process
         setup_mark("launched")
         placing = threading.Event()
