@@ -217,6 +217,12 @@ impl AdvancedAi {
         if growth_claims {
             self.claim_domination_monuments(g, pid, plan);
         }
+        // `score-seat-holds-its-capital`: a Score seat's held cities take
+        // their next Walls tier, then a shooter for the centre, after the
+        // Campus and Monument claims (whose heads they pass) and through the
+        // war's hold. Exact no-op while the gene is off. See
+        // `advanced/score_holds_its_capital.rs`.
+        self.claim_score_capital_defences(g, pid, plan);
         // `culture-seat-theater-first`: a Culture seat's first Theater
         // Squares, after the Campus claims (which yield those cities) and
         // ahead of the Prophet race and the routine claims. Exact no-op

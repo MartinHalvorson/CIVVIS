@@ -1300,10 +1300,11 @@ impl AdvancedAi {
         // still needs lead time when a stronger visible attacker approaches.
         // Reuse the wall-research warning and keep the existing one-queue
         // arbitration, legal defender choice, and completed-defense guard.
-        let approach_visible = (self.victory_planning
-            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
-            && active_major_war)
-            .then(|| g.player_vision_frame(pid));
+        // A Score seat too (`conquest_or_score_seat`): its cities are its
+        // points, and this branch only defends them.
+        let approach_visible =
+            (self.victory_planning && self.conquest_or_score_seat(g) && active_major_war)
+                .then(|| g.player_vision_frame(pid));
         let mut best: Option<(i32, u32, Option<Item>, Item)> = None;
         let mut retained: Option<(i32, u32, Item)> = None;
         let mut counter_rescue: Option<(i32, u32, Option<Item>, Item)> = None;

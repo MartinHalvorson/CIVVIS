@@ -27,11 +27,10 @@ impl AdvancedAi {
             return Some(masonry);
         }
         let target = self.active_victory_target(g);
+        // A Score seat too (`conquest_or_score_seat`): its cities are its
+        // points.
         if !self.victory_planning
-            || !matches!(
-                target,
-                Some(VictoryTarget::Culture | VictoryTarget::Domination)
-            )
+            || !(target == Some(VictoryTarget::Culture) || self.conquest_or_score_seat(g))
             || g.players[pid].techs.contains(&masonry)
         {
             return None;
@@ -61,7 +60,7 @@ impl AdvancedAi {
         // that overmatches an unwalled center and has a short route to its
         // approach is already a reason to unlock walls, even when terrain or
         // screening units keep it out of this turn's attack envelope.
-        if target == Some(VictoryTarget::Domination) {
+        if self.conquest_or_score_seat(g) {
             let visible = g.player_vision_frame(pid);
             if unwalled
                 .into_iter()

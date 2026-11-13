@@ -10297,6 +10297,10 @@ pub struct AdvancedAi {
     /// `score-seat-takes-what-pays`: the city the plan names and the last
     /// board line. Empty with the gene off.
     score_take_state: score_takes_what_pays::ScoreTakeState,
+    /// `score-seat-holds-its-capital`: a Score seat walls its capital and
+    /// frontier cities tier by tier and keeps a shooter in their centres. See
+    /// `advanced/score_holds_its_capital.rs`. Opt-in.
+    score_seat_holds_its_capital: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11377,6 +11381,9 @@ mod chop_feeds_the_long_build;
 /// one. See `advanced/chop_for_expansion.rs`.
 mod chop_for_expansion;
 
+/// `score-seat-holds-its-capital`: a Score seat's Walls tiers and centre
+/// shooters. See `advanced/score_holds_its_capital.rs`.
+mod score_holds_its_capital;
 /// `score-seat-plays-for-points`: a Score-target seat's production buys
 /// points. See `advanced/score_seat.rs`.
 mod score_seat;
@@ -20835,9 +20842,12 @@ impl AdvancedAi {
                 .is_some_and(|(_, item)| self.deterrence_unit_holds(g, pid, item));
             // `capital-walls-before-the-surprise`: the capital's claimed
             // Walls finish while they are armed.
-            let capital_walls_commitment = committed
-                .as_ref()
-                .is_some_and(|(_, item)| self.capital_walls_hold(g, pid, cid, item));
+            // `score-seat-holds-its-capital`: so do a held city's claimed
+            // Walls tier and centre shooter.
+            let capital_walls_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                self.capital_walls_hold(g, pid, cid, item)
+                    || self.score_capital_holds(g, pid, cid, item)
+            });
             // `granary-claims-the-bound-queue`: the claimed Granary finishes
             // while the city is still housing-bound.
             let bound_granary_commitment = committed

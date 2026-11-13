@@ -171,6 +171,8 @@ impl AdvancedAi {
                         // `domination-seat-raises-its-culture`: its Monument
                         // goes first.
                         || self.domination_monument_holds(g, pid, cid, plan, item)
+                        // `score-seat-holds-its-capital`: its Walls or shooter.
+                        || self.score_capital_holds(g, pid, cid, item)
                         || !Self::bound_granary_may_defer(g, pid, cid, item, at_major_war)
                     {
                         continue;

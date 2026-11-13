@@ -6092,6 +6092,13 @@ pub const GENES: &[Gene] = &[
     // declarer). Eleven Rome games: every city lost followed a declaration
     // at under 0.55 of the declarer. See `advanced/score_seat.rs`.
     Gene { tag: "score-seat-trims-the-idle-army", field: "score_seat_trims_the_idle_army", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_trims_the_idle_army, disable: AdvancedAi::disable_score_seat_trims_the_idle_army },
+    // Live Deity Rome, Score target, 6p Continents: Rome fell in 4 of 8 games
+    // from 2026-11-12 23:57Z, every time behind Ancient Walls with Castles
+    // known 18-37 turns (or a 4x army), the centre empty at the declaration
+    // in three. Held cities (the capital from t30, any city within 8 tiles
+    // of a rival city) build each Walls tier and keep a shooter in the
+    // centre. Opt-in; see `advanced/score_holds_its_capital.rs`.
+    Gene { tag: "score-seat-holds-its-capital", field: "score_seat_holds_its_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_holds_its_capital, disable: AdvancedAi::disable_score_seat_holds_its_capital },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

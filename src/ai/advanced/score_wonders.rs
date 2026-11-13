@@ -205,6 +205,10 @@ impl AdvancedAi {
                 if !military {
                     return true;
                 }
+                // `score-seat-holds-its-capital`: a held centre's shooter.
+                if self.score_capital_holds(g, pid, cid, head) {
+                    return false;
+                }
                 let cities = g.player_city_ids(pid).len();
                 let soldiers = g
                     .units

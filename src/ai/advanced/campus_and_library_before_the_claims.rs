@@ -321,6 +321,8 @@ impl AdvancedAi {
                     || matches!(spec.domain.as_deref(), Some("sea" | "air"))
                     || self.first_capital_training_holds(g, pid, cid, item)
                     || self.first_capital_land_recon_holds(g, pid, cid, plan, item)
+                    // `score-seat-holds-its-capital`: a held centre's shooter.
+                    || self.score_capital_holds(g, pid, cid, item)
                 {
                     return None;
                 }
