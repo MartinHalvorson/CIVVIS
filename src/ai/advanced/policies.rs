@@ -864,7 +864,11 @@ impl AdvancedAi {
         desired.splice(0..0, culture_defense_cards.iter().copied());
         let unproductive_economic_cards =
             self.domination_productive_policy_fallbacks(g, pid, &mut desired);
-        let upgrade_card = self.domination_upgrade_policy(g, pid);
+        // `upgrade-card-for-the-backlog`: every other target's backlog takes
+        // the same card through the same slot. `None` with the gene off.
+        let upgrade_card = self
+            .domination_upgrade_policy(g, pid)
+            .or_else(|| self.backlog_upgrade_card(g, pid));
         if let Some(card) = upgrade_card {
             desired.retain(|wanted| *wanted != card);
             desired.insert(0, card);
