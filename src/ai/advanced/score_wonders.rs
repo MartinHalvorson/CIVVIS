@@ -55,6 +55,31 @@
 //!    while a major is at war with us or the empire holds fewer soldiers than
 //!    cities, or anything finishing within two turns.
 //!
+//! ## Version 2: expansion and safety first
+//!
+//! `score-seat-raises-wonders-2` (enabling it turns version 1 off; it carries
+//! version 1's rules). Armed live from 00:40Z on 2026-11-13, version 1 built
+//! 1-5 wonders a game and cost cities: at t100 6.5 against 8.2 before it, at
+//! most 7.7 against 10.7, 2.0 lost against 0.8. In the journals of
+//! civvis-20261113T004307Z, 010705Z and 011722Z the capital held a wonder on
+//! 13-30 of the turns t40-99 (Apadana t66-84 in 010705Z, ahead of an
+//! Industrial Zone) and the empire trained 3-4 Settlers in t40-99 against
+//! 4-7 in the three games before the arm; in 011722Z Rome started Angkor Wat
+//! at t87 beside Gran Colombia (689 military to our 407, six tiles off),
+//! which declared at t89 and took Rome at t92. Version 2 holds the lanes (no
+//! start, and a standing race is not put back at its head) while any of:
+//!
+//! 1. **Expansion:** before [`SCORE_WONDER_V2_EXPANSION_STANDARD`] (80 at
+//!    Online), the empire is under the plan's city target, or a Settler is in
+//!    any city's queue.
+//! 2. **War:** a major is at war with us.
+//! 3. **A stronger neighbour:** a met major not known to stand far off
+//!    (`score-seat-trims-the-idle-army`'s neighbour) fields
+//!    [`SCORE_WONDER_V2_THREAT_RATIO`] times our military or more.
+//!
+//! And it never races in a city with a Settler in its queue. A race that
+//! finishes or is lost while held is still counted.
+//!
 //! Journal (every reason starts `score-seat-raises-wonders:`): each start
 //! (wonder, city, turns, points with the Era Score, the chance, what it
 //! passed), each loss of a race and each finish. Counters
@@ -89,6 +114,14 @@ pub(super) const SCORE_WONDER_LET_FINISH_TURNS: f64 = 2.0;
 /// Turns since a city was last attacked under which it races nothing.
 const SCORE_WONDER_ATTACK_MEMORY: u32 = 4;
 
+/// Version 2: before this turn, in Standard turns (80 at Online), the lanes
+/// hold while the empire is under its city target or a Settler is queued.
+pub(super) const SCORE_WONDER_V2_EXPANSION_STANDARD: u32 = 120;
+
+/// Version 2: the lanes hold while a neighbour fields this many times our
+/// military.
+pub(super) const SCORE_WONDER_V2_THREAT_RATIO: f64 = 1.5;
+
 /// Points at the tally for a finished wonder (`Game::score_parts`).
 const SCORE_WONDER_POINTS: f64 = 15.0;
 
@@ -105,7 +138,58 @@ pub(super) struct ScoreWonderPick {
 impl AdvancedAi {
     /// Whether the gene acts: on, on a Score target.
     pub(super) fn score_wonders_on(&self) -> bool {
-        self.score_seat_raises_wonders && self.victory_target == Some(VictoryTarget::Score)
+        (self.score_seat_raises_wonders || self.score_seat_raises_wonders_2)
+            && self.victory_target == Some(VictoryTarget::Score)
+    }
+
+    /// Version 2: why the lanes hold this turn (see the module), or `None`
+    /// when they do not, or with version 2 off.
+    pub(super) fn score_wonder_v2_hold(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Option<String> {
+        if !self.score_seat_raises_wonders_2 {
+            return None;
+        }
+        let city_ids = g.player_city_ids(pid);
+        if g.turn < g.standard_duration(SCORE_WONDER_V2_EXPANSION_STANDARD) {
+            if city_ids.len() < plan.desired_cities {
+                return Some(format!(
+                    "expansion first: {} cities of the {} the plan wants",
+                    city_ids.len(),
+                    plan.desired_cities
+                ));
+            }
+            if city_ids
+                .iter()
+                .any(|cid| Self::score_wonder_trains_a_settler(g, *cid))
+            {
+                return Some("expansion first: a Settler is queued".to_string());
+            }
+        }
+        if Self::score_wonder_at_war(g, pid) {
+            return Some("safety first: a major is at war with us".to_string());
+        }
+        let ours = g.military_power(pid);
+        if let Some((rival, theirs)) = self.score_seat_neighbour(g, pid) {
+            if theirs >= SCORE_WONDER_V2_THREAT_RATIO * ours {
+                return Some(format!(
+                    "safety first: {} fields {theirs:.0} military to our {ours:.0}",
+                    g.players[rival].civ
+                ));
+            }
+        }
+        None
+    }
+
+    /// Whether `cid` has a Settler anywhere in its queue.
+    pub(super) fn score_wonder_trains_a_settler(g: &Game, cid: u32) -> bool {
+        g.cities[&cid]
+            .queue
+            .iter()
+            .any(|item| matches!(item, Item::Unit { unit } if *unit == "settler"))
     }
 
     /// The era a wonder belongs to: its technology's, else its civic's.
@@ -316,6 +400,10 @@ impl AdvancedAi {
             .player_city_ids(pid)
             .into_iter()
             .filter(|cid| Self::score_wonder_city_safe(g, plan, *cid))
+            // Version 2: never in the city that trains the Settlers.
+            .filter(|cid| {
+                !(self.score_seat_raises_wonders_2 && Self::score_wonder_trains_a_settler(g, *cid))
+            })
             .collect();
         cities.sort_by(|a, b| {
             let (ca, cb) = (&g.cities[a], &g.cities[b]);
@@ -334,7 +422,13 @@ impl AdvancedAi {
 
     /// Resolve the races already held: finished, lost, or still running (and
     /// put back at the head of their queue when a routine item took it).
-    fn score_wonder_resolve_races(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+    fn score_wonder_resolve_races(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        held: bool,
+    ) {
         let races: Vec<(Pos, Name)> = self
             .score_wonder_races
             .iter()
@@ -377,7 +471,8 @@ impl AdvancedAi {
                         which the host salvages into the city");
                 continue;
             };
-            if g.cities[&cid].queue.first() == Some(&item)
+            if held
+                || g.cities[&cid].queue.first() == Some(&item)
                 || !Self::score_wonder_city_safe(g, plan, cid)
                 || plan.strategy == GrandStrategy::Recovery
                 || !self.score_wonder_may_pass(g, pid, cid)
@@ -400,8 +495,25 @@ impl AdvancedAi {
         if !self.score_wonders_on() || pid >= g.players.len() {
             return;
         }
-        self.score_wonder_resolve_races(g, pid, plan);
-        if !start || plan.strategy == GrandStrategy::Recovery {
+        // Version 2: the lanes hold for expansion and safety (see the module).
+        let hold = self.score_wonder_v2_hold(g, pid, plan);
+        if hold != self.score_wonder_hold {
+            match &hold {
+                Some(why) => {
+                    think!(self.journal(), Cities, Decision, "The wonder lanes hold";
+                           "score-seat-raises-wonders-2: {why}; no race starts and a standing \
+                            race is not put back at its head");
+                }
+                None => {
+                    think!(self.journal(), Cities, Decision, "The wonder lanes reopen";
+                           "score-seat-raises-wonders-2: the city target is met, no Settler is \
+                            queued, and no major is at war with us or out-guns us 1.5 to 1");
+                }
+            }
+            self.score_wonder_hold = hold.clone();
+        }
+        self.score_wonder_resolve_races(g, pid, plan, hold.is_some());
+        if !start || plan.strategy == GrandStrategy::Recovery || hold.is_some() {
             return;
         }
         let city_ids = g.player_city_ids(pid);

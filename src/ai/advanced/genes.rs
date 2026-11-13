@@ -6086,6 +6086,11 @@ pub const GENES: &[Gene] = &[
     // rivals' 3-13 while the host offered them; a one-lane-plus-one program on
     // the host's own quotes finished 7.7. See `advanced/score_wonders.rs`.
     Gene { tag: "score-seat-raises-wonders", field: "score_seat_raises_wonders", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_raises_wonders, disable: AdvancedAi::disable_score_seat_raises_wonders },
+    // Version 2: live v1 (11-13 00:40Z) built 1-5 wonders but cities at t100
+    // fell 8.2 -> 6.5 and losses rose 0.8 -> 2.0; the lanes hold for
+    // expansion before t80 and beside a 1.5x neighbour. See
+    // `advanced/score_wonders.rs`.
+    Gene { tag: "score-seat-raises-wonders-2", field: "score_seat_raises_wonders_2", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_raises_wonders_2, disable: AdvancedAi::disable_score_seat_raises_wonders_2 },
     // Live Deity Rome Score lane 2026-11-12, 11 games: Settlers were born at
     // the same pace in the fast and the slow games, but took a mean 8.7
     // turns from birth to founding in the three fastest against 23.8 in the

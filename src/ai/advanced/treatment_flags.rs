@@ -5802,6 +5802,18 @@ impl AdvancedAi {
         self.defend_force_holds_the_city_2 = false;
     }
 
+    /// Opt-in gene `score-seat-raises-wonders-2`; version two of the family,
+    /// so version one is turned off. See `advanced/score_wonders.rs`.
+    pub fn enable_score_seat_raises_wonders_2(&mut self) {
+        self.score_seat_raises_wonders = false;
+        self.score_seat_raises_wonders_2 = true;
+    }
+
+    /// The twin of `enable_score_seat_raises_wonders_2`.
+    pub fn disable_score_seat_raises_wonders_2(&mut self) {
+        self.score_seat_raises_wonders_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
