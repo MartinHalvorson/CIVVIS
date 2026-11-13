@@ -7814,6 +7814,11 @@ pub struct AdvancedAi {
     /// carries its upkeep, and purchases keep three turns of the unit bill.
     /// See `advanced/endgame_army_takes_the_queue.rs`. Opt-in.
     endgame_army_takes_the_queue: bool,
+    /// `faithless-seat-holds-its-faith-strikes`: a seat that founded no
+    /// religion (and is not playing for a Religious Victory) holds the faith
+    /// strike unless the rival's faith stands at match point. See
+    /// `advanced/faithless_seat_holds_its_faith_strikes.rs`. Off by default.
+    faithless_seat_holds_its_faith_strikes: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -11249,6 +11254,9 @@ mod faith_war_at_match_point;
 mod faith_war_before_the_flip;
 /// `faith-war-is-no-front`: see `advanced/faith_war_is_no_front.rs`.
 mod faith_war_is_no_front;
+/// `faithless-seat-holds-its-faith-strikes`: see
+/// `advanced/faithless_seat_holds_its_faith_strikes.rs`.
+mod faithless_seat_holds_its_faith_strikes;
 /// `own-flip-faith-war-asks-no-power`: see `advanced/own_flip_faith_war.rs`.
 mod own_flip_faith_war;
 

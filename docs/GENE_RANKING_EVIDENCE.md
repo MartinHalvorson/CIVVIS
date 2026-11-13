@@ -321,6 +321,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `faith-war-defends-the-diplomat` | off (unmeasured) | Opt-in gene `faith-war-defends-the-diplomat`; see `Self::faith_war_defends_the_diplomat`. | 1 \| 1 |
 | `faith-war-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-war-needs-the-edge`; see `Self::faith_war_needs_the_edge`. | 1 \| 1 |
 | `faith-war-on-a-small-world` | off (unmeasured) | Opt-in `faith-war-on-a-small-world`; see `AdvancedAi::faith_war_on_a_small_world`. | 1 \| 1 |
+| `faithless-seat-holds-its-faith-strikes` | off (unmeasured) | Opt-in gene `faithless-seat-holds-its-faith-strikes`; see `advanced/faithless_seat_holds_its_faith_strikes.rs`. | 1 \| 1 |
 | `field-reads-the-tile-it-leaves` | off (unmeasured) | Opt-in gene `field-reads-the-tile-it-leaves`; see `Self::field_reads_the_tile_it_leaves`. | 1 \| 1 |
 | `first-campus-before-the-settler` | off (unmeasured) | Opt-in `first-campus-before-the-settler`; see `advanced/first_campus_before_the_settler.rs`. | 1 \| 1 |
 | `first-capital-before-the-camp` | off (unmeasured) | Opening defence priority for the threatened sole capital. | 1 \| 1 |
