@@ -3182,7 +3182,8 @@ fn browser_renders_each_delivered_state_as_one_complete_frame() {
     // The watching loop's read, and the read a page opens on. The opening one
     // asks for the globe in the same breath: a second whole state for the
     // geometry alone used to land on the first turns of every visit.
-    assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\" + paintedQuery(), {signal:controller.signal})"));
+    assert!(EMBEDDED_INDEX
+        .contains("fetchJSON(\"/state\" + paintedQuery(), {signal:controller.signal})"));
     assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\" + paintedQuery() + \"&planet=1\")"));
     assert!(EMBEDDED_INDEX.contains("render(adoptTiles(adoptPlanetGeometry(await openingRead)));"));
     // Two tabs are two promises, so a page says which one it is, and what
