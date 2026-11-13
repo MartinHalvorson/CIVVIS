@@ -76,17 +76,22 @@
   // What a build check can read from outside the page.
   //
   // Worth stating plainly, because it is the one guarantee this architecture
-  // gets for free: a spectated turn is played *by* the request that asks for
-  // it, and the viewer only issues that request after `render()` has finished
-  // the previous turn. A turn that nobody painted therefore cannot be
-  // simulated at all — the frame-per-turn contract is structural here rather
-  // than enforced by a delivery gate. `turns` and `paints` should match.
+  // gets for free: the engine plays a frame only for a request that names the
+  // frame before it, and the viewer only issues that request after `render()`
+  // has finished the previous turn. The read-ahead below asks for exactly one
+  // frame early — the one the page is about to ask for — and never a second
+  // until the page has taken the first, so frames still reach the page one at
+  // a time and in order and none can be played past unseen. The
+  // frame-per-turn contract is structural here rather than enforced by a
+  // delivery gate. `turns` and `paints` should match.
   const report = (window.__civvisBeta = {
     ready: false,
     error: null,
     requests: 0,
     turns: 0,     // turns the engine played for this page
     paints: 0,    // next-turn requests, each one an acknowledged repaint
+    aheadHits: 0,   // frames the page was handed from the read-ahead
+    aheadMisses: 0, // read-ahead frames the page turned out not to ask for
     lastTurn: null,
     seenTurns: new Set(),
     fullMapFrames: 0,
@@ -96,6 +101,10 @@
     fullMapBytes: 0,
     patchBytes: 0,
   });
+
+  // The network as the page found it. Everything the engine does not answer
+  // goes here untouched, and so do this file's own reads of the manifest.
+  const networkFetch = window.fetch.bind(window);
 
   // ------------------------------------------------------------------ worker
 
@@ -265,6 +274,181 @@
 
   const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
+  // ------------------------------------------------------------ read-ahead
+
+  // A watched turn used to cost the engine's time *plus* the page's: the
+  // engine played a frame only when asked, the page asked only once it had
+  // painted the frame before, and so each stood idle while the other worked.
+  // In the opening turns the two are about the same size — 25 to 50 ms of
+  // engine against 30 ms of parse, paint and wait for the display — so the
+  // turn counter ran at little more than half the pace either side could
+  // keep, and it opened slowest of all: the first step waited behind the
+  // first paint, the largest paint of the game.
+  //
+  // So the frame the page is about to ask for is asked for here, the moment
+  // the page is handed the one before it. The request is the page's own next
+  // request, predicted: the watching loop names the frame it holds and the
+  // last thought it holds. The frame is the one in the answer it was just
+  // given. The thought is that answer's too if the page has been taking each
+  // answer's reasoning in as it arrives, and otherwise the one it named last
+  // time — the viewer only takes reasoning in when it repaints its side
+  // panel, and which of the two it is doing shows in what it asks. When the
+  // page does ask, the answer is already in hand or already on its way. A
+  // turn then costs the larger of the two times instead of their sum.
+  //
+  // Only at Lightning. At every slower pace a frame is held for its share of
+  // the turn budget, the engine is finished long before the page may have it,
+  // and there is nothing to gain by asking early.
+  //
+  // It is one frame and never two. A second is not asked for until the page
+  // has taken the first, so the engine is never more than one frame past the
+  // glass and every frame still reaches the page in order. And it is only
+  // ever a guess at a request: the engine answers what it is actually asked.
+  // If the page asks for something else — it resynchronised, or its cursor
+  // moved — the guess is dropped and the page's request goes to the engine as
+  // written, which answers with the world as it stands and a whole map, the
+  // way it answers any page that is not holding the frame on the table.
+  // Anything that can change the world or what a state says about it — a
+  // pause, a pace, a new game, a seat to watch as — drops the guess the same
+  // way, so a frame built before the change is never shown after it.
+  //
+  // `?ahead=0` turns it off, which is how its effect is measured.
+  const READ_AHEAD = new URL(window.location.href).searchParams.get("ahead") !== "0";
+  // A page that never asks for the predicted frame is a viewer this file does
+  // not understand. Each miss costs a whole map where a patch would have
+  // done, so a run of them ends the guessing for this visit.
+  const READ_AHEAD_MISS_LIMIT = 3;
+  let ahead = null; // { have, think, answer: Promise } — the one frame asked for early
+  let aheadMispredicted = 0; // in a row
+  // The world and the last thought in the state the page was most recently
+  // handed, to tell from its next request whether it took that reasoning in.
+  let handedSeed = null;
+  let handedCursor = null;
+
+  function queryValue(target, name) {
+    const match = new RegExp(`[?&]${name}=([^&]*)`).exec(target);
+    return match ? match[1] : null;
+  }
+
+  function dropAhead(mispredicted) {
+    if (ahead === null) return;
+    ahead = null;
+    report.aheadMisses++;
+    if (mispredicted) aheadMispredicted++;
+  }
+
+  // Called with the state the page is about to be handed, and the thought its
+  // request for that state named.
+  function readAhead(answer, askedThink) {
+    if (!answer || typeof answer !== "object") return;
+    const cursor = answer.ai_reasoning ? answer.ai_reasoning.cursor : null;
+    // Whether the page took in the reasoning it was handed last time. A page
+    // that did names that state's last thought; one that did not is still
+    // naming an older one, and will go on naming it until it repaints.
+    const keepsUp = answer.seed !== handedSeed || handedCursor === null ||
+      askedThink === handedCursor;
+    handedSeed = answer.seed;
+    handedCursor = Number.isSafeInteger(cursor) ? String(cursor) : null;
+    if (!READ_AHEAD || ahead !== null || paused || answer.error) return;
+    if (aheadMispredicted >= READ_AHEAD_MISS_LIMIT) return;
+    // Only a watched world plays itself, and a held or finished one does not.
+    if (answer.spectate !== true || answer.paused === true) return;
+    if (answer.finished === true || (answer.winner !== undefined && answer.winner !== null)) return;
+    if (answer.pace !== 0) return;
+    if (![answer.seed, answer.turn, answer.frame_sequence, cursor].every(Number.isSafeInteger)) return;
+    const have = `${answer.seed}:${answer.turn}:0:${answer.frame_sequence}`;
+    const think = keepsUp || askedThink === null ? String(cursor) : askedThink;
+    const reading = { have, think, answer: ask("GET", `/state?have=${have}&think=${think}`, "") };
+    // Its failure belongs to the request that is handed it. One nobody takes
+    // must not surface as an unhandled rejection.
+    reading.answer.catch(() => {});
+    ahead = reading;
+  }
+
+  // The page asking for a state. The read-ahead is the answer when it is the
+  // very request the page made; a whole-world read that names no frame is the
+  // engine's to answer and leaves the read-ahead standing, because it changes
+  // nothing the read-ahead was built on.
+  function takeAhead(target) {
+    if (ahead === null) return null;
+    const have = queryValue(target, "have");
+    if (have === null) return null;
+    if (ahead.have === have && ahead.think === queryValue(target, "think")) {
+      const reading = ahead;
+      ahead = null;
+      report.aheadHits++;
+      aheadMispredicted = 0;
+      return reading.answer;
+    }
+    dropAhead(true);
+    return null;
+  }
+
+  // What leaves a frame already asked for still true. Every `GET` is a read.
+  // The page's status heartbeat restates the pause it already has, and only
+  // changes anything when it says paused; saving reads the engine and writes
+  // to this page's own storage.
+  function keepsReadAhead(method, path, parsed) {
+    if (method === "GET") return true;
+    if (path === "/save") return true;
+    return path === "/spectator-status" && parsed.paused !== true;
+  }
+
+  // ------------------------------------------------------- opening settings
+
+  // The pace and the between-game hold the page is about to ask for, sent
+  // ahead of its first read.
+  //
+  // The module opens every world at Blitz with a ten-second hold; the viewer
+  // opens the public site at Lightning with a five-second one, or on whatever
+  // the visitor last picked. It used to say so only after its first paint:
+  // two `/pace` posts on the first frame, each answered with a whole state
+  // the page parsed and drew again, in the same moment the first turns were
+  // due. Said here instead, the first state the page reads already agrees
+  // with it, nothing is posted, and the first frame after it can be asked for
+  // early at the right pace.
+  //
+  // These are the viewer's rules (`restorePace`, `restoreBetweenGameCountdown`
+  // in `web/assets/app.js`) and `beta/shim_test.py` holds the two files to the
+  // same keys and values. If they ever did differ, the viewer would post its
+  // own choice on its first frame exactly as it always has.
+  //
+  // A link that configured its own world keeps the module's pace: a Tactics
+  // battle opens at Blitz whatever the visitor watches full games at, and the
+  // viewer is the one that knows which kind of world arrived.
+  const WATCH_PACE_KEY = "civvis-watch-pace";
+  const WATCH_PACES_MS = new Set([0, 500, 1000, 2000, 4000]);
+  const PUBLISHED_SITE_PACE_MS = 0;
+  const FINALE_KEY = "civvis-between-game-countdown";
+  const DEFAULT_FINALE_MS = 5000;
+  let openingSettingsSent = false;
+  function sendOpeningSettings() {
+    if (openingSettingsSent) return;
+    openingSettingsSent = true;
+    const stored = (key) => {
+      try {
+        const value = localStorage.getItem(key);
+        return value === null || value === "" ? NaN : Number(value);
+      } catch (_) {
+        return NaN;
+      }
+    };
+    const settings = {};
+    if (OPENING_PRESET === null) {
+      const picked = stored(WATCH_PACE_KEY);
+      if (WATCH_PACES_MS.has(picked)) settings.ms = picked;
+      else if (window.CIVVIS_PUBLISHED_SITE) settings.ms = PUBLISHED_SITE_PACE_MS;
+    }
+    const hold = stored(FINALE_KEY);
+    settings.between_game_countdown_ms = FINALE_OPTIONS_MS.has(hold) ? hold : DEFAULT_FINALE_MS;
+    if (typeof settings.ms === "number") pace = settings.ms;
+    betweenGameCountdownMs = settings.between_game_countdown_ms;
+    // The answer is a whole state nobody reads; taken as bytes, it is never
+    // parsed. Requests reach the engine in the order they are posted, so the
+    // page's first read is answered at this pace without waiting here.
+    ask("POST", "/pace", JSON.stringify(settings), true).catch(() => {});
+  }
+
   async function installedSuccessorBuild() {
     try {
       const [runtime, response] = await Promise.all([
@@ -289,14 +473,18 @@
   // to notice that separate event. A matching commit is mandatory so a page
   // caught during publication never assigns the successor's size to the
   // engine it is still running.
-  let runningBuildManifest = null;
+  //
+  // Read once, and asked for while this script is still loading. It used to
+  // be asked for by the first engine answer that wanted it, and twice over —
+  // the size and the build hour each kept a reading of their own — so the
+  // opening `/rules` and the opening `/state` each stood still for a round
+  // trip to the network while a ready engine waited: 0.2 to 0.3 s of every
+  // visit on a fast line, more on a slow one. The module is megabytes and
+  // this is a few hundred bytes, so asked for here it is in hand first.
+  const runningBuildManifest = networkFetch(BUILD_URL, { cache: "no-store" })
+    .then((response) => response.ok ? response.json() : null)
+    .catch(() => null);
   function loadRunningBuildManifest() {
-    if (runningBuildManifest === null) {
-      runningBuildManifest = networkFetch(new URL("build.json", here), {
-        cache: "no-store",
-      }).then((response) => response.ok ? response.json() : null)
-        .catch(() => null);
-    }
     return runningBuildManifest;
   }
 
@@ -496,15 +684,29 @@
 
   // --------------------------------------------------------------- dispatch
 
-  const json = (value) =>
-    new Response(JSON.stringify(value), {
+  // An engine answer, as the `Response` the page's `fetch` expects.
+  //
+  // The answer is already an object here: it was parsed once, off the bytes
+  // the worker sent. It used to be turned back into text for the `Response`
+  // and parsed a second time by the page — a megabyte and a half at boot, a
+  // few hundred kilobytes every turn after, all on the thread that paints.
+  // The page reads these with `.json()`, so that is answered with the object
+  // itself; `.text()` still gives the text to anything that wants it.
+  function json(value) {
+    const response = new Response(null, {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
+    response.json = () => Promise.resolve(value);
+    response.text = () => Promise.resolve(JSON.stringify(value));
+    response.clone = () => json(value);
+    return response;
+  }
 
   async function serve(method, target, body) {
     const path = target.split("?")[0];
     const parsed = body ? safeParse(body) : {};
+    if (!keepsReadAhead(method, path, parsed)) dropAhead(false);
 
     // The routes that need storage the engine cannot reach.
     if (method === "GET" && path === "/saves") {
@@ -548,6 +750,9 @@
         // Pausing voids a running countdown, exactly as it does on a socket.
         if (paused) finaleEndsAt = null;
       }
+      // A page that changed how it watches may ask differently from here on,
+      // so a read-ahead that had stopped guessing starts again.
+      aheadMispredicted = 0;
       return json(await ask("POST", "/pace", body));
     }
 
@@ -559,7 +764,14 @@
     if (wantsNextTurn && paused) await sleep(PAUSED_POLL_MS);
 
     const started = performance.now();
-    let answer = await ask(method, target, body);
+    const worldRead = method === "GET" && path === "/state";
+    let answer = await ((worldRead && takeAhead(target)) || ask(method, target, body));
+    // The page's own read of the world — the watching loop's, or the read it
+    // opens on — and so the one whose successor it will ask for next. The
+    // planet's geometry is read through `/state` too and is neither.
+    if (worldRead && (wantsNextTurn || /[?&]painted=/.test(target))) {
+      readAhead(answer, queryValue(target, "think"));
+    }
     // Playing on sets the engine's pause from its own request, so this clock
     // has to be told, or the resumed world is priced and held as a paused one.
     if (path === "/play-on" && typeof answer?.paused === "boolean") paused = answer.paused;
@@ -622,22 +834,14 @@
 
   // ------------------------------------------------------- the interception
 
-  const networkFetch = window.fetch.bind(window);
-
   // Publication records the optimized module after `wasm-opt` has finished.
   // Rust cannot truthfully bake that size into the module itself: changing the
   // embedded number changes the file, and optimization happens afterwards.
-  // Load the adjacent manifest once and attach its exact byte count only when
+  // Read the adjacent manifest once and attach its exact byte count only when
   // it names the same revision as the running module. That prevents a page
   // caught during a deployment from showing the successor's size.
-  let publishedBuildPromise = null;
   function loadPublishedBuild() {
-    if (publishedBuildPromise === null) {
-      publishedBuildPromise = networkFetch(BUILD_URL, {cache: "no-store"})
-        .then(response => response.ok ? response.json() : null)
-        .catch(() => null);
-    }
-    return publishedBuildPromise;
+    return loadRunningBuildManifest();
   }
   async function withPublishedArtifact(answer) {
     if (!answer || typeof answer !== "object") return answer;
@@ -691,7 +895,10 @@
     // routes read their parameters straight off the query string.
     const relative = target.startsWith("http") ? path + new URL(target).search : target;
     return ensureOpeningPreset()
-      .then(() => serve(method, relative, options_.body || ""))
+      .then(() => {
+        sendOpeningSettings();
+        return serve(method, relative, options_.body || "");
+      })
       .catch((error) => json({ error: String(error.message || error) }));
   };
 
