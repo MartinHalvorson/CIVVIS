@@ -117,6 +117,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, Write};
 use std::time::Instant;
 
+#[path = "gene_screen/edge_ledger.rs"]
+mod edge_ledger;
+#[cfg(test)]
+#[path = "gene_screen/edge_ledger_tests.rs"]
+mod edge_ledger_tests;
 #[cfg(test)]
 #[path = "gene_screen/host_tactics_tests.rs"]
 mod host_tactics_tests;
@@ -1380,6 +1385,21 @@ struct Row {
     units_lost_to_barbarians: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     civilians_lost: Option<u32>,
+    /// ⭐ THE EDGE LEDGER (2026-11-13): every unit-on-unit blow this seat's
+    /// units took and struck, by base gap (the ruleset's attack strength
+    /// minus the target's Combat strength) and by total gap (the strengths
+    /// the blow was resolved with), and the majors' mean base gap by turn
+    /// bucket. Read off `Game::combat_ledger` (`game/combat_ledger.rs`,
+    /// `docs/EDGE_LEDGER.md`). `None` in every file written before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    edge: Option<civvis::game::EdgeLedger>,
+    /// ⭐ The edge ledger's marks: at each Online-equivalent turn 50, 100
+    /// and 150 the seat lived to, its land army, how much of it could
+    /// upgrade, its treasury, and the rival majors' land units in its sight
+    /// (`edge_ledger::EdgeMark`). Empty — and absent — in files written
+    /// before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    edge_marks: Vec<edge_ledger::EdgeMark>,
     /// ⭐ WHO ORDERED THE UNITS THAT DIED: this seat's military units that
     /// died, by the step that last moved, held or struck with them, as
     /// `step: [ended its last turn within two tiles of a visible hostile,
@@ -2869,6 +2889,9 @@ fn play_game(
     let mut techs_at_live_pace: Option<Vec<usize>> = None;
     let mut trajectories = vec![Vec::new(); world.players.len()];
     let mut traces: Vec<Vec<TraceSample>> = vec![Vec::new(); world.players.len()];
+    // ⭐ The edge ledger's marks (`edge_ledger::MARKS`), on this game's clock.
+    let mut edge_due = edge_ledger::due_marks(world.game_speed);
+    let mut edge_marks: Vec<Vec<edge_ledger::EdgeMark>> = vec![Vec::new(); world.players.len()];
     let mut project_turns: Vec<BTreeMap<String, u32>> = vec![BTreeMap::new(); world.players.len()];
     // ⭐ `--trace` / `--rival-war-pace`: the live ladder's war census for each
     // measured seat — the turns it entered a war with another major, and its
@@ -2949,6 +2972,15 @@ fn play_game(
         if profile.trace && TRACE_TURNS.contains(&g.turn) {
             for &pid in &majors {
                 traces[pid].push(TraceSample::observe(g, pid));
+            }
+        }
+        while let Some(&(mark, turn)) = edge_due.first() {
+            if g.turn < turn {
+                break;
+            }
+            edge_due.remove(0);
+            for (pid, sample) in edge_ledger::observe(g, &majors, mark) {
+                edge_marks[pid].push(sample);
             }
         }
         if techs_at_pace.is_none() && g.turn >= pace_turn {
@@ -3066,6 +3098,7 @@ fn play_game(
             row.victories_off = closed.clone();
             row.trajectory = trajectories[seat].clone();
             row.trace = std::mem::take(&mut traces[seat]);
+            row.edge_marks = std::mem::take(&mut edge_marks[seat]);
             row.project_turns = std::mem::take(&mut project_turns[seat]);
             row.rival_war_turns = std::mem::take(&mut rival_war_turns[seat]);
             if war_census && this_rival.is_none() {
@@ -3325,6 +3358,9 @@ fn row_for_seat(
         units_lost_to_city_states: Some(game.combat_ledger(seat).units_lost_to_city_states),
         units_lost_to_barbarians: Some(game.combat_ledger(seat).units_lost_to_barbarians),
         civilians_lost: Some(game.combat_ledger(seat).civilians_lost),
+        edge: Some(game.combat_ledger(seat).edge),
+        // Filled in by `play_game`, which read the marks.
+        edge_marks: Vec::new(),
         // Filled in by `play_game`, which holds the seat's agent.
         last_orders: BTreeMap::new(),
         claim_crossings: BTreeMap::new(),
@@ -3524,6 +3560,9 @@ struct Seats<'a> {
     civics_inspired_share: Option<Vec<f64>>,
     /// ⭐ The city and unit ledgers, column by column (`unit_ledger::COLUMNS`).
     unit_ledger: Vec<Option<Vec<f64>>>,
+    /// ⭐ The edge ledger's blow counts, column by column
+    /// (`edge_ledger::COLUMNS`).
+    edge_ledger: Vec<Option<Vec<f64>>>,
 }
 
 impl<'a> Seats<'a> {
@@ -3596,6 +3635,7 @@ impl<'a> Seats<'a> {
         let techs_boosted_share = share_of(&|row| (row.techs_boosted, row.techs_researched));
         let civics_inspired_share = share_of(&|row| (row.civics_inspired, row.civics_adopted));
         let unit_ledger = unit_ledger::outcomes(&rows);
+        let edge_ledger = edge_ledger::outcomes(&rows);
         Seats {
             rows,
             columns,
@@ -3611,6 +3651,7 @@ impl<'a> Seats<'a> {
             techs_boosted_share,
             civics_inspired_share,
             unit_ledger,
+            edge_ledger,
         }
     }
 
@@ -3792,6 +3833,9 @@ struct GeneEstimate {
     /// ⭐ On−off Δ of each ledger column (`unit_ledger::COLUMNS`), `None`
     /// where the rows predate it.
     unit_ledger: Vec<Option<(f64, f64)>>,
+    /// ⭐ On−off Δ of each edge-ledger count (`edge_ledger::COLUMNS`),
+    /// `None` where the rows predate it.
+    edge_ledger: Vec<Option<(f64, f64)>>,
 }
 
 impl GeneEstimate {
@@ -3883,6 +3927,7 @@ fn estimate(header: &Header, rows: &[Row]) -> Estimates {
                 techs_boosted_share: pace(&seats.techs_boosted_share),
                 civics_inspired_share: pace(&seats.civics_inspired_share),
                 unit_ledger: seats.unit_ledger.iter().map(pace).collect(),
+                edge_ledger: seats.edge_ledger.iter().map(pace).collect(),
             }
         })
         .collect();
@@ -5027,6 +5072,7 @@ fn print_table(header: &Header, rows: &[Row]) {
          seconds, and positive is slower."
     );
     unit_ledger::print(&genes);
+    edge_ledger::print(&genes, rows);
     print_families(header, rows);
     print_victory_masks(header, rows);
     print_difficulty_rungs(header, rows);
@@ -5348,6 +5394,9 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
                 // ⭐ The city and unit ledgers: on − off Δ per column; null
                 // where the rows predate it.
                 "unit_ledger": unit_ledger::json(e),
+                // ⭐ The edge ledger's blow counts: on − off Δ per column;
+                // null where the rows predate it.
+                "edge_ledger": edge_ledger::json(e),
                 "adjusted_pp": e.adjusted.map(|(b, _)| 100.0 * b),
                 "adjusted_se_pp": e.adjusted.map(|(_, se)| 100.0 * se),
                 "read": read_column(e.win_z(), e.share_z(), family_z),
@@ -8076,6 +8125,8 @@ mod tests {
             units_lost_to_city_states: None,
             units_lost_to_barbarians: None,
             civilians_lost: None,
+            edge: None,
+            edge_marks: Vec::new(),
             last_orders: BTreeMap::new(),
             claim_crossings: BTreeMap::new(),
             chair_tactics: BTreeMap::new(),
@@ -10842,6 +10893,7 @@ mod tests {
         // un-resolvable row cannot drag the whole run's number to infinity.
         let se = |win: f64| GeneEstimate {
             unit_ledger: Vec::new(),
+            edge_ledger: Vec::new(),
             techs_150: None,
             techs_end: None,
             science_end: None,
@@ -11005,6 +11057,109 @@ mod tests {
         assert_eq!(
             unit_ledger::json(&estimates.genes[0])["units_lost"],
             serde_json::Value::Null
+        );
+    }
+
+    /// ⭐ The edge ledger is absent on a row written before it, round-trips
+    /// on a new one, reads its blow counts on−off, and pools into the
+    /// metrics the live ledger prints.
+    #[test]
+    fn the_edge_ledger_round_trips_reads_on_minus_off_and_pools() {
+        use civvis::game::{EdgeCell, EdgeLedger};
+        let legacy = r#"{"kind":"game","game":0,"seed":7,"seat":1,"genome":"10","win":false,
+            "winner":0,"victory":"score","turn":250,"score":900,"score_share":0.3,"rank":2,
+            "cities":8,"alive":true,"secs":50.0}"#;
+        let old: Row = serde_json::from_str(legacy).unwrap();
+        assert!(old.edge.is_none() && old.edge_marks.is_empty());
+        let text = serde_json::to_string(&old).unwrap();
+        assert!(
+            !text.contains("edge"),
+            "an old row stays what it was: {text}"
+        );
+        let header = test_header(&["a"]);
+        let mut rows = Vec::new();
+        for game in 0..12 {
+            for seat in 0..3 {
+                let on = (game + seat) % 2 == 0;
+                let mut row = test_row(game, seat, if on { "1" } else { "0" }, false);
+                let mut edge = EdgeLedger::default();
+                edge.taken_base[0][4] =
+                    EdgeCell::from([if on { 3 } else { 7 }, 200, 0, if on { 1 } else { 4 }, 0]);
+                edge.taken_base[0][1].blows = 2;
+                edge.struck_total[0][0].blows = if on { 5 } else { 8 };
+                edge.struck_total[2][4] =
+                    EdgeCell::from([if on { 6 } else { 2 }, 300, 20, if on { 3 } else { 1 }, 0]);
+                row.edge = Some(edge);
+                row.edge_marks = vec![edge_ledger::EdgeMark {
+                    mark: 100,
+                    turn: 100,
+                    army: 10,
+                    unlocked: if on { 6 } else { 2 },
+                    gain_sum: 20.0,
+                    gold: 100.0,
+                    our_strength_sum: 300.0,
+                    rival_units: 4,
+                    rival_strength_sum: 200.0,
+                    ..edge_ledger::EdgeMark::default()
+                }];
+                rows.push(row);
+            }
+        }
+        let text = serde_json::to_string(&rows[0]).unwrap();
+        let back: Row = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.edge, rows[0].edge);
+        assert_eq!(back.edge_marks, rows[0].edge_marks);
+        let e = &estimate(&header, &rows).genes[0];
+        for ((name, _), (column, expected)) in edge_ledger::COLUMNS
+            .iter()
+            .zip([-4.0, -4.0, -3.0, 1.0, -3.0, 4.0, 2.0].iter().enumerate())
+        {
+            let delta = e.edge_ledger[column]
+                .expect("every row carries the ledger")
+                .0;
+            assert!((delta - expected).abs() < 1e-9, "{name}: {delta}");
+        }
+        assert_eq!(edge_ledger::json(e)["blows_struck_high"]["n_on"], 18);
+        let all: Vec<&Row> = rows.iter().collect();
+        let metrics: BTreeMap<String, Option<f64>> =
+            edge_ledger::metrics(&all).into_iter().collect();
+        let near = |name: &str, expected: f64| {
+            let value = metrics[name].expect(name);
+            assert!((value - expected).abs() < 1e-9, "{name}: {value}");
+        };
+        // 18 seats at 3 blows past +10 and 18 at 7, every one with 2 more at -9..-4.
+        near("major_share_ge10", 180.0 / 252.0);
+        near("major_death_per_blow_ge10", 90.0 / 180.0);
+        near("unlocked_100", 0.4);
+        near("gain_100", (18.0 * 20.0 / 6.0 + 18.0 * 20.0 / 2.0) / 36.0);
+        near("strength_gap_100", 50.0 - 30.0);
+        assert_eq!(
+            metrics["unlocked_50"], None,
+            "no row reached turn 50's mark"
+        );
+        assert!(edge_ledger::render(&all).is_some_and(|tables| tables.contains("(a) blows")));
+        // A file written before the ledger: no measurement, never a Δ of 0.
+        let old: Vec<Row> = rows
+            .iter()
+            .cloned()
+            .map(|mut row| {
+                row.edge = None;
+                row
+            })
+            .collect();
+        assert_eq!(estimate(&header, &old).genes[0].edge_ledger[0], None);
+    }
+
+    /// ⭐ The edge marks fall on Online-equivalent turns 50, 100 and 150.
+    #[test]
+    fn the_edge_marks_fall_on_the_online_clock() {
+        assert_eq!(
+            edge_ledger::due_marks(GameSpeed::Online),
+            [(50, 50), (100, 100), (150, 150)]
+        );
+        assert_eq!(
+            edge_ledger::due_marks(GameSpeed::Standard),
+            [(50, 100), (100, 200), (150, 300)]
         );
     }
 

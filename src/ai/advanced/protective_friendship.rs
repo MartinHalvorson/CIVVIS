@@ -230,6 +230,11 @@ impl AdvancedAi {
         if g.is_at_war(pid, other) {
             return Some("we are at war");
         }
+        // `score-seat-keeps-friends`: the rival `score-seat-takes-what-pays`
+        // names as the campaign's is not befriended. `None` off.
+        if self.score_keeps_friends_on(g) && self.score_keeps_friends_spares(g) == Some(other) {
+            return Some("score-seat-keeps-friends: the campaign names their city");
+        }
         if g.are_friends(pid, other) {
             return Some("already a friend");
         }
@@ -333,13 +338,20 @@ impl AdvancedAi {
         // last few turns, read before the cadence so the renewal is not
         // missed. Empty with the gene off or on the Domination lane.
         let keeps_the_peace = self.friendship_keeps_the_peace_on(g);
-        let lapsed = if keeps_the_peace && self.befriend_the_strongest {
+        // `score-seat-keeps-friends`: a Score seat offers every turn, nearest
+        // first, with or without `befriend-the-strongest`. See
+        // `advanced/score_keeps_friends.rs`.
+        let keeps_friends = self.score_keeps_friends_on(g);
+        let asks = self.befriend_the_strongest || keeps_friends;
+        let lapsed = if keeps_the_peace && asks {
             self.friendship_lapses(g, pid)
         } else {
             BTreeSet::new()
         };
-        if !self.befriend_the_strongest
-            || (g.turn % FRIENDSHIP_CADENCE != pid as u32 % FRIENDSHIP_CADENCE && lapsed.is_empty())
+        if !asks
+            || (!keeps_friends
+                && g.turn % FRIENDSHIP_CADENCE != pid as u32 % FRIENDSHIP_CADENCE
+                && lapsed.is_empty())
         {
             return;
         }
@@ -356,6 +368,16 @@ impl AdvancedAi {
                 lapsed
                     .contains(&a.id)
                     .cmp(&lapsed.contains(&b.id))
+                    // `score-seat-keeps-friends`: the nearest neighbour next.
+                    // Equal (so unchanged) off.
+                    .then_with(|| {
+                        if keeps_friends {
+                            Self::score_friend_distance(g, pid, b.id)
+                                .cmp(&Self::score_friend_distance(g, pid, a.id))
+                        } else {
+                            std::cmp::Ordering::Equal
+                        }
+                    })
                     .then(g.military_power(a.id).total_cmp(&g.military_power(b.id)))
                     .then(b.id.cmp(&a.id))
             })
@@ -378,6 +400,29 @@ impl AdvancedAi {
             }
         }
         let Some(partner) = partner else {
+            // `score-seat-keeps-friends`: why nobody is asked this turn.
+            if keeps_friends && self.journal().wants(crate::reasoning::Level::Detail) {
+                let reasons: Vec<String> = g
+                    .players
+                    .iter()
+                    .filter(|other| {
+                        other.id != pid
+                            && other.alive
+                            && !other.is_minor
+                            && !other.is_barbarian
+                            && g.has_met(pid, other.id)
+                    })
+                    .filter_map(|other| {
+                        self.friendship_block(g, pid, other.id, keeps_the_peace, &lapsed)
+                            .map(|reason| format!("{}: {reason}", other.civ))
+                    })
+                    .collect();
+                if !reasons.is_empty() {
+                    think!(self.journal(), Diplomacy, Detail,
+                        "No friendship to offer";
+                        "score-seat-keeps-friends: {}", reasons.join("; "));
+                }
+            }
             return;
         };
         if g.apply(
@@ -399,7 +444,15 @@ impl AdvancedAi {
             if let Some(power) = self.gated_race_keeps_the_friend(g, pid, partner, &lapsed) {
                 self.journal_gated_race_renewal(g, partner, power);
             }
-            if lapsed.contains(&partner) {
+            if keeps_friends {
+                let tiles = Self::score_friend_distance(g, pid, partner);
+                let power = g.military_power(partner);
+                think!(self.journal(), Diplomacy, Decision,
+                    "Offering friendship to {civ}";
+                    "score-seat-keeps-friends: {}; {tiles} tiles from our nearest city, {power:.0} \
+                     power; no rival has declared on us while a declared friendship stood",
+                    if lapsed.contains(&partner) { "renewing a lapsed friendship" } else { "the nearest major the host lets us ask" });
+            } else if lapsed.contains(&partner) {
                 think!(self.journal(), Diplomacy, Decision,
                     "Renewing the friendship with {civ}";
                     "friendship-keeps-the-peace: it lapsed within {FRIENDSHIP_RENEW_WINDOW} turns; \

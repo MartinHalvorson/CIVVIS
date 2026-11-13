@@ -467,6 +467,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-writing-before-the-luxury` | off (unmeasured) | Opt-in Science Writing priority before optional research detours. | 1 \| 1 |
 | `score-seat-expands-hard` | off (unmeasured) | Opt-in gene `score-seat-expands-hard`; see `advanced/score_expands_hard.rs`. | 1 \| 1 |
 | `score-seat-founds-early` | off (unmeasured) | Opt-in `score-seat-founds-early`; see `advanced/score_seat_founds_early.rs`. | 1 \| 1 |
+| `score-seat-keeps-friends` | off (unmeasured) | Opt-in gene `score-seat-keeps-friends`; see `advanced/score_keeps_friends.rs`. | 1 \| 1 |
 | `score-seat-plays-for-points` | off (unmeasured) | Opt-in gene `score-seat-plays-for-points`; see `advanced/score_seat.rs`. | 1 \| 1 |
 | `score-seat-raises-wonders` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders`; see `advanced/score_wonders.rs`. | — \| 2 |
 | `score-seat-raises-wonders-2` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders-2`; version two of the family, so version one is turned off. | — \| 2 |

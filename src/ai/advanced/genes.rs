@@ -6112,6 +6112,12 @@ pub const GENES: &[Gene] = &[
     // took the Warlord's Throne, never the Ancestral Hall. See
     // `advanced/score_expands_hard.rs`.
     Gene { tag: "score-seat-expands-hard", field: "score_seat_expands_hard", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_expands_hard, disable: AdvancedAi::disable_score_seat_expands_hard },
+    // Live Deity Rome, Score target: no rival declared on us while a declared
+    // friendship stood (94 declarations), yet the control mod refused 52
+    // friendships the AI offered in one night, and the seat asked one rival
+    // every third turn. Accept every offer, ask every met major nearest
+    // first. Opt-in; see `advanced/score_keeps_friends.rs`.
+    Gene { tag: "score-seat-keeps-friends", field: "score_seat_keeps_friends", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_keeps_friends, disable: AdvancedAi::disable_score_seat_keeps_friends },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

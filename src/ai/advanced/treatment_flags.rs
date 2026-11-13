@@ -479,6 +479,9 @@ impl AdvancedAi {
         /// Opt-in gene `score-seat-expands-hard`; see
         /// `advanced/score_expands_hard.rs`.
         score_seat_expands_hard => enable_score_seat_expands_hard, disable_score_seat_expands_hard;
+        /// Opt-in gene `score-seat-keeps-friends`; see
+        /// `advanced/score_keeps_friends.rs`.
+        score_seat_keeps_friends => enable_score_seat_keeps_friends, disable_score_seat_keeps_friends;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

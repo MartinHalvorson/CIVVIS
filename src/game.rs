@@ -531,7 +531,10 @@ pub use combat_forecast::CombatForecast;
 /// Combat ledger: units each player killed and lost in combat, civilians it
 /// took and lost. See `game/combat_ledger.rs`.
 mod combat_ledger;
-pub use combat_ledger::CombatLedger;
+pub use combat_ledger::{
+    edge_bin, online_equivalent_turn, CombatLedger, EdgeCell, EdgeLedger, EdgeTable, EDGE_BINS,
+    EDGE_SIDES, EDGE_TURN_BUCKETS,
+};
 /// Completion: finishing a city's item, wonder effects, and placing new
 /// units. See `game/completion.rs`.
 mod completion;
