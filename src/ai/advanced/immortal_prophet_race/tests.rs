@@ -58,10 +58,28 @@ fn a_pending_prophet_still_founds() {
     assert!(seat(VictoryTarget::Culture, true).prophet_race_open_for(&game, 0));
 }
 
-/// A Diplomatic seat keeps the race: the Mahabodhi Temple and the founder's
-/// Inquisition both need a religion of our own.
+/// At Immortal a Diplomatic seat keeps the race: the Mahabodhi Temple and the
+/// founder's Inquisition both need a religion of our own. At Deity the last
+/// Prophet is gone by t46 (73 of 73 live games), so it sits the race out
+/// there like every seat but a Religion one.
 #[test]
-fn a_diplomatic_seat_keeps_the_race() {
-    let game = board("deity");
-    assert!(seat(VictoryTarget::Diplomacy, true).prophet_race_open_for(&game, 0));
+fn a_diplomatic_seat_keeps_the_race_at_immortal_and_sits_it_out_at_deity() {
+    let immortal = board("immortal");
+    assert!(seat(VictoryTarget::Diplomacy, true).prophet_race_open_for(&immortal, 0));
+    let deity = board("deity");
+    assert!(
+        seat(VictoryTarget::Diplomacy, false).prophet_race_open_for(&deity, 0),
+        "fixture: the race is open at Deity without the gene"
+    );
+    assert!(!seat(VictoryTarget::Diplomacy, true).prophet_race_open_for(&deity, 0));
+    assert!(
+        seat(VictoryTarget::Religion, true).prophet_race_open_for(&deity, 0),
+        "a Religion seat still races at Deity"
+    );
+    let mut pending = board("deity");
+    pending.players[0].prophet_pending = true;
+    assert!(
+        seat(VictoryTarget::Diplomacy, true).prophet_race_open_for(&pending, 0),
+        "a Prophet already pending still founds"
+    );
 }

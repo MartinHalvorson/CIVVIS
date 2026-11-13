@@ -19,29 +19,55 @@
 //!   (under a quarter of the leader's Production by t80-91).
 //!
 //! **What the gene does.** `prophet_race_open_for` reads closed at Immortal
-//! and Deity for a seat whose victory target is neither Religion nor
-//! Diplomacy (whose Mahabodhi points and founder defence need a faith), before
+//! and Deity for a seat whose victory target is neither Religion nor, at
+//! Immortal, Diplomacy (whose Mahabodhi points and founder defence need a
+//! faith; at Deity the Diplomatic seat is closed out too, see below), before
 //! any other test, unless a Prophet is pending (a Prophet earned or bought still
 //! founds). Every part of the race package admits through that gate or
 //! `prophet_race_enterable_for`, which calls it. Off, or below Immortal,
 //! nothing changes.
+//!
+//! **At Deity the Diplomatic seat sits it out too (live Deity Rome, 6-player
+//! Continents, Online, 2026-11-13).** In all 73 games of the day that reached
+//! t100, on every victory target, the state's `great_person_exhausted` listed
+//! the Prophet by t46: a median t39, quartiles t34-40, the earliest t21, and
+//! 72 of the 73 by t40. The second religion stood at a median t29 and the
+//! third at t36. None of the 73 founded a religion. The two
+//! Diplomatic-target games both entered the race from the capital:
+//! `175230Z` researched Astrology at t30 "which diplomacy needs", placed the
+//! Holy Site at t28-35 and held 7.7 Prophet points of the 30 a Prophet costs
+//! when the class ran out at t40 (1.1 a turn; 52 by t80, for nothing);
+//! `182344Z` held 2.3 at t40, built its Shrine at t42 and reached 133 by t80.
+//! Their capitals placed a Campus at t59 and t77 against a median t41 for the
+//! day's other capitals. So the Mahabodhi points and the founder's defence
+//! this exemption was kept for are not on offer at Deity, and the capital
+//! pays for the try exactly as the Culture seat's did at Immortal. At
+//! Immortal the Diplomatic seat keeps the race: nothing has measured it there.
 
 use super::*;
 
 impl AdvancedAi {
     /// Whether this seat sits out the Prophet race at its difficulty: the gene
-    /// is on, the majors play Immortal or Deity, and the seat is aiming at
-    /// neither a Religious nor a Diplomatic victory. A Diplomatic seat keeps
-    /// the race: the Mahabodhi Temple's two points and the founder's
-    /// Inquisition defence (`inquisition-defends-the-diplomat`) both need a
-    /// religion of our own, and this gene's probe measured Culture seats only.
+    /// is on, the majors play Immortal or Deity, and the seat is not aiming
+    /// at a Religious victory. At Immortal a Diplomatic seat keeps the race:
+    /// the Mahabodhi Temple's two points and the founder's Inquisition
+    /// defence (`inquisition-defends-the-diplomat`) both need a religion of
+    /// our own, and this gene's probe measured Culture seats only. At Deity
+    /// it sits the race out as well: the last Prophet is gone by t46 there
+    /// (see the module).
     pub(super) fn high_tier_skips_the_prophet_race(&self, g: &Game) -> bool {
-        self.immortal_skips_the_prophet_race
-            && matches!(g.difficulty.as_str(), "immortal" | "deity")
-            && !matches!(
-                self.active_victory_target(g),
+        if !self.immortal_skips_the_prophet_race {
+            return false;
+        }
+        let target = self.active_victory_target(g);
+        match g.difficulty.as_str() {
+            "deity" => target != Some(VictoryTarget::Religion),
+            "immortal" => !matches!(
+                target,
                 Some(VictoryTarget::Religion | VictoryTarget::Diplomacy)
-            )
+            ),
+            _ => false,
+        }
     }
 }
 
