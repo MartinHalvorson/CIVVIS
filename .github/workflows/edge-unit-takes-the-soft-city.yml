@@ -1,0 +1,110 @@
+name: edge-unit-takes-the-soft-city
+
+# ⚠ TEMPORARY experiment scaffolding for PR #5267, removed in its final
+# commit: the paired CI rounds of `edge-unit-takes-the-soft-city`
+# (`src/bin/gene_screen/edge_unit_takes_the_soft_city_tests.rs`). One build,
+# the worlds sharded by seed over runners (every arm of a seed in one
+# process, so no pair crosses a shard), then one report over every shard.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: edge-unit-takes-the-soft-city-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # Round 0: the control's fidelity to the live census, with the three other
+  # arms played beside it at 100 turns to see whether and why they fire.
+  CIVVIS_EDGE_WORLDS: "16"
+  CIVVIS_EDGE_TURNS: "100"
+  CIVVIS_EDGE_SEED: "52670000"
+  CIVVIS_EDGE_ARMS: "control,gene,stack,gene-free-iron"
+
+jobs:
+  build:
+    if: github.event.pull_request.number == 5267
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_INCREMENTAL: 0
+      RUSTFLAGS: -C link-arg=-fuse-ld=lld
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install lld
+        run: bash .github/scripts/install-apt-packages.sh lld
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-ci-deps-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-ci-deps-${{ runner.os }}-
+      - name: Build the gene_screen test binary
+        run: |
+          set -euo pipefail
+          cargo test --profile ci --locked --features developer-tools --bin gene_screen --no-run --message-format=json > build.jsonl
+          exe=$(jq -r 'select(.reason == "compiler-artifact" and .target.name == "gene_screen" and .profile.test == true) | .executable // empty' build.jsonl | tail -n 1)
+          test -n "$exe"
+          cp "$exe" gene-screen-tests
+          ./gene-screen-tests edge_unit_takes_the_soft_city --nocapture
+      - uses: actions/upload-artifact@v4
+        with:
+          name: driver
+          path: gene-screen-tests
+          retention-days: 3
+
+  play:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+        of: [4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: driver
+      - name: Play shard ${{ matrix.shard }} of ${{ matrix.of }}
+        env:
+          CIVVIS_EDGE_GENOME: src/bin/gene_screen/edge_unit_live_genome.txt
+          CIVVIS_EDGE_SHARD: ${{ matrix.shard }}/${{ matrix.of }}
+          CIVVIS_EDGE_OUT: worlds-${{ matrix.shard }}.jsonl
+        run: |
+          chmod +x gene-screen-tests
+          ./gene-screen-tests edge_unit_takes_the_soft_city_driver --ignored --nocapture
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: worlds-${{ matrix.shard }}
+          path: worlds-${{ matrix.shard }}.jsonl
+          retention-days: 14
+
+  report:
+    needs: [build, play]
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: driver
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: worlds-*
+          path: worlds
+          merge-multiple: true
+      - name: Report over every shard's worlds
+        run: |
+          chmod +x gene-screen-tests
+          ls -l worlds
+          CIVVIS_EDGE_ROWS=$(ls worlds/*.jsonl | paste -sd, -) ./gene-screen-tests edge_unit_takes_the_soft_city_driver --ignored --nocapture
