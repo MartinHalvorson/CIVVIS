@@ -1,5 +1,15 @@
 <!-- Notes the heuristic gene ranking carries verbatim, under its table. Edit here, not in GENE_HEURISTIC_RANKING.md (generated). -->
 
+## 2026-11-12 operator review: every default clears the +3 bar on its own
+
+Operator, 2026-11-12: include every beneficial gene, exclude every gene that hurts, and omit the questionable ones for now. The selection was re-run from the same three reporting batches (11,644 games, 69,864 total seats; published in #4050, #4130 and #4805) with no incumbents, so the hysteresis band held nothing: a gene is on only when its seat-weighted three-batch average is strictly above +3 wins per 10,000 total seats, the bar an off gene already had to clear. The 288 defaults became 220.
+
+- **Off: the 68 genes that were on by incumbency alone** (the previous ledger's `rules.hysteresis_held`). Over those 69,864 total seats their pooled on-minus-off win differences run from -0.15 pp to +0.17 pp with standard errors of 0.28 to 0.40 pp: 27 negative, 41 positive, none past |z| 0.52. The table's P(>0) for them was 34.8% to 69.4%, and every one of the 22 defaults under 50% was among them. None is a measured loss and none is a measured gain.
+- **On: nothing new.** Each of the 8 off genes whose average clears +3 over the same 69,864 total seats is a sibling of a shipped version with a higher average: `connect-the-luxury`, `battle-planner`, `battle-planner-2`, `naval-recon`, `amenity-project-preemption`, `trade-building-before-bankruptcy`, `industry-before-the-army` and `first-luxury-first-2`.
+- **Not judged by this review.** The 329 screenable genes that no reporting batch has priced stay off until one does. The newest batch ended 2 of its 5,000 games by domination, so a war or siege gene reads near zero on this screen whatever it does in a war; nine of the 68 are engine repairs or production treatments of that kind (`blind-objective-strength`, `buildings-before-projects`, `escort-unstick`, `peacetime-deterrence`, `recorded-tactical-step`, `religion-sues-peace`, `settler-guard-holds`, `slot-kind-tiebreak`, `strategic-wonders`), and a live seat that wants one keeps it through its force-on list.
+
+The next reselection applies the ordinary hysteresis against these 220: a default leaves only strictly below -3, and an omitted gene returns when its average clears +3.
+
 ## Historical screen evidence and current selection
 
 The observations below remain useful, but they do not implement the deployment rule. Since 2026-08-25 the **batch rule** decides every default from the ranking's three batch columns (`tools/genes.py::batch_rule`; the README states it); between 2026-08-24 and 2026-08-25 the selection was an operator-pinned list (`OPERATOR_DEFAULT_ON`, now gone), and before that the win-column rules described here. References to a promotion, veto, or deciding column describe the former process, not a current automatic action.
