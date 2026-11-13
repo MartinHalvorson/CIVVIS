@@ -1,0 +1,3 @@
+# TEMPORARY scaffolding on draft PR #5234: list every failing test in one CI round. Removed before merge.
+[profile.default]
+fail-fast = false
