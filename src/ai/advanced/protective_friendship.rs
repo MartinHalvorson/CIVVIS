@@ -269,7 +269,10 @@ impl AdvancedAi {
         // `friendship-ends-at-the-race`: a rival racing to win is left to the
         // counter once the friendship lapses. `friendship-outlasts-the-gated-race`:
         // not while `denial-war-needs-the-lane-edge` would refuse that war.
+        // `score-seat-keeps-friends`: not on a Score seat, whose denial wars
+        // have taken no city; the friendship is worth more there.
         if self.friendship_ends_at_the_race
+            && !self.score_keeps_friends_on(g)
             && self.friend_is_racing(g, other)
             && self
                 .gated_race_keeps_the_friend(g, pid, other, lapsed)

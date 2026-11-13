@@ -44,6 +44,16 @@
 //!    first (`friendship-keeps-the-peace`'s renewal). Never the campaign's
 //!    target and never a rival at war with us.
 //!
+//! **Past the race** (live, 15 games from 2026-11-13 10:06Z):
+//! `friendship-ends-at-the-race` held 356 offers and renewals to a racing
+//! rival, while the Score seat's denial wars took no city in 32 tries. On
+//! this seat it no longer holds one. The seat also issues no denouncement of
+//! its own ([`AdvancedAi::score_friends_hold_the_denouncement`]), except on
+//! the rival its own Score campaign names: the declaration desk's opening
+//! and the air surge's Arm-phase denouncement (live
+//! `civvis-20261113T122419Z` denounced Georgia at t130 appointing an air
+//! surge, and lost its friendship).
+//!
 //! No AI-offered alliance appeared in the same logs (the only alliance rows
 //! are our own proposals), so nothing here answers one. The seat's denounces
 //! on those nights all came from `launcher-war-serves-every-lane` before its
@@ -103,6 +113,14 @@ impl AdvancedAi {
             && self.friendship_would_shield_the_converter(g, pid, rival)
             && (!self.score_keeps_friends_on(g)
                 || self.score_friend_faith_at_match_point(g, pid, rival))
+    }
+
+    /// Whether this gene holds a denouncement of `target`: on a Score seat,
+    /// every one but the denouncement of the rival the seat's own Score
+    /// campaign names (`score-seat-takes-what-pays`). False with the gene off
+    /// or for another target.
+    pub(crate) fn score_friends_hold_the_denouncement(&self, g: &Game, target: usize) -> bool {
+        self.score_keeps_friends_on(g) && self.score_keeps_friends_spares(g) != Some(target)
     }
 
     /// `score-seat-keeps-friends`: the live dialogue closer's lease, and the

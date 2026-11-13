@@ -3025,6 +3025,10 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // The age. `the_schema_allowlists_cover_every_declared_field` fails if a
         // StateSnapshot field is missing here.
         "era_score", "era_score_baseline", "normal_age_threshold",
+        // What the Era Score was earned by: our own historic moments by type
+        // (`CivvisLedger.momentCensus`, 2026-11-13). Read by the analysis
+        // tools; the mirror does not consume it.
+        "historic_moments",
         "golden_age_threshold", "world_era", "era_countdown", "dark_age", "golden_age",
         "heroic_golden_age", "dedications", "dedication_choices", "resolutions",
         "congress_turns_left",

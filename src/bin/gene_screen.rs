@@ -117,6 +117,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, Write};
 use std::time::Instant;
 
+#[cfg(test)]
+#[path = "gene_screen/combat_genes_outclassed_tests.rs"]
+mod combat_genes_outclassed_tests;
 #[path = "gene_screen/edge_ledger.rs"]
 mod edge_ledger;
 #[cfg(test)]
