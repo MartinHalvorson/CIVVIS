@@ -1223,7 +1223,8 @@ function everywhere(count) {
                  + self.line("const skyCoastLaw") + self.fn("skySatelliteClimb")
                  + self.line("const SKY_HIDDEN_START") + self.fn("skySatellitePlan")
                  + self.fn("skySatelliteRoute") + self.fn("skyHomeInPicture")
-                 + self.line("const SKY_WORLD_IS_A_DOT") + self.fn("skyGlobeFlight"))
+                 + self.line("const SKY_WORLD_IS_A_DOT") + self.line("const SKY_MARKERS")
+                 + self.fn("skyGlobeFlight"))
         scenarios = r'''
 function key(pos) { return pos[0] + "," + pos[1]; }
 const PLANET = {cells:new Map([["3,4", {}]])};
@@ -1288,7 +1289,8 @@ for (const [R, least] of [[404.5, .7], [150, .8], [900, .1]]) {
                  + self.line("const SKY_THRUST_POWER") + self.fn("skyThrustLaw")
                  + self.line("const skyCoastLaw") + self.cut("const skyBrakeLaw", "};") + "};\n"
                  + self.fn("skyHomeInPicture") + self.fn("skyLaunchPassesHere")
-                 + self.line("const SKY_WORLD_IS_A_DOT") + self.fn("skyArrivalRoute")
+                 + self.line("const SKY_WORLD_IS_A_DOT") + self.line("const SKY_MARKERS")
+                 + self.fn("skyArrivalRoute")
                  + self.fn("skyPlanMission") + self.fn("skyOrbitSlot") + self.fn("skyGlobeFlight"))
         scenarios = r'''
 function key(pos) { return pos[0] + "," + pos[1]; }
@@ -1335,6 +1337,13 @@ const cosine = (out.x * bearing.x + out.y * bearing.y) / (Math.hypot(out.x, out.
 expect(far(flown.film.start, {x:CX, y:CY}) <= 8 + 1e-6, "the departure does not start at home");
 expect(cosine > .999 && flown.film.leaving, "the departure is not on the Moon's bearing: " + cosine);
 expect(flown.film.law(0) === 0 && flown.film.law(.5) < .3, "a departure starts from rest");
+// Too small to show its cities is still a marble, and a pad round the back of
+// it is behind it: the rocket comes out from behind the world.
+pad = [0, 1, 0];
+flown = fly(40, CX, CY);
+expect(flown.kind === "depart" && flown.film.pointAt(0).z < 0 && flown.film.pointAt(1).z === 0,
+  "a far-side departure was drawn across the face of the world");
+pad = [0, -1, 0];
 
 // Both ends in the picture: the whole trip, however big home is drawn.
 goal = {x:CX + 420, y:CY - 60};
@@ -1344,7 +1353,7 @@ expect(fly(3, CX, CY).kind === "transfer", "a trip between dots was not flown wh
 // An empire whose lands were never seen has no pad to be watched leaving.
 goal = {x:-20000, y:-9000};
 expect(fly(404.5, CX, CY, false).kind === "unseen", "a rocket left a stand-in pad");
-expect(fly(8, CX, CY, false).kind === "depart", "a marble needs no pad to leave from");
+expect(fly(40, CX, CY, false).kind === "depart", "a marble needs no pad to leave from");
 
 // Parked at another world with home far out of the picture: it goes by, as
 // before. Home back in the picture before it has: nothing is flown across it.

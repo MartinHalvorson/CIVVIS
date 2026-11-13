@@ -21517,7 +21517,8 @@ function skyBestAscent(launch, pad, camera, radius, centerX, centerY, stage, mar
       for (let step = 0; step <= 24; step++)
         if (inSight(skyAscentAt(shape, law(step / 24), skyFlightLens(camera, launch, step / 24),
                                 radius, centerX, centerY))) seen++;
-      if (seen < 2) continue;
+      // Coming into sight mid-flight for an instant is a blink, not a launch.
+      if (from > 0 && seen < 2) continue;
       // How the heading swings on the screen, and how flat-on it gets.
       let swing = 0, least = Infinity, most = 0, prior = null;
       for (let step = 0; step <= 8; step++) {
@@ -21649,9 +21650,10 @@ function skyPlanMission(launch, player, place, crews, camera, radius, centerX, c
     if (skyArrivalRoute(site, goal, margin)) return {kind:"arrive"};
   }
   if (!skyHomeInPicture(radius, centerX, centerY, stage)) return {kind:"crossing"};
-  // A marble has no east to climb into. Its rocket leaves on the bearing of
-  // where it is going, and a Moon rocket from a small Earth heads for the Moon.
-  if (home && radius <= SKY_WORLD_IS_A_DOT && skyArrivalRoute(site, goal, margin))
+  // A world too small to show its cities has no east to climb into. Its rocket
+  // leaves on the bearing of where it is going: a Moon rocket from a small
+  // Earth heads for the Moon, where a climb went wherever its pad pointed.
+  if (home && radius <= SKY_MARKERS && skyArrivalRoute(site, goal, margin))
     return {kind:"depart"};
   // A launch this camera cannot see any of is not drawn at all. It used to be
   // flown across the picture from the edge of the frame, a rocket out of nowhere.
@@ -21697,8 +21699,9 @@ function skySatelliteClimb(orbit, from, range, sweep, settle = .4) {
 // and then has to slow down to match its orbit: it simply started that much
 // earlier, and everything after that is the same flight. From a Spaceport round
 // the back that can be most of it, up to `SKY_HIDDEN_START`, and what is left
-// is the rocket coming up over the limb into its orbit. One in sight for fewer
-// than `SKY_LEAST_SIGHT` thirty-seconds of its film is a blink, and is not drawn.
+// is the rocket coming up over the limb into its orbit. One that comes into
+// sight for fewer than `SKY_LEAST_SIGHT` thirty-seconds of its film is a blink,
+// and is not drawn; a lift-off from a pad in sight always is.
 const SKY_HIDDEN_START = .8, SKY_LEAST_SIGHT = 4;
 function skySatellitePlan(launch, player, index, pad, camera, radius, centerX, centerY) {
   const base = skyOrbit(player);
@@ -21767,7 +21770,8 @@ function skySatellitePlan(launch, player, index, pad, camera, radius, centerX, c
     best = {from, node:Math.atan2(pad[1], pad[0]) -
       Math.atan2(Math.sin(from) * Math.cos(inclination), Math.cos(from)), range:sweep * .5};
   }
-  if (!(best.sight >= SKY_LEAST_SIGHT)) {
+  if (!(best.sight >= (best.skip === 0 && inSight(planetProject(pad, view, radius, centerX, centerY))
+                       ? 1 : SKY_LEAST_SIGHT))) {
     // The rocket is not drawn, and the craft comes round on its orbit. One
     // flown across the picture instead came in over the edge of the frame
     // hundreds of pixels from its Spaceport and left its craft to appear
@@ -21812,7 +21816,7 @@ function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, c
   if (!launch.route) {
     // An empire whose lands this viewer has never seen has no Spaceport to be
     // watched leaving, and a stand-in pad out at sea is a rocket from nowhere.
-    launch.route = radius > SKY_WORLD_IS_A_DOT && skyHomeInPicture(radius, centerX, centerY, stage) &&
+    launch.route = radius > SKY_MARKERS && skyHomeInPicture(radius, centerX, centerY, stage) &&
         !(launch.originPos && PLANET?.cells.get(key(launch.originPos))) ? {kind:"unseen"}
       : place
       ? skyPlanMission(launch, player, place, crews, camera, radius, centerX, centerY, stage, margin)
@@ -21824,9 +21828,12 @@ function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, c
   if (route.kind === "transfer")
     return skyTransferRoute(launch, player, place, crews, view, radius, centerX, centerY);
   if (route.kind === "depart") {
-    const film = skyArrivalRoute(planetProject(pad, view, radius, centerX, centerY),
+    const site = planetProject(pad, view, radius, centerX, centerY);
+    const film = skyArrivalRoute(site,
       skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY), margin);
-    return film && {...film, law:skyThrustLaw(0, film.entering ? SKY_ROLLING_START : 0)};
+    // From a pad round the back it comes out from behind the world.
+    return film && {...film, law:skyThrustLaw(0, film.entering ? SKY_ROLLING_START : 0),
+      pointAt:progress => ({...film.pointAt(progress), z:site.z * (1 - progress)})};
   }
   if (route.kind === "arrive") {
     const goal = skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY);
