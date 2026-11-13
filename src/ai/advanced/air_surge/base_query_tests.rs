@@ -117,11 +117,14 @@ fn carriers_overlap_existing_bases_and_move_without_retaining_an_answer() {
     g.spawn_test_unit("aircraft_carrier", 0, (12, 10));
     g.spawn_test_unit("aircraft_carrier", 1, (16, 10));
     for (owner, pos) in [(0, (14, 10)), (0, (18, 10)), (1, (18, 10))] {
-        let unit = g.units.get_mut(&carrier).unwrap();
-        unit.owner = owner;
-        unit.pos = pos;
+        g.relocate(carrier, pos);
+        g.units.get_mut(&carrier).unwrap().owner = owner;
         same_bases(&g);
     }
+    let mut mirrored = g.clone();
+    // Capacity reads occupancy, even if record coordinates arrive first.
+    mirrored.units.get_mut(&carrier).unwrap().pos = (-999, -999);
+    same_bases(&mirrored);
     g.remove_unit(carrier);
     same_bases(&g);
     let bases = AdvancedAi::air_surge_bases(&g, 0);
@@ -134,7 +137,8 @@ fn coordinates_absent_from_the_map_do_not_become_aircraft_bases() {
     g.cities.get_mut(&own).unwrap().pos = (-1000, -1000);
     g.spawn_test_unit("aircraft_carrier", 0, (-999, -999));
     same_bases(&g);
-    assert!(AdvancedAi::air_surge_base_candidates(&g, 0)
+    assert!(g
+        .air_base_candidates()
         .iter()
         .all(|pos| g.map.tiles.contains_key(pos)));
 }
@@ -212,7 +216,7 @@ fn ordinary_empty_tiles_never_need_a_full_capacity_query() {
     tile.improvement = Some(crate::name!("airstrip"));
     tile.improvement_owner = Some(0);
     g.spawn_test_unit("aircraft_carrier", 0, (18, 10));
-    let candidates = AdvancedAi::air_surge_base_candidates(&g, 0);
+    let candidates = g.air_base_candidates();
     assert!(
         candidates.len() < 16,
         "fixture has only a handful of possible bases"

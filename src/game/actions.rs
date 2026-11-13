@@ -2932,6 +2932,33 @@ impl Game {
             || (spec.promotion_class == "naval_melee" && self.has_ability(pid, "knarr"))
     }
 
+    /// Positions at which the existing aircraft-capacity query can be
+    /// positive. Read the same spatial indexes as `city_at` and `unit_ids_at`,
+    /// including partially synchronized mirror state; ownership and the full
+    /// district, building and carrier rules remain in `air_capacity_at`.
+    pub(crate) fn air_base_candidates(&self) -> Vec<Pos> {
+        let mut positions: Vec<_> = self
+            .city_by_pos
+            .keys()
+            .chain(self.occ.keys())
+            .copied()
+            .collect();
+        positions.extend(
+            self.map
+                .tiles
+                .values()
+                .filter(|tile| {
+                    tile.district.is_some() || tile.improvement.as_deref() == Some("airstrip")
+                })
+                .map(|tile| tile.pos),
+        );
+        positions.sort_unstable();
+        positions.dedup();
+        // The original full-map scan never queried an absent coordinate.
+        positions.retain(|position| self.map.tiles.contains_key(position));
+        positions
+    }
+
     pub(crate) fn air_capacity_at(&self, pid: usize, pos: Pos) -> i32 {
         let mut capacity = 0;
         if let Some(cid) = self.city_at(pos) {

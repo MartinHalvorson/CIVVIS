@@ -524,45 +524,10 @@ impl AdvancedAi {
     /// and carriers. Their coordinates can reach beyond their city centers;
     /// share the rebase engine's ownership and pillage rules.
     fn air_surge_bases(g: &Game, pid: usize) -> Vec<Pos> {
-        Self::air_surge_base_candidates(g, pid)
+        g.air_base_candidates()
             .into_iter()
             .filter(|position| g.air_capacity_at(pid, *position) > 0)
             .collect()
-    }
-
-    /// Every position that can contribute to `air_capacity_at`. Include all
-    /// district tiles, even when their city roster is incomplete or the
-    /// ruleset supplies a replacement. The existing capacity query still
-    /// decides ownership, family, pillage, buildings and carrier promotions.
-    fn air_surge_base_candidates(g: &Game, pid: usize) -> Vec<Pos> {
-        let mut positions: Vec<_> = g
-            .cities
-            .values()
-            .filter(|city| city.owner == pid)
-            .map(|city| city.pos)
-            .collect();
-        positions.extend(
-            g.map
-                .tiles
-                .values()
-                .filter(|tile| {
-                    tile.district.is_some() || tile.improvement.as_deref() == Some("airstrip")
-                })
-                .map(|tile| tile.pos),
-        );
-        positions.extend(
-            g.units
-                .values()
-                .filter(|unit| unit.owner == pid && unit.kind == "aircraft_carrier")
-                .map(|unit| unit.pos),
-        );
-        // The old full-map scan yielded sorted distinct positions. A city,
-        // airfield and carrier can name the same tile; absent save positions
-        // were never in that scan and cannot become bases here.
-        positions.sort_unstable();
-        positions.dedup();
-        positions.retain(|position| g.map.tiles.contains_key(position));
-        positions
     }
 
     /// Plan with the trainable generation until a launch wing exists. Once
