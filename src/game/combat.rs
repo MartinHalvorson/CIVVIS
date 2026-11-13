@@ -22,6 +22,49 @@
 
 use super::*;
 
+/// One read-only attack query's ordered target union. Tile indices already
+/// follow Pos order. Coordinates that disagree with that index retain the
+/// original Vec sort/dedup path, including off-map and mirrored records.
+struct AttackTargetUnion<'a> {
+    tiles: &'a crate::world::TileGrid,
+    in_map: crate::world::TileBits,
+    other: Vec<Pos>,
+}
+
+impl<'a> AttackTargetUnion<'a> {
+    fn new(tiles: &'a crate::world::TileGrid) -> Self {
+        Self {
+            tiles,
+            in_map: crate::world::TileBits::with_capacity(tiles.len()),
+            other: Vec::new(),
+        }
+    }
+
+    #[inline]
+    fn push(&mut self, pos: Pos) {
+        if let Some(index) = self.tiles.index_of(pos) {
+            if self.tiles.values().as_slice()[index].pos == pos {
+                self.in_map.insert(index);
+                return;
+            }
+        }
+        self.other.push(pos);
+    }
+
+    fn into_sorted(mut self) -> Vec<Pos> {
+        let tile_values = self.tiles.values();
+        let dense_tiles = tile_values.as_slice();
+        let mut targets = Vec::with_capacity(self.in_map.iter().count() + self.other.len());
+        targets.extend(self.in_map.iter().map(|index| dense_tiles[index].pos));
+        if !self.other.is_empty() {
+            targets.append(&mut self.other);
+            targets.sort_unstable();
+            targets.dedup();
+        }
+        targets
+    }
+}
+
 impl Game {
     /// Charge one bout of fighting. `WAR_WEARINESS_PER_COMBAT_IN_FOREIGN_LANDS`
     /// is 2 and `_IN_ALLIED_LANDS` is 1; fighting on your own soil is the
@@ -540,28 +583,10 @@ impl Game {
         // immediately walk it again.
         let positions = self.flow_past_unordered(uid, start, max_moves, true);
         let flood: Vec<Pos> = positions.iter().map(|(position, _)| *position).collect();
-        // ⚠ THIS WAS A `BTreeSet` AND IT ALLOCATED ONE NODE PER CANDIDATE.
-        // A ranged unit offers the same tile from every stride it can shoot
-        // from, so the set spent most of its work absorbing duplicates a node
-        // at a time, and its caller then re-collected the result into a
-        // second set. A `Vec` sorted once produces the identical ascending,
-        // distinct sequence this function's contract promises, from one
-        // buffer, and `BasicAi`'s envelope adopts it without copying.
-        let radius = attack_range.max(0) as usize;
-        let disk_capacity = 1usize
-            .saturating_add(
-                3usize
-                    .saturating_mul(radius)
-                    .saturating_mul(radius.saturating_add(1)),
-            )
-            .min(64);
-        let per_position = if spec.has_ranged_attack() {
-            disk_capacity
-        } else {
-            6
-        };
-        let mut targets: Vec<Pos> =
-            Vec::with_capacity(positions.len().saturating_mul(per_position));
+        // Every accepted target is still evaluated below in the original
+        // order. The map's dense position order can collect their union
+        // without storing and sorting the same tile from every stride.
+        let mut targets = AttackTargetUnion::new(&self.map.tiles);
         for (from, remaining) in positions {
             if remaining <= 0.0 {
                 continue;
@@ -592,9 +617,7 @@ impl Game {
                 }
             }
         }
-        targets.sort_unstable();
-        targets.dedup();
-        (targets, flood)
+        (targets.into_sorted(), flood)
     }
 
     /// The movement flood in traversal-discovery order. This is private to the
@@ -901,3 +924,6 @@ impl Game {
         }
     }
 }
+
+#[cfg(test)]
+mod target_union_tests;
