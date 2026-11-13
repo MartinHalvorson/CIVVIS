@@ -328,8 +328,10 @@ nor move it that turn; the harness plays the host's turn for it:
   can.
 - **Close, step away or hold.** A unit that struck nothing steps toward the
   measured seat with `advance_probability` (a shooter stops at its range),
-  steps away at the live majors' rate (24% at 25 hp or less, 13% above), and
-  otherwise holds. There is no other retreat.
+  divided by the share of units in the same column of the advance table that
+  had a tile to close to (one already beside us cannot, and the fit's rate
+  counts those too); else it steps away at the live majors' rate (24% at
+  25 hp or less, 13% above); else it holds. There is no other retreat.
 - **Not made host-like:** what the chairs build and how many soldiers they
   field, which cities they target, when they declare war, their units more
   than 8 tiles from the measured seat, their strikes on cities and districts

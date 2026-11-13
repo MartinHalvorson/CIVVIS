@@ -820,8 +820,8 @@ gene_screen --players 4 --width 60 --height 38 --city-states 6 --map pangaea \
   (`host_enemy::strike_probability` on the fit's open-ground features, over the
   share of open-ground reach that was exact) on a target drawn on the fitted
   weights, else a step toward the measured seat
-  (`host_enemy::advance_probability`), a step away (the live majors' rate), or
-  nothing. The header records `rival_host_tactics: true` and `--analyze`
+  (`host_enemy::advance_probability`, over the share that had a tile to close
+  to), a step away (the live majors' rate), or nothing. The header records `rival_host_tactics: true` and `--analyze`
   refuses to merge it with files played without the switch.
 - **`--chair-tactics-census`** wraps the chairs with the switch off: nothing
   they do changes, and each measured row gets `chair_tactics`, the table
