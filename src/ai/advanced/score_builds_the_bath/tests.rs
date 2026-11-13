@@ -7,9 +7,20 @@ fn score_seat_builds_the_bath_is_opt_in() {
     assert!(!ai.score_builds_the_bath());
     ai.enable_score_seat_builds_the_bath();
     assert!(ai.score_builds_the_bath());
-    let mut other = AdvancedAi::targeting(VictoryTarget::Science);
-    other.enable_score_seat_builds_the_bath();
-    assert!(!other.score_builds_the_bath(), "only a Score seat");
+    for target in [VictoryTarget::Science, VictoryTarget::Diplomacy] {
+        let mut peaceful = AdvancedAi::targeting(target);
+        peaceful.enable_score_seat_builds_the_bath();
+        assert!(peaceful.score_builds_the_bath(), "{target:?} too");
+    }
+    for target in [
+        VictoryTarget::Domination,
+        VictoryTarget::Culture,
+        VictoryTarget::Religion,
+    ] {
+        let mut other = AdvancedAi::targeting(target);
+        other.enable_score_seat_builds_the_bath();
+        assert!(!other.score_builds_the_bath(), "{target:?} is left alone");
+    }
 }
 
 /// A Roman city of three citizens on the first land tile whose Bath has a
@@ -112,14 +123,25 @@ fn an_idle_city_takes_its_bath() {
     assert!(off.cities[&city].queue.is_empty(), "off, nothing moves");
     assert!(!stock.score_bath_holds(&game, 0, city));
 
+    let mut culture = AdvancedAi::targeting(VictoryTarget::Culture);
+    culture.enable_score_seat_builds_the_bath();
+    let plan = culture.assess(&game, 0);
+    let mut elsewhere = game.clone();
+    culture.claim_score_bath(&mut elsewhere, 0, &plan);
+    assert!(
+        elsewhere.cities[&city].queue.is_empty(),
+        "a Culture seat is left alone"
+    );
+
     let mut science = AdvancedAi::targeting(VictoryTarget::Science);
     science.enable_score_seat_builds_the_bath();
     let plan = science.assess(&game, 0);
-    let mut elsewhere = game.clone();
-    science.claim_score_bath(&mut elsewhere, 0, &plan);
-    assert!(
-        elsewhere.cities[&city].queue.is_empty(),
-        "only a Score seat"
+    let mut launch = game.clone();
+    science.claim_score_bath(&mut launch, 0, &plan);
+    assert_eq!(
+        launch.cities[&city].queue.first(),
+        Some(&bath),
+        "a Science seat takes its Bath too"
     );
 
     let ai = seat(true);
