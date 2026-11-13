@@ -31,7 +31,9 @@ def bodies():
 
 def loaded():
     return [dict(path=path, status=200, finished=True, sha256=public.sha(raw),
-                 bytes=len(raw), body_file='loaded-responses/' + str(index) + '.body')
+                 bytes=len(raw), body_file='loaded-responses/' + str(index) + '.body',
+                 session='engine-worker' if path == '/civvis.wasm' else None,
+                 target_type='worker' if path == '/civvis.wasm' else 'page')
             for index, (path, raw) in enumerate(bodies().items())]
 
 
@@ -109,6 +111,8 @@ class PublicIdentityGuards(unittest.TestCase):
             lambda rows: rows[2].update(sha256='d' * 64),
             lambda rows: rows[2].update(finished=False),
             lambda rows: rows[2].update(status=404),
+            lambda rows: rows[2].update(session=None, target_type='page'),
+            lambda rows: rows[2].update(target_type='iframe'),
             lambda rows: rows.append(dict(rows[2], sha256='d' * 64)),
         ]
         for mutate in mutations:
@@ -287,6 +291,7 @@ class WorkerNetworkIntegration(unittest.TestCase):
                     time.sleep(.1)
                 self.assertEqual(len(rows), 1)
                 self.assertIsNotNone(rows[0]['session'], 'must observe the real worker target')
+                self.assertEqual(rows[0]['target_type'], 'worker')
                 body = dev.call('Network.getResponseBody',
                                 {'requestId': rows[0]['request_id']}, session=rows[0]['session'])
                 actual = (base64.b64decode(body['body']) if body.get('base64Encoded')

@@ -95,6 +95,7 @@ class Recorder:
         self.answers = {}
         self.console = []
         self.responses = {}
+        self.targets = {}
         self.alive = True
         self.thread = threading.Thread(target=self._read, daemon=True)
         self.thread.start()
@@ -145,13 +146,15 @@ class Recorder:
                 session = message.get('sessionId')
                 if method == 'Target.attachedToTarget':
                     child = params['sessionId']
+                    self.targets[child] = params['targetInfo']['type']
                     self.call('Network.enable', network_options(), wait=False, session=child)
                     self.call('Runtime.enable', wait=False, session=child)
                     self.call('Runtime.runIfWaitingForDebugger', wait=False, session=child)
                 elif method == 'Network.responseReceived':
                     self.responses[(session, params['requestId'])] = dict(
                         response=params['response'], resource_type=params.get('type'),
-                        session=session, request_id=params['requestId'], finished=False)
+                        session=session, target_type=self.targets.get(session, 'page'),
+                        request_id=params['requestId'], finished=False)
                 elif method == 'Network.loadingFinished':
                     row = self.responses.get((session, params['requestId']))
                     if row is not None:
@@ -194,15 +197,19 @@ def validate_loaded(loaded: list[dict], before: dict, after: dict, wasm: str) ->
     """Every captured executable must equal the public post-game readback."""
     if any(after.get(path) != value for path, value in before.items()):
         raise ValueError('public deployment changed during this game')
-    found = {}
+    found, worker_module = {}, False
     for row in loaded:
         path = row['path']
         if (not row['finished'] or row['status'] != 200
                 or row['sha256'] != after.get(path)):
             raise ValueError('loaded public response differs from readback: ' + path)
         found.setdefault(path, []).append(row['sha256'])
+        if path == '/civvis.wasm' and row.get('session') and row.get('target_type') == 'worker':
+            worker_module = True
     if any(path not in found for path in IDENTITY_PATHS):
         raise ValueError('missing original page/worker/module/frontend response body')
+    if not worker_module:
+        raise ValueError('original worker module response missing; page preload alone is insufficient')
     if any(value != wasm for value in found['/civvis.wasm']):
         raise ValueError('browser loaded a different WebAssembly module')
     return found
@@ -348,7 +355,8 @@ def observe(case: str, source: str, wasm: str, chrome: Path, out: Path,
             loaded.append(dict(path=path, status=row['response']['status'],
                                finished=row['finished'], sha256=sha(data), bytes=len(data),
                                body_file=str(body_file),
-                               session=row['session'], request_id=row['request_id'],
+                               session=row['session'], target_type=row['target_type'],
+                               request_id=row['request_id'],
                                response=row['response']))
         (out / 'loaded-responses.json').write_text(json.dumps(loaded, indent=2) + '\n')
         found = validate_loaded(loaded, before, after, wasm)
