@@ -324,17 +324,8 @@ impl BasicAi {
         uid: u32,
         reserve: i32,
     ) -> bool {
-        g.legal_actions_within(pid, ActionFamilies::UNITS)
+        g.legal_survival_attack_actions(pid, uid)
             .into_iter()
-            .filter(|action| {
-                matches!(
-                    action,
-                    Action::Attack { unit, .. }
-                        | Action::Ranged { unit, .. }
-                        | Action::PriorityTarget { unit, .. }
-                        if *unit == uid
-                )
-            })
             .any(|action| {
                 let mut future = g.clone();
                 if future.apply(pid, &action).is_err() {

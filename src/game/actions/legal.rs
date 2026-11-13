@@ -28,6 +28,57 @@ impl Game {
         }
     }
 
+    /// The exact ordered attacks a survival check can select for one unit.
+    /// Other units contribute no selectable action. An active policy trace
+    /// still reads the entire original enumeration, so its effect/card and
+    /// opaque footprint remains identical as well.
+    pub(crate) fn legal_survival_attack_actions(&self, pid: usize, uid: u32) -> Vec<Action> {
+        let actions = if self.query_memo.policy_reads_on.get() {
+            self.legal_actions_within(pid, ActionFamilies::UNITS)
+        } else {
+            if self.is_finished() || self.current != pid {
+                return Vec::new();
+            }
+            let _memo = self.query_memo();
+            if !self.pending_city_capture_actions(pid).is_empty() {
+                return Vec::new();
+            }
+            let player = &self.players[pid];
+            let current_visibility = self.player_vision_frame(pid);
+            let visibility_viewers = self.visibility_viewers(pid);
+            // Use the original roster membership, including an enclosing
+            // read-only query scope's roster, rather than a second ownership
+            // rule that could disagree with the full enumerator.
+            let mut unit_order_ids = self.player_unit_ids(pid);
+            unit_order_ids.retain(|candidate| *candidate == uid);
+            if unit_order_ids.is_empty() {
+                return Vec::new();
+            }
+            let mut actions = Vec::new();
+            self.push_unit_order_actions(
+                pid,
+                player,
+                unit_order_ids,
+                &current_visibility,
+                &visibility_viewers,
+                &mut actions,
+            );
+            actions
+        };
+        actions
+            .into_iter()
+            .filter(|action| {
+                matches!(
+                    action,
+                    Action::Attack { unit, .. }
+                        | Action::Ranged { unit, .. }
+                        | Action::PriorityTarget { unit, .. }
+                        if *unit == uid
+                )
+            })
+            .collect()
+    }
+
     /// Generate only the unit-local actions used by the AI's raider and air
     /// doctrines. Calling `legal_actions` for this decision also evaluates
     /// every city's production, purchases, diplomacy, and every other unit,
@@ -2102,3 +2153,6 @@ impl Game {
         deals
     }
 }
+
+#[cfg(test)]
+mod unit_attack_query_tests;
