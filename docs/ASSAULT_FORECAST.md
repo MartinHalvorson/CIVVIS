@@ -770,3 +770,44 @@ and killed of the target (`combat` events).
 - **What a gate on the 48 non-faith declarations would have cost:** no
   capture (none took a city); it would have spared 13 cities and 189 units
   lost to the targets, against 72 of theirs killed.
+
+**The gene.** `declaration-needs-a-capture` (opt-in) holds a declaration
+of war on a major unless the soldiers in reach forecast a capture. It reads
+the corps search (`assault_corps_best`) as if the war began this turn:
+- the pool is our land soldiers, Rams and Towers within 5 turns of their
+  moves of one of the target's cities;
+- the window is 7 turns for an open city and 10 for a walled one;
+- it needs `calibrated_within` of at least 0.5, and a breaker in the corps
+  for a walled city.
+
+A hold writes "Holding the war on X for a capture" with the best city's
+reading and what it is short of. The faith openers are exempt (they take
+`preferred_war_opening_ungated`). See
+`src/ai/advanced/declaration_needs_a_capture.rs`.
+
+**The sim cannot judge it.** The paired driver
+`src/bin/gene_screen/war_gate_tests.rs` (ignored by default) plays both live
+lane recipes with `--rival-host-tactics` and the armed set of 2026-11-13
+(522 tags), the gene off and on, 16 paired worlds each. CI on efb5a80a61
+(cargo-test run 43375217113, Domination; speed-job run 43375217273, Score):
+
+| recipe | wars we declared on a major, off / on | of them faith wars | gate: held turns / passed (on) | every other column, on - off |
+|---|---|---|---|---|
+| Gran Colombia Domination, 4p Pangaea, seeds 63400000-15 | 16 / 16 | 16 | 10 / 2 | 0.00 +/- 0.00 |
+| Rome Score, 6p Continents, t170, seeds 63500000-15 | 0 / 0 | - | 0 / 0 | 0.00 +/- 0.00 |
+
+"Every other column" is wars that took a city, cities those wars took and
+lost, capitals taken, cities taken and lost, units killed and lost, score,
+placement, score share and wins. Every one of the 32 pairs played the same
+game.
+
+- **The sim seat declares far less than the live seat.** Live: 2.4 wars a
+  game (Domination) and 0.7 (Score). Sim: 1.0 and 0.0.
+- **The sim never makes a war the gate governs.** All 16 sim declarations
+  were faith wars. Live, 48 of 195 were not.
+- **The gate did read.** It held 10 declaration turns and passed 2 on the
+  Domination recipe. The games stayed identical, so none of those roads
+  would have declared anyway.
+- **The evidence for this gene is the live census above.** The sim
+  confirms only that the gene changes nothing where nobody asks for a war
+  it governs.

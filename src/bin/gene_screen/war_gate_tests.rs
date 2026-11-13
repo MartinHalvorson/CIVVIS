@@ -17,7 +17,11 @@
 //! declared each one from the seat's journal.
 //!
 //! `cargo test --profile ci --features developer-tools --bin gene_screen war_gate -- --ignored --nocapture`,
-//! with `CIVVIS_WAR_GATE_WORLDS` for the seeds per recipe (default 16).
+//! with `CIVVIS_WAR_GATE_WORLDS` for the seeds per recipe (default 16) and
+//! `CIVVIS_WAR_GATE_RECIPES` (`domination`, `score` or `both`, the default).
+//! Each world also writes one `WAR-GATE-WORLD` line straight to stderr, past
+//! the harness's capture. The first run's output is in
+//! `docs/ASSAULT_FORECAST.md` ("Declarations").
 
 use super::*;
 use civvis::game::WarRecord;
@@ -41,7 +45,7 @@ fn metric(f: impl Fn(&World) -> f64 + 'static) -> Metric {
 
 /// The recipes a run plays when `CIVVIS_WAR_GATE_RECIPES` (`domination`,
 /// `score` or `both`) is unset.
-const DEFAULT_RECIPES: &str = "domination";
+const DEFAULT_RECIPES: &str = "both";
 
 /// `true` for the Score recipe, in the order played.
 fn recipes() -> Vec<bool> {
@@ -316,6 +320,7 @@ fn mean_se(xs: &[f64]) -> (f64, f64) {
 }
 
 #[test]
+#[ignore = "64 whole Deity games: about 6 minutes (Domination) and 12 (Score) on 4 cores; run with --ignored --nocapture"]
 fn war_gate_paired_on_the_two_lanes() {
     let mut genes = gene_table();
     let on: BTreeSet<String> = live_genome_tags(LIVE_ARMS).expect("the armed set");
@@ -461,7 +466,5 @@ fn war_gate_paired_on_the_two_lanes() {
             ));
         }
     }
-    let report = report.join("\n");
-    println!("{report}");
-    panic!("deliberate failure so CI prints the report:\n{report}");
+    println!("{}", report.join("\n"));
 }

@@ -22,6 +22,12 @@
 //!   reader saw read 0%, 6% and 0% at the declaration.
 //! - 4 more had no opener line; they are not declarations this gate sees.
 //!
+//! The sim cannot judge it. On the two live lane recipes (16 paired worlds
+//! each, `src/bin/gene_screen/war_gate_tests.rs`) the measured seat declared
+//! 16 wars in each arm's 16 Domination games and none in the Score games,
+//! every one a faith war. The gate held 10 declaration turns and changed no
+//! game.
+//!
 //! # The rule
 //!
 //! - **Pool:** our land soldiers, Battering Rams and Siege Towers within
