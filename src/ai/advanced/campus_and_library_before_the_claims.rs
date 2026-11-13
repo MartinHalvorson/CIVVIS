@@ -149,9 +149,14 @@
 //! 0.6.
 //! With the same cities (4.0), citizens (15.5) and Production (32) at t50 the
 //! Score games held 23 Science and 13 techs there and the Science games 14
-//! and 10, against a best rival at 69-79; at t75 3 Libraries against 1. The
-//! Science seat's own plan closes that by t100 (71 and 73), which is 50
-//! turns of research late in a race the rivals finish at t170-190. So the
+//! and 10, against a best rival at 69-79; at t75 3 Libraries against 1. Not
+//! all of that t50 gap is this gene's: the Score seat also seated Pingala
+//! first (a median t19 in 24 of 25 games, `domination-seat-appoints-pingala-
+//! first`, behind the same gate) where the Science seat seated Magnus (8 of
+//! 8, Pingala at t47.5). The Campus timing and the held-back city-turns
+//! above are this gene's own. The Science seat's own plan closes the gap by
+//! t100 (71 and 73), which is 50 turns of research late in a race the rivals
+//! finish at t170-190. So the
 //! gene reads [`AdvancedAi::campus_first_seat`]: Domination, Score, Science
 //! and Diplomacy. A Culture seat's slot goes to its Theater Square and a
 //! Religion seat's to its Holy Site, and they keep the old order.
