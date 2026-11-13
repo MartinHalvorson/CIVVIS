@@ -19065,6 +19065,65 @@ CivvisRacerResolutionVotes = function(rtype, favor, costs, config, cap)
 	return need, price;
 end
 
+-- ★★★ FROM MATCH POINT THE BANK IS SPENT ON THE VOTES THAT CARRY.
+--
+-- At `DiploVictoryMatchPoint` (18) the rivals gang on us and the ballot braces
+-- with the free vote (`CivvisRacerBraces`), so the session's other resolutions
+-- are where the last points come from: brace and two carried resolutions is
+-- +1, and from 19 that is the game. The counts above stop at the 60 Favor cap
+-- because Favor saved is the next session's claim. At match point there is no
+-- next claim to save for: the Diplomatic seats of 2026-11-13 lost to a
+-- rival's Science victory at t182-199, sessions are twenty turns apart, and
+-- the claim itself is not cast while the gang stands.
+--
+-- civvis-20261113T195128Z, t192: 19 points, 209 Favor. The brace took the
+-- free vote, the Heritage denial 84, the Migration Treaty the free vote (its
+-- count was over the cap), and 125 Favor went unspent. The treaty was lost to
+-- four rival blocks of 3 votes; the seat stayed on 19 and lost at t199. On
+-- the Deity lane (106 games, the rivals' votes held fixed) a Migration Treaty
+-- carries 59% of the time with 6 votes, 78% with 8 and 86% with 10; a Trade
+-- Treaty 63%, 73% and 80%.
+--
+-- So from match point a resolution may take the whole bank, less what the
+-- session's later resolutions would buy at their ordinary counts: its own
+-- count first, then more votes as the rest affords, up to twice the count
+-- (twice carried every Public Relations, Arms Control and Border Control in
+-- those games and 8 treaties in 10; past that the Favor is the next
+-- resolution's); and when the bank is short of the count, as many as it does
+-- afford. Returns
+-- `votes, price`, or `want, price` unchanged below match point, off the
+-- Diplomatic lane, or when it would buy no more. Off with
+-- `RacerMatchPointBank = false`. `entries` is the ballot's ordered list (rows
+-- with `rtype`, or bare names) and `current` this resolution's entry in it.
+CivvisRacerMatchPointVotes = function(rtype, entries, current, favor, costs, config, ourPoints, want, price)
+	config = type(config) == "table" and config or {};
+	if not CivvisDiploRacer(config) or config.RacerMatchPointBank == false
+			or type(costs) ~= "table"
+			or (tonumber(ourPoints) or 0) < (tonumber(config.DiploVictoryMatchPoint) or 18) then
+		return want, price;
+	end
+	local need, needPrice = CivvisRacerResolutionVotes(rtype, 1e9, costs, config, 1e9);
+	if need < 2 then return want, price; end
+	local reserve, later = 0, false;
+	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
+		local other = type(entry) == "table" and entry.rtype or entry;
+		if later and other ~= "WC_RES_DIPLOVICTORY" then
+			local _, otherPrice = CivvisRacerResolutionVotes(other, 1e9, costs, config);
+			reserve = reserve + otherPrice;
+		end
+		if entry == current then later = true; end
+	end
+	local bank = tonumber(favor) or 0;
+	local budget = bank - reserve;
+	-- Short of both: this resolution's own count first, the later one gets
+	-- what is left; short of even that, whatever the bank affords.
+	if budget < needPrice then budget = math.min(bank, needPrice); end
+	local votes = CivvisCongressVoteBudget(budget, costs, costs.MaxVotes);
+	if votes > 2 * need then votes = 2 * need; end
+	if votes < 2 or votes <= (tonumber(want) or 1) then return want, price; end
+	return votes, tonumber(costs[votes - 1]) or 0;
+end
+
 -- ★★ THE RACER NAMES THE TARGET THAT USUALLY WINS, NOT THE FIRST ONE LISTED.
 --
 -- A Congress Participation point needs our vote to match the winning option
@@ -25656,6 +25715,10 @@ local function tick()
 			-- before the claim.
 			envoyTally.racer_reserve = CivvisCongressRacer(cfg)
 				and CivvisRacerReserve(list, costs, cfg) or nil;
+			-- See `CivvisRacerMatchPointVotes`: our own points, read once.
+			envoyTally.racer_points = CivvisDiploRacer(cfg) and (tonumber(try(function()
+				return Players[pid]:GetStats():GetDiplomaticVictoryPoints();
+			end, 0)) or 0) or nil;
 			local cast, spent = 0, 0;
 			-- How the Diplomatic Victory ballot was cast, for `wc_vote`:
 			-- "claim" (A for us with the bank), "deny" (B against the leader
@@ -25998,6 +26061,9 @@ local function tick()
 							and not racerSlowed then
 						-- See `CivvisRacerResolutionVotes`.
 						local want, price = CivvisRacerResolutionVotes(rtype, favor, costs, cfg);
+						-- See `CivvisRacerMatchPointVotes`: from 18 points, the bank.
+						want, price = CivvisRacerMatchPointVotes(rtype, list, entry, favor, costs, cfg,
+							envoyTally.racer_points, want, price);
 						if want > 1 then
 							votes = want;
 							favor = favor - price;
