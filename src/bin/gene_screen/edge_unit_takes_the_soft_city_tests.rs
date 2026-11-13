@@ -418,7 +418,7 @@ fn stage_of(detail: &str) -> Option<&'static str> {
         "resource" if rest.contains(" improves ") => "improved",
         "resource" => "builder_walks",
         "force" if rest.starts_with("upgraded") => "upgraded",
-        "force" if rest.ends_with("before this one") => "trained",
+        "force" if rest.contains("before this one") => "trained",
         "force" => "force",
         "hold" if rest.contains("not on the board") => "declare_lost",
         "hold" if rest.contains("the others at") => "held_bodies",
@@ -429,10 +429,13 @@ fn stage_of(detail: &str) -> Option<&'static str> {
         "hold" if rest.contains("refused") => "held_refused",
         "hold" => "held_other",
         "denounced" => "denounced",
+        "kept" => "kept",
+        "heal" => "heal",
         "muster" => "mustered",
         "siege" => "siege",
         "assault" => "assault",
         "start" if rest.starts_with("research goes") => "start",
+        "start" if rest.starts_with("recheck") => "start_recheck",
         "start" if rest.starts_with("no ") => "start_closed",
         "start" => "start_supplied",
         "declared" => "declared",
@@ -990,6 +993,15 @@ fn describe(arm: &str, side: &[&World]) -> Vec<String> {
             sum("continued"),
             sum("peace"),
             sum("closed"),
+        ),
+        format!(
+            "   {arm:<14} version 2 (worlds): kept below the naming edge {}, a unit healed before the march {}, resource rechecked {}, stood down after the recheck {}",
+            worlds_with("kept"),
+            worlds_with("heal"),
+            worlds_with("start_recheck"),
+            side.iter()
+                .filter(|w| counter(w, "start_recheck") > 0 && counter(w, "start_closed") > 0)
+                .count(),
         ),
         format!(
             "   {arm:<14} holds (worlds): forecast {}, shipped opening refused {}, another war {}, no breaker {}, declaration refused {}",
