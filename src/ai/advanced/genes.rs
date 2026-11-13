@@ -5860,6 +5860,21 @@ pub const GENES: &[Gene] = &[
     // upkeep, and purchases keep three turns of the unit bill. Opt-in; see
     // `advanced/endgame_army_takes_the_queue.rs`.
     Gene { tag: "endgame-army-takes-the-queue", field: "endgame_army_takes_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_endgame_army_takes_the_queue, disable: AdvancedAi::disable_endgame_army_takes_the_queue },
+    // Live Deity 11-12/13, 96 Rome Score games: the nearest rival major city
+    // defends at 25 at t40 and 27.5 at t50 (walled in 14% and 18%), so a
+    // Legion (40) is +15 and +12.5; the seat owns a Legion in 0% and 1% of
+    // games then. The edge unit is researched, supplied, trained, mustered
+    // at the soft city and declared with on a capture forecast, and the war
+    // stops when the edge is gone. Opt-in; see
+    // `advanced/edge_unit_takes_the_soft_city.rs`.
+    Gene { tag: "edge-unit-takes-the-soft-city", field: "edge_unit_takes_the_soft_city", kind: Kind::OptIn, enable: AdvancedAi::enable_edge_unit_takes_the_soft_city, disable: AdvancedAi::disable_edge_unit_takes_the_soft_city },
+    // Live Science lane 11-13: Bronze Working at t59-82 and Iron Working at
+    // t62-101, no Legion in six games; the soft city's window shuts by t60.
+    // With `edge-unit-takes-the-soft-city` (required), a seat whose edge unit
+    // is its own unique unit researches its path from turn one, decides at
+    // Bronze Working, trains bodies and holds Gold for the upgrades. Opt-in;
+    // see `advanced/edge_unit_takes_the_soft_city.rs`.
+    Gene { tag: "edge-unit-opens-from-the-start", field: "edge_unit_opens_from_the_start", kind: Kind::OptIn, enable: AdvancedAi::enable_edge_unit_opens_from_the_start, disable: AdvancedAi::disable_edge_unit_opens_from_the_start },
     // Live Rome 11-12/13 (52 games, no faith founded in any): 30 faith strikes
     // took nothing, lost 3 cities to the target and 8 to others, 78 units for
     // 37 killed. The Score hold has since held one in 31 of 32 games, and is
@@ -6120,10 +6135,12 @@ pub const GENES: &[Gene] = &[
     // Live Deity Rome Score lane 2026-11-12, 11 games: Settlers were born at
     // the same pace in the fast and the slow games, but took a mean 8.7
     // turns from birth to founding in the three fastest against 23.8 in the
-    // slow ones (727 Settler-turns past the eighth turn out). On a Score
-    // seat a Settler past 8 Online turns, or turned home by the corridor,
-    // founds on the best safe, holdable site within four tiles. Opt-in; see
-    // `advanced/score_seat_founds_early.rs`.
+    // slow ones (727 Settler-turns past the eighth turn out). On every seat
+    // but a Domination one (Score-only until 2026-11-13, when the lane moved
+    // to Science and Diplomatic games and one of them held seven unfounded
+    // Settlers at three cities) a Settler past 8 Online turns, or turned
+    // home by the corridor, founds on the best safe, holdable site within
+    // four tiles. Opt-in; see `advanced/score_seat_founds_early.rs`.
     Gene { tag: "score-seat-founds-early", field: "score_seat_founds_early", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_founds_early, disable: AdvancedAi::disable_score_seat_founds_early },
     // Split out of score-seat-plays-for-points after its live arm lost the
     // capital (civvis-20261112T211954Z, t24 declaration at 0.46 of the

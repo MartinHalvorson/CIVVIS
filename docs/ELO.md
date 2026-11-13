@@ -121,6 +121,35 @@ the roster agent that agrees with them.
 neighbours) for the win-odds annotation. The rung ratings here are the
 measurement those constants were waiting for; reconciling them is open.
 
+## The watched table
+
+A world nobody is playing, which is what civvis.ai opens on, is a contest
+between the agents. `Session::deal_watched_table` takes as many of them off the
+top of the published ranking as the world has majors (`strategies::ranked`,
+strongest first) and deals them round the seats by the world's seed
+(`strategies::table`), so each agent holds one civilization and none of them
+always moves first. A table larger than the roster seats the ranking again from
+the top. A battlefield keeps the house fleet: the ratings were measured on whole
+games.
+
+Each agent plays exactly as its roster row is written, because that is what its
+rating describes. The site's experiment list (`SITE_EXPERIMENT_GENES`) therefore
+reaches a watched table only through a row that names the gene.
+
+What the page shows of it:
+
+- The standings carry **PLAYER** (the handle) and **ELO** (the published
+  rating) after Watch as and before the start odds. ELO exists only at a table
+  with a rated seat.
+- A table whose every major is rated sits down at those ratings, with each
+  one's bootstrap deviation, so the **START** odds differ by seat. A table with
+  one unrated seat (a person, the house fleet) keeps the flat prior for
+  everybody: the published ratings share one scale and nothing else is on it.
+- **Arena Stats → Strategies** keeps a win–loss record per handle in the
+  viewer's own browser. It is a tally of the games that browser watched, not a
+  rating: it moves no number in `data/strategy_elo.json`.
+- The result card names the agent that won.
+
 ## Where a person sees it
 
 - The setup panel's **Rival Civ AI Agent** select, under Difficulty, seats every

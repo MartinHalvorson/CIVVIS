@@ -329,6 +329,13 @@ impl AdvancedAi {
         /// Opt-in `endgame-army-takes-the-queue`; see
         /// `advanced/endgame_army_takes_the_queue.rs`.
         endgame_army_takes_the_queue => enable_endgame_army_takes_the_queue, disable_endgame_army_takes_the_queue;
+        /// Opt-in gene `edge-unit-takes-the-soft-city`; see
+        /// `advanced/edge_unit_takes_the_soft_city.rs`.
+        edge_unit_takes_the_soft_city => enable_edge_unit_takes_the_soft_city, disable_edge_unit_takes_the_soft_city;
+        /// Opt-in gene `edge-unit-opens-from-the-start` (requires
+        /// `edge-unit-takes-the-soft-city`); see
+        /// `advanced/edge_unit_takes_the_soft_city.rs`.
+        edge_unit_opens_from_the_start => enable_edge_unit_opens_from_the_start, disable_edge_unit_opens_from_the_start;
         /// Opt-in gene `faithless-seat-holds-its-faith-strikes`; see
         /// `advanced/faithless_seat_holds_its_faith_strikes.rs`.
         faithless_seat_holds_its_faith_strikes => enable_faithless_seat_holds_its_faith_strikes, disable_faithless_seat_holds_its_faith_strikes;

@@ -7814,6 +7814,21 @@ pub struct AdvancedAi {
     /// carries its upkeep, and purchases keep three turns of the unit bill.
     /// See `advanced/endgame_army_takes_the_queue.rs`. Opt-in.
     endgame_army_takes_the_queue: bool,
+    /// `edge-unit-takes-the-soft-city`: when the seat can field a melee unit
+    /// clearly stronger than a nearby rival city (the Roman Legion against
+    /// an expansion city at turn 40), it researches and supplies that unit,
+    /// trains a few, musters them at the city, declares on a capture
+    /// forecast, and stops when the edge is gone. See
+    /// `advanced/edge_unit_takes_the_soft_city.rs`. Off by default.
+    edge_unit_takes_the_soft_city: bool,
+    /// The window of `edge-unit-takes-the-soft-city`; `None` with it off.
+    edge_unit_window: Option<edge_unit_takes_the_soft_city::EdgeWindow>,
+    /// `edge-unit-opens-from-the-start`: with `edge-unit-takes-the-soft-city`
+    /// on and a unique edge unit (Rome's Legion), its path is researched from
+    /// turn one, the resource decides at its revealing technology, and
+    /// bodies and Gold are kept for the upgrades. See
+    /// `advanced/edge_unit_takes_the_soft_city.rs`. Off by default.
+    edge_unit_opens_from_the_start: bool,
     /// `faithless-seat-holds-its-faith-strikes`: a seat that founded no
     /// religion (and is not playing for a Religious Victory) holds the faith
     /// strike unless the rival's faith stands at match point. See
@@ -12119,6 +12134,9 @@ mod early_archers;
 /// the declaration, the vision guard on the march, and the continuation while
 /// the war pays. One opt-in gene; see `advanced/early_conquest.rs`.
 mod early_conquest;
+/// `edge-unit-takes-the-soft-city`: see
+/// `advanced/edge_unit_takes_the_soft_city.rs`.
+mod edge_unit_takes_the_soft_city;
 /// Version two of rapid city expansion keeps the measured-positive opening
 /// pace and safety gates without version one's forced queues, sprawl, or war.
 pub(super) mod rapid_city_expansion;
@@ -26680,6 +26698,11 @@ impl AdvancedAi {
         // the plan conquers next. Exact no-op while off. See
         // `advanced/city_state_harvest.rs`.
         self.maintain_city_state_harvest(g, pid);
+        // `edge-unit-takes-the-soft-city`: open, keep or close the window,
+        // muster and declare, and at war take, go on or ask for peace.
+        // Exact no-op while off. See
+        // `advanced/edge_unit_takes_the_soft_city.rs`.
+        self.maintain_edge_unit_window(g, pid);
         // `city_campaign`: drop the cities the plan has taken, expire one
         // never launched, draw or refresh one at peace. See
         // `advanced/city_campaign.rs`.
@@ -26717,6 +26740,8 @@ impl AdvancedAi {
             let mut next = self.assess(g, pid);
             self.apply_war_plan_to_strategy(&mut next);
             self.apply_city_state_harvest_to_strategy(g, pid, &mut next);
+            // `edge-unit-takes-the-soft-city`: no-op with the gene off.
+            self.apply_edge_unit_to_strategy(g, pid, &mut next);
             // `city-state-before-the-first-capital`: no-op with the gene off.
             self.apply_city_state_stone_to_strategy(g, pid, &mut next);
             self.apply_air_surge_to_strategy(g, pid, &mut next);
@@ -26724,6 +26749,7 @@ impl AdvancedAi {
         } else if let Some(mut current) = self.plan.take() {
             self.apply_war_plan_to_strategy(&mut current);
             self.apply_city_state_harvest_to_strategy(g, pid, &mut current);
+            self.apply_edge_unit_to_strategy(g, pid, &mut current);
             self.apply_city_state_stone_to_strategy(g, pid, &mut current);
             self.apply_air_surge_to_strategy(g, pid, &mut current);
             self.plan = Some(current);
