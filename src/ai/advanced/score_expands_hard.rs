@@ -63,6 +63,25 @@
 //!    city's queue once the Plaza stands
 //!    ([`AdvancedAi::claim_score_expansion_hall`]).
 //!
+//! **It waits out a war.** While a living major is at war with us the gene
+//! adds nothing to the Settler claims: past the band turn the floor's claim
+//! queues no Settler, and the stock rules decide the rest. Its first live
+//! carrier (`civvis-20261113T090930Z`) was at war with Indonesia and
+//! Phoenicia from turn 56 to turn 97; the three Settlers the gene had
+//! trained at turns 51-59 and the next at turn 84 sheltered in Rome and
+//! Aquileia ("Settler shelters in Rome" on 447 journal lines) and founded
+//! 10, 27 and 20 turns after they were born, one was lost, and the empire
+//! stood at four cities from turn 60 to turn 80. The Hall keeps its claim.
+//!
+//! **The frontier keeps its queues.** Past the band turn the gene queues no
+//! Settler in a city within [`SCORE_EXPANDS_FRONTIER_TILES`] of a charted
+//! rival major's city. On the war recipe (rivals at full Deity strength,
+//! war pace 100, host tactics; 60 pairs) the gene with the wartime rule
+//! still read military at turn 75 -19% (z -5.3) and cities lost +0.47 for
+//! cities at turn 100 +0.50 and score +3; on the standard recipe, where
+//! rivals rarely strike, it read score +20. The Settler it holds stands in
+//! front of the deterrent and the garrison in exactly those cities.
+//!
 //! Journal reasons start `score-seat-expands-hard:`.
 //!
 //! ⚠ Tried and withdrawn (paired sim, 60 seeds each):
@@ -102,6 +121,11 @@ pub(crate) const SCORE_EXPANDS_HALL_OVER_SETTLER_SHARE: f64 = 0.25;
 /// A city attacked within this many turns keeps its queue.
 const SCORE_EXPANDS_ATTACK_MEMORY: u32 = 4;
 
+/// A charted rival major's city this near one of ours makes it a frontier
+/// city: past the band turn its queue is left to the stock rules, so the
+/// garrison and the deterrent are not held behind a Settler.
+pub(crate) const SCORE_EXPANDS_FRONTIER_TILES: i32 = 8;
+
 impl AdvancedAi {
     /// The gene is on, `no-city-limit` carries it, and the seat aims at
     /// Score.
@@ -114,6 +138,24 @@ impl AdvancedAi {
     /// [`Self::score_expands_hard`] inside the settling window.
     pub(super) fn score_expands_hard_now(&self, g: &Game) -> bool {
         self.score_expands_hard() && self.holdable_land_window(g)
+    }
+
+    /// Whether a living major is at war with `pid`. While one is, the gene
+    /// stands down: a Settler trained then only shelters (see the module).
+    pub(super) fn score_expands_war_holds(g: &Game, pid: usize) -> bool {
+        g.players.iter().any(|other| {
+            other.id != pid
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && g.is_at_war(pid, other.id)
+        })
+    }
+
+    /// [`Self::score_expands_hard_now`] while no major is at war with `pid`:
+    /// the gate of everything the gene adds to the Settler claims.
+    pub(super) fn score_expands_hard_at_peace(&self, g: &Game, pid: usize) -> bool {
+        self.score_expands_hard_now(g) && !Self::score_expands_war_holds(g, pid)
     }
 
     /// The Settlers that may be walking or in production at once. See the
@@ -156,6 +198,14 @@ impl AdvancedAi {
             }
             _ => false,
         }
+    }
+
+    /// Whether a city at `pos` stands within [`SCORE_EXPANDS_FRONTIER_TILES`]
+    /// of a charted rival major's city (`holdable_land_threats`' list).
+    pub(super) fn score_expands_on_the_frontier(g: &Game, rival_cities: &[Pos], pos: Pos) -> bool {
+        rival_cities
+            .iter()
+            .any(|rival| g.wdist(*rival, pos) <= SCORE_EXPANDS_FRONTIER_TILES)
     }
 
     /// Whether the head of `cid`'s queue is the Ancestral Hall, which no

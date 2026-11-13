@@ -199,8 +199,20 @@ impl AdvancedAi {
             return;
         }
         // `score-seat-expands-hard`: the capital queues its next Settler while
-        // the first still walks.
-        let hard = self.score_expands_hard_now(g);
+        // the first still walks. The gene waits out a war with a major: it
+        // adds nothing then, and past the band turn, where only the gene
+        // keeps this floor open, the claim queues no Settler.
+        let hard = self.score_expands_hard_at_peace(g, pid);
+        let past_band = g.turn >= g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN);
+        if past_band && !hard {
+            return;
+        }
+        // ... and past the band turn it leaves the frontier's queues alone.
+        let frontier = if past_band {
+            Self::holdable_land_threats(g, pid).rival_cities
+        } else {
+            Vec::new()
+        };
         if walkers > 0 && n_cities < 2 && !hard {
             return;
         }
@@ -262,6 +274,7 @@ impl AdvancedAi {
                     self.first_capital_land_recon_holds(g, pid, cid, plan, head)
                 })
                 || (hard && Self::score_expands_keeps_the_hall(g, cid))
+                || Self::score_expands_on_the_frontier(g, &frontier, city.pos)
                 || !(Self::early_settler_may_displace(g, pid, cid)
                     || (hard && Self::score_expands_may_displace(g, pid, cid)))
                 || !g.can_produce(pid, cid, &item)
