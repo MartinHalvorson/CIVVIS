@@ -197,32 +197,32 @@ impl AdvancedAi {
         let small_town_threat = self.small_town_threat(g, pid, &religion);
         // See `advanced/religion_seat_counts_the_pressure.rs`. Empty off.
         let pressure_plan = self.religion_seat_pressure_plan(g, pid, uid, &religion);
-        let mut targets: Vec<(bool, i32, std::cmp::Reverse<u32>, Pos)> = g
-            .cities
-            .values()
-            .filter(|city| {
-                Self::city_needs_religious_support(g, pid, city, &religion)
-                    || (offensive
-                        && city.owner != pid
-                        && !g.is_at_war(pid, city.owner)
-                        && self.religion_campaign_needs_city(g, pid, city, &religion)
-                        && g.city_religion(city) != Some(religion.as_str()))
-            })
-            .map(|city| {
-                let own_pressure = city.pressure.get(&religion).copied().unwrap_or(0.0);
-                let rival_pressure = city
-                    .pressure
-                    .iter()
-                    .filter(|(belief, _)| belief.as_str() != religion)
-                    .map(|(_, pressure)| *pressure)
-                    .fold(0.0_f64, f64::max);
-                let swing = (rival_pressure - own_pressure).clamp(0.0, 500.0) as i32;
-                let foreign = (city.owner != pid) as i32;
-                let defensive_conversion = (city.owner == pid) as i32 * 170;
-                let held = veto
-                    .as_ref()
-                    .is_some_and(|veto| g.city_religion(city) == Some(veto.religion.as_str()));
-                let score = defensive_conversion
+        let mut targets: Vec<(bool, i32, std::cmp::Reverse<u32>, Pos)> =
+            g.cities
+                .values()
+                .filter(|city| {
+                    Self::city_needs_religious_support(g, pid, city, &religion)
+                        || (offensive
+                            && city.owner != pid
+                            && !g.is_at_war(pid, city.owner)
+                            && self.religion_campaign_needs_city(g, pid, city, &religion)
+                            && g.city_religion(city) != Some(religion.as_str()))
+                })
+                .map(|city| {
+                    let own_pressure = city.pressure.get(&religion).copied().unwrap_or(0.0);
+                    let rival_pressure = city
+                        .pressure
+                        .iter()
+                        .filter(|(belief, _)| belief.as_str() != religion)
+                        .map(|(_, pressure)| *pressure)
+                        .fold(0.0_f64, f64::max);
+                    let swing = (rival_pressure - own_pressure).clamp(0.0, 500.0) as i32;
+                    let foreign = (city.owner != pid) as i32;
+                    let defensive_conversion = (city.owner == pid) as i32 * 170;
+                    let held = veto
+                        .as_ref()
+                        .is_some_and(|veto| g.city_religion(city) == Some(veto.religion.as_str()));
+                    let score = defensive_conversion
                     + foreign * 90
                     + city.pop * 12
                     + city.is_capital as i32 * 18
@@ -237,16 +237,15 @@ impl AdvancedAi {
                         city,
                         &religion,
                         small_town_threat.as_deref(),
+                    ) - g.wdist(current, city.pos) * 4;
+                    (
+                        recovery.contains(&city.id),
+                        score,
+                        std::cmp::Reverse(city.id),
+                        city.pos,
                     )
-                    - g.wdist(current, city.pos) * 4;
-                (
-                    recovery.contains(&city.id),
-                    score,
-                    std::cmp::Reverse(city.id),
-                    city.pos,
-                )
-            })
-            .collect();
+                })
+                .collect();
         targets.sort_by(|left, right| right.cmp(left));
         // See `founder_home_targets` (`founder-converts-its-own-cities`): a
         // founder's spreader converts our own cities before any foreign one.

@@ -22694,6 +22694,9 @@ local function applyOrders(player, pid, turn, rows)
 	-- rows themselves so delayed strikes retain it without global frame state.
 	local survival = false;
 	local dialogueNoWar = false;
+	-- `score-seat-keeps-friends` (opt-in): the batch renews the dialogue
+	-- closer's lease; `subject` is the host player whose offer is refused.
+	local keepsFriends, keepsFriendsSpared = false, nil;
 	for i = #rows, 1, -1 do
 		local row = rows[i];
 		if row.kind == "combat_policy" and row.verb == "DOOMED_BLOW_VETO" then
@@ -22701,6 +22704,10 @@ local function applyOrders(player, pid, turn, rows)
 			table.remove(rows, i);
 		elseif row.kind == "combat_policy" and row.verb == "DIALOGUE_NEVER_DECLARES_WAR" then
 			dialogueNoWar = true;
+			table.remove(rows, i);
+		elseif row.kind == "combat_policy" and row.verb == "SCORE_SEAT_KEEPS_FRIENDS" then
+			keepsFriends = true;
+			keepsFriendsSpared = tonumber(row.subject);
 			table.remove(rows, i);
 		elseif row.kind == "combat_policy" and row.verb == "CONGRESS_GUARDS_THE_LEADER" then
 			-- `congress-guards-the-leader` (opt-in): the ballot reads it at the
@@ -22785,6 +22792,15 @@ local function applyOrders(player, pid, turn, rows)
 	-- The leader statement is answered in DiplomacyActionView's own context,
 	-- usually before this turn's first batch lands, so the batch renews a
 	-- one-turn lease there (CivvisControlAutoClose.lua) instead of a row flag.
+	if keepsFriends then
+		local leased = CivvisK.attempt(function()
+			LuaEvents.CivvisDialogueKeepsFriends(turn, keepsFriendsSpared);
+		end);
+		emit("combat_policy_applied", {
+			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
+			policy = "SCORE_SEAT_KEEPS_FRIENDS", leased = leased, spared = keepsFriendsSpared,
+		});
+	end
 	if dialogueNoWar then
 		local leased = CivvisK.attempt(function() LuaEvents.CivvisDialogueNoWar(turn); end);
 		emit("combat_policy_applied", {

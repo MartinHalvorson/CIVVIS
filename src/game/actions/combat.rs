@@ -16,6 +16,7 @@
 //! unchanged.
 
 use super::*;
+use crate::game::combat_ledger::EdgeBlow;
 
 impl Game {
     /// The two strengths `do_attack` resolves a melee blow with, `(attacker,
@@ -773,6 +774,17 @@ impl Game {
                 }
             }
             let attacker_dead = self.units[&uid].hp <= 0;
+            // Observes only: the edge ledger (`game/combat_ledger.rs`).
+            self.tally_edge_blow(EdgeBlow {
+                attacker: &attacker,
+                defender: &d,
+                attacker_strength: att,
+                defender_strength: ds,
+                damage_to_defender: dmg_out,
+                damage_to_attacker: dmg_in,
+                defender_killed: d_dead,
+                attacker_killed: attacker_dead,
+            });
             if attacker_dead && !d_dead && self.has_ability(downer, "killer_of_cyrus") {
                 if let Some(defender) = self.units.get_mut(&did) {
                     defender.hp = (defender.hp + 30).min(100);
@@ -1074,6 +1086,17 @@ impl Game {
             let dmg = damage(att, ds, &mut self.rng);
             self.apply_unit_damage(uid, did, dmg);
             let defender_dead = self.units[&did].hp <= 0;
+            // Observes only: the edge ledger (`game/combat_ledger.rs`).
+            self.tally_edge_blow(EdgeBlow {
+                attacker: &attacker,
+                defender: &defender,
+                attacker_strength: att,
+                defender_strength: ds,
+                damage_to_defender: dmg,
+                damage_to_attacker: 0,
+                defender_killed: defender_dead,
+                attacker_killed: false,
+            });
             self.record_emergency_combat(pid, downer, defender_dead);
             self.award_unit_combat_xp(uid, &defender, true, true, defender_dead);
             if !defender_dead {
