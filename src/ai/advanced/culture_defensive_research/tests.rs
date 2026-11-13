@@ -323,3 +323,39 @@ fn exposed_queue_does_not_retask_a_walled_noncapital_or_non_domination_city() {
         .redirect_unsafe_city_queue_for_defense(&mut g, 0, None)
         .is_none());
 }
+
+/// `conquest_or_score_seat`: a Score seat at war unlocks the walls for an
+/// exposed unwalled city and defends its queue as a Domination seat does; a
+/// Science or Religion seat does neither.
+#[test]
+fn a_score_seat_unlocks_and_defends_like_a_domination_seat() {
+    let (g, plan, _) = exposed_domination();
+    for (target, unlocks) in [
+        (VictoryTarget::Domination, true),
+        (VictoryTarget::Score, true),
+        (VictoryTarget::Science, false),
+        (VictoryTarget::Religion, false),
+    ] {
+        let ai = AdvancedAi::targeting(target);
+        assert_eq!(
+            ai.defensive_walls_research_goal(&g, 0, &plan).is_some(),
+            unlocks,
+            "{target:?}"
+        );
+    }
+    for (target, defends) in [
+        (VictoryTarget::Domination, true),
+        (VictoryTarget::Score, true),
+        (VictoryTarget::Science, false),
+        (VictoryTarget::Religion, false),
+    ] {
+        let (mut g, mut ai, city, _) = exposed_queue();
+        ai.victory_target = Some(target);
+        let claim = ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, None);
+        assert_eq!(
+            claim.map(|(cid, _)| cid),
+            defends.then_some(city),
+            "{target:?}"
+        );
+    }
+}

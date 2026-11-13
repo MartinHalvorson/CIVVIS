@@ -144,8 +144,8 @@ fn walls_go_ahead_of_a_wonder_and_a_district() {
     }
 }
 
-/// Once Ancient Walls stand and Castles is known, the next tier is the
-/// Medieval Walls.
+/// Once Ancient Walls stand at full health and Castles is known, the next
+/// tier is the Medieval Walls.
 #[test]
 fn the_medieval_walls_follow_the_ancient_ones() {
     let (mut g, cities) = board();
@@ -154,6 +154,8 @@ fn the_medieval_walls_follow_the_ancient_ones() {
         .unwrap()
         .buildings
         .push(crate::name!("walls"));
+    let full = g.city_max_wall_hp(&g.cities[&cities[0]]);
+    g.cities.get_mut(&cities[0]).unwrap().wall_hp = full;
     g.players[0].techs.insert(crate::name!("construction"));
     g.players[0].techs.insert(crate::name!("castles"));
     let next = AdvancedAi::score_next_walls(&g, 0, cities[0]);

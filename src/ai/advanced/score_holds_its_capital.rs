@@ -30,7 +30,8 @@
 //!    major's city.
 //! 2. **Walls, tier by tier.** A held city's next Walls tier it can build
 //!    (Ancient, Medieval, Renaissance, or the civilization's own) goes to the
-//!    head of its queue.
+//!    head of its queue. The next tier is legal only over full-health walls,
+//!    so a damaged wall's repair comes first.
 //! 3. **A shooter in the centre.** A held city with no ranged land soldier
 //!    of ours within [`SCORE_SHOOTER_REACH`] tiles of its centre trains its
 //!    best one, after its Walls. A ranged land soldier standing in a held
