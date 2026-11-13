@@ -631,6 +631,8 @@ Operator, 2026-11-12: include every beneficial gene, exclude every gene that hur
 - **On: nothing new.** Each of the 8 off genes whose average clears +3 over the same 69,864 total seats is a sibling of a shipped version with a higher average: `connect-the-luxury`, `battle-planner`, `battle-planner-2`, `naval-recon`, `amenity-project-preemption`, `trade-building-before-bankruptcy`, `industry-before-the-army` and `first-luxury-first-2`.
 - **Not judged by this review.** The 329 screenable genes that no reporting batch has priced stay off until one does. The newest batch ended 2 of its 5,000 games by domination, so a war or siege gene reads near zero on this screen whatever it does in a war; nine of the 68 are engine repairs or production treatments of that kind (`blind-objective-strength`, `buildings-before-projects`, `escort-unstick`, `peacetime-deterrence`, `recorded-tactical-step`, `religion-sues-peace`, `settler-guard-holds`, `slot-kind-tiebreak`, `strategic-wonders`), and a live seat that wants one keeps it through its force-on list.
 
+- **One family changes the version it plays.** `siege-is-progress-2` and `siege-is-progress-3` are exclusive at runtime but not a family to this tool, so both were listed and the later row played. Over the same 69,864 total seats `siege-is-progress-2` averages +4.6 wins per 10,000 total seats and `siege-is-progress-3` +0.4; with the held `-3` off, `-2` is the version a default seat plays.
+
 The next reselection applies the ordinary hysteresis against these 220: a default leaves only strictly below -3, and an omitted gene returns when its average clears +3.
 
 ## Historical screen evidence and current selection
