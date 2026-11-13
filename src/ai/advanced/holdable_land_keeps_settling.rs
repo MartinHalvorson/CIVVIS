@@ -527,6 +527,9 @@ impl AdvancedAi {
             } {
                 Some("a raider in its ring")
             } else if self.science_campus_holds_repeat_settler(g, pid, cid, plan)
+                // `score-seat-expands-hard`: the Ancestral Hall its claim
+                // raised is not this claim's to displace either.
+                || (self.score_expands_hard_now(g) && Self::score_expands_keeps_the_hall(g, cid))
                 || !Self::holdable_land_may_displace(g, pid, cid)
             {
                 Some("its queue keeps its item")

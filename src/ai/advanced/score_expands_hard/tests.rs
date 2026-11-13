@@ -396,6 +396,15 @@ fn the_plaza_takes_the_ancestral_hall_first() {
         !stock.early_settler_floor_holds(&on, 0, capital, &plan),
         "off, the Hall is routine work"
     );
+    // The mid-game Settler claim leaves the Hall at the head as well.
+    let mut held = on.clone();
+    garrison(&mut held);
+    let plan_held = ai.assess(&held, 0);
+    ai.claim_holdable_land_settler(&mut held, 0, &plan_held);
+    assert!(
+        AdvancedAi::score_expands_keeps_the_hall(&held, capital),
+        "the holdable-land claim does not displace the Hall"
+    );
 
     // A soldier keeps its queue against the Hall as well.
     let mut guarded = game.clone();
