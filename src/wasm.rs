@@ -283,20 +283,6 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
     let path = request_path(target);
 
     match (method, path) {
-        ("GET", "/runtime") => json!({
-            "server_instance": process_identity(),
-            "seed": with_session(|s| s.game.seed),
-            "commit": runtime_commit("unknown"),
-            "commit_time": runtime_commit_time(),
-            "built_at": runtime_built_at(),
-            "next_game_settings": NEXT_GAME_PARAMS.with(|cell| {
-                cell.borrow()
-                    .as_ref()
-                    .map(simulation_settings)
-                    .unwrap_or(Value::Null)
-            }),
-        }),
-
         // The long poll, though, is the whole clock of a spectated game and
         // has to survive the move into the page. On a socket the watching loop
         // names the frame it holds and the response is *withheld* until a
@@ -329,6 +315,35 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
             o["frame_budget_ms"] = json!(budget);
             deliver_browser_tiles(frame, held, &mut o);
             o
+        }),
+
+        _ => {
+            // Binaryen inlines single-caller helpers even past Rust's
+            // inline(never). Keep the infrequent handlers out of state polls
+            // with an opaque function pointer; black_box is an identity, so
+            // request behavior does not depend on this optimization barrier.
+            let cold_route =
+                std::hint::black_box(route_cold_unversioned as fn(&str, &str, Value) -> Value);
+            cold_route(method, path, parsed)
+        }
+    }
+}
+
+#[inline(never)]
+fn route_cold_unversioned(method: &str, path: &str, parsed: Value) -> Value {
+    match (method, path) {
+        ("GET", "/runtime") => json!({
+            "server_instance": process_identity(),
+            "seed": with_session(|s| s.game.seed),
+            "commit": runtime_commit("unknown"),
+            "commit_time": runtime_commit_time(),
+            "built_at": runtime_built_at(),
+            "next_game_settings": NEXT_GAME_PARAMS.with(|cell| {
+                cell.borrow()
+                    .as_ref()
+                    .map(simulation_settings)
+                    .unwrap_or(Value::Null)
+            }),
         }),
 
         // The countdown that follows a result is wall-clock, and a wasm module
