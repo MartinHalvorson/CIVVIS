@@ -11371,11 +11371,11 @@ mod chop_for_expansion;
 /// `score-seat-plays-for-points`: a Score-target seat's production buys
 /// points. See `advanced/score_seat.rs`.
 mod score_seat;
+/// `score-seat-founds-early`: see `advanced/score_seat_founds_early.rs`.
+mod score_seat_founds_early;
 /// `score-seat-raises-wonders`: a Score seat's wonder program, a queue claim
 /// that acts natively and live. See `advanced/score_wonders.rs`.
 mod score_wonders;
-/// `score-seat-founds-early`: see `advanced/score_seat_founds_early.rs`.
-mod score_seat_founds_early;
 
 /// The player civvis.ai seats: the deployment genome plus the site's own
 /// experiment list. See `advanced/site_deployment.rs`.
