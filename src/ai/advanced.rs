@@ -10304,6 +10304,10 @@ pub struct AdvancedAi {
     /// `score-seat-takes-what-pays`: the city the plan names and the last
     /// board line. Empty with the gene off.
     score_take_state: score_takes_what_pays::ScoreTakeState,
+    /// `score-seat-keeps-friends`: a Score seat accepts every friendship a
+    /// major offers and offers one to every met major the host allows,
+    /// nearest first. See `advanced/score_keeps_friends.rs`. Opt-in.
+    score_seat_keeps_friends: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11389,6 +11393,8 @@ mod chop_feeds_the_long_build;
 /// one. See `advanced/chop_for_expansion.rs`.
 mod chop_for_expansion;
 
+/// `score-seat-keeps-friends`: see `advanced/score_keeps_friends.rs`.
+mod score_keeps_friends;
 /// `score-seat-plays-for-points`: a Score-target seat's production buys
 /// points. See `advanced/score_seat.rs`.
 mod score_seat;
