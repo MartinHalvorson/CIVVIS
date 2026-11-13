@@ -2,13 +2,15 @@
 //! outclassed, the condition it fights in live? A leave-one-out screen on the
 //! gap-faithful lane recipes (`docs/COMBAT_GENES_OUTCLASSED.md`).
 //!
-//! Every arm plays the live armed set as `--live-genome`, with
-//! `--rival-host-tactics` and no `--rival-rung`: the settings
-//! `docs/EDGE_LEDGER.md` found to reproduce the live strength gap (and, for
-//! Rome, `--rival-war-pace 100`). The control arm plays the set as armed;
-//! each gene arm turns ONE armed gene off and plays the control's seeds and
-//! game indices, so a pair differs in that gene alone. Every arm of a world
-//! is played by the same process, so no pair crosses a shard or a build.
+//! Every arm plays with `--rival-host-tactics` and no `--rival-rung`: the
+//! settings `docs/EDGE_LEDGER.md` found to reproduce the live strength gap
+//! (and, for Rome, `--rival-war-pace 100`). The control arm plays the genome
+//! the live seat plays, given as `--live-genome` reads it: a live run's
+//! genome header (`why.log` line 1: the deployment genome with the armed
+//! set on top) or a list of tags, on iff named. Each gene arm turns ONE
+//! armed gene off and plays the control's seeds and game indices, so a pair
+//! differs in that gene alone. Every arm of a world is played by the same
+//! process, so no pair crosses a shard or a build.
 //!
 //! What a world records: the measured seat's gene-screen row (the combat
 //! ledger, `last_orders`, the edge ledger, cities lost and taken, score), the
@@ -20,7 +22,10 @@
 //!
 //! `cargo test --profile ci --features developer-tools --bin gene_screen
 //! combat_genes_outclassed_driver -- --ignored --nocapture`, with
-//! - `CIVVIS_LIVE_GENOME`: the armed set (default `~/.civvis-live-force-on`);
+//! - `CIVVIS_LIVE_GENOME`: the control's genome file (default the armed set,
+//!   `~/.civvis-live-force-on`, which read alone leaves the deployment genome
+//!   off; a live `why.log` header carries both);
+//! - `CIVVIS_COMBAT_ALT`: a second genome file, played as one more arm;
 //! - `CIVVIS_COMBAT_RECIPE`: `gran-colombia` (default) or `rome`;
 //! - `CIVVIS_COMBAT_GENES`: the armed tags to leave out, comma separated
 //!   (default [`SCREENED`]; `none` plays the control alone);
@@ -41,6 +46,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 const SEED: u64 = 64_710_000;
 const CONTROL: &str = "armed";
 const REPEAT: &str = "armed-again";
+/// `CIVVIS_COMBAT_ALT`: a second whole genome played as an arm.
+const ALTERNATIVE: &str = "alternative-genome";
 
 /// The armed genes the screen leaves out, one an arm. Why each is here is in
 /// `docs/COMBAT_GENES_OUTCLASSED.md`.
@@ -53,7 +60,7 @@ const SCREENED: &[&str] = &[
     "siege-commitment",
     "siege-needs-a-breaker",
     "anvil",
-    "war-reinforcement",
+    "camp-party",
     "march-uses-its-moves",
     "capital-defense-holds",
     "defenders-hold-the-walls",
@@ -195,37 +202,33 @@ fn env_number(name: &str, default: u64) -> u64 {
         .unwrap_or(default)
 }
 
-/// The armed set, read and applied, never printed: how many tags it names
-/// and how many of them this build does not carry.
-fn armed_genome(genes: &mut [Gene]) -> (Vec<bool>, String) {
-    let candidates: Vec<String> = std::env::var("CIVVIS_LIVE_GENOME")
-        .ok()
-        .into_iter()
-        .chain(
-            std::env::var("HOME")
-                .ok()
-                .map(|home| format!("{home}/.civvis-live-force-on")),
-        )
-        .collect();
-    let (path, text) = candidates
-        .iter()
-        .find_map(|path| {
-            std::fs::read_to_string(path)
-                .ok()
-                .map(|text| (path.clone(), text))
-        })
-        .unwrap_or_else(|| panic!("no armed set at any of {candidates:?}"));
-    let on = live_genome_tags(&text).expect("the armed set parses");
+/// A genome file, read and applied, never printed: a live run's genome
+/// header (`why.log` line 1, the genome the live seat played) or a list of
+/// tags (on iff named). Returns the genome and how many tags the file names
+/// and how many of them this build does not carry (host-only genes).
+fn genome_from(genes: &mut [Gene], path: &str) -> (Vec<bool>, String) {
+    let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let on = live_genome_tags(&text).expect("the genome file parses");
     assert!(!on.is_empty(), "{path} names no tags");
     let unknown = apply_live_genome(genes, &on);
     let genome: Vec<bool> = genes.iter().map(|gene| gene.default_on).collect();
     let note = format!(
-        "armed set {path}: {} tags, {} genes on in this build, {} tag(s) it does not carry",
+        "{path}: {} tags, {} genes on in this build, {} tag(s) it does not carry",
         on.len(),
         genome.iter().filter(|on| **on).count(),
         unknown.len()
     );
     (genome, note)
+}
+
+/// The control's genome file: `CIVVIS_LIVE_GENOME`, else the armed set.
+fn control_path() -> String {
+    std::env::var("CIVVIS_LIVE_GENOME").unwrap_or_else(|_| {
+        format!(
+            "{}/.civvis-live-force-on",
+            std::env::var("HOME").unwrap_or_default()
+        )
+    })
 }
 
 /// One line straight to the process's stderr, past the harness's capture.
@@ -405,9 +408,10 @@ fn report(worlds: &[World], note: &str) -> String {
                 arms.push(w.arm.as_str());
             }
         }
-        // The repeat first, then the screened genes in their list's order.
+        // The repeat and the alternative first, then the screened genes in
+        // their list's order.
         arms.sort_by_key(|arm| {
-            let rank = if *arm == REPEAT {
+            let rank = if *arm == REPEAT || *arm == ALTERNATIVE {
                 0
             } else {
                 SCREENED
@@ -701,7 +705,16 @@ fn combat_genes_outclassed_driver() {
         .filter(|(k, of)| *of > 0 && k < of)
         .unwrap_or((0, 1));
     let mut genes = gene_table();
-    let (armed, armed_note) = armed_genome(&mut genes);
+    // The alternative genome first: the control's is left in the table.
+    let alternative = std::env::var("CIVVIS_COMBAT_ALT")
+        .ok()
+        .filter(|path| !path.trim().is_empty())
+        .map(|path| genome_from(&mut genes, path.trim()));
+    let (armed, mut armed_note) = genome_from(&mut genes, &control_path());
+    armed_note = format!("control genome {armed_note}");
+    if let Some((_, note)) = &alternative {
+        armed_note.push_str(&format!("\n{ALTERNATIVE} genome {note}"));
+    }
     let wanted: Vec<String> = match std::env::var("CIVVIS_COMBAT_GENES") {
         Ok(list) if list.trim() == "none" => Vec::new(),
         Ok(list) => list
@@ -716,6 +729,9 @@ fn combat_genes_outclassed_driver() {
     if std::env::var("CIVVIS_COMBAT_REPEAT").is_ok_and(|v| v.trim() == "1") {
         arms.push((REPEAT.to_string(), armed.clone()));
     }
+    if let Some((genome, _)) = alternative {
+        arms.push((ALTERNATIVE.to_string(), genome));
+    }
     let mut skipped: Vec<String> = Vec::new();
     for tag in &wanted {
         match genes.iter().position(|gene| gene.tag == tag.as_str()) {
@@ -724,7 +740,7 @@ fn combat_genes_outclassed_driver() {
                 genome[i] = false;
                 arms.push((tag.clone(), genome));
             }
-            Some(_) => skipped.push(format!("{tag} (not armed)")),
+            Some(_) => skipped.push(format!("{tag} (off in the control genome)")),
             None => skipped.push(format!("{tag} (not in this build)")),
         }
     }

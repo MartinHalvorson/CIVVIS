@@ -18,10 +18,8 @@ concurrency:
 
 env:
   CIVVIS_COMBAT_RECIPE: gran-colombia
-  CIVVIS_COMBAT_WORLDS: "32"
-  CIVVIS_COMBAT_SEED: "64700000"
-  CIVVIS_COMBAT_GENES: siege-train
-  CIVVIS_COMBAT_REPEAT: "1"
+  CIVVIS_COMBAT_WORLDS: "24"
+  CIVVIS_COMBAT_SEED: "64710000"
 
 jobs:
   build:
@@ -66,16 +64,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: driver
-      - name: Play shard ${{ matrix.shard }} of 4
+      - name: Play shard ${{ matrix.shard }} of 6
         env:
-          CIVVIS_LIVE_GENOME: src/bin/gene_screen/combat_genes_armed_set.txt
-          CIVVIS_COMBAT_SHARD: ${{ matrix.shard }}/4
+          CIVVIS_LIVE_GENOME: src/bin/gene_screen/combat_genes_live_genome.txt
+          CIVVIS_COMBAT_ALT: src/bin/gene_screen/combat_genes_armed_set.txt
+          CIVVIS_COMBAT_SHARD: ${{ matrix.shard }}/6
           CIVVIS_COMBAT_OUT: worlds-${{ matrix.shard }}.jsonl
         run: |
           chmod +x gene-screen-tests
