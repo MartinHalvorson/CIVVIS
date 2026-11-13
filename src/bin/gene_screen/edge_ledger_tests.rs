@@ -46,7 +46,9 @@ struct Setting {
     rival_war_pace: Option<u32>,
 }
 
-const SETTINGS: [Setting; 3] = [
+/// The lane recipe's own handicap first, then the others the harness offers
+/// for the question (`docs/EDGE_LEDGER.md` has what each did).
+const SETTINGS: [Setting; 5] = [
     Setting {
         key: "recipe",
         rival_rung_below: Some(2),
@@ -60,10 +62,22 @@ const SETTINGS: [Setting; 3] = [
         rival_war_pace: None,
     },
     Setting {
+        key: "rung-1",
+        rival_rung_below: Some(1),
+        seat_pace: false,
+        rival_war_pace: None,
+    },
+    Setting {
         key: "seat-pace",
         rival_rung_below: Some(2),
         seat_pace: true,
         rival_war_pace: None,
+    },
+    Setting {
+        key: "no-rung-war",
+        rival_rung_below: None,
+        seat_pace: false,
+        rival_war_pace: Some(100),
     },
 ];
 
@@ -155,7 +169,6 @@ fn armed_genome(genes: &mut [Gene]) -> (Vec<bool>, String) {
     let candidates: Vec<String> = std::env::var("CIVVIS_LIVE_GENOME")
         .ok()
         .into_iter()
-        .chain(Some(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bin/gene_screen/edge_armed_set.txt").to_string()))
         .chain(
             std::env::var("HOME")
                 .ok()
@@ -199,6 +212,7 @@ fn cell(value: Option<f64>) -> String {
 }
 
 #[test]
+#[ignore = "whole Deity games on both lanes: run with --ignored --nocapture"]
 fn edge_ledger_driver() {
     let lanes = [&GRAN_COLOMBIA, &ROME];
     let chosen: Vec<&Setting> = match std::env::var("CIVVIS_EDGE_SETTINGS") {
@@ -206,10 +220,10 @@ fn edge_ledger_driver() {
             .iter()
             .filter(|setting| list.split(',').any(|key| key.trim() == setting.key))
             .collect(),
-        Err(_) => SETTINGS.iter().filter(|s| "recipe,no-rung".split(',').any(|k| k == s.key)).collect(),
+        Err(_) => SETTINGS.iter().collect(),
     };
     let n = env_number("CIVVIS_EDGE_WORLDS", 8);
-    let minutes = env_number("CIVVIS_EDGE_MINUTES", 15);
+    let minutes = env_number("CIVVIS_EDGE_MINUTES", 0);
     let mut genes = gene_table();
     let (genome, note) = armed_genome(&mut genes);
     // World by world, the longer lane first, so a deadline leaves every arm
@@ -311,19 +325,26 @@ fn edge_ledger_driver() {
         for (s, rows) in arms.iter().enumerate() {
             report.push(String::new());
             report.push(format!(
-                "-- {} lane, setting {}: per world (seed, units killed/lost, cities lost/taken, techs)",
+                "-- {} lane, setting {}: per world (seed, units killed/lost, cities lost/taken, techs, last turn, victory)",
                 lane.key, chosen[s].key
             ));
             for row in rows {
                 report.push(format!(
-                    "   seed {} {}/{} lost {} took {} techs {} alive {}",
+                    "   seed {} {}/{} lost {} took {} techs {} alive {} turn {} {} won {}",
                     row.seed,
                     row.units_killed.unwrap_or(0),
                     row.units_lost.unwrap_or(0),
                     row.cities_lost.unwrap_or(0),
                     row.cities_taken.unwrap_or(0),
                     row.techs,
-                    row.alive
+                    row.alive,
+                    row.turn,
+                    if row.victory.is_empty() {
+                        "-"
+                    } else {
+                        row.victory.as_str()
+                    },
+                    row.win
                 ));
             }
             if let Some(tables) = render(rows) {
@@ -331,7 +352,7 @@ fn edge_ledger_driver() {
             }
         }
     }
-    progress(&report.join("\n"));
+    println!("{}", report.join("\n"));
 }
 
 /// `tools/civ6_edge_ledger.py --since 20261112 --until 20261113T0420 --metrics`
