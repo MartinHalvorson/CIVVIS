@@ -14,6 +14,8 @@
 #   ./beta/publish.sh                  build from the working tree
 #   ./beta/publish.sh --commit <ref>   build from a pinned revision
 #   ./beta/publish.sh --symbols-out <dir>   retain a separate profiling sidecar
+#   ./beta/publish.sh --experimental-simd128 --out <dir> --symbols-out <dir>
+#     opt-in qualification only; production still uses the normal build
 #
 # Nothing in `web/` or `src/` is edited. The viewer is *copied* and the copy is
 # adjusted for living in a lane; if any of those adjustments stops matching,
@@ -25,15 +27,34 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 out="$repo_root/beta/dist"
 commit_ref=""
 symbols_out=""
+experimental_simd128=false
+explicit_out=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --commit) commit_ref="${2:?--commit needs a revision}"; shift 2 ;;
-    --out) out="${2:?--out needs a directory}"; shift 2 ;;
+    --out) out="${2:?--out needs a directory}"; explicit_out=true; shift 2 ;;
     --symbols-out) symbols_out="${2:?--symbols-out needs a directory}"; shift 2 ;;
+    --experimental-simd128) experimental_simd128=true; shift ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
+
+# Require isolated, explicitly named outputs before any build or deletion.
+if [ "$experimental_simd128" = true ]; then
+  if [ "$explicit_out" != true ] || [ -z "$symbols_out" ]; then
+    echo "experimental SIMD requires --out and --symbols-out" >&2; exit 2
+  fi
+  python3 - "$out" "$repo_root/beta/dist" "$symbols_out" <<'PY'
+from pathlib import Path
+import sys
+out, normal, symbols = (Path(p).resolve() for p in sys.argv[1:])
+if (out == normal or out in normal.parents or normal in out.parents
+        or symbols == normal or normal in symbols.parents
+        or symbols == out or out in symbols.parents or symbols in out.parents):
+    raise SystemExit('experimental SIMD needs a non-production output and a separate sidecar')
+PY
+fi
 
 export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
 
@@ -69,13 +90,17 @@ built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # and the module took a new content address on every deployment, so a
 # returning visitor downloaded and compiled an engine they already had. The
 # hour goes in build.json below, and shim.js hands it to the page from there.
-echo "==> building the engine for wasm32 from $short"
-(
+build_engine() (
   cd "$source_tree"
+  set -- --lib --target wasm32-unknown-unknown --release --crate-type cdylib
+  if [ "$experimental_simd128" = true ]; then
+    set -- "$@" -- -C target-feature=+simd128
+  fi
   CIVVIS_COMMIT="$commit" CIVVIS_COMMIT_TIME="$commit_time" CIVVIS_BUILT_AT="" \
-    cargo rustc --lib \
-    --target wasm32-unknown-unknown --release --crate-type cdylib
+    cargo rustc "$@"
 )
+echo "==> building the engine for wasm32 from $short (experimental SIMD: $experimental_simd128)"
+build_engine
 
 raw_wasm="$source_tree/target/wasm32-unknown-unknown/release/civvis.wasm"
 [ -f "$raw_wasm" ] || raw_wasm="${CARGO_TARGET_DIR:-}/wasm32-unknown-unknown/release/civvis.wasm"
@@ -341,6 +366,16 @@ cat > "$out/build.json" <<JSON
   "bundle_bytes": $bundle_bytes
 }
 JSON
+
+if [ "$experimental_simd128" = true ]; then
+  python3 - "$out/build.json" <<'PY'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+build = json.loads(path.read_text())
+build['experimental_target_features'] = ['simd128']
+path.write_text(json.dumps(build, indent=2) + '\n')
+PY
+fi
 
 echo
 echo "published build $short -> $out"
