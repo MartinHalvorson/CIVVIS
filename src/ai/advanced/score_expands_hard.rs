@@ -51,9 +51,10 @@
 //! 2. **More may give way to the Settler**
 //!    ([`AdvancedAi::score_expands_may_displace`]): a district at most half
 //!    paid (its progress is kept; never the empire's first Campus), a Builder
-//!    at most half paid, and a soldier while no major is at war with us and
-//!    the army already stands at one body a city. Walls, wonders, the
-//!    Ancestral Hall and anything finishing next turn keep their queue.
+//!    at most half paid, and a soldier while no major is at war with us, the
+//!    army already stands at one body a city, and no charted rival city lies
+//!    within [`SCORE_EXPANDS_FRONTIER_TILES`] of the city. Walls, wonders,
+//!    the Ancestral Hall and anything finishing next turn keep their queue.
 //! 3. **A wider pipeline** ([`AdvancedAi::score_expands_width_for`]): one
 //!    Settler more than the empire has cities, to six, walking or in
 //!    production; two while the army is short of a body a city. The capital
@@ -94,6 +95,11 @@ pub(crate) const SCORE_EXPANDS_HALL_OVER_SETTLER_SHARE: f64 = 0.25;
 
 /// A city attacked within this many turns keeps its queue.
 const SCORE_EXPANDS_ATTACK_MEMORY: u32 = 4;
+
+/// A charted rival major's city this near one of ours makes it a frontier
+/// city: its soldier never gives way to a Settler. Rome fell in 5 of 14 live
+/// games, each after a neighbour declared (session -c2).
+pub(crate) const SCORE_EXPANDS_FRONTIER_TILES: i32 = 8;
 
 impl AdvancedAi {
     /// The gene is on, `no-city-limit` carries it, and the seat aims at
@@ -162,6 +168,14 @@ impl AdvancedAi {
             }
             _ => false,
         }
+    }
+
+    /// Whether a city at `pos` stands within [`SCORE_EXPANDS_FRONTIER_TILES`]
+    /// of a charted rival major's city (`holdable_land_threats`' list).
+    pub(super) fn score_expands_on_the_frontier(g: &Game, rival_cities: &[Pos], pos: Pos) -> bool {
+        rival_cities
+            .iter()
+            .any(|rival| g.wdist(*rival, pos) <= SCORE_EXPANDS_FRONTIER_TILES)
     }
 
     /// Whether the head of `cid`'s queue is the Ancestral Hall, which no

@@ -239,6 +239,12 @@ impl AdvancedAi {
         // `score-seat-expands-hard`: a soldier's queue gives way only while
         // no major is at war with us and the army stands at a body a city.
         let army_stands = hard && !at_major_war && self.counts(g, pid).military >= n_cities;
+        // ... and never in a city on a rival's doorstep.
+        let rival_cities = if army_stands {
+            Self::holdable_land_threats(g, pid).rival_cities
+        } else {
+            Vec::new()
+        };
         let mut best: Option<(f64, u32)> = None;
         for &cid in &city_ids {
             let city = &g.cities[&cid];
@@ -261,7 +267,14 @@ impl AdvancedAi {
                 })
                 || (hard && Self::score_expands_keeps_the_hall(g, cid))
                 || !(Self::early_settler_may_displace(g, pid, cid)
-                    || (hard && Self::score_expands_may_displace(g, pid, cid, army_stands)))
+                    || (hard
+                        && Self::score_expands_may_displace(
+                            g,
+                            pid,
+                            cid,
+                            army_stands
+                                && !Self::score_expands_on_the_frontier(g, &rival_cities, city.pos),
+                        )))
                 || !g.can_produce(pid, cid, &item)
             {
                 continue;

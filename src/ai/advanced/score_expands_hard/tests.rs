@@ -207,6 +207,38 @@ fn what_keeps_its_queue() {
     assert!(!AdvancedAi::score_expands_keeps_the_hall(&game, capital));
 }
 
+/// A city within eight tiles of a charted rival city is a frontier city.
+#[test]
+fn a_frontier_city_is_one_near_a_rival_city() {
+    let (game, capital, _) = two_idle_cities();
+    let home = game.cities[&capital].pos;
+    let near = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) == SCORE_EXPANDS_FRONTIER_TILES)
+        .expect("fixture: a tile eight away");
+    let far = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) == SCORE_EXPANDS_FRONTIER_TILES + 1)
+        .expect("fixture: a tile nine away");
+    assert!(AdvancedAi::score_expands_on_the_frontier(
+        &game,
+        &[far, near],
+        home
+    ));
+    assert!(!AdvancedAi::score_expands_on_the_frontier(
+        &game,
+        &[far],
+        home
+    ));
+    assert!(!AdvancedAi::score_expands_on_the_frontier(&game, &[], home));
+}
+
 /// Past the band turn the stock floor is shut; the gene keeps it open while
 /// a new city still has its payback turns, and no longer.
 #[test]
