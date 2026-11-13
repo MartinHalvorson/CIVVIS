@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CIVVIS_ONE_UPGRADE_WORLDS: "32"
+  CIVVIS_ONE_UPGRADE_WORLDS: "48"
 
 jobs:
   build:
@@ -63,14 +63,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { recipe: gran-colombia, seed: "64760000", shard: 0, of: 4 }
-          - { recipe: gran-colombia, seed: "64760000", shard: 1, of: 4 }
-          - { recipe: gran-colombia, seed: "64760000", shard: 2, of: 4 }
-          - { recipe: gran-colombia, seed: "64760000", shard: 3, of: 4 }
-          - { recipe: rome, seed: "64770000", shard: 0, of: 4 }
-          - { recipe: rome, seed: "64770000", shard: 1, of: 4 }
-          - { recipe: rome, seed: "64770000", shard: 2, of: 4 }
-          - { recipe: rome, seed: "64770000", shard: 3, of: 4 }
+          - { recipe: gran-colombia, seed: "64780000", shard: 0, of: 6 }
+          - { recipe: gran-colombia, seed: "64780000", shard: 1, of: 6 }
+          - { recipe: gran-colombia, seed: "64780000", shard: 2, of: 6 }
+          - { recipe: gran-colombia, seed: "64780000", shard: 3, of: 6 }
+          - { recipe: gran-colombia, seed: "64780000", shard: 4, of: 6 }
+          - { recipe: gran-colombia, seed: "64780000", shard: 5, of: 6 }
+          - { recipe: rome, seed: "64790000", shard: 0, of: 6 }
+          - { recipe: rome, seed: "64790000", shard: 1, of: 6 }
+          - { recipe: rome, seed: "64790000", shard: 2, of: 6 }
+          - { recipe: rome, seed: "64790000", shard: 3, of: 6 }
+          - { recipe: rome, seed: "64790000", shard: 4, of: 6 }
+          - { recipe: rome, seed: "64790000", shard: 5, of: 6 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
