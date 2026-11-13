@@ -39,6 +39,22 @@ fn metric(f: impl Fn(&World) -> f64 + 'static) -> Metric {
     Box::new(f)
 }
 
+/// The recipes a run plays when `CIVVIS_WAR_GATE_RECIPES` (`domination`,
+/// `score` or `both`) is unset.
+const DEFAULT_RECIPES: &str = "domination";
+
+/// `true` for the Score recipe, in the order played.
+fn recipes() -> Vec<bool> {
+    match std::env::var("CIVVIS_WAR_GATE_RECIPES")
+        .unwrap_or_else(|_| DEFAULT_RECIPES.to_string())
+        .as_str()
+    {
+        "domination" => vec![false],
+        "score" => vec![true],
+        _ => vec![true, false],
+    }
+}
+
 fn worlds() -> usize {
     std::env::var("CIVVIS_WAR_GATE_WORLDS")
         .ok()
@@ -311,8 +327,10 @@ fn war_gate_paired_on_the_two_lanes() {
     std::fs::create_dir_all(&dir).expect("a journal dir");
     let dir = dir.to_string_lossy().to_string();
     let n = worlds();
-    let jobs: Vec<(bool, bool, usize)> = [true, false]
-        .into_iter()
+    let lanes = recipes();
+    let jobs: Vec<(bool, bool, usize)> = lanes
+        .iter()
+        .copied()
         .flat_map(|score| {
             (0..n).flat_map(move |world| [false, true].map(move |on| (score, on, world)))
         })
@@ -330,6 +348,18 @@ fn war_gate_paired_on_the_two_lanes() {
                         break;
                     };
                     let row = play(score, on, world, &genes, &base, &dir);
+                    // Straight to the descriptor, past the harness's capture,
+                    // so a run the job's clock cuts short still shows its worlds.
+                    let line = format!(
+                        "WAR-GATE-WORLD {} {} seed {} declared {} took {} war_taken {} war_lost {} capitals {} held {} passed {} cities_taken {} cities_lost {} killed {} lost {} score {} rank {} share {:.3} win {} secs {:.0} openers {:?}\n",
+                        if score { "score" } else { "domination" },
+                        if on { "on" } else { "off" },
+                        row.seed, row.declared, row.took_a_city, row.war_taken, row.war_lost,
+                        row.capitals_taken, row.held_turns, row.passed, row.cities_taken,
+                        row.cities_lost, row.units_killed, row.units_lost, row.score, row.rank,
+                        row.share, row.win, row.secs, row.openers
+                    );
+                    let _ = std::io::Write::write_all(&mut std::io::stderr(), line.as_bytes());
                     results.lock().unwrap().push((score, on, row));
                 })
                 .expect("a worker");
@@ -343,7 +373,7 @@ fn war_gate_paired_on_the_two_lanes() {
         unknown.len(),
         started.elapsed().as_secs_f64()
     )];
-    for score in [false, true] {
+    for score in [false, true].into_iter().filter(|s| lanes.contains(s)) {
         let lane = if score {
             "Rome / Score (6p continents, t170)"
         } else {
