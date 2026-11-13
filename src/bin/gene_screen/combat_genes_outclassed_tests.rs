@@ -61,7 +61,7 @@ const SCREENED: &[&str] = &[
     "siege-needs-a-breaker",
     "anvil",
     "camp-party",
-    "march-uses-its-moves",
+    "ranged-finish-on-the-mean",
     "capital-defense-holds",
     "defenders-hold-the-walls",
     "threatened-city-buys-its-defender-2",
