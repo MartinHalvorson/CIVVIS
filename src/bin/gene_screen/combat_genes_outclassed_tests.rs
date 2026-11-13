@@ -212,8 +212,13 @@ fn genome_from(genes: &mut [Gene], path: &str) -> (Vec<bool>, String) {
     assert!(!on.is_empty(), "{path} names no tags");
     let unknown = apply_live_genome(genes, &on);
     let genome: Vec<bool> = genes.iter().map(|gene| gene.default_on).collect();
+    let form = if text.trim_start().starts_with('{') {
+        "a genome header"
+    } else {
+        "a tag list: every gene it does not name is off, ledger defaults included"
+    };
     let note = format!(
-        "{path}: {} tags, {} genes on in this build, {} tag(s) it does not carry",
+        "{path} ({form}): {} tags, {} genes on in this build, {} tag(s) it does not carry",
         on.len(),
         genome.iter().filter(|on| **on).count(),
         unknown.len()
@@ -424,7 +429,7 @@ fn report(worlds: &[World], note: &str) -> String {
         let base: Vec<&World> = control.values().copied().collect();
         out.push(String::new());
         out.push(format!(
-            "== {recipe}: control (the armed set), {} worlds, seeds {}..{}",
+            "== {recipe}: control (the control genome), {} worlds, seeds {}..{}",
             base.len(),
             control.keys().next().copied().unwrap_or(0),
             control.keys().last().copied().unwrap_or(0)
@@ -547,7 +552,7 @@ fn report(worlds: &[World], note: &str) -> String {
         }
         out.push(String::new());
         out.push(format!(
-            "== {recipe}: one armed gene OFF minus the armed set, paired by seed (mean ± se a world; * = |d| >= 1.5 se on a loss column)"
+            "== {recipe}: one armed gene OFF minus the control, paired by seed (mean ± se a world; * = |d| >= 1.5 se on a loss column)"
         ));
         out.push(format!(
             "   {:<36} {:>5} {:>8} {:>15} {:>15} {:>15} {:>15} {:>15} {:>15} {:>15} {:>15}",
@@ -627,7 +632,7 @@ fn report(worlds: &[World], note: &str) -> String {
         }
         out.push(String::new());
         out.push(format!(
-            "== {recipe}: deaths by last order step, gene OFF minus the armed set, summed over the pairs (largest five moves)"
+            "== {recipe}: deaths by last order step, gene OFF minus the control, summed over the pairs (largest five moves)"
         ));
         out.extend(shifts);
         out.push(String::new());
@@ -664,7 +669,10 @@ fn report(worlds: &[World], note: &str) -> String {
             out.push(line);
         }
     }
-    out.join("\n")
+    out.iter()
+        .map(|line| line.trim_end())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[test]
