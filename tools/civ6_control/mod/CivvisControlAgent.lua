@@ -10467,6 +10467,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 		era_score_baseline = try(function()
 			return Game.GetEras():GetPlayerThresholdBaseline(pid);
 		end, -1),
+		-- What that Era Score was earned by: our own historic moments so far,
+		-- by type, as `{count, Era Score}`. See `CivvisLedger.momentCensus`.
+		-- nil until the first moment (never an empty table).
+		historic_moments = CivvisLedger.momentCensus(pid),
 		normal_age_threshold = try(function()
 			return Game.GetEras():GetPlayerDarkAgeThreshold(pid);
 		end, -1),
@@ -13257,6 +13261,46 @@ CivvisLedger.greatPersonAvailable = function(greatPeople, pid, entry)
 	return try(function()
 		return greatPeople:CanRecruitPerson(pid, entry.Individual);
 	end, false) == true;
+end;
+
+-- The seat's own historic moments so far, by type: `MomentType` to
+-- `{count, Era Score}`. The timeline screen reads the same list
+-- (DLC/Expansion2/UI/Additions/HistoricMoments.lua:18, :217, :258, :286):
+--   local MIN_INTEREST_LEVEL:number = 1;
+--   local allPrideMoments:table = Game.GetHistoryManager():GetAllMomentsData(localPlayerID, MIN_INTEREST_LEVEL);
+--   local momentInfo:table = GameInfo.Moments[momentData.Type];
+--   local momentScore:number = momentData.EraScore and momentData.EraScore or 0;
+-- The two moments under that interest level (a battle fought, a ship sunk)
+-- carry no Era Score. Only the seat's own list is read: a player at the
+-- keyboard cannot open a rival's timeline.
+-- ⚠ Returns nil, never an empty table: `{}` encodes as `[]`.
+CivvisLedger.momentCensus = function(pid)
+	return try(function()
+		local history = Game.GetHistoryManager();
+		if history == nil then return nil; end
+		local all = history:GetAllMomentsData(pid, 1);
+		if type(all) ~= "table" then return nil; end
+		local out = {};
+		local any = false;
+		for _, moment in ipairs(all) do
+			local info = GameInfo.Moments[moment.Type];
+			local name = info ~= nil and info.MomentType or nil;
+			if name ~= nil then
+				local row = out[name];
+				if row == nil then
+					row = { 0, 0 };
+					out[name] = row;
+					any = true;
+				end
+				row[1] = row[1] + 1;
+				if type(moment.EraScore) == "number" then
+					row[2] = row[2] + moment.EraScore;
+				end
+			end
+		end
+		if not any then return nil; end
+		return out;
+	end, nil);
 end;
 
 -- The host's patronage quote for one timeline entry in Gold or Faith
