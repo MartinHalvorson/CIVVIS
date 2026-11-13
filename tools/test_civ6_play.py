@@ -2909,6 +2909,19 @@ class DealSessionConfigTests(unittest.TestCase):
     def test_ordinary_play_keeps_direct_deals_by_default(self):
         self.assertIs(self._config()["DealSessions"], False)
 
+    def test_a_deal_session_quarantine_reaches_the_baked_config(self):
+        self.assertEqual(self._config()["DealSessionQuarantine"], "")
+        self.assertEqual(
+            self._config(deal_session_quarantine=["5:164", "1:150"])["DealSessionQuarantine"],
+            "5:164,1:150")
+        self.assertEqual(civ6_play.deal_session_quarantine(" 05:0164 "), "5:164")
+        for bad in ("5", "5:", ":164", "five:164", "5:-1", "5:164:2", ""):
+            with self.assertRaises(civ6_play.argparse.ArgumentTypeError, msg=bad):
+                civ6_play.deal_session_quarantine(bad)
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('ap.add_argument("--deal-session-quarantine", '
+                      'dest="deal_session_quarantine",', source)
+
     def test_civvis_decider_keeps_non_modal_deals_by_default(self):
         self.assertIs(self._config(civvis_decides=True)["DealSessions"], False)
 

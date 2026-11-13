@@ -1614,6 +1614,21 @@ def order_queue_timing_drift(event: dict, args: argparse.Namespace) -> list[str]
     return drift
 
 
+def deal_session_quarantine(text: str) -> str:
+    """`PLAYER:TURN` for `--deal-session-quarantine`, normalised.
+
+    A hung rival turn follows a deal session with that rival, and a reload
+    replays the same board into the same session (see `hung_rival_quarantine`
+    in civ6_civvis_climb.py). The value is baked into the mod's config as
+    text, so a malformed one is refused here rather than read as no hold.
+    """
+    player, sep, turn = str(text).strip().partition(":")
+    if not sep or not player.isdigit() or not turn.isdigit():
+        raise argparse.ArgumentTypeError(
+            f"expected PLAYER:TURN with two non-negative integers, got {text!r}")
+    return f"{int(player)}:{int(turn)}"
+
+
 def build_config(args: argparse.Namespace) -> dict:
     dialogue_seconds = getattr(args, "dialogue_seconds", 0.25)
     if dialogue_seconds is None:
@@ -1936,6 +1951,11 @@ def build_config(args: argparse.Namespace) -> dict:
         "DialogueSeconds": min(2.0, max(0.0, float(dialogue_seconds))),
         "DealSessions": (deal_sessions if deal_sessions in ("peace", "trade")
                          else bool(deal_sessions)),
+        # Rivals a reload must not open a deal session with, and the last turn
+        # of each hold: "5:164,1:150". Empty outside a continuation. See
+        # `deal_session_quarantine` and `CivvisTrade.quarantinedUntil`.
+        "DealSessionQuarantine": ",".join(
+            getattr(args, "deal_session_quarantine", None) or []),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -8155,6 +8175,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="use interactive sessions for trades only; peace is sent directly")
     ap.add_argument("--no-deal-sessions", dest="deal_sessions", action="store_false",
                     help="keep direct diplomacy sends even for a Civvis-driven game")
+    ap.add_argument("--deal-session-quarantine", dest="deal_session_quarantine",
+                    action="append", type=deal_session_quarantine, default=None,
+                    metavar="PLAYER:TURN",
+                    help="open no deal session with this rival through this game "
+                         "turn (repeatable); the climb passes it when it reloads "
+                         "a game whose rival turn hung")
     # Wins always finish the native movie. This setting retains a minimum
     # presentation time; it cannot shorten a winning cinematic.
     ap.add_argument("--end-game-seconds", type=float, default=10.0,
