@@ -19091,13 +19091,14 @@ end
 -- those games and 8 treaties in 10; past that the Favor is the next
 -- resolution's); and when the bank is short of the count, as many as it does
 -- afford. Returns
--- `votes, price`, or `want, price` unchanged below match point, off the
--- Diplomatic lane, or when it would buy no more. Off with
+-- `votes, price`, or `want, price` unchanged below match point, for a seat
+-- not racing the Congress (`CivvisCongressRacer`), or when it would buy no
+-- more. Off with
 -- `RacerMatchPointBank = false`. `entries` is the ballot's ordered list (rows
 -- with `rtype`, or bare names) and `current` this resolution's entry in it.
 CivvisRacerMatchPointVotes = function(rtype, entries, current, favor, costs, config, ourPoints, want, price)
 	config = type(config) == "table" and config or {};
-	if not CivvisDiploRacer(config) or config.RacerMatchPointBank == false
+	if not CivvisCongressRacer(config) or config.RacerMatchPointBank == false
 			or type(costs) ~= "table"
 			or (tonumber(ourPoints) or 0) < (tonumber(config.DiploVictoryMatchPoint) or 18) then
 		return want, price;
@@ -19144,13 +19145,15 @@ end
 -- half of those games and tested on the second: 100% (92% with the free
 -- vote), 19% and 41%.
 --
--- Only a Diplomatic racer (`CivvisDiploRacer`): another seat's participation
--- points buy nothing. Only option A, which is what the ballot already cast;
+-- Only a seat racing the Congress (`CivvisCongressRacer`: the Diplomatic
+-- lane, or a Science seat under `science-seat-races-the-congress`): another
+-- seat's participation points buy nothing. Only option A, which is what the
+-- ballot already cast;
 -- only when the target is offered; the vote count is still
 -- `CivvisRacerResolutionVotes`'s. Off with `RacerUsualWinner = false`.
 -- Returns `option, selection` (1-based), unchanged when it does not apply.
 CivvisRacerUsualWinner = function(rtype, targets, config, option, selection)
-	if not CivvisDiploRacer(config) or config.RacerUsualWinner == false then
+	if not CivvisCongressRacer(config) or config.RacerUsualWinner == false then
 		return option, selection;
 	end
 	local want = ({
@@ -25729,7 +25732,7 @@ local function tick()
 			envoyTally.racer_reserve = CivvisCongressRacer(cfg)
 				and CivvisRacerReserve(list, costs, cfg) or nil;
 			-- See `CivvisRacerMatchPointVotes`: our own points, read once.
-			envoyTally.racer_points = CivvisDiploRacer(cfg) and (tonumber(try(function()
+			envoyTally.racer_points = CivvisCongressRacer(cfg) and (tonumber(try(function()
 				return Players[pid]:GetStats():GetDiplomaticVictoryPoints();
 			end, 0)) or 0) or nil;
 			local cast, spent = 0, 0;
@@ -27171,9 +27174,16 @@ end
 -- Send Aid project outbids a space-race project), and Climate Accords is
 -- scored by decommissioning our own power plants. So a seat joins only where
 -- first place pays something its lane uses:
---   * a Diplomatic seat joins all of them (1 or 2 of the 20 points each);
---   * a Science seat joins the Space Station (space-race production,
---     expedition speed) and the Physics prize (technology boosts);
+--   * a Diplomatic seat joins all of them (1 or 2 of the 20 points each),
+--     and so does a Science seat racing the Congress
+--     (`science-seat-races-the-congress`, `CivvisCongressRacer`): the points
+--     are its second route, an Aid Request it is alone in is won with a
+--     one-Gold gift (civvis-20261113T211246Z, t136, +2), and under lane
+--     delegation no city takes a competition's project unasked, so the
+--     membership pulls no Production;
+--   * any other Science seat joins the Space Station (space-race
+--     production, expedition speed) and the Physics prize (technology
+--     boosts);
 --   * a Culture seat joins the World's Fair, the World Games and the
 --     Literature prize (culture, Tourism, Rock Bands);
 --   * every other seat votes as before.
@@ -27211,6 +27221,7 @@ CivvisCongressJoin.choose = function(pid, categories, config, atWarWith, blocker
 	local asks, skipped = {}, {};
 	config = type(config) == "table" and config or {};
 	local lane = config.VictoryLane;
+	local racer = CivvisCongressRacer(config);
 	for _, category in pairs(type(categories) == "table" and categories or {}) do
 		for _, prop in pairs(type(category) == "table" and type(category.ProposalsOfType) == "table"
 				and category.ProposalsOfType or {}) do
@@ -27221,7 +27232,7 @@ CivvisCongressJoin.choose = function(pid, categories, config, atWarWith, blocker
 				local why = nil;
 				if config[kind.flag] == false then
 					why = "disabled";
-				elseif lane ~= "diplomatic" and not (lane ~= nil and kind[lane] == true) then
+				elseif not racer and not (lane ~= nil and kind[lane] == true) then
 					why = "not_this_lane";
 				elseif prop.Disabled then
 					why = "proposal_disabled";

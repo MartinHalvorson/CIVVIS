@@ -120,6 +120,22 @@ do
 		.. "REQUEST_AID@3:not_this_lane WORLD_FAIR@-1:not_this_lane WORLD_GAMES@-1:not_this_lane")
 end
 
+-- 2b. A Science seat racing the Congress (`science-seat-races-the-congress`)
+-- joins all nine, as the Diplomatic seat does; the tag does nothing for
+-- another lane.
+do
+	local asks, skipped = choose("science", every(), { config = { ScienceCongressRacer = true } })
+	check("racing science seat joins all nine", asks,
+		"CLIMATE_ACCORDS@-1 MILITARY_AID_REQUEST@4 NOBEL_PRIZE_LITERATURE@-1 NOBEL_PRIZE_PEACE@-1 "
+		.. "NOBEL_PRIZE_PHYSICS@-1 REQUEST_AID@3 SPACE_STATION@-1 WORLD_FAIR@-1 WORLD_GAMES@-1")
+	check("racing science seat skips nothing of those kinds", skipped, "")
+	check("the racer switched off is a plain science seat again",
+		(choose("science", every(), { config = { ScienceCongressRacer = true, DiploRacer = false } })),
+		"NOBEL_PRIZE_PHYSICS@-1 SPACE_STATION@-1")
+	check("the tag does nothing for a Domination seat",
+		(choose("domination", every(), { config = { ScienceCongressRacer = true } })), "")
+end
+
 -- 3. A Culture seat joins the Fair, the Games and the Literature prize.
 check("culture seat joins three", (choose("culture", every())),
 	"NOBEL_PRIZE_LITERATURE@-1 WORLD_FAIR@-1 WORLD_GAMES@-1")
