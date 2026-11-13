@@ -17,12 +17,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Round 3: the opening from the start. 32 pairs on each of two recipes,
-  # 110 turns: the lane, and the lane with `--rival-walls 0` (the closest the
-  # throttle gets to the live walls). Control; gene; gene with
-  # `edge-unit-opens-from-the-start`; the same with the Iron waived.
+  # Round 4: round 3's arms on fresh seeds after the assault and the
+  # lost-declaration fixes; 32 pairs on each recipe, 110 turns.
   CIVVIS_EDGE_TURNS: "110"
-  CIVVIS_EDGE_SEED: "52670400"
+  CIVVIS_EDGE_SEED: "52670500"
   CIVVIS_EDGE_ARMS: "control,gene,gene-start,gene-start-free-iron"
 
 jobs:
