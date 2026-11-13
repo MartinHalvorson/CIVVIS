@@ -1911,7 +1911,7 @@ fn play_command(args: Vec<String>) {
     if args.iter().any(|a| a == "--live-pause") {
         civvis::civ6::enable_live_pause_control();
     }
-    civvis::server::serve_with_game(
+    civvis::server::serve_opening(
         arg(&args, "--port", 8765) as u16,
         !args.iter().any(|a| a == "--no-open"),
         civvis::server::Params {

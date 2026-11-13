@@ -5551,6 +5551,19 @@ pub fn serve_with_game(
     port: u16,
     open_browser: bool,
     params: Params,
+    game: Option<Game>,
+    initially_paused: bool,
+) {
+    let opening = game.map_or(Opening::Generated, Opening::Resumed);
+    serve_opening(port, open_browser, params, opening, initially_paused);
+}
+
+/// Serve the world `opening` names. `serve_with_game` is this for a world
+/// that is generated or resumed; a mirror has no other way in.
+pub fn serve_opening(
+    port: u16,
+    open_browser: bool,
+    params: Params,
     opening: Opening,
     initially_paused: bool,
 ) {
@@ -5625,7 +5638,7 @@ pub fn serve_with_game(
 }
 
 pub fn serve(port: u16, open_browser: bool, params: Params) {
-    serve_with_game(port, open_browser, params, Opening::Generated, false);
+    serve_with_game(port, open_browser, params, None, false);
 }
 
 fn open_url(url: &str) {
