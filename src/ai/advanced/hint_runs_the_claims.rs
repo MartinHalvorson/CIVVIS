@@ -81,6 +81,10 @@ impl AdvancedAi {
         // stands. Exact no-op while the gene is off. See
         // `advanced/score_expands_hard.rs`.
         self.claim_score_expansion_hall(g, pid, plan);
+        // `score-seat-builds-the-bath`: the seat's unique Aqueduct in every
+        // city that can hold one. Exact no-op while the gene is off. See
+        // `advanced/score_builds_the_bath.rs`.
+        self.claim_score_bath(g, pid, plan);
         self.claim_early_settler_floor(g, pid, plan);
         // `holdable-land-keeps-settling`: past the opening floor, a
         // Settler for a holdable seat, ahead of the routine claims below.
