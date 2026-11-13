@@ -231,7 +231,7 @@ fn play(score: bool, on: bool, world: usize, genes: &[Gene], base: &[bool], dir:
     let mut held: BTreeSet<(u32, &str)> = BTreeSet::new();
     for (turn, head, _) in &parsed {
         if head.starts_with("Holding the war on") && head.ends_with("for a capture") {
-            held.insert((*turn, head));
+            held.insert((*turn, *head));
         } else if head.starts_with("The war on") && head.ends_with("has its capture") {
             out.passed += 1;
         }
