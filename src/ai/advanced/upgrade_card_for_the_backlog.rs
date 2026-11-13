@@ -35,6 +35,18 @@
 //! Conscription, Levée en Masse, Limitanei or Praetorium). A held card stays
 //! while one such unit remains. `None`, and so the portfolio unchanged, with
 //! the gene off.
+//!
+//! ## Measured
+//!
+//! `world_tests.rs`, 64 paired worlds (out-teched Immortal shape, Score seat,
+//! rival chairs under host tactics, 170 turns; on minus off, mean ± se): the
+//! card is held 29 ± 3 of the seat's turns, upgrades bought +4.0 ± 0.9 (20.2
+//! to 24.1), strength bought +65 ± 15, the upgradeable share at turn 150
+//! 0.54 to 0.48 (-0.07 ± 0.02). Units lost -1.1 ± 0.7 (24.6 to 23.5), to
+//! majors -0.8 ± 0.7, killed -0.8 ± 1.3, cities lost +0.02 ± 0.07, taken
+//! -0.08 ± 0.05. No cost shows at turn 150: Science +0.4 ± 1.8, Culture
+//! +0.1 ± 1.0, cities founded +0.16 ± 0.10, score -2.5 ± 3.9; the seat won
+//! 37 of 64 games off and 36 on. The combat gain is within noise at this n.
 
 use super::*;
 

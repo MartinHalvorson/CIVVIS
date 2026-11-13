@@ -3,7 +3,10 @@
 //!
 //! Ignored: it plays paired whole worlds. Run with
 //! `cargo test --profile ci --lib upgrade_card_worlds -- --ignored --nocapture`
-//! (`CIVVIS_UPGRADE_CARD_WORLDS` sets the seeds; 32 by default).
+//! (`CIVVIS_UPGRADE_CARD_WORLDS` sets the seeds; 64 by default, seeds
+//! 51000..51063). The PR #5235 read played them on CI in two rounds of 32
+//! (cargo-test runs 43368859181 and 43371150940, both on main 8c0920a381),
+//! the report read off a deliberately failing copy of this test.
 //!
 //! The board is the out-teched Immortal shape of `priced_risk::driver_tests`
 //! (PR #5196) and `assault_forecast::world_tests` (PR #5211): four players,
@@ -53,18 +56,13 @@ const LIVE_GOLD: &[&str] = &[
     "score-seat-founds-early",
     "score-seat-takes-what-pays",
 ];
-/// The first seed this run plays: round one played 51000..51031 and round
-/// two 51032..51063 (each round's pairs share one build of main).
-const SEED_BASE: u64 = 51_032;
-const DEFAULT_SEEDS: u64 = 32;
+const SEED_BASE: u64 = 51_000;
+const DEFAULT_SEEDS: u64 = 64;
 const TURNS: u32 = 170;
 const MARKS: [u32; 2] = [100, 150];
 /// A world past this many seconds stops where it stands (`stopped`).
 const BUDGET_SECS: u64 = 12 * 60;
 const JOBS: usize = 4;
-/// The experiment rounds on CI read the report off a failing test (nextest
-/// prints a passing test's output to nobody). False once the report is in.
-const REPORT_BY_PANIC: bool = true;
 
 /// One reading of a world row.
 type Read<'a> = &'a dyn Fn(&WorldRow) -> f64;
@@ -343,6 +341,7 @@ fn paired(rows: &[(WorldRow, WorldRow)], keep: &dyn Fn(&WorldRow) -> bool, read:
 }
 
 #[test]
+#[ignore = "plays paired whole worlds; run with --ignored --nocapture"]
 fn upgrade_card_worlds() {
     let n = seeds();
     let started = Instant::now();
@@ -475,7 +474,4 @@ fn upgrade_card_worlds() {
     ));
     let report = out.join("\n");
     println!("{report}");
-    if REPORT_BY_PANIC {
-        panic!("{report}");
-    }
 }
