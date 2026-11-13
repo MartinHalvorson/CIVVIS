@@ -2797,7 +2797,7 @@ impl AdvancedAi {
     }
 
     /// Withholding twin for `enable_live_trader_route_adapter`, so the live bundle can be
-    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    /// priced by taking this one treatment out of it. See `genes::GENES`.
     pub fn disable_live_trader_route_adapter(&mut self) {
         self.live_trader_route_adapter = false;
     }
@@ -2867,7 +2867,7 @@ impl AdvancedAi {
     }
 
     /// Withholding twin for `enable_live_religious_purchase_guard`, so the live bundle can be
-    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    /// priced by taking this one treatment out of it. See `genes::GENES`.
     pub fn disable_live_religious_purchase_guard(&mut self) {
         self.base.live_religious_purchase_guard = false;
     }
@@ -2914,13 +2914,13 @@ impl AdvancedAi {
     }
 
     /// Withholding twin for `enable_whole_turn_backtrack_guard`. See
-    /// `LIVE_TREATMENTS`.
+    /// `genes::GENES`.
     pub fn disable_whole_turn_backtrack_guard(&mut self) {
         self.base.whole_turn_backtrack_guard = false;
     }
 
     /// Withholding twin for `enable_recorded_tactical_step`, so the live bundle can be
-    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    /// priced by taking this one treatment out of it. See `genes::GENES`.
     pub fn disable_recorded_tactical_step(&mut self) {
         self.base.recorded_tactical_step = false;
     }
@@ -3185,7 +3185,7 @@ impl AdvancedAi {
     }
 
     /// Withholding twin for `enable_strike_opening`, so the live bundle can be
-    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    /// priced by taking this one treatment out of it. See `genes::GENES`.
     pub fn disable_strike_opening(&mut self) {
         self.strike_opening = false;
     }
@@ -3530,7 +3530,7 @@ impl AdvancedAi {
     }
 
     /// Withholding twin for `enable_strategic_wonders`, so the arm can be
-    /// priced by taking this one treatment out. See `LIVE_TREATMENTS`.
+    /// priced by taking this one treatment out. See `genes::GENES`.
     pub fn disable_strategic_wonders(&mut self) {
         self.strategic_wonders = false;
     }
