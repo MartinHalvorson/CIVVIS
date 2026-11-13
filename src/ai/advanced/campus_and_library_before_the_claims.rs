@@ -28,8 +28,8 @@
 //! done, the faith defence's Holy Site and Shrine, a siege reservation's gun
 //! and the Aqueduct claim's Aqueduct.
 //!
-//! **The gene.** It applies while the active victory target is Domination or
-//! Score, in a city that is ours, is not the plan's threatened city, was not attacked
+//! **The gene.** It applies while the active victory target is Domination,
+//! Score, Science or Diplomacy, in a city that is ours, is not the plan's threatened city, was not attacked
 //! within four turns and, while a major is at war with us, stands away from
 //! the front (no hostile presses it: `rear-cities-grow-through-the-war-hold`'s
 //! rear-city test). There:
@@ -135,6 +135,36 @@
 //! builds is the Score seat's aim as much as the Domination seat's. It reads
 //! [`AdvancedAi::conquest_or_score_seat`].
 //!
+//! **A Science or Diplomatic seat, short of the growth items (live Deity
+//! Rome, 6-player Continents, Online, 2026-11-13).** The lane moved from the
+//! Score target to Science at 15:57Z and the gene went inert with it. The
+//! same day, same leader and map, cities founded by t100: on the Score target
+//! (28 games, 219 cities, the gene acting) a city's Campus stood a median 25
+//! turns (quartiles 17-34) after its founding or Writing, and
+//! `campus-claims-the-free-slot` journalled 30 city-turns a game of a
+//! buildable first Campus held back; on the Science target (8 games, 56
+//! cities) 34.5 turns (27-51) and 97 city-turns a game: the backlog Builder
+//! 12.5 a game against 0.9, near-rival deterrence 12.1 against 1.3, the bound
+//! Granary 11.1 against 1.1, the producer Industrial Zone 4.1 against under
+//! 0.6.
+//!
+//! Opening the whole gene on the Science seat did not pay. Paired simulation,
+//! 60 seeds, 250 turns, this gene and `first-campus-before-the-settler`
+//! acting there against the same base: Science +1.1 at t50 (16.3 to 17.4) but
+//! -1.2 at t100, techs +0.15 / +0.15 / -0.37 at t50 / t100 / t150, citizens
+//! -2.4 at t100 (46.4 to 44.0) and cities -0.30 (8.78 to 8.48). The early
+//! Science is real and the cost is larger, and the cost is citizens and
+//! cities: what a Builder, a Granary, an Aqueduct and a Settler make. So on
+//! the Science and Diplomacy targets
+//! ([`AdvancedAi::campus_first_keeps_growth`]) the first Campus and the
+//! Library go ahead of a soldier, the Commercial Hub, the Market, the
+//! Industrial Zone and the faith defence, and the deterrent and siege writers
+//! leave them alone, but a Builder, a Granary, an Aqueduct and a Settler keep
+//! the queue, their writers still take it from a standing Campus claim, and
+//! `first-campus-before-the-settler` does not act there. A Culture seat's
+//! slot goes to its Theater Square and a Religion seat's to its Holy Site,
+//! and they keep the old order.
+//!
 //! Grep the journal for `campus-and-library-before-the-claims:`.
 
 use super::*;
@@ -177,6 +207,28 @@ pub(super) enum ScienceFirstReach {
 }
 
 impl AdvancedAi {
+    /// The seats whose first Campus and Library go ahead of the routine
+    /// claims: the Domination lane's economy seats
+    /// ([`AdvancedAi::conquest_or_score_seat`]) and the Science and Diplomacy
+    /// targets, the latter short of the growth items
+    /// ([`AdvancedAi::campus_first_keeps_growth`]).
+    pub(super) fn campus_first_seat(&self, g: &Game) -> bool {
+        self.conquest_or_score_seat(g) || self.campus_first_keeps_growth(g)
+    }
+
+    /// The Science and Diplomacy targets: seats where the first Campus and
+    /// Library go ahead of the soldiers, the Commercial Hub, the Market, the
+    /// Industrial Zone and the faith defence, but not of what makes citizens
+    /// and cities (the Builder, the Granary, the Aqueduct, the Settler). See
+    /// the module ("A Science or Diplomatic seat, short of the growth items").
+    pub(super) fn campus_first_keeps_growth(&self, g: &Game) -> bool {
+        !self.conquest_or_score_seat(g)
+            && matches!(
+                self.active_victory_target(g),
+                Some(VictoryTarget::Science | VictoryTarget::Diplomacy)
+            )
+    }
+
     /// Whether the gene opens `cid` this turn, and how far. `None` with the
     /// gene off, for another victory target, for a city not ours, for the
     /// plan's threatened city or one attacked within
@@ -189,8 +241,9 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> Option<ScienceFirstReach> {
-        // A Score seat too: see [`AdvancedAi::conquest_or_score_seat`].
-        if !self.campus_and_library_before_the_claims || !self.conquest_or_score_seat(g) {
+        // A Score, Science or Diplomatic seat too: see
+        // [`AdvancedAi::campus_first_seat`].
+        if !self.campus_and_library_before_the_claims || !self.campus_first_seat(g) {
             return None;
         }
         let city = g.cities.get(&cid)?;
@@ -287,6 +340,9 @@ impl AdvancedAi {
         }
         let invested = g.item_invested_production(cid, item);
         let army = reach == ScienceFirstReach::EconomyAndArmy;
+        // A Science or Diplomatic seat keeps its Builder, Granary, Aqueduct
+        // and Settler ahead: see [`AdvancedAi::campus_first_keeps_growth`].
+        let growth_waits = !self.campus_first_keeps_growth(g);
         // The University passes a wonder with nothing paid, but not on a
         // Score seat: a wonder is fifteen score, the most any one item buys.
         let wonder_waits = what == ScienceFirstItem::University
@@ -302,14 +358,15 @@ impl AdvancedAi {
                 // The first Campus and the Library pass a Builder; the
                 // University does not.
                 if *unit == "builder" {
-                    return (what != ScienceFirstItem::University)
+                    return (growth_waits && what != ScienceFirstItem::University)
                         .then(|| "the Builder".to_string());
                 }
                 // A Settler with at most half its cost paid waits for the
                 // Library from four cities and the first Campus from six.
                 if *unit == "settler" {
                     let cost = g.item_cost_for_city(pid, cid, item);
-                    return (Self::campus_and_library_passes_settlers(g, pid, what)
+                    return (growth_waits
+                        && Self::campus_and_library_passes_settlers(g, pid, what)
                         && invested * 2.0 <= cost)
                         .then(|| {
                             format!("the Settler ({invested:.0} of {cost:.0} Production paid)")
@@ -339,7 +396,7 @@ impl AdvancedAi {
                     return wonder_waits.then(|| format!("the {}", Self::plain_item(item)));
                 }
                 match spec.replaces.unwrap_or(*building).as_str() {
-                    "granary" if economy => Some("the Granary".to_string()),
+                    "granary" if economy && growth_waits => Some("the Granary".to_string()),
                     "market" => Some("the Market".to_string()),
                     // A Campus passes only a Shrine with nothing paid.
                     "shrine" if (library || invested <= 0.0) && !race_site() => {
@@ -350,7 +407,7 @@ impl AdvancedAi {
             }
             Item::District { district, .. } => match g.district_family(*district).as_str() {
                 "commercial_hub" => Some("the Commercial Hub".to_string()),
-                "aqueduct" if economy => Some("the Aqueduct".to_string()),
+                "aqueduct" if economy && growth_waits => Some("the Aqueduct".to_string()),
                 "industrial_zone" if economy => Some("the Industrial Zone".to_string()),
                 // A Campus passes only a Holy Site with nothing paid: one
                 // with progress finishes first.
@@ -419,11 +476,29 @@ impl AdvancedAi {
         }
     }
 
+    /// [`Self::campus_and_library_holds`] as the Granary and backlog Builder
+    /// writers read it: false on a Science or Diplomatic seat, whose Granary
+    /// and Builder keep taking the queue
+    /// ([`AdvancedAi::campus_first_keeps_growth`]).
+    pub(super) fn campus_and_library_holds_the_growth_writers(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        item: &Item,
+    ) -> bool {
+        self.campus_and_library_before_the_claims
+            && !self.campus_first_keeps_growth(g)
+            && self.campus_and_library_holds(g, pid, cid, plan, item)
+    }
+
     /// Whether `cid`'s head is the first Campus or Library the gene holds and
     /// both Settler claims leave it alone too: from six cities for the
     /// Campus, four for the Library, and at any count for a first Campus
     /// with Production in (finish what was started). Always false with the
-    /// gene off.
+    /// gene off, and on a Science or Diplomatic seat, whose Settlers keep
+    /// their claims ([`AdvancedAi::campus_first_keeps_growth`]).
     pub(super) fn campus_and_library_holds_the_settler(
         &self,
         g: &Game,
@@ -432,6 +507,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> bool {
         self.campus_and_library_before_the_claims
+            && !self.campus_first_keeps_growth(g)
             && g.cities
                 .get(&cid)
                 .and_then(|city| city.queue.first())

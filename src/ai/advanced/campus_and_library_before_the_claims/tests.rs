@@ -716,7 +716,10 @@ fn a_score_seat_puts_its_first_campus_first_and_other_targets_keep_the_granary()
         (VictoryTarget::Domination, campus.clone()),
         (VictoryTarget::Score, campus.clone()),
         (VictoryTarget::Culture, granary()),
+        // A Science or Diplomatic seat's Campus passes other heads, but not
+        // the Granary: see the test below.
         (VictoryTarget::Science, granary()),
+        (VictoryTarget::Diplomacy, granary()),
         (VictoryTarget::Religion, granary()),
     ] {
         let mut board = g.clone();
@@ -724,6 +727,97 @@ fn a_score_seat_puts_its_first_campus_first_and_other_targets_keep_the_granary()
         ai.victory_target = Some(target);
         ai.claim_free_slot_campus(&mut board, 0, &plan);
         assert_eq!(head(&board, cid), Some(expected), "{target:?}");
+    }
+}
+
+/// `campus_first_keeps_growth`: on a Science or Diplomatic seat the first
+/// Campus and the Library go ahead of a Commercial Hub, an Industrial Zone
+/// and a soldier as they do on a Domination seat, but a Builder, a Granary,
+/// an Aqueduct and a Settler keep their queue (each waits on a Domination
+/// seat: the control). A Culture seat's gene stays shut.
+#[test]
+fn a_science_or_diplomatic_seat_passes_the_hub_and_zone_but_keeps_its_growth_items() {
+    let (mut g, armed, cid, plan, _) = campus_board_with(6);
+    let hub = district_head(&mut g, cid, "commercial_hub", 0.0);
+    let zone = district_head(&mut g, cid, "industrial_zone", 0.0);
+    let aqueduct = district_head(&mut g, cid, "aqueduct", 0.0);
+    let warrior = unit("warrior");
+    let builder = unit("builder");
+    let settler = AdvancedAi::early_settler_item();
+    let passes = |ai: &AdvancedAi, item: &Item, what: ScienceFirstItem| {
+        ai.campus_and_library_reach(&g, 0, cid, &plan)
+            .and_then(|reach| ai.campus_and_library_passes(&g, 0, cid, &plan, item, reach, what))
+    };
+    let domination = armed.clone();
+    for what in [ScienceFirstItem::FirstCampus, ScienceFirstItem::Library] {
+        for item in [&builder, &granary(), &aqueduct, &settler] {
+            assert!(
+                passes(&domination, item, what).is_some(),
+                "control: on a Domination seat {item:?} waits for the {what:?}"
+            );
+        }
+        for item in [&hub, &zone] {
+            assert!(
+                passes(&domination, item, what).is_some(),
+                "control: {item:?} waits for the {what:?}"
+            );
+        }
+    }
+    for target in [VictoryTarget::Science, VictoryTarget::Diplomacy] {
+        let mut ai = armed.clone();
+        ai.victory_target = Some(target);
+        assert!(ai.campus_first_seat(&g) && ai.campus_first_keeps_growth(&g));
+        for what in [ScienceFirstItem::FirstCampus, ScienceFirstItem::Library] {
+            for item in [&hub, &zone, &warrior] {
+                assert_eq!(
+                    passes(&ai, item, what),
+                    passes(&domination, item, what),
+                    "{target:?}: {item:?} waits for the {what:?} as on a Domination seat"
+                );
+            }
+            for item in [&builder, &granary(), &aqueduct, &settler] {
+                assert_eq!(
+                    passes(&ai, item, what),
+                    None,
+                    "{target:?}: {item:?} stays ahead of the {what:?}"
+                );
+            }
+        }
+    }
+    assert!(!domination.campus_first_keeps_growth(&g));
+    let mut culture = armed.clone();
+    culture.victory_target = Some(VictoryTarget::Culture);
+    assert!(!culture.campus_first_seat(&g));
+    assert_eq!(passes(&culture, &hub, ScienceFirstItem::FirstCampus), None);
+}
+
+/// A first Campus standing at the head of a Science or Diplomatic seat's
+/// queue is left alone by the deterrent and siege writers
+/// (`campus_and_library_holds`) but not by the Granary, Builder or Settler
+/// writers; on a Domination seat all of them leave it alone.
+#[test]
+fn a_science_seats_granary_builder_and_settler_writers_do_not_yield_to_the_campus() {
+    let (mut g, armed, cid, plan, campus) = campus_board_with(6);
+    armed.claim_free_slot_campus(&mut g, 0, &plan);
+    assert_eq!(head(&g, cid), Some(campus.clone()), "fixture: the claim");
+    assert!(armed.campus_and_library_holds(&g, 0, cid, &plan, &campus));
+    assert!(armed.campus_and_library_holds_the_growth_writers(&g, 0, cid, &plan, &campus));
+    assert!(armed.campus_and_library_holds_the_settler(&g, 0, cid, &plan));
+    for target in [VictoryTarget::Science, VictoryTarget::Diplomacy] {
+        let mut ai = armed.clone();
+        ai.victory_target = Some(target);
+        assert!(
+            ai.campus_and_library_holds(&g, 0, cid, &plan, &campus),
+            "{target:?}: the deterrent and siege writers leave it alone"
+        );
+        assert!(
+            !ai.campus_and_library_holds_the_growth_writers(&g, 0, cid, &plan, &campus),
+            "{target:?}: the Granary and Builder writers take the queue"
+        );
+        assert!(
+            !ai.campus_and_library_holds_the_settler(&g, 0, cid, &plan),
+            "{target:?}: the Settler claims take the queue"
+        );
     }
 }
 
