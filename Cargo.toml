@@ -217,6 +217,11 @@ memchr = "2"
 # job red no matter how the `#[global_allocator]` in `src/lib.rs` is gated.
 mimalloc = "0.1"
 
+# The browser uses a single-threaded linear memory heap. Keep this dependency
+# off native targets, whose allocator is independently selected above.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+talc = "=5.1.1"
+
 [profile.release]
 lto = "thin"
 # One codegen unit is worth about four percent of simulation throughput.

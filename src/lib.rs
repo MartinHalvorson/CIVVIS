@@ -39,6 +39,12 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+// Each browser worker owns its own non-shared WebAssembly memory. Use the
+// dynamically growing heap; an atomics build retains the standard allocator.
+#[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
+#[global_allocator]
+static WASM_GLOBAL: talc::wasm::WasmDynamicTalc = talc::wasm::new_wasm_dynamic_allocator();
+
 // The action encoder's consumers are all in `experiments/closed/`; the module
 // compiles only `kind_name` without the `closed-experiments` feature.
 pub mod action_space;
