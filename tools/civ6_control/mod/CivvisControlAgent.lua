@@ -4591,6 +4591,57 @@ local function cityNextReligion(city)
 	return row ~= nil and row.ReligionType or nil;
 end
 
+-- ★★★★ A WONDER THE HOST WILL TAKE NEXT DOOR IS BUILT NEXT DOOR.
+--
+-- `productionPlot` returns nothing when CIVVIS names a plot the host does not
+-- offer, because for a district the plot IS the decision (its adjacency). A
+-- wonder has none: the decision is the wonder and the city. Every refusal
+-- with ground on offer, 2026-11-12/13 (8 of the 13 `build_no_plot` rows):
+--   Statue of Liberty  asked (23,35) offered (24,34)        195128Z t130
+--   Statue of Liberty  asked (60,38) offered (61,39)        204218Z t138, t149
+--   Petra              asked (56,30) offered (57,30)
+--   Bolshoi Theatre    asked (22,25) offered (21,25); (62,16) offered 2
+--   Orszaghaz          asked (59,36) offered 3, one of them (59,37)
+--   Taj Mahal          asked (11,17) offered 4, one of them (12,17)
+-- the host's plot is a neighbour of the one asked each time. The refusal puts
+-- the wonder on the production cooldown, the mirror's memory of the offer
+-- (`host_wonder_sites`) lasts no longer than that, and the next ask names the
+-- same plot: 204218Z asked twice eleven turns apart and built its Statue of
+-- Liberty at t166, 28 turns after the first ask; 195128Z moved it to another
+-- city, built it at t152 and lost at t199 one point short of a Diplomatic
+-- victory. The Statue is four of the twenty points.
+--
+-- So for a WONDER the host's offered plot nearest the one asked is used,
+-- and `build_plot_substituted` says so. Nothing offered (the wonder is gone
+-- from the world, or the city has no ground) is the refusal it always was.
+-- Districts are untouched. Off with `WonderTakesOfferedPlot = false`.
+-- `distance(x1, y1, x2, y2)` is the host's hex distance; the offline test
+-- passes its own. Bare global for that test.
+CivvisWonderOfferedPlot = function(offeredPlots, requestedX, requestedY, config, distance)
+	if type(config) == "table" and config.WonderTakesOfferedPlot == false then return nil; end
+	if type(offeredPlots) ~= "table" then return nil; end
+	local x, y = tonumber(requestedX), tonumber(requestedY);
+	if x == nil or y == nil then return nil; end
+	distance = distance or function(x1, y1, x2, y2)
+		return try(function() return Map.GetPlotDistance(x1, y1, x2, y2); end, nil);
+	end;
+	local best, bestDistance = nil, nil;
+	for _, plot in ipairs(offeredPlots) do
+		local px = type(plot) == "table" and tonumber(plot.x) or nil;
+		local py = type(plot) == "table" and tonumber(plot.y) or nil;
+		if px ~= nil and py ~= nil then
+			local d = tonumber(distance(x, y, px, py));
+			-- A host that will not measure: the offset difference orders
+			-- neighbours first just as well.
+			if d == nil then d = math.max(math.abs(px - x), math.abs(py - y)); end
+			if bestDistance == nil or d < bestDistance then
+				best, bestDistance = { x = px, y = py }, d;
+			end
+		end
+	end
+	return best;
+end
+
 local function buildParams(row, city, requestedX, requestedY)
 	local params = {};
 	-- ⚠ WITHOUT AN INSERT MODE THE GAME REJECTS EVERY BUILD.
@@ -4621,6 +4672,22 @@ local function buildParams(row, city, requestedX, requestedY)
 			local where, offered, offeredPlots = productionPlot(city,
 				CityOperationTypes.PARAM_BUILDING_TYPE, row.Hash,
 				requestedX, requestedY);
+			-- See `CivvisWonderOfferedPlot`: ground the host does offer.
+			if where == nil then
+				where = CivvisWonderOfferedPlot(offeredPlots, requestedX, requestedY, cfg);
+				if where ~= nil then
+					emit("build_plot_substituted", {
+						city = try(function() return city:GetID(); end, -1),
+						building = row.Type or tostring(row.Hash),
+						turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+						x = requestedX, y = requestedY,
+						to_x = where.x, to_y = where.y,
+						offered = offered or 0,
+						-- What the host offered, as the refusal row below carries it.
+						offered_plots = offeredPlots,
+					});
+				end
+			end
 			if where == nil then
 				-- ★★★★★ SAY WHY. `build_no_plot` named the wonder and the city but
 				-- never the reason, and the two reasons want OPPOSITE responses.
