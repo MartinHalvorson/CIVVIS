@@ -297,7 +297,7 @@ impl AdvancedAi {
             let soldiers = self.counts(g, pid).military;
             // `score-seat-expands-hard`: one Settler more than the cities.
             // See `advanced/score_expands_hard.rs`.
-            if self.score_expands_hard_now(g) {
+            if self.score_expands_hard_at_peace(g, pid) {
                 Self::score_expands_width_for(cities, soldiers)
             } else {
                 Self::no_city_limit_width_for(cities, soldiers)
