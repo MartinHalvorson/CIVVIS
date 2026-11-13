@@ -2297,7 +2297,10 @@ impl AdvancedAi {
                                     | ObjectiveKind::ClearCamp
                             )
                             && distance > SIEGE_MEMBER_STRIKE_REACH
-                            && self.conquest_force_member(*uid)
+                            // `edge-unit-takes-the-soft-city`: its mustering
+                            // force too. `false` with that gene off.
+                            && (self.conquest_force_member(*uid)
+                                || self.edge_unit_force_member(g, *uid))
                         {
                             continue;
                         }
@@ -2847,6 +2850,11 @@ impl AdvancedAi {
         // force ever assembled" with every one of them inside the home ring.
         // While the opening gathers, the Reserve gathers at its rally.
         if let Some(rally) = self.conquest_staging_rally(g) {
+            return rally;
+        }
+        // `edge-unit-takes-the-soft-city`: the same while its force musters
+        // at the soft city. `None` with the gene off.
+        if let Some(rally) = self.edge_unit_staging_rally(g, pid) {
             return rally;
         }
         let ours = g.player_city_ids(pid);

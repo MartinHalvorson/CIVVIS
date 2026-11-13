@@ -329,6 +329,9 @@ impl AdvancedAi {
         /// Opt-in `endgame-army-takes-the-queue`; see
         /// `advanced/endgame_army_takes_the_queue.rs`.
         endgame_army_takes_the_queue => enable_endgame_army_takes_the_queue, disable_endgame_army_takes_the_queue;
+        /// Opt-in gene `edge-unit-takes-the-soft-city`; see
+        /// `advanced/edge_unit_takes_the_soft_city.rs`.
+        edge_unit_takes_the_soft_city => enable_edge_unit_takes_the_soft_city, disable_edge_unit_takes_the_soft_city;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its

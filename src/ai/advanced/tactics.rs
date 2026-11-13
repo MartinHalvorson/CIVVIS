@@ -173,6 +173,13 @@ impl AdvancedAi {
         uid: u32,
         plan: &StrategicPlan,
     ) -> Option<bool> {
+        // `edge-unit-takes-the-soft-city`: a body of the edge force walks to
+        // its stand 3-4 tiles from the soft city and holds it. `None` with
+        // the gene off and for every other unit. See
+        // `advanced/edge_unit_takes_the_soft_city.rs`.
+        if let Some(acted) = self.edge_unit_staging_step(g, pid, uid) {
+            return Some(acted);
+        }
         let opening = self.conquest_staging_objective(g, pid, uid, plan);
         let (target, objective) = if let Some((target, objective, _)) = opening {
             (target, objective)

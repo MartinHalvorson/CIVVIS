@@ -126,6 +126,9 @@ mod edge_ledger;
 #[path = "gene_screen/edge_ledger_tests.rs"]
 mod edge_ledger_tests;
 #[cfg(test)]
+#[path = "gene_screen/edge_unit_takes_the_soft_city_tests.rs"]
+mod edge_unit_takes_the_soft_city_tests;
+#[cfg(test)]
 #[path = "gene_screen/host_tactics_tests.rs"]
 mod host_tactics_tests;
 #[path = "gene_screen/rival_war_pace.rs"]
@@ -158,6 +161,30 @@ fn test_observe(g: &Game) {
 
 #[cfg(not(test))]
 fn test_observe(_: &Game) {}
+
+// Test scaffolding (`edge_unit_takes_the_soft_city_tests`): a per-thread hook
+// `play_game` hands the new world before its first turn, so one arm of a
+// pair can play changed rules in the same process. Outside tests a no-op.
+#[cfg(test)]
+type GameSetup = Box<dyn FnMut(&mut Game)>;
+
+#[cfg(test)]
+thread_local! {
+    static GAME_SETUP: std::cell::RefCell<Option<GameSetup>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn test_setup(g: &mut Game) {
+    GAME_SETUP.with(|setup| {
+        if let Some(setup) = setup.borrow_mut().as_mut() {
+            setup(g);
+        }
+    });
+}
+
+#[cfg(not(test))]
+fn test_setup(_: &mut Game) {}
 
 /// ⭐ THE SCREEN. One shape, so two batches are comparable without an argument
 /// about which regime read which gene (operator, 2026-08-22). Six majors on
@@ -2825,6 +2852,8 @@ fn play_game(
     // since the competitions landed, off by default and waiting for an
     // instrument that could price it.
     world.native_competitions = profile.native_competitions;
+    // Test scaffolding: see `test_setup`. Nothing outside tests.
+    test_setup(&mut world);
     let pinned = pinned_seats(profile.players, game, &profile.field);
     let kind = batch_rival_kind(profile.faithful, seed);
     let mut majors = Vec::new();
