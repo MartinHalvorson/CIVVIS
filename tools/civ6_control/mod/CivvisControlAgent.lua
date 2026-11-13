@@ -19564,8 +19564,21 @@ CivvisRacerClaimVotes = function(favor, ourPoints, rivalBlock, costs, maxVotes, 
 	-- with all of it: the fallback is a redirect or a free vote, and the
 	-- live redirect of civvis-20261030T070824Z-cont1 t201 (7 votes, budget
 	-- under `least`) let Portugal take +2 on its way from 12 to 19.
+	--
+	-- ★ AND FROM NINE VOTES IT CLAIMS WHATEVER THE LAST BLOCK WAS. The rivals
+	-- spend at a contested session too, and their next block is smaller: on
+	-- the Deity lane (six Diplomatic games, 2026-11-13) the session after a
+	-- claim found our bank at 144-249 Favor (9 to 11 votes), not over the
+	-- last block (9, 9, 12), so the ballot sat it out with the free vote
+	-- four times, and the rivals' largest block those sessions was 8, 5, 6
+	-- and 10: three of the four were ours for the asking, +2 each in games
+	-- that ended on 16, 17 and 16 of twenty with 130-350 Favor unspent. Over
+	-- the day's 20 sessions with no gang on us the rivals' largest block was
+	-- under 9 in 11, under 10 in 13, under 11 in 16. So a bank that buys
+	-- `DiploRacerClaimFloor` (9) votes or more claims with all of it.
 	if budget < least then
 		if budget > block then return budget; end
+		if budget >= (tonumber(config.DiploRacerClaimFloor) or 9) then return budget; end
 		return nil;
 	end
 	return math.min(least + math.ceil(block / 4), budget);
