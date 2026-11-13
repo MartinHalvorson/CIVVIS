@@ -1,6 +1,6 @@
-//! `score-seat-builds-the-bath`: a Score seat whose civilization replaces the
-//! Aqueduct with a unique district (Rome's Bath) builds it in every city that
-//! can hold one, as soon as the city can.
+//! `score-seat-builds-the-bath`: a Score, Science or Diplomatic seat whose
+//! civilization replaces the Aqueduct with a unique district (Rome's Bath)
+//! builds it in every city that can hold one, as soon as the city can.
 //!
 //! ## Why (live Deity Rome, 6-player Continents, Online, turn limit 170)
 //!
@@ -29,10 +29,26 @@
 //! within one of its housing with its Granary built, one city a turn, and
 //! leaves every science and culture item ahead of it.
 //!
+//! ## A Science and a Diplomatic seat too (2026-11-13)
+//!
+//! The Rome lane left the Score target for Science and Diplomatic games of
+//! 250 turns, and the housing reading there is the same. Ten Science games
+//! reaching turn 100: cities within one citizen of their housing cap 42% /
+//! 42% / 55% / 33% at turns 30 / 40 / 50 / 60, no city with a Bath before
+//! turn 75 and 25% at turn 100, 6.9 citizens a city at turn 100 against 9.1
+//! housing. Paired sim on the Science seat (60 seeds, 250-turn limit, this
+//! gene acting there against the lane without it): cities at turns 50 / 60 /
+//! 100 0.00 / 0.00 / +0.02, techs at turns 50 / 100 / 150 0.00 / -0.07 /
+//! 0.00, population at turn 100 +0.4 (z 2.2) and at turn 150 +2.2, districts
+//! at the end +3.8 (z 5.5), cities lost -0.17. It buys citizens and
+//! districts and costs no techs, so the gate reads
+//! [`AdvancedAi::score_bath_seat`]: Score, Science or Diplomacy.
+//!
 //! ## What the gene does
 //!
-//! Only on a seat whose assigned victory target is Score, and only for a
-//! civilization whose Aqueduct is a unique district. Off, an exact no-op.
+//! Only on a seat whose assigned victory target is Score, Science or
+//! Diplomacy, and only for a civilization whose Aqueduct is a unique
+//! district. Off, an exact no-op.
 //!
 //! Every turn, each city of [`SCORE_BATH_MIN_POP`] citizens or more with no
 //! Aqueduct, neither threatened nor attacked lately, whose legal Bath
@@ -70,9 +86,18 @@ pub(crate) const SCORE_BATH_OVER_DISTRICT_SHARE: f64 = 0.5;
 const SCORE_BATH_ATTACK_MEMORY: u32 = 4;
 
 impl AdvancedAi {
-    /// The gene is on and the seat aims at Score.
+    /// The seats the gene acts on: a Score, Science or Diplomatic target. See
+    /// the module.
+    pub(super) fn score_bath_seat(&self) -> bool {
+        matches!(
+            self.victory_target,
+            Some(VictoryTarget::Score | VictoryTarget::Science | VictoryTarget::Diplomacy)
+        )
+    }
+
+    /// The gene is on and the seat is one of [`Self::score_bath_seat`]'s.
     pub(super) fn score_builds_the_bath(&self) -> bool {
-        self.score_seat_builds_the_bath && self.victory_target == Some(VictoryTarget::Score)
+        self.score_seat_builds_the_bath && self.score_bath_seat()
     }
 
     /// The seat's unique replacement of the Aqueduct, when its civilization
@@ -205,9 +230,9 @@ impl AdvancedAi {
             .is_ok()
             {
                 think!(self.journal(), Economy, Decision,
-                    "{name} builds its {label} for the tally";
+                    "{name} builds its {label} at once";
                     "score-seat-builds-the-bath: {cost:.0} Production in {turns:.1} turns for \
-                     four points, its Housing and an Amenity{}",
+                     its Housing and an Amenity (four points at a tally){}",
                     displaced.map_or(String::new(), |item| format!(
                         "; {} keeps its progress", Self::plain_item(&item))));
             }
