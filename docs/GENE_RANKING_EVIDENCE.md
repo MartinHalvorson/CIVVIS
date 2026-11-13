@@ -389,6 +389,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `nusantara-settles-the-shore` | off (unmeasured) | Opt-in gene `nusantara-settles-the-shore`; see `advanced/nusantara_settles_the_shore.rs`. | 1 \| 1 |
 | `old-techs-before-the-beeline` | off (unmeasured) | Opt-in gene `old-techs-before-the-beeline`; see `advanced/old_techs_before_the_beeline.rs`. | 1 \| 1 |
 | `one-owner-per-unit` | off (unmeasured) | Opt-in `one-owner-per-unit`; see `advanced/unit_owner.rs`. | 1 \| 1 |
+| `one-upgrade-lifts-every-city` | off (unmeasured) | Opt-in gene `one-upgrade-lifts-every-city`; see `advanced/one_upgrade_lifts_every_city.rs`. | 1 \| 1 |
 | `open-city-is-the-objective` | off (unmeasured) | Opt-in `open-city-is-the-objective`; see `advanced/open_city_objective.rs`. | 1 \| 1 |
 | `opening-builder-after-the-first-settler` | off (unmeasured) | Opt-in gene `opening-builder-after-the-first-settler`; see `BasicAi::opening_builder_after_the_first_settler`. | 1 \| 1 |
 | `opening-ranged-support` | off (unmeasured) | Replace the capital's first opening slot with legal ranged support. | 1 \| 1 |
@@ -466,6 +467,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-seat-races-the-congress` | off (unmeasured) | Opt-in gene `science-seat-races-the-congress`: a live-only ballot change; see `CivvisCongressRacer` in `CivvisControlAgent.lua`. | 1 \| 1 |
 | `science-specializes-earlier` | off (unmeasured) | Opt-in gene `science-specializes-earlier`; see `Self::science_specializes_earlier`. | 1 \| 1 |
 | `science-writing-before-the-luxury` | off (unmeasured) | Opt-in Science Writing priority before optional research detours. | 1 \| 1 |
+| `score-seat-builds-the-bath` | off (unmeasured) | Opt-in gene `score-seat-builds-the-bath`; see `advanced/score_builds_the_bath.rs`. | 1 \| 1 |
 | `score-seat-expands-hard` | off (unmeasured) | Opt-in gene `score-seat-expands-hard`; see `advanced/score_expands_hard.rs`. | 1 \| 1 |
 | `score-seat-founds-early` | off (unmeasured) | Opt-in `score-seat-founds-early`; see `advanced/score_seat_founds_early.rs`. | 1 \| 1 |
 | `score-seat-grabs-what-pays` | off (unmeasured) | Opt-in `score-seat-grabs-what-pays`; see `advanced/score_takes_what_pays.rs`. | 1 \| 1 |

@@ -6799,11 +6799,26 @@ async function boot() {
   if (bootBusy) return;
   bootBusy = true;
   try {
-    RULES = await fetchJSON("/rules");
+    // The rules, the gene program and the opening state are three reads that
+    // do not depend on one another, so all three are asked for before any is
+    // waited on. Asked for one after another, the world waited for the rules
+    // to be parsed and the setup controls to be built before it was even
+    // requested, and the engine sat ready through both.
+    //
     // The gene program rides in beside the rules: one static answer per
     // server naming the heuristic genes that steer the seats. A server too
     // old to have the route costs nothing but the hidden track.
-    try { GENE_PROGRAM = await fetchJSON("/gene-program"); } catch { GENE_PROGRAM = null; }
+    const geneProgramRead = fetchJSON("/gene-program").catch(() => null);
+    // The opening read asks for the globe with the world. A Planet world
+    // cannot be drawn without its geometry, and asking for that after the
+    // first paint meant a second whole state — parsed, decoded and drawn in
+    // the very moment the first turns were due — behind a first frame that
+    // said "Building the globe…". A flat world's answer carries no globe.
+    const openingRead = fetchJSON("/state" + paintedQuery() + "&planet=1");
+    // Its failure is this boot's failure, reported where it is awaited below.
+    openingRead.catch(() => {});
+    RULES = await fetchJSON("/rules");
+    GENE_PROGRAM = await geneProgramRead;
     // The engine's stock opening setup: the single description of the world
     // nobody has decided anything about. The controls below stamp their
     // defaults from it rather than repeating its values here, so tweaking
@@ -6938,7 +6953,7 @@ async function boot() {
     // already be selected by the time it lands.
     syncSetupMode();
     fillStrategies(RULES);
-    render(adoptTiles(await fetchJSON("/state" + paintedQuery())));
+    render(adoptTiles(adoptPlanetGeometry(await openingRead)));
     if (bootAttempts) { bootAttempts = 0; clearBootRetrying(); }
     if (firstLoad) {
       firstLoad = false;
@@ -16680,8 +16695,19 @@ function linkPlanetCells(cells) {
   }
 }
 
-// Asked for the first time a Planet world appears and never again while it
-// lasts: the geometry is a property of the globe, not of the turn.
+// The globe that arrived with a state that asked for one. Taken before the
+// state is drawn, so the first paint of a Planet world is the planet; the
+// geometry is not part of any turn, so it does not stay on the state.
+function adoptPlanetGeometry(st) {
+  const raw = st?.map?.planet;
+  if (!raw) return st;
+  PLANET = decodePlanet(raw);
+  delete st.map.planet;
+  return st;
+}
+// Asked for the first time a Planet world appears without one — a new game, a
+// loaded save, a successor world — and never again while it lasts: the
+// geometry is a property of the globe, not of the turn.
 async function ensurePlanetGeometry() {
   if (!planetMap() || planetReady()) return;
   const wanted = planetFrequency();
