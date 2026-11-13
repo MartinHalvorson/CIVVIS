@@ -347,9 +347,7 @@ fn look(g: &Game, players: usize, seen: &mut BTreeMap<usize, Seen>) {
 /// The number after `key` in `text`, up to the next comma, space or `)`.
 fn number_after(text: &str, key: &str) -> Option<f64> {
     let rest = &text[text.find(key)? + key.len()..];
-    let end = rest
-        .find(|c: char| c == ',' || c == ' ' || c == ')')
-        .unwrap_or(rest.len());
+    let end = rest.find([',', ' ', ')']).unwrap_or(rest.len());
     rest[..end].parse().ok()
 }
 
