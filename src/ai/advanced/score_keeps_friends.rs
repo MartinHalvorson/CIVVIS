@@ -26,7 +26,14 @@
 //!    (`DiplomacyStatements_DeclareFriendship.xml:82-83`,
 //!    `LOC_DIPLO_DECLARE_FRIEND_CHOICE_POSITIVE`), except from the rival whose
 //!    city `score-seat-takes-what-pays` names as the campaign's
-//!    ([`AdvancedAi::score_keeps_friends_spares`]), which keeps the refusal.
+//!    ([`AdvancedAi::score_keeps_friends_spares`]), and a converter whose
+//!    faith stands at match point, which keep the refusal.
+//!    `friendship-spares-the-converter` otherwise does not hold an offer, a
+//!    renewal or an accept on this seat
+//!    ([`AdvancedAi::score_friends_spare_the_converter`]): live
+//!    `civvis-20261113T083412Z` let India's friendship lapse from t96 on
+//!    "their faith is the one we must fight", on a seat that founded no faith
+//!    and fights no faith war below match point.
 //!    The closer reports `"keeps_friends":"accept"` or `"spared"` on its
 //!    `diplomacy_choice` row.
 //! 2. **Offer.** `befriend-the-strongest`'s offer runs every turn instead of
@@ -67,12 +74,56 @@ impl AdvancedAi {
         Some(g.cities[&cid].owner)
     }
 
+    /// Whether `rival`'s faith stands at match point against us: the reading
+    /// `faith-war-at-match-point` and `score-seat-holds-its-faith-strikes`
+    /// use (every other living major follows it, or the religion lane reads
+    /// its match point).
+    pub(super) fn score_friend_faith_at_match_point(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> bool {
+        Self::we_are_the_last_holdout(g, pid, rival) || self.faith_at_match_point(g, rival)
+    }
+
+    /// Whether `friendship-spares-the-converter` keeps `rival` out of a
+    /// friendship on this seat. With this gene on a Score seat, only while
+    /// its faith stands at match point: the Score seat founded no faith in 52
+    /// games and holds its faith strike below match point
+    /// (`score-seat-holds-its-faith-strikes`), so the friendship forgoes no
+    /// war it would fight. Unchanged otherwise.
+    pub(super) fn score_friends_spare_the_converter(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> bool {
+        self.friendship_spares_the_converter
+            && self.friendship_would_shield_the_converter(g, pid, rival)
+            && (!self.score_keeps_friends_on(g)
+                || self.score_friend_faith_at_match_point(g, pid, rival))
+    }
+
     /// `score-seat-keeps-friends`: the live dialogue closer's lease, and the
-    /// native player it spares. `None` with the gene off or for another
-    /// target.
-    pub fn score_seat_keeps_friends_lease(&self, g: &Game) -> Option<Option<usize>> {
-        self.score_keeps_friends_on(g)
-            .then(|| self.score_keeps_friends_spares(g))
+    /// native players whose offers it refuses: the campaign's target and a
+    /// converter whose faith stands at match point. `None` with the gene off
+    /// or for another target.
+    pub fn score_seat_keeps_friends_lease(&self, g: &Game, pid: usize) -> Option<Vec<usize>> {
+        if !self.score_keeps_friends_on(g) {
+            return None;
+        }
+        let mut spared: Vec<usize> = self.score_keeps_friends_spares(g).into_iter().collect();
+        spared.extend(
+            g.players
+                .iter()
+                .filter(|other| other.id != pid && !other.is_minor && !other.is_barbarian)
+                .filter(|other| self.score_friends_spare_the_converter(g, pid, other.id))
+                .map(|other| other.id)
+                .filter(|id| !spared.contains(id))
+                .collect::<Vec<_>>(),
+        );
+        Some(spared)
     }
 
     /// Fewest tiles between a city of ours and a city of `other`; `i32::MAX`

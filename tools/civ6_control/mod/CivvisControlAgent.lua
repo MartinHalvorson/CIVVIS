@@ -22696,7 +22696,7 @@ local function applyOrders(player, pid, turn, rows)
 	local dialogueNoWar = false;
 	-- `score-seat-keeps-friends` (opt-in): the batch renews the dialogue
 	-- closer's lease; `subject` is the host player whose offer is refused.
-	local keepsFriends, keepsFriendsSpared = false, nil;
+	local keepsFriends, keepsFriendsSpared = false, {};
 	for i = #rows, 1, -1 do
 		local row = rows[i];
 		if row.kind == "combat_policy" and row.verb == "DOOMED_BLOW_VETO" then
@@ -22707,7 +22707,8 @@ local function applyOrders(player, pid, turn, rows)
 			table.remove(rows, i);
 		elseif row.kind == "combat_policy" and row.verb == "SCORE_SEAT_KEEPS_FRIENDS" then
 			keepsFriends = true;
-			keepsFriendsSpared = tonumber(row.subject);
+			local spared = tonumber(row.subject);
+			if spared ~= nil then keepsFriendsSpared[#keepsFriendsSpared + 1] = spared; end
 			table.remove(rows, i);
 		elseif row.kind == "combat_policy" and row.verb == "CONGRESS_GUARDS_THE_LEADER" then
 			-- `congress-guards-the-leader` (opt-in): the ballot reads it at the
@@ -22794,11 +22795,12 @@ local function applyOrders(player, pid, turn, rows)
 	-- one-turn lease there (CivvisControlAutoClose.lua) instead of a row flag.
 	if keepsFriends then
 		local leased = CivvisK.attempt(function()
-			LuaEvents.CivvisDialogueKeepsFriends(turn, keepsFriendsSpared);
+			LuaEvents.CivvisDialogueKeepsFriends(turn, table.concat(keepsFriendsSpared, ","));
 		end);
 		emit("combat_policy_applied", {
 			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
-			policy = "SCORE_SEAT_KEEPS_FRIENDS", leased = leased, spared = keepsFriendsSpared,
+			policy = "SCORE_SEAT_KEEPS_FRIENDS", leased = leased,
+			spared = table.concat(keepsFriendsSpared, ","),
 		});
 	end
 	if dialogueNoWar then
