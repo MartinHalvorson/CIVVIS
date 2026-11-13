@@ -344,3 +344,16 @@ since every simulated game is over before the live ones are.
 - **Not seed-paired across rounds.** Within a round every arm plays the same
   seeds; between rounds the seeds (round 3) or main (one opt-in gene, #5230)
   differ.
+- **Not faithful on rival walls.** These recipes reproduce the strength gap,
+  but they wall the rivals' cities far too early. The nearest rival major
+  city to ours has walls standing in 13 / 16 / 38 / 49% of live games at
+  turns 40 / 50 / 60 / 70 (117 games of 2026-11-12/13); on the Rome
+  war-faithful recipe the control reads 84 / 88 / 81 / 81% (32 worlds), and
+  the simulated rival also raises walls within two or three turns of a
+  declaration. `--rival-walls` cannot close it: at 0 the share is still
+  50-81%. The city's defence itself is close (28 / 33 / 40 / 42 simulated
+  against 25 / 27 / 40 / 45 live). So a simulated read of "no city taken"
+  before about turn 70 understates the live chance, and an early-capture
+  gene has to be priced on a live trial. Measured in
+  `docs/EDGE_UNIT_TAKES_THE_SOFT_CITY.md` (rounds 0-4 and the walls
+  calibration).
