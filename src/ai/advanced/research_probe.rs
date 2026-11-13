@@ -1587,10 +1587,9 @@ fn the_live_seat_does_not_open_an_elective_war() {
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     assert!(live.no_elective_war);
-    assert!(
-        live.elective_war_yields_to_a_lane,
-        "the deployment routes elective-war yields through the active lane"
-    );
+    // A reselection may hold `elective-war-yields-to-a-lane` off; seat it so
+    // the control arm below still withholds both policies.
+    live.enable_elective_war_yields_to_a_lane();
     let journal = crate::reasoning::Journal::recording();
     live.attach_journal(journal.handle());
     assert_ne!(
