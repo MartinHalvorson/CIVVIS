@@ -125,6 +125,52 @@ fn the_science_plaza_leaves_settlers_threats_and_other_aims_alone() {
     );
 }
 
+/// Live `civvis-20261113T164001Z`: Antium claimed its first Campus at t34 and
+/// the Hall and the Agency went back over it every turn until t58.
+#[test]
+fn the_tier_building_waits_for_its_citys_first_campus() {
+    let builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    let (mut g, city) = plaza_city(builder);
+    let site = g.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| {
+            let tile = &g.map.tiles[position];
+            *position != g.cities[&city].pos
+                && tile.district.is_none()
+                && !g.rules.is_water(tile)
+                && g.rules.is_passable(tile)
+        })
+        .unwrap();
+    let campus = Item::District {
+        district: crate::name!("campus"),
+        pos: site,
+    };
+    g.cities.get_mut(&city).unwrap().queue = vec![campus];
+    let ai = scientist(VictoryTarget::Science);
+    ai.claim_queue_for_the_plaza_tier(&mut g, 0, &plan());
+    assert_eq!(
+        head_district(&g, city).as_deref(),
+        Some("campus"),
+        "the first Campus keeps the head"
+    );
+    assert_eq!(g.players[0].counters.get("plaza_tier_claims"), None);
+
+    // Once a Campus stands, a district at the head is routine work again.
+    g.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("campus"), site);
+    ai.claim_queue_for_the_plaza_tier(&mut g, 0, &plan());
+    assert_eq!(head(&g, city).as_deref(), Some("ancestral_hall"));
+    assert_eq!(g.players[0].counters.get("plaza_tier_claims"), Some(&1));
+}
+
 /// One capital of ours with Political Philosophy's state workforce, no Plaza,
 /// `head` at the head of its queue, and a Campus when `campus`; population 7,
 /// so a Campus leaves it a free district slot.

@@ -45,6 +45,25 @@
 //! Campus comes first) takes the Plaza at the head of its queue under the
 //! same displacement rule, else the most productive city with a Plaza site
 //! and routine work at its head. Counter `plaza_district_claims`.
+//!
+//! ## The tier building waits for its city's first Campus
+//!
+//! The displacement rule calls every district routine work, a first Campus
+//! included, so in the Plaza city `campus-claims-the-free-slot` put the Campus
+//! at the head and this claim put the Ancestral Hall or the Intelligence
+//! Agency back over it in the same frame, turn after turn. Live Deity Rome
+//! (6-player Continents, Online, the nine Science-target games of 2026-11-13
+//! from 15:57Z): seven games journalled "the Plaza's next tier building goes
+//! ahead of campus", 60 city-turns in all, and in the seven cities where the
+//! Campus was claimed before it was placed it was placed 9, 14, 24, 25, 26,
+//! 30 and 32 turns after its first claim. In `civvis-20261113T164001Z` Antium,
+//! the second city, claimed its Campus at t34 and placed it at t58; in
+//! `161411Z` the Hall went ahead of the capital's own Campus (claimed t33,
+//! placed t47). The Plaza district already waits for the capital's Campus
+//! ("the Campus comes first"); the tier building now waits the same way: a
+//! Campus district at the head of a city that holds no Campus keeps its
+//! queue ([`AdvancedAi::plaza_city_owes_its_first_campus`]). Once the Campus
+//! stands, or with anything else at the head, nothing changes.
 
 use super::*;
 
@@ -145,6 +164,16 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether the head of `cid`'s queue is the city's first Campus: a Campus
+    /// district in a city that holds none. The tier building does not take
+    /// its place; see the module.
+    fn plaza_city_owes_its_first_campus(g: &Game, cid: u32) -> bool {
+        let city = &g.cities[&cid];
+        !g.city_has_district_family(city, crate::name!("campus"))
+            && matches!(city.queue.first(), Some(Item::District { district, .. })
+                if g.district_family(*district) == "campus")
+    }
+
     /// See the module: the Plaza city's next Science tier building claims its
     /// queue. Exact no-op with version 2 off or off a Science aim.
     pub(super) fn claim_queue_for_the_plaza_tier(
@@ -166,6 +195,7 @@ impl AdvancedAi {
             (!city.queue.contains(&item)
                 && plan.threatened_city != Some(cid)
                 && !attacked
+                && !Self::plaza_city_owes_its_first_campus(g, cid)
                 && city
                     .queue
                     .first()

@@ -118,6 +118,33 @@ fn a_settler_past_its_patience_takes_the_best_safe_site_in_reach() {
     );
 }
 
+/// A Science or a Diplomatic seat acts as the Score seat does: the Settler
+/// past its patience founds underfoot or takes a site within four tiles.
+#[test]
+fn every_peaceful_target_acts() {
+    for target in [VictoryTarget::Science, VictoryTarget::Diplomacy] {
+        let (mut game, uid, here) = walking_settler();
+        let patience = game.standard_duration(SCORE_FOUNDS_EARLY_PATIENCE_STANDARD);
+        let mut ai = seat(target, true);
+        assert!(ai.score_seat_founds_early_on(&game));
+        set_out(&mut ai, &game, uid, patience);
+        let acted = ai.score_seat_founds_early_step(&mut game, 0, uid);
+        assert_eq!(acted, Some(true), "{target:?} acts");
+        let founded_here = game
+            .player_city_ids(0)
+            .iter()
+            .any(|cid| game.cities[cid].pos == here);
+        let retargeted = ai
+            .settler_targets
+            .get(&uid)
+            .is_some_and(|site| game.wdist(*site, here) <= 4);
+        assert!(founded_here || retargeted, "{target:?}");
+    }
+    let game = walking_settler().0;
+    assert!(!seat(VictoryTarget::Domination, true).score_seat_founds_early_on(&game));
+    assert!(!seat(VictoryTarget::Science, false).score_seat_founds_early_on(&game));
+}
+
 /// After the early window the gene stands aside.
 #[test]
 fn the_gene_stands_aside_after_the_early_window() {
