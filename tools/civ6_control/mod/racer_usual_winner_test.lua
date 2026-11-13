@@ -89,8 +89,12 @@ check("another resolution keeps the ballot's choice",
 check("another resolution keeps a B too", pick("WC_RES_MERCENARY_COMPANIES", DISTRICTS, racer, 2, 1), "2/1")
 check("a Science seat keeps the first target",
     pick("WC_RES_MILITARY_ADVISORY", CLASSES, { VictoryLane = "science" }), "1/1")
-check("the Science congress racer keeps it too", pick("WC_RES_MILITARY_ADVISORY", CLASSES,
-    { VictoryLane = "science", ScienceCongressRacer = true }), "1/1")
+-- `science-seat-races-the-congress`: a Science seat racing the Congress is a
+-- racer here too; without the tag, or on another lane with it, it is not.
+check("a Science seat racing the Congress names Melee", pick("WC_RES_MILITARY_ADVISORY", CLASSES,
+    { VictoryLane = "science", ScienceCongressRacer = true }), "1/2")
+check("a Culture seat with the tag keeps the first target", pick("WC_RES_MILITARY_ADVISORY", CLASSES,
+    { VictoryLane = "culture", ScienceCongressRacer = true }), "1/1")
 check("no lane keeps the first target", pick("WC_RES_WORLD_IDEOLOGY", GOVERNMENTS, {}), "1/1")
 check("no config keeps the first target", pick("WC_RES_WORLD_IDEOLOGY", GOVERNMENTS, nil), "1/1")
 check("the racer switched off keeps the first target", pick("WC_RES_PATRONAGE", PEOPLE,

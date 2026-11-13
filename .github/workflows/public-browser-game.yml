@@ -1,0 +1,102 @@
+name: Observe actual public full games
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Exact 40-character commit currently served at www.civvis.ai
+        required: true
+        type: string
+      wasm_sha256:
+        description: Exact SHA256 of the currently served uncompressed module
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: public-browser-${{ github.ref }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        case: [default-7, default-8, default-9, six-7311001, six-7311002, six-7311003]
+        repeat: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - name: Test identity and all-original-game guards without playing games
+        run: python3 -m unittest discover -s tools -p test_site_public_browser_ci.py -v
+      - name: Install fixed Chrome without automatic updates
+        run: |
+          curl --fail --location --retry 3 \
+            https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.80/mac-arm64/chrome-mac-arm64.zip \
+            --output "$RUNNER_TEMP/civvis-chrome.zip"
+          shasum -a 256 "$RUNNER_TEMP/civvis-chrome.zip"
+          ditto -x -k "$RUNNER_TEMP/civvis-chrome.zip" "$RUNNER_TEMP/civvis-chrome"
+          echo "CIVVIS_BROWSER_EXECUTABLE=$RUNNER_TEMP/civvis-chrome/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing" >> "$GITHUB_ENV"
+      - name: Verify original worker response capture without playing a game
+        run: |
+          CIVVIS_PUBLIC_TRANSPORT_SMOKE_CHROME="$CIVVIS_BROWSER_EXECUTABLE" \
+            python3 -m unittest discover -s tools -p test_site_public_browser_ci.py \
+              -k WorkerNetworkIntegration -v
+      - name: Observe one original full natural normal game on the real public site
+        env:
+          PUBLIC_SOURCE: ${{ inputs.source }}
+          PUBLIC_MODULE: ${{ inputs.wasm_sha256 }}
+          PUBLIC_CASE: ${{ matrix.case }}
+          PUBLIC_REPEAT: ${{ matrix.repeat }}
+        run: |
+          python3 tools/site_public_browser_ci.py \
+            --source "$PUBLIC_SOURCE" --wasm-sha256 "$PUBLIC_MODULE" \
+            --case "$PUBLIC_CASE" --repeat "$PUBLIC_REPEAT" \
+            --chrome "$CIVVIS_BROWSER_EXECUTABLE" --out observation
+      - name: Preserve every original observation, including partial failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: civvis-public-game-${{ matrix.case }}-${{ matrix.repeat }}
+          path: observation
+          if-no-files-found: error
+          retention-days: 14
+
+  audit-originals:
+    needs: observe
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: civvis-public-game-*
+          path: originals
+      - name: Require all twelve original normal games and unchanged release
+        run: python3 tools/site_public_browser_ci.py --summarize originals --out summary
+      - name: Preserve complete audit summary
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: civvis-public-game-summary
+          path: summary
+          if-no-files-found: warn
+          retention-days: 14
