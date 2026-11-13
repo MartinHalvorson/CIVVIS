@@ -1277,6 +1277,13 @@ impl AdvancedAi {
                 _ if self.religion_seat_civic_goal(g, pid).is_some() => {
                     self.religion_seat_civic_goal(g, pid)
                 }
+                // `diplo-seat-statue-civic-first`: Civil Engineering, the
+                // Statue of Liberty's civic, ahead of the government ladder
+                // that took it last. See `advanced/diplo_statue_harbor.rs`.
+                // No-op with the gene off.
+                _ if self.diplo_statue_civic_goal(g, pid).is_some() => {
+                    self.diplo_statue_civic_goal(g, pid)
+                }
                 _ if self.government_ladder_goal(g, pid, objective).is_some() => {
                     self.government_ladder_goal(g, pid, objective)
                 }

@@ -1777,6 +1777,11 @@ impl AdvancedAi {
         if !shield_asked {
             self.propose_strategic_alliance(g, pid, plan, denied_partner);
         }
+        // `diplo-seat-allies-every-friend`: on a Diplomatic seat, one declared
+        // friend we hold no alliance with is asked for a kind still free on
+        // both sides; it stands down on a turn a desk above asked. See
+        // `advanced/diplo_allies_every_friend.rs`.
+        self.diplo_allies_every_friend_step(g, pid, denied_partner);
         // `embassy-finds-the-capital`: an Embassy to a rival whose original
         // capital we have never seen, the plan's target first; the stock
         // cadence below opens no second session on a turn it sends one. See

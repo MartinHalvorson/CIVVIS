@@ -24,6 +24,31 @@
 //! Theater claim's rule), with the other claims' heads kept. The delegated
 //! governor's rescoring leaves it alone ([`AdvancedAi::statue_harbor_holds`]).
 //!
+//! **`diplo-seat-statue-civic-first`** (2026-11-13, live Deity Rome, 6-player
+//! Continents, Online). The Harbor is there "the turn Civil Engineering
+//! lands", and the civic lands late. Civil Engineering needs Mercantilism and
+//! nothing else; `civvis-20261113T195128Z` held Mercantilism at t82 and Civil
+//! Engineering at t118, `204218Z` at t93 and t134. In between the civic slot
+//! took Diplomatic Service, The Enlightenment, Nationalism, Colonialism,
+//! Natural History and Scorched Earth, each "the most valuable step toward
+//! class struggle" (`government-ladder-2`): `civic_value` prices Civil
+//! Engineering without its wonder, so it came last of the seven. It is 920
+//! Culture (460 at Online), about twelve turns at the seat's 35-40 a turn.
+//! The Statue then stood at t152 and t166, and the day's five Diplomatic seats
+//! ended on 11, 16, 17, 19 and 16 of the twenty points, each game lost to a
+//! rival's Science victory at t182-199.
+//!
+//! So while the active target is Diplomacy and the lane is not lost, the
+//! Statue is still open, the seat holds a tier-two government's civic (Divine
+//! Right, Exploration or Reformed Church: the ladder's first rung is not
+//! delayed) and a city of ours holds or queues a Harbor that leaves the Statue
+//! a site, the civic goal is Civil Engineering until it is adopted
+//! ([`AdvancedAi::diplo_statue_civic_goal`]): ahead of the government ladder,
+//! behind the emergency and window goals. The steps toward it (Feudalism,
+//! Guilds, Medieval Faires, Humanism, Mercantilism) are the ladder's own road
+//! in the same order, so only what follows Mercantilism moves. Grep the
+//! journal for `toward civil engineering`. Off, nothing changes.
+//!
 //! **`science-seat-builds-the-statue`** (2026-11-06): a seat aiming at Science
 //! does the same from [`SCIENCE_STATUE_HARBOR_TURN`]. Deity 11-05, 51 games: the
 //! Statue was on the buildable list in 20, mostly for want of a Harbor by the
@@ -70,6 +95,36 @@ impl AdvancedAi {
                 .cities
                 .values()
                 .any(|city| city.wonders.contains_key(&statue))
+    }
+
+    /// `diplo-seat-statue-civic-first`: Civil Engineering as the civic goal
+    /// of a Diplomatic seat whose Statue of Liberty is still open, whose
+    /// first tier-two government civic is in hand and one of whose cities
+    /// holds or queues the Statue's Harbor. `None` with the gene off, on
+    /// another target, on a lost lane, and once the civic is adopted. See
+    /// the module.
+    pub(super) fn diplo_statue_civic_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        if !self.diplo_seat_statue_civic_first
+            || self.lane_lost
+            || self.active_victory_target(g) != Some(VictoryTarget::Diplomacy)
+        {
+            return None;
+        }
+        let player = &g.players[pid];
+        if player.civics.contains(&crate::name!("civil_engineering")) {
+            return None;
+        }
+        let tier_two = ["divine_right", "exploration", "reformed_church"]
+            .iter()
+            .any(|civic| player.civics.contains(&Name::new(civic)));
+        if !tier_two || !Self::statue_still_open(g) {
+            return None;
+        }
+        g.player_city_ids(pid)
+            .into_iter()
+            .filter_map(|cid| g.cities.get(&cid))
+            .any(|city| Self::has_statue_harbor(g, city))
+            .then_some("civil_engineering")
     }
 
     /// Whether a Harbor at `harbor` leaves the Statue of Liberty a site: a free
