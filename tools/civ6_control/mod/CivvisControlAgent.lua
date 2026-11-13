@@ -11009,7 +11009,8 @@ local function exportState(player, pid, turn, frame, eventKind)
 					sources[#sources + 1] = tostring(line);
 				end
 				out[#out + 1] = {
-					type = tostring(crisis.EmergencyType),
+					-- The row's NAME: see `CivvisEmergencyTypeName`.
+					type = CivvisEmergencyTypeName(crisis.EmergencyType),
 					name = tostring(crisis.NameText or ""),
 					target = tonumber(crisis.TargetID) or -1,
 					target_city = tostring(crisis.TargetCityName or ""),
@@ -18954,18 +18955,33 @@ CivvisCongressRacer = function(config)
 		and config.DiploRacer ~= false);
 end
 
+-- ★ FOUR COUNTS RE-READ ON THE DEITY LANE (106 live games, 2026-11-12/13;
+-- option A on ourselves, the rivals' recorded votes held fixed, a tie a loss;
+-- Favor at the Online price 2k(k-1)). The October table priced two of the
+-- player-target resolutions out of the 60 cap, so the racer cast the free
+-- vote on them, and under-bought two more:
+--   * Public Relations (0.94 a game): 2 votes carried 54%, 3 carry 93% for
+--     8 Favor more.
+--   * Arms Control (0.40): 3 carried 88%, 4 carry 100% for 12 more.
+--   * Trade Treaty (1.05): 8 votes are 112 Favor, over the cap, so the free
+--     vote stood (25%); 6 votes are 60 and carry 63%.
+--   * Migration Treaty (0.60): 11 votes are 220, over the cap (14%); 6 are
+--     60 and carry 59%. civvis-20261113T195128Z stood on 19 points at t193
+--     with 125 Favor left and lost this one to four blocks of 3.
+-- Together +1.08 points a game for 111 Favor a game; the seat ended its
+-- Diplomatic games with 130 to 350 unspent. Border Control stays at 2 (97%).
 CivvisRacerResolutionVotes = function(rtype, favor, costs, config, cap)
 	config = type(config) == "table" and config or {};
 	if type(costs) ~= "table" then return 1, 0; end
 	local need = ({
 		WC_RES_MERCENARY_COMPANIES = 2, WC_RES_WORLD_RELIGION = 2,
-		WC_RES_BORDER_CONTROL = 2, WC_RES_PUBLIC_RELATIONS = 2,
+		WC_RES_BORDER_CONTROL = 2, WC_RES_PUBLIC_RELATIONS = 3,
 		WC_RES_SOVEREIGNTY = 3, WC_RES_URBAN_DEVELOPMENT = 3,
 		WC_RES_MILITARY_ADVISORY = 3, WC_RES_ESPIONAGE_PACT = 3,
-		WC_RES_ARMS_CONTROL = 3, WC_RES_HERITAGE_ORG = 4,
+		WC_RES_ARMS_CONTROL = 4, WC_RES_HERITAGE_ORG = 4,
 		WC_RES_GLOBAL_ENERGY_TREATY = 4, WC_RES_DEFORESTATION_TREATY = 4,
-		WC_RES_TRADE_TREATY = 8, WC_RES_PATRONAGE = 10,
-		WC_RES_MIGRATION_TREATY = 11, WC_RES_PUBLIC_WORKS = 13,
+		WC_RES_TRADE_TREATY = 6, WC_RES_PATRONAGE = 10,
+		WC_RES_MIGRATION_TREATY = 6, WC_RES_PUBLIC_WORKS = 13,
 		WC_RES_WORLD_IDEOLOGY = 15, WC_RES_LUXURY = 16,
 	})[tostring(rtype)] or 4;
 	-- See `CivvisHeritageDenial`: a racer's tourism is worth nothing, so it
@@ -18980,6 +18996,47 @@ CivvisRacerResolutionVotes = function(rtype, favor, costs, config, cap)
 		return 1, 0;
 	end
 	return need, price;
+end
+
+-- ★★ THE RACER NAMES THE TARGET THAT USUALLY WINS, NOT THE FIRST ONE LISTED.
+--
+-- A Congress Participation point needs our vote to match the winning option
+-- AND target. On the resolutions with no branch of their own the ballot votes
+-- option A on `PossibleTargets[1]`, and for three of them the first target is
+-- one the field almost never picks. `wc_outcome`, 105 live games of
+-- 2026-11-12/13, the rivals' recorded votes held fixed and a tie counted as
+-- a loss:
+--   * Military Advisory (86, 0.82 a game): as cast (A on Recon, the first
+--     listed) our vote matched 3. The free vote on Melee matches 78 (91%) and
+--     the three votes the racer buys 86 (100%).
+--   * Patronage (82): as cast (A on the Great General) 0. The free vote on
+--     the Great Scientist matches 20 (24%).
+--   * World Ideology (37): as cast (A on Autocracy) 0. The free vote on
+--     Fascism matches 16 (43%).
+-- That is 1.1 points a game, on a Diplomatic seat that ended 1 to 4 short of
+-- twenty in three of four games. With the three targets learned on the first
+-- half of those games and tested on the second: 100% (92% with the free
+-- vote), 19% and 41%.
+--
+-- Only a Diplomatic racer (`CivvisDiploRacer`): another seat's participation
+-- points buy nothing. Only option A, which is what the ballot already cast;
+-- only when the target is offered; the vote count is still
+-- `CivvisRacerResolutionVotes`'s. Off with `RacerUsualWinner = false`.
+-- Returns `option, selection` (1-based), unchanged when it does not apply.
+CivvisRacerUsualWinner = function(rtype, targets, config, option, selection)
+	if not CivvisDiploRacer(config) or config.RacerUsualWinner == false then
+		return option, selection;
+	end
+	local want = ({
+		WC_RES_MILITARY_ADVISORY = "LOC_PROMOTION_CLASS_MELEE_NAME",
+		WC_RES_PATRONAGE = "LOC_GREAT_PERSON_CLASS_SCIENTIST_NAME",
+		WC_RES_WORLD_IDEOLOGY = "LOC_GOVERNMENT_FASCISM_NAME",
+	})[tostring(rtype)];
+	if want == nil then return option, selection; end
+	for idx, target in pairs(type(targets) == "table" and targets or {}) do
+		if type(idx) == "number" and target == want then return 1, idx; end
+	end
+	return option, selection;
 end
 
 -- ★★ HERITAGE ORGANIZATION: NO TOURISM FROM THE CULTURE LEADER'S GREAT WORKS.
@@ -25827,6 +25884,11 @@ local function tick()
 					elseif BAN_FIRST[rtype] then
 						option = 2;
 					end
+					-- See `CivvisRacerUsualWinner`: Melee, the Great Scientist and
+					-- Fascism in place of the first target listed.
+					if not racerSlowed then
+						option, selection = CivvisRacerUsualWinner(rtype, targets, cfg, option, selection);
+					end
 					-- See `CivvisParticipationDenialOption`: against a leader on
 					-- the denial floor, the option its own vote is predicted
 					-- not to take, with three votes when Favor allows. On a
@@ -25917,6 +25979,11 @@ local function tick()
 						selection = selection - 1, target = targets[selection] };
 				end
 			end
+			-- The session's proposals get their vote in the same submission: a
+			-- vote in favour is what joins an Aid Request or a Scored
+			-- Competition (`CivvisCongressJoin`). `pcall`, so nothing in it can
+			-- keep the congress turn from being submitted.
+			pcall(CivvisCongressJoin.cast, pid, ballotTurn);
 			CivvisK.guard(function()
 				UI.RequestPlayerOperation(pid, PlayerOperations.WORLD_CONGRESS_SUBMIT_TURN, {});
 			end);
@@ -26892,6 +26959,206 @@ local function onPlayerDefeat(player, defeat, eventID)
 		ours = (player == pid),
 	});
 end
+
+-- ★★★★ THE TRACKER'S `EmergencyType` IS A ROW NUMBER, AND CIVVIS READS A NAME.
+--
+-- `GetEmergencyInfoTable` gives each crisis its `EmergencyType` as the row
+-- index of `GameInfo.EmergencyAlliances`; the shipped tracker turns it into
+-- the name with `GameInfo.EmergencyAlliances[crisis.EmergencyType].EmergencyType`
+-- (DLC/Expansion2/UI/Additions/WorldCrisisTracker.lua:65). The state export
+-- wrote `tostring()` of the number. Nobody saw it, because the seat was in no
+-- competition and the list was always empty; the first game to join one
+-- (civvis-20261113T204218Z, t115, after `CivvisCongressJoin`) exported
+-- `"type": "11"` for the World's Fair and `"14"` for the World Games. The
+-- mirror matches `EMERGENCY_WORLD_GAMES` (`apply_host_competitions`,
+-- `Game::host_competition`), so the competition it was finally a member of
+-- still did not exist for the planner: no Training Athletes project was
+-- offered or priced.
+--
+-- A name passes through; a number the table does not know stays the number,
+-- as text, so the row still says what the host said. Bare global for the
+-- offline regression.
+CivvisEmergencyTypeName = function(raw)
+	if raw == nil then return tostring(raw); end
+	if type(raw) == "string" and raw:find("^EMERGENCY_") ~= nil then return raw; end
+	local name = try(function()
+		local row = GameInfo.EmergencyAlliances[raw];
+		return row and row.EmergencyType or nil;
+	end, nil);
+	if type(name) == "string" and name ~= "" then return name; end
+	return tostring(raw);
+end
+
+-- ★★★★★ A SCORED COMPETITION IS JOINED BY VOTING FOR IT, AND THE SEAT NEVER DID.
+--
+-- Gathering Storm admits a civilization to an Aid Request or a Scored
+-- Competition by its World Congress vote, not by the World Crisis prompt the
+-- handler below answers. The shipped text says so: "Vote for this Discussion.
+-- If the Discussion passes, you will join the resulting Scored Competition.
+-- Your first vote is free." and "players who vote in favor of the Scored
+-- Competition will compete to contribute to the cause"
+-- (DLC/Expansion2/Text/en_US).
+--
+-- Measured over the 104 live games (134 segments) of 2026-11-12/13:
+-- `Events.EmergencyAvailable` produced no `*_join` row at all. The review
+-- recorded our vote on 474 proposals of the kinds below: 0 on every Aid
+-- Request (206), and −1 on every World's Fair (94), World Games (94), Climate
+-- Accords (68) and Space Station (12) — the one vote against, on proposals
+-- that passed 263 times of 268. `state.emergencies` was `[]` in every state
+-- row of every game, so nothing downstream (the Send Aid project, the aid
+-- gift, `competition-victory-points`) has ever had a competition to price.
+-- The four Diplomatic seats of that window ended on a median 16.5 of the 20
+-- points, with a median 9 first-place points paid out in competitions they
+-- were not in; civvis-20261113T193612Z ended on 17 having sat out a World's
+-- Fair, a World Games and a Climate Accords whose first places pay 4.
+--
+-- The shipped screen sends one WORLD_CONGRESS_DISCUSSION_VOTE per proposal
+-- before WORLD_CONGRESS_SUBMIT_TURN (WorldCongressPopup.lua:2256-2262:
+-- PARAM_PLAYER_ONE = Sender, PARAM_PLAYER_TWO = Target,
+-- PARAM_WORLD_CONGRESS_VOTES = votes × direction). `voteWorldCongress` sent
+-- the resolution votes and the submit only. `cast` adds the free vote, in
+-- favour, from the same place.
+--
+-- ⚠ WHICH KINDS IS BY THE VICTORY LANE, because membership is not free
+-- downstream. The planner prices a competition's project on every lane
+-- (`host_competition_score_value`: 38 a point before urgency, so a 200-point
+-- Send Aid project outbids a space-race project), and Climate Accords is
+-- scored by decommissioning our own power plants. So a seat joins only where
+-- first place pays something its lane uses:
+--   * a Diplomatic seat joins all of them (1 or 2 of the 20 points each);
+--   * a Science seat joins the Space Station (space-race production,
+--     expedition speed) and the Physics prize (technology boosts);
+--   * a Culture seat joins the World's Fair, the World Games and the
+--     Literature prize (culture, Tourism, Rock Bands);
+--   * every other seat votes as before.
+-- Never the war emergencies (Military, City-State, Religious, Nuclear,
+-- Betrayal): a vote for one of those is a declaration of war.
+--
+-- The `AutoJoin*` flags the prompt handler below reads turn a kind off here
+-- too. A proposal the host disables for us, one whose voting blocker forbids
+-- the up vote (`GameInfo.VotingBlockers`: an unmet target, not invited), our
+-- own Aid Request, and an Aid Request for a rival we are at war with (the
+-- score sources deduct for it) are left alone.
+--
+-- A bare global for the offline regression, like the handler below.
+CivvisCongressJoin = {
+	kinds = {
+		WC_EMERGENCY_REQUEST_AID = { flag = "AutoJoinAidRequests", aid = true },
+		WC_EMERGENCY_MILITARY_AID_REQUEST = { flag = "AutoJoinAidRequests", aid = true },
+		WC_EMERGENCY_CLIMATE_ACCORDS = { flag = "AutoJoinClimateAccords" },
+		WC_EMERGENCY_WORLD_FAIR = { flag = "AutoJoinWorldsFair", culture = true },
+		WC_EMERGENCY_WORLD_GAMES = { flag = "AutoJoinWorldGames", culture = true },
+		WC_EMERGENCY_SPACE_STATION = { flag = "AutoJoinSpaceStation", science = true },
+		WC_EMERGENCY_NOBEL_PRIZE_LITERATURE = { flag = "AutoJoinNobelPrizes", culture = true },
+		WC_EMERGENCY_NOBEL_PRIZE_PEACE = { flag = "AutoJoinNobelPrizes" },
+		WC_EMERGENCY_NOBEL_PRIZE_PHYSICS = { flag = "AutoJoinNobelPrizes", science = true },
+	},
+};
+
+-- Which of a session's proposals get the free vote in favour, and why each of
+-- the others of these kinds does not. `categories` is
+-- `GetProposals(pid).Proposals`: `[proposalType] = { ProposalsOfType = {...} }`,
+-- each proposal `{ TypeName, Sender, Target, Disabled, VotingRestriction }`.
+-- Pure: `atWarWith(target)` and `blockerOf(restriction)` are the host reads.
+-- Both lists are sorted, so the order of `pairs` never reaches the log.
+CivvisCongressJoin.choose = function(pid, categories, config, atWarWith, blockerOf)
+	local asks, skipped = {}, {};
+	config = type(config) == "table" and config or {};
+	local lane = config.VictoryLane;
+	for _, category in pairs(type(categories) == "table" and categories or {}) do
+		for _, prop in pairs(type(category) == "table" and type(category.ProposalsOfType) == "table"
+				and category.ProposalsOfType or {}) do
+			local name = type(prop) == "table" and tostring(prop.TypeName or "") or "";
+			local kind = CivvisCongressJoin.kinds[name];
+			if kind ~= nil then
+				local target = tonumber(prop.Target) or -1;
+				local why = nil;
+				if config[kind.flag] == false then
+					why = "disabled";
+				elseif lane ~= "diplomatic" and not (lane ~= nil and kind[lane] == true) then
+					why = "not_this_lane";
+				elseif prop.Disabled then
+					why = "proposal_disabled";
+				elseif target == pid then
+					why = "target_is_local";
+				else
+					local blocker = blockerOf ~= nil and blockerOf(prop.VotingRestriction) or nil;
+					if type(blocker) == "table" and blocker.NoUpvote then
+						why = "no_upvote";
+					elseif kind.aid and target >= 0 and atWarWith ~= nil and atWarWith(target) then
+						why = "at_war";
+					end
+				end
+				local row = { type = name, target = target, sender = tonumber(prop.Sender), why = why };
+				if why == nil then
+					-- The operation takes the host's own values back, as the
+					-- shipped screen passes them (a competition has no Sender).
+					row.proposal = prop;
+					asks[#asks + 1] = row;
+				else
+					skipped[#skipped + 1] = row;
+				end
+			end
+		end
+	end
+	local function order(a, b)
+		if a.type ~= b.type then return a.type < b.type; end
+		return a.target < b.target;
+	end
+	table.sort(asks, order);
+	table.sort(skipped, order);
+	return asks, skipped;
+end;
+
+-- Cast them: called by `voteWorldCongress` just before it submits the congress
+-- turn, in a regular session (the scheduled competitions) and in a special one
+-- (the Aid Requests). Once a turn. Reports `wc_join_vote`; the next
+-- `wc_outcome` row's `proposals[].ours` (1, where it was 0 or −1) and a
+-- non-empty `state.emergencies` with `ours.member` are what prove it landed.
+CivvisCongressJoin.cast = function(pid, turn)
+	if CivvisCongressJoin.turn == turn then return 0; end
+	local categories = try(function()
+		return Game.GetWorldCongress():GetProposals(pid).Proposals;
+	end, nil);
+	if type(categories) ~= "table" then return 0; end
+	local player = try(function() return Players[pid]; end, nil);
+	local diplomacy = player and try(function() return player:GetDiplomacy(); end, nil) or nil;
+	local asks, skipped = CivvisCongressJoin.choose(pid, categories, cfg,
+		function(target)
+			return diplomacy ~= nil
+				and try(function() return diplomacy:IsAtWarWith(target); end, false) == true;
+		end,
+		function(restriction)
+			if restriction == nil then return nil; end
+			return try(function() return GameInfo.VotingBlockers[restriction]; end, nil);
+		end);
+	if #asks == 0 and #skipped == 0 then return 0; end
+	local operation = try(function() return PlayerOperations.WORLD_CONGRESS_DISCUSSION_VOTE; end);
+	local senderParam = try(function() return PlayerOperations.PARAM_PLAYER_ONE; end);
+	local targetParam = try(function() return PlayerOperations.PARAM_PLAYER_TWO; end);
+	local votesParam = try(function() return PlayerOperations.PARAM_WORLD_CONGRESS_VOTES; end);
+	local sent = 0;
+	for _, ask in ipairs(asks) do
+		local prop = ask.proposal;
+		ask.proposal = nil;
+		if operation == nil or senderParam == nil or targetParam == nil or votesParam == nil then
+			ask.sent, ask.why = false, "api_unavailable";
+		else
+			local params = {};
+			params[senderParam] = prop.Sender;
+			params[targetParam] = prop.Target;
+			params[votesParam] = 1;
+			ask.sent = CivvisK.attempt(function()
+				UI.RequestPlayerOperation(pid, operation, params);
+			end) and true or false;
+			if ask.sent then sent = sent + 1; else ask.why = "throw"; end
+		end
+	end
+	if sent > 0 then CivvisCongressJoin.turn = turn; end
+	emit("wc_join_vote", { turn = turn, lane = cfg.VictoryLane, sent = sent,
+	                       votes = asks, skipped = skipped });
+	return sent;
+end;
 
 -- ★★★★★ JOIN A SCORABLE WORLD CRISIS BEFORE TRYING TO WIN IT.
 --
