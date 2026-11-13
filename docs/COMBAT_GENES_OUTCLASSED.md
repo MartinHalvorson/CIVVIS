@@ -41,6 +41,12 @@ in opposite directions on the two recipes.
   --rival-chairs 5 --rival-pace --rival-war-pace 100 --target-mix score
   --seat-civ Rome --turns 170 --rival-host-tactics`.
 
+**A limit of these recipes found later.** They wall the rivals' cities far
+too early (84-88% of the nearest rival cities at turns 40-50 against 13-16%
+live), so the "cities taken" columns below understate what an attack before
+about turn 70 could do live. Units and cities lost, which this screen is
+about, do not depend on it. See "What it is not" in `docs/EDGE_LEDGER.md`.
+
 **Genome: the one the live seat plays, not the force-on list read alone.**
 The live seat plays the deployment genome (the gene ledger's defaults) with
 the armed set (`~/.civvis-live-force-on`) on top; a live run's `why.log`
