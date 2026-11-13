@@ -53,7 +53,9 @@ const LIVE_GOLD: &[&str] = &[
     "score-seat-founds-early",
     "score-seat-takes-what-pays",
 ];
-const SEED_BASE: u64 = 51_000;
+/// The first seed this run plays: round one played 51000..51031 and round
+/// two 51032..51063 (each round's pairs share one build of main).
+const SEED_BASE: u64 = 51_032;
 const DEFAULT_SEEDS: u64 = 32;
 const TURNS: u32 = 170;
 const MARKS: [u32; 2] = [100, 150];
@@ -393,7 +395,7 @@ fn upgrade_card_worlds() {
     let at = |slot: usize| move |r: &WorldRow| r.marks[slot].reached;
     out.push(String::new());
     out.push("Paired over seeds (on minus off):".to_string());
-    let whole: [(&str, Read); 9] = [
+    let whole: [(&str, Read); 10] = [
         ("units killed", &|r| f64::from(r.killed)),
         ("units lost", &|r| f64::from(r.lost)),
         ("units lost to majors", &|r| f64::from(r.lost_to_majors)),
@@ -401,6 +403,7 @@ fn upgrade_card_worlds() {
         ("cities taken", &|r| r.cities_taken as f64),
         ("upgrades bought", &|r| r.upgrades as f64),
         ("strength bought", &|r| r.strength_bought),
+        ("Gold on upgrades", &|r| r.upgrade_gold),
         ("seat turns holding the card", &|r| r.card_turns as f64),
         ("seat alive at the end", &|r| f64::from(u8::from(r.alive))),
     ];
