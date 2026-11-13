@@ -60,7 +60,11 @@ impl AdvancedAi {
         if !self.score_take_names_a_city(g) {
             return None;
         }
-        self.score_take_state.named.map(|(owner, _, _)| owner)
+        // The city is named by its tile (the live mirror renumbers cities
+        // and players' ids hold): its owner this frame is the rival spared.
+        let (pos, _, _) = self.score_take_state.named.as_ref()?;
+        let cid = g.city_at(*pos)?;
+        Some(g.cities[&cid].owner)
     }
 
     /// `score-seat-keeps-friends`: the live dialogue closer's lease, and the

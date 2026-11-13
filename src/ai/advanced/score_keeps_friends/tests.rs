@@ -105,7 +105,11 @@ fn the_campaigns_target_and_a_war_are_never_asked() {
     let mut ai = seat(VictoryTarget::Score, true);
     ai.enable_score_seat_takes_what_pays();
     let target_city = game.player_city_ids(1)[0];
-    ai.score_take_state.named = Some((1, target_city, 10.0));
+    ai.score_take_state.named = Some((
+        game.cities[&target_city].pos,
+        game.players[1].civ.clone(),
+        10.0,
+    ));
     assert_eq!(ai.score_keeps_friends_spares(&game), Some(1));
     assert_eq!(ai.score_seat_keeps_friends_lease(&game), Some(Some(1)));
     game.at_war.insert((0, 2));
