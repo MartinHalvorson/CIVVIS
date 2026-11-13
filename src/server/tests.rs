@@ -7625,6 +7625,17 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "const PLAYER_HUD_RATED_TABLE_HOLDS = [\"win_delta\", \"win_start\", \"elo\", \"player\"];"
     ));
     assert!(EMBEDDED_INDEX.contains("for (const key of playerHudShedOrder()) {"));
+    // The mirror of a Civilization VI game names its seats without rating
+    // them ("Civ 6 Deity AI"), and those names are what the operator reads
+    // the column for, so a named table holds Player as a rated one does. The
+    // first cut shed the column at a 1728 px window the moment the mirror
+    // stopped borrowing the site agents' ratings (real page, 2026-11-13).
+    assert!(EMBEDDED_INDEX.contains(
+        "function namedTableInPlay() {\n  return Boolean(state?.players?.some(player => player.ai_username));\n}"
+    ));
+    assert!(EMBEDDED_INDEX.contains("if (!namedTableInPlay()) return PLAYER_HUD_SHED_ORDER;"));
+    assert!(EMBEDDED_INDEX
+        .contains("function syncRatedPlayerFloors(hud) {\n  if (!namedTableInPlay()) {"));
     // Arena Stats keeps a record per player strategy: a Civ AI Agent by its
     // handle or a person, never the house fleet's per-game generated name.
     assert!(EMBEDDED_INDEX.contains("strategies: {label: \"Strategies\", table: \"agents\","));

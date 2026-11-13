@@ -145,6 +145,40 @@ class FollowTest(unittest.TestCase):
         self.assertEqual(json.loads(follow.mirror_frame_body(game)),
                          {"game": game, "mirror_player": 0})
 
+    def test_frame_publish_names_the_lane_our_seat_plays(self):
+        """The page labels our seat with the strategy actually being played,
+        so the frame carries the decider's lane beside the seat it pins."""
+        game = {"turn": 42}
+        self.assertEqual(
+            json.loads(follow.mirror_frame_body(game, "diplomatic")),
+            {"game": game, "mirror_player": 0, "mirror_strategy": "diplomatic"})
+        # No lane known yet: the frame is the one an older server expects.
+        self.assertEqual(json.loads(follow.mirror_frame_body(game, None)),
+                         {"game": game, "mirror_player": 0})
+
+    def test_the_lane_is_read_from_the_deciders_own_first_record(self):
+        with tempfile.TemporaryDirectory() as run_dir:
+            # Before the decider has written anything there is no lane, and
+            # the miss is not remembered.
+            self.assertIsNone(follow.decider_lane(run_dir))
+            with open(os.path.join(run_dir, "why.log"), "w",
+                      encoding="utf-8") as handle:
+                handle.write("[why] a line that is not a record\n")
+                handle.write(json.dumps({"kind": "other", "victory": "score"})
+                             + "\n")
+                handle.write(json.dumps({"kind": "genome", "strategy": "stock",
+                                         "victory": "diplomatic"}) + "\n")
+            self.assertEqual(follow.decider_lane(run_dir), "diplomatic")
+            # Found once, it is not read again: the log only grows.
+            os.unlink(os.path.join(run_dir, "why.log"))
+            self.assertEqual(follow.decider_lane(run_dir), "diplomatic")
+        with tempfile.TemporaryDirectory() as run_dir:
+            with open(os.path.join(run_dir, "why.log"), "w",
+                      encoding="utf-8") as handle:
+                handle.write(json.dumps({"kind": "genome", "victory": None})
+                             + "\n")
+            self.assertIsNone(follow.decider_lane(run_dir))
+
     def test_visible_server_refreshes_an_existing_tab_after_starting(self) -> None:
         class LiveProcess:
             pid = 4242

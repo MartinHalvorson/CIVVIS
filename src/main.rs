@@ -1945,7 +1945,11 @@ fn play_command(args: Vec<String>) {
             civs: play_options.civs,
             supervised: args.iter().any(|a| a == "--supervised"),
         },
-        mirrored.or(resumed),
+        match (mirrored, resumed) {
+            (Some(game), _) => civvis::server::Opening::Mirror(game),
+            (None, Some(game)) => civvis::server::Opening::Resumed(game),
+            (None, None) => civvis::server::Opening::Generated,
+        },
         args.iter().any(|a| a == "--paused"),
     );
 }

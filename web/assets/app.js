@@ -2337,6 +2337,11 @@ function playerHudEloValue(player) {
 function ratedTableInPlay() {
   return Boolean(state?.players?.some(player => playerHudEloValue(player) !== null));
 }
+// A named table says who is really playing each seat: those rated agents, or
+// the mirror of a Civilization VI game ("Civ 6 Deity AI", "CIVVIS Science").
+function namedTableInPlay() {
+  return Boolean(state?.players?.some(player => player.ai_username));
+}
 
 // Both classes of device, as one arsenal.
 function playerNuclearStockpile(player) {
@@ -2383,11 +2388,12 @@ const PLAYER_HUD_SHED_ORDER = [
 // holds each civilization, what it is rated, and the odds that rating gave
 // it. Those four columns are the last to step aside there, the name last of
 // all, and everything else gives way in the order above (so the leader's
-// name goes first). At any other table a player's name is a handle generated
-// for the one game and is the first to go, as that list says.
+// name goes first). The mirror of a Civilization VI game holds them too: its
+// names say which seats are that game's own AI. At any other table a player's
+// name is a handle generated for the one game and is the first to go.
 const PLAYER_HUD_RATED_TABLE_HOLDS = ["win_delta", "win_start", "elo", "player"];
 function playerHudShedOrder() {
-  if (!ratedTableInPlay()) return PLAYER_HUD_SHED_ORDER;
+  if (!namedTableInPlay()) return PLAYER_HUD_SHED_ORDER;
   return [...PLAYER_HUD_SHED_ORDER.filter(key => !PLAYER_HUD_RATED_TABLE_HOLDS.includes(key)),
     ...PLAYER_HUD_RATED_TABLE_HOLDS];
 }
@@ -2883,7 +2889,7 @@ function syncPlayerHudEloFloor() {
 const HUD_PLAYER_MIN_TYPE_SIZE = 9;
 let ratedPlayerFloorKey = "";
 function syncRatedPlayerFloors(hud) {
-  if (!ratedTableInPlay()) {
+  if (!namedTableInPlay()) {
     if (!ratedPlayerFloorKey) return false;
     ratedPlayerFloorKey = "";
     hud.style.removeProperty("--hud-player-min");
@@ -32398,9 +32404,11 @@ function forceChipsHtml(forces) {
 // and the panel says so rather than looking as if the agent had nothing on
 // its mind.
 function liveSeatPlanHtml() {
+  // The mirror names both: the lane our seat plays and the level of the rest.
+  const named = mine => (state.players || []).find(p => !p.is_minor && p.ai_username && (p.id === state.player) === mine);
   return `<div class="strategy-plan">` +
-    strategyRow("Agent", "CIVVIS Advanced AI", LIVE_SEAT_STORY) +
-    strategyRow("Rivals", "Firaxis AI", "Every other civilization is played by Civilization VI's own AI") +
+    strategyRow("Agent", reasonEscape(named(true)?.ai_username || "CIVVIS Advanced AI"), LIVE_SEAT_STORY) +
+    strategyRow("Rivals", reasonEscape(named(false)?.ai_username || "Firaxis AI"), "Every other civilization is played by Civilization VI's own AI") +
     `</div>` +
     `<div class="dossier-note">This page mirrors the live game. The agent's plan and ` +
     `reasoning stay with the game and are not shown here.</div>`;
