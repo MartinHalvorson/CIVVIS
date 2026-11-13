@@ -2116,7 +2116,7 @@ const PLAYER_HUD_COLUMNS = [
   {key:"civ", label:"Civilization", block:"identity", min:"--hud-ident-min", width:2.035},
   {key:"leader", label:"Leader", block:"identity", min:"--hud-ident-min", width:1.85},
   {key:"watch", label:"Watch as", block:"identity", min:"--hud-watch-column", width:0, fixed:true},
-  {key:"player", label:"Player", block:"identity", min:"--hud-ident-min", width:1.85},
+  {key:"player", label:"Player", block:"identity", min:"--hud-player-min", width:1.85},
   // The rating the player in this seat sat down with. A watched table seats a
   // rated Civ AI Agent at every civilization; a table with nobody rated has
   // no such fact, so the column is not part of it.
@@ -2816,23 +2816,19 @@ function syncPlayerHudColumns(placeGrips = true) {
   if (placeGrips) syncPlayerHudColumnGrips();
 }
 
-// The ELO and ELO-delta tracks share one numeric floor, so it has to cover the
-// widest signed value the table is showing. Measure at the text fitter's
-// maximum rather than at its current fitted size: a wider panel must never let
-// a score grow back into an ellipsis. The field's own inset and divider live
-// inside its grid track, and therefore belong in the floor too.
-function syncPlayerHudEloFloor() {
-  const hud = document.getElementById("playerhud");
-  const scores = [...(hud?.querySelectorAll(".diplomacy-elo-delta-value") || [])];
-  if (!hud || !scores.length) return;
+// The widest of these cells' texts at `typeSize`, with the inset and divider
+// of the field each one sits in: what a grid track must hold to show every
+// one of them whole. The fields live inside the track, so their inset is
+// part of the answer.
+function widestPlayerHudText(cells, typeSize) {
   const probe = document.createElement("span");
   probe.style.cssText = "position:fixed; visibility:hidden; inset:auto; display:inline-block; " +
     "width:max-content; min-width:max-content; max-width:none; overflow:visible; " +
     "white-space:nowrap; pointer-events:none; line-height:1;";
   document.body.append(probe);
-  let minimum = HUD_ELO_MIN_FLOOR;
-  for (const score of scores) {
-    const style = getComputedStyle(score);
+  let widest = 0;
+  for (const cell of cells) {
+    const style = getComputedStyle(cell);
     probe.style.fontFamily = style.fontFamily;
     probe.style.fontWeight = style.fontWeight;
     probe.style.fontStyle = style.fontStyle;
@@ -2842,20 +2838,75 @@ function syncPlayerHudEloFloor() {
     probe.style.fontOpticalSizing = style.fontOpticalSizing;
     probe.style.fontVariantNumeric = style.fontVariantNumeric;
     probe.style.letterSpacing = style.letterSpacing;
-    probe.style.fontSize = `${HUD_ELO_MAX_TYPE_SIZE}px`;
-    probe.textContent = score.textContent;
-    const fieldStyle = getComputedStyle(score.parentElement);
+    probe.style.fontSize = `${typeSize}px`;
+    probe.textContent = cell.textContent;
+    const fieldStyle = getComputedStyle(cell.parentElement);
     const inset = (parseFloat(fieldStyle.paddingLeft) || 0) +
       (parseFloat(fieldStyle.paddingRight) || 0) +
       (parseFloat(fieldStyle.borderLeftWidth) || 0) +
       (parseFloat(fieldStyle.borderRightWidth) || 0);
-    minimum = Math.max(minimum, Math.ceil(probe.getBoundingClientRect().width + inset + 1));
+    widest = Math.max(widest, Math.ceil(probe.getBoundingClientRect().width + inset + 1));
   }
   probe.remove();
-  const floor = `${minimum}px`;
-  if (hud.style.getPropertyValue("--hud-ident-num-min") === floor) return;
-  hud.style.setProperty("--hud-ident-num-min", floor);
-  syncPlayerHudColumns(false);
+  return widest;
+}
+
+// The ELO-delta track's numeric floor has to cover the widest signed value the
+// table is showing. Measure at the text fitter's maximum rather than at its
+// current fitted size: a wider panel must never let a score grow back into an
+// ellipsis.
+function syncPlayerHudEloFloor() {
+  const hud = document.getElementById("playerhud");
+  if (!hud) return;
+  let moved = syncRatedPlayerFloors(hud);
+  const scores = [...hud.querySelectorAll(".diplomacy-elo-delta-value")];
+  if (scores.length) {
+    const floor = `${Math.max(HUD_ELO_MIN_FLOOR, widestPlayerHudText(scores, HUD_ELO_MAX_TYPE_SIZE))}px`;
+    if (hud.style.getPropertyValue("--hud-ident-num-min") !== floor) {
+      hud.style.setProperty("--hud-ident-num-min", floor);
+      moved = true;
+    }
+  }
+  if (moved) syncPlayerHudColumns(false);
+}
+
+// At a table of rated Civ AI Agents the handle and its rating are what the
+// row is read for, and neither survives an ellipsis: "JackOfAllTr…" names
+// nobody and "12…" is not a rating. So the rating's track holds the widest
+// rating at the fitter's largest type, and the handle's holds the widest
+// handle at its smallest, which is the size the fitter can always fall back
+// to. Both are facts of the table, not of the frame, so they are measured
+// when the handles, the ratings or the loaded fonts change and not again:
+// this runs on every repaint of the standings. A column the panel has shed
+// has no cell to measure and keeps the floor it had, or seating it at the
+// stylesheet's narrower one would shed it again on the next pass.
+const HUD_PLAYER_MIN_TYPE_SIZE = 9;
+let ratedPlayerFloorKey = "";
+function syncRatedPlayerFloors(hud) {
+  if (!ratedTableInPlay()) {
+    if (!ratedPlayerFloorKey) return false;
+    ratedPlayerFloorKey = "";
+    hud.style.removeProperty("--hud-player-min");
+    hud.style.removeProperty("--hud-elo-min");
+    return true;
+  }
+  const names = [...hud.querySelectorAll(".diplomacy-player")];
+  const ratings = [...hud.querySelectorAll(".diplomacy-elo-value")];
+  const key = `${document.fonts?.status}|${names.map(cell => cell.textContent).join()}|` +
+    ratings.map(cell => cell.textContent).join();
+  if (key === ratedPlayerFloorKey || (!names.length && !ratings.length)) return false;
+  ratedPlayerFloorKey = key;
+  let moved = false;
+  for (const [property, cells, typeSize] of [
+    ["--hud-player-min", names, HUD_PLAYER_MIN_TYPE_SIZE],
+    ["--hud-elo-min", ratings, HUD_ELO_MAX_TYPE_SIZE]]) {
+    if (!cells.length) continue;
+    const floor = `${widestPlayerHudText(cells, typeSize)}px`;
+    if (hud.style.getPropertyValue(property) === floor) continue;
+    hud.style.setProperty(property, floor);
+    moved = true;
+  }
+  return moved;
 }
 
 // A heading cell *is* its column — each carries the key it stands for, so a

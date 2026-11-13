@@ -3673,9 +3673,10 @@
        label floor only. */
     --hud-ident-min: 30px; --hud-ident-num-min: 60px;
     --hud-odds-min: 27px; --hud-odds-trend-min: 13px;
-    /* A player's rating is four digits, and like every figure here it is
-       shown whole or not at all. */
-    --hud-elo-min: 30px;
+    /* A player's name stands on the label floor, and its rating on one of
+       its own. At a table of rated agents syncRatedPlayerFloors() raises
+       both to what the widest handle and rating need to be shown whole. */
+    --hud-player-min: var(--hud-ident-min); --hud-elo-min: 30px;
     /* Closest victory reads "science-39": the road's name may ellipsize, the
        turns may not. 48px keeps a four-digit count and the road's first
        letter whole at the fitter's floor, and like the Elo floor it holds at

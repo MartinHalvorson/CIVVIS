@@ -7603,7 +7603,17 @@ fn browser_orders_controls_interface_setup_and_logs() {
     ));
     assert!(EMBEDDED_INDEX.contains("elo:[\"ELO\", \"Player's Elo rating\", \"numeric\"],"));
     assert!(EMBEDDED_INDEX.contains("if (key === \"elo\") return playerHudEloValue(player);"));
-    assert!(EMBEDDED_INDEX.contains("--hud-elo-min: 30px;"));
+    // Neither the handle nor its rating may end in an ellipsis: each column
+    // is held to its widest content, measured when the table changes rather
+    // than on every repaint.
+    assert!(EMBEDDED_INDEX.contains("--hud-player-min: var(--hud-ident-min); --hud-elo-min: 30px;"));
+    assert!(EMBEDDED_INDEX.contains(
+        "{key:\"player\", label:\"Player\", block:\"identity\", min:\"--hud-player-min\", width:1.85},"
+    ));
+    assert!(EMBEDDED_INDEX.contains("let moved = syncRatedPlayerFloors(hud);"));
+    assert!(EMBEDDED_INDEX.contains(
+        "if (key === ratedPlayerFloorKey || (!names.length && !ratings.length)) return false;"
+    ));
     // A layout saved before the column existed takes it right after Player,
     // and gets Player itself back once: it names the competing agent now.
     assert!(EMBEDDED_INDEX.contains("predatesPlayerElo = !known.includes(\"elo\");"));
