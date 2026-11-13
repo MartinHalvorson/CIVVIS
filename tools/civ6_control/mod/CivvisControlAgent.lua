@@ -19091,13 +19091,14 @@ end
 -- those games and 8 treaties in 10; past that the Favor is the next
 -- resolution's); and when the bank is short of the count, as many as it does
 -- afford. Returns
--- `votes, price`, or `want, price` unchanged below match point, off the
--- Diplomatic lane, or when it would buy no more. Off with
+-- `votes, price`, or `want, price` unchanged below match point, for a seat
+-- not racing the Congress (`CivvisCongressRacer`), or when it would buy no
+-- more. Off with
 -- `RacerMatchPointBank = false`. `entries` is the ballot's ordered list (rows
 -- with `rtype`, or bare names) and `current` this resolution's entry in it.
 CivvisRacerMatchPointVotes = function(rtype, entries, current, favor, costs, config, ourPoints, want, price)
 	config = type(config) == "table" and config or {};
-	if not CivvisDiploRacer(config) or config.RacerMatchPointBank == false
+	if not CivvisCongressRacer(config) or config.RacerMatchPointBank == false
 			or type(costs) ~= "table"
 			or (tonumber(ourPoints) or 0) < (tonumber(config.DiploVictoryMatchPoint) or 18) then
 		return want, price;
@@ -19144,13 +19145,15 @@ end
 -- half of those games and tested on the second: 100% (92% with the free
 -- vote), 19% and 41%.
 --
--- Only a Diplomatic racer (`CivvisDiploRacer`): another seat's participation
--- points buy nothing. Only option A, which is what the ballot already cast;
+-- Only a seat racing the Congress (`CivvisCongressRacer`: the Diplomatic
+-- lane, or a Science seat under `science-seat-races-the-congress`): another
+-- seat's participation points buy nothing. Only option A, which is what the
+-- ballot already cast;
 -- only when the target is offered; the vote count is still
 -- `CivvisRacerResolutionVotes`'s. Off with `RacerUsualWinner = false`.
 -- Returns `option, selection` (1-based), unchanged when it does not apply.
 CivvisRacerUsualWinner = function(rtype, targets, config, option, selection)
-	if not CivvisDiploRacer(config) or config.RacerUsualWinner == false then
+	if not CivvisCongressRacer(config) or config.RacerUsualWinner == false then
 		return option, selection;
 	end
 	local want = ({
@@ -19564,8 +19567,21 @@ CivvisRacerClaimVotes = function(favor, ourPoints, rivalBlock, costs, maxVotes, 
 	-- with all of it: the fallback is a redirect or a free vote, and the
 	-- live redirect of civvis-20261030T070824Z-cont1 t201 (7 votes, budget
 	-- under `least`) let Portugal take +2 on its way from 12 to 19.
+	--
+	-- ★ AND FROM NINE VOTES IT CLAIMS WHATEVER THE LAST BLOCK WAS. The rivals
+	-- spend at a contested session too, and their next block is smaller: on
+	-- the Deity lane (six Diplomatic games, 2026-11-13) the session after a
+	-- claim found our bank at 144-249 Favor (9 to 11 votes), not over the
+	-- last block (9, 9, 12), so the ballot sat it out with the free vote
+	-- four times, and the rivals' largest block those sessions was 8, 5, 6
+	-- and 10: three of the four were ours for the asking, +2 each in games
+	-- that ended on 16, 17 and 16 of twenty with 130-350 Favor unspent. Over
+	-- the day's 20 sessions with no gang on us the rivals' largest block was
+	-- under 9 in 11, under 10 in 13, under 11 in 16. So a bank that buys
+	-- `DiploRacerClaimFloor` (9) votes or more claims with all of it.
 	if budget < least then
 		if budget > block then return budget; end
+		if budget >= (tonumber(config.DiploRacerClaimFloor) or 9) then return budget; end
 		return nil;
 	end
 	return math.min(least + math.ceil(block / 4), budget);
@@ -25716,7 +25732,7 @@ local function tick()
 			envoyTally.racer_reserve = CivvisCongressRacer(cfg)
 				and CivvisRacerReserve(list, costs, cfg) or nil;
 			-- See `CivvisRacerMatchPointVotes`: our own points, read once.
-			envoyTally.racer_points = CivvisDiploRacer(cfg) and (tonumber(try(function()
+			envoyTally.racer_points = CivvisCongressRacer(cfg) and (tonumber(try(function()
 				return Players[pid]:GetStats():GetDiplomaticVictoryPoints();
 			end, 0)) or 0) or nil;
 			local cast, spent = 0, 0;
@@ -27158,9 +27174,16 @@ end
 -- Send Aid project outbids a space-race project), and Climate Accords is
 -- scored by decommissioning our own power plants. So a seat joins only where
 -- first place pays something its lane uses:
---   * a Diplomatic seat joins all of them (1 or 2 of the 20 points each);
---   * a Science seat joins the Space Station (space-race production,
---     expedition speed) and the Physics prize (technology boosts);
+--   * a Diplomatic seat joins all of them (1 or 2 of the 20 points each),
+--     and so does a Science seat racing the Congress
+--     (`science-seat-races-the-congress`, `CivvisCongressRacer`): the points
+--     are its second route, an Aid Request it is alone in is won with a
+--     one-Gold gift (civvis-20261113T211246Z, t136, +2), and under lane
+--     delegation no city takes a competition's project unasked, so the
+--     membership pulls no Production;
+--   * any other Science seat joins the Space Station (space-race
+--     production, expedition speed) and the Physics prize (technology
+--     boosts);
 --   * a Culture seat joins the World's Fair, the World Games and the
 --     Literature prize (culture, Tourism, Rock Bands);
 --   * every other seat votes as before.
@@ -27198,6 +27221,7 @@ CivvisCongressJoin.choose = function(pid, categories, config, atWarWith, blocker
 	local asks, skipped = {}, {};
 	config = type(config) == "table" and config or {};
 	local lane = config.VictoryLane;
+	local racer = CivvisCongressRacer(config);
 	for _, category in pairs(type(categories) == "table" and categories or {}) do
 		for _, prop in pairs(type(category) == "table" and type(category.ProposalsOfType) == "table"
 				and category.ProposalsOfType or {}) do
@@ -27208,7 +27232,7 @@ CivvisCongressJoin.choose = function(pid, categories, config, atWarWith, blocker
 				local why = nil;
 				if config[kind.flag] == false then
 					why = "disabled";
-				elseif lane ~= "diplomatic" and not (lane ~= nil and kind[lane] == true) then
+				elseif not racer and not (lane ~= nil and kind[lane] == true) then
 					why = "not_this_lane";
 				elseif prop.Disabled then
 					why = "proposal_disabled";
