@@ -14,13 +14,14 @@ on:
         default: six-7311003
         required: true
       mode:
-        description: CPU sampling, complete browser game, same-runner browser pairs, or browser main-thread CPU
+        description: CPU sampling, browser observation, or compiler logging with a complete normal control game
         type: choice
         options:
           - cpu
           - browser
           - browser-pair
           - browser-cpu
+          - compiler
         default: cpu
         required: true
       baseline_qualified_run:
@@ -53,6 +54,8 @@ jobs:
         run: python3 -m unittest discover -s tools -p test_site_wasm_browser_ci.py -v
       - name: Test paired browser guards without playing games
         run: python3 -m unittest discover -s tools -p test_site_wasm_browser_pair_ci.py -v
+      - name: Test compiler observation guards without playing games
+        run: python3 -m unittest discover -s tools -p test_site_wasm_compiler_ci.py -v
       - name: Install a fixed browser without automatic updates for paired games and main-thread profiling
         if: ${{ inputs.mode == 'browser-pair' || inputs.mode == 'browser-cpu' }}
         run: |
@@ -70,7 +73,7 @@ jobs:
           github-token: ${{ github.token }}
           path: qualified
       - name: Profile one full normal game from the exact qualified module
-        if: ${{ inputs.mode != 'browser' && inputs.mode != 'browser-pair' && inputs.mode != 'browser-cpu' }}
+        if: ${{ inputs.mode != 'browser' && inputs.mode != 'browser-pair' && inputs.mode != 'browser-cpu' && inputs.mode != 'compiler' }}
         env:
           GH_TOKEN: ${{ github.token }}
           QUALIFIED_RUN: ${{ inputs.qualified_run }}
@@ -81,11 +84,29 @@ jobs:
             --qualified qualified --source "$PROFILE_SOURCE" --run "$QUALIFIED_RUN" \
             --repo "$GITHUB_REPOSITORY" --case "$PROFILE_CASE" --out profile
       - name: Preserve the bound module, CPU samples, raw save and frame hashes
-        if: ${{ always() && inputs.mode != 'browser' && inputs.mode != 'browser-pair' && inputs.mode != 'browser-cpu' }}
+        if: ${{ always() && inputs.mode != 'browser' && inputs.mode != 'browser-pair' && inputs.mode != 'browser-cpu' && inputs.mode != 'compiler' }}
         uses: actions/upload-artifact@v4
         with:
           name: civvis-wasm-cpu-profile
           path: profile
+          if-no-files-found: warn
+      - name: Observe compiler work with a complete uninstrumented normal control
+        if: ${{ inputs.mode == 'compiler' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFIED_RUN: ${{ inputs.qualified_run }}
+          PROFILE_SOURCE: ${{ inputs.source }}
+          PROFILE_CASE: ${{ inputs.case }}
+        run: |
+          python3 tools/site_wasm_compiler_ci.py \
+            --qualified qualified --source "$PROFILE_SOURCE" --run "$QUALIFIED_RUN" \
+            --repo "$GITHUB_REPOSITORY" --case "$PROFILE_CASE" --out compiler-trace
+      - name: Preserve complete control and compiler observations including partial failures
+        if: ${{ always() && inputs.mode == 'compiler' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: civvis-wasm-compiler-trace
+          path: compiler-trace
           if-no-files-found: warn
       - name: Download the qualified browser control
         if: ${{ inputs.mode == 'browser-pair' }}
