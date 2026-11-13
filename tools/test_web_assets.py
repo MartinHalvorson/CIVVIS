@@ -1278,7 +1278,6 @@ for (const [R, least] of [[404.5, .7], [150, .8], [900, .1]]) {
   });
   expect(drawn >= pads.length * least, `radius ${R}: only ${drawn} of ${pads.length} launches are drawn`);
   expect(lifted > 0 && (R > 500 || round > 0), `radius ${R}: ${lifted} lift-offs and ${round} round the limb`);
-  console.log(R, "drawn", drawn, "lifted", lifted, "round the limb or edge", round, "of", pads.length);
 }
 '''
         self.run_node(block + scenarios)
