@@ -796,6 +796,23 @@ disbands or merges is not a death; one removed by maintenance or fallout is
 counted as one. Neither instrument changes a decision: the frozen anchor
 (`advanced_v1_plays_the_same_game_it_always_did`) is unchanged.
 
+## ⭐ The edge ledger: how far apart each blow's two sides stood (2026-11-13)
+
+`Game::combat_ledger` also books every unit-on-unit blow on both seats by
+**base gap** (the ruleset's attack strength, Bombard else Ranged else Combat,
+minus the target's Combat strength) and **total gap** (the strengths the blow
+was resolved with), split by the other seat's side, with the rival majors'
+mean base gap by turn bucket. Every row carries the seat's ledger as `edge`
+and, at Online-equivalent turns 50, 100 and 150, an `edge_marks` entry: its
+land army, the share with an unlocked upgrade (also with the material in
+stock, also one `Game::unit_gold_upgrade_offer` would take), the Combat it
+would gain, its treasury and income, and the Combat of the rival majors' land
+units in its sight. `--analyze` prints the tables pooled over the measured
+rows, the metric list `tools/civ6_edge_ledger.py --metrics` prints for a live
+lane, and the on−off Δ of seven blow counts (`edge_ledger` in the `--json`
+summary). Observation only; the frozen anchor is unchanged. Definitions, the
+live lanes and the lane recipes' numbers: [EDGE_LEDGER.md](EDGE_LEDGER.md).
+
 ## ⭐ Chairs that fight like the host: `--rival-host-tactics` (2026-11-12)
 
 The rival chairs are this repository's own AI, and it does not fight like the
