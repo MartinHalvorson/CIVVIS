@@ -473,6 +473,9 @@ impl AdvancedAi {
         /// Opt-in gene `score-seat-trims-the-idle-army`; see
         /// `advanced/score_seat.rs`.
         score_seat_trims_the_idle_army => enable_score_seat_trims_the_idle_army, disable_score_seat_trims_the_idle_army;
+        /// Opt-in gene `score-seat-holds-its-capital`; see
+        /// `advanced/score_holds_its_capital.rs`.
+        score_seat_holds_its_capital => enable_score_seat_holds_its_capital, disable_score_seat_holds_its_capital;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

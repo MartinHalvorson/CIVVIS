@@ -151,6 +151,11 @@ impl AdvancedAi {
             plan.threatened_city != Some(cid)
                 && !(city.last_attacked > 0
                     && g.turn.saturating_sub(city.last_attacked) <= PEACE_HUB_ATTACK_MEMORY)
+                // `score-seat-holds-its-capital`: its Walls or shooter stay.
+                && !city
+                    .queue
+                    .first()
+                    .is_some_and(|head| self.score_capital_holds(g, pid, cid, head))
         };
         let market = city_ids
             .iter()

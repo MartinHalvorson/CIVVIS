@@ -95,6 +95,11 @@ impl AdvancedAi {
     /// Whether `uid` keeps the City Center of ours it stands on: see the
     /// module. Always false with the gene off.
     pub(super) fn keeps_the_centre(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        // `score-seat-holds-its-capital`: a held city's shooter keeps its
+        // centre at peace too. See `advanced/score_holds_its_capital.rs`.
+        if self.score_holds_the_centre(g, pid, uid) {
+            return true;
+        }
         if !self.centre_keeps_its_garrison {
             return false;
         }
@@ -211,12 +216,18 @@ impl AdvancedAi {
         pid: usize,
         uid: u32,
     ) -> Option<bool> {
-        if !self.centre_keeps_its_garrison {
+        // `score-seat-holds-its-capital` opens the keeper step for a held
+        // city's shooter; the fill below stays this gene's own.
+        if !self.centre_keeps_its_garrison && !self.score_holds_the_centre(g, pid, uid) {
             return None;
         }
         if self.keeps_the_centre(g, pid, uid) {
             let kind = g.units[&uid].kind;
             let at = g.units[&uid].pos;
+            // `score-seat-holds-its-capital` alone keeps this post: no war at
+            // the door under this gene. It fires the same way and journals
+            // under its own tag.
+            let held_only = !(self.centre_keeps_its_garrison && self.centre_threatened(g, pid, at));
             let city = g.city_at(at).map(|cid| g.cities[&cid].name.clone());
             let shot = self.centre_keeper_shot(g, pid, uid).filter(|target| {
                 g.apply(
@@ -232,6 +243,13 @@ impl AdvancedAi {
             if let Some(target) = shot {
                 // The next pass of the unit's turn fortifies it in place.
                 self.force_groups_dirty = true;
+                if held_only {
+                    think!(self.journal(), Military, Decision,
+                        "{} holds its centre and fires", city;
+                        "score-seat-holds-its-capital: the {} keeps the held centre and fires at \
+                         {target:?}", plain(kind.as_str()));
+                    return Some(true);
+                }
                 think!(self.journal(), Military, Decision,
                     "Centre keeps its garrison: the {} holds {} and fires", plain(kind.as_str()), city;
                     "centre-keeps-its-garrison: a soldier at war stands within {CENTRE_THREAT_REACH}; \
@@ -240,7 +258,7 @@ impl AdvancedAi {
                 return Some(true);
             }
             let fired = g.units.get(&uid).is_none_or(|unit| unit.attacks_left <= 0);
-            if !fired {
+            if !fired && !held_only {
                 think!(self.journal(), Military, Decision,
                     "Centre keeps its garrison: the {} holds {}", plain(kind.as_str()), city;
                     "centre-keeps-its-garrison: a soldier at war stands within {CENTRE_THREAT_REACH}; \
@@ -251,6 +269,9 @@ impl AdvancedAi {
                 self.base.fortify_or_stop(g, pid, uid);
             }
             return Some(false);
+        }
+        if !self.centre_keeps_its_garrison {
+            return None;
         }
         let (cid, at) = self.centre_to_fill(g, pid, uid)?;
         let from = g.units[&uid].pos;

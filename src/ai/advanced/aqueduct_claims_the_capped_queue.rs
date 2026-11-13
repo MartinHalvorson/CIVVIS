@@ -303,6 +303,8 @@ impl AdvancedAi {
                         || self.idle_route_trader_holds(g, pid, cid, plan, item)
                         || self.charting_hull_holds(g, pid, cid, plan, item)
                         || self.backlog_builder_holds(g, pid, cid, plan, item)
+                        // `score-seat-holds-its-capital`: its Walls or shooter.
+                        || self.score_capital_holds(g, pid, cid, item)
                         || Self::queued_wall_breaker(g, item)
                         || !Self::capped_aqueduct_may_defer(g, pid, cid, item, at_major_war)
                     {
