@@ -6978,6 +6978,15 @@ pub struct AdvancedAi {
     /// `defend-force-holds-the-city`: this turn's posts. Empty with the gene
     /// off.
     defend_hold_plan: defend_force_holds_the_city::HoldPlan,
+    /// `defend-force-holds-the-city-2`: capturers only, the ring only when
+    /// the city can fall within two enemy turns, and the positions plan
+    /// leaves the posts alone. See `advanced/defend_force_holds_the_city.rs`.
+    /// Opt-in.
+    defend_force_holds_the_city_2: bool,
+    /// `defend-force-holds-the-city-2`: the soldiers this turn's posts may
+    /// take, read by the battle planner's positions plan. Empty with the
+    /// version off.
+    defend_hold_members: BTreeSet<u32>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -9449,6 +9458,14 @@ pub struct AdvancedAi {
     /// `advanced/priced_risk.rs`. Opt-in.
     risk_is_priced: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
+    /// capital from turn 40 (Online) and in a second city from turn 90, as a
+    /// queue claim with a race-risk rule. See `advanced/score_wonders.rs`.
+    /// Off by default.
+    score_seat_raises_wonders: bool,
+    /// `score-seat-raises-wonders`: the races standing, by the racing city's
+    /// tile (the live mirror renumbers cities between frames).
+    score_wonder_races: BTreeMap<Pos, Name>,
     /// `siege-goes-on-the-forecast`: the siege train goes, holds and stands
     /// down on the capture forecast, and the Objective Board ranks Siege rows
     /// by value x P / expected turns. Implies the reading. See
@@ -10251,15 +10268,35 @@ pub struct AdvancedAi {
     /// instead of the greedy pick at a flat 0.5. Acts only with
     /// `battle-solver` on. Off by default.
     solver_plays_the_host: bool,
-    /// `score-seat-plays-for-points`: a Score-target seat races wonders at
-    /// the live race's price, holds its peacetime army at one body a city,
-    /// takes the Ancestral Hall over the Warlord's Throne, and starts nothing
-    /// in the last turns that cannot finish before the tally. See
-    /// `advanced/score_seat.rs`. Off by default.
+    /// `score-seat-plays-for-points`: a Score-target seat starts nothing in
+    /// the last turns that cannot finish before the tally (its wonder price
+    /// and Plaza choice were withdrawn; the wonders are
+    /// `score-seat-raises-wonders`'). See `advanced/score_seat.rs`. Off by
+    /// default.
     score_seat_plays_for_points: bool,
     /// `score-seat-plays-for-points`: what the gene's journal has already
     /// said, so each line is written once per change. Observation only.
     score_seat_journal: score_seat::ScoreSeatJournal,
+    /// `score-seat-founds-early`: on a Score seat, an early Settler past its
+    /// patience (or turned home by the corridor) founds on the best safe,
+    /// holdable site within reach. See `advanced/score_seat_founds_early.rs`.
+    /// Opt-in.
+    score_seat_founds_early: bool,
+    /// `score-seat-trims-the-idle-army`: with `score-seat-plays-for-points`
+    /// on, a Score seat at peace from turn 80 (Online), holding four cities
+    /// and at least 0.8 of the strongest neighbour's military, trains no land
+    /// unit past one a city (four at least). See `advanced/score_seat.rs`.
+    /// Off by default.
+    score_seat_trims_the_idle_army: bool,
+    /// `score-seat-takes-what-pays`: a Score seat takes the open city of a
+    /// neighbour no stronger than us that buys more points per Production
+    /// than its queues: the plan turns to Conquest on that city, the war
+    /// opens once the takers stand there, and the Domination war machinery
+    /// answers it. See `advanced/score_takes_what_pays.rs`. Opt-in.
+    score_seat_takes_what_pays: bool,
+    /// `score-seat-takes-what-pays`: the city the plan names and the last
+    /// board line. Empty with the gene off.
+    score_take_state: score_takes_what_pays::ScoreTakeState,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11343,6 +11380,11 @@ mod chop_for_expansion;
 /// `score-seat-plays-for-points`: a Score-target seat's production buys
 /// points. See `advanced/score_seat.rs`.
 mod score_seat;
+/// `score-seat-founds-early`: see `advanced/score_seat_founds_early.rs`.
+mod score_seat_founds_early;
+/// `score-seat-raises-wonders`: a Score seat's wonder program, a queue claim
+/// that acts natively and live. See `advanced/score_wonders.rs`.
+mod score_wonders;
 
 /// The player civvis.ai seats: the deployment genome plus the site's own
 /// experiment list. See `advanced/site_deployment.rs`.
@@ -12068,6 +12110,9 @@ mod luxury_research;
 /// neighbour's unwalled city within reach of our soldiers opens the war.
 /// See `advanced/soft_city_window.rs`.
 mod soft_city_window;
+
+/// `score-seat-takes-what-pays`: see `advanced/score_takes_what_pays.rs`.
+mod score_takes_what_pays;
 
 /// `growth-prices-the-farm`: the Builder prices the Housing and Food a small
 /// city cannot grow without. One opt-in gene; see `advanced/growth_farm.rs`.
@@ -13303,6 +13348,10 @@ impl AdvancedAi {
         // `open-city-draws-the-front`: the open city the front turned to; exact
         // no-op with the gene off. See `advanced/open_city_front.rs`.
         self.open_city_observe(g, pid);
+        // `score-seat-takes-what-pays`: the paying city the plan names, the
+        // board line and a capture; exact no-op with the gene off. See
+        // `advanced/score_takes_what_pays.rs`.
+        self.score_take_observe(g, pid);
         // `war-policy-via-board`: the tide with every major at war and the
         // unserved-Defend clocks; exact no-op with the gene off. See
         // `advanced/war_policy.rs`.
@@ -22871,12 +22920,15 @@ impl AdvancedAi {
         // `advanced/hopeless_army_yields_the_queue.rs`.
         let desired_military =
             self.hopeless_army_target(g, pid, plan, threatened, city_count, desired_military);
-        // `score-seat-plays-for-points`: at peace with every major, a Score
-        // seat's land army stops at one body a city; the Settler escorts and
-        // the barbarian floor below still add theirs. See
+        // `score-seat-trims-the-idle-army`: from turn 80 (Online), at peace,
+        // with four cities and 0.8 of the strongest neighbour's military, a
+        // Score seat's land army stops at one body a city (four at least),
+        // except in a frontier city with no garrison; the Settler escorts
+        // and the barbarian floor below still add theirs. `false` off. See
         // `advanced/score_seat.rs`.
+        let score_seat_trims = self.score_seat_trims_here(g, pid, cid, active_major_war);
         let desired_military =
-            self.score_seat_army_target(city_count, active_major_war, desired_military);
+            self.score_seat_army_target(city_count, score_seat_trims, desired_military);
         // ★★★★ EVERY WALKER GETS A GUARD AND EVERY CLAIM A GARRISON. See
         // `land_grab`: the peacetime land army wants one body per city plus
         // one per Settler in flight, so a wider pipeline never marches alone
@@ -23257,10 +23309,11 @@ impl AdvancedAi {
                     // keep every unit weakly positive forever, so a rejected Library
                     // could expose another Warrior on every turn. Threatened cities
                     // bypass the ceiling, and naval/air have independent targets.
-                    // `score-seat-plays-for-points`: a Score seat at peace
-                    // keeps no composition buffer above its targets, land or
-                    // sea; a unit buys no points. See `advanced/score_seat.rs`.
-                    let score_seat_holds = self.score_seat_holds_the_army(active_major_war);
+                    // `score-seat-trims-the-idle-army`: where the trim acts
+                    // (above), no composition buffer above the land and sea
+                    // targets; a unit buys no points. See
+                    // `advanced/score_seat.rs`.
+                    let score_seat_holds = score_seat_trims;
                     let ceiling_buffer = if (plan.strategy == GrandStrategy::Conquest
                         && !offensive_conquest)
                         || score_seat_holds
@@ -26386,11 +26439,8 @@ impl AdvancedAi {
         self.base.obsolete_buys_read_our_techs = self.obsolete_buys_read_our_techs();
         // `plaza-serves-the-scientist` (and version 2, which carries it): the
         // Plaza's tier list reads this.
-        // `score-seat-plays-for-points` reads the same list: the Ancestral
-        // Hall, not the Warlord's Throne. See `advanced/score_seat.rs`.
-        self.base.plaza_serves_science = self.plaza_serves_science_on()
-            || self.native_culture_plaza_economy(g, pid)
-            || self.score_seat_on();
+        self.base.plaza_serves_science =
+            self.plaza_serves_science_on() || self.native_culture_plaza_economy(g, pid);
         self.refresh_campus_multiplier_constants(g);
         self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;
@@ -27097,6 +27147,12 @@ impl AdvancedAi {
             // queue. Exact no-op while the gene is off. See
             // `advanced/commercial_hub_claims_a_peace_queue.rs`.
             self.claim_peace_queue_for_the_commercial_hub(g, pid, &plan);
+            // `score-seat-raises-wonders`: a Score seat's wonder lanes take the
+            // capital's (and later a second city's) routine queue, and its
+            // standing races are resolved. No new race while the war holds the
+            // claims. Exact no-op while the gene is off. See
+            // `advanced/score_wonders.rs`.
+            self.claim_queue_for_the_score_wonder(g, pid, &plan, !war_holds);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
@@ -27208,6 +27264,11 @@ impl AdvancedAi {
         // and before the pad holds and the defence handoffs below. Exact
         // no-op while the gene is off. See `advanced/near_done_work_finishes.rs`.
         self.claim_near_done_work_finishes(g, pid, &plan, &near_done_heads);
+        // `score-seat-raises-wonders`: a standing race a later writer displaced
+        // with routine work goes back to the head, before the defence handoffs
+        // below, which keep the last word. Starts nothing. Exact no-op while
+        // the gene is off. See `advanced/score_wonders.rs`.
+        self.claim_queue_for_the_score_wonder(g, pid, &plan, false);
         // `religion-seat-guards-the-race`: Prayers finishing this turn and a
         // pillaged Holy Site's repair, after every ordinary writer. See
         // `advanced/religion_seat_guards_the_race.rs`.

@@ -2362,7 +2362,12 @@ impl AdvancedAi {
             let kind = g.units[&uid].kind;
             let class = g.rules.units[kind].class.clone();
             let acted = match kind.as_str() {
-                "settler" => self.advanced_settler_step(g, pid, uid),
+                // `score-seat-founds-early`: a Score seat's Settler past its
+                // patience takes a safe site in reach first. `None` while the
+                // gene is off. See `advanced/score_seat_founds_early.rs`.
+                "settler" => self
+                    .score_seat_founds_early_step(g, pid, uid)
+                    .unwrap_or_else(|| self.advanced_settler_step(g, pid, uid)),
                 "builder" => self.advanced_builder_step(g, pid, uid, plan.strategy),
                 "military_engineer" => self
                     .forward_airfield_engineer_step(g, pid, uid, plan)
@@ -2696,6 +2701,10 @@ impl AdvancedAi {
                 BTreeSet::new()
             }
         });
+        // `defend-force-holds-the-city-2`: the soldiers this turn's posts may
+        // take, before the planner's positions plan. Nothing with the version
+        // off. See `advanced/defend_force_holds_the_city.rs`.
+        self.preview_hold_members(g, pid);
         if self.battle_planner_on() {
             if self.owned_pass(g, pid, OrderStep::Positions, |ai, g| {
                 ai.plan_battle(g, pid, plan)
@@ -2799,7 +2808,7 @@ impl AdvancedAi {
         // `defend-force-holds-the-city`: every threatened city's posts, drawn
         // after every other claim of the turn. Nothing with the gene off. See
         // `advanced/defend_force_holds_the_city.rs`.
-        if self.defend_force_holds_the_city {
+        if self.defend_hold_on() {
             let mut claimed = withdrawn.clone();
             claimed.extend(air_assault_units.iter().copied());
             claimed.extend(opening_recon_warrior);

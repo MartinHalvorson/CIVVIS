@@ -37,27 +37,41 @@
 //! Only on a seat whose assigned target is `VictoryTarget::Score`; an exact
 //! no-op off and on every other target.
 //!
-//! 1. **Wonders.** Where the Score lane prices a wonder at +180, it prices it
-//!    at the live race's `LIVE_WONDER_RACE_BONUS` scaled by the game's
-//!    progress (x1 at the start, x3 at the tally), under the live race's own
-//!    development guards: three cities, three buildings in the racing city,
-//!    the wonder at most two eras behind the world, one lane plus one per six
-//!    cities, and done within `CHEAPEST_WONDER_LANE_MAX_TURNS`. Every refusal
-//!    the arm already makes (a wonder queued elsewhere, a threatened city, a
-//!    race taking more than 65% of the turns left) still refuses.
-//! 2. **The army.** At peace with every major, the land target is one body a
-//!    city (the Settler escorts and the barbarian floor still add theirs), and
-//!    the composition buffer of two above the land and sea targets is
-//!    dropped, so a unit past them is priced as saturated. A declared war, a
-//!    threatened city, a barbarian alarm and every claim that names a unit
-//!    (walls, frontier defence, the contact fleet, the land eye) are untouched.
-//! 3. **The Plaza.** The Plaza's tier list is `plaza-serves-the-scientist`'s:
-//!    the Ancestral Hall, then the Intelligence Agency.
+//! 1. **Wonders: moved to `score-seat-raises-wonders`.** This gene first
+//!    priced a Score lane's wonder at the live race's bonus instead of +180.
+//!    It never fired live (the ranking that reads it runs only on an idle
+//!    queue) and, in the coordinator's 60-seed paired sim, built 0.10 wonders
+//!    a game against 0.08 while costing 0.40 cities (z -2.0): at that price a
+//!    ten-turn wonder in a city with three buildings out-bids a Settler. The
+//!    price is withdrawn; the wonder program is a queue claim in
+//!    `advanced/score_wonders.rs`.
+//! 2. **The army: its own gene, `score-seat-trims-the-idle-army`** (opt-in;
+//!    acts only with this gene on too). Armed live at 21:04Z on 2026-11-12
+//!    as part of this gene, the trim held one body a city from turn 1:
+//!    civvis-20261112T211954Z fielded 4-6 combat units at t20-t50, the
+//!    Mapuche (223-285 military against our 56-107) declared at t24 and took
+//!    Rome by t50. Split out and floored by defence: it acts only from turn
+//!    80 (Online), with four cities, at peace with every major and no paying
+//!    city named (`score-seat-takes-what-pays`), and while our military is at
+//!    least 0.8 of the strongest neighbour's (see
+//!    [`SCORE_TRIM_NEIGHBOUR_RATIO`] for the eleven games behind the ratio).
+//!    Then the land target is one body a city, four at least, never above
+//!    the stock target, and the buffer of two above the land and sea targets
+//!    is dropped. A frontier city with no soldier on its tile keeps the stock
+//!    pricing. A threatened city, a barbarian alarm, the Settler escorts and
+//!    every claim that names a unit (walls, frontier defence, the contact
+//!    fleet, the land eye, the deterrent) are untouched.
+//! 3. **The Plaza: withdrawn.** It took the Ancestral Hall and then the
+//!    Intelligence Agency, which left the Grand Master's Chapel out: the
+//!    Chapel is what lets Faith buy land units (`faith_purchase_land_units`
+//!    in `data/buildings.json`), and the same sim read 40 less military at the
+//!    end and 0.22 more cities lost. The stock list stands.
 //! 4. **The last turns.** Within [`SCORE_SPRINT_TURNS`] of the turn limit an
 //!    item that cannot finish before the tally is priced out (a Settler must
 //!    also walk to its site), so the queues go to what still scores.
 //!
-//! Journal: every line's reason starts `score-seat-plays-for-points:`.
+//! Journal: every line's reason starts `score-seat-plays-for-points:`, or
+//! `score-seat-trims-the-idle-army:` for the army.
 use super::*;
 
 /// Turns before the turn limit inside which an item that cannot finish by the
@@ -76,17 +90,38 @@ const SCORE_ARMY_LINE_EVERY: u32 = 10;
 /// a District 2 and a Settler 5 plus its citizens. Journal arithmetic only.
 const SCORE_POINTS_PER_HUNDRED_PRODUCTION: f64 = 2.0;
 
+/// `score-seat-trims-the-idle-army`: the first turn, in Standard turns, on
+/// which the trim may act: 80 at Online (`GameSpeed::scale_turns`, 66%). Eleven Rome games of 2026-11-12: five
+/// rival declarations came at t24-t51 and four cities fell at t30-t58
+/// (Ostia, the capital, Antium, Ostia); the waste the trim was built for came
+/// after t100 (game one: Artillery 1,179, Cuirassiers 620, Bombards 457).
+pub(super) const SCORE_TRIM_FROM_STANDARD: u32 = 120;
+
+/// `score-seat-trims-the-idle-army`: cities held before the trim acts.
+pub(super) const SCORE_TRIM_MIN_CITIES: usize = 4;
+
+/// `score-seat-trims-the-idle-army`: the trimmed land target never falls
+/// below this many bodies, nor below one a city.
+pub(super) const SCORE_TRIM_MIN_ARMY: usize = 4;
+
+/// `score-seat-trims-the-idle-army`: our military must be at least this share
+/// of the strongest neighbour's. In the eleven Rome games every city lost to
+/// a major followed a declaration made at 0.12-0.54 of the declarer's
+/// military (8 of 9 such declarations cost a city), and no declaration made
+/// at 0.85 or more cost one by itself (0 of 9); games nobody declared in sat
+/// at 0.17-0.72. 0.8 keeps the margin above every losing ratio.
+pub(super) const SCORE_TRIM_NEIGHBOUR_RATIO: f64 = 0.8;
+
+/// `score-seat-trims-the-idle-army`: a major with a known city this close to
+/// one of ours is a neighbour (`near-rival-deterrence`'s radius).
+pub(super) const SCORE_TRIM_NEIGHBOUR_TILES: i32 = 10;
+
 /// What the gene's journal has already said. Observation only: nothing here
 /// feeds a decision.
 #[derive(Clone, Default)]
 pub(super) struct ScoreSeatJournal {
     /// The last army line: (target, stock target, held, turn written).
     army: Option<(usize, usize, usize, u32)>,
-    /// Wonders already reported, by the racing city's tile and the wonder.
-    /// Tiles, not city ids: the live mirror renumbers cities between frames.
-    wonders: BTreeSet<(Pos, String)>,
-    /// The Plaza building already reported.
-    plaza: Option<String>,
     /// The turn limit whose last-turns line has been written.
     sprint: Option<u32>,
 }
@@ -100,48 +135,127 @@ impl AdvancedAi {
     /// Whether the peacetime army hold applies: the gene acts and no major is
     /// at war with us.
     pub(super) fn score_seat_holds_the_army(&self, active_major_war: bool) -> bool {
-        self.score_seat_on() && !active_major_war
+        // `score-seat-takes-what-pays`: a paying city the plan names lifts the
+        // hold as a war does, from the mustering stage on. `false` with that
+        // gene off. See `advanced/score_takes_what_pays.rs`.
+        self.score_seat_on() && !(active_major_war || self.score_take_lifts_the_cap())
     }
 
     /// The land army target under the hold: one body a city, never above the
     /// stock target. Unchanged off, off a Score target, and at war.
+    ///
+    /// `score-seat-trims-the-idle-army`: `trims` is
+    /// [`Self::score_seat_trims_here`]; the target is one body a city with at
+    /// least [`SCORE_TRIM_MIN_ARMY`], never above the stock target.
     pub(super) fn score_seat_army_target(
         &self,
         city_count: usize,
-        active_major_war: bool,
+        trims: bool,
         desired: usize,
     ) -> usize {
-        if self.score_seat_holds_the_army(active_major_war) {
-            desired.min(city_count)
+        if trims {
+            desired.min(city_count.max(SCORE_TRIM_MIN_ARMY))
         } else {
             desired
         }
     }
 
-    /// Whether a city may race a wonder at the live race's price: the gene
-    /// acts and the live race's development guards hold. The caller has
-    /// already established that the Score lane is open.
-    pub(super) fn score_seat_wonder_race_opens(
+    /// `score-seat-trims-the-idle-army`: whether the trim acts empire-wide
+    /// this turn. Both genes on, a Score target, the hold in force (no major
+    /// at war with us, no paying city named), turn
+    /// [`SCORE_TRIM_FROM_STANDARD`] (scaled to the speed) reached,
+    /// [`SCORE_TRIM_MIN_CITIES`] cities held, and our military at least
+    /// [`SCORE_TRIM_NEIGHBOUR_RATIO`] of every met major's that is at peace
+    /// with us and not known to stand far off ([`Self::score_seat_neighbour`]).
+    /// The cheap gates run first: this is read inside `production_value`.
+    pub(super) fn score_seat_trims_the_army(
         &self,
-        city_count: usize,
-        city_buildings: usize,
-        wonder_era: usize,
-        world_era: usize,
-        wonders_in_flight: usize,
-        turns: f64,
+        g: &Game,
+        pid: usize,
+        active_major_war: bool,
     ) -> bool {
-        self.score_seat_on()
-            && city_count >= 3
-            && city_buildings >= 3
-            && wonder_era + 2 >= world_era
-            && wonders_in_flight < Self::live_wonder_race_lanes(city_count)
-            && turns <= CHEAPEST_WONDER_LANE_MAX_TURNS
+        self.score_seat_trims_the_idle_army
+            && self.score_seat_holds_the_army(active_major_war)
+            && g.turn >= g.standard_duration(SCORE_TRIM_FROM_STANDARD)
+            && g.player_city_ids(pid).len() >= SCORE_TRIM_MIN_CITIES
+            && self.score_seat_neighbour(g, pid).is_none_or(|(_, theirs)| {
+                g.military_power(pid) >= SCORE_TRIM_NEIGHBOUR_RATIO * theirs
+            })
     }
 
-    /// The wonder's price on the open race, in the arm's raw units: the live
-    /// race's bonus at this point of the game.
-    pub(super) fn score_seat_wonder_price(g: &Game) -> f64 {
-        LIVE_WONDER_RACE_BONUS * Self::live_wonder_race_scale(g)
+    /// [`Self::score_seat_trims_the_army`] for one city: a frontier city (a
+    /// major's known city within [`SCORE_TRIM_NEIGHBOUR_TILES`]) with no land
+    /// soldier on its tile keeps the stock pricing until it is garrisoned.
+    pub(super) fn score_seat_trims_here(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        active_major_war: bool,
+    ) -> bool {
+        self.score_seat_trims_the_army(g, pid, active_major_war)
+            && !Self::score_seat_frontier_without_garrison(g, pid, cid)
+    }
+
+    /// The strongest met major at peace with us that is not known to stand
+    /// far off, and its military: a major counts unless we know at least one
+    /// of its cities and every one we know is more than
+    /// [`SCORE_TRIM_NEIGHBOUR_TILES`] from all of ours. A major whose cities we
+    /// have not seen counts: Portugal took Ostia at t58 of
+    /// civvis-20261112T201530Z with none of its cities in sight.
+    pub(super) fn score_seat_neighbour(&self, g: &Game, pid: usize) -> Option<(usize, f64)> {
+        let ours: Vec<Pos> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.cities[&cid].pos)
+            .collect();
+        g.players
+            .iter()
+            .filter(|other| {
+                other.id != pid
+                    && other.alive
+                    && !other.is_minor
+                    && !other.is_barbarian
+                    && !other.is_free_city
+                    && g.has_met(pid, other.id)
+                    && !g.same_team(pid, other.id)
+            })
+            .filter(|other| {
+                let mut known = g.cities.values().filter(|city| city.owner == other.id);
+                let mut any = false;
+                let near = known.any(|city| {
+                    any = true;
+                    ours.iter()
+                        .any(|home| g.wdist(*home, city.pos) <= SCORE_TRIM_NEIGHBOUR_TILES)
+                });
+                near || !any
+            })
+            .map(|other| (other.id, g.military_power(other.id)))
+            .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)))
+    }
+
+    /// Whether `cid` stands within [`SCORE_TRIM_NEIGHBOUR_TILES`] of a known
+    /// city of another major and has no land soldier of ours on its tile.
+    pub(super) fn score_seat_frontier_without_garrison(g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        let frontier = g.cities.values().any(|other| {
+            other.owner != pid
+                && g.players.get(other.owner).is_some_and(|owner| {
+                    owner.alive && !owner.is_minor && !owner.is_barbarian && !owner.is_free_city
+                })
+                && g.wdist(city.pos, other.pos) <= SCORE_TRIM_NEIGHBOUR_TILES
+        });
+        frontier
+            && !g.units.values().any(|unit| {
+                unit.owner == pid
+                    && unit.pos == city.pos
+                    && g.rules
+                        .units
+                        .get(&unit.kind)
+                        .is_some_and(|spec| spec.class == "military" && spec.domain.is_none())
+            })
     }
 
     /// Turns left in which a finished item still counts at the tally: the
@@ -206,13 +320,11 @@ impl AdvancedAi {
 
     /// Journal what the gene changed this turn. Observation only, after every
     /// production writer has settled the queues. Exact no-op off.
-    pub(super) fn journal_score_seat(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
+    pub(super) fn journal_score_seat(&mut self, g: &Game, pid: usize, _plan: &StrategicPlan) {
         if !self.score_seat_on() || pid >= g.players.len() {
             return;
         }
         self.journal_score_seat_army(g, pid);
-        self.journal_score_seat_wonders(g, pid, plan);
-        self.journal_score_seat_plaza(g, pid);
         self.journal_score_seat_sprint(g);
     }
 
@@ -224,7 +336,7 @@ impl AdvancedAi {
                 && !player.is_barbarian
                 && g.is_at_war(pid, player.id)
         });
-        if active_major_war {
+        if !self.score_seat_trims_the_army(g, pid, active_major_war) {
             return;
         }
         let cities = g.player_city_ids(pid);
@@ -233,7 +345,7 @@ impl AdvancedAi {
             return;
         }
         let stock = self.score_seat_stock_army_target(g, pid, city_count);
-        let target = self.score_seat_army_target(city_count, false, stock);
+        let target = self.score_seat_army_target(city_count, true, stock);
         if stock <= target {
             return;
         }
@@ -258,100 +370,21 @@ impl AdvancedAi {
             .and_then(|cid| Self::score_seat_unit_cost(g, pid, cid))
             .unwrap_or(0.0);
         let freed = not_trained as f64 * unit_cost;
+        let ours = g.military_power(pid);
+        let (neighbour, theirs) = self
+            .score_seat_neighbour(g, pid)
+            .map(|(other, power)| (g.players[other].civ.clone(), power))
+            .unwrap_or_else(|| ("no neighbour".to_string(), 0.0));
         think!(self.journal(), Cities, Decision,
-               "The peacetime army holds at {target} land units, one a city, where the stock \
+               "The idle army holds at {target} land units, one a city, where the stock \
                 target asks {stock}";
-               "score-seat-plays-for-points: {held} held; the {not_trained} more the stock \
-                would train (about {freed:.0} Production at {unit_cost:.0} each) go to \
-                buildings, districts, Settlers and wonders instead, about {:.0} points at \
+               "score-seat-trims-the-idle-army: {held} held; military {ours:.0} against \
+                {neighbour}'s {theirs:.0} (the trim needs {SCORE_TRIM_NEIGHBOUR_RATIO}), at \
+                peace with no city named; the {not_trained} more the stock would train \
+                (about {freed:.0} Production at {unit_cost:.0} each) go to buildings, \
+                districts, Settlers and wonders instead, about {:.0} points at \
                 {SCORE_POINTS_PER_HUNDRED_PRODUCTION:.0} a hundred; a unit is 0 points",
                freed * SCORE_POINTS_PER_HUNDRED_PRODUCTION / 100.0);
-    }
-
-    fn journal_score_seat_wonders(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
-        if plan.strategy == GrandStrategy::Recovery {
-            return;
-        }
-        let cities = g.player_city_ids(pid);
-        let city_count = cities.len();
-        let racing: Vec<u32> = cities
-            .iter()
-            .copied()
-            .filter(|cid| matches!(g.cities[cid].queue.first(), Some(Item::Wonder { .. })))
-            .collect();
-        for cid in &racing {
-            let city = &g.cities[cid];
-            let Some(item @ Item::Wonder { wonder, .. }) = city.queue.first() else {
-                continue;
-            };
-            let key = (city.pos, wonder.as_str().to_string());
-            if self.score_seat_journal.wonders.contains(&key) {
-                continue;
-            }
-            let Some(spec) = g.rules.wonders.get(wonder) else {
-                continue;
-            };
-            let wonder_era = spec
-                .tech
-                .as_deref()
-                .and_then(|tech| g.rules.techs.get(tech).map(|node| node.era))
-                .or_else(|| {
-                    spec.civic
-                        .as_deref()
-                        .and_then(|civic| g.rules.civics.get(civic).map(|node| node.era))
-                })
-                .unwrap_or(0);
-            let others = racing.len().saturating_sub(1);
-            let turns = self.production_build_turns(g, pid, *cid, item);
-            if !self.score_seat_wonder_race_opens(
-                city_count,
-                city.buildings.len(),
-                wonder_era,
-                g.world_era,
-                others,
-                turns,
-            ) {
-                continue;
-            }
-            self.score_seat_journal.wonders.insert(key);
-            let cost = g.item_remaining_cost_for_city(pid, *cid, item);
-            let moment = if wonder_era >= g.world_era { 4 } else { 3 };
-            think!(self.journal(), Cities, Decision,
-                   "{} races {} for the tally", city.name, Self::plain_item(item);
-                   "score-seat-plays-for-points: 15 points and a {moment} Era Score moment for \
-                    {cost:.0} Production, about {turns:.0} turns; priced at {:.0} raw where \
-                    the stock Score lane priced every wonder at 180, below a Library's ~960, \
-                    and built none in civvis-20261112T190022Z",
-                   Self::score_seat_wonder_price(g));
-        }
-    }
-
-    fn journal_score_seat_plaza(&mut self, g: &Game, pid: usize) {
-        for cid in g.player_city_ids(pid) {
-            let Some(ours) = BasicAi::plaza_building_item_for(g, pid, cid, true) else {
-                continue;
-            };
-            let stock = BasicAi::plaza_building_item_for(g, pid, cid, false);
-            if stock.as_ref() == Some(&ours) {
-                continue;
-            }
-            let ours_name = Self::plain_item(&ours);
-            if self.score_seat_journal.plaza.as_deref() == Some(ours_name.as_str()) {
-                return;
-            }
-            let stock_name = stock
-                .as_ref()
-                .map(Self::plain_item)
-                .unwrap_or_else(|| "nothing".to_string());
-            think!(self.journal(), Cities, Decision,
-                   "The Government Plaza in {} takes the {ours_name}, not the {stock_name}",
-                   g.cities[&cid].name;
-                   "score-seat-plays-for-points: either is 1 point; the Warlord's Throne pays \
-                    only on a capture, the Ancestral Hall gives +50% Production toward Settlers \
-                    in its city (5 points a city) and a Builder to every new one");
-            self.score_seat_journal.plaza = Some(ours_name);
-            return;
-        }
     }
 
     fn journal_score_seat_sprint(&mut self, g: &Game) {

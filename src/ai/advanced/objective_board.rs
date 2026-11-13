@@ -2773,7 +2773,9 @@ impl AdvancedAi {
         facts: &BTreeMap<u32, UnitFacts>,
         next_id: &mut u32,
     ) -> Option<usize> {
-        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+        // `score-seat-takes-what-pays`: or a Score seat's paying city.
+        if !(self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            || self.score_take_names_a_city(g))
             || rows.iter().any(|row| row.kind == ObjectiveKind::Deter)
         {
             return None;

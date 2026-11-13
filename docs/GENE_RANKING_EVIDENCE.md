@@ -275,7 +275,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `deck-follows-the-queue` | off (unmeasured) | Opt-in gene `deck-follows-the-queue`; the behaviour lives on `BasicAi::deck_follows_the_queue`, see `ai/deck_queue.rs`. | 1 \| 1 |
 | `deck-prices-growth` | off (unmeasured) | Opt-in gene `deck-prices-growth`; see `BasicAi::deck_prices_growth`. | 1 \| 1 |
 | `defence-holds-under-fire` | off (unmeasured) | Opt-in gene `defence-holds-under-fire`; see `Self::defence_holds_under_fire`. | 1 \| 1 |
-| `defend-force-holds-the-city` | off (unmeasured) | Opt-in gene `defend-force-holds-the-city`; see `advanced/defend_force_holds_the_city.rs`. | 1 \| 1 |
+| `defend-force-holds-the-city` | off (unmeasured) | Opt-in gene `defend-force-holds-the-city`; see `advanced/defend_force_holds_the_city.rs`. | — \| 2 |
+| `defend-force-holds-the-city-2` | off (unmeasured) | Opt-in gene `defend-force-holds-the-city-2`; version two of the family, so version one is turned off. | — \| 2 |
 | `defenders-hold-the-walls` | off (unmeasured) | Opt-in gene `defenders-hold-the-walls`; see `Self::defenders_hold_the_walls`. | 1 \| 1 |
 | `defenders-keep-the-city-in-reach` | off (unmeasured) | Keep defensive formations near their assigned threatened city. | 1 \| 1 |
 | `denial-charts-the-racer` | off (unmeasured) | `denial-charts-the-racer`: see `advanced/denial_charts_the_racer.rs`. | 1 \| 1 |
@@ -463,7 +464,11 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-seat-races-the-congress` | off (unmeasured) | Opt-in gene `science-seat-races-the-congress`: a live-only ballot change; see `CivvisCongressRacer` in `CivvisControlAgent.lua`. | 1 \| 1 |
 | `science-specializes-earlier` | off (unmeasured) | Opt-in gene `science-specializes-earlier`; see `Self::science_specializes_earlier`. | 1 \| 1 |
 | `science-writing-before-the-luxury` | off (unmeasured) | Opt-in Science Writing priority before optional research detours. | 1 \| 1 |
+| `score-seat-founds-early` | off (unmeasured) | Opt-in `score-seat-founds-early`; see `advanced/score_seat_founds_early.rs`. | 1 \| 1 |
 | `score-seat-plays-for-points` | off (unmeasured) | Opt-in gene `score-seat-plays-for-points`; see `advanced/score_seat.rs`. | 1 \| 1 |
+| `score-seat-raises-wonders` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders`; see `advanced/score_wonders.rs`. | 1 \| 1 |
+| `score-seat-takes-what-pays` | off (unmeasured) | Opt-in `score-seat-takes-what-pays`; see `advanced/score_takes_what_pays.rs`. | 1 \| 1 |
+| `score-seat-trims-the-idle-army` | off (unmeasured) | Opt-in gene `score-seat-trims-the-idle-army`; see `advanced/score_seat.rs`. | 1 \| 1 |
 | `sea-scout-claims-the-queue` | off (unmeasured) | Opt-in gene `sea-scout-claims-the-queue`; see `advanced/contact_fleet.rs`. | — \| 2 |
 | `sea-scout-claims-the-queue-2` | off (unmeasured) | Opt-in gene `space-people-call-the-projects`; see `advanced/space_people_call_the_projects.rs`. | — \| 2 |
 | `settler-founds-under-raiders` | off (unmeasured) | Opt-in gene `settler-founds-under-raiders`; see `Self::settler_founds_under_raiders`. | 1 \| 1 |

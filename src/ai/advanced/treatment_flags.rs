@@ -459,9 +459,20 @@ impl AdvancedAi {
         /// Opt-in gene `solver-plays-the-host`; see
         /// `advanced/battle_solver/host_enemy.rs`.
         solver_plays_the_host => enable_solver_plays_the_host, disable_solver_plays_the_host;
+        /// Opt-in `score-seat-takes-what-pays`; see
+        /// `advanced/score_takes_what_pays.rs`.
+        score_seat_takes_what_pays => enable_score_seat_takes_what_pays, disable_score_seat_takes_what_pays;
         /// Opt-in gene `score-seat-plays-for-points`; see
         /// `advanced/score_seat.rs`.
         score_seat_plays_for_points => enable_score_seat_plays_for_points, disable_score_seat_plays_for_points;
+        /// Opt-in gene `score-seat-raises-wonders`; see
+        /// `advanced/score_wonders.rs`.
+        score_seat_raises_wonders => enable_score_seat_raises_wonders, disable_score_seat_raises_wonders;
+        /// Opt-in `score-seat-founds-early`; see `advanced/score_seat_founds_early.rs`.
+        score_seat_founds_early => enable_score_seat_founds_early, disable_score_seat_founds_early;
+        /// Opt-in gene `score-seat-trims-the-idle-army`; see
+        /// `advanced/score_seat.rs`.
+        score_seat_trims_the_idle_army => enable_score_seat_trims_the_idle_army, disable_score_seat_trims_the_idle_army;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
@@ -5773,6 +5784,19 @@ impl AdvancedAi {
     /// The twin of `enable_exalted_goddess_buys_the_coastal_guard`.
     pub fn disable_exalted_goddess_buys_the_coastal_guard(&mut self) {
         self.exalted_goddess_buys_the_coastal_guard = false;
+    }
+
+    /// Opt-in gene `defend-force-holds-the-city-2`; version two of the
+    /// family, so version one is turned off. See
+    /// `advanced/defend_force_holds_the_city.rs`.
+    pub fn enable_defend_force_holds_the_city_2(&mut self) {
+        self.defend_force_holds_the_city = false;
+        self.defend_force_holds_the_city_2 = true;
+    }
+
+    /// The twin of `enable_defend_force_holds_the_city_2`.
+    pub fn disable_defend_force_holds_the_city_2(&mut self) {
+        self.defend_force_holds_the_city_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------
