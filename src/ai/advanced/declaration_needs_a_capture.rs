@@ -16,11 +16,11 @@
 //!   conversion: our cities on the target's faith fell by 0.66 (Domination)
 //!   and 1.13 (Score) in the 15 turns after one, against a rise of 1.46 and
 //!   1.42 after a faith war the seat wanted and held. They are exempt.
-//! - The other 48 openers that declare (science denial, the main path's
-//!   staged and counter wars, the open-city front, the launcher war) took no
-//!   city within 30 turns and lost 13 to the war's target, 186 units against
-//!   72 of the target's killed. Every one read under 0.1 on the forecast
-//!   where the reader was armed.
+//! - The other 48 (science denial, the main path's staged and counter wars,
+//!   the open-city front, the launcher war) took no city within 30 turns and
+//!   lost 13 to the war's target, and 189 units to its 72. The three the
+//!   reader saw read 0%, 6% and 0% at the declaration.
+//! - 4 more had no opener line; they are not declarations this gate sees.
 //!
 //! # The rule
 //!
@@ -43,7 +43,9 @@
 
 use super::assault_forecast::{AssaultCorps, ShortOf, CALIBRATED_FROM, HIGH_BIN_TAKEN};
 use super::AdvancedAi;
-use crate::game::{Game, Pos};
+use crate::game::Game;
+use crate::think;
+use crate::Pos;
 use std::collections::BTreeMap;
 
 /// Calibrated P(capture within the window) a declaration needs.
