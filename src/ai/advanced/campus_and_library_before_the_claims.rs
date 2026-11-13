@@ -28,8 +28,8 @@
 //! done, the faith defence's Holy Site and Shrine, a siege reservation's gun
 //! and the Aqueduct claim's Aqueduct.
 //!
-//! **The gene.** It applies while the active victory target is Domination or
-//! Score, in a city that is ours, is not the plan's threatened city, was not attacked
+//! **The gene.** It applies while the active victory target is Domination,
+//! Score, Science or Diplomacy, in a city that is ours, is not the plan's threatened city, was not attacked
 //! within four turns and, while a major is at war with us, stands away from
 //! the front (no hostile presses it: `rear-cities-grow-through-the-war-hold`'s
 //! rear-city test). There:
@@ -135,6 +135,27 @@
 //! builds is the Score seat's aim as much as the Domination seat's. It reads
 //! [`AdvancedAi::conquest_or_score_seat`].
 //!
+//! **A Science or Diplomatic seat too (live Deity Rome, 6-player Continents,
+//! Online, 2026-11-13).** The lane moved from the Score target to Science at
+//! 15:57Z and the gene went inert with it, on the one seat whose victory is
+//! the Campus. The same day, same leader and map, cities founded by t100:
+//! on the Score target (28 games, 219 cities, the gene acting) a city's
+//! Campus stood a median 25 turns (quartiles 17-34) after its founding or
+//! Writing, and `campus-claims-the-free-slot` journalled 30 city-turns a game
+//! of a buildable first Campus held back; on the Science target (8 games, 56
+//! cities) 34.5 turns (27-51) and 97 city-turns a game: the backlog Builder
+//! 12.5 a game against 0.9, near-rival deterrence 12.1 against 1.3, the bound
+//! Granary 11.1 against 1.1, the producer Industrial Zone 4.1 against under
+//! 0.6.
+//! With the same cities (4.0), citizens (15.5) and Production (32) at t50 the
+//! Score games held 23 Science and 13 techs there and the Science games 14
+//! and 10, against a best rival at 69-79; at t75 3 Libraries against 1. The
+//! Science seat's own plan closes that by t100 (71 and 73), which is 50
+//! turns of research late in a race the rivals finish at t170-190. So the
+//! gene reads [`AdvancedAi::campus_first_seat`]: Domination, Score, Science
+//! and Diplomacy. A Culture seat's slot goes to its Theater Square and a
+//! Religion seat's to its Holy Site, and they keep the old order.
+//!
 //! Grep the journal for `campus-and-library-before-the-claims:`.
 
 use super::*;
@@ -177,6 +198,19 @@ pub(super) enum ScienceFirstReach {
 }
 
 impl AdvancedAi {
+    /// The seats whose first Campus and Library go ahead of the routine
+    /// claims: the Domination lane's economy seats
+    /// ([`AdvancedAi::conquest_or_score_seat`]) and the Science and Diplomacy
+    /// targets. See the module ("A Science or Diplomatic seat too").
+    /// `first-campus-before-the-settler` reads it as well.
+    pub(super) fn campus_first_seat(&self, g: &Game) -> bool {
+        self.conquest_or_score_seat(g)
+            || matches!(
+                self.active_victory_target(g),
+                Some(VictoryTarget::Science | VictoryTarget::Diplomacy)
+            )
+    }
+
     /// Whether the gene opens `cid` this turn, and how far. `None` with the
     /// gene off, for another victory target, for a city not ours, for the
     /// plan's threatened city or one attacked within
@@ -189,8 +223,9 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> Option<ScienceFirstReach> {
-        // A Score seat too: see [`AdvancedAi::conquest_or_score_seat`].
-        if !self.campus_and_library_before_the_claims || !self.conquest_or_score_seat(g) {
+        // A Score, Science or Diplomatic seat too: see
+        // [`AdvancedAi::campus_first_seat`].
+        if !self.campus_and_library_before_the_claims || !self.campus_first_seat(g) {
             return None;
         }
         let city = g.cities.get(&cid)?;

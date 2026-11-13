@@ -264,18 +264,19 @@ fn the_commitment_yields_to_war_threat_and_a_standing_campus() {
     assert!(!ai.first_campus_holds_the_settler(&standing, 0, cid, &plan));
 }
 
-/// `conquest_or_score_seat`: a Score seat's first Campus precedes the floor's
-/// Settler as a Domination seat's does; a Culture, Science or Religion seat
-/// keeps the Settler.
+/// `campus_first_seat`: a Score, Science or Diplomatic seat's first Campus
+/// precedes the floor's Settler as a Domination seat's does; a Culture or
+/// Religion seat keeps the Settler.
 #[test]
-fn a_score_seat_takes_the_exception_and_other_targets_keep_the_settler() {
+fn a_score_science_or_diplomatic_seat_takes_the_exception_and_others_keep_the_settler() {
     let (g, armed, cid, plan, campus) = board();
     let turns = g.host_production_turns(cid, &campus).unwrap();
     for (target, precedes) in [
         (VictoryTarget::Domination, true),
         (VictoryTarget::Score, true),
+        (VictoryTarget::Science, true),
+        (VictoryTarget::Diplomacy, true),
         (VictoryTarget::Culture, false),
-        (VictoryTarget::Science, false),
         (VictoryTarget::Religion, false),
     ] {
         let mut ai = armed.clone();

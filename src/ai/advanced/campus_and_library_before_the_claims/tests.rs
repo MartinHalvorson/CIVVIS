@@ -706,17 +706,18 @@ fn a_counterweight_holy_site_yields_with_nothing_paid_but_not_with_progress() {
     }
 }
 
-/// `conquest_or_score_seat`: a Score seat's first Campus goes ahead of the
-/// Granary as a Domination seat's does; a Culture, Science or Religion seat
-/// keeps the Granary.
+/// `campus_first_seat`: a Score, Science or Diplomatic seat's first Campus
+/// goes ahead of the Granary as a Domination seat's does; a Culture or
+/// Religion seat keeps the Granary.
 #[test]
-fn a_score_seat_puts_its_first_campus_first_and_other_targets_keep_the_granary() {
+fn a_score_science_or_diplomatic_seat_puts_its_first_campus_first_and_others_keep_the_granary() {
     let (g, armed, cid, plan, campus) = campus_board();
     for (target, expected) in [
         (VictoryTarget::Domination, campus.clone()),
         (VictoryTarget::Score, campus.clone()),
+        (VictoryTarget::Science, campus.clone()),
+        (VictoryTarget::Diplomacy, campus.clone()),
         (VictoryTarget::Culture, granary()),
-        (VictoryTarget::Science, granary()),
         (VictoryTarget::Religion, granary()),
     ] {
         let mut board = g.clone();
