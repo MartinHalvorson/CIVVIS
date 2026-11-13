@@ -117,7 +117,16 @@ pub fn game_from_save(value: Value) -> Result<Game, String> {
         value => value,
     };
 
-    serde_json::from_value(payload).map_err(|error| format!("that is not a save: {error}"))
+    // Keep the large saved-Game decoder out of the browser request handler.
+    // Binaryen can inline single-caller helpers past Rust's inline(never),
+    // so retain this boundary with a safe function-pointer identity barrier.
+    let decode = std::hint::black_box(deserialize_game as fn(Value) -> serde_json::Result<Game>);
+    decode(payload).map_err(|error| format!("that is not a save: {error}"))
+}
+
+#[inline(never)]
+fn deserialize_game(payload: Value) -> serde_json::Result<Game> {
+    serde_json::from_value(payload)
 }
 
 #[cfg(test)]
