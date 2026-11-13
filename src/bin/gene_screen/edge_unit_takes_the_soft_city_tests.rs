@@ -48,7 +48,11 @@ const CONTROL: &str = "control";
 const GENE: &str = "gene";
 const STACK: &str = "stack";
 const FREE_IRON: &str = "gene-free-iron";
-const ARMS: [&str; 4] = [CONTROL, GENE, STACK, FREE_IRON];
+const START: &str = "gene-start";
+const START_FREE_IRON: &str = "gene-start-free-iron";
+const ARMS: [&str; 6] = [CONTROL, GENE, STACK, FREE_IRON, START, START_FREE_IRON];
+/// The second flag, which needs the first.
+const START_TAG: &str = "edge-unit-opens-from-the-start";
 /// The shipped early-conquest stack the `stack` arm turns on.
 /// `first-capital-strikes-the-open-window` needs
 /// `first-capital-before-the-walls`, and both act only on a Domination seat.
@@ -68,7 +72,7 @@ const FIDELITY_MARKS: [u32; 4] = [40, 50, 60, 70];
 /// Cities, techs, Science and military read at these turns.
 const SAMPLE_MARKS: [u32; 6] = [50, 75, 100, 125, 150, 200];
 /// Cities the seat founded, counted at these turns.
-const FOUNDED_MARKS: [u32; 2] = [75, 100];
+const FOUNDED_MARKS: [u32; 3] = [50, 75, 100];
 /// A Legion's strength, against the live census's defences.
 const LEGION_STRENGTH: f64 = 40.0;
 const LAUNCHES: [&str; 5] = [
@@ -154,6 +158,14 @@ struct Watch {
     iron_at_bronze: Option<bool>,
     first_iron: Option<u32>,
     first_legion: Option<u32>,
+    #[serde(default)]
+    third_legion: Option<u32>,
+    #[serde(default)]
+    mining: Option<u32>,
+    #[serde(default)]
+    pottery: Option<u32>,
+    #[serde(default)]
+    writing: Option<u32>,
     legions: BTreeMap<u32, usize>,
     nearest: BTreeMap<u32, Near>,
     samples: BTreeMap<u32, Sample>,
@@ -303,6 +315,15 @@ fn look(g: &Game, w: &mut Watch) {
     if w.iron_working.is_none() && knows("iron_working") {
         w.iron_working = Some(turn);
     }
+    for (tech, seen) in [
+        ("mining", &mut w.mining),
+        ("pottery", &mut w.pottery),
+        ("writing", &mut w.writing),
+    ] {
+        if seen.is_none() && knows(tech) {
+            *seen = Some(turn);
+        }
+    }
     let stock = player
         .strategic_resources
         .iter()
@@ -318,6 +339,9 @@ fn look(g: &Game, w: &mut Watch) {
         .count();
     if legions > 0 && w.first_legion.is_none() {
         w.first_legion = Some(turn);
+    }
+    if legions >= 3 && w.third_legion.is_none() {
+        w.third_legion = Some(turn);
     }
     for mark in FIDELITY_MARKS {
         if turn >= mark && !w.legions.contains_key(&mark) {
@@ -404,6 +428,11 @@ fn stage_of(detail: &str) -> Option<&'static str> {
         "hold" if rest.contains("refused") => "held_refused",
         "hold" => "held_other",
         "denounced" => "denounced",
+        "muster" => "mustered",
+        "siege" => "siege",
+        "start" if rest.starts_with("research goes") => "start",
+        "start" if rest.starts_with("no ") => "start_closed",
+        "start" => "start_supplied",
         "declared" => "declared",
         "captured" => "captured",
         "lost the target" => "lost_target",
@@ -503,7 +532,7 @@ fn play(
             look(g, &mut book.0);
         }));
     });
-    let free_iron = arm == FREE_IRON;
+    let free_iron = arm == FREE_IRON || arm == START_FREE_IRON;
     GAME_SETUP.with(|setup| {
         *setup.borrow_mut() = free_iron.then(|| Box::new(waive_legion_iron) as GameSetup);
     });
@@ -661,6 +690,7 @@ const COLUMNS: &[Column] = &[
     ),
     ("wars on us by t100", |w| Some(wars_on_us_by(w, 100)), true),
     ("cities taken by t60", |w| Some(taken_by(w, Some(60))), true),
+    ("cities taken by t80", |w| Some(taken_by(w, Some(80))), true),
     (
         "cities taken by t100",
         |w| Some(taken_by(w, Some(100))),
@@ -685,6 +715,11 @@ const COLUMNS: &[Column] = &[
         true,
     ),
     (
+        "cities founded by t50",
+        |w| w.watch.founded.get(&50).map(|n| *n as f64),
+        true,
+    ),
+    (
         "cities founded by t75",
         |w| w.watch.founded.get(&75).map(|n| *n as f64),
         true,
@@ -697,6 +732,11 @@ const COLUMNS: &[Column] = &[
     (
         "cities owned t50",
         |w| w.watch.samples.get(&50).map(|s| s.cities as f64),
+        true,
+    ),
+    (
+        "cities owned t75",
+        |w| w.watch.samples.get(&75).map(|s| s.cities as f64),
         true,
     ),
     (
@@ -838,6 +878,28 @@ fn fidelity(side: &[&World]) -> Vec<String> {
     out
 }
 
+/// Whether the journal shows the assault fought at the city: a siege line
+/// with the city below full health or an edge unit beside it, or a capture.
+fn assault_pressed(w: &World) -> bool {
+    counter(w, "captured") > 0
+        || w.events.iter().any(|(_, event)| {
+            let Some(rest) = event.strip_prefix("siege: ") else {
+                return false;
+            };
+            let health = rest
+                .split(" health ")
+                .nth(1)
+                .and_then(|after| after.split_whitespace().next())
+                .and_then(|hp| hp.parse::<i32>().ok());
+            let beside = rest
+                .split("; ")
+                .nth(1)
+                .and_then(|after| after.split_whitespace().next())
+                .and_then(|n| n.parse::<u32>().ok());
+            health.is_some_and(|hp| hp < 200) || beside.is_some_and(|n| n > 0)
+        })
+}
+
 /// What one arm did, over its own worlds.
 fn describe(arm: &str, side: &[&World]) -> Vec<String> {
     let n = side.len();
@@ -872,10 +934,47 @@ fn describe(arm: &str, side: &[&World]) -> Vec<String> {
             .entry(format!("{who} {}", w.row.victory))
             .or_default() += 1;
     }
+    let (mi_n, mi) = turns(|w| w.watch.mining);
+    let (po_n, po) = turns(|w| w.watch.pottery);
+    let (wr_n, wr) = turns(|w| w.watch.writing);
+    let (tl_n, tl) = turns(|w| w.watch.third_legion);
+    let (mu_n, mu) = turns(|w| counter_turn(w, "mustered"));
+    // The chain, stage by stage: over every world, and over the worlds with
+    // Iron in reach at Bronze Working.
+    let chain = |side: &[&World]| -> String {
+        let has = |f: &dyn Fn(&World) -> bool| side.iter().copied().filter(|&w| f(w)).count();
+        format!(
+            "{} worlds: research goal {}, resource (bought, mined or stocked) {}, 3 Legions {}, muster {}, denounced {}, declared {}, assault pressed {}, captured {}",
+            side.len(),
+            has(&|w: &World| counter(w, "goal") > 0),
+            has(&|w: &World| {
+                counter(w, "tile_bought") + counter(w, "improved") > 0
+                    || w.watch.first_iron.is_some_and(|t| t <= 80)
+            }),
+            has(&|w: &World| w.watch.third_legion.is_some()),
+            has(&|w: &World| counter(w, "mustered") > 0),
+            has(&|w: &World| counter(w, "denounced") > 0),
+            has(&|w: &World| counter(w, "declared") > 0),
+            has(&assault_pressed),
+            has(&|w: &World| counter(w, "captured") > 0),
+        )
+    };
+    let in_reach: Vec<&World> = side
+        .iter()
+        .copied()
+        .filter(|w| w.watch.iron_at_bronze == Some(true))
+        .collect();
     vec![
         format!(
             "   {arm:<14} research: Bronze Working in {bw_n}/{n} (median t{bw}), Iron in reach at Bronze Working {reach}/{at_bronze}, Iron Working {iw_n}/{n} (t{iw}), first Iron {fi_n}/{n} (t{fi}), first Legion {fl_n}/{n} (t{fl})"
         ),
+        format!(
+            "   {arm:<14} turns (median, worlds): Mining t{mi} ({mi_n}), Pottery t{po} ({po_n}), Writing t{wr} ({wr_n}), third Legion t{tl} ({tl_n}), muster t{mu} ({mu_n}), start opened {}, stood down at Bronze Working {}",
+            worlds_with("start"),
+            worlds_with("start_closed"),
+        ),
+        format!("   {arm:<14} chain, all: {}", chain(side)),
+        format!("   {arm:<14} chain, Iron in reach at Bronze Working: {}", chain(&in_reach[..])),
         format!(
             "   {arm:<14} gene: window opened {op_n}/{n} (median t{op}), research goal set {}/{n}, waited for want of a source {}/{n}, tiles bought {}, sources improved {}, upgrades {}, units trained {}, declared {de_n}/{n} (t{de}), captured {}, went on {}, peace asked {}, closed {}",
             worlds_with("goal"),
@@ -1143,10 +1242,18 @@ fn edge_unit_takes_the_soft_city_driver() {
         !control[index(TAG)],
         "the control genome already plays {TAG}"
     );
+    assert!(
+        !control[index(START_TAG)],
+        "the control genome already plays {START_TAG}"
+    );
     let genome_of = |arm: &str| -> Vec<bool> {
         let mut on = control.clone();
         match arm {
             GENE | FREE_IRON => on[index(TAG)] = true,
+            START | START_FREE_IRON => {
+                on[index(TAG)] = true;
+                on[index(START_TAG)] = true;
+            }
             STACK => {
                 for tag in STACK_ON {
                     on[index(tag)] = true;

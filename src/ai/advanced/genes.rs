@@ -5868,6 +5868,13 @@ pub const GENES: &[Gene] = &[
     // stops when the edge is gone. Opt-in; see
     // `advanced/edge_unit_takes_the_soft_city.rs`.
     Gene { tag: "edge-unit-takes-the-soft-city", field: "edge_unit_takes_the_soft_city", kind: Kind::OptIn, enable: AdvancedAi::enable_edge_unit_takes_the_soft_city, disable: AdvancedAi::disable_edge_unit_takes_the_soft_city },
+    // Live Science lane 11-13: Bronze Working at t59-82 and Iron Working at
+    // t62-101, no Legion in six games; the soft city's window shuts by t60.
+    // With `edge-unit-takes-the-soft-city` (required), a seat whose edge unit
+    // is its own unique unit researches its path from turn one, decides at
+    // Bronze Working, trains bodies and holds Gold for the upgrades. Opt-in;
+    // see `advanced/edge_unit_takes_the_soft_city.rs`.
+    Gene { tag: "edge-unit-opens-from-the-start", field: "edge_unit_opens_from_the_start", kind: Kind::OptIn, enable: AdvancedAi::enable_edge_unit_opens_from_the_start, disable: AdvancedAi::disable_edge_unit_opens_from_the_start },
     // Live Rome 11-12/13 (52 games, no faith founded in any): 30 faith strikes
     // took nothing, lost 3 cities to the target and 8 to others, 78 units for
     // 37 killed. The Score hold has since held one in 31 of 32 games, and is

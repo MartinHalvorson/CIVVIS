@@ -502,3 +502,109 @@ fn a_long_war_or_a_spent_force_asks_for_peace() {
     assert!(window(&ai).spent);
     assert_eq!(counter(&g, "peace"), 1);
 }
+
+fn from_the_start() -> AdvancedAi {
+    let mut ai = gene_on();
+    ai.enable_edge_unit_opens_from_the_start();
+    ai
+}
+
+/// One city of ours: the second city handed to the rival.
+fn one_city(g: &mut Game) {
+    let second = g.city_at(SECOND).unwrap();
+    g.cities.get_mut(&second).unwrap().owner = 1;
+}
+
+#[test]
+fn from_the_start_researches_the_path_with_one_city() {
+    let (mut g, _) = fixture(&[]);
+    one_city(&mut g);
+    // The first gene alone waits for two cities and names no goal.
+    let mut ai = gene_on();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(ai.edge_unit_research_goal(&g, 0), None);
+    assert_eq!(window(&ai).start, Some(false));
+    // With the second flag the path to the Legion is the goal from turn one:
+    // the technology that reveals its Iron (research walks Mining first).
+    let (mut g, _) = fixture(&[]);
+    one_city(&mut g);
+    let mut ai = from_the_start();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(window(&ai).start, Some(true));
+    assert_eq!(
+        ai.edge_unit_research_goal(&g, 0),
+        Some(crate::name!("bronze_working"))
+    );
+    assert_eq!(counter(&g, "start"), 1);
+    // Asked again it journals the goal once.
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(counter(&g, "goal"), 1);
+}
+
+#[test]
+fn from_the_start_stands_down_without_iron_at_bronze_working() {
+    let (mut g, _) = fixture(&["mining", "bronze_working"]);
+    one_city(&mut g);
+    let mut ai = from_the_start();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let w = window(&ai);
+    assert_eq!(w.start, Some(false));
+    assert!(!w.start_supplied);
+    assert_eq!(ai.edge_unit_research_goal(&g, 0), None);
+    assert_eq!(counter(&g, "start_closed"), 1);
+    assert_eq!(ai.edge_upgrade_gold_held(&g, 0), 0.0);
+}
+
+#[test]
+fn from_the_start_with_iron_in_reach_trains_bodies_and_holds_the_gold() {
+    let (mut g, _) = fixture(&["mining", "bronze_working"]);
+    with_iron(&mut g);
+    one_city(&mut g);
+    let warrior = g.spawn_test_unit("warrior", 0, CAPITAL);
+    let mut ai = from_the_start();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let w = window(&ai);
+    assert!(w.start_supplied && w.target.is_none());
+    assert_eq!(
+        ai.edge_unit_research_goal(&g, 0),
+        Some(crate::name!("iron_working"))
+    );
+    // The Warrior's upgrade into a Legion is held back from other purchases.
+    let held = ai.edge_upgrade_gold_held(&g, 0);
+    let price = g
+        .unit_upgrade_price_in_formation(0, crate::name!("warrior"), legion(), 0)
+        .unwrap()
+        .0;
+    assert!(held > 0.0 && (held - price).abs() < 1e-6, "{held} {price}");
+    assert!(ai.purchase_upkeep_floor(&g, 0, 0.0) >= held);
+    // The capital trains a second body to upgrade, with no city named.
+    ai.claim_edge_unit_queue(&mut g, 0);
+    let capital = g.city_at(CAPITAL).unwrap();
+    assert_eq!(
+        g.cities[&capital].queue.first(),
+        Some(&Item::Unit {
+            unit: crate::name!("warrior")
+        })
+    );
+    assert_eq!(g.units[&warrior].kind, crate::name!("warrior"));
+    // Off, nothing is held.
+    let (g, _) = fixture(&["mining", "bronze_working"]);
+    let ai = gene_on();
+    assert_eq!(ai.edge_upgrade_gold_held(&g, 0), 0.0);
+}
+
+#[test]
+fn from_the_start_stands_down_when_no_soft_city_is_named_by_turn_45() {
+    let (mut g, _) = fixture(&["mining", "bronze_working"]);
+    with_iron(&mut g);
+    // The rival's city is out of sight: nothing to name.
+    g.players[0].explored.remove(&RIVAL);
+    let mut ai = from_the_start();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(!window(&ai).spent);
+    g.turn = super::EDGE_START_NAME_TURN + 1;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(window(&ai).spent);
+    assert_eq!(counter(&g, "closed"), 1);
+    assert_eq!(ai.edge_unit_research_goal(&g, 0), None);
+}

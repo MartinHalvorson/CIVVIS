@@ -307,6 +307,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `each-civ-draws-its-width` | off (unmeasured) | Opt-in `each-civ-draws-its-width`; see `advanced/each_civ_draws_its_width.rs`. | 1 \| 1 |
 | `early-cities-keep-their-distance` | off (unmeasured) | Opt-in gene `early-cities-keep-their-distance`; see `Self::early_cities_keep_their_distance`. | 1 \| 1 |
 | `early-route-feeds-production` | off (unmeasured) | Opt-in gene `early-route-feeds-production`; see `Self::early_route_feeds_production`. | 1 \| 1 |
+| `edge-unit-opens-from-the-start` | off (unmeasured) | Opt-in gene `edge-unit-opens-from-the-start` (requires `edge-unit-takes-the-soft-city`); see `advanced/edge_unit_takes_the_soft_city.rs`. | 1 \| 1 |
 | `edge-unit-takes-the-soft-city` | off (unmeasured) | Opt-in gene `edge-unit-takes-the-soft-city`; see `advanced/edge_unit_takes_the_soft_city.rs`. | 1 \| 1 |
 | `education-follows-the-library` | off (unmeasured) | Opt-in `education-follows-the-library`; see `advanced/research/domination_education.rs`. | 1 \| 1 |
 | `elimination-yields-to-a-launch-2` | off (unmeasured) | Enable the separately measured staged Culture air-interception version. | 1 \| 2 |

@@ -7823,6 +7823,12 @@ pub struct AdvancedAi {
     edge_unit_takes_the_soft_city: bool,
     /// The window of `edge-unit-takes-the-soft-city`; `None` with it off.
     edge_unit_window: Option<edge_unit_takes_the_soft_city::EdgeWindow>,
+    /// `edge-unit-opens-from-the-start`: with `edge-unit-takes-the-soft-city`
+    /// on and a unique edge unit (Rome's Legion), its path is researched from
+    /// turn one, the resource decides at its revealing technology, and
+    /// bodies and Gold are kept for the upgrades. See
+    /// `advanced/edge_unit_takes_the_soft_city.rs`. Off by default.
+    edge_unit_opens_from_the_start: bool,
     /// `faithless-seat-holds-its-faith-strikes`: a seat that founded no
     /// religion (and is not playing for a Religious Victory) holds the faith
     /// strike unless the rival's faith stands at match point. See
