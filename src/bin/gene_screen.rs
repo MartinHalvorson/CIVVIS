@@ -128,6 +128,9 @@ mod edge_ledger_tests;
 #[cfg(test)]
 #[path = "gene_screen/host_tactics_tests.rs"]
 mod host_tactics_tests;
+#[cfg(test)]
+#[path = "gene_screen/one_upgrade_lifts_every_city_tests.rs"]
+mod one_upgrade_lifts_every_city_tests;
 #[path = "gene_screen/rival_war_pace.rs"]
 mod rival_war_pace;
 #[path = "gene_screen/unit_ledger.rs"]

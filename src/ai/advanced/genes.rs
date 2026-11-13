@@ -5950,6 +5950,13 @@ pub const GENES: &[Gene] = &[
     // unit; the owner's own step keeps it. Opt-in; see
     // `advanced/unit_owner.rs`.
     Gene { tag: "one-owner-per-unit", field: "one_owner_per_unit", kind: Kind::OptIn, enable: AdvancedAi::enable_one_owner_per_unit, disable: AdvancedAi::disable_one_owner_per_unit },
+    // Live Deity 11-12/13, 115 games: a city's strike is the best ranged
+    // strength its owner ever owned (93% of 12,374 rows, upgrades count), yet
+    // from turn 30 the best melee ever owned sat 10+ below what was unlocked on
+    // 38.6% of turns and the best ranged on 19.5%, because the upgrade pass
+    // keeps 120 Gold at peace. The first unit into a tier upgrades ahead of
+    // that floor. See `advanced/one_upgrade_lifts_every_city.rs`.
+    Gene { tag: "one-upgrade-lifts-every-city", field: "one_upgrade_lifts_every_city", kind: Kind::OptIn, enable: AdvancedAi::enable_one_upgrade_lifts_every_city, disable: AdvancedAi::disable_one_upgrade_lifts_every_city },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.

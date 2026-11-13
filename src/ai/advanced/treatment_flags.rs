@@ -369,6 +369,9 @@ impl AdvancedAi {
         open_city_is_the_objective => enable_open_city_is_the_objective, disable_open_city_is_the_objective;
         /// Opt-in `one-owner-per-unit`; see `advanced/unit_owner.rs`.
         one_owner_per_unit => enable_one_owner_per_unit, disable_one_owner_per_unit;
+        /// Opt-in gene `one-upgrade-lifts-every-city`; see
+        /// `advanced/one_upgrade_lifts_every_city.rs`.
+        one_upgrade_lifts_every_city => enable_one_upgrade_lifts_every_city, disable_one_upgrade_lifts_every_city;
         // ---- append: p-r --------------------------------------------
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;
