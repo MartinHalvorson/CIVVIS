@@ -35,6 +35,10 @@ const WINDOW: u32 = 30;
 type WarBook = BTreeMap<(u32, usize, usize, u32), WarRecord>;
 type Metric = Box<dyn Fn(&World) -> f64>;
 
+fn metric(f: impl Fn(&World) -> f64 + 'static) -> Metric {
+    Box::new(f)
+}
+
 fn worlds() -> usize {
     std::env::var("CIVVIS_WAR_GATE_WORLDS")
         .ok()
@@ -364,40 +368,37 @@ fn war_gate_paired_on_the_two_lanes() {
         let metrics: Vec<(&str, Metric)> = vec![
             (
                 "wars declared on a major",
-                Box::new(|r| f64::from(r.declared)),
+                metric(|r| f64::from(r.declared)),
             ),
             (
                 "  of them took a city <=30",
-                Box::new(|r| f64::from(r.took_a_city)),
+                metric(|r| f64::from(r.took_a_city)),
             ),
             (
                 "  cities those wars took <=30",
-                Box::new(|r| f64::from(r.war_taken)),
+                metric(|r| f64::from(r.war_taken)),
             ),
             (
                 "  cities those wars lost <=30",
-                Box::new(|r| f64::from(r.war_lost)),
+                metric(|r| f64::from(r.war_lost)),
             ),
             (
                 "capitals taken (declared wars)",
-                Box::new(|r| f64::from(r.capitals_taken)),
+                metric(|r| f64::from(r.capitals_taken)),
             ),
             (
                 "gate: turns a war was held",
-                Box::new(|r| f64::from(r.held_turns)),
+                metric(|r| f64::from(r.held_turns)),
             ),
-            (
-                "gate: declarations passed",
-                Box::new(|r| f64::from(r.passed)),
-            ),
-            ("cities taken (row)", Box::new(|r| r.cities_taken as f64)),
-            ("cities lost (row)", Box::new(|r| r.cities_lost as f64)),
-            ("units killed", Box::new(|r| f64::from(r.units_killed))),
-            ("units lost", Box::new(|r| f64::from(r.units_lost))),
-            ("score", Box::new(|r| r.score as f64)),
-            ("placement (1 = best)", Box::new(|r| r.rank as f64)),
-            ("score share", Box::new(|r| r.share)),
-            ("wins", Box::new(|r| f64::from(u8::from(r.win)))),
+            ("gate: declarations passed", metric(|r| f64::from(r.passed))),
+            ("cities taken (row)", metric(|r| r.cities_taken as f64)),
+            ("cities lost (row)", metric(|r| r.cities_lost as f64)),
+            ("units killed", metric(|r| f64::from(r.units_killed))),
+            ("units lost", metric(|r| f64::from(r.units_lost))),
+            ("score", metric(|r| r.score as f64)),
+            ("placement (1 = best)", metric(|r| r.rank as f64)),
+            ("score share", metric(|r| r.share)),
+            ("wins", metric(|r| f64::from(u8::from(r.win)))),
         ];
         report.push(format!(
             "  {:<34} {:>9} {:>9}   {:>18}",
@@ -408,8 +409,8 @@ fn war_gate_paired_on_the_two_lanes() {
             let (d, se) = mean_se(&diffs);
             report.push(format!(
                 "  {name:<34} {:>9.2} {:>9.2}   {d:>+8.2} +/- {se:<6.2}",
-                sum(&off, f.as_ref()) / off.len().max(1) as f64,
-                sum(&onr, f.as_ref()) / onr.len().max(1) as f64,
+                sum(&off, &**f) / off.len().max(1) as f64,
+                sum(&onr, &**f) / onr.len().max(1) as f64,
             ));
         }
         for (label, rows) in [("off", &off), ("on", &onr)] {
