@@ -17,12 +17,13 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Walls calibration: the control alone, 16 worlds, 71 turns, at three
-  # `--rival-walls` shares, read against the live share of walled nearest
-  # rival cities (13 / 16 / 38 / 49% at turns 40 / 50 / 60 / 70).
-  CIVVIS_EDGE_TURNS: "71"
-  CIVVIS_EDGE_SEED: "52670300"
-  CIVVIS_EDGE_ARMS: "control"
+  # Round 3: the opening from the start. 32 pairs on each of two recipes,
+  # 110 turns: the lane, and the lane with `--rival-walls 0` (the closest the
+  # throttle gets to the live walls). Control; gene; gene with
+  # `edge-unit-opens-from-the-start`; the same with the Iron waived.
+  CIVVIS_EDGE_TURNS: "110"
+  CIVVIS_EDGE_SEED: "52670400"
+  CIVVIS_EDGE_ARMS: "control,gene,gene-start,gene-start-free-iron"
 
 jobs:
   build:
@@ -68,12 +69,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { recipe: walls-0, walls: "0", worlds: "16", shard: 0, of: 2 }
-          - { recipe: walls-0, walls: "0", worlds: "16", shard: 1, of: 2 }
-          - { recipe: walls-5, walls: "5", worlds: "16", shard: 0, of: 2 }
-          - { recipe: walls-5, walls: "5", worlds: "16", shard: 1, of: 2 }
-          - { recipe: walls-10, walls: "10", worlds: "16", shard: 0, of: 2 }
-          - { recipe: walls-10, walls: "10", worlds: "16", shard: 1, of: 2 }
+          - { recipe: lane, walls: "", worlds: "32", shard: 0, of: 8 }
+          - { recipe: lane, walls: "", worlds: "32", shard: 1, of: 8 }
+          - { recipe: lane, walls: "", worlds: "32", shard: 2, of: 8 }
+          - { recipe: lane, walls: "", worlds: "32", shard: 3, of: 8 }
+          - { recipe: lane, walls: "", worlds: "32", shard: 4, of: 8 }
+          - { recipe: lane, walls: "", worlds: "32", shard: 5, of: 8 }
+          - { recipe: lane, walls: "", worlds: "32", shard: 6, of: 8 }
+          - { recipe: lane, walls: "", worlds: "32", shard: 7, of: 8 }
+          - { recipe: walls-0, walls: "0", worlds: "32", shard: 0, of: 8 }
+          - { recipe: walls-0, walls: "0", worlds: "32", shard: 1, of: 8 }
+          - { recipe: walls-0, walls: "0", worlds: "32", shard: 2, of: 8 }
+          - { recipe: walls-0, walls: "0", worlds: "32", shard: 3, of: 8 }
+          - { recipe: walls-0, walls: "0", worlds: "32", shard: 4, of: 8 }
+          - { recipe: walls-0, walls: "0", worlds: "32", shard: 5, of: 8 }
+          - { recipe: walls-0, walls: "0", worlds: "32", shard: 6, of: 8 }
+          - { recipe: walls-0, walls: "0", worlds: "32", shard: 7, of: 8 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
