@@ -8845,6 +8845,12 @@ pub struct AdvancedAi {
     /// a unit out to heal ...) does not; the owner's own step keeps it. See
     /// `advanced/unit_owner.rs`. Opt-in.
     one_owner_per_unit: bool,
+    /// `one-upgrade-lifts-every-city`: a Gold upgrade that lifts every
+    /// city's defence or ranged strike by 5 or more (the first unit into a
+    /// tier) is taken ahead of the treasury floor, down to an empty treasury
+    /// while the income holds. See `advanced/one_upgrade_lifts_every_city.rs`.
+    /// Off by default.
+    one_upgrade_lifts_every_city: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -11927,6 +11933,9 @@ mod nusantara_settles_the_shore;
 /// `old-techs-before-the-beeline`: the army's upgrade techs and the old-era
 /// backlog ahead of the beeline. See `advanced/old_techs_before_the_beeline.rs`.
 mod old_techs_before_the_beeline;
+/// `one-upgrade-lifts-every-city`: see
+/// `advanced/one_upgrade_lifts_every_city.rs`.
+mod one_upgrade_lifts_every_city;
 mod peacetime_republic;
 mod revealed_launch_research;
 /// `satellite-holds-the-pad`: see `advanced/satellite_holds_the_pad.rs`.
