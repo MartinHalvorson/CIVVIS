@@ -17,11 +17,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Round 0: the control's fidelity to the live census, with the three other
-  # arms played beside it at 100 turns to see whether and why they fire.
-  CIVVIS_EDGE_WORLDS: "16"
-  CIVVIS_EDGE_TURNS: "100"
-  CIVVIS_EDGE_SEED: "52670000"
+  # Round 1: fresh seeds, 150 turns, all four arms; the lane recipe on 32
+  # pairs and, as a labelled sensitivity, the same recipe with
+  # `--rival-walls 20` on 16 (the chairs wall far faster than the live field).
+  CIVVIS_EDGE_TURNS: "150"
+  CIVVIS_EDGE_SEED: "52670100"
   CIVVIS_EDGE_ARMS: "control,gene,stack,gene-free-iron"
 
 jobs:
@@ -67,26 +67,39 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
-        of: [4]
+        include:
+          - { recipe: lane, walls: "", worlds: "32", shard: 0, of: 8 }
+          - { recipe: lane, walls: "", worlds: "32", shard: 1, of: 8 }
+          - { recipe: lane, walls: "", worlds: "32", shard: 2, of: 8 }
+          - { recipe: lane, walls: "", worlds: "32", shard: 3, of: 8 }
+          - { recipe: lane, walls: "", worlds: "32", shard: 4, of: 8 }
+          - { recipe: lane, walls: "", worlds: "32", shard: 5, of: 8 }
+          - { recipe: lane, walls: "", worlds: "32", shard: 6, of: 8 }
+          - { recipe: lane, walls: "", worlds: "32", shard: 7, of: 8 }
+          - { recipe: walls-20, walls: "20", worlds: "16", shard: 0, of: 4 }
+          - { recipe: walls-20, walls: "20", worlds: "16", shard: 1, of: 4 }
+          - { recipe: walls-20, walls: "20", worlds: "16", shard: 2, of: 4 }
+          - { recipe: walls-20, walls: "20", worlds: "16", shard: 3, of: 4 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: driver
-      - name: Play shard ${{ matrix.shard }} of ${{ matrix.of }}
+      - name: Play ${{ matrix.recipe }} shard ${{ matrix.shard }} of ${{ matrix.of }}
         env:
           CIVVIS_EDGE_GENOME: src/bin/gene_screen/edge_unit_live_genome.txt
+          CIVVIS_EDGE_WORLDS: ${{ matrix.worlds }}
+          CIVVIS_EDGE_RIVAL_WALLS: ${{ matrix.walls }}
           CIVVIS_EDGE_SHARD: ${{ matrix.shard }}/${{ matrix.of }}
-          CIVVIS_EDGE_OUT: worlds-${{ matrix.shard }}.jsonl
+          CIVVIS_EDGE_OUT: worlds-${{ matrix.recipe }}-${{ matrix.shard }}.jsonl
         run: |
           chmod +x gene-screen-tests
           ./gene-screen-tests edge_unit_takes_the_soft_city_driver --ignored --nocapture
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: worlds-${{ matrix.shard }}
-          path: worlds-${{ matrix.shard }}.jsonl
+          name: worlds-${{ matrix.recipe }}-${{ matrix.shard }}
+          path: worlds-${{ matrix.recipe }}-${{ matrix.shard }}.jsonl
           retention-days: 14
 
   report:
