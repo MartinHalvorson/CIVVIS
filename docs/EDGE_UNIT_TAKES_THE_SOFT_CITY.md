@@ -159,20 +159,18 @@ on turn 1: Rome's Legion; a generic Swordsman or Horseman does not qualify):
 
 ## Version 2, from the first live game (PR #5292)
 
-`civvis-20261113T205538Z` (Rome, both flags; `why.log`, `events.jsonl`,
-`decisions.jsonl`): no Iron in reach at Bronze Working (turn 19), so the
-opening stood down, yet Iron was in stock from about 23. The window opened
-at 27 on Mbamba of Kongo (defence 17, unwalled, 8 tiles); Iron Working
-about 32. Legions owned: 1 at 36 (the Warrior upgraded for 75 of 76 Gold,
-walking at 50 health to 48), 2 at 51, 3 at 54, 5 at 75; none queued from
-33 to 44. Denounced at 54; closed at 56 "no longer soft" at edge +6
-(defence 17 / 24 / 32 / 34 at 27 / 33 / 39 / 56), never walled to 81.
+`civvis-20261113T205538Z` (Rome, both flags): no Iron in reach at Bronze
+Working (turn 19), so the opening stood down, yet Iron was in stock from
+about 23. Opened at 27 on Mbamba (defence 17, unwalled, 8 tiles); Legions
+owned 1 at 36 (a Warrior upgraded for 75 of 76 Gold, walking at 50 health
+to 48), 3 at 54, 5 at 75. Denounced at 54; closed at 56 "no longer soft"
+at edge +6 (defence 34); Mbamba was never walled to turn 81.
 
-**Why nothing was queued from 33 to 44.** The claim took only an idle queue
-in two cities (Rome, Antium). The claim chain runs only after the opening
-book, which held Rome to 37 (an Archer at 34, a Builder at 37); the early
-Settler floor, ahead of the claim, took Rome at 39 and Antium at 40; the
-Granary claim, after it, put Granaries ahead of queued Legions (45, 50).
+**Why nothing was queued from 33 to 44.** The claim took only idle queues,
+in Rome and Antium; the claim chain waits for the opening book, which held
+Rome to 37 (an Archer at 34, a Builder at 37); the early Settler floor,
+ahead of the claim, took Rome at 39 and Antium at 40; the Granary claim,
+after it, put Granaries ahead of queued Legions (45, 50).
 
 Changes (same two tags, still opt-in):
 
@@ -185,8 +183,8 @@ Changes (same two tags, still opt-in):
    once, ahead of a deferrable item (never one finishing this turn, a
    soldier, Walls, a wonder, a project, a District with work in it, or a
    city's first Settler: only the capital's gives way); the claims that
-   respect a reserved army build leave it queued; during the opening book
-   the window fills idle queues at the turn start.
+   respect a reserved army build leave it queued; in the opening book, once
+   a city is named, the turn start fills idle queues with the edge unit.
 3. **Gold** for the upgrades is held whenever the window is open.
 4. **Denounce** with the first edge unit, never before one exists.
 5. **Heal.** Under 70 health (above the withdraw line) an edge unit holds,
@@ -194,13 +192,30 @@ Changes (same two tags, still opt-in):
 6. **Recheck.** From the start, no source at the revealing technology is
    checked every turn for 10 Online turns (`start: recheck:`) first.
 7. **Upgrade passes.** The edge pass (`maintain_edge_unit_window`) runs
-   first in the turn, before `upgrade_units_preserving_air_wing`, whose
-   first step is `one-upgrade-lifts-every-city`; while Gold is held that
-   pass takes only an upgrade into the edge unit or one that leaves the
-   held Gold. A Warrior-to-Legion upgrade is bought once, by whichever pass
-   reaches it, and the edge force counts the Legion either way.
+   first, before `upgrade_units_preserving_air_wing`, whose first step is
+   `one-upgrade-lifts-every-city`; while Gold is held that pass takes only
+   an upgrade into the edge unit or one leaving the held Gold. A Warrior to
+   Legion is bought once, by either, and the edge force counts it.
 
-SANITY_ROUND_PLACEHOLDER
+**Sanity round** (16 pairs, 110 turns, lane recipe, seeds 52670500-15;
+worlds reaching each stage, in brackets of those with Iron in reach at
+Bronze Working; round 4 on the same seeds, `main` has moved since):
+
+| | goal | resource | 3 Legions | muster | denounced | declared | assault pressed | captured |
+|---|---|---|---|---|---|---|---|---|
+| round 4, gene-start | 16 (4) | 12 (4) | 5 (3) | 1 (0) | 1 (0) | 1 (0) | 1 (0) | 0 |
+| v2, gene-start | 16 (4) | 10 (4) | 7 (3) | 1 (0) | 4 (0) | 0 | 0 | 0 |
+| round 4, free Iron | 16 (4) | 10 (4) | 15 (4) | 4 (1) | 6 (1) | 3 (1) | 3 (1) | 0 |
+| v2, free Iron | 16 (4) | 12 (4) | 16 (4) | 4 (1) | 6 (2) | 2 (0) | 2 (0) | 0 |
+
+CI 43511045918 found a regression, fixed for the table's run (CI
+43514717689): the book-phase claim trained Warriors from turn 1 in place
+of the book's Scout and Settlers (free Iron: 4 windows opened, not 7).
+In it the real-Iron arm's one muster (Susa) came 3 turns before round 4's
+(Iron found on the recheck, denounced at the first Legion) and met walls
+with no Ram; round 4 declared on Susa unwalled, walled two turns later.
+Cities founded, paired: -0.56 ± 0.27 by turn 50 (round 4 -0.25), -0.19 by
+100.
 
 ## Live evidence (Rome, Score lane)
 
@@ -290,7 +305,8 @@ of a seed in one process, one report over every shard.
   PR's final commit. Restore them with `git checkout 2a37abe5a0 --
   .github/workflows/edge-unit-takes-the-soft-city.yml
   src/bin/gene_screen/edge_unit_live_genome.txt` (the round-4 workflow;
-  earlier rounds' settings are in the commits titled "WIP experiment").
+  earlier rounds' settings are in the commits titled "WIP experiment";
+  version 2's sanity round is commit `593f2b3027` of #5292).
 - **Statistics**: mean ± standard error of arm minus control, paired by seed,
   `*` at 1.5 standard errors; rounds are never pooled (a PR's CI plays the
   merge with current `main`, so a seed is a different world after `main`
