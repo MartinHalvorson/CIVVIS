@@ -381,6 +381,14 @@ fn the_plaza_takes_the_ancestral_hall_first() {
     let mut on = game.clone();
     ai.claim_score_expansion_hall(&mut on, 0, &plan);
     assert!(AdvancedAi::score_expands_keeps_the_hall(&on, capital));
+    assert!(
+        ai.early_settler_floor_holds(&on, 0, capital, &plan),
+        "the routine claims' hold keeps the Hall"
+    );
+    assert!(
+        !stock.early_settler_floor_holds(&on, 0, capital, &plan),
+        "off, the Hall is routine work"
+    );
 
     game.cities
         .get_mut(&capital)

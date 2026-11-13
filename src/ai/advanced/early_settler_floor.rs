@@ -118,6 +118,11 @@ impl AdvancedAi {
         if self.holdable_land_settler_holds(g, pid, cid, plan) {
             return true;
         }
+        // `score-seat-expands-hard`: the Ancestral Hall its claim raised is
+        // kept the same way. See `advanced/score_expands_hard.rs`.
+        if self.score_expands_hard_now(g) && Self::score_expands_keeps_the_hall(g, cid) {
+            return true;
+        }
         let floor = self.early_settler_floor(g, plan);
         if floor == 0
             || !matches!(
