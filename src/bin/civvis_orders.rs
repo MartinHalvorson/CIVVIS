@@ -6442,6 +6442,18 @@ fn decide(
     }
     // A leader statement is answered by the AutoClose layer, often before this
     // frame's orders land, so every batch renews a one-turn lease there.
+    // `score-seat-keeps-friends`: the dialogue closer accepts a major's
+    // offered friendship under a one-turn lease, which every batch renews. The
+    // subject is the host player the campaign names, whose offer keeps the
+    // refusal.
+    if let Some(spared) = ai.score_seat_keeps_friends_lease(&mirror_state.game) {
+        orders.push(Order {
+            kind: "combat_policy",
+            subject: spared.and_then(|player| host_player_target(mirror_state, state, player)),
+            verb: Some("SCORE_SEAT_KEEPS_FRIENDS".to_string()),
+            pos: None,
+        });
+    }
     if ai.dialogue_never_declares_war_enabled() {
         orders.push(Order {
             kind: "combat_policy",

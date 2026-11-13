@@ -413,6 +413,33 @@ local function dialogueNoWar()
     if not ok or type(now) ~= "number" then return true; end
     return now <= dialogueNoWarTurn + 1;
 end
+-- Gene `score-seat-keeps-friends` (opt-in). A declared friendship forbids a
+-- war between the pair while it stands; no rival declared on our seats while
+-- one stood, yet the ladder below answered every offered DECLARE_FRIEND with
+-- CHOICE_NEGATIVE (52 in one night of Score games). Under this lease, which
+-- each order batch renews like the no-war lease, a major's offer is answered
+-- with its CHOICE_POSITIVE (DiplomacyStatements_DeclareFriendship.xml:82-83,
+-- LOC_DIPLO_DECLARE_FRIEND_CHOICE_POSITIVE), unless it comes from the player
+-- the batch names as spared (the campaign's target). Without a lease nothing
+-- below changes.
+local keepsFriendsTurn, keepsFriendsSpared = nil, nil;
+if NAME == "DiplomacyActionView" then
+    pcall(function()
+        LuaEvents.CivvisDialogueKeepsFriends.Add(function(turn, spared)
+            keepsFriendsTurn = tonumber(turn);
+            keepsFriendsSpared = tonumber(spared);
+        end);
+    end);
+end
+-- "accept", "spared" or nil (no lease, or a stale one).
+local function keepsFriendsFrom(player)
+    if keepsFriendsTurn == nil then return nil; end
+    local ok, now = pcall(function() return Game.GetCurrentGameTurn(); end);
+    if not ok or type(now) ~= "number" or now > keepsFriendsTurn + 1 then return nil; end
+    if keepsFriendsSpared ~= nil and player == keepsFriendsSpared then return "spared"; end
+    return "accept";
+end
+local dialogueKeepsFriends = nil;
 local function declaresWar(selection)
     local action = selection.DiplomaticActionType;
     return type(action) == "string"
@@ -432,6 +459,7 @@ if NAME == "DiplomacyActionView" and type(DefaultHandlers) == "table" then
             responsePlayer(statement.FromPlayer), responsePlayer(toPlayer),
             responsePlayer(statement.Initiator));
         dialogueWarWithheld = false;
+        dialogueKeepsFriends = nil;
         stockApply(handler, statementType, subType, toPlayer, statement);
         local firstMeet = type(statementType) == "string"
             and string.find(statementType, "^FIRST_MEET_") ~= nil;
@@ -457,8 +485,18 @@ if NAME == "DiplomacyActionView" and type(DefaultHandlers) == "table" then
                 and "LOC_DIPLO_EMBASSY_CHOICE_POSITIVE" or nil;
             local best = 0;
             local noWar = dialogueNoWar();
+            -- `score-seat-keeps-friends`: a major's offered friendship.
+            local keepFriend = statementType == "DECLARE_FRIEND"
+                and statement.Initiator ~= localPlayer
+                and keepsFriendsFrom(statement.FromPlayer) or nil;
+            dialogueKeepsFriends = keepFriend;
             for _, selection in ipairs(parsed.Selections or {}) do
                 local score = rank[selection.Key] or 0;
+                if keepFriend == "accept" and selection.Key == "CHOICE_POSITIVE"
+                        and selection.Text == "LOC_DIPLO_DECLARE_FRIEND_CHOICE_POSITIVE"
+                        and not declaresWar(selection) then
+                    score = 4;
+                end
                 if visitorText ~= nil and selection.Key == "CHOICE_POSITIVE"
                         and selection.Text == visitorText and not declaresWar(selection) then
                     score = 4;
@@ -704,7 +742,9 @@ local function endScreen(attempt)
         local choice, callback = dialogueChoice, dialogueCallback;
         -- Dispatch can install a follow-up synchronously. Record the response
         -- being answered, including its war guard, before invoking its callback.
-        local context = dialogueContext .. (dialogueWarWithheld and ',"war_withheld":true' or '');
+        local context = dialogueContext .. (dialogueWarWithheld and ',"war_withheld":true' or '')
+            .. (dialogueKeepsFriends ~= nil
+                and string.format(',"keeps_friends":"%s"', dialogueKeepsFriends) or '');
         dialogueAnswered = true;
         local ok = pcall(function() callback(choice); end);
         -- A callback may synchronously replace this statement. Do not mark
