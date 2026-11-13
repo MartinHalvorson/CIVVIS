@@ -441,6 +441,11 @@ impl AdvancedAi {
     /// Formal War clock, and that is not a declaration. Shared with
     /// `early-conquest-opening`, whose assembled force wants the same rule.
     pub(super) fn raid_opening(&self, g: &Game, pid: usize, target: usize) -> Option<Action> {
+        // `declaration-needs-a-capture`: the surprise war below is a
+        // declaration too.
+        if self.declaration_lacks_a_capture(g, pid, target) {
+            return None;
+        }
         let legal = g.legal_actions_within(pid, ActionFamilies::DIPLOMACY);
         if let Some(action) = self.preferred_war_opening(g, pid, target) {
             if matches!(action, Action::DeclareWarWithCasusBelli { .. }) {

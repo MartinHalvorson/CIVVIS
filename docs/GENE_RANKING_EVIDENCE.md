@@ -274,6 +274,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `curator-sits-with-the-works` | off (unmeasured) | Opt-in gene `curator-sits-with-the-works`; see `advanced/curator_sits_with_the_works.rs`. | 1 \| 1 |
 | `deck-follows-the-queue` | off (unmeasured) | Opt-in gene `deck-follows-the-queue`; the behaviour lives on `BasicAi::deck_follows_the_queue`, see `ai/deck_queue.rs`. | 1 \| 1 |
 | `deck-prices-growth` | off (unmeasured) | Opt-in gene `deck-prices-growth`; see `BasicAi::deck_prices_growth`. | 1 \| 1 |
+| `declaration-needs-a-capture` | off (unmeasured) | Opt-in gene `declaration-needs-a-capture`; see `advanced/declaration_needs_a_capture.rs`. | 1 \| 1 |
 | `defence-holds-under-fire` | off (unmeasured) | Opt-in gene `defence-holds-under-fire`; see `Self::defence_holds_under_fire`. | 1 \| 1 |
 | `defend-force-holds-the-city` | off (unmeasured) | Opt-in gene `defend-force-holds-the-city`; see `advanced/defend_force_holds_the_city.rs`. | — \| 2 |
 | `defend-force-holds-the-city-2` | off (unmeasured) | Opt-in gene `defend-force-holds-the-city-2`; version two of the family, so version one is turned off. | — \| 2 |
