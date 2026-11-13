@@ -5743,6 +5743,12 @@ pub const GENES: &[Gene] = &[
     // queue. A Diplomatic seat lends one city to the competition's project.
     // See `advanced/diplo_competition_claim.rs`.
     Gene { tag: "diplo-seat-claims-the-competition", field: "diplo_seat_claims_the_competition", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_claims_the_competition, disable: AdvancedAi::disable_diplo_seat_claims_the_competition },
+    // Live Deity Rome 11-13, five Diplomatic games ending on 11-19 of twenty
+    // points: Civil Engineering came 36 and 41 turns after Mercantilism, last
+    // of the seven steps toward Class Struggle, and the Statue of Liberty (four
+    // points) at t152 and t166. A Diplomatic seat with the Statue's Harbor
+    // takes Civil Engineering first. See `advanced/diplo_statue_harbor.rs`.
+    Gene { tag: "diplo-seat-statue-civic-first", field: "diplo_seat_statue_civic_first", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_statue_civic_first, disable: AdvancedAi::disable_diplo_seat_statue_civic_first },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

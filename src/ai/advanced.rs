@@ -7000,6 +7000,11 @@ pub struct AdvancedAi {
     /// Astronauts) in production while the competition runs. See
     /// `advanced/diplo_competition_claim.rs`. Off by default.
     diplo_seat_claims_the_competition: bool,
+    /// `diplo-seat-statue-civic-first`: a Diplomatic seat's civic goal is
+    /// Civil Engineering (the Statue of Liberty's civic) once a tier-two
+    /// government civic is in hand and the Statue's Harbor stands or is
+    /// queued. See `advanced/diplo_statue_harbor.rs`. Off by default.
+    diplo_seat_statue_civic_first: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
