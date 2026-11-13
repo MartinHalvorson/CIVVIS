@@ -404,6 +404,13 @@ fn execute_observed_action_recorded(
             // Visible borders can have an unseen city, so the view offers a
             // plot the board refuses; aborting repeats it before any queue.
             Action::BuyPlot { .. } => true,
+            // A recruitment the board refuses changes nothing on it. The
+            // measured case: `great-person-housing` sells a Great Work on the
+            // view to free a slot and recruits the Writer; the board refuses
+            // the sale, so the slot stays full and it refuses the recruit.
+            // Aborting there repeated both refusals in every frame, and no
+            // city with an empty queue received its order.
+            Action::RecruitGreatPerson { .. } => true,
             // Proposals are validated before being queued. A refusal cannot
             // change peace, borders or terrain, so it must not starve later
             // Builder work or military orders. Refresh after this batch.

@@ -423,11 +423,16 @@ fn zz_probe_which_removed_gene_masks_the_stall() {
         ("ledger".to_string(), Vec::new()),
         ("ledger+all68".to_string(), PROBE_REMOVED.to_vec()),
     ];
-    variants.extend(
-        PROBE_REMOVED
-            .iter()
-            .map(|tag| (format!("+{tag}"), vec![*tag])),
-    );
+    for tag in [
+        "recorded-tactical-step",
+        "builders-improve-the-worked-for-production",
+        "campus-adjacency-threshold-2",
+        "culture-defense-theater",
+        "trade-route-network",
+        "district-planning-3",
+    ] {
+        variants.push((format!("+{tag}"), vec![tag]));
+    }
     let workers = 4;
     let mut rows: Vec<(usize, String, f64, usize, Vec<String>)> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..workers)
