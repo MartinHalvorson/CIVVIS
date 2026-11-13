@@ -1719,6 +1719,9 @@ pub struct QueryCache {
     /// over three hundred tiles asked the same questions three hundred times.
     /// The answers are computed once per unit per memo scope instead.
     movement: std::cell::RefCell<Option<BTreeMap<u32, MovementProfile>>>,
+    /// Exact ZOC answers shared across an immutable enemy-table batch, by
+    /// owner/religious context and destination. Its own guard owns the scope.
+    zoc_batch: std::cell::RefCell<Option<zone_of_control::ZocMemo>>,
     amenities: std::cell::RefCell<Option<BTreeMap<u32, i64>>>,
     // `legal_purchase_actions_for_city` asks `unit_purchase_cost_for_formation`
     // for every unit kind in the ruleset, at all three formations and both

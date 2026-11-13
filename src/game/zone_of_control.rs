@@ -12,7 +12,85 @@
 
 use super::*;
 
+#[derive(Default)]
+pub(super) struct ZocMemo {
+    owners: BTreeMap<usize, OwnerZocMemo>,
+}
+
+#[derive(Default)]
+struct OwnerZocMemo {
+    ordinary: Option<Vec<Option<bool>>>,
+    religious: BTreeMap<String, Vec<Option<bool>>>,
+}
+
+impl ZocMemo {
+    fn answer(&self, owner: usize, religion: Option<&str>, slot: usize) -> Option<bool> {
+        let owner = self.owners.get(&owner)?;
+        let answers = match religion {
+            Some(religion) => owner.religious.get(religion)?,
+            None => owner.ordinary.as_ref()?,
+        };
+        answers.get(slot).copied().flatten()
+    }
+
+    fn remember(
+        &mut self,
+        owner: usize,
+        religion: Option<&str>,
+        slot: usize,
+        tile_count: usize,
+        answer: bool,
+    ) {
+        let owner = self.owners.entry(owner).or_default();
+        let answers = match religion {
+            Some(religion) => {
+                if !owner.religious.contains_key(religion) {
+                    owner
+                        .religious
+                        .insert(religion.to_owned(), vec![None; tile_count]);
+                }
+                owner.religious.get_mut(religion).unwrap()
+            }
+            None => owner.ordinary.get_or_insert_with(|| vec![None; tile_count]),
+        };
+        if let Some(slot) = answers.get_mut(slot) {
+            *slot = Some(answer);
+        }
+    }
+}
+
+/// Share exact destination answers while several units read one fixed board.
+/// A nested guard reuses the outer batch; the last owning guard clears it.
+pub(crate) struct ZocBatchMemo<'a> {
+    game: &'a Game,
+    outermost: bool,
+}
+
+impl Drop for ZocBatchMemo<'_> {
+    fn drop(&mut self) {
+        if self.outermost {
+            *self.game.query_memo.zoc_batch.borrow_mut() = None;
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static ZOC_CALCULATIONS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
 impl Game {
+    pub(crate) fn zoc_batch_memo(&self) -> ZocBatchMemo<'_> {
+        let outermost = self.query_memo.zoc_batch.borrow().is_none();
+        if outermost {
+            *self.query_memo.zoc_batch.borrow_mut() = Some(ZocMemo::default());
+        }
+        ZocBatchMemo {
+            game: self,
+            outermost,
+        }
+    }
+
     pub(super) fn unit_shares_escort_movement(&self, unit: &Unit) -> bool {
         self.promotion_effect(unit, "escort_mobility") > 0.0
             || self.rules.units[unit.kind]
@@ -235,6 +313,41 @@ impl Game {
     }
 
     pub(super) fn in_enemy_zoc_for(&self, uid: u32, pos: Pos) -> bool {
+        // A flood already keeps its own per-destination answer. A batch also
+        // shares it across different units: the mover contributes only its
+        // owner and, when religious, its religion to the unchanged predicate.
+        let active = self.query_memo.zoc_batch.borrow().is_some();
+        if !active || self.query_memo.policy_reads_on.get() {
+            return self.in_enemy_zoc_for_uncached(uid, pos);
+        }
+        let mover = &self.units[&uid];
+        let spec = &self.rules.units[mover.kind];
+        let Some(slot) = self.map.tiles.index_of(pos) else {
+            return self.in_enemy_zoc_for_uncached(uid, pos);
+        };
+        let religion = mover
+            .religion
+            .as_deref()
+            .filter(|_| spec.class == "religious");
+        let cached = self
+            .query_memo
+            .zoc_batch
+            .borrow()
+            .as_ref()
+            .and_then(|memo| memo.answer(mover.owner, religion, slot));
+        if let Some(answer) = cached {
+            return answer;
+        }
+        let answer = self.in_enemy_zoc_for_uncached(uid, pos);
+        if let Some(memo) = self.query_memo.zoc_batch.borrow_mut().as_mut() {
+            memo.remember(mover.owner, religion, slot, self.map.tiles.len(), answer);
+        }
+        answer
+    }
+
+    fn in_enemy_zoc_for_uncached(&self, uid: u32, pos: Pos) -> bool {
+        #[cfg(test)]
+        ZOC_CALCULATIONS.with(|count| count.set(count.get() + 1));
         let mover = &self.units[&uid];
         let mover_spec = &self.rules.units[mover.kind];
         let Some(t) = self.map.get(pos) else {
@@ -280,3 +393,6 @@ impl Game {
         false
     }
 }
+
+#[cfg(test)]
+mod batch_memo_tests;

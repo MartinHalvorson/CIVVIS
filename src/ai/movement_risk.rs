@@ -67,6 +67,7 @@ impl BasicAi {
         target: Pos,
         members: Option<&[u32]>,
     ) -> MovementRiskFrame {
+        let _zoc = g.zoc_batch_memo();
         let source = self.enemy_attack_envelopes(g, pid);
         let envelopes = MOVEMENT_REACH.with(|slot| {
             let mut cache = slot.borrow_mut();

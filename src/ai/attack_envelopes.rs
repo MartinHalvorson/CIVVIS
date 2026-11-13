@@ -97,6 +97,7 @@ impl BasicAi {
             .unwrap_or_else(|| (g.turn, Self::attack_envelope_fingerprint(g, None)));
         let envelopes = std::sync::Arc::new({
             let _memo = g.query_memo();
+            let _zoc = g.zoc_batch_memo();
             self.compute_enemy_attack_envelopes(g, pid, reach_key)
         });
         let mut slot = self
