@@ -359,7 +359,13 @@ fn execute_observed_action_recorded(
         }
         _ => None,
     };
-    if game.apply(pid, action).is_err() {
+    let applied = game.apply(pid, action);
+    // TEMPORARY PROBE (draft PR #5234): removed before merge.
+    #[cfg(test)]
+    if let Err(error) = &applied {
+        tests::note_refusal(game.turn, pid, action, error);
+    }
+    if applied.is_err() {
         *game.players[pid]
             .counters
             .entry("player:refused".into())
