@@ -312,13 +312,16 @@ fn the_plaza_takes_the_ancestral_hall_first() {
         "the Hall first"
     );
 
-    // The claim: the Hall goes ahead of an Archer; off, nothing moves.
-    head(&mut game, capital, unit("archer"));
+    // The claim: the Hall goes ahead of a Granary; off, nothing moves.
+    let granary = Item::Building {
+        building: Name::new("granary"),
+    };
+    head(&mut game, capital, granary.clone());
     let stock = seat(VictoryTarget::Score, false);
     let plan = stock.assess(&game, 0);
     let mut off = game.clone();
     stock.claim_score_expansion_hall(&mut off, 0, &plan);
-    assert_eq!(off.cities[&capital].queue.first(), Some(&unit("archer")));
+    assert_eq!(off.cities[&capital].queue.first(), Some(&granary));
     let ai = seat(VictoryTarget::Score, true);
     let plan = ai.assess(&game, 0);
     let mut on = game.clone();
@@ -331,6 +334,16 @@ fn the_plaza_takes_the_ancestral_hall_first() {
     assert!(
         !stock.early_settler_floor_holds(&on, 0, capital, &plan),
         "off, the Hall is routine work"
+    );
+
+    // A soldier keeps its queue against the Hall as well.
+    let mut guarded = game.clone();
+    head(&mut guarded, capital, unit("archer"));
+    let plan = ai.assess(&guarded, 0);
+    ai.claim_score_expansion_hall(&mut guarded, 0, &plan);
+    assert_eq!(
+        guarded.cities[&capital].queue.first(),
+        Some(&unit("archer"))
     );
 
     game.cities
