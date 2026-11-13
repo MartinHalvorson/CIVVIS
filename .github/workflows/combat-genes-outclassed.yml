@@ -17,9 +17,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CIVVIS_COMBAT_RECIPE: gran-colombia
-  CIVVIS_COMBAT_WORLDS: "24"
-  CIVVIS_COMBAT_SEED: "64710000"
+  CIVVIS_COMBAT_WORLDS: "32"
+  CIVVIS_COMBAT_GENES: ranged-finish-on-the-mean,siege-needs-a-breaker,safest-stand,capital-defense-holds,shared-danger
 
 jobs:
   build:
@@ -64,26 +63,38 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5]
+        include:
+          - { recipe: gran-colombia, seed: "64720000", shard: 0, of: 4 }
+          - { recipe: gran-colombia, seed: "64720000", shard: 1, of: 4 }
+          - { recipe: gran-colombia, seed: "64720000", shard: 2, of: 4 }
+          - { recipe: gran-colombia, seed: "64720000", shard: 3, of: 4 }
+          - { recipe: rome, seed: "64730000", shard: 0, of: 6 }
+          - { recipe: rome, seed: "64730000", shard: 1, of: 6 }
+          - { recipe: rome, seed: "64730000", shard: 2, of: 6 }
+          - { recipe: rome, seed: "64730000", shard: 3, of: 6 }
+          - { recipe: rome, seed: "64730000", shard: 4, of: 6 }
+          - { recipe: rome, seed: "64730000", shard: 5, of: 6 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: driver
-      - name: Play shard ${{ matrix.shard }} of 6
+      - name: Play ${{ matrix.recipe }} shard ${{ matrix.shard }} of ${{ matrix.of }}
         env:
           CIVVIS_LIVE_GENOME: src/bin/gene_screen/combat_genes_live_genome.txt
           CIVVIS_COMBAT_ALT: src/bin/gene_screen/combat_genes_armed_set.txt
-          CIVVIS_COMBAT_SHARD: ${{ matrix.shard }}/6
-          CIVVIS_COMBAT_OUT: worlds-${{ matrix.shard }}.jsonl
+          CIVVIS_COMBAT_RECIPE: ${{ matrix.recipe }}
+          CIVVIS_COMBAT_SEED: ${{ matrix.seed }}
+          CIVVIS_COMBAT_SHARD: ${{ matrix.shard }}/${{ matrix.of }}
+          CIVVIS_COMBAT_OUT: worlds-${{ matrix.recipe }}-${{ matrix.shard }}.jsonl
         run: |
           chmod +x gene-screen-tests
           ./gene-screen-tests combat_genes_outclassed_driver --ignored --nocapture
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: worlds-${{ matrix.shard }}
-          path: worlds-${{ matrix.shard }}.jsonl
+          name: worlds-${{ matrix.recipe }}-${{ matrix.shard }}
+          path: worlds-${{ matrix.recipe }}-${{ matrix.shard }}.jsonl
           retention-days: 14
 
   report:
