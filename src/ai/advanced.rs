@@ -10717,6 +10717,11 @@ pub struct AdvancedAi {
     /// nearest stronger neighbour until it can be asked for a friendship.
     /// See `advanced/tribute_warms_the_neighbour.rs`. Off by default.
     tribute_warms_the_neighbour: bool,
+    /// `upgrade-card-for-the-backlog`: a seat whose target is not Domination
+    /// slots the half-price upgrade card while two or more land units hold an
+    /// unlocked successor the treasury cannot pay for. See
+    /// `advanced/upgrade_card_for_the_backlog.rs`. Off by default.
+    upgrade_card_for_the_backlog: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -11951,6 +11956,9 @@ mod tribute_buys_the_friendship;
 /// `advanced/tribute_warms_the_neighbour.rs`.
 mod tribute_warms_the_neighbour;
 mod universities_before_the_forge;
+/// `upgrade-card-for-the-backlog`: see
+/// `advanced/upgrade_card_for_the_backlog.rs`.
+mod upgrade_card_for_the_backlog;
 pub use science_victory_drive::ScienceDrive;
 
 /// `capital-campus-before-the-plaza`: the capital's Campus and Library

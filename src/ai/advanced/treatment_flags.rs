@@ -486,6 +486,9 @@ impl AdvancedAi {
         /// `unique-unit-closes-the-dark-age`: see
         /// `advanced/unique_unit_closes_the_age.rs`.
         unique_unit_closes_the_dark_age => enable_unique_unit_closes_the_dark_age, disable_unique_unit_closes_the_dark_age;
+        /// Opt-in gene `upgrade-card-for-the-backlog`; see
+        /// `advanced/upgrade_card_for_the_backlog.rs`.
+        upgrade_card_for_the_backlog => enable_upgrade_card_for_the_backlog, disable_upgrade_card_for_the_backlog;
     }
 
     toggles! {
