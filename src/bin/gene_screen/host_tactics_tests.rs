@@ -6,7 +6,8 @@
 //! --rival-chairs 3 --rival-rung -2 --rival-pace --target-mix domination`),
 //! with `--chair-tactics-census` on every arm so the off arm is read too. The
 //! measured seat plays the deployment genome with `defend-force-holds-the-city`
-//! off and on. A demonstration at small n: the lane runs the 60 seeds.
+//! off and on. A demonstration at small n: the lane runs the 60 seeds. The
+//! first run's output is in `docs/HOST_ENEMY_MODEL.md`.
 //!
 //! `cargo test --features developer-tools --bin gene_screen host_tactics -- --ignored --nocapture`,
 //! with `CIVVIS_HOST_TACTICS_WORLDS` for the seeds per arm.
@@ -77,8 +78,8 @@ fn worlds() -> usize {
 }
 
 #[test]
+#[ignore = "whole Deity games: about 7 minutes on 4 cores; run with --ignored --nocapture"]
 fn host_tactics_table_and_paired_demonstration() {
-    // WIP: CI evidence run; the report rides the panic into the log.
     let genes = gene_table();
     let gene = genes
         .iter()
@@ -178,5 +179,5 @@ fn host_tactics_table_and_paired_demonstration() {
             ));
         }
     }
-    panic!("{}", report.join("\n"));
+    println!("{}", report.join("\n"));
 }

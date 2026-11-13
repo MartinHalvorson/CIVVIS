@@ -589,7 +589,8 @@ fn foes(g: &Game, pid: usize, victims: &[usize]) -> Vec<usize> {
 /// zone of control puts out of reach, a unit already beside us that cannot
 /// close. The switch acts only where the board allows, so it draws at the
 /// fitted rate divided by this share and the census reads the fitted rate
-/// back. Each entry is `[rows, possible]`.
+/// back. Each entry is `[rows, possible]`, counted on the units the
+/// measured seat sees (the rows the fit and the census read).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ReachShare {
     /// Open-ground reach that was exact, indexed by "in reach without moving".
