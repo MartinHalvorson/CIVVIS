@@ -257,9 +257,17 @@ check("match point braces", mode, "brace")
 check("brace votes B", requests[1].option, 2)
 check("brace names us", requests[1].selection, 0)
 check("brace is the free vote", requests[1].votes, 1)
-check("brace still buys border control", requests[2].votes, 2)
-check("brace buys public relations with three", requests[3].votes, 3)
-check("brace spend", spent, 4 + 12)
+-- From match point the bank is spent (`CivvisRacerMatchPointVotes`): twice
+-- the ordinary count on each, 4 votes (24 Favor) and 6 (60).
+check("brace buys border control with twice its count", requests[2].votes, 4)
+check("brace buys public relations with twice its count", requests[3].votes, 6)
+check("brace spend", spent, 24 + 60)
+config.RacerMatchPointBank = false
+spent, mode = run(300, 8, 18, 9)
+check("with the match-point bank off the ordinary counts stand",
+    requests[2].votes .. "/" .. requests[3].votes, "2/3")
+check("and the ordinary spend", spent, 4 + 12)
+config.RacerMatchPointBank = nil
 check("brace below 18", CivvisRacerBraces(17, {}), false)
 check("brace at 18", CivvisRacerBraces(18, {}), true)
 check("warned at 15 braces", CivvisRacerBraces(15, {}, 6), true)

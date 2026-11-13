@@ -4591,6 +4591,57 @@ local function cityNextReligion(city)
 	return row ~= nil and row.ReligionType or nil;
 end
 
+-- ★★★★ A WONDER THE HOST WILL TAKE NEXT DOOR IS BUILT NEXT DOOR.
+--
+-- `productionPlot` returns nothing when CIVVIS names a plot the host does not
+-- offer, because for a district the plot IS the decision (its adjacency). A
+-- wonder has none: the decision is the wonder and the city. Every refusal
+-- with ground on offer, 2026-11-12/13 (8 of the 13 `build_no_plot` rows):
+--   Statue of Liberty  asked (23,35) offered (24,34)        195128Z t130
+--   Statue of Liberty  asked (60,38) offered (61,39)        204218Z t138, t149
+--   Petra              asked (56,30) offered (57,30)
+--   Bolshoi Theatre    asked (22,25) offered (21,25); (62,16) offered 2
+--   Orszaghaz          asked (59,36) offered 3, one of them (59,37)
+--   Taj Mahal          asked (11,17) offered 4, one of them (12,17)
+-- the host's plot is a neighbour of the one asked each time. The refusal puts
+-- the wonder on the production cooldown, the mirror's memory of the offer
+-- (`host_wonder_sites`) lasts no longer than that, and the next ask names the
+-- same plot: 204218Z asked twice eleven turns apart and built its Statue of
+-- Liberty at t166, 28 turns after the first ask; 195128Z moved it to another
+-- city, built it at t152 and lost at t199 one point short of a Diplomatic
+-- victory. The Statue is four of the twenty points.
+--
+-- So for a WONDER the host's offered plot nearest the one asked is used,
+-- and `build_plot_substituted` says so. Nothing offered (the wonder is gone
+-- from the world, or the city has no ground) is the refusal it always was.
+-- Districts are untouched. Off with `WonderTakesOfferedPlot = false`.
+-- `distance(x1, y1, x2, y2)` is the host's hex distance; the offline test
+-- passes its own. Bare global for that test.
+CivvisWonderOfferedPlot = function(offeredPlots, requestedX, requestedY, config, distance)
+	if type(config) == "table" and config.WonderTakesOfferedPlot == false then return nil; end
+	if type(offeredPlots) ~= "table" then return nil; end
+	local x, y = tonumber(requestedX), tonumber(requestedY);
+	if x == nil or y == nil then return nil; end
+	distance = distance or function(x1, y1, x2, y2)
+		return try(function() return Map.GetPlotDistance(x1, y1, x2, y2); end, nil);
+	end;
+	local best, bestDistance = nil, nil;
+	for _, plot in ipairs(offeredPlots) do
+		local px = type(plot) == "table" and tonumber(plot.x) or nil;
+		local py = type(plot) == "table" and tonumber(plot.y) or nil;
+		if px ~= nil and py ~= nil then
+			local d = tonumber(distance(x, y, px, py));
+			-- A host that will not measure: the offset difference orders
+			-- neighbours first just as well.
+			if d == nil then d = math.max(math.abs(px - x), math.abs(py - y)); end
+			if bestDistance == nil or d < bestDistance then
+				best, bestDistance = { x = px, y = py }, d;
+			end
+		end
+	end
+	return best;
+end
+
 local function buildParams(row, city, requestedX, requestedY)
 	local params = {};
 	-- ⚠ WITHOUT AN INSERT MODE THE GAME REJECTS EVERY BUILD.
@@ -4621,6 +4672,22 @@ local function buildParams(row, city, requestedX, requestedY)
 			local where, offered, offeredPlots = productionPlot(city,
 				CityOperationTypes.PARAM_BUILDING_TYPE, row.Hash,
 				requestedX, requestedY);
+			-- See `CivvisWonderOfferedPlot`: ground the host does offer.
+			if where == nil then
+				where = CivvisWonderOfferedPlot(offeredPlots, requestedX, requestedY, cfg);
+				if where ~= nil then
+					emit("build_plot_substituted", {
+						city = try(function() return city:GetID(); end, -1),
+						building = row.Type or tostring(row.Hash),
+						turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+						x = requestedX, y = requestedY,
+						to_x = where.x, to_y = where.y,
+						offered = offered or 0,
+						-- What the host offered, as the refusal row below carries it.
+						offered_plots = offeredPlots,
+					});
+				end
+			end
 			if where == nil then
 				-- ★★★★★ SAY WHY. `build_no_plot` named the wonder and the city but
 				-- never the reason, and the two reasons want OPPOSITE responses.
@@ -18998,6 +19065,65 @@ CivvisRacerResolutionVotes = function(rtype, favor, costs, config, cap)
 	return need, price;
 end
 
+-- ★★★ FROM MATCH POINT THE BANK IS SPENT ON THE VOTES THAT CARRY.
+--
+-- At `DiploVictoryMatchPoint` (18) the rivals gang on us and the ballot braces
+-- with the free vote (`CivvisRacerBraces`), so the session's other resolutions
+-- are where the last points come from: brace and two carried resolutions is
+-- +1, and from 19 that is the game. The counts above stop at the 60 Favor cap
+-- because Favor saved is the next session's claim. At match point there is no
+-- next claim to save for: the Diplomatic seats of 2026-11-13 lost to a
+-- rival's Science victory at t182-199, sessions are twenty turns apart, and
+-- the claim itself is not cast while the gang stands.
+--
+-- civvis-20261113T195128Z, t192: 19 points, 209 Favor. The brace took the
+-- free vote, the Heritage denial 84, the Migration Treaty the free vote (its
+-- count was over the cap), and 125 Favor went unspent. The treaty was lost to
+-- four rival blocks of 3 votes; the seat stayed on 19 and lost at t199. On
+-- the Deity lane (106 games, the rivals' votes held fixed) a Migration Treaty
+-- carries 59% of the time with 6 votes, 78% with 8 and 86% with 10; a Trade
+-- Treaty 63%, 73% and 80%.
+--
+-- So from match point a resolution may take the whole bank, less what the
+-- session's later resolutions would buy at their ordinary counts: its own
+-- count first, then more votes as the rest affords, up to twice the count
+-- (twice carried every Public Relations, Arms Control and Border Control in
+-- those games and 8 treaties in 10; past that the Favor is the next
+-- resolution's); and when the bank is short of the count, as many as it does
+-- afford. Returns
+-- `votes, price`, or `want, price` unchanged below match point, off the
+-- Diplomatic lane, or when it would buy no more. Off with
+-- `RacerMatchPointBank = false`. `entries` is the ballot's ordered list (rows
+-- with `rtype`, or bare names) and `current` this resolution's entry in it.
+CivvisRacerMatchPointVotes = function(rtype, entries, current, favor, costs, config, ourPoints, want, price)
+	config = type(config) == "table" and config or {};
+	if not CivvisDiploRacer(config) or config.RacerMatchPointBank == false
+			or type(costs) ~= "table"
+			or (tonumber(ourPoints) or 0) < (tonumber(config.DiploVictoryMatchPoint) or 18) then
+		return want, price;
+	end
+	local need, needPrice = CivvisRacerResolutionVotes(rtype, 1e9, costs, config, 1e9);
+	if need < 2 then return want, price; end
+	local reserve, later = 0, false;
+	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
+		local other = type(entry) == "table" and entry.rtype or entry;
+		if later and other ~= "WC_RES_DIPLOVICTORY" then
+			local _, otherPrice = CivvisRacerResolutionVotes(other, 1e9, costs, config);
+			reserve = reserve + otherPrice;
+		end
+		if entry == current then later = true; end
+	end
+	local bank = tonumber(favor) or 0;
+	local budget = bank - reserve;
+	-- Short of both: this resolution's own count first, the later one gets
+	-- what is left; short of even that, whatever the bank affords.
+	if budget < needPrice then budget = math.min(bank, needPrice); end
+	local votes = CivvisCongressVoteBudget(budget, costs, costs.MaxVotes);
+	if votes > 2 * need then votes = 2 * need; end
+	if votes < 2 or votes <= (tonumber(want) or 1) then return want, price; end
+	return votes, tonumber(costs[votes - 1]) or 0;
+end
+
 -- ★★ THE RACER NAMES THE TARGET THAT USUALLY WINS, NOT THE FIRST ONE LISTED.
 --
 -- A Congress Participation point needs our vote to match the winning option
@@ -25589,6 +25715,10 @@ local function tick()
 			-- before the claim.
 			envoyTally.racer_reserve = CivvisCongressRacer(cfg)
 				and CivvisRacerReserve(list, costs, cfg) or nil;
+			-- See `CivvisRacerMatchPointVotes`: our own points, read once.
+			envoyTally.racer_points = CivvisDiploRacer(cfg) and (tonumber(try(function()
+				return Players[pid]:GetStats():GetDiplomaticVictoryPoints();
+			end, 0)) or 0) or nil;
 			local cast, spent = 0, 0;
 			-- How the Diplomatic Victory ballot was cast, for `wc_vote`:
 			-- "claim" (A for us with the bank), "deny" (B against the leader
@@ -25931,6 +26061,9 @@ local function tick()
 							and not racerSlowed then
 						-- See `CivvisRacerResolutionVotes`.
 						local want, price = CivvisRacerResolutionVotes(rtype, favor, costs, cfg);
+						-- See `CivvisRacerMatchPointVotes`: from 18 points, the bank.
+						want, price = CivvisRacerMatchPointVotes(rtype, list, entry, favor, costs, cfg,
+							envoyTally.racer_points, want, price);
 						if want > 1 then
 							votes = want;
 							favor = favor - price;
