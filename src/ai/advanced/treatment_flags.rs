@@ -329,6 +329,9 @@ impl AdvancedAi {
         /// Opt-in `endgame-army-takes-the-queue`; see
         /// `advanced/endgame_army_takes_the_queue.rs`.
         endgame_army_takes_the_queue => enable_endgame_army_takes_the_queue, disable_endgame_army_takes_the_queue;
+        /// Opt-in gene `faithless-seat-holds-its-faith-strikes`; see
+        /// `advanced/faithless_seat_holds_its_faith_strikes.rs`.
+        faithless_seat_holds_its_faith_strikes => enable_faithless_seat_holds_its_faith_strikes, disable_faithless_seat_holds_its_faith_strikes;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its

@@ -5860,6 +5860,13 @@ pub const GENES: &[Gene] = &[
     // upkeep, and purchases keep three turns of the unit bill. Opt-in; see
     // `advanced/endgame_army_takes_the_queue.rs`.
     Gene { tag: "endgame-army-takes-the-queue", field: "endgame_army_takes_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_endgame_army_takes_the_queue, disable: AdvancedAi::disable_endgame_army_takes_the_queue },
+    // Live Rome 11-12/13 (52 games, no faith founded in any): 30 faith strikes
+    // took nothing, lost 3 cities to the target and 8 to others, 78 units for
+    // 37 killed. The Score hold has since held one in 31 of 32 games, and is
+    // inert on the lane's new Science target. A seat with no religion of its
+    // own strikes only a faith at match point, whatever its target but
+    // Religion. See `advanced/faithless_seat_holds_its_faith_strikes.rs`.
+    Gene { tag: "faithless-seat-holds-its-faith-strikes", field: "faithless_seat_holds_its_faith_strikes", kind: Kind::OptIn, enable: AdvancedAi::enable_faithless_seat_holds_its_faith_strikes, disable: AdvancedAi::disable_faithless_seat_holds_its_faith_strikes },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
