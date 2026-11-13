@@ -37,7 +37,11 @@
 //! 3. **Window**: opens on a soft city up to turn [`EDGE_LAST_TURN`] on Online
 //!    (scaled by speed as `city_state_harvest::harvest_floor` scales), with at
 //!    least [`EDGE_MIN_CITIES`] cities, until this game's one attempt is spent.
-//!    A city named by then stays the target while it stays soft, up to turn
+//!    A city named by then stays the target while it stays soft (version 2:
+//!    an unwalled one while the capture forecast with the edge units owned,
+//!    posed beside it, reads it taken, or while the edge is
+//!    [`EDGE_UNWALLED_FLOOR`] or better before [`EDGE_MUSTER_BODIES`] are
+//!    owned; see `edge_keep_unwalled`), up to turn
 //!    [`EDGE_MUSTER_LAST_TURN`]: in round 0 (16 paired worlds with the Legion's
 //!    Iron waived) 13 worlds held 3-6 Legions only by turns 44-55, and a
 //!    window shut at 55 closed on every one of them still walking. While it
@@ -54,18 +58,22 @@
 //!      outside them is bought.
 //!    - **Force** ([`AdvancedAi::claim_edge_unit_queue`]): edge units, up to
 //!      [`EDGE_FORCE_MAX`] owned and queued, while the resource allows, in the
-//!      capital and the one other city nearest the target, plus one breaker
-//!      when the walls stand. A Gold upgrade of an owned unit into the edge
-//!      unit goes ahead of the treasury floor, down to 0 Gold while income is
-//!      not negative. The window needs two cities, so the first Settler is
-//!      never deferred.
+//!      capital and the two other cities nearest the target (version 2; one
+//!      before the unit is trainable), ahead of a deferrable item, plus one
+//!      breaker when the walls stand. A Gold upgrade of an owned unit into the
+//!      edge unit goes ahead of the treasury floor, down to 0 Gold while
+//!      income is not negative, and its bill is held back from other
+//!      purchases while the window is open. A city's first Settler is never
+//!      deferred.
 //!    - **Muster**: at the start of each turn the edge units (and the
 //!      breaker) walk with every move to a free stand
 //!      [`EDGE_STAND_MIN_TILES`]-[`EDGE_MUSTER_TILES`] tiles from the city and
 //!      hold it fortified, so no later step of the turn walks them home (round
 //!      0: with the unit pass's staging step alone no muster formed in any
 //!      world). The objective board's Reserve gathers there too, as it does
-//!      at the shipped opening's rally.
+//!      at the shipped opening's rally. Version 2: an edge unit under
+//!      [`EDGE_HEAL_HP`] heals first, in place or in a city of ours within
+//!      [`EDGE_HEAL_CITY_TILES`].
 //!    - **Declare**: once [`EDGE_MUSTER_BODIES`] edge units at
 //!      [`EDGE_MUSTER_HP`] or more stand within [`EDGE_MUSTER_TILES`] of the
 //!      city (and a breaker behind walls), no other major is at war with us,
@@ -74,8 +82,9 @@
 //!      `DECLARE_P` or more, the seat declares through the shipped
 //!      `preferred_war_opening`. On a major with no casus belli that opening
 //!      denounces first and offers the Formal War five standard turns later,
-//!      so the denouncement goes out as soon as [`EDGE_MUSTER_BODIES`] edge
-//!      units are owned. From the declaration the plan's target is the city
+//!      so the denouncement goes out as soon as [`EDGE_DENOUNCE_BODIES`] edge
+//!      unit is owned (version 2: the first, so its five turns run during the
+//!      muster). From the declaration the plan's target is the city
 //!      ([`AdvancedAi::apply_edge_unit_to_strategy`]).
 //!    - **After a capture**: on to the same owner's next city if it is within
 //!      [`EDGE_CONTINUE_TILES`] of the force and the edge is still
@@ -142,6 +151,27 @@ pub(crate) const EDGE_STRIKE_MIN_HP: i32 = 35;
 pub(crate) const EDGE_WAR_PATIENCE: u32 = 20;
 /// Edge units below which the war asks for peace.
 pub(crate) const EDGE_FORCE_FLOOR: usize = 2;
+/// Version 2: the edge an unwalled named city may fall to and stay the
+/// target while fewer than [`EDGE_MUSTER_BODIES`] edge units are owned (live
+/// 205538Z: Mbamba went from +23 to +6 while the force was raised).
+pub(crate) const EDGE_UNWALLED_FLOOR: f64 = -4.0;
+/// Version 2: cities that train the edge unit at once once it is trainable:
+/// the capital and the two nearest the target.
+pub(crate) const EDGE_TRAINING_CITIES: usize = 3;
+/// Version 2: edge units owned before the denouncement goes out, so its five
+/// turns run during the muster.
+pub(crate) const EDGE_DENOUNCE_BODIES: usize = 1;
+/// Version 2: an edge unit under this health heals before it marches (live
+/// 205538Z: the upgraded Warrior walked at 50 health from turn 36 to 48).
+pub(crate) const EDGE_HEAL_HP: i32 = EDGE_MUSTER_HP;
+/// Version 2: a wounded edge unit within this many tiles of a city of ours
+/// heals in that city.
+pub(crate) const EDGE_HEAL_CITY_TILES: i32 = 2;
+/// Version 2, `edge-unit-opens-from-the-start`: Online turns the resource
+/// check repeats after the revealing technology lands with no source in
+/// reach (live 205538Z: none at Bronze Working, turn 19; Iron in stock from
+/// about turn 23).
+pub(crate) const EDGE_START_RECHECK_TURNS: u32 = 10;
 /// Builders walk this far to a source.
 const EDGE_BUILDER_STEPS: usize = 8;
 /// Every line's detail starts with this.
@@ -212,6 +242,15 @@ pub(crate) struct EdgeWindow {
     pub(crate) mustered: Option<u32>,
     /// Declarations that never reached the board, asked again.
     pub(crate) redeclared: u32,
+    /// Version 2, from the start: the turn the resource check first found no
+    /// source in reach at its revealing technology; the check repeats for
+    /// [`EDGE_START_RECHECK_TURNS`] from it.
+    pub(crate) recheck_since: Option<u32>,
+    /// Version 2: how the named city is kept below the naming edge
+    /// (`"edge"` or `"forecast"`), journalled once for each.
+    pub(crate) kept: Option<&'static str>,
+    /// Version 2: edge units journalled as healing before the march.
+    pub(crate) healing: BTreeSet<u32>,
 }
 
 impl EdgeWindow {
@@ -547,20 +586,152 @@ impl AdvancedAi {
         best
     }
 
-    /// The capital and the one other city of ours nearest `target`: where
-    /// the force is trained.
-    fn edge_training_cities(g: &Game, pid: usize, target: Pos) -> Vec<u32> {
+    /// The capital and the other cities of ours nearest `target`, `count` in
+    /// all: where the force is trained.
+    fn edge_training_cities(g: &Game, pid: usize, target: Pos, count: usize) -> Vec<u32> {
         let capital = Self::conquest_capital(g, pid);
-        let mut cities: Vec<u32> = capital.into_iter().collect();
-        if let Some(other) = g
+        let mut others: Vec<u32> = g
             .player_city_ids(pid)
             .into_iter()
             .filter(|cid| Some(*cid) != capital)
-            .min_by_key(|cid| (g.wdist(g.cities[cid].pos, target), *cid))
-        {
-            cities.push(other);
-        }
+            .collect();
+        others.sort_by_key(|cid| (g.wdist(g.cities[cid].pos, target), *cid));
+        let mut cities: Vec<u32> = capital.into_iter().collect();
+        let room = count.saturating_sub(cities.len());
+        cities.extend(others.into_iter().take(room));
         cities
+    }
+
+    /// Version 2: whether the edge unit (or its breaker) may take the head
+    /// of `cid`'s queue from `item`, keeping its progress. Never an item
+    /// that finishes this turn, a military unit, Walls, a wonder, a project,
+    /// or a District with work in it; never a city's first Settler: the
+    /// capital's went to the second city, so only the capital's Settler is
+    /// deferred, once the empire holds [`EDGE_MIN_CITIES`] cities, and a
+    /// Settler anywhere else is read as that city's first. Live 205538Z:
+    /// the claim took only idle queues, and the two cities it trained in
+    /// were idle on four turns between turns 33 and 44.
+    fn edge_may_displace(g: &Game, pid: usize, cid: u32, item: &Item) -> bool {
+        let remaining =
+            g.item_cost_for_city(pid, cid, item) - g.item_invested_production(cid, item);
+        if remaining <= g.city_yields(cid).production {
+            return false;
+        }
+        match item {
+            Item::Unit { unit } if *unit == "settler" => {
+                g.cities[&cid].is_capital && g.player_city_ids(pid).len() >= EDGE_MIN_CITIES
+            }
+            Item::Unit { unit } => matches!(unit.as_str(), "builder" | "scout" | "trader"),
+            Item::Building { building } => g.rules.buildings.get(building).is_some_and(|spec| {
+                !spec.wonder
+                    && !matches!(
+                        building.as_str(),
+                        "walls" | "medieval_walls" | "renaissance_walls"
+                    )
+            }),
+            Item::District { .. } => g.item_invested_production(cid, item) <= 0.0,
+            _ => false,
+        }
+    }
+
+    /// Version 2: the capture forecast the declaration reads
+    /// (`assault_forecast_at_peace`, `calibrated_within`
+    /// [`EDGE_FORECAST_TURNS`]) for `units` at their current health, posed
+    /// beside the city: on a copy of the board each is placed on a free
+    /// land tile next to it, then two and three tiles out. Returns the
+    /// calibrated and the raw chance. `None` when no forecast reads.
+    fn edge_posed_forecast(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        units: &[u32],
+    ) -> Option<(f32, f32)> {
+        let center = g.cities.get(&cid)?.pos;
+        let mut board = g.clone();
+        let free =
+            |board: &Game, pos: Pos| {
+                board.map.get(pos).is_some_and(|tile| {
+                    !board.rules.is_water(tile) && board.rules.is_passable(tile)
+                }) && board.city_at(pos).is_none()
+                    && board.unit_ids_at(pos).iter().all(|uid| units.contains(uid))
+            };
+        let mut spots: Vec<Pos> = Vec::new();
+        for ring in 1..=EDGE_STAND_MIN_TILES {
+            let mut tiles = board.wring(center, ring);
+            tiles.sort_unstable();
+            spots.extend(tiles.into_iter().filter(|pos| free(&board, *pos)));
+        }
+        for (uid, spot) in units.iter().zip(spots) {
+            if board.units.contains_key(uid) {
+                board.relocate(*uid, spot);
+            }
+        }
+        let forecast = self.assault_forecast_at_peace(&board, pid, cid, units)?;
+        let city = &board.cities[&cid];
+        let walls = board.city_max_wall_hp(city).max(city.wall_hp);
+        Some((
+            forecast.calibrated_within(EDGE_FORECAST_TURNS, walls),
+            forecast.within(EDGE_FORECAST_TURNS),
+        ))
+    }
+
+    /// Version 2: whether an unwalled named city below [`EDGE_MIN`] stays
+    /// the target. With [`EDGE_MUSTER_BODIES`] or more edge units owned, while
+    /// the forecast with them beside it ([`Self::edge_posed_forecast`]) reads
+    /// it taken at `DECLARE_P` or more; with fewer, while the edge is
+    /// [`EDGE_UNWALLED_FLOOR`] or better. `Ok` names how it is kept and the
+    /// mode; `Err` why it is not.
+    fn edge_keep_unwalled(
+        &self,
+        g: &Game,
+        pid: usize,
+        soft: &SoftCity,
+        unit: Name,
+    ) -> Result<(&'static str, String), String> {
+        let owned: Vec<u32> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| g.units[uid].kind == unit)
+            .collect();
+        let name = &g.cities[&soft.city].name;
+        let unit_name = plain(unit.as_str());
+        if owned.len() < EDGE_MUSTER_BODIES {
+            let line = format!(
+                "{name} unwalled at defence {:.0}, edge {:+.0}, with {} of {} {unit_name} owned (the floor is {:+.0} until {} are owned)",
+                soft.defence,
+                soft.edge,
+                owned.len(),
+                EDGE_MUSTER_BODIES,
+                EDGE_UNWALLED_FLOOR,
+                EDGE_MUSTER_BODIES
+            );
+            return if soft.edge + 1e-9 >= EDGE_UNWALLED_FLOOR {
+                Ok(("edge", line))
+            } else {
+                Err(line)
+            };
+        }
+        let Some((chance, raw)) = self.edge_posed_forecast(g, pid, soft.city, &owned) else {
+            return Err(format!(
+                "{name} unwalled at defence {:.0}, edge {:+.0}: no forecast reads",
+                soft.defence, soft.edge
+            ));
+        };
+        let line = format!(
+            "{name} unwalled at defence {:.0}, edge {:+.0}: the forecast with the {} {unit_name} owned beside it reads {:.0}% within {} turns (raw {:.0}%)",
+            soft.defence,
+            soft.edge,
+            owned.len(),
+            chance * 100.0,
+            EDGE_FORECAST_TURNS,
+            raw * 100.0
+        );
+        if chance >= DECLARE_P {
+            Ok(("forecast", line))
+        } else {
+            Err(format!("{line}, short of {:.0}%", DECLARE_P * 100.0))
+        }
     }
 
     /// Journal why the window is not open, once for each new reason.
@@ -616,6 +787,13 @@ impl AdvancedAi {
             }
         }
         self.edge_unit_window = Some(window);
+        // Version 2: the claim chain (`run_idle_queue_claims`) runs only once
+        // the opening book is done, and live 205538Z's book held the capital
+        // to turn 37. While it runs, the window claims idle queues here, at
+        // the start of the turn; the book fills only an idle queue.
+        if self.base.book_pos < 4 {
+            self.edge_claim_queues(g, pid, false);
+        }
     }
 
     /// The window before the war.
@@ -709,15 +887,65 @@ impl AdvancedAi {
             return;
         }
         // Keep the named city while it stays soft; otherwise the best one.
-        let kept = window
+        // Version 2: behind walls the named city keeps the naming rule (a
+        // breaker its walls admit, and the edge); unwalled it stays the
+        // target below the edge while the capture forecast holds (live
+        // 205538Z: Mbamba, never walled, was dropped at edge +6 two turns
+        // after the third Legion).
+        let named_city = window
             .target
             .as_ref()
             .filter(|_| window.unit == Some(edge.unit))
-            .and_then(|target| g.city_at(target.pos))
-            .and_then(|cid| {
-                self.edge_read_city(g, pid, edge.strength, cid, &ours, EDGE_REACH_TILES)
-            })
-            .filter(|soft| soft.edge + 1e-9 >= EDGE_MIN);
+            .and_then(|target| g.city_at(target.pos));
+        let mut lapsed: Option<String> = None;
+        let kept = match named_city {
+            None => None,
+            Some(cid) => {
+                match self.edge_read_city(g, pid, edge.strength, cid, &ours, EDGE_REACH_TILES) {
+                    Some(soft) if soft.edge + 1e-9 >= EDGE_MIN => {
+                        window.kept = None;
+                        Some(soft)
+                    }
+                    Some(soft) if !soft.walls => {
+                        match self.edge_keep_unwalled(g, pid, &soft, edge.unit) {
+                            Ok((mode, why)) => {
+                                if window.kept != Some(mode) {
+                                    window.kept = Some(mode);
+                                    Self::edge_count(g, pid, "kept");
+                                    think!(self.journal(), Military, Decision,
+                                           "Edge unit keeps its target below the edge";
+                                           "{TAG}: kept: {why}; it stays the target");
+                                }
+                                Some(soft)
+                            }
+                            Err(why) => {
+                                lapsed = Some(why);
+                                None
+                            }
+                        }
+                    }
+                    Some(soft) => {
+                        lapsed = Some(format!(
+                            "{} walled at defence {:.0}, edge {:+.0}, under {:+.0}",
+                            g.cities[&cid].name, soft.defence, soft.edge, EDGE_MIN
+                        ));
+                        None
+                    }
+                    None => {
+                        let city = &g.cities[&cid];
+                        lapsed = Some(if city.wall_hp > 0 {
+                            format!(
+                                "{} walled, and no breaker its walls admit can be trained",
+                                city.name
+                            )
+                        } else {
+                            format!("{} is no longer a legal target in reach", city.name)
+                        });
+                        None
+                    }
+                }
+            }
+        };
         // Past the naming turn only the city already named is mustered on.
         let Some(soft) = kept.or_else(|| {
             naming
@@ -735,12 +963,15 @@ impl AdvancedAi {
                 .flatten()
         }) else {
             if !naming {
-                self.edge_close(
-                    g,
-                    pid,
-                    window,
-                    "past the naming turn the named city is no longer soft",
-                );
+                let why = match lapsed {
+                    Some(why) => {
+                        format!(
+                            "past the naming turn the named city is no longer the target: {why}"
+                        )
+                    }
+                    None => "past the naming turn the named city is gone".to_string(),
+                };
+                self.edge_close(g, pid, window, &why);
                 return;
             }
             self.edge_wait(window, "no soft city in reach".to_string());
@@ -795,6 +1026,7 @@ impl AdvancedAi {
         }
         if renamed {
             self.force_groups_dirty = true;
+            window.kept = None;
             think!(self.journal(), Military, Strategy,
                    "Edge unit window opens on {}", g.cities[&soft.city].name;
                    "{TAG}: opened: {} ({:.0}) against {} of {} at defence {:.0}, edge +{:.0}, {} tiles from our nearest city, walls {}{}; {} technolog{} to go",
@@ -826,7 +1058,7 @@ impl AdvancedAi {
             self.edge_muster(g, pid, window, &soft, edge.unit);
             if window.declared.is_none() {
                 let city_pos = g.cities[&soft.city].pos;
-                self.edge_walk_the_force(g, pid, edge.unit, city_pos);
+                self.edge_walk_the_force(g, pid, window, edge.unit, city_pos);
             }
         }
     }
@@ -867,6 +1099,19 @@ impl AdvancedAi {
         let unsupplied =
             edge_resource(g, edge.unit).filter(|(res, cost)| !edge_supplied(g, pid, *res, *cost));
         let Some((res, _)) = unsupplied else {
+            // Version 2: a supply that appears during the recheck (a stock or
+            // an income) commits the opening too.
+            if let Some(since) = window.recheck_since.filter(|_| !window.start_supplied) {
+                if let Some((res, _)) = edge_resource(g, edge.unit) {
+                    Self::edge_count(g, pid, "start_recheck_found");
+                    think!(self.journal(), Military, Decision,
+                           "Edge unit opening from the start: {} supplied", plain(res.as_str());
+                           "{TAG}: start: {} is supplied {} turn(s) into the recheck; {} is the goal, up to {} bodies train to upgrade and Gold is held for the upgrades",
+                           plain(res.as_str()), g.turn.saturating_sub(since),
+                           plain(own.map_or("the unit", |tech| tech.as_str())),
+                           EDGE_MUSTER_BODIES);
+                }
+            }
             window.start_supplied = true;
             return own;
         };
@@ -874,21 +1119,50 @@ impl AdvancedAi {
         if let Some(reveal) = reveal.filter(|tech| !g.players[pid].techs.contains(tech)) {
             return Some(reveal);
         }
+        let reveal_name = plain(reveal.map_or("its technology", |tech| tech.as_str()));
         if edge_sources(g, pid, res).is_empty() {
-            window.start = Some(false);
+            // Version 2: the check repeats every turn for
+            // EDGE_START_RECHECK_TURNS before the opening stands down (live
+            // 205538Z: none in reach at Bronze Working on turn 19, Iron in
+            // stock from about turn 23). No Science is spent meanwhile.
             window.start_supplied = false;
+            let first = window.recheck_since.is_none();
+            let since = *window.recheck_since.get_or_insert(g.turn);
+            let until = since + harvest_floor(g, EDGE_START_RECHECK_TURNS);
+            if g.turn < until {
+                if first {
+                    Self::edge_count(g, pid, "start_recheck");
+                    think!(self.journal(), Military, Decision,
+                           "Edge unit opening from the start checks again";
+                           "{TAG}: start: recheck: no {} source in reach at {}; checking every turn until turn {} before the opening stands down",
+                           plain(res.as_str()), reveal_name, until);
+                }
+                return None;
+            }
+            window.start = Some(false);
             Self::edge_count(g, pid, "start_closed");
             think!(self.journal(), Military, Strategy,
                    "Edge unit opening from the start stands down";
-                   "{TAG}: start: no {} source in reach at {}; research returns to normal",
-                   plain(res.as_str()),
-                   plain(reveal.map_or("its technology", |tech| tech.as_str())));
+                   "{TAG}: start: no {} source in reach at {} or in the {} turns after; research returns to normal",
+                   plain(res.as_str()), reveal_name, until - since);
             return None;
         }
         if !window.start_supplied {
+            let found = window
+                .recheck_since
+                .map(|since| {
+                    format!(
+                        " ({} turn(s) into the recheck)",
+                        g.turn.saturating_sub(since)
+                    )
+                })
+                .unwrap_or_default();
+            if window.recheck_since.is_some() {
+                Self::edge_count(g, pid, "start_recheck_found");
+            }
             think!(self.journal(), Military, Decision,
                    "Edge unit opening from the start: {} in reach", plain(res.as_str());
-                   "{TAG}: start: a {} source is in reach; {} is the goal, a Builder improves the source first, up to {} bodies train to upgrade and Gold is held for the upgrades",
+                   "{TAG}: start: a {} source is in reach{found}; {} is the goal, a Builder improves the source first, up to {} bodies train to upgrade and Gold is held for the upgrades",
                    plain(res.as_str()),
                    plain(own.map_or("the unit", |tech| tech.as_str())),
                    EDGE_MUSTER_BODIES);
@@ -924,24 +1198,36 @@ impl AdvancedAi {
         }
     }
 
-    /// `edge-unit-opens-from-the-start`: the Gold held back from every other
-    /// purchase while the opening is live and its resource is in reach: the
-    /// upgrade bill of up to [`EDGE_MUSTER_BODIES`] owned units that upgrade
-    /// into the edge unit. Zero with either flag off.
+    /// The Gold held back from every other purchase (`purchase_upkeep_floor`)
+    /// and from `one-upgrade-lifts-every-city`'s other upgrades: the upgrade
+    /// bill of up to [`EDGE_MUSTER_BODIES`] owned units that upgrade into the
+    /// edge unit, no more than the force still has room for. Held while the
+    /// window is open (version 2; live 205538Z spent 75 of 76 Gold on one
+    /// upgrade with nothing held for the next), and, with
+    /// `edge-unit-opens-from-the-start`, while the opening is live and its
+    /// resource is in reach. Zero with the gene off.
     pub(super) fn edge_upgrade_gold_held(&self, g: &Game, pid: usize) -> f64 {
-        if !self.edge_unit_takes_the_soft_city || !self.edge_unit_opens_from_the_start {
+        if !self.edge_unit_takes_the_soft_city {
             return 0.0;
         }
+        let from_the_start = self.edge_unit_opens_from_the_start;
         let Some(window) = self
             .edge_unit_window
             .as_ref()
-            .filter(|w| w.preparing() && w.start_supplied)
+            .filter(|w| w.live() || (from_the_start && w.preparing() && w.start_supplied))
         else {
             return 0.0;
         };
         let Some(unit) = window.unit else {
             return 0.0;
         };
+        let (owned, queued) = Self::edge_force(g, pid, unit);
+        let room = EDGE_FORCE_MAX
+            .saturating_sub(owned + queued)
+            .min(EDGE_MUSTER_BODIES);
+        if room == 0 {
+            return 0.0;
+        }
         let mut bills: Vec<f64> = g
             .player_unit_ids(pid)
             .into_iter()
@@ -955,7 +1241,17 @@ impl AdvancedAi {
             })
             .collect();
         bills.sort_by(f64::total_cmp);
-        bills.into_iter().take(EDGE_MUSTER_BODIES).sum()
+        bills.into_iter().take(room).sum()
+    }
+
+    /// Version 2: the edge unit `pid`'s window holds Gold for, while it
+    /// holds any ([`Self::edge_upgrade_gold_held`]). `one-upgrade-lifts-every-city`
+    /// reads it: an upgrade into this unit is never held back by the hold.
+    pub(super) fn edge_unit_held_for(&self, g: &Game, pid: usize) -> Option<Name> {
+        if self.edge_upgrade_gold_held(g, pid) <= 0.0 {
+            return None;
+        }
+        self.edge_unit_window.as_ref().and_then(|w| w.unit)
     }
 
     /// The muster's reach: [`EDGE_MUSTER_TILES`], or two more when no free
@@ -979,8 +1275,16 @@ impl AdvancedAi {
     /// left, so no later step of the turn walks it home). Round 0: with the
     /// staging step alone, 13 worlds held 3-6 Legions by turn 44-55 and no
     /// muster formed in any. Not while a city of ours is threatened or a
-    /// major is at war with us.
-    fn edge_walk_the_force(&mut self, g: &mut Game, pid: usize, unit: Name, city: Pos) {
+    /// major is at war with us. Version 2: an edge unit under
+    /// [`EDGE_HEAL_HP`] heals first ([`Self::edge_heal_step`]).
+    fn edge_walk_the_force(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        window: &mut EdgeWindow,
+        unit: Name,
+        city: Pos,
+    ) {
         let at_war = g.players.iter().any(|player| {
             player.id != pid
                 && player.alive
@@ -993,12 +1297,51 @@ impl AdvancedAi {
         }
         let guards = self.all_reserved_civilian_guards();
         let withdraw = self.base.w.withdraw_hp;
+        // Heal before the march: a wounded edge unit of the force holds (or
+        // steps into a city of ours two tiles off) and does not walk. One at
+        // or below the withdraw line is the unit pass's recovery, as before.
+        window.healing.retain(|uid| {
+            g.units.get(uid).is_some_and(|body| {
+                body.owner == pid && body.kind == unit && body.hp < EDGE_HEAL_HP
+            })
+        });
+        let wounded: Vec<u32> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| {
+                let body = &g.units[uid];
+                body.kind == unit
+                    && body.hp < EDGE_HEAL_HP
+                    && body.hp as f64 > withdraw
+                    && !guards.contains(uid)
+                    && !g.is_embarked(body)
+            })
+            .collect();
+        for uid in wounded.iter().copied() {
+            let (hp, from) = (g.units[&uid].hp, g.units[&uid].pos);
+            let Some(haven) = Self::edge_heal_step(g, pid, uid) else {
+                continue;
+            };
+            if window.healing.insert(uid) {
+                Self::edge_count(g, pid, "heal");
+                let place = match haven {
+                    Some(cid) => format!("in {}", g.cities[&cid].name),
+                    None => "in place".to_string(),
+                };
+                think!(self.journal(), Military, Decision,
+                       "Edge unit heals before the march";
+                       "{TAG}: heal: {} {uid} at {hp} health heals {place} before it marches ({} tiles from the target); it walks at {}",
+                       plain(unit.as_str()), g.wdist(from, city), EDGE_HEAL_HP;
+                       from);
+            }
+        }
         let force: Vec<u32> = g
             .player_unit_ids(pid)
             .into_iter()
             .filter(|uid| {
                 let body = &g.units[uid];
                 (body.kind == unit || is_breaker(body.kind.as_str()))
+                    && !wounded.contains(uid)
                     && !guards.contains(uid)
                     && !g.is_embarked(body)
                     && body.hp as f64 > withdraw
@@ -1058,6 +1401,54 @@ impl AdvancedAi {
         )
     }
 
+    /// Version 2: one wounded edge unit heals before it marches. It steps,
+    /// with every move it has, into the nearest city of ours within
+    /// [`EDGE_HEAL_CITY_TILES`] when there is one, and holds fortified there
+    /// or where it stands, so no later step of the turn walks it (live
+    /// 205538Z: the upgraded Warrior, at 50 health, walked from turn 36 to
+    /// 48 and never healed). Returns the city it heals in, `Some(None)` in
+    /// place, `None` for a unit gone.
+    fn edge_heal_step(g: &mut Game, pid: usize, uid: u32) -> Option<Option<u32>> {
+        let here = g.units.get(&uid)?.pos;
+        let haven = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| g.wdist(g.cities[cid].pos, here) <= EDGE_HEAL_CITY_TILES)
+            .min_by_key(|cid| (g.wdist(g.cities[cid].pos, here), *cid));
+        if let Some(cid) = haven {
+            let city = g.cities[&cid].pos;
+            for _ in 0..6 {
+                let Some(body) = g.units.get(&uid) else {
+                    break;
+                };
+                if body.pos == city || body.moves_left <= 0.0 {
+                    break;
+                }
+                let Some(next) = g
+                    .route_step(uid, city, 0)
+                    .filter(|next| g.can_move(uid, *next))
+                else {
+                    break;
+                };
+                if g.apply(
+                    pid,
+                    &Action::Move {
+                        unit: uid,
+                        to: next,
+                    },
+                )
+                .is_err()
+                {
+                    break;
+                }
+            }
+        }
+        if g.units.get(&uid).is_some_and(|body| body.moves_left > 0.0) {
+            let _ = g.apply(pid, &Action::Fortify { unit: uid });
+        }
+        Some(haven)
+    }
+
     fn edge_journal_denounce(&mut self, g: &mut Game, pid: usize, rival: usize) {
         Self::edge_count(g, pid, "denounced");
         let wait = g.standard_duration(5);
@@ -1095,17 +1486,19 @@ impl AdvancedAi {
         unit: Name,
     ) {
         let city_pos = g.cities[&soft.city].pos;
-        // Once the force is raised, the shipped opening's denouncement goes
-        // out, so the Formal War is legal by the time the force musters
+        // Once the first edge unit exists, the shipped opening's denouncement
+        // goes out, so the Formal War is legal by the time the force musters
         // (`preferred_war_opening` on a major with no casus belli denounces
         // and waits five standard turns). A war action it offers now is left
-        // for the muster.
+        // for the muster. Version 2: at the first unit, not the third (live
+        // 205538Z denounced at turn 54 with the third Legion; the window
+        // closed at 56 with the Formal War still three turns off).
         let raised = g
             .player_unit_ids(pid)
             .into_iter()
             .filter(|uid| g.units[uid].kind == unit)
             .count()
-            >= EDGE_MUSTER_BODIES;
+            >= EDGE_DENOUNCE_BODIES;
         let denounced = g.players[pid]
             .denounced_until
             .get(&soft.rival)
@@ -1276,7 +1669,7 @@ impl AdvancedAi {
         Self::edge_count(g, pid, "declared");
         think!(self.journal(), Military, Strategy,
                "Edge unit declares on {} for {}", g.players[soft.rival].civ, name;
-               "{TAG}: declared: {bodies} {} at {}+ health within {} tiles{}, {} in the pool; forecast {:.0}% within {} turns (raw {:.0}%), edge +{:.0}",
+               "{TAG}: declared: {bodies} {} at {}+ health within {} tiles{}, {} in the pool; forecast {:.0}% within {} turns (raw {:.0}%), edge {:+.0}",
                plain(unit.as_str()), EDGE_MUSTER_HP, reach,
                if soft.walls { format!(" and {breakers} breaker(s)") } else { String::new() },
                pool.len(), chance * 100.0, EDGE_FORECAST_TURNS, raw * 100.0, soft.edge;
@@ -1681,11 +2074,52 @@ impl AdvancedAi {
             .filter(|goal| !g.players[pid].techs.contains(goal))
     }
 
-    /// `edge-unit-takes-the-soft-city`: an idle queue of the capital, or of
-    /// the one other city nearest the target, trains the next edge unit (or
-    /// the breaker the walls ask for) while the window is open. Exact no-op
-    /// with the gene off.
+    /// `edge-unit-takes-the-soft-city`: the capital and the cities nearest
+    /// the target train the next edge unit (or the breaker the walls ask
+    /// for) while the window is open. Exact no-op with the gene off.
+    ///
+    /// Version 2 (live 205538Z: one Legion owned and nothing queued from
+    /// turn 33 to 44 with Iron in stock): while the window is open and the
+    /// unit is trainable, [`EDGE_TRAINING_CITIES`] cities train it at once,
+    /// and it takes the head of their queues from a deferrable item
+    /// ([`Self::edge_may_displace`]) instead of waiting for an idle one. Other
+    /// claims leave it there (`first_capital_training_holds` reads
+    /// [`Self::edge_unit_training_holds`]).
     pub(super) fn claim_edge_unit_queue(&mut self, g: &mut Game, pid: usize) {
+        self.edge_claim_queues(g, pid, true);
+    }
+
+    /// Version 2: whether `item` at the head of `cid`'s queue is the edge
+    /// force's unit or its breaker in one of the training cities, while the
+    /// window is open; the claims that respect a reserved army build leave
+    /// it in place. `false` with the gene off.
+    pub(super) fn edge_unit_training_holds(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+    ) -> bool {
+        if !self.edge_unit_takes_the_soft_city {
+            return false;
+        }
+        let Some(window) = self.edge_unit_window.as_ref().filter(|w| w.live()) else {
+            return false;
+        };
+        let (Some(unit), Some(target)) = (window.unit, window.target.as_ref()) else {
+            return false;
+        };
+        let Item::Unit { unit: kind } = item else {
+            return false;
+        };
+        (*kind == unit || is_breaker(kind.as_str()))
+            && Self::edge_training_cities(g, pid, target.pos, EDGE_TRAINING_CITIES).contains(&cid)
+    }
+
+    /// The claim. `preempt` lets the edge unit take the head of a queue
+    /// from a deferrable item; off, only idle queues are filled (the turn
+    /// start while the opening book runs, whose own items are left alone).
+    fn edge_claim_queues(&mut self, g: &mut Game, pid: usize, preempt: bool) {
         if !self.edge_unit_takes_the_soft_city {
             return;
         }
@@ -1700,6 +2134,7 @@ impl AdvancedAi {
         let Some(unit) = window.unit else {
             return;
         };
+        let live = window.live();
         let target = window.target.clone();
         // Before a city is named the force gathers at the capital.
         let Some(anchor) = target
@@ -1717,10 +2152,33 @@ impl AdvancedAi {
             })
             .filter(|cid| g.cities[cid].wall_hp > 0)
             .and_then(|cid| edge_breaker(g, pid, cid));
-        for cid in Self::edge_training_cities(g, pid, anchor) {
-            if !g.cities[&cid].queue.is_empty() {
-                continue;
+        // Version 2: three cities at once while the window is open and the
+        // unit's technology is known; before, the capital and one other.
+        let trainable = g
+            .rules
+            .units
+            .get(&unit)
+            .and_then(|spec| spec.tech)
+            .is_none_or(|tech| g.players[pid].techs.contains(&tech));
+        let count = if live && trainable {
+            EDGE_TRAINING_CITIES
+        } else {
+            2
+        };
+        for cid in Self::edge_training_cities(g, pid, anchor, count) {
+            let head = g.cities[&cid].queue.first().cloned();
+            if let Some(Item::Unit { unit: kind }) = &head {
+                if *kind == unit || is_breaker(kind.as_str()) {
+                    continue;
+                }
             }
+            let displaced = match &head {
+                None => None,
+                Some(item) if preempt && live && Self::edge_may_displace(g, pid, cid, item) => {
+                    Some(item.clone())
+                }
+                Some(_) => continue,
+            };
             let (owned, queued) = Self::edge_force(g, pid, unit);
             let breakers_held = Self::conquest_breakers_held(g, pid);
             let mut item: Option<Item> = None;
@@ -1737,8 +2195,9 @@ impl AdvancedAi {
                 }
             }
             // `edge-unit-opens-from-the-start`: while the edge unit cannot be
-            // trained, bodies that upgrade into it, up to the muster's three.
-            if item.is_none() && from_the_start {
+            // trained, bodies that upgrade into it, up to the muster's three,
+            // in an idle queue only.
+            if item.is_none() && from_the_start && displaced.is_none() {
                 let feeders = Self::edge_feeders(g, pid, unit);
                 if owned + queued + feeders.0 + feeders.1 < EDGE_MUSTER_BODIES {
                     if let Some(feeder) = Self::edge_feeder_kind(g, pid, cid, unit) {
@@ -1761,9 +2220,18 @@ impl AdvancedAi {
                 continue;
             }
             Self::edge_count(g, pid, "trained");
+            let ahead = displaced
+                .as_ref()
+                .map(|item| {
+                    format!(
+                        ", ahead of {} (it keeps its progress)",
+                        Self::plain_item(item)
+                    )
+                })
+                .unwrap_or_default();
             think!(self.journal(), Military, Decision,
                    "{} trains {} for the edge force", g.cities[&cid].name, Self::plain_item(&item);
-                   "{TAG}: force: {} {} owned and {} queued of {} before this one",
+                   "{TAG}: force: {} {} owned and {} queued of {} before this one{ahead}",
                    owned, plain(unit.as_str()), queued, EDGE_FORCE_MAX);
         }
     }
@@ -1967,6 +2435,14 @@ impl AdvancedAi {
             return None;
         }
         let (_, city) = self.edge_staging_target(g, pid, uid)?;
+        // Version 2: a wounded edge unit heals before it marches.
+        let unit = self.edge_unit_window.as_ref().and_then(|w| w.unit);
+        if g.units
+            .get(&uid)
+            .is_some_and(|body| Some(body.kind) == unit && body.hp < EDGE_HEAL_HP)
+        {
+            return Self::edge_heal_step(g, pid, uid).map(|_| false);
+        }
         Self::edge_stage_unit(g, pid, uid, city)
     }
 

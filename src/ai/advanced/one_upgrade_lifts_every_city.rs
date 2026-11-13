@@ -44,6 +44,14 @@
 //! 4. The best lift per Gold goes first (the cheaper, then the lower unit id,
 //!    on a tie). The basis is read again and the pass repeats until nothing
 //!    qualifies, which is at once after the first unit of a tier.
+//! 5. While `edge-unit-takes-the-soft-city` holds Gold for the upgrades into
+//!    its edge unit (`edge_upgrade_gold_held`), an upgrade into that unit
+//!    goes as above; any other waits unless it leaves the held Gold in the
+//!    treasury. The edge gene's own upgrade pass runs first in the turn
+//!    (`maintain_edge_unit_window`, ahead of this pass in `take_turn_inner`),
+//!    so a Warrior-to-Legion upgrade both want is bought once, by whichever
+//!    pass reaches it with the Gold, and the edge gene counts the Legion in
+//!    its force either way (it counts the units it owns).
 //!
 //! Off, the pass returns before it reads anything.
 
@@ -121,12 +129,22 @@ impl AdvancedAi {
         loop {
             let (melee, ranged) = Self::city_lift_basis(g, pid);
             let treasury = g.players[pid].gold;
+            // `edge-unit-takes-the-soft-city`: while its window holds Gold for
+            // the upgrades into its edge unit, only an upgrade into that unit,
+            // or one that leaves the held Gold in the treasury, is taken here
+            // (both passes read the same treasury: live 205538Z's edge
+            // upgrade spent 75 of 76 Gold). 0 and `None` with the gene off.
+            let held = self.edge_upgrade_gold_held(g, pid);
+            let held_for = self.edge_unit_held_for(g, pid);
             let mut best: Option<(f64, f64, u32, Name, CityLift)> = None;
             for uid in g.player_unit_ids(pid) {
                 let Some((target, gold, resources)) = g.unit_gold_upgrade_offer(pid, uid) else {
                     continue;
                 };
                 if gold > treasury {
+                    continue;
+                }
+                if held > 0.0 && Some(target) != held_for && treasury - gold + 1e-9 < held {
                     continue;
                 }
                 let to = &g.rules.units[target];

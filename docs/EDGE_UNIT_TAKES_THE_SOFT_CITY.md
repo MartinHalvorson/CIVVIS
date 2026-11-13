@@ -2,7 +2,7 @@
 
 `edge-unit-takes-the-soft-city` (opt-in, off by default, not armed).
 Code: `src/ai/advanced/edge_unit_takes_the_soft_city.rs`. Driver:
-`src/bin/gene_screen/edge_unit_takes_the_soft_city_tests.rs`. PR #5267.
+`src/bin/gene_screen/edge_unit_takes_the_soft_city_tests.rs`. PR #5267; version 2 PR #5292.
 
 ## Question
 
@@ -59,7 +59,8 @@ reading that can price it.
    stays soft. *Changed after round 0:* a city named by turn 55 stays the
    target, mustered on and declared on, while it stays soft, up to turn 70
    (as first specified the window shut at turn 55, before any force could
-   stand at the city). While the window is open:
+   stand at the city). *Version 2:* an unwalled named city stays the target
+   below the +8 edge (see "Version 2" below). While the window is open:
    - **Research.** When the edge unit needs a strategic resource the seat
      neither holds (10 or more) nor earns, the technology that reveals it is
      the research goal (Bronze Working reveals Iron). Once it is known, the
@@ -79,6 +80,8 @@ reading that can price it.
      of an owned unit into the edge unit (Warrior to Legion) is taken ahead of
      the treasury floor, down to 0 Gold while income is not negative. The
      window needs two cities, so the first Settler is never deferred.
+     *Version 2:* three cities, ahead of a deferrable item, and the upgrade
+     bill held back from other purchases (see "Version 2" below).
    - **Muster.** Before the war the edge units (and the breaker) walk to a
      free stand 3-4 tiles from the city outside any border closed to us (3-6
      when none is free) and hold it. *Changed after round 0:* the walk runs at
@@ -97,7 +100,8 @@ reading that can price it.
      `preferred_war_opening`. On a major with no casus belli that function
      returns a Denounce and offers the Formal War five standard turns later;
      *changed after round 0*, the denouncement goes out once 3 edge units are
-     owned, so the Formal War is legal when the force musters, and a Denounce
+     owned (*version 2:* once the first is), so the Formal War is legal when
+     the force musters, and a Denounce
      offered at the muster is applied and held. From the declaration the
      plan's target player and city are that city's
      (`apply_edge_unit_to_strategy`), under the lane's own strategy; the
@@ -135,7 +139,8 @@ on turn 1: Rome's Legion; a generic Swordsman or Horseman does not qualify):
 - **At Bronze Working** the existing resource rule decides: a source in reach
   makes the unit's own technology (Iron Working) the goal; none stands the
   opening down and research returns to normal (two cheap technologies
-  spent). The first gene's ordinary window goes on and opens later if a
+  spent). *Version 2:* the check first repeats every turn for 10 Online
+  turns. The first gene's ordinary window goes on and opens later if a
   source comes into reach.
 - **With the source in reach**: a Builder improves it first (also Iron
   Working's boost); the capital and the city nearest the target (the
@@ -151,6 +156,61 @@ on turn 1: Rome's Legion; a generic Swordsman or Horseman does not qualify):
   opening down and journals it; the edge units stay as defence.
 - Everything after the muster is the first gene (denounce, forecast gate,
   declaration, assault, continue or peace).
+
+## Version 2, from the first live game (PR #5292)
+
+`civvis-20261113T205538Z`, Rome with both flags (`why.log`, the `state`
+rows of `events.jsonl`, `decisions.jsonl`). Bronze Working at turn 19 found
+no Iron in reach and the opening stood down; Iron was in stock from about
+turn 23 (14 at 30, 25 at 40). The window opened at 27 on Mbamba of Kongo
+(defence 17, unwalled, 8 tiles); Iron Working about 32. Legions owned: 1 at
+36 (the upgraded Warrior, 75 of 76 Gold at +6 a turn, at 50 health and
+walking until 48), 2 at 51, 3 at 54, 4 at 57, 5 at 75; none queued from 33
+to 44. Kongo was denounced at 54, and at 56 the window closed "past the
+naming turn the named city is no longer soft": defence 17 / 24 / 32 / 34 at
+27 / 33 / 39 / 56 (edge +6), 41-51 to 69, walls 0 on every row to turn 81.
+No war; the denouncement bought nothing.
+
+**Why nothing was queued from 33 to 44.** The claim filled only an idle
+queue, in the capital and one other city (Antium). The claim chain
+(`run_idle_queue_claims`) runs only after the opening book, which held the
+capital to turn 37 and gave its idle turns to an Archer (34) and a Builder
+(37); the early Settler floor, ahead of the claim in the chain, took Rome at
+39 and Antium (walled to 39) at 40. Once queued, the Granary claim, after it
+in the chain, put a Granary ahead of the Legion (Rome 45, Antium 50).
+
+The changes (same two tags, still opt-in):
+
+1. **Unwalled target on the forecast.** Past naming, an unwalled named city
+   below +8 stays the target (muster, denouncement, declaration) while the
+   declaration's forecast, read with every edge unit owned posed beside it
+   at its current health, takes it within 4 turns at 0.5 or more; before 3
+   are owned, while the edge is -4 or better. Walled: the old rule. Lines
+   `kept:` and `closed: ... no longer the target: <why>`.
+2. **Force.** Once the window is open and the unit trainable, the capital
+   and the two cities nearest the target train it at once, ahead of a
+   deferrable item (not one finishing this turn, a soldier, Walls, a wonder,
+   a project, a District with work in it, or a city's first Settler: only
+   the capital's Settler gives way). The Granary, backlog Builder and
+   Campus claims leave it queued (`first_capital_training_holds`), and
+   during the opening book the window fills idle queues at the turn start.
+3. **Gold.** The upgrade bill (up to 3 bodies) is held from other purchases
+   whenever the window is open, not only from the start.
+4. **Denounce** with the first edge unit owned, never before one exists.
+5. **Heal.** An edge unit under 70 health (above the withdraw line) holds
+   fortified, or steps into a city of ours within 2 tiles, before it walks
+   (`heal:`); the unit pass's staging hook holds it too.
+6. **Recheck.** From the start, no source at the revealing technology is
+   checked again every turn for 10 Online turns (`start: recheck:`); a
+   source or a supply in that time commits the opening.
+7. **Upgrade passes.** The edge pass (`maintain_edge_unit_window`) runs first
+   in the turn, ahead of `upgrade_units_preserving_air_wing`, whose first
+   step is `one-upgrade-lifts-every-city`. While Gold is held, that pass
+   takes only an upgrade into the edge unit or one that leaves the held Gold;
+   a Warrior-to-Legion upgrade is bought once, by whichever pass reaches it,
+   and the edge force counts the Legion (it counts units owned).
+
+SANITY_ROUND_PLACEHOLDER
 
 ## Live evidence (Rome, Score lane)
 
@@ -596,11 +656,14 @@ both flags on:
    valuable") step toward bronze working, which the edge unit outclassing a
    nearby rival city needs` (Mining first). Check the host's research
    matches the turn.
-3. **The decision at Bronze Working**: either `start: no iron source in
-   reach at bronze working; research returns to normal` (the opening ends
-   here, two cheap technologies spent), or `start: a iron source is in
+3. **The decision at Bronze Working**: either `start: a iron source is in
    reach; iron working is the goal, ...`, followed by `research: iron
-   working toward legion`.
+   working toward legion`, or (version 2) `start: recheck: no iron source in
+   reach at bronze working; checking every turn until turn T`, then within
+   ten turns `start: a iron source is in reach (K turn(s) into the recheck)`
+   or `start: iron is supplied K turn(s) into the recheck`, or at turn T
+   `start: no iron source in reach at bronze working or in the 10 turns
+   after; research returns to normal` (two cheap technologies spent).
 4. **Resource**: `resource: builder N walks to the iron at (x, y)`, then
    `... improves the iron at (x, y)`; or `resource: bought a iron source for
    G Gold, H left`. Check the host built the Mine (Iron income above zero)
@@ -609,19 +672,29 @@ both flags on:
    with `force: ... before this one`; while they wait, no other Gold buy
    should take the treasury below the Warriors' upgrade bill (the purchase
    floor). Then `force: upgraded a warrior to legion for G Gold of H`, and
-   `<city> trains Legion for the edge force`.
+   `<city> trains Legion for the edge force`, in up to three cities at once
+   (version 2), some `..., ahead of <item> (it keeps its progress)`. A
+   Granary or Builder claim should not take a queued Legion back.
 6. **The target**: `opened: legion (40) against <city> of <civ> at defence D,
    edge +E, T tiles from our nearest city, walls ...`. While none is soft,
    `waiting: no soft city in reach`; by turn 45 with none,
    `closed: no soft city within 10 tiles is known by turn 45; the opening
    stands down`. Check the host's city banner defence against D.
 7. **Denouncement**: `denounced: <civ> so the Formal War is legal in N turns`,
-   once three Legions are owned. The host should show the denouncement.
+   once the first Legion is owned (version 2). The host should show the
+   denouncement.
 8. **Muster**: while walking, `hold: B of N legion at <city> with 70+ health;
    the others at ... tiles ...`; then `muster: 3 legion at 70+ health within
    4 tiles of <city>` (6 when the rival's border has closed the 3-4 ring).
    By turn 60 without a declaration: `closed: the force is not at the city
    by turn 60; the opening stands down and the legion stay as defence`.
+   Version 2: a Legion under 70 health first `heal: legion N at H health
+   heals in place (or in <city>) before it marches`; it should not move
+   until healed. Past the naming turn, an unwalled target below +8 gives
+   `kept: <city> unwalled at defence D, edge E: the forecast with the N
+   legion owned beside it reads X% ...` (or `..., with N of 3 legion owned
+   (the floor is -4 ...)`); it ends with `closed: past the naming turn the
+   named city is no longer the target: <why>`.
 9. **Gates at the muster**: `hold: ... the forecast reads X% within 4 turns
    (raw Y%), short of Z`; `hold: ... the shipped opening offers no
    declaration on <civ> yet (a denouncement waits out its Formal War)`;
