@@ -6995,6 +6995,16 @@ pub struct AdvancedAi {
     /// `declaration-needs-a-capture`: the turn's verdicts by target, so a
     /// turn reads and journals once. Untouched while the gene is off.
     declaration_capture_memo: RefCell<declaration_needs_a_capture::CaptureMemo>,
+    /// `diplo-seat-claims-the-competition`: a Diplomatic seat keeps one
+    /// scored competition's project (Send Aid, Training Athletes, Training
+    /// Astronauts) in production while the competition runs. See
+    /// `advanced/diplo_competition_claim.rs`. Off by default.
+    diplo_seat_claims_the_competition: bool,
+    /// `diplo-seat-statue-civic-first`: a Diplomatic seat's civic goal is
+    /// Civil Engineering (the Statue of Liberty's civic) once a tier-two
+    /// government civic is in hand and the Statue's Harbor stands or is
+    /// queued. See `advanced/diplo_statue_harbor.rs`. Off by default.
+    diplo_seat_statue_civic_first: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11387,6 +11397,9 @@ mod culture_work_purchase;
 /// `curator-sits-with-the-works`: see `advanced/curator_sits_with_the_works.rs`.
 mod curator_sits_with_the_works;
 
+/// `diplo-seat-claims-the-competition`: see
+/// `advanced/diplo_competition_claim.rs`.
+mod diplo_competition_claim;
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.
 mod diplo_statue_harbor;
 
@@ -20969,6 +20982,11 @@ impl AdvancedAi {
             let diplo_wonder_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.diplo_wonder_holds(g, pid, cid, plan, item));
+            // `diplo-seat-claims-the-competition`: the claimed competition
+            // project finishes while its competition still runs.
+            let diplo_competition_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.diplo_competition_holds(g, pid, cid, plan, item));
             // `culture-seat-monuments`: the claimed Monument finishes.
             // `culture-digs-every-site` and `great-works-never-wait`: the
             // claimed Archaeologist and slot building finish too.
@@ -21066,6 +21084,7 @@ impl AdvancedAi {
                     || capital_monument_commitment
                     || culture_theater_commitment
                     || diplo_wonder_commitment
+                    || diplo_competition_commitment
                     || culture_monument_commitment
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
@@ -21096,6 +21115,7 @@ impl AdvancedAi {
                     || capital_monument_commitment
                     || culture_theater_commitment
                     || diplo_wonder_commitment
+                    || diplo_competition_commitment
                     || culture_monument_commitment
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
