@@ -10900,6 +10900,15 @@ local function exportState(player, pid, turn, frame, eventKind)
 								required_district = info.ActionRequiresCompletedDistrictType,
 								required_missing_building = info.ActionRequiresMissingBuildingType,
 								required_great_work = info.ActionRequiresCityGreatWorkObjectType,
+								-- The host's own patronage quotes for this
+								-- individual, as GreatPeoplePopup.lua reads
+								-- them (lines 735-738). `nil` when the host
+								-- does not answer; the planner then keeps its
+								-- own price.
+								patron_gold = CivvisLedger.patronQuote(greatPeople, pid, entry, "GOLD"),
+								patron_faith = CivvisLedger.patronQuote(greatPeople, pid, entry, "FAITH"),
+								can_patron_gold = CivvisLedger.patronAllowed(greatPeople, pid, entry, "GOLD"),
+								can_patron_faith = CivvisLedger.patronAllowed(greatPeople, pid, entry, "FAITH"),
 							};
 							any = true;
 						end
@@ -13248,6 +13257,28 @@ CivvisLedger.greatPersonAvailable = function(greatPeople, pid, entry)
 	return try(function()
 		return greatPeople:CanRecruitPerson(pid, entry.Individual);
 	end, false) == true;
+end;
+
+-- The host's patronage quote for one timeline entry in Gold or Faith
+-- (`yield` is "GOLD" or "FAITH"), and whether the host would accept the
+-- purchase now. Base/Assets/UI/Popups/GreatPeoplePopup.lua:735-738:
+--   canPatronizeWithGold = pGreatPeople:CanPatronizePerson(displayPlayerID, entry.Individual, YieldTypes.GOLD);
+--   patronizeWithGoldCost = pGreatPeople:GetPatronizeCost(displayPlayerID, entry.Individual, YieldTypes.GOLD);
+-- Both answer nil when the host throws or the call is missing.
+CivvisLedger.patronQuote = function(greatPeople, pid, entry, yield)
+	return try(function()
+		local cost = greatPeople:GetPatronizeCost(pid, entry.Individual, YieldTypes[yield]);
+		if type(cost) ~= "number" then return nil; end
+		return cost;
+	end, nil);
+end;
+
+CivvisLedger.patronAllowed = function(greatPeople, pid, entry, yield)
+	return try(function()
+		local allowed = greatPeople:CanPatronizePerson(pid, entry.Individual, YieldTypes[yield]);
+		if type(allowed) ~= "boolean" then return nil; end
+		return allowed;
+	end, nil);
 end;
 
 CivvisLedger.componentKey = function(id)
