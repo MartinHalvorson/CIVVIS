@@ -30,7 +30,7 @@ fn board(planet: bool) -> (Game, Pos) {
         tile.hills = false;
         tile.road = 0;
     }
-    for player in &mut g.players {
+    for player in g.players.iter_mut() {
         player.techs.extend(g.rules.techs.keys().copied());
         player.civics.extend(g.rules.civics.keys().copied());
     }
