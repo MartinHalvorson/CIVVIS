@@ -17,7 +17,8 @@ fn competition(game: &Game, kind: &str, left: u32) -> crate::game::HostCompetiti
 }
 
 /// The wonder claim's own empire with the seat a member of a World Games
-/// that has `left` turns to run.
+/// that has `left` turns to run (a thousand where the fixture's one-citizen
+/// cities must be able to finish a project).
 fn games_board(left: u32) -> Game {
     let (mut game, _) = strategic_wonder_fixture(6_401, "mahabodhi_temple");
     let games = competition(&game, "EMERGENCY_WORLD_GAMES", left);
@@ -51,7 +52,7 @@ fn holders(game: &Game) -> Vec<u32> {
 /// competition runs, and it is made once.
 #[test]
 fn a_diplomatic_seat_claims_the_competitions_project_in_one_city() {
-    let game = games_board(200);
+    let game = games_board(1_000);
     let plan = wonder_plan(GrandStrategy::Diplomacy, game.turn);
     let mut seat = AdvancedAi::targeting(VictoryTarget::Diplomacy);
     assert!(offers(&seat, &game, &plan).is_empty(), "off: nothing");
@@ -96,7 +97,7 @@ fn a_diplomatic_seat_claims_the_competitions_project_in_one_city() {
 /// competition too close to its end offers nothing.
 #[test]
 fn only_an_unthreatened_diplomatic_seat_with_time_left_claims() {
-    let game = games_board(200);
+    let game = games_board(1_000);
     let plan = wonder_plan(GrandStrategy::Diplomacy, game.turn);
     let mut seat = AdvancedAi::targeting(VictoryTarget::Diplomacy);
     seat.enable_diplo_seat_claims_the_competition();
@@ -136,9 +137,9 @@ fn only_an_unthreatened_diplomatic_seat_with_time_left_claims() {
 /// running the city is lent to Send Aid.
 #[test]
 fn the_aid_request_outranks_the_world_games() {
-    let mut game = games_board(200);
-    let aid = competition(&game, "EMERGENCY_SEND_AID", 200);
-    let games = competition(&game, "EMERGENCY_WORLD_GAMES", 200);
+    let mut game = games_board(1_000);
+    let aid = competition(&game, "EMERGENCY_SEND_AID", 1_000);
+    let games = competition(&game, "EMERGENCY_WORLD_GAMES", 1_000);
     game.replace_host_competitions(vec![aid, games]);
     let plan = wonder_plan(GrandStrategy::Diplomacy, game.turn);
     let mut seat = AdvancedAi::targeting(VictoryTarget::Diplomacy);
