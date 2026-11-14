@@ -208,8 +208,10 @@ fn a_domination_opening_appoints_pingala_with_the_gene_and_magnus_without() {
 fn pingala_first_leaves_other_targets_and_a_recovery_alone() {
     let mut game = opening_board(9_202);
     let opening = opening_plan(&game, GrandStrategy::Expansion);
-    pingala_first_seat(VictoryTarget::Science, true).strategic_governors(&mut game, 0, &opening);
-    assert_eq!(opening_roster(&game), ["magnus"]);
+    let mut off = opening_board(9_202);
+    pingala_first_seat(VictoryTarget::Culture, true).strategic_governors(&mut game, 0, &opening);
+    pingala_first_seat(VictoryTarget::Culture, false).strategic_governors(&mut off, 0, &opening);
+    assert_eq!(opening_roster(&game), opening_roster(&off));
 
     let mut game = opening_board(9_203);
     let recovery = opening_plan(&game, GrandStrategy::Recovery);
@@ -282,26 +284,45 @@ fn a_domination_pingala_stays_seated_with_the_gene() {
     assert_eq!(name, "pingala");
     assert!(within > 0.0);
     let science = pingala_first_seat(VictoryTarget::Science, true);
-    assert_eq!(science.culture_pingala_stays_home(&game), None);
+    assert_eq!(
+        science
+            .culture_pingala_stays_home(&game)
+            .map(|(name, _)| name),
+        Some("pingala"),
+        "a Science seat keeps her home too"
+    );
+    let religion = pingala_first_seat(VictoryTarget::Religion, true);
+    assert_eq!(religion.culture_pingala_stays_home(&game), None);
 }
 
-/// `conquest_or_score_seat`: a Score seat (an Expansion plan) seats Pingala
-/// first as a Domination seat does, and takes the economic Governor after a
-/// founded Moksha; a Culture, Science or Religion seat does with the gene
-/// what it does without it.
+/// `pingala_first_seat`: a Score, Science or Diplomatic seat (an Expansion
+/// plan) seats Pingala first as a Domination seat does, and without the gene
+/// Magnus; a Culture or Religion seat does with the gene what it does
+/// without it. Only a Domination or Score seat takes the economic Governor
+/// after a founded Moksha.
 #[test]
 fn a_score_seat_appoints_pingala_first_and_other_targets_are_unchanged() {
     let opening = opening_plan(&opening_board(9_206), GrandStrategy::Expansion);
-    for target in [VictoryTarget::Domination, VictoryTarget::Score] {
+    for target in [
+        VictoryTarget::Domination,
+        VictoryTarget::Score,
+        VictoryTarget::Science,
+        VictoryTarget::Diplomacy,
+    ] {
         let mut game = opening_board(9_206);
         pingala_first_seat(target, true).strategic_governors(&mut game, 0, &opening);
         assert_eq!(opening_roster(&game), ["pingala"], "{target:?}");
     }
-    for target in [
-        VictoryTarget::Culture,
-        VictoryTarget::Science,
-        VictoryTarget::Religion,
-    ] {
+    for target in [VictoryTarget::Science, VictoryTarget::Diplomacy] {
+        let mut game = opening_board(9_206);
+        pingala_first_seat(target, false).strategic_governors(&mut game, 0, &opening);
+        assert_eq!(
+            opening_roster(&game),
+            ["magnus"],
+            "{target:?} without the gene"
+        );
+    }
+    for target in [VictoryTarget::Culture, VictoryTarget::Religion] {
         let mut on = opening_board(9_206);
         pingala_first_seat(target, true).strategic_governors(&mut on, 0, &opening);
         let mut off = opening_board(9_206);
