@@ -571,7 +571,19 @@ impl Game {
                 return value.get(&city.id).copied().unwrap_or(0);
             }
         }
-        let value = self.luxury_amenity_allocations_uncached(pid);
+        // The split is the empire's, not the city's: every city of `pid`
+        // asks for the same one. It is kept beside the yields from one
+        // read-only pass to the next (`KeptDerivations`), so a caller with no
+        // query scope open across the cities no longer splits the empire's
+        // luxuries once per city.
+        let value = match self.kept_luxury_split(pid) {
+            Some(kept) => kept,
+            None => {
+                let value = self.luxury_amenity_allocations_uncached(pid);
+                self.keep_luxury_split(pid, &value);
+                value
+            }
+        };
         let amenities = value.get(&city.id).copied().unwrap_or(0);
         if let Some(memo) = self.query_memo.lux_alloc.borrow_mut().as_mut() {
             memo.insert(pid, value);
@@ -579,7 +591,10 @@ impl Game {
         amenities
     }
 
-    pub(super) fn luxury_amenity_allocations_uncached(&self, pid: usize) -> BTreeMap<u32, i64> {
+    pub(in crate::game) fn luxury_amenity_allocations_uncached(
+        &self,
+        pid: usize,
+    ) -> BTreeMap<u32, i64> {
         let cities: Vec<&City> = self
             .cities
             .values()
