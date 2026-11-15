@@ -1023,19 +1023,50 @@ impl Game {
     /// routes equal over every military unit of a played game, with the
     /// flags set every way round.
     pub(crate) fn approach_arrivals_on_a_fresh_turn(&self, uid: u32) -> Vec<(Pos, f64)> {
-        let Some(unit) = self.units.get(&uid) else {
+        let Some((start, moves)) = self.fresh_turn_approach(uid) else {
             return Vec::new();
         };
-        let (start, moves) = (unit.pos, self.unit_max_moves(uid));
-        if moves <= 0.0 || self.formation_movement_locked_on_a_fresh_turn(uid) {
-            return Vec::new();
-        }
         self.approach_arrivals_with(uid, start, moves)
+    }
+
+    /// [`Self::approach_arrivals_on_a_fresh_turn`], and every tile its flood
+    /// relaxed: the start, each arrival and each tile it only crossed. For a
+    /// caller that must know how far out the answer read the board (see
+    /// `unit_preservation`'s `TrialReach`).
+    pub(crate) fn approach_arrivals_on_a_fresh_turn_with_flood(
+        &self,
+        uid: u32,
+    ) -> (Vec<(Pos, f64)>, Vec<Pos>) {
+        let Some(unit) = self.units.get(&uid) else {
+            return (Vec::new(), Vec::new());
+        };
+        let Some((start, moves)) = self.fresh_turn_approach(uid) else {
+            return (Vec::new(), vec![unit.pos]);
+        };
+        let flood = self.approach_flood(uid, start, moves);
+        let mut relaxed: Vec<Pos> = flood.iter().map(|(pos, _)| *pos).collect();
+        relaxed.push(start);
+        (self.approach_stops(uid, start, flood), relaxed)
+    }
+
+    /// Where a fresh turn's approach starts and with how much movement, or
+    /// `None` when it cannot move at all (no movement, or locked in place).
+    fn fresh_turn_approach(&self, uid: u32) -> Option<(Pos, f64)> {
+        let unit = self.units.get(&uid)?;
+        let (start, moves) = (unit.pos, self.unit_max_moves(uid));
+        (moves > 0.0 && !self.formation_movement_locked_on_a_fresh_turn(uid))
+            .then_some((start, moves))
     }
 
     /// The flood both of the above run, once each has settled where the unit
     /// starts and with how much movement.
     fn approach_arrivals_with(&self, uid: u32, start: Pos, moves: f64) -> Vec<(Pos, f64)> {
+        let flood = self.approach_flood(uid, start, moves);
+        self.approach_stops(uid, start, flood)
+    }
+
+    /// Every tile the approach relaxes, with the movement it keeps there.
+    fn approach_flood(&self, uid: u32, start: Pos, moves: f64) -> Vec<(Pos, (f64, bool))> {
         let _memo = self.query_memo();
         let mut arrivals: Vec<(Pos, (f64, bool))> = Vec::new();
         self.relax_movement_into(
@@ -1047,6 +1078,16 @@ impl Game {
             &mut arrivals,
         );
         arrivals
+    }
+
+    /// The tiles of an approach flood the unit may end on.
+    fn approach_stops(
+        &self,
+        uid: u32,
+        start: Pos,
+        flood: Vec<(Pos, (f64, bool))>,
+    ) -> Vec<(Pos, f64)> {
+        flood
             .into_iter()
             .filter(|(pos, _)| *pos != start && self.can_stop(uid, *pos))
             .map(|(pos, (kept, _))| (pos, kept))
@@ -1124,7 +1165,23 @@ impl Game {
             None => return vec![],
         };
         let best = self.flow(uid, start, moves);
-        best.into_keys()
+        self.stops_in(uid, start, best.into_keys())
+    }
+
+    /// [`Self::reachable`], and every tile its flood relaxed (the start
+    /// included), for a caller that must know how far out it read the board.
+    pub(crate) fn reachable_with_flood(&self, uid: u32) -> (Vec<Pos>, Vec<Pos>) {
+        let Some((start, moves)) = self.units.get(&uid).map(|u| (u.pos, u.moves_left)) else {
+            return (vec![], vec![]);
+        };
+        let best = self.flow(uid, start, moves);
+        let mut relaxed: Vec<Pos> = best.keys().copied().collect();
+        relaxed.push(start);
+        (self.stops_in(uid, start, best.into_keys()), relaxed)
+    }
+
+    fn stops_in(&self, uid: u32, start: Pos, tiles: impl Iterator<Item = Pos>) -> Vec<Pos> {
+        tiles
             .filter(|p| *p != start && self.can_stop(uid, *p))
             .collect()
     }

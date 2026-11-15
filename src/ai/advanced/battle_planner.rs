@@ -326,7 +326,7 @@ pub(super) fn wounded_penalty(hp: i32) -> f64 {
 /// Whether `pid` is the live seat on a mirrored board: the one place the host
 /// has shown the seat what it can see. Empty everywhere else, including every
 /// arena and screen board, so a rule keyed on it is inert there.
-fn mirrored_board(g: &Game, pid: usize) -> bool {
+pub(super) fn mirrored_board(g: &Game, pid: usize) -> bool {
     pid == crate::game::MIRRORED_SEAT && !g.host_observed.is_empty()
 }
 
@@ -351,6 +351,20 @@ fn mirrored_board(g: &Game, pid: usize) -> bool {
 /// two are the same flood is written down). `strike_reach_tests` keeps the
 /// old route as its reference.
 pub(crate) fn strike_reach_of(g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
+    strike_reach_reading(g, pid, uid, None)
+}
+
+/// [`strike_reach_of`], pushing onto `relaxed` the unit's own tile and every
+/// tile its movement flood relaxed: with the attack range, everything the
+/// answer read off the board. An air unit pushes nothing; its disk is read
+/// around its operation origin, not along a flood, so a caller that keeps a
+/// strike reach by what it read must not keep an air unit's this way.
+pub(super) fn strike_reach_reading(
+    g: &Game,
+    pid: usize,
+    uid: u32,
+    relaxed: Option<&mut Vec<Pos>>,
+) -> Vec<Pos> {
     let Some(unit) = g.units.get(&uid) else {
         return Vec::new();
     };
@@ -363,11 +377,73 @@ pub(crate) fn strike_reach_of(g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
     }
     let max_moves = g.unit_max_moves(uid);
     if max_moves <= 0.0 {
+        if let Some(relaxed) = relaxed {
+            relaxed.push(unit.pos);
+        }
         return Vec::new();
     }
     let mut stands: Vec<(Pos, f64)> = vec![(unit.pos, max_moves)];
-    stands.extend(g.approach_arrivals_on_a_fresh_turn(uid));
+    match relaxed {
+        Some(relaxed) => {
+            let (arrivals, flood) = g.approach_arrivals_on_a_fresh_turn_with_flood(uid);
+            relaxed.extend(flood);
+            relaxed.push(unit.pos);
+            stands.extend(arrivals);
+        }
+        None => stands.extend(g.approach_arrivals_on_a_fresh_turn(uid)),
+    }
     strikes_from_stands(g, pid, uid, stands)
+}
+
+/// A unit [`DangerField::with_reach`] prices: a visible military unit of a
+/// seat at war with `pid` that can strike at all.
+pub(super) fn hostile_in_field(g: &Game, pid: usize, unit: &crate::game::Unit) -> bool {
+    let spec = &g.rules.units[unit.kind];
+    unit.owner != pid
+        && g.is_at_war(pid, unit.owner)
+        && spec.class == "military"
+        && (spec.is_melee_capable() || spec.has_ranged_attack())
+        && g.unit_visible_to(unit.id, pid)
+}
+
+/// One hostile's `reach` (its strike reach) widened by everything it could
+/// strike after a turn to reposition: it is stood on `probe` at the start of
+/// a fresh turn, on every tile it can reach, and its strike reach from each
+/// is added. `probe` is put back as it was. With `relaxed`, every tile those
+/// floods relaxed (and each stand) is pushed there, which with the attack
+/// range is everything the answer read off the board.
+pub(super) fn widen_to_the_second_turn(
+    probe: &mut Game,
+    pid: usize,
+    uid: u32,
+    reach: &mut Vec<Pos>,
+    mut relaxed: Option<&mut Vec<Pos>>,
+) {
+    let saved = probe.units[&uid].clone();
+    let moves = probe.unit_max_moves(uid);
+    if let Some(unit) = probe.units.get_mut(&uid) {
+        unit.moves_left = moves;
+        unit.moved = false;
+        unit.acted = false;
+        unit.zoc_stopped = false;
+        unit.started_turn_in_zoc = false;
+    }
+    let stands = match relaxed.as_deref_mut() {
+        Some(relaxed) => {
+            let (stands, flood) = probe.reachable_with_flood(uid);
+            relaxed.extend(flood);
+            stands
+        }
+        None => probe.reachable(uid),
+    };
+    for stand in stands {
+        probe.relocate(uid, stand);
+        reach.extend(strike_reach_reading(probe, pid, uid, relaxed.as_deref_mut()));
+    }
+    probe.relocate(uid, saved.pos);
+    *probe.units.get_mut(&uid).expect("forecast retains enemy") = saved;
+    reach.sort_unstable();
+    reach.dedup();
 }
 
 /// The reference for [`strike_reach_of`]: the route it took before it read
@@ -525,24 +601,32 @@ impl DangerField {
         let mut field = Self::with_reach(g, pid, true);
         let mut probe = g.speculative_clone();
         for (uid, reach) in &mut field.reaches {
-            let saved = probe.units[uid].clone();
-            let moves = probe.unit_max_moves(*uid);
-            if let Some(unit) = probe.units.get_mut(uid) {
-                unit.moves_left = moves;
-                unit.moved = false;
-                unit.acted = false;
-                unit.zoc_stopped = false;
-                unit.started_turn_in_zoc = false;
-            }
-            let stands = probe.reachable(*uid);
-            for stand in stands {
-                probe.relocate(*uid, stand);
-                reach.extend(strike_reach_of(&probe, pid, *uid));
-            }
-            probe.relocate(*uid, saved.pos);
-            *probe.units.get_mut(uid).expect("forecast retains enemy") = saved;
-            reach.sort_unstable();
-            reach.dedup();
+            widen_to_the_second_turn(&mut probe, pid, *uid, reach, None);
+        }
+        field
+    }
+
+    /// [`Self::second_turn`] on `g`, from the first-turn field `first` that
+    /// `with_reach(g, pid, true)` builds, with `widen` doing for each hostile
+    /// what [`widen_to_the_second_turn`] does. The new field shares nothing
+    /// mutable with `first`: its probe is a fresh copy and its blows unpriced.
+    pub(super) fn second_turn_from(
+        first: &DangerField,
+        g: &Game,
+        mut widen: impl FnMut(u32, &mut Vec<Pos>),
+    ) -> Self {
+        let mut field = DangerField {
+            pid: first.pid,
+            probe: g.speculative_clone(),
+            reaches: first.reaches.clone(),
+            cache: BTreeMap::new(),
+            widened: first.widened,
+            shares: BTreeMap::new(),
+            floods: first.floods.clone(),
+            reads_the_tile_it_leaves: false,
+        };
+        for (uid, reach) in &mut field.reaches {
+            widen(*uid, reach);
         }
         field
     }
@@ -555,33 +639,44 @@ impl DangerField {
     /// The field on the flood's reach, or with `strike_reach` on the reach
     /// the engine resolves a blow over (`strike_reach_of`).
     pub(super) fn with_reach(g: &Game, pid: usize, strike_reach: bool) -> Self {
+        let hostiles = g
+            .units
+            .values()
+            .filter(|unit| hostile_in_field(g, pid, unit))
+            .map(|unit| {
+                let flood = g.attack_reach(unit.id);
+                let strike = strike_reach.then(|| strike_reach_of(g, pid, unit.id));
+                (unit.id, flood, strike)
+            })
+            .collect();
+        Self::from_hostiles(g, pid, hostiles)
+    }
+
+    /// The field over hostiles whose reaches the caller already holds, each
+    /// `(id, flood, strike)` exactly as [`Self::with_reach`] reads them on
+    /// `g` (`strike` is `None` without `strike-reach`), in `g.units` order.
+    pub(super) fn from_hostiles(
+        g: &Game,
+        pid: usize,
+        hostiles: Vec<(u32, Vec<Pos>, Option<Vec<Pos>>)>,
+    ) -> Self {
         let probe = g.speculative_clone();
         let mut reaches = Vec::new();
         let mut floods = BTreeMap::new();
         let mut widened = 0u32;
-        for unit in g.units.values() {
-            let spec = &g.rules.units[unit.kind];
-            if unit.owner == pid
-                || !g.is_at_war(pid, unit.owner)
-                || spec.class != "military"
-                || !(spec.is_melee_capable() || spec.has_ranged_attack())
-                || !g.unit_visible_to(unit.id, pid)
-            {
-                continue;
-            }
-            let flood = g.attack_reach(unit.id);
-            let reach = if strike_reach {
-                let strike = strike_reach_of(g, pid, unit.id);
-                if strike.iter().any(|tile| flood.binary_search(tile).is_err()) {
-                    widened += 1;
+        for (id, flood, strike) in hostiles {
+            let reach = match strike {
+                Some(strike) => {
+                    if strike.iter().any(|tile| flood.binary_search(tile).is_err()) {
+                        widened += 1;
+                    }
+                    floods.insert(id, flood);
+                    strike
                 }
-                floods.insert(unit.id, flood);
-                strike
-            } else {
-                flood
+                None => flood,
             };
             if !reach.is_empty() {
-                reaches.push((unit.id, reach));
+                reaches.push((id, reach));
             }
         }
         reaches.sort_by_key(|(id, _)| *id);
