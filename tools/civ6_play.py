@@ -2445,10 +2445,13 @@ def focus_game(side: str = "left", fraction: float = 0.5) -> None:
 
 #: Logged on transitions only, so a person working beside the game does not
 #: fill the play log with one line per poll.
-_SHARED_DESKTOP_STATE: dict = {"deferring": False}
+_SHARED_DESKTOP_STATE: dict = {"deferring": False, "front_other_at": None}
+#: How long focus upkeep takes "another app is in front" as still true
+#: before it asks again (see `maintain_game_focus`).
+FOCUS_FRONT_SECONDS = 5.0
 
 
-def shared_desktop_in_use() -> bool:
+def shared_desktop_in_use(front_max_age: float = 0.0) -> bool:
     """Optional GUI recovery must leave other apps in front while a person is here.
 
     Two ways the desktop counts as shared, and the harness keeps its hands off
@@ -2465,6 +2468,13 @@ def shared_desktop_in_use() -> bool:
 
     In shared mode a Civ VI that is already frontmost is still fair game: the
     person put it there. Anything else in front is theirs.
+
+    ``front_max_age`` lets a caller that asks on a timer reuse the last
+    "another app is in front" answer for that many seconds. Only that answer
+    is ever reused, never "Civ VI is in front": a stale reading can then only
+    keep the harness's hands off a little longer, not raise the game over
+    someone. The marker and the idle clock are read every time, so removing
+    the marker, or the person leaving, still takes effect at once.
     """
     active = operator_presence.operator_active()
     marker = (Path.home() / ".civvis-shared-desktop").exists()
@@ -2474,12 +2484,19 @@ def shared_desktop_in_use() -> bool:
               if active else
               "[desktop] the Mac has been idle; resuming game upkeep", flush=True)
     if not (active or marker):
+        _SHARED_DESKTOP_STATE["front_other_at"] = None
         return False
+    now = time.monotonic()
+    seen = _SHARED_DESKTOP_STATE.get("front_other_at")
+    if front_max_age > 0 and seen is not None and 0 <= now - seen < front_max_age:
+        return True
     try:
-        return not popup_clear.frontmost().startswith("Civ6")
+        other = not popup_clear.frontmost().startswith("Civ6")
     except (OSError, subprocess.SubprocessError):
         # An unreadable foreground is not permission to take the keyboard.
-        return True
+        other = True
+    _SHARED_DESKTOP_STATE["front_other_at"] = now if other else None
+    return other
 
 
 def maintain_game_focus(interval: float, last_focus: float, *,
@@ -2491,11 +2508,22 @@ def maintain_game_focus(interval: float, last_focus: float, *,
     ~/.civvis-shared-desktop is the standing manual override on top of that.
     Background progress also depends on Civ VI's own ThrottleWhileInactive
     setting; this switch cannot change engine behavior.
+
+    ★ A DEFERRED UPKEEP ASKS AGAIN ON THE NEXT PASS, AND THE ASK IS A PROCESS.
+    Deferring returns the old stamp, so while another app stays in front the
+    question "which app is in front?" was put on every 0.25 s pass of the
+    watch, each time as a 0.25 s `osascript`. Measured 2026-11-15 on a live
+    game with the mirror page in front (`civvis-20261115T124823Z`): 2.20
+    launches a second from this line, half of the 4.4 on the host, and for
+    each one the harness relayed no board to the decider (the receipt stamps
+    of `events.jsonl` carry the 0.45 s rhythm). So the answer "another app
+    is in front" stands for `FOCUS_FRONT_SECONDS`; upkeep that could resume
+    resumes at most that much later.
     """
     now = time.monotonic()
     if interval <= 0 or now - last_focus < interval:
         return last_focus
-    if shared_desktop_in_use() or screen_locked():
+    if shared_desktop_in_use(front_max_age=FOCUS_FRONT_SECONDS) or screen_locked():
         return last_focus
     focus_game()
     if place:
@@ -5100,6 +5128,267 @@ def restart_in_place(tail: watch.LogTail, on_event, run_dir: Path,
 # Firaxis's rolling autosaves on this build: `AutoSave_NNNN.Civ6Save`, one per
 # turn, the newest ten kept, older ones rotated into `prev/`. The Load Game
 # screen lists them only while its "Autosaves" filter is ticked.
+#: Where macOS files a crash of the game, and what its reports are called.
+CRASH_REPORT_DIR = Path.home() / "Library" / "Logs" / "DiagnosticReports"
+CRASH_REPORT_GLOB = "Civ6_Exe_Child-*.ips"
+#: How long the report of a process that just died is waited for.
+CRASH_REPORT_WAIT_S = 6.0
+#: How often a game notes the host's load averages in its own event stream,
+#: and how recently the game itself must have written there for the note to
+#: be added (see `host_load_row`).
+HOST_LOAD_EVERY_S = 30.0
+HOST_LOAD_BESIDE_S = 1.0
+#: Frames every abort passes through: they say that it died, not where.
+CRASH_NOISE_FRAMES = frozenset({
+    "__pthread_kill", "pthread_kill", "abort", "__abort_message",
+    "demangling_terminate_handler()", "_objc_terminate()",
+    "std::__terminate(void (*)())",
+})
+#: Rows that say the mod touched a screen, a popup or a diplomacy session:
+#: the candidates for "the last thing we did to the UI" before a crash.
+CRASH_UI_ROW_KINDS = frozenset({
+    "event_lock", "autoclose", "autoclose_behind_deal", "autoclose_hold",
+    "autoclose_desktop", "deal_session", "rock_band_concert", "timescale",
+    "diplomacy_choice", "first_meet_choice",
+})
+#: What a trail row keeps besides its kind, context and age.
+CRASH_TRAIL_FIELDS = ("turn", "frame", "screen", "holder", "op", "phase", "why",
+                      "reason", "verb", "blocker", "forced")
+
+
+def host_load() -> list[float] | None:
+    """The host's 1, 5 and 15 minute load averages, or None where unknown."""
+    try:
+        return [round(value, 2) for value in os.getloadavg()]
+    except (AttributeError, OSError):
+        return None
+
+
+def host_load_row(events_path: Path, since_last_s: float, wall: float | None = None,
+                  every_s: float = HOST_LOAD_EVERY_S,
+                  beside_s: float = HOST_LOAD_BESIDE_S) -> dict | None:
+    """The `host_load` row due now, or None.
+
+    ★ ONLY BESIDE A ROW OF THE GAME'S. `civvis-agent-wedge-watchdog.sh` reads
+    the mtime of `events.jsonl` as the game's own voice ("a parked game is
+    silent, a slow one is not"). A row written here on a timer would keep a
+    parked game looking alive for ever, so the load is noted only when the
+    game wrote a row within the last ``beside_s``: a silent game gets none,
+    and its file's age is extended by at most that second.
+    """
+    if since_last_s < every_s:
+        return None
+    try:
+        quiet = (time.time() if wall is None else wall) - events_path.stat().st_mtime
+    except OSError:
+        return None
+    if quiet > beside_s:
+        return None
+    load = host_load()
+    if load is None:
+        return None
+    return {"kind": "host_load", "ctx": "harness", "load": load}
+
+
+def newest_crash_report(since: float, folder: Path | None = None) -> Path | None:
+    """The game's newest crash report written at or after ``since`` (epoch s)."""
+    newest, stamp = None, since
+    try:
+        paths = list((folder or CRASH_REPORT_DIR).glob(CRASH_REPORT_GLOB))
+    except OSError:
+        return None
+    for path in paths:
+        try:
+            written = path.stat().st_mtime
+        except OSError:
+            continue
+        if written >= stamp:
+            newest, stamp = path, written
+    return newest
+
+
+def _crash_clock(text) -> datetime | None:
+    """A report's `2026-11-15 06:28:24.6174 -0600` as an aware time."""
+    for layout in ("%Y-%m-%d %H:%M:%S.%f %z", "%Y-%m-%d %H:%M:%S %z"):
+        try:
+            return datetime.strptime(str(text), layout)
+        except ValueError:
+            continue
+    return None
+
+
+def read_crash_report(path: Path) -> dict:
+    """What a macOS crash report says died: signal, thread and first frames.
+
+    A `.ips` file is two JSON documents, a one-line header and the report.
+    `signature` is coarse on purpose (signal, thread, first frame that is not
+    the abort itself, unsymbolized frames by image only) so the same fault
+    counts as one across games: the two aborts of 2026-11-15 (11:18Z, 12:28Z)
+    both read `SIGABRT TBB __cxa_pure_virtual`, the six of 11-08..11-13
+    `SIGSEGV WinMain GameCore_XP2.dll`. `frames` keeps the offsets.
+    """
+    _head, _, body = path.read_text(errors="replace").partition("\n")
+    report = json.loads(body)
+    images = report.get("usedImages") or []
+    crashed = next((thread for thread in report.get("threads") or []
+                    if isinstance(thread, dict) and thread.get("triggered")), {})
+    frames, first = [], None
+    for frame in crashed.get("frames") or []:
+        symbol = frame.get("symbol")
+        if symbol in CRASH_NOISE_FRAMES:
+            continue
+        index = frame.get("imageIndex")
+        image = (str(images[index].get("name") or "?")
+                 if isinstance(index, int) and 0 <= index < len(images) else "?")
+        if image.startswith("libsystem_"):
+            continue
+        if first is None:
+            first = symbol or image
+        offset = frame.get("imageOffset")
+        frames.append(symbol or (f"{image}+0x{offset:x}" if isinstance(offset, int)
+                                 else image))
+        if len(frames) >= 4:
+            break
+    exception = report.get("exception") or {}
+    thread = str(crashed.get("name") or crashed.get("queue") or "?")
+    thread = thread.split(" (WinID", 1)[0]
+    signal_name = str(exception.get("signal") or exception.get("type") or "?")
+    captured, launched = (_crash_clock(report.get("captureTime")),
+                          _crash_clock(report.get("procLaunch")))
+    return {
+        "report": path.name,
+        "signal": signal_name,
+        "exception": exception.get("type"),
+        "thread": thread,
+        "frames": frames,
+        "signature": " ".join(part for part in (signal_name, thread, first) if part),
+        "captured": (captured.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                     if captured else None),
+        "alive_s": (round((captured - launched).total_seconds(), 1)
+                    if captured and launched else None),
+    }
+
+
+def _event_clock(text) -> datetime | None:
+    try:
+        return datetime.strptime(str(text), "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def crash_trail(events_path: Path, died: datetime | None, keep: int = 12,
+                tail_bytes: int = 4 * 1024 * 1024) -> dict:
+    """What the event stream held when the game died: the turn, whose phase it
+    was, the last rows with their age, and the last row that touched the UI.
+
+    Read from the file, not kept in memory: the rows are already there with
+    their receipt stamps, and a crash is rare. Ages are milliseconds before
+    ``died`` (the report's capture time), or before the last row without one.
+    The phase is "rival" when the last `end_turn_wait` had no blocker left and
+    no `orders` row followed it, else "ours". `trail_s` is how far back the
+    reading reaches, so a missing `last_ui_row` means "none in that long".
+    """
+    try:
+        with events_path.open("rb") as journal:
+            journal.seek(0, os.SEEK_END)
+            size = journal.tell()
+            journal.seek(max(0, size - tail_bytes))
+            lines = journal.read().decode("utf-8", errors="replace").split("\n")
+    except OSError:
+        return {}
+    rows = []
+    for line in lines[1:] if size > tail_bytes else lines:
+        if not line.startswith("{"):
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        stamp = _event_clock(row.get("utc")) if isinstance(row, dict) else None
+        if stamp is not None:
+            rows.append((stamp, row))
+    if not rows:
+        return {}
+    end = died or rows[-1][0]
+
+    def age(stamp: datetime) -> int:
+        return int(round((end - stamp).total_seconds() * 1000))
+
+    def brief(stamp: datetime, row: dict) -> dict:
+        out = {"age_ms": age(stamp), "kind": row.get("kind")}
+        if row.get("ctx") not in (None, "agent"):
+            out["ctx"] = row.get("ctx")
+        for field in CRASH_TRAIL_FIELDS:
+            value = row.get(field)
+            if isinstance(value, (str, int, float, bool)):
+                out[field] = value
+        return out
+
+    turn, phase, last_ui, trail = None, "ours", None, []
+    for stamp, row in rows:
+        kind = row.get("kind")
+        if kind == "host_load":
+            continue
+        if isinstance(row.get("turn"), int):
+            turn = row["turn"]
+        if kind == "end_turn_wait":
+            phase = "ours" if row.get("blockers") else "rival"
+        elif kind in ("orders", "turn"):
+            phase = "ours"
+        if kind in CRASH_UI_ROW_KINDS or row.get("ctx") == "autoclose":
+            last_ui = brief(stamp, row)
+        if trail and trail[-1]["kind"] == kind and trail[-1].get("ctx") == (
+                row.get("ctx") if row.get("ctx") not in (None, "agent") else None):
+            # A run of the same row is one entry: its newest, and how many.
+            count = trail[-1].get("n", 1) + 1
+            trail[-1] = brief(stamp, row)
+            trail[-1]["n"] = count
+        else:
+            trail.append(brief(stamp, row))
+    return {
+        "turn": turn,
+        "phase": phase,
+        "trail_s": round(age(rows[0][0]) / 1000.0, 1),
+        "last_row_age_ms": age(rows[-1][0]),
+        "last_ui_row": last_ui,
+        "last_rows": trail[-keep:],
+    }
+
+
+def native_crash_row(events_path: Path, since: float, wait_s: float = CRASH_REPORT_WAIT_S,
+                     folder: Path | None = None, sleep=time.sleep,
+                     clock=time.monotonic) -> dict | None:
+    """The `native_crash` row for a game that exited under the harness, or
+    None when macOS wrote no report for it since ``since``.
+
+    ★ A CRASH SHOULD DESCRIBE ITSELF. 2026-11-15: the game aborted twice in
+    30 games with a signature never seen in the 648 before (a TBB worker
+    running a frame job that was already destroyed), and both times the run
+    said only "game exited". Telling the two apart from the older fault, and
+    seeing that the second had no popup closed for 11 s and no deal session
+    open, took reading the reports and the event tails by hand. This row
+    carries that reading: which fault, on which turn and in whose phase, what
+    the mod last did and how long before, and how loaded the host was.
+    """
+    deadline = clock() + max(0.0, wait_s)
+    while True:
+        path = newest_crash_report(since, folder)
+        if path is not None or clock() >= deadline:
+            break
+        sleep(0.5)
+    if path is None:
+        return None
+    try:
+        row = read_crash_report(path)
+    except (OSError, ValueError, TypeError, AttributeError) as error:
+        row = {"report": path.name, "signature": None,
+               "unreadable": f"{type(error).__name__}: {error}"[:160]}
+    died = _event_clock(row.get("captured")) if row.get("captured") else None
+    row.update(crash_trail(events_path, died))
+    row.update({"kind": "native_crash", "ctx": "harness", "load": host_load()})
+    return row
+
+
 AUTOSAVE_DIR = (Path.home() / "Library" / "Application Support"
                 / "Sid Meier's Civilization VI" / "Sid Meier's Civilization VI"
                 / "Saves" / "Single" / "auto")
@@ -7417,8 +7706,22 @@ def _play(args: argparse.Namespace) -> int:
                   file=sys.stderr, flush=True)
         print(f"[retire] {'requested' if sent else 'waiting'}: {detail}", flush=True)
 
+    # The host's load, about every `HOST_LOAD_EVERY_S` while the game is
+    # talking, in the game's own stream: a game that crashes or hangs can
+    # then be set against the games that did not (see `native_crash_row`).
+    load_noted = [0.0]
+    watch_began_wall = time.time()
+
+    def note_host_load() -> None:
+        now = time.monotonic()
+        row = host_load_row(events_path, now - load_noted[0])
+        if row is not None:
+            load_noted[0] = now
+            record(row)
+
     def keep_foreground() -> None:
         process_operator_retirement()
+        note_host_load()
         last_focus[0] = maintain_game_focus(
             args.focus_every, last_focus[0], place=True,
         )
@@ -7601,6 +7904,19 @@ def _play(args: argparse.Namespace) -> int:
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
             consecutive = 0
     mirror_beat.set()
+    if reason == "game exited":
+        crash = native_crash_row(events_path, watch_began_wall)
+        if crash is None:
+            print(f"[crash] the game exited and macOS filed no crash report for it "
+                  f"within {CRASH_REPORT_WAIT_S:.0f}s", flush=True)
+        else:
+            record(crash)
+            ui = crash.get("last_ui_row") or {}
+            print(f"[crash] {crash.get('signature') or 'unreadable report'} "
+                  f"({crash.get('report')}) at turn {crash.get('turn')} in "
+                  f"{crash.get('phase')} phase; last row {crash.get('last_row_age_ms')} ms "
+                  f"before, last UI row {ui.get('kind')} {ui.get('screen') or ''} "
+                  f"{ui.get('age_ms')} ms before; load {crash.get('load')}", flush=True)
     # Whatever ended the run, it no longer holds a game.
     live_pause.release_state(args.tag)
 

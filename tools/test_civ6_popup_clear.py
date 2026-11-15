@@ -148,6 +148,179 @@ class PopupTimingTest(unittest.TestCase):
         self.assertLessEqual(popup_clear.POST_CLICK_SETTLE_SECONDS, 0.25)
 
 
+class SystemEventsRateTest(unittest.TestCase):
+    """The window is asked for every few seconds and the front app only when
+    its answer is used; nothing is pressed through remembered geometry."""
+
+    BOX = (0, 33, 864, 542)
+
+    class Done(Exception):
+        pass
+
+    def _run(self, kinds, boxes=None, front="Civ6_Exe_Child", passes=None, cards=False):
+        """Drive `main` for one pass per entry of ``kinds`` on a fake clock
+        that only sleeps advance; returns what was asked and pressed."""
+        clock = [0.0]
+        seen = {"sleeps": [], "boxes": [], "fronts": 0, "captured": [], "keys": 0}
+        kinds = list(kinds)
+        boxes = list(boxes) if boxes is not None else None
+        limit = passes or len(kinds)
+
+        def sleep(seconds):
+            seen["sleeps"].append(round(seconds, 3))
+            clock[0] += seconds
+            if len(seen["sleeps"]) >= limit:
+                raise self.Done()
+
+        def window_box():
+            seen["boxes"].append(clock[0])
+            return self.BOX if boxes is None else boxes.pop(0)
+
+        def capture(box):
+            seen["captured"].append(box)
+            return mock.Mock(size=(1728, 1084)), 2.0
+
+        def classify(_window):
+            kind = kinds.pop(0)
+            if isinstance(kind, Exception):
+                raise kind
+            return kind, [], 0.5
+
+        def frontmost():
+            seen["fronts"] += 1
+            return front
+
+        def press_key(*_a, **_k):
+            seen["keys"] += 1
+
+        with tempfile.TemporaryDirectory() as root, \
+                mock.patch.object(popup_clear.macos_capture, "prepare", return_value=True), \
+                mock.patch.object(popup_clear, "operator_holds_game", return_value=False), \
+                mock.patch.object(popup_clear, "newest_run_is_pre_turn", return_value=False), \
+                mock.patch.object(popup_clear, "capture_pause_reason", return_value=None), \
+                mock.patch.object(popup_clear, "game_in_progress", return_value=True), \
+                mock.patch.object(popup_clear, "window_box", side_effect=window_box), \
+                mock.patch.object(popup_clear, "capture", side_effect=capture), \
+                mock.patch.object(popup_clear, "classify", side_effect=classify), \
+                mock.patch.object(popup_clear, "frontmost", side_effect=frontmost), \
+                mock.patch.object(popup_clear.macos_input, "press_key", side_effect=press_key), \
+                mock.patch.object(popup_clear.time, "monotonic", side_effect=lambda: clock[0]), \
+                mock.patch.object(popup_clear.time, "sleep", side_effect=sleep), \
+                mock.patch.object(sys, "argv", [
+                    "popup_clear.py", "--interval", "0.25", "--runs", root,
+                    "--log", str(Path(root) / "popup.log")]
+                    + (["--cards"] if cards else [])):
+            try:
+                popup_clear.main()
+            except self.Done:
+                pass
+            seen["log"] = (Path(root) / "popup.log").read_text() \
+                if (Path(root) / "popup.log").exists() else ""
+        return seen
+
+    def test_a_bare_map_asks_for_the_window_every_five_seconds_and_never_the_front(self) -> None:
+        seen = self._run(["map"] * 12)
+        # Twelve passes, 1.25 s apart: the window is read at 0, 5 and 10 s.
+        self.assertEqual(seen["boxes"], [0.0, 5.0, 10.0])
+        self.assertEqual(seen["fronts"], 0)
+        self.assertEqual(len(seen["captured"]), 12)
+        # The pace of captures is the measured one, not four a second.
+        self.assertEqual(set(seen["sleeps"]), {1.25})
+
+    def test_a_card_left_to_the_mod_is_as_quiet_as_the_map(self) -> None:
+        # Probed on civvis-20261115T131026Z: the live screen classified as a
+        # card nine captures in ten, never as the map, and the lane does not
+        # pass --cards. Twelve such passes ask what twelve map passes ask.
+        seen = self._run(["card"] * 12)
+        self.assertEqual(seen["boxes"], [0.0, 5.0, 10.0])
+        self.assertEqual(seen["fronts"], 0)
+        self.assertEqual(set(seen["sleeps"]), {1.25})
+        self.assertEqual(seen["log"].count("a card matched"), 1)
+        # Cards and the map mixed are one quiet run.
+        mixed = self._run(["card", "map", "card", "card", "map", "card"])
+        self.assertEqual((mixed["boxes"], mixed["fronts"]), ([0.0, 5.0], 0))
+        # A leader after cards is still looked at afresh before the ESC count.
+        leader = self._run(["card", "leader", "leader", "leader", "leader"])
+        self.assertEqual(leader["boxes"], [0.0, 1.5, 1.75, 2.0])
+        self.assertEqual((leader["fronts"], leader["keys"]), (3, 1))
+        self.assertEqual(leader["sleeps"], [1.25, 0.25, 0.25, 0.25, 0.25])
+        # With --cards a card is something this loop may click: every pass
+        # reads the window and the front app and chases at a quarter second.
+        clicking = self._run(["card"] * 4, cards=True)
+        self.assertEqual(clicking["boxes"], [0.0, 0.25, 0.5, 0.75])
+        self.assertEqual(clicking["fronts"], 4)
+        self.assertEqual(set(clicking["sleeps"]), {0.25})
+        self.assertTrue(popup_clear.quiet_pass("map", False))
+        self.assertTrue(popup_clear.quiet_pass("map", True))
+        self.assertTrue(popup_clear.quiet_pass("card", False))
+        self.assertFalse(popup_clear.quiet_pass("card", True))
+        for kind in ("leader", "advisor", "congress", "pause", "notice", "deal"):
+            self.assertFalse(popup_clear.quiet_pass(kind, False))
+
+    def test_nothing_is_pressed_through_a_remembered_window(self) -> None:
+        # Pass 1 sees the map and remembers the window. Pass 2 sees a leader
+        # through that memory: it presses nothing, asks nothing, and looks
+        # again a quarter second later. Passes 3-5 read the window afresh
+        # every time; the third of them is the first ESC, as before.
+        seen = self._run(["map", "leader", "leader", "leader", "leader"])
+        self.assertEqual(seen["boxes"], [0.0, 1.5, 1.75, 2.0])
+        self.assertEqual(seen["fronts"], 3)
+        self.assertEqual(seen["keys"], 1)
+        self.assertEqual(seen["sleeps"], [1.25, 0.25, 0.25, 0.25, 0.25])
+        self.assertIn("leader has covered the map for 3 passes", seen["log"])
+        # The same scene with someone else's app in front: asked, not pressed.
+        other = self._run(["map", "leader", "leader", "leader", "leader"], front="Terminal")
+        self.assertEqual((other["fronts"], other["keys"]), (3, 0))
+
+    def test_a_moved_window_is_found_before_anything_is_done(self) -> None:
+        moved = (120, 60, 864, 542)
+        seen = self._run(["map", "leader", "leader", "map", "map"],
+                         boxes=[self.BOX, moved, moved])
+        # The look that follows the remembered one is of the window where it
+        # now is, and once the map is back that is what is remembered: three
+        # readings in five passes (the first map, the fresh leader, the map).
+        self.assertEqual(seen["captured"], [self.BOX, self.BOX, moved, moved, moved])
+        self.assertEqual(len(seen["boxes"]), 3)
+        self.assertEqual(seen["fronts"], 1)
+
+    def test_a_window_that_went_away_is_noticed_on_the_next_fresh_look(self) -> None:
+        seen = self._run(["map", "leader"], boxes=[self.BOX, None, None], passes=3)
+        self.assertEqual(seen["captured"], [self.BOX, self.BOX])
+        self.assertIn("no Civilization VI window", seen["log"])
+        self.assertEqual(seen["keys"], 0)
+        # Between games the wait keeps asking at its own pace.
+        self.assertEqual(seen["sleeps"], [1.25, 0.25, 1.25])
+
+    def test_a_failed_pass_forgets_the_window(self) -> None:
+        seen = self._run(["map", RuntimeError("capture failed"), "map"])
+        self.assertEqual(len(seen["boxes"]), 2)
+        self.assertIn("error: capture failed", seen["log"])
+
+    def test_the_window_memo_and_the_map_pace(self) -> None:
+        memo = {"box": None, "at": None}
+        with mock.patch.object(popup_clear, "window_box", side_effect=[self.BOX, None, None, self.BOX]) as asked:
+            self.assertEqual(popup_clear.window_box_reading(memo, now=10.0), (self.BOX, True))
+            self.assertEqual(popup_clear.window_box_reading(memo, now=14.9), (self.BOX, False))
+            # Older than the limit: asked again, and no window is not kept.
+            self.assertEqual(popup_clear.window_box_reading(memo, now=15.0), (None, True))
+            self.assertEqual(popup_clear.window_box_reading(memo, now=15.1), (None, True))
+            self.assertEqual(popup_clear.window_box_reading(memo, now=15.2), (self.BOX, True))
+            self.assertEqual(asked.call_count, 4)
+            # A clock that went backwards is not trusted.
+            memo["at"] = 99.0
+            with mock.patch.object(popup_clear, "window_box", return_value=self.BOX) as again:
+                self.assertEqual(popup_clear.window_box_reading(memo, now=20.0), (self.BOX, True))
+                again.assert_called_once()
+        self.assertEqual(popup_clear.WINDOW_BOX_SECONDS, 5.0)
+        # A pass that took 0.2 s sleeps the rest of 1.25 s; a slow pass still
+        # gets the ordinary wait, and a long interval is not shortened.
+        self.assertAlmostEqual(popup_clear.map_pass_delay(0.25, began=100.0, now=100.2), 1.05)
+        self.assertAlmostEqual(popup_clear.map_pass_delay(0.25, began=100.0, now=103.0), 0.25)
+        self.assertAlmostEqual(popup_clear.map_pass_delay(2.0, began=100.0, now=100.2), 2.0)
+        self.assertAlmostEqual(popup_clear.map_pass_delay(0.0, began=100.0, now=102.0),
+                               popup_clear.MIN_POLL_SECONDS)
+
+
 class SetupYieldTest(unittest.TestCase):
     def test_newest_pre_turn_run_does_not_inherit_an_older_game(self) -> None:
         with tempfile.TemporaryDirectory() as root:

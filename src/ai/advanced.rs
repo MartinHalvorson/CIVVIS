@@ -10409,6 +10409,15 @@ pub struct AdvancedAi {
     /// point. See `advanced/score_seat_holds_its_faith_strikes.rs`. Off by
     /// default.
     score_seat_holds_its_faith_strikes: bool,
+    /// `settler-keeps-its-named-site`: the ranked pick passes over an unseen
+    /// plot and a site within the founding spacing of another Settler's, and
+    /// every change of destination is journalled. See
+    /// `advanced/settler_keeps_its_named_site.rs`. Off by default.
+    settler_keeps_its_named_site: bool,
+    /// `settler-keeps-its-named-site`: the last site each Settler named,
+    /// keyed by its stable Civ VI id so the live mirror's per-frame board ids
+    /// cannot lose it. Empty with the gene off.
+    settler_named_sites: BTreeMap<i64, Pos>,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -12188,6 +12197,10 @@ mod rear_cities_grow_through_the_war_hold;
 /// asks wider questions instead of holding, and a watchdog bounds every
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
 mod settler_never_idles;
+/// A Settler is sent only to a site it can keep, and every change of its
+/// destination is journalled. One opt-in gene; see
+/// `advanced/settler_keeps_its_named_site.rs`.
+mod settler_keeps_its_named_site;
 /// `settler-founds-under-raiders`: see `advanced/settler_raiders.rs`.
 mod settler_raiders;
 /// Route around a host-refused step before discarding its city destination.
@@ -12635,6 +12648,7 @@ impl AdvancedAi {
         self.settler_targets.clear();
         self.settler_stalls.clear();
         self.settler_stall_turn.clear();
+        self.settler_named_sites.clear();
         self.escort_march.clear();
         self.settler_guards.clear();
         self.settler_sea_guards.clear();

@@ -2398,6 +2398,28 @@ fn museum_swap_requires_both_native_inventory_slots_not_a_request() {
     );
     before.cities[1].great_works = Some(vec![]);
     assert_eq!(check(&swap, &before, &after, &[]), Verdict::Verified);
+    // A new Great Work created into the slot the work left does not hide
+    // the swap (live civvis-20261115T114552Z t143)...
+    after.cities[0].great_works = Some(vec![work("ART_NEW")]);
+    assert_eq!(check(&swap, &before, &after, &[]), Verdict::Verified);
+    // ...but a work the source museum already held, now in that slot, is
+    // not a new one, and a swap for a held work still wants that work back.
+    let other_slot = civvis::mirror::StateGreatWork {
+        slot: 1,
+        ..work("ART_C")
+    };
+    before.cities[0].great_works = Some(vec![work("ART_A"), other_slot]);
+    after.cities[0].great_works = Some(vec![work("ART_C")]);
+    assert_eq!(
+        check(&swap, &before, &after, &[]),
+        failed("museum_swap_not_observed")
+    );
+    before.cities[1].great_works = Some(vec![work("ART_B")]);
+    after.cities[0].great_works = Some(vec![work("ART_NEW")]);
+    assert_eq!(
+        check(&swap, &before, &after, &[]),
+        failed("museum_swap_not_observed")
+    );
 }
 
 #[test]

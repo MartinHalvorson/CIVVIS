@@ -8331,6 +8331,8 @@ local function exportState(player, pid, turn, frame, eventKind)
 		-- not forget the yield, Tourism, theming identity, or consumed slot.
 		CivvisExportClock.lap("plots");
 		local greatWorks = nil;
+		-- nil, never an empty table: the row's map must not cross as a list.
+		local greatWorkTurns = nil;
 		if blds ~= nil then
 			greatWorks = {};
 			for buildingInfo in GameInfo.Buildings() do
@@ -8360,6 +8362,16 @@ local function exportState(player, pid, turn, frame, eventKind)
 									building = buildingInfo.BuildingType,
 									slot = slot,
 								};
+								-- The turn it was created, which starts the ten-turn
+								-- art lock (GreatWorksOverview.lua:782-799): the
+								-- decider holds a swap back until it has run out.
+								local made = tonumber(try(function()
+									return blds:GetTurnFromIndex(workIndex);
+								end, nil));
+								if made ~= nil then
+									greatWorkTurns = greatWorkTurns or {};
+									greatWorkTurns[info.GreatWorkType] = made;
+								end
 							end
 						end
 					end
@@ -8420,6 +8432,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			worked = worked,
 			specialists = specialists,
 			great_works = greatWorks,
+			great_work_turns = greatWorkTurns,
 			yields = exactYields,
 			yield_sources = yieldSources,
 			incoming_routes = incomingRoutes[try(function() return city:GetID(); end, -1)],
@@ -21133,11 +21146,18 @@ CivvisQueue.NOOP_CONFIRM_TICKS = 3;
 CivvisQueue.noopStands = function(entry, subject, turn, atOrigin, moves)
 	if entry.noop_named == nil or entry.noop_tick == nil or not atOrigin then return false; end
 	if entry.wait < entry.noop_tick + CivvisQueue.NOOP_CONFIRM_TICKS then return false; end
-	local attempt = CivvisBoard.moveAttempts[subject];
-	if attempt == nil or attempt.turn ~= turn or attempt.moves == nil or moves == nil then
-		return false;
+	-- The movement it had when it was named; a MOVE_TO also has its attempt
+	-- on record. A SWAP has no attempt record, so a SWAP named a no-op was
+	-- never released here and held its follow-up to the cap
+	-- (civvis-20261115T102552Z t79: an Archer's SWAP named at tick 3, its
+	-- FORTIFY refused at tick 30, 5.2 s).
+	local base = entry.noop_moves;
+	if base == nil then
+		local attempt = CivvisBoard.moveAttempts[subject];
+		if attempt ~= nil and attempt.turn == turn then base = attempt.moves; end
 	end
-	return moves >= attempt.moves;
+	if base == nil or moves == nil then return false; end
+	return moves >= base;
 end;
 
 -- ★ A WALK THAT STEPPED AND THEN STOOD STILL HAS STOPPED.
@@ -21159,6 +21179,64 @@ end;
 -- start late (a first step came more than 1.5 s after its order 61 times in
 -- 8,447), and `moveNoop` / `noopStands` own the unit still on its origin.
 CivvisQueue.WALK_STALL_TICKS = 10;
+
+-- ★ A WALK THE HOST HAS ENDED IS GIVEN A MOMENT TO SHOW ON THE BOARD.
+--
+-- The watch on a first order's walk is dropped when the host's operation
+-- event arrives. The unit's plot read changes one to three ticks after that
+-- event, so the queue read as drained and the replan board was exported with
+-- the unit still on the plot it had left; the decider then planned it from
+-- there. Measured, first-order walks read unmoved in a replan board and then
+-- moved: 28, 75 and 79 a game (civvis-20261115T120431Z, 113645Z, 101703Z),
+-- 171 in 075925Z; for those units the frame re-sent the same move, sent the
+-- unit somewhere else from the wrong plot (16, 25 and 45 a game) or sent it
+-- nothing (14, 59, 41).
+--
+-- So a rows-less watch whose event has come, whose unit still reads its
+-- origin with movement left, waits up to `WATCH_LAND_TICKS` more ticks for
+-- the plot to change, and only when the host's own path
+-- (`UnitManager.GetMoveToPathEx`, WorldInput.lua:961; one read, at the
+-- event) says the walk reaches its plot this turn. A walk the host cannot
+-- path is answered at once, as before. From the recorded timings of three
+-- games (124823Z, 122335Z, 123222Z) the hold would have applied to 8, 5 and
+-- 62 replan boards and added 0.013, 0.002 and 0.036 s a turn; all 11, 7 and
+-- 120 late walks landed inside it.
+CivvisQueue.WATCH_LAND_TICKS = 3;
+CivvisQueue.pathLandsThisTurn = function(unit, x, y)
+	return try(function()
+		local destination = Map.GetPlotIndex(x, y);
+		local path = UnitManager.GetMoveToPathEx(unit, destination);
+		if path == nil or path.plots == nil or path.turns == nil then return false; end
+		local n = 0;
+		for _ in pairs(path.plots) do n = n + 1; end
+		if n < 2 or path.plots[n] ~= destination then return false; end
+		local last = tonumber(path.turns[n]);
+		return last ~= nil and last <= 1;
+	end, false) == true;
+end;
+-- One `queue_landing_hold` row when a hold ends: how many ticks it took and
+-- whether the unit had left its plot, so the cost can be read off a game.
+CivvisQueue.waitsToLand = function(entry, unit, subject, turn, arrived, spent, ux, uy)
+	if #entry.rows > 0 or not entry.ready or entry.expect == nil then return false; end
+	local onOrigin = entry.origin ~= nil and ux == entry.origin.x and uy == entry.origin.y;
+	local waiting = false;
+	if onOrigin and not arrived and not spent then
+		if entry.land_from == nil then
+			entry.land_from = entry.wait;
+			entry.land_feasible = CivvisQueue.pathLandsThisTurn(unit, entry.expect.x, entry.expect.y);
+		end
+		-- `WatchLandTicks` overrides the bound; 0 turns the hold off.
+		waiting = entry.land_feasible == true
+			and entry.wait < entry.land_from
+				+ (tonumber(cfg.WatchLandTicks) or CivvisQueue.WATCH_LAND_TICKS);
+	end
+	if not waiting and entry.land_feasible == true and not entry.land_told then
+		entry.land_told = true;
+		emit("queue_landing_hold", { turn = turn, unit = subject,
+			held = entry.wait - entry.land_from, landed = not onOrigin });
+	end
+	return waiting;
+end;
 CivvisQueue.walkStalled = function(entry, ux, uy)
 	if entry.seen_x == nil then
 		if entry.origin ~= nil and (ux ~= entry.origin.x or uy ~= entry.origin.y) then
@@ -21428,6 +21506,34 @@ CivvisQueue.drain = function(player, pid, turn)
 							spent = spent, at = { ux, uy }, want = { entry.expect.x, entry.expect.y } });
 					end
 				end
+				-- ★ ...AND A WALK STALLED IN ITS OPERATION IS RELEASED AS A WATCH IS.
+				-- An accepted MOVE_TO can sit in ACTIVITY_OPERATION with its unit
+				-- on its origin and its movement intact for the whole turn. A
+				-- rows-less watch on such a walk is released at the probe tick
+				-- (`StalledOperationRelease`, live): of the 64 released in 36 games
+				-- of 2026-11-14..15, 63 never left their plot that turn. With a
+				-- follow-up behind it the same walk held the frame to the cap
+				-- (civvis-20261115T101703Z t64: a Scout's MOVE_TO then PILLAGE,
+				-- named `unknown` at tick 30, 7.0 s). Same evidence, same tick,
+				-- same switch: the follow-up is refused by the name the cap gives.
+				if active_operation and entry.expect ~= nil and not arrived and not spent
+						and not cannot_land and not entry.stall_checked
+						and cfg.StalledOperationRelease == true
+						and entry.origin ~= nil and ux == entry.origin.x and uy == entry.origin.y
+						and entry.wait >= (tonumber(cfg.OrderQueueNoopProbeTicks) or 8)
+						and entry.wait < grace
+						and try(function() return UI.IsGameCoreBusy(); end, false) ~= true then
+					entry.stall_checked = true;
+					local attempt = CivvisBoard.moveAttempts[subject];
+					if attempt ~= nil and attempt.turn == turn and attempt.moves ~= nil
+							and moves ~= nil and moves >= attempt.moves then
+						cannot_land, entry.cannot_land = true, true;
+						emit("stall_probe", { turn = turn, unit = subject,
+							unit_kind = unitTypeName(unit), tick = entry.wait, moves = moves,
+							from = { ux, uy }, want = { entry.expect.x, entry.expect.y },
+							released = true, follow_up = true });
+					end
+				end
 				-- See `walkStalled`: a walk that stepped and then stood still.
 				local stalled = not spent and entry.wait < grace
 					and CivvisQueue.walkStalled(entry, ux, uy);
@@ -21436,6 +21542,11 @@ CivvisQueue.drain = function(player, pid, turn)
 				local ready = (entry.ready or arrived or spent or moved_from_origin
 					or unpathed or cannot_land or stalled or entry.wait >= grace)
 					and (not active_operation or stuck_operation);
+				-- See `waitsToLand`: the host has ended the walk; its plot read has not caught up.
+				if ready and not unpathed and entry.wait < grace
+						and CivvisQueue.waitsToLand(entry, unit, subject, turn, arrived, spent, ux, uy) then
+					ready = false;
+				end
 				if ready and #entry.rows > 0 then
 					local target = CivvisQueue.warPending(player, pid, entry.rows[entry.next], turn);
 					if target ~= nil then
@@ -21628,6 +21739,7 @@ CivvisQueue.drain = function(player, pid, turn)
 								-- A new leg: what was learnt about the last one is not
 								-- about this one, and it starts from where the unit is.
 								entry.land_probed, entry.cannot_land = nil, nil;
+								entry.stall_checked, entry.noop_moves = nil, nil;
 								entry.step_tick, entry.seen_x, entry.seen_y = nil, ux, uy;
 								entry.settle_passes = ok
 									and verb == "MOVE_TO"
@@ -22068,8 +22180,10 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 		return false;
 	end
 	entry.noop_named = why;
-	-- See `CivvisQueue.noopStands`: the tick this leg was named on.
+	-- See `CivvisQueue.noopStands`: the tick this leg was named on, and the
+	-- movement its unit had then.
 	entry.noop_tick = entry.wait or 0;
+	entry.noop_moves = moves;
 	-- The host says no route exists, so waiting out the grace cannot change it:
 	-- of 293 such legs in seven games, none reached the wanted plot.
 	if why == "no_path" then entry.noop_no_path = true; end
