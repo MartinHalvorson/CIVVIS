@@ -7939,10 +7939,10 @@ document.addEventListener("visibilitychange", () => {
 });
 // Max Speed is a whole-turn budget shown as a cap in turns/s (operator 11-15:
 // Max default, then 5, 2, 1, 0.5, 0.25, 0.1). Max is zero: no wait at all. A
-// pick has to outlive the server that received it — every game is a new
-// process at the default half-second per turn, and a viewer who chose Max was
-// quietly returned to 2 turns/s at the next world — so a chosen pace is
-// remembered and handed to whatever server the page finds itself talking to.
+// pick has to outlive the server that received it: every game is a new
+// process on the server's default (Max since 11-15; it was half a second),
+// where a viewer's slower cap would quietly lapse at the next world. So a pace
+// is remembered and handed to whatever server the page finds itself talking to.
 const PACE_KEY = "civvis-watch-pace";
 let paceRealigned = false;
 let paceDisagreed = 0;
@@ -8019,7 +8019,7 @@ function applyWorldPaceDefault(tactics) {
 }
 function specPace() {
   const select = document.getElementById("specspeed");
-  return select ? +select.value : 500;
+  return select ? +select.value : 0;
 }
 // The interval is a browser preference like Max Speed rather than a world
 // setting. A supervised successor is a fresh process, so remember it here and
@@ -27783,7 +27783,7 @@ function hudTurnPlate() {
   const liveLevel = livePause.available ? difficultyLevel(state.difficulty) : null;
   const paceSelect = document.getElementById("specspeed");
   const paceOption = paceSelect?.selectedOptions[0];
-  const watchPace = SPEC ? paceOption?.textContent.trim() || "2 turns/s" : "Manual";
+  const watchPace = SPEC ? paceOption?.textContent.trim() || "Max" : "Manual";
   const watchPaceOptions = SPEC && paceSelect
     ? [...paceSelect.options].map(option =>
         `<option value="${escapeAttr(option.value)}"${option.value === paceOption?.value ? " selected" : ""}>` +

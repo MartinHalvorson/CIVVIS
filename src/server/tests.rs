@@ -1555,7 +1555,7 @@ fn a_viewer_slower_than_the_pace_still_sees_every_turn() {
     params.width = 24;
     params.height = 16;
     params.seed = 20_260_725;
-    std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+    std::thread::spawn(move || serve_at_two_turns_a_second(port, params));
 
     let deadline = Instant::now() + Duration::from_secs(60);
     while http_get(port, "/status").is_none() {
@@ -1631,7 +1631,7 @@ fn an_arriving_page_is_not_held_up_by_another_viewers_paint() {
     params.width = 24;
     params.height = 16;
     params.seed = 20_260_727;
-    std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+    std::thread::spawn(move || serve_at_two_turns_a_second(port, params));
 
     let deadline = Instant::now() + Duration::from_secs(60);
     while http_get(port, "/status").is_none() {
@@ -1913,6 +1913,46 @@ fn blitz_server_posts_each_players_completed_turn() {
     assert_eq!(status["frames_missed"], json!(0));
 }
 
+/// A spectator server held to half a second a turn from its first step.
+/// The tests that measure frames, viewers and result holds were written
+/// against that pace when it was the default; a server now opens at Max
+/// (`DEFAULT_PACE_MS`), and these name the pace they measure instead of
+/// inheriting it.
+fn serve_at_two_turns_a_second(port: u16, params: Params) {
+    super::serve_opening_at_pace(port, false, params, super::Opening::Generated, false, 500);
+}
+
+/// A new server opens at Max (operator 2026-11-15): no wait between turns
+/// until a viewer picks a slower Max Speed. The browser build's module
+/// opens on the same constant.
+#[test]
+fn a_new_server_opens_at_max_speed() {
+    let port = TcpListener::bind(("127.0.0.1", 0))
+        .expect("a free port")
+        .local_addr()
+        .unwrap()
+        .port();
+    let mut params = current();
+    params.spectate = true;
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_115;
+    // Paused, so the world under test is not played flat out meanwhile.
+    std::thread::spawn(move || super::serve_with_game(port, false, params, None, true));
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while http_get(port, "/status").is_none() {
+        assert!(Instant::now() < deadline, "spectator server never came up");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let state: Value =
+        serde_json::from_str(&http_get(port, "/state").expect("state")).expect("state is JSON");
+    assert_eq!(state["pace"], json!(0), "a new server opens at Max");
+    let router = include_str!("../wasm.rs");
+    assert!(router.contains("static PACE: Cell<u64> = const { Cell::new(DEFAULT_PACE_MS) };"));
+}
+
 /// Start a spectator on its own port and wait for it to answer.
 fn exhibition(seed: u64) -> u16 {
     let port = TcpListener::bind(("127.0.0.1", 0))
@@ -1927,7 +1967,7 @@ fn exhibition(seed: u64) -> u16 {
     params.width = 24;
     params.height = 16;
     params.seed = seed;
-    std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+    std::thread::spawn(move || serve_at_two_turns_a_second(port, params));
     let deadline = Instant::now() + Duration::from_secs(60);
     while http_get(port, "/status").is_none() {
         assert!(Instant::now() < deadline, "spectator server never came up");
@@ -2421,7 +2461,7 @@ fn the_pace_endpoint_flips_the_arena_fog_for_the_running_battle() {
     );
     params.spectate = true;
     params.seed = 20_260_815;
-    std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+    std::thread::spawn(move || serve_at_two_turns_a_second(port, params));
     let deadline = Instant::now() + Duration::from_secs(60);
     while http_get(port, "/status").is_none() {
         assert!(Instant::now() < deadline, "arena server never came up");
@@ -2488,7 +2528,7 @@ fn a_result_arrives_with_its_countdown_and_can_be_played_past() {
     params.seed = 20_260_727;
     // Short enough that the turn limit lands within the test's patience.
     params.max_turns = 3;
-    std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+    std::thread::spawn(move || serve_at_two_turns_a_second(port, params));
     let deadline = Instant::now() + Duration::from_secs(60);
     while http_get(port, "/status").is_none() {
         assert!(Instant::now() < deadline, "spectator server never came up");
@@ -2645,7 +2685,7 @@ fn no_between_game_countdown_starts_the_successor_without_a_result_hold() {
     params.height = 16;
     params.seed = 20_260_804;
     params.max_turns = 1;
-    std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+    std::thread::spawn(move || serve_at_two_turns_a_second(port, params));
 
     let runtime = |port| -> Value {
         serde_json::from_str(&http_get(port, "/runtime").expect("runtime"))
@@ -8456,8 +8496,8 @@ fn the_stock_opening_world_is_the_tiny_tennis_ball_exhibition() {
 /// civvis.ai opens at Max Speed without a desktop build moving: the choice
 /// is the viewer's, gated to the hosts that serve the published site, and it
 /// never reaches `localStorage`, so a pace somebody picked by hand still wins.
-/// The markup's own 2 turns/s is what a desktop page shows before its server
-/// reports in.
+/// The markup's own Max is what a desktop page shows before its server
+/// reports in, and since 2026-11-15 a server opens at Max too.
 #[test]
 fn the_published_site_opens_at_max_speed_as_a_soft_choice() {
     assert!(EMBEDDED_INDEX.contains(
@@ -8467,7 +8507,7 @@ fn the_published_site_opens_at_max_speed_as_a_soft_choice() {
     assert!(
         EMBEDDED_INDEX.contains(": window.CIVVIS_PUBLISHED_SITE ? PUBLISHED_SITE_PACE_MS : null;")
     );
-    assert!(EMBEDDED_INDEX.contains("<option value=\"500\" selected>2 turns/s</option>"));
+    assert!(EMBEDDED_INDEX.contains("<option value=\"0\" selected>Max</option>"));
     assert_eq!(
         EMBEDDED_INDEX
             .matches("localStorage.setItem(PACE_KEY")
@@ -8485,9 +8525,9 @@ fn the_published_site_opens_at_max_speed_as_a_soft_choice() {
 fn max_speed_offers_turns_per_second_caps() {
     assert!(EMBEDDED_INDEX.contains("<div class=\"speed-row\"><span>Max Speed</span>"));
     let ladder = concat!(
-        "<option value=\"0\">Max</option>\n",
+        "<option value=\"0\" selected>Max</option>\n",
         "              <option value=\"200\">5 turns/s</option>\n",
-        "              <option value=\"500\" selected>2 turns/s</option>\n",
+        "              <option value=\"500\">2 turns/s</option>\n",
         "              <option value=\"1000\">1 turn/s</option>\n",
         "              <option value=\"2000\">0.5 turns/s</option>\n",
         "              <option value=\"4000\">0.25 turns/s</option>\n",

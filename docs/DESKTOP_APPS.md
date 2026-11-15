@@ -91,7 +91,7 @@ timestamped generated artifacts to consume the disk without bound.
 Both apps open directly into AI simulation on **the engine's stock opening
 world** — the same world civvis.ai opens on, described once by
 `stock_opening_params` in `src/server.rs` and by nothing else. No teams, an
-Ancient start, Blitz 500 ms watch speed, normal hot-equator/cold-poles
+Ancient start, Max watch speed (no wait between turns), normal hot-equator/cold-poles
 latitude, and every victory condition enabled.
 
 This section deliberately does not restate the seat count, map or shape.

@@ -399,7 +399,7 @@
   // The pace and the between-game hold the page is about to ask for, sent
   // ahead of its first read.
   //
-  // The module opens every world at 2 turns/s with a ten-second hold; the viewer
+  // The module opens every world at Max with a ten-second hold; the viewer
   // opens the public site at Max with a five-second one, or on whatever
   // the visitor last picked. It used to say so only after its first paint:
   // two `/pace` posts on the first frame, each answered with a whole state
