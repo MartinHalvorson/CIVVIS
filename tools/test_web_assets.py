@@ -532,6 +532,72 @@ class TheVictoryTrackerFitsItsRoom(unittest.TestCase):
         self.assertIn("victory fit checks passed", done.stdout)
 
 
+CULTURE_RANK_SCENARIOS = r"""
+__FIGURES__
+__COMPACT__
+const victoryMetric = (player, road) => player.victories[road];
+const track = {id:"culture"}, researchField = "civics";
+const seat = (id, tourists, target, civics, progress) =>
+  ({id, score:0, victories:{culture:{tourists, target, civics, civic_total:50, progress}}});
+const order = contenders => {
+__RANKED__
+  return ranked.map(player => player.id);
+};
+const eq = (actual, wanted, note) => {
+  if (JSON.stringify(actual) !== JSON.stringify(wanted))
+    throw new Error(`${note}: got ${JSON.stringify(actual)}, wanted ${JSON.stringify(wanted)}`);
+};
+// The row prints what the game prints, and the heading names what is counted.
+eq(victoryTrackerStats("culture", {tourists:34, target:87}), "34/87", "tourists over the tourists needed");
+eq(victoryTrackerStats("culture", {tourists:1234, target:5678}), "1.2k/5.7k", "long counts are compacted");
+eq(victoryTrackerStats("culture", {}), "0/1", "a seat with no figures yet");
+eq(victoryTrackerSubheading("culture"), "<span>Civics</span><span>Tourists</span>", "the heading");
+// Nearest its own bar leads, not the larger crowd.
+eq(order([seat(0, 60, 120, 9, 50), seat(1, 40, 50, 3, 80)]), [1, 0], "the ratio outranks the count");
+// One tourist against a far bar rounds to 0.0% on the meter. It still leads a
+// seat with none, whatever that seat's civics.
+eq(order([seat(0, 0, 10, 30, 0), seat(1, 1, 3000, 5, 0)]), [1, 0], "counts decide under the rounding");
+// The meter stops at a hundred; the ratio does not.
+eq(order([seat(0, 101, 100, 40, 100), seat(1, 150, 100, 2, 100)]), [1, 0], "past the bar");
+// With no tourists anywhere the civics the left meter draws keep the order.
+eq(order([seat(0, 0, 1, 4, 0), seat(1, 0, 1, 11, 0), seat(2, 0, 1, 7, 0)]), [1, 2, 0], "civics break a tie");
+// Every other path still ranks on its meter and prints what it printed.
+eq(victoryLead("science", {progress:45, tourists:9, target:1}), 45, "other paths rank on progress");
+eq(victoryTrackerStats("science", {projects:1, project_target:4, techs:30, tech_total:77}), "1/4", "launches");
+eq(victoryTrackerStats("religious", {converted:2, target:5}), "2/5", "religious");
+eq(victoryTrackerStats("diplomatic", {points:7}), "7/20", "diplomatic");
+eq(victoryTrackerStats("domination", {capitals:1, target:6}), "1/6", "domination");
+eq(victoryTrackerStats("score", {points:412}), "412", "score");
+console.log("culture rank checks passed");
+"""
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class CultureIsLedOnTouristsOverTheTouristsNeeded(unittest.TestCase):
+    """Operator, 2026-11-15: the culture path should read "tourists / required
+    tourists to win" like the game, sorted "by whoever is leading this ratio".
+    It printed a bare tourist count under "Tourism" and ranked on the meter's
+    percent, which is rounded to a tenth and stops at a hundred."""
+
+    def test_the_rows_and_their_order(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        figures = source[source.index("function victoryValue("):
+                         source.index("function victoryDescription(")]
+        compact = source[source.index("function compactStat("):]
+        compact = compact[:compact.index("\n}\n") + 3]
+        overview = source[source.index("function playerHudOverview()"):]
+        overview = overview[:overview.index("\n}\n")]
+        ranked = overview[overview.index("const ranked = [...contenders]"):]
+        ranked = ranked[:ranked.index("      });\n") + len("      });")]
+        # The tracker's own comparator is what runs below, not a copy of it.
+        self.assertIn("victoryLead(track.id, bm) - victoryLead(track.id, am)", ranked)
+        script = (CULTURE_RANK_SCENARIOS.replace("__FIGURES__", figures)
+                  .replace("__COMPACT__", compact).replace("__RANKED__", ranked))
+        done = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr.strip())
+        self.assertIn("culture rank checks passed", done.stdout)
+
+
 HUD_WINDOW_SCENARIOS = r"""
 const SPEC = false;
 __CONSTS__
