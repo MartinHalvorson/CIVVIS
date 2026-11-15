@@ -634,13 +634,22 @@
     };
     // An entrant that never lost is rated "at least", one that never won "at most".
     const elo = (r) => (r.bound === "upper" ? "\u2264" : "") + Math.round(r.elo) + (r.bound === "lower" ? "+" : "");
+    // A Civilization VI level by its number as well as its name, which is how
+    // the game's own setup screen and most players count them: "Lv 5 King".
+    // Levels the tables cannot tell apart share a row and read as a range.
+    const level = (r) => {
+      const lv = Array.isArray(r.levels) ? r.levels : [];
+      if (!lv.length) return "";
+      const low = Math.min(...lv), high = Math.max(...lv);
+      return "Lv " + low + (high > low ? "\u2013" + high : "") + " ";
+    };
     let shown = false;
 
     const strategies = data.strategies;
     if (strategies && Array.isArray(strategies.rows)) {
       let place = 0;
       const rows = strategies.rows.map((r) => r.kind === "rung"
-        ? row("is-rung", "", "Civ VI " + r.name, "", elo(r), "", "Civilization VI difficulty: " + r.name)
+        ? row("is-rung", "", "Civ VI " + level(r) + r.name, "", elo(r), "", "Civilization VI difficulty: " + level(r) + r.name)
         : row("", String(++place), r.name, r.tilt, elo(r), r.sd ? "\u00b1" + Math.round(r.sd) : "",
               r.name + ": won " + r.wins + " of " + r.games + " rated tables"));
       const note = (strategies.tables ? strategies.tables + " " : "")
