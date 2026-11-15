@@ -229,6 +229,8 @@ fn upgrades_spend_to_the_wartime_reserve_while_short() {
     game.players[0].techs.insert(crate::name!("archery"));
     let home = game.cities[&ours].pos;
     let slinger = game.spawn_test_unit("slinger", 0, home);
+    // The offer reads the treasury, so quote it with Gold in hand.
+    game.players[0].gold = 1_000.0;
     let (_, quote, _) = game
         .unit_gold_upgrade_offer(0, slinger)
         .expect("fixture: the slinger can upgrade at home");
@@ -286,6 +288,12 @@ fn the_next_wall_tier_is_claimed_facing_the_neighbour() {
         .unwrap()
         .buildings
         .push(crate::name!("walls"));
+    // The next tier needs the standing walls at full strength.
+    let city = &game.cities[&ours];
+    let full = game.city_max_wall_hp(city);
+    game.cities.get_mut(&ours).unwrap().wall_hp = full;
+    // Banked Production, so the 220 of Medieval Walls fits the build limit.
+    game.cities.get_mut(&ours).unwrap().production = 200.0;
     let medieval = Item::Building {
         building: crate::name!("medieval_walls"),
     };
