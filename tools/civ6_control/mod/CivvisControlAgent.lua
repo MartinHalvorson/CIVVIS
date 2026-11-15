@@ -21125,6 +21125,36 @@ CivvisQueue.walkStalled = function(entry, ux, uy)
 		and (ux ~= entry.expect.x or uy ~= entry.expect.y);
 end;
 
+-- ★ A REFUSED UNIT ORDER SAYS WHICH UNIT. The `orders` row counts refusals
+-- by reason (`refused_by`), and the reason carries no unit: the census of
+-- 2026-11-15 could say a game had 114 `move_no_path` and 62
+-- `move_no_moves_this_turn`, and had to guess from positions which units they
+-- were. `move_no_moves_this_turn` in particular (132 in three games, every
+-- one in a replan frame) could not be told apart from a unit with a movement
+-- point left being refused a step it could have taken. One row per refusal,
+-- with the unit, the plot, and the movement it had; bounded per turn so a bad
+-- turn cannot flood the log. Nothing reads it but the census.
+CivvisQueue.REFUSED_ROWS_PER_TURN = 80;
+CivvisQueue.noteRefused = function(pid, row, turn, why)
+	local q = CivvisQueue;
+	if q.refusedTurn ~= turn then q.refusedTurn, q.refusedRows = turn, 0; end
+	if q.refusedRows >= q.REFUSED_ROWS_PER_TURN then return; end
+	q.refusedRows = q.refusedRows + 1;
+	pcall(function()
+		local subject = tonumber(row.subject);
+		local unit = subject ~= nil and liveUnit(pid, subject) or nil;
+		emit("order_refused", {
+			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
+			unit = subject, unit_kind = unit ~= nil and unitTypeName(unit) or nil,
+			verb = tostring(row.verb or ""), x = tonumber(row.x), y = tonumber(row.y),
+			why = tostring(why),
+			at = unit ~= nil and { unit:GetX(), unit:GetY() } or nil,
+			moves = unit ~= nil and try(function() return unit:GetMovesRemaining(); end, nil) or nil,
+			max_moves = unit ~= nil and try(function() return unit:GetMaxMoves(); end, nil) or nil,
+		});
+	end);
+end;
+
 CivvisQueue.drain = function(player, pid, turn)
 	local q = CivvisQueue;
 	if q.count + q.watching <= 0 then return 0; end
@@ -23981,8 +24011,9 @@ local function applyOrders(player, pid, turn, rows)
 				CivvisQueue.push(subject, row, nil);
 				firstRun[subject] = { expect = nil };
 			else
-				local ok = runOrder(index, row);
+				local ok, why = runOrder(index, row);
 				if isUnit then
+					if not ok then CivvisQueue.noteRefused(pid, row, turn, why); end
 					firstRun[subject] = { expect = ok and CivvisQueue.expectFor(row) or nil };
 					if not ok then firstRefused[subject] = true; end
 					if ok and tostring(row.verb or "") == "MOVE_TO" then

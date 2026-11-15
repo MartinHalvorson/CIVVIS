@@ -724,6 +724,41 @@ check("refused walk issues nothing", ops(11), "")
 check("no follow-up queued after a refused first order", queue.pendingCount(), 0)
 check("the dropped follow-up is named", (lastEvent("orders") or ""):find("queue_prior_refused", 1, true) ~= nil, true)
 
+-- 3b. A refused first order says which unit, where it stood and what it had.
+-- The `orders` row only counts refusals by reason.
+reset()
+LOG = {}
+host.units[31] = { id = 31, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 1 }
+host.refuse[31] = { UNITOPERATION_MOVE_TO = true }
+applyOrders(player, PID, 7, { row(31, "MOVE_TO", 2, 1) })
+local refusedRow = lastEvent("order_refused") or ""
+check("a refused order is on the log with its unit", field(refusedRow, "unit"), 31)
+check("…its verb", field(refusedRow, "verb"), "MOVE_TO")
+check("…the plot it was sent to", refusedRow:find('"x":2', 1, true) ~= nil and refusedRow:find('"y":1', 1, true) ~= nil, true)
+check("…the movement it had", field(refusedRow, "moves"), 1)
+check("…and a reason", (field(refusedRow, "why") or "") ~= "", true)
+host.refuse[31] = nil
+LOG = {}
+applyOrders(player, PID, 7, { row(31, "MOVE_TO", 2, 1) })
+check("an accepted order writes no such row", lastEvent("order_refused"), nil)
+-- Bounded per turn (the count is the turn's, so start it afresh here).
+reset()
+LOG = {}
+queue.refusedTurn = nil
+local flood = {}
+for id = 400, 500 do
+	host.units[id] = { id = id, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 1 }
+	host.refuse[id] = { UNITOPERATION_MOVE_TO = true }
+	flood[#flood + 1] = row(id, "MOVE_TO", 2, 1)
+end
+applyOrders(player, PID, 7, flood)
+local refusedRows = 0
+for _, line in ipairs(LOG) do
+	if line:find('"kind":"order_refused"', 1, true) then refusedRows = refusedRows + 1 end
+end
+check("a flood of refusals writes a bounded number of rows", refusedRows, 80)
+for id = 400, 500 do host.refuse[id] = nil end
+
 -- 4. A queued unit that dies is a named refusal, never a dereference.
 reset()
 host.units[12] = { id = 12, kind = "UNIT_WARRIOR", x = 5, y = 5, moves = 2 }
