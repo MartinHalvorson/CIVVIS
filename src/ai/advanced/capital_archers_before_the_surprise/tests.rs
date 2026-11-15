@@ -722,6 +722,17 @@ fn the_best_shooter_keeps_the_capitals_centre() {
         "a soldier of ours holds the centre already"
     );
 
+    // Another city's garrison stays where it is.
+    let mut garrisoned = game.clone();
+    let town = ground(&garrisoned, capital, 4);
+    garrisoned.place_city(0, town, None);
+    garrisoned.spawn_test_unit("archer", 0, town);
+    assert_eq!(
+        ai.capital_archers_keeper(&garrisoned, 0),
+        None,
+        "another city's garrison is not called"
+    );
+
     let mut afar = game.clone();
     let out = ground(&afar, capital, CAPITAL_ARCHERS_REACH_TILES + 1);
     afar.spawn_test_unit("archer", 0, out);

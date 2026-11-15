@@ -489,7 +489,8 @@ impl AdvancedAi {
     /// best shooter on the capital's City Center keeps it (the longest reach,
     /// then the strongest shot, then the most health); with none there and
     /// no other land soldier of ours on it, the nearest free shooter within
-    /// [`CAPITAL_ARCHERS_REACH_TILES`] is called home. `None` with the gene
+    /// [`CAPITAL_ARCHERS_REACH_TILES`] that is not another city's garrison is
+    /// called home. `None` with the gene
     /// off. Recomputed from the board at every read: nothing is remembered by
     /// unit id.
     pub(super) fn capital_archers_keeper(&self, g: &Game, pid: usize) -> Option<(u32, Pos)> {
@@ -530,10 +531,14 @@ impl AdvancedAi {
         if !on_centre.is_empty() {
             return None;
         }
+        // A shooter on another City Center of ours is that city's garrison
+        // and is not called away from it.
         g.player_unit_ids(pid)
             .into_iter()
             .filter(|uid| {
-                g.wdist(g.units[uid].pos, home) <= CAPITAL_ARCHERS_REACH_TILES
+                let at = g.units[uid].pos;
+                g.wdist(at, home) <= CAPITAL_ARCHERS_REACH_TILES
+                    && !g.city_at(at).is_some_and(|cid| g.cities[&cid].owner == pid)
                     && self.capital_archers_free_shooter(g, pid, *uid)
             })
             .min_by_key(|uid| {
