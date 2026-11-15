@@ -6203,6 +6203,12 @@ pub const GENES: &[Gene] = &[
     // point and no rival won a Religious Victory. A Score seat strikes only a
     // faith at match point. See `advanced/score_seat_holds_its_faith_strikes.rs`.
     Gene { tag: "score-seat-holds-its-faith-strikes", field: "score_seat_holds_its_faith_strikes", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_holds_its_faith_strikes, disable: AdvancedAi::disable_score_seat_holds_its_faith_strikes },
+    // Live Deity 11-15, 27 runs, 229 Settlers: 46% of the walking went to
+    // sites later dropped. 31% of named sites were plots the seat had never
+    // seen (79 of 141 revealed proved Coast or Ocean), and 32 drops were our
+    // own city founded within three tiles of a sibling's site. See
+    // `advanced/settler_keeps_its_named_site.rs`.
+    Gene { tag: "settler-keeps-its-named-site", field: "settler_keeps_its_named_site", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_keeps_its_named_site, disable: AdvancedAi::disable_settler_keeps_its_named_site },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
