@@ -441,3 +441,75 @@ fn a_withheld_departure_does_not_found_its_planned_city_on_the_original_tile() {
     assert!(g.units.contains_key(&settler));
     assert_eq!(g.units[&settler].pos, g.units[&guard].pos);
 }
+
+/// `TrialReach` keeps a hostile's reaches on a trial board only where the
+/// trial could not have changed them: on every stand of a retreat, its first-
+/// and second-turn fields equal the ones `with_reach` and `second_turn` build
+/// from scratch, and the hostiles far from the move are kept, not re-read.
+#[test]
+fn trial_stands_keep_exactly_the_reaches_the_move_cannot_touch() {
+    let mut g = field();
+    let ours = g.spawn_unit("horseman", 0, at(10, 7));
+    g.units.get_mut(&ours).unwrap().hp = 40;
+    let origin = g.units[&ours].pos;
+    let land_at = |g: &Game, near: i32, far: i32| -> Vec<Pos> {
+        g.map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| {
+                let distance = g.wdist(origin, *pos);
+                distance >= near
+                    && distance <= far
+                    && g.map
+                        .get(*pos)
+                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                    && g.unit_ids_at(*pos).is_empty()
+                    && g.city_at(*pos).is_none()
+            })
+            .collect()
+    };
+    let close = land_at(&g, 2, 3);
+    let distant = land_at(&g, 9, 12);
+    assert!(close.len() >= 2 && distant.len() >= 2, "the arena has room");
+    g.spawn_unit("warrior", 1, close[0]);
+    g.spawn_unit("archer", 1, close[close.len() - 1]);
+    g.spawn_unit("spearman", 1, distant[0]);
+    g.spawn_unit("archer", 1, distant[distant.len() - 1]);
+
+    let mut trials = TrialReach::new(&g, 0);
+    let mut stands = vec![origin];
+    stands.extend(g.reachable(ours));
+    assert!(stands.len() > 3, "the horseman has stands to try");
+    for stand in stands {
+        let mut trial = g.speculative_clone();
+        if stand != origin
+            && trial
+                .apply(
+                    0,
+                    &Action::MoveTo {
+                        unit: ours,
+                        to: stand,
+                    },
+                )
+                .is_err()
+        {
+            continue;
+        }
+        let first = trials.first_field(&trial);
+        assert!(
+            first.same_reaches(&DangerField::with_reach(&trial, 0, true)),
+            "first turn, stand {stand:?}"
+        );
+        assert!(
+            trials
+                .second_field(&first, &trial)
+                .same_reaches(&DangerField::second_turn(&trial, 0)),
+            "second turn, stand {stand:?}"
+        );
+    }
+    assert!(
+        trials.kept > 0,
+        "the distant hostiles are kept, not re-read"
+    );
+}
