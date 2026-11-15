@@ -134,7 +134,7 @@ impl Game {
     /// that, 1.1% of a gene-screen game (`docs/SIMULATOR_PERFORMANCE.md`,
     /// 2026-11-15). Both tests only read the board, so their order is free,
     /// and the Suzerain test fails for most city-states.
-    fn suzerain_type_count(&self, pid: usize, kind: &str) -> usize {
+    pub(super) fn suzerain_type_count(&self, pid: usize, kind: &str) -> usize {
         self.players
             .iter()
             .filter(|minor| {
