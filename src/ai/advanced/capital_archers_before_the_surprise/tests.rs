@@ -48,7 +48,7 @@ fn watched() -> (Game, u32) {
     game.players[0].gold = 90.0;
     game.players[0].gold_per_turn = 6.0;
     power(&mut game, 0, 50.0);
-    power(&mut game, 1, 150.0);
+    power(&mut game, 1, 200.0);
     let at = ground(&game, capital, 5);
     game.spawn_unit("warrior", 1, at);
     (game, capital)
@@ -165,9 +165,9 @@ fn the_threat_reads_the_watch_at_two_and_a_half_times_on_an_unwalled_capital() {
     assert_eq!(ai.capital_watch_sightings.get(&1), Some(&game.turn));
     let (rival, ratio) = ai
         .capital_archers_threat(&game, 0)
-        .expect("3.0x at the door");
+        .expect("4.0x at the door");
     assert_eq!(rival, 1);
-    assert!((ratio - 3.0).abs() < 1e-9);
+    assert!((ratio - 4.0).abs() < 1e-9);
     assert!(
         !ai.capital_walls_before_the_surprise
             && ai.capital_walls_research_threat(&game, 0).is_none(),
@@ -175,10 +175,19 @@ fn the_threat_reads_the_watch_at_two_and_a_half_times_on_an_unwalled_capital() {
     );
 
     let mut level = game.clone();
-    power(&mut level, 1, 120.0);
+    power(&mut level, 1, 150.0);
     assert!(
         ai.capital_archers_threat(&level, 0).is_none(),
-        "2.4x: under the bar"
+        "3.0x: under the spending bar"
+    );
+    assert!(
+        ai.capital_archers_watched(&level, 0).is_some(),
+        "3.0x: over the watch bar"
+    );
+    power(&mut level, 1, 120.0);
+    assert!(
+        ai.capital_archers_watched(&level, 0).is_none(),
+        "2.4x: under the watch bar"
     );
 
     let mut later = game.clone();
@@ -407,6 +416,12 @@ fn the_capitals_slingers_take_the_archer_upgrade_at_once() {
         .push(crate::name!("walls"));
     assert!(ai.capital_archers_threat(&walled, 0).is_none());
     assert_eq!(ai.capital_archers_upgrade(&mut walled, 0), 2);
+
+    // Under the spending bar the watch bar still upgrades.
+    let mut lower = game.clone();
+    power(&mut lower, 1, 150.0);
+    assert!(ai.capital_archers_threat(&lower, 0).is_none());
+    assert_eq!(ai.capital_archers_upgrade(&mut lower, 0), 2);
 }
 
 /// The Gold leg: the upgrade bills of up to two Slingers at the capital are
@@ -482,21 +497,31 @@ fn the_capital_trains_its_second_shooter_ahead_of_the_settler() {
     AdvancedAi::new().claim_capital_archers_before_the_surprise(&mut off, 0);
     assert_eq!(off.cities[&capital].queue.first(), Some(&settler));
 
+    // Without Archery no Slinger is trained: the Archer waits for it.
+    let mut early = game.clone();
+    ai.claim_capital_archers_before_the_surprise(&mut early, 0);
+    assert_eq!(early.cities[&capital].queue.first(), Some(&settler));
+
+    // With Archery the trainee is the Archer, and the claim holds it.
+    game.players[0].techs.insert(crate::name!("archery"));
     let mut claimed = game.clone();
     ai.claim_capital_archers_before_the_surprise(&mut claimed, 0);
     assert_eq!(
         claimed.cities[&capital].queue.first(),
-        Some(&unit("slinger"))
+        Some(&unit("archer"))
     );
-    assert!(ai.capital_archers_hold(&claimed, 0, capital, &unit("slinger")));
+    assert!(ai.capital_archers_hold(&claimed, 0, capital, &unit("archer")));
     assert!(!ai.capital_archers_hold(&claimed, 0, capital, &settler));
-    assert!(!AdvancedAi::new().capital_archers_hold(&claimed, 0, capital, &unit("slinger")));
+    assert!(!AdvancedAi::new().capital_archers_hold(&claimed, 0, capital, &unit("archer")));
 
-    // With Archery the trainee is the Archer.
-    let mut later = game.clone();
-    later.players[0].techs.insert(crate::name!("archery"));
-    ai.claim_capital_archers_before_the_surprise(&mut later, 0);
-    assert_eq!(later.cities[&capital].queue.first(), Some(&unit("archer")));
+    let mut lower = game.clone();
+    power(&mut lower, 1, 150.0);
+    ai.claim_capital_archers_before_the_surprise(&mut lower, 0);
+    assert_eq!(
+        lower.cities[&capital].queue.first(),
+        Some(&settler),
+        "3.0x: under the spending bar"
+    );
 
     let mut two = game.clone();
     slinger(&mut two, capital, 2);
@@ -637,8 +662,8 @@ fn the_capital_buys_its_missing_shooter_above_the_held_bills() {
     assert!(ai.capital_archers_purchase(&mut held, 0));
 
     let mut level = game.clone();
-    power(&mut level, 1, 120.0);
-    assert!(!ai.capital_archers_purchase(&mut level, 0), "2.4x");
+    power(&mut level, 1, 150.0);
+    assert!(!ai.capital_archers_purchase(&mut level, 0), "3.0x");
 
     let mut walled = game.clone();
     walled

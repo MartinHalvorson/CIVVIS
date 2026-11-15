@@ -3,7 +3,9 @@
 //! soldiers has stood within eight tiles of our original capital in the last
 //! ten live turns (the capital watch `capital-walls-before-the-surprise`
 //! keeps), and that capital has no Walls yet, the capital is armed with
-//! shooters before the war instead of during it:
+//! shooters before the war instead of during it. The cheap legs (the upgrade,
+//! and the keeper behind Walls at war) already act at
+//! [`CAPITAL_ARCHERS_WATCH_RATIO`]:
 //!
 //! 1. **Research.** Archery goes ahead of Masonry while a Slinger of ours
 //!    stands within [`CAPITAL_ARCHERS_REACH_TILES`] of the capital or the
@@ -20,8 +22,8 @@
 //! 4. **Production.** While fewer than [`CAPITAL_ARCHERS_WANTED`] shooters
 //!    of ours stand within [`CAPITAL_ARCHERS_HOME_TILES`] of the capital (a
 //!    shooter at its queue's head counts) and the empire holds fewer than
-//!    [`CAPITAL_ARCHERS_MAX_OWNED`], the capital trains its best shooter
-//!    ahead of the next Settler. A head that finishes this turn, a Settler
+//!    [`CAPITAL_ARCHERS_MAX_OWNED`], the capital trains its best range-two
+//!    shooter (an Archer, never a Slinger) ahead of the next Settler. A head that finishes this turn, a Settler
 //!    within two turns of done, a land soldier in training and the walls
 //!    gene's own claim keep the queue.
 //! 5. **Purchase.** Under the same count (a shooter in training counts), the
@@ -32,10 +34,10 @@
 //!    major is at war with us, the best shooter on the capital's City Center
 //!    keeps it: it fires from the centre when it has a shot and otherwise
 //!    fortifies there, ahead of every errand, recovery or march that would
-//!    walk it out. With
-//!    nobody of ours on the centre, the nearest free shooter within
-//!    [`CAPITAL_ARCHERS_REACH_TILES`] walks home. A Settler's or Builder's
-//!    guard and a siege member are left to their work.
+//!    walk it out. With nobody of ours on the centre, the nearest free
+//!    shooter within [`CAPITAL_ARCHERS_REACH_TILES`] walks home; another
+//!    city's garrison, a Settler's or Builder's guard and a siege member are
+//!    left to their work.
 //!
 //! The research, production, Gold and purchase legs end when the capital's
 //! Walls stand, when the watch lapses, or when the ratio falls under the bar.
@@ -45,6 +47,14 @@
 //! on through every peaceful watch after the Walls lost three more original
 //! capitals in 24 Culture seeds (6 against 3), each a hundred turns or more
 //! after the keeper first moved a shooter.
+//!
+//! **Why the bars.** At Deity and Immortal a met neighbour fields 2.5x our
+//! power in most openings. With every leg at 2.5x, paired Immortal Score
+//! screens (Rome, 120 turns, 12 seeds) trained or bought Slingers at the
+//! capital at t11-23 in four seeds and read Science at t100 6.5 lower and
+//! cities at t100 0.6 fewer, with no capital at risk in either arm. The
+//! spending legs now wait for 3.5x, the floor of the live declarations
+//! before turn 30, and the production leg trains only a range-two shooter.
 //!
 //! **Why (live Deity, 6 players, Small Continents, Online; 2026-11-15, 33
 //! games).** Four surprise wars opened on our seat before turn 30, by majors
@@ -95,10 +105,15 @@ use super::capital_walls_before_the_surprise::{CAPITAL_WALLS_SETTLER_TURNS, CAPI
 use super::*;
 
 /// A watched major's military power over ours that arms the capital's
-/// shooters: every declaration before turn 30 on 2026-11-15 came at 3.4 or
-/// more, and the neighbours met by turn 15 that never declared stood at
-/// 1.1-3.1 in five of nine.
-pub(crate) const CAPITAL_ARCHERS_RATIO: f64 = 2.5;
+/// spending legs (research, Gold, production, purchase, and the keeper
+/// before the Walls): every declaration before turn 30 on 2026-11-15 came at
+/// 3.4 or more, and the neighbours met by turn 15 that never declared stood
+/// at 1.1-3.1 in five of nine.
+pub(crate) const CAPITAL_ARCHERS_RATIO: f64 = 3.5;
+
+/// The bar for the cheap legs: a waiting Slinger's upgrade, and the keeper
+/// behind Walls while the watched major is at war with us.
+pub(crate) const CAPITAL_ARCHERS_WATCH_RATIO: f64 = 2.5;
 
 /// Tiles from the original capital within which a Slinger of ours is one of
 /// its shooters for the research, the upgrade and the held Gold: the watch's
@@ -131,16 +146,18 @@ impl AdvancedAi {
             return None;
         }
         self.capital_archers_watched(g, pid)
+            .filter(|(_, ratio)| *ratio >= CAPITAL_ARCHERS_RATIO)
     }
 
-    /// The watch alone, whatever the capital's Walls: the upgrade leg keeps
-    /// a waiting Slinger's upgrade after the Walls stand.
+    /// The watch alone at [`CAPITAL_ARCHERS_WATCH_RATIO`], whatever the
+    /// capital's Walls: the upgrade leg keeps a waiting Slinger's upgrade
+    /// after the Walls stand.
     fn capital_archers_watched(&self, g: &Game, pid: usize) -> Option<(usize, f64)> {
         if !self.capital_archers_before_the_surprise {
             return None;
         }
         self.capital_watched_major_power(g, pid)
-            .filter(|(_, ratio)| *ratio >= CAPITAL_ARCHERS_RATIO)
+            .filter(|(_, ratio)| *ratio >= CAPITAL_ARCHERS_WATCH_RATIO)
     }
 
     /// A land shooter that is no siege engine: a Slinger, an Archer and the
@@ -344,14 +361,16 @@ impl AdvancedAi {
         (near, owned)
     }
 
-    /// The best shooter `capital` can train: the longest reach, then the
-    /// strongest shot, then the cheapest.
+    /// The best range-two shooter `capital` can train (never a Slinger: an
+    /// opening Slinger trained ahead of a Settler cost more than it held):
+    /// the longest reach, then the strongest shot, then the cheapest.
     fn capital_archers_trainee(g: &Game, pid: usize, capital: u32) -> Option<Name> {
         g.rules
             .units
             .iter()
             .filter(|(name, spec)| {
                 Self::capital_archers_shooter(spec)
+                    && spec.range >= super::early_archers::EARLY_ARCHERS_MIN_RANGE
                     && g.can_produce(pid, capital, &Item::Unit { unit: **name })
             })
             .max_by(|(a_name, a), (b_name, b)| {
