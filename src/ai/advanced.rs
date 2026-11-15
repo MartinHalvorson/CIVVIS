@@ -6875,11 +6875,6 @@ pub struct AdvancedAi {
     /// builds the last Market a near road civic's Inspiration counts. See
     /// `advanced/culture_road_triggers.rs`. Off by default.
     culture_road_builds_its_triggers: bool,
-    /// `culture-faith-site-per-theater-2`: version one, and the Culture Faith
-    /// sources are claimed in parallel, one item per Theater city, rather
-    /// than one in the whole empire. See `advanced/culture_faith_sources.rs`.
-    /// Opt-in.
-    culture_faith_site_per_theater_2: bool,
     /// `culture-keeps-pingala-home`: a Culture target's seated Pingala answers
     /// a Loyalty emergency only in a city about to flip. See
     /// `advanced/culture_pingala_first.rs`. Opt-in.
@@ -7008,6 +7003,18 @@ pub struct AdvancedAi {
     /// the next Settler, and the best shooter keeps the City Center. See
     /// `advanced/capital_archers_before_the_surprise.rs`. Opt-in.
     capital_archers_before_the_surprise: bool,
+    /// `culture-faith-site-per-theater-4`: version three, and a city that
+    /// keeps its last free slot for the Holy Site puts the Holy Site ahead of
+    /// a routine queue head (a Builder, a Theater Square building, a Granary,
+    /// a second Monument, a Settler past the early floor); a slot kept with no
+    /// Holy Site started for `CULTURE_FAITH_KEPT_SLOT_PATIENCE` standard turns
+    /// is released. See `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_faith_site_per_theater_4: bool,
+    /// `culture-faith-site-per-theater-4`: consecutive turns each city has
+    /// kept its slot with no Holy Site started, keyed by the city's tile
+    /// (live city ids are not stable between frames): (last turn counted,
+    /// turns). Untouched while the gene is off.
+    culture_faith_kept_slot_turns: BTreeMap<Pos, (u32, u32)>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See

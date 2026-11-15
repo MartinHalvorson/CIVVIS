@@ -5576,12 +5576,6 @@ pub const GENES: &[Gene] = &[
     // that inspires a near road civic first. Opt-in; see
     // `advanced/culture_road_inspirations.rs`.
     Gene { tag: "culture-road-earns-its-inspirations", field: "culture_road_earns_its_inspirations", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_earns_its_inspirations, disable: AdvancedAi::disable_culture_road_earns_its_inspirations },
-    // `culture-faith-site-per-theater-2`: version one, and the Faith sources
-    // are claimed in parallel, one per Theater city. Live Deity Kristina
-    // 20261110T183027Z under version one built one source at a time (Holy
-    // Site t60, Shrine t69, Temple t92, next Holy Site t121) and made 12
-    // Faith a turn at t100. Opt-in; see `advanced/culture_faith_sources.rs`.
-    Gene { tag: "culture-faith-site-per-theater-2", field: "culture_faith_site_per_theater_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater_2, disable: AdvancedAi::disable_culture_faith_site_per_theater_2 },
     // Live Deity Kristina 11-10: 13 science-denial wars at 0.04-0.88 of the
     // target's power took 13 of our cities and delayed no launch. Off
     // Domination the war needs the launcher counter's edge and spares a
@@ -5753,6 +5747,14 @@ pub const GENES: &[Gene] = &[
     // of 40 and Archery two to four turns after Masonry. See
     // `advanced/capital_archers_before_the_surprise.rs`.
     Gene { tag: "capital-archers-before-the-surprise", field: "capital_archers_before_the_surprise", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_archers_before_the_surprise, disable: AdvancedAi::disable_capital_archers_before_the_surprise },
+    // `culture-faith-site-per-theater-4`: version three, and the city that
+    // keeps its last slot for the Holy Site puts the Holy Site ahead of a
+    // routine head; a slot kept for eight Online turns with no Holy Site
+    // started is released. Live Lv 7 Greece 2026-11-15 (181610Z, 173123Z,
+    // 162506Z) kept slots on 43-136 city-turns before t100 while the claim
+    // yielded to the Builder, Settler, Amphitheater and Granary heads. Opt-in;
+    // see `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-faith-site-per-theater-4", field: "culture_faith_site_per_theater_4", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater_4, disable: AdvancedAi::disable_culture_faith_site_per_theater_4 },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

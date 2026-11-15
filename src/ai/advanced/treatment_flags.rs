@@ -203,9 +203,6 @@ impl AdvancedAi {
         /// `culture-faith-site-per-theater`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_site_per_theater => enable_culture_faith_site_per_theater, disable_culture_faith_site_per_theater;
-        /// `culture-faith-site-per-theater-2`: see
-        /// `advanced/culture_faith_sources.rs`.
-        culture_faith_site_per_theater_2 => enable_culture_faith_site_per_theater_2, disable_culture_faith_site_per_theater_2;
         /// `culture-road-builds-its-triggers`: see
         /// `advanced/culture_road_triggers.rs`.
         culture_road_builds_its_triggers => enable_culture_road_builds_its_triggers, disable_culture_road_builds_its_triggers;
@@ -290,6 +287,9 @@ impl AdvancedAi {
         /// Opt-in gene `capital-archers-before-the-surprise`; see
         /// `advanced/capital_archers_before_the_surprise.rs`.
         capital_archers_before_the_surprise => enable_capital_archers_before_the_surprise, disable_capital_archers_before_the_surprise;
+        /// `culture-faith-site-per-theater-4`: see
+        /// `advanced/culture_faith_sources.rs`.
+        culture_faith_site_per_theater_4 => enable_culture_faith_site_per_theater_4, disable_culture_faith_site_per_theater_4;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

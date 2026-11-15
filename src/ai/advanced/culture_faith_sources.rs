@@ -12,8 +12,11 @@
 //! (`AdvancedAi::culture_faith_astrology_due`), so the sites are unlocked
 //! when the sources open.
 //!
-//! `culture-faith-site-per-theater-2` carries version one and claims the
-//! sources in parallel, one Faith item per Theater city at a time. Without a
+//! `culture-faith-site-per-theater-2` carried version one and claimed the
+//! sources in parallel, one Faith item per Theater city at a time; its own
+//! flag was culled to make room for version four (a family holds three
+//! versions), and versions three and four carry its claim
+//! (`AdvancedAi::culture_faith_parallel_on`). Without a
 //! host production quote the claim used to keep one item in the whole empire:
 //! live Deity Kristina 20261110T183027Z, armed with version one, built its
 //! Holy Site at t60, the Shrine at t69, the Temple at t92 and the next Holy
@@ -51,6 +54,27 @@
 //! (`AdvancedAi::culture_faith_astrology_first`): 20261111T000134Z stood three
 //! Acropolises at t36 and researched Horseback Riding, Construction and the
 //! war's upgrades until Astrology at t66.
+//!
+//! `culture-faith-site-per-theater-4` carries version three and makes the
+//! kept slot produce its Holy Site. Live Lv 7 Greece 2026-11-15 kept slots on
+//! 43 (181610Z), 136 (173123Z) and 123 (162506Z) city-turns before t100 while
+//! the claim skipped those cities as "keeps its builder", "keeps its settler",
+//! "keeps its amphitheater" or "keeps its granary": the slot held the Campus,
+//! the Commercial Hub and the Harbor out and the Holy Site yielded to the
+//! routine head, so nothing took the slot. 181610Z had 0 of 5 Holy Sites at
+//! t100, 2 Faith a turn, and Cold War at t150. Under version four, a city
+//! whose slot is kept puts the Holy Site ahead of a routine head
+//! (`AdvancedAi::culture_faith_kept_slot_passes_the_head`): a Builder unless
+//! it is the empire's only Builder cover for the worked backlog, a Theater
+//! Square building, a Granary, a Trader, a Monument while another city has
+//! one, a Settler past the early floor, any other building, a Neighborhood. A
+//! Settler under the early floor, Walls, the deterrent, a soldier at war with a
+//! major, a Spy, a wonder of two turns or less, an Aqueduct, a project and
+//! anything finishing within a turn keep the queue. The displaced item keeps
+//! its progress. A slot kept for [`CULTURE_FAITH_KEPT_SLOT_PATIENCE`]
+//! consecutive standard turns with no Holy Site started is released for that
+//! city until the slot is next kept afresh, so the city can take a Campus or a
+//! Commercial Hub instead of nothing.
 
 use super::*;
 
@@ -104,6 +128,15 @@ const CULTURE_SHRINE_GOLD_RESERVE: f64 = 50.0;
 /// 140-Gold Shrine is in reach within a few turns in most games.
 const CULTURE_SHRINE_FUND_TURNS: f64 = 6.0;
 
+/// `culture-faith-site-per-theater-4`: standard turns (eight Online) a city may
+/// keep its last free slot with no Holy Site started before the slot is
+/// released. A Holy Site priced at t60-t100 takes 8-17 Online turns, so eight
+/// turns of waiting is about one more Holy Site's build time lost, while the
+/// three live games above held their slots empty for 10-60 turns. What still
+/// holds a kept city's Holy Site past the routine heads is a threat, war, the
+/// early Settler floor or Walls; those last a few turns, not eight.
+const CULTURE_FAITH_KEPT_SLOT_PATIENCE: u32 = 10;
+
 impl AdvancedAi {
     fn culture_faith_source_budget(&self, g: &Game, pid: usize) -> Option<usize> {
         // One memo for the whole sweep; see `Game::query_memo`.
@@ -144,7 +177,7 @@ impl AdvancedAi {
             + g.observed_yield_adjustments
                 .get(&pid)
                 .map_or(0.0, |yield_| yield_.faith);
-        let (per_city, ceiling) = if self.culture_faith_site_per_theater_3 {
+        let (per_city, ceiling) = if self.culture_faith_slots_on() {
             (CULTURE_FAITH_PER_THEATER_INCOME_3, f64::INFINITY)
         } else if per_theater {
             CULTURE_FAITH_PER_THEATER_INCOME
@@ -158,7 +191,7 @@ impl AdvancedAi {
         {
             return None;
         }
-        Some(if self.culture_faith_site_per_theater_3 {
+        Some(if self.culture_faith_slots_on() {
             theater_cities.max(1)
         } else if per_theater {
             theater_cities.clamp(1, CULTURE_FAITH_SITES_PER_THEATER_CAP)
@@ -194,20 +227,34 @@ impl AdvancedAi {
     /// ahead of a barbarian, launch, wartime-upgrade or siege goal; the caller
     /// keeps those above it. False with version three off.
     pub(super) fn culture_faith_astrology_first(&self, g: &Game, pid: usize) -> bool {
-        self.culture_faith_site_per_theater_3 && self.culture_faith_astrology_due(g, pid)
+        self.culture_faith_slots_on() && self.culture_faith_astrology_due(g, pid)
     }
 
-    /// `culture-faith-site-per-theater`, carried by its versions two and three.
+    /// `culture-faith-site-per-theater`, carried by its versions three and four.
     fn culture_faith_per_theater_on(&self) -> bool {
-        self.culture_faith_site_per_theater
-            || self.culture_faith_site_per_theater_2
-            || self.culture_faith_site_per_theater_3
+        self.culture_faith_site_per_theater || self.culture_faith_slots_on()
     }
 
-    /// `culture-faith-site-per-theater-2`, carried by its version three: the
-    /// parallel claim, its head pass, its thirty-turn cap and its journal.
+    /// `culture-faith-site-per-theater-3`, carried by its version four: the
+    /// kept slot, the uncapped sites and income, and Astrology first.
+    fn culture_faith_slots_on(&self) -> bool {
+        self.culture_faith_site_per_theater_3 || self.culture_faith_site_per_theater_4
+    }
+
+    /// The tag the family's journal lines start with.
+    fn culture_faith_version(&self) -> &'static str {
+        if self.culture_faith_site_per_theater_4 {
+            "culture-faith-site-per-theater-4"
+        } else {
+            "culture-faith-site-per-theater-3"
+        }
+    }
+
+    /// Version two's parallel claim, its head pass, its thirty-turn cap and
+    /// its journal, carried by versions three and four (version two's own
+    /// flag is culled).
     fn culture_faith_parallel_on(&self) -> bool {
-        self.culture_faith_site_per_theater_2 || self.culture_faith_site_per_theater_3
+        self.culture_faith_slots_on()
     }
 
     /// The Holy Site the claim would place in `cid`. Versions one and two take
@@ -215,7 +262,7 @@ impl AdvancedAi {
     /// the claim's own cap, so its journal can say a site is too slow rather
     /// than that there is none.
     fn culture_faith_site_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
-        if self.culture_faith_site_per_theater_3 {
+        if self.culture_faith_slots_on() {
             BasicAi::first_district_item_with_budget(g, pid, cid, "holy_site", f64::INFINITY)
         } else {
             BasicAi::first_district_item(g, pid, cid, "holy_site")
@@ -298,10 +345,72 @@ impl AdvancedAi {
     /// slot for its Holy Site this turn: the gene on, the Faith sources open
     /// and the city's own test. Read by `culture-seat-fills-its-district-slots`
     /// (`advanced/culture_fills_its_slots.rs`), which never takes that slot.
+    /// Under version four, a city whose slot
+    /// [is released](Self::culture_faith_slot_released) is not kept.
     pub(super) fn culture_faith_slot_is_kept(&self, g: &Game, pid: usize, cid: u32) -> bool {
-        self.culture_faith_site_per_theater_3
+        self.culture_faith_slots_on()
             && self.culture_faith_source_budget(g, pid).is_some()
             && self.culture_faith_keeps_the_slot(g, pid, cid)
+            && !self.culture_faith_slot_released(g, cid)
+    }
+
+    /// `culture-faith-site-per-theater-4`: whether `cid` has kept its slot
+    /// with no Holy Site started for more than
+    /// [`CULTURE_FAITH_KEPT_SLOT_PATIENCE`] standard turns running, counted
+    /// this turn by [`Self::culture_faith_hold_the_slots`]. Always false with
+    /// version four off.
+    fn culture_faith_slot_released(&self, g: &Game, cid: u32) -> bool {
+        self.culture_faith_site_per_theater_4
+            && g.cities.get(&cid).is_some_and(|city| {
+                self.culture_faith_kept_slot_turns
+                    .get(&city.pos)
+                    .is_some_and(|&(last, turns)| {
+                        last == g.turn
+                            && turns > g.standard_duration(CULTURE_FAITH_KEPT_SLOT_PATIENCE)
+                    })
+            })
+    }
+
+    /// `culture-faith-site-per-theater-4`: count one more turn for every city
+    /// in `kept` (once a turn, however many frames ask), forget the cities
+    /// that did not keep their slot last turn or this one, and return the
+    /// cities still within their patience; the released ones are journalled.
+    /// With version four off, `kept` unchanged.
+    fn culture_faith_count_the_kept_turns(&mut self, g: &Game, kept: Vec<u32>) -> Vec<u32> {
+        if !self.culture_faith_site_per_theater_4 {
+            return kept;
+        }
+        let turn = g.turn;
+        let patience = g.standard_duration(CULTURE_FAITH_KEPT_SLOT_PATIENCE);
+        self.culture_faith_kept_slot_turns
+            .retain(|_, (last, _)| last.saturating_add(1) >= turn);
+        let mut within = Vec::with_capacity(kept.len());
+        for cid in kept {
+            let city = &g.cities[&cid];
+            let (last, turns) = self
+                .culture_faith_kept_slot_turns
+                .get(&city.pos)
+                .copied()
+                .unwrap_or((turn, 0));
+            let turns = if last == turn {
+                turns.max(1)
+            } else if last.saturating_add(1) == turn {
+                turns + 1
+            } else {
+                1
+            };
+            self.culture_faith_kept_slot_turns
+                .insert(city.pos, (turn, turns));
+            if turns > patience {
+                think!(self.journal(), Cities, Detail,
+                    "{} releases its kept district slot", city.name;
+                    "culture-faith-site-per-theater-4: no Holy Site started in {} turns of keeping it (patience {patience}); its other specialty districts may take the slot until it is next kept afresh",
+                    turns - 1);
+            } else {
+                within.push(cid);
+            }
+        }
+        within
     }
 
     /// `culture-faith-site-per-theater-3`: refuse every other specialty
@@ -314,12 +423,16 @@ impl AdvancedAi {
     /// and a district whose foundation the city already laid stay open. Returns
     /// the board's refusals for [`Self::culture_faith_release_the_slots`];
     /// `None` with the gene off or nothing kept.
+    ///
+    /// `culture-faith-site-per-theater-4`: a city that has kept its slot for
+    /// longer than its patience is left open
+    /// (`culture_faith_count_the_kept_turns`).
     pub(super) fn culture_faith_hold_the_slots(
-        &self,
+        &mut self,
         g: &mut Game,
         pid: usize,
     ) -> Option<super::culture_theater_first::CultureSiteReservation> {
-        if !self.culture_faith_site_per_theater_3 {
+        if !self.culture_faith_slots_on() {
             return None;
         }
         self.culture_faith_source_budget(g, pid)?;
@@ -328,6 +441,7 @@ impl AdvancedAi {
             .into_iter()
             .filter(|cid| self.culture_faith_keeps_the_slot(g, pid, *cid))
             .collect();
+        let kept = self.culture_faith_count_the_kept_turns(g, kept);
         if kept.is_empty() {
             return None;
         }
@@ -367,7 +481,8 @@ impl AdvancedAi {
             }
             think!(self.journal(), Cities, Detail,
                 "{} keeps its last district slot for the Holy Site", city.name;
-                "culture-faith-site-per-theater-3: {refused} other specialty districts stand down this turn; Theater Square standing, no Holy Site, one slot free");
+                "{}: {refused} other specialty districts stand down this turn; Theater Square standing, no Holy Site, one slot free",
+                self.culture_faith_version());
         }
         g.blocked_districts = Arc::new(districts);
         // Also retires every menu derived before the refusals.
@@ -394,7 +509,7 @@ impl AdvancedAi {
         limit: usize,
     ) -> String {
         let city = &g.cities[&cid];
-        if !self.culture_faith_site_per_theater_3 {
+        if !self.culture_faith_slots_on() {
             "has no legal source within the budget".into()
         } else if g.city_has_district_family(city, crate::name!("holy_site")) {
             "has its Shrine and Temple".into()
@@ -420,7 +535,7 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> String {
-        if !self.culture_faith_site_per_theater_3 {
+        if !self.culture_faith_slots_on() {
             return "is not safe".into();
         }
         let city = &g.cities[&cid];
@@ -488,6 +603,76 @@ impl AdvancedAi {
             Item::District { district, .. } => g.district_family(*district) == "aqueduct",
             _ => false,
         }
+    }
+
+    /// `culture-faith-site-per-theater-4`: whether the Holy Site of `cid`,
+    /// a city that [keeps its slot](Self::culture_faith_slot_is_kept) for it,
+    /// goes ahead of the routine `head`. The head keeps the queue when it is a
+    /// Settler the early floor still wants, the deterrent, a Builder that is
+    /// the empire's only Builder cover while the worked backlog wants one
+    /// ([`Self::backlog_builder_holds`], no charge in the field or queued
+    /// elsewhere), the first Monument the capital or the Culture Monument
+    /// claim holds while no other city of ours has one, or what
+    /// [`Self::culture_theater_may_defer`] keeps (Walls, a wonder, Shrine or
+    /// Temple, an Aqueduct, a Spy, a project, a soldier at war with a major,
+    /// a live Great Person commitment, anything finishing within a turn).
+    /// Every other head (a Builder, an Amphitheater or Art Museum, a Granary,
+    /// a Trader, a Settler past the floor, a Neighborhood, any other building)
+    /// waits and keeps its progress. False with version four off.
+    pub(super) fn culture_faith_kept_slot_passes_the_head(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        head: &Item,
+        at_major_war: bool,
+    ) -> bool {
+        if !self.culture_faith_site_per_theater_4
+            || !self.culture_faith_slot_is_kept(g, pid, cid)
+            || self.early_settler_floor_holds(g, pid, cid, plan)
+            || self.deterrent_holds_against_culture(g, pid, head)
+        {
+            return false;
+        }
+        match head {
+            Item::Unit { unit } if *unit == "builder" => {
+                if self.backlog_builder_holds(g, pid, cid, plan, head) {
+                    let own = g.builder_charges(pid).max(1);
+                    if BasicAi::builder_charge_cover(g, pid) - own <= 0 {
+                        return false;
+                    }
+                }
+            }
+            Item::Building { building }
+                if g.building_is_family(*building, crate::name!("monument")) =>
+            {
+                let elsewhere = g.player_city_ids(pid).into_iter().any(|other| {
+                    other != cid
+                        && g.cities[&other].buildings.iter().any(|standing| {
+                            g.building_is_family(*standing, crate::name!("monument"))
+                        })
+                });
+                if !elsewhere
+                    && (self.capital_monument_holds(g, pid, cid, plan, head)
+                        || self.culture_monument_finishes_first(g, pid, cid, plan, head))
+                {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+        if matches!(head, Item::Unit { unit } if *unit == "settler") {
+            // The floor above keeps the Settler it wants; the stock rule
+            // below keeps every Settler, so the remaining tests run here.
+            if Self::live_gp_cultural_building_commitment(g, pid, cid, head) {
+                return false;
+            }
+            let remaining =
+                g.item_cost_for_city(pid, cid, head) - g.item_invested_production(cid, head);
+            return remaining > g.city_yields(cid).production;
+        }
+        Self::culture_theater_may_defer(g, pid, cid, head, at_major_war)
     }
 
     fn culture_faith_item(g: &Game, item: &Item) -> bool {
@@ -668,6 +853,11 @@ impl AdvancedAi {
                 let passes = self.culture_faith_parallel_on()
                     && !self.early_settler_floor_holds(g, pid, cid, plan)
                     && Self::culture_faith_passes_the_head(g, pid, cid, head);
+                // `culture-faith-site-per-theater-4`: the kept slot's Holy
+                // Site goes ahead of a routine head.
+                let passes = passes
+                    || self
+                        .culture_faith_kept_slot_passes_the_head(g, pid, cid, plan, head, at_war);
                 if !passes
                     && (self.culture_theater_holds(g, pid, cid, plan, head)
                         || self.early_settler_floor_holds(g, pid, cid, plan)
@@ -733,7 +923,7 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        if !self.culture_faith_site_per_theater_3 {
+        if !self.culture_faith_slots_on() {
             self.claim_one_culture_faith_source(g, pid, plan);
             return;
         }
@@ -765,11 +955,7 @@ impl AdvancedAi {
             plan,
             self.culture_faith_parallel_on().then_some(&mut skips),
         );
-        let version = if self.culture_faith_site_per_theater_3 {
-            "culture-faith-site-per-theater-3"
-        } else {
-            "culture-faith-site-per-theater-2"
-        };
+        let version = self.culture_faith_version();
         let Some((city, item, turns)) = target else {
             if !skips.is_empty() {
                 think!(self.journal(), Cities, Detail,
@@ -781,6 +967,11 @@ impl AdvancedAi {
         if g.cities[&city].queue.first() == Some(&item) {
             return false;
         }
+        // `culture-faith-site-per-theater-4`: the head a kept slot's Holy Site
+        // displaces, for the journal.
+        let kept_slot_head = (self.culture_faith_site_per_theater_4
+            && self.culture_faith_slot_is_kept(g, pid, city))
+        .then(|| g.cities[&city].queue.first().cloned());
         if g.apply(
             pid,
             &Action::Produce {
@@ -797,6 +988,14 @@ impl AdvancedAi {
         } else {
             "one safe source at a time"
         };
+        if let Some(head) = kept_slot_head {
+            think!(self.journal(), Cities, Decision,
+                "{} claims {} for Culture's Faith economy", g.cities[&city].name, Self::plain_item(&item);
+                "culture-faith-site-per-theater-4: the slot it keeps for the Holy Site takes it, ahead of {}; {pace}, {turns:.1} production turns",
+                head.map_or_else(|| "an idle queue".to_string(), |head| format!(
+                    "its {} (it keeps its progress)", Self::plain_item(&head))));
+            return true;
+        }
         think!(self.journal(), Cities, Decision,
             "{} claims {} for Culture's Faith economy", g.cities[&city].name, Self::plain_item(&item);
             "{pace}, {turns:.1} production turns; Faith supports Naturalists and Rock Bands after the Prophet race");
