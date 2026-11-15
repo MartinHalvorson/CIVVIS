@@ -13323,9 +13323,28 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	-- cash bids are built before the session opens: native 135842Z t146
 	-- re-entered EQUALIZE with PROPOSED, then received its late EQUALIZE_FAILED
 	-- and stalled. Never send a second resource request from this callback.
+	--
+	-- ★ AN OPEN BORDERS QUOTE TAKES THE SAME TWO STEPS. The rival answers our
+	-- EQUALIZE with REJECTED and its own price on our side of the deal, and
+	-- this handler walked away from it. Measured on the two full Pericles games
+	-- of 2026-11-15 (civvis-20261115T071444Z, civvis-20261115T082538Z): 24 of 34
+	-- and 25 of 31 Open Borders asks came back that way with the passage alone
+	-- on their side and a price inside our ceiling (median 10 and 9 Gold against
+	-- 28), and 1 and 3 closed. The Great Work lifecycle below closed all 7 of
+	-- the quotes it re-proposed in those same games, each answered ADJUSTED in
+	-- the same instant. It is the shipped deal screen's own sequence and names
+	-- no item: Base/Assets/UI/DiplomacyDealView.lua:2765-2772
+	-- (`OnDiplomacyIncomingDeal` copies the incoming deal to the outgoing one
+	-- and records the action) and :544-560 (`OnProposeOrAcceptDeal`: after
+	-- REJECTED the button proposes the working deal; after ADJUSTED or ACCEPTED
+	-- with equal working deals it sends ACCEPTED). The quote is copied, never
+	-- changed, and every guard below applies unchanged: the passage and Gold
+	-- only, a price above zero and inside the ceiling and its caps, and no
+	-- proposal while the engine still holds one.
 	local activeSession = trade.sessions[fromPlayer];
 	local proposalQuote = buying and type(pending.want) == "string"
-		and string.find(pending.want, "^GREATWORK:") ~= nil;
+		and (string.find(pending.want, "^GREATWORK:") ~= nil
+			or pending.want == "OPEN_BORDERS");
 	if proposalQuote
 			and activeSession ~= nil and activeSession.kind == "buy" and activeSession.sent then
 		local enginePending = try(function()
