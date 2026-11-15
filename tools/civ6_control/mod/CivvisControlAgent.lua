@@ -20746,9 +20746,22 @@ CivvisQueue.moveDepartureWait = function(player, pid, row, rows, index)
 			end
 		end
 		if #peers == 0 then return nil; end
+		-- ONE unit waits for a plot. The decider can send two or three units of
+		-- one class to the same plot in a batch; all of them waited, the first
+		-- took it, and the others' moves were accepted by the host and never
+		-- started, so a follow-up behind one held its frame to the cap
+		-- (civvis-20261115T100810Z t29, a Scout behind a War-Cart, 5.8 s;
+		-- 104039Z t111, two units behind a War-Cart, 5.9 s; 8, 0, 1 and 3 such
+		-- extra waits a game). The others are refused at once, as they were
+		-- before the wait existed: the host has no path for them.
+		local claim = x .. "," .. y .. ":" .. tostring(spec.FormationClass);
+		local claims = CivvisQueue.plotClaims or {};
+		CivvisQueue.plotClaims = claims;
+		if claims[claim] ~= nil and claims[claim] ~= subject then return nil; end
 		-- Only now ask the host: a plot nobody of ours holds costs no path read.
 		local capped, why = CivvisBoard.capToTurn(unit, x, y);
 		if capped ~= false or why ~= "no_path" then return nil; end
+		claims[claim] = subject;
 		return { x = x, y = y, peers = peers, move = true };
 	end, nil);
 end;
@@ -20939,6 +20952,39 @@ CivvisQueue.noopStands = function(entry, subject, turn, atOrigin, moves)
 		return false;
 	end
 	return moves >= attempt.moves;
+end;
+
+-- ★ A WALK THAT STEPPED AND THEN STOOD STILL HAS STOPPED.
+--
+-- A follow-up waits for its unit's walk to reach the plot it was sent to, up
+-- to the grace. A walk the host stops short (the plot ahead was taken, or the
+-- unit has movement left but not enough for the next plot) leaves the unit
+-- off its origin with movement, so nothing named it and the frame ran to the
+-- cap: civvis-20261115T104039Z t28, a War-Cart one plot short, awake, 2 moves
+-- left, 6.5 s; 101703Z t94, a Crossbowman in an operation with 0.25 left,
+-- 4.9 s. Measured on five games of 2026-11-15 (095713Z, 100810Z, 101703Z,
+-- 102552Z, 104039Z): of 4,717 gaps between one unit's successive steps inside
+-- one frame, 4,715 were 1.0 s or less and the two longer ones 1.76 s and a
+-- re-issued order. So a unit that has stepped during this leg and has not
+-- changed plot for `WALK_STALL_TICKS` (about 1.9 s) is not going to: its
+-- follow-ups are refused by the name the grace gives, now.
+--
+-- A unit that has not stepped at all is not judged here: a whole frame can
+-- start late (a first step came more than 1.5 s after its order 61 times in
+-- 8,447), and `moveNoop` / `noopStands` own the unit still on its origin.
+CivvisQueue.WALK_STALL_TICKS = 10;
+CivvisQueue.walkStalled = function(entry, ux, uy)
+	if entry.seen_x == nil then
+		if entry.origin ~= nil and (ux ~= entry.origin.x or uy ~= entry.origin.y) then
+			entry.step_tick = entry.wait;
+		end
+	elseif ux ~= entry.seen_x or uy ~= entry.seen_y then
+		entry.step_tick = entry.wait;
+	end
+	entry.seen_x, entry.seen_y = ux, uy;
+	return #entry.rows > 0 and entry.expect ~= nil and entry.step_tick ~= nil
+		and entry.wait - entry.step_tick >= CivvisQueue.WALK_STALL_TICKS
+		and (ux ~= entry.expect.x or uy ~= entry.expect.y);
 end;
 
 CivvisQueue.drain = function(player, pid, turn)
@@ -21143,9 +21189,15 @@ CivvisQueue.drain = function(player, pid, turn)
 				-- path read at the probe tick) the host's own path lands it on a
 				-- later turn (`reachesThisTurn`'s `guard_still_capped`). A path the
 				-- host cannot be asked for decides nothing; the grace stays.
+				-- ★ THE VERDICT IS KEPT. The path is read once, and the one-pass
+				-- MOVE_TO -> FORTIFY settle delay below takes the tick it is read
+				-- on, so the verdict was gone a tick later and the frame ran to
+				-- the cap all the same (civvis-20261115T101703Z t93: a
+				-- Crossbowman's `queue_cannot_land` at tick 8, its FORTIFY refused
+				-- at tick 30, 5.3 s).
 				local cannot_land = false;
 				if active_operation and entry.expect ~= nil and not arrived and entry.wait < grace then
-					if spent then
+					if spent or entry.cannot_land then
 						cannot_land = true;
 					elseif not entry.land_probed
 							and entry.wait >= (tonumber(cfg.OrderQueueNoopProbeTicks) or 8)
@@ -21154,15 +21206,20 @@ CivvisQueue.drain = function(player, pid, turn)
 						local reaches, why = CivvisBoard.reachesThisTurn(unit, entry.expect.x, entry.expect.y);
 						cannot_land = not reaches and why == "guard_still_capped";
 					end
-					if cannot_land then
+					if cannot_land and not entry.cannot_land then
+						entry.cannot_land = true;
 						emit("queue_cannot_land", { turn = turn, unit = subject, tick = entry.wait,
 							spent = spent, at = { ux, uy }, want = { entry.expect.x, entry.expect.y } });
 					end
 				end
+				-- See `walkStalled`: a walk that stepped and then stood still.
+				local stalled = not spent and entry.wait < grace
+					and CivvisQueue.walkStalled(entry, ux, uy);
 				local stuck_operation = active_operation and entry.expect ~= nil
-					and not arrived and (entry.wait >= grace or cannot_land);
+					and not arrived and (entry.wait >= grace or cannot_land or stalled);
 				local ready = (entry.ready or arrived or spent or moved_from_origin
-					or unpathed or cannot_land or entry.wait >= grace) and (not active_operation or stuck_operation);
+					or unpathed or cannot_land or stalled or entry.wait >= grace)
+					and (not active_operation or stuck_operation);
 				if ready and #entry.rows > 0 then
 					local target = CivvisQueue.condemnWarPending(player, pid, entry.rows[entry.next], turn);
 					if target ~= nil then
@@ -21244,7 +21301,8 @@ CivvisQueue.drain = function(player, pid, turn)
 				elseif ready and CivvisQueue.dropWatch(subject, entry) then
 					-- The opening walk has landed; nothing follows it.
 				elseif ready and entry.expect ~= nil and not arrived and not spent
-						and entry.wait < grace and not cannot_land and not entry.noop_no_path
+						and entry.wait < grace and not cannot_land and not stalled
+						and not entry.noop_no_path
 						and not CivvisQueue.noopStands(entry, subject, turn, atOrigin, moves) then
 					-- (A walk the host's path lands on a later turn cannot be the
 					-- one that arrives later this tick: `cannot_land` above.)
@@ -21278,7 +21336,8 @@ CivvisQueue.drain = function(player, pid, turn)
 								origin = entry.origin ~= nil and { entry.origin.x, entry.origin.y } or nil,
 								want = { entry.expect.x, entry.expect.y },
 								moves = moves, noop = entry.noop_named, noop_tick = entry.noop_tick,
-								cannot_land = cannot_land,
+								cannot_land = cannot_land, stalled = stalled,
+								step_tick = entry.step_tick,
 								activity = try(function()
 									return CivvisBoard.activityName(UnitManager.GetActivityType(unit));
 								end, nil),
@@ -21327,6 +21386,10 @@ CivvisQueue.drain = function(player, pid, turn)
 								entry.ready = false;
 								entry.wait = 0;
 								entry.war_wait = nil;
+								-- A new leg: what was learnt about the last one is not
+								-- about this one, and it starts from where the unit is.
+								entry.land_probed, entry.cannot_land = nil, nil;
+								entry.step_tick, entry.seen_x, entry.seen_y = nil, ux, uy;
 								entry.settle_passes = ok
 									and verb == "MOVE_TO"
 									and tostring(entry.rows[entry.next].verb or "") == "FORTIFY"
@@ -23736,6 +23799,7 @@ local function applyOrders(player, pid, turn, rows)
 	local firstRun, firstRefused = {}, {};
 	-- See `CivvisQueue.holdersAt`: read afresh for this batch.
 	CivvisQueue.plotHolders = nil;
+	CivvisQueue.plotClaims = nil;
 	for index, row in ipairs(rows) do
 		if not ordered[index] then
 			local subject = tonumber(row.subject);
