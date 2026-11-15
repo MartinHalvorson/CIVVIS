@@ -1226,6 +1226,12 @@ struct SafeHealingTargetCache {
 struct EnemyEnvelope {
     reach: std::sync::Arc<EnvelopeReach>,
     sensitive: std::sync::Arc<std::collections::HashSet<Pos>>,
+    /// The disk a written tile must fall inside to be able to change this
+    /// envelope: centred on the unit, out to its farthest flood tile plus its
+    /// attack range. `None` when its flood was empty (a unit locked in place
+    /// this turn), so every write is taken to touch it. See
+    /// [`BasicAi::envelope_board_change`].
+    sight: Option<(Pos, i32)>,
 }
 
 /// The multiplier and the seed the three envelope fingerprints mix with — the
@@ -1271,10 +1277,13 @@ impl EnvelopeUnit {
 
 /// The board the per-enemy envelopes were last measured against.
 struct EnvelopeBoard {
-    /// Map epoch, the belligerence fingerprint and the city fingerprint. Any
-    /// of these moving is treated as "everything changed": they are rare and
-    /// global.
-    stamp: (u64, u64, u64),
+    /// The belligerence fingerprint and the city fingerprint. Either moving
+    /// is treated as "everything changed": they are rare and global.
+    stamp: (u64, u64),
+    /// Where the map's write history stood ([`crate::world::TileGrid::write_chain`]).
+    /// The tiles written since are reported by position; a history that
+    /// cannot be followed back here is "everything changed".
+    map_chain: u64,
     /// Every field of a unit that the board key hashes, plus the tile it is
     /// flying a patrol over.
     ///
@@ -1303,6 +1312,12 @@ struct EnvelopeBoard {
     /// `HashMap` and the diff hashed each id twice, once to build the new
     /// board and once to look the old one up.
     units: Vec<(u32, EnvelopeUnit)>,
+    /// The seat whose own inert units' changes this board has left out of a
+    /// delta since every change was last reported, if any. See
+    /// [`BasicAi::envelope_board_change`]: what an inert unit cannot touch is
+    /// an envelope of an enemy *at war with its owner*, so a later ask on
+    /// behalf of any other seat starts over from "everything changed".
+    skipped_for: Option<usize>,
 }
 
 /// What [`BasicAi::envelope_board_change`] found, for the two questions the
@@ -1310,6 +1325,11 @@ struct EnvelopeBoard {
 struct EnvelopeChange {
     /// The tiles a change touched, or `None` for "assume everything changed".
     touched: Option<Vec<Pos>>,
+    /// The map tiles opened for writing since the last ask, when `touched` is
+    /// `Some`. Tested against each envelope's `sight`, not its sensitive set:
+    /// a tile can change a ranged unit's line of sight as far out as its
+    /// range reaches.
+    written: Vec<Pos>,
     /// Whether any unit the previous board held is gone from this one — or,
     /// conservatively, `true` whenever the delta is `None` and nothing is
     /// known. Only the per-enemy store's cleanup reads it; see the call site.

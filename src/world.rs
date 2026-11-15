@@ -293,9 +293,25 @@ pub struct TileGrid {
     /// map-sized copy from every clone; `rebuild` is the only writer and
     /// replaces the whole index when a grid is constructed from a save.
     slot: std::sync::Arc<Vec<u32>>,
+    /// A running hash of every write route taken since the grid was built,
+    /// mixed from the epoch and the tile each one opened. Unlike the epoch it
+    /// tells two histories apart: a game cloned to look ahead numbers its
+    /// writes from the same epoch as the board it was cloned from, so equal
+    /// epochs on the two can name different maps, and equal chains cannot
+    /// unless the two wrote the same tiles in the same order.
+    write_chain: u64,
+    /// The most recent writes, each with the chain value just after it, and
+    /// `None` for a route that opened the whole map. See
+    /// [`TileGrid::writes_since`]. Shared until written, like `tiles`.
+    writes: std::sync::Arc<Vec<(u64, Option<Pos>)>>,
 }
 
 const EMPTY_SLOT: u32 = u32::MAX;
+
+/// How many writes [`TileGrid::writes_since`] can look back over. A reader
+/// that has fallen further behind is told nothing is known, which is what
+/// every reader of the bare epoch is told about any write at all.
+const WRITE_LOG: usize = 256;
 
 /// Tile-vector indices for one tile's in-map neighbors. The position form is
 /// retained separately for public callers; movement floods already need these
@@ -327,6 +343,8 @@ impl TileGrid {
             epoch: 0,
             tiles: std::sync::Arc::new(Vec::new()),
             slot: std::sync::Arc::new(Vec::new()),
+            write_chain: 0,
+            writes: std::sync::Arc::new(Vec::new()),
         };
         let mut tiles = Vec::with_capacity((width.max(0) * height.max(0)) as usize);
         for row in 0..height {
@@ -345,13 +363,15 @@ impl TileGrid {
             epoch: 0,
             tiles: std::sync::Arc::new(Vec::new()),
             slot: std::sync::Arc::new(Vec::new()),
+            write_chain: 0,
+            writes: std::sync::Arc::new(Vec::new()),
         };
         grid.rebuild(tiles);
         grid
     }
 
     fn rebuild(&mut self, mut tiles: Vec<Tile>) {
-        self.epoch += 1;
+        self.note_write(None);
         tiles.sort_unstable_by_key(|tile| tile.pos);
         tiles.dedup_by_key(|tile| tile.pos);
         let cells = (self.width.max(0) as usize) * (self.height.max(0) as usize);
@@ -394,7 +414,7 @@ impl TileGrid {
 
     #[inline]
     pub fn get_mut(&mut self, pos: &Pos) -> Option<&mut Tile> {
-        self.epoch += 1;
+        self.note_write(Some(*pos));
         let index = self.index_of(*pos)?;
         Some(&mut std::sync::Arc::make_mut(&mut self.tiles)[index])
     }
@@ -404,6 +424,51 @@ impl TileGrid {
     #[inline]
     pub fn epoch(&self) -> u64 {
         self.epoch
+    }
+
+    /// Every route that can write to a tile comes through here: it moves the
+    /// epoch, extends the chain and logs the tile (`None`: the whole map).
+    #[inline]
+    fn note_write(&mut self, at: Option<Pos>) {
+        const SEED: u64 = 0x9E37_79B9_7F4A_7C15;
+        self.epoch += 1;
+        let tile = at.map_or(u64::MAX, |(q, r)| {
+            (u64::from(q as u32) << 32) | u64::from(r as u32)
+        });
+        let mut chain = (self.write_chain ^ self.epoch).wrapping_mul(SEED);
+        chain = (chain ^ tile).wrapping_mul(SEED);
+        self.write_chain = chain ^ (chain >> 29);
+        let log = std::sync::Arc::make_mut(&mut self.writes);
+        if log.len() >= WRITE_LOG {
+            log.drain(..WRITE_LOG / 2);
+        }
+        log.push((self.write_chain, at));
+    }
+
+    /// Where the grid's history stands. Pass it to [`Self::writes_since`]
+    /// later to learn what was opened for writing in between.
+    #[inline]
+    pub fn write_chain(&self) -> u64 {
+        self.write_chain
+    }
+
+    /// The tiles opened for writing since this grid stood at `chain`, in
+    /// order and possibly repeated, or `None` when that cannot be told: the
+    /// chain is not in this grid's recent history (another branch of a cloned
+    /// game, a rebuilt grid, or more than the log holds), or a route in
+    /// between opened the whole map. An empty list means nothing was written.
+    ///
+    /// Opened, not changed: a route that took a tile for writing and left it
+    /// as it was is listed too, exactly as it moves the epoch.
+    pub fn writes_since(&self, chain: u64) -> Option<Vec<Pos>> {
+        if chain == self.write_chain {
+            return Some(Vec::new());
+        }
+        let at = self.writes.iter().rposition(|(seen, _)| *seen == chain)?;
+        self.writes[at + 1..]
+            .iter()
+            .map(|(_, tile)| *tile)
+            .collect()
     }
 
     #[inline]
@@ -428,7 +493,7 @@ impl TileGrid {
     }
 
     pub fn values_mut(&mut self) -> std::slice::IterMut<'_, Tile> {
-        self.epoch += 1;
+        self.note_write(None);
         std::sync::Arc::make_mut(&mut self.tiles).iter_mut()
     }
 
@@ -443,6 +508,9 @@ impl TileGrid {
         }
     }
 }
+
+#[cfg(test)]
+mod write_log_tests;
 
 #[cfg(test)]
 mod tests {
@@ -556,7 +624,7 @@ impl<'a> IntoIterator for &'a mut TileGrid {
         std::iter::Map<std::slice::IterMut<'a, Tile>, fn(&'a mut Tile) -> (Pos, &'a mut Tile)>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.epoch += 1;
+        self.note_write(None);
         std::sync::Arc::make_mut(&mut self.tiles)
             .iter_mut()
             .map(|tile| (tile.pos, tile))
