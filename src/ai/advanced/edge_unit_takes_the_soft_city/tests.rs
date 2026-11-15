@@ -1839,6 +1839,48 @@ fn the_rush_names_no_city_its_force_cannot_reach_in_time() {
 }
 
 #[test]
+fn a_domination_seat_s_rush_names_the_capital_first() {
+    // Only a capital counts toward a Domination victory, and a capital
+    // carries its own citizens' Loyalty (live 100810Z: Tskhumi, three tiles
+    // from Tbilisi, left as a Free City five turns after it fell).
+    let (mut g, near) = rush_fixture();
+    let far = (16, 8);
+    let capital = g.found_city_for(1, far, None);
+    g.players[0].explored.insert(far);
+    g.cities.get_mut(&near).unwrap().is_capital = false;
+    g.cities.get_mut(&capital).unwrap().is_capital = true;
+    // A Score seat names the nearer city.
+    let score = rush_on(VictoryTarget::Score);
+    assert_eq!(
+        score
+            .edge_rush_soft_city(&g, 0, 30.0, &[CAPITAL], 15)
+            .map(|soft| soft.city),
+        Some(near)
+    );
+    // A Domination seat names the capital, twelve tiles off.
+    let mut ai = rush_on(VictoryTarget::Domination);
+    assert_eq!(
+        ai.edge_rush_soft_city(&g, 0, 30.0, &[CAPITAL], 15)
+            .map(|soft| soft.city),
+        Some(capital)
+    );
+    // Named on the nearer city before the capital was seen, it turns to
+    // the capital while no muster has formed.
+    g.players[0].explored.remove(&far);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(
+        window(&ai).target.as_ref().map(|target| target.city),
+        Some(near)
+    );
+    g.players[0].explored.insert(far);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(
+        window(&ai).target.as_ref().map(|target| target.city),
+        Some(capital)
+    );
+}
+
+#[test]
 fn a_scout_past_eight_tiles_walks_home() {
     // Nothing can be named (the rival's city is walled): a War-Cart twelve
     // tiles out comes back toward the capital, so the force is home when a

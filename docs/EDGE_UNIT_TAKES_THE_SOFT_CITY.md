@@ -344,6 +344,11 @@ the evidence for each is under "Live carriers of the merged rule"):
   two tiles and strike what comes, one explores only while no rival
   soldier is within four tiles, and a Score seat asks for peace every
   three turns (`regroup: peace asked of ...`).
+- *A Domination seat (PR #5329)*: a rival capital that passes the naming
+  rules is named ahead of any other city (only a capital counts toward the
+  victory, and it carries its own citizens' Loyalty), and the window turns
+  from a city that is not a capital to a capital that comes into reach
+  while no muster has formed. A Score seat's naming is unchanged.
 - *Deals*: the incoming-deal desk refuses a declared friendship from the
   target's owner (any major before a city is named) and a peace offer from
   the rival whose city is being pressed; the rival's peace is taken while
@@ -504,6 +509,8 @@ takes a perturbation of the frame (`--py`).
 | 094903Z, Score | t7 / t32 | t27 Đồng Hới of Vietnam, 14 tiles, defence 18, no walls; walled at t34 | none | never | 0 | none | t46, no city by turn 45 | 0 to t46 | 3, 13.5 | 0.26 at t60, 0.29 at t120 |
 | 100810Z, Domination | t5 / t16 | t13 Tskhumi of Georgia, 14 tiles, defence 10, no walls | t23 (3) | t25, forecast 85% | 10 | t28 Tskhumi | t33, the city gone | 4 | 2, 17.8 | 0.30 at t56 |
 | 101703Z, Score | t6 / t22 | t29 Esztergom of Hungary, 6 tiles, defence 20 (15 on the host), no walls | t31 (3) | t34, forecast 85% | 6 | none | t39, walls up, forecast 0% twice | 3 to t39 | 4, 33.2 | 0.66 at t60, 0.58 at t120 |
+| 104039Z, Domination | t7 / t15 | t14 Niani, Mali's capital, 13 tiles, defence 13, no walls | t21 (3) | never | 0 | none | t46, no muster kept | 2 | 4, 14.3 | 0.37 at t60, 0.42 at t112 |
+| 104756Z, Score | t6 / t15 | t13 Antioch of Byzantium, 10 tiles, defence 20, no walls | t20 (3) | t27 with five, forecast 85% | 10 | none | t37, ten war turns | 6 | 2, 10.8 | 0.32 at t60, 0.25 at t75 |
 
 What each showed, and the rule that answers it (PR #5322):
 
@@ -560,7 +567,28 @@ What each showed, and the rule that answers it (PR #5322):
   and closed at about a tile a turn. *Against a city at defence 15 or more
   the muster is four units, and the position wait is one turn, not three.*
 
-Across the four games the War-Carts made 1.5-1.7 host moves a turn against
+- **104039Z, the one capital named.** Three War-Carts stood at Niani
+  (population 4, defence 23 with its garrison, two soldiers in sight) at
+  turn 21; replayed as if at war the forecast read 0% within four turns,
+  17% within eight and 22% within twelve. By turn 25 two of five were
+  there: the others were healing 6-11 tiles off. Three do not take a Deity
+  capital; the muster of four and the eight-turn reading are the least it
+  needs.
+- **104756Z, seven health short.** Five War-Carts declared on Antioch
+  (defence 22, a Warrior inside, an Archer beside it) at turn 27. None of
+  them moved on the turn of the declaration (four `MOVE_TO` orders failed
+  `did_not_move`); the city stood at 54, 104 and 193 damage of 200 at the
+  end of turns 28, 29 and 30, with the War-Carts beside it at 15, 33 and 1
+  health and two fresh ones 6 and 10 tiles off, one of which never came
+  nearer. A Heavy Chariot had walked in at turn 30 (defence 30).
+
+Of the six carriers of the first version, six named a city, one of them a
+capital; three declared (with three, three and five War-Carts); one took a
+city (not a capital) and lost it on Loyalty; the two that failed left the
+city at 55 and 7 health. *A Domination seat names a rival capital ahead of
+any other city (PR #5329).*
+
+Across these games the War-Carts made 1.5-1.7 host moves a turn against
 an allowance of three or four, so a march is about 1.5 tiles a turn; that
 is the figure the naming rule uses.
 
