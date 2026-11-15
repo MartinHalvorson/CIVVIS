@@ -1561,7 +1561,7 @@ thread_local! {
     /// [`AdvancedAi::danger_field`]. Holding the envelope keeps its address
     /// from being reused, so a pointer match cannot be a different envelope.
     static KEPT_STRIKE_REACH: std::cell::RefCell<KeptStrikeReach> =
-        std::cell::RefCell::new(BTreeMap::new());
+        const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
 type KeptStrikeReach = BTreeMap<(usize, u32), (Arc<crate::ai::EnvelopeReach>, Arc<[Pos]>)>;
