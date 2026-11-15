@@ -856,9 +856,8 @@ impl AdvancedAi {
                 // `culture-faith-site-per-theater-4`: the kept slot's Holy
                 // Site goes ahead of a routine head.
                 let passes = passes
-                    || self.culture_faith_kept_slot_passes_the_head(
-                        g, pid, cid, plan, head, at_war,
-                    );
+                    || self
+                        .culture_faith_kept_slot_passes_the_head(g, pid, cid, plan, head, at_war);
                 if !passes
                     && (self.culture_theater_holds(g, pid, cid, plan, head)
                         || self.early_settler_floor_holds(g, pid, cid, plan)

@@ -1046,7 +1046,10 @@ fn version_four_passes_a_settler_past_the_floor_but_not_one_under_it() {
     let (mut g, ai, mut plan, kept) = kept_slot_board(Some(settler));
     let (three, four) = claim_under_three_and_four(&g, &ai, &plan, kept);
     assert!(!three, "version three keeps every Settler");
-    assert!(four, "no floor wants this Settler: the Holy Site goes first");
+    assert!(
+        four,
+        "no floor wants this Settler: the Holy Site goes first"
+    );
     let mut floor = ai.clone();
     floor.enable_early_settler_floor();
     g.turn = 30;
@@ -1054,7 +1057,10 @@ fn version_four_passes_a_settler_past_the_floor_but_not_one_under_it() {
     assert!(floor.early_settler_floor_holds(&g, 0, kept, &plan));
     assert!(floor.culture_faith_slot_is_kept(&g, 0, kept));
     let (three, four) = claim_under_three_and_four(&g, &floor, &plan, kept);
-    assert!(!three && !four, "a Settler under the early floor keeps its queue");
+    assert!(
+        !three && !four,
+        "a Settler under the early floor keeps its queue"
+    );
 }
 
 #[test]
