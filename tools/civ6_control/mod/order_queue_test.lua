@@ -1287,6 +1287,37 @@ do
 	check("three: and moves once the second has left", ops(THIRD), "UNITOPERATION_MOVE_TO")
 	check("three: nothing was abandoned", lastEvent("queue_move_departure_abandoned"), nil)
 
+	-- The host's operation event reaches the queue before the unit's plot read
+	-- changes, so the watch on the unit ahead is dropped while it still stands
+	-- on the plot. That is a unit leaving, not a unit stuck: #5328 read "no
+	-- queue entry" as stuck and gave up at tick 2 on 34 and 132 followers in
+	-- civvis-20261115T105844Z and 110627Z; 33 and 128 of the units ahead then
+	-- left, nearly all within 0.3 s.
+	column()
+	applyOrders(player, PID, 7, {follow(), lead()})
+	queue.drain(player, PID, 7)
+	queue.noteUnitEvent(PID, PID, AHEAD)
+	queue.drain(player, PID, 7)
+	check("event first: the watch on the unit ahead is gone", queue.pending[AHEAD], nil)
+	check("event first: and it still stands on the plot", host.units[AHEAD].x, 5)
+	check("event first: the follower still waits", queue.pending[BEHIND] ~= nil, true)
+	check("event first: nothing was abandoned", lastEvent("queue_move_departure_abandoned"), nil)
+	queue.drain(player, PID, 7)
+	host.arrive(AHEAD)
+	queue.drain(player, PID, 7)
+	check("event first: the follower moves when the plot read changes", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+	-- ...and one that never leaves is still given up on at six counted ticks.
+	column()
+	applyOrders(player, PID, 7, {follow(), lead()})
+	queue.drain(player, PID, 7)
+	queue.noteUnitEvent(PID, PID, AHEAD)
+	for _ = 1, 4 do queue.drain(player, PID, 7) end
+	check("event first, never leaves: still waiting at five ticks", queue.pending[BEHIND] ~= nil, true)
+	queue.drain(player, PID, 7)
+	check("event first, never leaves: given up on at six", queue.pending[BEHIND], nil)
+	check("event first, never leaves: named as leaving, not stuck",
+		(lastEvent("queue_move_departure_abandoned") or ""):find('"ahead":"leaving"', 1, true) ~= nil, true)
+
 	-- The unit ahead was ordered to move and its move was refused: it has no
 	-- order in flight, so the follower is released at once, not at six ticks.
 	column()
