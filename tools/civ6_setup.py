@@ -108,8 +108,8 @@ VERIFICATION_OPTIONS = {
         "AutoSaveFrequency": 4,
     },
     "GraphicsOptions.txt": {
-        # ⚠ THESE TWO DO NOT HOLD ON A GPU THE GAME DOES NOT KNOW, which is
-        # every Apple Silicon seat ("Device ID: 1007"). Startup.log there says
+        # ⚠ THESE TWO DO NOT HOLD ON A GPU THE GAME DOES NOT KNOW, as on the
+        # `martbot-mbp-m5-max-128` seat ("Device ID: 1007"). Startup.log there says
         # "Successfully determined Graphics Performance Level. Default graphics
         # settings to medium/medium." at each boot, and the game writes the
         # file back with both at 1. So every play log repeats
