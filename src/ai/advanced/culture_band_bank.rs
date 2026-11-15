@@ -70,7 +70,11 @@ const BAND_BANK_UNDER_FIRE_TURNS: u32 = 4;
 impl AdvancedAi {
     /// Whether the bank is open, so a Naturalist waits for the bands.
     pub(super) fn culture_band_bank_holds_naturalists(&self, g: &Game, pid: usize) -> bool {
-        self.culture_band_bank(g, pid) > 0.0
+        // A band waiting for a stage (`band-buys-with-a-stage-in-reach`)
+        // keeps the bank open past Cold War; the Naturalist does not wait for
+        // it, as it never waited once Cold War was known.
+        !g.players[pid].civics.contains(&crate::name!("cold_war"))
+            && self.culture_band_bank(g, pid) > 0.0
     }
 
     /// The Faith the Great Person, worship-building and religious-unit passes
@@ -88,19 +92,27 @@ impl AdvancedAi {
     }
 
     fn culture_band_bank_held(&self, g: &Game, pid: usize, through_fire: bool) -> f64 {
-        if !(self.culture_banks_for_the_bands || self.culture_bank_opens_at_nationalism)
+        // `band-buys-with-a-stage-in-reach`: a band waiting for a stage keeps
+        // the bank open past Cold War. See
+        // `advanced/band_buys_with_a_stage_in_reach.rs`.
+        let waiting = self.band_buys_with_a_stage_in_reach
+            && !self.lane_lost
+            && self.active_victory_target(g) == Some(VictoryTarget::Culture)
+            && self.band_waits_for_a_stage(g, pid);
+        if !(self.culture_banks_for_the_bands || self.culture_bank_opens_at_nationalism || waiting)
             || self.lane_lost
             || self.active_victory_target(g) != Some(VictoryTarget::Culture)
         {
             return 0.0;
         }
         let player = &g.players[pid];
-        if player.civics.contains(&crate::name!("cold_war")) {
+        if player.civics.contains(&crate::name!("cold_war")) && !waiting {
             return 0.0;
         }
-        let nearing = (self.culture_banks_for_the_bands
-            && (player.civics.contains(&crate::name!("ideology"))
-                || matches!(player.civic.as_deref(), Some("ideology" | "cold_war"))))
+        let nearing = waiting
+            || (self.culture_banks_for_the_bands
+                && (player.civics.contains(&crate::name!("ideology"))
+                    || matches!(player.civic.as_deref(), Some("ideology" | "cold_war"))))
             || (self.culture_bank_opens_at_nationalism
                 && player.civics.contains(&crate::name!("nationalism")));
         let under_fire = g.player_city_ids(pid).iter().any(|cid| {

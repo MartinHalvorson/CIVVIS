@@ -5669,6 +5669,11 @@ pub struct AdvancedAi {
     /// `breaker-walks-under-a-shield`: where the breaker and its shield last
     /// stood, for the journal of its loss. `None` while the gene is off.
     breaker_shield_memory: Option<breaker_walks_under_a_shield::BreakerShieldMemory>,
+    /// `band-buys-with-a-stage-in-reach`: no Rock Band is bought while no
+    /// stage lies within four turns of a city of ours, and the band bank
+    /// stays open past Cold War meanwhile. See
+    /// `advanced/band_buys_with_a_stage_in_reach.rs`. Off by default.
+    band_buys_with_a_stage_in_reach: bool,
     // ---- append: c-d ------------------------------------------------
     /// `domination-seat-appoints-pingala-first`: a Domination target spends
     /// its first Governor titles on Pingala in its largest city and her
@@ -11905,6 +11910,10 @@ mod backlog_builder_takes_the_queue;
 /// `band-buys-near-the-stage`: a Rock Band is bought in the city nearest a
 /// stage it can play. See `advanced/band_buys_near_the_stage.rs`.
 mod band_buys_near_the_stage;
+/// `band-buys-with-a-stage-in-reach`: no Rock Band is bought while no stage
+/// lies within four turns of a city of ours; the Faith stays banked. See
+/// `advanced/band_buys_with_a_stage_in_reach.rs`.
+mod band_buys_with_a_stage_in_reach;
 mod band_hunt;
 /// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
 /// survival depends on. See `advanced/band_plays_its_stage.rs`.
@@ -19170,6 +19179,14 @@ impl AdvancedAi {
             self.band_purchase_cities(g, pid)
         } else {
             g.player_city_ids(pid)
+        };
+        // `band-buys-with-a-stage-in-reach`: only a city with a stage in
+        // reach buys; none, and the band waits. See
+        // `advanced/band_buys_with_a_stage_in_reach.rs`.
+        let band_cities = if self.band_buys_with_a_stage_in_reach {
+            self.band_cities_in_reach(g, pid, band_cities)
+        } else {
+            band_cities
         };
         for city in band_cities {
             // Same correction as the religious units above: the shipped rules

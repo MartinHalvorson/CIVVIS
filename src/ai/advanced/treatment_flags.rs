@@ -144,6 +144,9 @@ impl AdvancedAi {
         /// Opt-in gene `band-plays-the-stage-at-hand`; see
         /// `advanced/band_plays_the_stage_at_hand.rs`.
         base.band_plays_the_stage_at_hand => enable_band_plays_the_stage_at_hand, disable_band_plays_the_stage_at_hand;
+        /// Opt-in gene `band-buys-with-a-stage-in-reach`; see
+        /// `advanced/band_buys_with_a_stage_in_reach.rs`.
+        band_buys_with_a_stage_in_reach => enable_band_buys_with_a_stage_in_reach, disable_band_buys_with_a_stage_in_reach;
         // ---- append: c-d --------------------------------------------
         /// `domination-seat-appoints-pingala-first`: Pingala and Researcher
         /// take a Domination seat's first Governor titles. See

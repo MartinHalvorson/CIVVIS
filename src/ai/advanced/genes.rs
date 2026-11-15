@@ -5491,6 +5491,11 @@ pub const GENES: &[Gene] = &[
     // none, four for one, no trip for two). Opt-in; see
     // `advanced/band_plays_the_stage_at_hand.rs`.
     Gene { tag: "band-plays-the-stage-at-hand", field: "band_plays_the_stage_at_hand", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_the_stage_at_hand, disable: AdvancedAi::disable_band_plays_the_stage_at_hand },
+    // No Rock Band is bought while no stage lies within four turns of a city
+    // of ours (live 11-15: 17 of 264 bands bought farther played 0.82 concerts
+    // each); the band bank stays open past Cold War meanwhile. Opt-in; see
+    // `advanced/band_buys_with_a_stage_in_reach.rs`.
+    Gene { tag: "band-buys-with-a-stage-in-reach", field: "band_buys_with_a_stage_in_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_band_buys_with_a_stage_in_reach, disable: AdvancedAi::disable_band_buys_with_a_stage_in_reach },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.

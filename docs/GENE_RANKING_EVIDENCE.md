@@ -196,6 +196,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `assault-forecast-is-read` | off (unmeasured) | Opt-in gene `assault-forecast-is-read`: a capture forecast and one journal line for every siege the train assesses; no decision changes. | 1 \| 1 |
 | `band-bank-bars-people-under-fire` | off (unmeasured) | Opt-in gene `band-bank-bars-people-under-fire`; see `advanced/culture_band_bank.rs`. | 1 \| 1 |
 | `band-buys-near-the-stage` | off (unmeasured) | Opt-in gene `band-buys-near-the-stage`; see `advanced/band_buys_near_the_stage.rs`. | 1 \| 1 |
+| `band-buys-with-a-stage-in-reach` | off (unmeasured) | Opt-in gene `band-buys-with-a-stage-in-reach`; see `advanced/band_buys_with_a_stage_in_reach.rs`. | 1 \| 1 |
 | `band-plays-at-level-three` | off (unmeasured) | Opt-in gene `band-plays-at-level-three`; see `advanced/band_plays_at_level_three.rs`. | 1 \| 1 |
 | `band-plays-its-stage` | off (unmeasured) | `band-plays-its-stage`: Rock Bands take the promotions and tours that keep them alive, because album sales compound over a band's career. | 1 \| 1 |
 | `band-plays-the-stage-at-hand` | off (unmeasured) | Opt-in gene `band-plays-the-stage-at-hand`; see `advanced/band_plays_the_stage_at_hand.rs`. | 1 \| 1 |

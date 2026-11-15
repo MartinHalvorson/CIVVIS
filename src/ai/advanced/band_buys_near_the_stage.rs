@@ -26,7 +26,7 @@ use super::*;
 
 /// The tiles a new band could play: the host's highlights for our bands,
 /// else the wonders and Theater Squares of open rivals we have seen.
-fn band_stages(g: &Game, pid: usize) -> BTreeSet<Pos> {
+pub(super) fn band_stages(g: &Game, pid: usize) -> BTreeSet<Pos> {
     let highlighted: BTreeSet<Pos> = g
         .units
         .values()
