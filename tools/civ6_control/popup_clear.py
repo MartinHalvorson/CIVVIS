@@ -151,6 +151,16 @@ SETUP_YIELD_SECONDS = 1.0
 # see. Nothing is ever pressed through a remembered window: a pass that sees
 # anything but the map through one forgets it and looks again (`LookAgain`),
 # and every pass with a popup up reads the window afresh, as before.
+#
+# ★ THE LIVE SCREEN IS A "CARD", NOT A "MAP". Probed on the first game with
+# the lines above (civvis-20261115T131026Z, turns 30-40, ten captures a
+# second apart): `classify` answered card nine times and leader once, never
+# map, and the loop still launched 0.67 and 0.60 `osascript`s a second. A
+# card is left to the mod unless `--cards` is passed (the lane does not pass
+# it): that pass presses nothing and reads neither answer, exactly like a
+# bare map. So "quiet" is the map, or a card this run will not click
+# (`quiet_pass`), and a quiet pass keeps the remembered window, does not ask
+# for the front app, and keeps the map's pace.
 WINDOW_BOX_SECONDS = 5.0
 #: What a pass over the bare map took while it asked both questions every
 #: time (1.30 s measured, 0.77 passes a second). The answers it no longer
@@ -162,6 +172,12 @@ MAP_PASS_SECONDS = 1.25
 
 class LookAgain(Exception):
     """This pass saw a popup through remembered geometry; the next reads it fresh."""
+
+
+def quiet_pass(kind, cards):
+    """Whether a pass that classified ``kind`` can press nothing at all: the
+    bare map, or a card while cards are left to the mod (no ``--cards``)."""
+    return kind == "map" or (kind == "card" and not cards)
 
 
 def window_box_reading(memo, now=None, ttl=WINDOW_BOX_SECONDS):
@@ -1359,6 +1375,7 @@ def main():
 
         idle = False
         covered = False
+        quiet = False
         try:
             box, fresh_box = window_box_reading(geometry)
             if not box:
@@ -1375,12 +1392,13 @@ def main():
                     warned_setup = False
                 window, scale = capture(box)
                 kind, targets, dark = classify(window)
-                if kind != "map":
-                    # With anything on screen the window is read every pass.
+                quiet = quiet_pass(kind, args.cards)
+                if not quiet:
+                    # With anything to press the window is read every pass.
                     geometry["box"] = None
                     if not fresh_box:
                         raise LookAgain()
-                front = frontmost() if kind != "map" else ""
+                front = "" if quiet else frontmost()
                 # These positively identified panels can stop the game clock.
                 # Give them a longer grace period to recover a paused run;
                 # all broader dark/card recognition remains tied to a fresh turn so
@@ -1555,7 +1573,7 @@ def main():
         # pass; this changes when we look, never what we are willing to click.
         if idle:
             delay = max(MIN_POLL_SECONDS, args.interval * 5)  # between games
-        elif covered:
+        elif covered and not quiet:
             delay = covered_poll_delay(args.interval)
         else:
             delay = map_pass_delay(args.interval, pass_began)
