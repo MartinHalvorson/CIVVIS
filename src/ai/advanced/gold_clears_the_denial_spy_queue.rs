@@ -52,7 +52,10 @@
 //!    (the host's quote, else the Production left over the city's rate)
 //!    has a head the claim will not displace, and that head is a building or
 //!    unit Gold can buy with at most [`SPY_QUEUE_MAX_PAID_SHARE`] of it
-//!    already paid (a purchase throws that Production away).
+//!    already paid (a purchase throws that Production away). In practice a
+//!    Settler or a building: a land combat unit at the head bars every land
+//!    combat purchase in its city (`land_combat_purchase_slot_open`), and
+//!    districts, Wonders and projects are never for sale.
 //! 3. **It saves real time.** That city's Spy comes at least
 //!    [`SPY_QUEUE_MIN_TURNS_SAVED`] turns sooner than in the best city the
 //!    claim could take without Gold, or no such city exists.
