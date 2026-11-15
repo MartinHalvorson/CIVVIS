@@ -51,6 +51,20 @@
 //!
 //! The native sim plays on known terrain (no `unknown` plot), so it can judge
 //! only parts 2 and 3; part 1 is a live-board effect.
+//!
+//! ## Measured (2026-11-15, PR #5340)
+//!
+//! - Paired sim, 60 seeds, Rome Score seat, Deity 6p Continents Online:
+//!   destination changes per Settler 2.93 -> 2.42 (z -2.6), tiles walked
+//!   237 -> 203 (z -2.6), Settler-turns per founded city 16.1 -> 14.0
+//!   (z -2.4), cities at t100 9.00 -> 9.32 (z +1.6). Drops for a sibling's
+//!   site or our own new city fell from 466 to 115.
+//! - One-frame `civvis_orders` replays of 152 live frames where a Settler
+//!   named an unseen plot: unseen sites named fell from 76 of 102 marching
+//!   Settlers to 35; the 26 passed over were half water or Mountain, but the
+//!   seen site taken instead was farther (8.2 tiles against 5.7) and worth
+//!   less (74.8 against 86.0). 26 others kept the fog site through the
+//!   exhaustion fallback.
 
 use super::{hostile_memory_key, AdvancedAi, Game};
 use crate::think;
