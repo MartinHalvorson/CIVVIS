@@ -1,0 +1,100 @@
+name: edge-unit-rush-sims
+
+# ⚠ TEMPORARY experiment scaffolding for PR #5305, removed in its final
+# commit: the paired simulator rounds of `edge-unit-rushes-from-the-capital`.
+# One build of `gene_screen`, then the lane recipe played on runners in
+# shards: every shard plays the control arm and the gene arm on the same
+# seeds, and uploads the rows and the measured seat's journals. The live
+# host is saturated (a live game, a leader sweep), so nothing is built there.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: edge-unit-rush-sims-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  RUSH_TURNS: "120"
+  RUSH_SEED: "52680000"
+  RUSH_GAMES: "4"
+
+jobs:
+  build:
+    if: github.event.pull_request.number == 5305
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: 0
+      RUSTFLAGS: -C link-arg=-fuse-ld=lld
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install lld
+        run: bash .github/scripts/install-apt-packages.sh lld
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-ci-deps-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-ci-deps-${{ runner.os }}-
+      - name: Build gene_screen
+        run: |
+          set -euo pipefail
+          cargo build --profile ci --locked --features developer-tools --bin gene_screen
+          cp target/ci/gene_screen gene-screen-bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: driver
+          path: gene-screen-bin
+          retention-days: 3
+
+  play:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        civ: [Sumeria]
+        target: [score]
+        walls: ["-", "15"]
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: driver
+      - name: Play ${{ matrix.civ }} ${{ matrix.target }} walls ${{ matrix.walls }} shard ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          chmod +x gene-screen-bin
+          mkdir -p out
+          seed=$((RUSH_SEED + ${{ matrix.shard }} * RUSH_GAMES))
+          last=$((seed + RUSH_GAMES - 1))
+          walls=()
+          if [ "${{ matrix.walls }}" != "-" ]; then walls=(--rival-walls "${{ matrix.walls }}"); fi
+          for arm in control rush; do
+            name="lane_w${{ matrix.walls }}_${{ matrix.target }}_${{ matrix.civ }}_t${RUSH_TURNS}_s${seed}_n${RUSH_GAMES}_${arm}"
+            ./gene-screen-bin --games "$RUSH_GAMES" --start-seed "$seed" --jobs 4 --out "out/$name.jsonl" --quiet \
+              --players 6 --width 74 --height 46 --city-states 9 --map continents \
+              --difficulty deity --rivals firaxis-faithful --handicap rivals --rival-chairs 5 \
+              --rival-rung -2 --rival-pace "${walls[@]}" --target-mix "${{ matrix.target }}" \
+              --seat-civ "${{ matrix.civ }}" --turns "$RUSH_TURNS" \
+              --deployment-genome --live-genome "experiments/rush/genome_${arm}.json" --trace \
+              --journal "$(seq "$seed" "$last" | paste -sd, -)" > "out/$name.log" 2>&1 || { tail -40 "out/$name.log"; exit 1; }
+            tail -3 "out/$name.log"
+          done
+          ls -l out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rows-${{ matrix.civ }}-${{ matrix.target }}-w${{ matrix.walls }}-${{ matrix.shard }}
+          path: out
+          retention-days: 14
