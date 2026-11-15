@@ -24998,7 +24998,15 @@ end;
 -- 6 and 29 s; the rest are queued behind another session and do not open
 -- until the end turn goes through, so holding for them only spent the whole
 -- window: 233 holds, 96 minutes, 12% of those games' wall clock.
-CivvisTrade.OPENING_HOLD_SECONDS = 8;
+-- ★ THREE SECONDS, WAS EIGHT. Live, 218 run segments of 2026-11-12..13
+-- (5,749 asks put in the turn their session was opened): 5,408 (94.1%) were
+-- put within 3 s of the opening, 301 (5.2%) only once the end turn had gone
+-- through, and 40 (0.7%) in between, ten of those at the 8 s bound itself.
+-- The hold ran out 448 times (`opening_unasked`), 2,562 s in all; bounded at
+-- 3 s those same holds are 556 s. A session that opens after the release is
+-- what it already was at 8 s: a peace or alliance ask is closed and asked
+-- again next turn (see "CLOSED, NOT ASKED"), a trade ask is put late.
+CivvisTrade.OPENING_HOLD_SECONDS = 3;
 CivvisTrade.holdsEndTurn = function(turn)
 	-- Opening, asked and counter-wait sessions still own a live UI reply.
 	-- Native 20261108T084123Z t147 forced EndTurn between a queued opening
