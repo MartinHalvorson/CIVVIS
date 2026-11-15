@@ -523,6 +523,39 @@ function CivvisK.attempt(fn)
 	return ok;
 end
 
+-- ★ AN ORDER THAT THROWS SAYS WHAT THREW, AND WHICH ORDER IT WAS.
+--
+-- Both places that hand a row to `applyOrder` wrap it in one `pcall` per
+-- order, so a handler that raises costs that order and nothing after it. The
+-- raised message was then dropped: the order was counted under the refusal
+-- reason `throw` and nothing else was written. Run civvis-20261115T071444Z
+-- (Pericles, Deity) counted `refused_by.unit.throw` on 12 opening frames by
+-- turn 137 and held zero `agent_error` events, because every other guard in
+-- this file reports through `noteError` and these two did not. Joining the
+-- frames to the order channel left a Scout's `MOVE_TO` as the only candidate
+-- on the one frame that refused nothing else (turn 124), and the Scout stood
+-- where it was; which line raised could not be read from any log.
+--
+-- `noteError` keeps its once-per-message discipline. The event beside it
+-- names the order each time, up to a per-game limit, so the refusal can be
+-- joined to the unit and the turn it cost.
+CivvisK.ORDER_THROW_LIMIT = 200;
+CivvisK.orderThrows = 0;
+function CivvisK.orderThrew(err, row, turn, where)
+	CivvisK.noteError(err, where);
+	if CivvisK.orderThrows >= CivvisK.ORDER_THROW_LIMIT then return; end
+	CivvisK.orderThrows = CivvisK.orderThrows + 1;
+	pcall(function()
+		emit("order_threw", {
+			turn = turn, where = where,
+			frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
+			order_kind = tostring(row.kind or "?"), subject = tonumber(row.subject),
+			verb = tostring(row.verb or ""), x = tonumber(row.x), y = tonumber(row.y),
+			message = string.sub(string.match(tostring(err), "^[^\n]*"), 1, 240),
+		});
+	end);
+end
+
 -- Every read of the game API is guarded. A method this ruleset does not have,
 -- or an object in a transient state, must not take the whole turn down: a
 -- controller that dies mid-turn leaves the game at a prompt forever, which
@@ -21014,7 +21047,8 @@ CivvisQueue.drain = function(player, pid, turn)
 							local safe, res1, res2 = pcall(function()
 								return applyOrder(player, pid, row, turn);
 							end);
-							if safe then ok, why = res1, res2; end
+							if safe then ok, why = res1, res2;
+							else CivvisK.orderThrew(res1, row, turn, "queued_order"); end
 							ran = ran + 1;
 							q.count = q.count - 1;
 							if ok then
@@ -23335,7 +23369,8 @@ local function applyOrders(player, pid, turn, rows)
 		local safe, res1, res2 = pcall(function()
 			return applyOrder(player, pid, row, turn);
 		end);
-		if safe then ok, why = res1, res2; end
+		if safe then ok, why = res1, res2;
+		else CivvisK.orderThrew(res1, row, turn, "order"); end
 		if ok then
 			if shadow then
 				CivvisBoard.stats.escort_shadow_applied = CivvisBoard.stats.escort_shadow_applied + 1;
