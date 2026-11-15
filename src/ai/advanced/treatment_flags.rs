@@ -339,6 +339,9 @@ impl AdvancedAi {
         /// Opt-in gene `faithless-seat-holds-its-faith-strikes`; see
         /// `advanced/faithless_seat_holds_its_faith_strikes.rs`.
         faithless_seat_holds_its_faith_strikes => enable_faithless_seat_holds_its_faith_strikes, disable_faithless_seat_holds_its_faith_strikes;
+        /// Opt-in gene `edge-unit-rushes-from-the-capital`; see
+        /// `advanced/edge_unit_takes_the_soft_city.rs`.
+        edge_unit_rushes_from_the_capital => enable_edge_unit_rushes_from_the_capital, disable_edge_unit_rushes_from_the_capital;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its

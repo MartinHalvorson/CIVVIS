@@ -2,7 +2,8 @@
 
 `edge-unit-takes-the-soft-city` (opt-in, off by default, not armed).
 Code: `src/ai/advanced/edge_unit_takes_the_soft_city.rs`. Driver:
-`src/bin/gene_screen/edge_unit_takes_the_soft_city_tests.rs`. PR #5267.
+`src/bin/gene_screen/edge_unit_takes_the_soft_city_tests.rs`. PR #5267; version 2 PR #5292;
+`edge-unit-rushes-from-the-capital` (opt-in, runs the window by itself) PR #5305.
 
 ## Question
 
@@ -59,7 +60,8 @@ reading that can price it.
    stays soft. *Changed after round 0:* a city named by turn 55 stays the
    target, mustered on and declared on, while it stays soft, up to turn 70
    (as first specified the window shut at turn 55, before any force could
-   stand at the city). While the window is open:
+   stand at the city). *Version 2:* an unwalled named city stays the target
+   below the +8 edge (see "Version 2" below). While the window is open:
    - **Research.** When the edge unit needs a strategic resource the seat
      neither holds (10 or more) nor earns, the technology that reveals it is
      the research goal (Bronze Working reveals Iron). Once it is known, the
@@ -79,6 +81,8 @@ reading that can price it.
      of an owned unit into the edge unit (Warrior to Legion) is taken ahead of
      the treasury floor, down to 0 Gold while income is not negative. The
      window needs two cities, so the first Settler is never deferred.
+     *Version 2:* three cities, ahead of a deferrable item, and the upgrade
+     bill held back from other purchases (see "Version 2" below).
    - **Muster.** Before the war the edge units (and the breaker) walk to a
      free stand 3-4 tiles from the city outside any border closed to us (3-6
      when none is free) and hold it. *Changed after round 0:* the walk runs at
@@ -97,7 +101,8 @@ reading that can price it.
      `preferred_war_opening`. On a major with no casus belli that function
      returns a Denounce and offers the Formal War five standard turns later;
      *changed after round 0*, the denouncement goes out once 3 edge units are
-     owned, so the Formal War is legal when the force musters, and a Denounce
+     owned (*version 2:* once the first is), so the Formal War is legal when
+     the force musters, and a Denounce
      offered at the muster is applied and held. From the declaration the
      plan's target player and city are that city's
      (`apply_edge_unit_to_strategy`), under the lane's own strategy; the
@@ -135,7 +140,8 @@ on turn 1: Rome's Legion; a generic Swordsman or Horseman does not qualify):
 - **At Bronze Working** the existing resource rule decides: a source in reach
   makes the unit's own technology (Iron Working) the goal; none stands the
   opening down and research returns to normal (two cheap technologies
-  spent). The first gene's ordinary window goes on and opens later if a
+  spent). *Version 2:* the check first repeats every turn for 10 Online
+  turns. The first gene's ordinary window goes on and opens later if a
   source comes into reach.
 - **With the source in reach**: a Builder improves it first (also Iron
   Working's boost); the capital and the city nearest the target (the
@@ -151,6 +157,302 @@ on turn 1: Rome's Legion; a generic Swordsman or Horseman does not qualify):
   opening down and journals it; the edge units stay as defence.
 - Everything after the muster is the first gene (denounce, forecast gate,
   declaration, assault, continue or peace).
+
+## Version 2, from the first live game (PR #5292)
+
+`civvis-20261113T205538Z` (Rome, both flags): no Iron in reach at Bronze
+Working (turn 19), so the opening stood down, yet Iron was in stock from
+about 23. Opened at 27 on Mbamba (defence 17, unwalled, 8 tiles); Legions
+owned 1 at 36 (a Warrior upgraded for 75 of 76 Gold, walking at 50 health
+to 48), 3 at 54, 5 at 75. Denounced at 54; closed at 56 "no longer soft"
+at edge +6 (defence 34); Mbamba was never walled to turn 81.
+
+**Why nothing was queued from 33 to 44.** The claim took only idle queues,
+in Rome and Antium; the claim chain waits for the opening book, which held
+Rome to 37 (an Archer at 34, a Builder at 37); the early Settler floor,
+ahead of the claim, took Rome at 39 and Antium at 40; the Granary claim,
+after it, put Granaries ahead of queued Legions (45, 50).
+
+Changes (same two tags, still opt-in):
+
+1. **Unwalled target on the forecast.** Past naming, an unwalled city below
+   +8 stays the target while the declaration's forecast, with every edge
+   unit owned posed beside it at its health, takes it within 4 turns at
+   0.5+; before 3 are owned, while the edge is -4 or better (`kept:`).
+   Walled: the old rule. The close names why.
+2. **Force.** The capital and the two cities nearest the target train it at
+   once, ahead of a deferrable item (never one finishing this turn, a
+   soldier, Walls, a wonder, a project, a District with work in it, or a
+   city's first Settler: only the capital's gives way); the claims that
+   respect a reserved army build leave it queued; in the opening book, once
+   a city is named, the turn start fills idle queues with the edge unit.
+3. **Gold** for the upgrades is held whenever the window is open.
+4. **Denounce** with the first edge unit, never before one exists.
+5. **Heal.** Under 70 health (above the withdraw line) an edge unit holds,
+   or steps into a city of ours within 2 tiles, before it walks (`heal:`).
+6. **Recheck.** From the start, no source at the revealing technology is
+   checked every turn for 10 Online turns (`start: recheck:`) first.
+7. **Upgrade passes.** The edge pass (`maintain_edge_unit_window`) runs
+   first, before `upgrade_units_preserving_air_wing`, whose first step is
+   `one-upgrade-lifts-every-city`; while Gold is held that pass takes only
+   an upgrade into the edge unit or one leaving the held Gold. A Warrior to
+   Legion is bought once, by either, and the edge force counts it.
+
+**Sanity round** (16 pairs, 110 turns, lane recipe, seeds 52670500-15;
+worlds reaching each stage, in brackets of those with Iron in reach at
+Bronze Working; round 4 on the same seeds, `main` has moved since):
+
+| | goal | resource | 3 Legions | muster | denounced | declared | assault pressed | captured |
+|---|---|---|---|---|---|---|---|---|
+| round 4, gene-start | 16 (4) | 12 (4) | 5 (3) | 1 (0) | 1 (0) | 1 (0) | 1 (0) | 0 |
+| v2, gene-start | 16 (4) | 10 (4) | 7 (3) | 1 (0) | 4 (0) | 0 | 0 | 0 |
+| round 4, free Iron | 16 (4) | 10 (4) | 15 (4) | 4 (1) | 6 (1) | 3 (1) | 3 (1) | 0 |
+| v2, free Iron | 16 (4) | 12 (4) | 16 (4) | 4 (1) | 6 (2) | 2 (0) | 2 (0) | 0 |
+
+CI 43511045918 found a regression, fixed for the table's run (CI
+43514717689): the book-phase claim trained Warriors from turn 1 in place
+of the book's Scout and Settlers (free Iron: 4 windows opened, not 7).
+In it the real-Iron arm's one muster (Susa) came 3 turns before round 4's
+(Iron found on the recheck, denounced at the first Legion) and met walls
+with no Ram; round 4 declared on Susa unwalled, walled two turns later.
+Cities founded, paired: -0.56 ± 0.27 by turn 50 (round 4 -0.25), -0.19 by
+100.
+
+## Rush from the capital (`edge-unit-rushes-from-the-capital`, PR #5305)
+
+**Why.** The Legion needs Mining, Bronze Working, Iron Working and Iron, so
+it stood at the city at turn 44-100, and the soft city's window shuts around
+turn 55-60. In 84 live Rome Score games the seat's score sat at 0.40 of the
+best rival's from turn 25, and 230 Domination games took no rival capital. A
+unit that is trainable on turn 1 does not wait: Sumeria's War-Cart (30,
+three moves, no technology, no resource) and the Aztec Eagle Warrior (28)
+against cities that defend at 13-17 before turn 30 (live 205538Z: Mbamba at
+17 on turn 27; a capital with only Warriors built reads 13).
+
+**Rule** (the third tag, opt-in; it runs the window by itself, so it is the
+only tag to arm):
+
+- **Seat.** Only a seat whose assigned victory target is Score or
+  Domination (`edge_rush_armed`). On any other seat, and on an adaptive
+  seat, nothing is read.
+- **Unit** (`edge_rush_unit`). The civilization's own unique land melee unit
+  that needs no technology still missing, no strategic resource, no building
+  and no district, at least 8 stronger than the strongest unit every seat
+  trains with nothing (the Warrior, 20). It is the edge unit, ahead of a
+  stronger unit that is technologies away: on turn 1 the base rule names
+  Sumeria the Swordsman (35, three technologies and Iron). A civilization
+  with no such unit (Rome, Gaul's Gaesatae at 20) runs nothing under this
+  tag alone, and the base window if the base tag is armed too.
+- **Force.** The capital trains 2 before anything else, the opening book
+  included, and a third once a rival major is met, on the main path and in
+  the live production hint (`claim_edge_rush_queue`). Once a city is named the version-2 claim trains
+  on to 6 in the capital and the two cities nearest the target, ahead of a
+  deferrable item. Gold is held for the next one and buys it in a training
+  city that quotes a price (`force: bought ...`): the host buys a land
+  soldier into the City Center, so a city with a soldier on its tile or at
+  the head of its queue quotes none.
+- **Scouting.** While no city is named up to 2 edge units explore with
+  every move inside the rush's reach of the capital: toward the fog within
+  3 tiles of a rival's border they have seen first, otherwise the Scout's
+  own step, and one past the reach walks back (`scouting:`); a wounded one
+  heals first.
+  The other edge units, and the scouts once everything in reach is charted,
+  are the unit pass's (the camps, the escorts, the capital's defence).
+- **No friendship with the target.** While the rush runs, a declared
+  friendship is neither offered to nor accepted from the owner of the named
+  city, nor any major before a city is named (`edge_rush_spares_friendship`,
+  read by the friendship desk and by the live dialogue lease). Round 1:
+  `score-seat-keeps-friends` befriended the neighbour on first contact, a
+  friend is not a legal target, and the city was named at a median turn 33.
+- **Target.** Named from one city. An unwalled rival city, its centre
+  explored, within 5 turns of the unit's moves of one of our cities (15
+  tiles for the War-Cart, 10 for the Eagle Warrior), at an edge of 0 or
+  better; a walled one keeps the base rule (+8 and a breaker). Of the
+  cities at +8 or better the nearest is named (the march is the rush's
+  clock); with none that soft, the largest edge. It stays the target while
+  unwalled at -4 or better. No city named by turn 45, or no declaration by
+  turn 60, stands the rush down.
+- **Muster.** The force stands as near as 2 tiles from the city, in the
+  nearest ring that has a free stand outside the rival's border which the
+  unit stands on or has a road to (the base window stands 3-4 tiles out).
+- **Declaration.** The base gate: 3 at 70+ health within 4 tiles and the
+  capture forecast at 0.5 calibrated within 4 turns, read every turn as the
+  force grows. The denouncement still goes out with the first unit, but the
+  muster does not wait for its five turns: the rush declares the Formal War
+  when it is legal and a surprise war when it is not (`edge_rush_opening`),
+  on a turn three of its units stand on their stands with a move left
+  (`hold: ... K of the N war cart there stand on their stand with a move
+  left`; three turns after the muster first formed, three that can move are
+  enough wherever they stand), and the force presses the assault on the
+  turn it declares. A war the target's owner declares on us first does not
+  stop the walk, and at the muster it is the window's war (`declared:
+  already at war ...`).
+- **Assault.** The base gene's press, with the nearest unit first and the
+  column walked twice. A unit aims at a tile beside the city that holds no
+  soldier of ours. One that cannot reach the city this turn strikes the
+  weakest hostile soldier beside it at 50 health or more, and otherwise
+  holds fortified, so no later step of the turn walks it home; the
+  objective board keeps the force out of distant Destroy, Escort and
+  ClearCamp rows through the war. Round 2: the board's Reserve took the
+  force back toward the capital on the first war turns, and the first blow
+  came 2-3 turns after the declaration.
+- **Stopping.** At war the rush reads the at-war forecast once a turn
+  (`assault_forecast`, P(capture within 12 turns)). Under 20% on two war
+  turns running with the force gathered (walls raised behind the
+  declaration, the rival's soldiers arrived) it stops (`closed: the
+  forecast reads ...`); so does it after 10 war turns without a capture (the
+  base window waits 20), and with fewer than 2 edge units owned and queued.
+  A Score seat then asks for peace; a Domination seat asks for none and its
+  lane keeps the war (`handed over:`).
+- **Home.** When the rush is over, for whatever reason, its surviving edge
+  units walk back to within 2 tiles of our nearest city for 8 turns
+  (`home:`), so a rush that took nothing does not leave the seat without
+  defenders. The unit inside a city the rush took stays there. The one
+  exception is a Domination seat whose rush took a city: the lane keeps the
+  force with the war.
+- **After a capture.** The city is kept (`edge_rush_keeps`) and the edge
+  unit inside it stays as its garrison. The force goes on to the same
+  owner's city, the capital included, within 12 tiles, that the at-war
+  forecast reads taken at 0.5 or better within 6 turns with the force where
+  it stands and at the health it has (`continue: ... forecast N%`); a
+  wounded unit inside our borders heals before it closes. With none read
+  the force regroups for up to 8 turns: the wounded heal, one healthy unit
+  explores within 12 tiles of the captured city, the others hold, and the
+  forecast is read again each turn (`regroup:`). A walled city the forecast
+  does not read taken is left alone. Training and buying go on through the
+  war.
+
+### Rush rounds (CI farm on #5305; Sumeria, Score target, 120 turns)
+
+**Method.** A temporary workflow on the PR built `gene_screen` once and
+played the lane recipe on runners in shards, the control arm and the gene
+arm on the same seeds, with the measured seat's journal kept
+(`--journal`): `--players 6 --width 74 --height 46 --city-states 9 --map
+continents --difficulty deity --rivals firaxis-faithful --handicap rivals
+--rival-chairs 5 --rival-rung -2 --rival-pace --target-mix score --seat-civ
+Sumeria --turns 120 --deployment-genome --live-genome <genome> --trace`,
+seeds 52680000-23 (24 pairs a recipe), the genome the live force list of
+2026-11-15 07:2xZ (717 treatments) with and without the tag. A second
+recipe adds `--rival-walls 15`. Score at the marks comes from a local probe
+on the trace sample (not shipped). The workflow, the genomes and the probe
+were scaffolding and are not in the merged tree; the reader scripts are
+`~/civvis-score-tools/rush-20261115/` (`fetch_ci.py`, `pairs.py`). Paired
+differences are mean ± standard error, `*` at 1.5 standard errors.
+
+Worlds of 24 reaching each stage in the gene arm, and the gene arm minus
+the control, paired by seed. "Score / best" is the seat's score over the
+best rival's at the mark, control then gene.
+
+| round, recipe | worlds with a capture | named (median turn) | declared | assault | captured | cities taken | cities lost | units lost | cities t50 | Science t50 | score / best t60 | t100 | t120 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 lane | 1 | 17 (t33) | 12 | 10 | 1 | +0.04 ± 0.04 | -0.04 ± 0.19 | +8.92 ± 2.77* | -0.83 ± 0.19* (of 3.54) | -4.19 ± 1.09* (of 15.63) | 0.31 / 0.24 | 0.36 / 0.28 | 0.37 / 0.29 |
+| 1 walls-15 | 2 | 14 (t33) | 10 | 9 | 2 | +0.08 ± 0.06 | -0.42 ± 0.16* | +10.29 ± 3.07* | -1.17 ± 0.22* (of 3.79) | -4.70 ± 1.06* (of 16.31) | 0.32 / 0.26 | 0.36 / 0.30 | 0.37 / 0.32 |
+| 2 lane | 4 | 16 (t28) | 13 | 12 | 4 | +0.17 ± 0.08* | -0.38 ± 0.16* | +6.75 ± 1.71* | -1.12 ± 0.20* (of 3.54) | -5.02 ± 0.97* (of 15.63) | 0.31 / 0.24 | 0.36 / 0.28 | 0.37 / 0.29 |
+| 2 walls-15 | 6 | 17 (t29) | 12 | 11 | 6 | +0.25 ± 0.09* | -0.04 ± 0.24 | +11.62 ± 2.99* | -1.17 ± 0.21* (of 3.79) | -6.17 ± 1.39* (of 16.31) | 0.32 / 0.25 | 0.36 / 0.29 | 0.37 / 0.30 |
+| 3 lane | 2 | 15 (t32) | 11 | 9 | 2 | +0.08 ± 0.06 | +0.00 ± 0.18 | +5.42 ± 1.23* | -0.62 ± 0.13* (of 3.54) | -3.78 ± 0.99* (of 15.63) | 0.31 / 0.26 | 0.36 / 0.30 | 0.37 / 0.31 |
+| 3 lane, Aztec | 1 | 13 (t35) | 7 | 3 | 0 | +0.04 ± 0.04 | +0.08 ± 0.16 | +5.54 ± 2.07* | -1.25 ± 0.24* (of 4.12) | -6.07 ± 1.46* (of 17.84) | 0.33 / 0.26 | 0.38 / 0.30 | 0.39 / 0.32 |
+| 3 lane, Domination target | 3 (control 2) | 14 (t32) | 11 | 9 | 3 | +0.12 ± 0.12 | -0.12 ± 0.26 | +9.42 ± 3.06* | -0.96 ± 0.23* (of 3.46) | -5.30 ± 1.12* (of 16.81) | 0.32 / 0.25 | 0.33 / 0.26 | 0.33 / 0.26 |
+| 4 lane | 5 | 14 (t32) | 6 | 6 | 5 | +0.25 ± 0.11* | -0.33 ± 0.16* | +4.29 ± 1.87* | -0.42 ± 0.20* (of 3.54) | -3.18 ± 1.19* (of 15.63) | 0.31 / 0.27 | 0.36 / 0.31 | 0.37 / 0.32 |
+| 4 lane, Aztec | 1 | 9 (t35) | 3 | 3 | 1 | +0.04 ± 0.04 | -0.08 ± 0.15 | +1.29 ± 1.49 | -0.67 ± 0.25* (of 4.12) | -4.28 ± 1.38* (of 17.84) | 0.33 / 0.28 | 0.38 / 0.34 | 0.39 / 0.36 |
+| 4 lane, Domination target | 4 (control 2) | 14 (t32) | 6 | 6 | 4 | +0.08 ± 0.08 | -0.33 ± 0.22 | +4.62 ± 2.39* | -0.46 ± 0.23* (of 3.46) | -4.04 ± 1.40* (of 16.81) | 0.32 / 0.27 | 0.33 / 0.29 | 0.33 / 0.30 |
+
+What each round changed, from the journals of the one before:
+
+- **Round 1** (the rule as first written: three before the book, every
+  edge unit scouting, the shipped opening's denouncement and Formal War,
+  the base assault). The chain ran end to end: the War-Cart was chosen on
+  turn 1, first owned at turn 7, three by about turn 15. One world named
+  Toronto at turn 11 (defence 10, 9 tiles), declared at 16 with three, and
+  took it at 20. In the others `score-seat-keeps-friends` offered a
+  friendship on first contact (a friend is not a legal target), so the city
+  was named when the friendship lapsed; and from about turn 28 the chairs
+  raised walls on or within two turns of the declaration, and ten assaults
+  fought 16-20 turns for nothing.
+- **Round 2** (no friendship with the target; a surprise war when the
+  Formal War is not yet legal; the stop on the at-war forecast; the regroup
+  after a capture). Captures 4 and 6 of 24, cities lost down from 0.58 to
+  0.21 on the lane. The first blow still came 2-3 turns after the
+  declaration: the objective board's Reserve walked the force back toward
+  the capital, the stop streak was counted in frames (a turn is planned in
+  several) and stopped the war the turn after a continuation, and in the
+  worlds that named no city every War-Cart was out scouting while the
+  capital held its Settlers back under barbarian pressure (one city at turn
+  50 against three).
+- **Round 3** (two scouts with goals of their own; the nearest city at +8;
+  the press that holds its ground and strikes soldiers; the stop streak by
+  turn; the standing forecast for the next city; survivors home; Aztec and
+  a Domination target added). Cities at turn 50 came back to -0.62 and the
+  units lost to +5.4, but the scouts' own goals named a city later than the
+  Scout's step had, the force struck no blow on the turn it declared in 11
+  of 11 wars from its stands three and four tiles out, and 7 of the 9 wars
+  the forecast stopped had met walls raised behind the declaration. The
+  Eagle Warrior (28, two moves) declared in 7 worlds and took nothing.
+- **Round 4** (the Scout's step for the two scouts, a seen border first;
+  the muster as near as two tiles; the declaration on a turn three stand on
+  their stands with a move left; the third unit only once a rival is met).
+  Six wars were declared and five took a city, one of them two (seeds 0,
+  14, 18, 22, 23, captures at turns 23-51), cities lost fell to 0.25 from
+  0.58, and the cost came down again (cities at turn 50 -0.42, final score
+  -34.5 of 304). It also showed a deadlock: a free stand two tiles out with
+  no road to it kept the units from ever standing "on their stand", and the
+  world that named Toronto at turn 11 (taken at turn 19-20 in rounds 1-3)
+  held the declaration to the end. The merged rule takes a stand only in a
+  ring the unit stands on or has a road to, and three turns after the muster
+  forms it declares with three that can move, wherever they stand. That fix
+  has the unit tests and no simulator round behind it.
+
+**Reading.** In the simulator the rush is a loss on the Score lane: it
+takes a city in 2-6 worlds of 24, the seat founds 0.4-1.2 fewer cities by
+turn 50, and its score against the best rival falls from 0.37 to 0.29-0.32
+(round 4: 0.32). No world took a rival capital. The worlds that took a city
+before turn 25 did it against unwalled cities at defence 10-13 with three
+or four War-Carts in one to four war turns; most worlds that named a city
+after turn 28 met walls bought behind the declaration. The Eagle Warrior
+(28, two moves, a 10-tile reach) declared in 3-7 worlds and took one city
+in two rounds: the War-Cart is the unit this rule is for. That is the simulator's chairs, not the live field
+(13-18% of the nearest rival cities walled at turns 40-50, walls about seven
+turns into a war in the one replayed game), so the simulator prices the
+cost and not the gain. The live carriers decide.
+
+### What to look for in a rush carrier's why.log
+
+`grep 'edge-unit-takes-the-soft-city:' why.log`, or
+`~/civvis-score-tools/rush_funnel.py SINCE` for the funnel of every armed
+run. For a Sumeria seat with `edge-unit-rushes-from-the-capital` armed:
+
+1. **Turn 1**: `rush: war cart (30) is trainable from turn 1 ...`. Absent:
+   the tag is not armed for this seat, or its target is not Score or
+   Domination. `rush: no unique land melee unit of <civ> ...`: the
+   civilization has no such unit.
+2. **Force**: `<capital> trains war cart for the edge force` with `force: N
+   war cart owned and M queued of 2 before this one` (of 3 once a rival is
+   met, of 6 once a city is named); `force: bought a war cart in <city> for
+   G Gold`. Check the host's production is the War-Cart from the first
+   prompt.
+3. **Scouting**: `scouting: ...` once the first exists (about turn 7).
+4. **Target**: `opened: war cart (30) against <city> of <civ> at defence D,
+   edge +E, T tiles from our nearest city, walls none`. Before it
+   `waiting: no soft city in reach`; with none by turn 45, `closed: no soft
+   city within 15 tiles is known by turn 45`.
+5. **Muster**: `denounced: <civ> ...`; `hold: N of M war cart at <city> with
+   70+ health; the others at ...` while they walk; `muster: 3 war cart ...`;
+   then either `hold: ... the forecast reads X% within 4 turns (raw Y%),
+   short of Z` or `hold: ... K of the N war cart there stand on their stand
+   with a move left`.
+6. **Declaration**: `declared: 3 war cart ... forecast X% ...` (or
+   `declared: already at war with <civ>`), and on the same turn `assault: N
+   blow(s) on <city>, health A to B`. The host must show the war that turn.
+7. **War**: one `siege: <city> health H walls W; A war cart beside it, N
+   within 4, war turn T` a turn, with `assault:` lines. Walls appearing in
+   the `siege:` line after the declaration is the simulator's pattern; note
+   the war turn it happens on.
+8. **Capture**: `captured: <city> from <civ>, N taken, M war cart left`, the
+   host's keep, then `continue: <next city> ... forecast X%` or `regroup:
+   ...` for up to 8 turns.
+9. **The end**: `closed: the forecast reads <city> taken at N% within 12
+   turns on 2 war turns running (health, walls, the force, hostiles in
+   sight)`, `closed: 10 war turns without a capture`, or the stand-downs;
+   then `peace:` (Score) or `handed over:` (Domination) and `home: ...`.
 
 ## Live evidence (Rome, Score lane)
 
@@ -240,7 +542,8 @@ of a seed in one process, one report over every shard.
   PR's final commit. Restore them with `git checkout 2a37abe5a0 --
   .github/workflows/edge-unit-takes-the-soft-city.yml
   src/bin/gene_screen/edge_unit_live_genome.txt` (the round-4 workflow;
-  earlier rounds' settings are in the commits titled "WIP experiment").
+  earlier rounds' settings are in the commits titled "WIP experiment";
+  version 2's sanity round is commit `593f2b3027` of #5292).
 - **Statistics**: mean ± standard error of arm minus control, paired by seed,
   `*` at 1.5 standard errors; rounds are never pooled (a PR's CI plays the
   merge with current `main`, so a seed is a different world after `main`
@@ -596,11 +899,14 @@ both flags on:
    valuable") step toward bronze working, which the edge unit outclassing a
    nearby rival city needs` (Mining first). Check the host's research
    matches the turn.
-3. **The decision at Bronze Working**: either `start: no iron source in
-   reach at bronze working; research returns to normal` (the opening ends
-   here, two cheap technologies spent), or `start: a iron source is in
+3. **The decision at Bronze Working**: either `start: a iron source is in
    reach; iron working is the goal, ...`, followed by `research: iron
-   working toward legion`.
+   working toward legion`, or (version 2) `start: recheck: no iron source in
+   reach at bronze working; checking every turn until turn T`, then within
+   ten turns `start: a iron source is in reach (K turn(s) into the recheck)`
+   or `start: iron is supplied K turn(s) into the recheck`, or at turn T
+   `start: no iron source in reach at bronze working or in the 10 turns
+   after; research returns to normal` (two cheap technologies spent).
 4. **Resource**: `resource: builder N walks to the iron at (x, y)`, then
    `... improves the iron at (x, y)`; or `resource: bought a iron source for
    G Gold, H left`. Check the host built the Mine (Iron income above zero)
@@ -609,19 +915,29 @@ both flags on:
    with `force: ... before this one`; while they wait, no other Gold buy
    should take the treasury below the Warriors' upgrade bill (the purchase
    floor). Then `force: upgraded a warrior to legion for G Gold of H`, and
-   `<city> trains Legion for the edge force`.
+   `<city> trains Legion for the edge force`, in up to three cities at once
+   (version 2), some `..., ahead of <item> (it keeps its progress)`. A
+   Granary or Builder claim should not take a queued Legion back.
 6. **The target**: `opened: legion (40) against <city> of <civ> at defence D,
    edge +E, T tiles from our nearest city, walls ...`. While none is soft,
    `waiting: no soft city in reach`; by turn 45 with none,
    `closed: no soft city within 10 tiles is known by turn 45; the opening
    stands down`. Check the host's city banner defence against D.
 7. **Denouncement**: `denounced: <civ> so the Formal War is legal in N turns`,
-   once three Legions are owned. The host should show the denouncement.
+   once the first Legion is owned (version 2). The host should show the
+   denouncement.
 8. **Muster**: while walking, `hold: B of N legion at <city> with 70+ health;
    the others at ... tiles ...`; then `muster: 3 legion at 70+ health within
    4 tiles of <city>` (6 when the rival's border has closed the 3-4 ring).
    By turn 60 without a declaration: `closed: the force is not at the city
    by turn 60; the opening stands down and the legion stay as defence`.
+   Version 2: a Legion under 70 health first `heal: legion N at H health
+   heals in place (or in <city>) before it marches`; it should not move
+   until healed. Past the naming turn, an unwalled target below +8 gives
+   `kept: <city> unwalled at defence D, edge E: the forecast with the N
+   legion owned beside it reads X% ...` (or `..., with N of 3 legion owned
+   (the floor is -4 ...)`); it ends with `closed: past the naming turn the
+   named city is no longer the target: <why>`.
 9. **Gates at the muster**: `hold: ... the forecast reads X% within 4 turns
    (raw Y%), short of Z`; `hold: ... the shipped opening offers no
    declaration on <civ> yet (a denouncement waits out its Formal War)`;
@@ -690,3 +1006,13 @@ Ram with the force whatever the walls read at the muster.
   only; on a Science seat its first-capital genes are inert by their lane
   gate.
 - **cargo-test** on the final head: see the PR's checks.
+- **The rush (`edge-unit-rushes-from-the-capital`)**: no live game at
+  merge. Gilgamesh has never been seated by the launcher, so the first
+  carrier also tests the leader picker's row, the host's production prompt
+  for `UNIT_SUMERIAN_WAR_CART`, the surprise-war order, and the dialogue
+  lease that refuses the target's friendship. The stand rule and the
+  three-turn grace that end round 4's deadlock have unit tests and no
+  simulator round. The simulator's walls behind a declaration are not the
+  live field's, so its capture rate and its cost are both readings of the
+  simulator. Aztec ran two rounds (one capture); no other civilization has
+  a unit the rule accepts.
