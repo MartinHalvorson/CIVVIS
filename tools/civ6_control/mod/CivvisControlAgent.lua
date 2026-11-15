@@ -8359,6 +8359,12 @@ local function exportState(player, pid, turn, frame, eventKind)
 									creator = instance and instance.CreatorName or "",
 									building = buildingInfo.BuildingType,
 									slot = slot,
+									-- The turn it was created, which starts the ten-turn
+									-- art lock (GreatWorksOverview.lua:782-799): the
+									-- decider holds a swap back until it has run out.
+									created = try(function()
+										return blds:GetTurnFromIndex(workIndex);
+									end, nil),
 								};
 							end
 						end

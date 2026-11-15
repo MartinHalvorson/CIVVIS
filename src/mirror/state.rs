@@ -330,6 +330,10 @@ pub struct StateGreatWork {
     pub building: String,
     #[serde(default)]
     pub slot: i32,
+    /// The turn the work was created (`GetTurnFromIndex`), which starts the
+    /// host's ten-turn art lock. `None` from a mod that does not export it.
+    #[serde(default)]
+    pub created: Option<i64>,
 }
 
 /// One appointed Governor exactly as Civilization VI reports it.

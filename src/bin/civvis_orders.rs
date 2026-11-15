@@ -52,6 +52,8 @@ mod builder_diagnostics;
 #[path = "civvis_orders/builder_operation_refusals.rs"]
 mod builder_operation_refusals;
 
+#[path = "civvis_orders/locked_art.rs"]
+mod locked_art;
 #[path = "civvis_orders/spent_traders.rs"]
 mod spent_traders;
 #[path = "civvis_orders/trader_origin_coverage.rs"]
@@ -5998,9 +6000,15 @@ fn decide(
         }
     }
 
+    // See `locked_art`: a work inside its ten-turn lock is not proposed.
+    let mut art_locked = 0;
     for (source, work, destination, slot) in
         ai.native_art_museum_swaps(&mirror_state.game, 0, state)
     {
+        if locked_art::locked(state, source, &work, destination, slot) {
+            art_locked += 1;
+            continue;
+        }
         if let Ok(destination) = i32::try_from(destination) {
             orders.push(Order {
                 kind: "museum_swap",
@@ -6009,6 +6017,10 @@ fn decide(
                 pos: Some((destination, slot)),
             });
         }
+    }
+
+    if art_locked > 0 {
+        note_bits.push(format!("museum_swaps_wait_for_the_art_lock={art_locked}"));
     }
 
     let relocated_traders = trader_origin_coverage::apply(
