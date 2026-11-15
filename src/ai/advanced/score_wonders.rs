@@ -84,6 +84,35 @@
 //! (wonder, city, turns, points with the Era Score, the chance, what it
 //! passed), each loss of a race and each finish. Counters
 //! `score_wonder_starts`, `score_wonder_finishes`, `score_wonder_losses`.
+//!
+//! ## Version 3: a rear lane through the threat hold
+//!
+//! `score-seat-raises-wonders-3` (enabling it turns versions 1 and 2 off; it
+//! carries version 2's rules). In five live Rome Score games of 2026-11-15 at
+//! Immortal (turn limit 120) version 2's "safety first" held every lane from
+//! t80 to the tally in three (164620Z, 183022Z, most of 153340Z) and they
+//! built nothing, while Apadana, Jebel Barkal and Petra stood on offer at 200
+//! Production from t60-80 to t100-120 in 183022Z; the two that reopened at
+//! t80 (143627Z, 174608Z) started 3-4 wonders and finished 2-3, and 143627Z
+//! ended at 0.62 of the leader's score against 0.51-0.59. At t121 the gap to
+//! the leader sat in wonders (0-45 points against 105-165), Era Score and
+//! districts, not in cities, techs or civics.
+//!
+//! So during a "safety first" hold (not the expansion hold) ONE lane stays
+//! open, in the most productive city standing [`SCORE_WONDER_V3_REAR_TILES`]
+//! or more from the nearest known city of every major at war with us or
+//! fielding [`SCORE_WONDER_V2_THREAT_RATIO`] times our military, with no
+//! Settler in its queue and not itself threatened or attacked lately. A city
+//! that already races keeps the lane while it qualifies. The capital races
+//! only when it qualifies. The rear lane stays shut on a Recovery plan, while
+//! the plan names a threatened city of ours, for four turns after any city of
+//! ours is attacked (war at the gates), and while a threat's cities are
+//! unseen. A standing race in any other city is held as version 2 holds it.
+//!
+//! Journal: the rear lane opening, moving and closing, each naming the threat
+//! and the distance, and each rear start, all starting
+//! `score-seat-raises-wonders-3:`. Counters `score_wonder_rear_turns` (turns
+//! the rear lane stood open) and `score_wonder_rear_starts`.
 use super::*;
 
 /// The first lane opens on this turn, in Standard turns (40 at Online).
@@ -122,8 +151,30 @@ pub(super) const SCORE_WONDER_V2_EXPANSION_STANDARD: u32 = 120;
 /// military.
 pub(super) const SCORE_WONDER_V2_THREAT_RATIO: f64 = 1.5;
 
+/// Version 3: the rear lane's city stands at least this many tiles from the
+/// nearest known city of every threat. Ten is the radius inside which
+/// `score-seat-trims-the-idle-army` calls a major a neighbour
+/// (`SCORE_TRIM_NEIGHBOUR_TILES` in `score_seat.rs`), so the rear city lies outside every
+/// threat's neighbourhood by the same measure that raised the hold. It is
+/// also five or more turns of march for the Classical and Medieval armies
+/// (two moves, less on hills and woods) that took Rome in 011722Z from six
+/// tiles off three turns after the declaration: long enough for the plan to
+/// name a threatened city, which closes the lane, before an army arrives. On
+/// a 6p Continents map whose cities stand four to six tiles apart, it leaves
+/// at least one city of ours between the threat and the race.
+pub(super) const SCORE_WONDER_V3_REAR_TILES: i32 = 10;
+
 /// Points at the tally for a finished wonder (`Game::score_parts`).
 const SCORE_WONDER_POINTS: f64 = 15.0;
+
+/// Version 3: the city that keeps the rear lane, the threat nearest to it
+/// and that threat's nearest known city's distance.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct ScoreWonderRear {
+    pub(super) city: u32,
+    pub(super) threat: usize,
+    pub(super) tiles: i32,
+}
 
 /// One candidate race: the item, its turns, chance and expected points a turn.
 #[derive(Clone, Debug)]
@@ -138,19 +189,26 @@ pub(super) struct ScoreWonderPick {
 impl AdvancedAi {
     /// Whether the gene acts: on, on a Score target.
     pub(super) fn score_wonders_on(&self) -> bool {
-        (self.score_seat_raises_wonders || self.score_seat_raises_wonders_2)
+        (self.score_seat_raises_wonders
+            || self.score_seat_raises_wonders_2
+            || self.score_seat_raises_wonders_3)
             && self.victory_target == Some(VictoryTarget::Score)
     }
 
+    /// Whether version 2's rules apply: version 2, or version 3 carrying it.
+    fn score_wonder_v2_rules(&self) -> bool {
+        self.score_seat_raises_wonders_2 || self.score_seat_raises_wonders_3
+    }
+
     /// Version 2: why the lanes hold this turn (see the module), or `None`
-    /// when they do not, or with version 2 off.
+    /// when they do not, or with versions 2 and 3 off.
     pub(super) fn score_wonder_v2_hold(
         &self,
         g: &Game,
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<String> {
-        if !self.score_seat_raises_wonders_2 {
+        if !self.score_wonder_v2_rules() {
             return None;
         }
         let city_ids = g.player_city_ids(pid);
@@ -182,6 +240,124 @@ impl AdvancedAi {
             }
         }
         None
+    }
+
+    /// Version 3: the city that keeps one lane open through a "safety first"
+    /// hold (see the module), or why none does. Call only with version 3 on
+    /// and such a hold standing.
+    pub(super) fn score_wonder_v3_rear(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Result<ScoreWonderRear, String> {
+        if plan.strategy == GrandStrategy::Recovery {
+            return Err("a Recovery plan".to_string());
+        }
+        let city_ids = g.player_city_ids(pid);
+        if let Some(cid) = plan.threatened_city.filter(|cid| g.cities.contains_key(cid)) {
+            return Err(format!(
+                "war at the gates: {} is threatened",
+                g.cities[&cid].name
+            ));
+        }
+        if let Some(cid) = city_ids.iter().copied().find(|cid| {
+            let city = &g.cities[cid];
+            city.last_attacked > 0
+                && g.turn.saturating_sub(city.last_attacked) <= SCORE_WONDER_ATTACK_MEMORY
+        }) {
+            return Err(format!(
+                "war at the gates: {} was attacked on turn {}",
+                g.cities[&cid].name, g.cities[&cid].last_attacked
+            ));
+        }
+        // The threats: every major at war with us, and every met major
+        // fielding the hold's ratio of our military.
+        let ours = g.military_power(pid);
+        let threats: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|other| {
+                other.id != pid && other.alive && !other.is_minor && !other.is_barbarian
+            })
+            .filter(|other| {
+                g.is_at_war(pid, other.id)
+                    || (!other.is_free_city
+                        && g.has_met(pid, other.id)
+                        && !g.same_team(pid, other.id)
+                        && g.military_power(other.id) >= SCORE_WONDER_V2_THREAT_RATIO * ours)
+            })
+            .map(|other| other.id)
+            .collect();
+        if threats.is_empty() {
+            return Err("no threat named".to_string());
+        }
+        let mut sites: Vec<(usize, Pos)> = Vec::new();
+        for threat in &threats {
+            let before = sites.len();
+            sites.extend(
+                g.cities
+                    .values()
+                    .filter(|city| city.owner == *threat)
+                    .map(|city| (*threat, city.pos)),
+            );
+            if sites.len() == before {
+                return Err(format!("{}'s cities are unseen", g.players[*threat].civ));
+            }
+        }
+        // Each candidate's nearest threat city.
+        let nearest = |cid: u32| -> Option<(usize, i32)> {
+            let pos = g.cities[&cid].pos;
+            sites
+                .iter()
+                .map(|(threat, site)| (*threat, g.wdist(pos, *site)))
+                .min_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)))
+        };
+        let mut best: Option<(bool, f64, u32, usize, i32)> = None;
+        let mut farthest: Option<(i32, u32, usize)> = None;
+        for cid in city_ids {
+            let Some((threat, tiles)) = nearest(cid) else {
+                continue;
+            };
+            if farthest.is_none_or(|(d, _, _)| tiles > d) {
+                farthest = Some((tiles, cid, threat));
+            }
+            if tiles < SCORE_WONDER_V3_REAR_TILES
+                || !Self::score_wonder_city_safe(g, plan, cid)
+                || Self::score_wonder_trains_a_settler(g, cid)
+            {
+                continue;
+            }
+            // A city already racing keeps the lane; then the most productive.
+            let racing = self.score_wonder_races.contains_key(&g.cities[&cid].pos);
+            let production = g.city_yields(cid).production;
+            let better = best.is_none_or(|(r, p, c, _, _)| {
+                racing
+                    .cmp(&r)
+                    .then(production.total_cmp(&p))
+                    .then(c.cmp(&cid))
+                    .is_gt()
+            });
+            if better {
+                best = Some((racing, production, cid, threat, tiles));
+            }
+        }
+        match (best, farthest) {
+            (Some((_, _, city, threat, tiles)), _) => Ok(ScoreWonderRear { city, threat, tiles }),
+            (None, Some((tiles, cid, threat))) if tiles >= SCORE_WONDER_V3_REAR_TILES => Err(
+                format!(
+                    "no rear city may race: {} stands {tiles} tiles from {} but is unsafe or \
+                     trains a Settler",
+                    g.cities[&cid].name, g.players[threat].civ
+                ),
+            ),
+            (None, Some((tiles, cid, threat))) => Err(format!(
+                "no city stands {SCORE_WONDER_V3_REAR_TILES} tiles from the threat: the \
+                 farthest, {}, is {tiles} from {}",
+                g.cities[&cid].name, g.players[threat].civ
+            )),
+            (None, None) => Err("no city".to_string()),
+        }
     }
 
     /// Whether `cid` has a Settler anywhere in its queue.
@@ -402,7 +578,7 @@ impl AdvancedAi {
             .filter(|cid| Self::score_wonder_city_safe(g, plan, *cid))
             // Version 2: never in the city that trains the Settlers.
             .filter(|cid| {
-                !(self.score_seat_raises_wonders_2 && Self::score_wonder_trains_a_settler(g, *cid))
+                !(self.score_wonder_v2_rules() && Self::score_wonder_trains_a_settler(g, *cid))
             })
             .collect();
         cities.sort_by(|a, b| {
@@ -422,12 +598,14 @@ impl AdvancedAi {
 
     /// Resolve the races already held: finished, lost, or still running (and
     /// put back at the head of their queue when a routine item took it).
+    /// While `held`, only a race in `rear` (version 3's rear lane) goes back.
     fn score_wonder_resolve_races(
         &mut self,
         g: &mut Game,
         pid: usize,
         plan: &StrategicPlan,
         held: bool,
+        rear: Option<u32>,
     ) {
         let races: Vec<(Pos, Name)> = self
             .score_wonder_races
@@ -471,7 +649,7 @@ impl AdvancedAi {
                         which the host salvages into the city");
                 continue;
             };
-            if held
+            if (held && rear != Some(cid))
                 || g.cities[&cid].queue.first() == Some(&item)
                 || !Self::score_wonder_city_safe(g, plan, cid)
                 || plan.strategy == GrandStrategy::Recovery
@@ -512,8 +690,40 @@ impl AdvancedAi {
             }
             self.score_wonder_hold = hold.clone();
         }
-        self.score_wonder_resolve_races(g, pid, plan, hold.is_some());
-        if !start || plan.strategy == GrandStrategy::Recovery || hold.is_some() {
+        // Version 3: one rear lane through a "safety first" hold.
+        let rear = match &hold {
+            Some(why) if self.score_seat_raises_wonders_3 && why.starts_with("safety first") => {
+                Some(self.score_wonder_v3_rear(g, pid, plan))
+            }
+            _ => None,
+        };
+        let note = rear.as_ref().map(|rear| match rear {
+            Ok(rear) => format!(
+                "{} keeps the rear lane, {} tiles from {}'s nearest city",
+                g.cities[&rear.city].name, rear.tiles, g.players[rear.threat].civ
+            ),
+            Err(why) => format!("the rear lane is shut: {why}"),
+        });
+        if note != self.score_wonder_rear_note {
+            if let Some(note) = &note {
+                think!(self.journal(), Cities, Decision, "The rear wonder lane";
+                       "score-seat-raises-wonders-3: {note} (a rear city stands {} or more \
+                        tiles from every major at war with us or out-gunning us)",
+                       SCORE_WONDER_V3_REAR_TILES);
+            }
+            self.score_wonder_rear_note = note;
+        }
+        let rear = rear.and_then(Result::ok);
+        if rear.is_some() {
+            *g.players[pid]
+                .counters
+                .entry("score_wonder_rear_turns".to_string())
+                .or_insert(0) += 1;
+        }
+        let rear_city = rear.as_ref().map(|rear| rear.city);
+        self.score_wonder_resolve_races(g, pid, plan, hold.is_some(), rear_city);
+        if !start || plan.strategy == GrandStrategy::Recovery || (hold.is_some() && rear.is_none())
+        {
             return;
         }
         let city_ids = g.player_city_ids(pid);
@@ -521,20 +731,28 @@ impl AdvancedAi {
         if lanes == 0 {
             return;
         }
+        // Under the hold the rear lane is the only one.
+        let lanes = if rear.is_some() { 1 } else { lanes };
         // A city with a wonder at its head, from this gene or any writer,
-        // already holds a lane.
+        // already holds a lane (under the hold, only the rear city counts).
         let mut racing: BTreeSet<Name> = BTreeSet::new();
         let mut held = 0;
         for cid in &city_ids {
             if let Some(Item::Wonder { wonder, .. }) = g.cities[cid].queue.first() {
                 racing.insert(*wonder);
-                held += 1;
+                if rear_city.is_none_or(|rear| rear == *cid) {
+                    held += 1;
+                }
             }
         }
         if held >= lanes {
             return;
         }
-        for cid in self.score_wonder_lane_cities(g, pid, plan, lanes) {
+        let lane_cities = match rear_city {
+            Some(cid) => vec![cid],
+            None => self.score_wonder_lane_cities(g, pid, plan, lanes),
+        };
+        for cid in lane_cities {
             if held >= lanes {
                 break;
             }
@@ -574,6 +792,22 @@ impl AdvancedAi {
                 .counters
                 .entry("score_wonder_starts".to_string())
                 .or_insert(0) += 1;
+            if let Some(rear) = &rear {
+                *g.players[pid]
+                    .counters
+                    .entry("score_wonder_rear_starts".to_string())
+                    .or_insert(0) += 1;
+                think!(self.journal(), Cities, Decision,
+                       "{} raises {} in the rear", g.cities[&cid].name, plain(wonder.as_str());
+                       "score-seat-raises-wonders-3: the rear lane through the hold ({}), {} \
+                        tiles from {}'s nearest city; {} points ({} and a {} Era Score moment) \
+                        for {cost:.0} Production, about {:.0} turns, a {:.0}% chance to finish \
+                        first; it goes ahead of {passed}",
+                       hold.as_deref().unwrap_or(""), rear.tiles, g.players[rear.threat].civ,
+                       SCORE_WONDER_POINTS as u32 + pick.moment, SCORE_WONDER_POINTS as u32,
+                       pick.moment, pick.turns, pick.chance * 100.0);
+                continue;
+            }
             think!(self.journal(), Cities, Decision,
                    "{} raises {} for the tally", g.cities[&cid].name, plain(wonder.as_str());
                    "score-seat-raises-wonders: {} points ({} and a {} Era Score moment) for \
