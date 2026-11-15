@@ -13795,8 +13795,21 @@ end
 --
 -- ⚠ An absent or failing API answers nil and the strike proceeds — the
 -- historical behaviour — never a blanket refusal.
--- ⚠ `#results` and `rawget`, not `ipairs`: the answer is a host table and
--- the test harness stands in stubs whose `__index` invents members.
+-- ⚠ `#results` and a plain index, not `ipairs`: the answer is a host table
+-- and the test harness stands in stubs whose `__index` invents members. The
+-- length bounds the read, so an invented member is never reached.
+--
+-- ⚠⚠ AND NOT `rawget`: THE LIVE HOST DOES NOT HAVE IT. This read used
+-- `rawget(results, i)` from the day the guard shipped, so the guard raised on
+-- every answer that named a player, which is every time it had something to
+-- refuse. The order's `pcall` caught it, so the war was still not started,
+-- but the refusal was the anonymous `throw`: no `war_refused` event, no
+-- `would_declare_war` verdict, and the decider sent the same order again the
+-- next turn. Live game civvis-20261115T075055Z, turn 54, Scout 196608
+-- `MOVE_TO (60,23)`: "CivvisControlAgent.lua:8199: function expected instead
+-- of nil", and installed line 8199 is the read below. The game before it,
+-- civvis-20261115T071444Z, counted `throw` 36 times, each on a frame with a
+-- move onto ground the seat had not yet revealed.
 CivvisLedger.warStarters = function(actor, x, y, weapon)
 	if actor == nil or x == nil or y == nil then return nil; end
 	local results = try(function()
@@ -13810,7 +13823,7 @@ CivvisLedger.warStarters = function(actor, x, y, weapon)
 	if type(results) ~= "table" then return nil; end
 	local players = {};
 	for i = 1, #results do
-		local id = tonumber(rawget(results, i));
+		local id = tonumber(results[i]);
 		if id ~= nil then players[#players + 1] = id; end
 	end
 	if #players == 0 then return nil; end
