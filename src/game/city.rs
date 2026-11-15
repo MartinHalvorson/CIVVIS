@@ -1694,7 +1694,7 @@ impl Game {
             memo.insert(cid, yields);
         }
         if let Some(kept) = kept {
-            kept.borrow_mut().insert(cid, yields);
+            kept.borrow_mut().yields.insert(cid, yields);
         }
         yields
     }
@@ -1789,8 +1789,28 @@ impl Game {
         )
     }
 
+    /// How many citizen plans and how many luxury splits were answered from
+    /// what was kept beside the yields. See [`KeptDerivations`].
+    pub fn kept_plans_reused(&self) -> (u64, u64) {
+        (
+            self.query_memo.kept_plans_reused.get(),
+            self.query_memo.kept_luxuries_reused.get(),
+        )
+    }
+
     /// Which kept map answers for this city right now, if either does.
-    fn kept_yields_for(&self, cid: u32) -> Option<&std::cell::RefCell<BTreeMap<u32, Yields>>> {
+    fn kept_yields_for(&self, cid: u32) -> Option<&std::cell::RefCell<KeptDerivations>> {
+        self.kept_derivations_for(self.cities.get(&cid)?.owner)
+    }
+
+    /// Which kept map answers for `owner`'s cities right now, if either does.
+    /// Every condition on reading or filling anything kept is here, and the
+    /// two locks that are read back rather than reported (the tile grid's
+    /// epoch and the acting seat's settings) are checked here on every ask.
+    pub(in crate::game) fn kept_derivations_for(
+        &self,
+        owner: usize,
+    ) -> Option<&std::cell::RefCell<KeptDerivations>> {
         let memo = &self.query_memo;
         if !memo.keeps_rival_yields.get()
             || memo.acting.get() != 0
@@ -1805,7 +1825,13 @@ impl Game {
         {
             return None;
         }
-        if self.cities.get(&cid)?.owner != self.current {
+        let epoch = self.map.tiles.epoch();
+        if memo.rival_yields_epoch.get() != epoch {
+            memo.rival_yields.borrow_mut().clear();
+            memo.own_yields.borrow_mut().clear();
+            memo.rival_yields_epoch.set(epoch);
+        }
+        if owner != self.current {
             Some(&memo.rival_yields)
         } else if memo.keeps_own_yields.get() {
             // The two settings an agent writes on its own seat most, read
@@ -1847,17 +1873,11 @@ impl Game {
 
     fn kept_city_yields(
         &self,
-        held: &std::cell::RefCell<BTreeMap<u32, Yields>>,
+        held: &std::cell::RefCell<KeptDerivations>,
         cid: u32,
     ) -> Option<Yields> {
         let memo = &self.query_memo;
-        let epoch = self.map.tiles.epoch();
-        if memo.rival_yields_epoch.get() != epoch {
-            memo.rival_yields.borrow_mut().clear();
-            memo.own_yields.borrow_mut().clear();
-            memo.rival_yields_epoch.set(epoch);
-        }
-        let kept = held.borrow().get(&cid).copied();
+        let kept = held.borrow().yields.get(&cid).copied();
         let Some(kept) = kept else {
             memo.rival_yields_derived
                 .set(memo.rival_yields_derived.get() + 1);
@@ -1885,6 +1905,75 @@ impl Game {
             );
         }
         Some(kept)
+    }
+
+    /// The citizen plan kept for this city, if one is and may answer.
+    ///
+    /// With [`Game::audit_rival_yields`] on, the plan is worked out again
+    /// with nothing kept allowed to answer, and the two must be equal.
+    pub(in crate::game) fn kept_citizen_plan(&self, cid: u32) -> Option<CitizenPlan> {
+        let held = self.kept_yields_for(cid)?;
+        let kept = held.borrow().plans.get(&cid).cloned()?;
+        let memo = &self.query_memo;
+        memo.kept_plans_reused.set(memo.kept_plans_reused.get() + 1);
+        if memo.audits_rival_yields.get() {
+            memo.auditing_rival_yields.set(true);
+            let fresh = {
+                let _memo = self.query_memo();
+                self.city_citizen_plan_weighted(cid, None)
+            };
+            memo.auditing_rival_yields.set(false);
+            assert!(
+                fresh == kept,
+                "a kept citizen plan went stale: city {cid} of seat {} on turn {} while seat {} \
+                 acts. Kept {kept:?}, the board now gives {fresh:?}.",
+                self.cities[&cid].owner,
+                self.turn,
+                self.current,
+            );
+        }
+        Some(kept)
+    }
+
+    /// Keep this city's citizen plan beside its yields, if anything is being
+    /// kept for it right now.
+    pub(in crate::game) fn keep_citizen_plan(&self, cid: u32, plan: &CitizenPlan) {
+        if let Some(held) = self.kept_yields_for(cid) {
+            held.borrow_mut().plans.insert(cid, plan.clone());
+        }
+    }
+
+    /// The luxury split kept for `pid`'s empire, if one is and may answer.
+    /// Audited the way [`Self::kept_citizen_plan`] is.
+    pub(in crate::game) fn kept_luxury_split(&self, pid: usize) -> Option<BTreeMap<u32, i64>> {
+        let held = self.kept_derivations_for(pid)?;
+        let kept = held.borrow().luxuries.get(&pid).cloned()?;
+        let memo = &self.query_memo;
+        memo.kept_luxuries_reused
+            .set(memo.kept_luxuries_reused.get() + 1);
+        if memo.audits_rival_yields.get() {
+            memo.auditing_rival_yields.set(true);
+            let fresh = {
+                let _memo = self.query_memo();
+                self.luxury_amenity_allocations_uncached(pid)
+            };
+            memo.auditing_rival_yields.set(false);
+            assert!(
+                fresh == kept,
+                "a kept luxury split went stale: seat {pid} on turn {} while seat {} acts. \
+                 Kept {kept:?}, the board now gives {fresh:?}.",
+                self.turn,
+                self.current,
+            );
+        }
+        Some(kept)
+    }
+
+    /// Keep `pid`'s luxury split, if anything is being kept for it right now.
+    pub(in crate::game) fn keep_luxury_split(&self, pid: usize, split: &BTreeMap<u32, i64>) {
+        if let Some(held) = self.kept_derivations_for(pid) {
+            held.borrow_mut().luxuries.insert(pid, split.clone());
+        }
     }
 
     /// Yields this city would produce if its citizens were assigned under

@@ -79,6 +79,10 @@ pub(super) struct HostMoveRefusals {
     /// so only a refused queue or a fresh observed Wall handoff can replace it.
     pub(super) same_turn_production_orders: std::collections::BTreeMap<i64, HostProductionLease>,
     pub(super) same_turn: Option<u32>,
+    /// Fog plots closed this turn because the host refused a move onto them
+    /// as a war starter (`closed_ground::Ledger::closed_on`), for the reply's
+    /// note only; the ledger itself closes them on the board.
+    pub(super) closed_fog_plots: usize,
 }
 
 #[derive(Clone, Copy)]
