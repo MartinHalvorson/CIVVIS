@@ -5486,6 +5486,11 @@ pub const GENES: &[Gene] = &[
     // assessed siege gets a capture forecast on the battle solver's board and
     // one journal line; no decision changes. See `advanced/assault_forecast.rs`.
     Gene { tag: "assault-forecast-is-read", field: "assault_forecast_is_read", kind: Kind::OptIn, enable: AdvancedAi::enable_assault_forecast_is_read, disable: AdvancedAi::disable_assault_forecast_is_read },
+    // A Rock Band plays a stage it can reach this turn instead of its tour's
+    // stage when the trip is longer than its levels are worth (two turns for
+    // none, four for one, no trip for two). Opt-in; see
+    // `advanced/band_plays_the_stage_at_hand.rs`.
+    Gene { tag: "band-plays-the-stage-at-hand", field: "band_plays_the_stage_at_hand", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_the_stage_at_hand, disable: AdvancedAi::disable_band_plays_the_stage_at_hand },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.

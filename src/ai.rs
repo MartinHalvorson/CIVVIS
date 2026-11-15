@@ -2232,6 +2232,13 @@ pub struct BasicAi {
     /// well; one stalled turn bars nothing. Off by default; opt-in gene. See
     /// `advanced/band_stall_bars_no_host.rs`.
     pub(crate) band_stall_bars_no_host: bool,
+    /// `band-plays-the-stage-at-hand`: a Rock Band plays a stage it can reach
+    /// this turn instead of its tour's stage when the trip there is longer
+    /// than the levels it gains are worth: two turns for none, four for one,
+    /// no trip for two. Live, 40 trips set out from beside a playable stage
+    /// took 266 of 579 band-turns. Off by default; opt-in gene. See
+    /// `advanced/band_plays_the_stage_at_hand.rs`.
+    pub(crate) band_plays_the_stage_at_hand: bool,
     /// `band-stall-bars-no-host`: by [`BasicAi::band_memory_key`], the turn a
     /// band was last walked nowhere and the civilization it was walking to.
     band_stall_strikes: RefCell<HashMap<i64, (u32, String)>>,
@@ -4053,6 +4060,7 @@ impl BasicAi {
             bands_wait_at_the_door: false,
             band_plays_at_level_three: false,
             band_stall_bars_no_host: false,
+            band_plays_the_stage_at_hand: false,
             band_stall_strikes: RefCell::new(HashMap::new()),
             band_trips: RefCell::new(HashMap::new()),
             band_refused_hosts: RefCell::new(HashMap::new()),
@@ -4514,6 +4522,7 @@ impl BasicAi {
             bands_wait_at_the_door: false,
             band_plays_at_level_three: false,
             band_stall_bars_no_host: false,
+            band_plays_the_stage_at_hand: false,
             band_stall_strikes: RefCell::new(HashMap::new()),
             band_trips: RefCell::new(HashMap::new()),
             band_refused_hosts: RefCell::new(HashMap::new()),
@@ -7817,6 +7826,13 @@ impl BasicAi {
         let Some(here) = g.units.get(&uid).map(|unit| unit.pos) else {
             return false;
         };
+        // `band-plays-the-stage-at-hand`: a long trip gives way to a stage
+        // this turn can reach. See `advanced/band_plays_the_stage_at_hand.rs`.
+        if self.band_plays_the_stage_at_hand {
+            if let Some(acted) = self.rock_band_stage_at_hand(g, pid, uid, here) {
+                return acted;
+            }
+        }
         let mut can_perform_here = g.rock_concert_tourism(pid, uid).is_some();
         if can_perform_here && self.band_plays_at_level_three {
             // `band-plays-at-level-three`: no lower-level show while a

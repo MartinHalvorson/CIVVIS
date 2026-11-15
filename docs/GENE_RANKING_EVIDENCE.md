@@ -198,6 +198,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `band-buys-near-the-stage` | off (unmeasured) | Opt-in gene `band-buys-near-the-stage`; see `advanced/band_buys_near_the_stage.rs`. | 1 \| 1 |
 | `band-plays-at-level-three` | off (unmeasured) | Opt-in gene `band-plays-at-level-three`; see `advanced/band_plays_at_level_three.rs`. | 1 \| 1 |
 | `band-plays-its-stage` | off (unmeasured) | `band-plays-its-stage`: Rock Bands take the promotions and tours that keep them alive, because album sales compound over a band's career. | 1 \| 1 |
+| `band-plays-the-stage-at-hand` | off (unmeasured) | Opt-in gene `band-plays-the-stage-at-hand`; see `advanced/band_plays_the_stage_at_hand.rs`. | 1 \| 1 |
 | `band-plays-what-it-can-reach` | off (unmeasured) | Opt-in gene `band-plays-what-it-can-reach`; see `advanced/band_plays_what_it_can_reach.rs`. | 1 \| 1 |
 | `band-stage-needs-three-venues` | off (unmeasured) | Opt-in gene `band-stage-needs-three-venues`; see `advanced/band_plays_its_stage.rs`. | 1 \| 1 |
 | `band-stall-bars-no-host` | off (unmeasured) | Opt-in gene `band-stall-bars-no-host`; see `advanced/band_stall_bars_no_host.rs`. | 1 \| 1 |
