@@ -296,9 +296,18 @@ check("orders_queue reports the landed strike", field(lastEvent("orders_queue"),
 -- turn-204 capital attack was discarded while its tank was still on the
 -- origin, even though the tank reached the attack tile later that tick.
 reset()
+-- The host has a path for these walks, as it did for the tank. (Without one a
+-- settled walk on its origin is `no_path` and is dropped at once.)
+Map.GetPlotIndex = function(x, y) return y * 100 + x end
+UnitManager.GetMoveToPathEx = function(_, destination)
+	return { plots = { 1, destination }, turns = { 0, 1 } }
+end
 host.units[144] = { id = 144, kind = "UNIT_TANK", x = 5, y = 5, moves = 5 }
 applyOrders(player, PID, 7, { row(144, "MOVE_TO", 6, 5), row(144, "ATTACK", 7, 5) })
-queue.noteUnitEvent(PID, player, 144)
+-- (pid, the event's player id, unit): this call passed the player OBJECT as
+-- the id until now, which the queue ignores, so no host event was ever
+-- delivered and the two cases below held their follow-up for want of one.
+check("the host event is delivered", queue.noteUnitEvent(PID, PID, 144), true)
 queue.drain(player, PID, 7)
 check("early host event keeps the attack queued", queue.pendingCount(), 1)
 check("early host event does not fire the attack", ops(144), "UNITOPERATION_MOVE_TO")
@@ -309,16 +318,62 @@ check("late move callback releases the attack", ops(144),
 check("late arrival drains the queue", queue.pendingCount(), 0)
 check("late arrival lands the queued strike", field(lastEvent("orders_queue"), "strikes_landed"), 1)
 
+-- A walk the host has NAMED a no-op holds its follow-up three more ticks, not
+-- the whole grace. The hold is what saved the tank above (its move arrived a
+-- tick after the operation-ended event); its length was the cost:
+-- civvis-20261115T085920Z turn 143, a Skirmisher's walk named
+-- `hostile_adjacent` at tick 1 and its follow-up then held the frame 8.5 s. Of
+-- 21 named legs that moved afterwards in the twelve logs of that day, 20 did
+-- so in the instant the name was written.
 reset()
 host.units[145] = { id = 145, kind = "UNIT_TANK", x = 5, y = 5, moves = 5 }
 applyOrders(player, PID, 7, { row(145, "MOVE_TO", 6, 5), row(145, "ATTACK", 7, 5) })
-queue.noteUnitEvent(PID, player, 145)
-for _ = 1, 29 do queue.drain(player, PID, 7) end
-check("a truly stalled walk is held only through grace", queue.pendingCount(), 1)
+queue.noteUnitEvent(PID, PID, 145)
 queue.drain(player, PID, 7)
-check("stalled attack is refused after grace", queue.pendingCount(), 0)
+local named = lastEvent("move_noop") or ""
+check("a settled walk that did not move is named at tick 1",
+	named:find('"unit":145', 1, true) ~= nil and named:find('"ticks":1', 1, true) ~= nil, true)
+check("its follow-up is still held", queue.pendingCount(), 1)
+queue.drain(player, PID, 7)
+queue.drain(player, PID, 7)
+check("…and for the two ticks after", queue.pendingCount(), 1)
+check("nothing ran in the meantime", ops(145), "UNITOPERATION_MOVE_TO")
+queue.drain(player, PID, 7)
+check("three ticks on, still on its origin, the stalled attack is refused", queue.pendingCount(), 0)
 check("stalled refusal remains named", (lastEvent("orders_queue") or ""):
 	find("queue_prior_not_arrived", 1, true) ~= nil, true)
+local refusedRow = lastEvent("queue_prior_refused") or ""
+check("the refusal names its unit", refusedRow:find('"unit":145', 1, true) ~= nil, true)
+check("…the tick it was released on", refusedRow:find('"tick":4', 1, true) ~= nil, true)
+check("…that this was not the grace", refusedRow:find('"at_grace":false', 1, true) ~= nil, true)
+check("…and the order that was waiting", refusedRow:find('"next_verb":"ATTACK"', 1, true) ~= nil, true)
+check("the attack never ran from the wrong plot", ops(145), "UNITOPERATION_MOVE_TO")
+
+-- A unit that has spent movement since the request is under way, whatever
+-- its plot reads: it keeps the full grace, and the refusal at the grace says so.
+reset()
+host.units[146] = { id = 146, kind = "UNIT_TANK", x = 5, y = 5, moves = 5 }
+applyOrders(player, PID, 7, { row(146, "MOVE_TO", 6, 5), row(146, "ATTACK", 7, 5) })
+queue.noteUnitEvent(PID, PID, 146)
+queue.drain(player, PID, 7)
+host.units[146].moves = 4
+for _ = 1, 28 do queue.drain(player, PID, 7) end
+check("a unit that spent movement keeps its hold through the grace", queue.pendingCount(), 1)
+queue.drain(player, PID, 7)
+check("…and is refused at it", queue.pendingCount(), 0)
+check("the grace refusal says it was the grace",
+	(lastEvent("queue_prior_refused") or ""):find('"at_grace":true', 1, true) ~= nil, true)
+
+-- A walk with no host event at all is not named and keeps the grace, as before.
+reset()
+host.units[147] = { id = 147, kind = "UNIT_TANK", x = 5, y = 5, moves = 5 }
+applyOrders(player, PID, 7, { row(147, "MOVE_TO", 6, 5), row(147, "ATTACK", 7, 5) })
+for _ = 1, 29 do queue.drain(player, PID, 7) end
+check("a walk the host never reported is held only through grace", queue.pendingCount(), 1)
+queue.drain(player, PID, 7)
+check("…and refused after it", queue.pendingCount(), 0)
+UnitManager.GetMoveToPathEx = nil
+Map.GetPlotIndex = nil
 
 -- 2b. Reaching the requested plot while the host's operation is still active
 -- is not settled. Civilization VI can expose the unit at its destination and
