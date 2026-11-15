@@ -172,7 +172,15 @@ impl Game {
         // A runtime attachment can carry any key at all, and the table it
         // comes from is swapped in after the ruleset is indexed, so the
         // index only settles this for a seat carrying no attachments.
-        let granted = self.rules.effect_index.policies(effect);
+        // The index names the effect as well as ruling it out, so each card
+        // below is asked by interned name rather than by text.
+        let named = self
+            .rules
+            .effect_index
+            .policies
+            .get_key_value(effect)
+            .map(|(name, ())| *name);
+        let granted = named.is_some();
         if granted {
             // A key no card in the ruleset grants cannot be a card's key, so
             // a trace loses nothing by recording only the ones that are.
@@ -196,7 +204,15 @@ impl Game {
             + self.players[pid]
                 .policies
                 .iter()
-                .filter_map(|name| self.rules.policies.get_interned(*name)?.effects.get(effect))
+                .filter_map(|name| {
+                    let effects = &self.rules.policies.get_interned(*name)?.effects;
+                    match named {
+                        Some(named) => effects.get_name(named),
+                        // Only a seat with attachments gets here, for a key
+                        // no card in the ruleset grants.
+                        None => effects.get(effect).copied(),
+                    }
+                })
                 .sum::<f64>()
     }
 

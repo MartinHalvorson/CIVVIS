@@ -2040,9 +2040,9 @@ function playerHudSeatHeight(seats, mapHeight) {
 }
 
 function playerHudContentHeight(rows) {
-  // A watched world's turn plate opens with its live stopwatch, a section of
-  // its own above the age, so its floor keeps one more row's room: early on,
-  // with two civilizations met, the stopwatch otherwise pushed the plate's
+  // A watched world's turn plate carries its live stopwatch, a line of its
+  // own under the turn counter, so its floor keeps one more row's room: early
+  // on, with two civilizations met, the stopwatch otherwise pushed the plate's
   // whole list — the Map row first — out of the masthead.
   const floor = PLAYER_HUD_MIN_HEIGHT + (SPEC ? playerHudRowPitch() : 0);
   return Math.max(floor, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());
@@ -3463,7 +3463,10 @@ const RESPONSIVE_TEXT_RULES = [
   // lets it overhang by that much. Ask for a few pixels back so the word ends
   // inside the button at every width.
   {selector:"#playerhud .watch-as-link", min:9, max:12, slack:6},
-  {selector:"#playerhud .turn-era", min:12, max:17},
+  // The age stands clear of the fold chevron, so a long one ("Renaissance
+  // Age") has 98px on the narrowest plate: whole near 11px, cut short at 12.
+  // It ends in an ellipsis when a fit lands a pixel over, hence the slack.
+  {selector:"#playerhud .turn-era", min:10.5, max:17, slack:3},
   {selector:"#playerhud .turn-live .turn-label", min:11, max:14},
   // The word, the number and the cap are one reading and scale as one: every
   // part is sized in em from this box. Fitted apart, the label and the cap each
@@ -3474,9 +3477,9 @@ const RESPONSIVE_TEXT_RULES = [
   // grid track holds the widest whole row, so the block's own overflow is the
   // exact amount it is too big by — and one size for every row is what keeps
   // four adjacent settings looking like one instrument.
-  {selector:"#playerhud .turn-settings", min:8.5, max:12, slack:4},
-  // Max Speed sits alone above the age, so it is fitted on its own.
-  {selector:"#playerhud .turn-pace-line", min:8.5, max:12, slack:4},
+  // "Mode: Firaxis Civ VI Testing" needs 126px at 8.5px and the narrowest
+  // plate has 124, so the floor is 8: smaller type, not a clipped letter.
+  {selector:"#playerhud .turn-settings", min:8, max:12, slack:4},
   {selector:"#victoryhud .hud-section-heading > span", min:8.5, max:12, parentWidth:true},
   {selector:".dossier-window .dossier-title", min:11, max:18},
   {selector:".dossier-window .dossier-tag", min:9, max:11},
@@ -7532,7 +7535,7 @@ async function pressLiveNewGame() {
   }
   paintLivePause();
 }
-// --- Live time: the turn plate's stopwatch, its top section above the age. It
+// --- Live time: the turn plate's stopwatch, the line under its counter. It
 // reads how long the world on screen has actually been playing: it starts
 // with the world's first unpaused frame, stops while the simulation is paused
 // or a result is on screen, and a new world starts it over from zero. A
@@ -27792,11 +27795,11 @@ function hudTurnPlate() {
   // Who is playing, and whose eyes the map is drawn through (operator
   // 2026-11-15: a "Mode:" and a "POV:" on the turn box).
   const plateMode = livePause.available
-    ? ["Civ VI", "A live Civilization VI game, mirrored here turn by turn."]
-    : SPEC ? ["Self-play", "Every civilization is played by an AI agent. Nobody holds a seat."]
-    : ["Single player", "You play one civilization. AI agents play the rest."];
+    ? ["Firaxis Civ VI Testing", "A live Firaxis Civilization VI game under test, mirrored here turn by turn."]
+    : SPEC ? ["CIVVIS Self-play", "Every civilization is played by a CIVVIS AI agent. Nobody holds a seat."]
+    : ["CIVVIS Single Player", "You play one civilization. CIVVIS AI agents play the rest."];
   const platePov = !SPEC || playerView
-    ? ["Single player", `The world as ${identity.civ || "one civilization"} sees it, behind its own fog.`]
+    ? ["Single Player", `The world as ${identity.civ || "one civilization"} sees it, behind its own fog.`]
     : ["Global", "The whole world at once, with no civilization's fog."];
   const mapScript = state.map.script || "tenins_ball";
   const mapName = mapScript === "tenins_ball" ? "Tennis Ball" : titleCase(mapScript);
@@ -27896,14 +27899,13 @@ function hudTurnPlate() {
     : ``;
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
     (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
-    `max speed ${watchPace}; ` +
+    `max speed ${watchPace}; mode ${plateMode[0]}; point of view ${platePov[0]}; ` +
     `map ${mapRowValue}; ` +
     (liveLevel ? `difficulty level ${liveLevel.level}, ${liveLevel.name}; ` : ``) +
     `game speed ${speedName}; ` +
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
-    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated; ` +
-    `mode ${plateMode[0]}; point of view ${platePov[0]}`;
+    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
   // A count and the toll it was taken out of are one reading, so they share a
   // row: the survivors keep the value's weight and colour, the fallen follow in
   // the label's own ink so the eye lands on the living number first.
@@ -27915,24 +27917,26 @@ function hudTurnPlate() {
     `<b>${alive}<small class="turn-toll">(${lost} eliminated)</small></b></div>`;
   const frameRow = (label, [value, title]) => `<div class="turn-setting" title="${escapeAttr(title)}">` +
     `<span>${label}</span><b>${escapeAttr(value)}</b></div>`;
-  // The stopwatch is the plate's own top section, above the age (operator
-  // 2026-10-14: "live time can be a very top section above the age"). Watch
-  // pace sits directly under it, still above the age (operator 2026-11-09).
+  // Age and turn open the box; the stopwatch follows, then the list: Max
+  // Speed, Mode, POV and the setup (operator 2026-11-15: "age, turn counter,
+  // live time, max speed, mode, pov, rest is the same"). That retires the
+  // stopwatch's place at the very top (2026-10-14) and the pace's above the
+  // age (2026-11-09); the speed is the list's first row, in the list's type.
   return `<section class="victory-turn${liveTimeText !== null ? " has-live-time" : ""}" ` +
     `title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
     hudFoldButton("turnplate", "turn box", "turn-plate-fold") +
-    (liveTimeText !== null
-      ? `<div class="turn-live" title="How long this world has been playing. Pauses stop the clock; a restart starts it over.">` +
-        `<span class="turn-label">Live time</span><b data-live-time>${liveTimeText}</b></div>`
-      : ``) +
-    `<div class="turn-setting turn-pace-line"><span>Max Speed:</span>${watchPaceValue}</div>` +
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="${turnCountClasses}"><span class="turn-label">Turn</span>` +
     `<div class="turn-progress"><strong>${reportedTurn()}</strong>` +
     `<small class="turn-total">${compactTurn ? "/" : "/ "}${turnCap}</small></div>` +
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
     `</div>` +
+    (liveTimeText !== null
+      ? `<div class="turn-live" title="How long this world has been playing. Pauses stop the clock; a restart starts it over.">` +
+        `<span class="turn-label">Live time</span><b data-live-time>${liveTimeText}</b></div>`
+      : ``) +
     `<div class="turn-settings" aria-label="Game setup">` +
+    `<div class="turn-setting turn-pace-line"><span>Max Speed:</span>${watchPaceValue}</div>` +
     frameRow("Mode:", plateMode) + frameRow("POV:", platePov) +
     `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}">` +
     `<b>${escapeAttr(setupLine)}</b></div>` +

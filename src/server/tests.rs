@@ -8772,26 +8772,39 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
 
 /// The turn box says how the game is being played and whose eyes the map is
 /// drawn through (operator 2026-11-15: add a "Mode:" and a "POV:"). Mode is
-/// Self-play when every seat is an agent's, Single player when a person
-/// holds one, Civ VI beside a mirrored live game. POV is Global for the
-/// omniscient spectator and Single player for a played seat or a Watch-as
-/// view, whose tooltip names the civilization. The two rows open the
-/// settings list, above the setup line, and the plate's spoken label carries
-/// both. Two more rows do not fit beside a four-seat table, so the
-/// masthead's automatic height takes the box's measured content as a floor;
-/// a dragged height is still the viewer's own.
+/// CIVVIS Self-play when every seat is an agent's, CIVVIS Single Player when
+/// a person holds one, Firaxis Civ VI Testing beside a mirrored live game
+/// (operator, same day: "Change Civ VI to CIVVIS Self-play, Firaxis Civ VI
+/// Testing, and CIVVIS Single Player"). POV is Global for the omniscient
+/// spectator and Single Player for a played seat or a Watch-as view, whose
+/// tooltip names the civilization.
+///
+/// The box reads in the order the operator gave with those names: "age,
+/// turn counter, live time, max speed, mode, pov, rest is the same". Max
+/// Speed is the settings list's first row, so it shares the list's type and
+/// edges instead of being fitted on its own, and one rule under the counter
+/// opens the section. The plate's spoken label follows the same order.
+///
+/// A short roster's table ends above the box's last row, so the masthead's
+/// automatic height takes the box's measured content as a floor; a dragged
+/// height is still the viewer's own.
 #[test]
 fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
     for piece in [
         "const plateMode = livePause.available",
-        "? [\"Civ VI\", \"A live Civilization VI game, mirrored here turn by turn.\"]",
-        ": SPEC ? [\"Self-play\", \"Every civilization is played by an AI agent. Nobody holds a seat.\"]",
-        ": [\"Single player\", \"You play one civilization. AI agents play the rest.\"];",
+        "? [\"Firaxis Civ VI Testing\", \"A live Firaxis Civilization VI game under test, mirrored here turn by turn.\"]",
+        ": SPEC ? [\"CIVVIS Self-play\", \"Every civilization is played by a CIVVIS AI agent. Nobody holds a seat.\"]",
+        ": [\"CIVVIS Single Player\", \"You play one civilization. CIVVIS AI agents play the rest.\"];",
         "const platePov = !SPEC || playerView",
-        "? [\"Single player\", `The world as ${identity.civ || \"one civilization\"} sees it, behind its own fog.`]",
+        "? [\"Single Player\", `The world as ${identity.civ || \"one civilization\"} sees it, behind its own fog.`]",
         ": [\"Global\", \"The whole world at once, with no civilization's fog.\"];",
-        "frameRow(\"Mode:\", plateMode) + frameRow(\"POV:\", platePov) +\n    `<div class=\"turn-setting turn-setup-line\"",
-        "`mode ${plateMode[0]}; point of view ${platePov[0]}`;",
+        "`<div class=\"turn-settings\" aria-label=\"Game setup\">` +\n    `<div class=\"turn-setting turn-pace-line\"><span>Max Speed:</span>${watchPaceValue}</div>` +\n    frameRow(\"Mode:\", plateMode) + frameRow(\"POV:\", platePov) +\n    `<div class=\"turn-setting turn-setup-line\"",
+        "`max speed ${watchPace}; mode ${plateMode[0]}; point of view ${platePov[0]}; ` +",
+        ".turn-count + .turn-live { padding-top: 5px; border-top: 1px solid #d7b66a24; }",
+        ".turn-live + .turn-settings { padding-top: 0; border-top: 0; }",
+        "#playerhud.turn-plate-wide .turn-pace-line { grid-column: 1 / -1; justify-content: safe center; }",
+        "{selector:\"#playerhud .turn-era\", min:10.5, max:17, slack:3},",
+        "{selector:\"#playerhud .turn-settings\", min:8, max:12, slack:4},",
         "function measureTurnPlateNeed(hud) {",
         "const last = plate?.querySelector(\".turn-settings\")?.lastElementChild;",
         "const plateNeed = measureTurnPlateNeed(hud);",
@@ -8800,6 +8813,43 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
         assert!(
             EMBEDDED_INDEX.contains(piece),
             "the turn box's Mode and POV rows are missing {piece}"
+        );
+    }
+    // Age, turn counter, live time, then the list that opens on Max Speed.
+    let (_, plate) = EMBEDDED_INDEX
+        .split_once("function hudTurnPlate() {")
+        .expect("the turn plate");
+    let (_, markup) = plate
+        .split_once("hudFoldButton(\"turnplate\", \"turn box\", \"turn-plate-fold\") +")
+        .expect("the plate's markup");
+    let order = [
+        "<span class=\"turn-era\">",
+        "<span class=\"turn-label\">Turn</span>",
+        "<div class=\"turn-live\"",
+        "<span>Max Speed:</span>",
+        "frameRow(\"Mode:\", plateMode)",
+        "frameRow(\"POV:\", platePov)",
+        "turn-setup-line",
+        "rosterRow(\"Civs:\"",
+        "rosterRow(\"City states:\"",
+    ]
+    .map(|part| {
+        markup
+            .find(part)
+            .unwrap_or_else(|| panic!("the plate lost {part}"))
+    });
+    assert!(
+        order.windows(2).all(|pair| pair[0] < pair[1]),
+        "the turn box is out of the operator's order: {order:?}"
+    );
+    // Max Speed is no longer a line of its own with its own fit and rule.
+    for gone in [
+        "{selector:\"#playerhud .turn-pace-line\"",
+        ".has-live-time .turn-pace-line {",
+    ] {
+        assert!(
+            !EMBEDDED_INDEX.contains(gone),
+            "Max Speed still stands apart from the settings list: {gone}"
         );
     }
 }
