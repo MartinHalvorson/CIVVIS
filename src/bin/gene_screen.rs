@@ -106,6 +106,7 @@
 //! says `foldover` or `prior`) still analyse: their rows are seats with a
 //! genome and an outcome like any other, and the estimator here never needed
 //! the pairing. Only the sampling changed.
+use civvis::ai::player::ViewYields;
 use civvis::ai::{run_game_observed, AdvancedAi, Ai, VictoryTarget};
 use civvis::game::{Game, GameOptions, DIPLOMATIC_VICTORY_POINTS};
 use civvis::host_tactics::{HostTactics, HostTacticsSeat, TacticsCensus};
@@ -141,6 +142,23 @@ mod unit_ledger;
 #[cfg(test)]
 #[path = "gene_screen/war_gate_tests.rs"]
 mod war_gate_tests;
+
+/// ⭐ `--no-kept-yields` / `--audit-kept-yields`: how every seat's planning
+/// views answer for a city yield they have already derived
+/// ([`ViewYields`]). Kept is the default and what a screen should run. The
+/// other two are instruments and play the same games to the same rows:
+/// `--no-kept-yields` derives every yield afresh, which prices the keeping,
+/// and `--audit-kept-yields` derives every reused answer again and panics on
+/// a difference, which is how a new gene's write to the board is shown to
+/// drop what it must. A process-wide switch rather than a leg of the
+/// profile, because it is not one: no row can tell which mode wrote it.
+static VIEW_YIELDS: std::sync::OnceLock<ViewYields> = std::sync::OnceLock::new();
+/// City yields the batch's planning views answered from what they kept, and
+/// derived while keeping, summed over every seat of every game.
+static VIEW_YIELD_READS: [std::sync::atomic::AtomicU64; 2] = [
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+];
 
 // Test scaffolding (`war_gate_tests`): a per-thread observer `play_game`
 // hands every turn's board and the last one. Outside tests it is a no-op.
@@ -1097,9 +1115,8 @@ const LIVE_PACE_GAME_TURN: u32 = 150;
 /// ⭐ THE TRACE MARKS (`--trace`, 2026-10-31), in raw game turns: the turns
 /// the live fidelity census reads a rival at (`events.jsonl` `kind: "state"`
 /// rows, first frame of the turn), plus the decades between them.
-const TRACE_TURNS: [u32; 28] = [
-    10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 125, 130, 140, 150, 160, 170, 175, 180,
-    190, 200, 210, 220, 225, 230, 240, 250,
+const TRACE_TURNS: [u32; 15] = [
+    10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225,
 ];
 
 /// One major's economy at one [`TRACE_TURNS`] mark: what the live seat's
@@ -1172,38 +1189,6 @@ struct TraceSample {
     units_lost_to_barbarians: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     civilians_lost: Option<u32>,
-    /// LEADER-SWEEP LOCAL PROBE (not on main): the seat's score, the other
-    /// majors' original capitals it holds, its great works, and whether it
-    /// still holds its own original capital, at the mark. Observes only.
-    #[serde(default)]
-    score: i64,
-    #[serde(default)]
-    rival_capitals: usize,
-    #[serde(default)]
-    great_works: usize,
-    #[serde(default)]
-    own_capital: bool,
-    /// LEADER-SWEEP LOCAL PROBE: cities captured so far (the `captures`
-    /// counter) and cities this seat founded that another owner holds now.
-    #[serde(default)]
-    captures: i64,
-    #[serde(default)]
-    founded_lost: usize,
-}
-
-/// LEADER-SWEEP LOCAL PROBE: other majors' original capitals `pid` owns.
-fn rival_capitals_held(g: &Game, pid: usize) -> usize {
-    g.cities
-        .values()
-        .filter(|city| {
-            city.is_capital
-                && city.owner == pid
-                && city.original_owner != pid
-                && g.players
-                    .get(city.original_owner)
-                    .is_some_and(|p| !p.is_minor && !p.is_barbarian)
-        })
-        .count()
 }
 
 impl TraceSample {
@@ -1274,19 +1259,6 @@ impl TraceSample {
             units_lost_to_majors: Some(g.combat_ledger(pid).units_lost_to_majors),
             units_lost_to_barbarians: Some(g.combat_ledger(pid).units_lost_to_barbarians),
             civilians_lost: Some(g.combat_ledger(pid).civilians_lost),
-            score: g.score(pid),
-            rival_capitals: rival_capitals_held(g, pid),
-            great_works: g.players[pid].great_work_pieces.len(),
-            own_capital: g
-                .cities
-                .values()
-                .any(|city| city.is_capital && city.original_owner == pid && city.owner == pid),
-            captures: g.players[pid].counters.get("captures").copied().unwrap_or(0),
-            founded_lost: g
-                .cities
-                .values()
-                .filter(|city| city.original_owner == pid && city.owner != pid)
-                .count(),
         }
     }
 }
@@ -2939,6 +2911,12 @@ fn play_game(
             }
         })
         .collect();
+    // ⭐ `--no-kept-yields` / `--audit-kept-yields`: see `VIEW_YIELDS`.
+    if let Some(&mode) = VIEW_YIELDS.get() {
+        for ai in &mut ais {
+            ai.set_view_yields(mode);
+        }
+    }
     // ⭐ `--journal`: one shared log for this game's measured seats, drained
     // every turn so the ring (`reasoning::RING_CAPACITY`) never drops a turn.
     let journal = profile
@@ -3041,20 +3019,6 @@ fn play_game(
                 for project in &g.players[pid].science_projects {
                     project_turns[pid]
                         .entry(project.to_string())
-                        .or_insert(g.turn);
-                }
-                // LEADER-SWEEP LOCAL PROBE: the turn the seat first held its
-                // n-th rival original capital.
-                for n in 1..=rival_capitals_held(g, pid) {
-                    project_turns[pid]
-                        .entry(format!("rival_capital_{n}"))
-                        .or_insert(g.turn);
-                }
-                // ... and the turn of its n-th city capture (first eight).
-                let captures = g.players[pid].counters.get("captures").copied().unwrap_or(0);
-                for n in 1..=captures.clamp(0, 8) {
-                    project_turns[pid]
-                        .entry(format!("city_capture_{n}"))
                         .or_insert(g.turn);
                 }
             }
@@ -3163,13 +3127,12 @@ fn play_game(
     } else {
         run_game_observed(&mut world, &mut ais, &mut observe);
     }
-    test_observe(&world);
-    // LEADER-SWEEP LOCAL PROBE: one last sample of the finished world.
-    if profile.trace {
-        for &pid in &majors {
-            traces[pid].push(TraceSample::observe(&world, pid));
-        }
+    for ai in &ais {
+        let seat = ai.view_yields();
+        VIEW_YIELD_READS[0].fetch_add(seat.reused, std::sync::atomic::Ordering::Relaxed);
+        VIEW_YIELD_READS[1].fetch_add(seat.derived, std::sync::atomic::Ordering::Relaxed);
     }
+    test_observe(&world);
     if let Some(journal) = &journal {
         drain_journal(journal, journal_cursor, &mut journal_lines);
         let path = format!("{}.journal.{seed}.txt", profile.journal_base);
@@ -7115,6 +7078,9 @@ fn usage() -> ! {
          tourists, techs, civics, wonders, districts) at turns 10..100 by tens, 125, 150, 175, 200, 225 onto its \
          row as `trace`; rows are unchanged without it; [--journal SEED[,SEED]] writes those seeds' \
          measured-seat reasoning (strategy, war, diplomacy and research decisions) to <out>.journal.<seed>.txt\n       \
+         the same games the slow way: [--no-kept-yields] derives every city yield a planning view is asked \
+         for instead of keeping it between the plan's passes; [--audit-kept-yields] keeps them, derives every \
+         reused one again and panics on a difference; neither changes a row\n       \
          the handicapped rivals: [--handicap all|rivals] (default all; rivals exempts every measured seat from \
          the rung's bonuses so only the rival chairs play with them, as the live seat meets Emperor) \
          [--rival-chairs N] (default 1, at most players-1); both need --rivals\n       \
@@ -7313,6 +7279,13 @@ fn main() {
     let city_states = number(&args, "--city-states", SCREEN_CITY_STATES as i64).max(0) as usize;
     let jobs = number(&args, "--jobs", civvis::parallel::default_jobs() as i64).max(1) as usize;
     let quiet = present(&args, "--quiet");
+    // See `VIEW_YIELDS`. The audit wins when both are given: it is the one
+    // that can fail.
+    if present(&args, "--audit-kept-yields") {
+        let _ = VIEW_YIELDS.set(ViewYields::Audited);
+    } else if present(&args, "--no-kept-yields") {
+        let _ = VIEW_YIELDS.set(ViewYields::Derived);
+    }
     // ⚠ Stock seating is a FIXED civ per seat (Rome, Egypt, Greece, China…),
     // and on the first 250-pair run seats 0 and 2 won twice as often as seat 3
     // whoever sat there. Shuffling per map is a leg of the screen;
@@ -8012,6 +7985,16 @@ fn main() {
         rows.len(),
         started.elapsed().as_secs_f64(),
         games_to_play as f64 / started.elapsed().as_secs_f64().max(1e-9),
+    );
+    println!(
+        "city yields on the planning views ({}): {} answered from what a view kept, {} derived",
+        match VIEW_YIELDS.get().copied().unwrap_or_default() {
+            ViewYields::Kept => "kept",
+            ViewYields::Derived => "--no-kept-yields",
+            ViewYields::Audited => "--audit-kept-yields, every reuse derived again and compared",
+        },
+        VIEW_YIELD_READS[0].load(std::sync::atomic::Ordering::Relaxed),
+        VIEW_YIELD_READS[1].load(std::sync::atomic::Ordering::Relaxed),
     );
     print_table(&header, &rows);
 }
@@ -9763,10 +9746,6 @@ mod tests {
             units_lost_to_majors: Some(4),
             units_lost_to_barbarians: Some(1),
             civilians_lost: None,
-            score: 0,
-            rival_capitals: 0,
-            great_works: 0,
-            own_capital: true,
         }];
         let text = serde_json::to_string(&traced).expect("serializes");
         let back: Row = serde_json::from_str(&text).expect("parses");

@@ -1747,6 +1747,14 @@ fn a_mustered_rush_keeps_its_city_and_reads_eight_turns() {
     let journal = crate::reasoning::Journal::recording();
     ai.base.journal = journal.handle();
     ai.maintain_edge_unit_window(&mut g, 0);
+    // Against a city at defence 15 or more the muster is four (live
+    // 101703Z: three struck six blows in four war turns and left the city
+    // at 55 of 200).
+    assert_eq!(window(&ai).mustered, None);
+    assert!(!g.is_at_war(0, 1));
+    let fourth = g.spawn_test_unit("war_cart", 0, (10, 7));
+    g.units.get_mut(&fourth).unwrap().moves_left = 0.0;
+    ai.maintain_edge_unit_window(&mut g, 0);
     assert_eq!(window(&ai).mustered, Some(10));
     assert!(!g.is_at_war(0, 1));
     rival_defends_at(&mut g, 45);

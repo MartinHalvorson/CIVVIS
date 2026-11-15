@@ -146,7 +146,9 @@
 //!   ([`AdvancedAi::edge_rush_spares_friendship`]).
 //! - **Declaration**: the capture forecast at the muster is the gate, read
 //!   over [`EDGE_RUSH_FORECAST_TURNS`] turns, every turn as the force
-//!   grows. The muster does not wait out the
+//!   grows; against a city at defence [`EDGE_RUSH_HARD_DEFENCE`] or more
+//!   the muster is [`EDGE_RUSH_HARD_BODIES`] units. The muster does not
+//!   wait out the
 //!   denouncement: the Formal War when it is legal, else a surprise war
 //!   ([`AdvancedAi::edge_rush_opening`]), on a turn the force can still
 //!   move, and the force, mustered as near as [`EDGE_RUSH_STAND_MIN_TILES`]
@@ -278,9 +280,22 @@ pub(crate) const EDGE_RUSH_FIRST_UNMET: usize = 2;
 /// The rush: tiles from the force the next city may stand after a capture.
 pub(crate) const EDGE_RUSH_CONTINUE_TILES: i32 = 12;
 /// The rush: turns after its muster forms that the declaration waits for
-/// three units to stand on their stands with a move left; past them it
-/// declares with three that can move, wherever they stand.
-pub(crate) const EDGE_RUSH_POSITION_TURNS: u32 = 3;
+/// the mustered units to stand on their stands with a move left; past them
+/// it declares with as many that can move, wherever they stand. Live
+/// 101703Z: the muster formed at turn 31 at an empty city of defence 15,
+/// the declaration waited to turn 34 for the stands, a Scout had walked in
+/// by then, and one blow landed on the turn it declared all the same.
+pub(crate) const EDGE_RUSH_POSITION_TURNS: u32 = 1;
+/// The rush musters this many edge units, not [`EDGE_MUSTER_BODIES`],
+/// against a city that defends at [`EDGE_RUSH_HARD_DEFENCE`] or more. Live
+/// 101703Z: three War-Carts declared on Esztergom (15, then 26 with a
+/// Spearman beside it), struck six blows in four war turns (1, 2, 1, 1: a
+/// War-Cart under 35 health does not strike), left the city at 55 of 200,
+/// and Hungary bought walls on the fourth war turn. Three more War-Carts
+/// were 9-12 tiles off.
+pub(crate) const EDGE_RUSH_HARD_BODIES: usize = 4;
+/// See [`EDGE_RUSH_HARD_BODIES`].
+pub(crate) const EDGE_RUSH_HARD_DEFENCE: f64 = 15.0;
 /// The rush: the nearest stand its force takes before the war, where the
 /// rival's border leaves one free (a young city owns only its first ring).
 /// From [`EDGE_STAND_MIN_TILES`] the War-Cart spent the declaration turn
@@ -2598,6 +2613,12 @@ impl AdvancedAi {
         // (round 1: Legions held 5-6 tiles out on a closed ring and never
         // counted).
         let reach = Self::edge_muster_reach(g, pid, city_pos);
+        // The rush wants one more body against a city that defends.
+        let need = if window.rushing() && soft.defence + 1e-9 >= EDGE_RUSH_HARD_DEFENCE {
+            EDGE_RUSH_HARD_BODIES
+        } else {
+            EDGE_MUSTER_BODIES
+        };
         let near: Vec<u32> = g
             .player_unit_ids(pid)
             .into_iter()
@@ -2610,7 +2631,7 @@ impl AdvancedAi {
             .iter()
             .filter(|&&uid| g.units[&uid].kind == unit && g.units[&uid].hp >= EDGE_MUSTER_HP)
             .count();
-        if bodies >= EDGE_MUSTER_BODIES && window.mustered.is_none() {
+        if bodies >= need && window.mustered.is_none() {
             window.mustered = Some(g.turn);
             Self::edge_count(g, pid, "mustered");
             think!(self.journal(), Military, Strategy,
@@ -2619,7 +2640,7 @@ impl AdvancedAi {
                    plain(unit.as_str()), EDGE_MUSTER_HP, g.cities[&soft.city].name;
                    city_pos);
         }
-        if bodies < EDGE_MUSTER_BODIES {
+        if bodies < need {
             let owned: Vec<u32> = g
                 .player_unit_ids(pid)
                 .into_iter()
@@ -2635,7 +2656,7 @@ impl AdvancedAi {
                     .collect();
                 away.sort_unstable();
                 let why = format!(
-                    "{bodies} of {} {} at {} with {}+ health; the others at {}",
+                    "{bodies} of {} {} at {} with {}+ health, {need} wanted; the others at {}",
                     owned.len(),
                     plain(unit.as_str()),
                     g.cities[&soft.city].name,
@@ -2765,9 +2786,9 @@ impl AdvancedAi {
             let waited = window
                 .mustered
                 .is_some_and(|since| g.turn >= since + EDGE_RUSH_POSITION_TURNS);
-            if movers < EDGE_MUSTER_BODIES && !(waited && able.len() >= EDGE_MUSTER_BODIES) {
+            if movers < need && !(waited && able.len() >= need) {
                 let why = format!(
-                    "the forecast reads {:.0}% at {name}; {movers} of the {bodies} {} there stand on their stand with a move left, so the declaration waits for the turn three do",
+                    "the forecast reads {:.0}% at {name}; {movers} of the {bodies} {} there stand on their stand with a move left, so the declaration waits for the turn {need} do",
                     chance * 100.0,
                     plain(unit.as_str())
                 );
