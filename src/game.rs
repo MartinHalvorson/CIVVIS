@@ -13774,9 +13774,9 @@ impl Game {
 mod production_catalog_tests;
 
 #[cfg(test)]
-mod yield_carry_tests;
-#[cfg(test)]
 mod kept_yields_moves_tests;
+#[cfg(test)]
+mod yield_carry_tests;
 
 #[cfg(test)]
 mod dedication_era_tests;

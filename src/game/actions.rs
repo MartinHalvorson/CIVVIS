@@ -487,12 +487,18 @@ impl Game {
             let state = (hash ^ value).wrapping_mul(SEED);
             state ^ (state >> 29)
         };
-        let units = self.units.values().fold(self.units.len() as u64, |hash, unit| {
-            mix(hash, (u64::from(unit.id) << 8) | unit.owner as u64)
-        });
-        let cities = self.cities.values().fold(self.cities.len() as u64, |hash, city| {
-            mix(hash, (u64::from(city.id) << 8) | city.owner as u64)
-        });
+        let units = self
+            .units
+            .values()
+            .fold(self.units.len() as u64, |hash, unit| {
+                mix(hash, (u64::from(unit.id) << 8) | unit.owner as u64)
+            });
+        let cities = self
+            .cities
+            .values()
+            .fold(self.cities.len() as u64, |hash, city| {
+                mix(hash, (u64::from(city.id) << 8) | city.owner as u64)
+            });
         OrdinaryMoveWatch {
             on_a_city_centre: self
                 .units
