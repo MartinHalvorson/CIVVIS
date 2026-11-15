@@ -8779,11 +8779,10 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
 /// spectator and Single Player for a played seat or a Watch-as view, whose
 /// tooltip names the civilization.
 ///
-/// The box reads in the order the operator gave with those names: "age,
-/// turn counter, live time, max speed, mode, pov, rest is the same". Max
-/// Speed is the settings list's first row, so it shares the list's type and
-/// edges instead of being fitted on its own, and one rule under the counter
-/// opens the section. The plate's spoken label follows the same order.
+/// The two rows open the settings list, above the setup line. Live time and
+/// Max Speed stand above the age and the turn counter: they spent an
+/// afternoon under the counter and the operator moved them "back above age
+/// and turn counter like before", so Max Speed is again a line of its own.
 ///
 /// A short roster's table ends above the box's last row, so the masthead's
 /// automatic height takes the box's measured content as a floor; a dragged
@@ -8798,13 +8797,13 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
         "const platePov = !SPEC || playerView",
         "? [\"Single Player\", `The world as ${identity.civ || \"one civilization\"} sees it, behind its own fog.`]",
         ": [\"Global\", \"The whole world at once, with no civilization's fog.\"];",
-        "`<div class=\"turn-settings\" aria-label=\"Game setup\">` +\n    `<div class=\"turn-setting turn-pace-line\"><span>Max Speed:</span>${watchPaceValue}</div>` +\n    frameRow(\"Mode:\", plateMode) + frameRow(\"POV:\", platePov) +\n    `<div class=\"turn-setting turn-setup-line\"",
-        "`max speed ${watchPace}; mode ${plateMode[0]}; point of view ${platePov[0]}; ` +",
-        ".turn-count + .turn-live { padding-top: 5px; border-top: 1px solid #d7b66a24; }",
-        ".turn-live + .turn-settings { padding-top: 0; border-top: 0; }",
-        "#playerhud.turn-plate-wide .turn-pace-line { grid-column: 1 / -1; justify-content: safe center; }",
-        "{selector:\"#playerhud .turn-era\", min:10.5, max:17, slack:3},",
+        "frameRow(\"Mode:\", plateMode) + frameRow(\"POV:\", platePov) +\n    `<div class=\"turn-setting turn-setup-line\"",
+        "`mode ${plateMode[0]}; point of view ${platePov[0]}`;",
+        // The long Mode name is whole on the narrowest plate at 8px.
         "{selector:\"#playerhud .turn-settings\", min:8, max:12, slack:4},",
+        // Max Speed is a line of its own, fitted and ruled as before.
+        "{selector:\"#playerhud .turn-pace-line\", min:8.5, max:12, slack:4},",
+        ".has-live-time .turn-pace-line { padding-bottom: 4px; border-bottom: 1px solid #d7b66a24; }",
         "function measureTurnPlateNeed(hud) {",
         "const last = plate?.querySelector(\".turn-settings\")?.lastElementChild;",
         "const plateNeed = measureTurnPlateNeed(hud);",
@@ -8815,7 +8814,7 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
             "the turn box's Mode and POV rows are missing {piece}"
         );
     }
-    // Age, turn counter, live time, then the list that opens on Max Speed.
+    // Live time, Max Speed, age, turn counter, then the list from Mode down.
     let (_, plate) = EMBEDDED_INDEX
         .split_once("function hudTurnPlate() {")
         .expect("the turn plate");
@@ -8823,10 +8822,10 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
         .split_once("hudFoldButton(\"turnplate\", \"turn box\", \"turn-plate-fold\") +")
         .expect("the plate's markup");
     let order = [
-        "<span class=\"turn-era\">",
-        "<span class=\"turn-label\">Turn</span>",
         "<div class=\"turn-live\"",
         "<span>Max Speed:</span>",
+        "<span class=\"turn-era\">",
+        "<span class=\"turn-label\">Turn</span>",
         "frameRow(\"Mode:\", plateMode)",
         "frameRow(\"POV:\", platePov)",
         "turn-setup-line",
@@ -8842,16 +8841,6 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
         order.windows(2).all(|pair| pair[0] < pair[1]),
         "the turn box is out of the operator's order: {order:?}"
     );
-    // Max Speed is no longer a line of its own with its own fit and rule.
-    for gone in [
-        "{selector:\"#playerhud .turn-pace-line\"",
-        ".has-live-time .turn-pace-line {",
-    ] {
-        assert!(
-            !EMBEDDED_INDEX.contains(gone),
-            "Max Speed still stands apart from the settings list: {gone}"
-        );
-    }
 }
 
 /// Player-row color is reserved for a current war. Friendships and
