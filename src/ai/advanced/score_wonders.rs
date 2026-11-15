@@ -332,8 +332,8 @@ impl AdvancedAi {
                 .min()
                 .unwrap_or(SCORE_WONDER_V3_REAR_TILES)
         };
-        // Each candidate's nearest threat: (threat, tiles, its city seen).
-        let nearest = |cid: u32| -> Option<(usize, i32, bool)> {
+        // Each candidate's nearest threat, known or bounded by unexplored land.
+        let nearest = |cid: u32| -> Option<ScoreWonderRear> {
             let pos = g.cities[&cid].pos;
             let known = sites
                 .iter()
@@ -342,18 +342,24 @@ impl AdvancedAi {
             known
                 .chain(fogged)
                 .min_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)))
+                .map(|(threat, tiles, seen)| ScoreWonderRear {
+                    city: cid,
+                    threat,
+                    tiles,
+                    seen,
+                })
         };
-        let mut best: Option<(bool, f64, u32, (usize, i32, bool))> = None;
-        let mut farthest: Option<(i32, u32, (usize, i32, bool))> = None;
+        // The rear city so far: (already racing, its Production, its reading).
+        let mut best: Option<(bool, f64, ScoreWonderRear)> = None;
+        let mut farthest: Option<ScoreWonderRear> = None;
         for cid in city_ids {
             let Some(near) = nearest(cid) else {
                 continue;
             };
-            let tiles = near.1;
-            if farthest.is_none_or(|(d, _, _)| tiles > d) {
-                farthest = Some((tiles, cid, near));
+            if farthest.as_ref().is_none_or(|far| near.tiles > far.tiles) {
+                farthest = Some(near.clone());
             }
-            if tiles < SCORE_WONDER_V3_REAR_TILES
+            if near.tiles < SCORE_WONDER_V3_REAR_TILES
                 || !Self::score_wonder_city_safe(g, plan, cid)
                 || Self::score_wonder_trains_a_settler(g, cid)
             {
@@ -362,38 +368,29 @@ impl AdvancedAi {
             // A city already racing keeps the lane; then the most productive.
             let racing = self.score_wonder_races.contains_key(&g.cities[&cid].pos);
             let production = g.city_yields(cid).production;
-            let better = best.is_none_or(|(r, p, c, _)| {
+            let better = best.as_ref().is_none_or(|(r, p, other)| {
                 racing
-                    .cmp(&r)
-                    .then(production.total_cmp(&p))
-                    .then(c.cmp(&cid))
+                    .cmp(r)
+                    .then(production.total_cmp(p))
+                    .then(other.city.cmp(&cid))
                     .is_gt()
             });
             if better {
-                best = Some((racing, production, cid, near));
+                best = Some((racing, production, near));
             }
         }
         match (best, farthest) {
-            (Some((_, _, city, (threat, tiles, seen))), _) => Ok(ScoreWonderRear {
-                city,
-                threat,
-                tiles,
-                seen,
-            }),
-            (None, Some((tiles, cid, (threat, _, seen))))
-                if tiles >= SCORE_WONDER_V3_REAR_TILES =>
-            {
-                Err(format!(
-                    "no rear city may race: {} stands {} but is unsafe or trains a Settler",
-                    g.cities[&cid].name,
-                    Self::score_wonder_v3_distance(g, threat, tiles, seen)
-                ))
-            }
-            (None, Some((tiles, cid, (threat, _, seen)))) => Err(format!(
+            (Some((_, _, rear)), _) => Ok(rear),
+            (None, Some(far)) if far.tiles >= SCORE_WONDER_V3_REAR_TILES => Err(format!(
+                "no rear city may race: {} stands {} but is unsafe or trains a Settler",
+                g.cities[&far.city].name,
+                Self::score_wonder_v3_distance(g, far.threat, far.tiles, far.seen)
+            )),
+            (None, Some(far)) => Err(format!(
                 "no city stands {SCORE_WONDER_V3_REAR_TILES} tiles from the threat: the \
                  farthest, {}, stands {}",
-                g.cities[&cid].name,
-                Self::score_wonder_v3_distance(g, threat, tiles, seen)
+                g.cities[&far.city].name,
+                Self::score_wonder_v3_distance(g, far.threat, far.tiles, far.seen)
             )),
             (None, None) => Err("no city".to_string()),
         }
