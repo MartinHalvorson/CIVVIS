@@ -5882,6 +5882,16 @@ pub const GENES: &[Gene] = &[
     // own strikes only a faith at match point, whatever its target but
     // Religion. See `advanced/faithless_seat_holds_its_faith_strikes.rs`.
     Gene { tag: "faithless-seat-holds-its-faith-strikes", field: "faithless_seat_holds_its_faith_strikes", kind: Kind::OptIn, enable: AdvancedAi::enable_faithless_seat_holds_its_faith_strikes, disable: AdvancedAi::disable_faithless_seat_holds_its_faith_strikes },
+    // Live Deity: 84 Rome Score games sat at 0.40 of the best rival's score
+    // from t25, 230 Domination games took no rival capital, and the Legion
+    // (three technologies and Iron) arrived at t44-100, after the soft
+    // city's window. A unique unit trainable on turn one with no technology
+    // and no resource, 8 or more over the Warrior (the War-Cart, the Eagle
+    // Warrior), is trained in the capital first, scouts, and takes the
+    // nearest unwalled rival city on the capture forecast. Score and
+    // Domination seats only. Opt-in; see
+    // `advanced/edge_unit_takes_the_soft_city.rs`.
+    Gene { tag: "edge-unit-rushes-from-the-capital", field: "edge_unit_rushes_from_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_edge_unit_rushes_from_the_capital, disable: AdvancedAi::disable_edge_unit_rushes_from_the_capital },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
