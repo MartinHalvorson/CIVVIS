@@ -1,0 +1,21 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "open-capital-declares-at-twice",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 10 boards of two live Immortal Domination games (civvis-20261115T172539Z t106-111, Arabia at 0.43-0.49 of our power with Cairo unwalled 15 tiles out; civvis-20261115T181018Z t101-102, Germany at 0.47-0.48 with Aachen unwalled 11 tiles out), each the run's events.jsonl cut at frame 0 of the turn. Both arms run one frozen release civvis_orders --resumed built from the branch at 3e6ac1a8c2 (base main d25731d783) with the run's own requested genome (why.log line 1 forced, each as --with); the on arm adds --with open-capital-declares-at-twice. On the 8 unpatched boards the off arm reproduces the live hold ('Holding off war ... the Siege row for Damascus/Hong Kong asks N strength') and opens nothing; the on arm denounces the target (DENOUNCE, the Formal War's first step) in 8/8. Two boards are patched, and say so: the target marked denounced by us six turns before (state DENOUNCED, our_denounce_turn, DECLARE_FORMAL_WAR allowed). On 172539Z t108 the on arm then declares the Formal War on Arabia; on 181018Z t101 declaration-needs-a-capture holds it (Hong Kong reads 0% within 7 turns), the forecast gate the gene keeps.",
+  "archive": {
+    "path": "docs/eval/2026-11-15-open-capital-declares-at-twice.native-queries.tar.xz",
+    "sha256": "2bea5685f8082175998a51b60a18be342b6275a9ef7367d22380c937a2cec7b4"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json"
+  ]
+}

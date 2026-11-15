@@ -149,13 +149,17 @@ pub(super) const PREY_DECLARE_RATIO: f64 = 0.4;
 impl AdvancedAi {
     /// Whether `target` is prey this seat declares on now: see the module.
     /// Always false with the gene off.
+    /// `open-capital-declares-at-twice`: or `target`'s original capital
+    /// stands open at twice its steady power; see
+    /// `advanced/open_capital_declares_at_twice.rs`.
     pub(super) fn prey_is_declared_on_now(&self, g: &Game, pid: usize, target: usize) -> bool {
-        self.prey_is_declared_on
+        (self.prey_is_declared_on
             && self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && g.players
                 .get(target)
                 .is_some_and(|rival| rival.alive && !rival.is_minor && !rival.is_barbarian)
-            && g.military_power(target) <= PREY_DECLARE_RATIO * g.military_power(pid)
+            && g.military_power(target) <= PREY_DECLARE_RATIO * g.military_power(pid))
+            || self.open_capital_at_twice(g, pid, target).is_some()
     }
 
     /// `prey-waits-for-the-march`: whether the prey declaration on `rival`

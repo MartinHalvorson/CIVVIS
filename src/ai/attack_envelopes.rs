@@ -475,7 +475,7 @@ impl BasicAi {
     /// moving invalidated anyway. `advanced_v1_plays_the_same_game_it_always_did`
     /// passed throughout — the anchor's five profiles do not move an envoy in
     /// a way that matters.
-    fn envelope_belligerence_fingerprint(g: &Game) -> u64 {
+    pub(crate) fn envelope_belligerence_fingerprint(g: &Game) -> u64 {
         let mut hash = FINGERPRINT_SEED;
         let mut mix = |value: u64| {
             hash = (hash ^ value).wrapping_mul(FINGERPRINT_SEED);
@@ -498,7 +498,7 @@ impl BasicAi {
     }
 
     /// The cities as `attack_reach` sees them: identity, owner and place.
-    fn envelope_city_fingerprint(g: &Game) -> u64 {
+    pub(crate) fn envelope_city_fingerprint(g: &Game) -> u64 {
         let mut hash = FINGERPRINT_SEED;
         for city in g.cities.values() {
             for value in [

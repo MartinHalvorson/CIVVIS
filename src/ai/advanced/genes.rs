@@ -6013,6 +6013,13 @@ pub const GENES: &[Gene] = &[
     // past the window at 0.8 of a near neighbour's power, not on Domination.
     // Opt-in; see `advanced/near_rival_deterrence_holds_late.rs`.
     Gene { tag: "near-rival-deterrence-holds-late", field: "near_rival_deterrence_holds_late", kind: Kind::OptIn, enable: AdvancedAi::enable_near_rival_deterrence_holds_late, disable: AdvancedAi::disable_near_rival_deterrence_holds_late },
+    // Live Immortal 2026-11-15, Domination: civvis-20261115T172539Z held its war
+    // on Arabia t106-111 at 2.0-2.3x Arabia's power with Cairo unwalled 15
+    // tiles out, and 181018Z its war on Germany t100-102 at 2.0-2.1x with
+    // Aachen unwalled, both for the board's Siege row and Defend row. An
+    // unwalled original capital at twice the target's steady power declares
+    // as prey. Opt-in; see `advanced/open_capital_declares_at_twice.rs`.
+    Gene { tag: "open-capital-declares-at-twice", field: "open_capital_declares_at_twice", kind: Kind::OptIn, enable: AdvancedAi::enable_open_capital_declares_at_twice, disable: AdvancedAi::disable_open_capital_declares_at_twice },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
