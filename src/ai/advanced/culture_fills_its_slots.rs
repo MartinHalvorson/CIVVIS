@@ -54,9 +54,13 @@
 //! Amphitheater, a Museum or a Broadcast Center, and any cheaper item keep
 //! their queue; the displaced item keeps its progress.
 //!
-//! The claim runs beside the Score one, after the Campus claims (so a city's
-//! first Campus and its Library keep their order) and before the Culture,
-//! defence, repair and endgame claims, which may still take the queue.
+//! The claim runs after the Campus claims (so a city's first Campus and its
+//! Library keep their order) and after the Culture seat's own claims (the
+//! Theater Squares, Monuments, the road's triggers, the dig's Archaeologist,
+//! the Great Works' slot buildings), so it takes only a queue none of them
+//! wanted; the defence, repair and endgame claims still follow it. Beside the
+//! Score claim, ahead of those Culture claims, 60 paired sims gained Science
+//! (+10.7 at the end) and lost Culture (-14.4 at turn 150).
 //!
 //! Journal reasons start `culture-seat-fills-its-district-slots:`.
 
