@@ -85,14 +85,19 @@ impl AdvancedAi {
     /// unique improvements and buildings, with the road civic that unlocks
     /// it. `None` for a civilization with none on the road.
     pub(super) fn unique_culture_source(g: &Game, pid: usize) -> Option<(UniqueSource, Name)> {
-        let culture = |yields: f64, effects: &std::collections::BTreeMap<String, f64>| {
+        // Improvements keep a `BTreeMap` of effects and buildings an
+        // `EffectMap`; both iterate `(&String, &f64)` in key order.
+        fn culture<'a>(
+            yields: f64,
+            effects: impl IntoIterator<Item = (&'a String, &'a f64)>,
+        ) -> f64 {
             yields
                 + effects
-                    .iter()
+                    .into_iter()
                     .filter(|(key, _)| key.contains("culture"))
                     .map(|(_, value)| value.max(0.0))
                     .sum::<f64>()
-        };
+        }
         let on_road = |civic: Name| {
             civic == ROAD_GOAL
                 || g.rules

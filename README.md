@@ -10,8 +10,8 @@ Posting progress videos on the [CIVVIS](https://www.youtube.com/@civvis) YouTube
 
 Highest Level Won by Victory Type:
 - Lv 8 - [Science - 206](https://www.youtube.com/watch?v=Gu5cxEIGTuE), [Diplo - 173](https://www.youtube.com/watch?v=CQQM2uk4AkA), [Religion - 167](https://youtu.be/a12Fevo-0DM)
-- Lv 7 - ...
-- Lv 6 - [Culture](https://www.youtube.com/watch?v=S6oiMRpQ36M), [Domination](https://www.youtube.com/watch?v=DMdNOQT3NS0)
+- Lv 7 - [Culture](https://youtu.be/oTJz4EYS4ME)
+- Lv 6 - [Domination](https://www.youtube.com/watch?v=DMdNOQT3NS0)
 - Lv 5 - ...
 - Lv 4 - [Score](https://www.youtube.com/watch?v=-ft0Ah99J1g) (score victory is less common on high levels as games are usually decided before the turn limit is reached)
 
