@@ -20767,18 +20767,31 @@ CivvisQueue.moveDepartureWait = function(player, pid, row, rows, index)
 end;
 
 -- What the units a follower waits for are doing: "clear" (none of them is
--- on the plot any more), "leaving" (one still is, with its own order in
--- flight), "queued" (one still is, and is itself waiting for the plot ahead of
--- it), or "stuck" (one still is, with nothing left in the queue: its move was
--- refused, or settled without leaving, so it is not going anywhere).
+-- on the plot any more), "leaving" (one still is, and the host accepted its
+-- move this batch), "queued" (one still is, and is itself waiting for the plot
+-- ahead of it), or "stuck" (one still is, and no move of its was accepted:
+-- its order was refused, so it is not going anywhere).
 --
 -- #5325 counted six ticks whatever the unit ahead was doing. Measured on its
 -- first two wartime games (civvis-20261115T100810Z, 101703Z): 50 and 48
 -- unit-turns timed out, about half of them the third or later unit of a
 -- column, whose occupant was itself waiting for the plot ahead of it; 16 and
 -- 11 of the timed-out units then stood still for the turn. A queued occupant
--- cannot leave yet, so its ticks are not the follower's; an occupant with no
--- order in flight never will, so waiting for it only holds the frame.
+-- cannot leave yet, so its ticks are not the follower's; an occupant whose
+-- order was refused never will, so waiting for it only holds the frame.
+--
+-- ⚠ "NOTHING LEFT IN THE QUEUE" IS NOT "STUCK". #5328 read a unit with no
+-- queue entry as stuck. On the live host the watch on an accepted walk is
+-- dropped when the host's operation event arrives, and the unit's plot read
+-- changes a tick or three later, so the unit ahead was called stuck while it
+-- was leaving: on the first two games to carry #5328
+-- (civvis-20261115T105844Z, 110627Z) 34 and 132 followers gave up on a unit
+-- "stuck" at tick 2, and 33 and 128 of those units left the plot, nearly all
+-- within 0.3 s. Released waits fell from 72-75% to 23% and 17%, and units
+-- that reached the plot they waited for from 73% and 71% to 48% and 44%.
+-- What says a unit is leaving is that the host accepted its move
+-- (`CivvisQueue.departing`, set where the move is issued), not that a watch
+-- is still open on it.
 -- A read that fails answers "leaving", and the short wait refuses by name.
 CivvisQueue.moveDepartureState = function(pid, dependency)
 	return try(function()
@@ -20787,17 +20800,16 @@ CivvisQueue.moveDepartureState = function(pid, dependency)
 			local other = liveUnit(pid, id);
 			if other ~= nil and other:GetX() == dependency.x and other:GetY() == dependency.y then
 				local ahead = CivvisQueue.pending[id];
-				if ahead == nil then
-					-- A unit whose own queued move has just been issued has left
-					-- the queue and not yet the plot: see `departing` in the drain.
-					if CivvisQueue.departing == nil or not CivvisQueue.departing[id] then
-						return "stuck";
-					end
+				local waiting = ahead ~= nil and ahead.rows[ahead.next] or nil;
+				if CivvisQueue.departing ~= nil and CivvisQueue.departing[id] then
 					if state ~= "queued" then state = "leaving"; end
-				elseif ahead.departure_wait ~= nil and ahead.departure_wait.move then
+				elseif waiting ~= nil and tostring(waiting.verb or "") == "MOVE_TO" then
+					-- Its own move is still queued: behind the plot ahead of
+					-- it, or behind a war that is not on yet.
 					state = "queued";
-				elseif state ~= "queued" then
-					state = "leaving";
+				else
+					-- No move of this unit's was accepted, and none is queued.
+					return "stuck";
 				end
 			end
 		end
@@ -23800,6 +23812,8 @@ local function applyOrders(player, pid, turn, rows)
 	-- See `CivvisQueue.holdersAt`: read afresh for this batch.
 	CivvisQueue.plotHolders = nil;
 	CivvisQueue.plotClaims = nil;
+	-- See `moveDepartureState`: whose move the host accepted in this batch.
+	CivvisQueue.departing = {};
 	for index, row in ipairs(rows) do
 		if not ordered[index] then
 			local subject = tonumber(row.subject);
@@ -23838,6 +23852,9 @@ local function applyOrders(player, pid, turn, rows)
 				if isUnit then
 					firstRun[subject] = { expect = ok and CivvisQueue.expectFor(row) or nil };
 					if not ok then firstRefused[subject] = true; end
+					if ok and tostring(row.verb or "") == "MOVE_TO" then
+						CivvisQueue.departing[subject] = true;
+					end
 					-- Hold the turn until this walk lands (see CivvisQueue.watch);
 					-- a queued follow-up for the unit replaces the watch.
 					if queueOn and ok and firstRun[subject].expect ~= nil then
