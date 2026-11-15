@@ -54,10 +54,10 @@ mod builder_operation_refusals;
 
 #[path = "civvis_orders/spent_traders.rs"]
 mod spent_traders;
-#[path = "civvis_orders/walk_steps.rs"]
-mod walk_steps;
 #[path = "civvis_orders/trader_origin_coverage.rs"]
 mod trader_origin_coverage;
+#[path = "civvis_orders/walk_steps.rs"]
+mod walk_steps;
 
 #[path = "civvis_orders/air_assault.rs"]
 mod air_assault;
