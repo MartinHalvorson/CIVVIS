@@ -1232,6 +1232,12 @@ struct EnemyEnvelope {
     /// this turn), so every write is taken to touch it. See
     /// [`BasicAi::envelope_board_change`].
     sight: Option<(Pos, i32)>,
+    /// For an air unit, what its reach is a function of: its kind, the tile
+    /// it operates from (`Game::air_operation_origin`) and its attack range.
+    /// Its reach is the disk of that range around that tile and nothing else,
+    /// so it is kept exactly while the three stand. `None` for every other
+    /// unit, which is kept by `sensitive` and `sight` instead.
+    air: Option<(u32, Pos, i32)>,
 }
 
 /// The multiplier and the seed the three envelope fingerprints mix with — the
