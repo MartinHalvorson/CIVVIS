@@ -148,6 +148,11 @@ impl AdvancedAi {
         let n_cities = city_ids.len();
         let settlers = self.counts(g, pid).settlers;
         for cid in city_ids {
+            // `rear-cities-grow-through-the-war-hold`: under the war's hold,
+            // only a rear city. Always open while the gene is off.
+            if !self.claim_open_behind_the_front(cid) {
+                continue;
+            }
             let Some((granary, turns)) = self.bound_granary_item(g, pid, cid, plan) else {
                 continue;
             };
@@ -160,6 +165,12 @@ impl AdvancedAi {
                     if self.charting_hull_holds(g, pid, cid, plan, item)
                         || self.first_capital_training_holds(g, pid, cid, item)
                         || self.culture_monument_finishes_first(g, pid, cid, plan, item)
+                        // `campus-and-library-before-the-claims`: its first
+                        // Campus, Library or University goes first.
+                        || self.campus_and_library_holds(g, pid, cid, plan, item)
+                        // `domination-seat-raises-its-culture`: its Monument
+                        // goes first.
+                        || self.domination_monument_holds(g, pid, cid, plan, item)
                         || !Self::bound_granary_may_defer(g, pid, cid, item, at_major_war)
                     {
                         continue;

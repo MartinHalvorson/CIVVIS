@@ -93,7 +93,7 @@ impl AdvancedAi {
 
     /// Land steps from `from` to every passable land tile within `reach`,
     /// ignoring units and borders. Empty when `from` is not on land.
-    fn open_city_land_steps(g: &Game, from: Pos, reach: i32) -> BTreeMap<Pos, i32> {
+    pub(super) fn open_city_land_steps(g: &Game, from: Pos, reach: i32) -> BTreeMap<Pos, i32> {
         let land = |pos: Pos| {
             g.map
                 .get(pos)

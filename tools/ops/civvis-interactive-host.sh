@@ -54,7 +54,9 @@ wedge_watchdog_owned=0
 say() { print -r -- "[interactive-host] $(date -u +%FT%TZ) $*" >> "$LOG" }
 
 verification_intent_running() {
-  [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == running ]]
+  # `terminal` authorizes this Terminal-hosted chain and nothing that would
+  # recover it from the background (civvis-games.sh, CIVVIS_CONTROL).
+  [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == (running|terminal) ]]
 }
 
 intent_reason() {

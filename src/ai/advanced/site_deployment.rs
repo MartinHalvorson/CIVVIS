@@ -1,8 +1,20 @@
-//! The player civvis.ai seats.
+//! The house player civvis.ai seats.
 //!
-//! Every major on the site plays the deployment genome on the authoritative
+//! The site's house fleet plays the deployment genome on the authoritative
 //! board ([`AdvancedAi::enable_native_deployment`]) plus the genes named in
 //! [`SITE_EXPERIMENT_GENES`].
+//!
+//! ## Where the house player sits since 2026-11-13
+//!
+//! Across the table from a person, and on a battlefield. A world nobody is
+//! playing, which is what civvis.ai opens on, is dealt the top-rated Civ AI
+//! Agents instead, one to a major (`Session::deal_watched_table`,
+//! `crate::strategies::table`). Each of those plays as its roster row is
+//! written, so this list reaches the watched page only through a row that
+//! names the gene: `forward` (ForwardSettle) is the deployment genome plus
+//! `no-city-limit`, and is at the table for that reason. To put a new
+//! experiment in front of the operator on the watched page, add a roster
+//! row for it; a tag added here alone plays only against a person.
 //!
 //! ## Why the site has a list of its own
 //!
@@ -13,14 +25,15 @@
 //! sessions measured wider empires and filed opt-in genes for them, and
 //! civvis.ai/test went on building ten cities a civ.
 //!
-//! This list is that route. A tag here is on for every site major and for
-//! nothing else: `gene_screen`, the live Civ VI seat and every rated
+//! This list is that route. A tag here is on for every house-fleet major
+//! and for nothing else: `gene_screen`, the live Civ VI seat and every rated
 //! instrument build their own agents from the ledger and never call
 //! [`AdvancedAi::enable_site_deployment`]. The `/test` lane follows `main`,
 //! so an entry plays there at the next publish; the front page takes it at
 //! its next promotion.
 //!
-//! Add a tag when the operator asks for an experiment on the site. Remove it
+//! Add a tag when the operator asks for an experiment on the site (and, for
+//! the watched page, the roster row above). Remove it
 //! when the ledger deploys the gene (the entry is then redundant) or the
 //! experiment ends.
 use super::*;

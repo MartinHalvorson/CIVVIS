@@ -102,6 +102,7 @@ impl Game {
                 };
                 if let Some(killer) = culprit {
                     self.record_war_unit_loss(killer, owner, &kind, formation, position);
+                    self.tally_combat_removal(killer, owner, kind);
                 }
                 self.remove_unit(unit_id);
             } else {

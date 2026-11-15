@@ -2031,14 +2031,29 @@ fn live_city_json(
             // yield: zero is no opinion, above it favoured, below disfavoured.
             "emphasis": yields_json(
                 &g.players[city.owner]
-                    .city_directives
+                    .citizen_focus
                     .get(&city.id)
-                    .map(|directive| directive.emphasis)
+                    .copied()
                     .unwrap_or_default(),
             ),
             "worked_tiles": citizens.worked_tiles.iter()
                 .map(|tile| json!([tile.0, tile.1])).collect::<Vec<_>>(),
             "specialists": citizens.specialists,
+            // Each district's specialist slots, where it stands, and how many
+            // the seat has filled by hand.
+            "specialist_slots": g.city_specialist_slots(city.id).into_iter()
+                .map(|(family, tile, slots)| json!({
+                    "placed": g.players[city.owner].specialist_locks.get(&city.id)
+                        .and_then(|held| held.get(&family)).copied().unwrap_or(0),
+                    "family": family, "pos": [tile.0, tile.1], "slots": slots,
+                }))
+                .collect::<Vec<_>>(),
+            // Tiles the seat has placed a citizen on by hand.
+            "locked": g.players[city.owner]
+                .citizen_locks
+                .get(&city.id)
+                .map(|held| held.iter().map(|tile| json!([tile.0, tile.1])).collect::<Vec<_>>())
+                .unwrap_or_default(),
         },
     });
     merge(&mut value, private);

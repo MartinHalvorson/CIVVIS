@@ -864,7 +864,11 @@ impl AdvancedAi {
         desired.splice(0..0, culture_defense_cards.iter().copied());
         let unproductive_economic_cards =
             self.domination_productive_policy_fallbacks(g, pid, &mut desired);
-        let upgrade_card = self.domination_upgrade_policy(g, pid);
+        // `upgrade-card-for-the-backlog`: every other target's backlog takes
+        // the same card through the same slot. `None` with the gene off.
+        let upgrade_card = self
+            .domination_upgrade_policy(g, pid)
+            .or_else(|| self.backlog_upgrade_card(g, pid));
         if let Some(card) = upgrade_card {
             desired.retain(|wanted| *wanted != card);
             desired.insert(0, card);
@@ -988,6 +992,22 @@ impl AdvancedAi {
                    "space-denial-slots-the-spy-cards: {} ahead of the ordinary Diplomatic cards \
                     while our Spies answer the space race",
                    denial_spy_cards.iter().map(|card| plain(card)).collect::<Vec<_>>().join(" and "));
+        }
+        // `policy-swap-keeps-the-army-paid`: income is projected against the
+        // deck the turn began with. While the deck the base review (or a
+        // government change) left projects zero or less, the paying cards it
+        // gave up are wanted back first. `None` with the gene off. See
+        // `advanced/policy_swap_keeps_the_army_paid.rs`.
+        let army_pay = self.army_pay(g, pid, &desired, protect_wartime_income);
+        let mut army_paid_kept: BTreeMap<Name, String> = BTreeMap::new();
+        if let Some(pay) = &army_pay {
+            let slottable: HashSet<Name> = g.available_policies(pid).into_iter().collect();
+            let back = pay.restores(&g.players[pid].policies, |card| slottable.contains(card));
+            for (card, projected) in back.into_iter().rev() {
+                desired.retain(|wanted| *wanted != card.as_str());
+                desired.insert(0, card.as_str());
+                army_paid_kept.insert(card, pay.detail(card.as_str(), projected, None));
+            }
         }
         let desired_set: HashSet<&str> = desired.iter().copied().collect();
         // If circumstances changed, remove a downside-bearing Dark Age card
@@ -1308,6 +1328,21 @@ impl AdvancedAi {
                     }
                 }
             }
+            // `policy-swap-keeps-the-army-paid`: a card stays when giving it
+            // up for this one takes the projected income to zero or below,
+            // counting every card given up or slotted since the turn began.
+            if let Some(pay) = &army_pay {
+                let deck = &g.players[pid].policies;
+                replaceable.retain(|current| {
+                    let Some(after) = pay.keeps(deck, current.as_str(), card) else {
+                        return true;
+                    };
+                    army_paid_kept
+                        .entry(*current)
+                        .or_insert_with(|| pay.detail(current.as_str(), after, Some(card)));
+                    false
+                });
+            }
             replaceable.sort_by(|first, second| {
                 let key = |current: &str| {
                     let policy = &g.rules.policies[current];
@@ -1395,6 +1430,14 @@ impl AdvancedAi {
                    "Keeping {} while income is not positive", plain(&current);
                    "solvent-or-hold: {:+.1} Gold a turn; {} would have taken its slot",
                    g.players[pid].gold_per_turn, plain(card));
+        }
+        // `policy-swap-keeps-the-army-paid`: only a card the deck still holds.
+        for (current, detail) in army_paid_kept {
+            if g.players[pid].policies.contains(&current) {
+                think!(self.journal(), Policies, Decision,
+                       "Keeping {} while income is not positive", plain(&current);
+                       "{detail}");
+            }
         }
     }
 
@@ -1641,7 +1684,7 @@ impl AdvancedAi {
     }
 
     pub(super) fn strategic_governors(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        let strategy = self.governor_title_strategy(g, plan.strategy);
+        let strategy = self.governor_title_strategy(g, pid, plan.strategy);
         while g.governor_titles_available(pid) > 0 {
             // `curator-sits-with-the-works`: Curator first once the works
             // stand. Exact no-op with the gene off.
@@ -1657,7 +1700,12 @@ impl AdvancedAi {
             let primary_name = g.players[pid]
                 .governor_roster
                 .iter()
-                .filter(|(_, state)| state.promotions.len() < 2)
+                // `domination-seat-appoints-pingala-first`: Researcher
+                // completes Pingala's foundation on a Domination seat.
+                .filter(|(name, state)| {
+                    state.promotions.len() < 2
+                        && !self.domination_pingala_founded(g, pid, name.as_str(), plan.strategy)
+                })
                 .min_by_key(|(name, state)| (state.assigned_turn, name.as_str()))
                 .map(|(name, _)| *name)
                 .unwrap_or_else(|| Name::new(priority[0]));
@@ -1696,6 +1744,9 @@ impl AdvancedAi {
                     )
                     .is_ok()
                     {
+                        // `domination-seat-raises-its-culture`: journal the
+                        // Connoisseur it brought forward.
+                        self.explain_domination_connoisseur(g, pid, primary, &promotion);
                         continue;
                     }
                 }

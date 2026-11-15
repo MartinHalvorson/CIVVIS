@@ -53,10 +53,26 @@
 //! first version went to the Mapuche.
 //!
 //! A Spy standing in a racer's city that is no longer the leader's moves to
-//! the leader unless Disrupt Rocketry is offered where it stands, and a
-//! Listening Post or Gain Sources it is running there does not hold it (a
-//! Disrupt Rocketry does). In the leader's city the every-pad re-post no
-//! longer pulls it away toward another racer's pad.
+//! the leader unless this seat can run the Disrupt Rocketry offered where it
+//! stands, and a Listening Post or Gain Sources it is running there does not
+//! hold it (a Disrupt Rocketry does). In the leader's city the every-pad
+//! re-post no longer pulls it away toward another racer's pad.
+//!
+//! "Can run" is the board's own offer, or the host's when
+//! `science-denial-every-pad` can file a standing pad of that owner under the
+//! city ([`AdvancedAi::racer_spy_disrupt_runnable`]). The host's menu alone
+//! held a Spy the step below never sent: live Deity Gran Colombia
+//! civvis-20261112T075931Z kept its last Spy in Australia's Melbourne from
+//! turn 176 to 210, nine Listening Posts and no Disrupt Rocketry, while the
+//! gene named Byzantium the leader from turn 179 ("Byzantium leads the space
+//! race") and Byzantium landed Mars at 198, launched at 204 and won at 210.
+//! The host offered the disruption there on every pass ("Disrupt Rocketry is
+//! offered in Australia's Melbourne", t179-t209); the only Australian pad
+//! within reach, (32, 18), last seen at turn 169, read pillaged on our board
+//! after Australia had repaired it, so the board listed no disruption and
+//! the every-pad filing found no standing pad. With every city of ours
+//! refused a Spy from turn 180 (slots held by captured agents), it was the
+//! network's only agent from 193.
 //!
 //! The home counter-spy and the culture-heist posting keep their places
 //! ahead of the post, and a Spy in a culture racer's city keeps the heist.
@@ -273,8 +289,10 @@ impl AdvancedAi {
 
     /// The city of `leader` an idle `spy` standing at `current_city` should
     /// be posted to, if any: none while it stands in the leader's city or a
-    /// culture racer's, nor in another racer's city where Disrupt Rocketry
-    /// is offered; otherwise the leader's city no other Spy of ours holds,
+    /// culture racer's, nor in another racer's city where this seat can run
+    /// the Disrupt Rocketry offered there ([`Self::racer_spy_disrupt_runnable`],
+    /// with every racer's pad re-filable, as live arms `science-denial-every-pad`);
+    /// otherwise the leader's city no other Spy of ours holds,
     /// ranked by a seen standing Spaceport within three tiles, then the
     /// capital, then nearness to the capital. Only cities the host lets us
     /// post to (`legal`) count.
@@ -310,6 +328,7 @@ impl AdvancedAi {
             search,
             false,
             &BTreeMap::new(),
+            racers,
         )
     }
 
@@ -343,6 +362,7 @@ impl AdvancedAi {
         search: Option<RacerSpySearch<'_>>,
         prefer_campus: bool,
         dry_cities: &BTreeMap<u32, u32>,
+        refile: &BTreeSet<usize>,
     ) -> Option<u32> {
         let leader = leader?;
         let pid = g.spies.get(&spy)?.owner;
@@ -372,7 +392,7 @@ impl AdvancedAi {
         if (here == Some(leader) && !searching && !campus_move)
             || here.is_some_and(|owner| culture_racers.contains(&owner))
             || (here.is_some_and(|owner| racers.contains(&owner))
-                && Self::racer_spy_disrupt_offered(g, spy, legal))
+                && Self::racer_spy_disrupt_runnable(g, spy, legal, refile))
         {
             return None;
         }
@@ -583,6 +603,40 @@ impl AdvancedAi {
             .get(&spy)
             .and_then(|facts| facts.spy_missions.as_ref())
             .is_some_and(|menu| menu.contains("disrupt_rocketry"))
+    }
+
+    /// Whether this seat can run the Disrupt Rocketry offered to `spy` where
+    /// it stands: the board lists it (`legal`), or the host's menu offers it
+    /// and `science-denial-every-pad` (`refile`, its threats; empty with that
+    /// gene off) can file a standing pad of the city's owner under this city
+    /// (`every_pad_refile_pad`). A host offer the board cannot file is not
+    /// runnable: its only pad within reach reads pillaged on our board, the
+    /// sighting a fogged tile keeps after the owner repaired it.
+    pub(crate) fn racer_spy_disrupt_runnable(
+        g: &Game,
+        spy: u32,
+        legal: &[Action],
+        refile: &BTreeSet<usize>,
+    ) -> bool {
+        if legal.iter().any(|action| {
+            matches!(action, Action::SpyMission { mission, .. } if mission == "disrupt_rocketry")
+        }) {
+            return true;
+        }
+        let host_offers = g
+            .host_unit_facts
+            .get(&spy)
+            .and_then(|facts| facts.spy_missions.as_ref())
+            .is_some_and(|menu| menu.contains("disrupt_rocketry"));
+        host_offers
+            && g.spies
+                .get(&spy)
+                .and_then(|agent| agent.city)
+                .and_then(|city| g.cities.get(&city))
+                .is_some_and(|city| {
+                    refile.contains(&city.owner)
+                        && Self::every_pad_refile_pad(g, city.owner, city.pos).is_some()
+                })
     }
 
     /// Whether `spy`, whose last order is still running, should move on

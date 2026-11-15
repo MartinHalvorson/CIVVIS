@@ -70,6 +70,53 @@ fn rejected_production_does_not_discard_the_armys_shot() {
     assert_eq!(g.cities[&city].queue, queue);
 }
 
+/// Guard for the stall `fog_honest_seats_lose_almost_no_production_to_refused_orders`
+/// measured on seed 3,750,002: a Great Writer with no open slot was recruited
+/// on the view behind a Great Work sale the board refused. The refused
+/// recruit ended each frame before any `Produce`, three frames a turn, and
+/// the seat's emptied queues stayed empty for the rest of the game.
+#[test]
+fn rejected_recruitment_does_not_discard_production_or_the_armys_shot() {
+    let (mut g, city, target, gun) = battle();
+    g.cities.get_mut(&city).unwrap().queue.clear();
+    let order = g
+        .legal_actions(0)
+        .into_iter()
+        .find(|action| matches!(action, Action::Produce { city: of, .. } if *of == city))
+        .expect("the city can start something");
+    let rejected = Action::RecruitGreatPerson {
+        kind: "writer".into(),
+    };
+    assert!(
+        g.clone().apply(0, &rejected).is_err(),
+        "no Great Writer is on offer to this seat"
+    );
+    let actions = [
+        (0, rejected),
+        (0, order),
+        (
+            0,
+            Action::Ranged {
+                unit: gun,
+                target: g.units[&target].pos,
+            },
+        ),
+    ];
+    assert!(
+        execute_frame(&mut g, 0, &Default::default(), actions.iter()),
+        "a rejected hypothesis still requests a fresh observation"
+    );
+    assert_eq!(g.players[0].counters["player:refused"], 1);
+    assert!(
+        !g.cities[&city].queue.is_empty(),
+        "a rejected recruitment left the city's queue empty"
+    );
+    assert!(
+        g.units[&target].hp < 1000,
+        "a rejected recruitment starved the army"
+    );
+}
+
 #[test]
 fn rejected_financial_trade_does_not_discard_the_armys_shot() {
     let (mut g, _, target, gun) = battle();

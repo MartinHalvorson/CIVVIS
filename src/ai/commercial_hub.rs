@@ -103,7 +103,7 @@ impl BasicAi {
     /// The Market (or this civilization's replacement) of the Commercial Hub
     /// standing in `cid`, when the city finishes it within
     /// `COMMERCIAL_HUB_MAX_TURNS`.
-    fn commercial_market_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+    pub(super) fn commercial_market_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
         let city = g.cities.get(&cid)?;
         if !g.city_has_district_family(city, crate::name!("commercial_hub")) {
             return None;
@@ -150,7 +150,7 @@ impl BasicAi {
 
     /// Whether `cid` holds a Commercial Hub, its foundation, or has one first
     /// in its queue.
-    fn commercial_hub_held_or_queued(g: &Game, cid: u32) -> bool {
+    pub(super) fn commercial_hub_held_or_queued(g: &Game, cid: u32) -> bool {
         Self::district_family_held_or_queued(g, cid, crate::name!("commercial_hub"))
     }
 
@@ -169,7 +169,13 @@ impl BasicAi {
     /// of the unthreatened cities that lack one and have a site -- as many
     /// as the hubs still wanted -- and finishes it within
     /// `COMMERCIAL_HUB_MAX_TURNS`.
-    fn commercial_hub_item(&self, g: &Game, pid: usize, cid: u32, n_cities: usize) -> Option<Item> {
+    pub(super) fn commercial_hub_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+    ) -> Option<Item> {
         let hub = Self::civ_district(g, pid, "commercial_hub");
         let spec = g.rules.districts.get(&hub)?;
         let unlocked = spec

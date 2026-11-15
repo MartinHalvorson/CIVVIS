@@ -13350,6 +13350,7 @@ fn colliding_unit_intents_revalidate_and_finish_from_live_state() {
             actions: vec![Action::Move { unit, to: target }],
             took_a_turn: true,
             base_state: ai.base.unit_plan_state(unit),
+            step: last_orders::OrderStep::Other,
         })
         .collect();
     ai.apply_unit_intents(

@@ -936,3 +936,37 @@ fn the_parity_pause_keeps_native_budget_and_emergency_guards() {
         assert_eq!(head(&game, cid), Some(unit("warrior")), "{case}");
     }
 }
+
+/// `rear-cities-grow-through-the-war-hold`: while the war hold names its rear
+/// cities, the free slot's first Campus goes to the quickest REAR city, and
+/// the quicker front city keeps its queue. With no rear set (the gene off or
+/// no hold) the quickest city claims as before.
+#[test]
+fn under_the_war_hold_the_first_campus_goes_to_the_quickest_rear_city() {
+    // The seed the peacetime claim test above proves: ranked[0] claims first,
+    // ranked[1] next.
+    let (mut game, ranked) = campus_less_empire(95_101, 1);
+    all_queue(&mut game, &ranked, &unit("knight"));
+
+    let mut ai = armed();
+    let plan = ai.assess(&game, 0);
+    let mut open = game.clone();
+    ai.claim_free_slot_campus(&mut open, 0, &plan);
+    assert!(
+        is_campus(&open, &head(&open, ranked[0])),
+        "no rear set: the quickest city claims"
+    );
+
+    ai.rear_cities_open_under_the_hold = Some(ranked[1..].iter().copied().collect());
+    let mut held = game.clone();
+    ai.claim_free_slot_campus(&mut held, 0, &plan);
+    assert_eq!(
+        head(&held, ranked[0]),
+        Some(unit("knight")),
+        "the front city keeps its queue"
+    );
+    assert!(
+        is_campus(&held, &head(&held, ranked[1])),
+        "the quickest rear city claims its first Campus"
+    );
+}

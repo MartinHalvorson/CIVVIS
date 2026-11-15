@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use super::super::{AdvancedAi, StrategicPlan};
+use super::host_enemy::{HostClass, Owner};
 use super::model::{
     Board, CitySpec, Objective, State, Unit, F_CAPTURES, F_IGNORES_ZOC, F_MELEE, F_MOVE_AND_FIRE,
     F_RANGED, F_SIEGE, F_ZOC, IMPASSABLE, MP, NO_CITY, NO_TILE, OURS, THEIRS,
@@ -124,6 +125,34 @@ pub(super) fn theaters(ai: &AdvancedAi, g: &Game, pid: usize) -> Vec<Theater> {
         .collect()
 }
 
+/// A unit's class and owner as the fitted host model reads them
+/// (`host_enemy`, `tools/fit_host_enemy.py`).
+fn host_traits(g: &Game, uid: u32) -> (HostClass, Owner) {
+    let unit = &g.units[&uid];
+    let spec = &g.rules.units[unit.kind];
+    let class = if spec.siege {
+        HostClass::Siege
+    } else if spec.has_ranged_attack() {
+        HostClass::Ranged
+    } else if matches!(
+        spec.promotion_class.as_str(),
+        "light_cavalry" | "heavy_cavalry"
+    ) {
+        HostClass::Cavalry
+    } else {
+        HostClass::Melee
+    };
+    let player = &g.players[unit.owner];
+    let owner = if player.is_minor || player.is_free_city {
+        Owner::CityState
+    } else if player.is_barbarian {
+        Owner::Barbarian
+    } else {
+        Owner::Major
+    };
+    (class, owner)
+}
+
 fn class_of(classes: &mut Vec<(crate::name::Name, u32)>, g: &Game, uid: u32) -> u8 {
     let kind = g.units[&uid].kind;
     if let Some(found) = classes.iter().position(|(k, _)| *k == kind) {
@@ -195,6 +224,7 @@ pub(super) fn snapshot(
 
     let mut classes: Vec<(crate::name::Name, u32)> = Vec::new();
     let mut units = Vec::with_capacity(n);
+    let mut host = Vec::with_capacity(n);
     for (i, uid) in unit_ids.iter().enumerate() {
         let u = &g.units[uid];
         let spec = &g.rules.units[u.kind];
@@ -216,6 +246,7 @@ pub(super) fn snapshot(
         if g.siege_may_attack_after_moving(u) {
             flags |= F_MOVE_AND_FIRE;
         }
+        host.push(host_traits(g, *uid));
         let actor = i < members.len();
         units.push(Unit {
             tile: index[&u.pos],
@@ -466,6 +497,9 @@ pub(super) fn snapshot(
         reach0,
         los0,
         has_los: true,
+        march_on_objective: false,
+        melee_breach_share: 0.0,
+        host,
     };
     let state = State::new(&board, units, city_state);
     let objective = choose_objective(g, pid, &board, &state, &city_ids, plan);

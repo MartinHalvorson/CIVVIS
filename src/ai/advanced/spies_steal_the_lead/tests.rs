@@ -393,6 +393,7 @@ fn a_science_post_prefers_the_leaders_campus_city() {
             None,
             prefer,
             &BTreeMap::new(),
+            &racers,
         )
     };
     assert_eq!(post(false), Some(capital), "stock: the capital first");
@@ -418,6 +419,7 @@ fn a_spy_in_a_campusless_leader_city_moves_to_its_campus() {
             None,
             prefer,
             &BTreeMap::new(),
+            &racers,
         )
     };
     assert_eq!(
@@ -486,6 +488,7 @@ fn a_spy_in_a_dry_leader_city_moves_on_when_no_campus_is_known() {
             None,
             true,
             dry,
+            &racers,
         )
     };
     assert_eq!(post(&BTreeMap::new()), None, "not shown dry: it waits");

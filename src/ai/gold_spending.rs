@@ -25,7 +25,10 @@ impl BasicAi {
             Some(spec) => spec.cost * 4.0,
             None => return false,
         };
-        if g.players[pid].gold + 1e-9 < price + reserve {
+        // `gold-unit-buys-read-the-host-quote`: each city's own quote is
+        // tested against the reserve below instead of this list price.
+        if !self.gold_unit_buys_read_the_host_quote && g.players[pid].gold + 1e-9 < price + reserve
+        {
             return false;
         }
         for cid in city_ids {
@@ -43,6 +46,17 @@ impl BasicAi {
             // refusal is a different set. Both must pass before spending gold.
             if !g.can_produce(pid, *cid, &item) || g.purchase_is_blocked(*cid, &item) {
                 continue;
+            }
+            // `gold-unit-buys-read-the-host-quote`: the reserve holds against
+            // what this city charges (live t192: a Builder listed at 200 was
+            // quoted 400 and left 20 Gold under a 162 reserve).
+            if self.gold_unit_buys_read_the_host_quote {
+                let Some(quote) = g.unit_purchase_cost(pid, *cid, unit, "gold") else {
+                    continue;
+                };
+                if g.players[pid].gold + 1e-9 < quote + reserve {
+                    continue;
+                }
             }
             if g.apply(
                 pid,

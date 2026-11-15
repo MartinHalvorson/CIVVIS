@@ -88,6 +88,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use super::assault_forecast;
 use super::{AdvancedAi, AppliedAttack, ForceDomain, ForceGroup, StrategicPlan};
 use crate::game::{effective_strength, expected_damage, Action, Game};
 use crate::think;
@@ -2118,8 +2119,9 @@ impl AdvancedAi {
     /// charges every enemy blow to every one of our units at once and must
     /// not undo that verdict one unit at a time.
     pub(super) fn active_siege_member(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        // `score-seat-takes-what-pays`: or a Score seat's paying city.
         self.siege_train
-            && self.active_victory_target(g) == Some(super::VictoryTarget::Domination)
+            && self.conquest_gates_open(g)
             && self.force_groups.iter().any(|group| {
                 group.domain == ForceDomain::Land
                     && group.units.contains(&uid)
@@ -2145,8 +2147,9 @@ impl AdvancedAi {
     /// 100-hp catapults before Babylon were rotated out at danger 96-100 and
     /// fortified; Stage never invested in 18 turns.
     pub(super) fn staging_siege_member(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        // `score-seat-takes-what-pays`: or a Score seat's paying city.
         self.siege_train
-            && self.active_victory_target(g) == Some(super::VictoryTarget::Domination)
+            && self.conquest_gates_open(g)
             && self.force_groups.iter().any(|group| {
                 group.domain == ForceDomain::Land
                     && group.units.contains(&uid)
@@ -2262,6 +2265,8 @@ impl AdvancedAi {
                 .get(&cid)
                 .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner))
                 .filter(|city| !self.siege_stood_down_at(g, city.pos))
+                // `siege-goes-on-the-forecast`: nor does a hopeless one.
+                .filter(|city| !self.forecast_stood_down_at(g, city.pos))
                 .map(|_| cid)
         };
         g.city_at(group.objective).and_then(enemy_city).or_else(|| {
@@ -3009,6 +3014,44 @@ impl AdvancedAi {
         }
         // `capture-holds-the-ring`: see `dying_open_city`.
         let dying = self.dying_open_city(&city);
+        // `open-city-is-the-objective`: an open city the train's own melee
+        // take within a few turns goes now; neither the muster's bill nor the
+        // damage budget holds or aborts it. `None` with the gene off. See
+        // `advanced/open_city_objective.rs`.
+        let open_go = if arena {
+            None
+        } else {
+            self.open_city_siege_go(g, pid, cid, &force)
+        };
+        // `assault-forecast-is-read`: the capture forecast for this force,
+        // and its journal line. `siege-goes-on-the-forecast` reads it too:
+        // the train goes at `GO_P` within `GO_HORIZON` turns whatever the
+        // bill, the breaker and the damage budget say, an invested train at
+        // `HOLD_P` does not abort, and `HOPELESS_STREAK` gathered readings
+        // under `HOPELESS_P` that no one more unit lifts stand it down.
+        // `None` and all false with both genes off. See
+        // `advanced/assault_forecast.rs`.
+        let forecast = (self.assault_forecast_read()
+            && (self.siege_goes_on_the_forecast
+                || self.journal().wants(crate::reasoning::Level::Decision)))
+        .then(|| self.assault_forecast(g, pid, cid, &force))
+        .flatten();
+        if let Some(reading) = &forecast {
+            self.journal_assault_forecast(g, cid, reading);
+        }
+        let go_reading = forecast
+            .as_ref()
+            .filter(|_| {
+                self.siege_goes_on_the_forecast && assault_forecast::forecast_goes_and_holds()
+            })
+            .map(|reading| reading.within(assault_forecast::GO_HORIZON));
+        let forecast_go = go_reading.is_some_and(|p| p >= assault_forecast::GO_P);
+        let forecast_holds = go_reading.is_some_and(|p| p >= assault_forecast::HOLD_P);
+        let forecast_stands_down = !arena
+            && self.siege_goes_on_the_forecast
+            && forecast
+                .as_ref()
+                .is_some_and(|reading| self.note_forecast_hopeless(g, cid, reading));
         // `phantom-capture-keeps-the-siege`: a Hold the host never executed
         // over a falling city (walls down, within its taker's blow) resumes
         // the siege it replaced: no regroup, no muster hold.
@@ -3080,10 +3123,19 @@ impl AdvancedAi {
             let weak_target = self.weak_target_skips_the_muster
                 && g.military_power(city.owner)
                     <= MUSTER_WEAK_TARGET_SHARE * g.military_power(pid).max(1.0);
-            let ready = dying || walls_answered || committed || weak_target || restored;
+            let ready_stock = dying
+                || walls_answered
+                || committed
+                || weak_target
+                || restored
+                || open_go.is_some();
+            // `siege-goes-on-the-forecast`: the forecast's go closes the
+            // muster too. The shortfall below reads the stock readiness, so
+            // production is left as it was.
+            let ready = ready_stock || forecast_go;
             // `siege-shortfall-claims-the-projects`: a held train whose whole
             // force is short of the bill asks the cities for soldiers.
-            self.note_siege_shortfall(cid, turn, !ready && strength < bill);
+            self.note_siege_shortfall(cid, turn, !ready_stock && strength < bill);
             if !ready {
                 self.stage_muster_closed.remove(&cid);
             }
@@ -3120,8 +3172,12 @@ impl AdvancedAi {
                     "dying"
                 } else if walls_answered || committed {
                     "ready"
-                } else {
+                } else if weak_target || restored {
                     "weak target"
+                } else if open_go.is_some() {
+                    "open-city-is-the-objective"
+                } else {
+                    "siege-goes-on-the-forecast"
                 };
                 let name = g
                     .cities
@@ -3157,6 +3213,13 @@ impl AdvancedAi {
                     city.pos);
             }
         }
+        // `open-city-is-the-objective`: whether the go order alone moved the
+        // train out of Stage this turn.
+        let mut open_go_order = false;
+        // `siege-goes-on-the-forecast`: whether the forecast alone moved the
+        // train out of Stage, and whether it held an abort off.
+        let mut forecast_go_order = false;
+        let mut forecast_held_abort = false;
         let record = self.sieges.entry(cid).or_insert(Siege {
             stage: SiegeStage::Stage,
             taker: None,
@@ -3196,16 +3259,18 @@ impl AdvancedAi {
             } else {
                 ABORT_SHARE
             };
-            if invested
+            let abort_reading = invested
                 && !restored
+                && open_go.is_none()
                 && (strength < abort_share * bill
                     || (!damage_can_continue
                         && breach_taker.is_none()
                         && !held_breach
                         && !opens_walls
                         && !grind)
-                    || no_breaker)
-            {
+                    || no_breaker);
+            forecast_held_abort = abort_reading && forecast_holds;
+            if abort_reading && !forecast_holds {
                 // A Hold over a city that is not ours is a capture that never
                 // landed, not a running assault: there is no dip to ride out,
                 // so reopening it never bypasses the abort gate.
@@ -3224,12 +3289,14 @@ impl AdvancedAi {
                     // rest of the train fills distant staging posts. Keep
                     // the whole-force bill and positive-damage gate, but let
                     // a healthy, reachable capturer exploit that breach.
-                    if ((arena && gathered) || staged >= bill || breach_taker.is_some())
+                    let stock = ((arena && gathered) || staged >= bill || breach_taker.is_some())
                         && (damage_entry_ready || opens_walls || grind)
-                        && !no_breaker
-                    {
+                        && !no_breaker;
+                    if stock || open_go.is_some() || forecast_go {
                         stage = SiegeStage::Invest;
                     }
+                    open_go_order = !stock && open_go.is_some();
+                    forecast_go_order = !stock && open_go.is_none() && forecast_go;
                 }
                 SiegeStage::Invest => {
                     let patience = turn.saturating_sub(record.entered) >= INVEST_PATIENCE;
@@ -3238,6 +3305,10 @@ impl AdvancedAi {
                     }
                 }
                 _ => {}
+            }
+            // `siege-goes-on-the-forecast`: a hopeless siege stands down.
+            if forecast_stands_down {
+                stage = SiegeStage::Stage;
             }
             // `capture-holds-the-ring`: a dying open city is never staged for.
             if stage == SiegeStage::Stage && dying {
@@ -3305,6 +3376,46 @@ impl AdvancedAi {
         }
         if ring > 0 && sealed == ring && stage != SiegeStage::Hold {
             self.census.siege_rings_sealed += 1;
+        }
+        if let (true, Some(take)) = (open_go_order, &open_go) {
+            // `open-city-is-the-objective`: the go order.
+            let name = g
+                .cities
+                .get(&cid)
+                .map(|c| c.name.clone())
+                .unwrap_or_default();
+            think!(self.journal(), Military, Decision,
+                "Siege of {name}: the takers go";
+                "open-city-is-the-objective: no walls; {} taker(s) of the train take it in {} turn(s) against a centre of {:.0}, so neither the bill ({staged:.0} staged of {bill:.0}) nor the damage budget holds them",
+                take.takers, take.turns, take.defence;
+                city.pos);
+        }
+        if forecast_go_order || forecast_held_abort {
+            // `siege-goes-on-the-forecast`: the go order, or the held abort.
+            let name = g
+                .cities
+                .get(&cid)
+                .map(|c| c.name.clone())
+                .unwrap_or_default();
+            let p = go_reading.unwrap_or(0.0) * 100.0;
+            let horizon = assault_forecast::GO_HORIZON;
+            if forecast_go_order {
+                think!(self.journal(), Military, Decision,
+                    "Siege of {name}: the forecast goes";
+                    "siege-goes-on-the-forecast: {p:.0}% to take it within {horizon} turns, at or over {:.0}%, \
+                     so neither the bill ({staged:.0} staged of {bill:.0}), the breaker hold ({no_breaker}) nor the \
+                     damage budget (ready {damage_entry_ready}) holds the train",
+                    assault_forecast::GO_P * 100.0;
+                    city.pos);
+            } else {
+                think!(self.journal(), Military, Decision,
+                    "Siege of {name}: the forecast holds the train";
+                    "siege-goes-on-the-forecast: {p:.0}% to take it within {horizon} turns, at or over {:.0}%, \
+                     so the abort ({strength:.0} strength against a bill of {bill:.0}, breaker hold {no_breaker}, \
+                     damage can continue {damage_can_continue}) does not pull it back",
+                    assault_forecast::HOLD_P * 100.0;
+                    city.pos);
+            }
         }
         if stage == SiegeStage::Hold && previous != SiegeStage::Hold {
             self.census.siege_captures += 1;
@@ -4571,7 +4682,8 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         group: &ForceGroup,
     ) -> Option<bool> {
-        if self.active_victory_target(g) != Some(super::VictoryTarget::Domination)
+        // `score-seat-takes-what-pays`: or a Score seat's paying city.
+        if !self.conquest_gates_open(g)
             || city.hp <= 0
             || (city.wall_hp > 0 && !melee_wall_attack_allowed(g, pid, uid, city.id))
         {
@@ -4828,7 +4940,8 @@ impl AdvancedAi {
     /// Keep enough health to survive the reply and remain a capture body.
     fn safe_taker_pressure(&mut self, g: &mut Game, pid: usize, uid: u32, city: &CityView) -> bool {
         let unit = &g.units[&uid];
-        if self.active_victory_target(g) != Some(super::VictoryTarget::Domination)
+        // `score-seat-takes-what-pays`: or a Score seat's paying city.
+        if !self.conquest_gates_open(g)
             || city.wall_hp > 0
             || unit.hp < 80
             || unit.attacks_left <= 0

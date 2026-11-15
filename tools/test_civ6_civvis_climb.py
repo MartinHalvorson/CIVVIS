@@ -2383,6 +2383,29 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
             saves[2],
         )
 
+    def test_one_hang_is_reloaded_at_most_three_times(self):
+        """civvis-20261112T112009Z hung at t90, t89 and t88 across two reloads
+        (40 minutes); a fourth stride back is not taken. A caller that does
+        not track episodes keeps the whole budget."""
+        class Args:
+            max_resumes = 6
+            resume_min_turn = climb.RESUME_MIN_TURN
+
+        saves = [Path(f"/saves/AutoSave_{n:04d}.Civ6Save") for n in range(90, 40, -1)]
+        finder = lambda newer_than=None: saves
+        frozen = {"last_turn": 88}
+        self.assertEqual(climb.RESUME_EPISODE_MAX, 3)
+        self.assertIsNotNone(climb.resume_from_autosave(
+            frozen, "frozen", 2, Args(), 1234.5, recent=finder, stride_index=2))
+        self.assertIsNone(climb.resume_from_autosave(
+            frozen, "frozen", 3, Args(), 1234.5, recent=finder, stride_index=3))
+        # A new episode (a freeze two or more turns later) reloads again.
+        self.assertIsNotNone(climb.resume_from_autosave(
+            frozen, "frozen", 3, Args(), 1234.5, recent=finder, stride_index=0))
+        # No episode tracking: the historical stride sequence, budget only.
+        self.assertIsNotNone(climb.resume_from_autosave(
+            frozen, "frozen", 3, Args(), 1234.5, recent=finder))
+
     def test_a_short_rolling_list_never_reuses_a_clamped_resume(self):
         args = self._Args()
         args.max_resumes = 6
@@ -2672,10 +2695,14 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
 
         self.assertEqual(code, 1)
         self.assertEqual(len(rows), 1)
+        # Three reloads, each a different board, and then the hang is given
+        # up (`RESUME_EPISODE_MAX`): the fourth freeze at the same turn used
+        # to clamp onto `AutoSave_0080`, a board between two that had already
+        # hung.
         self.assertEqual(
             [resume["save"] for resume in rows[0]["resumes"]],
             ["AutoSave_0087.Civ6Save", "AutoSave_0084.Civ6Save",
-             "AutoSave_0079.Civ6Save", "AutoSave_0080.Civ6Save"],
+             "AutoSave_0079.Civ6Save"],
         )
 
     def test_resumes_can_be_switched_off(self):
@@ -2814,6 +2841,65 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         self.assertIn("--peace-deal-sessions", cmd("peace"))
         self.assertIn("--trade-deal-sessions", cmd("trade"))
         self.assertNotIn("--deal-sessions", base)
+
+    def test_a_continuation_carries_the_hung_rivals_quarantine(self):
+        """`--deal-session-quarantine PLAYER:TURN` once per held rival, in a
+        stable order; without a hold the command line is today's."""
+        base = climb.play_command(self._play_args(), "t-cont1",
+                                  Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertNotIn("--deal-session-quarantine", base)
+        self.assertEqual(
+            climb.play_command(self._play_args(), "t-cont1", Path("orders.sqlite"),
+                               Path("civvis_orders"), quarantine={}), base)
+        held = climb.play_command(self._play_args(), "t-cont1", Path("orders.sqlite"),
+                                  Path("civvis_orders"), quarantine={5: 164, 1: 150})
+        words = [held[i + 1] for i, word in enumerate(held)
+                 if word == "--deal-session-quarantine"]
+        self.assertEqual(words, ["1:150", "5:164"])
+        self.assertEqual([word for word in held
+                          if word not in ("--deal-session-quarantine", "1:150", "5:164")],
+                         base)
+
+    def test_the_hung_rival_is_read_from_the_frozen_runs_own_events(self):
+        """Live civvis-20261113T171033Z-cont3: a peace session with player 5
+        at t149 closed `counter_not_sent`, then `ai_phase_stall` with
+        `active_players: [5]`. The hold runs fifteen turns past the stall."""
+        import tempfile
+
+        def events(rows):
+            run = Path(tempfile.mkdtemp())
+            (run / "events.jsonl").write_text(
+                "".join(json.dumps(row) + "\n" for row in rows) + "not json\n")
+            return run
+
+        session = {"kind": "deal_session", "phase": "closed", "target": 5, "turn": 149,
+                   "why": "counter_not_sent"}
+        stall = {"kind": "ai_phase_stall", "active_players": [5], "turn": 149}
+        self.assertEqual(climb.hung_rival_quarantine(events([session, stall])),
+                         (5, 149 + climb.HUNG_RIVAL_QUARANTINE_TURNS))
+        self.assertEqual(climb.HUNG_RIVAL_QUARANTINE_TURNS, 15)
+        # The last stall record is the one that froze the run.
+        earlier = {"kind": "ai_phase_stall", "active_players": [1], "turn": 120}
+        self.assertEqual(
+            climb.hung_rival_quarantine(events(
+                [{**session, "target": 1, "turn": 120}, earlier, session, stall])),
+            (5, 164))
+        # No session with that rival on that turn: not this cause, no hold.
+        self.assertIsNone(climb.hung_rival_quarantine(events([stall])))
+        self.assertIsNone(climb.hung_rival_quarantine(
+            events([{**session, "target": 4}, stall])))
+        self.assertIsNone(climb.hung_rival_quarantine(
+            events([{**session, "turn": 148}, stall])))
+        # A stall that names nobody, or several players, holds nobody.
+        self.assertIsNone(climb.hung_rival_quarantine(
+            events([session, {**stall, "active_players": []}])))
+        self.assertIsNone(climb.hung_rival_quarantine(
+            events([session, {**stall, "active_players": [4, 5]}])))
+        self.assertIsNone(climb.hung_rival_quarantine(
+            events([session, {**stall, "turn": None}])))
+        # No stall record, no events file.
+        self.assertIsNone(climb.hung_rival_quarantine(events([session])))
+        self.assertIsNone(climb.hung_rival_quarantine(Path(tempfile.mkdtemp())))
 
     def test_deal_sessions_mode_reads_flag_then_env_then_policy_file(self):
         import tempfile

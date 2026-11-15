@@ -1911,7 +1911,7 @@ fn play_command(args: Vec<String>) {
     if args.iter().any(|a| a == "--live-pause") {
         civvis::civ6::enable_live_pause_control();
     }
-    civvis::server::serve_with_game(
+    civvis::server::serve_opening(
         arg(&args, "--port", 8765) as u16,
         !args.iter().any(|a| a == "--no-open"),
         civvis::server::Params {
@@ -1945,7 +1945,11 @@ fn play_command(args: Vec<String>) {
             civs: play_options.civs,
             supervised: args.iter().any(|a| a == "--supervised"),
         },
-        mirrored.or(resumed),
+        match (mirrored, resumed) {
+            (Some(game), _) => civvis::server::Opening::Mirror(game),
+            (None, Some(game)) => civvis::server::Opening::Resumed(game),
+            (None, None) => civvis::server::Opening::Generated,
+        },
         args.iter().any(|a| a == "--paused"),
     );
 }

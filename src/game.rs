@@ -528,6 +528,13 @@ mod city_states;
 mod combat;
 mod combat_forecast;
 pub use combat_forecast::CombatForecast;
+/// Combat ledger: units each player killed and lost in combat, civilians it
+/// took and lost. See `game/combat_ledger.rs`.
+mod combat_ledger;
+pub use combat_ledger::{
+    edge_bin, online_equivalent_turn, CombatLedger, EdgeCell, EdgeLedger, EdgeTable, EDGE_BINS,
+    EDGE_SIDES, EDGE_TURN_BUCKETS,
+};
 /// Completion: finishing a city's item, wonder effects, and placing new
 /// units. See `game/completion.rs`.
 mod completion;
@@ -5173,6 +5180,31 @@ pub struct Player {
     /// because the governor only ever looks up cities that exist.
     #[serde(default)]
     pub city_directives: BTreeMap<u32, CityDirective>,
+    /// Tiles a seat has placed a citizen on by hand, keyed by city id.
+    ///
+    /// Civilization VI lets a player lock a citizen to a tile; the governor
+    /// then places everyone else around it. A locked citizen is seated first
+    /// and no later pass moves it, including the one that covers consumption:
+    /// a player who locks a city into starving has been obeyed, as in that
+    /// game. Empty is the shipped behaviour, which is every AI seat and every
+    /// old save. Nothing in the engine writes this.
+    #[serde(default)]
+    pub citizen_locks: BTreeMap<u32, BTreeSet<Pos>>,
+    /// Citizens a seat has placed in a district's specialist slots by hand:
+    /// city id, then district family, then how many. The governor seats them
+    /// first, as it does a citizen placed on a tile, and never moves them.
+    /// Empty is the shipped behaviour and nothing in the engine writes it.
+    #[serde(default)]
+    pub specialist_locks: BTreeMap<u32, BTreeMap<String, usize>>,
+    /// The seat's own yield focus for each city, added to the governor's
+    /// appetites after everything else.
+    ///
+    /// It is kept apart from `city_directives` on purpose. An agent rebuilds
+    /// that whole map every turn it plays, so a focus a person set there was
+    /// erased the first time they handed the seat to auto-play. This one is
+    /// written only by the played seat and nobody clears it but them.
+    #[serde(default)]
+    pub citizen_focus: BTreeMap<u32, Yields>,
     pub faith: f64,
     /// Gathering Storm strategic-resource stockpiles. Luxuries remain copy
     /// based and are intentionally not represented here.
@@ -5515,6 +5547,10 @@ pub struct Player {
     /// [`Game::unit_lifetime_stats`].
     #[serde(default)]
     pub unit_lifetimes: BTreeMap<Name, UnitLifetimeStats>,
+    /// Units killed and lost in combat, civilians taken and lost. Observes
+    /// only; absent from a save while empty. See `game/combat_ledger.rs`.
+    #[serde(default, skip_serializing_if = "CombatLedger::is_empty")]
+    pub combat_ledger: CombatLedger,
     /// Every great work as an object with its creating era and creator, kept
     /// in lockstep with the ``great_work:*`` counters. Theming reads these.
     #[serde(default)]
@@ -5548,6 +5584,9 @@ impl Player {
             bankruptcy_amenity_penalty: 0,
             citizen_food_bias: 0.0,
             city_directives: BTreeMap::new(),
+            citizen_locks: BTreeMap::new(),
+            specialist_locks: BTreeMap::new(),
+            citizen_focus: BTreeMap::new(),
             faith: 0.0,
             strategic_resources: BTreeMap::new(),
             strategic_resource_shortages: BTreeMap::new(),
@@ -5638,6 +5677,7 @@ impl Player {
             envoys: Vec::new(),
             counters: BTreeMap::new(),
             unit_lifetimes: BTreeMap::new(),
+            combat_ledger: CombatLedger::default(),
             great_work_pieces: Vec::new(),
             quests: BTreeMap::new(),
             boosted_techs: BTreeSet::new(),
@@ -7791,6 +7831,11 @@ pub struct Game {
     /// `docs/ELO_REPINS.md` for what promoting it costs.
     #[serde(default)]
     pub native_competitions: bool,
+    /// ⭐ The harness switch `--rival-host-tactics` (`host_tactics.rs`): what
+    /// a governed rival chair may not do this turn, set only for that chair's
+    /// own turn and read by `apply`. Never saved, never set outside the
+    /// harness, so every other game is byte for byte what it was.
+    pub(crate) host_gate: Option<Box<crate::host_tactics::Gate>>,
     /// Turn the last Special Session was seated. Shipped
     /// `WORLD_CONGRESS_MIN_TIME_BETWEEN_SPECIAL_SESSIONS` holds the next one
     /// off for 15 standard-scaled turns. Saves from before this field start
@@ -8376,6 +8421,7 @@ impl From<GameSer> for Game {
             competition: s.competition,
             competition_lockout_until: s.competition_lockout_until,
             native_competitions: s.native_competitions,
+            host_gate: None,
             last_special_session: s.last_special_session,
             pending_emergencies: s.pending_emergencies,
             active_emergencies: s.active_emergencies,
@@ -8697,6 +8743,9 @@ impl Game {
         for player in self.players.iter_mut() {
             player.remembered_cities.clear();
             player.city_directives.clear();
+            player.citizen_locks.clear();
+            player.specialist_locks.clear();
+            player.citizen_focus.clear();
         }
     }
 
@@ -8761,6 +8810,9 @@ impl Game {
         Arc::make_mut(&mut self.observed_city_specialists).remove(&cid);
         for player in self.players.iter_mut() {
             player.city_directives.remove(&cid);
+            player.citizen_locks.remove(&cid);
+            player.specialist_locks.remove(&cid);
+            player.citizen_focus.remove(&cid);
         }
         *self.query_memo.city_ids.borrow_mut() = None;
     }
@@ -9157,6 +9209,7 @@ impl Game {
             competition: None,
             competition_lockout_until: BTreeMap::new(),
             native_competitions: false,
+            host_gate: None,
             last_special_session: 0,
             pending_emergencies: Vec::new(),
             active_emergencies: Vec::new(),
@@ -12390,8 +12443,12 @@ impl Game {
     /// game. Both questions — whether, and where — are answered from one
     /// lookup rather than from two of the same one.
     fn established_governor_at(&self, pid: usize, governor: &str) -> Option<u32> {
-        let state = self.players.get(pid)?.governor_roster.get(governor)?;
-        let spec = self.rules.governors.get(governor)?;
+        let (governor_name, state) = self
+            .players
+            .get(pid)?
+            .governor_roster
+            .get_key_value(governor)?;
+        let spec = self.rules.governors.get_interned(*governor_name)?;
         let city_id = state.city?;
         let city = self.cities.get(&city_id)?;
         // Capturing or razing a Governor's city displaces that Governor. Amani
@@ -13591,6 +13648,7 @@ impl Game {
     }
 
     fn record_kill(&mut self, pid: usize, weapon: Option<&str>, victim: &Unit) {
+        self.tally_combat_removal(pid, victim.owner, victim.kind);
         bump(&mut self.players[pid], "kills");
         if let Some(kind) = weapon {
             *self.players[pid]

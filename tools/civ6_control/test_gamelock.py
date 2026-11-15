@@ -282,5 +282,18 @@ class VerificationIntent(unittest.TestCase):
             "civvis-intent-gate-test", require_verification_intent=True))
         gamelock.release()
 
+    def test_terminal_authorizes_the_window_loop_and_no_background_caller(self) -> None:
+        self.intent.write_text("terminal\n")
+        # What every keeper, watchdog and background service asks.
+        refusal = gamelock.verification_intent_description()
+        self.assertIsNotNone(refusal)
+        self.assertIn("nothing in the background", refusal)
+        # What the loop in the Terminal window asks.
+        self.assertIsNone(
+            gamelock.verification_intent_description(terminal_window=True))
+        self.assertTrue(gamelock.acquire(
+            "civvis-intent-gate-test", require_verification_intent=True))
+        gamelock.release()
+
 if __name__ == "__main__":
     unittest.main()

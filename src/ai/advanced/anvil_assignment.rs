@@ -43,6 +43,11 @@ impl AdvancedAi {
             None
         };
         let cid = assigned.unwrap_or(original);
+        // `defend-force-holds-the-city`: a held city's posts stand the Anvil
+        // down. `false` with the gene off.
+        if self.defend_hold_holds(cid) {
+            return None;
+        }
         let city = g.cities.get(&cid).filter(|city| city.owner == pid)?;
         (g.wdist(group.anchor, city.pos) <= THREAT_RELIEF_RADIUS).then_some(cid)
     }

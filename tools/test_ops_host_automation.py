@@ -360,6 +360,26 @@ class TheWrapperAppliesThePolicyAndNothingElse(unittest.TestCase):
             self.assertFalse(host.out.exists())
             self.assertIn("verification intent is not running", host.logged())
 
+    def test_terminal_intent_reaches_the_launcher(self):
+        with TemporaryDirectory() as raw:
+            host = _Host(raw)
+            host.write_policy("CIVVIS_CONTROL=terminal")
+            host.intent.write_text("terminal\n")
+            done = zsh(WRAPPER, env=host.env())
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertIn("stub-ran", done.stdout)
+            self.assertNotIn("CIVVIS_CONTROL", host.logged(),
+                             "a known key is not reported as unknown")
+
+    def test_a_misspelt_control_mode_refuses(self):
+        with TemporaryDirectory() as raw:
+            host = _Host(raw)
+            host.write_policy("CIVVIS_CONTROL=window")
+            done = zsh(WRAPPER, env=host.env())
+            self.assertEqual(done.returncode, 64, done.stdout + done.stderr)
+            self.assertFalse(host.out.exists())
+            self.assertIn("must be terminal or unattended", host.logged())
+
 
 @unittest.skipUnless(HAS_ZSH, "the installer is zsh; this runner has no zsh")
 class TheInstallerWiresAHostToTheTrackedTree(unittest.TestCase):
@@ -637,6 +657,95 @@ class TheSwitchIsTheTrackedOne(unittest.TestCase):
                 self.assertEqual(pin.read_text(), "head\n")
                 self.assertEqual(open_pin.read_text(), "head\n",
                                  "Terminal must receive a verifiable head pin")
+
+    def _switch_host(self, raw: str, *policy: str):
+        """A home whose `open` and `launchctl` only count how often they ran."""
+        home = Path(raw) / "home"
+        home.mkdir()
+        agents = home / "Library" / "LaunchAgents"
+        agents.mkdir(parents=True)
+        for label in ("com.civvis.ladder-watchdog", "com.civvis.spectator"):
+            (agents / f"{label}.plist").write_text("<plist/>")
+        (home / ".civvis-verification-policy").write_text(
+            "".join(f"{line}\n" for line in policy))
+        wrapper = home / civvis_collab.LADDER_OPERATOR_WRAPPER.name
+        wrapper.write_text("#!/bin/zsh\nexit 0\n")
+        wrapper.chmod(0o755)
+        fake_bin = home / "fake-bin"
+        fake_bin.mkdir()
+        for name, source in {
+            # No halt stands (`--halt-status` exits 1), so only the intent can
+            # hold `ensure` back.
+            "python3": '#!/bin/zsh\n[[ "$*" == *--halt-status* ]] && exit 1\nexit 0\n',
+            "pgrep": "#!/bin/zsh\nexit 1\n",
+            "launchctl": '#!/bin/zsh\nprint -r -- "$*" >> "$HOME/launchctl-calls"\n',
+            "open": '#!/bin/zsh\nprint -r -- "$*" >> "$HOME/open-calls"\n',
+        }.items():
+            command = fake_bin / name
+            command.write_text(source)
+            command.chmod(0o755)
+        env = clean_env(HOME=str(home), CIVVIS_REPO=str(REPO),
+                        PATH=str(fake_bin) + os.pathsep + os.environ["PATH"])
+
+        def calls(name: str) -> int:
+            log = home / f"{name}-calls"
+            return len(log.read_text().splitlines()) if log.exists() else 0
+
+        return home, env, calls
+
+    def test_terminal_control_opens_one_window_and_nothing_recovers_it(self):
+        """The 2026-11-12 fault: the keeper reopened a loop the operator had closed."""
+        with TemporaryDirectory() as raw:
+            home, env, calls = self._switch_host(raw, "CIVVIS_CONTROL=terminal")
+            intent = home / ".civvis-operator-intent"
+            done = zsh(SWITCH, "on", env=env)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertEqual(intent.read_text(), "terminal\n")
+            self.assertEqual(calls("open"), 1, "one Terminal window hosts the loop")
+            self.assertEqual(calls("launchctl"), 0, "no background service is loaded")
+            # The window is gone (pgrep finds no chain) and the keeper's own
+            # command runs: it must leave the lane down.
+            done = zsh(SWITCH, "ensure", env=env)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertIn("intent=terminal", done.stdout)
+            self.assertIn("leaving the lanes down", done.stdout)
+            self.assertEqual(calls("open"), 1, "ensure reopened a closed window")
+            self.assertEqual(intent.read_text(), "terminal\n")
+
+    def test_unattended_control_is_unchanged_and_still_recovers(self):
+        with TemporaryDirectory() as raw:
+            home, env, calls = self._switch_host(raw)
+            done = zsh(SWITCH, "on", env=env)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertEqual((home / ".civvis-operator-intent").read_text(), "running\n")
+            self.assertGreater(calls("launchctl"), 0, "both services are ensured")
+            self.assertEqual(calls("open"), 1)
+            done = zsh(SWITCH, "ensure", env=env)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertEqual(calls("open"), 2, "an authorized missing loop is recovered")
+
+    def test_an_unknown_control_mode_turns_nothing_on(self):
+        with TemporaryDirectory() as raw:
+            home, env, calls = self._switch_host(raw, "CIVVIS_CONTROL=window")
+            done = zsh(SWITCH, "on", env=env)
+            self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+            self.assertIn("must be terminal or unattended", done.stdout)
+            self.assertFalse((home / ".civvis-operator-intent").exists())
+            self.assertEqual(calls("open"), 0)
+
+    def test_only_the_window_chain_accepts_the_terminal_intent(self):
+        """Discovered, not listed: a new script that accepts it must be named here."""
+        accepting = sorted(
+            path.name for path in OPS.glob("*.sh")
+            if "(running|terminal)" in path.read_text())
+        self.assertEqual(accepting, [
+            "civvis-game-supervisor.sh",
+            "civvis-interactive-host.sh",
+            "civvis-verified-head-launcher.sh",
+        ])
+        text = SWITCH.read_text()
+        ensure = text[text.index("ensure)\n"):text.index("\nstatus)\n")]
+        self.assertNotIn("intent_is_terminal", ensure)
 
 
 @unittest.skipUnless(HAS_ZSH, "the prune job is zsh; this runner has no zsh")

@@ -3179,7 +3179,13 @@ fn browser_renders_each_delivered_state_as_one_complete_frame() {
     assert!(EMBEDDED_INDEX.contains("paintedFrame = {seed:st.seed, turn:st.turn,"));
     assert!(EMBEDDED_INDEX.contains("finished:gameFinished(st)"));
     assert!(EMBEDDED_INDEX.contains("&frame=${paintedFrame.sequence}"));
-    assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\" + paintedQuery())"));
+    // The watching loop's read, and the read a page opens on. The opening one
+    // asks for the globe in the same breath: a second whole state for the
+    // geometry alone used to land on the first turns of every visit.
+    assert!(EMBEDDED_INDEX
+        .contains("fetchJSON(\"/state\" + paintedQuery(), {signal:controller.signal})"));
+    assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\" + paintedQuery() + \"&planet=1\")"));
+    assert!(EMBEDDED_INDEX.contains("render(adoptTiles(adoptPlanetGeometry(await openingRead)));"));
     // Two tabs are two promises, so a page says which one it is, and what
     // it holds is asked separately from what it drew — a state can arrive,
     // patch the tiles and still fail to paint.
@@ -7241,7 +7247,8 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // the head has to rewrite them, or the new cell lands in an implicit
     // track outside the list.
     assert!(
-        EMBEDDED_INDEX.contains("  syncPlayerHudColumns();\n  syncHudColumnRoster();"),
+        EMBEDDED_INDEX
+            .contains("  syncPlayerHudColumns();\n  const rosterChanged = syncHudColumnRoster();"),
         "a repaint restates the tracks and the roster the arriving column changed"
     );
     assert!(
@@ -7563,6 +7570,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "civ",
         "leader",
         "player",
+        "elo",
         "elo_delta",
         "win_start",
         "win_delta",
@@ -7575,6 +7583,68 @@ fn browser_orders_controls_interface_setup_and_logs() {
             "the {key} heading should carry a sortable label"
         );
     }
+    // The player and the rating it sat down with stand together, after
+    // Watch as and before the odds they explain (operator, 2026-11-13: "add
+    // player and elo to the player hud. after the watch as col and before
+    // start win odds").
+    let column_at = |key: &str| {
+        EMBEDDED_INDEX
+            .find(&format!("{{key:\"{key}\", label:"))
+            .unwrap_or_else(|| panic!("no {key} column in the model"))
+    };
+    assert!(
+        column_at("watch") < column_at("player")
+            && column_at("player") < column_at("elo")
+            && column_at("elo") < column_at("win_start"),
+        "Watch as, Player, Player Elo, then the odds"
+    );
+    assert!(EMBEDDED_INDEX.contains(
+        "{key:\"elo\", label:\"Player Elo\", block:\"identity\", min:\"--hud-elo-min\", width:.6,\n   exists:ratedTableInPlay},"
+    ));
+    assert!(EMBEDDED_INDEX.contains("elo:[\"ELO\", \"Player's Elo rating\", \"numeric\"],"));
+    assert!(EMBEDDED_INDEX.contains("if (key === \"elo\") return playerHudEloValue(player);"));
+    // Neither the handle nor its rating may end in an ellipsis: each column
+    // is held to its widest content, measured when the table changes rather
+    // than on every repaint.
+    assert!(EMBEDDED_INDEX.contains("--hud-player-min: var(--hud-ident-min); --hud-elo-min: 30px;"));
+    assert!(EMBEDDED_INDEX.contains(
+        "{key:\"player\", label:\"Player\", block:\"identity\", min:\"--hud-player-min\", width:1.85},"
+    ));
+    assert!(EMBEDDED_INDEX.contains("let moved = syncRatedPlayerFloors(hud);"));
+    assert!(EMBEDDED_INDEX.contains(
+        "if (key === ratedPlayerFloorKey || (!names.length && !ratings.length)) return false;"
+    ));
+    // A layout saved before the column existed takes it right after Player,
+    // and gets Player itself back once: it names the competing agent now.
+    assert!(EMBEDDED_INDEX.contains("predatesPlayerElo = !known.includes(\"elo\");"));
+    assert!(EMBEDDED_INDEX
+        .contains("if (predatesPlayerElo) playerHudHiddenColumns.delete(\"player\");"));
+    // At a table of rated agents the player, its rating and the odds that
+    // rating gave it are the last columns to give way.
+    assert!(EMBEDDED_INDEX.contains(
+        "const PLAYER_HUD_RATED_TABLE_HOLDS = [\"win_delta\", \"win_start\", \"elo\", \"player\"];"
+    ));
+    assert!(EMBEDDED_INDEX.contains("for (const key of playerHudShedOrder()) {"));
+    // The mirror of a Civilization VI game names its seats without rating
+    // them ("Civ 6 Deity AI"), and those names are what the operator reads
+    // the column for, so a named table holds Player as a rated one does. The
+    // first cut shed the column at a 1728 px window the moment the mirror
+    // stopped borrowing the site agents' ratings (real page, 2026-11-13).
+    assert!(EMBEDDED_INDEX.contains(
+        "function namedTableInPlay() {\n  return Boolean(state?.players?.some(player => player.ai_username));\n}"
+    ));
+    assert!(EMBEDDED_INDEX.contains("if (!namedTableInPlay()) return PLAYER_HUD_SHED_ORDER;"));
+    assert!(EMBEDDED_INDEX
+        .contains("function syncRatedPlayerFloors(hud) {\n  if (!namedTableInPlay()) {"));
+    // Arena Stats keeps a record per player strategy: a Civ AI Agent by its
+    // handle or a person, never the house fleet's per-game generated name.
+    assert!(EMBEDDED_INDEX.contains("strategies: {label: \"Strategies\", table: \"agents\","));
+    assert!(EMBEDDED_INDEX.contains("return p.player_username || p.ai_username || null;"));
+    assert!(EMBEDDED_INDEX
+        .contains("if (strategy) bumpSimulationRecord(bucket.agents, strategy, column);"));
+    assert!(EMBEDDED_INDEX.contains(
+        "const table = bucket?.[SIM_STATS_VIEWS[simStatsView].table || simStatsView] || {};"
+    ));
     assert!(
         EMBEDDED_INDEX
             .contains("return playerHudSortHead(column.key, label, title, classes, attrs);"),
@@ -9323,6 +9393,17 @@ fn a_game_has_a_start_a_pause_and_its_payoffs() {
     assert!(EMBEDDED_APP_MOMENTS_JS.starts_with("\"use strict\";"));
     let served = String::from_utf8(index_with_app_instance(EMBEDDED_INDEX_HTML, 7)).unwrap();
     assert!(served.contains(r#"<script src="/assets/app_moments.js?instance=7"></script>"#));
+    // Arena Stats is a script of its own, ahead of the renderer that calls
+    // it, and a replaced server hands it out under its own instance like the
+    // rest.
+    assert!(super::EMBEDDED_APP_ARENA_JS.starts_with("\"use strict\";"));
+    let arena = served
+        .find(r#"<script src="/assets/app_arena.js?instance=7"></script>"#)
+        .expect("the Arena Stats script is served under the instance");
+    let renderer = served
+        .find(r#"<script src="/assets/app.js?instance=7"></script>"#)
+        .expect("the renderer is served under the instance");
+    assert!(arena < renderer, "app_arena.js loads before app.js");
     for id in [
         "moments",
         "fd-pause",
@@ -13124,6 +13205,7 @@ fn a_new_game_seats_the_rivals_a_person_asked_for() {
         .expect("a registered agent can be seated");
     assert_eq!(session.rival_strategy_name(), Some("siege"));
     assert_eq!(session.seated_strategy_name(0), Some("player"));
+    assert_eq!(session.seated_strategy_name(1), Some("siege"));
     let rules = crate::routes::rules(&session, false);
     assert_eq!(rules["rival_strategy"], json!("siege"));
     let ladder = rules["civ6_ladder"].as_array().expect("a ladder");
@@ -13221,15 +13303,17 @@ fn a_player_can_hand_their_seat_to_a_named_strategy() {
     assert_eq!(session.game.turn, before + 3);
 }
 
-/// Every major on screen carries its odds of winning, whether or not this
-/// game rates anybody — and nothing does: every seat sits down at the same
-/// provisional prior, so the start odds are the table and the difficulty.
+/// A table nobody is playing is a contest between our strongest Civ AI
+/// Agents (operator, 2026-11-13: "lets have our top 4 (or however many)
+/// player strategies compete. each gets a civ"). Every major is dealt a
+/// different one off the top of the published ranking, says which in the
+/// observation, and sits down at its rating.
 #[test]
-fn every_major_carries_odds_without_a_rating() {
+fn a_watched_table_seats_the_top_rated_agents_one_to_a_civ() {
     let mut params = current();
     params.spectate = true;
     params.num_players = 4;
-    let session = Session::new(params);
+    let session = Session::new(params.clone());
 
     let state = session.state();
     let majors: Vec<&Value> = state["players"]
@@ -13239,23 +13323,51 @@ fn every_major_carries_odds_without_a_rating() {
         .filter(|p| p["is_minor"] != json!(true) && p["is_barbarian"] != json!(true))
         .collect();
     assert_eq!(majors.len(), 4);
+    let top: std::collections::BTreeSet<&str> = crate::strategies::ranked()
+        .iter()
+        .take(4)
+        .map(|row| row.id)
+        .collect();
+    let mut seated = std::collections::BTreeSet::new();
+    let mut rated_odds: Vec<(i64, f64)> = Vec::new();
     let mut shares = 0.0;
     let mut now_shares = 0.0;
     for player in &majors {
-        assert!(player["ai_elo"].is_null(), "nothing rates a seat any more");
-        shares += player["odds_start"]
+        let seat = player["id"].as_u64().unwrap() as usize;
+        let agent = player["ai_agent"]
+            .as_str()
+            .expect("every watched major names its agent");
+        let row = crate::strategies::find(agent).expect("a roster agent");
+        assert_eq!(session.seated_strategy_name(seat), Some(row.id));
+        assert_eq!(player["ai_username"], json!(row.handle));
+        assert_eq!(player["ai_strat_label"], json!(row.tilt));
+        let published = crate::strategies::published()
+            .ratings
+            .get(row.id)
+            .expect("the top of the ranking is rated");
+        let elo = published.elo.round() as i64;
+        assert_eq!(player["ai_elo"], json!(elo));
+        // The seat sits down at that rating: its prior with the difficulty
+        // bargain taken back out is the number the standings print.
+        let prior = player["odds_prior_elo"].as_i64().expect("a prior")
+            - player["odds_handicap_elo"].as_i64().expect("a handicap");
+        assert!(
+            (prior - elo).abs() <= 1,
+            "{agent}: prior {prior}, rated {elo}"
+        );
+        let start = player["odds_start"]
             .as_f64()
             .expect("every major has start odds");
+        rated_odds.push((elo, start));
+        shares += start;
         now_shares += player["odds_now"].as_f64().expect("and now odds");
-        assert!(player["odds_prior_elo"].as_i64().is_some());
-        // Nobody chose these seats, so the one agent behind all of them
-        // does not get to put its handle on four different civilizations.
-        assert!(
-            player["ai_username"].is_null(),
-            "an unseated table keeps its per-seat names"
-        );
         assert!(player["ai_name"].as_str().is_some_and(|n| !n.is_empty()));
+        assert!(
+            seated.insert(row.id),
+            "{agent} holds two civilizations at a four-seat table"
+        );
     }
+    assert_eq!(seated, top, "the table is the top of the ranking");
     assert!(
         (shares - 1.0).abs() < 0.02,
         "one table, one winner: start odds summed to {shares}"
@@ -13264,6 +13376,103 @@ fn every_major_carries_odds_without_a_rating() {
         (now_shares - 1.0).abs() < 0.02,
         "and so does the live answer: now odds summed to {now_shares}"
     );
+    // A higher rating is a better chance before a tile is drawn.
+    rated_odds.sort_by_key(|(elo, _)| *elo);
+    assert!(
+        rated_odds.windows(2).all(|pair| pair[0].1 <= pair[1].1),
+        "start odds follow the ratings: {rated_odds:?}"
+    );
+    let (lowest, highest) = (rated_odds[0], rated_odds[rated_odds.len() - 1]);
+    assert!(
+        lowest.0 == highest.0 || lowest.1 < highest.1,
+        "{rated_odds:?}"
+    );
+
+    // The deal belongs to the world: the same table resumed puts every
+    // agent back in the seat it was playing.
+    let resumed = Session::from_game(params.clone(), session.game.clone());
+    for seat in 0..session.game.players.len() {
+        assert_eq!(
+            resumed.seated_strategy_name(seat),
+            session.seated_strategy_name(seat)
+        );
+    }
+    // And it is dealt, not fixed: across worlds every agent draws seat 0.
+    let mut first_seat = std::collections::BTreeSet::new();
+    for seed in 1..40 {
+        let mut other = params.clone();
+        other.seed = seed;
+        first_seat.insert(
+            Session::new(other)
+                .seated_strategy_name(0)
+                .unwrap()
+                .to_string(),
+        );
+    }
+    assert_eq!(
+        first_seat.len(),
+        4,
+        "seat 0 went to the same agents: {first_seat:?}"
+    );
+
+    // A person who asks to watch one agent at every seat still gets that.
+    let mut chosen = Session::new(params);
+    chosen
+        .start_new_game(&json!({
+            "seed": 21, "spectate": true, "force": true, "rival_strategy": "siege",
+        }))
+        .expect("a registered agent can be seated");
+    for player in chosen.state()["players"].as_array().unwrap() {
+        if player["is_minor"] != json!(true) && player["is_barbarian"] != json!(true) {
+            assert_eq!(player["ai_username"], json!("SiegeTheDay"));
+        }
+    }
+}
+
+/// Across the table from a person sits the house fleet, as it always has.
+/// Nobody there is rated, so no seat claims a rating and every seat sits
+/// down at the same provisional prior: a measured 1200 beside a person's
+/// provisional 1500 would be two scales in one table.
+#[test]
+fn a_played_table_keeps_the_house_fleet_and_the_flat_prior() {
+    let mut params = current();
+    params.num_players = 4;
+    let mut session = Session::new(params.clone());
+    assert_eq!(session.seated_strategy_name(0), Some("player"));
+    for seat in 1..4 {
+        assert_eq!(session.seated_strategy_name(seat), Some("advanced"));
+    }
+    for player in session.state()["players"].as_array().unwrap() {
+        assert!(player["ai_elo"].is_null(), "nothing rates the house fleet");
+        assert!(
+            player["ai_username"].is_null(),
+            "the house fleet keeps its per-seat names"
+        );
+    }
+    assert!(session.rated_table().is_none());
+    // Rivals a person asked for are rated, and the person still is not, so
+    // the table keeps the one prior for everybody.
+    session.seat_rivals("siege").expect("a registered agent");
+    assert_eq!(session.seated_strategy_name(1), Some("siege"));
+    assert_eq!(session.seated_strategy_name(0), Some("player"));
+    assert!(session.rated_table().is_none());
+
+    // A battlefield nobody is playing keeps the house fleet too: the
+    // ratings were measured on whole games.
+    let arena = new_game_params(
+        &params,
+        &json!({
+            "num_players": 2, "map_script": "battlefield", "width": 11, "height": 10,
+            "spectate": true,
+        }),
+    );
+    assert!(arena.spectate && arena.map_script.is_battlefield());
+    let arena = Session::new(arena);
+    for (seat, player) in arena.game.players.iter().enumerate() {
+        if !player.is_minor && !player.is_barbarian {
+            assert_eq!(arena.seated_strategy_name(seat), Some("advanced"));
+        }
+    }
 }
 
 /// A seated player is told their own odds, and an unmet rival's are withheld
@@ -14165,7 +14374,7 @@ fn a_selected_city_shows_what_its_land_yields() {
         tiles.contains("if (buying) for (const site of sitePick.sites.keys()) tiles.add(site);")
     );
     assert!(EMBEDDED_APP_JS
-        .contains("return !SPEC && Boolean((sitePick && sitePick.plots) || cityScreenOpen());"));
+        .contains("return !SPEC && Boolean((sitePick && (sitePick.plots || sitePick.citizens)) || cityScreenOpen());"));
     // Both maps read it, and the yield icons being on still shows everything.
     assert_eq!(
         EMBEDDED_APP_JS
@@ -15862,15 +16071,25 @@ fn browser_covers_every_empire_decision() {
 /// constructor to `enable_native_deployment` plus the list.
 #[test]
 fn the_strategy_panel_names_the_agent_the_site_seats() {
-    // The panel's Agent row tells a viewer every major is the rule-based
-    // CIVVIS agent and that no model is playing. Both halves are facts about
-    // this tree, so they are held here rather than left as copy.
+    // The panel's Agent row names the Civ AI Agent in the seat and tells a
+    // viewer it is a rule-based CIVVIS agent with no model playing. Both
+    // halves are facts about this tree, so they are held here rather than
+    // left as copy: every watched major is a roster row, and a roster row
+    // can only be built on one of the rule-based chassis.
     let mut params = current();
     params.spectate = true;
     let session = Session::new(params);
     for (seat, player) in session.game.players.iter().enumerate() {
         if !player.is_minor && !player.is_barbarian {
-            assert_eq!(session.seated_strategy_name(seat), Some("advanced"));
+            let name = session.seated_strategy_name(seat).expect("a seated agent");
+            let row = crate::strategies::find(name).expect("a roster row");
+            assert!(matches!(
+                row.chassis,
+                crate::strategies::Chassis::Deployment
+                    | crate::strategies::Chassis::Stock
+                    | crate::strategies::Chassis::Legacy
+                    | crate::strategies::Chassis::Basic
+            ));
         }
     }
     let embedded = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data");
@@ -15879,7 +16098,8 @@ fn the_strategy_panel_names_the_agent_the_site_seats() {
         "a shipped value net makes the panel's \"no neural network\" untrue"
     );
     assert!(EMBEDDED_INDEX.contains("It uses no language model and no neural network"));
-    assert!(EMBEDDED_INDEX.contains("row(\"Agent\", \"CIVVIS Advanced AI\", SITE_AGENT_STORY)"));
+    assert!(EMBEDDED_INDEX.contains("row(\"Agent\", siteAgentName(p), SITE_AGENT_STORY)"));
+    assert!(EMBEDDED_INDEX.contains(": \"CIVVIS Advanced AI\";"));
 }
 
 #[test]
@@ -16092,7 +16312,12 @@ fn a_played_seat_sets_its_citys_yield_focus() {
     // state the write produced.
     let favoured = ask(&mut session, "food", 1);
     assert!(favoured["error"].is_null(), "{}", favoured["error"]);
-    assert!(session.game.players[0].city_directives[&city].emphasis.food > 0.0);
+    assert!(session.game.players[0].citizen_focus[&city].food > 0.0);
+    // An agent that takes the seat rebuilds every directive. The seat's own
+    // focus is not one of them, so auto-play does not erase it.
+    session.game.players[0].city_directives.clear();
+    session.game.board_written();
+    assert!(citizens(&session.state())["emphasis"]["food"].as_f64() > Some(0.0));
     let after = citizens(&favoured);
     assert!(after["emphasis"]["food"].as_f64() > Some(0.0));
     assert!(after["weights"]["food"].as_f64() > before["weights"]["food"].as_f64());
@@ -16175,6 +16400,236 @@ fn a_city_keeps_a_queue_the_page_reissues() {
     let routes = include_str!("../routes.rs");
     assert!(routes.contains("const FOCUS_FAVOURED: f64 = 4.0;"));
     assert!(routes.contains("const FOCUS_DISFAVOURED: f64 = -1.0;"));
+}
+
+/// Civilization VI's Manage Citizens: a player presses a tile and a citizen
+/// works it until told otherwise. Placing a citizen was the last thing a
+/// person could do in a city there and not here.
+#[test]
+fn a_played_seat_places_a_citizen_by_hand() {
+    let mut params = current();
+    params.spectate = false;
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_014;
+    let mut session = Session::new(params);
+    let settler = session
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "settler")
+        .map(|unit| unit.pos)
+        .expect("seat 0 opens with a settler");
+    session.game.found_city_for(0, settler, None);
+    let (city, center) = session
+        .game
+        .cities
+        .values()
+        .find(|city| city.owner == 0)
+        .map(|city| (city.id, city.pos))
+        .expect("the city just founded");
+    session.game.cities.get_mut(&city).unwrap().pop = 2;
+    session.game.board_written();
+    let citizens = |state: &Value| {
+        state["cities"]
+            .as_array()
+            .expect("cities")
+            .iter()
+            .find(|seen| seen["id"] == json!(city))
+            .expect("the seat's own city")["citizens"]
+            .clone()
+    };
+    let before = citizens(&session.state());
+    assert_eq!(before["locked"], json!([]));
+    let worked = before["worked_tiles"]
+        .as_array()
+        .expect("worked tiles")
+        .clone();
+    assert_eq!(worked.len(), 2);
+
+    // Three tiles the city owns and the governor left unworked.
+    let spare: Vec<(i32, i32)> = session.game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|pos| *pos != center && !worked.contains(&json!([pos.0, pos.1])))
+        .filter(|pos| {
+            session
+                .game
+                .map
+                .get(*pos)
+                .is_some_and(|tile| tile.district.is_none() && tile.wonder.is_none())
+        })
+        .take(3)
+        .collect();
+    assert_eq!(spare.len(), 3, "a new city owns more land than it works");
+    let ask = |session: &mut Session, pos: (i32, i32), lock: bool| {
+        crate::routes::city_citizen(
+            session,
+            &json!({"city": city, "pos": [pos.0, pos.1], "lock": lock}),
+        )
+    };
+
+    // Placed: the citizen works that tile, and the page is told it was placed.
+    let placed = ask(&mut session, spare[0], true);
+    assert!(placed["error"].is_null(), "{}", placed["error"]);
+    let after = citizens(&placed);
+    assert_eq!(after["locked"], json!([[spare[0].0, spare[0].1]]));
+    let now_worked = after["worked_tiles"].as_array().expect("worked tiles");
+    assert!(now_worked.contains(&json!([spare[0].0, spare[0].1])));
+    assert_eq!(
+        now_worked.len(),
+        2,
+        "placing moves a citizen, it does not add one"
+    );
+
+    // Two citizens, so a second may be placed and a third may not.
+    assert!(ask(&mut session, spare[1], true)["error"].is_null());
+    assert!(ask(&mut session, spare[2], true)["error"].is_string());
+    // Nor on the city's own tile, nor on land that is not the city's.
+    assert!(ask(&mut session, center, true)["error"].is_string());
+    assert!(ask(&mut session, (4_000, 4_000), true)["error"].is_string());
+
+    // Released, the governor has the citizens back, to the tile.
+    ask(&mut session, spare[0], false);
+    let released = ask(&mut session, spare[1], false);
+    assert_eq!(citizens(&released)["locked"], json!([]));
+    assert_eq!(citizens(&released)["worked_tiles"], before["worked_tiles"]);
+    assert!(session.game.players[0].citizen_locks.is_empty());
+
+    // Both front ends answer it, and the browser build routes it to the engine.
+    assert!(include_str!("../wasm.rs").contains("(\"POST\", \"/city-citizen\")"));
+    assert!(include_str!("../server.rs").contains("(\"POST\", \"/city-citizen\")"));
+    assert!(include_str!("../../beta/shim.js").contains("\"/city-citizen\""));
+
+    // The page: a mode on the map that stays up, marks who works what, and
+    // only appears for a server that says which citizens are placed.
+    assert!(EMBEDDED_APP_JS
+        .contains("if (sitePick.citizens) { toggleCitizenLock(sitePick.cityId, pos); return; }"));
+    assert!(EMBEDDED_APP_JS.contains("(city.citizens && Array.isArray(city.citizens.locked)"));
+    assert!(EMBEDDED_APP_JS
+        .contains(": {city: cityId, pos: [pos[0], pos[1]], lock: !held.has(key(pos))};"));
+    assert_eq!(
+        EMBEDDED_APP_JS
+            .matches("    markCitizenPick(site, ")
+            .count(),
+        2
+    );
+}
+
+/// Civilization VI lets a player seat a specialist in a district. The route
+/// that places a citizen on a tile seats one in a district's slots too, by a
+/// count, and the page shows each district as seated of slots.
+#[test]
+fn a_played_seat_seats_a_specialist_by_hand() {
+    let mut params = current();
+    params.spectate = false;
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_014;
+    let mut session = Session::new(params);
+    let settler = session
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "settler")
+        .map(|unit| unit.pos)
+        .expect("seat 0 opens with a settler");
+    session.game.found_city_for(0, settler, None);
+    let (city, center) = session
+        .game
+        .cities
+        .values()
+        .find(|city| city.owner == 0)
+        .map(|city| (city.id, city.pos))
+        .expect("the city just founded");
+    // A campus with a library on land the city owns, and two citizens.
+    let site = session.game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|pos| *pos != center)
+        .expect("land beside the city");
+    session.game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
+    {
+        let held = session.game.cities.get_mut(&city).unwrap();
+        held.pop = 2;
+        held.districts.insert(crate::name!("campus"), site);
+        held.buildings.push(crate::name!("library"));
+    }
+    session.game.board_written();
+    let citizens = |state: &Value| {
+        state["cities"]
+            .as_array()
+            .expect("cities")
+            .iter()
+            .find(|seen| seen["id"] == json!(city))
+            .expect("the seat's own city")["citizens"]
+            .clone()
+    };
+    let before = citizens(&session.state());
+    let slots = before["specialist_slots"]
+        .as_array()
+        .expect("slots")
+        .clone();
+    assert_eq!(slots.len(), 1, "{before}");
+    assert_eq!(slots[0]["family"], json!("campus"));
+    assert_eq!(slots[0]["pos"], json!([site.0, site.1]));
+    assert_eq!(slots[0]["placed"], json!(0));
+    let offered = slots[0]["slots"].as_u64().expect("a slot count");
+    assert!(offered >= 1);
+    assert_eq!(before["specialists"], json!([]));
+
+    let ask = |session: &mut Session, family: &str, count: u64| {
+        crate::routes::city_citizen(
+            session,
+            &json!({"city": city, "specialist": family, "count": count}),
+        )
+    };
+    // Seated: one citizen leaves the land for the campus and is held there.
+    let seated = ask(&mut session, "campus", 1);
+    assert!(seated["error"].is_null(), "{}", seated["error"]);
+    let after = citizens(&seated);
+    assert_eq!(after["specialists"], json!(["campus"]));
+    assert_eq!(after["specialist_slots"][0]["placed"], json!(1));
+    assert_eq!(after["worked_tiles"].as_array().map(Vec::len), Some(1));
+
+    // More than the district has, a district the city lacks, and more
+    // citizens than the city has are each refused.
+    assert!(ask(&mut session, "campus", offered + 1)["error"].is_string());
+    assert!(ask(&mut session, "holy_site", 1)["error"].is_string());
+    let land = session.game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|pos| *pos != center && *pos != site)
+        .take(2)
+        .collect::<Vec<_>>();
+    let place = |session: &mut Session, pos: (i32, i32)| {
+        crate::routes::city_citizen(session, &json!({"city": city, "pos": [pos.0, pos.1]}))
+    };
+    assert!(place(&mut session, land[0])["error"].is_null());
+    assert!(place(&mut session, land[1])["error"].is_string());
+
+    // Released, the governor has the citizen back.
+    let released = ask(&mut session, "campus", 0);
+    assert_eq!(
+        citizens(&released)["specialist_slots"][0]["placed"],
+        json!(0)
+    );
+    assert!(session.game.players[0].specialist_locks.is_empty());
+
+    // The page seats by the district's own count and shows seated of slots.
+    assert!(EMBEDDED_APP_JS.contains(
+        "? {city: cityId, specialist: site.specialist, count: site.held >= site.slots ? 0 : site.held + 1}"
+    ));
+    assert!(
+        EMBEDDED_APP_JS.contains("cx.fillText(`${slot.seated}/${slot.slots}`, x, y + size * .03);")
+    );
 }
 
 /// Two live games were ended by "New game from the CIVVIS page" (2026-10-15
@@ -16316,6 +16771,11 @@ fn the_leaders_a_player_has_met_ride_the_top_of_the_map() {
     // a record, not a name, and printing it as one stopped the page drawing
     // the turn an alliance was signed.
     assert!(EMBEDDED_APP_JS.contains("try { html = leaderRibbonMarkup(); }"));
+    // A leader is a drawn bust in the civilization's colours with its
+    // monogram as the name tag. The drawing is the page's own.
+    assert!(ribbon
+        .contains("`<svg class=\"ribbon-bust\" viewBox=\"0 0 36 36\" aria-hidden=\"true\">` +"));
+    assert!(EMBEDDED_INDEX.contains("fill: var(--civ-trim); clip-path: circle(50%);"));
     assert!(EMBEDDED_APP_JS
         .contains("const kind = held && typeof held === \"object\" ? held.kind : held;"));
     assert_eq!(EMBEDDED_APP_JS.matches("allianceWord(player)").count(), 3);
@@ -16372,6 +16832,7 @@ fn no_two_page_scripts_declare_the_same_function() {
     // failed, because audio stays suspended until a real click.
     let scripts = [
         ("app_palette.js", super::EMBEDDED_APP_PALETTE_JS),
+        ("app_arena.js", super::EMBEDDED_APP_ARENA_JS),
         ("app.js", EMBEDDED_APP_JS),
         ("app_setup.js", EMBEDDED_APP_SETUP_JS),
         ("app_moments.js", EMBEDDED_APP_MOMENTS_JS),

@@ -477,6 +477,11 @@ impl AdvancedAi {
         if g.cities[&cid].queue.first() == Some(&item) {
             return;
         }
+        // `campus-and-library-before-the-claims`: the city's first Campus or
+        // Library goes first; the sanctuary waits for it.
+        if self.campus_and_library_holds_the_faith_writers(g, pid, cid, plan) {
+            return;
+        }
         // See `founder_wants_a_second_source` (`founder-keeps-two-sources`).
         let second_source =
             self.founder_wants_a_second_source(g, pid) && Self::own_faith_sources(g, pid) == 1;

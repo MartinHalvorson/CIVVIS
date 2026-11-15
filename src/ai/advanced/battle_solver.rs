@@ -24,17 +24,29 @@
 //!   for: keep this city, take this city, or destroy what is here. The
 //!   forecast reports the chance of reaching it and in how many turns.
 //!
+//! - **The enemy it plays against.** By default a guess: greedy on blow
+//!   value, standing still half the time. Gene `solver-plays-the-host` swaps
+//!   in the host AI's own habits, fitted to live games (`host_enemy`,
+//!   `docs/HOST_ENEMY_MODEL.md`).
+//!
 //! Units a siege has reserved are left to the siege train; anything the
 //! solver cannot model (ships, aircraft, embarked units) stays with the
 //! planner and the ladder.
 
-mod dice;
+/// `pub(super)` for `risk-is-priced` (`priced_risk.rs`), which reads a
+/// volley's exact kill chance from the same arithmetic.
+pub(super) mod dice;
 mod extract;
-mod model;
+pub mod host_enemy;
+/// `pub(super)` for `assault_forecast`, which plays a siege forward on the
+/// same board. Nothing here changes for it.
+pub(super) mod model;
 mod search;
 
 #[cfg(test)]
 mod extract_tests;
+#[cfg(test)]
+mod host_enemy_bench;
 
 use std::collections::BTreeSet;
 
@@ -48,6 +60,28 @@ use search::{solve, Budget, Solution};
 /// The solver's search budget. Rollouts are cheap enough to afford this on
 /// every fight of every frame; the live seat runs 2-3 frames a turn.
 const BATTLE_SOLVER_BUDGET: Budget = Budget::DEFAULT;
+
+/// A horizon the bench in `host_enemy_bench` sets to measure deeper play;
+/// zero keeps `BATTLE_SOLVER_BUDGET`. Test builds only.
+#[cfg(test)]
+static TEST_HORIZON: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// The budget a fight is solved with: `BATTLE_SOLVER_BUDGET` in every
+/// shipping build.
+fn solver_budget() -> Budget {
+    #[cfg(test)]
+    {
+        let horizon = TEST_HORIZON.load(std::sync::atomic::Ordering::Relaxed);
+        if horizon > 0 {
+            return Budget {
+                horizon,
+                ..BATTLE_SOLVER_BUDGET
+            };
+        }
+    }
+    BATTLE_SOLVER_BUDGET
+}
+
 /// How many times one fight may be re-solved in a frame after the dice
 /// surprise the plan: the rolls are real, so the rest of the turn is too.
 const MAX_RESOLVES: u32 = 4;
@@ -115,8 +149,11 @@ impl AdvancedAi {
                     &snap.board,
                     &snap.state,
                     snap.objective,
-                    BATTLE_SOLVER_BUDGET,
-                    Weights::default(),
+                    solver_budget(),
+                    Weights {
+                        host_enemy: self.solver_plays_the_host,
+                        ..Weights::default()
+                    },
                     seed,
                 );
                 self.census.battle_solver_rollouts += solution.rollouts as u64;
@@ -275,7 +312,7 @@ impl AdvancedAi {
             solution.plan.iter().filter(|(_, l)| l.aim != Aim::None).count(),
             kills.into_iter().collect::<Vec<_>>().join(", ");
             "{} rollouts over {} turns ({} samples): objective {:.0}%, lose {:.1} units, kill {:.1}, value {:+.0} ({})",
-            solution.rollouts, BATTLE_SOLVER_BUDGET.horizon, forecast.samples,
+            solution.rollouts, solver_budget().horizon, forecast.samples,
             forecast.p_objective * 100.0, forecast.own_lost, forecast.killed, forecast.value,
             solution.by_posture.iter()
                 .map(|(p, v)| format!("{p:?} {v:+.0}"))

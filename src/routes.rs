@@ -546,22 +546,29 @@ pub fn load_uploaded(session: &mut Session, parsed: &Value) -> Result<(), String
         ));
     }
     let params = session.params.clone();
-    let mut next = if parsed.get("mirror_player").is_some() {
-        Session::from_game(params, game)
-    } else {
-        Session::from_saved_game(params, game)
-    };
     // A mirror publishes a frame, not a playable save. Seat and pause it
     // before replacing the session so concurrent polls cannot see the full
     // world between /load and the follower's later /view request.
-    if let Some(player) = parsed.get("mirror_player") {
-        let player = player
+    let next = if let Some(player) = parsed.get("mirror_player") {
+        let seat = player
             .as_u64()
             .and_then(|pid| usize::try_from(pid).ok())
             .ok_or_else(|| "mirror_player must be a non-negative integer".to_string())?;
-        next.set_view_player(Some(player))?;
+        // `mirror_strategy` is the lane the live decider is playing, by the
+        // id it was launched with. A follower that does not know it, or
+        // names one the decider would refuse, leaves the seat named for our
+        // agent without a lane rather than failing the frame.
+        let lane = parsed["mirror_strategy"]
+            .as_str()
+            .and_then(crate::strategies::LiveLane::from_id);
+        let table = server::MirrorTable { seat, lane };
+        let mut next = Session::from_mirror(params, game, table);
+        next.set_view_player(Some(seat))?;
         next.set_spectator_paused(true);
-    }
+        next
+    } else {
+        Session::from_saved_game(params, game)
+    };
     *session = next;
     Ok(())
 }
@@ -667,18 +674,135 @@ pub fn city_focus(session: &mut Session, parsed: &Value) -> Value {
         stance if stance < 0 => FOCUS_DISFAVOURED,
         _ => 0.0,
     };
-    let directive = session.game.players[0]
-        .city_directives
+    // Written to the seat's own focus and not to the directive: an agent
+    // rebuilds every directive on the turns it plays, and a person's focus
+    // has to outlive handing the seat to auto-play.
+    let focus = session.game.players[0]
+        .citizen_focus
         .entry(city)
         .or_default();
     match parsed["yield"].as_str() {
-        Some("food") => directive.emphasis.food = amount,
-        Some("production") => directive.emphasis.production = amount,
-        Some("gold") => directive.emphasis.gold = amount,
-        Some("science") => directive.emphasis.science = amount,
-        Some("culture") => directive.emphasis.culture = amount,
-        Some("faith") => directive.emphasis.faith = amount,
+        Some("food") => focus.food = amount,
+        Some("production") => focus.production = amount,
+        Some("gold") => focus.gold = amount,
+        Some("science") => focus.science = amount,
+        Some("culture") => focus.culture = amount,
+        Some("faith") => focus.faith = amount,
         _ => return json!({"error": "a focus names one of the six yields"}),
+    }
+    // A governor setting, written without an action.
+    session.game.board_written();
+    let mut out = session.state();
+    out["error"] = Value::Null;
+    out
+}
+
+/// `POST /city-citizen` — place one of the played seat's citizens on a tile
+/// by hand, or take the placement off.
+///
+/// Civilization VI's Manage Citizens: a player presses a tile to lock a
+/// citizen there and the governor places everyone else around it. The engine
+/// holds the placements in `Player::citizen_locks`; this is the only thing
+/// that writes them. A tile has to be one the city could work, and a city
+/// cannot have more citizens placed than it has citizens.
+pub fn city_citizen(session: &mut Session, parsed: &Value) -> Value {
+    if session.params.spectate {
+        return json!({"error": "a watched game has no seat to place a citizen from"});
+    }
+    let owned = parsed["city"]
+        .as_u64()
+        .map(|city| city as u32)
+        .filter(|city| {
+            session
+                .game
+                .cities
+                .get(city)
+                .is_some_and(|held| held.owner == 0)
+        });
+    let Some(city) = owned else {
+        return json!({"error": "not your city"});
+    };
+    // A district's specialist slots are filled by a count, not a tile: its
+    // slots are interchangeable, so the request says how many of that
+    // district's are to be held.
+    if let Some(family) = parsed["specialist"].as_str() {
+        let slots = session
+            .game
+            .city_specialist_slots(city)
+            .into_iter()
+            .find(|(held, _, _)| held == family)
+            .map(|(_, _, slots)| slots);
+        let Some(slots) = slots else {
+            return json!({"error": "that district has no specialist slot in this city"});
+        };
+        let wanted = parsed["count"].as_u64().unwrap_or(0) as usize;
+        if wanted > slots {
+            return json!({"error": "that district has no more specialist slots"});
+        }
+        let citizens = session.game.cities[&city].pop.max(0) as usize;
+        let seat = &mut session.game.players[0];
+        let on_tiles = seat.citizen_locks.get(&city).map_or(0, |held| held.len());
+        let held = seat.specialist_locks.entry(city).or_default();
+        let elsewhere: usize = held
+            .iter()
+            .filter(|(other, _)| other.as_str() != family)
+            .map(|(_, count)| *count)
+            .sum();
+        if wanted > 0 && on_tiles + elsewhere + wanted > citizens {
+            return json!({"error": "every citizen of this city is already placed"});
+        }
+        if wanted == 0 {
+            held.remove(family);
+        } else {
+            held.insert(family.to_string(), wanted);
+        }
+        if held.is_empty() {
+            seat.specialist_locks.remove(&city);
+        }
+        session.game.board_written();
+        let mut out = session.state();
+        out["error"] = Value::Null;
+        return out;
+    }
+    let pos = parsed["pos"]
+        .as_array()
+        .and_then(|pos| Some((pos.first()?.as_i64()? as i32, pos.get(1)?.as_i64()? as i32)));
+    let Some(pos) = pos else {
+        return json!({"error": "a citizen is placed on a tile"});
+    };
+    if parsed["lock"].as_bool().unwrap_or(true) {
+        let (workable, citizens) = {
+            let held = &session.game.cities[&city];
+            let open_ground = session.game.map.get(pos).is_some_and(|tile| {
+                tile.district.is_none()
+                    && tile.district_foundation.is_none()
+                    && tile.wonder.is_none()
+            });
+            (
+                pos != held.pos && held.owned_tiles.contains(&pos) && open_ground,
+                held.pop.max(0) as usize,
+            )
+        };
+        if !workable {
+            return json!({"error": "that tile cannot be worked by this city"});
+        }
+        let in_slots: usize = session.game.players[0]
+            .specialist_locks
+            .get(&city)
+            .map_or(0, |held| held.values().sum());
+        let placed = session.game.players[0]
+            .citizen_locks
+            .entry(city)
+            .or_default();
+        if !placed.contains(&pos) && placed.len() + in_slots >= citizens {
+            return json!({"error": "every citizen of this city is already placed"});
+        }
+        placed.insert(pos);
+    } else if let Some(placed) = session.game.players[0].citizen_locks.get_mut(&city) {
+        placed.remove(&pos);
+        if placed.is_empty() {
+            session.game.players[0].citizen_locks.remove(&city);
+        }
     }
     // A governor setting, written without an action.
     session.game.board_written();

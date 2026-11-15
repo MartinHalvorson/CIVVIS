@@ -513,12 +513,14 @@ static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(||
     );
     page.push_str(EMBEDDED_INDEX_HTML);
     page.push_str(EMBEDDED_APP_PALETTE_JS);
+    page.push_str(EMBEDDED_APP_ARENA_JS);
     page.push_str(EMBEDDED_APP_JS);
     page.push_str(EMBEDDED_APP_SETUP_JS);
     page.push_str(EMBEDDED_APP_MOMENTS_JS);
     page.push_str(EMBEDDED_APP_FRONTDOOR_JS);
     page
 });
+const EMBEDDED_APP_ARENA_JS: &str = include_str!("../web/assets/app_arena.js");
 const EMBEDDED_APP_SETUP_JS: &str = include_str!("../web/assets/app_setup.js");
 const EMBEDDED_APP_FRONTDOOR_JS: &str = include_str!("../web/assets/app_frontdoor.js");
 const EMBEDDED_APP_MOMENTS_JS: &str = include_str!("../web/assets/app_moments.js");
@@ -587,6 +589,28 @@ pub struct Params {
     pub supervised: bool,
 }
 
+/// A game of Civilization VI this session repaints (`civvis play --mirror`,
+/// and every frame `tools/follow.py` publishes through `/load`). Nothing here
+/// plays it: the host's one human slot is our live decider, a separate
+/// process, and every other major is Civilization VI's own AI.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MirrorTable {
+    /// The seat our decider plays, by player index.
+    pub seat: usize,
+    /// The lane it is playing, once the follower has said which.
+    pub lane: Option<crate::strategies::LiveLane>,
+}
+
+/// The world a server opens on.
+pub enum Opening {
+    /// One generated from the launch parameters.
+    Generated,
+    /// A checkpoint, resumed in the mode the launch asked for (`--resume`).
+    Resumed(Game),
+    /// A game of Civilization VI rebuilt for repainting (`--mirror`).
+    Mirror(Game),
+}
+
 pub struct Session {
     pub params: Params,
     pub game: Game,
@@ -613,6 +637,11 @@ pub struct Session {
     /// The Civ AI Agent every rival major was seated with at setup, by
     /// registry id. `None` is the house fleet, `ai_fleet`.
     rival_strategy: Option<String>,
+    /// The Civ AI Agent playing each seat, by player index: the one a watched
+    /// table dealt it, or the one a person chose for their rivals. `None` is
+    /// the house fleet, which covers a seat somebody is sitting in, every
+    /// city-state and the barbarians.
+    seat_strategies: Vec<Option<&'static crate::strategies::PlayerStrategy>>,
     /// The last browser batch that borrowed the human seat, and how many
     /// turns it played. A client retries the same id after a dropped socket;
     /// remembering one completed batch makes that retry an acknowledgement,
@@ -621,6 +650,10 @@ pub struct Session {
     /// Who is playing each human seat: a player registered when this game
     /// began, never one of the agents already in the roster.
     human_players: BTreeMap<usize, SeatPlayer>,
+    /// Set when this session repaints a game of Civilization VI. The seats
+    /// then name who is really playing them (`name_ai_players`), not an
+    /// agent of this process.
+    mirror: Option<MirrorTable>,
     /// What every agent at this table decided, and why.
     ///
     /// One journal for the whole session, handed to each seat, so a turn is
@@ -2141,6 +2174,10 @@ impl Session {
     /// reached the page, because the site seated the ledger genome alone.
     /// `SITE_EXPERIMENT_GENES` (`ai/advanced/site_deployment.rs`) is the
     /// site's own list on top of it.
+    ///
+    /// This is the house fleet. A watched table then re-seats its majors
+    /// with the rated Civ AI Agents (`deal_watched_table`), so what this
+    /// builds is what plays against a person and what a battlefield keeps.
     fn ai_fleet(game: &Game) -> Vec<Box<dyn Ai + Send>> {
         game.players
             .iter()
@@ -2154,6 +2191,49 @@ impl Session {
                 }
             })
             .collect()
+    }
+
+    /// Seat a watched table: a world nobody is playing is a contest between
+    /// our strongest Civ AI Agents, each given a civilization of its own
+    /// (operator, 2026-11-13: "lets have our top 4 (or however many) player
+    /// strategies compete. each gets a civ"). The table takes as many agents
+    /// off the top of the published ranking as it has majors and deals them
+    /// round the seats by the world's seed (`strategies::table`).
+    ///
+    /// Each agent plays as its roster row is written, which is what its
+    /// rating was measured on. So `SITE_EXPERIMENT_GENES` reaches a watched
+    /// table only through a row that names the gene, as `forward` names
+    /// `no-city-limit`; the house fleet under it still seats every rival of
+    /// a played game.
+    ///
+    /// A battlefield keeps the house fleet: the ratings were measured on
+    /// whole games, and an arena has no empire for a tilt to act on.
+    ///
+    /// Returns who was seated where, by player index.
+    fn deal_watched_table(
+        spectate: bool,
+        game: &Game,
+        ais: &mut [Box<dyn Ai + Send>],
+    ) -> Vec<Option<&'static crate::strategies::PlayerStrategy>> {
+        let mut seated = vec![None; game.players.len()];
+        if !spectate || game.is_arena() {
+            return seated;
+        }
+        let seats: Vec<usize> = game
+            .players
+            .iter()
+            .enumerate()
+            .filter(|(seat, player)| {
+                !player.is_minor && !player.is_barbarian && !game.is_human_seat(*seat)
+            })
+            .map(|(seat, _)| seat)
+            .collect();
+        let table = crate::strategies::table(seats.len(), game.seed);
+        for (seat, row) in seats.into_iter().zip(table) {
+            ais[seat] = row.build();
+            seated[seat] = Some(row);
+        }
+        seated
     }
 
     /// Name every seat a person is at. Sitting down to play does not make you
@@ -2225,6 +2305,7 @@ impl Session {
         // Minors/barbarians retain the cheaper baseline because they do not
         // need empire-level planning.
         let mut ais = Self::ai_fleet(&game);
+        let seat_strategies = Self::deal_watched_table(params.spectate, &game, &mut ais);
         // Only a watched table records its reasoning. Everywhere else the
         // journal is off and every `think!` is one `Option` test.
         let journal = if params.spectate {
@@ -2247,10 +2328,12 @@ impl Session {
             resumed_next_game_params: None,
             autoplay_strategy: None,
             rival_strategy: None,
+            seat_strategies,
             last_autoplay_request: None,
             keeps_rival_yields: true,
             keeps_own_yields: true,
             human_players,
+            mirror: None,
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
             simultaneous_jobs: 1,
@@ -2268,7 +2351,20 @@ impl Session {
 
     /// Restore an interrupted match and rebuild only the AIs' transient plans.
     /// The serialized game retains the authoritative RNG and world state.
-    pub fn from_game(mut params: Params, game: Game) -> Session {
+    pub fn from_game(params: Params, game: Game) -> Session {
+        Self::restore(params, game, None)
+    }
+
+    /// Repaint a game of Civilization VI. The board is restored as
+    /// `from_game` restores one, and the table is not dealt: a watched world
+    /// of our own seats our top-rated agents, and this one was labelling
+    /// Civilization VI's Deity rivals SwingVote, JackOfAllTrades and
+    /// TouristTrap at their site ratings (live, 2026-11-13).
+    pub fn from_mirror(params: Params, game: Game, table: MirrorTable) -> Session {
+        Self::restore(params, game, Some(table))
+    }
+
+    fn restore(mut params: Params, game: Game, mirror: Option<MirrorTable>) -> Session {
         // Launch flags may already carry setup selected for the next world.
         // Preserve that intent while the checkpoint below restores the active
         // world's authoritative parameters.
@@ -2316,6 +2412,13 @@ impl Session {
             != simulation_settings(&params))
         .then_some(requested_next);
         let mut ais = Self::ai_fleet(&game);
+        // The deal is a function of the seed and the seats, so a watched
+        // table resumes with every agent back in the seat it was playing.
+        // A mirrored table is somebody else's game: no agent of ours sits.
+        let seat_strategies = match mirror {
+            Some(_) => vec![None; game.players.len()],
+            None => Self::deal_watched_table(params.spectate, &game, &mut ais),
+        };
         // A save carries the world, not what anyone was thinking while they
         // played it. The restored table starts a fresh record from the turn it
         // resumes.
@@ -2345,10 +2448,12 @@ impl Session {
             resumed_next_game_params: next_game_params,
             autoplay_strategy: None,
             rival_strategy: None,
+            seat_strategies,
             last_autoplay_request: None,
             keeps_rival_yields: true,
             keeps_own_yields: true,
             human_players,
+            mirror,
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
             simultaneous_jobs: 1,
@@ -2620,13 +2725,19 @@ impl Session {
 
     /// Give every met major both of its odds of winning this game: the ones
     /// it sat down with, and the ones it holds now. The odds themselves are
-    /// [`crate::odds`]; every seat sits down at the same provisional prior,
-    /// so the start odds are the difficulty bargain and the size of the
-    /// table, which is exactly what they should be with nothing rating the
-    /// seats.
+    /// [`crate::odds`]. A table of rated Civ AI Agents sits down at their
+    /// published ratings (`rated_table`); at any other, every seat sits down
+    /// at the same provisional prior, so the start odds are the difficulty
+    /// bargain and the size of the table.
     fn name_seat_odds(&self, o: &mut Value) {
         let g = &self.game;
-        let odds = crate::odds::table(g, |_pid| 1500.0f64);
+        let rated = self.rated_table();
+        let odds = crate::odds::table(g, |pid| {
+            rated
+                .as_ref()
+                .and_then(|table| table.get(&pid).copied())
+                .unwrap_or_else(|| crate::odds::PriorRating::from(1500.0f64))
+        });
         let Some(players) = o["players"].as_array_mut() else {
             return;
         };
@@ -2679,8 +2790,33 @@ impl Session {
             {
                 continue;
             }
+            // A mirrored game says who is really at each seat: the lane our
+            // decider is playing at ours, Civilization VI's own AI at its
+            // level everywhere else. No name is generated for either, since
+            // nothing in this process is playing them.
+            if let Some(table) = self.mirror {
+                let seat = if id == table.seat {
+                    crate::strategies::live_seat_json(table.lane)
+                } else {
+                    crate::strategies::civ6_ai_seat_json(&self.game.difficulty)
+                };
+                if let (Some(player), Value::Object(seat)) = (player.as_object_mut(), seat) {
+                    player.extend(seat);
+                }
+                continue;
+            }
             let strategy = self.ais.get(id).and_then(|ai| ai.strategy_label());
             player["ai_name"] = json!(generated_ai_name(self.game.seed, id, strategy));
+            // A seat a Civ AI Agent holds says which one, and the rating it
+            // sat down with: the handle is what the standings and the record
+            // between games know it by.
+            if let Some(row) = self.seated_agent(id) {
+                if let (Some(player), Value::Object(agent)) =
+                    (player.as_object_mut(), crate::strategies::seat_json(row))
+                {
+                    player.extend(agent);
+                }
+            }
         }
     }
 
@@ -3066,6 +3202,7 @@ impl Session {
             }
             self.ais[seat] = row.build();
             self.ais[seat].attach_journal(self.journal.handle());
+            self.seat_strategies[seat] = Some(row);
         }
         self.rival_strategy = Some(row.id.to_string());
         Ok(())
@@ -3074,6 +3211,35 @@ impl Session {
     /// The Civ AI Agent the rivals were seated with, when one was chosen.
     pub fn rival_strategy_name(&self) -> Option<&str> {
         self.rival_strategy.as_deref()
+    }
+
+    /// The Civ AI Agent seated at `seat`, when the table dealt it one or a
+    /// person chose one for it. A seat somebody is sitting in has none: the
+    /// person is the player there, whatever would take over if they got up.
+    fn seated_agent(&self, seat: usize) -> Option<&'static crate::strategies::PlayerStrategy> {
+        if self.human_players.contains_key(&seat) {
+            return None;
+        }
+        self.seat_strategies.get(seat).copied().flatten()
+    }
+
+    /// The rating every major sat down with, when all of them are rated
+    /// agents. The published ratings share one scale and nothing else is on
+    /// it, so a table with one unrated seat (a person, the house fleet) keeps
+    /// the flat prior for everybody rather than set a measured 1200 beside a
+    /// provisional 1500.
+    fn rated_table(&self) -> Option<BTreeMap<usize, crate::odds::PriorRating>> {
+        let ratings = &crate::strategies::published().ratings;
+        self.game
+            .players
+            .iter()
+            .enumerate()
+            .filter(|(_, player)| !player.is_minor && !player.is_barbarian)
+            .map(|(seat, _)| {
+                let rating = ratings.get(self.seated_agent(seat)?.id)?;
+                Some((seat, crate::odds::PriorRating::new(rating.elo, rating.sd)))
+            })
+            .collect()
     }
 
     /// The strategy currently playing `seat`, by roster name: the one a player
@@ -3089,6 +3255,11 @@ impl Session {
         // they got up.
         if let Some(player) = self.human_players.get(&seat) {
             return Some(&player.name);
+        }
+        // A watched table dealt this seat an agent, or a person chose one
+        // for their rivals.
+        if let Some(row) = self.seated_agent(seat) {
+            return Some(row.id);
         }
         // Nobody has been handed this seat: the fleet built the default agent
         // there — "advanced", or the cheaper baseline for minors.
@@ -3218,6 +3389,7 @@ impl Session {
 }
 
 const APP_PALETTE_JS_TAG: &str = r#"<script src="/assets/app_palette.js"></script>"#;
+const APP_ARENA_JS_TAG: &str = r#"<script src="/assets/app_arena.js"></script>"#;
 const APP_JS_TAG: &str = r#"<script src="/assets/app.js"></script>"#;
 const APP_SETUP_JS_TAG: &str = r#"<script src="/assets/app_setup.js"></script>"#;
 const APP_FRONTDOOR_JS_TAG: &str = r#"<script src="/assets/app_frontdoor.js"></script>"#;
@@ -3232,6 +3404,7 @@ const APP_MOMENTS_JS_TAG: &str = r#"<script src="/assets/app_moments.js"></scrip
 fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
     let palette_tag =
         format!(r#"<script src="/assets/app_palette.js?instance={instance}"></script>"#);
+    let arena_tag = format!(r#"<script src="/assets/app_arena.js?instance={instance}"></script>"#);
     let app_tag = format!(r#"<script src="/assets/app.js?instance={instance}"></script>"#);
     let setup_tag = format!(r#"<script src="/assets/app_setup.js?instance={instance}"></script>"#);
     let frontdoor_tag =
@@ -3239,6 +3412,7 @@ fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
     let moments_tag =
         format!(r#"<script src="/assets/app_moments.js?instance={instance}"></script>"#);
     page.replacen(APP_PALETTE_JS_TAG, &palette_tag, 1)
+        .replacen(APP_ARENA_JS_TAG, &arena_tag, 1)
         .replacen(APP_JS_TAG, &app_tag, 1)
         .replacen(APP_SETUP_JS_TAG, &setup_tag, 1)
         .replacen(APP_FRONTDOOR_JS_TAG, &frontdoor_tag, 1)
@@ -3271,6 +3445,11 @@ fn app_palette_js() -> Vec<u8> {
         }
     }
     EMBEDDED_APP_PALETTE_JS.as_bytes().to_vec()
+}
+
+fn app_arena_js() -> Vec<u8> {
+    std::fs::read("web/assets/app_arena.js")
+        .unwrap_or_else(|_| EMBEDDED_APP_ARENA_JS.as_bytes().to_vec())
 }
 
 fn app_moments_js() -> Vec<u8> {
@@ -4563,6 +4742,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 &app_palette_js(),
             );
         }
+        ("GET", "/assets/app_arena.js") => {
+            respond(
+                stream,
+                "200 OK",
+                "text/javascript; charset=utf-8",
+                &app_arena_js(),
+            );
+        }
         ("GET", "/assets/app.js") => {
             respond(
                 stream,
@@ -4904,6 +5091,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("POST", "/city-focus") => {
             let mut session = lock_or_recover(&sh.session);
             let answer = crate::routes::city_focus(&mut session, &parsed);
+            drop(session);
+            respond_json(stream, &answer);
+        }
+        // A citizen of the played seat placed on a tile by hand.
+        ("POST", "/city-citizen") => {
+            let mut session = lock_or_recover(&sh.session);
+            let answer = crate::routes::city_citizen(&mut session, &parsed);
             drop(session);
             respond_json(stream, &answer);
         }
@@ -5360,13 +5554,29 @@ pub fn serve_with_game(
     game: Option<Game>,
     initially_paused: bool,
 ) {
+    let opening = game.map_or(Opening::Generated, Opening::Resumed);
+    serve_opening(port, open_browser, params, opening, initially_paused);
+}
+
+/// Serve the world `opening` names. `serve_with_game` is this for a world
+/// that is generated or resumed; a mirror has no other way in.
+pub fn serve_opening(
+    port: u16,
+    open_browser: bool,
+    params: Params,
+    opening: Opening,
+    initially_paused: bool,
+) {
     let listener = TcpListener::bind(("127.0.0.1", port))
         .unwrap_or_else(|e| panic!("cannot bind port {port}: {e}"));
     let actual = listener.local_addr().unwrap().port();
     let url = format!("http://127.0.0.1:{actual}/");
-    let mut session = match game {
-        Some(game) => Session::from_game(params, game),
-        None => Session::new(params),
+    let mut session = match opening {
+        Opening::Generated => Session::new(params),
+        Opening::Resumed(game) => Session::from_game(params, game),
+        // The seat is the host's human slot, which the rebuild always puts
+        // first; the follower names the lane with its first frame.
+        Opening::Mirror(game) => Session::from_mirror(params, game, MirrorTable::default()),
     };
     session.spectator_paused = initially_paused;
     println!("Martin Halvorson's Civilization VIS — playing at {url}");

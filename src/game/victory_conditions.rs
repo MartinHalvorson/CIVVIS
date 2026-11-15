@@ -1228,8 +1228,14 @@ fn the_expedition_goes_where_the_survey_reached() {
     // can draw. The two rosters are written out separately — the client
     // needs positions and palettes the engine has no use for — so the ids
     // are pinned against each other here rather than left to drift into a
-    // destination that renders as nothing.
-    let client = include_str!("../../web/assets/app.js");
+    // destination that renders as nothing. The viewer's roster is one of its
+    // data tables, which sit in the script loaded ahead of the renderer; both
+    // are read, so the roster can be found in whichever one holds it.
+    let client = [
+        include_str!("../../web/assets/app_palette.js"),
+        include_str!("../../web/assets/app.js"),
+    ]
+    .concat();
     for target in EXOPLANET_TARGETS.iter() {
         assert!(
             client.contains(&format!("id:\"{}\"", target.id)),

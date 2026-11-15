@@ -16,6 +16,7 @@
 //! unchanged.
 
 use super::*;
+use crate::game::combat_ledger::EdgeBlow;
 
 impl Game {
     /// The two strengths `do_attack` resolves a melee blow with, `(attacker,
@@ -469,6 +470,7 @@ impl Game {
             .copied()
             .collect();
         for id in garrison {
+            self.tally_combat_death(self.units[&uid].owner, id);
             self.remove_unit(id);
             self.on_unit_lost(defender);
         }
@@ -524,6 +526,7 @@ impl Game {
         self.units.get_mut(&uid).unwrap().hp -= received;
         self.consume_melee_attack(uid, target);
         if self.units[&uid].hp <= 0 {
+            self.tally_combat_death(defender, uid);
             self.remove_unit(uid);
             self.on_unit_lost(pid);
             let mut state = self.defending_district_state(cid, target).unwrap();
@@ -771,6 +774,17 @@ impl Game {
                 }
             }
             let attacker_dead = self.units[&uid].hp <= 0;
+            // Observes only: the edge ledger (`game/combat_ledger.rs`).
+            self.tally_edge_blow(EdgeBlow {
+                attacker: &attacker,
+                defender: &d,
+                attacker_strength: att,
+                defender_strength: ds,
+                damage_to_defender: dmg_out,
+                damage_to_attacker: dmg_in,
+                defender_killed: d_dead,
+                attacker_killed: attacker_dead,
+            });
             if attacker_dead && !d_dead && self.has_ability(downer, "killer_of_cyrus") {
                 if let Some(defender) = self.units.get_mut(&did) {
                     defender.hp = (defender.hp + 30).min(100);
@@ -875,6 +889,7 @@ impl Game {
                 self.city_take_damage(pid, cid, dmg_out, mult, tower);
                 self.units.get_mut(&uid).unwrap().hp -= dmg_in;
                 if self.units[&uid].hp <= 0 {
+                    self.tally_combat_death(defender, uid);
                     self.remove_unit(uid);
                     self.on_unit_lost(pid);
                     let c = self.cities.get_mut(&cid).unwrap();
@@ -1071,6 +1086,17 @@ impl Game {
             let dmg = damage(att, ds, &mut self.rng);
             self.apply_unit_damage(uid, did, dmg);
             let defender_dead = self.units[&did].hp <= 0;
+            // Observes only: the edge ledger (`game/combat_ledger.rs`).
+            self.tally_edge_blow(EdgeBlow {
+                attacker: &attacker,
+                defender: &defender,
+                attacker_strength: att,
+                defender_strength: ds,
+                damage_to_defender: dmg,
+                damage_to_attacker: 0,
+                defender_killed: defender_dead,
+                attacker_killed: false,
+            });
             self.record_emergency_combat(pid, downer, defender_dead);
             self.award_unit_combat_xp(uid, &defender, true, true, defender_dead);
             if !defender_dead {
@@ -1342,6 +1368,7 @@ impl Game {
                 self.apply_unit_damage(attacker_id, interceptor_id, counter);
                 if self.units[&interceptor_id].hp <= 0 {
                     let owner = self.units[&interceptor_id].owner;
+                    self.tally_combat_death(attacker.owner, interceptor_id);
                     self.remove_unit(interceptor_id);
                     self.on_unit_lost(owner);
                 }
@@ -1349,6 +1376,7 @@ impl Game {
 
             self.apply_unit_damage(interceptor_id, attacker_id, incoming);
             if self.units[&attacker_id].hp <= 0 {
+                self.tally_combat_death(interceptor.owner, attacker_id);
                 self.remove_unit(attacker_id);
                 self.on_unit_lost(attacker.owner);
                 return (true, fighter_engaged);

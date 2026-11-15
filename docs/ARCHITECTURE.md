@@ -64,7 +64,9 @@ CLI / HTTP server / browser / WASM / evaluation tools
   scripts intentionally: inline controls and renderer callbacks keep their
   existing global contract while setup work no longer conflicts with map
   rendering edits. Native, beta, and WASM delivery all serve the same pair,
-  plus `web/assets/app_moments.js` (sound and payoff banners, which only read
+  plus `web/assets/app_palette.js` and `web/assets/app_arena.js` (the map's
+  palette, and the Arena Stats record between games; both carved out of
+  `app.js` and loaded ahead of it), `web/assets/app_moments.js` (sound and payoff banners, which only read
   the turn's events) and `web/assets/app_frontdoor.js`, the main menu, Create
   Game and game menu screens that only the published site shows. The site lands
   on the live AI game: the menu opens only at `?menu` or from inside a game. It

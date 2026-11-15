@@ -751,6 +751,117 @@ table prints a **religion census** from them, because conversion decided two
 thirds of games on the Pangaea instrument (28% at the screen's shape) and the
 rows could not say one thing about how the losing seat stood in that race.
 
+## ⭐ The unit ledger and who ordered the dead (2026-11-12)
+
+The rows carried a city ledger (`cities_taken`, `cities_lost`) and nothing
+for the army, because the engine kept no per-player loss counter. It does
+now: `Game::combat_ledger` (`src/game/combat_ledger.rs`) counts each unit at
+the line that removes it in combat — a melee or ranged kill either way, a
+city, encampment or district strike, an air strike or interception, the
+garrison of a taken encampment or city, a civilian captured or destroyed, a
+nuclear blast. Religious units, elimination, maintenance, fallout, disasters,
+loyalty flips, merges and disbands are not combat and are not counted. Every
+row carries the measured seat's ledger at the end of the game:
+
+| field | what |
+|---|---|
+| `units_killed` | enemy military units this seat's units, cities and districts removed |
+| `units_lost` | this seat's military units an enemy removed |
+| `units_lost_to_majors` | of `units_lost`, struck by a major civilization |
+| `units_lost_to_city_states` | of `units_lost`, struck by a city-state |
+| `units_lost_to_barbarians` | of `units_lost`, struck by the barbarian seat (the Free Cities' are in none of the three) |
+| `civilians_lost` | this seat's civilian and support units captured or destroyed |
+| `last_orders` | this seat's military units that died, by the step that last moved, held or struck with them: `{"coordinated": [within, beyond], …}`, where `within` ended its last turn within two tiles of a visible hostile; only steps that saw a death are written |
+| `claim_crossings` | this seat's orders that crossed another claim on the unit, `{"siege_taker:immediate_kills": [crossed, deliberate, refused], …}`: the claim that owned the unit (`ai/advanced/unit_owner.rs`) and the step that ordered it anyway; `deliberate` are the crossings the code makes on purpose, `refused` the ones `one-owner-per-unit` stopped |
+| `unit_turns`, `unordered_unit_turns` | this seat's military units counted at the end of each of its turns, and those no step ordered that turn |
+
+Every one is absent from a row written before it, and `None` when read, so a
+reader tells "not recorded" from "lost none". `--trace` writes the first five
+at each mark. `--analyze` prints a **unit ledger** table — the on−off Δ of
+`cities_taken`, `cities_lost`, `units_killed` and `units_lost`, then
+`units_lost_to_majors`, `units_lost_to_barbarians` and `civilians_lost` — and
+the `--json` summary carries the same seven under each gene's `unit_ledger`.
+
+`last_orders` comes from the agent (`src/ai/advanced/last_orders.rs`): a
+pre-pass of the unit pass is followed by one line that credits the orders it
+applied, and each branch of the per-unit ladder names itself with one line.
+`other` is an order no step named and `unordered` a unit nobody ordered; the
+share of `other` is the part of the census still to be named.
+`claim_crossings` reads every existing claim on a unit (a siege's taker and
+members, a Settler's or Builder's guard, the battle plan, a unit out to heal,
+the amphibious crossing, the centre keeper and four smaller ones) in one
+fixed precedence and counts each order a step gave a unit another claim
+owned; the opt-in gene `one-owner-per-unit` refuses those orders. A unit the seat
+disbands or merges is not a death; one removed by maintenance or fallout is
+counted as one. Neither instrument changes a decision: the frozen anchor
+(`advanced_v1_plays_the_same_game_it_always_did`) is unchanged.
+
+## ⭐ The edge ledger: how far apart each blow's two sides stood (2026-11-13)
+
+`Game::combat_ledger` also books every unit-on-unit blow on both seats by
+**base gap** (the ruleset's attack strength, Bombard else Ranged else Combat,
+minus the target's Combat strength) and **total gap** (the strengths the blow
+was resolved with), split by the other seat's side, with the rival majors'
+mean base gap by turn bucket. Every row carries the seat's ledger as `edge`
+and, at Online-equivalent turns 50, 100 and 150, an `edge_marks` entry: its
+land army, the share with an unlocked upgrade (also with the material in
+stock, also one `Game::unit_gold_upgrade_offer` would take), the Combat it
+would gain, its treasury and income, and the Combat of the rival majors' land
+units in its sight. `--analyze` prints the tables pooled over the measured
+rows, the metric list `tools/civ6_edge_ledger.py --metrics` prints for a live
+lane, and the on−off Δ of seven blow counts (`edge_ledger` in the `--json`
+summary). Observation only; the frozen anchor is unchanged. Definitions, the
+live lanes and the lane recipes' numbers: [EDGE_LEDGER.md](EDGE_LEDGER.md).
+
+## ⭐ Chairs that fight like the host: `--rival-host-tactics` (2026-11-12)
+
+The rival chairs are this repository's own AI, and it does not fight like the
+live host: over 116 live Deity games the host struck one of ours on a quarter
+of the turns it had one in reach (43% when it need not move, 11% when it
+must), took the unit in front of it, and did not retreat when wounded
+(`docs/HOST_ENEMY_MODEL.md`). A defence or tactics gene read against chairs
+that strike far more often is read against an opponent nobody meets live.
+
+```bash
+gene_screen --players 4 --width 60 --height 38 --city-states 6 --map pangaea \
+  --difficulty deity --rivals firaxis-faithful --handicap rivals --rival-chairs 3 \
+  --rival-rung -2 --rival-pace --target-mix domination \
+  --rival-host-tactics --genes <tag> --games N --start-seed S --out rows.jsonl
+```
+
+- **`--rival-host-tactics`** wraps every rival chair in
+  `civvis::host_tactics::HostTacticsSeat` with the switch on. The chair's AI
+  may neither strike a measured seat's unit with one of its land fighters
+  within 8 tiles of that seat nor move it; the harness plays that unit's turn
+  from draws hashed from the game seed: a strike at the fitted rate
+  (`host_enemy::strike_probability` on the fit's open-ground features, over the
+  share of open-ground reach that was exact) on a target drawn on the fitted
+  weights, else a step toward the measured seat
+  (`host_enemy::advance_probability`, over the share that had a tile to close
+  to), a step away (the live majors' rate), or nothing. The header records `rival_host_tactics: true` and `--analyze`
+  refuses to merge it with files played without the switch.
+- **`--chair-tactics-census`** wraps the chairs with the switch off: nothing
+  they do changes, and each measured row gets `chair_tactics`, the table
+  `tools/fit_host_enemy.py rates` prints for the live host
+  (`"strike | in reach without moving": [hits, rows]`, …). With the switch on
+  the rows carry it too, plus `gate: …` counts of what the switch did.
+- **Not made host-like:** production and army size, target cities, war
+  timing (`--rival-war-pace` is the knob for that), strikes on cities and
+  districts (allowed, from where a governed unit stands) and the cities' own
+  strikes, units more than 8 tiles away, other players, and fog (the switch
+  governs every unit in range, seen or not).
+- Without either flag no seat is wrapped and the game is byte for byte what
+  it was (the frozen anchor is unchanged). Both need `--rivals`.
+
+`victory_eval --domination-pair <tag> … --rival-host-tactics on` applies the
+same switch to the domination pair's rival majors and writes `rival_tactics`
+on each arm.
+
+`src/bin/gene_screen/host_tactics_tests.rs` (ignored; `--ignored
+--nocapture`) prints the chairs' table beside the live host's with the switch
+off and on, and `defend-force-holds-the-city` off and on under each; the
+first run is in `docs/HOST_ENEMY_MODEL.md`.
+
 ## ⭐ Science pace: `techs_150` and `science_end` (2026-09-01)
 
 The screen prices every gene by win share, and 52% of its games end on score

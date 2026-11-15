@@ -14,6 +14,7 @@
 //! (2026-11-05). Methods the rest of the controller calls are `pub(super)`;
 //! the code is otherwise unchanged.
 
+use super::last_orders::OrderStep;
 use super::*;
 
 impl AdvancedAi {
@@ -196,32 +197,32 @@ impl AdvancedAi {
         let small_town_threat = self.small_town_threat(g, pid, &religion);
         // See `advanced/religion_seat_counts_the_pressure.rs`. Empty off.
         let pressure_plan = self.religion_seat_pressure_plan(g, pid, uid, &religion);
-        let mut targets: Vec<(bool, i32, std::cmp::Reverse<u32>, Pos)> = g
-            .cities
-            .values()
-            .filter(|city| {
-                Self::city_needs_religious_support(g, pid, city, &religion)
-                    || (offensive
-                        && city.owner != pid
-                        && !g.is_at_war(pid, city.owner)
-                        && self.religion_campaign_needs_city(g, pid, city, &religion)
-                        && g.city_religion(city) != Some(religion.as_str()))
-            })
-            .map(|city| {
-                let own_pressure = city.pressure.get(&religion).copied().unwrap_or(0.0);
-                let rival_pressure = city
-                    .pressure
-                    .iter()
-                    .filter(|(belief, _)| belief.as_str() != religion)
-                    .map(|(_, pressure)| *pressure)
-                    .fold(0.0_f64, f64::max);
-                let swing = (rival_pressure - own_pressure).clamp(0.0, 500.0) as i32;
-                let foreign = (city.owner != pid) as i32;
-                let defensive_conversion = (city.owner == pid) as i32 * 170;
-                let held = veto
-                    .as_ref()
-                    .is_some_and(|veto| g.city_religion(city) == Some(veto.religion.as_str()));
-                let score = defensive_conversion
+        let mut targets: Vec<(bool, i32, std::cmp::Reverse<u32>, Pos)> =
+            g.cities
+                .values()
+                .filter(|city| {
+                    Self::city_needs_religious_support(g, pid, city, &religion)
+                        || (offensive
+                            && city.owner != pid
+                            && !g.is_at_war(pid, city.owner)
+                            && self.religion_campaign_needs_city(g, pid, city, &religion)
+                            && g.city_religion(city) != Some(religion.as_str()))
+                })
+                .map(|city| {
+                    let own_pressure = city.pressure.get(&religion).copied().unwrap_or(0.0);
+                    let rival_pressure = city
+                        .pressure
+                        .iter()
+                        .filter(|(belief, _)| belief.as_str() != religion)
+                        .map(|(_, pressure)| *pressure)
+                        .fold(0.0_f64, f64::max);
+                    let swing = (rival_pressure - own_pressure).clamp(0.0, 500.0) as i32;
+                    let foreign = (city.owner != pid) as i32;
+                    let defensive_conversion = (city.owner == pid) as i32 * 170;
+                    let held = veto
+                        .as_ref()
+                        .is_some_and(|veto| g.city_religion(city) == Some(veto.religion.as_str()));
+                    let score = defensive_conversion
                     + foreign * 90
                     + city.pop * 12
                     + city.is_capital as i32 * 18
@@ -236,16 +237,15 @@ impl AdvancedAi {
                         city,
                         &religion,
                         small_town_threat.as_deref(),
+                    ) - g.wdist(current, city.pos) * 4;
+                    (
+                        recovery.contains(&city.id),
+                        score,
+                        std::cmp::Reverse(city.id),
+                        city.pos,
                     )
-                    - g.wdist(current, city.pos) * 4;
-                (
-                    recovery.contains(&city.id),
-                    score,
-                    std::cmp::Reverse(city.id),
-                    city.pos,
-                )
-            })
-            .collect();
+                })
+                .collect();
         targets.sort_by(|left, right| right.cmp(left));
         // See `founder_home_targets` (`founder-converts-its-own-cities`): a
         // founder's spreader converts our own cities before any foreign one.
@@ -681,7 +681,12 @@ impl AdvancedAi {
                 .enumerate()
                 .filter_map(|(order, action)| {
                     let (uid, target) = Self::unit_strike_actor_and_target(action)?;
-                    (!spent.contains(&uid) && !self.builder_guard_reserved(uid))
+                    // `centre-keeps-its-garrison`: a threatened city's
+                    // garrison makes no melee blow, which would carry it out
+                    // of the City Center on a kill. `false` with the gene off.
+                    let keeper_melee = matches!(action, Action::Attack { .. })
+                        && self.keeps_the_centre(g, pid, uid);
+                    (!spent.contains(&uid) && !self.builder_guard_reserved(uid) && !keeper_melee)
                         .then(|| self.immediate_kill_value(g, pid, action, plan))
                         .flatten()
                         .map(|(value, eliminated)| (value, eliminated, target, uid, order, action))
@@ -1172,18 +1177,42 @@ impl AdvancedAi {
         decline_settlers: bool,
     ) -> bool {
         if self.builder_guard_reserved(uid) {
+            self.ordering(OrderStep::Escort);
             return self.base.fortify_or_stop(g, pid, uid);
         }
         // `battle-planner`: a unit the plan has already struck with, moved
         // or rotated out this turn stays where the plan put it. Always
         // false with the gene off. See `advanced/battle_planner.rs`.
         if self.battle_planner_claims(uid) {
+            self.ordering(OrderStep::BattlePlanner);
             return self.base.fortify_or_stop(g, pid, uid);
+        }
+        // `defend-force-holds-the-city`: a posted soldier strikes from its
+        // post and holds it. `None` with the gene off or without a post. See
+        // `advanced/defend_force_holds_the_city.rs`.
+        if let Some(acted) = self.defend_hold_step(g, pid, uid) {
+            self.ordering(OrderStep::DefendHold);
+            return acted;
+        }
+        // `centre-keeps-its-garrison`: a threatened city's garrison keeps
+        // its City Center, and an empty one takes a soldier in reach. `None`
+        // with the gene off. See `advanced/centre_keeps_its_garrison.rs`.
+        if let Some(acted) = self.centre_garrison_step(g, pid, uid) {
+            self.ordering(OrderStep::CentreGarrison);
+            return acted;
+        }
+        // `score-seat-takes-what-pays` (graded): a centre we took keeps a
+        // soldier, and an empty one takes one in reach. `None` with the graded
+        // versions off. See `advanced/score_takes_what_pays.rs`.
+        if let Some(acted) = self.score_take_garrison_step(g, pid, uid) {
+            self.ordering(OrderStep::CentreGarrison);
+            return acted;
         }
         // `amphibious-siege-train`: a member of the crossing in hand takes
         // the train's orders before anything else can land it at home. `None`
         // with the gene off. See `advanced/amphibious_siege_train.rs`.
         if let Some(acted) = self.amphibious_member_step(g, pid, uid) {
+            self.ordering(OrderStep::Amphibious);
             return acted;
         }
         // `breaker-walks-under-a-shield`: the early conquest opening's breaker
@@ -1191,12 +1220,14 @@ impl AdvancedAi {
         // its swings at the walls until the breaker stands beside them.
         // `None` with the gene off. See `advanced/breaker_walks_under_a_shield.rs`.
         if let Some(acted) = self.shielded_breaker_step(g, pid, uid, plan) {
+            self.ordering(OrderStep::Breaker);
             return acted;
         }
         // `domination-target-gets-its-breaker`: before the war a Ram or Tower
         // for the lane's target walks to the army before its walls. `None`
         // with the gene off. See `advanced/domination_target_gets_its_breaker.rs`.
         if let Some(acted) = self.domination_breaker_step(g, pid, uid, plan) {
+            self.ordering(OrderStep::Breaker);
             return acted;
         }
         let unit = g.units[&uid].clone();
@@ -1231,6 +1262,7 @@ impl AdvancedAi {
             && spec.class == "military"
             && self.condemn_step(g, pid, uid)
         {
+            self.ordering(OrderStep::Condemn);
             return true;
         }
         let holding_threatened_city = plan.threatened_city.is_some_and(|cid| {
@@ -1255,6 +1287,7 @@ impl AdvancedAi {
                 || (self.settler_guard_holds_on() && self.formationless_settler_escort()))
         {
             if let Some(acted) = self.stacked_guard_step(g, pid, uid) {
+                self.ordering(OrderStep::Escort);
                 return acted;
             }
         }
@@ -1264,6 +1297,7 @@ impl AdvancedAi {
         // away. `None` with the gene off. See `advanced/swap_rotation.rs`.
         if !unwanted_settler_adjacent && !holding_threatened_city {
             if let Some(acted) = self.swap_rotation_step(g, pid, uid) {
+                self.ordering(OrderStep::SwapRotation);
                 return acted;
             }
         }
@@ -1273,6 +1307,7 @@ impl AdvancedAi {
         // See `advanced/wounded_out_of_reach.rs`.
         if !unwanted_settler_adjacent && !holding_threatened_city {
             if let Some(acted) = self.wounded_out_of_reach_step(g, pid, uid) {
+                self.ordering(OrderStep::WoundedOutOfReach);
                 return acted;
             }
         }
@@ -1296,11 +1331,13 @@ impl AdvancedAi {
             && (self.active_siege_member(g, pid, uid) || self.staging_siege_member(g, pid, uid));
         if !unwanted_settler_adjacent && !holding_threatened_city && !siege_post_holds {
             if let Some(acted) = self.base.healing_step(g, pid, uid) {
+                self.ordering(OrderStep::Healing);
                 return acted;
             }
         }
         if self.base.unit_objective_memory && !siege_post_holds {
             if let Some(acted) = self.base.retreat_step(g, pid, uid) {
+                self.ordering(OrderStep::Retreat);
                 return acted;
             }
         }
@@ -1309,15 +1346,18 @@ impl AdvancedAi {
         // must not consume every turn before the exploration fallback.
         if !unwanted_settler_adjacent && !holding_threatened_city {
             if let Some(acted) = self.distance_scout_step(g, pid, uid) {
+                self.ordering(OrderStep::Explorer);
                 return acted;
             }
         }
         if let Some(acted) = self.timed_war_objective_step(g, pid, uid) {
+            self.ordering(OrderStep::WarObjective);
             self.force_groups_dirty |= acted;
             return acted;
         }
         if !unwanted_settler_adjacent && !holding_threatened_city {
             if let Some(acted) = self.domination_upgrade_return_step(g, pid, uid, plan) {
+                self.ordering(OrderStep::UpgradeReturn);
                 return acted;
             }
         }
@@ -1338,6 +1378,7 @@ impl AdvancedAi {
             });
         if self.unit_is_reserved(uid) || assigned_siege {
             if let Some(acted) = self.siege_doctrine_step(g, pid, uid, plan) {
+                self.ordering(OrderStep::SiegeDoctrine);
                 return acted;
             }
         }
@@ -1345,6 +1386,7 @@ impl AdvancedAi {
             .base
             .capture_adjacent_civilian(g, pid, uid, decline_settlers)
         {
+            self.ordering(OrderStep::CivilianCapture);
             return true;
         }
         // The gene's pursuit half: a capturable barbarian-held civilian a few
@@ -1367,21 +1409,25 @@ impl AdvancedAi {
                 .base
                 .pursue_capturable_civilian(g, pid, uid, decline_settlers)
         {
+            self.ordering(OrderStep::CivilianCapture);
             return true;
         }
         // `science-threat-denial`: the pad raid. It runs ahead of the
         // opportunistic raid because it is the objective a war was declared
         // for. See `advanced/science_threat_denial.rs`.
         if let Some(acted) = self.science_denial_raid_step(g, pid, uid, plan) {
+            self.ordering(OrderStep::RaidPrize);
             return acted;
         }
         // See `opportunistic_war`: during a raid, pillage under our feet or
         // walk to the nearest prize. The adjacent capture above already took
         // anything one step away.
         if let Some(acted) = self.raid_prize_step(g, pid, uid, plan, decline_settlers) {
+            self.ordering(OrderStep::RaidPrize);
             return acted;
         }
         if matches!(doctrine, UnitDoctrine::AirDefense | UnitDoctrine::AirStrike) {
+            self.ordering(OrderStep::Air);
             let Some(action) = self.advanced_air_action(g, pid, uid, plan) else {
                 return false;
             };
@@ -1394,9 +1440,11 @@ impl AdvancedAi {
             return acted;
         }
         if let Some(acted) = self.settler_escort_step(g, pid, uid, plan) {
+            self.ordering(OrderStep::Escort);
             return acted;
         }
         if let Some(action) = self.base.doctrine_action(g, pid, uid) {
+            self.ordering(OrderStep::DoctrineAction);
             let changes_force_picture = matches!(
                 &action,
                 Action::Attack { .. }
@@ -1410,6 +1458,7 @@ impl AdvancedAi {
         }
         if !unwanted_settler_adjacent {
             if let Some(city) = self.occupation_garrison_target(g, pid, uid) {
+                self.ordering(OrderStep::Garrison);
                 if unit.pos != city {
                     return self.base.step_toward(g, pid, uid, city);
                 }
@@ -1421,6 +1470,7 @@ impl AdvancedAi {
         // assigns the nearest eligible unit before this step falls through to
         // the ring's ordinary tactical posture.
         if let Some(acted) = self.threatened_city_garrison_step(g, pid, uid, plan.threatened_city) {
+            self.ordering(OrderStep::Garrison);
             return acted;
         }
         let mut enemies: Vec<usize> = g
@@ -1472,6 +1522,7 @@ impl AdvancedAi {
         // home faith war, which is no front. `false` with the gene off.
         if self.first_capital_marches_through(g, pid, uid, &enemies) {
             if let Some(acted) = self.campaign_staging_step(g, pid, uid, plan) {
+                self.ordering(OrderStep::Staging);
                 return acted;
             }
         }
@@ -1490,6 +1541,7 @@ impl AdvancedAi {
             if !unwanted_settler_adjacent
                 && self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid)
             {
+                self.ordering(OrderStep::Camp);
                 return true;
             }
             // A newly charted village is an expiring reward, so resolve it
@@ -1498,6 +1550,7 @@ impl AdvancedAi {
             // Scouts the long chase and admits only a nearby military fallback;
             // Settlers and Builders stay on their own movement paths.
             if self.base.village_seeking && self.base.village_collection_step(g, pid, uid) {
+                self.ordering(OrderStep::Explorer);
                 return true;
             }
             if spec.domain.as_deref() == Some("sea") {
@@ -1505,6 +1558,7 @@ impl AdvancedAi {
                     .linked_to
                     .filter(|peer| g.units.get(peer).is_some_and(|peer| peer.kind == "settler"))
                 {
+                    self.ordering(OrderStep::Escort);
                     if let Some(target) = self.settler_targets.get(&settler).copied() {
                         let approach = BasicAi::naval_approach(g, uid, target).unwrap_or(target);
                         if approach != unit.pos && self.base.step_toward(g, pid, uid, approach) {
@@ -1524,19 +1578,23 @@ impl AdvancedAi {
                 // stood down between wars. Same roster, same turn, here too.
                 if self.is_naval_explorer(g, pid, uid) {
                     if let Some(acted) = self.explorer_turn(g, pid, uid) {
+                        self.ordering(OrderStep::Explorer);
                         return acted;
                     }
                 }
             }
             if let Some(acted) = self.war_return_home_step(g, pid, uid) {
+                self.ordering(OrderStep::Staging);
                 return acted;
             }
             if let Some(acted) = self.campaign_staging_step(g, pid, uid, plan) {
+                self.ordering(OrderStep::Staging);
                 return acted;
             }
             if special_improver {
                 if let Some(acted) = self.advanced_special_improver_step(g, pid, uid, plan.strategy)
                 {
+                    self.ordering(OrderStep::Improver);
                     return acted;
                 }
             }
@@ -1557,6 +1615,7 @@ impl AdvancedAi {
             // scan runs in this branch to take the adjacent trade.
             if self.base.camp_bounty {
                 if let Some(camp) = self.base.camp_bounty_target(g, pid, uid) {
+                    self.ordering(OrderStep::Camp);
                     let defended = g
                         .unit_ids_at(camp)
                         .iter()
@@ -1617,12 +1676,14 @@ impl AdvancedAi {
                 }
             }
             if self.neighbor_contact_step(g, pid, uid) {
+                self.ordering(OrderStep::Explorer);
                 return true;
             }
             // `pass-picket`: a unit nothing above wanted takes its recon
             // order — the post toward a neighbour once nothing is left to
             // explore. See `advanced/recon_disruption.rs`.
             if let Some(acted) = self.recon_disruption_step(g, pid, uid) {
+                self.ordering(OrderStep::Picket);
                 return acted;
             }
             // `chokepoint-garrison`: the gate on the approach to one of our
@@ -1631,6 +1692,7 @@ impl AdvancedAi {
             // header of `advanced/chokepoints.rs` for why it is not a
             // wartime stand.
             if let Some(acted) = self.chokepoint_garrison_step(g, pid, uid) {
+                self.ordering(OrderStep::Garrison);
                 return acted;
             }
             // The advanced rescue gene is also present in the BasicAi fallback
@@ -1641,8 +1703,10 @@ impl AdvancedAi {
             // defender is the safe answer until the next frame refreshes the
             // threat picture.
             if protect_threatened_rescue {
+                self.ordering(OrderStep::Garrison);
                 return self.base.fortify_or_stop(g, pid, uid);
             }
+            self.ordering(OrderStep::Peacetime);
             return self.base.military_step(g, pid, uid);
         }
         // Combat can change occupancy, local power and the best focus target.
@@ -1659,6 +1723,7 @@ impl AdvancedAi {
         // will not put it on the city's ring, and four attempts to make them
         // do so each measured worse.
         if let Some(acted) = self.rush_siege_step(g, pid, uid, plan) {
+            self.ordering(OrderStep::RushSiege);
             self.force_groups_dirty = true;
             return acted;
         }
@@ -1667,6 +1732,7 @@ impl AdvancedAi {
         // it in place of the per-unit scan and the group mover below. `None`
         // with both genes off. See `advanced/siege_train.rs`.
         if let Some(acted) = self.siege_doctrine_step(g, pid, uid, plan) {
+            self.ordering(OrderStep::SiegeDoctrine);
             return acted;
         }
         let group = self
@@ -2017,6 +2083,7 @@ impl AdvancedAi {
                            if lethal_kill { "; finishing it now" } else { "" }; at);
                 }
                 if g.apply(pid, &action).is_ok() {
+                    self.ordering(OrderStep::TacticalAttack);
                     self.force_groups_dirty = true;
                     return true;
                 }
@@ -2065,10 +2132,12 @@ impl AdvancedAi {
         // struck has no movement left. This spends only movement the march
         // below would not use. See `advanced/city_campaign.rs`.
         if let Some(acted) = self.campaign_pillage_step(g, pid, uid, plan, group.as_ref()) {
+            self.ordering(OrderStep::Pillage);
             return acted;
         }
 
         if let Some(acted) = self.wonder_clearance_step(g, pid, uid) {
+            self.ordering(OrderStep::Escort);
             self.force_groups_dirty |= acted;
             return acted;
         }
@@ -2083,6 +2152,7 @@ impl AdvancedAi {
             .any(|enemy| enemies.contains(&enemy.owner) && BasicAi::waterborne(g, enemy.id));
         if !hostile_water_unit {
             if let Some(settler) = linked_settler {
+                self.ordering(OrderStep::Escort);
                 if let Some(target) = self.settler_targets.get(&settler).copied() {
                     let approach = BasicAi::naval_approach(g, uid, target).unwrap_or(target);
                     if approach != unit.pos && self.base.step_toward(g, pid, uid, approach) {
@@ -2094,6 +2164,7 @@ impl AdvancedAi {
         }
 
         if unwanted_settler_adjacent {
+            self.ordering(OrderStep::Hold);
             return self.base.fortify_or_stop(g, pid, uid);
         }
 
@@ -2106,6 +2177,7 @@ impl AdvancedAi {
             || naval_explorer
         {
             if let Some(acted) = self.explorer_turn(g, pid, uid) {
+                self.ordering(OrderStep::Explorer);
                 return acted;
             }
         }
@@ -2116,6 +2188,7 @@ impl AdvancedAi {
         // distant campaign march.
         if special_improver {
             if let Some(acted) = self.advanced_special_improver_step(g, pid, uid, plan.strategy) {
+                self.ordering(OrderStep::Improver);
                 return acted;
             }
         }
@@ -2139,6 +2212,7 @@ impl AdvancedAi {
         );
         if strategic_barbarian_response {
             if let Some(barb) = g.barb_pid.filter(|barb| enemies.contains(barb)) {
+                self.ordering(OrderStep::BarbarianResponse);
                 let barb_only = [barb];
                 let garrisoned = self.base.barbarian_garrison_step(g, pid, uid, &barb_only);
                 if garrisoned {
@@ -2170,6 +2244,7 @@ impl AdvancedAi {
         // one-step clear beside this unit. Immediate combat, civilian capture,
         // recovery, escorts, and any local defense above keep their priority.
         if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+            self.ordering(OrderStep::Camp);
             return true;
         }
         // The defender's claim above is deliberately bounded to the nearest
@@ -2180,6 +2255,7 @@ impl AdvancedAi {
         // use their existing group and reinforcement path unchanged.
         if barbarian_only.is_some() {
             if let Some(acted) = self.campaign_staging_step(g, pid, uid, plan) {
+                self.ordering(OrderStep::Staging);
                 return acted;
             }
         }
@@ -2236,12 +2312,19 @@ impl AdvancedAi {
         if let Some(acted) =
             self.wartime_reinforcement_step(g, pid, uid, plan, group.as_ref(), &enemies)
         {
+            self.ordering(OrderStep::Reinforcement);
             self.force_groups_dirty = true;
             return acted;
         }
         if let Some(orders) = &group {
+            self.ordering(OrderStep::Coordinated);
             return self.coordinated_tactical_step(g, pid, uid, orders, &enemies, decline_settlers);
         }
+        self.ordering(if campaign.is_some() {
+            OrderStep::Tactical
+        } else {
+            OrderStep::Peacetime
+        });
         match campaign {
             Some(target) => self
                 .base
@@ -2285,7 +2368,12 @@ impl AdvancedAi {
             let kind = g.units[&uid].kind;
             let class = g.rules.units[kind].class.clone();
             let acted = match kind.as_str() {
-                "settler" => self.advanced_settler_step(g, pid, uid),
+                // `score-seat-founds-early`: a Score seat's Settler past its
+                // patience takes a safe site in reach first. `None` while the
+                // gene is off. See `advanced/score_seat_founds_early.rs`.
+                "settler" => self
+                    .score_seat_founds_early_step(g, pid, uid)
+                    .unwrap_or_else(|| self.advanced_settler_step(g, pid, uid)),
                 "builder" => self.advanced_builder_step(g, pid, uid, plan.strategy),
                 "military_engineer" => self
                     .forward_airfield_engineer_step(g, pid, uid, plan)
@@ -2305,8 +2393,10 @@ impl AdvancedAi {
                 _ if self.victory_planning && class == "religious" => {
                     self.advanced_religious_step(g, pid, uid, religious_offensive)
                 }
-                _ => self.advanced_military_step_with_decline(g, pid, uid, plan, decline_settlers),
+                _ => self.credited_military_step(g, pid, uid, plan, decline_settlers),
             };
+            // A civilian's step can move its escort. See `advanced/last_orders.rs`.
+            self.credit_orders(g, OrderStep::Escort);
             if !acted {
                 break;
             }
@@ -2338,7 +2428,7 @@ impl AdvancedAi {
                         flags.decline_settlers,
                     );
                 if !took_a_turn {
-                    self.base.hold_stood_down_unit(g, pid, uid);
+                    self.stand_down(g, pid, uid);
                 }
                 continue;
             }
@@ -2385,6 +2475,7 @@ impl AdvancedAi {
                 }
                 snapshot_invalid |= invalidates_followers;
             }
+            self.credit_orders(g, intent.step);
             if valid {
                 self.base.merge_unit_plan_state(uid, intent.base_state);
                 took_a_turn |= intent.took_a_turn;
@@ -2402,7 +2493,7 @@ impl AdvancedAi {
                 );
             }
             if !took_a_turn {
-                self.base.hold_stood_down_unit(g, pid, uid);
+                self.stand_down(g, pid, uid);
             }
         }
         self.base.clear_prepared_patrol_posts();
@@ -2470,7 +2561,12 @@ impl AdvancedAi {
     }
 
     pub(super) fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        // Observes only: see `advanced/last_orders.rs`.
+        self.open_unit_orders(g, pid);
         self.builder_support.clear();
+        // `risk-is-priced`: the last frame's reading goes before anything
+        // moves; this frame's is read below, once the kills are settled.
+        self.clear_priced_risk();
         self.base.begin_movement_turn(g, pid);
         self.refresh_wonder_clearance(g, pid);
         // In a native game a Trader has walking movement and the ordinary unit
@@ -2521,7 +2617,7 @@ impl AdvancedAi {
                 decline_settlers,
             );
             if !took_a_turn {
-                self.base.hold_stood_down_unit(g, pid, warrior);
+                self.stand_down(g, pid, warrior);
             }
             self.refresh_opening_settler_targets_after_recon(
                 g,
@@ -2557,7 +2653,7 @@ impl AdvancedAi {
                     decline_settlers,
                 );
                 if !took_a_turn {
-                    self.base.hold_stood_down_unit(g, pid, uid);
+                    self.stand_down(g, pid, uid);
                 }
                 settled_first.push(uid);
             }
@@ -2571,6 +2667,7 @@ impl AdvancedAi {
         self.stage_culture_air_interception(g, pid, plan);
         let held_aircraft = self.hold_staged_culture_aircraft(g, pid, plan);
         self.execute_culture_air_interception(g, pid, plan);
+        self.credit_orders(g, OrderStep::Air);
         // Hide waiting planes from the early coordinated assignments. Restore
         // their real readiness immediately afterwards: holding is no action,
         // not an invented engine operation or a permanent readiness change.
@@ -2600,21 +2697,35 @@ impl AdvancedAi {
         // `war-kills-the-bands-2`: the band hunt claims its bodies before the
         // battle is planned. Nothing with the version off. See
         // `advanced/band_hunt.rs`.
-        let early_band_hunters = if self.war_kills_the_bands_2 {
-            self.plan_band_hunt(g, pid, plan, &BTreeSet::new())
-        } else {
-            BTreeSet::new()
-        };
+        // `owned_pass`: each pre-pass below runs under `one-owner-per-unit`
+        // and credits its orders; with the gene off it is the pass and the
+        // credit. See `advanced/unit_owner.rs`.
+        let early_band_hunters = self.owned_pass(g, pid, OrderStep::Hunts, |ai, g| {
+            if ai.war_kills_the_bands_2 {
+                ai.plan_band_hunt(g, pid, plan, &BTreeSet::new())
+            } else {
+                BTreeSet::new()
+            }
+        });
+        // `defend-force-holds-the-city-2`: the soldiers this turn's posts may
+        // take, before the planner's positions plan. Nothing with the version
+        // off. See `advanced/defend_force_holds_the_city.rs`.
+        self.preview_hold_members(g, pid);
         if self.battle_planner_on() {
-            if self.plan_battle(g, pid, plan) {
+            if self.owned_pass(g, pid, OrderStep::Positions, |ai, g| {
+                ai.plan_battle(g, pid, plan)
+            }) {
                 self.rebuild_force_groups(g, pid, plan);
                 self.force_groups_dirty = false;
             }
             self.fire_plan_orders = fire_plan::FirePlan::default();
         } else {
-            withdrawn = self.withdraw_before_kill_prepass(g, pid, plan);
-            let killed = self.victory_planning
-                && self.prioritize_immediate_kills(g, pid, plan, &withdrawn) > 0;
+            withdrawn = self.owned_pass(g, pid, OrderStep::Withdraw, |ai, g| {
+                ai.withdraw_before_kill_prepass(g, pid, plan)
+            });
+            let killed = self.owned_pass(g, pid, OrderStep::ImmediateKills, |ai, g| {
+                ai.victory_planning && ai.prioritize_immediate_kills(g, pid, plan, &withdrawn) > 0
+            });
             if killed || !withdrawn.is_empty() {
                 self.rebuild_force_groups(g, pid, plan);
                 self.force_groups_dirty = false;
@@ -2628,9 +2739,21 @@ impl AdvancedAi {
         // read once the turn's kills are settled, and a gun already standing
         // on one steps off it. Nothing with the gene off. See
         // `advanced/guns_stay_out_of_reach.rs`.
+        //
+        // `risk-is-priced` reads its frame first: each covered unit's
+        // mission, allowance, price and death chance on every tile it can
+        // reach, which the guns' veto then leaves alone; a siege gun over its
+        // allowance steps out (credited with the guns' own step-out).
+        // Nothing with the gene off. See `advanced/priced_risk.rs`.
+        self.mark_priced_risk(g, pid, plan);
         self.mark_gun_lethal_tiles(g, pid);
-        self.guns_step_out_of_reach(g, pid);
-        let mut air_assault_units = self.plan_air_city_assault(g, pid, plan);
+        self.owned_pass(g, pid, OrderStep::GunsOutOfReach, |ai, g| {
+            ai.guns_step_out_of_reach(g, pid);
+            ai.priced_risk_guns_step_out(g, pid);
+        });
+        let mut air_assault_units = self.owned_pass(g, pid, OrderStep::Air, |ai, g| {
+            ai.plan_air_city_assault(g, pid, plan)
+        });
         for (uid, moves, attacks) in held_readiness {
             if let Some(unit) = g.units.get_mut(&uid) {
                 unit.moves_left = moves;
@@ -2641,32 +2764,43 @@ impl AdvancedAi {
         // `falling-city-calls-the-takers`: a falling city is taken, or its
         // nearest fit bodies close in. Nothing with the gene off. See
         // `advanced/falling_city_takers.rs`.
-        let falling_takers = self.plan_falling_city_takers(g, pid, plan, &air_assault_units);
+        let falling_takers = self.owned_pass(g, pid, OrderStep::FallingCity, |ai, g| {
+            ai.plan_falling_city_takers(g, pid, plan, &air_assault_units)
+        });
         air_assault_units.extend(falling_takers);
         // `air-surge-2` raiders: spare surge cavalry pillage behind the wing.
         // Nothing is read outside a Domination surge at war. See
         // `advanced/air_surge/raids.rs`.
         // `invest-keeps-its-cavalry`: see `assess_sieges_before_the_raids`.
         self.assess_sieges_before_the_raids(g, pid, plan);
-        let raiders = self.plan_air_surge_raids(g, pid, plan, &air_assault_units);
+        let raiders = self.owned_pass(g, pid, OrderStep::Raids, |ai, g| {
+            ai.plan_air_surge_raids(g, pid, plan, &air_assault_units)
+        });
         air_assault_units.extend(raiders);
         // A faithless Domination seat condemns the spreaders converting it.
         // See `advanced/air_surge/heretic_hunt.rs`.
-        let hunters = self.plan_heretic_hunt(g, pid, &air_assault_units);
+        let hunters = self.owned_pass(g, pid, OrderStep::Hunts, |ai, g| {
+            ai.plan_heretic_hunt(g, pid, &air_assault_units)
+        });
         air_assault_units.extend(hunters);
         // `war-kills-the-bands`: an enemy Rock Band in reach is run down.
         // Nothing with the gene off. See `advanced/band_hunt.rs`.
         // Version two hunted before the battle (`early_band_hunters`).
         let band_hunters = if self.war_kills_the_bands_2 {
+            self.credit_orders(g, OrderStep::Hunts);
             early_band_hunters
         } else {
-            self.plan_band_hunt(g, pid, plan, &air_assault_units)
+            self.owned_pass(g, pid, OrderStep::Hunts, |ai, g| {
+                ai.plan_band_hunt(g, pid, plan, &air_assault_units)
+            })
         };
         air_assault_units.extend(band_hunters);
         // `war-raids-the-pads`: a decisive space racer's standing pads are
         // pillaged from the air or on foot. Nothing with the gene off. See
         // `advanced/launcher_war.rs`.
-        let pad_raiders = self.plan_pad_raids(g, pid, plan, &air_assault_units);
+        let pad_raiders = self.owned_pass(g, pid, OrderStep::Raids, |ai, g| {
+            ai.plan_pad_raids(g, pid, plan, &air_assault_units)
+        });
         air_assault_units.extend(pad_raiders);
         // `pass-picket`: this turn's recon orders, drawn once from the
         // start-of-turn board so units planned in parallel agree on them.
@@ -2677,6 +2811,17 @@ impl AdvancedAi {
         // once from the same board and for the same reason. Nothing is read
         // with the gene off. See `advanced/chokepoints.rs`.
         self.chokepoint_gate_plan(g, pid);
+        // `defend-force-holds-the-city`: every threatened city's posts, drawn
+        // after every other claim of the turn. Nothing with the gene off. See
+        // `advanced/defend_force_holds_the_city.rs`.
+        if self.defend_hold_on() {
+            let mut claimed = withdrawn.clone();
+            claimed.extend(air_assault_units.iter().copied());
+            claimed.extend(opening_recon_warrior);
+            self.owned_pass(g, pid, OrderStep::DefendHold, |ai, g| {
+                ai.hold_the_cities(g, pid, &claimed)
+            });
+        }
         let mut ids = g.player_unit_ids(pid);
         ids.retain(|uid| {
             !settled_first.contains(uid)
@@ -2729,7 +2874,7 @@ impl AdvancedAi {
                     decline_settlers,
                 );
                 if !took_a_turn {
-                    self.base.hold_stood_down_unit(g, pid, uid);
+                    self.stand_down(g, pid, uid);
                 }
                 cursor += 1;
                 continue;
@@ -2749,7 +2894,7 @@ impl AdvancedAi {
                     decline_settlers,
                 );
                 if !took_a_turn {
-                    self.base.hold_stood_down_unit(g, pid, uid);
+                    self.stand_down(g, pid, uid);
                 }
                 cursor = end;
                 continue;

@@ -220,6 +220,120 @@ pub fn find(name: &str) -> Option<&'static PlayerStrategy> {
         .find(|row| row.id == name || row.handle == name || row.aliases.contains(&name))
 }
 
+/// The roster by published Elo, strongest first. An agent nothing has rated
+/// ranks below every rated one, and equal ratings keep roster order.
+pub fn ranked() -> Vec<&'static PlayerStrategy> {
+    let file = published();
+    let elo = |row: &PlayerStrategy| {
+        file.ratings
+            .get(row.id)
+            .map_or(f64::NEG_INFINITY, |rating| rating.elo)
+    };
+    let mut rows: Vec<&'static PlayerStrategy> = ROSTER.iter().collect();
+    rows.sort_by(|a, b| elo(b).total_cmp(&elo(a)));
+    rows
+}
+
+/// Keeps the deal apart from every other stream drawn from a game's seed.
+const TABLE_DEAL_STREAM: u64 = 0x7ab1_e0f5_ea75_d0a1;
+
+/// Who plays a watched table of `seats` majors: the strongest agents, one to
+/// a seat, dealt round the table by `seed`.
+///
+/// The deal is what keeps an agent from always drawing the first seat, and
+/// with it the first move and the first start position. It is a stream of
+/// its own, never the game's, so seating a table cannot move the world it
+/// is played on. A table larger than the roster seats the ranking again from
+/// the top.
+pub fn table(seats: usize, seed: u64) -> Vec<&'static PlayerStrategy> {
+    let ranked = ranked();
+    let mut table: Vec<&'static PlayerStrategy> =
+        (0..seats).map(|seat| ranked[seat % ranked.len()]).collect();
+    let mut rng = crate::rng::Rng::new(seed ^ TABLE_DEAL_STREAM);
+    for index in (1..table.len()).rev() {
+        table.swap(index, rng.below(index + 1));
+    }
+    table
+}
+
+/// What a seat says about the agent playing it: its handle, its tilt, and
+/// the rating it sat down with when `strategy_elo` has measured one.
+pub fn seat_json(row: &PlayerStrategy) -> Value {
+    let file = published();
+    let rating = file.ratings.get(row.id);
+    json!({
+        "ai_agent": row.id,
+        "ai_username": row.handle,
+        "ai_strat_label": row.tilt,
+        "ai_elo": rating.map(|r| r.elo.round() as i64),
+        "ai_elo_sd": rating.map(|r| r.sd.round() as i64),
+        "ai_elo_tables": rating.map_or(0, |r| r.games),
+        "ai_elo_provisional": rating.is_none_or(|r| r.games < PROVISIONAL_TABLES),
+        "ai_civ6_level": rating.and_then(|r| nearest_rung(file, r.elo)),
+    })
+}
+
+/// The lane our own seat plays in a mirrored game of Civilization VI, as the
+/// live decider is launched with it (`civvis-orders --victory`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LiveLane {
+    /// `civvis`: no contract, the agent follows whichever victory is open.
+    Adaptive,
+    /// Contracted to one victory for the whole game.
+    Target(VictoryTarget),
+}
+
+impl LiveLane {
+    /// A lane by the id the decider takes. An id it would refuse is no lane.
+    pub fn from_id(id: &str) -> Option<LiveLane> {
+        if id == "civvis" {
+            return Some(LiveLane::Adaptive);
+        }
+        id.parse().ok().map(LiveLane::Target)
+    }
+}
+
+/// What a seat says when Civilization VI's own AI is playing it: every rival
+/// of a mirrored game (operator, 2026-11-13: "for validation games, the
+/// player should just be something like "Civ 6 Deity AI" or whatever the
+/// level is"). `difficulty` is the rung id the host reported. Nothing of ours
+/// plays the seat, so it carries no agent id and no rating: the published
+/// rung ratings were measured on our stand-in for that AI, not on it.
+pub fn civ6_ai_seat_json(difficulty: &str) -> Value {
+    let rung = CIV6_RUNGS.iter().find(|(id, _)| *id == difficulty);
+    json!({
+        "ai_username": match rung {
+            Some((_, name)) => format!("Civ 6 {name} AI"),
+            None => "Civ 6 AI".to_string(),
+        },
+        "ai_strat_label": "Civilization VI's own AI",
+    })
+}
+
+/// What our own seat in a mirrored game says: the strategy the live decider
+/// is actually playing (same instruction: "where we control the player ai
+/// strategy, then we should list out the actual strategy being used"). The
+/// live genome is no roster row, so it borrows no handle and no rating.
+/// `None` is a follower that has not said which lane the decider is on.
+pub fn live_seat_json(lane: Option<LiveLane>) -> Value {
+    let (handle, tilt) = match lane {
+        None => ("CIVVIS Advanced AI".to_string(), "Live agent".to_string()),
+        Some(LiveLane::Adaptive) => (
+            "CIVVIS Adaptive".to_string(),
+            "Live agent · whichever victory is open".to_string(),
+        ),
+        Some(LiveLane::Target(target)) => {
+            let id = target.as_str();
+            let lane = format!("{}{}", id[..1].to_ascii_uppercase(), &id[1..]);
+            (
+                format!("CIVVIS {lane}"),
+                format!("Live agent · {lane} victory"),
+            )
+        }
+    };
+    json!({ "ai_username": handle, "ai_strat_label": tilt })
+}
+
 /// The ledger key of a Civilization VI rung's rivals.
 pub fn rung_key(rung: &str) -> String {
     format!("civ6:{rung}")
@@ -471,6 +585,100 @@ mod tests {
         assert_eq!(find("basic").map(|row| row.id), Some("wheels"));
         assert_eq!(find("TouristTrap").map(|row| row.id), Some("tourist"));
         assert!(find("nobody").is_none());
+    }
+
+    /// A watched table seats the strongest agents, each exactly once, and
+    /// the seed decides only who sits where.
+    #[test]
+    fn a_table_seats_the_top_rated_agents_once_each() {
+        let ranked = ranked();
+        assert_eq!(ranked.len(), ROSTER.len());
+        let file = published();
+        let rated: Vec<f64> = ranked
+            .iter()
+            .filter_map(|row| file.ratings.get(row.id).map(|rating| rating.elo))
+            .collect();
+        assert!(
+            rated.windows(2).all(|pair| pair[0] >= pair[1]),
+            "strongest first: {rated:?}"
+        );
+        let top: BTreeSet<&str> = ranked.iter().take(4).map(|row| row.id).collect();
+        let mut first_seats = BTreeSet::new();
+        for seed in 0..40_u64 {
+            let dealt: Vec<&str> = table(4, seed).iter().map(|row| row.id).collect();
+            let seated: BTreeSet<&str> = dealt.iter().copied().collect();
+            assert_eq!(seated, top, "seed {seed} seated somebody else");
+            let again: Vec<&str> = table(4, seed).iter().map(|row| row.id).collect();
+            assert_eq!(dealt, again, "the same seed deals the same table");
+            first_seats.insert(dealt[0]);
+        }
+        assert_eq!(
+            first_seats, top,
+            "every agent draws the first seat sometimes"
+        );
+        // More seats than agents: everybody sits before anybody sits twice.
+        let crowded = table(ROSTER.len() + 2, 7);
+        let distinct: BTreeSet<&str> = crowded.iter().map(|row| row.id).collect();
+        assert_eq!(distinct.len(), ROSTER.len());
+        assert!(table(0, 7).is_empty());
+    }
+
+    #[test]
+    fn a_seat_carries_its_agents_handle_and_published_rating() {
+        let seat = seat_json(find("jack").expect("the flagship"));
+        assert_eq!(seat["ai_username"], json!("JackOfAllTrades"));
+        assert_eq!(seat["ai_agent"], json!("jack"));
+        let published = published()
+            .ratings
+            .get("jack")
+            .map(|r| r.elo.round() as i64);
+        assert_eq!(seat["ai_elo"].as_i64(), published);
+    }
+
+    #[test]
+    fn a_mirrored_rival_is_named_for_civilization_vis_own_ai() {
+        let deity = civ6_ai_seat_json("deity");
+        assert_eq!(deity["ai_username"], json!("Civ 6 Deity AI"));
+        assert_eq!(deity["ai_strat_label"], json!("Civilization VI's own AI"));
+        // Nothing of ours is in the seat: no roster id and no rating.
+        assert!(deity["ai_agent"].is_null());
+        assert!(deity["ai_elo"].is_null());
+        for (id, name) in CIV6_RUNGS {
+            assert_eq!(
+                civ6_ai_seat_json(id)["ai_username"],
+                json!(format!("Civ 6 {name} AI"))
+            );
+        }
+        // A level the ladder does not hold still says whose AI it is.
+        assert_eq!(civ6_ai_seat_json("")["ai_username"], json!("Civ 6 AI"));
+    }
+
+    #[test]
+    fn our_mirrored_seat_names_the_lane_it_plays() {
+        // Every id the live decider accepts names a lane.
+        for (id, handle) in [
+            ("science", "CIVVIS Science"),
+            ("culture", "CIVVIS Culture"),
+            ("religious", "CIVVIS Religious"),
+            ("diplomatic", "CIVVIS Diplomatic"),
+            ("domination", "CIVVIS Domination"),
+            ("score", "CIVVIS Score"),
+            ("civvis", "CIVVIS Adaptive"),
+        ] {
+            let lane = LiveLane::from_id(id).unwrap_or_else(|| panic!("{id} is a lane"));
+            let seat = live_seat_json(Some(lane));
+            assert_eq!(seat["ai_username"], json!(handle));
+            assert!(seat["ai_elo"].is_null(), "the live genome is unrated");
+        }
+        assert_eq!(
+            live_seat_json(LiveLane::from_id("diplomatic"))["ai_strat_label"],
+            json!("Live agent · Diplomatic victory")
+        );
+        assert_eq!(LiveLane::from_id(""), None);
+        assert_eq!(
+            live_seat_json(None)["ai_username"],
+            json!("CIVVIS Advanced AI")
+        );
     }
 
     #[test]

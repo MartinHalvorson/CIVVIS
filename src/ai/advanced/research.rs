@@ -13,6 +13,7 @@
 use super::*;
 
 mod culture_education;
+mod domination_education;
 mod walls_interrupt;
 
 /// `spies-steal-the-lead`: the civic value Diplomatic Service (Spy capacity)
@@ -382,6 +383,10 @@ impl AdvancedAi {
             // `research-follows-the-first-capital`: the same army's research
             // survives a stepping stone's release when a major capital is named.
             let first_capital_army_goal = self.first_capital_army_research_goal(g, pid);
+            // `edge-unit-takes-the-soft-city`: the technology that reveals the
+            // edge unit's resource, then its own, while its window is open.
+            // `None` with the gene off.
+            let edge_unit_goal = self.edge_unit_research_goal(g, pid);
             let defensive_walls_goal = self
                 .frontier_walls_research_goal(g, pid)
                 .or_else(|| self.defensive_walls_research_goal(g, pid, plan));
@@ -394,6 +399,17 @@ impl AdvancedAi {
             let production_technology_goal = self.named_production_technology_goal(g, pid, plan);
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
             let domination_campus_goal = self.domination_campus_unlock_goal(g, pid);
+            // `education-follows-the-library`: `None` with the gene off. See
+            // `research/domination_education.rs`.
+            let domination_education_goal = self.domination_education_goal(g, pid);
+            // The same goal ahead of the wartime modernization chain once
+            // Education is at most two technologies short.
+            let education_before_modernization = Self::domination_education_ahead_of_modernization(
+                g,
+                pid,
+                domination_education_goal,
+                wartime_modernization_goal.as_deref(),
+            );
             let every_lane_campus_goal = self.every_lane_campus_unlock_goal(g, pid);
             let science_writing_goal = self.science_writing_before_the_luxury_goal(g, pid);
             let endgame_goal = self.science_endgame_research_goal(g, pid);
@@ -485,6 +501,10 @@ impl AdvancedAi {
                 _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
                 _ if stone_research_goal.is_some() => stone_research_goal.as_deref(),
                 _ if first_capital_army_goal.is_some() => first_capital_army_goal.as_deref(),
+                // `edge-unit-takes-the-soft-city`: behind the walls, the
+                // opening Archery and the openings above, ahead of every lane
+                // beeline. See `advanced/edge_unit_takes_the_soft_city.rs`.
+                _ if edge_unit_goal.is_some() => edge_unit_goal.as_deref(),
                 // `diplo-match-point-beelines-the-points`: from match point the
                 // last points in the tree, whatever the plan reads, ahead of
                 // every war and lane arm below. Live Immortal
@@ -654,6 +674,10 @@ impl AdvancedAi {
                 // An owned Rocketry commits the first launch through Recovery
                 // and optional modernization; urgent defenses remain above.
                 _ if first_launch_goal.is_some() => first_launch_goal,
+                // `education-follows-the-library`: Education (or a step at
+                // most two short of it) takes the modernization's slot, behind
+                // every arm above. See `research/domination_education.rs`.
+                _ if education_before_modernization.is_some() => education_before_modernization,
                 _ if wartime_modernization_goal.is_some() => wartime_modernization_goal.as_deref(),
                 _ if domination_siege_goal.is_some() => domination_siege_goal.as_deref(),
                 // Once the late launch chain is committed, finish its remaining
@@ -709,6 +733,10 @@ impl AdvancedAi {
                 // Two founded cities can invest in campuses. Finish their
                 // unlock before optional bargains and generic branch scores.
                 _ if domination_campus_goal.is_some() => domination_campus_goal,
+                // `education-follows-the-library`: the Universities those
+                // campuses are ready for, in the same slot. See
+                // `research/domination_education.rs`.
+                _ if domination_education_goal.is_some() => domination_education_goal,
                 // `campus-unlock-every-lane`: the same unlock for a Culture,
                 // Religion or adaptive seat, which otherwise has no Writing
                 // goal at all. See `advanced/domination_research.rs`.
@@ -816,6 +844,15 @@ impl AdvancedAi {
             if let Some(goal) =
                 decisive_window_goal.filter(|goal| forced_goal == Some(goal.as_str()))
             {
+                for tech in g.available_techs(pid) {
+                    if self.tech_leads_to(g, &tech, goal.as_str()) && !available.contains(&tech) {
+                        available.push(tech);
+                    }
+                }
+            }
+            // `edge-unit-takes-the-soft-city`: every legal step toward the
+            // edge unit's technology while it owns the forced goal.
+            if let Some(goal) = edge_unit_goal.filter(|goal| forced_goal == Some(goal.as_str())) {
                 for tech in g.available_techs(pid) {
                     if self.tech_leads_to(g, &tech, goal.as_str()) && !available.contains(&tech) {
                         available.push(tech);
@@ -998,6 +1035,8 @@ impl AdvancedAi {
                                 }
                             } else if first_capital_army_goal.as_deref() == Some(goal) {
                                 format!("research-follows-the-first-capital: the {step} step toward {}, keeping the named capital's breaker and unique melee line ahead of the economic beeline", plain(goal))
+                            } else if edge_unit_goal.as_deref() == Some(goal) {
+                                format!("edge-unit-takes-the-soft-city: the {step} step toward {}, which the edge unit outclassing a nearby rival city needs", plain(goal))
                             } else if barbarian_military_goal.as_deref() == Some(goal) {
                                 format!(
                                     "the {step} step toward {}, needed to catch a nearby barbarian army",
@@ -1055,6 +1094,23 @@ impl AdvancedAi {
                                 )
                             } else if domination_campus_goal == Some(goal) {
                                 "unlock campuses for the expanding domination economy".to_string()
+                            } else if domination_education_goal == Some(goal) {
+                                let ready = Self::education_ready_campus_cities(g, pid);
+                                let ahead = match (
+                                    education_before_modernization,
+                                    wartime_modernization_goal.as_deref(),
+                                ) {
+                                    (Some(_), Some(chain)) => format!(
+                                        ", ahead of the wartime modernization chain toward {}",
+                                        plain(chain)
+                                    ),
+                                    _ => String::new(),
+                                };
+                                format!(
+                                    "education-follows-the-library: the {step} step toward {}{ahead}, opening Universities for {ready} Campus {} with a Library",
+                                    plain(goal),
+                                    if ready == 1 { "city" } else { "cities" }
+                                )
                             } else if let Some((_, civic)) =
                                 culture_road_tech.filter(|(tech, _)| *tech == goal)
                             {

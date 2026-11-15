@@ -331,10 +331,21 @@ impl AdvancedAi {
     /// unit bill -- the floor `upgrade_treasury_floor` keeps. `stock` comes
     /// back unchanged while the gene is off.
     pub(super) fn purchase_upkeep_floor(&self, g: &Game, pid: usize, stock: f64) -> f64 {
-        if !self.purchases_keep_the_upkeep_reserve {
-            return stock;
+        // `edge-unit-opens-from-the-start`: the upgrade bill of the opening's
+        // bodies is held back from every discretionary buy. Zero (the floor
+        // unchanged) with the gene off. See
+        // `advanced/edge_unit_takes_the_soft_city.rs`.
+        let held = self.edge_upgrade_gold_held(g, pid);
+        let floor = if !self.purchases_keep_the_upkeep_reserve {
+            stock
+        } else {
+            upgrade_floor_from(stock, g.unit_gold_maintenance(pid))
+        };
+        if held > 0.0 {
+            floor.max(held)
+        } else {
+            floor
         }
-        upgrade_floor_from(stock, g.unit_gold_maintenance(pid))
     }
 
     /// `treasury-at-work-2`: the reserve `advanced_gold_spending` keeps back,

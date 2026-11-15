@@ -627,6 +627,12 @@ impl AdvancedAi {
         if let Some(acted) = self.chop_feeds_the_long_build_step(g, pid, uid, strategy) {
             return acted;
         }
+        // `edge-unit-takes-the-soft-city`: a source of the edge unit's
+        // resource inside our borders is improved first while its window is
+        // open and nothing supplies it. `None` with the gene off.
+        if let Some(acted) = self.edge_unit_builder_step(g, pid, uid) {
+            return acted;
+        }
         if let Some(acted) = self.air_resource_builder_step(g, pid, uid) {
             return acted;
         }

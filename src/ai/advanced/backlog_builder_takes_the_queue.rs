@@ -135,6 +135,11 @@ impl AdvancedAi {
             0
         };
         let cover = BasicAi::builder_charge_cover(g, pid) - own;
+        // `the-worked-backlog-gets-its-builder-first`: the gene's quota, so
+        // the Builder it called is held too. Always false with the gene off.
+        if self.base.worked_backlog_runs_ahead(backlog, cover) {
+            return true;
+        }
         // `prod-tiles-call-the-builders`: the quota the claim was made under,
         // so a Builder claimed for the production ground is held too. Off,
         // `wanted` is the stock `backlog x WORKED_BACKLOG_COVER`.
@@ -182,6 +187,11 @@ impl AdvancedAi {
         let _memo = g.query_memo();
         let mut best: Option<(f64, u32, Item)> = None;
         for cid in g.player_city_ids(pid) {
+            // `rear-cities-grow-through-the-war-hold`: under the war's hold,
+            // only a rear city. Always open while the gene is off.
+            if !self.claim_open_behind_the_front(cid) {
+                continue;
+            }
             if exclude == Some(cid) {
                 continue;
             }
@@ -208,6 +218,9 @@ impl AdvancedAi {
                     || self.idle_route_trader_holds(g, pid, cid, plan, item)
                     || self.charting_hull_holds(g, pid, cid, plan, item)
                     || self.culture_monument_finishes_first(g, pid, cid, plan, item)
+                    // `campus-and-library-before-the-claims`: its first
+                    // Campus, Library or University goes first.
+                    || self.campus_and_library_holds(g, pid, cid, plan, item)
                     || !Self::idle_route_trader_may_defer(g, pid, cid, item, at_major_war)
                 {
                     continue;
@@ -250,6 +263,10 @@ impl AdvancedAi {
             if let Some(note) = self.base.production_tile_quota_note(g, pid) {
                 think!(self.journal(), Economy, Detail,
                        "{name}'s Builder answers the production ground"; "{note}");
+            }
+            if let Some(note) = self.worked_backlog_first_note(backlog, cover) {
+                think!(self.journal(), Economy, Detail,
+                       "{name}'s Builder answers the whole worked backlog"; "{note}");
             }
         }
     }

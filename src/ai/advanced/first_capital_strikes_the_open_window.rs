@@ -95,6 +95,25 @@
 //!    063232Z: "Campaign remains aimed at Palenque"), and the power-gap
 //!    Recovery posture stays off while the strike's war runs; a home
 //!    emergency and a threatened city still take them.
+//! 7. **The search combs the ring where rival capitals stand**
+//!    ([`AdvancedAi::first_capital_search_goal`]). Before any capital can be
+//!    named, inside the first [`FIRST_CAPITAL_SEARCH_TURNS`] standard turns
+//!    and with no opening standing, a free scout with no rival lead walks to
+//!    the nearest unexplored tile it can enter
+//!    [`FIRST_CAPITAL_SEARCH_INNER`]-[`FIRST_CAPITAL_SEARCH_OUTER`] tiles
+//!    from our capital, and keeps that goal while it stays fog. A second
+//!    scout leaves the ground within [`FIRST_CAPITAL_SEARCH_SPACING`] of the
+//!    first one's goal to it, and no goal lies within
+//!    [`FIRST_CAPITAL_SEARCH_CLEARANCE`] of a visible hostile soldier. Live
+//!    Gran Colombia, 24 Deity games of 2026-11-11 from 19:57Z (four players,
+//!    Tiny Pangaea, Online): the nearest rival capital stood 11-20 tiles out
+//!    in 16, and was first seen by turn 20 in 4 of them, at turns 29-42 in
+//!    4 (three already behind walls) and at turns 54-150 in 8. The four seen
+//!    early were all named the turn they were seen. The lone Scout swept the
+//!    frontier most revealing and farthest from home (the city-state contact
+//!    sweep) and met the nearest major at turns 25-38 in six games; once met,
+//!    that major's borders are closed, and a capital three rings inside them
+//!    stays unseen (203522Z: Istanbul, 14 tiles out, first seen at turn 93).
 //!
 //! Threatened-city and Recovery holds on the march, the tactics, the wall
 //! ceilings, the reach and the naming deadline are the shipped ones. Inert
@@ -109,6 +128,7 @@ use super::first_capital_before_the_walls::FIRST_CAPITAL_WALL_CEILING;
 use super::AdvancedAi;
 use crate::game::Game;
 use crate::think;
+use crate::Pos;
 
 /// The most city strength a named capital may read and still be soft. The
 /// live Cree capital read 16-28 from turn 28 to 43 and 38-47 from turn 44
@@ -135,9 +155,32 @@ pub(crate) const FIRST_CAPITAL_BARE_STRENGTH: f64 = 20.0;
 pub(crate) const FIRST_CAPITAL_BARE_REACH: i32 = 14;
 
 /// The cities the empire holds before the reservation opens on a bare
-/// capital, and before its strike: one. The capital's production goes to the
-/// force before the first Settler; a rival capital is worth more cities.
-pub(crate) const FIRST_CAPITAL_BARE_CITIES: usize = 1;
+/// capital, and before its strike: two, the soft capital's count. It was
+/// one (#5124), so the force came before the first Settler. Live Deity Gran
+/// Colombia, the four games that named a bare capital after the latch held
+/// (`civvis-20261111T195754Z`, `civvis-20261112T003131Z`, `003932Z`,
+/// `010242Z`): none declared (one city trains the six bodies and a Ram in
+/// 25 to 35 turns; two forces stood out the patience window, one never
+/// assembled, one neighbour declared first), and they held 2.5 and 3.0
+/// cities at turns 40 and 60 against 3.1 and 4.5 in the 31 other games.
+pub(crate) const FIRST_CAPITAL_BARE_CITIES: usize = 2;
+
+/// The military power the reserved force adds to ours once it is trained:
+/// four Warriors and two Slingers or Archers. A capital is bare only when
+/// its owner's public power is within [`FIRST_CAPITAL_POWER_RATIO`] of ours
+/// plus this, because no strike passes that ratio later. The four bare
+/// capitals the live seat has named, at the turn of the naming:
+///
+/// | Owner | Its power | Ours | Bare by this rule | What followed |
+/// |---|---|---|---|---|
+/// | Persia | 170 | 67 | yes (230) | still 163 to 234 at turns 30 to 40 |
+/// | Scotland | 159 | 62 | yes (224) | 191 to 219, below ours by turn 40 |
+/// | Mali | 113 | 34 | yes (187) | 164 to 285 |
+/// | Arabia | 293 | 53 | no (212) | 399, then 485 at turn 40 |
+///
+/// Against Arabia (`civvis-20261111T194319Z`) the reservation held the
+/// capital from turn 20 for a strike its power guard never allowed.
+pub(crate) const FIRST_CAPITAL_BARE_FORCE: f64 = 110.0;
 
 /// How much stronger than our best melee body at the rally the city may read
 /// and still be struck. Live civvis-20261111T063232Z declared at t80 on Wak
@@ -186,6 +229,27 @@ pub(crate) const FIRST_CAPITAL_STRIKE_TURNS: u32 = 3;
 
 /// What a city heals each turn in the engine (`game/turn.rs`: `city.hp + 20`).
 pub(crate) const FIRST_CAPITAL_CITY_HEAL: i32 = 20;
+
+/// The inner edge of the ring the search combs, in tiles from our capital.
+/// The nearest rival capital stood 11-20 tiles out in 16 of the 24 live
+/// games, and a Scout sees two tiles either side of its path.
+pub(crate) const FIRST_CAPITAL_SEARCH_INNER: i32 = 11;
+
+/// The outer edge of that ring: one Scout lap of the five-tile band sees
+/// ground 9-17 tiles out, and a capital's borders farther out.
+pub(crate) const FIRST_CAPITAL_SEARCH_OUTER: i32 = 15;
+
+/// Standard turns the search runs (turn 30 at Online): the capitals first
+/// seen at turns 29-42 were three in four behind walls already.
+pub(crate) const FIRST_CAPITAL_SEARCH_TURNS: u32 = 45;
+
+/// A second scout leaves ground this close to the first one's goal to it
+/// (the explorer's own spacing).
+pub(crate) const FIRST_CAPITAL_SEARCH_SPACING: i32 = 4;
+
+/// No search goal this close to a visible hostile soldier (the explorer's
+/// own threat radius).
+pub(crate) const FIRST_CAPITAL_SEARCH_CLEARANCE: i32 = 3;
 
 /// What the bodies at the rally make of the city's bill.
 #[derive(Clone, Debug, PartialEq)]
@@ -739,8 +803,11 @@ impl AdvancedAi {
     }
 
     /// Whether `city` is bare right now: no walls built, a strength (as last
-    /// seen) of at most [`FIRST_CAPITAL_BARE_STRENGTH`], and within
-    /// [`FIRST_CAPITAL_BARE_REACH`] of our capital.
+    /// seen) of at most [`FIRST_CAPITAL_BARE_STRENGTH`], within
+    /// [`FIRST_CAPITAL_BARE_REACH`] of our capital, and an owner whose public
+    /// military power the reserved force would bring within the strike's
+    /// ratio: at most [`FIRST_CAPITAL_POWER_RATIO`] times ours plus
+    /// [`FIRST_CAPITAL_BARE_FORCE`].
     pub(crate) fn first_capital_is_bare(g: &Game, pid: usize, city: u32) -> bool {
         let Some(home) = Self::first_capital_home(g, pid) else {
             return false;
@@ -749,6 +816,9 @@ impl AdvancedAi {
             g.city_max_wall_hp(target) <= 0
                 && g.city_strength(city) <= FIRST_CAPITAL_BARE_STRENGTH
                 && g.wdist(home, target.pos) <= FIRST_CAPITAL_BARE_REACH
+                && g.military_power(target.owner)
+                    <= FIRST_CAPITAL_POWER_RATIO
+                        * (g.military_power(pid) + FIRST_CAPITAL_BARE_FORCE)
         })
     }
 
@@ -778,7 +848,7 @@ impl AdvancedAi {
                 think!(self.journal(), Military, Strategy,
                        "First capital before the walls: {} is bare", city.name;
                        "defence {:.0}, no walls, {} tiles from our capital: the reservation opens \
-                        at {} city and the strike does not wait for a second",
+                        at {} cities, and the latch keeps it open while the capital stays soft",
                        g.city_strength(city.id),
                        Self::first_capital_home(g, pid).map_or(0, |home| g.wdist(home, city.pos)),
                        FIRST_CAPITAL_BARE_CITIES;
@@ -829,9 +899,9 @@ impl AdvancedAi {
         self.first_capital_read_the_bareness(g, pid, soft);
     }
 
-    /// The cities a soft capital's reservation waits for (one for a bare
-    /// one), or `None` while the named capital is not soft (or the gene is
-    /// off).
+    /// The cities a soft capital's reservation waits for (the same two for a
+    /// bare one, see [`FIRST_CAPITAL_BARE_CITIES`]), or `None` while the
+    /// named capital is not soft (or the gene is off).
     pub(super) fn first_capital_soft_settler_cities(&self) -> Option<usize> {
         (self.first_capital_soft_now && self.first_capital_strikes_active()).then_some(
             if self.first_capital_bare.is_some() {
@@ -894,6 +964,110 @@ impl AdvancedAi {
                "First capital before the walls: the window holds";
                "{city}: the commit deadline came and {reason}; the opening waits {grace} more \
                 turns instead of releasing");
+    }
+
+    /// ⭐ Item 7: the goal of the free scout `uid` while no rival capital can
+    /// be named: the goal it already holds if that is still unexplored ground
+    /// it can enter on the ring, else the nearest such tile (nearer the
+    /// ring's middle, then the lower tile, on a tie) that is not within
+    /// [`FIRST_CAPITAL_SEARCH_SPACING`] of another scout's held goal. Nothing
+    /// lies within [`FIRST_CAPITAL_SEARCH_CLEARANCE`] of a visible hostile
+    /// soldier. `None` with the gene off, once a capital can be named, with an
+    /// opening standing or closed, past the window, before our capital
+    /// stands, for a unit that is not a free scout, and once the ring is
+    /// charted.
+    pub(super) fn first_capital_search_goal(&self, g: &Game, pid: usize, uid: u32) -> Option<Pos> {
+        if !self.first_capital_strikes_active()
+            || self.conquest_opening.is_some()
+            || self.conquest_closed
+            || g.turn >= g.standard_duration(FIRST_CAPITAL_SEARCH_TURNS)
+            || !self.distance_scout_available(g, pid, uid)
+        {
+            return None;
+        }
+        let home = Self::first_capital_home(g, pid)?;
+        if self.first_capital_target(g, pid).is_some() {
+            return None;
+        }
+        let visible = g.player_vision_frame(pid);
+        let threats: Vec<Pos> = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner != pid
+                    && g.is_at_war(pid, unit.owner)
+                    && g.rules.units[unit.kind].class == "military"
+                    && g.sees(&visible, unit.pos)
+            })
+            .map(|unit| unit.pos)
+            .collect();
+        let explored = &g.players[pid].explored;
+        let goal = {
+            let dead = self.base.explore_dead.borrow();
+            let held_goals = self.base.explore_goal.borrow();
+            let usable = |pos: Pos| {
+                (FIRST_CAPITAL_SEARCH_INNER..=FIRST_CAPITAL_SEARCH_OUTER)
+                    .contains(&g.wdist(home, pos))
+                    && !explored.contains(&pos)
+                    && g.unit_can_traverse(uid, pos)
+                    && !dead
+                        .get(&uid)
+                        .and_then(|goals| goals.get(&pos))
+                        .is_some_and(|expiry| *expiry > g.turn)
+                    && threats
+                        .iter()
+                        .all(|threat| g.wdist(*threat, pos) > FIRST_CAPITAL_SEARCH_CLEARANCE)
+            };
+            let held = held_goals
+                .get(&uid)
+                .map(|(goal, _)| *goal)
+                .filter(|goal| usable(*goal));
+            match held {
+                Some(goal) => goal,
+                None => {
+                    let others: Vec<Pos> = held_goals
+                        .iter()
+                        .filter(|(other, _)| {
+                            **other != uid
+                                && g.units.get(other).is_some_and(|unit| unit.owner == pid)
+                        })
+                        .map(|(_, (goal, _))| *goal)
+                        .collect();
+                    let origin = g.units[&uid].pos;
+                    let middle = (FIRST_CAPITAL_SEARCH_INNER + FIRST_CAPITAL_SEARCH_OUTER) / 2;
+                    g.wdisk(home, FIRST_CAPITAL_SEARCH_OUTER)
+                        .into_iter()
+                        .filter(|pos| usable(*pos))
+                        .filter(|pos| {
+                            others
+                                .iter()
+                                .all(|other| g.wdist(*other, *pos) > FIRST_CAPITAL_SEARCH_SPACING)
+                        })
+                        .min_by_key(|pos| {
+                            (
+                                g.wdist(origin, *pos),
+                                (g.wdist(home, *pos) - middle).abs(),
+                                *pos,
+                            )
+                        })?
+                }
+            }
+        };
+        let fresh = self
+            .base
+            .explore_goal
+            .borrow()
+            .get(&uid)
+            .is_none_or(|(held, _)| *held != goal);
+        if fresh {
+            think!(self.journal(), Military, Detail,
+                   "{} {uid} combs the ring for a first capital", g.units[&uid].kind;
+                   "no rival capital can be named yet; the free scout walks the unexplored \
+                    ground {}-{} tiles from our capital, nearest first",
+                   FIRST_CAPITAL_SEARCH_INNER, FIRST_CAPITAL_SEARCH_OUTER;
+                   goal);
+        }
+        Some(goal)
     }
 }
 

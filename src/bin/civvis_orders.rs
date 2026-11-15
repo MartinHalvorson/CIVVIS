@@ -3404,6 +3404,44 @@ fn drain_sells_the_bank(state: &civvis::mirror::StateSnapshot) -> bool {
             .any(|rival| rival.dvp.unwrap_or(0) >= FAVOR_DRAIN_HOLD_DVP)
 }
 
+/// Whether a Domination plan sells its bank past the vote hold: the seat's
+/// victory target is Domination and no met rival has reached
+/// [`FAVOR_BUY_LEADER_DVP`], the count at which `favor-bought-before-congress`
+/// starts buying Favor back for the deciding session.
+///
+/// ★ THE CONQUEST SEAT BANKED ITS FAVOR AND RAN ON ELEVEN GOLD A TURN. Live
+/// Deity Gran Colombia, forty Domination games of 2026-11-11/12: the bank
+/// read 23 Favor at t60, 64 at t80, 102 at t100 and 137 at t120 (one to three
+/// points a turn) while net Gold read 10 to 16 a turn and 83 in hand at
+/// t100. A rival reached [`FAVOR_HOLD_DVP`] by t76 in 38 of the 40, so
+/// nothing sold unless the treasury was already drained; the 26 sales that
+/// did close then paid about 0.22 Gold a turn for each point (150 Favor for
+/// 33 Gold a turn at t115 and again at t132). None of those games ended on a
+/// Diplomatic Victory: rivals won on Culture by t111-149 and on Science by
+/// t184-195, with the highest rival count a median 11 points at the end.
+/// A seat that wins by taking capitals casts no vote that decides its game
+/// before then, and the bank is the one income it was leaving unsold. It
+/// keeps the cadence and the drained treasury's reserve.
+///
+/// ★ A SCORE SEAT BANKS IT THE SAME WAY, AND ITS GAME ENDS AT THE TURN
+/// LIMIT. Live Deity Rome, Score target, 6 players, limit 160, sixteen to
+/// eighteen games of 2026-11-13: the bank read a median 20 Favor at t50, 79
+/// at t75, 154 at t100 and 250 at t150 while net Gold read 10 a turn to t75
+/// and 25 at t100, with 94 to 138 in hand; the richest met rival made 46
+/// Gold a turn at t75, 129 at t100 and 574 at t150. Not one sale was
+/// journalled. A seat that wins on points at the limit casts no deciding
+/// vote either, so it sells on the same reading, to the same stop.
+fn conquest_sells_the_bank(
+    plan: Option<(&str, Option<&str>)>,
+    state: &civvis::mirror::StateSnapshot,
+) -> bool {
+    plan.is_some_and(|(_, victory)| matches!(victory, Some("domination" | "score")))
+        && !state
+            .rivals
+            .iter()
+            .any(|rival| rival.dvp.unwrap_or(0) >= FAVOR_BUY_LEADER_DVP)
+}
+
 /// ★ Until 2026-08-24 the floor was a flat Gold a point; the engine's own
 /// book (`Game::favor_gold_value`, `1.1 + 0.14·era + 0.07·dvp`) says 1.7–3.0
 /// over a game, and the caller now passes it. Kept as the floor of floors.
@@ -3486,7 +3524,9 @@ fn drop_off_lane_alliances(
 }
 
 /// Drop the planner's own favor sales when the plan means to cast that favor,
-/// or once a rival's DVP makes the bank votes ([`favor_banked_for_votes`]).
+/// or once a rival's DVP makes the bank votes ([`favor_banked_for_votes`]),
+/// unless the treasury is drained or the plan is a conquest
+/// ([`drain_sells_the_bank`], [`conquest_sells_the_bank`]).
 /// `Game::quick_deals` quotes a ten-favor block to any partner two DVP richer,
 /// plan-blind — a sale to a rival nearer the win than we are. Returns how many
 /// orders were held back.
@@ -3497,7 +3537,9 @@ fn hold_planner_favor_sales(
 ) -> usize {
     if !plan_keeps_favor(plan)
         && !plan_races_diplomacy(plan)
-        && (!favor_banked_for_votes(state) || drain_sells_the_bank(state))
+        && (!favor_banked_for_votes(state)
+            || drain_sells_the_bank(state)
+            || conquest_sells_the_bank(plan, state))
     {
         return 0;
     }
@@ -3600,7 +3642,10 @@ fn append_favor_sale_order(
     // See `treasury_drained`: a drained treasury sells past the vote hold,
     // off the cadence, and down to a smaller reserve.
     let drained = drain_sells_the_bank(state);
-    if favor_banked_for_votes(state) && !drained {
+    // See `conquest_sells_the_bank`: a Domination plan sells past the vote
+    // hold too, on the cadence, down to the same smaller reserve.
+    let conquest = conquest_sells_the_bank(plan, state);
+    if favor_banked_for_votes(state) && !drained && !conquest {
         return Some("favor_hold:contender");
     }
     if !drained && state.turn % FAVOR_SALE_CADENCE != FAVOR_SALE_PHASE {
@@ -3610,7 +3655,7 @@ fn append_favor_sale_order(
         return Some("favor_hold:unknown");
     };
     let surplus = favor
-        - if drained {
+        - if drained || conquest {
             FAVOR_DRAIN_RESERVE
         } else {
             FAVOR_RESERVE
@@ -6397,6 +6442,26 @@ fn decide(
     }
     // A leader statement is answered by the AutoClose layer, often before this
     // frame's orders land, so every batch renews a one-turn lease there.
+    // `score-seat-keeps-friends`: the dialogue closer accepts a major's
+    // offered friendship under a one-turn lease, which every batch renews. The
+    // subject is the host player the campaign names, whose offer keeps the
+    // refusal.
+    if let Some(spared) = ai.score_seat_keeps_friends_lease(&mirror_state.game, 0) {
+        let hosts: Vec<Option<i64>> = spared
+            .into_iter()
+            .filter_map(|player| host_player_target(mirror_state, state, player))
+            .map(Some)
+            .collect();
+        // One order per spared player; one with no subject when none is.
+        for subject in if hosts.is_empty() { vec![None] } else { hosts } {
+            orders.push(Order {
+                kind: "combat_policy",
+                subject,
+                verb: Some("SCORE_SEAT_KEEPS_FRIENDS".to_string()),
+                pos: None,
+            });
+        }
+    }
     if ai.dialogue_never_declares_war_enabled() {
         orders.push(Order {
             kind: "combat_policy",
@@ -9359,6 +9424,10 @@ fn main() {
     }
     if args.iter().any(|a| a == "--explain-settler") {
         diagnostics::explain_settler(args, players, max_turns, frontier, &load);
+        return;
+    }
+    if args.iter().any(|a| a == "--explain-assault") {
+        diagnostics::explain_assault(args, players, max_turns, frontier, &load);
         return;
     }
     if args.iter().any(|a| a == "--dump-mirror") {

@@ -393,3 +393,93 @@ fn the_front_line_city_trains_no_settler() {
         home
     ));
 }
+
+/// Recovery is a war like any other: with a soldier for every city the gene
+/// still trains a Settler, an army short of that does not, and off, Recovery
+/// stops every claim.
+#[test]
+fn recovery_stops_the_settlers_only_while_the_army_is_short() {
+    let (mut game, _, _) = two_idle_cities();
+    // A long game, so the stock claim's window is open and a city still pays.
+    game.max_turns = 500;
+    game.turn = game.standard_duration(90);
+    let ai = armed();
+    let mut plan = ai.assess(&game, 0);
+    plan.strategy = GrandStrategy::Recovery;
+
+    let mut thin = game.clone();
+    ai.claim_holdable_land_settler(&mut thin, 0, &plan);
+    assert!(
+        settlers_queued(&thin).is_empty(),
+        "no soldiers: Recovery holds"
+    );
+
+    garrison(&mut game);
+    let mut plan = ai.assess(&game, 0);
+    plan.strategy = GrandStrategy::Recovery;
+    let mut on = game.clone();
+    ai.claim_holdable_land_settler(&mut on, 0, &plan);
+    assert!(
+        !settlers_queued(&on).is_empty(),
+        "a soldier for every city: the Settlers keep coming"
+    );
+
+    let mut stock = AdvancedAi::new();
+    stock.enable_holdable_land_keeps_settling();
+    let mut plan = stock.assess(&game, 0);
+    plan.strategy = GrandStrategy::Recovery;
+    let mut off = game.clone();
+    stock.claim_holdable_land_settler(&mut off, 0, &plan);
+    assert!(settlers_queued(&off).is_empty(), "off: Recovery stops it");
+}
+
+/// A city with every seat inside the ordinary radius gone still has one
+/// farther out, and the claim trains for it; off, it trains nothing.
+#[test]
+fn a_city_trains_for_a_seat_past_its_own_radius() {
+    let (mut game, capital, second) = two_idle_cities();
+    game.max_turns = 500;
+    game.turn = game.standard_duration(90);
+    garrison(&mut game);
+    // Only the capital may train, and nothing within eleven tiles of it may
+    // be settled.
+    game.cities.get_mut(&second).unwrap().pop = 1;
+    let home = game.cities[&capital].pos;
+    let blocked: std::collections::BTreeSet<Pos> = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| game.wdist(*pos, home) <= 11)
+        .collect();
+    game.blocked_city_sites = std::sync::Arc::new(blocked);
+    let ai = armed();
+    let threats = AdvancedAi::holdable_land_threats(&game, 0);
+    assert!(
+        ai.holdable_land_seat(&game, 0, home, 0, &threats).is_err(),
+        "fixture: no seat inside the ordinary radius"
+    );
+    let far =
+        ai.holdable_land_seat_within(&game, 0, home, 0, &threats, NO_CITY_LIMIT_FAR_SEAT_RADIUS);
+    let Ok((site, _)) = far else {
+        // The fixture's map has no legal land twelve to eighteen tiles out.
+        return;
+    };
+    assert!(game.wdist(site, home) > 11);
+    let plan = ai.assess(&game, 0);
+    if ai.settlement_target(&plan) > 2 {
+        let mut on = game.clone();
+        ai.claim_holdable_land_settler(&mut on, 0, &plan);
+        assert_eq!(
+            settlers_queued(&on),
+            vec![capital],
+            "trained for the far seat"
+        );
+    }
+    let mut stock = AdvancedAi::new();
+    stock.enable_holdable_land_keeps_settling();
+    let plan = stock.assess(&game, 0);
+    let mut off = game.clone();
+    stock.claim_holdable_land_settler(&mut off, 0, &plan);
+    assert!(settlers_queued(&off).is_empty(), "off: no seat, no Settler");
+}

@@ -209,6 +209,9 @@ impl AdvancedAi {
                        "{city_name} trains a Spy against {rival}'s space race";
                        "science-denial-trains-spies: {held} held and {queued} queued against \
                         {needed} needed; {production:.0} Production a turn here");
+                // `denial-spies-skip-the-upkeep-wait`: say when its waiver is
+                // what keeps this Spy. Silent with that gene off.
+                self.journal_denial_spy_upkeep_waiver(g, pid, city, &spy, plan);
             }
         }
     }

@@ -470,6 +470,7 @@ mod walls_under_fire;
 mod weights;
 
 mod slinger_first;
+pub use advanced::battle_solver::host_enemy;
 pub use advanced::commitments::{CommitmentCensus, CommitmentLedger};
 pub use advanced::victory_portfolio::{
     DevelopmentPhase, PortfolioReport, PortfolioTrace, VictoryEstimate,
@@ -1404,6 +1405,13 @@ pub struct BasicAi {
     pub(crate) reserve_floor: f64,
     /// Preserve pre-repair defender buying only in the frozen advanced_v1 control.
     legacy_defender_purchases: bool,
+    /// `gold-unit-buys-read-the-host-quote`: `buy_gold_unit` (the Builder,
+    /// Trader and Settler buys of `spend_gold`) tests each city's own Gold
+    /// quote (`Game::unit_purchase_cost`) against the reserve, not the list
+    /// price `cost * 4`. Live Deity civvis-20261112T075931Z t192: a Builder
+    /// the host quoted at 400 passed a 200 + 162 reserve test and left 20
+    /// Gold. Set through `AdvancedAi::enable_gold_unit_buys_read_the_host_quote`.
+    pub(crate) gold_unit_buys_read_the_host_quote: bool,
     /// Scale each district family by how much of the empire still lacks it.
     pub(crate) district_coverage: bool,
     /// Version 2 of `district_coverage`: the same coverage term with a
@@ -1815,6 +1823,15 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `prod-tiles-call-the-builders`.
     pub(crate) prod_tiles_call_the_builders: bool,
+    /// With `builders_cover_the_worked_backlog`, the backlog step also wants a
+    /// Builder while the unimproved worked tiles run two or more ahead of the
+    /// charges in hand and queued (about one charge a tile), whatever the
+    /// 60% quota says. See
+    /// `ai/advanced/the_worked_backlog_gets_its_builder_first.rs`.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene
+    /// `the-worked-backlog-gets-its-builder-first`.
+    pub(crate) the_worked_backlog_gets_its_builder_first: bool,
     /// From turn 90 standard (t60 Online), ahead of the military floor: the
     /// Market of a standing Commercial Hub, then a Trader while the empire's
     /// routes and Traders leave a route slot open, then a Commercial Hub on
@@ -2906,6 +2923,11 @@ pub struct BasicAi {
     /// instead of the Warlord's Throne and the Grand Master's Chapel. See
     /// `BasicAi::plaza_building_item_for`. False on a bare `BasicAi`.
     pub(crate) plaza_serves_science: bool,
+    /// `score-seat-expands-hard`: set by `AdvancedAi` each turn while the gene
+    /// acts; the Government Plaza's tier buildings are then the Ancestral Hall
+    /// and the Grand Master's Chapel. See `BasicAi::plaza_hall_first_item`.
+    /// False on a bare `BasicAi`.
+    pub(crate) plaza_hall_first: bool,
     /// `launch-pad-keeps-its-rung`: an idle city resumes its own placed,
     /// unfinished Spaceport foundation while no pad of ours stands. See
     /// `launch_pad_resume.rs`. Set by the Advanced gene; off by default.
@@ -3018,6 +3040,11 @@ pub struct BasicAi {
     /// source no longer on the board stops counting. Empty with the gene
     /// off. See `advanced/guns_stay_out_of_reach.rs`.
     unit_lethal_blows: HashMap<u32, HashMap<Pos, Vec<(u32, f64)>>>,
+    /// `risk-is-priced`: per covered land unit, this frame's mission,
+    /// allowance and price, and its death chance on each tile it can reach.
+    /// Written by the advanced controller each frame; empty with the gene
+    /// off. See `advanced/priced_risk.rs`.
+    priced_risk: advanced::priced_risk::PricedRiskMap,
     /// Melee units the ancient-rush lane wants in hand, or 0 when no rush is
     /// running. Set once a turn by `AdvancedAi` from its strategic plan.
     ///
@@ -3176,6 +3203,22 @@ pub struct BasicAi {
     pub(crate) first_pad_in_the_forge: bool,
     /// Independent first-slot exploration experiment.
     pub(crate) scout_first_opening: bool,
+    /// `opening-scout-comes-back`: the opening Scout the barbarian defence
+    /// displaced is the next build in that city, and a Scout lost before
+    /// `OPENING_SCOUT_LOSS_TURNS` standard turns, while no rival capital is
+    /// charted, is replaced at once, once a game. See `ai/scout_first.rs`.
+    /// Set through `AdvancedAi::enable_opening_scout_comes_back`.
+    pub(crate) opening_scout_comes_back: bool,
+    /// `opening-scout-comes-back`: the tile of the city whose opening Scout
+    /// the barbarian defence displaced. A tile, not a city id: the live
+    /// mirror renumbers cities when it rebuilds the board.
+    pub(crate) opening_scout_owed_at: Option<Pos>,
+    /// `opening-scout-comes-back`: a recon unit of ours has stood on the
+    /// board this game, so its absence is a loss.
+    pub(crate) opening_recon_fielded: bool,
+    /// `opening-scout-comes-back`: the one replacement of a lost early Scout
+    /// has been ordered.
+    pub(crate) opening_scout_replaced: bool,
     /// Opt-in first-slot ranged support; later recon behavior stays enabled.
     pub(crate) opening_ranged_support: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
@@ -3940,6 +3983,7 @@ impl BasicAi {
             garrison_under_fire: false,
             reserve_floor: 0.0,
             legacy_defender_purchases: false,
+            gold_unit_buys_read_the_host_quote: false,
             district_coverage: false,
             district_coverage_2: false,
             slot_kind_tiebreak: false,
@@ -3980,6 +4024,7 @@ impl BasicAi {
             housing_cap_builds_the_aqueduct: false,
             builders_cover_the_worked_backlog: false,
             prod_tiles_call_the_builders: false,
+            the_worked_backlog_gets_its_builder_first: false,
             commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,
@@ -4088,6 +4133,7 @@ impl BasicAi {
             obsolete_military_buys_barred: false,
             obsolete_buys_read_our_techs: false,
             plaza_serves_science: false,
+            plaza_hall_first: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             dig_museums_wanted: 0,
@@ -4113,6 +4159,7 @@ impl BasicAi {
             frame_own_tiles: HashMap::new(),
             gun_lethal_tiles: HashMap::new(),
             unit_lethal_blows: HashMap::new(),
+            priced_risk: Default::default(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -4126,6 +4173,10 @@ impl BasicAi {
             opening_builder_paid: false,
             first_pad_in_the_forge: false,
             scout_first_opening: false,
+            opening_scout_comes_back: false,
+            opening_scout_owed_at: None,
+            opening_recon_fielded: false,
+            opening_scout_replaced: false,
             opening_ranged_support: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
@@ -4393,6 +4444,7 @@ impl BasicAi {
             garrison_under_fire: false,
             reserve_floor: 0.0,
             legacy_defender_purchases: false,
+            gold_unit_buys_read_the_host_quote: false,
             district_coverage: false,
             district_coverage_2: false,
             slot_kind_tiebreak: false,
@@ -4433,6 +4485,7 @@ impl BasicAi {
             housing_cap_builds_the_aqueduct: false,
             builders_cover_the_worked_backlog: false,
             prod_tiles_call_the_builders: false,
+            the_worked_backlog_gets_its_builder_first: false,
             commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,
@@ -4541,6 +4594,7 @@ impl BasicAi {
             obsolete_military_buys_barred: false,
             obsolete_buys_read_our_techs: false,
             plaza_serves_science: false,
+            plaza_hall_first: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             dig_museums_wanted: 0,
@@ -4566,6 +4620,7 @@ impl BasicAi {
             frame_own_tiles: HashMap::new(),
             gun_lethal_tiles: HashMap::new(),
             unit_lethal_blows: HashMap::new(),
+            priced_risk: Default::default(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -4579,6 +4634,10 @@ impl BasicAi {
             opening_builder_paid: false,
             first_pad_in_the_forge: false,
             scout_first_opening: false,
+            opening_scout_comes_back: false,
+            opening_scout_owed_at: None,
+            opening_recon_fielded: false,
+            opening_scout_replaced: false,
             opening_ranged_support: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
@@ -5981,6 +6040,8 @@ impl BasicAi {
                     if live && displaces_settler {
                         self.opening_defense_preempts += 1;
                     }
+                    // `opening-scout-comes-back`: a displaced Scout is owed.
+                    self.note_opening_scout_displaced(g, *cid, displaced.as_ref());
                     if self.journal.wants(crate::reasoning::Level::Decision) {
                         let city = &g.cities[cid];
                         think!(self.journal, Military, Decision,
@@ -6006,6 +6067,11 @@ impl BasicAi {
                     }
                     continue;
                 }
+            }
+            // `opening-scout-comes-back`: the displaced Scout, or a lost early
+            // Scout's one replacement, before the book. See `ai/scout_first.rs`.
+            if self.play_opening_scout_comes_back(g, pid, *cid) {
+                continue;
             }
             // The held opening-book Settler takes the capital's queue the turn
             // the city reaches the host's floor. See `opening_settler_waits`.
@@ -7433,6 +7499,13 @@ impl BasicAi {
         if !allow_livelock_retread && self.retreads_a_loop(uid, to) {
             return false;
         }
+        // `risk-is-priced`: a step whose death chance is over the unit's
+        // mission allowance, and no lower than where it stands, is refused
+        // with a journal line. Empty with the gene off. See
+        // `advanced/priced_risk.rs`.
+        if self.priced_risk_refuses(g, uid, from, to) {
+            return false;
+        }
         true
     }
 
@@ -8532,6 +8605,9 @@ impl BasicAi {
 
 #[cfg(test)]
 mod military_purchase_tests;
+
+#[cfg(test)]
+mod gold_spending_quote_tests;
 
 #[cfg(test)]
 mod tests;

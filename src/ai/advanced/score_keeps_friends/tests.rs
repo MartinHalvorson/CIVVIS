@@ -1,0 +1,278 @@
+use super::*;
+
+#[test]
+fn score_seat_keeps_friends_is_opt_in() {
+    super::super::test_support::opt_in_off_in_both_controllers("score-seat-keeps-friends", |ai| {
+        ai.score_seat_keeps_friends
+    });
+}
+
+/// Three majors in contact, each with a capital, major 2 the strongest, on
+/// turn 31 (not seat 0's `befriend-the-strongest` cadence turn).
+fn three_majors() -> Game {
+    let mut game = Game::new_full(3, 24, 16, 7_923, 300, 0, false);
+    for pid in 0..3 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("every major starts with a settler");
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+    }
+    for pid in 0..3 {
+        for other in pid + 1..3 {
+            game.record_contact(pid, other);
+        }
+    }
+    let capital = game.cities[&game.player_city_ids(2)[0]].pos;
+    for _ in 0..4 {
+        game.spawn_test_unit("warrior", 2, capital);
+    }
+    game.turn = 31;
+    game
+}
+
+fn seat(target: VictoryTarget, gene: bool) -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(target);
+    ai.disable_befriend_the_strongest();
+    if gene {
+        ai.enable_score_seat_keeps_friends();
+    }
+    ai
+}
+
+fn asked(game: &Game) -> Vec<usize> {
+    game.pending_deals
+        .iter()
+        .filter(|deal| deal.from == 0 && deal.friendship)
+        .map(|deal| deal.to)
+        .collect()
+}
+
+/// The lease reaches the live closer for every target but Domination with
+/// the gene, and for none without it.
+#[test]
+fn the_lease_is_every_seats_but_a_conquest_one() {
+    let game = three_majors();
+    for target in [
+        VictoryTarget::Score,
+        VictoryTarget::Science,
+        VictoryTarget::Culture,
+        VictoryTarget::Diplomacy,
+        VictoryTarget::Religion,
+    ] {
+        assert_eq!(
+            seat(target, true).score_seat_keeps_friends_lease(&game, 0),
+            Some(vec![]),
+            "{target:?}"
+        );
+        assert_eq!(
+            seat(target, false).score_seat_keeps_friends_lease(&game, 0),
+            None
+        );
+    }
+    assert_eq!(
+        seat(VictoryTarget::Domination, true).score_seat_keeps_friends_lease(&game, 0),
+        None
+    );
+}
+
+/// An untargeted seat keeps friends unless its plan is Conquest.
+#[test]
+fn an_untargeted_seat_keeps_friends_off_a_conquest_plan() {
+    let game = three_majors();
+    let mut ai = AdvancedAi::new();
+    ai.enable_score_seat_keeps_friends();
+    assert!(ai.score_keeps_friends_on(&game), "no plan yet");
+    for (strategy, on) in [
+        (GrandStrategy::Science, true),
+        (GrandStrategy::Expansion, true),
+        (GrandStrategy::Conquest, false),
+    ] {
+        ai.plan = Some(StrategicPlan {
+            strategy,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 6,
+            assessed_turn: game.turn,
+            rush: false,
+        });
+        assert_eq!(ai.score_keeps_friends_on(&game), on, "{strategy:?}");
+    }
+}
+
+/// A Science seat with the gene asks every turn, nearest first.
+#[test]
+fn a_science_seat_asks_every_turn() {
+    let mut game = three_majors();
+    let ai = seat(VictoryTarget::Science, true);
+    ai.propose_protective_friendship(&mut game, 0);
+    assert_eq!(asked(&game).len(), 1, "turn 31 is off the old cadence");
+}
+
+/// Off the cadence turn, a Score seat with the gene asks the nearest major
+/// and, the next turn, the other; off, or for another target, nobody is
+/// asked.
+#[test]
+fn a_score_seat_asks_every_turn_nearest_first() {
+    for ai in [
+        seat(VictoryTarget::Score, false),
+        seat(VictoryTarget::Domination, true),
+    ] {
+        let mut game = three_majors();
+        ai.propose_protective_friendship(&mut game, 0);
+        assert!(asked(&game).is_empty());
+    }
+    let mut game = three_majors();
+    let near = |game: &Game, other| AdvancedAi::score_friend_distance(game, 0, other);
+    let nearest = if near(&game, 1) <= near(&game, 2) {
+        1
+    } else {
+        2
+    };
+    let ai = seat(VictoryTarget::Score, true);
+    ai.propose_protective_friendship(&mut game, 0);
+    assert_eq!(asked(&game), [nearest], "the nearest major first");
+    game.turn += 1;
+    ai.propose_protective_friendship(&mut game, 0);
+    let mut both = asked(&game);
+    both.sort_unstable();
+    assert_eq!(both, [1, 2], "the next turn asks the other");
+}
+
+/// The rival whose city the Score campaign names is never asked, and a
+/// rival at war with us is never asked.
+#[test]
+fn the_campaigns_target_and_a_war_are_never_asked() {
+    let mut game = three_majors();
+    let mut ai = seat(VictoryTarget::Score, true);
+    ai.enable_score_seat_takes_what_pays();
+    let target_city = game.player_city_ids(1)[0];
+    ai.score_take_state.named = Some((
+        game.cities[&target_city].pos,
+        game.players[1].civ.clone(),
+        10.0,
+    ));
+    assert_eq!(ai.score_keeps_friends_spares(&game), Some(1));
+    assert_eq!(ai.score_seat_keeps_friends_lease(&game, 0), Some(vec![1]));
+    game.at_war.insert((0, 2));
+    for _ in 0..3 {
+        ai.propose_protective_friendship(&mut game, 0);
+        game.turn += 1;
+    }
+    assert!(asked(&game).is_empty(), "{:?}", asked(&game));
+}
+
+/// Major 1 founded a faith that its own city follows (so it leads every
+/// founded faith and `friendship-spares-the-converter` reads it as the
+/// converter); with `others`, major 2's city follows it too.
+fn converter_board(others: bool) -> Game {
+    let mut game = three_majors();
+    game.players[1].religion = Some("faith_theirs".into());
+    let mut followers = vec![1];
+    if others {
+        followers.push(2);
+    }
+    for pid in followers {
+        let cid = game.player_city_ids(pid)[0];
+        let city = game.cities.get_mut(&cid).unwrap();
+        city.pressure.insert("faith_theirs".into(), 400.0);
+        city.atheist_pressure = 0.0;
+    }
+    game
+}
+
+fn converter_seat(gene: bool) -> AdvancedAi {
+    let mut ai = seat(VictoryTarget::Score, gene);
+    ai.enable_friendship_spares_the_converter();
+    ai
+}
+
+/// Below match point a Score seat with the gene offers the converter its
+/// friendship and accepts its offer; without the gene the exclusion holds.
+#[test]
+fn below_match_point_the_converter_is_a_friend() {
+    let game = converter_board(false);
+    let ai = converter_seat(true);
+    assert!(ai.friendship_would_shield_the_converter(&game, 0, 1));
+    assert!(!ai.score_friend_faith_at_match_point(&game, 0, 1));
+    assert!(!ai.score_friends_spare_the_converter(&game, 0, 1));
+    assert_eq!(ai.score_seat_keeps_friends_lease(&game, 0), Some(vec![]));
+    assert!(converter_seat(false).score_friends_spare_the_converter(&game, 0, 1));
+}
+
+/// At match point (we are its last holdout) the converter is neither offered
+/// nor accepted.
+#[test]
+fn at_match_point_the_converter_is_spared() {
+    let game = converter_board(true);
+    let ai = converter_seat(true);
+    assert!(ai.score_friend_faith_at_match_point(&game, 0, 1));
+    assert!(ai.score_friends_spare_the_converter(&game, 0, 1));
+    assert_eq!(ai.score_seat_keeps_friends_lease(&game, 0), Some(vec![1]));
+}
+
+/// A rival racing to win (major 2, ten Diplomatic Victory points) is
+/// befriended by a Score seat with the gene; without it,
+/// `friendship-ends-at-the-race` passes it over. Major 1 is at war with us,
+/// so the racer is the only candidate.
+#[test]
+fn a_score_seat_befriends_a_racer() {
+    let mut game = three_majors();
+    game.players[2].dvp = 10;
+    game.at_war.insert((0, 1));
+    game.turn = 30;
+    let mut off = seat(VictoryTarget::Score, false);
+    off.enable_befriend_the_strongest();
+    off.enable_friendship_ends_at_the_race();
+    let mut board = game.clone();
+    off.propose_protective_friendship(&mut board, 0);
+    assert!(
+        asked(&board).is_empty(),
+        "off: the racer is left to the counter"
+    );
+    let mut on = seat(VictoryTarget::Score, true);
+    on.enable_friendship_ends_at_the_race();
+    on.propose_protective_friendship(&mut game, 0);
+    assert_eq!(asked(&game), [2], "on: the racer is asked");
+}
+
+/// The Score seat holds its own denouncements, but not of the rival its own
+/// Score campaign names; off, or for another target, it holds none.
+#[test]
+fn a_score_seat_holds_its_denouncements_but_the_campaigns() {
+    let game = three_majors();
+    let mut ai = seat(VictoryTarget::Score, true);
+    assert!(ai.score_friends_hold_the_denouncement(&game, 1));
+    ai.enable_score_seat_takes_what_pays();
+    let target_city = game.player_city_ids(1)[0];
+    ai.score_take_state.named = Some((
+        game.cities[&target_city].pos,
+        game.players[1].civ.clone(),
+        10.0,
+    ));
+    assert!(!ai.score_friends_hold_the_denouncement(&game, 1));
+    assert!(ai.score_friends_hold_the_denouncement(&game, 2));
+    for off in [
+        seat(VictoryTarget::Score, false),
+        seat(VictoryTarget::Domination, true),
+    ] {
+        assert!(!off.score_friends_hold_the_denouncement(&game, 2));
+    }
+}
+
+/// On a Religious target the converter exclusion holds below match point,
+/// as it did before the gene relaxed it.
+#[test]
+fn a_religious_seat_keeps_the_converter_exclusion() {
+    let game = converter_board(false);
+    let mut religion = seat(VictoryTarget::Religion, true);
+    religion.enable_friendship_spares_the_converter();
+    assert!(!religion.score_friend_faith_at_match_point(&game, 0, 1));
+    assert!(religion.score_friends_spare_the_converter(&game, 0, 1));
+    let mut science = seat(VictoryTarget::Science, true);
+    science.enable_friendship_spares_the_converter();
+    assert!(!science.score_friends_spare_the_converter(&game, 0, 1));
+}

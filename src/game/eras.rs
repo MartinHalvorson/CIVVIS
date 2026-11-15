@@ -294,12 +294,12 @@ impl Game {
         self.players[pid]
             .techs
             .iter()
-            .filter_map(|name| self.rules.techs.get(name).map(|spec| spec.era))
+            .filter_map(|name| self.rules.techs.get_interned(*name).map(|spec| spec.era))
             .chain(
                 self.players[pid]
                     .civics
                     .iter()
-                    .filter_map(|name| self.rules.civics.get(name).map(|spec| spec.era)),
+                    .filter_map(|name| self.rules.civics.get_interned(*name).map(|spec| spec.era)),
             )
             .max()
             .unwrap_or(0)

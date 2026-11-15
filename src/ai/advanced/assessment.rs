@@ -594,6 +594,11 @@ impl AdvancedAi {
         let threat_recovery = threatened_city.is_some()
             && !(self.recovery_needs_the_deficit
                 && my_power >= RECOVERY_THREAT_POWER_RATIO * recovery_opponent_power.max(1.0));
+        // `score-seat-takes-what-pays`: the open city a Score seat takes
+        // because it pays more points per Production than its queues, under
+        // the gene's circumstances. `None` with the gene off and off the
+        // Score lane. See `advanced/score_takes_what_pays.rs`.
+        let score_take = self.score_take_pick(g, pid, threatened_city.is_some());
         // A final war has no later to recover for and no race left to deny:
         // every civilization in it attacks. See `last_civ_standing`.
         let (strategy, because) = if last_civ_standing::fights_the_final_war(g, pid) {
@@ -651,6 +656,12 @@ impl AdvancedAi {
             (
                 counter,
                 "countering a rival close to winning, ahead of the lane",
+            )
+        } else if score_take.is_some() {
+            // `score-seat-takes-what-pays`: see above.
+            (
+                GrandStrategy::Conquest,
+                "a neighbour's open city pays more points than the queues",
             )
         } else if let Some(target) = active_victory_target {
             if target == VictoryTarget::Religion
@@ -1454,6 +1465,41 @@ impl AdvancedAi {
             .or(wing_city.map(|(_, city)| city))
             .or(committed_target_city)
             .or(ranked_target_city);
+        // `score-seat-takes-what-pays`: the paying city is the objective of
+        // the Conquest plan it chose, unless a home emergency or the
+        // finishing capital holds the plan. `None` with the gene off.
+        let score_take_named = score_take
+            .as_ref()
+            .filter(|_| {
+                strategy == GrandStrategy::Conquest
+                    && because == "a neighbour's open city pays more points than the queues"
+                    && emergency_objective.is_none()
+                    && finishing_capital.is_none()
+            })
+            .map(|take| (take.rival, take.city));
+        let (target_player, target_city) = match score_take_named {
+            Some((rival, city)) => (Some(rival), Some(city)),
+            None => (target_player, target_city),
+        };
+        // `open-city-is-the-objective`: at war for any reason, an open city
+        // our takers would take within a few turns is the objective, unless a
+        // home emergency, the finishing capital or a war already running on
+        // another rival's urgent clock holds the plan. A counter still at
+        // peace waits the few turns. `None` with the gene off. See
+        // `advanced/open_city_objective.rs`.
+        let open_city_take = self.open_city_objective(g, pid, target_city, |rival| {
+            emergency_objective.is_some()
+                || finishing_capital.is_some()
+                || actionable_denial.is_some_and(|(urgent, _)| {
+                    urgent != rival
+                        && g.is_at_war(pid, urgent)
+                        && self.urgent_victory_threat(g, urgent)
+                })
+        });
+        let (target_player, target_city) = match &open_city_take {
+            Some(take) => (Some(take.rival), Some(take.city)),
+            None => (target_player, target_city),
+        };
         // `first-capital-strikes-the-open-window`: while the first capital's
         // window stands, the campaign stays on its city. `None` with the gene
         // off. See `advanced/first_capital_strikes_the_open_window.rs`.
@@ -1508,6 +1554,7 @@ impl AdvancedAi {
             finishing_capital.is_none()
                 && capture_opportunity_city.is_none()
                 && stale_walled_city.is_none()
+                && open_city_take.is_none()
                 && Some(*city) != ranked_target_city
         }) {
             let city = &g.cities[&committed_city];
@@ -1516,7 +1563,7 @@ impl AdvancedAi {
                    "the major-war army stays committed until it captures the city or its war target changes";
                    city.pos);
         }
-        if let Some(opportunity) = capture_opportunity_city {
+        if let Some(opportunity) = capture_opportunity_city.filter(|_| open_city_take.is_none()) {
             if let (true, Some(prior)) = (self.open_city_draws_the_front, committed_target_city) {
                 // See `advanced/open_city_front.rs`.
                 self.journal_open_city_turn(g, pid, prior, opportunity);
@@ -1528,14 +1575,16 @@ impl AdvancedAi {
                        city.pos);
             }
         }
-        if let Some(nearer) = stale_walled_city {
+        if let Some(nearer) = stale_walled_city.filter(|_| open_city_take.is_none()) {
             let city = &g.cities[&nearer];
             think!(self.journal(), Strategy, Strategy,
                    "Campaign abandons a distant untouched city for {}", city.name;
                    "a land force is within a short march of this cheaper objective, while none reached the old siege";
                    city.pos);
         }
-        if let Some((prior, under)) = wing_city.filter(|_| finishing_capital.is_none()) {
+        if let Some((prior, under)) =
+            wing_city.filter(|_| finishing_capital.is_none() && open_city_take.is_none())
+        {
             let (prior, city) = (&g.cities[&prior], &g.cities[&under]);
             think!(self.journal(), Strategy, Strategy,
                    "Campaign moves under the wing to {}", city.name;

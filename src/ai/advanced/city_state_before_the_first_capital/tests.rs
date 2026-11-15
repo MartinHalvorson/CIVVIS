@@ -1185,3 +1185,43 @@ fn a_city_near_the_rally_trains_the_stones_force() {
         0.0
     );
 }
+
+/// The centre is priced with the garrison that walks in: a city-state
+/// with only Warriors fights at 26, and one with a Swordsman at 41, which no
+/// force of Warriors finishes, so the strike on it is never declared.
+#[test]
+fn the_centre_is_priced_with_the_city_states_strongest_soldier() {
+    let (mut game, near, _) = fixture();
+    stand_walls(&mut game, near);
+    let mut ai = seat(true);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    force_at(&mut game, rally);
+    unit(&mut game, "battering_ram", rally);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.clone().unwrap();
+    let city = game.cities[&near].clone();
+    assert!((AdvancedAi::city_state_stone_centre(&game, &city) - 20.0).abs() < 1e-6);
+    assert_eq!(ai.city_state_stone_holds(&game, 0, &opening), None);
+
+    // Its own Warrior, far from the city: the centre fights at 26.
+    game.spawn_test_unit("warrior", 2, at(20, 12));
+    assert!((AdvancedAi::city_state_stone_centre(&game, &city) - 26.0).abs() < 1e-6);
+    let (bodies, _, _) =
+        AdvancedAi::city_state_stone_bodies_needed(&game, &opening).expect("priced");
+    assert_eq!(bodies, 7, "six finish a centre of 26 and one is spare");
+
+    // A Swordsman: 41, and the five Warriors at the rally hold.
+    game.spawn_test_unit("swordsman", 2, at(21, 12));
+    assert!((AdvancedAi::city_state_stone_centre(&game, &city) - 41.0).abs() < 1e-6);
+    let (_, blows, needed) =
+        AdvancedAi::city_state_stone_kill_time(&game, &opening).expect("priced");
+    assert!(blows <= needed, "{blows} against {needed}");
+    assert_eq!(
+        ai.city_state_stone_holds(&game, 0, &opening),
+        Some("the melee bodies at the rally would not finish the city before they fall")
+    );
+    let (bodies, _, _) =
+        AdvancedAi::city_state_stone_bodies_needed(&game, &opening).expect("priced");
+    assert!(bodies > STONE_MELEE_MAX, "{bodies}");
+}

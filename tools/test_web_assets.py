@@ -1053,3 +1053,106 @@ expect(store.list.length >= 3, "a territory round the whole world had nothing to
 '''
         done = subprocess.run([NODE, "-e", project + names + scenarios], capture_output=True, text=True, timeout=15)
         self.assertEqual(done.returncode, 0, done.stderr)
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class LaunchesBetweenDots(unittest.TestCase):
+    """From the Solar System stop the Earth is nine pixels from the Sun.
+
+    A launch drawn at its close-up size, flying a fixed hop, set off looking as
+    though it had left the Sun and ended nowhere. These run the route planner
+    itself on that picture: a trip ends where it is going, nothing flies over
+    the Sun, and the pictures that had room all along are flown as before.
+    """
+
+    def test_a_launch_between_dots_leaves_home_and_ends_where_it_is_going(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+
+        def cut(start, end):
+            begin = source.index(start)
+            return source[begin:source.index(end, begin)]
+
+        block = (cut("function skyFade(", "// ---")
+                 + cut("function skyLaunchPoint(", "// How much of the straight line")
+                 + cut("const SKY_HULL_SHARE =", "// The camera is parked at the destination"))
+        scenarios = r'''
+const easeIO = t => t;
+const SKY_SUN = {id:"sun"};
+let sun = {x:0, y:0, r:3.4}, pad = {x:0, y:0, z:0}, goal = {x:0, y:0};
+function skyPlacement() { return sun; }
+function planetProject() { return pad; }
+function skyLaunchPad() { return null; }
+function skyLaunchEnd() { return goal; }
+function skyThrustLaw() { return clock => clock; }
+const skyTransferLaw = clock => clock;
+function expect(condition, message) { if (!condition) throw Error(message); }
+const far = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+function fly(mission = "mars") {
+  const film = skyTransferRoute({mission, route:{kind:"transfer"}}, {id:0}, {}, {}, {}, 1, 0, 0);
+  let nearest = Infinity;
+  for (let step = 0; step <= 60; step++) nearest = Math.min(nearest, far(film.pointAt(step / 60), sun));
+  return {...film, nearest, length:far(film.start, film.end)};
+}
+
+// The Solar System stop: one astronomical unit is about nine pixels.
+pad = {x:100, y:100, z:0}; sun = {x:100, y:109.3, r:3.4};
+
+// Mars off to one side, a dozen pixels away: the rocket goes there and stops.
+goal = {x:111, y:98};
+let film = fly();
+expect(far(film.start, pad) < 1e-9, "a launch must start at home");
+expect(far(film.end, goal) < 1e-9 && !film.leaving, "a Mars rocket must end at Mars: " + JSON.stringify(film.end));
+expect(film.hull <= film.length * .68 + 1e-9 && film.hull >= 4.5, "the hull was not fitted to its trip");
+expect(film.nearest >= sun.r + 4 - 1e-6, "a clear trip was not left clear");
+
+// Mars straight across the Sun: round it, never over it, and still to Mars.
+goal = {x:100, y:123.4};
+film = fly();
+expect(far(film.end, goal) < 1e-9, "going round the Sun must not move the destination");
+expect(film.nearest >= sun.r + 4 - 1e-6, "a Mars rocket flew across the Sun: " + film.nearest);
+
+// The Moon, on top of the Earth from out here, bearing straight at the Sun:
+// a short departure that stays in home's own room and off the Sun.
+goal = {x:100, y:102};
+film = fly("moon");
+expect(film.leaving, "there is no trip to a place that is not a second place");
+expect(film.length <= 9.3 && film.length >= 7 - 1e-9, "the departure was not scaled to the picture: " + film.length);
+expect(film.nearest >= Math.min(sun.r + 4, 9.3 * .8) - 1e-6, "a departure flew at the Sun: " + film.nearest);
+expect(film.hull < 6, "a close-up hull in a picture of the system: " + film.hull);
+
+// The expedition departs towards where it is going; its lane begins close by.
+goal = {x:94, y:100};
+film = fly("expedition");
+expect(film.leaving && film.end.x < pad.x - 6, "the expedition must depart along its lane");
+
+// The whole system a speck, as at the Voyage stop: nothing to be in scale
+// with, so the departure is the one it always was.
+sun = {x:100.0004, y:100.0004, r:3.4}; goal = {x:100, y:100};
+film = fly("moon");
+expect(Math.abs(film.length - 44) < 1e-9 && film.hull >= 20.4, "the speck's departure changed: " + film.length);
+expect(Math.abs(film.end.x - pad.x) < 1e-9 && film.end.y < pad.y, "with no bearing it goes up");
+
+// Home a marble with the Sun far off the stage: also as it always was, and a
+// world that is its own place on the stage gets the whole trip at full size.
+sun = {x:9000, y:-4000, r:60}; goal = {x:101.5, y:100};
+film = fly("moon");
+expect(Math.abs(film.length - 44) < 1e-9 && Math.abs(film.end.y - pad.y) < 1e-9, "a clear departure was turned");
+goal = {x:160, y:140};
+film = fly("moon");
+expect(far(film.end, goal) < 1e-9 && film.hull >= 20.4 && !film.leaving, "a trip in the picture changed");
+'''
+        done = subprocess.run([NODE, "-e", block + scenarios], capture_output=True, text=True, timeout=15)
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_home_is_a_dot_among_the_dots_and_its_name_keeps_off_the_sun(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        start = source.index("function drawPlanetSky(")
+        sky = source[start:source.index("\n}\n", start)]
+        # The marble the other planets get, by the rule the other planets get it.
+        self.assertIn("const marble = {...SKY_EARTH, x:centerX, y:centerY, r:SKY_EARTH.floor};", sky)
+        self.assertIn("skyFade(SKY_EARTH.separation * radius, 2.5, 7)", sky)
+        # Its name goes to the side with less under it, and the Sun counts most.
+        self.assertIn("const above = covers(true) < covers(false);", sky)
+        self.assertIn('cost += place.id === "sun" ? 3 : 1;', sky)
+        # A launch's own name is kept off home's name and off the Sun.
+        self.assertIn("drawSkyLaunches(crews, placements, camera, radius, centerX, centerY, now, crowd);", sky)

@@ -374,7 +374,9 @@ impl AdvancedAi {
     /// column that has breached at least 20 wall HP gets a longer, bounded
     /// chance to finish the attack through standing walls.
     pub(super) fn domination_siege_has_grace(&self, g: &Game, pid: usize, other: usize) -> bool {
-        self.active_victory_target(g) == Some(VictoryTarget::Domination)
+        // `score-seat-takes-what-pays`: or a Score seat's paying city.
+        (self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            || self.score_take_names_a_city(g))
             && self.sieges.iter().any(|(cid, siege)| {
                 matches!(
                     siege.stage,

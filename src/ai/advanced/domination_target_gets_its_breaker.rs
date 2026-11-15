@@ -322,6 +322,18 @@ impl AdvancedAi {
             }
         }
         let (_, arrival, own, kind) = best?;
+        // `hopeless-army-yields-the-queue`: no breaker for walls nothing we
+        // can field will breach. See `advanced/hopeless_army_yields_the_queue.rs`.
+        if self.hopeless_army_active(g) {
+            if let Some(walls) = Self::walls_nothing_breaches(g, pid, target) {
+                think!(self.journal(), Military, Decision,
+                    "{} lays no {} down for the walls of {}", g.cities[&own].name,
+                    crate::reasoning::plain(kind.as_str()), g.cities[&target].name;
+                    "hopeless-army-yields-the-queue: {}", walls.describe();
+                    objective);
+                return None;
+            }
+        }
         let item = Item::Unit { unit: kind };
         if g.apply(
             pid,

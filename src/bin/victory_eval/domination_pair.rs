@@ -17,11 +17,16 @@
 //! Continents, 9 city-states and Deity by default. `--force-file PATH`
 //! freezes a host bundle for the focal seat; the tested gene alone is toggled.
 //! These probes use CIVVIS rivals and cannot establish native win rates.
+//! `--rival-host-tactics on` governs the rival majors' soldiers near the
+//! focal seat at the live host's fitted strike, target and hold rates
+//! (`civvis::host_tactics`, `docs/HOST_ENEMY_MODEL.md`); each arm then also
+//! records how the rivals fought (`rival_tactics`). Off by default.
 use civvis::ai::{gene, run_game_observed, AdvancedAi, Ai, Gene, VictoryTarget};
 use civvis::game::{Action, Game, GameOptions, LeaderPool};
+use civvis::host_tactics::{HostTactics, HostTacticsSeat};
 use civvis::setup::MapScript;
 use serde::Serialize;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
@@ -46,6 +51,9 @@ struct Config {
     /// The clock; 250 (the natural one) unless `--max-turns` shortens it for
     /// an economy probe read at the earlier `ECONOMY_MARKS`.
     max_turns: u32,
+    /// `--rival-host-tactics on`: the rival majors fight at the live host's
+    /// fitted rates (`civvis::host_tactics`).
+    rival_host_tactics: bool,
 }
 
 fn parse(args: &[String]) -> Result<Config, String> {
@@ -57,6 +65,7 @@ fn parse(args: &[String]) -> Result<Config, String> {
     let mut start_seed = 37_140_000;
     let mut out = None;
     let mut max_turns = 250;
+    let mut rival_host_tactics = false;
     let mut seen = BTreeSet::new();
     for pair in args.chunks(2) {
         let flag = &pair[0];
@@ -95,6 +104,13 @@ fn parse(args: &[String]) -> Result<Config, String> {
             "--games" => games = value.parse::<u64>().map_err(|e| e.to_string())?,
             "--start-seed" => start_seed = value.parse::<u64>().map_err(|e| e.to_string())?,
             "--out" => out = Some(PathBuf::from(value)),
+            "--rival-host-tactics" => {
+                rival_host_tactics = match value.as_str() {
+                    "on" => true,
+                    "off" => false,
+                    _ => return Err("--rival-host-tactics takes on or off".to_string()),
+                };
+            }
             "--max-turns" => {
                 max_turns = value.parse::<u32>().map_err(|e| e.to_string())?;
                 if !(40..=250).contains(&max_turns) {
@@ -140,6 +156,7 @@ fn parse(args: &[String]) -> Result<Config, String> {
         start_seed,
         out: out.ok_or("--out is required; existing files are never overwritten")?,
         max_turns,
+        rival_host_tactics,
     })
 }
 
@@ -234,6 +251,29 @@ struct Outcome {
     /// Turns the focal seat spent bankrupt (its bankruptcy Amenity penalty
     /// above zero), so a treasury policy is read on the failure it guards.
     bankrupt_turns: u32,
+    /// Schema 7: the focal seat's units killed and lost in combat, and its
+    /// civilians taken and lost (`game/combat_ledger.rs`), so a tactics
+    /// policy is read on the exchange as well as on the cities.
+    focal_units: civvis::game::CombatLedger,
+    /// Schema 7: the focal seat's military units that died, by the step that
+    /// last ordered them, `[ended within two tiles of a visible hostile,
+    /// beyond]` (`ai/advanced/last_orders.rs`).
+    focal_last_orders: BTreeMap<String, [u32; 2]>,
+    /// Schema 8: the focal seat's orders that crossed another claim on the
+    /// unit, `owner:step: [crossed, deliberate, refused]`, and its military
+    /// unit-turns with those no step ordered (`ai/advanced/unit_owner.rs`).
+    focal_claim_crossings: BTreeMap<String, [u32; 3]>,
+    focal_unit_turns: u32,
+    focal_unordered_unit_turns: u32,
+    /// Schema 8: cities the focal seat captured (its `captures` counter) and
+    /// cities it founded that another seat holds at the end.
+    focal_cities_taken: i64,
+    focal_cities_lost: usize,
+    /// `--rival-host-tactics on`: how the rival majors fought the focal seat,
+    /// `row: [hits, rows]` (`civvis::host_tactics::TacticsCensus::report`).
+    /// Empty — and absent — with the switch off.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    rival_tactics: BTreeMap<String, [f64; 2]>,
 }
 
 /// Turns at which [`EconomySnapshot`] is taken: the live ladder's own
@@ -599,8 +639,38 @@ fn trial(seed: u64, config: &Config, enabled: bool) -> Trial {
             }
         }
     };
-    run_game_observed(&mut game, &mut ais, &mut observe);
+    // `--rival-host-tactics on`: every rival major plays inside the switch.
+    // Off, nothing is wrapped and the arm is what it always was.
+    let mut rival_tactics = BTreeMap::new();
+    if config.rival_host_tactics {
+        let majors: BTreeSet<usize> = game
+            .players
+            .iter()
+            .filter(|p| !p.is_minor && !p.is_barbarian && p.id != 0)
+            .map(|p| p.id)
+            .collect();
+        let host = HostTactics {
+            seed,
+            victims: vec![0],
+            gate: true,
+        };
+        let mut seats: Vec<HostTacticsSeat<AdvancedAi>> = ais
+            .drain(..)
+            .enumerate()
+            .map(|(pid, ai)| HostTacticsSeat::new(ai, majors.contains(&pid).then(|| host.clone())))
+            .collect();
+        run_game_observed(&mut game, &mut seats, &mut observe);
+        let mut census = civvis::host_tactics::TacticsCensus::default();
+        for seat in &seats {
+            census.absorb(&seat.census);
+        }
+        rival_tactics = census.report();
+        ais = seats.into_iter().map(|seat| seat.inner).collect();
+    } else {
+        run_game_observed(&mut game, &mut ais, &mut observe);
+    }
     observe(&game);
+    ais[0].settle_last_orders(&game, 0);
     if let Some(dir) = explain_dir {
         let path = dir.join(format!(
             "{seed}-{}.why.log",
@@ -629,6 +699,22 @@ fn trial(seed: u64, config: &Config, enabled: bool) -> Trial {
         air_surge: ais[0].air_surge_census_summary(),
         economy,
         bankrupt_turns,
+        focal_units: game.combat_ledger(0),
+        focal_last_orders: ais[0].strategy_census().last_orders.map(),
+        focal_claim_crossings: ais[0].strategy_census().claims.map(),
+        focal_unit_turns: ais[0].strategy_census().claims.unit_turns,
+        focal_unordered_unit_turns: ais[0].strategy_census().claims.unordered_unit_turns,
+        focal_cities_taken: game.players[0]
+            .counters
+            .get("captures")
+            .copied()
+            .unwrap_or(0),
+        focal_cities_lost: game
+            .cities
+            .values()
+            .filter(|city| city.original_owner == 0 && city.owner != 0)
+            .count(),
+        rival_tactics,
     };
     Trial {
         outcome,
@@ -668,12 +754,16 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
             domination[i] += usize::from(arm.outcome.focal_domination_won);
         }
         let row = serde_json::json!({
-            "schema": 6, "kind": "simulator_domination_policy_pair",
+            "schema": 8, "kind": "simulator_domination_policy_pair",
             "policy": config.policy.tag, "seed": seed,
             "execution_order": if index % 2 == 0 { "off,on" } else { "on,off" },
             "profile": profile(seed, config.difficulty, config.max_turns, config.setup), "civilizations": off.civs,
             "focal_seat": 0, "focal_target": "domination",
-            "rivals": "adaptive CIVVIS live bridge; not Firaxis AI",
+            "rivals": if config.rival_host_tactics {
+                "adaptive CIVVIS live bridge, soldiers at the live host's fitted strike/target/hold rates (--rival-host-tactics on); not Firaxis AI"
+            } else {
+                "adaptive CIVVIS live bridge; not Firaxis AI"
+            },
             "forced_focal_policies": config.forced,
             "actions_identical": actions_identical,
             "off": off.outcome, "on": on.outcome,

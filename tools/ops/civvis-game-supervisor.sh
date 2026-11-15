@@ -393,7 +393,9 @@ if [[ -n "$REQUESTED_LEGACY_SCORE_RATIO" && "$REQUESTED_LEGACY_SCORE_RATIO" != 0
 fi
 
 verification_intent_running() {
-  [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == running ]]
+  # `terminal` authorizes this Terminal-hosted chain and nothing that would
+  # recover it from the background (civvis-games.sh, CIVVIS_CONTROL).
+  [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == (running|terminal) ]]
 }
 
 intent_reason() {

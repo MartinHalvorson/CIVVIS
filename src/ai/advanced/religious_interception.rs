@@ -232,7 +232,9 @@ impl AdvancedAi {
                     continue;
                 }
             }
-            let Some(opening) = self.preferred_war_opening(g, pid, rival) else {
+            // Not held by `declaration-needs-a-capture`: the interception is
+            // fought for the spreaders, not a city.
+            let Some(opening) = self.preferred_war_opening_ungated(g, pid, rival) else {
                 continue;
             };
             if !matches!(

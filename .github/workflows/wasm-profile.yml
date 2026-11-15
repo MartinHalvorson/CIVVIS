@@ -1,0 +1,170 @@
+name: wasm-profile
+
+on:
+  workflow_dispatch:
+    inputs:
+      qualified_run:
+        description: Successful wasm-qualify run containing the production module and function map
+        required: true
+      source:
+        description: Exact 40-character source SHA recorded by that qualification
+        required: true
+      case:
+        description: Normal benchmark case (default-7/8/9 or six-7311001/2/3)
+        default: six-7311003
+        required: true
+      mode:
+        description: CPU sampling, browser observation, or compiler logging with a complete normal control game
+        type: choice
+        options:
+          - cpu
+          - browser
+          - browser-pair
+          - browser-cpu
+          - compiler
+        default: cpu
+        required: true
+      baseline_qualified_run:
+        description: Control qualification run (required for browser-pair mode)
+        required: false
+      baseline_source:
+        description: Exact control source SHA (required for browser-pair mode)
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: wasm-profile-${{ github.ref }}-${{ inputs.qualified_run }}-${{ inputs.case }}-${{ inputs.mode }}
+  cancel-in-progress: false
+
+jobs:
+  wasm-profile:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - name: Test profile provenance and completion guards without playing games
+        run: python3 -m unittest discover -s tools -p test_site_wasm_profile_ci.py -v
+      - name: Test browser observation guards without playing games
+        run: python3 -m unittest discover -s tools -p test_site_wasm_browser_ci.py -v
+      - name: Test paired browser guards without playing games
+        run: python3 -m unittest discover -s tools -p test_site_wasm_browser_pair_ci.py -v
+      - name: Test compiler observation guards without playing games
+        run: python3 -m unittest discover -s tools -p test_site_wasm_compiler_ci.py -v
+      - name: Install a fixed browser without automatic updates for paired games and main-thread profiling
+        if: ${{ inputs.mode == 'browser-pair' || inputs.mode == 'browser-cpu' }}
+        run: |
+          curl --fail --location --retry 3 \
+            https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.80/mac-arm64/chrome-mac-arm64.zip \
+            --output "$RUNNER_TEMP/civvis-chrome.zip"
+          shasum -a 256 "$RUNNER_TEMP/civvis-chrome.zip"
+          ditto -x -k "$RUNNER_TEMP/civvis-chrome.zip" "$RUNNER_TEMP/civvis-chrome"
+          echo "CIVVIS_BROWSER_EXECUTABLE=$RUNNER_TEMP/civvis-chrome/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing" >> "$GITHUB_ENV"
+      - name: Download the qualified engine
+        uses: actions/download-artifact@v4
+        with:
+          name: civvis-wasm-qualification
+          run-id: ${{ inputs.qualified_run }}
+          github-token: ${{ github.token }}
+          path: qualified
+      - name: Profile one full normal game from the exact qualified module
+        if: ${{ inputs.mode != 'browser' && inputs.mode != 'browser-pair' && inputs.mode != 'browser-cpu' && inputs.mode != 'compiler' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFIED_RUN: ${{ inputs.qualified_run }}
+          PROFILE_SOURCE: ${{ inputs.source }}
+          PROFILE_CASE: ${{ inputs.case }}
+        run: |
+          python3 tools/site_wasm_profile_ci.py \
+            --qualified qualified --source "$PROFILE_SOURCE" --run "$QUALIFIED_RUN" \
+            --repo "$GITHUB_REPOSITORY" --case "$PROFILE_CASE" --out profile
+      - name: Preserve the bound module, CPU samples, raw save and frame hashes
+        if: ${{ always() && inputs.mode != 'browser' && inputs.mode != 'browser-pair' && inputs.mode != 'browser-cpu' && inputs.mode != 'compiler' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: civvis-wasm-cpu-profile
+          path: profile
+          if-no-files-found: warn
+      - name: Observe compiler work with a complete uninstrumented normal control
+        if: ${{ inputs.mode == 'compiler' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFIED_RUN: ${{ inputs.qualified_run }}
+          PROFILE_SOURCE: ${{ inputs.source }}
+          PROFILE_CASE: ${{ inputs.case }}
+        run: |
+          python3 tools/site_wasm_compiler_ci.py \
+            --qualified qualified --source "$PROFILE_SOURCE" --run "$QUALIFIED_RUN" \
+            --repo "$GITHUB_REPOSITORY" --case "$PROFILE_CASE" --out compiler-trace
+      - name: Preserve complete control and compiler observations including partial failures
+        if: ${{ always() && inputs.mode == 'compiler' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: civvis-wasm-compiler-trace
+          path: compiler-trace
+          if-no-files-found: warn
+      - name: Download the qualified browser control
+        if: ${{ inputs.mode == 'browser-pair' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: civvis-wasm-qualification
+          run-id: ${{ inputs.baseline_qualified_run }}
+          github-token: ${{ github.token }}
+          path: qualified-baseline
+      - name: Compare complete normal browser games in both orders
+        if: ${{ inputs.mode == 'browser-pair' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFIED_RUN: ${{ inputs.qualified_run }}
+          PROFILE_SOURCE: ${{ inputs.source }}
+          PROFILE_CASE: ${{ inputs.case }}
+          BASELINE_RUN: ${{ inputs.baseline_qualified_run }}
+          BASELINE_SOURCE: ${{ inputs.baseline_source }}
+        run: |
+          python3 tools/site_wasm_browser_pair_ci.py \
+            --candidate qualified --candidate-source "$PROFILE_SOURCE" --candidate-run "$QUALIFIED_RUN" \
+            --baseline qualified-baseline --baseline-source "$BASELINE_SOURCE" --baseline-run "$BASELINE_RUN" \
+            --repo "$GITHUB_REPOSITORY" --case "$PROFILE_CASE" --out browser-pair \
+            --chrome "$CIVVIS_BROWSER_EXECUTABLE"
+      - name: Preserve all paired browser observations and original saves
+        if: ${{ always() && inputs.mode == 'browser-pair' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: civvis-wasm-browser-pair
+          path: browser-pair
+          if-no-files-found: warn
+      - name: Observe one complete normal website game and final paint
+        if: ${{ inputs.mode == 'browser' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFIED_RUN: ${{ inputs.qualified_run }}
+          PROFILE_SOURCE: ${{ inputs.source }}
+          PROFILE_CASE: ${{ inputs.case }}
+        run: |
+          python3 tools/site_wasm_browser_ci.py \
+            --qualified qualified --source "$PROFILE_SOURCE" --run "$QUALIFIED_RUN" \
+            --repo "$GITHUB_REPOSITORY" --case "$PROFILE_CASE" --out browser-game
+      - name: Profile the main thread through a complete normal website game
+        if: ${{ inputs.mode == 'browser-cpu' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFIED_RUN: ${{ inputs.qualified_run }}
+          PROFILE_SOURCE: ${{ inputs.source }}
+          PROFILE_CASE: ${{ inputs.case }}
+        run: |
+          python3 tools/site_wasm_browser_ci.py \
+            --qualified qualified --source "$PROFILE_SOURCE" --run "$QUALIFIED_RUN" \
+            --repo "$GITHUB_REPOSITORY" --case "$PROFILE_CASE" --out browser-game \
+            --main-cpu-profile --chrome "$CIVVIS_BROWSER_EXECUTABLE"
+      - name: Preserve complete browser observations and original save bytes
+        if: ${{ always() && (inputs.mode == 'browser' || inputs.mode == 'browser-cpu') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: civvis-wasm-browser-game
+          path: browser-game
+          if-no-files-found: warn

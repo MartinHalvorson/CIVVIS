@@ -86,6 +86,11 @@
 #                                     and records the arm (docs/LIVE_SCREEN.md).
 #                                     Absent: no screen. ~/.civvis-live-screen-gene
 #                                     is the same switch read per batch.
+#   CIVVIS_CONTROL                    unattended (default) or terminal. Read by
+#                                     civvis-games.sh: under terminal, `on`
+#                                     records the intent `terminal`, this
+#                                     window's loop may play, and no keeper or
+#                                     background service starts or recovers one.
 #
 # Anything else in the environment that would change WHAT the seat plays — a
 # labelled experiment, a retired strategy, an alternate host, a former restart
@@ -200,9 +205,11 @@ refuse() {
 }
 
 # Clearing the low-level gamelock halt is not authorization to run this
-# unattended chain. Only `civvis-games on` writes the exact `running` value;
-# missing, unreadable, or any other value is a hard refusal.
-if [[ ! -r "$INTENTFILE" || "$(<"$INTENTFILE")" != running ]]; then
+# unattended chain. Only `civvis-games on` writes the exact `running` value,
+# or `terminal` on a host whose policy says CIVVIS_CONTROL=terminal (this
+# window may play; no keeper may recover it). Missing, unreadable, or any other
+# value is a hard refusal.
+if [[ ! -r "$INTENTFILE" || "$(<"$INTENTFILE")" != (running|terminal) ]]; then
   refuse "verification intent is not running at $INTENTFILE; run civvis-games on to authorize automatic verification"
 fi
 
@@ -279,6 +286,12 @@ if [[ -f "$POLICY" ]]; then
         # plays unarmed, so this only has to be one hyphenated token.
         [[ "$value" =~ '^[a-z0-9][a-z0-9-]*$' ]] \
           || refuse "$POLICY:$lineno CIVVIS_SCREEN_GENE='$value' is not one gene tag" ;;
+      CIVVIS_CONTROL)
+        # Read by civvis-games.sh, which decides what `on` authorizes. Checked
+        # here so a misspelt mode stops this launch instead of passing as noise.
+        [[ "$value" == terminal || "$value" == unattended ]] \
+          || refuse "$POLICY:$lineno CIVVIS_CONTROL='$value' must be terminal or unattended"
+        continue ;;
       *)
         say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_VICTORY CIVVIS_MAP CIVVIS_MAP_SIZE CIVVIS_SPEED CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_DEAL_SESSIONS CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING CIVVIS_BUILD_MODE CIVVIS_CAPTURE_DECIDER_INPUTS)"
         continue ;;

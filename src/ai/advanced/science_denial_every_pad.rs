@@ -288,6 +288,29 @@ impl AdvancedAi {
             .min_by_key(|cid| (g.wdist(city.pos, g.cities[cid].pos), *cid))
     }
 
+    /// The standing Spaceport of `owner` that a host's Disrupt Rocketry from
+    /// the city at `centre` must mean, when the board does not offer it: the
+    /// nearest one within [`PAD_CITY_REACH`] that the board reads unpillaged.
+    /// `None` when every such pad on the board reads pillaged (or there is
+    /// none): the board cannot file, and so cannot run, that disruption.
+    pub(crate) fn every_pad_refile_pad(g: &Game, owner: usize, centre: Pos) -> Option<Pos> {
+        g.wdisk(centre, PAD_CITY_REACH)
+            .into_iter()
+            .filter(|pos| {
+                g.map.get(*pos).is_some_and(|tile| {
+                    !tile.pillaged
+                        && tile
+                            .district
+                            .is_some_and(|district| g.district_family(district) == "spaceport")
+                        && tile
+                            .owner_city
+                            .and_then(|cid| g.cities.get(&cid))
+                            .is_some_and(|city| city.owner == owner)
+                })
+            })
+            .min_by_key(|pos| (g.wdist(centre, *pos), *pos))
+    }
+
     /// The Disrupt Rocketry to run for `spy` in a threat's city, if any. When
     /// the host offers it from here and the board does not, the nearest
     /// standing Spaceport of the same owner within reach is filed under this
@@ -315,22 +338,7 @@ impl AdvancedAi {
         if !Self::every_pad_host_offers_disrupt(g, spy) {
             return None;
         }
-        let pad: Pos = g
-            .wdisk(centre, PAD_CITY_REACH)
-            .into_iter()
-            .filter(|pos| {
-                g.map.get(*pos).is_some_and(|tile| {
-                    !tile.pillaged
-                        && tile
-                            .district
-                            .is_some_and(|district| g.district_family(district) == "spaceport")
-                        && tile
-                            .owner_city
-                            .and_then(|cid| g.cities.get(&cid))
-                            .is_some_and(|city| city.owner == owner)
-                })
-            })
-            .min_by_key(|pos| (g.wdist(centre, *pos), *pos))?;
+        let pad = Self::every_pad_refile_pad(g, owner, centre)?;
         let district = g.map.get(pad)?.district?;
         let previous = g.map.get(pad).and_then(|tile| tile.owner_city);
         if let Some(old) = previous

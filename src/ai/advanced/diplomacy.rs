@@ -1183,7 +1183,32 @@ impl AdvancedAi {
             })
     }
 
+    /// The opening a war on `target` starts with: a casus belli, a surprise
+    /// war, or the denouncement that licenses a Formal War. Under
+    /// `declaration-needs-a-capture` a declaration on a major is held
+    /// (`None`) unless the soldiers in reach forecast a capture; see
+    /// `advanced/declaration_needs_a_capture.rs`. A denouncement is never
+    /// held.
     pub(super) fn preferred_war_opening(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+    ) -> Option<Action> {
+        let opening = self.preferred_war_opening_ungated(g, pid, target)?;
+        let declares = matches!(
+            opening,
+            Action::DeclareWar { .. } | Action::DeclareWarWithCasusBelli { .. }
+        );
+        if declares && self.declaration_lacks_a_capture(g, pid, target) {
+            return None;
+        }
+        Some(opening)
+    }
+
+    /// [`Self::preferred_war_opening`] without the capture gate: the road of
+    /// the faith wars, whose point is the spreaders rather than a city.
+    pub(super) fn preferred_war_opening_ungated(
         &self,
         g: &Game,
         pid: usize,
@@ -1287,6 +1312,9 @@ impl AdvancedAi {
             || self.favor_spares_surprise(g, pid, target)
             || self.active_victory_target(g) != Some(VictoryTarget::Domination)
             || g.military_power(pid) < STRIKE_WHEN_STAGED_RATIO * g.military_power(target).max(1.0)
+            // `declaration-needs-a-capture`: the surprise war in place of a
+            // denouncement is a declaration too.
+            || self.declaration_lacks_a_capture(g, pid, target)
         {
             return None;
         }
@@ -1615,7 +1643,11 @@ impl AdvancedAi {
                             // `faith-war-before-the-flip`: see
                             // `advanced/faith_war_before_the_flip.rs`.
                             || (deal.peace
-                                && self.faith_war_keeps_the_war(g, pid, deal.from)));
+                                && self.faith_war_keeps_the_war(g, pid, deal.from))
+                            // `open-city-is-the-objective`: see
+                            // `advanced/open_city_objective.rs`.
+                            || (deal.peace
+                                && self.open_city_keeps_the_war(g, pid, deal.from)));
                     (
                         worth >= 0.0 && !pins_objective,
                         deal.peace,
@@ -1631,6 +1663,9 @@ impl AdvancedAi {
             }
             if peace && !accept && self.faith_war_keeps_the_war(g, pid, from) {
                 self.journal_faith_war_keeps(g, pid, from, true);
+            }
+            if peace && !accept && self.open_city_keeps_the_war(g, pid, from) {
+                self.journal_open_city_keeps_the_war(g, pid, from, true);
             }
             if self.journal().wants(crate::reasoning::Level::Decision) {
                 let who = g
@@ -1888,6 +1923,11 @@ impl AdvancedAi {
             // declared a war the expansion cannot afford, once the host will
             // sign. `None` with the gene off. See `advanced/unchosen_war_peace.rs`.
             let unchosen_peace = self.unchosen_war_peace_since(g, pid, *other, plan);
+            // `score-seat-takes-what-pays` (graded): we took the city we went
+            // for and no second paying city of theirs stands in reach. `false`
+            // with the graded versions off. See
+            // `advanced/score_takes_what_pays.rs`.
+            let score_take_peace = self.score_take_peace_due(g, pid, *other);
             if g.is_at_war(pid, *other)
                 && !g.emergency_war_pair(pid, *other)
                 && !g.players[*other].is_minor
@@ -1977,7 +2017,8 @@ impl AdvancedAi {
                     || (interception_handoff && !air_front)
                     || faith_war_exit
                     || science_defensive_peace
-                    || unchosen_peace.is_some())
+                    || unchosen_peace.is_some()
+                    || score_take_peace)
             {
                 // `peace-waits-for-the-host-minimum`: no offer to a war
                 // declared on us before the host signs any; the bridge's
@@ -2014,6 +2055,19 @@ impl AdvancedAi {
                 // `advanced/faith_war_before_the_flip.rs`.
                 if self.faith_war_keeps_the_war(g, pid, *other) {
                     self.journal_faith_war_keeps(g, pid, *other, false);
+                    continue;
+                }
+                // `open-city-is-the-objective`: no peace while an open city
+                // of theirs is ours to take within a few turns, unless our
+                // cities are falling, we are outmatched, or the one-war rule
+                // makes it for the victory counter, a settled capital or a
+                // rout. `false` with the gene off. See
+                // `advanced/open_city_objective.rs`.
+                if !science_defensive_peace
+                    && !Self::open_city_yields_to(one_war_peace)
+                    && self.open_city_keeps_the_war(g, pid, *other)
+                {
+                    self.journal_open_city_keeps_the_war(g, pid, *other, false);
                     continue;
                 }
                 // `prey-war-is-kept`: no peace with prey unless our cities
@@ -2101,6 +2155,8 @@ impl AdvancedAi {
                         "faith-strike-spares-the-stages: the heretic strike's war closes the stages our Rock Bands play, so it ends as soon as the host signs".to_string()
                     } else if faith_war_exit {
                         "faith-war-before-the-flip: no spreader of its faith has stood at our cities for five turns and no city of ours is converting".to_string()
+                    } else if score_take_peace {
+                        "score-seat-takes-what-pays: we took the city we went for and no second paying city of theirs stands in reach".to_string()
                     } else {
                         "the war has stalled".to_string()
                     };
@@ -2201,6 +2257,18 @@ impl AdvancedAi {
         // `first-capital-strikes-the-open-window`: no new raid while the first
         // capital's window stands. `false` with the gene off.
         if !self.first_capital_holds_the_raid(g) && self.opportunistic_war_diplomacy(g, pid, plan) {
+            return;
+        }
+        // `first-capital-strikes-the-open-window`: a neighbour's unwalled
+        // city within reach of our soldiers. The turn's one declaration.
+        // `false` with the gene off. See `advanced/soft_city_window.rs`.
+        if self.soft_city_window_opening(g, pid, plan) {
+            return;
+        }
+        // `score-seat-takes-what-pays`: the war for a Score seat's paying
+        // city, once its takers stand there. The turn's one declaration.
+        // `false` with the gene off. See `advanced/score_takes_what_pays.rs`.
+        if self.score_take_opening(g, pid, plan) {
             return;
         }
         // `early-conquest-opening`: the assembled force's declaration, and the
@@ -2379,8 +2447,10 @@ impl AdvancedAi {
         }
         // See `one_war::COUNTER_WAR_POWER_FLOOR`: against a faith, urgency
         // waives the war ratio but not the floor under it, and a staged bill
-        // does not stand in for it either.
-        let below_counter_floor = urgent_denial && self.counter_war_hopeless(g, pid, target);
+        // does not stand in for it either. `faith-war-at-match-point`: never
+        // against a founder whose faith stands at match point against us; see
+        // `advanced/faith_war_at_match_point.rs`.
+        let below_counter_floor = self.counter_floor_holds(g, pid, target, urgent_denial);
         // See `urgent_denial_has_the_edge`: under the gene an urgent clock
         // waives the war ratio and the edge only at 1.5 times the rival's
         // steady power; short of it the declaration holds like an elective war.
@@ -2719,6 +2789,15 @@ impl AdvancedAi {
                     action = surprise;
                 }
                 let denounce_first = matches!(action, Action::Denounce { .. });
+                // `score-seat-keeps-friends`: no denouncement of our own on a
+                // Score seat, but on the campaign's own target.
+                if denounce_first && self.score_friends_hold_the_denouncement(g, target) {
+                    think!(self.journal(), Diplomacy, Decision,
+                        "Not denouncing {}", g.players[target].civ;
+                        "score-seat-keeps-friends: a denouncement ends the friendship that keeps \
+                         the peace, and the Score seat's own campaign does not name them");
+                    return;
+                }
                 // `prey-waits-for-the-march`: a war the prey waiver alone
                 // opens waits for the field army's march; a denouncement's
                 // five turns run meanwhile. See `advanced/prey_declaration.rs`.
@@ -3553,12 +3632,23 @@ impl AdvancedAi {
             }
             // `racer-keeps-the-spies`: an idle Spy outside the leading space
             // racer's cities (and any culture racer's, and any other racer's
-            // where Disrupt Rocketry is offered) goes to the leader, before
-            // any pad of it is seen. Never taken with the gene off
-            // (`racer_spy_leader` is `None`).
+            // where this seat can run the Disrupt Rocketry offered there)
+            // goes to the leader, before any pad of it is seen. Never taken
+            // with the gene off (`racer_spy_leader` is `None`).
             let racer_spy_searching = self.racer_spy_search().is_some_and(|search| {
                 Self::racer_spy_searching(g, spy_id, current_city, racer_spy_leader, search, &legal)
             });
+            // The racer this Spy leaves while the host still offers Disrupt
+            // Rocketry where it stands: an offer the board cannot run (its pad
+            // there reads pillaged from a fogged sighting) no longer holds it.
+            let racer_spy_left_offer = current_city
+                .and_then(|city| g.cities.get(&city))
+                .filter(|city| {
+                    racer_spy_racers.contains(&city.owner)
+                        && Some(city.owner) != racer_spy_leader
+                        && Self::racer_spy_disrupt_offered(g, spy_id, &legal)
+                })
+                .map(|city| (g.players[city.owner].civ.to_string(), city.name.clone()));
             // `spies-steal-the-lead`: a Science aim posts to a Campus city.
             if let Some(post) = Self::racer_spy_post_for(
                 g,
@@ -3571,6 +3661,7 @@ impl AdvancedAi {
                 self.racer_spy_search(),
                 self.spies_steal_the_lead_on(plan),
                 &self.steal_dry_cities,
+                &every_pad_threats,
             ) {
                 if let Some(action) = legal.iter().find(
                     |action| matches!(action, Action::AssignSpy { city, .. } if *city == post),
@@ -3601,6 +3692,17 @@ impl AdvancedAi {
                                     {landed} space project(s) and Disrupt Rocketry is not \
                                     offered in {here}, so the pad is elsewhere; {unseen} of \
                                     its cities we have not seen");
+                        } else if let Some((left, left_city)) = &racer_spy_left_offer {
+                            *g.players[pid]
+                                .counters
+                                .entry("racer_spy_unrunnable_offers_left".to_string())
+                                .or_insert(0) += 1;
+                            think!(self.journal(), Military, Decision,
+                                   "A Spy leaves {left}'s {left_city} for {racer}'s {city_name}";
+                                   "racer-keeps-the-spies: {racer} leads the space race, not \
+                                    {left}; the host offers Disrupt Rocketry in {left_city}, but \
+                                    every Spaceport of {left} our board holds near it reads \
+                                    pillaged, so the Spy cannot run it there");
                         } else {
                             think!(self.journal(), Military, Decision,
                                    "A Spy goes to {racer}'s {city_name}";

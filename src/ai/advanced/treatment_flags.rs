@@ -80,6 +80,10 @@ impl AdvancedAi {
     // `tools/test_treatment_append_points.py` holds the block below to its size.
     toggles! {
         // ---- append: a-b --------------------------------------------
+        /// Opt-in gene `assault-forecast-is-read`: a capture forecast and one
+        /// journal line for every siege the train assesses; no decision
+        /// changes. See `advanced/assault_forecast.rs`.
+        assault_forecast_is_read => enable_assault_forecast_is_read, disable_assault_forecast_is_read;
         /// Opt-in gene `apostle-evangelizes-unspent`; see
         /// `advanced/apostle_evangelizes_unspent.rs`.
         apostle_evangelizes_unspent => enable_apostle_evangelizes_unspent, disable_apostle_evangelizes_unspent;
@@ -124,7 +128,24 @@ impl AdvancedAi {
         /// Opt-in gene `breaker-walks-under-a-shield`; see
         /// `advanced/breaker_walks_under_a_shield.rs`.
         breaker_walks_under_a_shield => enable_breaker_walks_under_a_shield, disable_breaker_walks_under_a_shield;
+        /// `opening-scout-comes-back`: the opening Scout the barbarian defence
+        /// displaced is that city's next build, and a Scout lost early while no
+        /// rival capital is charted is replaced at once. See `ai/scout_first.rs`.
+        base.opening_scout_comes_back => enable_opening_scout_comes_back, disable_opening_scout_comes_back;
+        /// Opt-in gene `the-worked-backlog-gets-its-builder-first`; acts
+        /// through `builders-cover-the-worked-backlog`'s step and
+        /// `backlog-builder-takes-the-queue`'s claim. See
+        /// `advanced/the_worked_backlog_gets_its_builder_first.rs`.
+        base.the_worked_backlog_gets_its_builder_first => enable_the_worked_backlog_gets_its_builder_first, disable_the_worked_backlog_gets_its_builder_first;
+        /// Opt-in gene `gold-unit-buys-read-the-host-quote`: the Builder,
+        /// Trader and Settler Gold buys test each city's own quote against
+        /// the reserve. See `BasicAi::buy_gold_unit`.
+        base.gold_unit_buys_read_the_host_quote => enable_gold_unit_buys_read_the_host_quote, disable_gold_unit_buys_read_the_host_quote;
         // ---- append: c-d --------------------------------------------
+        /// `domination-seat-appoints-pingala-first`: Pingala and Researcher
+        /// take a Domination seat's first Governor titles. See
+        /// `advanced/domination_governors.rs`.
+        domination_seat_appoints_pingala_first => enable_domination_seat_appoints_pingala_first, disable_domination_seat_appoints_pingala_first;
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
         corps_comes_home_alive => enable_corps_comes_home_alive, disable_corps_comes_home_alive;
@@ -236,6 +257,30 @@ impl AdvancedAi {
         /// `city-state-before-the-first-capital`: a Domination seat's early
         /// conquest opening takes one nearby city-state before the first capital.
         city_state_before_the_first_capital => enable_city_state_before_the_first_capital, disable_city_state_before_the_first_capital;
+        /// Opt-in `commercial-hub-claims-a-peace-queue`; see
+        /// `advanced/commercial_hub_claims_a_peace_queue.rs`.
+        commercial_hub_claims_a_peace_queue => enable_commercial_hub_claims_a_peace_queue, disable_commercial_hub_claims_a_peace_queue;
+        /// Opt-in `campus-and-library-before-the-claims`; see
+        /// `advanced/campus_and_library_before_the_claims.rs`.
+        campus_and_library_before_the_claims => enable_campus_and_library_before_the_claims, disable_campus_and_library_before_the_claims;
+        /// Opt-in `denial-spies-skip-the-upkeep-wait`; see
+        /// `advanced/denial_spies_skip_the_upkeep_wait.rs`.
+        denial_spies_skip_the_upkeep_wait => enable_denial_spies_skip_the_upkeep_wait, disable_denial_spies_skip_the_upkeep_wait;
+        /// Opt-in gene `deterrence-stops-at-a-garrison`; see
+        /// `advanced/deterrence_stops_at_a_garrison.rs`.
+        deterrence_stops_at_a_garrison => enable_deterrence_stops_at_a_garrison, disable_deterrence_stops_at_a_garrison;
+        /// Opt-in gene `domination-seat-raises-its-culture`; see
+        /// `advanced/domination_culture.rs`.
+        domination_seat_raises_its_culture => enable_domination_seat_raises_its_culture, disable_domination_seat_raises_its_culture;
+        /// Opt-in gene `centre-keeps-its-garrison`; see
+        /// `advanced/centre_keeps_its_garrison.rs`.
+        centre_keeps_its_garrison => enable_centre_keeps_its_garrison, disable_centre_keeps_its_garrison;
+        /// Opt-in gene `defend-force-holds-the-city`; see
+        /// `advanced/defend_force_holds_the_city.rs`.
+        defend_force_holds_the_city => enable_defend_force_holds_the_city, disable_defend_force_holds_the_city;
+        /// Opt-in gene `declaration-needs-a-capture`; see
+        /// `advanced/declaration_needs_a_capture.rs`.
+        declaration_needs_a_capture => enable_declaration_needs_a_capture, disable_declaration_needs_a_capture;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -272,6 +317,28 @@ impl AdvancedAi {
         /// `first-capital-walks-the-one-landmass`: see
         /// `advanced/first_capital_walks_the_one_landmass.rs`.
         first_capital_walks_the_one_landmass => enable_first_capital_walks_the_one_landmass, disable_first_capital_walks_the_one_landmass;
+        /// Opt-in `education-follows-the-library`; see
+        /// `advanced/research/domination_education.rs`.
+        education_follows_the_library => enable_education_follows_the_library, disable_education_follows_the_library;
+        /// Opt-in `first-campus-before-the-settler`; see
+        /// `advanced/first_campus_before_the_settler.rs`.
+        first_campus_before_the_settler => enable_first_campus_before_the_settler, disable_first_campus_before_the_settler;
+        /// Opt-in `faith-war-at-match-point`; see
+        /// `advanced/faith_war_at_match_point.rs`.
+        faith_war_at_match_point => enable_faith_war_at_match_point, disable_faith_war_at_match_point;
+        /// Opt-in `endgame-army-takes-the-queue`; see
+        /// `advanced/endgame_army_takes_the_queue.rs`.
+        endgame_army_takes_the_queue => enable_endgame_army_takes_the_queue, disable_endgame_army_takes_the_queue;
+        /// Opt-in gene `edge-unit-takes-the-soft-city`; see
+        /// `advanced/edge_unit_takes_the_soft_city.rs`.
+        edge_unit_takes_the_soft_city => enable_edge_unit_takes_the_soft_city, disable_edge_unit_takes_the_soft_city;
+        /// Opt-in gene `edge-unit-opens-from-the-start` (requires
+        /// `edge-unit-takes-the-soft-city`); see
+        /// `advanced/edge_unit_takes_the_soft_city.rs`.
+        edge_unit_opens_from_the_start => enable_edge_unit_opens_from_the_start, disable_edge_unit_opens_from_the_start;
+        /// Opt-in gene `faithless-seat-holds-its-faith-strikes`; see
+        /// `advanced/faithless_seat_holds_its_faith_strikes.rs`.
+        faithless_seat_holds_its_faith_strikes => enable_faithless_seat_holds_its_faith_strikes, disable_faithless_seat_holds_its_faith_strikes;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
@@ -287,6 +354,9 @@ impl AdvancedAi {
         /// Opt-in gene `great-works-never-wait`; see
         /// `advanced/great_works_never_wait.rs`.
         great_works_never_wait => enable_great_works_never_wait, disable_great_works_never_wait;
+        /// Opt-in gene `hopeless-army-yields-the-queue`; see
+        /// `advanced/hopeless_army_yields_the_queue.rs`.
+        hopeless_army_yields_the_queue => enable_hopeless_army_yields_the_queue, disable_hopeless_army_yields_the_queue;
         // ---- append: l-o --------------------------------------------
         /// Native land upgrade materials use a bounded host cash quote.
         land_army_asks_the_host_price => enable_land_army_asks_the_host_price, disable_land_army_asks_the_host_price;
@@ -301,6 +371,17 @@ impl AdvancedAi {
         /// claims an idle queue before optional economy work on an early
         /// Domination seat without a reachable capital.
         land_recon_before_the_first_capital => enable_land_recon_before_the_first_capital, disable_land_recon_before_the_first_capital;
+        /// Opt-in `own-flip-faith-war-asks-no-power`; see
+        /// `advanced/own_flip_faith_war.rs`.
+        own_flip_faith_war_asks_no_power => enable_own_flip_faith_war_asks_no_power, disable_own_flip_faith_war_asks_no_power;
+        /// Opt-in `open-city-is-the-objective`; see
+        /// `advanced/open_city_objective.rs`.
+        open_city_is_the_objective => enable_open_city_is_the_objective, disable_open_city_is_the_objective;
+        /// Opt-in `one-owner-per-unit`; see `advanced/unit_owner.rs`.
+        one_owner_per_unit => enable_one_owner_per_unit, disable_one_owner_per_unit;
+        /// Opt-in gene `one-upgrade-lifts-every-city`; see
+        /// `advanced/one_upgrade_lifts_every_city.rs`.
+        one_upgrade_lifts_every_city => enable_one_upgrade_lifts_every_city, disable_one_upgrade_lifts_every_city;
         // ---- append: p-r --------------------------------------------
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;
@@ -360,7 +441,22 @@ impl AdvancedAi {
         /// `research-follows-the-first-capital`: see
         /// `advanced/first_capital_research.rs`.
         research_follows_the_first_capital => enable_research_follows_the_first_capital, disable_research_follows_the_first_capital;
+        /// `rear-cities-grow-through-the-war-hold`: see
+        /// `advanced/rear_cities_grow_through_the_war_hold.rs`.
+        rear_cities_grow_through_the_war_hold => enable_rear_cities_grow_through_the_war_hold, disable_rear_cities_grow_through_the_war_hold;
+        /// Opt-in gene `policy-swap-keeps-the-army-paid`: no policy swap takes
+        /// projected income to zero or below; see
+        /// `advanced/policy_swap_keeps_the_army_paid.rs`.
+        policy_swap_keeps_the_army_paid => enable_policy_swap_keeps_the_army_paid, disable_policy_swap_keeps_the_army_paid;
+        /// Opt-in gene `risk-is-priced`: one death chance per pathed move,
+        /// refused over the mission's allowance; see `advanced/priced_risk.rs`.
+        risk_is_priced => enable_risk_is_priced, disable_risk_is_priced;
         // ---- append: s-s --------------------------------------------
+        /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
+        /// holds and stands down on the capture forecast, and Siege rows rank
+        /// by value x P / expected turns; implies the reading. See
+        /// `advanced/assault_forecast.rs`.
+        siege_goes_on_the_forecast => enable_siege_goes_on_the_forecast, disable_siege_goes_on_the_forecast;
         /// Opt-in gene `sweden-builds-open-air-museums`; see
         /// `advanced/sweden_builds_open_air_museums.rs`.
         sweden_builds_open_air_museums => enable_sweden_builds_open_air_museums, disable_sweden_builds_open_air_museums;
@@ -376,6 +472,47 @@ impl AdvancedAi {
         /// Opt-in gene `settler-stall-counts-turns`; see
         /// `advanced/settler_stall_counts_turns.rs`.
         settler_stall_counts_turns => enable_settler_stall_counts_turns, disable_settler_stall_counts_turns;
+        /// Opt-in gene `solver-plays-the-host`; see
+        /// `advanced/battle_solver/host_enemy.rs`.
+        solver_plays_the_host => enable_solver_plays_the_host, disable_solver_plays_the_host;
+        /// Opt-in `score-seat-takes-what-pays`; see
+        /// `advanced/score_takes_what_pays.rs`.
+        score_seat_takes_what_pays => enable_score_seat_takes_what_pays, disable_score_seat_takes_what_pays;
+        /// Opt-in `score-seat-takes-what-pays-2`; see
+        /// `advanced/score_takes_what_pays.rs`.
+        score_seat_takes_what_pays_2 => enable_score_seat_takes_what_pays_2, disable_score_seat_takes_what_pays_2;
+        /// Opt-in `score-seat-takes-what-pays-3`; see
+        /// `advanced/score_takes_what_pays.rs`.
+        score_seat_takes_what_pays_3 => enable_score_seat_takes_what_pays_3, disable_score_seat_takes_what_pays_3;
+        /// Opt-in `score-seat-grabs-what-pays`; see
+        /// `advanced/score_takes_what_pays.rs`.
+        score_seat_grabs_what_pays => enable_score_seat_grabs_what_pays, disable_score_seat_grabs_what_pays;
+        /// Opt-in gene `score-seat-plays-for-points`; see
+        /// `advanced/score_seat.rs`.
+        score_seat_plays_for_points => enable_score_seat_plays_for_points, disable_score_seat_plays_for_points;
+        /// Opt-in gene `score-seat-raises-wonders`; see
+        /// `advanced/score_wonders.rs`.
+        score_seat_raises_wonders => enable_score_seat_raises_wonders, disable_score_seat_raises_wonders;
+        /// Opt-in `score-seat-founds-early`; see `advanced/score_seat_founds_early.rs`.
+        score_seat_founds_early => enable_score_seat_founds_early, disable_score_seat_founds_early;
+        /// Opt-in gene `score-seat-trims-the-idle-army`; see
+        /// `advanced/score_seat.rs`.
+        score_seat_trims_the_idle_army => enable_score_seat_trims_the_idle_army, disable_score_seat_trims_the_idle_army;
+        /// Opt-in gene `score-seat-builds-the-bath`; see
+        /// `advanced/score_builds_the_bath.rs`.
+        score_seat_builds_the_bath => enable_score_seat_builds_the_bath, disable_score_seat_builds_the_bath;
+        /// Opt-in gene `score-seat-expands-hard`; see
+        /// `advanced/score_expands_hard.rs`.
+        score_seat_expands_hard => enable_score_seat_expands_hard, disable_score_seat_expands_hard;
+        /// Opt-in gene `score-seat-fills-its-district-slots`; see
+        /// `advanced/score_fills_its_slots.rs`.
+        score_seat_fills_its_district_slots => enable_score_seat_fills_its_district_slots, disable_score_seat_fills_its_district_slots;
+        /// Opt-in gene `score-seat-keeps-friends`; see
+        /// `advanced/score_keeps_friends.rs`.
+        score_seat_keeps_friends => enable_score_seat_keeps_friends, disable_score_seat_keeps_friends;
+        /// Opt-in gene `score-seat-holds-its-faith-strikes`; see
+        /// `advanced/score_seat_holds_its_faith_strikes.rs`.
+        score_seat_holds_its_faith_strikes => enable_score_seat_holds_its_faith_strikes, disable_score_seat_holds_its_faith_strikes;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
@@ -386,6 +523,9 @@ impl AdvancedAi {
         /// `unique-unit-closes-the-dark-age`: see
         /// `advanced/unique_unit_closes_the_age.rs`.
         unique_unit_closes_the_dark_age => enable_unique_unit_closes_the_dark_age, disable_unique_unit_closes_the_dark_age;
+        /// Opt-in gene `upgrade-card-for-the-backlog`; see
+        /// `advanced/upgrade_card_for_the_backlog.rs`.
+        upgrade_card_for_the_backlog => enable_upgrade_card_for_the_backlog, disable_upgrade_card_for_the_backlog;
     }
 
     toggles! {
@@ -2676,7 +2816,7 @@ impl AdvancedAi {
     }
 
     /// Withholding twin for `enable_live_trader_route_adapter`, so the live bundle can be
-    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    /// priced by taking this one treatment out of it. See `genes::GENES`.
     pub fn disable_live_trader_route_adapter(&mut self) {
         self.live_trader_route_adapter = false;
     }
@@ -2746,7 +2886,7 @@ impl AdvancedAi {
     }
 
     /// Withholding twin for `enable_live_religious_purchase_guard`, so the live bundle can be
-    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    /// priced by taking this one treatment out of it. See `genes::GENES`.
     pub fn disable_live_religious_purchase_guard(&mut self) {
         self.base.live_religious_purchase_guard = false;
     }
@@ -2793,13 +2933,13 @@ impl AdvancedAi {
     }
 
     /// Withholding twin for `enable_whole_turn_backtrack_guard`. See
-    /// `LIVE_TREATMENTS`.
+    /// `genes::GENES`.
     pub fn disable_whole_turn_backtrack_guard(&mut self) {
         self.base.whole_turn_backtrack_guard = false;
     }
 
     /// Withholding twin for `enable_recorded_tactical_step`, so the live bundle can be
-    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    /// priced by taking this one treatment out of it. See `genes::GENES`.
     pub fn disable_recorded_tactical_step(&mut self) {
         self.base.recorded_tactical_step = false;
     }
@@ -3064,7 +3204,7 @@ impl AdvancedAi {
     }
 
     /// Withholding twin for `enable_strike_opening`, so the live bundle can be
-    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    /// priced by taking this one treatment out of it. See `genes::GENES`.
     pub fn disable_strike_opening(&mut self) {
         self.strike_opening = false;
     }
@@ -3409,7 +3549,7 @@ impl AdvancedAi {
     }
 
     /// Withholding twin for `enable_strategic_wonders`, so the arm can be
-    /// priced by taking this one treatment out. See `LIVE_TREATMENTS`.
+    /// priced by taking this one treatment out. See `genes::GENES`.
     pub fn disable_strategic_wonders(&mut self) {
         self.strategic_wonders = false;
     }
@@ -5687,6 +5827,31 @@ impl AdvancedAi {
     /// The twin of `enable_exalted_goddess_buys_the_coastal_guard`.
     pub fn disable_exalted_goddess_buys_the_coastal_guard(&mut self) {
         self.exalted_goddess_buys_the_coastal_guard = false;
+    }
+
+    /// Opt-in gene `defend-force-holds-the-city-2`; version two of the
+    /// family, so version one is turned off. See
+    /// `advanced/defend_force_holds_the_city.rs`.
+    pub fn enable_defend_force_holds_the_city_2(&mut self) {
+        self.defend_force_holds_the_city = false;
+        self.defend_force_holds_the_city_2 = true;
+    }
+
+    /// The twin of `enable_defend_force_holds_the_city_2`.
+    pub fn disable_defend_force_holds_the_city_2(&mut self) {
+        self.defend_force_holds_the_city_2 = false;
+    }
+
+    /// Opt-in gene `score-seat-raises-wonders-2`; version two of the family,
+    /// so version one is turned off. See `advanced/score_wonders.rs`.
+    pub fn enable_score_seat_raises_wonders_2(&mut self) {
+        self.score_seat_raises_wonders = false;
+        self.score_seat_raises_wonders_2 = true;
+    }
+
+    /// The twin of `enable_score_seat_raises_wonders_2`.
+    pub fn disable_score_seat_raises_wonders_2(&mut self) {
+        self.score_seat_raises_wonders_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------

@@ -1017,7 +1017,17 @@ def city_deficit_reading(event: dict, deficit: int) -> dict | None:
 # t181-t255) took their first rival capital after turn 100 (t104-t177; the
 # other at t87). The 11 Deity Domination-lane games that reached turn 100 held
 # none by then and won none.
+#
+# ★ A game that is level on techs is not retired. Live Deity Gran Colombia
+# civvis-20261112T002140Z (four players, Pangaea, Online) was retired at turn
+# 152 holding 51 techs against the best rival's 54, 11 cities against 9, 6 and
+# 5, and 0.9 times the power of the rival it was fighting: the strongest seat
+# of some fifty games that day. CIVVIS_RESTART_DOMINATION_NO_CAPITAL_LEVEL_TECHS
+# is the share of the best rival's tech count at which the game plays on (0.85
+# spares that game; the usual retired game stood at 0.55); 0 or absent keeps
+# the rule unconditional. A record without the tech counts is not level.
 DOMINATION_NO_CAPITAL_POLICY_KEY = "CIVVIS_RESTART_DOMINATION_NO_CAPITAL_FROM_TURN"
+DOMINATION_NO_CAPITAL_LEVEL_KEY = "CIVVIS_RESTART_DOMINATION_NO_CAPITAL_LEVEL_TECHS"
 DOMINATION_NO_CAPITAL_TURNS = 3
 
 
@@ -1034,6 +1044,41 @@ def parse_domination_no_capital_from_turn(value: str | None) -> int:
               "not a turn number such as 100", flush=True)
         return 0
     return turn
+
+
+def parse_domination_no_capital_level(value: str | None) -> float:
+    """The tech share that spares a level game, from `0.85`; 0 = no exemption."""
+    if value is None or value == "":
+        return 0.0
+    try:
+        share = float(value)
+    except ValueError:
+        share = -1.0
+    if not 0.0 <= share <= 2.0:
+        print(f"[policy] ignoring {DOMINATION_NO_CAPITAL_LEVEL_KEY}={value!r}: "
+              "not a share such as 0.85", flush=True)
+        return 0.0
+    return share
+
+
+def domination_no_capital_level_policy(path: Path | None = None) -> float:
+    """The policy's level-game tech share for the no-capital rule; 0 when unset."""
+    return parse_domination_no_capital_level(
+        read_policy_value(DOMINATION_NO_CAPITAL_LEVEL_KEY, path))
+
+
+def domination_tech_share(event: dict) -> float | None:
+    """Our tech count over the best rival's in one `state` record; None if unreadable."""
+    ours = event.get("techs")
+    rivals = event.get("rivals")
+    if not isinstance(ours, list) or not isinstance(rivals, list):
+        return None
+    counts = [rival.get("techs") for rival in rivals if isinstance(rival, dict)]
+    counts = [count for count in counts
+              if isinstance(count, int) and not isinstance(count, bool) and count > 0]
+    if not counts:
+        return None
+    return len(ours) / max(counts)
 
 
 def domination_no_capital_policy(path: Path | None = None) -> int:
@@ -1057,8 +1102,11 @@ def domination_no_capital_turn(args: argparse.Namespace) -> int:
 
 
 def domination_no_capital_reading(state: dict, event: dict,
-                                  from_turn: int) -> dict | None:
+                                  from_turn: int, level_techs: float = 0.0) -> dict | None:
     """Fold one record into the no-capital watch; a verdict once the run holds.
+
+    `level_techs` above 0 spares a game whose tech count is at least that share
+    of the best rival's (`domination_tech_share`): the run of turns is cleared.
 
     `from_turn` is already at the game's speed (see `online_turns`); 0 is off.
     `state` carries our player (`domination_owner`), the city-states seen
@@ -1102,6 +1150,12 @@ def domination_no_capital_reading(state: dict, event: dict,
         return None
     if turn < from_turn:
         return None
+    if isinstance(level_techs, (int, float)) and not isinstance(level_techs, bool) \
+            and level_techs > 0:
+        share = domination_tech_share(event)
+        if share is not None and share >= level_techs:
+            state.pop("domination_no_capital", None)
+            return None
     run = state.get("domination_no_capital")
     if run is None:
         run = state["domination_no_capital"] = {"since": turn, "last": turn, "turns": 1}
@@ -1560,6 +1614,21 @@ def order_queue_timing_drift(event: dict, args: argparse.Namespace) -> list[str]
     return drift
 
 
+def deal_session_quarantine(text: str) -> str:
+    """`PLAYER:TURN` for `--deal-session-quarantine`, normalised.
+
+    A hung rival turn follows a deal session with that rival, and a reload
+    replays the same board into the same session (see `hung_rival_quarantine`
+    in civ6_civvis_climb.py). The value is baked into the mod's config as
+    text, so a malformed one is refused here rather than read as no hold.
+    """
+    player, sep, turn = str(text).strip().partition(":")
+    if not sep or not player.isdigit() or not turn.isdigit():
+        raise argparse.ArgumentTypeError(
+            f"expected PLAYER:TURN with two non-negative integers, got {text!r}")
+    return f"{int(player)}:{int(turn)}"
+
+
 def build_config(args: argparse.Namespace) -> dict:
     dialogue_seconds = getattr(args, "dialogue_seconds", 0.25)
     if dialogue_seconds is None:
@@ -1882,6 +1951,11 @@ def build_config(args: argparse.Namespace) -> dict:
         "DialogueSeconds": min(2.0, max(0.0, float(dialogue_seconds))),
         "DealSessions": (deal_sessions if deal_sessions in ("peace", "trade")
                          else bool(deal_sessions)),
+        # Rivals a reload must not open a deal session with, and the last turn
+        # of each hold: "5:164,1:150". Empty outside a continuation. See
+        # `deal_session_quarantine` and `CivvisTrade.quarantinedUntil`.
+        "DealSessionQuarantine": ",".join(
+            getattr(args, "deal_session_quarantine", None) or []),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -2119,16 +2193,57 @@ def game_window() -> tuple[int, int, int, int] | None:
 UNSEEN_WINDOW_STRIKES = 3
 
 
+#: The stdout of the game this process launched, set at the launch. The host
+#: fault's second signature is read from it (`view_bridge_fault`). None for a
+#: game someone else started.
+GAME_STDOUT_LOG: Path | None = None
+
+#: `com.apple.view-bridge ... Connection interrupted` lines in the game's own
+#: stdout from which the host fault is named. The faulted game writes one about
+#: every ten seconds from its first second; a healthy one writes none (0 lines
+#: in 122 played runs of 2026-11-12/13, against 40 and 21 in the two launches
+#: of the 11-13 episode that never drew a window).
+VIEW_BRIDGE_FAULT_LINES = 3
+
+
+def view_bridge_fault(log: Path | None = None) -> str | None:
+    """The host fault as the game's own log shows it, or None.
+
+    The 11-04 detector needs System Events' probe to FAIL. On 2026-11-09 and
+    again on 11-13 System Events answered, with no window, for as long as the
+    fault lasted, so nothing struck: 11-13 spent two launches of seven minutes
+    each with no event written and no marker. What every episode has had
+    (09-27, 10-16, 10-27, 11-04, 11-09, 11-13) is this line in Civ VI's stdout
+    from the first second.
+    """
+    log = GAME_STDOUT_LOG if log is None else log
+    if log is None:
+        return None
+    try:
+        with open(log, errors="replace") as handle:
+            lines = sum(1 for line in handle
+                        if "com.apple.view-bridge" in line and "Connection interrupted" in line)
+    except OSError:
+        return None
+    if lines < VIEW_BRIDGE_FAULT_LINES:
+        return None
+    return (f"Civ VI's own log has {lines} 'com.apple.view-bridge: Connection interrupted' "
+            "errors since it launched (a healthy game logs none) and System Events "
+            "counts no game window")
+
+
 def unseen_game_window() -> str | None:
     """Evidence that the game is on screen but System Events cannot see it.
 
-    Call it right after `game_window` returned None. Only a FAILED System Events
-    probe counts. An answer with no window in it is the ordinary "not drawn
-    yet" or "on another Space", and is never evidence. See `host_health`.
+    Call it right after `game_window` returned None. A FAILED System Events
+    probe with the window on screen counts. An answer with no window in it is
+    the ordinary "not drawn yet" or "on another Space" and is not evidence by
+    itself; it is when the game's own log shows the fault
+    (`view_bridge_fault`). See `host_health`.
     """
     error = macos_window.window_probe_error()
     if error is None:
-        return None
+        return view_bridge_fault()
     windows = macos_window.cg_windows(env.game_pids())
     if not windows:
         return None
@@ -5329,12 +5444,17 @@ def play(args: argparse.Namespace) -> int:
     no_capital_from = (domination_no_capital_policy() if no_capital_from is None
                        else parse_domination_no_capital_from_turn(str(no_capital_from)))
     args.restart_domination_no_capital_from_turn = no_capital_from
+    no_capital_level = domination_no_capital_level_policy()
+    args.restart_domination_no_capital_level_techs = no_capital_level
     if no_capital_from > 0 and getattr(args, "civvis_victory", None) == "domination":
         speed = getattr(args, "speed", None)
         print(f"[policy] a domination game holding no rival original capital for "
               f"{DOMINATION_NO_CAPITAL_TURNS} turns running from turn "
               f"{online_turns(no_capital_from, speed)} is retired (operator 2026-11-10; "
               f"from turn {no_capital_from} at Online, scaled to {speed})", flush=True)
+        if no_capital_level > 0:
+            print(f"[policy] ... unless it holds {no_capital_level:.0%} of the best "
+                  "rival's techs or more: a level game plays on", flush=True)
     if production_share > 0:
         speed = getattr(args, "speed", None)
         print(f"[policy] a game whose Production stays under {production_share:.0%} "
@@ -5708,14 +5828,28 @@ def setup_drift(event: dict, args: argparse.Namespace) -> list[str]:
     `MAPSIZE_TINY` everywhere and be a different game. Each count is checked
     only when the seat reported an integer: an older mod that reports nothing
     is unverified, not wrong, the same rule `ruleset_match` follows.
+
+    ★★★ A RELOADED GAME HAS HAD TURNS TO LOSE PLAYERS. The seat counts the
+    majors and city-states alive now, and a `--load-save` continuation joins
+    the game mid-way. Live Deity Gran Colombia civvis-20261112T092252Z (Tiny
+    Pangaea, four majors) stalled in a rival's turn at t116 holding 12 cities
+    and twice the best rival's production; one rival had been eliminated by
+    then, so the reload of AutoSave_0112 reported `players 3`, read as drift,
+    and the continuation was filed `wrong_game_configuration` and thrown
+    away. Fewer than the size's defaults is the game's own history on a
+    reload; more than the defaults cannot come from play, and a fresh game
+    must still match exactly.
     """
     expected = MAP_SIZE_DEFAULTS.get(str(event.get("size") or args.map_size))
     if expected is None:
         return []
+    reloaded = bool(getattr(args, "load_save", None))
     drift = []
     for field, want in (("players", expected[0]), ("city_states", expected[1])):
         have = event.get(field)
         if isinstance(have, int) and not isinstance(have, bool) and have != want:
+            if reloaded and 0 < have < want:
+                continue
             drift.append(f"{field} {have} != {want}")
     return drift
 
@@ -6212,8 +6346,12 @@ def _play(args: argparse.Namespace) -> int:
         # Measured before the launch, so placing the window as it appears pays no
         # AppKit compile (~1.5 s) while it shows full screen.
         desktop_size()
+        # The detector's second signature is read from this log; see
+        # `view_bridge_fault`.
+        global GAME_STDOUT_LOG
+        GAME_STDOUT_LOG = run_dir / "stdout.log"
         setup_clock_start()
-        game_process = launcher.launch(stdout=run_dir / "stdout.log")
+        game_process = launcher.launch(stdout=GAME_STDOUT_LOG)
         owned_launch["process"] = game_process
         setup_mark("launched")
         placing = threading.Event()
@@ -6817,7 +6955,9 @@ def _play(args: argparse.Namespace) -> int:
         # ★ OPERATOR 2026-11-10: a Domination game with no rival original
         # capital by the policy's turn. See `domination_no_capital_reading`.
         if no_capital_from > 0:
-            reading = domination_no_capital_reading(state, event, no_capital_from)
+            reading = domination_no_capital_reading(
+                state, event, no_capital_from,
+                getattr(args, "restart_domination_no_capital_level_techs", 0.0) or 0.0)
             if reading is not None and reading.get("fires"):
                 print(f"[abandon] turn {reading['turn']}: no rival original capital held "
                       f"since turn {reading['since']} ({reading['turns']} turns running "
@@ -7146,7 +7286,8 @@ def _play(args: argparse.Namespace) -> int:
         stall_s=args.stall_seconds,
         frozen_s=args.frozen_seconds,
         pause_when=held_or_locked,
-        finish_turn=args.max_turns, ceiling_s=ceiling_s)
+        finish_turn=args.max_turns, ceiling_s=ceiling_s,
+        ai_stall_s=args.ai_stall_seconds or None)
     # ★★★ PHOTOGRAPH A STALL BEFORE KILLING IT. Stalls are now the dominant way runs
     # end — t87, t95, t106, t184 — and the event stream goes silent by definition, so
     # it cannot say what is on screen. One screen (`DiplomacyDealView`) was already
@@ -7192,6 +7333,14 @@ def _play(args: argparse.Namespace) -> int:
                   "attempt so the climb restarts or reloads it", flush=True)
             reason = "stalled: main menu"
             break
+        # A rival's turn hung in the game core has no screen to dismiss, and
+        # the sweep's clicks would land on a live map. See `ai_stall_s` in
+        # `watch.follow`.
+        if reason.startswith(watch.AI_PHASE_STALL_REASON):
+            print("a rival's turn is hung in the game core: there is no "
+                  "screen to dismiss, so the attempt ends here and the climb "
+                  "reloads an autosave", flush=True)
+            break
         # A queued desktop rescue may be driving the same screen right now.
         desktop_rescues.drain(30.0)
         dismiss_leader_dialogue()
@@ -7201,7 +7350,8 @@ def _play(args: argparse.Namespace) -> int:
                               stall_s=args.stall_seconds,
                               frozen_s=args.frozen_seconds,
                               pause_when=held_or_locked,
-                              finish_turn=args.max_turns, ceiling_s=ceiling_s)
+                              finish_turn=args.max_turns, ceiling_s=ceiling_s,
+                              ai_stall_s=args.ai_stall_seconds or None)
         if not reason.startswith("stalled"):
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
             consecutive = 0
@@ -7892,6 +8042,17 @@ def main(argv: list[str] | None = None) -> int:
     # 480s rather than the 420s of its sibling: a real turn can legitimately take a
     # while late in a large game (rival AI turns, a long animation), and this one
     # kills a run that is still emitting, so it must be the more patient of the two.
+    # A rival's turn the mod itself reported hung (`ai_phase_stall`, 30 s into
+    # a "PLEASE WAIT" with the core idle) is given this many more silent
+    # seconds, not the 420 of `--stall-seconds` plus a dialogue rescue: there
+    # is no screen to dismiss. 240 and not less: the climb reads a player that
+    # exits with its turn stale for `EXIT_WHILE_STALE_S` (240 s) as frozen and
+    # reloads the autosave; an earlier exit would be filed as a finished game.
+    # 0 turns the fast path off.
+    ap.add_argument("--ai-stall-seconds", type=float, default=240.0,
+                    help="after the game reports a hung rival turn, give up on "
+                         "the attempt once it has stayed silent this long "
+                         "(0 = wait for --stall-seconds as before)")
     ap.add_argument("--frozen-seconds", type=float, default=480.0,
                     help="give up on a run whose TURN has not advanced for this "
                          "long, even though it is still emitting events")
@@ -8059,6 +8220,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="use interactive sessions for trades only; peace is sent directly")
     ap.add_argument("--no-deal-sessions", dest="deal_sessions", action="store_false",
                     help="keep direct diplomacy sends even for a Civvis-driven game")
+    ap.add_argument("--deal-session-quarantine", dest="deal_session_quarantine",
+                    action="append", type=deal_session_quarantine, default=None,
+                    metavar="PLAYER:TURN",
+                    help="open no deal session with this rival through this game "
+                         "turn (repeatable); the climb passes it when it reloads "
+                         "a game whose rival turn hung")
     # Wins always finish the native movie. This setting retains a minimum
     # presentation time; it cannot shorten a winning cinematic.
     ap.add_argument("--end-game-seconds", type=float, default=10.0,

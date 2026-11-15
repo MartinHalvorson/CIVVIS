@@ -67,8 +67,8 @@ impl Game {
             // +2 -- except the Cliffs of Dover and Uluru, which are +4.
             appeal += adjacent
                 .feature
-                .as_deref()
-                .and_then(|feature| self.rules.features.get(feature))
+                .as_ref()
+                .and_then(|feature| self.rules.features.get_interned(*feature))
                 .map_or(0, |spec| spec.appeal.round() as i32);
             if adjacent.owner_city == owner_city_id
                 && adjacent.improvement.is_none()
@@ -94,7 +94,7 @@ impl Game {
                 appeal += self
                     .rules
                     .districts
-                    .get(district.as_str())
+                    .get_interned(district)
                     .map(|spec| spec.appeal.round() as i32)
                     .unwrap_or(0);
             }
@@ -102,8 +102,8 @@ impl Game {
             if !adjacent.pillaged {
                 appeal += adjacent
                     .improvement
-                    .as_deref()
-                    .and_then(|improvement| self.rules.improvements.get(improvement))
+                    .as_ref()
+                    .and_then(|improvement| self.rules.improvements.get_interned(*improvement))
                     .and_then(|improvement| improvement.effects.get("adjacent_appeal"))
                     .copied()
                     .unwrap_or(0.0) as i32;

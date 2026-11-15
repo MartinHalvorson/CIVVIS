@@ -2090,6 +2090,39 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertEqual(civ6_play.setup_drift({**event, "players": True}, args()), [])
         self.assertEqual(civ6_play.setup_drift({"size": "MAPSIZE_UNKNOWN", "players": 99}, args()), [])
 
+    def test_a_reloaded_game_may_have_lost_players(self) -> None:
+        """A `--load-save` continuation reports the majors and city-states
+        alive at the save (civvis-20261112T092252Z-cont1 reported 3 of Tiny's
+        4 after a rival was eliminated and was refused). Fewer is history;
+        more is still drift, and a fresh game must match exactly."""
+        seat = {
+            "difficulty": "DIFFICULTY_SETTLER", "size": "MAPSIZE_TINY",
+            "speed": "GAMESPEED_ONLINE", "map": "Continents.lua",
+            "leader": "LEADER_TRAJAN", "modes": [],
+            "ruleset": "RULESET_EXPANSION_2", "players": 3, "city_states": 5,
+        }
+        fresh = args(map_size="MAPSIZE_TINY")
+        reload = args(map_size="MAPSIZE_TINY", load_save="/saves/auto/AutoSave_0112.Civ6Save")
+        self.assertEqual(civ6_play.setup_drift(seat, fresh),
+                         ["players 3 != 4", "city_states 5 != 6"])
+        self.assertEqual(civ6_play.seat_matches_requested(seat, fresh), (False, True, True))
+        self.assertEqual(civ6_play.setup_drift(seat, reload), [])
+        self.assertEqual(civ6_play.seat_matches_requested(seat, reload), (True, True, True))
+        self.assertEqual(civ6_play.setup_drift({**seat, "players": 6}, reload), ["players 6 != 4"])
+        self.assertEqual(civ6_play.setup_drift({**seat, "players": 0}, reload), ["players 0 != 4"])
+        self.assertEqual(civ6_play.setup_drift({**seat, "city_states": 9}, reload),
+                         ["city_states 9 != 6"])
+
+    def test_a_hung_rival_turn_skips_the_dialogue_rescue(self) -> None:
+        """`--ai-stall-seconds` reaches both watch loops, defaults to the
+        climb's frozen threshold, and the rescue loop ends on its reason
+        instead of sweeping clicks over a live map."""
+        source = Path(civ6_play.__file__).read_text()
+        self.assertEqual(source.count("ai_stall_s=args.ai_stall_seconds or None"), 2)
+        self.assertIn('ap.add_argument("--ai-stall-seconds", type=float, default=240.0', source)
+        self.assertIn("if reason.startswith(watch.AI_PHASE_STALL_REASON):", source)
+        self.assertTrue(civ6_play.watch.AI_PHASE_STALL_REASON.startswith("stalled"))
+
     def test_the_live_lane_seat_passes(self) -> None:
         """The seat every 2026-10-04 game reported (G61-G65)."""
         live = {"players": 4, "size": "MAPSIZE_TINY", "map": "Pangaea.lua", "city_states": 6}
@@ -2875,6 +2908,19 @@ class DealSessionConfigTests(unittest.TestCase):
 
     def test_ordinary_play_keeps_direct_deals_by_default(self):
         self.assertIs(self._config()["DealSessions"], False)
+
+    def test_a_deal_session_quarantine_reaches_the_baked_config(self):
+        self.assertEqual(self._config()["DealSessionQuarantine"], "")
+        self.assertEqual(
+            self._config(deal_session_quarantine=["5:164", "1:150"])["DealSessionQuarantine"],
+            "5:164,1:150")
+        self.assertEqual(civ6_play.deal_session_quarantine(" 05:0164 "), "5:164")
+        for bad in ("5", "5:", ":164", "five:164", "5:-1", "5:164:2", ""):
+            with self.assertRaises(civ6_play.argparse.ArgumentTypeError, msg=bad):
+                civ6_play.deal_session_quarantine(bad)
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('ap.add_argument("--deal-session-quarantine", '
+                      'dest="deal_session_quarantine",', source)
 
     def test_civvis_decider_keeps_non_modal_deals_by_default(self):
         self.assertIs(self._config(civvis_decides=True)["DealSessions"], False)
@@ -4137,6 +4183,55 @@ class UnseenGameWindowTest(unittest.TestCase):
         self.assertIn("1634x1084", evidence)
         self.assertIn("-1728", evidence)
         self.assertEqual(record.call_args.kwargs["tag"], "civvis-x")
+
+    VIEW_BRIDGE = ("2026-11-13 15:25:58.042 Civ6_Exe_Child[89016:59924444] "
+                   "+[NSXPCSharedListener endpointForReply:withListenerName:replyErrorCode:]: "
+                   "an error occurred while attempting to obtain endpoint for listener "
+                   "'com.apple.view-bridge': Connection interrupted\n")
+    HEALTHY = ("[S_API] SteamAPI_Init(): Loaded steamclient.dylib OK.\n"
+               "Setting breakpad minidump AppID = 289070\n")
+
+    def note_with_log(self, strikes: int, text: str | None):
+        """A probe System Events ANSWERED (no window), with the game's stdout."""
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "stdout.log"
+            if text is not None:
+                log.write_text(text)
+            with patch.object(civ6_play, "GAME_STDOUT_LOG", log):
+                return self.note(strikes, None, [])
+
+    def test_the_games_own_log_names_the_fault_when_system_events_answers(self) -> None:
+        """2026-11-13: System Events counted 0 windows for two whole launches."""
+        faulted = self.HEALTHY + self.VIEW_BRIDGE * 3
+        result, record = self.note_with_log(0, faulted)
+        self.assertEqual(result, 1)
+        record.assert_not_called()
+        result, record = self.note_with_log(1, faulted)
+        self.assertEqual(result, 2)
+        result, record = self.note_with_log(2, faulted + self.VIEW_BRIDGE * 4)
+        self.assertEqual(result, -1)
+        evidence = record.call_args.args[0]
+        self.assertIn("com.apple.view-bridge", evidence)
+        self.assertIn("7 ", evidence)
+        self.assertEqual(record.call_args.kwargs["tag"], "civvis-x")
+
+    def test_a_healthy_short_or_missing_log_is_not_a_strike(self) -> None:
+        for text in (self.HEALTHY, self.HEALTHY + self.VIEW_BRIDGE * 2, "", None):
+            result, record = self.note_with_log(2, text)
+            self.assertEqual(result, 0, text)
+            record.assert_not_called()
+
+    def test_no_launch_of_ours_means_no_log_to_read(self) -> None:
+        with patch.object(civ6_play, "GAME_STDOUT_LOG", None):
+            self.assertIsNone(civ6_play.view_bridge_fault())
+            result, record = self.note(2, None, [])
+        self.assertEqual(result, 0)
+        record.assert_not_called()
+
+    def test_the_launch_names_the_log_the_detector_reads(self) -> None:
+        source = Path(civ6_play.__file__).read_text()
+        self.assertIn('GAME_STDOUT_LOG = run_dir / "stdout.log"\n', source)
+        self.assertIn("game_process = launcher.launch(stdout=GAME_STDOUT_LOG)", source)
 
     def test_both_bootstraps_count_strikes_and_stop_on_the_fault(self) -> None:
         source = Path(civ6_play.__file__).read_text()

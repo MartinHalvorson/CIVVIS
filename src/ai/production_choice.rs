@@ -2893,6 +2893,19 @@ impl BasicAi {
             .into_iter()
             .find_map(|building| Self::civ_building(g, pid, cid, building))
     }
+
+    /// `score-seat-expands-hard`'s tier list: the Ancestral Hall (+50%
+    /// Production toward Settlers in the Plaza's city, a free Builder for
+    /// every new city), then the stock list's Grand Master's Chapel, which the
+    /// Hall does not exclude.
+    pub(crate) fn plaza_hall_first_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        if !g.city_has_district_family(&g.cities[&cid], crate::name!("government_plaza")) {
+            return None;
+        }
+        ["ancestral_hall", "grand_masters_chapel"]
+            .into_iter()
+            .find_map(|building| Self::civ_building(g, pid, cid, building))
+    }
 }
 
 #[cfg(test)]

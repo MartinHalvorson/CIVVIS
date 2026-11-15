@@ -455,6 +455,62 @@ def test_silence_is_still_caught_by_its_own_watchdog():
     assert reason.startswith("stalled: no event"), reason
 
 
+class AiPhaseStallTest(RelayCadenceTest):
+    """`ai_stall_s`: a rival turn the mod reported hung is not given the full
+    silence window (civvis-20261112T112009Z hung at t90, t89 and t88)."""
+
+    def test_a_reported_hang_ends_the_watch_after_its_own_window(self) -> None:
+        class Tail:
+            polls = 0
+
+            def poll(self):
+                Tail.polls += 1
+                if Tail.polls == 2:
+                    return [{"kind": "state", "turn": 90},
+                            {"kind": "ai_phase_stall", "turn": 90, "waited": 30.5}]
+                return []
+
+        reason, elapsed, _ = self._run(
+            Tail(), timeout_s=3600.0, poll_s=1.0, stall_s=420.0, ai_stall_s=240.0)
+        self.assertTrue(reason.startswith(watch.AI_PHASE_STALL_REASON), reason)
+        self.assertTrue(reason.startswith("stalled"), reason)
+        self.assertGreater(elapsed, 240.0)
+        self.assertLess(elapsed, 250.0)
+
+    def test_a_slow_rival_turn_that_resumes_is_not_a_stall(self) -> None:
+        class Tail:
+            polls = 0
+
+            def poll(self):
+                Tail.polls += 1
+                if Tail.polls == 2:
+                    return [{"kind": "ai_phase_stall", "turn": 90, "waited": 30.5}]
+                if Tail.polls == 100:
+                    return [{"kind": "state", "turn": 91}]
+                return []
+
+        reason, elapsed, _ = self._run(
+            Tail(), timeout_s=3600.0, poll_s=1.0, stall_s=420.0, ai_stall_s=240.0)
+        # The later event cleared the report; only the ordinary silence
+        # window ends the watch, 420 s after that event.
+        self.assertEqual(reason, "stalled: no event for 420s")
+        self.assertGreater(elapsed, 500.0)
+
+    def test_without_the_window_a_reported_hang_waits_as_before(self) -> None:
+        class Tail:
+            polls = 0
+
+            def poll(self):
+                Tail.polls += 1
+                return ([{"kind": "ai_phase_stall", "turn": 90}]
+                        if Tail.polls == 2 else [])
+
+        reason, elapsed, _ = self._run(
+            Tail(), timeout_s=3600.0, poll_s=1.0, stall_s=420.0)
+        self.assertEqual(reason, "stalled: no event for 420s")
+        self.assertGreater(elapsed, 420.0)
+
+
 class ProjectionTest(unittest.TestCase):
     """`turns_left_seconds` is the whole decision, so test it on its own."""
 
