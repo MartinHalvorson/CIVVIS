@@ -7004,9 +7004,9 @@ pub struct AdvancedAi {
     culture_seat_fills_its_district_slots: bool,
     /// `capital-archers-before-the-surprise`: under the capital watch at 2.5x
     /// our power, Archery goes ahead of Masonry, the capital's Slingers upgrade
-    /// at once from held Gold, and a second shooter is trained ahead of the
-    /// next Settler. See `advanced/capital_archers_before_the_surprise.rs`.
-    /// Opt-in.
+    /// at once from held Gold, a second shooter is trained or bought ahead of
+    /// the next Settler, and the best shooter keeps the City Center. See
+    /// `advanced/capital_archers_before_the_surprise.rs`. Opt-in.
     capital_archers_before_the_surprise: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
@@ -12289,9 +12289,10 @@ mod worked_backlog_claim;
 /// `advanced/world_religion_condemns.rs`.
 mod world_religion_condemns;
 
-/// Archery before Masonry, the capital's Slingers upgraded from held Gold
-/// and a second shooter ahead of the next Settler, under the same watch.
-/// Opt-in gene `capital-archers-before-the-surprise`. See
+/// Archery before Masonry, the capital's Slingers upgraded from held Gold,
+/// a second shooter trained or bought ahead of the next Settler, and the best
+/// shooter kept in the City Center, under the same watch. Opt-in gene
+/// `capital-archers-before-the-surprise`. See
 /// `advanced/capital_archers_before_the_surprise.rs`.
 mod capital_archers_before_the_surprise;
 /// Masonry, the capital's Walls and a bought defender before a stronger
@@ -26880,8 +26881,12 @@ impl AdvancedAi {
         // original capital while a stronger neighbour at peace stands at its
         // door owns the turn the same way. See
         // `advanced/capital_walls_before_the_surprise.rs`.
+        // `capital-archers-before-the-surprise`: likewise the capital's
+        // missing shooter, bought at once. `false` with the gene off.
         let surprise_defense_purchase = !emergency_city_defense
-            && (self.surprise_defense_purchase(g, pid) || self.capital_garrison_purchase(g, pid));
+            && (self.surprise_defense_purchase(g, pid)
+                || self.capital_garrison_purchase(g, pid)
+                || self.capital_archers_purchase(g, pid));
         // `breaker-bought-for-the-siege`: after the city-saving purchases,
         // the wall-breaker a held siege is waiting for. See
         // `advanced/siege_train/breaker_purchase.rs`.

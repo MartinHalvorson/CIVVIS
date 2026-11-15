@@ -165,7 +165,9 @@ fn the_threat_reads_the_watch_at_two_and_a_half_times_on_an_unwalled_capital() {
     );
     ai.observe_turn_start_hostiles(&game, 0);
     assert_eq!(ai.capital_watch_sightings.get(&1), Some(&game.turn));
-    let (rival, ratio) = ai.capital_archers_threat(&game, 0).expect("3.0x at the door");
+    let (rival, ratio) = ai
+        .capital_archers_threat(&game, 0)
+        .expect("3.0x at the door");
     assert_eq!(rival, 1);
     assert!((ratio - 3.0).abs() < 1e-9);
     assert!(
@@ -182,9 +184,8 @@ fn the_threat_reads_the_watch_at_two_and_a_half_times_on_an_unwalled_capital() {
     );
 
     let mut later = game.clone();
-    later.turn += later
-        .standard_duration(capital_walls_before_the_surprise::CAPITAL_WATCH_STANDARD)
-        + 1;
+    later.turn +=
+        later.standard_duration(capital_walls_before_the_surprise::CAPITAL_WATCH_STANDARD) + 1;
     assert!(
         ai.capital_archers_threat(&later, 0).is_none(),
         "stale sighting"
@@ -573,4 +574,172 @@ fn the_walls_claim_keeps_the_queue_once_masonry_is_known() {
     assert_eq!(game.cities[&capital].queue.first(), Some(&walls()));
     ai.claim_capital_archers_before_the_surprise(&mut game, 0);
     assert_eq!(game.cities[&capital].queue.first(), Some(&walls()));
+}
+
+/// The purchase leg: with Archery known and no shooter at home the Gold above
+/// the floor buys an Archer into the capital at once; a shooter in training
+/// counts, two at home, a short treasury, the Walls standing, a ratio under
+/// the bar and the gene off buy nothing.
+#[test]
+fn the_capital_buys_its_missing_shooter_above_the_held_bills() {
+    let (mut game, capital) = watched();
+    game.players[0].techs.insert(crate::name!("archery"));
+    game.players[0].gold = 400.0;
+    let home = game.cities[&capital].pos;
+    let mut ai = armed();
+    ai.observe_turn_start_hostiles(&game, 0);
+    let shooters_home = |game: &Game| {
+        game.units
+            .values()
+            .filter(|unit| unit.owner == 0 && unit.pos == home && unit.kind == "archer")
+            .count()
+    };
+    let price = game
+        .unit_purchase_cost(0, capital, "archer", "gold")
+        .expect("fixture: an Archer for sale");
+    assert!(price > 0.0 && price < 400.0, "{price}");
+
+    let mut off = game.clone();
+    assert!(!AdvancedAi::new().capital_archers_purchase(&mut off, 0));
+    assert_eq!(shooters_home(&off), 0);
+
+    let mut bought = game.clone();
+    assert!(ai.capital_archers_purchase(&mut bought, 0));
+    assert_eq!(shooters_home(&bought), 1);
+    assert!((bought.players[0].gold - (400.0 - price)).abs() < 1e-6);
+
+    // One at home and one in training make two: nothing more is bought.
+    let mut training = bought.clone();
+    training
+        .apply(
+            0,
+            &Action::Produce {
+                city: capital,
+                item: unit("archer"),
+            },
+        )
+        .unwrap();
+    assert!(!ai.capital_archers_purchase(&mut training, 0));
+
+    let mut two = game.clone();
+    slinger(&mut two, capital, 1);
+    slinger(&mut two, capital, 2);
+    assert!(!ai.capital_archers_purchase(&mut two, 0), "two at home");
+
+    let mut poor = game.clone();
+    poor.players[0].gold = price - 1.0;
+    assert!(!ai.capital_archers_purchase(&mut poor, 0));
+
+    // A waiting Slinger's upgrade bill is held from the purchase.
+    let mut held = game.clone();
+    slinger(&mut held, capital, 1);
+    let bill = ai.capital_archers_gold_held(&held, 0);
+    assert!(bill > 0.0);
+    held.players[0].gold = price + bill - 1.0;
+    assert!(
+        !ai.capital_archers_purchase(&mut held, 0),
+        "the bill is kept"
+    );
+    held.players[0].gold = price + bill + 1.0;
+    assert!(ai.capital_archers_purchase(&mut held, 0));
+
+    let mut level = game.clone();
+    power(&mut level, 1, 120.0);
+    assert!(!ai.capital_archers_purchase(&mut level, 0), "2.4x");
+
+    let mut walled = game.clone();
+    walled
+        .cities
+        .get_mut(&capital)
+        .unwrap()
+        .buildings
+        .insert(crate::name!("walls"));
+    assert!(
+        !ai.capital_archers_purchase(&mut walled, 0),
+        "the Walls stand"
+    );
+}
+
+/// The keeper leg: the best shooter on the capital's City Center keeps it
+/// and fortifies (Walls standing or not); with the centre empty the nearest
+/// shooter within reach walks home; a melee soldier on the centre, a
+/// shooter out of reach, a lapsed watch and the gene off leave the units to
+/// their own steps.
+#[test]
+fn the_best_shooter_keeps_the_capitals_centre() {
+    let (mut game, capital) = watched();
+    game.players[0].techs.insert(crate::name!("archery"));
+    let home = game.cities[&capital].pos;
+    let mut ai = armed();
+    ai.observe_turn_start_hostiles(&game, 0);
+
+    let mut kept = game.clone();
+    let sling = slinger(&mut kept, capital, 0);
+    assert_eq!(ai.capital_archers_keeper(&kept, 0), Some((sling, home)));
+    assert_eq!(AdvancedAi::new().capital_archers_keeper(&kept, 0), None);
+    let near = ground(&kept, capital, 1);
+    let archer = kept.spawn_test_unit("archer", 0, near);
+    assert_eq!(
+        ai.capital_archers_keeper(&kept, 0),
+        Some((sling, home)),
+        "the one on the centre keeps it"
+    );
+    assert_eq!(ai.capital_archers_keeper_step(&mut kept, 0, archer), None);
+    assert_eq!(
+        ai.capital_archers_keeper_step(&mut kept, 0, sling),
+        Some(false)
+    );
+    assert_eq!(kept.units[&sling].pos, home, "it holds the centre");
+
+    let mut walled = kept.clone();
+    walled
+        .cities
+        .get_mut(&capital)
+        .unwrap()
+        .buildings
+        .insert(crate::name!("walls"));
+    assert_eq!(
+        ai.capital_archers_keeper(&walled, 0),
+        Some((sling, home)),
+        "the Walls do not end the keeper"
+    );
+
+    let mut called = game.clone();
+    let start = ground(&called, capital, 3);
+    let walker = called.spawn_test_unit("archer", 0, start);
+    let farther = ground(&called, capital, 5);
+    called.spawn_test_unit("archer", 0, farther);
+    assert_eq!(ai.capital_archers_keeper(&called, 0), Some((walker, home)));
+    assert_eq!(
+        ai.capital_archers_keeper_step(&mut called, 0, walker),
+        Some(true)
+    );
+    assert!(
+        called.wdist(called.units[&walker].pos, home) < 3,
+        "it walks home"
+    );
+
+    let mut held = game.clone();
+    held.spawn_test_unit("warrior", 0, home);
+    let beside = ground(&held, capital, 1);
+    held.spawn_test_unit("archer", 0, beside);
+    assert_eq!(
+        ai.capital_archers_keeper(&held, 0),
+        None,
+        "a soldier of ours holds the centre already"
+    );
+
+    let mut afar = game.clone();
+    let out = ground(&afar, capital, CAPITAL_ARCHERS_REACH_TILES + 1);
+    afar.spawn_test_unit("archer", 0, out);
+    assert_eq!(ai.capital_archers_keeper(&afar, 0), None, "out of reach");
+
+    let mut later = kept.clone();
+    later.turn +=
+        later.standard_duration(capital_walls_before_the_surprise::CAPITAL_WATCH_STANDARD) + 1;
+    assert_eq!(
+        ai.capital_archers_keeper(&later, 0),
+        None,
+        "the watch lapsed"
+    );
 }

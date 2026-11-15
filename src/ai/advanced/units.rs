@@ -1201,6 +1201,14 @@ impl AdvancedAi {
             self.ordering(OrderStep::CentreGarrison);
             return acted;
         }
+        // `capital-archers-before-the-surprise`: while a 2.5x major is
+        // watched at the original capital, its best shooter keeps the City
+        // Center and an empty one calls the nearest shooter home. `None` with
+        // the gene off. See `advanced/capital_archers_before_the_surprise.rs`.
+        if let Some(acted) = self.capital_archers_keeper_step(g, pid, uid) {
+            self.ordering(OrderStep::CentreGarrison);
+            return acted;
+        }
         // `score-seat-takes-what-pays` (graded): a centre we took keeps a
         // soldier, and an empty one takes one in reach. `None` with the graded
         // versions off. See `advanced/score_takes_what_pays.rs`.

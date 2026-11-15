@@ -24,10 +24,21 @@
 //!    ahead of the next Settler. A head that finishes this turn, a Settler
 //!    within two turns of done, a land soldier in training and the walls
 //!    gene's own claim keep the queue.
+//! 5. **Purchase.** Under the same count (a shooter in training counts), the
+//!    Gold above the upkeep floor, which holds the upgrade bills, buys the
+//!    best shooter into the capital at once: one of the turn's city-saving
+//!    purchases, after the emergency lane and the walls gene's door buy.
+//! 6. **Keeper.** The best shooter on the capital's City Center keeps it: it
+//!    fires from the centre when it has a shot and otherwise fortifies there,
+//!    ahead of every errand, recovery or march that would walk it out. With
+//!    nobody of ours on the centre, the nearest free shooter within
+//!    [`CAPITAL_ARCHERS_REACH_TILES`] walks home. A Settler's or Builder's
+//!    guard and a siege member are left to their work.
 //!
-//! Every leg ends when the capital's Walls stand, when the watch lapses, or
-//! when the ratio falls under the bar; the upgrade leg alone keeps going for
-//! a Slinger that is still waiting.
+//! The research, production, Gold and purchase legs end when the capital's
+//! Walls stand, when the watch lapses, or when the ratio falls under the bar.
+//! The upgrade and keeper legs read the watch alone: Walls standing, a
+//! waiting Slinger still upgrades and the keeper still holds the centre.
 //!
 //! **Why (live Deity, 6 players, Small Continents, Online; 2026-11-15, 33
 //! games).** Four surprise wars opened on our seat before turn 30, by majors
@@ -62,6 +73,13 @@
 //! about 30 from two tiles away, the city centre included, so two of them
 //! finish about one struck Warrior a turn where two Slingers finished three
 //! in nine turns (inferred from the logged strengths, not measured).
+//!
+//! **Why the keeper.** `civvis-20261115T132136Z` (Rome): Inca met at t11
+//! at 3.5x. Rome's shooters stood within two tiles of it at t19-20 and
+//! t29-33, none at t21-26 or t28, while two Inca Warriors stood within three
+//! tiles at t27-28; the City Center held a shooter at t32 and t43-48 only.
+//! The 11-12 Gran Colombia census in `advanced/centre_keeps_its_garrison.rs`
+//! counts our soldiers stepping out of a threatened centre on 29% of turns.
 //!
 //! Off: nothing changes. The watch itself is recorded when either this gene,
 //! the walls gene or `capital-watch-arms-the-slinger` is on. Grep the journal
@@ -278,10 +296,12 @@ impl AdvancedAi {
             }
             let delta = Self::upgrade_upkeep_delta(g, uid, target);
             let bill = g.unit_gold_maintenance(pid);
-            let reserve =
-                super::gold_and_cards::UPKEEP_RESERVE_TURNS * (bill + delta).max(0.0);
+            let reserve = super::gold_and_cards::UPKEEP_RESERVE_TURNS * (bill + delta).max(0.0);
             let gold = g.players[pid].gold;
-            if !delta.is_finite() || !bill.is_finite() || !gold.is_finite() || gold - price < reserve
+            if !delta.is_finite()
+                || !bill.is_finite()
+                || !gold.is_finite()
+                || gold - price < reserve
             {
                 continue;
             }
@@ -360,6 +380,231 @@ impl AdvancedAi {
         }
         let (near, owned) = Self::capital_archers_census(g, pid, cid);
         near < CAPITAL_ARCHERS_WANTED && owned < CAPITAL_ARCHERS_MAX_OWNED
+    }
+
+    /// Whether the capital's queue head is a land shooter: the one in
+    /// training counts toward [`CAPITAL_ARCHERS_WANTED`] for the purchase.
+    fn capital_archers_shooter_in_training(g: &Game, capital: u32) -> bool {
+        matches!(g.cities[&capital].queue.first(),
+            Some(Item::Unit { unit }) if g.rules.units.get(unit)
+                .is_some_and(Self::capital_archers_shooter))
+    }
+
+    /// The best shooter `capital` sells for Gold within `budget`: the longest
+    /// reach, then the strongest shot, then the cheapest; and its price.
+    fn capital_archers_for_sale(
+        g: &Game,
+        pid: usize,
+        capital: u32,
+        budget: f64,
+    ) -> Option<(Name, f64)> {
+        g.rules
+            .units
+            .iter()
+            .filter(|(_, spec)| Self::capital_archers_shooter(spec))
+            .filter_map(|(name, spec)| {
+                let item = Item::Unit { unit: *name };
+                if !g.can_produce(pid, capital, &item) || g.purchase_is_blocked(capital, &item) {
+                    return None;
+                }
+                let price = g.unit_purchase_cost(pid, capital, name.as_str(), "gold")?;
+                (price.is_finite() && price > 0.0 && price <= budget + 1e-9)
+                    .then_some((*name, spec, price))
+            })
+            .max_by(|(a_name, a, a_price), (b_name, b, b_price)| {
+                a.range
+                    .cmp(&b.range)
+                    .then(
+                        a.ranged_attack_strength()
+                            .total_cmp(&b.ranged_attack_strength()),
+                    )
+                    .then(b_price.total_cmp(a_price))
+                    .then(b_name.as_str().cmp(a_name.as_str()))
+            })
+            .map(|(name, _, price)| (name, price))
+    }
+
+    /// The purchase leg: while the threat reads and fewer than
+    /// [`CAPITAL_ARCHERS_WANTED`] shooters stand within
+    /// [`CAPITAL_ARCHERS_HOME_TILES`] of the capital (one in training there
+    /// counts), the Gold above the upkeep floor (which holds the Slingers'
+    /// upgrade bills) buys the best shooter into the capital at once. One of
+    /// the turn's city-saving purchases: true when one was bought. Exact
+    /// no-op with the gene off.
+    pub(super) fn capital_archers_purchase(&self, g: &mut Game, pid: usize) -> bool {
+        let Some((rival, ratio)) = self.capital_archers_threat(g, pid) else {
+            return false;
+        };
+        let Some(capital) = Self::capital_watch_city(g, pid) else {
+            return false;
+        };
+        let (near, owned) = Self::capital_archers_census(g, pid, capital);
+        let training = usize::from(Self::capital_archers_shooter_in_training(g, capital));
+        if near + training >= CAPITAL_ARCHERS_WANTED || owned >= CAPITAL_ARCHERS_MAX_OWNED {
+            return false;
+        }
+        let floor = self.purchase_upkeep_floor(g, pid, 0.0);
+        let gold = g.players[pid].gold;
+        let Some((unit, price)) = Self::capital_archers_for_sale(g, pid, capital, gold - floor)
+        else {
+            return false;
+        };
+        if g.apply(
+            pid,
+            &Action::Buy {
+                city: capital,
+                unit,
+                formation: 0,
+                currency: "gold".into(),
+            },
+        )
+        .is_err()
+        {
+            return false;
+        }
+        think!(self.journal(), Military, Decision,
+            "{} buys a {} before {} can surprise it",
+            g.cities[&capital].name, crate::reasoning::plain(unit.as_str()), g.players[rival].civ;
+            "capital-archers-before-the-surprise: {} fields {ratio:.1}x our power and its soldiers \
+             stood within {CAPITAL_WATCH_TILES} tiles; {near} of {CAPITAL_ARCHERS_WANTED} shooters \
+             within {CAPITAL_ARCHERS_HOME_TILES} tiles, {training} in training; {price:.0} of \
+             {gold:.0} Gold, {floor:.0} kept",
+            g.players[rival].civ);
+        true
+    }
+
+    /// A shooter of ours free to keep the capital's City Center: a land
+    /// soldier that can hold a centre, not a Settler's or a Builder's guard
+    /// and not in a siege.
+    fn capital_archers_free_shooter(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        AdvancedAi::centre_soldier(g, pid, uid)
+            && Self::capital_archers_shooter(&g.rules.units[g.units[&uid].kind])
+            && !self.guard_is_bound_to_any_settler(uid)
+            && !self.guard_is_reserved_for_civilian(uid)
+            && !self.active_siege_member(g, pid, uid)
+            && !self.staging_siege_member(g, pid, uid)
+    }
+
+    /// The keeper leg's choice: while the watch reads (Walls or none), the
+    /// best shooter on the capital's City Center keeps it (the longest reach,
+    /// then the strongest shot, then the most health); with none there and
+    /// no other land soldier of ours on it, the nearest free shooter within
+    /// [`CAPITAL_ARCHERS_REACH_TILES`] is called home. `None` with the gene
+    /// off. Recomputed from the board at every read: nothing is remembered by
+    /// unit id.
+    pub(super) fn capital_archers_keeper(&self, g: &Game, pid: usize) -> Option<(u32, Pos)> {
+        self.capital_archers_watched(g, pid)?;
+        let capital = Self::capital_watch_city(g, pid)?;
+        let home = g.cities[&capital].pos;
+        let rank = |uid: &u32| {
+            let unit = &g.units[uid];
+            let spec = &g.rules.units[unit.kind];
+            (
+                spec.range,
+                (spec.ranged_attack_strength() * 100.0) as i64,
+                unit.hp,
+                std::cmp::Reverse(*uid),
+            )
+        };
+        let on_centre: Vec<u32> = g
+            .unit_ids_at(home)
+            .iter()
+            .copied()
+            .filter(|uid| {
+                g.units.get(uid).is_some_and(|unit| {
+                    let spec = &g.rules.units[unit.kind];
+                    unit.owner == pid
+                        && spec.class == "military"
+                        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                })
+            })
+            .collect();
+        if let Some(keeper) = on_centre
+            .iter()
+            .copied()
+            .filter(|uid| self.capital_archers_free_shooter(g, pid, *uid))
+            .max_by_key(rank)
+        {
+            return Some((keeper, home));
+        }
+        if !on_centre.is_empty() {
+            return None;
+        }
+        g.player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| {
+                g.wdist(g.units[uid].pos, home) <= CAPITAL_ARCHERS_REACH_TILES
+                    && self.capital_archers_free_shooter(g, pid, *uid)
+            })
+            .min_by_key(|uid| {
+                let (range, shot, hp, id) = rank(uid);
+                (
+                    g.wdist(g.units[uid].pos, home),
+                    std::cmp::Reverse((range, shot, hp, id)),
+                )
+            })
+            .map(|uid| (uid, home))
+    }
+
+    /// The keeper leg's step for `uid`: the capital's keeper fires from the
+    /// City Center when it has a shot (`Some(true)`; its next pass
+    /// fortifies) and otherwise fortifies there (`Some(false)`); it is never
+    /// walked out. The called keeper steps home (`Some(true)`). `None` for
+    /// every other unit, and with the gene off.
+    pub(super) fn capital_archers_keeper_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> Option<bool> {
+        let (keeper, home) = self.capital_archers_keeper(g, pid)?;
+        if keeper != uid {
+            return None;
+        }
+        let kind = g.units[&uid].kind;
+        let from = g.units[&uid].pos;
+        let (rival, ratio) = self.capital_archers_watched(g, pid)?;
+        let capital = g
+            .city_at(home)
+            .map(|cid| g.cities[&cid].name.clone())
+            .unwrap_or_default();
+        if from == home {
+            if let Some(target) = self.centre_keeper_shot(g, pid, uid).filter(|target| {
+                g.apply(
+                    pid,
+                    &Action::Ranged {
+                        unit: uid,
+                        target: *target,
+                    },
+                )
+                .is_ok()
+            }) {
+                self.force_groups_dirty = true;
+                think!(self.journal(), Military, Decision,
+                    "The {} keeps {} and fires", plain(kind.as_str()), capital;
+                    "capital-archers-before-the-surprise: {} fields {ratio:.1}x our power and its \
+                     soldiers stood within {CAPITAL_WATCH_TILES} tiles; the best shooter keeps the \
+                     City Center and fires from it at {target:?}",
+                    g.players[rival].civ);
+                return Some(true);
+            }
+            if g.units.contains_key(&uid) {
+                self.base.fortify_or_stop(g, pid, uid);
+            }
+            return Some(false);
+        }
+        if g.units[&uid].moves_left <= 0.0 || !self.base.step_toward(g, pid, uid, home) {
+            return None;
+        }
+        self.force_groups_dirty = true;
+        let to = g.units.get(&uid).map_or(from, |unit| unit.pos);
+        think!(self.journal(), Military, Decision,
+            "The {} walks home to keep {}", plain(kind.as_str()), capital;
+            "capital-archers-before-the-surprise: {} fields {ratio:.1}x our power and its soldiers \
+             stood within {CAPITAL_WATCH_TILES} tiles; nobody of ours stood in the City Center; \
+             {from:?} -> {to:?}",
+            g.players[rival].civ);
+        Some(true)
     }
 
     /// The production leg, after the walls gene's own claim: the capital's
