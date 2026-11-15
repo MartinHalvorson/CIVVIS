@@ -483,6 +483,22 @@ impl Game {
     /// capital: expansion is gated by capital growth, and the shipped weights
     /// value production at 1.55 against food at 1.25.
     pub fn city_citizen_plan_weighted(&self, cid: u32, weights: Option<Yields>) -> CitizenPlan {
+        // The city's own plan is kept beside its yields from one read-only
+        // pass to the next; see `KeptDerivations`. A weighted probe is a
+        // what-if and is neither kept nor answered from what is.
+        if weights.is_some() {
+            return self.city_citizen_plan_derived(cid, weights);
+        }
+        if let Some(plan) = self.kept_citizen_plan(cid) {
+            return plan;
+        }
+        let plan = self.city_citizen_plan_derived(cid, None);
+        self.keep_citizen_plan(cid, &plan);
+        plan
+    }
+
+    /// [`Self::city_citizen_plan_weighted`], worked out from the board.
+    fn city_citizen_plan_derived(&self, cid: u32, weights: Option<Yields>) -> CitizenPlan {
         let city = &self.cities[&cid];
         let mut strategy = self.citizen_strategy(cid);
         if let Some(weights) = weights {

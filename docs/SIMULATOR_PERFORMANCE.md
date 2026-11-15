@@ -450,6 +450,51 @@ of it), `pick_item` still takes the backlog census once per city with a
 `Produce` between cities (1.2%), and the full purchase menu is still listed
 up to twice a seat-turn (3.5%).
 
+### What a kept yield is made of is kept with it (−2.1% when written, −0.5% when merged)
+
+After the three cuts above the citizen plan was still the largest single
+cost in a site game. `Game::keep_rival_yields` kept each city's *yields* between a seat's passes
+and threw away the two things a yield is made of that other callers ask for
+by themselves: the citizen plan (the Builder census, the worked-tile test and
+the state document ask for the plan and never the yield) and the luxury split
+(every city's amenities ask for the whole empire's, so a caller holding no
+query scope across the cities re-split the empire once per city).
+
+`KeptDerivations` holds all three in the same two maps, filled and read under
+the same conditions and dropped by the same events, so nothing new decides
+when a kept answer is stale. `--audit-kept-yields` re-derives every reused
+plan and split as it does every reused yield. Instructions for 150 turns,
+every checkpoint identical: −2.06%, −2.12%, −1.97% (seeds 7, 8, 9).
+
+⚠ **Those three readings are 2026-11-11's, and the site's world has shrunk
+since.** The change waited four days for a merge. Measured again on
+2026-11-15 with `main` at `afb11185a8` merged in, the release build, one run
+a seed, base and candidate alternating: 169.92 to 169.10, 154.29 to 153.46
+and 152.52 to 151.69 billion instructions, **−0.48%, −0.54%, −0.54%** (seeds
+7, 8, 9), every save and document checkpoint identical, and three audited
+games (seeds 7, 8, 11) reported nothing. It is a quarter of the first
+reading, and the game it is measured on is a smaller one: the majors end
+seed 7 on 9 to 14 cities where the profile above found 11 to 18, and that
+game's planning asks for 84,871 city yields with keeping on (37,802 reused,
+47,069 derived) where the table further up counted 200,782 (134,122 and
+66,660). Fewer cities asked about less often leaves less to keep. The
+profile shares in the next paragraph are the earlier world's as well.
+
+**What is left, and why it is not in this change.** A profile of the result
+(seed 7, turns 40 to 170) still has 26% of the thread deriving city yields
+(the plan is 17 of those points and the luxury split 5), and 8 points of the
+26 is one caller: the culture forecast, which reads every
+*rival* city's culture. Counted over one 150-turn game, the four majors
+issued 35,303 actions, the lane table was rebuilt 1,127 times and the
+forecast ran 1,801 times, three a seat-turn, and each run found the rivals'
+kept yields already dropped: every action but `Produce` drops them, and so
+does any tile write anywhere (27,000 of those actions were a unit moving).
+Almost none of those can change what a rival's city yields, but "almost" is
+not a rule. Keeping rival yields across the acting seat's own unit moves and
+its Builders' improvements needs a write-set argument per action type and a
+finer tile rule, checked by the audit over many seeds; that is the next 5
+points and it is a change to review on its own.
+
 ⚠ **One cargo target directory cannot be shared between worktrees.** Cargo
 decides a crate is fresh by comparing its sources' modification times with
 the last build's, by path *relative to the package*, so a second worktree
