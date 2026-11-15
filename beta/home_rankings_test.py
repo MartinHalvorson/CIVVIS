@@ -34,6 +34,13 @@ class HomeRankings(unittest.TestCase):
             self.assertEqual(row["elo"], published["ratings"][row["id"]]["elo"])
         rungs = [row for row in rows if row["kind"] == "rung"]
         self.assertIn("Prince", [row["name"] for row in rungs])
+        # A rung's level number is its place on the engine's own ladder.
+        ladder = re.search(r"CIV6_RUNGS: \[.*?\] = \[(.*?)\];", (ROOT / "src" / "strategies.rs").read_text(encoding="utf-8"), re.S)
+        self.assertEqual(re.findall(r'\("(\w+)",', ladder[1]), home_rankings.CIV6_RUNGS)
+        levels = {name: lv for row in rungs for name, lv in zip(row["name"].split(" · "), row["levels"])}
+        self.assertEqual((levels["Settler"], levels["Prince"], levels["King"], levels["Deity"]), (1, 4, 5, 8))
+        self.assertEqual(sorted(levels.values()), list(range(1, 9)))
+        self.assertIn('"Civ VI " + level(r) + r.name', LANDING)
         named = [name for row in rungs for name in row["name"].split(" · ")]
         self.assertEqual(sorted(named), sorted(rung.title() for rung in published["ladder"]))
 
