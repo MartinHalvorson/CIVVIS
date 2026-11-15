@@ -2771,8 +2771,12 @@ impl AdvancedAi {
         // urgent, culture and faith counters -- also needs our Production at
         // 0.8 times the target's (`parity-reads-the-front`: its Production
         // around our cities and the objective). Says so itself.
+        // `open-capital-declares-at-twice`: an open capital at twice the
+        // target's power is not held for Production. `None` with the gene off.
+        let open_capital = self.open_capital_at_twice(g, pid, target);
         if opens
             && !launcher_ready
+            && open_capital.is_none()
             && !self.declaration_has_production_parity(
                 g,
                 pid,
@@ -2781,6 +2785,9 @@ impl AdvancedAi {
             )
         {
             return;
+        }
+        if let Some(capital) = open_capital.filter(|_| opens) {
+            self.journal_open_capital_at_twice(g, pid, target, capital);
         }
         if opens {
             // `coalition_before_war`: invite the target's neighbours to a
