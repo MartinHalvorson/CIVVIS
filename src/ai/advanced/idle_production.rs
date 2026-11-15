@@ -125,7 +125,7 @@ impl AdvancedAi {
             return None;
         }
         let worked: Vec<Pos> = match g.observed_city_worked_tiles.get(&cid) {
-            Some(worked) => worked.iter().copied().collect(),
+            Some(worked) => worked.to_vec(),
             None => g.city_citizen_plan(cid).worked_tiles,
         };
         let weakest = worked
