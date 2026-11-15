@@ -141,6 +141,26 @@ struct RosterDocument {
 
 struct LeaderRoster {
     leaders: Vec<LeaderRosterEntry>,
+    /// Positions in `leaders`, ordered by [`civ_order`] of the name there:
+    /// what [`entry`] searches. The loader refuses a repeated civilization,
+    /// so a name has one position.
+    by_civ: Vec<u32>,
+}
+
+/// The order [`LeaderRoster::by_civ`] is kept in: shorter names first, then
+/// byte order. Any total order would do; this one settles most comparisons
+/// on the two lengths without reading either name.
+fn civ_order(left: &str, right: &str) -> std::cmp::Ordering {
+    left.len().cmp(&right.len()).then_with(|| left.cmp(right))
+}
+
+/// `leaders`' positions in [`civ_order`].
+fn index_by_civ(leaders: &[LeaderRosterEntry]) -> Vec<u32> {
+    let mut by_civ: Vec<u32> = (0..leaders.len() as u32).collect();
+    by_civ.sort_by(|left, right| {
+        civ_order(&leaders[*left as usize].civ, &leaders[*right as usize].civ)
+    });
+    by_civ
 }
 
 static ROSTER: OnceLock<LeaderRoster> = OnceLock::new();
@@ -151,7 +171,29 @@ pub fn all() -> &'static [LeaderRosterEntry] {
 }
 
 /// Find a record by the exact civilization identity carried in a setup/save.
+///
+/// ★ THIS IS ASKED MILLIONS OF TIMES A GAME, AND IT READ THE WHOLE ROSTER
+/// EVERY TIME. `Game::has_ability`, `civ_effect` and `owns_civ_unique` all
+/// begin by asking whether the seat is a Civilization VI identity
+/// ([`uses_civ6_mechanics`]), which is this lookup, and the rules ask one of
+/// the three for almost every yield, strength and movement term. It walked
+/// the roster comparing names until one matched: 2.6% of a gene-screen game
+/// (`docs/SIMULATOR_PERFORMANCE.md`, 2026-11-15). The roster is read once
+/// and never changes, so its names are kept in order and searched.
 pub fn entry(civ: &str) -> Option<&'static LeaderRosterEntry> {
+    let roster = roster();
+    roster
+        .by_civ
+        .binary_search_by(|at| civ_order(&roster.leaders[*at as usize].civ, civ))
+        .ok()
+        .map(|found| &roster.leaders[roster.by_civ[found] as usize])
+}
+
+/// [`entry`] as it was written first: the first record whose name matches,
+/// found by reading the roster in order. Test-only, as what the search is
+/// compared against.
+#[cfg(test)]
+fn entry_by_reading_the_roster(civ: &str) -> Option<&'static LeaderRosterEntry> {
     all().iter().find(|entry| entry.civ == civ)
 }
 
@@ -284,6 +326,7 @@ fn roster() -> &'static LeaderRoster {
             );
         }
         LeaderRoster {
+            by_civ: index_by_civ(&document.leaders),
             leaders: document.leaders,
         }
     })
@@ -294,6 +337,64 @@ mod tests {
     use super::*;
     use crate::game::{CIV6_LEADER_POOL, CIV_NAMES};
     use crate::rules::Rules;
+
+    /// The search finds the record reading the roster in order found, for
+    /// every name on it, and finds nothing for a name that is not: a near
+    /// miss of every length, a city-state, the wrong case.
+    #[test]
+    fn the_search_finds_the_record_that_reading_the_roster_found() {
+        assert_eq!(roster().by_civ.len(), all().len());
+        for (position, record) in all().iter().enumerate() {
+            let found = entry(&record.civ).expect("every roster name is found");
+            assert!(
+                std::ptr::eq(found, &all()[position]),
+                "{} found {}",
+                record.civ,
+                found.civ
+            );
+            assert!(std::ptr::eq(
+                found,
+                entry_by_reading_the_roster(&record.civ).unwrap()
+            ));
+            let mut near_misses = vec![
+                format!("{} ", record.civ),
+                format!(" {}", record.civ),
+                record.civ.to_lowercase(),
+                record.civ.to_uppercase(),
+                record.civ.chars().skip(1).collect(),
+                format!("{}a", record.civ),
+            ];
+            near_misses.retain(|name| *name != record.civ);
+            for name in near_misses {
+                assert_eq!(
+                    entry(&name).map(|found| found.civ.as_str()),
+                    entry_by_reading_the_roster(&name).map(|found| found.civ.as_str()),
+                    "{name:?}"
+                );
+            }
+        }
+        for name in [
+            "",
+            "Zanzibar",
+            "Auckland",
+            "barbarians",
+            "Free Cities",
+            "\u{e9}",
+        ] {
+            assert!(entry_by_reading_the_roster(name).is_none(), "{name:?}");
+            assert!(entry(name).is_none(), "{name:?}");
+            assert!(!uses_civ6_mechanics(name));
+            assert!(!is_selectable(name));
+            assert!(true_start(name).is_none());
+        }
+        // The index is in the order the search compares by, with no ties.
+        for pair in roster().by_civ.windows(2) {
+            assert_eq!(
+                civ_order(&all()[pair[0] as usize].civ, &all()[pair[1] as usize].civ),
+                std::cmp::Ordering::Less
+            );
+        }
+    }
 
     #[test]
     fn roster_preserves_every_legacy_identity_and_coordinate_in_order() {
