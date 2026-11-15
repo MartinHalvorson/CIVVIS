@@ -425,14 +425,83 @@ impl Game {
         // so the acting seat's own cities are dropped as for any action.
         // Everything else drops everything: nothing here reasons about what a
         // purchase, a move, an envoy or a deal can touch.
+        //
+        // ★★ AN ORDINARY MOVE KEEPS EVERYTHING, UNLESS IT DID ONE OF THE FEW
+        // THINGS A MOVE CAN DO TO A CITY. A seat moves units far more often
+        // than it does anything else (a 150-turn site game: 35,303 major
+        // actions, 27,000 of them `Move` or `MoveTo`), and every one of them
+        // threw away every yield kept for every city, so a Builder's next step
+        // re-derived its whole empire's yields to price its next job. What a
+        // move can reach in a city's yields, read off `do_move_step`:
+        //
+        // * tiles: a tribal village, a barbarian camp, a pillage on entry. Each
+        //   writes the tile, and the tile grid's epoch drops what is kept on
+        //   the next read (`Game::kept_derivations_for`), as for any action;
+        // * a garrison: city yields and amenities read the units on the city's
+        //   own centre, and nothing else of any unit. So a move that starts or
+        //   ends on a city centre drops everything;
+        // * first contact (`record_contacts_in_sight`): a meeting can hand out
+        //   an envoy and with it a suzerain's bonuses, so a move after which
+        //   any seat has met anyone new drops everything;
+        // * a capture (`resolve_entered_units`) or a unit leaving the board,
+        //   and, belt and braces, a city changing hands: either drops
+        //   everything.
+        //
+        // `OrdinaryMoveWatch` reads those three before and after; anything
+        // else a move writes (the unit itself, sight, trails, zone-of-control
+        // flags) no city yield reads. `Fortify` writes only the unit.
+        let ordinary = match action {
+            Action::Move { unit, .. } | Action::MoveTo { unit, .. } | Action::Fortify { unit } => {
+                Some(*unit)
+            }
+            _ => None,
+        };
         let reach = match action {
             Action::Produce { .. } => ActionReach::OwnCities,
+            _ if ordinary.is_some() => ActionReach::UnitOnly,
             _ => ActionReach::Board,
         };
+        let watch = ordinary.map(|uid| self.ordinary_move_watch(uid));
         self.query_memo.action_begins(reach);
         let result = self.apply_unbracketed(pid, action);
-        self.query_memo.action_ends(reach);
+        let reached = match (ordinary, watch) {
+            (Some(uid), Some(before)) => {
+                let after = self.ordinary_move_watch(uid);
+                if before.on_a_city_centre || after.on_a_city_centre || before != after {
+                    ActionReach::Board
+                } else {
+                    ActionReach::UnitOnly
+                }
+            }
+            _ => reach,
+        };
+        self.query_memo.action_ends(reached);
         result
+    }
+
+    /// What an ordinary move must leave alone for the yields kept for every
+    /// city to stand. See the note in [`Game::apply`].
+    pub(super) fn ordinary_move_watch(&self, uid: u32) -> OrdinaryMoveWatch {
+        const SEED: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mix = |hash: u64, value: u64| {
+            let state = (hash ^ value).wrapping_mul(SEED);
+            state ^ (state >> 29)
+        };
+        let units = self.units.values().fold(self.units.len() as u64, |hash, unit| {
+            mix(hash, (u64::from(unit.id) << 8) | unit.owner as u64)
+        });
+        let cities = self.cities.values().fold(self.cities.len() as u64, |hash, city| {
+            mix(hash, (u64::from(city.id) << 8) | city.owner as u64)
+        });
+        OrdinaryMoveWatch {
+            on_a_city_centre: self
+                .units
+                .get(&uid)
+                .is_some_and(|unit| self.city_at(unit.pos).is_some()),
+            contacts: self.players.iter().map(|player| player.met.len()).sum(),
+            units,
+            cities,
+        }
     }
 
     fn apply_unbracketed(&mut self, pid: usize, action: &Action) -> Result<(), String> {

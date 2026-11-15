@@ -1979,6 +1979,23 @@ enum ActionReach {
     OwnCities,
     /// Anything can.
     Board,
+    /// Only the acting unit was written: nothing kept is dropped. See the
+    /// ordinary-move note in `Game::apply`.
+    UnitOnly,
+}
+
+/// What [`Game::apply`] reads around an ordinary move to tell whether it did
+/// anything a kept city yield could notice.
+#[derive(PartialEq, Eq)]
+pub(super) struct OrdinaryMoveWatch {
+    /// The moving unit stands on a city centre (a garrison).
+    on_a_city_centre: bool,
+    /// How many seats every seat has met, summed.
+    contacts: usize,
+    /// Every unit's id and owner, folded.
+    units: u64,
+    /// Every city's id and owner, folded.
+    cities: u64,
 }
 
 impl QueryCache {
@@ -1997,7 +2014,7 @@ impl QueryCache {
     }
 
     fn drop_kept_yields(&self, reach: ActionReach) {
-        if !self.keeps_rival_yields.get() {
+        if !self.keeps_rival_yields.get() || reach == ActionReach::UnitOnly {
             return;
         }
         self.own_yields.borrow_mut().clear();
@@ -13758,6 +13775,8 @@ mod production_catalog_tests;
 
 #[cfg(test)]
 mod yield_carry_tests;
+#[cfg(test)]
+mod kept_yields_moves_tests;
 
 #[cfg(test)]
 mod dedication_era_tests;
