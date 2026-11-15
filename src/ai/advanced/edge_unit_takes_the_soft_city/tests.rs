@@ -543,9 +543,28 @@ fn from_the_start_researches_the_path_with_one_city() {
 
 #[test]
 fn from_the_start_stands_down_without_iron_at_bronze_working() {
+    // Version 2: the check repeats every turn for ten Online turns first,
+    // spending no Science and holding no Gold meanwhile.
     let (mut g, _) = fixture(&["mining", "bronze_working"]);
     one_city(&mut g);
+    g.turn = 19;
     let mut ai = from_the_start();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let w = window(&ai);
+    assert_eq!(w.start, Some(true));
+    assert_eq!(w.recheck_since, Some(19));
+    assert!(!w.start_supplied);
+    assert_eq!(ai.edge_unit_research_goal(&g, 0), None);
+    assert_eq!(counter(&g, "start_recheck"), 1);
+    assert_eq!(counter(&g, "start_closed"), 0);
+    assert_eq!(ai.edge_upgrade_gold_held(&g, 0), 0.0);
+    // Still none nine turns on: still checking, journalled once.
+    g.turn = 28;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(window(&ai).start, Some(true));
+    assert_eq!(counter(&g, "start_recheck"), 1);
+    // Ten turns on, the opening stands down.
+    g.turn = 19 + super::EDGE_START_RECHECK_TURNS;
     ai.maintain_edge_unit_window(&mut g, 0);
     let w = window(&ai);
     assert_eq!(w.start, Some(false));
@@ -553,6 +572,48 @@ fn from_the_start_stands_down_without_iron_at_bronze_working() {
     assert_eq!(ai.edge_unit_research_goal(&g, 0), None);
     assert_eq!(counter(&g, "start_closed"), 1);
     assert_eq!(ai.edge_upgrade_gold_held(&g, 0), 0.0);
+}
+
+#[test]
+fn a_source_found_on_the_recheck_commits_the_opening() {
+    let (mut g, _) = fixture(&["mining", "bronze_working"]);
+    one_city(&mut g);
+    g.turn = 19;
+    let mut ai = from_the_start();
+    let journal = crate::reasoning::Journal::recording();
+    ai.base.journal = journal.handle();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(window(&ai).recheck_since, Some(19));
+    // Iron comes into reach three turns later (a border grows over it).
+    g.turn = 22;
+    with_iron(&mut g);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let w = window(&ai);
+    assert_eq!(w.start, Some(true));
+    assert!(w.start_supplied);
+    assert_eq!(
+        ai.edge_unit_research_goal(&g, 0),
+        Some(crate::name!("iron_working"))
+    );
+    assert_eq!(counter(&g, "start_recheck_found"), 1);
+    assert_eq!(counter(&g, "start_closed"), 0);
+    let details: Vec<String> = journal
+        .since(0)
+        .thoughts
+        .iter()
+        .map(|thought| thought.detail.clone())
+        .collect();
+    assert!(
+        details.iter().any(|detail| detail
+            .starts_with("edge-unit-takes-the-soft-city: start: recheck: no iron source")),
+        "{details:?}"
+    );
+    assert!(
+        details
+            .iter()
+            .any(|detail| detail.contains("into the recheck")),
+        "{details:?}"
+    );
 }
 
 #[test]
@@ -577,9 +638,15 @@ fn from_the_start_with_iron_in_reach_trains_bodies_and_holds_the_gold() {
         .0;
     assert!(held > 0.0 && (held - price).abs() < 1e-6, "{held} {price}");
     assert!(ai.purchase_upkeep_floor(&g, 0, 0.0) >= held);
-    // The capital trains a second body to upgrade, with no city named.
-    ai.claim_edge_unit_queue(&mut g, 0);
+    // The turn start trains nothing while the opening book runs and no
+    // city is named (the sanity round's first version of #5292 trained
+    // Warriors from turn 1 in place of the book's Scout and Settlers).
     let capital = g.city_at(CAPITAL).unwrap();
+    assert!(ai.base.book_pos < 4);
+    assert!(g.cities[&capital].queue.is_empty());
+    // The claim chain's capital trains a second body to upgrade, with no
+    // city named.
+    ai.claim_edge_unit_queue(&mut g, 0);
     assert_eq!(
         g.cities[&capital].queue.first(),
         Some(&Item::Unit {
@@ -632,4 +699,432 @@ fn a_declaration_that_never_reached_the_board_is_asked_again() {
     assert_eq!(w.declared, None);
     assert_eq!(w.redeclared, 1);
     assert_eq!(counter(&g, "declare_lost"), 1);
+}
+
+// ---- Version 2, from the first live game (civvis-20261113T205538Z) ----
+
+fn details(journal: &crate::reasoning::Journal) -> Vec<String> {
+    journal
+        .since(0)
+        .thoughts
+        .iter()
+        .map(|thought| thought.detail.clone())
+        .collect()
+}
+
+/// The rival's city defends at `defence`: its best unit ever, less 10, plus
+/// what the city adds (the Palace's 3), read off a Warrior's 20 first.
+fn rival_defends_at(g: &mut Game, defence: i64) {
+    let city = g.city_at(RIVAL).unwrap();
+    let counters = &mut g.players[1].counters;
+    counters.insert("strongest_unit_built".to_string(), 20);
+    let base = g.city_strength(city) as i64;
+    g.players[1]
+        .counters
+        .insert("strongest_unit_built".to_string(), defence - base + 20);
+    assert_eq!(g.city_strength(city), defence as f64);
+}
+
+/// The window named on the rival's city at turn 40, with `legions` full
+/// Legions of ours beside our capital.
+fn named_with(legions: usize) -> (Game, AdvancedAi, u32, Vec<u32>) {
+    let (mut g, city) = fixture(&["mining", "bronze_working", "iron_working"]);
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 40.0);
+    let bodies: Vec<u32> = [(5, 9), (5, 7), (3, 8), (3, 9)]
+        .into_iter()
+        .take(legions)
+        .map(|pos| g.spawn_test_unit("legion", 0, pos))
+        .collect();
+    let mut ai = gene_on();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(window(&ai).target.map(|target| target.city), Some(city));
+    (g, ai, city, bodies)
+}
+
+/// A new turn for the force: every move back.
+fn fresh_moves(g: &mut Game, bodies: &[u32]) {
+    for uid in bodies {
+        if let Some(body) = g.units.get_mut(uid) {
+            body.moves_left = 2.0;
+            body.acted = false;
+        }
+    }
+}
+
+#[test]
+fn an_unwalled_city_at_edge_plus_six_stays_the_target_with_three_legions() {
+    // Live 205538Z: Mbamba, never walled, went from defence 17 to 34 while
+    // the force was raised, and the window closed at edge +6.
+    let (mut g, mut ai, city, bodies) = named_with(3);
+    let journal = crate::reasoning::Journal::recording();
+    ai.base.journal = journal.handle();
+    rival_defends_at(&mut g, 34);
+    g.turn = EDGE_LAST_TURN + 1;
+    fresh_moves(&mut g, &bodies);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let w = window(&ai);
+    let lines = details(&journal);
+    assert!(!w.spent, "{lines:?}");
+    assert_eq!(w.target.map(|target| target.city), Some(city));
+    assert_eq!(w.kept, Some("forecast"), "{lines:?}");
+    assert_eq!(counter(&g, "kept"), 1);
+    assert_eq!(counter(&g, "closed"), 0);
+    assert!(
+        lines.iter().any(
+            |line| line.starts_with("edge-unit-takes-the-soft-city: kept: ")
+                && line.contains("edge +6")
+                && line.contains("the forecast with the 3 legion owned beside it")
+        ),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn an_unwalled_city_keeps_to_the_floor_before_three_legions_are_owned() {
+    // One Legion owned: kept at edge +1, closed below -4.
+    let (mut g, mut ai, city, _) = named_with(1);
+    rival_defends_at(&mut g, 39);
+    g.turn = EDGE_LAST_TURN + 1;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let w = window(&ai);
+    assert!(!w.spent);
+    assert_eq!(w.target.map(|target| target.city), Some(city));
+    assert_eq!(w.kept, Some("edge"));
+    rival_defends_at(&mut g, 45);
+    g.turn += 1;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(window(&ai).spent);
+    assert_eq!(counter(&g, "closed"), 1);
+}
+
+#[test]
+fn a_walled_city_without_a_breaker_closes_past_the_naming_turn() {
+    // Behind walls the naming rule holds: no Masonry, no Ram, not the target.
+    let (mut g, mut ai, city, bodies) = named_with(3);
+    let journal = crate::reasoning::Journal::recording();
+    ai.base.journal = journal.handle();
+    rival_defends_at(&mut g, 34);
+    g.cities.get_mut(&city).unwrap().wall_hp = 100;
+    g.turn = EDGE_LAST_TURN + 1;
+    fresh_moves(&mut g, &bodies);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let lines = details(&journal);
+    assert!(window(&ai).spent, "{lines:?}");
+    assert_eq!(counter(&g, "closed"), 1);
+    assert_eq!(counter(&g, "kept"), 0);
+    assert!(
+        lines.iter().any(|line| line.starts_with(
+            "edge-unit-takes-the-soft-city: closed: past the naming turn the named city is no longer the target"
+        ) && line.contains("no breaker")),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn the_first_legion_denounces() {
+    let (g, _, _, _) = named_with(1);
+    assert!(!g.is_at_war(0, 1));
+    assert!(g.players[0]
+        .denounced_until
+        .get(&1)
+        .is_some_and(|until| *until > g.turn));
+    assert_eq!(counter(&g, "denounced"), 1);
+    // Never before a unit exists.
+    let (g, _, _, _) = named_with(0);
+    assert!(!g.players[0].denounced_until.contains_key(&1));
+    assert_eq!(counter(&g, "denounced"), 0);
+}
+
+#[test]
+fn gold_is_held_for_the_upgrades_while_the_window_is_open() {
+    // The first gene alone (no from-the-start flag): a Warrior that upgrades
+    // into a Legion holds its bill back from other purchases.
+    let (mut g, _) = fixture(&["mining", "bronze_working", "iron_working"]);
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 40.0);
+    g.spawn_test_unit("warrior", 0, CAPITAL);
+    let mut ai = gene_on();
+    assert_eq!(ai.edge_upgrade_gold_held(&g, 0), 0.0, "no window yet");
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(window(&ai).live());
+    let price = g
+        .unit_upgrade_price_in_formation(0, crate::name!("warrior"), legion(), 0)
+        .unwrap()
+        .0;
+    let held = ai.edge_upgrade_gold_held(&g, 0);
+    assert!(held > 0.0 && (held - price).abs() < 1e-6, "{held} {price}");
+    assert!(ai.purchase_upkeep_floor(&g, 0, 0.0) >= held);
+    assert_eq!(ai.edge_unit_held_for(&g, 0), Some(legion()));
+    // No body to upgrade, nothing held.
+    let (mut g, _) = fixture(&["mining", "bronze_working", "iron_working"]);
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 40.0);
+    let mut ai = gene_on();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(window(&ai).live());
+    assert_eq!(ai.edge_upgrade_gold_held(&g, 0), 0.0);
+}
+
+#[test]
+fn a_wounded_legion_heals_before_it_marches() {
+    let (mut g, _) = fixture(&["mining", "bronze_working", "iron_working"]);
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 40.0);
+    // Far from any city of ours: heals in place. Two tiles from the
+    // capital: heals in it. At full health: walks.
+    let afield = g.spawn_test_unit("legion", 0, (8, 2));
+    let near_home = g.spawn_test_unit("legion", 0, (6, 8));
+    let fit = g.spawn_test_unit("legion", 0, (5, 9));
+    for uid in [afield, near_home] {
+        g.units.get_mut(&uid).unwrap().hp = 50;
+    }
+    assert!(g
+        .player_city_ids(0)
+        .iter()
+        .all(|cid| g.wdist(g.cities[cid].pos, (8, 2)) > super::EDGE_HEAL_CITY_TILES));
+    assert!(g.wdist((6, 8), CAPITAL) <= super::EDGE_HEAL_CITY_TILES);
+    let fit_before = g.wdist(g.units[&fit].pos, RIVAL);
+    let mut ai = gene_on();
+    let journal = crate::reasoning::Journal::recording();
+    ai.base.journal = journal.handle();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let lines = details(&journal);
+    assert_eq!(g.units[&afield].pos, (8, 2), "{lines:?}");
+    assert!(g.units[&afield].moves_left <= 0.0);
+    assert!(g.wdist(g.units[&near_home].pos, CAPITAL) < 2, "{lines:?}");
+    assert!(g.wdist(g.units[&fit].pos, RIVAL) < fit_before, "{lines:?}");
+    assert_eq!(counter(&g, "heal"), 2, "{lines:?}");
+    assert!(
+        lines.iter().any(
+            |line| line.starts_with("edge-unit-takes-the-soft-city: heal: legion")
+                && line.contains("heals in place")
+        ),
+        "{lines:?}"
+    );
+    // The unit pass's staging hook holds the wounded too.
+    g.units.get_mut(&afield).unwrap().moves_left = 2.0;
+    assert_eq!(ai.edge_unit_staging_step(&mut g, 0, afield), Some(false));
+    assert_eq!(g.units[&afield].pos, (8, 2));
+    // Asked again the same episode, journalled once.
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(counter(&g, "heal"), 2);
+}
+
+/// Our third city, nearest the rival, and a fourth far from it.
+const THIRD: Pos = (9, 13);
+const FAR: Pos = (1, 18);
+
+#[test]
+fn three_cities_train_the_legion_at_once() {
+    let (mut g, _) = fixture(&["mining", "bronze_working", "iron_working", "pottery"]);
+    let third = g.found_city_for(0, THIRD, None);
+    let far = g.found_city_for(0, FAR, None);
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 40.0);
+    let capital = g.city_at(CAPITAL).unwrap();
+    let second = g.city_at(SECOND).unwrap();
+    let mut ai = gene_on();
+    // The opening book is done: the claim chain runs, not the turn start.
+    ai.base.book_pos = 4;
+    let journal = crate::reasoning::Journal::recording();
+    ai.base.journal = journal.handle();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(window(&ai).live());
+    let granary = Item::Building {
+        building: crate::name!("granary"),
+    };
+    let builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    for city in g.cities.values_mut() {
+        city.queue.clear();
+    }
+    g.cities.get_mut(&second).unwrap().queue = vec![granary.clone()];
+    g.cities.get_mut(&third).unwrap().queue = vec![builder.clone()];
+    ai.claim_edge_unit_queue(&mut g, 0);
+    let body = Item::Unit { unit: legion() };
+    for cid in [capital, second, third] {
+        assert_eq!(
+            g.cities[&cid].queue.first(),
+            Some(&body),
+            "{}: {:?}",
+            g.cities[&cid].name,
+            details(&journal)
+        );
+    }
+    assert!(
+        g.cities[&far].queue.is_empty(),
+        "the fourth city is left alone"
+    );
+    assert_eq!(AdvancedAi::edge_force(&g, 0, legion()), (0, 3));
+    let lines = details(&journal);
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("ahead of granary (it keeps its progress)")),
+        "{lines:?}"
+    );
+    // The Granary claim and its kin leave the queued Legion in place.
+    assert!(ai.first_capital_training_holds(&g, 0, second, &body));
+    assert!(!ai.first_capital_training_holds(&g, 0, far, &body));
+
+    // A city's first Settler is never deferred: the capital's went to the
+    // second city, so only the capital's Settler gives way.
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    for city in g.cities.values_mut() {
+        city.queue.clear();
+    }
+    g.cities.get_mut(&capital).unwrap().queue = vec![settler.clone()];
+    g.cities.get_mut(&second).unwrap().queue = vec![settler.clone()];
+    g.cities.get_mut(&third).unwrap().queue = vec![settler.clone()];
+    ai.claim_edge_unit_queue(&mut g, 0);
+    assert_eq!(g.cities[&capital].queue.first(), Some(&body));
+    assert_eq!(g.cities[&second].queue.first(), Some(&settler));
+    assert_eq!(g.cities[&third].queue.first(), Some(&settler));
+}
+
+#[test]
+fn during_the_opening_book_the_turn_start_fills_idle_queues_only() {
+    // Live 205538Z: the claim chain waits for the opening book, which held
+    // the capital to turn 37.
+    let (mut g, _) = fixture(&["mining", "bronze_working", "iron_working"]);
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 40.0);
+    let capital = g.city_at(CAPITAL).unwrap();
+    let second = g.city_at(SECOND).unwrap();
+    let builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    g.cities.get_mut(&second).unwrap().queue = vec![builder.clone()];
+    let mut ai = gene_on();
+    assert!(ai.base.book_pos < 4);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(
+        g.cities[&capital].queue.first(),
+        Some(&Item::Unit { unit: legion() })
+    );
+    assert_eq!(g.cities[&second].queue.first(), Some(&builder));
+}
+
+/// A Warrior in our capital and a Slinger in our second city; Archery and
+/// Iron Working known, Iron in stock, the counters reading only these two.
+fn two_upgrades_on_offer(gold: f64) -> (Game, AdvancedAi, u32, u32) {
+    let (mut g, city) = fixture(&["mining", "bronze_working", "iron_working", "archery"]);
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 40.0);
+    let warrior = g.spawn_test_unit("warrior", 0, CAPITAL);
+    let slinger = g.spawn_test_unit("slinger", 0, SECOND);
+    g.players[0].counters.remove("strongest_unit_built");
+    g.players[0].counters.remove("strongest_ranged_built");
+    g.players[0].gold = gold;
+    g.players[0].gold_per_turn = 5.0;
+    let mut ai = gene_on();
+    ai.enable_one_upgrade_lifts_every_city();
+    ai.edge_unit_window = Some(EdgeWindow {
+        unit: Some(legion()),
+        target: Some(EdgeTarget {
+            player: 1,
+            city,
+            pos: RIVAL,
+            owner_civ: g.players[1].civ.clone(),
+        }),
+        opened: Some(30),
+        ..EdgeWindow::default()
+    });
+    (g, ai, warrior, slinger)
+}
+
+fn price(g: &Game, from: &str, to: &str) -> f64 {
+    g.unit_upgrade_price_in_formation(0, Name::new(from), Name::new(to), 0)
+        .unwrap()
+        .0
+}
+
+#[test]
+fn with_gold_for_one_upgrade_the_legion_is_the_one_taken() {
+    // Gold for one of the two. The Archer lifts every city's strike by 10
+    // for less Gold than the Legion's 20 to defence, so the pass takes it
+    // first when nothing is held.
+    let (g, _, _, _) = two_upgrades_on_offer(0.0);
+    let (legion_bill, archer_bill) = (
+        price(&g, "warrior", "legion"),
+        price(&g, "slinger", "archer"),
+    );
+    assert!(10.0 / archer_bill > 20.0 / legion_bill);
+    let gold = legion_bill.max(archer_bill) + 1.0;
+    assert!(gold < legion_bill + archer_bill);
+
+    let (mut g, mut ai, warrior, slinger) = two_upgrades_on_offer(gold);
+    ai.edge_unit_window = None;
+    assert_eq!(ai.upgrades_that_lift_every_city(&mut g, 0), 1);
+    assert_eq!(g.units[&slinger].kind, crate::name!("archer"));
+    assert_eq!(g.units[&warrior].kind, crate::name!("warrior"));
+
+    // The window open and holding the Legion's bill: the Legion.
+    let (mut g, ai, warrior, slinger) = two_upgrades_on_offer(gold);
+    assert!((ai.edge_upgrade_gold_held(&g, 0) - legion_bill).abs() < 1e-6);
+    assert_eq!(ai.upgrades_that_lift_every_city(&mut g, 0), 1);
+    assert_eq!(g.units[&warrior].kind, legion());
+    assert_eq!(g.units[&slinger].kind, crate::name!("slinger"));
+    // Nothing is held once the Warrior is a Legion.
+    assert_eq!(ai.edge_upgrade_gold_held(&g, 0), 0.0);
+}
+
+#[test]
+fn the_warrior_to_legion_upgrade_is_bought_once_and_counted_in_the_force() {
+    // The one-upgrade pass buys it: the edge gene buys no second one and
+    // counts the Legion.
+    let (mut g, mut ai, warrior, _) = two_upgrades_on_offer(1_000.0);
+    let journal = crate::reasoning::Journal::recording();
+    ai.base.journal = journal.handle();
+    assert!(ai.upgrades_that_lift_every_city(&mut g, 0) >= 1);
+    assert_eq!(g.units[&warrior].kind, legion());
+    assert_eq!(AdvancedAi::edge_force(&g, 0, legion()).0, 1);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(counter(&g, "upgraded"), 0);
+    let lines = details(&journal);
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.contains("warrior to legion"))
+            .count(),
+        1,
+        "{lines:?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.starts_with("edge-unit-takes-the-soft-city: force: 1 legion owned")),
+        "{lines:?}"
+    );
+
+    // The edge gene's pass runs first in the turn: it buys it, and the
+    // one-upgrade pass after it buys no second one.
+    let (mut g, mut ai, warrior, _) = two_upgrades_on_offer(1_000.0);
+    ai.edge_unit_window = None;
+    let journal = crate::reasoning::Journal::recording();
+    ai.base.journal = journal.handle();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(g.units[&warrior].kind, legion());
+    assert_eq!(counter(&g, "upgraded"), 1);
+    ai.upgrades_that_lift_every_city(&mut g, 0);
+    let lines = details(&journal);
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.contains("warrior to legion"))
+            .count(),
+        1,
+        "{lines:?}"
+    );
 }
