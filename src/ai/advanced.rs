@@ -9519,6 +9519,11 @@ pub struct AdvancedAi {
     /// `guns-stay-out-of-reach` for the units it reads. See
     /// `advanced/priced_risk.rs`. Opt-in.
     risk_is_priced: bool,
+    /// `passage-waits-past-the-opening`: no Open Borders purchase before
+    /// Online turn 80 (speed-scaled), and after it none from a rival whose
+    /// military is over 1.5x ours; one journal line per withheld purchase.
+    /// See `advanced/passage_waits_past_the_opening.rs`. Opt-in.
+    passage_waits_past_the_opening: bool,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -12316,6 +12321,10 @@ mod envoys_open_the_siege_road;
 mod forward_airfield_project;
 mod frontier_walls_before_the_surprise;
 mod modernization_prices_the_path;
+/// `passage-waits-past-the-opening`: no Open Borders bought in the opening,
+/// none after it from a rival over 1.5x our military. See
+/// `advanced/passage_waits_past_the_opening.rs`.
+mod passage_waits_past_the_opening;
 /// `policy-swap-keeps-the-army-paid`: see
 /// `advanced/policy_swap_keeps_the_army_paid.rs`.
 mod policy_swap_keeps_the_army_paid;

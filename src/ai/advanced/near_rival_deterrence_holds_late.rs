@@ -12,7 +12,8 @@
 //!    and stops once we stand at the target.
 //! 2. **Production.** The opening gene's claim, unchanged in what it may take:
 //!    one idle or routine queue a turn trains the strongest land unit of the
-//!    role the army lacks (`combined_arms_unit`) in the city that finishes it
+//!    role the army lacks (`combined_arms_unit`; the ranged one is the
+//!    strongest non-siege shooter) in the city that finishes it
 //!    soonest, within `DETERRENCE_MAX_BUILD`, at most `DETERRENCE_MAX_QUEUED`
 //!    in training; the early city floor's Settler, Builders, Walls, wonders,
 //!    investments in progress and every claim hold the opening gene respects
