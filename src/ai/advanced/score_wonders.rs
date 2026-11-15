@@ -105,9 +105,18 @@
 //! Settler in its queue and not itself threatened or attacked lately. A city
 //! that already races keeps the lane while it qualifies. The capital races
 //! only when it qualifies. The rear lane stays shut on a Recovery plan, while
-//! the plan names a threatened city of ours, for four turns after any city of
-//! ours is attacked (war at the gates), and while a threat's cities are
-//! unseen. A standing race in any other city is held as version 2 holds it.
+//! the plan names a threatened city of ours, and for four turns after any
+//! city of ours is attacked (war at the gates). A standing race in any other
+//! city is held as version 2 holds it.
+//!
+//! **A threat whose cities are unseen** (version 2 holds for one: Portugal
+//! took Ostia at t58 of civvis-20261112T201530Z with none of its cities in
+//! sight) is measured by the land we have not explored: its cities stand on
+//! unexplored tiles, so a city with no unexplored land tile within nine
+//! tiles stands ten or more from them. Shutting the lane on any unseen
+//! threat instead kept it shut through most of the hold in the first eight
+//! paired sim games and, replayed on the live frames, in 24 of 41 turns
+//! t80-120 of civvis-20261115T153340Z and 19 of 41 of 164620Z.
 //!
 //! Journal: the rear lane opening, moving and closing, each naming the threat
 //! and the distance, and each rear start, all starting
@@ -168,12 +177,16 @@ pub(super) const SCORE_WONDER_V3_REAR_TILES: i32 = 10;
 const SCORE_WONDER_POINTS: f64 = 15.0;
 
 /// Version 3: the city that keeps the rear lane, the threat nearest to it
-/// and that threat's nearest known city's distance.
+/// and that threat's nearest known city's distance (or, for a threat whose
+/// cities are unseen, the distance to the nearest unexplored land tile).
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct ScoreWonderRear {
     pub(super) city: u32,
     pub(super) threat: usize,
     pub(super) tiles: i32,
+    /// False when the threat's cities are unseen and `tiles` is the bound
+    /// the nearest unexplored land puts on them.
+    pub(super) seen: bool,
 }
 
 /// One candidate race: the item, its turns, chance and expected points a turn.
@@ -295,35 +308,50 @@ impl AdvancedAi {
         if threats.is_empty() {
             return Err("no threat named".to_string());
         }
-        let mut sites: Vec<(usize, Pos)> = Vec::new();
-        for threat in &threats {
-            let before = sites.len();
-            sites.extend(
-                g.cities
-                    .values()
-                    .filter(|city| city.owner == *threat)
-                    .map(|city| (*threat, city.pos)),
-            );
-            if sites.len() == before {
-                return Err(format!("{}'s cities are unseen", g.players[*threat].civ));
-            }
-        }
-        // Each candidate's nearest threat city.
-        let nearest = |cid: u32| -> Option<(usize, i32)> {
+        let sites: Vec<(usize, Pos)> = g
+            .cities
+            .values()
+            .filter(|city| threats.contains(&city.owner))
+            .map(|city| (city.owner, city.pos))
+            .collect();
+        // A threat none of whose cities we know stands on land we have not
+        // explored, so the nearest unexplored land tile bounds it from below.
+        let unseen = threats
+            .iter()
+            .copied()
+            .find(|threat| !sites.iter().any(|(owner, _)| owner == threat));
+        let fog = |pos: Pos| -> i32 {
+            let explored = &g.players[pid].explored;
+            g.wdisk(pos, SCORE_WONDER_V3_REAR_TILES - 1)
+                .into_iter()
+                .filter(|tile| {
+                    !explored.contains(tile)
+                        && g.map.get(*tile).is_some_and(|t| !g.rules.is_water(t))
+                })
+                .map(|tile| g.wdist(pos, tile))
+                .min()
+                .unwrap_or(SCORE_WONDER_V3_REAR_TILES)
+        };
+        // Each candidate's nearest threat: (threat, tiles, its city seen).
+        let nearest = |cid: u32| -> Option<(usize, i32, bool)> {
             let pos = g.cities[&cid].pos;
-            sites
+            let known = sites
                 .iter()
-                .map(|(threat, site)| (*threat, g.wdist(pos, *site)))
+                .map(|(threat, site)| (*threat, g.wdist(pos, *site), true));
+            let fogged = unseen.map(|threat| (threat, fog(pos), false));
+            known
+                .chain(fogged)
                 .min_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)))
         };
-        let mut best: Option<(bool, f64, u32, usize, i32)> = None;
-        let mut farthest: Option<(i32, u32, usize)> = None;
+        let mut best: Option<(bool, f64, u32, (usize, i32, bool))> = None;
+        let mut farthest: Option<(i32, u32, (usize, i32, bool))> = None;
         for cid in city_ids {
-            let Some((threat, tiles)) = nearest(cid) else {
+            let Some(near) = nearest(cid) else {
                 continue;
             };
+            let tiles = near.1;
             if farthest.is_none_or(|(d, _, _)| tiles > d) {
-                farthest = Some((tiles, cid, threat));
+                farthest = Some((tiles, cid, near));
             }
             if tiles < SCORE_WONDER_V3_REAR_TILES
                 || !Self::score_wonder_city_safe(g, plan, cid)
@@ -334,7 +362,7 @@ impl AdvancedAi {
             // A city already racing keeps the lane; then the most productive.
             let racing = self.score_wonder_races.contains_key(&g.cities[&cid].pos);
             let production = g.city_yields(cid).production;
-            let better = best.is_none_or(|(r, p, c, _, _)| {
+            let better = best.is_none_or(|(r, p, c, _)| {
                 racing
                     .cmp(&r)
                     .then(production.total_cmp(&p))
@@ -342,28 +370,53 @@ impl AdvancedAi {
                     .is_gt()
             });
             if better {
-                best = Some((racing, production, cid, threat, tiles));
+                best = Some((racing, production, cid, near));
             }
         }
         match (best, farthest) {
-            (Some((_, _, city, threat, tiles)), _) => Ok(ScoreWonderRear {
+            (Some((_, _, city, (threat, tiles, seen))), _) => Ok(ScoreWonderRear {
                 city,
                 threat,
                 tiles,
+                seen,
             }),
-            (None, Some((tiles, cid, threat))) if tiles >= SCORE_WONDER_V3_REAR_TILES => {
+            (None, Some((tiles, cid, (threat, _, seen))))
+                if tiles >= SCORE_WONDER_V3_REAR_TILES =>
+            {
                 Err(format!(
-                    "no rear city may race: {} stands {tiles} tiles from {} but is unsafe or \
-                     trains a Settler",
-                    g.cities[&cid].name, g.players[threat].civ
+                    "no rear city may race: {} stands {} but is unsafe or trains a Settler",
+                    g.cities[&cid].name,
+                    Self::score_wonder_v3_distance(g, threat, tiles, seen)
                 ))
             }
-            (None, Some((tiles, cid, threat))) => Err(format!(
+            (None, Some((tiles, cid, (threat, _, seen)))) => Err(format!(
                 "no city stands {SCORE_WONDER_V3_REAR_TILES} tiles from the threat: the \
-                 farthest, {}, is {tiles} from {}",
-                g.cities[&cid].name, g.players[threat].civ
+                 farthest, {}, stands {}",
+                g.cities[&cid].name,
+                Self::score_wonder_v3_distance(g, threat, tiles, seen)
             )),
             (None, None) => Err("no city".to_string()),
+        }
+    }
+
+    /// Version 3: a journal phrase for a city's distance to its nearest
+    /// threat, known or bounded by unexplored land.
+    pub(super) fn score_wonder_v3_distance(
+        g: &Game,
+        threat: usize,
+        tiles: i32,
+        seen: bool,
+    ) -> String {
+        let civ = &g.players[threat].civ;
+        if seen {
+            format!("{tiles} tiles from {civ}'s nearest city")
+        } else if tiles >= SCORE_WONDER_V3_REAR_TILES {
+            format!(
+                "with {civ}'s cities unseen and no unexplored land within {} tiles",
+                SCORE_WONDER_V3_REAR_TILES - 1
+            )
+        } else {
+            format!("{tiles} tiles from unexplored land, where {civ}'s unseen cities may stand")
         }
     }
 
@@ -706,8 +759,9 @@ impl AdvancedAi {
         };
         let note = rear.as_ref().map(|rear| match rear {
             Ok(rear) => format!(
-                "{} keeps the rear lane, {} tiles from {}'s nearest city",
-                g.cities[&rear.city].name, rear.tiles, g.players[rear.threat].civ
+                "{} keeps the rear lane, {}",
+                g.cities[&rear.city].name,
+                Self::score_wonder_v3_distance(g, rear.threat, rear.tiles, rear.seen)
             ),
             Err(why) => format!("the rear lane is shut: {why}"),
         });
@@ -806,11 +860,11 @@ impl AdvancedAi {
                     .or_insert(0) += 1;
                 think!(self.journal(), Cities, Decision,
                        "{} raises {} in the rear", g.cities[&cid].name, plain(wonder.as_str());
-                       "score-seat-raises-wonders-3: the rear lane through the hold ({}), {} \
-                        tiles from {}'s nearest city; {} points ({} and a {} Era Score moment) \
-                        for {cost:.0} Production, about {:.0} turns, a {:.0}% chance to finish \
-                        first; it goes ahead of {passed}",
-                       hold.as_deref().unwrap_or(""), rear.tiles, g.players[rear.threat].civ,
+                       "score-seat-raises-wonders-3: the rear lane through the hold ({}), {}; \
+                        {} points ({} and a {} Era Score moment) for {cost:.0} Production, about \
+                        {:.0} turns, a {:.0}% chance to finish first; it goes ahead of {passed}",
+                       hold.as_deref().unwrap_or(""),
+                       Self::score_wonder_v3_distance(g, rear.threat, rear.tiles, rear.seen),
                        SCORE_WONDER_POINTS as u32 + pick.moment, SCORE_WONDER_POINTS as u32,
                        pick.moment, pick.turns, pick.chance * 100.0);
                 continue;

@@ -757,3 +757,41 @@ fn a_rear_race_is_held_once_its_city_stops_qualifying() {
         .as_deref()
         .is_some_and(|note| note.contains("no city stands 10 tiles")));
 }
+
+/// ★ A threat none of whose cities we know is bounded by unexplored land:
+/// with unexplored land within nine tiles of every city the lane stays shut;
+/// once everything within nine tiles of the capital is explored, the capital
+/// keeps the lane.
+#[test]
+fn an_unseen_threat_is_bounded_by_unexplored_land() {
+    let plan = plan_wanting(90, 3);
+    let (mut g, capital) = three_cities(90);
+    g.players[0].met.insert(1);
+    g.players[1].met.insert(0);
+    g.at_war.insert((0, 1));
+    // The seat's view knows no city of the rival's.
+    g.cities.retain(|_, city| city.owner != 1);
+    g.players[0].explored.clear();
+    let monument = Item::Building {
+        building: crate::name!("monument"),
+    };
+    for cid in g.player_city_ids(0) {
+        g.cities.get_mut(&cid).unwrap().queue = vec![monument.clone()];
+    }
+    let mut v3 = seat_v3();
+    let shut = v3.score_wonder_v3_rear(&g, 0, &plan).unwrap_err();
+    assert!(shut.contains("unexplored land"), "{shut}");
+    v3.claim_queue_for_the_score_wonder(&mut g, 0, &plan, true);
+    assert!(!races(&g, capital));
+
+    let around = g.wdisk(g.cities[&capital].pos, SCORE_WONDER_V3_REAR_TILES - 1);
+    g.players[0].explored.extend(around);
+    let picked = v3.score_wonder_v3_rear(&g, 0, &plan).expect("a rear city");
+    assert_eq!((picked.city, picked.seen), (capital, false));
+    v3.claim_queue_for_the_score_wonder(&mut g, 0, &plan, true);
+    assert!(races(&g, capital));
+    assert!(v3
+        .score_wonder_rear_note
+        .as_deref()
+        .is_some_and(|note| note.contains("cities unseen")));
+}
