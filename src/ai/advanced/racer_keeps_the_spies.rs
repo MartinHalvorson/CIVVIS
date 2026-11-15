@@ -598,11 +598,7 @@ impl AdvancedAi {
     pub(crate) fn racer_spy_disrupt_offered(g: &Game, spy: u32, legal: &[Action]) -> bool {
         legal.iter().any(|action| {
             matches!(action, Action::SpyMission { mission, .. } if mission == "disrupt_rocketry")
-        }) || g
-            .host_unit_facts
-            .get(&spy)
-            .and_then(|facts| facts.spy_missions.as_ref())
-            .is_some_and(|menu| menu.contains("disrupt_rocketry"))
+        }) || Self::host_lists_spy_mission(g, spy, "disrupt_rocketry")
     }
 
     /// Whether this seat can run the Disrupt Rocketry offered to `spy` where
@@ -623,12 +619,7 @@ impl AdvancedAi {
         }) {
             return true;
         }
-        let host_offers = g
-            .host_unit_facts
-            .get(&spy)
-            .and_then(|facts| facts.spy_missions.as_ref())
-            .is_some_and(|menu| menu.contains("disrupt_rocketry"));
-        host_offers
+        Self::host_lists_spy_mission(g, spy, "disrupt_rocketry")
             && g.spies
                 .get(&spy)
                 .and_then(|agent| agent.city)

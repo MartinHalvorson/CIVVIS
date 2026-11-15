@@ -222,16 +222,6 @@ impl AdvancedAi {
         pads.retain(|cid| !self.science_denial_refused_pads.contains_key(cid));
     }
 
-    /// The spy of ours that holds `cid`: the lowest id posted or travelling
-    /// there, so of two in one city exactly one stays.
-    fn every_pad_holder(g: &Game, pid: usize, cid: u32) -> Option<u32> {
-        g.spies
-            .values()
-            .filter(|spy| spy.owner == pid && spy.captured_by.is_none() && spy.city == Some(cid))
-            .map(|spy| spy.id)
-            .min()
-    }
-
     /// What posting `spy` to `cid` is worth under the gene:
     /// [`EVERY_PAD_ASSIGN_PRIORITY`] for a pad city no other spy of ours
     /// holds, nothing elsewhere or with the gene off (`pads` empty).
@@ -242,26 +232,7 @@ impl AdvancedAi {
         pads: &BTreeSet<u32>,
         cid: u32,
     ) -> i32 {
-        if !pads.contains(&cid) {
-            return 0;
-        }
-        let held = g
-            .spies
-            .values()
-            .any(|other| other.owner == pid && other.id != spy && other.city == Some(cid));
-        if held {
-            0
-        } else {
-            EVERY_PAD_ASSIGN_PRIORITY
-        }
-    }
-
-    /// Whether the host lists Disrupt Rocketry on `spy`'s own menu.
-    fn every_pad_host_offers_disrupt(g: &Game, spy: u32) -> bool {
-        g.host_unit_facts
-            .get(&spy)
-            .and_then(|facts| facts.spy_missions.as_ref())
-            .is_some_and(|menu| menu.contains("disrupt_rocketry"))
+        Self::unheld_spy_target_bonus(g, pid, spy, pads, cid, EVERY_PAD_ASSIGN_PRIORITY)
     }
 
     /// The free pad city an idle `spy` standing in a foreign city should
@@ -274,18 +245,7 @@ impl AdvancedAi {
         current_city: Option<u32>,
         pads: &BTreeSet<u32>,
     ) -> Option<u32> {
-        let here = current_city?;
-        let city = g.cities.get(&here)?;
-        if city.owner == pid || Self::every_pad_host_offers_disrupt(g, spy) {
-            return None;
-        }
-        if pads.contains(&here) && Self::every_pad_holder(g, pid, here) == Some(spy) {
-            return None;
-        }
-        pads.iter()
-            .copied()
-            .filter(|cid| *cid != here && Self::every_pad_holder(g, pid, *cid).is_none())
-            .min_by_key(|cid| (g.wdist(city.pos, g.cities[cid].pos), *cid))
+        Self::spy_repost_to_free_target(g, pid, spy, current_city, pads, "disrupt_rocketry")
     }
 
     /// The standing Spaceport of `owner` that a host's Disrupt Rocketry from
@@ -335,7 +295,7 @@ impl AdvancedAi {
         if let Some(action) = disrupt(g) {
             return Some(action);
         }
-        if !Self::every_pad_host_offers_disrupt(g, spy) {
+        if !Self::host_lists_spy_mission(g, spy, "disrupt_rocketry") {
             return None;
         }
         let pad = Self::every_pad_refile_pad(g, owner, centre)?;

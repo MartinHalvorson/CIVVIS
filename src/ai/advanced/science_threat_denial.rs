@@ -438,18 +438,7 @@ impl AdvancedAi {
         pads: &BTreeSet<u32>,
         cid: u32,
     ) -> i32 {
-        if !pads.contains(&cid) {
-            return 0;
-        }
-        let posted = g
-            .spies
-            .values()
-            .any(|other| other.owner == pid && other.id != spy && other.city == Some(cid));
-        if posted {
-            0
-        } else {
-            DENIAL_SPY_ASSIGN_PRIORITY
-        }
+        Self::unheld_spy_target_bonus(g, pid, spy, pads, cid, DENIAL_SPY_ASSIGN_PRIORITY)
     }
 
     /// Rung 2: what a `disrupt_rocketry` run against a threat is worth beyond
@@ -486,15 +475,6 @@ impl AdvancedAi {
             .map(|(cid, _)| cid)
     }
 
-    /// Whether a spy of ours other than `spy` is in, or on its way to, `cid`.
-    /// The engine sets `Spy::city` to the destination the turn the order is
-    /// given, so one read covers the posted and the travelling agent.
-    fn science_denial_pad_is_held(g: &Game, pid: usize, spy: u32, cid: u32) -> bool {
-        g.spies
-            .values()
-            .any(|other| other.owner == pid && other.id != spy && other.city == Some(cid))
-    }
-
     /// `science-denial-spy-reads-the-leader`: what posting `spy` to `cid` is
     /// worth beyond [`AdvancedAi::science_denial_spy_assignment_bonus`] —
     /// [`DENIAL_LEADER_SPY_ASSIGN_PRIORITY`] for the leading threat's launch
@@ -508,7 +488,7 @@ impl AdvancedAi {
         leader: Option<u32>,
         cid: u32,
     ) -> i32 {
-        if leader != Some(cid) || Self::science_denial_pad_is_held(g, pid, spy, cid) {
+        if leader != Some(cid) || Self::other_spy_of_ours_in(g, pid, spy, cid) {
             0
         } else {
             DENIAL_LEADER_SPY_ASSIGN_PRIORITY
@@ -538,7 +518,7 @@ impl AdvancedAi {
         here.id != leader
             && here.owner != pid
             && !threats.contains(&here.owner)
-            && !Self::science_denial_pad_is_held(g, pid, spy, leader)
+            && !Self::other_spy_of_ours_in(g, pid, spy, leader)
     }
 
     // ---- Rung 3: the raid -------------------------------------------------
