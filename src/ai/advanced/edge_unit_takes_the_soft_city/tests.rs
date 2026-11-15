@@ -1401,7 +1401,17 @@ fn the_rush_reaches_fifteen_tiles_for_the_war_cart() {
     let city = g.found_city_for(1, far, None);
     g.players[0].explored.insert(far);
     assert_eq!(g.wdist(CAPITAL, far), 12);
+    g.cities.get_mut(&near).unwrap().is_capital = true;
+    g.cities.get_mut(&city).unwrap().is_capital = false;
     let mut ai = rush_on(VictoryTarget::Score);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    // Not the rival's capital and more than nine tiles from every city of
+    // ours: no citizen of ours presses on it, so it would leave on Loyalty
+    // (live 100810Z: taken at turn 28, a Free City at turn 33). Not named.
+    assert_eq!(window(&ai).target, None);
+    // The rival's capital there carries its own pressure: named.
+    g.cities.get_mut(&near).unwrap().is_capital = false;
+    g.cities.get_mut(&city).unwrap().is_capital = true;
     ai.maintain_edge_unit_window(&mut g, 0);
     assert_eq!(window(&ai).target.map(|target| target.city), Some(city));
 }
@@ -1772,6 +1782,9 @@ fn the_rush_names_the_near_city_over_a_slightly_softer_far_one() {
     let far = (16, 8);
     let other = g.found_city_for(1, far, None);
     g.players[0].explored.insert(far);
+    // The far one is the rival's capital, so its distance does not bar it.
+    g.cities.get_mut(&near).unwrap().is_capital = false;
+    g.cities.get_mut(&other).unwrap().is_capital = true;
     let ai = rush_on(VictoryTarget::Score);
     let read = |g: &Game, cid: u32| {
         ai.edge_read_city(g, 0, 30.0, cid, &[CAPITAL], 15)

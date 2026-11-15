@@ -133,8 +133,10 @@
 //!   [`edge_rush_reach`] of ours at an edge of [`EDGE_RUSH_MIN`] or better
 //!   (a walled one keeps the base rule), the nearest of those at
 //!   [`EDGE_MIN`] or better, else the lowest march (tiles less the edge
-//!   over [`EDGE_RUSH_EDGE_PER_TILE`]), and only one the force can stand at
-//!   by turn [`EDGE_RUSH_ARRIVE_BY`]; none is named past turn
+//!   over [`EDGE_RUSH_EDGE_PER_TILE`]), only one the force can stand at
+//!   by turn [`EDGE_RUSH_ARRIVE_BY`], and, unless it is a capital, only one
+//!   within [`EDGE_RUSH_LOYAL_TILES`] of a city of ours (farther, it leaves
+//!   on Loyalty within turns of its capture); none is named past turn
 //!   [`EDGE_RUSH_NAME_TURN`]; kept while unwalled and the edge is
 //!   [`EDGE_UNWALLED_FLOOR`] or better, and at any edge while
 //!   [`EDGE_MUSTER_BODIES`] edge units stand mustered at it. While the rush
@@ -319,6 +321,14 @@ pub(crate) const EDGE_RUSH_NAME_TURN: u32 = 32;
 /// War-Carts were trained for it, and it stood walled at turn 34 with the
 /// nearest of them six tiles away.
 pub(crate) const EDGE_RUSH_ARRIVE_BY: u32 = 34;
+/// The rush names a rival city that is not its owner's capital only this
+/// near a city of ours: past it no citizen of ours presses on the city, and
+/// it leaves on Loyalty within a few turns of its capture. Live 100810Z
+/// (Gilgamesh, Deity): Tskhumi, 14 tiles from our capital and three from
+/// Georgia's, was taken at turn 28 at Loyalty 50, lost 10-13 a turn with a
+/// unit inside it, and became a Free City at turn 33; four of six War-Carts
+/// died around it. A capital carries its own citizens' pressure.
+pub(crate) const EDGE_RUSH_LOYAL_TILES: i32 = 9;
 /// Tiles a turn the force covers on its march (live 094137Z: a War-Cart
 /// came 14 tiles in nine turns over hills, jungle and rivers).
 pub(crate) const EDGE_RUSH_TILES_PER_TURN: f64 = 1.5;
@@ -921,6 +931,10 @@ impl AdvancedAi {
             };
             let floor = if soft.walls { EDGE_MIN } else { EDGE_RUSH_MIN };
             if soft.edge + 1e-9 < floor {
+                continue;
+            }
+            // A city our citizens do not press on is not held once taken.
+            if !city.is_capital && soft.tiles > EDGE_RUSH_LOYAL_TILES {
                 continue;
             }
             // A city the force cannot stand at in time is not named: it is
