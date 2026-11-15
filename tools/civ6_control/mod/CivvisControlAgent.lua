@@ -21228,8 +21228,11 @@ CivvisQueue.drain = function(player, pid, turn)
 						-- Name the unit whose follow-ups are refused and the state it
 						-- was in: the refusal is counted by reason only, so a frame
 						-- held to the cap could not say which unit held it or why.
+						-- Its own name: `queue_prior_refused` is already the reason
+						-- the dispatcher counts for a follow-up of a REFUSED first
+						-- order, and a search for one found both.
 						if #entry.rows > 0 then
-							emit("queue_prior_refused", {
+							emit("queue_follow_up_unlanded", {
 								turn = turn, unit = subject, unit_kind = unitTypeName(unit),
 								tick = entry.wait, at_grace = entry.wait >= grace,
 								at = { ux, uy },
