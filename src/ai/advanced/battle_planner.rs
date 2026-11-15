@@ -1652,6 +1652,39 @@ impl AdvancedAi {
                     field.reaches.len(),
                     fresh.reaches.len()
                 );
+                for unit in g
+                    .units
+                    .values()
+                    .filter(|unit| hostile_in_field(g, pid, unit))
+                {
+                    let id = unit.id;
+                    let envelope = envelopes
+                        .binary_search_by_key(&id, |(hostile, _)| *hostile)
+                        .ok()
+                        .map(|at| envelopes[at].1.iter().copied().collect::<Vec<_>>());
+                    let flood = g.attack_reach(id);
+                    let kept_flood = field.floods.get(&id);
+                    let kept_reach = field.reaches.iter().find(|(hostile, _)| *hostile == id);
+                    let fresh_reach = fresh.reaches.iter().find(|(hostile, _)| *hostile == id);
+                    if envelope.as_ref().is_some_and(|tiles| *tiles != flood)
+                        || kept_flood != fresh.floods.get(&id)
+                        || kept_reach != fresh_reach
+                    {
+                        eprintln!(
+                            "  hostile {id} {} owner {} at {:?} air {}: envelope {} flood {} \
+                             (envelope==flood {}), strike kept {} fresh {}",
+                            unit.kind.as_str(),
+                            unit.owner,
+                            unit.pos,
+                            g.rules.units[unit.kind].domain.as_deref() == Some("air"),
+                            envelope.as_ref().map_or(-1, |tiles| tiles.len() as i64),
+                            flood.len(),
+                            envelope.as_ref().is_none_or(|tiles| *tiles == flood),
+                            kept_reach.map_or(0, |(_, reach)| reach.len()),
+                            fresh_reach.map_or(0, |(_, reach)| reach.len()),
+                        );
+                    }
+                }
             }
             return fresh;
         }
