@@ -21559,8 +21559,30 @@ CivvisQueue.drain = function(player, pid, turn)
 								q.stats.refusals[key] = (q.stats.refusals[key] or 0) + 1;
 							end
 							entry.next = entry.next + 1;
+							-- ★ A MOVE ISSUED FROM THE QUEUE IS WATCHED UNTIL IT LANDS, like
+							-- the walk of a first order (`CivvisQueue.watch`). A unit's last
+							-- queued row left nothing in the queue, so a move released from a
+							-- column or war wait went out, the queue read as drained, and the
+							-- replan frame was exported with the unit still on the plot it was
+							-- leaving. The decider then planned it from there: on
+							-- civvis-20261115T120431Z, 113645Z and 101703Z, 36, 40 and 61
+							-- units a game were shown unmoved in a replan board and then moved,
+							-- and the frame re-sent the same move (refused: the unit was
+							-- already there), sent the unit somewhere else from the wrong plot,
+							-- or sent it nothing. Before the column wait existed
+							-- (075925Z) there were none.
+							local landing = nil;
 							if entry.next > #entry.rows then
-								q.pending[subject] = nil;
+								if ok and verb == "MOVE_TO" then landing = CivvisQueue.expectFor(row); end
+								if landing ~= nil and (ux ~= landing.x or uy ~= landing.y) then
+									q.pending[subject] = {
+										rows = {}, next = 1, expect = landing, origin = { x = ux, y = uy },
+										ready = false, wait = 0, settle_passes = 0, opening_verb = "MOVE_TO",
+									};
+									q.watching = q.watching + 1;
+								else
+									q.pending[subject] = nil;
+								end
 							else
 								entry.expect = ok and CivvisQueue.expectFor(row) or nil;
 								entry.ready = false;
