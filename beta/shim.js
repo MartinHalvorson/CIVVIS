@@ -399,8 +399,8 @@
   // The pace and the between-game hold the page is about to ask for, sent
   // ahead of its first read.
   //
-  // The module opens every world at Blitz with a ten-second hold; the viewer
-  // opens the public site at Lightning with a five-second one, or on whatever
+  // The module opens every world at 2 turns/s with a ten-second hold; the viewer
+  // opens the public site at Max with a five-second one, or on whatever
   // the visitor last picked. It used to say so only after its first paint:
   // two `/pace` posts on the first frame, each answered with a whole state
   // the page parsed and drew again, in the same moment the first turns were
@@ -414,10 +414,10 @@
   // own choice on its first frame exactly as it always has.
   //
   // A link that configured its own world keeps the module's pace: a Tactics
-  // battle opens at Blitz whatever the visitor watches full games at, and the
+  // battle opens at 2 turns/s whatever the visitor watches full games at, and the
   // viewer is the one that knows which kind of world arrived.
   const WATCH_PACE_KEY = "civvis-watch-pace";
-  const WATCH_PACES_MS = new Set([0, 500, 1000, 2000, 4000]);
+  const WATCH_PACES_MS = new Set([0, 200, 500, 1000, 2000, 4000, 10000]);
   const PUBLISHED_SITE_PACE_MS = 0;
   const FINALE_KEY = "civvis-between-game-countdown";
   const DEFAULT_FINALE_MS = 5000;

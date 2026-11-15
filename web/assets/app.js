@@ -3460,7 +3460,7 @@ const RESPONSIVE_TEXT_RULES = [
   // exact amount it is too big by — and one size for every row is what keeps
   // four adjacent settings looking like one instrument.
   {selector:"#playerhud .turn-settings", min:8.5, max:12, slack:4},
-  // Watch pace sits alone above the age, so it is fitted on its own.
+  // Max Speed sits alone above the age, so it is fitted on its own.
   {selector:"#playerhud .turn-pace-line", min:8.5, max:12, slack:4},
   {selector:"#victoryhud .hud-section-heading > span", min:8.5, max:12, parentWidth:true},
   {selector:".dossier-window .dossier-title", min:11, max:18},
@@ -7676,7 +7676,7 @@ function adoptTiles(st) {
 // Martin-requested simulation requirement: every published boundary is owed
 // one complete frame from one snapshot — updated HUD, victory tracker, map,
 // minimap, units, sidebars, controls, and everything else bound to that frame.
-// At Blitz and slower, a boundary follows every player's turn; Lightning uses
+// At 2 turns/s and slower, a boundary follows every player's turn; faster caps use
 // the end of the round. The server holds each boundary until an active viewer
 // acknowledges that complete paint. Only a page that actually paints
 // counts as one: the keeper's refresh check and any curl read /state as well,
@@ -7937,12 +7937,12 @@ setInterval(followLiveServer, FOLLOW_POLL_MS);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) followLiveServer();
 });
-// Watch pace is a whole-turn budget. Lightning is zero, so the server takes no
-// wait at all. A pick also has to outlive the server that received it. Every
-// game is a new process starting at the default half-second per turn, and the
-// exhibition cycles games all day. A viewer who chose Lightning was quietly
-// returned to Blitz at the next world. A chosen pace is remembered and handed
-// to whatever server the page finds itself talking to.
+// Max Speed is a whole-turn budget shown as a cap in turns/s (operator 11-15:
+// Max default, then 5, 2, 1, 0.5, 0.25, 0.1). Max is zero: no wait at all. A
+// pick has to outlive the server that received it — every game is a new
+// process at the default half-second per turn, and a viewer who chose Max was
+// quietly returned to 2 turns/s at the next world — so a chosen pace is
+// remembered and handed to whatever server the page finds itself talking to.
 const PACE_KEY = "civvis-watch-pace";
 let paceRealigned = false;
 let paceDisagreed = 0;
@@ -7951,7 +7951,7 @@ let paceAsserted = null; // the server pace we have already answered with a push
 // The viewer's own pace, null until they pick one, or on the published site
 // until its opening pace stands in for one. Distinct from paceChoice,
 // which is what the world on screen is being held at: the two differ exactly
-// while a Tactics battle borrows Blitz over a slower preference, and this is
+// while a Tactics battle borrows 2 turns/s over a slower preference, and this is
 // what the next full game goes back to.
 let pacePreference = null;
 function paceHeldOpen() {
@@ -7977,7 +7977,7 @@ function rememberPace(ms) {
   paceDisagreed = 0;
   try { localStorage.setItem(PACE_KEY, String(ms)); } catch (e) {}
 }
-// The published site opens at Lightning; a desktop build opens on whatever its
+// The published site opens at Max; a desktop build opens on whatever its
 // server reports. Soft in the same way as the Tactics default below: paceChoice
 // tells the module on its first frame and nothing reaches localStorage, so a
 // pace the viewer picked by hand still wins.
@@ -7996,7 +7996,7 @@ function restorePace() {
   select.value = String(ms);
 }
 // A Tactics battle is decided in a couple of minutes, so every Tactics world
-// opens at Blitz — a pace remembered from a full game makes a skirmish crawl,
+// opens at 2 turns/s — a pace remembered from a full game makes a skirmish crawl,
 // and the pace select is right there for anyone who wants to slow it down.
 // The viewer's own pace waits in pacePreference and comes back with the next
 // full game. Held as a soft choice exactly like the between-game countdown's
@@ -8004,7 +8004,7 @@ function restorePace() {
 // server about it once, and never into localStorage, where a later session
 // would read it back as a preference nobody expressed. Called once per world,
 // so a pace picked during a battle stands for that battle and the next
-// Tactics world opens at Blitz again.
+// Tactics world opens at 2 turns/s again.
 const TACTICS_PACE_MS = 500;
 function applyWorldPaceDefault(tactics) {
   const select = document.getElementById("specspeed");
@@ -8021,7 +8021,7 @@ function specPace() {
   const select = document.getElementById("specspeed");
   return select ? +select.value : 500;
 }
-// The interval is a browser preference like watch pace rather than a world
+// The interval is a browser preference like Max Speed rather than a world
 // setting. A supervised successor is a fresh process, so remember it here and
 // reassert it if that process opens at the stock ten seconds.
 const BETWEEN_GAME_COUNTDOWN_KEY = "civvis-between-game-countdown";
@@ -8160,7 +8160,7 @@ function refreshRenderResolution() {
 // At rapid exhibition speeds the acting seat changes too quickly to read; its
 // marker becomes a flickering distraction rather than useful turn context.
 // Two seconds is the first pace where the viewer can follow a whole turn, so
-// only Standard and slower paces mark the acting civilization in the HUD.
+// only 0.5 turns/s and slower mark the acting civilization in the HUD.
 const PLAYER_HUD_ACTIVE_MIN_PACE_MS = 2000;
 function highlightActingPlayerInHud() {
   const pace = Number(state?.pace);
@@ -8200,7 +8200,7 @@ function updateBetweenGameCountdownControl(st) {
              betweenGameCountdownOffered(select, betweenGameCountdownChoice) &&
              !betweenGameCountdownHeldOpen()) {
     // A newly spawned supervised process begins at its safe default. The
-    // viewer's saved choice wins, just as it does for watch pace.
+    // viewer's saved choice wins, just as it does for Max Speed.
     select.value = String(betweenGameCountdownChoice);
     if (betweenGameCountdownAsserted !== serverMs) {
       betweenGameCountdownAsserted = serverMs;
@@ -8723,7 +8723,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // Tactics world counts down in 3s unless the viewer has picked an
     // interval by hand.
     applyBetweenGameCountdownDefault(tactics);
-    // And the watch pace: a Tactics world opens at Blitz, a full game at
+    // And Max Speed: a Tactics world opens at 2 turns/s, a full game at
     // whatever the viewer's own pace is.
     applyWorldPaceDefault(tactics);
     const majors = st.players.filter(p => !p.is_minor && !p.is_barbarian).length;
@@ -27783,15 +27783,15 @@ function hudTurnPlate() {
   const liveLevel = livePause.available ? difficultyLevel(state.difficulty) : null;
   const paceSelect = document.getElementById("specspeed");
   const paceOption = paceSelect?.selectedOptions[0];
-  const watchPace = SPEC ? paceOption?.textContent.trim() || "Blitz" : "Manual";
+  const watchPace = SPEC ? paceOption?.textContent.trim() || "2 turns/s" : "Manual";
   const watchPaceOptions = SPEC && paceSelect
     ? [...paceSelect.options].map(option =>
         `<option value="${escapeAttr(option.value)}"${option.value === paceOption?.value ? " selected" : ""}>` +
         `${escapeAttr(option.textContent.trim())}</option>`).join("")
     : "";
   const watchPaceValue = SPEC
-    ? `<span class="turn-pace-choice"><select data-hud-pace title="Change watch pace" ` +
-      `aria-label="Watch pace">${watchPaceOptions}</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span>`
+    ? `<span class="turn-pace-choice"><select data-hud-pace title="Change max speed" ` +
+      `aria-label="Max speed">${watchPaceOptions}</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span>`
     : `<b>${watchPace}</b>`;
   // The map first, as the lobby names it: how many civilizations were dealt
   // and on which script ("4P Pangaea"). The dealt count includes the fallen.
@@ -27872,7 +27872,7 @@ function hudTurnPlate() {
     : ``;
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
     (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
-    `watch pace ${watchPace}; ` +
+    `max speed ${watchPace}; ` +
     `map ${mapRowValue}; ` +
     (liveLevel ? `difficulty level ${liveLevel.level}, ${liveLevel.name}; ` : ``) +
     `game speed ${speedName}; ` +
@@ -27898,7 +27898,7 @@ function hudTurnPlate() {
       ? `<div class="turn-live" title="How long this world has been playing. Pauses stop the clock; a restart starts it over.">` +
         `<span class="turn-label">Live time</span><b data-live-time>${liveTimeText}</b></div>`
       : ``) +
-    `<div class="turn-setting turn-pace-line"><span>Watch pace:</span>${watchPaceValue}</div>` +
+    `<div class="turn-setting turn-pace-line"><span>Max Speed:</span>${watchPaceValue}</div>` +
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="${turnCountClasses}"><span class="turn-label">Turn</span>` +
     `<div class="turn-progress"><strong>${reportedTurn()}</strong>` +

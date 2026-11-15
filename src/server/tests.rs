@@ -8453,13 +8453,13 @@ fn the_stock_opening_world_is_the_tiny_tennis_ball_exhibition() {
     assert_eq!(params.seed, 7);
 }
 
-/// civvis.ai opens at Lightning without a desktop build moving: the choice
+/// civvis.ai opens at Max Speed without a desktop build moving: the choice
 /// is the viewer's, gated to the hosts that serve the published site, and it
 /// never reaches `localStorage`, so a pace somebody picked by hand still wins.
-/// The markup's own Blitz is what a desktop page shows before its server
+/// The markup's own 2 turns/s is what a desktop page shows before its server
 /// reports in.
 #[test]
-fn the_published_site_opens_at_lightning_as_a_soft_choice() {
+fn the_published_site_opens_at_max_speed_as_a_soft_choice() {
     assert!(EMBEDDED_INDEX.contains(
         "window.CIVVIS_PUBLISHED_SITE = /(^|\\.)civvis\\.ai$|\\.pages\\.dev$/.test(location.hostname);"
     ));
@@ -8467,7 +8467,7 @@ fn the_published_site_opens_at_lightning_as_a_soft_choice() {
     assert!(
         EMBEDDED_INDEX.contains(": window.CIVVIS_PUBLISHED_SITE ? PUBLISHED_SITE_PACE_MS : null;")
     );
-    assert!(EMBEDDED_INDEX.contains("<option value=\"500\" selected>Blitz</option>"));
+    assert!(EMBEDDED_INDEX.contains("<option value=\"500\" selected>2 turns/s</option>"));
     assert_eq!(
         EMBEDDED_INDEX
             .matches("localStorage.setItem(PACE_KEY")
@@ -8475,6 +8475,32 @@ fn the_published_site_opens_at_lightning_as_a_soft_choice() {
         1,
         "only a hand-picked pace is remembered"
     );
+}
+
+/// The control is Max Speed (operator 2026-11-15): a cap in turns per second,
+/// Max first and unpaced, then 5, 2, 1, 0.5, 0.25 and 0.1 turns a second.
+/// Each value is the whole-turn budget in milliseconds the server already
+/// takes, so a pace remembered under the old names keeps its meaning.
+#[test]
+fn max_speed_offers_turns_per_second_caps() {
+    assert!(EMBEDDED_INDEX.contains("<div class=\"speed-row\"><span>Max Speed</span>"));
+    let ladder = concat!(
+        "<option value=\"0\">Max</option>\n",
+        "              <option value=\"200\">5 turns/s</option>\n",
+        "              <option value=\"500\" selected>2 turns/s</option>\n",
+        "              <option value=\"1000\">1 turn/s</option>\n",
+        "              <option value=\"2000\">0.5 turns/s</option>\n",
+        "              <option value=\"4000\">0.25 turns/s</option>\n",
+        "              <option value=\"10000\">0.1 turns/s</option>\n",
+        "            </select>",
+    );
+    assert!(
+        EMBEDDED_INDEX.contains(ladder),
+        "the Max Speed ladder moved"
+    );
+    assert!(EMBEDDED_INDEX.contains("<span>Max Speed:</span>${watchPaceValue}"));
+    assert!(!EMBEDDED_INDEX.contains(">Lightning</option>"));
+    assert!(!EMBEDDED_INDEX.contains(">Blitz</option>"));
 }
 
 /// The product is hard-committed to sequential turns: the stock world
