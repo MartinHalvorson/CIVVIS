@@ -7017,6 +7017,12 @@ pub struct AdvancedAi {
     /// the original capital, by owner, under
     /// `capital-archers-before-the-surprise-2`.
     capital_archers_door_sightings: BTreeMap<usize, u32>,
+    /// `denial-spies-cover-every-racer`: the space racers are ranked by their
+    /// progress (projects, then the expedition's trip), Science only breaking
+    /// a tie, and every racer within one project of the lead gets a Spy of
+    /// ours before any gets a second. See
+    /// `advanced/denial_spies_cover_every_racer.rs`. Opt-in.
+    denial_spies_cover_every_racer: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11384,6 +11390,8 @@ mod denial_nearest_finish;
 mod denial_needs_a_road;
 /// `denial-spies-count-their-losses`: see `advanced/denial_spies_count_their_losses.rs`.
 mod denial_spies_count_their_losses;
+/// `denial-spies-cover-every-racer`: see `advanced/denial_spies_cover_every_racer.rs`.
+mod denial_spies_cover_every_racer;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;

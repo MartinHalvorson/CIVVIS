@@ -294,6 +294,9 @@ impl AdvancedAi {
         /// of `capital-archers-before-the-surprise`; see
         /// `advanced/capital_archers_before_the_surprise.rs`.
         capital_archers_before_the_surprise_2 => enable_capital_archers_before_the_surprise_2, disable_capital_archers_before_the_surprise_2;
+        /// Opt-in gene `denial-spies-cover-every-racer`; see
+        /// `advanced/denial_spies_cover_every_racer.rs`.
+        denial_spies_cover_every_racer => enable_denial_spies_cover_every_racer, disable_denial_spies_cover_every_racer;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
