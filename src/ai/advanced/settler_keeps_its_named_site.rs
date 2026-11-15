@@ -35,9 +35,11 @@
 //!    no seen site, the exhaustion and stranded fallbacks still look into
 //!    the fog, as before.
 //! 2. A site within three tiles (the founding spacing) of a site another
-//!    live Settler of ours has named is not offered to the ranked pick
-//!    either. A cached site is never dropped for this, so two Settlers whose
-//!    sites already overlap do not drop each other's.
+//!    live Settler of ours has named is not offered to the ranked pick, nor
+//!    to the two exhaustion fallbacks of `settler-never-idles`. A cached site
+//!    is never dropped for this, so two Settlers whose sites already overlap
+//!    do not drop each other's. The founding-now rules (walk deadline,
+//!    stalled Settler, the Score seat's near site, shelter) are untouched.
 //! 3. Every change of destination gets one line, `Settler changes its
 //!    destination from A to B`, naming what happened to A and keyed by the
 //!    Settler's stable id. The comparison is against the last site this
@@ -90,6 +92,14 @@ impl AdvancedAi {
             .map(|(_, site)| *site)
     }
 
+    /// Whether `pos` lies within the founding spacing of a site another live
+    /// Settler of ours has named, so at most one of the two can be founded.
+    /// The exhaustion fallbacks ask this too. `false` with the gene off.
+    pub(super) fn named_site_spaced_out(&self, g: &Game, pid: usize, uid: u32, pos: Pos) -> bool {
+        self.settler_keeps_its_named_site
+            && self.sibling_site_within_spacing(g, pid, uid, pos).is_some()
+    }
+
     /// Whether the ranked pick must pass over `pos` for this Settler: the
     /// plot is unseen, or it lies within the founding spacing of another
     /// Settler's named site. `false` with the gene off.
@@ -104,7 +114,7 @@ impl AdvancedAi {
             return false;
         }
         g.map.get(pos).is_some_and(|tile| g.rules.is_unknown(tile))
-            || self.sibling_site_within_spacing(g, pid, uid, pos).is_some()
+            || self.named_site_spaced_out(g, pid, uid, pos)
     }
 
     /// After the Settler's step: remember the site it names, and journal a

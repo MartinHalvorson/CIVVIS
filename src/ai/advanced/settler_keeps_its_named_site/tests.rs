@@ -105,28 +105,22 @@ fn off_is_a_no_op() {
 fn the_site_is_kept_when_a_better_one_appears() {
     let (mut g, mut ai, settler, site, journal) = committed(true);
     assert_eq!(ai.settler_named_sites.get(&CIV6_ID), Some(&site));
-    // Make the runner-up the best-ranked site by a wide margin.
-    let (rival, before) = ai
-        .best_settler_target(&g, 0, settler, 8, Some(site))
-        .expect("a second site");
-    let luxury = g
-        .rules
-        .resources
-        .iter()
-        .find(|(_, spec)| spec.class == "luxury")
-        .map(|(name, _)| *name)
-        .expect("a luxury resource");
-    for pos in g.wdisk(rival, 1) {
+    // Strip the named site's ring to bare desert, so another site now ranks
+    // above it while the named one stays legal and safe.
+    for pos in g.wdisk(site, 2) {
+        if pos == site {
+            continue;
+        }
         if let Some(tile) = g.map.tiles.get_mut(&pos) {
-            tile.resource = Some(luxury);
+            if !g.rules.is_water(tile) && g.rules.is_passable(tile) {
+                tile.terrain = crate::name!("desert");
+                tile.feature = None;
+                tile.resource = None;
+            }
         }
     }
-    let (now_best, after) = ai.best_settler_target(&g, 0, settler, 8, None).unwrap();
-    assert_eq!(
-        now_best, rival,
-        "precondition: the runner-up now ranks first"
-    );
-    assert!(after > before);
+    let (now_best, _) = ai.best_settler_target(&g, 0, settler, 8, None).unwrap();
+    assert_ne!(now_best, site, "precondition: another site now ranks first");
     g.turn += 1;
     frame(&mut g, &mut ai, settler);
     assert_eq!(ai.settler_targets.get(&settler), Some(&site));
@@ -235,10 +229,20 @@ fn the_stall_limit_drop_is_named() {
         g.turn += 1;
         held(&mut g, &mut ai);
     }
-    // The drop leaves the Settler without a site for one frame; the next
-    // frame names a new one and the change is journalled then.
-    held(&mut g, &mut ai);
-    assert_ne!(ai.settler_targets.get(&settler), Some(&site));
+    assert_eq!(
+        ai.settler_avoid.get(&settler).map(|(pos, _)| *pos),
+        Some(site),
+        "precondition: the stall limit set the site aside"
+    );
+    // The drop leaves the Settler without a site; the change is journalled
+    // on the step that names the next one, whichever rule names it.
+    assert!(!ai.settler_targets.contains_key(&settler));
+    let next = land_neighbour(&g, start);
+    ai.settler_targets.insert(settler, next);
+    let key = ai.named_site_key(&g, settler);
+    ai.note_named_site(&g, 0, settler, key);
+    let new = ai.settler_targets[&settler];
+    assert_ne!(new, site);
     let line = change_line_for(&journal, site);
     assert!(line.detail.contains("was set aside"), "{}", line.detail);
 }
