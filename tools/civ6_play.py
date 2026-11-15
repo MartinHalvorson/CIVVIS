@@ -837,6 +837,97 @@ def early_city_reading(state: dict, event: dict, count: int) -> dict | None:
     }
 
 
+# ★ A GAME THAT HAS LOST HALF ITS CITIES IS PLAYED OUT SLOWLY AND LOST. Lane
+# rule of 2026-11-15, under the operator's goal of that day (more games is
+# more tests): live civvis-20261115T075925Z lost five of six cities to a
+# joint war on turns 112-123 and was still being played, one city left, at
+# turn 129 of 250.
+#
+# The rule: once our city count has fallen by at least N from the most we
+# have held this run AND stands at or below half of that peak, on records of
+# `CITY_COLLAPSE_TURNS` game turns running, the game is retired. N is
+# CIVVIS_RESTART_ON_CITY_COLLAPSE in ~/.civvis-verification-policy (3 = three
+# cities lost; 0, absent, or not a whole number = off, the default). It reads
+# the `cities` list of every agent `state` record, as the early-city rule
+# does; every city we hold counts, captured ones included, and a record with
+# an empty or unreadable list says nothing either way.
+#
+# Checked before it was built (per-turn city counts from the ledger branch):
+# - 45 of the ladder's 62 wins have a city series (the other 17 predate the
+#   branch). At N=3 the rule ends none of them: no winner ever stood below
+#   75% of its peak, 13 ever lost a city, one lost two, none lost three.
+#   Dropping N to 2, the share to two thirds or the run to two turns still
+#   ends none.
+# - 464 run segments of 2026-11-10..13 and 11-15 (one win among them): 80
+#   lost three or more cities from their peak, the rule fires on 52 (11%),
+#   at turn 129 in the median, and saves 1,022 turns (median 16, up to 96 a
+#   game) and 85 minutes, 2.1% of those games' time in turns. After it fired
+#   no game came back to within one city of its peak; four of the 52 ended
+#   with more cities than they had when it fired.
+CITY_COLLAPSE_POLICY_KEY = "CIVVIS_RESTART_ON_CITY_COLLAPSE"
+CITY_COLLAPSE_SHARE = 0.5
+CITY_COLLAPSE_TURNS = 3
+
+
+def parse_city_collapse(value: str | None) -> int:
+    """How many cities below its peak a game must be, from `3`; 0 = off."""
+    if value is None or value == "":
+        return 0
+    try:
+        lost = int(value)
+    except ValueError:
+        lost = -1
+    if lost < 0:
+        print(f"[policy] ignoring {CITY_COLLAPSE_POLICY_KEY}={value!r}: "
+              "not a count of cities such as 3", flush=True)
+        return 0
+    return lost
+
+
+def city_collapse_policy(path: Path | None = None) -> int:
+    """The policy's city-collapse size; 0 (off) when unset or invalid."""
+    return parse_city_collapse(read_policy_value(CITY_COLLAPSE_POLICY_KEY, path))
+
+
+def city_collapse_reading(state: dict, event: dict, lost: int) -> dict | None:
+    """Fold one record into the city-collapse watch; a verdict once it holds.
+
+    `state` carries the most cities held (`city_peak`) and the turn the
+    collapse was first read (`city_collapse_since`) between records. Returns
+    None for anything that is not a readable agent `state` record or calls
+    nothing, else `{"rule": "city_collapse", "fires": True, ...}`.
+    """
+    if (not isinstance(lost, int) or isinstance(lost, bool) or lost <= 0
+            or event.get("kind") != "state" or event.get("ctx") != "agent"):
+        return None
+    turn = event.get("turn")
+    cities = event.get("cities")
+    if (not isinstance(turn, int) or isinstance(turn, bool)
+            or not isinstance(cities, list)):
+        return None
+    held = len({ident for city in cities if (ident := _city_id(city)) is not None})
+    if held == 0:
+        return None
+    peak = max(state.get("city_peak") or 0, held)
+    state["city_peak"] = peak
+    if peak - held < lost or held > CITY_COLLAPSE_SHARE * peak:
+        state.pop("city_collapse_since", None)
+        return None
+    since = state.setdefault("city_collapse_since", turn)
+    if turn - since + 1 < CITY_COLLAPSE_TURNS:
+        return None
+    return {
+        "rule": "city_collapse",
+        "turn": turn,
+        "since": since,
+        "peak": peak,
+        "held": held,
+        "lost": peak - held,
+        "line": lost,
+        "fires": True,
+    }
+
+
 # ★ OPERATOR 2026-11-09: "if we are targeting a religious victory, we should
 # also restart if we lose our own religion as a religious victory will not
 # happen then."
@@ -2020,15 +2111,39 @@ SCREEN_POLL_S = 1.5
 # shorter budget: by then a menu that is still unreadable is more likely a
 # covering dialog, which the branch after the poll recovers from.
 FIRST_MENU_POLL_BUDGET_S = 40.0
+# ★ And once the boot is nearly done, that first poll looks about every
+# second. A look is a capture and a recognizer pass (0.8-1.4 s) and the poll
+# then slept `SCREEN_POLL_S`, so the menu was read every 2.4 s and found 1.2 s
+# late on average. Over 86 games of 2026-11-13 and 11-15 the label was read
+# at +25.5 s in the median (p10 23.3, p90 26.4) and the poll began at +11 to
+# +13 s; from `FIRST_MENU_QUICK_AFTER_S` into the poll (about +20 s after
+# launch) the sleep between looks is `FIRST_MENU_QUICK_POLL_S`. The reading
+# itself is unchanged (`_settled_main_menu_point`: a fading row is not a
+# click), and so is every other poll.
+FIRST_MENU_QUICK_AFTER_S = 8.0
+FIRST_MENU_QUICK_POLL_S = 0.3
 
 
 def _poll_screen(read, budget_s: float = SCREEN_POLL_BUDGET_S,
-                 poll_s: float = SCREEN_POLL_S):
-    """Call ``read`` until it returns something other than None or the budget is spent."""
-    deadline = time.monotonic() + budget_s
+                 poll_s: float = SCREEN_POLL_S,
+                 quick_after_s: float | None = None,
+                 quick_poll_s: float | None = None):
+    """Call ``read`` until it returns something other than None or the budget is spent.
+
+    With ``quick_after_s`` and ``quick_poll_s`` the wait between looks drops to
+    ``quick_poll_s`` once the poll has run ``quick_after_s`` (never above
+    ``poll_s``); without both it is ``poll_s`` throughout, as before.
+    """
+    started = time.monotonic()
+    deadline = started + budget_s
+    quick = (quick_after_s is not None and quick_poll_s is not None
+             and 0 <= quick_poll_s < poll_s)
     result = read()
     while result is None and time.monotonic() < deadline:
-        time.sleep(poll_s)
+        if quick and time.monotonic() - started >= quick_after_s:
+            time.sleep(quick_poll_s)
+        else:
+            time.sleep(poll_s)
         result = read()
     return result
 # How many extra startup budgets the whole bootstrap may spend on a screen that
@@ -4627,7 +4742,9 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             return (point, rows) if point is not None or len(rows) >= 4 else None
 
         top = _poll_screen(read_top_menu, budget_s=FIRST_MENU_POLL_BUDGET_S
-                           if attempt == 1 else SCREEN_POLL_BUDGET_S)
+                           if attempt == 1 else SCREEN_POLL_BUDGET_S,
+                           quick_after_s=FIRST_MENU_QUICK_AFTER_S if attempt == 1 else None,
+                           quick_poll_s=FIRST_MENU_QUICK_POLL_S if attempt == 1 else None)
         menu_point, toprows = top if top is not None else (None, [])
         sp_y = MENU["single_player"][1]
         pitch = 0.029
@@ -5423,6 +5540,17 @@ def play(args: argparse.Namespace) -> int:
         print(f"[policy] a game that loses its capital or one of the first "
               f"{early_city_count} cities it founded is retired "
               "(operator 2026-11-04)", flush=True)
+    # Lane rule 2026-11-15: see `city_collapse_reading`. Off unless the flag
+    # or the host policy file names a count.
+    city_collapse = getattr(args, "restart_on_city_collapse", None)
+    city_collapse = (city_collapse_policy() if city_collapse is None
+                     else parse_city_collapse(str(city_collapse)))
+    args.restart_on_city_collapse = city_collapse
+    if city_collapse > 0:
+        print(f"[policy] a game that has lost {city_collapse} or more cities from "
+              f"its peak and holds {CITY_COLLAPSE_SHARE:.0%} of that peak or fewer, "
+              f"for {CITY_COLLAPSE_TURNS} turns running, is retired "
+              "(lane rule 2026-11-15)", flush=True)
     # Operator 2026-11-09: see `city_deficit_reading`.
     city_deficit = getattr(args, "restart_on_city_deficit", None)
     city_deficit = (city_deficit_policy() if city_deficit is None
@@ -6184,6 +6312,7 @@ def _play(args: argparse.Namespace) -> int:
     production_share_from = online_turns(production_share_from, getattr(args, "speed", None))
     production_share_turns = online_turns(PRODUCTION_SHARE_TURNS, getattr(args, "speed", None))
     early_city_count = getattr(args, "restart_on_early_city_lost", None) or 0
+    city_collapse = getattr(args, "restart_on_city_collapse", None) or 0
     city_deficit = getattr(args, "restart_on_city_deficit", None) or 0
     religion_lost_rule = (bool(getattr(args, "restart_on_religion_lost", None))
                           and getattr(args, "civvis_victory", None) == "religious")
@@ -6928,6 +7057,16 @@ def _play(args: argparse.Namespace) -> int:
                       f"first {early_city_count} cities, held lost since turn "
                       f"{reading['lost_turn']}) — retiring so the next game starts "
                       "(operator 2026-11-04)", flush=True)
+                return abandon_with_retire(reading)
+        # Lane rule 2026-11-15: half the cities gone and staying gone. See
+        # `city_collapse_reading`.
+        if city_collapse > 0:
+            reading = city_collapse_reading(state, event, city_collapse)
+            if reading is not None and reading.get("fires"):
+                print(f"[abandon] turn {reading['turn']}: {reading['held']} cities "
+                      f"held of a peak of {reading['peak']} ({reading['lost']} lost, "
+                      f"at or below half since turn {reading['since']}) — retiring "
+                      "so the next game starts (lane rule 2026-11-15)", flush=True)
                 return abandon_with_retire(reading)
         # ★ OPERATOR 2026-11-09: a religious win cannot happen without our
         # religion. See `religion_lost_reading`.
@@ -7909,6 +8048,12 @@ def main(argv: list[str] | None = None) -> int:
                          "first N cities it founded (0 = off); unset reads "
                          f"{EARLY_CITY_POLICY_KEY} from the host's verification "
                          "policy file (operator 2026-11-04)")
+    ap.add_argument("--restart-on-city-collapse", type=int, default=None,
+                    help="retire a game that has lost N or more cities from its "
+                         "peak and holds half that peak or fewer, three turns "
+                         "running (0 = off); unset reads "
+                         f"{CITY_COLLAPSE_POLICY_KEY} from the host's verification "
+                         "policy file, where absent is off (lane rule 2026-11-15)")
     ap.add_argument("--restart-on-city-deficit", type=int, default=None,
                     help="retire a game N or more cities behind any rival it has "
                          "met (0 = off); unset reads "

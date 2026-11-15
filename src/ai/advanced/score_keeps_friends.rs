@@ -159,7 +159,13 @@ impl AdvancedAi {
             g.players
                 .iter()
                 .filter(|other| other.id != pid && !other.is_minor && !other.is_barbarian)
-                .filter(|other| self.score_friends_spare_the_converter(g, pid, other.id))
+                // `edge-unit-rushes-from-the-capital`: the rush's target (every
+                // major before one is named) keeps the refusal too. `false`
+                // off the rush.
+                .filter(|other| {
+                    self.score_friends_spare_the_converter(g, pid, other.id)
+                        || self.edge_rush_spares_friendship(g, other.id)
+                })
                 .map(|other| other.id)
                 .filter(|id| !spared.contains(id))
                 .collect::<Vec<_>>(),

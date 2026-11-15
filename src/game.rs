@@ -2610,6 +2610,22 @@ impl Players {
         self.0.iter_mut().map(Arc::make_mut)
     }
 
+    /// Seat `player` at `index`, in place of whoever sat there.
+    ///
+    /// `players[index] = player` says the same thing and costs a whole seat
+    /// more: indexing mutably copies a shared seat before handing it out, so
+    /// the assignment copied everything the old player had ever learned and
+    /// dropped the copy on the next line. A decision view replaces every
+    /// seat but the observer's with a redacted one, and it is a fresh clone,
+    /// so every one of those seats was shared (`Game::player_decision_view`).
+    /// The roster's epoch moves exactly as it does for the assignment.
+    ///
+    /// Panics when `index` is out of range, as the assignment does.
+    pub fn replace(&mut self, index: usize, player: Player) {
+        self.1 = self.1.wrapping_add(1);
+        self.0[index] = Arc::new(player);
+    }
+
     /// See the tuple field's doc comment.
     #[inline]
     fn epoch(&self) -> u64 {
