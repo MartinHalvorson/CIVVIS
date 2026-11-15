@@ -5195,6 +5195,65 @@ def stage_resume_save(load_save: Path,
     return staged
 
 
+#: How many times a resume presses the Load Game button, and how long each
+#: press gets to take the panel away, before the attempt is given up.
+LOAD_PRESS_TRIES = 3
+LOAD_PRESS_SETTLE_S = 4.0
+
+
+def _load_panel_reading(path: Path, bounds: tuple[int, int, int, int],
+                        save_label: str) -> str | None:
+    """What still shows of the Load Game panel in a screenshot, or None when
+    none of it does (a loading screen, or the game itself).
+
+    Three readings, because the button alone is not enough: under the pointer
+    its label fades (civvis-20261115T110627Z-cont1, `load-confirmation-
+    attempt2.png`), while the red Delete button beside it and the selected
+    save's row stay plain.
+    """
+    x, y, w, h = bounds
+    low = y + int(h * 0.75)
+    if any(point[1] >= low for point in _observed_label_points(
+            path, "Load Game", bounds, strip=LOAD_GAME_ACTION_STRIP)):
+        return "its Load Game button reads"
+    if any(point[1] >= low for point in _observed_label_points(
+            path, "Delete", bounds, strip=LOAD_GAME_ACTION_STRIP)):
+        return "its Delete button reads, the Load Game button does not (disabled or under the pointer)"
+    if _observed_label_point(path, save_label, bounds) is not None:
+        return "the save's row reads, neither action button does"
+    return None
+
+
+def press_load_game(press, look, started, tries: int = LOAD_PRESS_TRIES,
+                    settle_s: float = LOAD_PRESS_SETTLE_S) -> str:
+    """Press the Load Game button until the load is seen to have started.
+
+    ★ THE PRESS IS NOT THE LOAD. Live civvis-20261115T110627Z-cont1 (the
+    reload after a native crash): the row was selected, the button was
+    pressed at +52.3 s, and nothing happened. The window dropped the click;
+    ten seconds later the panel was exactly as before, with the pointer
+    resting on the button. The harness then read "the main menu is gone" as
+    "the game is still coming up" and spent four 90 s waits on a screen that
+    was never going to change, until the lane was restarted by hand nine
+    minutes in. The resume thirty minutes earlier (`104756Z-cont1`) made the
+    same presses and loaded.
+
+    ``press(n)`` clicks the button for the n-th time. ``started(seconds)``
+    waits that long for the agent's first record. ``look(n)`` then reads the
+    screen and returns "panel" while the Load Game panel is still up, and
+    anything else once it is gone or a confirmation has been answered.
+    Returns "started", "loading" (the panel went: the ordinary waits take
+    over), or "stuck" (the panel survived every press).
+    """
+    for attempt in range(1, max(1, tries) + 1):
+        press(attempt)
+        if started(settle_s):
+            return "started"
+        if look(attempt) != "panel":
+            return "loading"
+    return "stuck"
+
+
 def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
                          args: argparse.Namespace, verify_s: float = 120.0) -> bool:
     """Load a named save after proving each rendered menu target.
@@ -5302,7 +5361,40 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
                   file=sys.stderr)
             return False
         print(f"loading saved game {save_label} from observed row {save_target}")
-        click_at(*action)
+        panel_reads = {"what": None}
+
+        def press(count: int) -> None:
+            if count > 1:
+                print(f"[load] the Load Game panel is still up {LOAD_PRESS_SETTLE_S:.0f}s "
+                      f"after press {count - 1} ({panel_reads['what']}); pressing "
+                      "its button again", flush=True)
+            click_at(*action)
+
+        def look(count: int) -> str:
+            shot = run_dir / f"load-pressed-attempt{attempt}-{count}.png"
+            screenshot(shot)
+            # A save from an older revision of the mod asks first; answer a
+            # visibly read YES and let the ordinary waits take over.
+            yes = _observed_label_point(shot, "Yes", bounds)
+            if yes is not None:
+                click_at(*yes)
+                return "confirmed"
+            panel_reads["what"] = _load_panel_reading(shot, bounds, save_label)
+            return "panel" if panel_reads["what"] else "gone"
+
+        pressed = press_load_game(press, look, started)
+        if pressed == "started":
+            return True
+        if pressed == "stuck":
+            # Fail in seconds, not after the loading patience: the next
+            # attempt, or the climb, can do something about a save that will
+            # not start; a wait cannot.
+            print(f"attempt {attempt}: the Load Game panel is still up after "
+                  f"{LOAD_PRESS_TRIES} presses of its button ({panel_reads['what']}); "
+                  f"{save_label} did not start loading, so this resume ends here "
+                  f"(last look: load-pressed-attempt{attempt}-{LOAD_PRESS_TRIES}.png)",
+                  file=sys.stderr, flush=True)
+            return False
 
         # A save made with an older revision of the same mod can produce a
         # compatibility confirmation. Give a normal load a head start, then
