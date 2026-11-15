@@ -1318,6 +1318,99 @@ else
 		return raw / scale;
 	end
 
+	-- ★★★ A POPUP QUEUED BEHIND A DEAL SESSION HOLDS THE GAME, AND THE RIVAL'S
+	-- VERDICT WITH IT. A popup takes an event lock when its event fires
+	-- (`ms_eventID = UI.ReferenceCurrentEvent()`, DLC/Expansion2/UI/Additions/
+	-- RockBandMoviePopup.lua:138) and gives it back in its own `Close()`
+	-- (`UI.ReleaseEventID( ms_eventID )`, :34). Until then the game core
+	-- dispatches nothing more. This shim closes such a popup 0.05 s after it
+	-- comes up, but a popup queued while a leader screen is showing does not
+	-- come up, and a hidden context does not tick (see the heartbeat note), so
+	-- nothing closes it until the leader screen goes. During a deal session
+	-- the agent keeps that screen up for `DealAnswerHoldSeconds` (30) waiting
+	-- for the rival's verdict, which the core cannot compute behind the lock.
+	--
+	-- Live 2026-11-15, Pericles culture seat, civvis-20261115T071444Z and its
+	-- reload: 70 asks, 66 closed inside 0.8 s. The other four (t134, t142,
+	-- t159, t175) each had a Rock Band concert land 0.02 to 0.25 s after the
+	-- ask; `RockBandMoviePopup` held its lock for the whole 30 s and gave it
+	-- back within 0.25 s of the leader screen closing on the timeout. In
+	-- three of the four the rival then spoke 0.1 to 1.0 s after that release.
+	-- Two of them hung the rival's turn (t159, t175: the verdict came as the
+	-- rival's own session, which the game left `Adding to pending`), the
+	-- first costing 6.8 minutes and a reload. No ask of those two runs waited
+	-- more than 3 s without such a lock.
+	--
+	-- So the diplomacy view that is up for a deal session watches the shared
+	-- ledger, and a lock another context has held for `BEHIND_DEAL_SECONDS`
+	-- is handed back by its owner: `LuaEvents.CivvisCloseBehindDeal(ctx, id)`
+	-- reaches every context's shim, and the one named runs its ordinary close
+	-- (`endScreen`, the popup's own `Close()`), the same call it would make
+	-- 0.05 s after coming up. The grace lets the popup finish the handler
+	-- that took the lock. Nothing is released from outside its owner, a lock
+	-- is asked for once, and the operator's Pause, the end screens and the
+	-- wonder movie are left alone as everywhere else in this file.
+	local BEHIND_DEAL_SECONDS = 0.25;
+	local behindDeal = { seen = {}, asked = {} };
+	local function closeLocksBehindDeal(dt)
+		local ledger = nil;
+		pcall(function() ledger = ExposedMembers.CivvisEventLocks; end);
+		if type(ledger) ~= "table" or type(ledger.held) ~= "table" then return; end
+		-- Collected first and asked after the walk: the owner's close takes
+		-- its entry out of `held`, and whatever the freed game dispatches
+		-- next may put another in.
+		local due = {};
+		for id, entry in pairs(ledger.held) do
+			local ctx = type(entry) == "table" and entry.ctx or nil;
+			-- The wonder movie keeps its own clock (`wonderAnimationReady`):
+			-- closing it unseen would cut it from the recording.
+			if type(ctx) == "string" and ctx ~= "DiplomacyActionView"
+					and ctx ~= "DiplomacyDealView" and ctx ~= "WonderBuiltPopup"
+					and not behindDeal.asked[id] then
+				local seen = (behindDeal.seen[id] or 0) + dt;
+				behindDeal.seen[id] = seen;
+				if seen >= BEHIND_DEAL_SECONDS then
+					due[#due + 1] = { id = id, ctx = ctx, seen = seen };
+				end
+			end
+		end
+		-- Forget locks that are gone, so the two tables stay as small as the
+		-- ledger itself (at most EVENT_LOCK_CAP entries).
+		for id in pairs(behindDeal.seen) do
+			if ledger.held[id] == nil then behindDeal.seen[id] = nil; end
+		end
+		for id in pairs(behindDeal.asked) do
+			if ledger.held[id] == nil then behindDeal.asked[id] = nil; end
+		end
+		for _, lock in ipairs(due) do
+			behindDeal.asked[lock.id] = true;
+			behindDeal.seen[lock.id] = nil;
+			report("autoclose_behind_deal", string.format(
+				',"holder":"%s","id":%d,"held_for":%.2f',
+				lock.ctx, tonumber(lock.id) or -1, lock.seen));
+			pcall(function() LuaEvents.CivvisCloseBehindDeal(lock.ctx, lock.id); end);
+		end
+	end
+	pcall(function()
+		LuaEvents.CivvisCloseBehindDeal.Add(function(holder, id)
+			if holder ~= NAME or END_SCREENS[NAME] or operatorHolds() then return; end
+			if NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView"
+					or NAME == "WonderBuiltPopup" then return; end
+			-- Only while this context still holds that lock: a popup that
+			-- closed in the meantime has nothing to give back.
+			local entry = nil;
+			pcall(function() entry = ExposedMembers.CivvisEventLocks.held[id]; end);
+			if type(entry) ~= "table" or entry.ctx ~= NAME then return; end
+			local ended = false;
+			pcall(function() ended = endScreen(1); end);
+			local released = true;
+			pcall(function() released = ExposedMembers.CivvisEventLocks.held[id] == nil; end);
+			report("autoclose", string.format(
+				',"after":0.00,"ended":%s,"gone":%s,"behind_deal":true,"released":%s',
+				tostring(ended), tostring(not isUp()), tostring(released)));
+		end);
+	end);
+
 	local function tick(fDTime)
 		local realDT = realSeconds(fDTime);
 		-- ★★★★ PROOF THAT THE UI THREAD IS STILL ALIVE WHILE THE GAME IS NOT.
@@ -1394,6 +1487,9 @@ else
 				holdReported = true;
 				report("autoclose_hold", string.format(',"seconds":%.2f', dealHold));
 			end
+			-- The verdict this hold waits for cannot come while another
+			-- context holds the game (see `closeLocksBehindDeal`).
+			pcall(closeLocksBehindDeal, dt);
 			if dealHold > 0 then return; end
 			-- A deal session with no rival statement can leave BlackFadeAnim
 			-- running forever.  The hold is our explicit ownership proof, so the
