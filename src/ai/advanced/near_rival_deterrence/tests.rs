@@ -226,3 +226,70 @@ fn the_faith_defence_keeps_its_queue_with_the_gene() {
         assert_eq!(kept.cities[&ours].queue.first(), Some(&head));
     }
 }
+
+/// A Catapult out-ranges an Archer in `best_military`'s ranged pick but is a
+/// poor deterrent: with both trainable and the army due a ranged unit, the
+/// claim trains the Archer; with the army due a melee unit, the pick is
+/// unchanged. No siege unit qualifies as a deterrent.
+#[test]
+fn the_ranged_deterrent_is_never_a_siege_unit() {
+    let Some((mut game, ours, _theirs)) = neighbours(DETERRENCE_NEAR_TILES) else {
+        panic!("fixture: two capitals within the neighbour radius");
+    };
+    for tech in ["bronze_working", "archery", "engineering"] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
+    power(&mut game, 0, 100.0);
+    power(&mut game, 1, 200.0);
+    let home = game.cities[&ours].pos;
+    let ai = armed();
+    assert!(
+        !AdvancedAi::deterrence_land_unit(&game, &crate::name!("catapult")),
+        "a siege unit is no deterrent"
+    );
+
+    // One Warrior: melee 1 > ranged 0, so the ranged role is due.
+    let mut ranged_due = game.clone();
+    ranged_due.spawn_unit("warrior", 0, home);
+    assert_eq!(
+        ai.base
+            .combined_arms_unit(&ranged_due, 0, ours, 1, 0)
+            .as_deref(),
+        Some("catapult"),
+        "fixture: the ranged role picks the Catapult"
+    );
+    let plan = ai.assess(&ranged_due, 0);
+    ai.claim_deterrence_unit(&mut ranged_due, 0, &plan);
+    assert_eq!(
+        ranged_due.cities[&ours].queue.first(),
+        Some(&Item::Unit {
+            unit: crate::name!("archer")
+        }),
+        "the ranged deterrent is the Archer, not the Catapult"
+    );
+
+    // One Archer: the melee role is due and its pick stands.
+    let mut melee_due = game.clone();
+    melee_due.spawn_unit("archer", 0, home);
+    let melee = ai
+        .base
+        .combined_arms_unit(&melee_due, 0, ours, 0, 1)
+        .expect("fixture: a melee pick");
+    assert!(
+        melee_due
+            .rules
+            .units
+            .get(&Name::new(&melee))
+            .is_some_and(|spec| spec.is_melee_capable()),
+        "fixture: {melee} is melee"
+    );
+    let plan = ai.assess(&melee_due, 0);
+    ai.claim_deterrence_unit(&mut melee_due, 0, &plan);
+    assert_eq!(
+        melee_due.cities[&ours].queue.first(),
+        Some(&Item::Unit {
+            unit: Name::new(&melee)
+        }),
+        "the melee deterrent is unchanged"
+    );
+}
