@@ -108,9 +108,9 @@ fn spy() -> Item {
     }
 }
 
-fn warrior() -> Item {
+fn settler() -> Item {
     Item::Unit {
-        unit: crate::name!("warrior"),
+        unit: crate::name!("settler"),
     }
 }
 
@@ -131,17 +131,17 @@ fn by_production(g: &Game, among: &[u32]) -> Vec<u32> {
     ranked.into_iter().map(|(_, cid)| cid).collect()
 }
 
-/// The board with a Warrior (which no Spy claim displaces) at the head of
+/// The board with a Settler (which no Spy claim displaces) at the head of
 /// the best city, and Gold `above` the purchase reserve plus its price.
 fn blocked_board(above: f64) -> (Game, Vec<u32>, f64) {
     let (mut g, ours) = board();
     let ranked = by_production(&g, &ours);
-    g.cities.get_mut(&ranked[0]).unwrap().queue = vec![warrior()];
+    g.cities.get_mut(&ranked[0]).unwrap().queue = vec![settler()];
     let ai = seat(VictoryTarget::Culture, true);
     let floor = ai.purchase_upkeep_floor(&g, 0, 0.0);
     let price = g
-        .unit_purchase_cost(0, ranked[0], "warrior", "gold")
-        .expect("a Warrior is for sale");
+        .unit_purchase_cost(0, ranked[0], "settler", "gold")
+        .expect("a Settler is for sale");
     g.players[0].gold = floor + price + above;
     (g, ranked, price)
 }
@@ -193,29 +193,29 @@ fn a_free_slot_buys_the_best_citys_head_and_trains_the_spy_there() {
     seat(VictoryTarget::Culture, false).claim_queues_for_denial_spies(&mut without, 0, &plan());
     assert!(
         !training(&without).contains(&ranked[0]),
-        "the claim does not displace the Warrior"
+        "the claim does not displace the Settler"
     );
     let ai = seat(VictoryTarget::Culture, true);
     let buy = ai
         .denial_spy_queue_purchase(&g, 0, &plan())
         .expect("a purchase");
     assert_eq!(buy.city, ranked[0]);
-    assert_eq!(buy.head, warrior());
+    assert_eq!(buy.head, settler());
     assert_eq!((buy.held, buy.queued, buy.slots), (0, 0, 2));
     let gold = g.players[0].gold;
-    let warriors = |g: &Game| {
+    let settlers = |g: &Game| {
         g.player_unit_ids(0)
             .into_iter()
-            .filter(|uid| g.units[uid].kind == "warrior")
+            .filter(|uid| g.units[uid].kind == "settler")
             .count()
     };
-    assert_eq!(warriors(&g), 0);
+    assert_eq!(settlers(&g), 0);
     assert!(ai.clear_queue_for_denial_spy(&mut g, 0, &plan()));
     assert!(
         (gold - g.players[0].gold - price).abs() < 1e-6,
         "paid the price"
     );
-    assert_eq!(warriors(&g), 1, "the Warrior is built, not delayed");
+    assert_eq!(settlers(&g), 1, "the Settler is built, not delayed");
     assert_eq!(
         training(&g),
         BTreeSet::from([ranked[0]]),
@@ -277,11 +277,11 @@ fn no_purchase_without_a_racer_or_when_the_open_city_is_as_good() {
     // The blocked city is not the best one: the claim takes the best itself.
     let (mut g, ranked, _) = blocked_board(50.0);
     g.cities.get_mut(&ranked[0]).unwrap().queue.clear();
-    g.cities.get_mut(&ranked[2]).unwrap().queue = vec![warrior()];
+    g.cities.get_mut(&ranked[2]).unwrap().queue = vec![settler()];
     assert!(ai.denial_spy_queue_purchase(&g, 0, &plan()).is_none());
     // A head mostly paid finishes on its own.
     let (mut g, ranked, _) = blocked_board(50.0);
-    let cost = g.item_cost_for_city(0, ranked[0], &warrior());
+    let cost = g.item_cost_for_city(0, ranked[0], &settler());
     g.cities.get_mut(&ranked[0]).unwrap().production = 0.5 * cost;
     assert!(ai.denial_spy_queue_purchase(&g, 0, &plan()).is_none());
     // A Science seat keeps the old claim.
