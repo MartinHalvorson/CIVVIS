@@ -1,7 +1,8 @@
 //! `near-rival-deterrence`: from live turn 30 to 80, while a met major at
 //! peace has a city within [`DETERRENCE_NEAR_TILES`] of ours and our military
 //! power is below its own, one idle or routine queue a turn trains a land
-//! unit (at most [`DETERRENCE_MAX_QUEUED`] in training), until we stand level.
+//! unit, never a siege unit (at most [`DETERRENCE_MAX_QUEUED`] in training),
+//! until we stand level.
 //! The early city floor's Settler, Builders, Walls, wonders and investments in
 //! progress keep their queues.
 //!
@@ -117,9 +118,12 @@ impl AdvancedAi {
         })
     }
 
+    /// A land unit that can fight and is not a siege gun: a siege unit is a
+    /// poor deterrent and no city defender.
     pub(super) fn deterrence_land_unit(g: &Game, unit: &Name) -> bool {
         g.rules.units.get(unit).is_some_and(|spec| {
             spec.class == "military"
+                && !spec.siege
                 && spec.domain.as_deref().is_none_or(|domain| domain == "land")
                 && (spec.is_melee_capable() || spec.has_ranged_attack())
         })
@@ -281,8 +285,25 @@ impl AdvancedAi {
             let pick = if out_of_reach {
                 Self::garrison_shooter_for(g, pid, cid).map(|unit| unit.to_string())
             } else {
+                // `best_military`'s ranged pick is the highest ranged
+                // strength, so a Catapult beat an Archer: when the army is due
+                // a ranged unit the deterrent is the strongest non-siege
+                // shooter, or the melee pick when none can be trained.
                 self.base
                     .combined_arms_unit(g, pid, cid, counts.melee, counts.ranged)
+                    .and_then(|unit| {
+                        if !g
+                            .rules
+                            .units
+                            .get(&Name::new(&unit))
+                            .is_some_and(|spec| spec.has_ranged_attack())
+                        {
+                            return Some(unit);
+                        }
+                        Self::garrison_shooter_for(g, pid, cid)
+                            .map(|unit| unit.to_string())
+                            .or_else(|| self.base.best_military(g, pid, cid, Some(false)))
+                    })
             };
             let Some(unit) = pick.filter(|unit| Self::deterrence_land_unit(g, &Name::new(unit)))
             else {
