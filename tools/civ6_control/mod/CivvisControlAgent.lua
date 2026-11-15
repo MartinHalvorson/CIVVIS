@@ -21133,11 +21133,18 @@ CivvisQueue.NOOP_CONFIRM_TICKS = 3;
 CivvisQueue.noopStands = function(entry, subject, turn, atOrigin, moves)
 	if entry.noop_named == nil or entry.noop_tick == nil or not atOrigin then return false; end
 	if entry.wait < entry.noop_tick + CivvisQueue.NOOP_CONFIRM_TICKS then return false; end
-	local attempt = CivvisBoard.moveAttempts[subject];
-	if attempt == nil or attempt.turn ~= turn or attempt.moves == nil or moves == nil then
-		return false;
+	-- The movement it had when it was named; a MOVE_TO also has its attempt
+	-- on record. A SWAP has no attempt record, so a SWAP named a no-op was
+	-- never released here and held its follow-up to the cap
+	-- (civvis-20261115T102552Z t79: an Archer's SWAP named at tick 3, its
+	-- FORTIFY refused at tick 30, 5.2 s).
+	local base = entry.noop_moves;
+	if base == nil then
+		local attempt = CivvisBoard.moveAttempts[subject];
+		if attempt ~= nil and attempt.turn == turn then base = attempt.moves; end
 	end
-	return moves >= attempt.moves;
+	if base == nil or moves == nil then return false; end
+	return moves >= base;
 end;
 
 -- ★ A WALK THAT STEPPED AND THEN STOOD STILL HAS STOPPED.
@@ -21428,6 +21435,34 @@ CivvisQueue.drain = function(player, pid, turn)
 							spent = spent, at = { ux, uy }, want = { entry.expect.x, entry.expect.y } });
 					end
 				end
+				-- ★ ...AND A WALK STALLED IN ITS OPERATION IS RELEASED AS A WATCH IS.
+				-- An accepted MOVE_TO can sit in ACTIVITY_OPERATION with its unit
+				-- on its origin and its movement intact for the whole turn. A
+				-- rows-less watch on such a walk is released at the probe tick
+				-- (`StalledOperationRelease`, live): of the 64 released in 36 games
+				-- of 2026-11-14..15, 63 never left their plot that turn. With a
+				-- follow-up behind it the same walk held the frame to the cap
+				-- (civvis-20261115T101703Z t64: a Scout's MOVE_TO then PILLAGE,
+				-- named `unknown` at tick 30, 7.0 s). Same evidence, same tick,
+				-- same switch: the follow-up is refused by the name the cap gives.
+				if active_operation and entry.expect ~= nil and not arrived and not spent
+						and not cannot_land and not entry.stall_checked
+						and cfg.StalledOperationRelease == true
+						and entry.origin ~= nil and ux == entry.origin.x and uy == entry.origin.y
+						and entry.wait >= (tonumber(cfg.OrderQueueNoopProbeTicks) or 8)
+						and entry.wait < grace
+						and try(function() return UI.IsGameCoreBusy(); end, false) ~= true then
+					entry.stall_checked = true;
+					local attempt = CivvisBoard.moveAttempts[subject];
+					if attempt ~= nil and attempt.turn == turn and attempt.moves ~= nil
+							and moves ~= nil and moves >= attempt.moves then
+						cannot_land, entry.cannot_land = true, true;
+						emit("stall_probe", { turn = turn, unit = subject,
+							unit_kind = unitTypeName(unit), tick = entry.wait, moves = moves,
+							from = { ux, uy }, want = { entry.expect.x, entry.expect.y },
+							released = true, follow_up = true });
+					end
+				end
 				-- See `walkStalled`: a walk that stepped and then stood still.
 				local stalled = not spent and entry.wait < grace
 					and CivvisQueue.walkStalled(entry, ux, uy);
@@ -21628,6 +21663,7 @@ CivvisQueue.drain = function(player, pid, turn)
 								-- A new leg: what was learnt about the last one is not
 								-- about this one, and it starts from where the unit is.
 								entry.land_probed, entry.cannot_land = nil, nil;
+								entry.stall_checked, entry.noop_moves = nil, nil;
 								entry.step_tick, entry.seen_x, entry.seen_y = nil, ux, uy;
 								entry.settle_passes = ok
 									and verb == "MOVE_TO"
@@ -22068,8 +22104,10 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 		return false;
 	end
 	entry.noop_named = why;
-	-- See `CivvisQueue.noopStands`: the tick this leg was named on.
+	-- See `CivvisQueue.noopStands`: the tick this leg was named on, and the
+	-- movement its unit had then.
 	entry.noop_tick = entry.wait or 0;
+	entry.noop_moves = moves;
 	-- The host says no route exists, so waiting out the grace cannot change it:
 	-- of 293 such legs in seven games, none reached the wanted plot.
 	if why == "no_path" then entry.noop_no_path = true; end
