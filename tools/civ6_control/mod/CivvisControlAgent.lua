@@ -12582,24 +12582,29 @@ end;
 --    drawn was torn down.
 -- A concert that finds no leader screen up has neither problem: its popup
 -- shows and is closed on its ordinary path (140 of that day's 151 concerts).
--- So the two are kept apart at the source. A `TOURISM_BOMB` order is refused
--- for this frame, with its own reason, while any deal session is open or its
--- answer still holds the turn, and in any frame whose orders can open one
--- (`peace`, `friendship`, `alliance`, `sell`, `buy`). The band has spent
--- nothing; the next frame's or the next turn's order plays it. The release
--- behind a session stays for the popups no order of ours raises.
+-- So the two are kept apart at the source, and a concert is never lost to it:
+--  - a frame's session asks (`SESSION_ORDER_KINDS`) go out after every unit
+--    order of that frame, so a band already on its stage plays first;
+--  - a concert waits only while a deal of THIS turn holds our end turn
+--    (`holdsEndTurn`: a session opening or awaiting its answer, or an
+--    unanswered ask's verdict), and it waits in the order queue, which
+--    retries it every tick and holds the turn until it has played. So it
+--    plays the same turn, as soon as the hold ends, and never later than our
+--    end turn would have gone out anyway.
+-- ★★ THE HOLD USED TO COST WHOLE TURNS. #5336/#5341 refused the order for
+-- the frame while ANY session sat in `CivvisTrade.sessions` or the frame
+-- carried an ask. civvis-20261115T151156Z: a session to 4 opened at t184 was
+-- never acknowledged and never closed, so it sat there for the rest of the
+-- game, and a level-4 band on its stage at (57,14) was refused three times a
+-- turn, t184-193, never playing again; the game was lost at t193 by about
+-- the ~9 concerts it missed. 100 band-turns of 31 turns were held that game.
+-- A session left from an earlier turn holds nothing here (`holdsEndTurn`
+-- counts this turn's only). The release behind a session (#5309) stays the
+-- fallback for the popups no order of ours raises.
 CivvisTrade.SESSION_ORDER_KINDS = { peace = true, friendship = true, alliance = true,
 	sell = true, buy = true };
-CivvisTrade.concertWaits = function(rows)
-	local trade = CivvisTrade;
-	if next(trade.sessions) ~= nil or trade.turnHold ~= nil then return true; end
-	if type(rows) ~= "table" then return false; end
-	for _, row in ipairs(rows) do
-		if type(row) == "table" and trade.SESSION_ORDER_KINDS[tostring(row.kind or "")] then
-			return true;
-		end
-	end
-	return false;
+CivvisTrade.concertWaits = function(turn)
+	return try(function() return CivvisTrade.holdsEndTurn(turn); end, false) == true;
 end;
 CivvisTrade.ask = function(pid, subject, action, kind, turn)
 	local trade = CivvisTrade;
@@ -18598,15 +18603,14 @@ local function applyOrder(player, pid, row, turn)
 		-- SPREAD_RELIGION, REMOVE_HERESY, RELIGIOUS_HEAL, LAUNCH_INQUISITION,
 		-- CONVERT_BARBARIANS, PILLAGE. All parameterless -- `operate` selects
 		-- the shipped UnitPanel's two-argument request for these.
-		-- See `CivvisTrade.concertWaits`. Here as well as in the frame's own
-		-- loop, because that loop is not the only caller: a band that has to
-		-- walk to its site plays from the order queue (`CivvisQueue.drain`),
-		-- some ticks after the frame, when a session opened by that frame or
-		-- the next is already up. Live civvis-20261115T114552Z, the first game
-		-- with the frame's hold: one concert held in the loop (t158 frame 1)
-		-- and three more played from the queue behind the same turn's sessions
-		-- (t154, t158 twice), each closed while hidden as before.
-		if verb == "TOURISM_BOMB" and CivvisTrade.concertWaits(nil) then
+		-- See `CivvisTrade.concertWaits`. The frame's loop and the queue's
+		-- drain both keep a waiting concert in the queue instead of sending
+		-- it here; this is the backstop for any other caller (and the frame
+		-- with `OrderQueue = false`). A band that has to walk to its site
+		-- plays from the queue some ticks after the frame, when a session
+		-- opened by that frame is already up (civvis-20261115T114552Z t154,
+		-- t158: three concerts closed while hidden behind one).
+		if verb == "TOURISM_BOMB" and CivvisTrade.concertWaits(turn) then
 			return false, "concert_waits_for_the_deal_session";
 		end
 		local hash = OP["UNITOPERATION_" .. verb];
@@ -21681,6 +21685,13 @@ CivvisQueue.drain = function(player, pid, turn)
 								or CivvisQueue.isStrike(row)) then
 							-- Nothing that needs movement can run; say why, don't ask.
 							CivvisQueue.refuseRest(subject, entry, "queue_no_moves");
+						elseif verb == "TOURISM_BOMB" and CivvisTrade.concertWaits(turn) then
+							-- See `CivvisTrade.concertWaits`: kept, asked again next
+							-- tick, and the turn is held for it meanwhile.
+							if entry.concert_waits == nil then
+								emit("concert_deferred", { turn = turn, unit = subject, from = "queue" });
+							end
+							entry.concert_waits = (entry.concert_waits or 0) + 1;
 						else
 							local ok, why = false, "throw";
 							local safe, res1, res2 = pcall(function()
@@ -21690,6 +21701,11 @@ CivvisQueue.drain = function(player, pid, turn)
 							else CivvisK.orderThrew(res1, row, turn, "queued_order"); end
 							ran = ran + 1;
 							q.count = q.count - 1;
+							if verb == "TOURISM_BOMB" and entry.concert_waits ~= nil then
+								emit("concert_released", { turn = turn, unit = subject,
+									waited = entry.concert_waits, applied = ok == true,
+									why = tostring(why) });
+							end
 							if ok then
 								q.stats.applied = q.stats.applied + 1;
 								if CivvisQueue.isStrike(row) then
@@ -24024,7 +24040,8 @@ local function applyOrders(player, pid, turn, rows)
 			return false, "settler_scout_capture_hold";
 		end
 		-- See `CivvisTrade.concertWaits`: no concert behind a leader screen.
-		if kind == "unit" and verb == "TOURISM_BOMB" and CivvisTrade.concertWaits(rows) then
+		-- With the queue on, the dispatch below queues it instead.
+		if kind == "unit" and verb == "TOURISM_BOMB" and CivvisTrade.concertWaits(turn) then
 			countRefusal(kind, "concert_waits_for_the_deal_session");
 			ordered[index] = true;
 			return false, "concert_waits_for_the_deal_session";
@@ -24161,8 +24178,10 @@ local function applyOrders(player, pid, turn, rows)
 	CivvisQueue.plotClaims = nil;
 	-- See `moveDepartureState`: whose move the host accepted in this batch.
 	CivvisQueue.departing = {};
+	-- See `CivvisTrade.concertWaits`: a deal ask goes out after the frame's unit
+	-- orders, so a concert in the same frame plays before its leader screen.
 	for index, row in ipairs(rows) do
-		if not ordered[index] then
+		if not ordered[index] and not CivvisTrade.SESSION_ORDER_KINDS[tostring(row.kind or "")] then
 			local subject = tonumber(row.subject);
 			local isUnit = tostring(row.kind or "") == "unit" and subject ~= nil;
 			local departureWait;
@@ -24194,6 +24213,15 @@ local function applyOrders(player, pid, turn, rows)
 				ordered[index] = true;
 				CivvisQueue.push(subject, row, nil);
 				firstRun[subject] = { expect = nil };
+			elseif queueOn and isUnit and tostring(row.verb or "") == "TOURISM_BOMB"
+					and CivvisTrade.concertWaits(turn) then
+				-- A deal holds the turn: the queue plays it once the hold ends.
+				ordered[index] = true;
+				CivvisQueue.push(subject, row, nil);
+				CivvisQueue.pending[subject].concert_waits = 0;
+				firstRun[subject] = { expect = nil };
+				emit("concert_deferred", { turn = turn, unit = subject,
+					frame = awaiting.frame or 0, from = "frame" });
 			else
 				local ok, why = runOrder(index, row);
 				if isUnit then
@@ -24221,6 +24249,9 @@ local function applyOrders(player, pid, turn, rows)
 				end
 			end
 		end
+	end
+	for index, row in ipairs(rows) do
+		if not ordered[index] then runOrder(index, row); end
 	end
 
 	-- Great People go first, before the unmentioned-unit holding pass: they
