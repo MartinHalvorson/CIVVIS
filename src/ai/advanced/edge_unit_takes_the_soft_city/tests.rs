@@ -1949,4 +1949,33 @@ fn the_rush_musters_one_move_from_the_city() {
         );
     }
     assert!(!g.is_at_war(0, 1), "the muster waits for the next turn");
+    // The next turn they stand ready and the rush declares and strikes.
+    let fresh = |g: &mut Game| {
+        for uid in &carts {
+            let body = g.units.get_mut(uid).unwrap();
+            body.moves_left = 3.0;
+            body.acted = false;
+        }
+    };
+    g.turn += 1;
+    fresh(&mut g);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(g.is_at_war(0, 1));
+
+    // Three turns after the muster formed the rush no longer waits for the
+    // stands: it declares with three that can move, wherever they are.
+    let (mut g, _) = rush_fixture();
+    let carts = war_carts(&mut g, &[(9, 8), (9, 9), (9, 10)]);
+    let mut ai = rush_on(VictoryTarget::Score);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(window(&ai).mustered, Some(10));
+    for (uid, pos) in carts.iter().zip([(9, 8), (9, 9), (9, 10)]) {
+        g.relocate(*uid, pos);
+        let body = g.units.get_mut(uid).unwrap();
+        body.moves_left = 3.0;
+        body.acted = false;
+    }
+    g.turn += super::EDGE_RUSH_POSITION_TURNS;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(g.is_at_war(0, 1));
 }

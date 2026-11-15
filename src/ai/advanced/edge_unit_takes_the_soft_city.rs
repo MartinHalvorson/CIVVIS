@@ -261,6 +261,10 @@ pub(crate) const EDGE_RUSH_FIRST: usize = EDGE_MUSTER_BODIES;
 pub(crate) const EDGE_RUSH_FIRST_UNMET: usize = 2;
 /// The rush: tiles from the force the next city may stand after a capture.
 pub(crate) const EDGE_RUSH_CONTINUE_TILES: i32 = 12;
+/// The rush: turns after its muster forms that the declaration waits for
+/// three units to stand on their stands with a move left; past them it
+/// declares with three that can move, wherever they stand.
+pub(crate) const EDGE_RUSH_POSITION_TURNS: u32 = 3;
 /// The rush: the nearest stand its force takes before the war, where the
 /// rival's border leaves one free (a young city owns only its first ring).
 /// From [`EDGE_STAND_MIN_TILES`] the War-Cart spent the declaration turn
@@ -2192,7 +2196,10 @@ impl AdvancedAi {
     /// [`EDGE_STAND_MIN_TILES`]-[`EDGE_MUSTER_TILES`] tiles from `city`
     /// outside a border closed to us (its own tile counts), and with none,
     /// out to two tiles farther. `close` (the rush): the free stands of the
-    /// nearest ring from [`EDGE_RUSH_STAND_MIN_TILES`] out that has one.
+    /// nearest ring from [`EDGE_RUSH_STAND_MIN_TILES`] out that it stands on
+    /// or has a road to. Round 4: a free stand two tiles out with no road
+    /// to it kept three units from ever standing "on their stand", and one
+    /// world named Toronto at turn 11 and never declared.
     fn edge_stand_goals(g: &Game, pid: usize, uid: u32, city: Pos, close: bool) -> HashSet<Pos> {
         let Some(here) = g.units.get(&uid).map(|body| body.pos) else {
             return HashSet::new();
@@ -2207,19 +2214,22 @@ impl AdvancedAi {
                 })
                 .collect()
         };
-        let goals = if close {
-            (EDGE_RUSH_STAND_MIN_TILES..=EDGE_MUSTER_TILES)
-                .map(|ring| stands(ring, ring))
-                .find(|ring| !ring.is_empty())
-                .unwrap_or_default()
+        if close {
+            for ring in EDGE_RUSH_STAND_MIN_TILES..=EDGE_MUSTER_TILES {
+                let goals = stands(ring, ring);
+                if goals.contains(&here)
+                    || (!goals.is_empty() && g.route_step_to_any(uid, &goals).is_some())
+                {
+                    return goals;
+                }
+            }
         } else {
-            stands(EDGE_STAND_MIN_TILES, EDGE_MUSTER_TILES)
-        };
-        if goals.is_empty() {
-            stands(EDGE_STAND_MIN_TILES, EDGE_MUSTER_TILES + 2)
-        } else {
-            goals
+            let goals = stands(EDGE_STAND_MIN_TILES, EDGE_MUSTER_TILES);
+            if !goals.is_empty() {
+                return goals;
+            }
         }
+        stands(EDGE_STAND_MIN_TILES, EDGE_MUSTER_TILES + 2)
     }
 
     /// One step of a force body toward a free stand
@@ -2513,17 +2523,25 @@ impl AdvancedAi {
         // frames, and a muster that forms after the walk has spent the
         // moves waits for the next turn's first frame.
         if window.rushing() {
-            let movers = near
+            let able: Vec<u32> = near
                 .iter()
-                .filter(|&&uid| {
-                    let body = &g.units[&uid];
-                    body.kind == unit
-                        && body.hp >= EDGE_MUSTER_HP
-                        && body.moves_left > 0.0
-                        && Self::edge_stand_goals(g, pid, uid, city_pos, true).contains(&body.pos)
+                .copied()
+                .filter(|uid| {
+                    let body = &g.units[uid];
+                    body.kind == unit && body.hp >= EDGE_MUSTER_HP && body.moves_left > 0.0
+                })
+                .collect();
+            let movers = able
+                .iter()
+                .filter(|uid| {
+                    Self::edge_stand_goals(g, pid, **uid, city_pos, true)
+                        .contains(&g.units[*uid].pos)
                 })
                 .count();
-            if movers < EDGE_MUSTER_BODIES {
+            let waited = window
+                .mustered
+                .is_some_and(|since| g.turn >= since + EDGE_RUSH_POSITION_TURNS);
+            if movers < EDGE_MUSTER_BODIES && !(waited && able.len() >= EDGE_MUSTER_BODIES) {
                 let why = format!(
                     "the forecast reads {:.0}% at {name}; {movers} of the {bodies} {} there stand on their stand with a move left, so the declaration waits for the turn three do",
                     chance * 100.0,
