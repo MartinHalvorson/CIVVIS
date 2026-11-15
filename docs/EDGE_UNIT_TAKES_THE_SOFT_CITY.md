@@ -2,7 +2,8 @@
 
 `edge-unit-takes-the-soft-city` (opt-in, off by default, not armed).
 Code: `src/ai/advanced/edge_unit_takes_the_soft_city.rs`. Driver:
-`src/bin/gene_screen/edge_unit_takes_the_soft_city_tests.rs`. PR #5267; version 2 PR #5292.
+`src/bin/gene_screen/edge_unit_takes_the_soft_city_tests.rs`. PR #5267; version 2 PR #5292;
+`edge-unit-rushes-from-the-capital` (opt-in, runs the window by itself) PR #5305.
 
 ## Question
 
@@ -216,6 +217,60 @@ In it the real-Iron arm's one muster (Susa) came 3 turns before round 4's
 with no Ram; round 4 declared on Susa unwalled, walled two turns later.
 Cities founded, paired: -0.56 ± 0.27 by turn 50 (round 4 -0.25), -0.19 by
 100.
+
+## Rush from the capital (`edge-unit-rushes-from-the-capital`, PR #5305)
+
+**Why.** The Legion needs Mining, Bronze Working, Iron Working and Iron, so
+it stood at the city at turn 44-100, and the soft city's window shuts around
+turn 55-60. In 84 live Rome Score games the seat's score sat at 0.40 of the
+best rival's from turn 25, and 230 Domination games took no rival capital. A
+unit that is trainable on turn 1 does not wait: Sumeria's War-Cart (30,
+three moves, no technology, no resource) and the Aztec Eagle Warrior (28)
+against cities that defend at 13-17 before turn 30 (live 205538Z: Mbamba at
+17 on turn 27; a capital with only Warriors built reads 13).
+
+**Rule** (the third tag, opt-in; it runs the window by itself, so it is the
+only tag to arm):
+
+- **Seat.** Only a seat whose assigned victory target is Score or
+  Domination (`edge_rush_armed`). On any other seat, and on an adaptive
+  seat, nothing is read.
+- **Unit** (`edge_rush_unit`). The civilization's own unique land melee unit
+  that needs no technology still missing, no strategic resource, no building
+  and no district, at least 8 stronger than the strongest unit every seat
+  trains with nothing (the Warrior, 20). It is the edge unit, ahead of a
+  stronger unit that is technologies away: on turn 1 the base rule names
+  Sumeria the Swordsman (35, three technologies and Iron). A civilization
+  with no such unit (Rome, Gaul's Gaesatae at 20) runs nothing under this
+  tag alone, and the base window if the base tag is armed too.
+- **Force.** The capital trains 3 before anything else, the opening book
+  included, on the main path and in the live production hint
+  (`claim_edge_rush_queue`). Once a city is named the version-2 claim trains
+  on to 6 in the capital and the two cities nearest the target, ahead of a
+  deferrable item. Gold is held for the next one and buys it as soon as the
+  treasury holds its price (`force: bought ...`).
+- **Scouting.** While no city is named the edge units explore with every
+  move, inside the rush's reach of the capital (`scouting:`); a wounded one
+  heals first.
+- **Target.** Named from one city. An unwalled rival city, its centre
+  explored, within 5 turns of the unit's moves of one of our cities (15
+  tiles for the War-Cart, 10 for the Eagle Warrior), at an edge of 0 or
+  better; a walled one keeps the base rule (+8 and a breaker). It stays the
+  target while unwalled at -4 or better. The declaration's capture forecast
+  (3 at 70+ health within 4 tiles, calibrated 0.5 within 4 turns) is the
+  gate, read every turn as the force grows. No city named by turn 45, or no
+  declaration by turn 60, stands the rush down.
+- **War.** A war the target's owner declares on us first does not stop the
+  walk, and with the muster formed and the forecast read it is the window's
+  war (`declared: already at war ...`). The assault is the base gene's.
+- **After a capture.** The city is kept (`edge_rush_keeps`) and the edge
+  unit inside it stays as its garrison. The force goes on to the same
+  owner's city, the capital included, within 12 tiles, that the forecast
+  reads taken at 0.5 or better with every edge unit of the force at full
+  health and beside it (`continue: ... forecast N%`); a wounded unit inside
+  our borders heals before it closes. A walled city the forecast does not
+  read taken is left alone, and with no city to go on to peace is asked.
+  Training and buying go on through the war.
 
 ## Live evidence (Rome, Score lane)
 

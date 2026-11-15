@@ -9744,6 +9744,10 @@ mod tests {
             units_lost_to_majors: Some(4),
             units_lost_to_barbarians: Some(1),
             civilians_lost: None,
+            score: 0,
+            rival_capitals: 0,
+            great_works: 0,
+            own_capital: true,
         }];
         let text = serde_json::to_string(&traced).expect("serializes");
         let back: Row = serde_json::from_str(&text).expect("parses");

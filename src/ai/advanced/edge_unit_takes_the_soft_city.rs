@@ -227,6 +227,21 @@ pub(crate) const EDGE_RUSH_REACH_MAX: i32 = 15;
 pub(crate) const EDGE_RUSH_FIRST: usize = EDGE_MUSTER_BODIES;
 /// The rush: tiles from the force the next city may stand after a capture.
 pub(crate) const EDGE_RUSH_CONTINUE_TILES: i32 = 12;
+/// The rush: war turns without a capture before it stops (the base window
+/// waits [`EDGE_WAR_PATIENCE`]). Round 1 (24 Sumeria pairs): the one capture
+/// came on war turn 4; the ten assaults that took nothing fought 16-20 turns
+/// and lost 9 more units a game than the control.
+pub(crate) const EDGE_RUSH_WAR_PATIENCE: u32 = 10;
+/// The rush stops when the at-war capture forecast (`assault_forecast`,
+/// P(capture within its 12 turns)) reads under this on
+/// [`EDGE_RUSH_STOP_STREAK`] war turns running. Under 20% the forecast is
+/// right (4% taken on 1,200 posed sieges, `docs/ASSAULT_FORECAST.md`).
+pub(crate) const EDGE_RUSH_STOP_P: f32 = 0.2;
+/// See [`EDGE_RUSH_STOP_P`].
+pub(crate) const EDGE_RUSH_STOP_STREAK: u32 = 2;
+/// The rush: turns after a capture the force heals, looks for the owner's
+/// next city and reads the forecast again before it asks for peace.
+pub(crate) const EDGE_RUSH_REGROUP_TURNS: u32 = 6;
 /// Builders walk this far to a source.
 const EDGE_BUILDER_STEPS: usize = 8;
 /// Every line's detail starts with this.
@@ -315,6 +330,12 @@ pub(crate) struct EdgeWindow {
     pub(crate) rush_scouting: bool,
     /// The rush: edge units bought with Gold.
     pub(crate) rush_bought: u32,
+    /// The rush: war turns running on which the at-war forecast read under
+    /// [`EDGE_RUSH_STOP_P`].
+    pub(crate) rush_hopeless: u32,
+    /// The rush: the turn the force began to regroup after a capture, with
+    /// no next city read yet.
+    pub(crate) rush_regroup: Option<u32>,
 }
 
 impl EdgeWindow {
@@ -1264,9 +1285,10 @@ impl AdvancedAi {
                 self.edge_prepare(g, pid, window, &edge, start_goal);
             }
             if rush {
-                // No city known yet: buy the next body and look for one.
-                self.edge_rush_buy(g, pid, window, edge.unit);
+                // No city known yet: look for one, then buy the next body
+                // (the scouts have left the city tile a purchase lands on).
                 self.edge_rush_scout(g, pid, window, edge.unit, reach);
+                self.edge_rush_buy(g, pid, window, edge.unit);
             }
             return;
         };
@@ -1336,9 +1358,6 @@ impl AdvancedAi {
         if edge.missing.is_empty() {
             self.edge_upgrades(g, pid, edge.unit);
         }
-        if rush {
-            self.edge_rush_buy(g, pid, window, edge.unit);
-        }
         let force = Self::edge_force(g, pid, edge.unit);
         if force != window.force_noted {
             window.force_noted = force;
@@ -1353,6 +1372,11 @@ impl AdvancedAi {
                 let city_pos = g.cities[&soft.city].pos;
                 self.edge_walk_the_force(g, pid, window, edge.unit, city_pos);
             }
+        }
+        if rush {
+            // After the walk: the force has left the city tiles a purchase
+            // lands on.
+            self.edge_rush_buy(g, pid, window, edge.unit);
         }
     }
 
@@ -1505,8 +1529,11 @@ impl AdvancedAi {
     /// The rush: the city that buys the next edge unit and its Gold price,
     /// while the force has room for one: [`EDGE_RUSH_FIRST`] owned and
     /// queued before a city is named, [`EDGE_FORCE_MAX`] after. The training
-    /// city nearest the target (the capital before one is named) whose
-    /// purchase the host has not refused.
+    /// city nearest the target (the capital before one is named) that quotes
+    /// a price: the host buys a land soldier into the City Center, so a city
+    /// with a soldier on its tile or at the head of its queue quotes none
+    /// (`Game::land_combat_purchase_slot_open`), nor one whose purchase the
+    /// host has refused.
     fn edge_rush_price(
         &self,
         g: &Game,
@@ -1728,6 +1755,31 @@ impl AdvancedAi {
             && g.cities
                 .get(&cid)
                 .is_some_and(|city| city.original_owner != pid)
+    }
+
+    /// `edge-unit-rushes-from-the-capital`: whether a declared friendship
+    /// with `other` is neither offered nor accepted, because it would forbid
+    /// the rush's war: while the rush runs, the owner of the named city,
+    /// and every major while no city is named yet (any of them may hold the
+    /// city the rush names). `false` off the rush and once it is over.
+    pub(super) fn edge_rush_spares_friendship(&self, g: &Game, other: usize) -> bool {
+        if !self.edge_gene_on() {
+            return false;
+        }
+        let Some(window) = self
+            .edge_unit_window
+            .as_ref()
+            .filter(|w| w.rushing() && !w.spent)
+        else {
+            return false;
+        };
+        match window.target.as_ref() {
+            Some(target) => player_by_civ(g, &target.owner_civ).unwrap_or(target.player) == other,
+            None => g
+                .players
+                .get(other)
+                .is_some_and(|player| player.alive && !player.is_minor && !player.is_barbarian),
+        }
     }
 
     /// The Gold held back from every other purchase (`purchase_upkeep_floor`)
@@ -2194,9 +2246,17 @@ impl AdvancedAi {
                    city_pos);
             self.plan = None;
             self.force_groups_dirty = true;
+            self.edge_rush_first_blows(g, pid, unit, soft.city, &name);
             return;
         }
-        let Some(action) = self.preferred_war_opening(g, pid, soft.rival) else {
+        // The rush does not wait out a denouncement's five turns at the
+        // muster: every turn brings the rival's soldiers and walls.
+        let opening = if window.rushing() {
+            self.edge_rush_opening(g, pid, soft.rival)
+        } else {
+            self.preferred_war_opening(g, pid, soft.rival)
+        };
+        let Some(action) = opening else {
             let why = format!(
                 "the forecast reads {:.0}% at {name}, and the shipped opening offers no declaration on {} yet (a denouncement waits out its Formal War)",
                 chance * 100.0,
@@ -2239,6 +2299,47 @@ impl AdvancedAi {
                city_pos);
         self.plan = None;
         self.force_groups_dirty = true;
+        if window.rushing() {
+            self.edge_rush_first_blows(g, pid, unit, soft.city, &name);
+        }
+    }
+
+    /// The rush's opening at the muster: a casus belli when one is legal
+    /// (the Formal War once the denouncement of the first unit has run its
+    /// turns), else a surprise war. The shipped opening would denounce and
+    /// wait five turns; round 1 lost 1-4 turns to that wait at 7 of 12
+    /// musters, and the simulator's chairs raised walls two turns into the
+    /// war in the ones that came late. `None` when no declaration is legal.
+    fn edge_rush_opening(&self, g: &Game, pid: usize, rival: usize) -> Option<Action> {
+        if let Some(
+            action @ (Action::DeclareWar { .. } | Action::DeclareWarWithCasusBelli { .. }),
+        ) = self.preferred_war_opening_ungated(g, pid, rival)
+        {
+            return Some(action);
+        }
+        g.legal_actions_within(pid, ActionFamilies::DIPLOMACY)
+            .into_iter()
+            .find(|action| matches!(action, Action::DeclareWar { player } if *player == rival))
+    }
+
+    /// The rush presses the assault on the turn it declares: the force
+    /// still has every move, and round 1 spent the first war turn walking
+    /// the last three tiles.
+    fn edge_rush_first_blows(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        unit: Name,
+        cid: u32,
+        name: &str,
+    ) {
+        let (blows, before, after) = self.edge_press_the_assault(g, pid, unit, cid, true);
+        if blows > 0 {
+            Self::edge_count(g, pid, "assault");
+            think!(self.journal(), Military, Decision,
+                   "Edge unit strikes {}", name;
+                   "{TAG}: assault: {blows} blow(s) on {name}, health {before} to {after}");
+        }
     }
 
     /// The window at war: the capture, the continuation, the peace.
@@ -2313,10 +2414,16 @@ impl AdvancedAi {
             self.edge_rush_buy(g, pid, window, unit);
         }
         if owner == Some(rival) {
+            window.rush_regroup = None;
             let since = g
                 .turn
                 .saturating_sub(window.last_capture.unwrap_or(declared));
-            if since >= EDGE_WAR_PATIENCE {
+            let patience = if rush {
+                EDGE_RUSH_WAR_PATIENCE
+            } else {
+                EDGE_WAR_PATIENCE
+            };
+            if since >= patience {
                 let why = format!("{since} war turns without a capture at {name}");
                 self.edge_sue(g, pid, window, rival, &why);
                 return;
@@ -2325,6 +2432,37 @@ impl AdvancedAi {
                 let why = format!("{} {} left", force.len(), plain(unit.as_str()));
                 self.edge_sue(g, pid, window, rival, &why);
                 return;
+            }
+            // The rush stops when the forecast says the city will not fall
+            // (walls raised behind the declaration, the rival's soldiers
+            // arrived), before the force is spent on it.
+            if rush && g.turn > declared {
+                if let Some(forecast) = self.assault_forecast(g, pid, target.city, &force) {
+                    let p = forecast.p();
+                    if p < EDGE_RUSH_STOP_P {
+                        window.rush_hopeless += 1;
+                    } else {
+                        window.rush_hopeless = 0;
+                    }
+                    if window.rush_hopeless >= EDGE_RUSH_STOP_STREAK {
+                        let (health, walls) = g
+                            .cities
+                            .get(&target.city)
+                            .map_or((0, 0), |city| (city.hp, city.wall_hp));
+                        let why = format!(
+                            "the forecast reads {name} taken at {:.0}% within {} turns on {} war turns running (health {health}, walls {walls}, {} {} in the force, {} hostile(s) in sight)",
+                            p * 100.0,
+                            super::assault_forecast::HORIZON,
+                            window.rush_hopeless,
+                            force.len(),
+                            plain(unit.as_str()),
+                            forecast.hostiles
+                        );
+                        Self::edge_count(g, pid, "stopped");
+                        self.edge_sue(g, pid, window, rival, &why);
+                        return;
+                    }
+                }
             }
             // The assault: breakers and edge units step beside the city and
             // the edge units strike it (round 3: five declared wars stood
@@ -2366,9 +2504,12 @@ impl AdvancedAi {
             window.target = Some(target);
             return;
         }
-        if owner == Some(pid) {
+        if window.rush_regroup.is_some() {
+            // Regrouping at a city already counted.
+        } else if owner == Some(pid) {
             window.taken += 1;
             window.last_capture = Some(g.turn);
+            window.rush_hopeless = 0;
             Self::edge_count(g, pid, "captured");
             think!(self.journal(), Military, Strategy,
                    "Edge unit takes {}", name;
@@ -2413,6 +2554,26 @@ impl AdvancedAi {
             )
         };
         let Some(next) = next.filter(|_| force.len() + coming >= EDGE_FORCE_FLOOR) else {
+            // The rush regroups before it gives up: the force heals in what
+            // it took, looks for the owner's next city, and the forecast is
+            // read again each turn.
+            if rush && owner == Some(pid) && force.len() + coming >= EDGE_FORCE_FLOOR {
+                let since = *window.rush_regroup.get_or_insert(g.turn);
+                if g.turn < since + EDGE_RUSH_REGROUP_TURNS {
+                    if g.turn == since {
+                        Self::edge_count(g, pid, "regroup");
+                        think!(self.journal(), Military, Decision,
+                               "Edge unit force regroups at {}", name;
+                               "{TAG}: regroup: no city of {} within {} tiles reads taken yet; the {} {} heal at {name} and look for one until turn {}",
+                               target.owner_civ, EDGE_RUSH_CONTINUE_TILES, force.len(),
+                               plain(unit.as_str()), since + EDGE_RUSH_REGROUP_TURNS;
+                               target.pos);
+                    }
+                    self.edge_rush_regroup(g, pid, &force, target.pos);
+                    window.target = Some(target);
+                    return;
+                }
+            }
             let why = if rush {
                 format!(
                     "no city of {} within {} tiles of the force that the forecast reads taken at {:.0}% or better ({} {} left)",
@@ -2448,10 +2609,60 @@ impl AdvancedAi {
             pos: next_city.pos,
             owner_civ: target.owner_civ,
         });
-        if window.last_capture.is_none() {
+        if window.last_capture.is_none() || window.rush_regroup.is_some() {
+            // The patience runs from the turn the force goes on.
             window.last_capture = Some(g.turn);
         }
+        window.rush_regroup = None;
+        window.rush_hopeless = 0;
         self.plan = None;
+    }
+
+    /// The rush regroups after a capture: a wounded edge unit of the force
+    /// heals (in a city of ours two tiles off when its tile is free, else
+    /// where it stands), and a healthy one explores with every move, inside
+    /// [`EDGE_RUSH_CONTINUE_TILES`] of the city it took, so the owner's next
+    /// city is charted. The garrison is not in `force`.
+    fn edge_rush_regroup(&mut self, g: &mut Game, pid: usize, force: &[u32], held: Pos) {
+        for uid in force.iter().copied() {
+            let Some(body) = g.units.get(&uid) else {
+                continue;
+            };
+            if g.is_embarked(body) {
+                continue;
+            }
+            if body.hp < EDGE_HEAL_HP {
+                let _ = Self::edge_heal_step(g, pid, uid);
+                continue;
+            }
+            for _ in 0..6 {
+                let Some(body) = g.units.get(&uid) else {
+                    break;
+                };
+                if body.moves_left <= 0.0 {
+                    break;
+                }
+                let stepped = if g.wdist(body.pos, held) > EDGE_RUSH_CONTINUE_TILES {
+                    g.route_step(uid, held, 1)
+                        .filter(|next| g.can_move(uid, *next))
+                        .is_some_and(|next| {
+                            g.apply(
+                                pid,
+                                &Action::Move {
+                                    unit: uid,
+                                    to: next,
+                                },
+                            )
+                            .is_ok()
+                        })
+                } else {
+                    self.base.explore_step(g, pid, uid)
+                };
+                if !stepped {
+                    break;
+                }
+            }
+        }
     }
 
     /// Press the assault on `cid` at the start of the turn: each breaker of
@@ -2563,7 +2774,8 @@ impl AdvancedAi {
         (blows, before, after)
     }
 
-    /// Ask `rival` for peace and close the window.
+    /// Ask `rival` for peace and close the window. The rush on a Domination
+    /// seat asks for none: the window closes and the lane keeps the war.
     fn edge_sue(
         &mut self,
         g: &mut Game,
@@ -2572,6 +2784,15 @@ impl AdvancedAi {
         rival: usize,
         why: &str,
     ) {
+        if window.rushing() && self.victory_target == Some(VictoryTarget::Domination) {
+            Self::edge_count(g, pid, "handed_over");
+            think!(self.journal(), Military, Strategy,
+                   "Edge unit rush hands the war to the lane";
+                   "{TAG}: handed over: {why}; the Domination lane keeps the war with {}",
+                   g.players[rival].civ);
+            self.edge_close(g, pid, window, why);
+            return;
+        }
         Self::edge_count(g, pid, "peace");
         think!(self.journal(), Military, Strategy,
                "Edge unit asks {} for peace", g.players[rival].civ;

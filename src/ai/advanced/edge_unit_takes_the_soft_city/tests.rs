@@ -1430,36 +1430,43 @@ fn gold_is_held_for_the_next_war_cart_and_buys_it() {
         .expect("a Gold price");
     let mut ai = rush_on(VictoryTarget::Score);
     ai.maintain_edge_unit_window(&mut g, 0);
-    // Short of the price, it is held back from every other purchase.
+    // The capital trains one: the host buys a land soldier into the City
+    // Center, so a city with one at the head of its queue quotes no price
+    // and nothing is held.
+    assert_eq!(
+        g.cities[&capital].queue.first(),
+        Some(&Item::Unit { unit: war_cart() })
+    );
+    assert_eq!(ai.edge_upgrade_gold_held(&g, 0), 0.0);
+    // With the queue on something else the price is quoted, and short of
+    // it the Gold is held back from every other purchase.
+    g.cities.get_mut(&capital).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("settler"),
+    }];
     assert_eq!(ai.edge_upgrade_gold_held(&g, 0), price);
     assert!(ai.purchase_upkeep_floor(&g, 0, 0.0) >= price);
     assert_eq!(counter(&g, "bought"), 0);
     // With the price in the treasury the next turn buys it.
     g.players[0].gold = price + 5.0;
     g.players[0].gold_per_turn = 3.0;
-    let before = g
-        .player_unit_ids(0)
-        .into_iter()
-        .filter(|uid| g.units[uid].kind == war_cart())
-        .count();
     ai.maintain_edge_unit_window(&mut g, 0);
-    let after = g
+    let owned = g
         .player_unit_ids(0)
         .into_iter()
         .filter(|uid| g.units[uid].kind == war_cart())
         .count();
-    assert_eq!(after, before + 1);
+    assert_eq!(owned, 1);
     assert_eq!(counter(&g, "bought"), 1);
     assert_eq!(window(&ai).rush_bought, 1);
     assert!((g.players[0].gold - 5.0).abs() < 1e-6);
 }
 
 #[test]
-fn three_war_carts_at_the_city_declare_from_one_city() {
+fn three_war_carts_at_the_city_declare_at_once_and_strike() {
+    // No denouncement has run its five turns: the rush does not wait for
+    // the Formal War, and the force strikes on the turn it declares.
     let (mut g, city) = rush_fixture();
     war_carts(&mut g, &[(10, 8), (10, 9), (10, 7)]);
-    g.players[0].denounced_until.insert(1, 70);
-    g.players[0].denounced_since.insert(1, 2);
     let mut ai = rush_on(VictoryTarget::Score);
     let journal = crate::reasoning::Journal::recording();
     ai.base.journal = journal.handle();
@@ -1471,10 +1478,24 @@ fn three_war_carts_at_the_city_declare_from_one_city() {
     assert!(details(&journal)
         .iter()
         .any(|line| line.starts_with("edge-unit-takes-the-soft-city: declared: 3 war cart")));
+    assert!(counter(&g, "assault") >= 1, "{:?}", details(&journal));
+    assert!(g.cities[&city].hp < 200);
     // The rush keeps what its war takes.
     g.cities.get_mut(&city).unwrap().owner = 0;
     assert!(ai.edge_rush_keeps(&g, 0, city));
     assert!(!ai.edge_rush_keeps(&g, 0, g.city_at(CAPITAL).unwrap()));
+
+    // The base window still waits out its denouncement.
+    let (mut g, _) = fixture(&["mining", "bronze_working", "iron_working"]);
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 40.0);
+    for pos in [(10, 8), (10, 9), (10, 7)] {
+        g.spawn_test_unit("legion", 0, pos);
+    }
+    let mut ai = gene_on();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(!g.is_at_war(0, 1));
 }
 
 #[test]
@@ -1593,12 +1614,80 @@ fn after_a_capture_a_walled_city_the_forecast_does_not_read_is_left_alone() {
     g.spawn_test_unit("war_cart", 0, RIVAL);
     let walled = g.city_at(next).unwrap();
     g.cities.get_mut(&walled).unwrap().wall_hp = 100;
+    // The force regroups first: it heals and looks for another city.
     ai.maintain_edge_unit_window(&mut g, 0);
     let w = window(&ai);
     assert_eq!(counter(&g, "captured"), 1);
     assert_eq!(counter(&g, "continued"), 0);
+    assert_eq!(counter(&g, "regroup"), 1);
+    assert_eq!(w.rush_regroup, Some(15));
+    assert!(!w.spent);
+    g.turn += 1;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(counter(&g, "captured"), 1, "the capture is counted once");
+    assert_eq!(counter(&g, "regroup"), 1);
+    // With none read by the end of the regroup, peace is asked.
+    g.turn = 15 + super::EDGE_RUSH_REGROUP_TURNS;
+    ai.maintain_edge_unit_window(&mut g, 0);
     assert_eq!(counter(&g, "peace"), 1);
-    assert!(w.spent);
+    assert!(window(&ai).spent);
+}
+
+#[test]
+fn the_regroup_goes_on_when_a_city_reads_taken() {
+    let next = (17, 8);
+    let (mut g, mut ai, city, _) = rush_at_war(&[(11, 8), (11, 9), (12, 9)], Some(next));
+    g.cities.get_mut(&city).unwrap().owner = 0;
+    // The next city is not charted yet.
+    g.players[0].explored.remove(&next);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(counter(&g, "regroup"), 1);
+    assert_eq!(counter(&g, "continued"), 0);
+    // Charted two turns on, it is the next target.
+    g.turn += 2;
+    g.players[0].explored.insert(next);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let w = window(&ai);
+    assert_eq!(counter(&g, "continued"), 1);
+    assert_eq!(w.rush_regroup, None);
+    assert_eq!(w.target.map(|target| target.pos), Some(next));
+    assert_eq!(w.taken, 1);
+}
+
+#[test]
+fn the_rush_stops_when_the_forecast_reads_no_capture() {
+    // Walls raised behind the declaration and no breaker: the forecast
+    // reads the city not taken, and on the second such turn the rush stops
+    // instead of spending the force on it.
+    let (mut g, mut ai, city, carts) = rush_at_war(&[(11, 8), (11, 9), (12, 9)], None);
+    g.cities.get_mut(&city).unwrap().wall_hp = 300;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let w = window(&ai);
+    assert_eq!(w.rush_hopeless, 1);
+    assert!(!w.spent);
+    g.turn += 1;
+    for uid in &carts {
+        if let Some(body) = g.units.get_mut(uid) {
+            body.moves_left = 3.0;
+            body.acted = false;
+        }
+    }
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(counter(&g, "stopped"), 1);
+    assert_eq!(counter(&g, "peace"), 1);
+    assert!(window(&ai).spent);
+
+    // An open city the force is taking reads well and the war goes on.
+    let (mut g, mut ai, _, _) = rush_at_war(&[(11, 8), (11, 9), (12, 9)], None);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let w = window(&ai);
+    assert_eq!(w.rush_hopeless, 0);
+    assert!(!w.spent);
+    // A rush that takes nothing in ten war turns stops (the base window
+    // waits twenty).
+    g.turn = 12 + super::EDGE_RUSH_WAR_PATIENCE;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(window(&ai).spent);
 }
 
 #[test]
@@ -1613,4 +1702,66 @@ fn a_wounded_war_cart_inside_our_borders_heals_before_it_closes() {
     );
     assert!(g.units[&carts[0]].fortified);
     assert!(g.wdist(g.units[&carts[1]].pos, RIVAL) <= 1);
+}
+
+#[test]
+fn the_rush_makes_no_friend_of_its_target() {
+    let (mut g, _) = rush_fixture();
+    g.players[0].explored.remove(&RIVAL);
+    let mut ai = rush_on(VictoryTarget::Score);
+    ai.enable_score_seat_keeps_friends();
+    assert!(!ai.edge_rush_spares_friendship(&g, 1));
+    assert_eq!(ai.score_seat_keeps_friends_lease(&g, 0), Some(Vec::new()));
+    // No city named yet: a friendship with any major could forbid the war.
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(window(&ai).target, None);
+    assert!(ai.edge_rush_spares_friendship(&g, 1));
+    // The live dialogue closer refuses their offer under the same lease.
+    assert!(ai
+        .score_seat_keeps_friends_lease(&g, 0)
+        .is_some_and(|spared| spared.contains(&1)));
+    // Named: its owner.
+    g.players[0].explored.insert(RIVAL);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(window(&ai).target.is_some());
+    assert!(ai.edge_rush_spares_friendship(&g, 1));
+    assert!(!ai.edge_rush_spares_friendship(&g, 0));
+    // Over: friendships are the seat's again.
+    let mut over = window(&ai);
+    over.spent = true;
+    ai.edge_unit_window = Some(over);
+    assert!(!ai.edge_rush_spares_friendship(&g, 1));
+    // The base gene alone spares nobody.
+    let (mut g, _) = fixture(&["mining", "bronze_working", "iron_working"]);
+    let mut ai = gene_on();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(window(&ai).target.is_some());
+    assert!(!ai.edge_rush_spares_friendship(&g, 1));
+}
+
+#[test]
+fn a_domination_seat_s_rush_ends_without_asking_for_peace() {
+    // No next city by the end of the regroup: a Score seat asks for peace,
+    // a Domination seat hands the war to its lane.
+    let (mut g, mut ai, city, _) = rush_at_war(&[(11, 8), (11, 9), (12, 9)], None);
+    g.cities.get_mut(&city).unwrap().owner = 0;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(!window(&ai).spent);
+    g.turn += super::EDGE_RUSH_REGROUP_TURNS;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(window(&ai).spent);
+    assert_eq!(counter(&g, "peace"), 1);
+    assert!(ai.peace_offers.contains(&1));
+
+    let (mut g, mut ai, city, _) = rush_at_war(&[(11, 8), (11, 9), (12, 9)], None);
+    ai.victory_target = Some(VictoryTarget::Domination);
+    g.cities.get_mut(&city).unwrap().owner = 0;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    g.turn += super::EDGE_RUSH_REGROUP_TURNS;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(window(&ai).spent);
+    assert_eq!(counter(&g, "peace"), 0);
+    assert_eq!(counter(&g, "handed_over"), 1);
+    assert!(!ai.peace_offers.contains(&1));
+    assert!(g.is_at_war(0, 1));
 }
