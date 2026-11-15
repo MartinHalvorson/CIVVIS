@@ -11953,12 +11953,12 @@ mod holdable_land_keeps_settling;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
 /// faith. See `advanced/holy_city_guard.rs`.
 mod holy_city_guard;
-/// `builders-improve-the-idle-for-production`: an idle Mine or Lumber Mill
-/// tile priced as if worked. See `advanced/idle_production.rs`.
-mod idle_production;
 /// `hopeless-army-yields-the-queue`: no soldiers for walls nothing breaches.
 /// See `advanced/hopeless_army_yields_the_queue.rs`.
 mod hopeless_army_yields_the_queue;
+/// `builders-improve-the-idle-for-production`: an idle Mine or Lumber Mill
+/// tile priced as if worked. See `advanced/idle_production.rs`.
+mod idle_production;
 /// `industrial-zone-claims-the-factory`: once Industrialization is known, the
 /// Factory that reaches the most new cities (then the Coal Power Plant that
 /// powers the most Factories) claims its city's queue. See

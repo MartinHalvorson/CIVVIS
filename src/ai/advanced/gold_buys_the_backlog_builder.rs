@@ -90,7 +90,8 @@ impl AdvancedAi {
                     .count()
             })
             .sum();
-        let quota = self.worked_backlog_with_idle(g, pid)
+        let quota = self
+            .worked_backlog_with_idle(g, pid)
             .div_ceil(3)
             .min(cities.len().div_ceil(2));
         let held = afield + training;
