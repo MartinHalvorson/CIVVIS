@@ -20589,6 +20589,67 @@ CivvisQueue.condemnWarPending = function(player, pid, row, turn)
 	end, nil);
 end;
 
+-- ★ A MOVE OR STRIKE INTO A WAR WE HAVE JUST DECLARED WAITS FOR THE WAR.
+--
+-- The declaration is a request (`warRequests` above: accepted, not
+-- acknowledged), and the unit orders of the same batch were applied a
+-- millisecond after it. The target's borders are still closed then, so the
+-- host has no path into them and refuses a strike on what stands there.
+-- Measured on the declaration frame of two of three rush games:
+-- civvis-20261115T104756Z t27 (declared on player 3, target Antioch at
+-- (45,24)): three War-Cart MOVE_TO refused `move_no_path`, to (46,24), (45,25)
+-- and (44,25), every one a plot player 3 owned, and the ATTACK on Antioch
+-- queued behind the first dropped `queue_prior_refused`; one War-Cart struck
+-- a frame later. civvis-20261115T100810Z t25 (declared on player 2): all six
+-- moves and strikes of the frame refused, the four `move_no_path` all onto
+-- plots player 2 owned. The same order sent 0.9 s later, with the war on,
+-- was accepted.
+--
+-- So such an order waits, the way CONDEMN_HERETIC does, and is issued when
+-- `IsAtWarWith` reads true (CityStates.lua:1508 reads the same relation). It
+-- waits only when a war was requested this turn and is not yet on, and the
+-- order's plot belongs to that player or one of its units stands on it.
+-- Anything else runs at once, as before. A war that never comes on refuses
+-- the order by name at the grace, where it used to be refused at once.
+CivvisQueue.WAR_ACK_VERBS = { MOVE_TO = true, ATTACK = true, CAPTURE = true, RANGE_ATTACK = true };
+CivvisQueue.strikeWarPending = function(player, pid, row, turn)
+	if tostring(row.kind or "") ~= "unit"
+			or not CivvisQueue.WAR_ACK_VERBS[tostring(row.verb or "")] then return nil; end
+	local x, y = tonumber(row.x), tonumber(row.y);
+	if x == nil or y == nil then return nil; end
+	local requested = false;
+	for _, requestTurn in pairs(CivvisQueue.warRequests) do
+		if requestTurn == turn then requested = true; break; end
+	end
+	if not requested then return nil; end
+	return try(function()
+		local diplomacy = player:GetDiplomacy();
+		local plot = Map.GetPlot(x, y);
+		local owner = plot ~= nil and plot:GetOwner() or -1;
+		for target, requestTurn in pairs(CivvisQueue.warRequests) do
+			if requestTurn == turn and diplomacy:IsAtWarWith(target) ~= true then
+				if owner == target then return target; end
+				-- A religious unit neither bars the plot nor is what a
+				-- strike is aimed at: a move onto its plot is legal at peace.
+				for _, other in Players[target]:GetUnits():Members() do
+					if other:GetX() == x and other:GetY() == y then
+						local info = GameInfo.Units[other:GetUnitType()];
+						if info == nil or (tonumber(info.ReligiousStrength) or 0) <= 0 then
+							return target;
+						end
+					end
+				end
+			end
+		end
+		return nil;
+	end, nil);
+end;
+-- Either dependency on a war this turn's request has not started yet.
+CivvisQueue.warPending = function(player, pid, row, turn)
+	return CivvisQueue.condemnWarPending(player, pid, row, turn)
+		or CivvisQueue.strikeWarPending(player, pid, row, turn);
+end;
+
 -- Native 131233 t68: an awake Archer shared its city with a Warrior whose
 -- MOVE_TO came later in the same batch. Its opening shot was refused; it
 -- moved and fired on the next frame. Do not infer a universal stacking rule:
@@ -21221,11 +21282,12 @@ CivvisQueue.drain = function(player, pid, turn)
 					or unpathed or cannot_land or stalled or entry.wait >= grace)
 					and (not active_operation or stuck_operation);
 				if ready and #entry.rows > 0 then
-					local target = CivvisQueue.condemnWarPending(player, pid, entry.rows[entry.next], turn);
+					local target = CivvisQueue.warPending(player, pid, entry.rows[entry.next], turn);
 					if target ~= nil then
 						entry.war_wait = (entry.war_wait or 0) + 1;
 						if entry.war_wait == 1 then
-							emit("queue_war_wait", { turn = turn, unit = subject, target = target });
+							emit("queue_war_wait", { turn = turn, unit = subject, target = target,
+								verb = tostring(entry.rows[entry.next].verb or "") });
 						end
 						if entry.war_wait >= grace then
 							CivvisQueue.refuseRest(subject, entry, "queue_war_not_acknowledged");
@@ -23826,7 +23888,7 @@ local function applyOrders(player, pid, turn, rows)
 					departures = #departureWait.peers,
 				});
 			elseif queueOn and isUnit
-					and CivvisQueue.condemnWarPending(player, pid, row, turn) ~= nil then
+					and CivvisQueue.warPending(player, pid, row, turn) ~= nil then
 				-- No earlier unit order is needed for this dependency: the war
 				-- request itself is still in flight. Queue it without reporting
 				-- a failed command or poisoning this unit's later orders.

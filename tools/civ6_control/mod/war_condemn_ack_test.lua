@@ -73,7 +73,11 @@ PlayerManager = { GetAliveMajorIDs = function() return { 0, 1, 3 } end,
 PlayersVisibility = { [PID] = { IsVisible = function() return host.visible end } }
 Game = { GetLocalPlayer = function() return PID end,
 	GetCurrentGameTurn = function() return turn end }
-Map = { GetPlot = function() return nil end,
+Map = { GetPlot = function(x, y)
+		local owner = host.owners ~= nil and host.owners[tostring(x) .. "," .. tostring(y)] or nil
+		if owner == nil then return nil end
+		return { GetOwner = function() return owner end }
+	end,
 	GetPlotDistance = function(x1, y1, x2, y2)
 		return math.max(math.abs(x1 - x2), math.abs(y1 - y2))
 	end }
@@ -147,6 +151,7 @@ local function put(owner, id, kind, x, y, moves)
 end
 local function reset()
 	host.units, host.wars, host.requests, host.ops, host.commands = {}, {}, {}, {}, {}
+	host.owners = {}
 	host.allowed, host.visible = true, true
 	host.request_throws, host.synchronous, host.force_refusal, host.unknown = false, false, false, false
 	host.condemn_gates, host.enemy_reads = 0, 0
@@ -322,4 +327,73 @@ queue.ticks = 8
 check("real global cap releases turn", settle(player, PID, turn), true)
 check("global cap still releases queue", queue.pendingCount(), 0)
 check("global cap remains named", queue.stats.refusals.queue_stalled, 1)
+-- A move or strike into the war just declared waits for the war too.
+-- civvis-20261115T104756Z t27: three War-Cart MOVE_TO onto plots the
+-- declared-on player owned were refused `move_no_path` in the declaration's
+-- own frame and the ATTACK on its city behind one was dropped; 100810Z t25:
+-- all six moves and strikes of the frame refused.
+local SOLDIER = 77
+reset()
+host.units[key(3, TARGET)] = nil
+host.owners["5,19"] = 3
+put(3, SOLDIER, "UNIT_WARRIOR", 6, 19)
+apply(player, PID, turn, { war, row(ACTOR, "MOVE_TO", 5, 19), row(ACTOR, "ATTACK", 6, 19) })
+check("a move into the new enemy's land is not asked of the host yet", #host.ops, 0)
+check("it and the strike behind it are queued", queue.pendingCount(), 2)
+check("nothing is refused", queue.stats.refused, 0)
+drain()
+check("still not asked while the war is not on", #host.ops, 0)
+check("the wait is on the log once", eventCount("queue_war_wait"), 1)
+host.wars[3] = true
+drain()
+check("the move goes once the war is on", #host.ops, 1)
+check("the release is on the log", eventCount("queue_war_wait_released"), 1)
+host.units[key(PID, ACTOR)].x = 5
+drain()
+check("and the strike follows the walk", #host.ops, 2)
+check("with nothing refused", queue.stats.refused, 0)
+
+-- A strike at a plot the new enemy's soldier stands on, on land nobody owns.
+reset()
+host.units[key(3, TARGET)] = nil
+put(3, SOLDIER, "UNIT_WARRIOR", 5, 19)
+apply(player, PID, turn, { war, row(ACTOR, "ATTACK", 5, 19) })
+check("a strike on the new enemy's soldier waits", #host.ops, 0)
+host.wars[3] = true
+drain()
+check("and lands once the war is on", #host.ops, 1)
+
+-- What does not depend on the new war runs at once, as before.
+reset()
+host.units[key(3, TARGET)] = nil
+host.owners["5,19"] = 1
+apply(player, PID, turn, { war, row(ACTOR, "MOVE_TO", 5, 19) })
+check("a move onto another player's land does not wait for this war", #host.ops, 1)
+reset()
+host.units[key(3, TARGET)] = nil
+apply(player, PID, turn, { war, row(ACTOR, "MOVE_TO", 5, 19) })
+check("a move onto land nobody owns does not wait", #host.ops, 1)
+check("no wait is logged for either", eventCount("queue_war_wait"), 0)
+reset()
+host.units[key(3, TARGET)] = nil
+host.owners["5,19"] = 3
+host.synchronous = true
+apply(player, PID, turn, { war, row(ACTOR, "MOVE_TO", 5, 19) })
+check("a war that is on at once adds no wait", #host.ops, 1)
+reset()
+host.units[key(3, TARGET)] = nil
+host.owners["5,19"] = 3
+apply(player, PID, turn, { row(ACTOR, "MOVE_TO", 5, 19) })
+check("with no declaration this turn nothing waits", #host.ops, 1)
+
+-- A war that never comes on: the order is refused by name at the grace.
+reset()
+host.units[key(3, TARGET)] = nil
+host.owners["5,19"] = 3
+apply(player, PID, turn, { war, row(ACTOR, "MOVE_TO", 5, 19) })
+for _ = 1, 3 do drain() end
+check("an unacknowledged war releases the queue", queue.pendingCount(), 0)
+check("by name", queue.stats.refusals.queue_war_not_acknowledged, 1)
+check("and the move is never asked of the host", #host.ops, 0)
+
 print("war/condemn acknowledgement: " .. checks .. " assertions passed against real agent/queue/ledger")
