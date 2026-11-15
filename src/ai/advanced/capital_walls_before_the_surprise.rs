@@ -109,7 +109,7 @@ impl AdvancedAi {
     pub(super) fn remember_capital_watch_sightings(&mut self, g: &Game, pid: usize) {
         if !self.capital_walls_before_the_surprise
             && !self.capital_watch_arms_the_slinger
-            && !self.capital_archers_before_the_surprise
+            && !self.capital_archers_on()
         {
             return;
         }
@@ -123,6 +123,9 @@ impl AdvancedAi {
         for owner in owners {
             self.capital_watch_sightings.insert(owner, g.turn);
         }
+        // `capital-archers-before-the-surprise-2`: the nearer door. No-op
+        // with the version off.
+        self.remember_capital_archers_door(g, pid, at);
     }
 
     /// The strongest watched major seen at our door within the window that

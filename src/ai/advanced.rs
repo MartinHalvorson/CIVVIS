@@ -7008,6 +7008,15 @@ pub struct AdvancedAi {
     /// the next Settler, and the best shooter keeps the City Center. See
     /// `advanced/capital_archers_before_the_surprise.rs`. Opt-in.
     capital_archers_before_the_surprise: bool,
+    /// `capital-archers-before-the-surprise-2`: version one, and in the
+    /// opening a watched major's soldier within six tiles of the unwalled
+    /// original capital arms its spending legs at 2.5x. See
+    /// `advanced/capital_archers_before_the_surprise.rs`. Opt-in.
+    capital_archers_before_the_surprise_2: bool,
+    /// The turn a watched major's soldier was last seen within six tiles of
+    /// the original capital, by owner, under
+    /// `capital-archers-before-the-surprise-2`.
+    capital_archers_door_sightings: BTreeMap<usize, u32>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See

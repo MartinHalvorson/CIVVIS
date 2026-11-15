@@ -5753,6 +5753,13 @@ pub const GENES: &[Gene] = &[
     // of 40 and Archery two to four turns after Masonry. See
     // `advanced/capital_archers_before_the_surprise.rs`.
     Gene { tag: "capital-archers-before-the-surprise", field: "capital_archers_before_the_surprise", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_archers_before_the_surprise, disable: AdvancedAi::disable_capital_archers_before_the_surprise },
+    // Live Immortal civvis-20261115T192831Z (Sweden, version one armed):
+    // Spain at 2.3-3.7x, a Warrior two tiles from Stockholm at t11, declared
+    // at t26 and took it at t30 with its Walls at 35 of 40; the 3.5x legs
+    // read on one turn. Version two arms them at 2.5x in the opening while a
+    // soldier stood within six tiles. See
+    // `advanced/capital_archers_before_the_surprise.rs`.
+    Gene { tag: "capital-archers-before-the-surprise-2", field: "capital_archers_before_the_surprise_2", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_archers_before_the_surprise_2, disable: AdvancedAi::disable_capital_archers_before_the_surprise_2 },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

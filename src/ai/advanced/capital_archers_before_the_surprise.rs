@@ -56,6 +56,18 @@
 //! spending legs now wait for 3.5x, the floor of the live declarations
 //! before turn 30, and the production leg trains only a range-two shooter.
 //!
+//! **Version two, `capital-archers-before-the-surprise-2`.** Everything
+//! above, and in the opening (Online turn 45) a watched major whose soldier
+//! stood within [`CAPITAL_ARCHERS_DOOR_TILES`] of the unwalled original
+//! capital in the watch's window arms the spending legs at
+//! [`CAPITAL_ARCHERS_WATCH_RATIO`]. Live Immortal
+//! `civvis-20261115T192831Z` (Sweden, version one armed): Spain met at t11
+//! at 3.0x with a Warrior two tiles from Stockholm, read 2.3-3.7x until it
+//! declared at t26 with four Warriors, and took Stockholm at t30 with its
+//! Walls at 35 of 40. Science stood at 3 a turn; Masonry took t11-23, the
+//! only Slinger became an Archer at t27, and 80 Gold went to a Warrior three
+//! times. The 3.5x legs read on one turn (t18).
+//!
 //! **Why (live Deity, 6 players, Small Continents, Online; 2026-11-15, 33
 //! games).** Four surprise wars opened on our seat before turn 30, by majors
 //! at 3.4-5.6 times our power, and two of them went for the capital and took
@@ -133,27 +145,90 @@ pub(crate) const CAPITAL_ARCHERS_MAX_OWNED: usize = 3;
 /// Upgrades the Gold leg holds a bill for.
 pub(crate) const CAPITAL_ARCHERS_HELD_BILLS: usize = 2;
 
+/// Version two's door: a watched major's soldier this near the original
+/// capital in the watch's window arms the spending legs at
+/// [`CAPITAL_ARCHERS_WATCH_RATIO`].
+pub(crate) const CAPITAL_ARCHERS_DOOR_TILES: i32 = 6;
+
+/// Version two's door reads only in the opening: standard turns, 45 on
+/// Online.
+pub(crate) const CAPITAL_ARCHERS_OPENING_STANDARD: u32 = 67;
+
 impl AdvancedAi {
     /// The watched major the gene answers and its power over ours: the gene
     /// on, an original capital of ours without Walls, and the capital watch
     /// reading [`CAPITAL_ARCHERS_RATIO`]. `None` otherwise.
     pub(super) fn capital_archers_threat(&self, g: &Game, pid: usize) -> Option<(usize, f64)> {
-        if !self.capital_archers_before_the_surprise {
+        if !self.capital_archers_on() {
             return None;
         }
         let capital = Self::capital_watch_city(g, pid)?;
         if g.city_max_wall_hp(&g.cities[&capital]) > 0 {
             return None;
         }
+        // Version two: in the opening, a watched major whose soldier stood at
+        // the door arms the spending legs at the watch bar.
         self.capital_archers_watched(g, pid)
-            .filter(|(_, ratio)| *ratio >= CAPITAL_ARCHERS_RATIO)
+            .filter(|(rival, ratio)| {
+                *ratio >= CAPITAL_ARCHERS_RATIO || self.capital_archers_opening_door(g, *rival)
+            })
+    }
+
+    /// Either version of the gene.
+    pub(super) fn capital_archers_on(&self) -> bool {
+        self.capital_archers_before_the_surprise || self.capital_archers_before_the_surprise_2
+    }
+
+    /// Version two's door: the game is still in its opening (Online turn
+    /// 45) and a soldier of `rival` stood within [`CAPITAL_ARCHERS_DOOR_TILES`]
+    /// of the original capital in the watch's window. False with version two
+    /// off.
+    pub(super) fn capital_archers_opening_door(&self, g: &Game, rival: usize) -> bool {
+        self.capital_archers_before_the_surprise_2
+            && g.turn <= g.standard_duration(CAPITAL_ARCHERS_OPENING_STANDARD)
+            && self
+                .capital_archers_door_sightings
+                .get(&rival)
+                .is_some_and(|seen| {
+                    *seen <= g.turn
+                        && g.turn - *seen
+                            <= g.standard_duration(
+                                capital_walls_before_the_surprise::CAPITAL_WATCH_STANDARD,
+                            )
+                })
+    }
+
+    /// Record the turn each watched major's soldier was last seen within
+    /// [`CAPITAL_ARCHERS_DOOR_TILES`] of the original capital at `at`. Runs
+    /// with the capital watch at turn start. Exact no-op with version two
+    /// off.
+    pub(super) fn remember_capital_archers_door(&mut self, g: &Game, pid: usize, at: Pos) {
+        if !self.capital_archers_before_the_surprise_2 {
+            return;
+        }
+        let owners: Vec<usize> = Self::capital_watch_seen(g, pid, at, CAPITAL_ARCHERS_DOOR_TILES)
+            .map(|unit| unit.owner)
+            .collect();
+        for owner in owners {
+            self.capital_archers_door_sightings.insert(owner, g.turn);
+        }
+    }
+
+    /// What the journal adds when version two's door, not the 3.5x bar,
+    /// armed a spending leg.
+    fn capital_archers_bar_note(ratio: f64) -> &'static str {
+        if ratio < CAPITAL_ARCHERS_RATIO {
+            " (opening door: its soldier stood within six tiles)"
+        } else {
+            ""
+        }
     }
 
     /// The watch alone at [`CAPITAL_ARCHERS_WATCH_RATIO`], whatever the
     /// capital's Walls: the upgrade leg keeps a waiting Slinger's upgrade
     /// after the Walls stand.
     fn capital_archers_watched(&self, g: &Game, pid: usize) -> Option<(usize, f64)> {
-        if !self.capital_archers_before_the_surprise {
+        if !self.capital_archers_on() {
             return None;
         }
         self.capital_watched_major_power(g, pid)
@@ -249,9 +324,10 @@ impl AdvancedAi {
         let slingers = Self::capital_archers_slingers(g, pid, capital).len();
         Some(format!(
             "capital-archers-before-the-surprise: Archery before Masonry; {} fields {ratio:.1}x our \
-             power, its soldiers stood within {CAPITAL_WATCH_TILES} tiles, and {slingers} Slinger(s) \
-             at the capital upgrade the turn it lands",
-            g.players[rival].civ
+             power, its soldiers stood within {CAPITAL_WATCH_TILES} tiles{}, and {slingers} \
+             Slinger(s) at the capital upgrade the turn it lands",
+            g.players[rival].civ,
+            Self::capital_archers_bar_note(ratio)
         ))
     }
 
@@ -493,8 +569,8 @@ impl AdvancedAi {
             "capital-archers-before-the-surprise: {} fields {ratio:.1}x our power and its soldiers \
              stood within {CAPITAL_WATCH_TILES} tiles; {near} of {CAPITAL_ARCHERS_WANTED} shooters \
              within {CAPITAL_ARCHERS_HOME_TILES} tiles, {training} in training; {price:.0} of \
-             {gold:.0} Gold, {floor:.0} kept",
-            g.players[rival].civ);
+             {gold:.0} Gold, {floor:.0} kept{}",
+            g.players[rival].civ, Self::capital_archers_bar_note(ratio));
         true
     }
 
@@ -709,9 +785,10 @@ impl AdvancedAi {
             g.cities[&capital].name, crate::reasoning::plain(unit.as_str()), g.players[rival].civ;
             "capital-archers-before-the-surprise: {ratio:.1}x our power and its soldiers stood \
              within {CAPITAL_WATCH_TILES} tiles; {near} of {CAPITAL_ARCHERS_WANTED} shooters within \
-             {CAPITAL_ARCHERS_HOME_TILES} tiles; {turns:.1} turns{}",
+             {CAPITAL_ARCHERS_HOME_TILES} tiles; {turns:.1} turns{}{}",
             head.map_or(String::new(), |item| format!(
-                "; {} keeps its progress", Self::plain_item(&item))));
+                "; {} keeps its progress", Self::plain_item(&item))),
+            Self::capital_archers_bar_note(ratio));
     }
 }
 
