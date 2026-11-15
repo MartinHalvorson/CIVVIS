@@ -2020,15 +2020,39 @@ SCREEN_POLL_S = 1.5
 # shorter budget: by then a menu that is still unreadable is more likely a
 # covering dialog, which the branch after the poll recovers from.
 FIRST_MENU_POLL_BUDGET_S = 40.0
+# ★ And once the boot is nearly done, that first poll looks about every
+# second. A look is a capture and a recognizer pass (0.8-1.4 s) and the poll
+# then slept `SCREEN_POLL_S`, so the menu was read every 2.4 s and found 1.2 s
+# late on average. Over 86 games of 2026-11-13 and 11-15 the label was read
+# at +25.5 s in the median (p10 23.3, p90 26.4) and the poll began at +11 to
+# +13 s; from `FIRST_MENU_QUICK_AFTER_S` into the poll (about +20 s after
+# launch) the sleep between looks is `FIRST_MENU_QUICK_POLL_S`. The reading
+# itself is unchanged (`_settled_main_menu_point`: a fading row is not a
+# click), and so is every other poll.
+FIRST_MENU_QUICK_AFTER_S = 8.0
+FIRST_MENU_QUICK_POLL_S = 0.3
 
 
 def _poll_screen(read, budget_s: float = SCREEN_POLL_BUDGET_S,
-                 poll_s: float = SCREEN_POLL_S):
-    """Call ``read`` until it returns something other than None or the budget is spent."""
-    deadline = time.monotonic() + budget_s
+                 poll_s: float = SCREEN_POLL_S,
+                 quick_after_s: float | None = None,
+                 quick_poll_s: float | None = None):
+    """Call ``read`` until it returns something other than None or the budget is spent.
+
+    With ``quick_after_s`` and ``quick_poll_s`` the wait between looks drops to
+    ``quick_poll_s`` once the poll has run ``quick_after_s`` (never above
+    ``poll_s``); without both it is ``poll_s`` throughout, as before.
+    """
+    started = time.monotonic()
+    deadline = started + budget_s
+    quick = (quick_after_s is not None and quick_poll_s is not None
+             and 0 <= quick_poll_s < poll_s)
     result = read()
     while result is None and time.monotonic() < deadline:
-        time.sleep(poll_s)
+        if quick and time.monotonic() - started >= quick_after_s:
+            time.sleep(quick_poll_s)
+        else:
+            time.sleep(poll_s)
         result = read()
     return result
 # How many extra startup budgets the whole bootstrap may spend on a screen that
@@ -4627,7 +4651,9 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             return (point, rows) if point is not None or len(rows) >= 4 else None
 
         top = _poll_screen(read_top_menu, budget_s=FIRST_MENU_POLL_BUDGET_S
-                           if attempt == 1 else SCREEN_POLL_BUDGET_S)
+                           if attempt == 1 else SCREEN_POLL_BUDGET_S,
+                           quick_after_s=FIRST_MENU_QUICK_AFTER_S if attempt == 1 else None,
+                           quick_poll_s=FIRST_MENU_QUICK_POLL_S if attempt == 1 else None)
         menu_point, toprows = top if top is not None else (None, [])
         sp_y = MENU["single_player"][1]
         pitch = 0.029
