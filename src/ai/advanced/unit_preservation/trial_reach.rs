@@ -135,6 +135,9 @@ pub(super) struct TrialReach {
     /// `None` for a hostile that is read fresh on every trial (an air unit,
     /// or one the base board does not hold).
     hostiles: BTreeMap<u32, Option<Hostile>>,
+    /// How many hostile reaches a trial kept (first and second turn).
+    #[cfg(test)]
+    pub(super) kept: usize,
 }
 
 impl TrialReach {
@@ -147,6 +150,8 @@ impl TrialReach {
             chain: g.map.tiles.write_chain(),
             keep: !mirrored_board(g, pid),
             hostiles: BTreeMap::new(),
+            #[cfg(test)]
+            kept: 0,
         }
     }
 
@@ -290,7 +295,13 @@ impl TrialReach {
                     }
                     fresh
                 }
-                Some(kept) => kept,
+                Some(kept) => {
+                    #[cfg(test)]
+                    {
+                        self.kept += 1;
+                    }
+                    kept
+                }
                 None => fresh(),
             };
             hostiles.push((id, flood, Some(strike)));
@@ -310,6 +321,10 @@ impl TrialReach {
                 let (second, reads) = self.second(id)?;
                 reads.hold(trial, change).then(|| second.clone())
             });
+            #[cfg(test)]
+            {
+                self.kept += usize::from(kept.is_some());
+            }
             let mut widen = |reach: &mut Vec<Pos>| {
                 let probe = probe.get_or_insert_with(|| trial.speculative_clone());
                 widen_to_the_second_turn(probe, pid, id, reach, None);

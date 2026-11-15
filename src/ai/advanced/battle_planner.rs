@@ -438,7 +438,12 @@ pub(super) fn widen_to_the_second_turn(
     };
     for stand in stands {
         probe.relocate(uid, stand);
-        reach.extend(strike_reach_reading(probe, pid, uid, relaxed.as_deref_mut()));
+        reach.extend(strike_reach_reading(
+            probe,
+            pid,
+            uid,
+            relaxed.as_deref_mut(),
+        ));
     }
     probe.relocate(uid, saved.pos);
     *probe.units.get_mut(&uid).expect("forecast retains enemy") = saved;
@@ -604,6 +609,15 @@ impl DangerField {
             widen_to_the_second_turn(&mut probe, pid, *uid, reach, None);
         }
         field
+    }
+
+    /// Whether two fields price the same hostiles over the same reaches.
+    #[cfg(test)]
+    pub(super) fn same_reaches(&self, other: &DangerField) -> bool {
+        self.pid == other.pid
+            && self.reaches == other.reaches
+            && self.floods == other.floods
+            && self.widened == other.widened
     }
 
     /// [`Self::second_turn`] on `g`, from the first-turn field `first` that
