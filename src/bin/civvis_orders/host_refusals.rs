@@ -401,7 +401,15 @@ impl HostMoveRefusals {
                     row.kind == "order_failed"
                         && row.subject == Some(unit)
                         && row.pos == Some((attempt.turn as i32, -1))
-                        && row.verb.as_deref() == Some("unit:MOVE_TO host_noop_no_path")
+                        && matches!(
+                            row.verb.as_deref(),
+                            // The host walked nowhere, or had no path to
+                            // give when the mod asked before sending.
+                            Some(
+                                "unit:MOVE_TO host_noop_no_path"
+                                    | "unit:MOVE_TO host_refused_no_path"
+                            )
+                        )
                 })
             {
                 self.local_retry.insert(unit, (state.turn, attempt.from));

@@ -819,6 +819,52 @@ check("…having been asked", pathReads > 0, true)
 UnitManager.GetMoveToPathEx = nil
 Map.GetPlotIndex = nil
 
+-- 3d. The replan board waits for a walk the host has ended. The host's event
+-- reaches the queue a tick or three before the unit's plot read changes; the
+-- watch was dropped at the event and the board exported with the unit still
+-- on the plot it had left (28, 75 and 79 first-order walks a game on
+-- civvis-20261115T120431Z, 113645Z, 101703Z). (Events are read only while
+-- the queue holds a row, so each case has another unit with one.)
+local function landing(id)
+	reset()
+	LOG = {}
+	host.units[id] = { id = id, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+	host.units[39] = { id = 39, kind = "UNIT_WARRIOR", x = 5, y = 5, moves = 2 }
+	applyOrders(player, PID, 7, { row(id, "MOVE_TO", 2, 1), row(39, "MOVE_TO", 6, 5), row(39, "ATTACK", 7, 5) })
+	check("landing: the host's event is read", queue.noteUnitEvent(PID, PID, id), true)
+end
+Map.GetPlotIndex = function(x, y) return y * 100 + x end
+UnitManager.GetMoveToPathEx = function(_, destination)
+	return { plots = { 1, destination }, turns = { 0, 1 } }
+end
+landing(35)
+queue.drain(player, PID, 7)
+check("landing: the watch is held after the host's event", queue.pending[35] ~= nil, true)
+queue.drain(player, PID, 7)
+check("landing: and on the next tick", queue.pending[35] ~= nil, true)
+host.arrive(35)
+queue.drain(player, PID, 7)
+check("landing: it is dropped the tick the plot read changes", queue.pending[35], nil)
+check("landing: the hold says it landed", (lastEvent("queue_landing_hold") or ""):find('"landed":true', 1, true) ~= nil, true)
+check("landing: and it was never called a no-op", (lastEvent("move_noop") or ""):find('"unit":35', 1, true), nil)
+-- A walk that never shows is given three ticks, no more.
+landing(36)
+for _ = 1, 3 do queue.drain(player, PID, 7) end
+check("landing: three ticks on it is still held", queue.pending[36] ~= nil, true)
+queue.drain(player, PID, 7)
+check("landing: and released on the fourth", queue.pending[36], nil)
+check("landing: the hold says it did not land", (lastEvent("queue_landing_hold") or ""):find('"landed":false', 1, true) ~= nil, true)
+-- A walk the host has no path for by the time its event comes is answered
+-- at once, as before.
+landing(37)
+UnitManager.GetMoveToPathEx = function() return { plots = { 1 }, turns = { 0 } } end
+queue.drain(player, PID, 7)
+queue.drain(player, PID, 7)
+check("landing: a walk the path does not land this turn is not held", queue.pending[37], nil)
+check("landing: and no hold is on the log", lastEvent("queue_landing_hold"), nil)
+UnitManager.GetMoveToPathEx = nil
+Map.GetPlotIndex = nil
+
 -- 4. A queued unit that dies is a named refusal, never a dereference.
 reset()
 host.units[12] = { id = 12, kind = "UNIT_WARRIOR", x = 5, y = 5, moves = 2 }
@@ -1404,11 +1450,14 @@ do
 	queue.drain(player, PID, 7)
 	queue.noteUnitEvent(PID, PID, AHEAD)
 	queue.drain(player, PID, 7)
+	-- The host's path says this walk lands this turn, so its watch is held up
+	-- to three ticks for the plot read to change (`waitsToLand`), then dropped.
+	check("event first: the watch on the unit ahead is held for the landing", queue.pending[AHEAD] ~= nil, true)
+	for _ = 1, 3 do queue.drain(player, PID, 7) end
 	check("event first: the watch on the unit ahead is gone", queue.pending[AHEAD], nil)
 	check("event first: and it still stands on the plot", host.units[AHEAD].x, 5)
 	check("event first: the follower still waits", queue.pending[BEHIND] ~= nil, true)
 	check("event first: nothing was abandoned", lastEvent("queue_move_departure_abandoned"), nil)
-	queue.drain(player, PID, 7)
 	host.arrive(AHEAD)
 	queue.drain(player, PID, 7)
 	check("event first: the follower moves when the plot read changes", ops(BEHIND), "UNITOPERATION_MOVE_TO")

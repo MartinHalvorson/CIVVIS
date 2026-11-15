@@ -157,7 +157,7 @@ class SystemEventsRateTest(unittest.TestCase):
     class Done(Exception):
         pass
 
-    def _run(self, kinds, boxes=None, front="Civ6_Exe_Child", passes=None):
+    def _run(self, kinds, boxes=None, front="Civ6_Exe_Child", passes=None, cards=False):
         """Drive `main` for one pass per entry of ``kinds`` on a fake clock
         that only sleeps advance; returns what was asked and pressed."""
         clock = [0.0]
@@ -208,7 +208,8 @@ class SystemEventsRateTest(unittest.TestCase):
                 mock.patch.object(popup_clear.time, "sleep", side_effect=sleep), \
                 mock.patch.object(sys, "argv", [
                     "popup_clear.py", "--interval", "0.25", "--runs", root,
-                    "--log", str(Path(root) / "popup.log")]):
+                    "--log", str(Path(root) / "popup.log")]
+                    + (["--cards"] if cards else [])):
             try:
                 popup_clear.main()
             except self.Done:
@@ -225,6 +226,36 @@ class SystemEventsRateTest(unittest.TestCase):
         self.assertEqual(len(seen["captured"]), 12)
         # The pace of captures is the measured one, not four a second.
         self.assertEqual(set(seen["sleeps"]), {1.25})
+
+    def test_a_card_left_to_the_mod_is_as_quiet_as_the_map(self) -> None:
+        # Probed on civvis-20261115T131026Z: the live screen classified as a
+        # card nine captures in ten, never as the map, and the lane does not
+        # pass --cards. Twelve such passes ask what twelve map passes ask.
+        seen = self._run(["card"] * 12)
+        self.assertEqual(seen["boxes"], [0.0, 5.0, 10.0])
+        self.assertEqual(seen["fronts"], 0)
+        self.assertEqual(set(seen["sleeps"]), {1.25})
+        self.assertEqual(seen["log"].count("a card matched"), 1)
+        # Cards and the map mixed are one quiet run.
+        mixed = self._run(["card", "map", "card", "card", "map", "card"])
+        self.assertEqual((mixed["boxes"], mixed["fronts"]), ([0.0, 5.0], 0))
+        # A leader after cards is still looked at afresh before the ESC count.
+        leader = self._run(["card", "leader", "leader", "leader", "leader"])
+        self.assertEqual(leader["boxes"], [0.0, 1.5, 1.75, 2.0])
+        self.assertEqual((leader["fronts"], leader["keys"]), (3, 1))
+        self.assertEqual(leader["sleeps"], [1.25, 0.25, 0.25, 0.25, 0.25])
+        # With --cards a card is something this loop may click: every pass
+        # reads the window and the front app and chases at a quarter second.
+        clicking = self._run(["card"] * 4, cards=True)
+        self.assertEqual(clicking["boxes"], [0.0, 0.25, 0.5, 0.75])
+        self.assertEqual(clicking["fronts"], 4)
+        self.assertEqual(set(clicking["sleeps"]), {0.25})
+        self.assertTrue(popup_clear.quiet_pass("map", False))
+        self.assertTrue(popup_clear.quiet_pass("map", True))
+        self.assertTrue(popup_clear.quiet_pass("card", False))
+        self.assertFalse(popup_clear.quiet_pass("card", True))
+        for kind in ("leader", "advisor", "congress", "pause", "notice", "deal"):
+            self.assertFalse(popup_clear.quiet_pass(kind, False))
 
     def test_nothing_is_pressed_through_a_remembered_window(self) -> None:
         # Pass 1 sees the map and remembers the window. Pass 2 sees a leader

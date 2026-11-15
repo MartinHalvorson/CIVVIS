@@ -21179,6 +21179,64 @@ end;
 -- start late (a first step came more than 1.5 s after its order 61 times in
 -- 8,447), and `moveNoop` / `noopStands` own the unit still on its origin.
 CivvisQueue.WALK_STALL_TICKS = 10;
+
+-- ★ A WALK THE HOST HAS ENDED IS GIVEN A MOMENT TO SHOW ON THE BOARD.
+--
+-- The watch on a first order's walk is dropped when the host's operation
+-- event arrives. The unit's plot read changes one to three ticks after that
+-- event, so the queue read as drained and the replan board was exported with
+-- the unit still on the plot it had left; the decider then planned it from
+-- there. Measured, first-order walks read unmoved in a replan board and then
+-- moved: 28, 75 and 79 a game (civvis-20261115T120431Z, 113645Z, 101703Z),
+-- 171 in 075925Z; for those units the frame re-sent the same move, sent the
+-- unit somewhere else from the wrong plot (16, 25 and 45 a game) or sent it
+-- nothing (14, 59, 41).
+--
+-- So a rows-less watch whose event has come, whose unit still reads its
+-- origin with movement left, waits up to `WATCH_LAND_TICKS` more ticks for
+-- the plot to change, and only when the host's own path
+-- (`UnitManager.GetMoveToPathEx`, WorldInput.lua:961; one read, at the
+-- event) says the walk reaches its plot this turn. A walk the host cannot
+-- path is answered at once, as before. From the recorded timings of three
+-- games (124823Z, 122335Z, 123222Z) the hold would have applied to 8, 5 and
+-- 62 replan boards and added 0.013, 0.002 and 0.036 s a turn; all 11, 7 and
+-- 120 late walks landed inside it.
+CivvisQueue.WATCH_LAND_TICKS = 3;
+CivvisQueue.pathLandsThisTurn = function(unit, x, y)
+	return try(function()
+		local destination = Map.GetPlotIndex(x, y);
+		local path = UnitManager.GetMoveToPathEx(unit, destination);
+		if path == nil or path.plots == nil or path.turns == nil then return false; end
+		local n = 0;
+		for _ in pairs(path.plots) do n = n + 1; end
+		if n < 2 or path.plots[n] ~= destination then return false; end
+		local last = tonumber(path.turns[n]);
+		return last ~= nil and last <= 1;
+	end, false) == true;
+end;
+-- One `queue_landing_hold` row when a hold ends: how many ticks it took and
+-- whether the unit had left its plot, so the cost can be read off a game.
+CivvisQueue.waitsToLand = function(entry, unit, subject, turn, arrived, spent, ux, uy)
+	if #entry.rows > 0 or not entry.ready or entry.expect == nil then return false; end
+	local onOrigin = entry.origin ~= nil and ux == entry.origin.x and uy == entry.origin.y;
+	local waiting = false;
+	if onOrigin and not arrived and not spent then
+		if entry.land_from == nil then
+			entry.land_from = entry.wait;
+			entry.land_feasible = CivvisQueue.pathLandsThisTurn(unit, entry.expect.x, entry.expect.y);
+		end
+		-- `WatchLandTicks` overrides the bound; 0 turns the hold off.
+		waiting = entry.land_feasible == true
+			and entry.wait < entry.land_from
+				+ (tonumber(cfg.WatchLandTicks) or CivvisQueue.WATCH_LAND_TICKS);
+	end
+	if not waiting and entry.land_feasible == true and not entry.land_told then
+		entry.land_told = true;
+		emit("queue_landing_hold", { turn = turn, unit = subject,
+			held = entry.wait - entry.land_from, landed = not onOrigin });
+	end
+	return waiting;
+end;
 CivvisQueue.walkStalled = function(entry, ux, uy)
 	if entry.seen_x == nil then
 		if entry.origin ~= nil and (ux ~= entry.origin.x or uy ~= entry.origin.y) then
@@ -21484,6 +21542,11 @@ CivvisQueue.drain = function(player, pid, turn)
 				local ready = (entry.ready or arrived or spent or moved_from_origin
 					or unpathed or cannot_land or stalled or entry.wait >= grace)
 					and (not active_operation or stuck_operation);
+				-- See `waitsToLand`: the host has ended the walk; its plot read has not caught up.
+				if ready and not unpathed and entry.wait < grace
+						and CivvisQueue.waitsToLand(entry, unit, subject, turn, arrived, spent, ux, uy) then
+					ready = false;
+				end
 				if ready and #entry.rows > 0 then
 					local target = CivvisQueue.warPending(player, pid, entry.rows[entry.next], turn);
 					if target ~= nil then
