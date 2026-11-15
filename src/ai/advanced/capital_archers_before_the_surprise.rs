@@ -28,17 +28,23 @@
 //!    Gold above the upkeep floor, which holds the upgrade bills, buys the
 //!    best shooter into the capital at once: one of the turn's city-saving
 //!    purchases, after the emergency lane and the walls gene's door buy.
-//! 6. **Keeper.** The best shooter on the capital's City Center keeps it: it
-//!    fires from the centre when it has a shot and otherwise fortifies there,
-//!    ahead of every errand, recovery or march that would walk it out. With
+//! 6. **Keeper.** While the threat reads, or behind Walls while the watched
+//!    major is at war with us, the best shooter on the capital's City Center
+//!    keeps it: it fires from the centre when it has a shot and otherwise
+//!    fortifies there, ahead of every errand, recovery or march that would
+//!    walk it out. With
 //!    nobody of ours on the centre, the nearest free shooter within
 //!    [`CAPITAL_ARCHERS_REACH_TILES`] walks home. A Settler's or Builder's
 //!    guard and a siege member are left to their work.
 //!
 //! The research, production, Gold and purchase legs end when the capital's
 //! Walls stand, when the watch lapses, or when the ratio falls under the bar.
-//! The upgrade and keeper legs read the watch alone: Walls standing, a
-//! waiting Slinger still upgrades and the keeper still holds the centre.
+//! The upgrade leg reads the watch alone: Walls standing, a waiting Slinger
+//! still upgrades. The keeper holds the centre behind Walls only while the
+//! watched major is at war with us: paired war-rate screens with the keeper
+//! on through every peaceful watch after the Walls lost three more original
+//! capitals in 24 Culture seeds (6 against 3), each a hundred turns or more
+//! after the keeper first moved a shooter.
 //!
 //! **Why (live Deity, 6 players, Small Continents, Online; 2026-11-15, 33
 //! games).** Four surprise wars opened on our seat before turn 30, by majors
@@ -473,6 +479,16 @@ impl AdvancedAi {
         true
     }
 
+    /// The keeper leg's window: the threat (the watch at the bar, the capital
+    /// unwalled), or, with the Walls standing, the watch while the watched
+    /// major is at war with us. At peace behind Walls the shooter is free.
+    fn capital_archers_keeper_window(&self, g: &Game, pid: usize) -> Option<(usize, f64)> {
+        self.capital_archers_threat(g, pid).or_else(|| {
+            self.capital_archers_watched(g, pid)
+                .filter(|(rival, _)| g.is_at_war(pid, *rival))
+        })
+    }
+
     /// A shooter of ours free to keep the capital's City Center: a land
     /// soldier that can hold a centre, not a Settler's or a Builder's guard
     /// and not in a siege.
@@ -485,7 +501,7 @@ impl AdvancedAi {
             && !self.staging_siege_member(g, pid, uid)
     }
 
-    /// The keeper leg's choice: while the watch reads (Walls or none), the
+    /// The keeper leg's choice: inside its window, the
     /// best shooter on the capital's City Center keeps it (the longest reach,
     /// then the strongest shot, then the most health); with none there and
     /// no other land soldier of ours on it, the nearest free shooter within
@@ -494,7 +510,7 @@ impl AdvancedAi {
     /// off. Recomputed from the board at every read: nothing is remembered by
     /// unit id.
     pub(super) fn capital_archers_keeper(&self, g: &Game, pid: usize) -> Option<(u32, Pos)> {
-        self.capital_archers_watched(g, pid)?;
+        self.capital_archers_keeper_window(g, pid)?;
         let capital = Self::capital_watch_city(g, pid)?;
         let home = g.cities[&capital].pos;
         let rank = |uid: &u32| {
@@ -568,7 +584,7 @@ impl AdvancedAi {
         }
         let kind = g.units[&uid].kind;
         let from = g.units[&uid].pos;
-        let (rival, ratio) = self.capital_archers_watched(g, pid)?;
+        let (rival, ratio) = self.capital_archers_keeper_window(g, pid)?;
         let capital = g
             .city_at(home)
             .map(|cid| g.cities[&cid].name.clone())

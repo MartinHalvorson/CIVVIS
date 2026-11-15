@@ -693,8 +693,15 @@ fn the_best_shooter_keeps_the_capitals_centre() {
         .push(crate::name!("walls"));
     assert_eq!(
         ai.capital_archers_keeper(&walled, 0),
+        None,
+        "at peace behind Walls the shooter is free"
+    );
+    walled.at_war.insert((0, 1));
+    walled.at_war.insert((1, 0));
+    assert_eq!(
+        ai.capital_archers_keeper(&walled, 0),
         Some((sling, home)),
-        "the Walls do not end the keeper"
+        "at war with the watched major the keeper holds behind the Walls"
     );
 
     let mut called = game.clone();
