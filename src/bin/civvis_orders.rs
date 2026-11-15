@@ -65,6 +65,8 @@ mod air_assault_continuation;
 mod campus_above_sea;
 #[path = "civvis_orders/citizen_growth.rs"]
 mod citizen_growth;
+#[path = "civvis_orders/closed_ground.rs"]
+mod closed_ground;
 #[path = "civvis_orders/culture_ski_resorts.rs"]
 mod culture_ski_resorts;
 #[path = "civvis_orders/diagnostics.rs"]
@@ -6168,6 +6170,12 @@ fn decide(
     if !host_move_refusals.dead.is_empty() {
         note_bits.push(format!("host_dead_plots={}", host_move_refusals.dead.len()));
     }
+    if host_move_refusals.closed_fog_plots > 0 {
+        note_bits.push(format!(
+            "host_closed_fog_plots={}",
+            host_move_refusals.closed_fog_plots
+        ));
+    }
     let (governor_safe, deferred_governor_followups) = defer_governor_followups(orders);
     orders = governor_safe;
     if deferred_governor_followups > 0 {
@@ -9594,6 +9602,8 @@ fn main() {
     let mut spy_losses = SpyLossLedger::default();
     // `luxury-asks-pay-in-strategics-2`: partners our barter could not reach.
     let mut barter_shorts = BarterShortLedger::default();
+    // Fog the host refused a move onto as a war starter. See `closed_ground`.
+    let mut closed_ground = closed_ground::Ledger::default();
     let mut explain_cursor: u64 = 0;
     // What left for the host on each frame, until the next turn's frame answers
     // for it. See "order postconditions" above.
@@ -9628,6 +9638,8 @@ fn main() {
                 // frontier probe. Read it before rebuilding the mirror so a
                 // transient failure cannot be mistaken for dead terrain.
                 host_move_refusals.observe(&state, &verdicts);
+                closed_ground.refresh(&events);
+                host_move_refusals.closed_fog_plots = closed_ground.closed_on(state.turn);
                 // ★★★★★ FRESH BOARD, PERSISTENT AGENT — the one combination that works.
                 //
                 // Three of the four quadrants were measured: fresh board + fresh agent
@@ -9742,6 +9754,7 @@ fn main() {
                     host_city_strikes.apply(&mut board, state.turn);
                     host_air_strikes.apply(&mut board, state.turn);
                     host_move_refusals.apply(&mut board);
+                    closed_ground.apply(&mut board, state.turn);
                     let reply = decide(
                         &mut board,
                         &mut ai,
@@ -9778,6 +9791,7 @@ fn main() {
                             host_city_strikes.apply(&mut fresh, state.turn);
                             host_air_strikes.apply(&mut fresh, state.turn);
                             host_move_refusals.apply(&mut fresh);
+                            closed_ground.apply(&mut fresh, state.turn);
                             let reply = decide(
                                 &mut fresh,
                                 &mut ai,
@@ -9806,6 +9820,7 @@ fn main() {
                             host_city_strikes.apply(existing, state.turn);
                             host_air_strikes.apply(existing, state.turn);
                             host_move_refusals.apply(existing);
+                            closed_ground.apply(existing, state.turn);
                             // `--fresh-ai` isolates the two halves of persistence: keep the
                             // mirror, throw away the agent. If orders come back, the empty
                             // turns are the AGENT's carried state; if they stay empty, they
