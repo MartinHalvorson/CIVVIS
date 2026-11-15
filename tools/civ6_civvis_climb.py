@@ -1878,7 +1878,11 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
             # write it.
             handoff = wedge_handoff(tag)
             if handoff is not None:
-                print(f"[watchdog] the wedge watchdog handed {tag} over at turn "
+                # The play harness writes the same marker when it ends a hung
+                # rival turn itself (`civ6_control.watch.write_stall_handoff`).
+                who = ("the play harness" if handoff.get("by") == "civ6_play"
+                       else "the wedge watchdog")
+                print(f"[watchdog] {who} handed {tag} over at turn "
                       f"{handoff.get('turn', last_turn)} "
                       f"({handoff.get('reason') or 'no reason recorded'}); "
                       f"treating the attempt as frozen so its autosave can be "
@@ -1995,7 +1999,9 @@ EXIT_WHILE_STALE_S = 240.0
 #: The file `civvis-agent-wedge-watchdog.sh` writes into a run's directory the
 #: moment it hands that run to the climb for an autosave reload — BEFORE it
 #: signals the player, so the climb finds it however quickly the player exits.
-#: The name is pinned on both sides by `test_ops_wedge_watchdog.py`.
+#: The name is pinned on both sides by `test_ops_wedge_watchdog.py`. The play
+#: harness writes it too, when it ends a hung rival turn itself
+#: (`civ6_control.watch.STALL_HANDOFF_MARKER`, pinned by `test_civ6_watch.py`).
 WEDGE_HANDOFF_MARKER = "wedge-handoff.json"
 
 
