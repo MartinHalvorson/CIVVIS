@@ -342,8 +342,10 @@ queue.drain(player, PID, 7)
 check("three ticks on, still on its origin, the stalled attack is refused", queue.pendingCount(), 0)
 check("stalled refusal remains named", (lastEvent("orders_queue") or ""):
 	find("queue_prior_not_arrived", 1, true) ~= nil, true)
-local refusedRow = lastEvent("queue_prior_refused") or ""
+local refusedRow = lastEvent("queue_follow_up_unlanded") or ""
 check("the refusal names its unit", refusedRow:find('"unit":145', 1, true) ~= nil, true)
+check("the event's name is not the dispatcher's older refusal reason",
+	(lastEvent("queue_prior_refused") or ""), "")
 check("…the tick it was released on", refusedRow:find('"tick":4', 1, true) ~= nil, true)
 check("…that this was not the grace", refusedRow:find('"at_grace":false', 1, true) ~= nil, true)
 check("…and the order that was waiting", refusedRow:find('"next_verb":"ATTACK"', 1, true) ~= nil, true)
@@ -362,7 +364,7 @@ check("a unit that spent movement keeps its hold through the grace", queue.pendi
 queue.drain(player, PID, 7)
 check("…and is refused at it", queue.pendingCount(), 0)
 check("the grace refusal says it was the grace",
-	(lastEvent("queue_prior_refused") or ""):find('"at_grace":true', 1, true) ~= nil, true)
+	(lastEvent("queue_follow_up_unlanded") or ""):find('"at_grace":true', 1, true) ~= nil, true)
 
 -- A walk with no host event at all is not named and keeps the grace, as before.
 reset()
