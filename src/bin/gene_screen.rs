@@ -1097,9 +1097,8 @@ const LIVE_PACE_GAME_TURN: u32 = 150;
 /// ⭐ THE TRACE MARKS (`--trace`, 2026-10-31), in raw game turns: the turns
 /// the live fidelity census reads a rival at (`events.jsonl` `kind: "state"`
 /// rows, first frame of the turn), plus the decades between them.
-const TRACE_TURNS: [u32; 28] = [
-    10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 125, 130, 140, 150, 160, 170, 175, 180,
-    190, 200, 210, 220, 225, 230, 240, 250,
+const TRACE_TURNS: [u32; 15] = [
+    10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225,
 ];
 
 /// One major's economy at one [`TRACE_TURNS`] mark: what the live seat's
@@ -1172,32 +1171,6 @@ struct TraceSample {
     units_lost_to_barbarians: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     civilians_lost: Option<u32>,
-    /// LEADER-SWEEP LOCAL PROBE (not on main): the seat's score, the other
-    /// majors' original capitals it holds, its great works, and whether it
-    /// still holds its own original capital, at the mark. Observes only.
-    #[serde(default)]
-    score: i64,
-    #[serde(default)]
-    rival_capitals: usize,
-    #[serde(default)]
-    great_works: usize,
-    #[serde(default)]
-    own_capital: bool,
-}
-
-/// LEADER-SWEEP LOCAL PROBE: other majors' original capitals `pid` owns.
-fn rival_capitals_held(g: &Game, pid: usize) -> usize {
-    g.cities
-        .values()
-        .filter(|city| {
-            city.is_capital
-                && city.owner == pid
-                && city.original_owner != pid
-                && g.players
-                    .get(city.original_owner)
-                    .is_some_and(|p| !p.is_minor && !p.is_barbarian)
-        })
-        .count()
 }
 
 impl TraceSample {
@@ -1268,13 +1241,6 @@ impl TraceSample {
             units_lost_to_majors: Some(g.combat_ledger(pid).units_lost_to_majors),
             units_lost_to_barbarians: Some(g.combat_ledger(pid).units_lost_to_barbarians),
             civilians_lost: Some(g.combat_ledger(pid).civilians_lost),
-            score: g.score(pid),
-            rival_capitals: rival_capitals_held(g, pid),
-            great_works: g.players[pid].great_work_pieces.len(),
-            own_capital: g
-                .cities
-                .values()
-                .any(|city| city.is_capital && city.original_owner == pid && city.owner == pid),
         }
     }
 }
@@ -3031,13 +2997,6 @@ fn play_game(
                         .entry(project.to_string())
                         .or_insert(g.turn);
                 }
-                // LEADER-SWEEP LOCAL PROBE: the turn the seat first held its
-                // n-th rival original capital.
-                for n in 1..=rival_capitals_held(g, pid) {
-                    project_turns[pid]
-                        .entry(format!("rival_capital_{n}"))
-                        .or_insert(g.turn);
-                }
             }
         }
         if g.turn.is_multiple_of(25) {
@@ -3145,12 +3104,6 @@ fn play_game(
         run_game_observed(&mut world, &mut ais, &mut observe);
     }
     test_observe(&world);
-    // LEADER-SWEEP LOCAL PROBE: one last sample of the finished world.
-    if profile.trace {
-        for &pid in &majors {
-            traces[pid].push(TraceSample::observe(&world, pid));
-        }
-    }
     if let Some(journal) = &journal {
         drain_journal(journal, journal_cursor, &mut journal_lines);
         let path = format!("{}.journal.{seed}.txt", profile.journal_base);
@@ -9744,10 +9697,6 @@ mod tests {
             units_lost_to_majors: Some(4),
             units_lost_to_barbarians: Some(1),
             civilians_lost: None,
-            score: 0,
-            rival_capitals: 0,
-            great_works: 0,
-            own_capital: true,
         }];
         let text = serde_json::to_string(&traced).expect("serializes");
         let back: Row = serde_json::from_str(&text).expect("parses");
