@@ -217,7 +217,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `campus-above-the-sea` | off (unmeasured) | Prefer a safe legal site for a new native Science Campus. | 1 \| 1 |
 | `campus-and-library-before-the-claims` | off (unmeasured) | Opt-in `campus-and-library-before-the-claims`; see `advanced/campus_and_library_before_the_claims.rs`. | 1 \| 1 |
 | `campus-unlock-every-lane` | off (unmeasured) | Opt-in gene `campus-unlock-every-lane`; see `Self::campus_unlock_every_lane`. | 1 \| 1 |
-| `capital-archers-before-the-surprise` | off (unmeasured) | Opt-in gene `capital-archers-before-the-surprise`; see `advanced/capital_archers_before_the_surprise.rs`. | 1 \| 1 |
+| `capital-archers-before-the-surprise` | off (unmeasured) | Opt-in gene `capital-archers-before-the-surprise`; see `advanced/capital_archers_before_the_surprise.rs`. | — \| 2 |
+| `capital-archers-before-the-surprise-2` | off (unmeasured) | Opt-in gene `capital-archers-before-the-surprise-2`, version two of `capital-archers-before-the-surprise`; see `advanced/capital_archers_before_the_surprise.rs`. | — \| 2 |
 | `capital-keeps-its-defender` | off (unmeasured) | Opt-in gene `capital-keeps-its-defender`; see `Self::capital_keeps_its_defender`. | — \| 3 |
 | `capital-keeps-its-defender-2` | off (unmeasured) | Opt-in gene `capital-keeps-its-defender-2`; see `Self::capital_keeps_its_defender_2`. | — \| 3 |
 | `capital-keeps-its-defender-3` | off (unmeasured) | Opt-in gene `capital-keeps-its-defender-3`; see `Self::capital_keeps_its_defender_3`. | — \| 3 |

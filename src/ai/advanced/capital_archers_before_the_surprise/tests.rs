@@ -779,3 +779,94 @@ fn the_best_shooter_keeps_the_capitals_centre() {
         "the watch lapsed"
     );
 }
+
+fn armed_two() -> AdvancedAi {
+    let mut ai = AdvancedAi::new();
+    ai.enable_capital_archers_before_the_surprise_2();
+    ai
+}
+
+/// Version two: in the opening a watched major's soldier within six tiles of
+/// the unwalled original capital arms the spending legs at 2.5x; past the
+/// opening, with the soldier farther out, behind Walls and with version one
+/// only, 3.0x stays under the 3.5x bar. 4.0x arms both versions.
+#[test]
+fn version_two_opens_the_door_at_two_and_a_half_times_in_the_opening() {
+    let (mut game, capital) = watched();
+    power(&mut game, 1, 150.0);
+
+    let mut one = armed();
+    one.observe_turn_start_hostiles(&game, 0);
+    assert!(
+        one.capital_archers_threat(&game, 0).is_none(),
+        "version one: 3.0x is under the 3.5x bar"
+    );
+    assert!(one.capital_archers_door_sightings.is_empty());
+
+    let mut two = armed_two();
+    two.observe_turn_start_hostiles(&game, 0);
+    assert_eq!(two.capital_watch_sightings.get(&1), Some(&game.turn));
+    assert_eq!(two.capital_archers_door_sightings.get(&1), Some(&game.turn));
+    let (rival, ratio) = two
+        .capital_archers_threat(&game, 0)
+        .expect("version two: the opening door at 3.0x");
+    assert_eq!(rival, 1);
+    assert!((ratio - 3.0).abs() < 1e-9);
+    assert!(two.capital_archers_hold_the_chest(&game, 0));
+
+    // Version two carries version one: 4.0x arms it with no door at all.
+    let mut strong = game.clone();
+    power(&mut strong, 1, 200.0);
+    let mut two_no_door = armed_two();
+    two_no_door.capital_watch_sightings.insert(1, strong.turn);
+    assert!(two_no_door.capital_archers_threat(&strong, 0).is_some());
+
+    // Past the opening the door no longer reads.
+    let mut late = game.clone();
+    late.turn = late.standard_duration(CAPITAL_ARCHERS_OPENING_STANDARD) + 1;
+    let mut two_late = armed_two();
+    two_late.observe_turn_start_hostiles(&late, 0);
+    assert!(two_late.capital_archers_watched(&late, 0).is_some());
+    assert!(
+        two_late.capital_archers_threat(&late, 0).is_none(),
+        "past the opening"
+    );
+
+    // A soldier seven tiles out is watched but is not at the door.
+    let mut far = game.clone();
+    for uid in far.player_unit_ids(1) {
+        far.remove_unit(uid);
+    }
+    let out = ground(&far, capital, CAPITAL_ARCHERS_DOOR_TILES + 1);
+    far.spawn_unit("warrior", 1, out);
+    let mut two_far = armed_two();
+    two_far.observe_turn_start_hostiles(&far, 0);
+    assert!(two_far.capital_archers_watched(&far, 0).is_some());
+    assert!(two_far.capital_archers_door_sightings.is_empty());
+    assert!(
+        two_far.capital_archers_threat(&far, 0).is_none(),
+        "seven tiles"
+    );
+
+    // The door stays open for the watch's window after the soldier leaves.
+    let mut after = game.clone();
+    after.turn += 3;
+    for uid in after.player_unit_ids(1) {
+        after.remove_unit(uid);
+    }
+    assert!(two.capital_archers_threat(&after, 0).is_some());
+
+    let mut walled = game.clone();
+    walled
+        .cities
+        .get_mut(&capital)
+        .unwrap()
+        .buildings
+        .push(crate::name!("walls"));
+    assert!(two.capital_archers_threat(&walled, 0).is_none(), "Walls");
+
+    // The research leg journals the door.
+    slinger(&mut game, capital, 1);
+    let reason = two.capital_archers_research_reason(&game, 0).unwrap();
+    assert!(reason.contains("opening door"), "{reason}");
+}
