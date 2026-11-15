@@ -8871,6 +8871,17 @@ pub struct AdvancedAi {
     /// while the income holds. See `advanced/one_upgrade_lifts_every_city.rs`.
     /// Off by default.
     one_upgrade_lifts_every_city: bool,
+    /// `near-rival-deterrence-holds-late`: `near-rival-deterrence` past its
+    /// window, at [`near_rival_deterrence_holds_late::LATE_DETERRENCE_RATIO`]
+    /// (0.8) of a near neighbour's power, on any seat but Domination: Gold
+    /// upgrades down to the wartime reserve, then the opening gene's land
+    /// unit claim, then the next tier of Walls nearest the neighbour. Live
+    /// Deity civvis-20261115T075925Z: the opening claim fired 43 times to t79
+    /// and never after; Russia went 478 -> 1094 power t90-105 against our
+    /// 461 -> 553, declared at t108 at 0.39, and five of six cities fell by
+    /// t123. See `advanced/near_rival_deterrence_holds_late.rs`. Off by
+    /// default.
+    near_rival_deterrence_holds_late: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -11761,6 +11772,10 @@ mod near_done_work_finishes;
 /// out-guns us in the opening. One opt-in gene; see
 /// `advanced/near_rival_deterrence.rs`.
 mod near_rival_deterrence;
+/// `near-rival-deterrence-holds-late`: the deterrent, Gold upgrades and the
+/// next tier of Walls past the opening window. One opt-in gene; see
+/// `advanced/near_rival_deterrence_holds_late.rs`.
+mod near_rival_deterrence_holds_late;
 /// `rival-pace`: a calibrated rival chair's city horizon follows the live
 /// Immortal field's city count by turn. Not a gene — set only by
 /// `gene_screen --rival-pace` on its rival chairs; see
@@ -20948,9 +20963,11 @@ impl AdvancedAi {
                 && self.early_settler_floor_holds(g, pid, cid, plan);
             // `near-rival-deterrence`: the deterrent finishes while a
             // neighbour still out-guns us.
-            let deterrence_commitment = committed
-                .as_ref()
-                .is_some_and(|(_, item)| self.deterrence_unit_holds(g, pid, item));
+            // `near-rival-deterrence-holds-late`: its Walls likewise.
+            let deterrence_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                self.deterrence_unit_holds(g, pid, item)
+                    || self.late_deterrence_walls_hold(g, pid, cid, item)
+            });
             // `capital-walls-before-the-surprise`: the capital's claimed
             // Walls finish while they are armed.
             let capital_walls_commitment = committed
@@ -26885,6 +26902,13 @@ impl AdvancedAi {
         // appointed package has its own bill and runs its own pass, so this
         // stands down for it; the late generic pass below is then a no-op
         // because the upgrades have already been consumed.
+        // `near-rival-deterrence-holds-late`: a near neighbour at peace out-guns
+        // us past the opening; the upgrade budget goes down to the wartime
+        // reserve before the purchase portfolio. Exact no-op while the gene is
+        // off. See `advanced/near_rival_deterrence_holds_late.rs`.
+        if self.war_plan.is_none() {
+            self.late_deterrence_upgrades(g, pid);
+        }
         if self.upgrade_the_garrison && self.war_plan.is_none() {
             let at_major_war = g.players.iter().any(|other| {
                 other.id != pid
