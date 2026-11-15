@@ -282,6 +282,30 @@ check("behind a session only the concert waits", played(), false)
 check("…the move beside it is still requested",
 	calls(22):find("UNITOPERATION_MOVE_TO", 1, true) ~= nil, true)
 
+-- 6b. A band that walks first plays from the order queue, some ticks after
+--     the frame: live civvis-20261115T114552Z t154 and t158 played three
+--     concerts that way behind sessions the frame's own check could not see.
+local function queued(session)
+	clear()
+	queue.push(BAND, concert(), nil, nil)
+	if session then
+		trade.sessions[4] = { kind = "buy", action = "EQUALIZE", turn = 7, sent = true }
+	end
+	for _ = 1, 40 do queue.drain(player, PID, 7) end
+	return played(), (queue.stats.refusals or {})["concert_waits_for_the_deal_session"]
+end
+local playedFree, refusedFree = queued(false)
+check("a queued concert with no session is played", playedFree, true)
+check("…and not counted as waiting", refusedFree, nil)
+local playedBehind, refusedBehind = queued(true)
+check("a queued concert behind an open session is not requested", playedBehind, false)
+check("…and the queue records why", refusedBehind, 1)
+clear()
+queue.push(BAND, concert(), nil, nil)
+trade.turnHold = { turn = 7, target = 4, at = 0 }
+for _ = 1, 40 do queue.drain(player, PID, 7) end
+check("a queued concert behind a held turn is not requested", played(), false)
+
 -- 7. Malformed input never throws.
 clear()
 check("no rows", trade.concertWaits(nil), false)

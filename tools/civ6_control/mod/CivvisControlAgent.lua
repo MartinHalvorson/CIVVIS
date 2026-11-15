@@ -18548,6 +18548,17 @@ local function applyOrder(player, pid, row, turn)
 		-- SPREAD_RELIGION, REMOVE_HERESY, RELIGIOUS_HEAL, LAUNCH_INQUISITION,
 		-- CONVERT_BARBARIANS, PILLAGE. All parameterless -- `operate` selects
 		-- the shipped UnitPanel's two-argument request for these.
+		-- See `CivvisTrade.concertWaits`. Here as well as in the frame's own
+		-- loop, because that loop is not the only caller: a band that has to
+		-- walk to its site plays from the order queue (`CivvisQueue.drain`),
+		-- some ticks after the frame, when a session opened by that frame or
+		-- the next is already up. Live civvis-20261115T114552Z, the first game
+		-- with the frame's hold: one concert held in the loop (t158 frame 1)
+		-- and three more played from the queue behind the same turn's sessions
+		-- (t154, t158 twice), each closed while hidden as before.
+		if verb == "TOURISM_BOMB" and CivvisTrade.concertWaits(nil) then
+			return false, "concert_waits_for_the_deal_session";
+		end
 		local hash = OP["UNITOPERATION_" .. verb];
 		if hash == nil then return false, "unknown_op_" .. verb; end
 		-- ⚠ NAME THE REFUSAL, NOT THE VERB. This tail returned `verb` for BOTH
