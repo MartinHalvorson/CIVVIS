@@ -136,7 +136,9 @@
 //!   over [`EDGE_RUSH_EDGE_PER_TILE`]), only one the force can stand at
 //!   by turn [`EDGE_RUSH_ARRIVE_BY`], and, unless it is a capital, only one
 //!   within [`EDGE_RUSH_LOYAL_TILES`] of a city of ours (farther, it leaves
-//!   on Loyalty within turns of its capture); none is named past turn
+//!   on Loyalty within turns of its capture); a Domination seat names a
+//!   capital ahead of any other city and turns to one that comes into
+//!   reach before its muster forms; none is named past turn
 //!   [`EDGE_RUSH_NAME_TURN`]; kept while unwalled and the edge is
 //!   [`EDGE_UNWALLED_FLOOR`] or better, and at any edge while
 //!   [`EDGE_MUSTER_BODIES`] edge units stand mustered at it. While the rush
@@ -930,6 +932,12 @@ impl AdvancedAi {
     /// [`EDGE_MIN`] or better the nearest (the march is the rush's clock);
     /// with none that soft, the lowest march (tiles less the edge over
     /// [`EDGE_RUSH_EDGE_PER_TILE`]). Then the lowest id.
+    ///
+    /// A Domination seat names a rival capital that passes those rules ahead
+    /// of any other city: only a capital counts toward its victory, and a
+    /// capital carries its own citizens' Loyalty (live 100810Z: Tskhumi,
+    /// three tiles from Tbilisi, fell at turn 28 and left as a Free City at
+    /// turn 33; of the first six live carriers one named a capital).
     pub(crate) fn edge_rush_soft_city(
         &self,
         g: &Game,
@@ -940,6 +948,8 @@ impl AdvancedAi {
     ) -> Option<SoftCity> {
         let mut best: Option<SoftCity> = None;
         let arrive_by = harvest_floor(g, EDGE_RUSH_ARRIVE_BY);
+        let capital_first = self.victory_target == Some(VictoryTarget::Domination);
+        let is_capital = |cid: u32| g.cities.get(&cid).is_some_and(|city| city.is_capital);
         for city in g.cities.values() {
             let Some(soft) = self.edge_read_city(g, pid, strength, city.id, from, reach) else {
                 continue;
@@ -964,9 +974,11 @@ impl AdvancedAi {
             // at +3 and 4 tiles, with four War-Carts standing at Porto).
             let march =
                 |soft: &SoftCity| f64::from(soft.tiles) - soft.edge / EDGE_RUSH_EDGE_PER_TILE;
-            let better = best
-                .as_ref()
-                .is_none_or(|held| match (easy(&soft), easy(held)) {
+            let better = best.as_ref().is_none_or(|held| {
+                if capital_first && city.is_capital != is_capital(held.city) {
+                    return city.is_capital;
+                }
+                match (easy(&soft), easy(held)) {
                     (true, false) => true,
                     (false, true) => false,
                     (true, true) => (soft.tiles, soft.city) < (held.tiles, held.city),
@@ -977,7 +989,8 @@ impl AdvancedAi {
                             (soft.tiles, soft.city) < (held.tiles, held.city)
                         }
                     }
-                });
+                }
+            });
             if better {
                 best = Some(soft);
             }
@@ -1506,6 +1519,29 @@ impl AdvancedAi {
                     }
                 }
             }
+        };
+        // A Domination seat's rush turns to a rival capital that comes into
+        // reach while no muster has formed at the city it named.
+        let kept = match kept {
+            Some(soft)
+                if rush
+                    && naming
+                    && self.victory_target == Some(VictoryTarget::Domination)
+                    && window.mustered.is_none()
+                    && !g.cities.get(&soft.city).is_some_and(|city| city.is_capital) =>
+            {
+                match self.edge_rush_soft_city(g, pid, edge.strength, &ours, reach) {
+                    Some(capital)
+                        if g.cities
+                            .get(&capital.city)
+                            .is_some_and(|city| city.is_capital) =>
+                    {
+                        Some(capital)
+                    }
+                    _ => Some(soft),
+                }
+            }
+            other => other,
         };
         // Past the naming turn only the city already named is mustered on.
         let Some(soft) = kept.or_else(|| {
