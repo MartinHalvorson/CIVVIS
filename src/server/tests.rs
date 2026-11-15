@@ -8690,7 +8690,7 @@ fn browser_lets_the_turn_plate_widen_into_two_columns() {
     }
 }
 
-/// The turn plate's first line is the map, a live Civilization VI game's
+/// The turn plate's setup line is the map, a live Civilization VI game's
 /// level and the speed, with no labels: "4P Pangaea · Lv 6 · Online"
 /// (operator 2026-10-14: "combine the top 2 rows … all one line"). The level
 /// is counted on the ruleset's own ladder so "Lv 6" is the verification
@@ -8728,6 +8728,40 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
     assert_eq!(rules.difficulties.len(), 8);
     assert_eq!(rules.difficulties["emperor"].order + 1, 6);
     assert_eq!(rules.difficulties["immortal"].order + 1, 7);
+}
+
+/// The turn box says how the game is being played and whose eyes the map is
+/// drawn through (operator 2026-11-15: add a "Mode:" and a "POV:"). Mode is
+/// Self-play when every seat is an agent's, Single player when a person
+/// holds one, Civ VI beside a mirrored live game. POV is Global for the
+/// omniscient spectator and Single player for a played seat or a Watch-as
+/// view, whose tooltip names the civilization. The two rows open the
+/// settings list, above the setup line, and the plate's spoken label carries
+/// both. Two more rows do not fit beside a four-seat table, so the
+/// masthead's automatic height takes the box's measured content as a floor;
+/// a dragged height is still the viewer's own.
+#[test]
+fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
+    for piece in [
+        "const plateMode = livePause.available",
+        "? [\"Civ VI\", \"A live Civilization VI game, mirrored here turn by turn.\"]",
+        ": SPEC ? [\"Self-play\", \"Every civilization is played by an AI agent. Nobody holds a seat.\"]",
+        ": [\"Single player\", \"You play one civilization. AI agents play the rest.\"];",
+        "const platePov = !SPEC || playerView",
+        "? [\"Single player\", `The world as ${identity.civ || \"one civilization\"} sees it, behind its own fog.`]",
+        ": [\"Global\", \"The whole world at once, with no civilization's fog.\"];",
+        "frameRow(\"Mode:\", plateMode) + frameRow(\"POV:\", platePov) +\n    `<div class=\"turn-setting turn-setup-line\"",
+        "`mode ${plateMode[0]}; point of view ${platePov[0]}`;",
+        "function measureTurnPlateNeed(hud) {",
+        "const last = plate?.querySelector(\".turn-settings\")?.lastElementChild;",
+        "const plateNeed = measureTurnPlateNeed(hud);",
+        "if (!HUD_LAYOUT.players) pickPlayerHudHeight();",
+    ] {
+        assert!(
+            EMBEDDED_INDEX.contains(piece),
+            "the turn box's Mode and POV rows are missing {piece}"
+        );
+    }
 }
 
 /// Player-row color is reserved for a current war. Friendships and
@@ -10823,7 +10857,11 @@ fn a_hundred_civ_world_keeps_the_map_and_paints_only_the_tiles_that_carry_ink() 
     assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_DEFAULT_MAP_SHARE = .42;"));
     assert!(EMBEDDED_INDEX.contains("function playerHudSeatHeight(seats, mapHeight) {"));
     assert!(EMBEDDED_INDEX.contains(
-        "`${Math.min(requestedHeight, seatHeight + cityRowsShown * playerHudRowPitch())}px`"
+        "Math.min(requestedHeight, seatHeight + cityRowsShown * playerHudRowPitch()))}px`"
+    ));
+    // The turn box's floor under a short table answers to the same share.
+    assert!(EMBEDDED_INDEX.contains(
+        "Math.min(turnPlateNeed, Math.floor(mapArea.clientHeight * PLAYER_HUD_DEFAULT_MAP_SHARE))"
     ));
     // A table past every stock world builds only the seats near what shows.
     assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_WINDOW_MIN_SEATS = 30;"));
