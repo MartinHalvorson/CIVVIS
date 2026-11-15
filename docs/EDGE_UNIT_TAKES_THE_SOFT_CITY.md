@@ -322,6 +322,33 @@ only tag to arm):
   does not read taken is left alone. Training and buying go on through the
   war.
 
+**As changed by PR #5322** (from the first four live carriers and round 6;
+the evidence for each is under "Live carriers of the merged rule"):
+
+- *Scouting*: within 8 tiles of the capital, not the naming reach.
+- *March*: a unit the walk moved, or one standing near the city, fortifies
+  with the moves it has left; one with no stand in reach comes toward our
+  city nearest the target.
+- *Target*: under the base edge the lowest march is named (tiles less the
+  edge over 2), not the largest edge. A city is named only when the force
+  can stand at it by turn 34 at 1.5 tiles a turn, none past turn 32, and a
+  city that is not its owner's capital only within 9 tiles of a city of
+  ours (farther, no citizen of ours presses on it and it leaves on
+  Loyalty). A city the muster stands at stays the target whatever its edge
+  reads that turn.
+- *Declaration*: the forecast is read over 8 turns, not 4. Against a city
+  at defence 15 or more the muster is 4 units. The wait for the units to
+  stand on their stands is 1 turn, not 3.
+- *After a capture*: with no next city read the force holds the city for
+  up to 20 turns: one unit walks in as its garrison, the rest stay within
+  two tiles and strike what comes, one explores only while no rival
+  soldier is within four tiles, and a Score seat asks for peace every
+  three turns (`regroup: peace asked of ...`).
+- *Deals*: the incoming-deal desk refuses a declared friendship from the
+  target's owner (any major before a city is named) and a peace offer from
+  the rival whose city is being pressed; the rival's peace is taken while
+  the rush holds a city.
+
 ### Rush rounds (CI farm on #5305; Sumeria, Score target, 120 turns)
 
 **Method.** A temporary workflow on the PR built `gene_screen` once and
@@ -355,6 +382,18 @@ best rival's at the mark, control then gene.
 | 4 lane | 5 | 14 (t32) | 6 | 6 | 5 | +0.25 ± 0.11* | -0.33 ± 0.16* | +4.29 ± 1.87* | -0.42 ± 0.20* (of 3.54) | -3.18 ± 1.19* (of 15.63) | 0.31 / 0.27 | 0.36 / 0.31 | 0.37 / 0.32 |
 | 4 lane, Aztec | 1 | 9 (t35) | 3 | 3 | 1 | +0.04 ± 0.04 | -0.08 ± 0.15 | +1.29 ± 1.49 | -0.67 ± 0.25* (of 4.12) | -4.28 ± 1.38* (of 17.84) | 0.33 / 0.28 | 0.38 / 0.34 | 0.39 / 0.36 |
 | 4 lane, Domination target | 4 (control 2) | 14 (t32) | 6 | 6 | 4 | +0.08 ± 0.08 | -0.33 ± 0.22 | +4.62 ± 2.39* | -0.46 ± 0.23* (of 3.46) | -4.04 ± 1.40* (of 16.81) | 0.32 / 0.27 | 0.33 / 0.29 | 0.33 / 0.30 |
+| 5 lane (the merged rule, #5305) | 6 | 14 (t32) | 7 | 7 | 6 | +0.29 ± 0.11* | -0.29 ± 0.15* | +4.38 ± 1.86* | -0.42 ± 0.20* (of 3.54) | -3.18 ± 1.19* (of 15.63) | 0.31 / 0.27 | 0.36 / 0.31 | 0.37 / 0.32 |
+| 5 walls-15 | 5 | 15 (t32) | 10 | 10 | 5 | +0.21 ± 0.08* | -0.33 ± 0.17* | +9.79 ± 3.48* | -0.92 ± 0.21* (of 3.79) | -3.50 ± 1.23* (of 16.31) | 0.32 / 0.26 | 0.36 / 0.30 | 0.37 / 0.32 |
+| 5 lane, Domination target | 5 (control 2) | 14 (t32) | 7 | 7 | 5 | +0.17 ± 0.12 | -0.29 ± 0.21 | +5.17 ± 2.40* | -0.46 ± 0.23* (of 3.46) | -4.06 ± 1.40* (of 16.81) | 0.32 / 0.27 | 0.33 / 0.29 | 0.33 / 0.30 |
+| 5 walls-15, Domination target | 6 (control 2) | 15 (t32) | 10 | 10 | 5 | +0.21 ± 0.12* | -0.25 ± 0.15* | +12.71 ± 4.73* | -0.88 ± 0.24* (of 3.75) | -4.03 ± 1.46* (of 16.33) | 0.33 / 0.26 | 0.34 / 0.28 | 0.34 / 0.29 |
+| 6 lane (#5322: the deal desk refuses the target's friendship) | 7 | 15 (t17) | 9 | 9 | 7 | +0.29 ± 0.09* | -0.25 ± 0.15* | +3.62 ± 1.16* | -0.71 ± 0.22* (of 3.54) | -3.71 ± 1.31* (of 15.63) | 0.31 / 0.26 | 0.36 / 0.31 | 0.37 / 0.33 |
+| 6 walls-15 | 8 | 16 (t25) | 12 | 12 | 8 | +0.33 ± 0.10* | -0.21 ± 0.18 | +10.83 ± 3.02* | -0.79 ± 0.21* (of 3.79) | -4.71 ± 1.35* (of 16.31) | 0.32 / 0.26 | 0.36 / 0.30 | 0.37 / 0.31 |
+| 6 lane, Domination target | 7 (control 2) | 16 (t25) | 9 | 9 | 7 | +0.29 ± 0.14* | -0.12 ± 0.20 | +4.67 ± 2.20* | -0.67 ± 0.26* (of 3.46) | -5.31 ± 1.51* (of 16.81) | 0.32 / 0.26 | 0.33 / 0.28 | 0.33 / 0.29 |
+| 6 walls-15, Domination target | 8 (control 2) | 17 (t25) | 12 | 12 | 8 | +0.29 ± 0.13* | -0.38 ± 0.16* | +9.17 ± 3.04* | -1.00 ± 0.22* (of 3.75) | -4.87 ± 1.48* (of 16.33) | 0.33 / 0.25 | 0.34 / 0.28 | 0.34 / 0.29 |
+| 7 lane (#5322 at 72ffee02: every follow-up change but the four-unit muster and the one-turn position wait) | 3 | 5 (t16) | 5 | 5 | 3 | +0.17 ± 0.10* | +0.08 ± 0.20 | +3.62 ± 2.46 | -0.29 ± 0.27 (of 3.54) | -3.94 ± 1.15* (of 15.63) | 0.31 / 0.26 | 0.36 / 0.32 | 0.37 / 0.33 |
+| 7 walls-15 | 3 | 5 (t16) | 5 | 4 | 3 | +0.21 ± 0.13* | -0.46 ± 0.15* | +4.38 ± 2.38* | -0.58 ± 0.21* (of 3.79) | -3.07 ± 1.19* (of 16.31) | 0.32 / 0.28 | 0.36 / 0.34 | 0.37 / 0.35 |
+| 7 lane, Domination target | 5 (control 2) | 5 (t16) | 5 | 5 | 3 | +0.17 ± 0.10* | +0.00 ± 0.21 | +5.75 ± 3.20* | -0.42 ± 0.25* (of 3.46) | -4.49 ± 1.18* (of 16.81) | 0.32 / 0.26 | 0.33 / 0.30 | 0.33 / 0.30 |
+| 7 walls-15, Domination target | 3 (control 2) | 5 (t16) | 5 | 4 | 3 | +0.08 ± 0.10 | -0.21 ± 0.15 | +3.21 ± 2.32 | -0.79 ± 0.22* (of 3.75) | -3.41 ± 1.28* (of 16.33) | 0.33 / 0.27 | 0.34 / 0.29 | 0.34 / 0.30 |
 
 What each round changed, from the journals of the one before:
 
@@ -398,13 +437,51 @@ What each round changed, from the journals of the one before:
   world that named Toronto at turn 11 (taken at turn 19-20 in rounds 1-3)
   held the declaration to the end. The merged rule takes a stand only in a
   ring the unit stands on or has a road to, and three turns after the muster
-  forms it declares with three that can move, wherever they stand. That fix
-  has the unit tests and no simulator round behind it.
+  forms it declares with three that can move, wherever they stand.
+- **Round 5** (the rule as merged in #5305, the stand fix included; run on
+  the follow-up PR's farm). Seven wars, six with a capture: the world that
+  deadlocked in round 4 took Toronto at turn 20 again.
+- **Round 6** (the deal desk refuses the target's friendship: the
+  simulator's rivals offer one as a deal on first contact, the desk took it
+  at +40, and five worlds that knew an open city by turn 13-17 named it at
+  turn 28-37). Naming moved to a median of turn 17 and a city fell in seven
+  worlds at turns 20-27 and 51. Six of the seven were back in the rival's
+  hands within ten turns: the seat held one city before the capture and
+  one ten turns on, against two to four for the control, and ended 70-120
+  score behind it in five of them. The window had closed four to eight
+  turns after the capture and called the survivors home.
+- **Round 7** (#5322 from the live carriers: the eight-turn forecast, the
+  target kept at the muster, the nearest march, a city named only within
+  nine tiles of ours or a capital and only when the march ends by turn 34,
+  none past turn 32, scouts within eight tiles, the walk that holds, and
+  the hold after a capture). Five worlds of 24 named a city, all five
+  declared, three took one (one of them the rival's capital at turn 18 and
+  a second city at turn 20). Split by what happened, the gene arm's final
+  score less the control's on the lane recipe:
+
+  | worlds | n | final score | cities t30 | cities t50 | Science t50 |
+  |---|---|---|---|---|---|
+  | no city named (the rush stood down at turn 33) | 19 | -0.8 ± 7.4 | -0.47 | +0.16 | -3.38 |
+  | named, no capture | 2 | -171 ± 57 | -0.50 | -2.00 | -6.24 |
+  | a capture | 3 | -117 ± 19 | -0.33 | -2.00 | -6.00 |
+
+  So the stand-down at turn 32 and the narrower naming took the rule's
+  cost out of the worlds with no city to take (a final score level with
+  the control's, where rounds 4-6 gave up 35-39 points over all worlds),
+  and left it in the five that fought: the seat stood at one or two cities
+  at turn 50 against the control's four, and every captured city was back
+  in the rival's hands or gone by turn 40-60, the capital included. The
+  world that took two cities left its hold at turn 23 for a third city
+  with three War-Carts, was stopped at turn 27, and lost both. The
+  four-unit muster and the one-turn position wait came after this round
+  (from live 101703Z) and have unit tests only.
 
 **Reading.** In the simulator the rush is a loss on the Score lane: it
-takes a city in 2-6 worlds of 24, the seat founds 0.4-1.2 fewer cities by
-turn 50, and its score against the best rival falls from 0.37 to 0.29-0.32
-(round 4: 0.32). No world took a rival capital. The worlds that took a city
+takes a city in 2-7 worlds of 24, the seat founds 0.3-1.2 fewer cities by
+turn 50, and its score against the best rival falls from 0.37 to 0.29-0.33
+(round 7: 0.33, the whole of it in the five worlds that named a city). No
+world held a rival capital at the end (round 7 took one at turn 18 and lost
+it). The worlds that took a city
 before turn 25 did it against unwalled cities at defence 10-13 with three
 or four War-Carts in one to four war turns; most worlds that named a city
 after turn 28 met walls bought behind the declaration. The Eagle Warrior
@@ -413,6 +490,84 @@ in two rounds: the War-Cart is the unit this rule is for. That is the simulator'
 (13-18% of the nearest rival cities walled at turns 40-50, walls about seven
 turns into a war in the one replayed game), so the simulator prices the
 cost and not the gain. The live carriers decide.
+
+### Live carriers of the merged rule (2026-11-15, Deity, 6 players, Small Continents, Online)
+
+`~/civvis-score-tools/rush_funnel.py 20261115T0941`; the frames were
+replayed through each run's own decider snapshot with
+`~/civvis-score-tools/rush-20261115/replay_frame.py RUN TURN`, which also
+takes a perturbation of the frame (`--py`).
+
+| run, seat | first / third War-Cart | named | muster | declared | blows | captured | closed | edge units lost | cities, Science t50 | score / best met rival |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 094137Z, Domination | t7 / t14 | t22 Porto of Portugal, 4 tiles, defence 20, no walls | t31 (3) | never | 0 | none | t61, no muster by turn 60 | 1 | 3, 15.6 | 0.38 at t60 |
+| 094903Z, Score | t7 / t32 | t27 Đồng Hới of Vietnam, 14 tiles, defence 18, no walls; walled at t34 | none | never | 0 | none | t46, no city by turn 45 | 0 to t46 | 3, 13.5 | 0.26 at t60, 0.29 at t120 |
+| 100810Z, Domination | t5 / t16 | t13 Tskhumi of Georgia, 14 tiles, defence 10, no walls | t23 (3) | t25, forecast 85% | 10 | t28 Tskhumi | t33, the city gone | 4 | 2, 17.8 | 0.30 at t56 |
+| 101703Z, Score | t6 / t22 | t29 Esztergom of Hungary, 6 tiles, defence 20 (15 on the host), no walls | t31 (3) | t34, forecast 85% | 6 | none | t39, walls up, forecast 0% twice | 3 to t39 | 4, 33.2 | 0.66 at t60, 0.58 at t120 |
+
+What each showed, and the rule that answers it (PR #5322):
+
+- **094137Z, the force was not home.** Porto was founded four tiles from
+  the capital at turn 22 with two of the three War-Carts 15-17 tiles off,
+  scouting; they came back at about 1.5 tiles a turn. The fifth stepped out
+  of Ur and a later pass took it back in on each of turns 33-37; the sixth
+  circled 13 tiles off for 20 turns under the unit pass. *Scouts stay
+  within eight tiles of the capital; the walk fortifies a unit it moved,
+  and one with no stand in reach comes toward our city nearest the target.*
+- **094137Z, the four-turn forecast.** Four War-Carts stood two tiles from
+  Porto (defence 25-27, no walls) from turn 31 to 40 and the gate read 0%
+  within four turns on every one. Replayed as if at war, the same boards
+  read 0/0/0/9/22/45/53 by turn (turn 31), 83% within eight (turn 33), 50%
+  (turn 36) and 100% within six (turn 40), with about four units lost.
+  Two Warriors, a Slinger and a Scout held the stands beside the city, so
+  the first blows landed on turn two or three; with the rival's soldiers
+  taken out of the frame the reading was 85%, and a lone Scout beside the
+  city put it back to 0% within four. *The rush reads the forecast over
+  eight turns.*
+- **094137Z, the rename.** At turn 41 a Heavy Chariot passed through Porto,
+  the city read defence 35 for one turn (edge -5, under the floor of -4),
+  and the window renamed to Biruta of Phoenicia, 15 tiles off, on the
+  largest edge (+5 against Porto's +3). Porto read 27 with no garrison at
+  turns 43-44. *A city the force stands mustered at stays the target
+  whatever its edge reads; under the base edge the nearest march names the
+  city.*
+- **094903Z, a late and far city.** No rival was met until about turn 27,
+  so two War-Carts were owned to turn 30. Đồng Hới was named at turn 27,
+  14 tiles off; four more War-Carts were trained for it and it stood walled
+  at turn 34 with the nearest of them six tiles away. (The 48 units the
+  seat lost in that game fell in a rival's war from turn 100 on, 25 of them
+  in turns 100-119, not in the rush.) *A city is named only when the march
+  ends by turn 34 at 1.5 tiles a turn, and none past turn 32.*
+- **100810Z, the first live capture, lost on Loyalty.** Three War-Carts
+  declared at turn 25 and took Tskhumi at turn 28 with ten blows. The city
+  stood at Loyalty 50 and lost 13.4, 10.4, 10.5 and 10.5 a turn with a unit
+  of ours inside it on each of them (the Scout, then a War-Cart); the host
+  logged it a Free City at turn 33. It lies three tiles from Tbilisi
+  (population 6), which the seat had not seen when it named the city, and
+  11-14 from our two cities. Four of the six War-Carts died to three
+  Warriors around it. *A rival city that is not its owner's capital is
+  named only within nine tiles of a city of ours.* Porto passes that rule;
+  Tskhumi and Đồng Hới do not.
+
+- **101703Z, three were one too few.** The muster formed at turn 31 with
+  the city empty at defence 15; the declaration waited to turn 34 for three
+  units to stand on their stands with a move left, and a Scout had walked
+  in by then. Three War-Carts struck 1, 2, 1 and 1 blows on the four war
+  turns (a Spearman came beside the city, two War-Carts stood at 27 and 30
+  health by the third turn, and one under 35 does not strike), the city
+  stood at 55 of 200 after the sixth blow, and Hungary bought walls on the
+  fourth war turn (defence 39). Three more War-Carts were 9-12 tiles off
+  and closed at about a tile a turn. *Against a city at defence 15 or more
+  the muster is four units, and the position wait is one turn, not three.*
+
+Across the four games the War-Carts made 1.5-1.7 host moves a turn against
+an allowance of three or four, so a march is about 1.5 tiles a turn; that
+is the figure the naming rule uses.
+
+The hold after a capture (a garrison that walks in, the rest within two
+tiles, peace asked by a Score seat, up to 20 turns) is from round 6; round
+7 shows it does not keep a city against the simulator's rivals, and it has
+no live game behind it yet.
 
 ### What to look for in a rush carrier's why.log
 
@@ -432,13 +587,15 @@ run. For a Sumeria seat with `edge-unit-rushes-from-the-capital` armed:
 3. **Scouting**: `scouting: ...` once the first exists (about turn 7).
 4. **Target**: `opened: war cart (30) against <city> of <civ> at defence D,
    edge +E, T tiles from our nearest city, walls none`. Before it
-   `waiting: no soft city in reach`; with none by turn 45, `closed: no soft
-   city within 15 tiles is known by turn 45`.
+   `waiting: no soft city in reach`; with none by turn 32, `closed: no soft
+   city within 15 tiles is known by turn 32`. A city that is not a capital
+   and stands more than nine tiles from our cities, or one whose march
+   ends past turn 34, is not named.
 5. **Muster**: `denounced: <civ> ...`; `hold: N of M war cart at <city> with
    70+ health; the others at ...` while they walk; `muster: 3 war cart ...`;
-   then either `hold: ... the forecast reads X% within 4 turns (raw Y%),
-   short of Z` or `hold: ... K of the N war cart there stand on their stand
-   with a move left`.
+   then either `hold: ... the forecast reads X% within 8 turns (raw Y%, P%
+   within 12), short of Z` or `hold: ... K of the N war cart there stand on
+   their stand with a move left`.
 6. **Declaration**: `declared: 3 war cart ... forecast X% ...` (or
    `declared: already at war with <civ>`), and on the same turn `assault: N
    blow(s) on <city>, health A to B`. The host must show the war that turn.
@@ -448,7 +605,9 @@ run. For a Sumeria seat with `edge-unit-rushes-from-the-capital` armed:
    the war turn it happens on.
 8. **Capture**: `captured: <city> from <civ>, N taken, M war cart left`, the
    host's keep, then `continue: <next city> ... forecast X%` or `regroup:
-   ...` for up to 8 turns.
+   ... the N war cart hold <city>, heal and read again until turn T` for up
+   to 20 turns, with `regroup: peace asked of <civ> ...` on a Score seat.
+   Watch the city's Loyalty in the state frames while it is held.
 9. **The end**: `closed: the forecast reads <city> taken at N% within 12
    turns on 2 war turns running (health, walls, the force, hostiles in
    sight)`, `closed: 10 war turns without a capture`, or the stand-downs;
@@ -1006,11 +1165,12 @@ Ram with the force whatever the walls read at the muster.
   only; on a Science seat its first-capital genes are inert by their lane
   gate.
 - **cargo-test** on the final head: see the PR's checks.
-- **The rush (`edge-unit-rushes-from-the-capital`)**: no live game at
-  merge. Gilgamesh has never been seated by the launcher, so the first
-  carrier also tests the leader picker's row, the host's production prompt
-  for `UNIT_SUMERIAN_WAR_CART`, the surprise-war order, and the dialogue
-  lease that refuses the target's friendship. The stand rule and the
+- **The rush (`edge-unit-rushes-from-the-capital`)**: four live games of
+  the first version (above), none yet of the follow-up (#5322). The leader
+  picker's row, the host's production prompt for `UNIT_SUMERIAN_WAR_CART`
+  and the surprise-war order all worked live. Not yet seen live: a capture
+  inside our Loyalty reach, the hold, the peace asked while holding, the
+  deal desk's refusals, and the four-unit muster. The stand rule and the
   three-turn grace that end round 4's deadlock have unit tests and no
   simulator round. The simulator's walls behind a declaration are not the
   live field's, so its capture rate and its cost are both readings of the
