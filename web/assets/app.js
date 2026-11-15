@@ -2048,6 +2048,21 @@ function playerHudContentHeight(rows) {
   return Math.max(floor, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());
 }
 
+// The turn box's list is masthead content too: a short roster's table ends
+// above the box's last row (Mode and POV, operator 2026-11-15, are two rows a
+// four-seat table has no room for), so the box's own content, read after each
+// draw, is the height's floor. A folded box asks for nothing.
+let turnPlateNeed = 0;
+function measureTurnPlateNeed(hud) {
+  const plate = hud.querySelector(".victory-turn");
+  const last = plate?.querySelector(".turn-settings")?.lastElementChild;
+  const box = plate?.getBoundingClientRect();
+  if (!last || !box.height) return 0;
+  // 8px: the plate's own bottom padding and border, under its last row.
+  return Math.ceil(last.getBoundingClientRect().bottom - box.top + 8 +
+    hud.getBoundingClientRect().height - box.height);
+}
+
 const HUD_WIDGETS = {
   // A player row is one line: the turn plate, an identity and twelve fixed metric
   // columns side by side, which is why the standings want the map's width and
@@ -27774,6 +27789,15 @@ function hudTurnPlate() {
   const playerView = SPEC && state.view_player !== null && state.view_player !== undefined;
   const identity = SPEC ? viewer : state.players[0];
   const viewLabel = playerView ? "Player view" : SPEC ? "Observing" : "Your empire";
+  // Who is playing, and whose eyes the map is drawn through (operator
+  // 2026-11-15: a "Mode:" and a "POV:" on the turn box).
+  const plateMode = livePause.available
+    ? ["Civ VI", "A live Civilization VI game, mirrored here turn by turn."]
+    : SPEC ? ["Self-play", "Every civilization is played by an AI agent. Nobody holds a seat."]
+    : ["Single player", "You play one civilization. AI agents play the rest."];
+  const platePov = !SPEC || playerView
+    ? ["Single player", `The world as ${identity.civ || "one civilization"} sees it, behind its own fog.`]
+    : ["Global", "The whole world at once, with no civilization's fog."];
   const mapScript = state.map.script || "tenins_ball";
   const mapName = mapScript === "tenins_ball" ? "Tennis Ball" : titleCase(mapScript);
   const speedName = titleCase(state.game_speed || "standard");
@@ -27878,7 +27902,8 @@ function hudTurnPlate() {
     `game speed ${speedName}; ` +
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
-    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
+    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated; ` +
+    `mode ${plateMode[0]}; point of view ${platePov[0]}`;
   // A count and the toll it was taken out of are one reading, so they share a
   // row: the survivors keep the value's weight and colour, the fallen follow in
   // the label's own ink so the eye lands on the living number first.
@@ -27888,6 +27913,8 @@ function hudTurnPlate() {
   const rosterRow = (label, alive, lost) =>
     `<div class="turn-setting"><span>${label}</span>` +
     `<b>${alive}<small class="turn-toll">(${lost} eliminated)</small></b></div>`;
+  const frameRow = (label, [value, title]) => `<div class="turn-setting" title="${escapeAttr(title)}">` +
+    `<span>${label}</span><b>${escapeAttr(value)}</b></div>`;
   // The stopwatch is the plate's own top section, above the age (operator
   // 2026-10-14: "live time can be a very top section above the age"). Watch
   // pace sits directly under it, still above the age (operator 2026-11-09).
@@ -27906,6 +27933,7 @@ function hudTurnPlate() {
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
     `</div>` +
     `<div class="turn-settings" aria-label="Game setup">` +
+    frameRow("Mode:", plateMode) + frameRow("POV:", platePov) +
     `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}">` +
     `<b>${escapeAttr(setupLine)}</b></div>` +
     fogRow +
@@ -28442,9 +28470,11 @@ function drawPlayerHud() {
   // counter; every additional civilization gets exactly one more row, until
   // the masthead reaches its share of the map and the rest of the table scrolls.
   const requestedHeight = playerHudContentHeight(rows);
+  const pickPlayerHudHeight = () => mapArea.style.setProperty("--player-hud-height",
+    `${Math.max(Math.min(turnPlateNeed, Math.floor(mapArea.clientHeight * PLAYER_HUD_DEFAULT_MAP_SHARE)),
+      Math.min(requestedHeight, seatHeight + cityRowsShown * playerHudRowPitch()))}px`);
   if (!HUD_LAYOUT.players) {
-    mapArea.style.setProperty("--player-hud-height",
-      `${Math.min(requestedHeight, seatHeight + cityRowsShown * playerHudRowPitch())}px`);
+    pickPlayerHudHeight();
   } else if (hudLayoutGesture?.name !== "players") {
     // A window can shrink under a saved height; the map bound still holds.
     const metrics = hudWidgetMetrics(hud);
@@ -28754,6 +28784,11 @@ function drawPlayerHud() {
   // has Player Elo, a battlefield has no empire columns) changes what the
   // table has room for, and which columns give way first.
   if (!standingsExisted || rosterChanged) refreshPlayerHudShedColumns();
+  const plateNeed = measureTurnPlateNeed(hud);
+  if (plateNeed !== turnPlateNeed) {
+    turnPlateNeed = plateNeed;
+    if (!HUD_LAYOUT.players) pickPlayerHudHeight();
+  }
   // The masthead is as tall as the table it holds, so a civilization met or
   // destroyed moves the map area's top edge as surely as dragging it does.
   refitMapAreaToChrome();
