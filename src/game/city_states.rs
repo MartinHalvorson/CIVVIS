@@ -122,7 +122,40 @@ impl Game {
         }
     }
 
+    /// How many living city-states of type `kind` have `pid` as Suzerain.
+    ///
+    /// ★ THE CHEAP QUESTION IS ASKED FIRST. A city-state's type is found by
+    /// reading the ruleset's roster of every city-state there is, 182 names,
+    /// until one matches (`cs_type`); who its Suzerain is has been answered
+    /// already and is kept (`suzerain_of`). Every city's yields ask this four
+    /// times, once a yield type, of every city-state on the board, and the
+    /// type was read first: on the screen's nine city-states a seat that is
+    /// Suzerain of nobody read the roster thirty-six times a city to learn
+    /// that, 1.1% of a gene-screen game (`docs/SIMULATOR_PERFORMANCE.md`,
+    /// 2026-11-15). Both tests only read the board, so their order is free,
+    /// and the Suzerain test fails for most city-states.
     fn suzerain_type_count(&self, pid: usize, kind: &str) -> usize {
+        self.players
+            .iter()
+            .filter(|minor| {
+                minor.alive
+                    && minor.is_minor
+                    && !minor.is_barbarian
+                    && self.suzerain_of(minor.id) == Some(pid)
+                    && self.cs_type(&minor.civ) == kind
+            })
+            .count()
+    }
+
+    /// [`Self::suzerain_type_count`] as it was written first, the type read
+    /// before the Suzerain. Test-only: what the reordered count is compared
+    /// against.
+    #[cfg(test)]
+    pub(super) fn suzerain_type_count_reading_the_type_first(
+        &self,
+        pid: usize,
+        kind: &str,
+    ) -> usize {
         self.players
             .iter()
             .filter(|minor| {
@@ -743,6 +776,32 @@ impl Game {
         // into a war against us (run civvis-20260816T223457Z t90) and came
         // back the turn peace was made (t98); Rome's capital point from the
         // same city-state went and returned with it.
+        for state in self
+            .players
+            .iter()
+            .filter(|state| state.is_minor && !state.is_barbarian && state.alive)
+            .filter(|state| !self.is_at_war(pid, state.id))
+        {
+            // A city-state the seat has no Envoy at pays nothing whatever its
+            // type is (`envoy_type_yields_for_count` returns nothing for a
+            // count of zero), and the type costs a read of the whole roster
+            // of city-states to learn. Counted first, it is read only for the
+            // city-states that can pay.
+            let envoys = self.envoys_at(pid, state.id);
+            if envoys <= 0 {
+                continue;
+            }
+            yields.add(self.envoy_type_yields_for_count(city, self.cs_type(&state.civ), envoys));
+        }
+        yields
+    }
+
+    /// [`Self::envoy_yields`] as it was written first, every city-state's
+    /// type read whether or not the seat has an Envoy there. Test-only: what
+    /// the shorter walk is compared against.
+    #[cfg(test)]
+    pub(super) fn envoy_yields_reading_every_type(&self, pid: usize, city: &City) -> Yields {
+        let mut yields = Yields::default();
         for state in self
             .players
             .iter()
