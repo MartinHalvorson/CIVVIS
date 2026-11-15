@@ -4370,6 +4370,20 @@ fn host_previews_on(
 /// order for a transient one. The builder path met this same shape and got a
 /// transient guard for it (`moves == 0`); the trade path never did, and cannot
 /// use that one anyway because the mod sends no `moves` on this event.
+///
+/// ## The mod now sends `moves`, and a refusal at zero is not a reading at all
+///
+/// Corroboration was meant to span turns and a replan frame defeated it: the
+/// same order goes out again in a later frame of the same turn, so one bad
+/// instant was read twice. Live game `civvis-20261115T071444Z` bought six
+/// Traders and sent each on a route in the frames after the purchase, where a
+/// bought unit has no movement, and did the same on each turn a Trader
+/// changed its origin city. In its first sitting (to turn 159) 15 such
+/// requests were refused, 11 of them for a pair the host listed in its own
+/// `route_options`, and six pairs were retired for the game, four of them
+/// pairs the host listed. A refusal recorded with `moves: 0` says the Trader
+/// could not act, and nothing about the route, so it is not counted. An event
+/// without the field (an older mod) is counted as before.
 const TRADE_ROUTE_REFUSALS_BEFORE_BLOCK: usize = 2;
 
 fn refused_trade_routes_through(
@@ -4393,6 +4407,11 @@ fn refused_trade_routes_through(
                     > limit as u64
             })
         {
+            continue;
+        }
+        // See `TRADE_ROUTE_REFUSALS_BEFORE_BLOCK`: a Trader with no movement
+        // left is refused whatever it asks for.
+        if event.get("moves").and_then(|value| value.as_f64()) == Some(0.0) {
             continue;
         }
         let values = ["from_x", "from_y", "x", "y"].map(|key| {
