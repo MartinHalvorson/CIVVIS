@@ -3740,7 +3740,7 @@ impl AdvancedAi {
         // ten tiles out from turn 135 to 153 ("damage ready false"), and
         // civvis-20261004T040138Z (game 47) held Quebec City's at ten.
         let mut gun_danger = (arm_of(g, uid) == Arm::Siege).then(|| {
-            let mut field = super::battle_planner::DangerField::with_reach(g, pid, true);
+            let mut field = self.danger_field(g, pid, true);
             if self.shared_danger {
                 field.share(g);
             }
@@ -4209,7 +4209,7 @@ impl AdvancedAi {
     fn muster_step(&mut self, g: &mut Game, pid: usize, uid: u32, city: &CityView) -> Option<bool> {
         let here = g.units.get(&uid)?.pos;
         let limit = f64::from(g.units[&uid].hp) * MUSTER_DANGER_SHARE;
-        let mut field = super::battle_planner::DangerField::with_reach(g, pid, true);
+        let mut field = self.danger_field(g, pid, true);
         if self.shared_danger {
             field.share(g);
         }
