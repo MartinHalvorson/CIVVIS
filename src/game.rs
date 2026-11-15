@@ -501,6 +501,7 @@ mod growth;
 mod policy_ledger;
 mod research_quotes;
 mod route_avoidance;
+pub(crate) use route_avoidance::RouteReach;
 
 /// Amenities: luxuries, required and local amenities, war weariness. See
 /// `game/amenities.rs`.
