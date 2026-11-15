@@ -1331,7 +1331,7 @@ else
 	-- for the rival's verdict, which the core cannot compute behind the lock.
 	--
 	-- Live 2026-11-15, Pericles culture seat, civvis-20261115T071444Z and its
-	-- reload: 70 asks, 66 closed inside 0.6 s. The other four (t134, t142,
+	-- reload: 70 asks, 66 closed inside 0.8 s. The other four (t134, t142,
 	-- t159, t175) each had a Rock Band concert land 0.02 to 0.25 s after the
 	-- ask; `RockBandMoviePopup` held its lock for the whole 30 s and gave it
 	-- back within 0.25 s of the leader screen closing on the timeout. In
