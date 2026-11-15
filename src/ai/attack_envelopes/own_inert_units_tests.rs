@@ -22,7 +22,7 @@ fn board() -> (Game, u32, u32, u32) {
     let centre = positions[positions.len() / 2];
     let enemy = g.spawn_test_unit("warrior", 1, centre);
     let near = g.nbrs(centre).into_iter().next().unwrap();
-    let builder = g.spawn_test_unit("builder", 0, g.nbrs(near).into_iter().last().unwrap());
+    let builder = g.spawn_test_unit("builder", 0, g.nbrs(near).into_iter().next_back().unwrap());
     let soldier = g.spawn_test_unit("warrior", 0, positions[3]);
     (g, enemy, builder, soldier)
 }
