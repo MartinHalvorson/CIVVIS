@@ -42,7 +42,7 @@ thread_local! {
     static HOOKED: Cell<bool> = const { Cell::new(false) };
     /// What the socket build keeps in atomics on `Shared`. Nothing in this
     /// build reads them but the page that set them.
-    static PACE: Cell<u64> = const { Cell::new(500) };
+    static PACE: Cell<u64> = const { Cell::new(DEFAULT_PACE_MS) };
     static BETWEEN_GAME_COUNTDOWN_MS: Cell<u64> =
         const { Cell::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS) };
     static PAUSED: Cell<bool> = const { Cell::new(false) };
