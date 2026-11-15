@@ -388,6 +388,9 @@ impl AdvancedAi {
         /// Opt-in gene `one-upgrade-lifts-every-city`; see
         /// `advanced/one_upgrade_lifts_every_city.rs`.
         one_upgrade_lifts_every_city => enable_one_upgrade_lifts_every_city, disable_one_upgrade_lifts_every_city;
+        /// Opt-in gene `near-rival-deterrence-holds-late`; see
+        /// `advanced/near_rival_deterrence_holds_late.rs`.
+        near_rival_deterrence_holds_late => enable_near_rival_deterrence_holds_late, disable_near_rival_deterrence_holds_late;
         // ---- append: p-r --------------------------------------------
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;
