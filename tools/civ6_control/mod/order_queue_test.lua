@@ -1257,7 +1257,18 @@ do
 	queue.drain(player, PID, 7)
 	check("column: the follower moves once the plot is clear", ops(BEHIND), "UNITOPERATION_MOVE_TO")
 	check("column: the release is on the log", lastEvent("queue_move_departure_released") ~= nil, true)
+	-- The move just issued is watched until it lands, like a first order's
+	-- walk: with nothing left in the queue the replan frame was exported
+	-- with the follower still on the plot it was leaving (36, 40 and 61
+	-- units a game on civvis-20261115T120431Z, 113645Z and 101703Z).
+	check("column: the follower's walk holds the frame until it lands", queue.pendingCount(), 1)
+	check("column: as a watch, with nothing more to issue", #queue.pending[BEHIND].rows, 0)
+	queue.drain(player, PID, 7)
+	check("column: still held while it has not landed", queue.pendingCount(), 1)
+	host.arrive(BEHIND)
+	queue.drain(player, PID, 7)
 	check("column: the queue drains", queue.pendingCount(), 0)
+	check("column: and nothing more was asked of the host", ops(BEHIND), "UNITOPERATION_MOVE_TO")
 
 	-- The same with the unit ahead named first in the batch.
 	column()
@@ -1401,6 +1412,8 @@ do
 	host.arrive(AHEAD)
 	queue.drain(player, PID, 7)
 	check("one plot: the unit that waited takes it", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+	host.arrive(BEHIND)
+	queue.drain(player, PID, 7)
 	check("one plot: and nothing is left holding the frame", queue.pendingCount(), 0)
 	-- A unit of another class is no rival for the plot: it never waited.
 	three()
