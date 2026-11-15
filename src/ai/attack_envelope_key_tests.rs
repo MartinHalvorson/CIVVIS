@@ -244,10 +244,17 @@ fn the_board_delta_reports_every_tile_a_change_touched() {
         ai.envelope_board_delta(&game).is_none(),
         "a city changing hands must fall back to recomputing everything"
     );
+    // A map edit is reported by the tile it wrote (each envelope tests it
+    // against its own `sight`); a route that opens the whole map cannot be
+    // told and falls back to recomputing everything.
     game.map.tiles.get_mut(&from).unwrap().road = 5;
+    let change = ai.envelope_board_change(&game, None);
+    assert_eq!(change.touched, Some(Vec::new()), "no unit changed");
+    assert_eq!(change.written, vec![from], "a map edit is reported by tile");
+    let _ = game.map.tiles.values_mut();
     assert!(
         ai.envelope_board_delta(&game).is_none(),
-        "a map edit must fall back to recomputing everything"
+        "a whole-map write must fall back to recomputing everything"
     );
 }
 

@@ -297,7 +297,7 @@ impl BasicAi {
     /// store's cleanup rides along with it.
     #[cfg(test)]
     pub(super) fn envelope_board_delta(&self, g: &Game) -> Option<Vec<Pos>> {
-        self.envelope_board_change(g).touched
+        self.envelope_board_change(g, None).touched
     }
 
     /// ★★★ THE DIFF IS A MERGE, NOT A REBUILD. Both rosters are ordered by
@@ -310,19 +310,78 @@ impl BasicAi {
     /// the same one, over the same fields, and the tiles reported are the
     /// same set. Only the order within the returned `Vec` differs, and its
     /// single reader asks whether a sensitive set contains any of them.
-    pub(super) fn envelope_board_change(&self, g: &Game) -> EnvelopeChange {
+    /// The tiles the board changes since the last ask touched, for the
+    /// per-enemy envelopes to test against their sensitive sets.
+    ///
+    /// ★★ `asker`'s OWN INERT UNITS ARE LEFT OUT. An envelope here is the reach
+    /// of a military unit at war with the seat asking, and the two floods it is
+    /// built from read other units in exactly two ways: zone of control
+    /// (`in_enemy_zoc_for`, military units that `exerts_zoc`) and a hostile
+    /// fighter's patrol (`can_enter_past`). The attack reach floods through
+    /// units (`through_units`), and the strike reach's arrivals
+    /// (`approach_arrivals_with`) read a tile holding one of the asker's
+    /// civilians, religious or support units exactly as they read an empty
+    /// one: `entry_at_neighbor` answers `Stop` for both when the mover is at
+    /// war with the occupant, which every envelope's subject is. So a Builder,
+    /// a Settler or a Missionary of the asker's walking about cannot change
+    /// any envelope this seat is told, and each such step used to re-flood
+    /// every enemy whose movement field it crossed. Only a change of place,
+    /// formation or lock is left out this way: a unit that changed owner or
+    /// kind, started a patrol, or left the board is reported as before.
+    ///
+    /// ⚠ That argument holds for the asker only. A third seat's Builder can
+    /// turn a `Stop` into a `Pass` for a mover at peace with it, so the board
+    /// remembers whose changes it left out (`skipped_for`) and treats an ask
+    /// on behalf of any other seat as "everything changed". One AI plays one
+    /// seat, so in play that never fires.
+    ///
+    /// ★★★ A MAP WRITE IS REPORTED BY TILE, NOT AS "EVERYTHING CHANGED". This
+    /// board used to carry the map epoch in its stamp, so any tile opened for
+    /// writing anywhere — a Builder's improvement, a chop, one tile of border
+    /// growth — re-flooded every enemy on the next ask: 3,063 times in one
+    /// 210-turn site game, three quarters of every flood the envelopes ran,
+    /// almost always for one to five tiles. The map now keeps a short log of
+    /// what it opened (`TileGrid::writes_since`), and the tiles are tested
+    /// against each envelope's `sight`: the disk around the unit out to its
+    /// farthest flood tile plus its attack range. That is everything both
+    /// floods read off the map. The attack reach reads tile costs, borders,
+    /// cliffs, rivers and districts along its flood and one step beyond it,
+    /// and line of sight from every flood tile out to its range; the strike
+    /// reach's arrivals (`approach_arrivals_with`) relax the same costs with a
+    /// stricter entry test, so they stay inside the attack flood, and they
+    /// shoot from inside it. A unit whose flood was empty (locked in place
+    /// this turn) has no `sight` and is refreshed by any write, since on a
+    /// fresh turn its strike reach can walk where its attack reach cannot.
+    /// A history that cannot be followed back (a whole-map write, another
+    /// branch of a cloned game, a log overrun) is "everything changed".
+    pub(super) fn envelope_board_change(&self, g: &Game, asker: Option<usize>) -> EnvelopeChange {
         let mut previous = self
             .envelope_board
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let stamp = (
-            g.map.tiles.epoch(),
             Self::envelope_belligerence_fingerprint(g),
             Self::envelope_city_fingerprint(g),
         );
+        let map_chain = g.map.tiles.write_chain();
+        let inert = |unit: &crate::game::Unit| {
+            asker == Some(unit.owner)
+                && g.rules.units[unit.kind].class != "military"
+                && !g.exerts_zoc(unit)
+        };
+        let mut skipped_for = None;
         let mut units: Vec<(u32, EnvelopeUnit)> = Vec::with_capacity(g.units.len());
-        let change = match previous.as_ref() {
-            Some(prior) if prior.stamp == stamp => {
+        let written = previous
+            .as_ref()
+            .filter(|prior| {
+                prior.stamp == stamp && prior.skipped_for.is_none_or(|seat| Some(seat) == asker)
+            })
+            .and_then(|prior| g.map.tiles.writes_since(prior.map_chain));
+        let change = match (previous.as_ref(), written) {
+            (Some(prior), Some(mut written)) => {
+                written.sort_unstable();
+                written.dedup();
+                skipped_for = prior.skipped_for;
                 let mut touched = Vec::new();
                 let mut removed = false;
                 let mut before = prior.units.iter().peekable();
@@ -339,16 +398,29 @@ impl BasicAi {
                     match before.peek() {
                         Some((same, was)) if same == id => {
                             if *was != now {
-                                touched.push(was.pos);
-                                touched.push(now.pos);
-                                touched.extend(was.patrol);
-                                touched.extend(now.patrol);
+                                if was.owner == now.owner
+                                    && was.kind == now.kind
+                                    && was.patrol.is_none()
+                                    && now.patrol.is_none()
+                                    && inert(unit)
+                                {
+                                    skipped_for = asker;
+                                } else {
+                                    touched.push(was.pos);
+                                    touched.push(now.pos);
+                                    touched.extend(was.patrol);
+                                    touched.extend(now.patrol);
+                                }
                             }
                             before.next();
                         }
                         _ => {
-                            touched.push(now.pos);
-                            touched.extend(now.patrol);
+                            if now.patrol.is_none() && inert(unit) {
+                                skipped_for = asker;
+                            } else {
+                                touched.push(now.pos);
+                                touched.extend(now.patrol);
+                            }
                         }
                     }
                     units.push((*id, now));
@@ -360,6 +432,7 @@ impl BasicAi {
                 }
                 EnvelopeChange {
                     touched: Some(touched),
+                    written,
                     removed,
                 }
             }
@@ -373,11 +446,17 @@ impl BasicAi {
                 // cleanup must run.
                 EnvelopeChange {
                     touched: None,
+                    written: Vec::new(),
                     removed: true,
                 }
             }
         };
-        *previous = Some(EnvelopeBoard { stamp, units });
+        *previous = Some(EnvelopeBoard {
+            stamp,
+            map_chain,
+            units,
+            skipped_for,
+        });
         change
     }
 
@@ -447,8 +526,9 @@ impl BasicAi {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let EnvelopeChange {
             touched: delta,
+            written,
             removed,
-        } = self.envelope_board_change(g);
+        } = self.envelope_board_change(g, Some(pid));
         let out: AttackEnvelopes = g
             .units
             .values()
@@ -471,6 +551,11 @@ impl BasicAi {
                         if delta
                             .iter()
                             .all(|touched| !entry.sensitive.contains(touched))
+                            && written.iter().all(|tile| {
+                                entry
+                                    .sight
+                                    .is_some_and(|(centre, radius)| g.wdist(*tile, centre) > radius)
+                            })
                         {
                             // ⚠ DIAGNOSTIC ONLY. With CIVVIS_ENVELOPE_AUDIT set,
                             // every reuse is checked against a fresh computation
@@ -494,9 +579,21 @@ impl BasicAi {
                 let reach: std::sync::Arc<EnvelopeReach> =
                     std::sync::Arc::new(EnvelopeReach::from_shared_tiles(cached.shared_targets()));
                 if reusable {
+                    // How far out a written tile can still reach this
+                    // envelope; see `envelope_board_change`.
+                    let flood = cached.flood();
+                    let sight = (!flood.is_empty()).then(|| {
+                        let farthest = flood
+                            .iter()
+                            .map(|tile| g.wdist(unit.pos, *tile))
+                            .max()
+                            .unwrap_or(0);
+                        (unit.pos, farthest + g.unit_attack_range(unit.id).max(1))
+                    });
                     store.insert(
                         unit.id,
                         EnemyEnvelope {
+                            sight,
                             reach: std::sync::Arc::clone(&reach),
                             sensitive: std::sync::Arc::new(Self::envelope_sensitive_tiles(
                                 g,
@@ -537,3 +634,6 @@ impl BasicAi {
         out
     }
 }
+
+#[cfg(test)]
+mod own_inert_units_tests;
