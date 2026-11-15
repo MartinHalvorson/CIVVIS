@@ -48,6 +48,7 @@ pub mod belief;
 pub mod city_states;
 pub mod civ6;
 pub mod doctrine;
+pub mod effect_map;
 pub mod elo;
 pub mod evolve;
 pub mod fractal;
