@@ -1390,11 +1390,11 @@ fn the_rush_reaches_fifteen_tiles_for_the_war_cart() {
 }
 
 #[test]
-fn the_war_carts_scout_while_no_city_is_named() {
+fn two_war_carts_scout_while_no_city_is_named() {
     let (mut g, _) = rush_fixture();
     // Only the ground around the capital is known.
     g.players[0].explored = g.wdisk(CAPITAL, 3).into_iter().collect();
-    let carts = war_carts(&mut g, &[(5, 8), (3, 8)]);
+    let carts = war_carts(&mut g, &[(5, 8), (3, 8), (4, 9)]);
     let mut ai = rush_on(VictoryTarget::Score);
     let journal = crate::reasoning::Journal::recording();
     ai.base.journal = journal.handle();
@@ -1403,21 +1403,47 @@ fn the_war_carts_scout_while_no_city_is_named() {
     assert_eq!(w.target, None);
     assert!(w.rush_scouting);
     assert_eq!(counter(&g, "scouting"), 1);
+    // Two scout, one to each side of the capital; the third is left to the
+    // unit pass with its moves.
+    let (east, west) = (g.units[&carts[0]].pos, g.units[&carts[1]].pos);
     assert!(
-        carts
-            .iter()
-            .any(|uid| g.units[uid].pos != (5, 8) && g.units[uid].pos != (3, 8)),
-        "a War-Cart explores: {:?}",
+        east != (5, 8) && east.0 >= 4,
+        "{east:?} {:?}",
         details(&journal)
     );
-    // One past the reach walks back toward the capital.
+    assert!(
+        west != (3, 8) && west.0 < 4,
+        "{west:?} {:?}",
+        details(&journal)
+    );
+    assert_eq!(g.units[&carts[2]].pos, (4, 9));
+    assert!(g.units[&carts[2]].moves_left > 0.0);
+
+    // A rival's border we have seen draws the scout: its city is beside it.
     let (mut g, _) = rush_fixture();
-    g.players[0].explored.remove(&RIVAL);
-    let stray = g.spawn_test_unit("war_cart", 0, (24, 8));
-    let before = g.wdist(g.units[&stray].pos, CAPITAL);
+    g.players[0].explored = g.wdisk(CAPITAL, 3).into_iter().collect();
+    let border = (11, 8);
+    assert_eq!(
+        g.map.get(border).and_then(|tile| tile.owner_city),
+        g.city_at(RIVAL)
+    );
+    g.players[0].explored.insert(border);
+    let scout = g.spawn_test_unit("war_cart", 0, (3, 8));
+    let before = g.wdist(g.units[&scout].pos, RIVAL);
     let mut ai = rush_on(VictoryTarget::Score);
     ai.maintain_edge_unit_window(&mut g, 0);
-    assert!(g.wdist(g.units[&stray].pos, CAPITAL) < before);
+    assert!(g.wdist(g.units[&scout].pos, RIVAL) < before);
+
+    // With everything in reach charted there is nothing to order: the unit
+    // pass has the War-Carts.
+    let (mut g, city) = rush_fixture();
+    g.players[0].explored = g.map.tiles.keys().copied().collect();
+    g.cities.get_mut(&city).unwrap().wall_hp = 100;
+    let idle = g.spawn_test_unit("war_cart", 0, (5, 8));
+    let mut ai = rush_on(VictoryTarget::Score);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(g.units[&idle].pos, (5, 8));
+    assert!(g.units[&idle].moves_left > 0.0);
 }
 
 #[test]
@@ -1665,6 +1691,11 @@ fn the_rush_stops_when_the_forecast_reads_no_capture() {
     let w = window(&ai);
     assert_eq!(w.rush_hopeless, 1);
     assert!(!w.spent);
+    // A second frame of the same turn reads the same turn: counted once.
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let w = window(&ai);
+    assert_eq!(w.rush_hopeless, 1);
+    assert!(!w.spent);
     g.turn += 1;
     for uid in &carts {
         if let Some(body) = g.units.get_mut(uid) {
@@ -1733,6 +1764,9 @@ fn the_rush_makes_no_friend_of_its_target() {
     assert!(!ai.edge_rush_spares_friendship(&g, 1));
     // The base gene alone spares nobody.
     let (mut g, _) = fixture(&["mining", "bronze_working", "iron_working"]);
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 40.0);
     let mut ai = gene_on();
     ai.maintain_edge_unit_window(&mut g, 0);
     assert!(window(&ai).target.is_some());
@@ -1764,4 +1798,123 @@ fn a_domination_seat_s_rush_ends_without_asking_for_peace() {
     assert_eq!(counter(&g, "handed_over"), 1);
     assert!(!ai.peace_offers.contains(&1));
     assert!(g.is_at_war(0, 1));
+}
+
+#[test]
+fn a_rush_that_stops_calls_its_survivors_home() {
+    // Walls behind the declaration: the rush stops on the second hopeless
+    // turn, and from that turn its War-Carts walk back to our capital.
+    let (mut g, mut ai, city, carts) = rush_at_war(&[(11, 8), (11, 9), (12, 9)], None);
+    g.cities.get_mut(&city).unwrap().wall_hp = 300;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let fresh = |g: &mut Game| {
+        for uid in &carts {
+            if let Some(body) = g.units.get_mut(uid) {
+                body.moves_left = 3.0;
+                body.acted = false;
+            }
+        }
+    };
+    g.turn += 1;
+    fresh(&mut g);
+    let journal = crate::reasoning::Journal::recording();
+    ai.base.journal = journal.handle();
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let w = window(&ai);
+    assert!(w.spent);
+    assert_eq!(w.rush_home, Some(16));
+    assert_eq!(counter(&g, "home"), 1, "{:?}", details(&journal));
+    let alive: Vec<u32> = carts
+        .iter()
+        .copied()
+        .filter(|uid| g.units.contains_key(uid))
+        .collect();
+    assert!(!alive.is_empty());
+    let far = |g: &Game| -> i32 {
+        alive
+            .iter()
+            .map(|uid| g.wdist(g.units[uid].pos, CAPITAL))
+            .sum()
+    };
+    let before = far(&g);
+    g.turn += 1;
+    fresh(&mut g);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(far(&g) < before, "the survivors walk home");
+    // Past the homecoming the units are the unit pass's again.
+    g.turn = 16 + super::EDGE_RUSH_HOME_TURNS;
+    fresh(&mut g);
+    let held = far(&g);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(far(&g), held);
+    // A Domination seat's rush that took a city keeps its force forward.
+    let (mut g, mut ai, city, _) = rush_at_war(&[(11, 8), (11, 9), (12, 9)], None);
+    ai.victory_target = Some(VictoryTarget::Domination);
+    g.cities.get_mut(&city).unwrap().owner = 0;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    g.turn += super::EDGE_RUSH_REGROUP_TURNS;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    let w = window(&ai);
+    assert!(w.spent);
+    assert_eq!(w.rush_home, None);
+}
+
+#[test]
+fn a_cart_that_cannot_reach_the_city_strikes_a_soldier_beside_it_or_holds() {
+    let (mut g, _, _, carts) = rush_at_war(&[(6, 8), (6, 11), (3, 11)], None);
+    // A hostile soldier beside it: struck.
+    let foe = g.spawn_test_unit("warrior", 1, (7, 8));
+    let before = g.units[&foe].hp;
+    AdvancedAi::edge_rush_engage_or_hold(&mut g, 0, carts[0]);
+    assert!(g.units.get(&foe).is_none_or(|unit| unit.hp < before));
+    // None beside it: it holds, fortified, with no move left for a later
+    // step of the turn to spend.
+    AdvancedAi::edge_rush_engage_or_hold(&mut g, 0, carts[1]);
+    assert!(g.units[&carts[1]].fortified);
+    assert!(g.units[&carts[1]].moves_left <= 0.0);
+    // A wounded one holds even with a soldier beside it.
+    let other = g.spawn_test_unit("warrior", 1, (4, 11));
+    let health = g.units[&other].hp;
+    g.units.get_mut(&carts[2]).unwrap().hp = super::EDGE_RUSH_ENGAGE_HP - 1;
+    AdvancedAi::edge_rush_engage_or_hold(&mut g, 0, carts[2]);
+    assert_eq!(g.units[&other].hp, health);
+    assert!(g.units[&carts[2]].fortified);
+}
+
+#[test]
+fn the_rush_declares_on_a_turn_its_force_can_still_move() {
+    // The muster forms after the walk has spent the turn's moves: the
+    // declaration waits for the next turn, when it comes with the blows.
+    let (mut g, city) = rush_fixture();
+    let carts = war_carts(&mut g, &[(10, 8), (10, 9), (10, 7)]);
+    for uid in &carts {
+        g.units.get_mut(uid).unwrap().moves_left = 0.0;
+    }
+    let mut ai = rush_on(VictoryTarget::Score);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(!g.is_at_war(0, 1));
+    assert_eq!(counter(&g, "held_moves"), 1);
+    g.turn += 1;
+    for uid in &carts {
+        let body = g.units.get_mut(uid).unwrap();
+        body.moves_left = 3.0;
+        body.acted = false;
+    }
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(g.is_at_war(0, 1));
+    assert!(g.cities[&city].hp < 200);
+}
+
+#[test]
+fn the_rush_s_force_stays_out_of_distant_rows_through_its_war() {
+    let (g, ai, _, carts) = rush_at_war(&[(11, 8), (11, 9), (12, 9)], None);
+    assert!(ai.edge_unit_force_member(&g, carts[0]));
+    // The base window's force is its member only while it musters.
+    let (g, ai, _) = at_war(3, None);
+    let body = g
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| g.units[uid].kind == legion())
+        .unwrap();
+    assert!(!ai.edge_unit_force_member(&g, body));
 }

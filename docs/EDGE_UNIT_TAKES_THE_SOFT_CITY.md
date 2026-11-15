@@ -247,30 +247,74 @@ only tag to arm):
   included, on the main path and in the live production hint
   (`claim_edge_rush_queue`). Once a city is named the version-2 claim trains
   on to 6 in the capital and the two cities nearest the target, ahead of a
-  deferrable item. Gold is held for the next one and buys it as soon as the
-  treasury holds its price (`force: bought ...`).
-- **Scouting.** While no city is named the edge units explore with every
-  move, inside the rush's reach of the capital (`scouting:`); a wounded one
-  heals first.
+  deferrable item. Gold is held for the next one and buys it in a training
+  city that quotes a price (`force: bought ...`): the host buys a land
+  soldier into the City Center, so a city with a soldier on its tile or at
+  the head of its queue quotes none.
+- **Scouting.** While no city is named up to 2 edge units walk with every
+  move to the nearest unexplored land inside the rush's reach of the
+  capital, one to each side of it, and first to the fog within 3 tiles of a
+  rival's border they have seen (`scouting:`); a wounded one heals first.
+  The other edge units, and the scouts once everything in reach is charted,
+  are the unit pass's (the camps, the escorts, the capital's defence).
+- **No friendship with the target.** While the rush runs, a declared
+  friendship is neither offered to nor accepted from the owner of the named
+  city, nor any major before a city is named (`edge_rush_spares_friendship`,
+  read by the friendship desk and by the live dialogue lease). Round 1:
+  `score-seat-keeps-friends` befriended the neighbour on first contact, a
+  friend is not a legal target, and the city was named at a median turn 33.
 - **Target.** Named from one city. An unwalled rival city, its centre
   explored, within 5 turns of the unit's moves of one of our cities (15
   tiles for the War-Cart, 10 for the Eagle Warrior), at an edge of 0 or
-  better; a walled one keeps the base rule (+8 and a breaker). It stays the
-  target while unwalled at -4 or better. The declaration's capture forecast
-  (3 at 70+ health within 4 tiles, calibrated 0.5 within 4 turns) is the
-  gate, read every turn as the force grows. No city named by turn 45, or no
-  declaration by turn 60, stands the rush down.
-- **War.** A war the target's owner declares on us first does not stop the
-  walk, and with the muster formed and the forecast read it is the window's
-  war (`declared: already at war ...`). The assault is the base gene's.
+  better; a walled one keeps the base rule (+8 and a breaker). Of the
+  cities at +8 or better the nearest is named (the march is the rush's
+  clock); with none that soft, the largest edge. It stays the target while
+  unwalled at -4 or better. No city named by turn 45, or no declaration by
+  turn 60, stands the rush down.
+- **Declaration.** The base gate: 3 at 70+ health within 4 tiles and the
+  capture forecast at 0.5 calibrated within 4 turns, read every turn as the
+  force grows. The denouncement still goes out with the first unit, but the
+  muster does not wait for its five turns: the rush declares the Formal War
+  when it is legal and a surprise war when it is not (`edge_rush_opening`),
+  on a turn its force can still move (`hold: ... the declaration waits for
+  the next turn's first move`), and the force presses the assault on the
+  turn it declares. A war the target's owner declares on us first does not
+  stop the walk, and at the muster it is the window's war (`declared:
+  already at war ...`).
+- **Assault.** The base gene's press, with the nearest unit first and the
+  column walked twice. A unit aims at a tile beside the city that holds no
+  soldier of ours. One that cannot reach the city this turn strikes the
+  weakest hostile soldier beside it at 50 health or more, and otherwise
+  holds fortified, so no later step of the turn walks it home; the
+  objective board keeps the force out of distant Destroy, Escort and
+  ClearCamp rows through the war. Round 2: the board's Reserve took the
+  force back toward the capital on the first war turns, and the first blow
+  came 2-3 turns after the declaration.
+- **Stopping.** At war the rush reads the at-war forecast once a turn
+  (`assault_forecast`, P(capture within 12 turns)). Under 20% on two war
+  turns running with the force gathered (walls raised behind the
+  declaration, the rival's soldiers arrived) it stops (`closed: the
+  forecast reads ...`); so does it after 10 war turns without a capture (the
+  base window waits 20), and with fewer than 2 edge units owned and queued.
+  A Score seat then asks for peace; a Domination seat asks for none and its
+  lane keeps the war (`handed over:`).
+- **Home.** When the rush is over, for whatever reason, its surviving edge
+  units walk back to within 2 tiles of our nearest city for 8 turns
+  (`home:`), so a rush that took nothing does not leave the seat without
+  defenders. The unit inside a city the rush took stays there. The one
+  exception is a Domination seat whose rush took a city: the lane keeps the
+  force with the war.
 - **After a capture.** The city is kept (`edge_rush_keeps`) and the edge
   unit inside it stays as its garrison. The force goes on to the same
-  owner's city, the capital included, within 12 tiles, that the forecast
-  reads taken at 0.5 or better with every edge unit of the force at full
-  health and beside it (`continue: ... forecast N%`); a wounded unit inside
-  our borders heals before it closes. A walled city the forecast does not
-  read taken is left alone, and with no city to go on to peace is asked.
-  Training and buying go on through the war.
+  owner's city, the capital included, within 12 tiles, that the at-war
+  forecast reads taken at 0.5 or better within 6 turns with the force where
+  it stands and at the health it has (`continue: ... forecast N%`); a
+  wounded unit inside our borders heals before it closes. With none read
+  the force regroups for up to 8 turns: the wounded heal, one healthy unit
+  explores within 12 tiles of the captured city, the others hold, and the
+  forecast is read again each turn (`regroup:`). A walled city the forecast
+  does not read taken is left alone. Training and buying go on through the
+  war.
 
 ## Live evidence (Rome, Score lane)
 

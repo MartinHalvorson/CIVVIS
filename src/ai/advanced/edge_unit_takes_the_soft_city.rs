@@ -116,20 +116,46 @@
 //!   anything else, the opening book included, and the hint for the
 //!   capital's next item is the same. Once a city is named the version-2
 //!   claim trains on to [`EDGE_FORCE_MAX`]. Gold is held for one more and
-//!   buys it in the capital ([`AdvancedAi::edge_rush_buy`]).
-//! - **Scouting**: while no city is named the edge units explore, inside
-//!   the rush's reach of the capital ([`AdvancedAi::edge_rush_scout`]).
+//!   buys it in a training city that quotes a price
+//!   ([`AdvancedAi::edge_rush_buy`]).
+//! - **Scouting**: while no city is named up to [`EDGE_RUSH_SCOUTS`] edge
+//!   units walk to the nearest unexplored land inside the rush's reach of
+//!   the capital, a rival's border we have seen first
+//!   ([`AdvancedAi::edge_rush_scout`]); the others are the unit pass's.
 //! - **Target**: named from one city. An unwalled rival city within
 //!   [`edge_rush_reach`] of ours at an edge of [`EDGE_RUSH_MIN`] or better
-//!   (a walled one keeps the base rule), kept while unwalled and the edge is
-//!   [`EDGE_UNWALLED_FLOOR`] or better. The declaration's capture forecast
-//!   is the gate, read every turn as the force grows.
-//! - **War**: a war the target declares on us first is the window's war.
-//!   A capture is kept ([`AdvancedAi::edge_rush_keeps`]). After it the force
-//!   goes on to the same owner's city, the capital included, that the
-//!   forecast with every edge unit owned, healed and beside it, reads taken
-//!   ([`AdvancedAi::edge_rush_next_city`]); a wounded unit inside our
-//!   borders heals before it closes. With none, peace is asked.
+//!   (a walled one keeps the base rule), the nearest of those at
+//!   [`EDGE_MIN`] or better, kept while unwalled and the edge is
+//!   [`EDGE_UNWALLED_FLOOR`] or better. While the rush runs no declared
+//!   friendship is offered to or accepted from its owner (any major before
+//!   a city is named): a friend is not a legal target
+//!   ([`AdvancedAi::edge_rush_spares_friendship`]).
+//! - **Declaration**: the capture forecast at the muster is the gate, read
+//!   every turn as the force grows. The muster does not wait out the
+//!   denouncement: the Formal War when it is legal, else a surprise war
+//!   ([`AdvancedAi::edge_rush_opening`]), on a turn the force can still
+//!   move, and the force strikes on the turn it declares. A war the target
+//!   declares on us first is the window's war.
+//! - **Stopping**: the at-war forecast under [`EDGE_RUSH_STOP_P`] on
+//!   [`EDGE_RUSH_STOP_STREAK`] war turns running, [`EDGE_RUSH_WAR_PATIENCE`]
+//!   war turns without a capture, or fewer than [`EDGE_FORCE_FLOOR`] edge
+//!   units owned and queued. A Score seat asks for peace; a Domination seat
+//!   hands the war to its lane. The survivors then walk back to our cities
+//!   for [`EDGE_RUSH_HOME_TURNS`] turns ([`AdvancedAi::edge_rush_walk_home`]),
+//!   unless a Domination seat's rush took a city.
+//! - **After a capture**: the city is kept ([`AdvancedAi::edge_rush_keeps`])
+//!   and the unit inside it is its garrison. The force goes on to the same
+//!   owner's city, the capital included, that the at-war forecast reads
+//!   taken within [`EDGE_RUSH_CONTINUE_TURNS`] turns with the force where
+//!   it stands ([`AdvancedAi::edge_rush_next_city`]); a wounded unit inside
+//!   our borders heals before it closes. With none read, the force regroups
+//!   for [`EDGE_RUSH_REGROUP_TURNS`] turns (the wounded heal, one unit
+//!   explores, the rest hold, and the forecast is read again each turn).
+//! - **Assault**: the nearest unit goes first and the column is walked
+//!   twice; a unit that cannot reach the city this turn strikes a hostile
+//!   soldier beside it, or holds fortified so the objective board's Reserve
+//!   does not walk it home ([`AdvancedAi::edge_rush_engage_or_hold`]); the
+//!   board keeps the force out of distant rows through the war.
 //!
 //! The base flag alone is unchanged. The rush flag alone runs nothing for a
 //! civilization with no such unit, and nothing off a Score or Domination
@@ -227,6 +253,15 @@ pub(crate) const EDGE_RUSH_REACH_MAX: i32 = 15;
 pub(crate) const EDGE_RUSH_FIRST: usize = EDGE_MUSTER_BODIES;
 /// The rush: tiles from the force the next city may stand after a capture.
 pub(crate) const EDGE_RUSH_CONTINUE_TILES: i32 = 12;
+/// The rush: edge units that scout while no city is named. The others are
+/// the unit pass's (the camps, the escorts, the capital's defence): round 2
+/// sent every one out, and in the worlds that named no city the capital sat
+/// under barbarian pressure and held its Settlers back (one city at turn 50
+/// against three).
+pub(crate) const EDGE_RUSH_SCOUTS: usize = 2;
+/// The rush: an unexplored tile this near a rival's border we have seen is
+/// scouted first (the city stands beside its border).
+pub(crate) const EDGE_RUSH_BORDER_TILES: i32 = 3;
 /// The rush: war turns without a capture before it stops (the base window
 /// waits [`EDGE_WAR_PATIENCE`]). Round 1 (24 Sumeria pairs): the one capture
 /// came on war turn 4; the ten assaults that took nothing fought 16-20 turns
@@ -241,7 +276,20 @@ pub(crate) const EDGE_RUSH_STOP_P: f32 = 0.2;
 pub(crate) const EDGE_RUSH_STOP_STREAK: u32 = 2;
 /// The rush: turns after a capture the force heals, looks for the owner's
 /// next city and reads the forecast again before it asks for peace.
-pub(crate) const EDGE_RUSH_REGROUP_TURNS: u32 = 6;
+pub(crate) const EDGE_RUSH_REGROUP_TURNS: u32 = 8;
+/// The rush goes on to a city the at-war forecast reads taken within this
+/// many turns, with the force where it stands and at the health it has.
+pub(crate) const EDGE_RUSH_CONTINUE_TURNS: usize = 6;
+/// The rush: health at which an edge unit that cannot reach the city this
+/// turn strikes a hostile soldier beside it (under it, it holds).
+pub(crate) const EDGE_RUSH_ENGAGE_HP: i32 = 50;
+/// The rush is over: for this many turns its surviving edge units walk back
+/// to our cities, so a rush that took nothing does not leave the seat
+/// without defenders (live 2026-11-15: Deity rivals declared joint wars on a
+/// seat at 317 military against their 950-1,022).
+pub(crate) const EDGE_RUSH_HOME_TURNS: u32 = 8;
+/// An edge unit this near a city of ours is home.
+pub(crate) const EDGE_RUSH_HOME_TILES: i32 = 2;
 /// Builders walk this far to a source.
 const EDGE_BUILDER_STEPS: usize = 8;
 /// Every line's detail starts with this.
@@ -331,11 +379,15 @@ pub(crate) struct EdgeWindow {
     /// The rush: edge units bought with Gold.
     pub(crate) rush_bought: u32,
     /// The rush: war turns running on which the at-war forecast read under
-    /// [`EDGE_RUSH_STOP_P`].
+    /// [`EDGE_RUSH_STOP_P`], and the last turn counted (a turn is planned in
+    /// several frames, and each frame reads the forecast).
     pub(crate) rush_hopeless: u32,
+    pub(crate) rush_hopeless_turn: Option<u32>,
     /// The rush: the turn the force began to regroup after a capture, with
     /// no next city read yet.
     pub(crate) rush_regroup: Option<u32>,
+    /// The rush: the turn it ended with its survivors called home.
+    pub(crate) rush_home: Option<u32>,
 }
 
 impl EdgeWindow {
@@ -774,8 +826,9 @@ impl AdvancedAi {
     /// `edge-unit-rushes-from-the-capital`: the city the rush names. An
     /// unwalled rival major's city within `reach` of `from` at an edge of
     /// [`EDGE_RUSH_MIN`] or better; a walled one keeps the base rule
-    /// ([`EDGE_MIN`], and a breaker its walls admit). The largest edge first,
-    /// then the nearest, then the lowest id.
+    /// ([`EDGE_MIN`], and a breaker its walls admit). Among the cities at
+    /// [`EDGE_MIN`] or better the nearest (the march is the rush's clock);
+    /// with none that soft, the largest edge. Then the lowest id.
     pub(crate) fn edge_rush_soft_city(
         &self,
         g: &Game,
@@ -793,13 +846,21 @@ impl AdvancedAi {
             if soft.edge + 1e-9 < floor {
                 continue;
             }
-            let better = best.as_ref().is_none_or(|held| {
-                if (soft.edge - held.edge).abs() > 1e-9 {
-                    soft.edge > held.edge
-                } else {
-                    (soft.tiles, soft.city) < (held.tiles, held.city)
-                }
-            });
+            let easy = |soft: &SoftCity| soft.edge + 1e-9 >= EDGE_MIN;
+            let better = best
+                .as_ref()
+                .is_none_or(|held| match (easy(&soft), easy(held)) {
+                    (true, false) => true,
+                    (false, true) => false,
+                    (true, true) => (soft.tiles, soft.city) < (held.tiles, held.city),
+                    (false, false) => {
+                        if (soft.edge - held.edge).abs() > 1e-9 {
+                            soft.edge > held.edge
+                        } else {
+                            (soft.tiles, soft.city) < (held.tiles, held.city)
+                        }
+                    }
+                });
             if better {
                 best = Some(soft);
             }
@@ -861,24 +922,15 @@ impl AdvancedAi {
     /// beside the city: on a copy of the board each is placed on a free
     /// land tile next to it, then two and three tiles out. Returns the
     /// calibrated and the raw chance. `None` when no forecast reads.
-    /// `healed` (the rush's continuation) reads them at full health.
     fn edge_posed_forecast(
         &self,
         g: &Game,
         pid: usize,
         cid: u32,
         units: &[u32],
-        healed: bool,
     ) -> Option<(f32, f32)> {
         let center = g.cities.get(&cid)?.pos;
         let mut board = g.clone();
-        if healed {
-            for uid in units {
-                if let Some(body) = board.units.get_mut(uid) {
-                    body.hp = 100;
-                }
-            }
-        }
         let free =
             |board: &Game, pos: Pos| {
                 board.map.get(pos).is_some_and(|tile| {
@@ -942,7 +994,7 @@ impl AdvancedAi {
                 Err(line)
             };
         }
-        let Some((chance, raw)) = self.edge_posed_forecast(g, pid, soft.city, &owned, false) else {
+        let Some((chance, raw)) = self.edge_posed_forecast(g, pid, soft.city, &owned) else {
             return Err(format!(
                 "{name} unwalled at defence {:.0}, edge {:+.0}: no forecast reads",
                 soft.defence, soft.edge
@@ -995,6 +1047,78 @@ impl AdvancedAi {
             self.plan = None;
         }
         self.force_groups_dirty = true;
+        // The rush's survivors come home, unless a Domination seat's rush
+        // took a city: its lane keeps the war and the force with it.
+        if window.rushing()
+            && !(self.victory_target == Some(VictoryTarget::Domination) && window.taken > 0)
+        {
+            window.rush_home = Some(g.turn);
+        }
+    }
+
+    /// The rush is over: each surviving edge unit farther than
+    /// [`EDGE_RUSH_HOME_TILES`] from every city of ours walks toward the
+    /// nearest one with every move, for [`EDGE_RUSH_HOME_TURNS`] turns. One
+    /// inside a city it took stays as its garrison; one already home is the
+    /// unit pass's.
+    fn edge_rush_walk_home(&mut self, g: &mut Game, pid: usize, unit: Name, since: u32) {
+        let cities: Vec<Pos> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.cities[&cid].pos)
+            .collect();
+        if cities.is_empty() {
+            return;
+        }
+        let away: Vec<(u32, Pos)> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|uid| {
+                let body = &g.units[&uid];
+                if body.kind != unit || g.is_embarked(body) {
+                    return None;
+                }
+                let home = cities
+                    .iter()
+                    .copied()
+                    .min_by_key(|pos| (g.wdist(body.pos, *pos), *pos))?;
+                (g.wdist(body.pos, home) > EDGE_RUSH_HOME_TILES).then_some((uid, home))
+            })
+            .collect();
+        if g.turn == since && !away.is_empty() {
+            Self::edge_count(g, pid, "home");
+            think!(self.journal(), Military, Decision,
+                   "Edge unit survivors come home";
+                   "{TAG}: home: the rush is over; {} {} walk back to our cities until turn {}",
+                   away.len(), plain(unit.as_str()), since + EDGE_RUSH_HOME_TURNS);
+        }
+        for (uid, home) in away {
+            for _ in 0..6 {
+                let Some(body) = g.units.get(&uid) else {
+                    break;
+                };
+                if body.moves_left <= 0.0 || g.wdist(body.pos, home) <= EDGE_RUSH_HOME_TILES {
+                    break;
+                }
+                let Some(next) = g
+                    .route_step(uid, home, 1)
+                    .filter(|next| g.can_move(uid, *next))
+                else {
+                    break;
+                };
+                if g.apply(
+                    pid,
+                    &Action::Move {
+                        unit: uid,
+                        to: next,
+                    },
+                )
+                .is_err()
+                {
+                    break;
+                }
+            }
+        }
     }
 
     /// ⭐ Start of turn: open, keep or close the window; its research goal,
@@ -1011,6 +1135,11 @@ impl AdvancedAi {
                 self.edge_war(g, pid, &mut window);
             } else {
                 self.edge_peace(g, pid, &mut window);
+            }
+        }
+        if let (true, Some(since), Some(unit)) = (window.spent, window.rush_home, window.unit) {
+            if g.turn < since + EDGE_RUSH_HOME_TURNS {
+                self.edge_rush_walk_home(g, pid, unit, since);
             }
         }
         self.edge_unit_window = Some(window);
@@ -1605,12 +1734,80 @@ impl AdvancedAi {
                g.cities[&cid].pos);
     }
 
-    /// The rush, while no city is named: the edge units look for one. Each
-    /// explores with every move it has (`BasicAi::explore_step`, the Scout's
-    /// own step), and one past `reach` tiles from the capital walks back
-    /// toward it, since nothing it found out there could be named. A wounded
-    /// one heals first. Not while a city of ours is threatened or a major is
-    /// at war with us: the unit pass has them then.
+    /// The rush's scouting goals for `uid`: the unexplored land within
+    /// `reach` of `home` it can walk on. Tiles within
+    /// [`EDGE_RUSH_BORDER_TILES`] of a rival major's border we have seen come
+    /// first (its city stands beside it); otherwise scout `half` 0 takes
+    /// the east of the capital and 1 the west, and the whole of it when its
+    /// own half is charted. Empty when everything in reach is charted.
+    fn edge_rush_scout_goals(
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        home: Pos,
+        reach: i32,
+        half: usize,
+    ) -> HashSet<Pos> {
+        let explored = &g.players[pid].explored;
+        let goals: HashSet<Pos> = g
+            .wdisk(home, reach)
+            .into_iter()
+            .filter(|pos| {
+                !explored.contains(pos)
+                    && g.map
+                        .get(*pos)
+                        .is_some_and(|tile| !g.rules.is_water(tile) && g.rules.is_passable(tile))
+                    && g.unit_can_traverse(uid, *pos)
+            })
+            .collect();
+        let rival_border = |pos: Pos| {
+            explored.contains(&pos)
+                && g.map
+                    .get(pos)
+                    .and_then(|tile| tile.owner_city)
+                    .and_then(|cid| g.cities.get(&cid))
+                    .and_then(|city| g.players.get(city.owner))
+                    .is_some_and(|owner| {
+                        owner.id != pid
+                            && owner.alive
+                            && !owner.is_minor
+                            && !owner.is_barbarian
+                            && !owner.is_free_city
+                    })
+        };
+        let by_a_border: HashSet<Pos> = goals
+            .iter()
+            .copied()
+            .filter(|pos| {
+                g.wdisk(*pos, EDGE_RUSH_BORDER_TILES)
+                    .into_iter()
+                    .any(rival_border)
+            })
+            .collect();
+        if !by_a_border.is_empty() {
+            return by_a_border;
+        }
+        let mine: HashSet<Pos> = goals
+            .iter()
+            .copied()
+            .filter(|pos| (pos.0 >= home.0) == (half == 0))
+            .collect();
+        if mine.is_empty() {
+            goals
+        } else {
+            mine
+        }
+    }
+
+    /// The rush, while no city is named: up to [`EDGE_RUSH_SCOUTS`] edge
+    /// units look for one. Each walks with every move toward the nearest
+    /// unexplored land inside `reach` of the capital
+    /// ([`Self::edge_rush_scout_goals`]); nothing it found farther out could
+    /// be named. A wounded one heals first. With everything in reach
+    /// charted, and for the edge units past the first
+    /// [`EDGE_RUSH_SCOUTS`], nothing is ordered here: the unit pass has
+    /// them (the camps, the escorts, the capital's defence). Not while a
+    /// city of ours is threatened or a major is at war with us.
     fn edge_rush_scout(
         &mut self,
         g: &mut Game,
@@ -1644,6 +1841,7 @@ impl AdvancedAi {
                     && !g.is_embarked(body)
                     && body.hp as f64 > withdraw
             })
+            .take(EDGE_RUSH_SCOUTS)
             .collect();
         if scouts.is_empty() {
             return;
@@ -1653,11 +1851,11 @@ impl AdvancedAi {
             Self::edge_count(g, pid, "scouting");
             think!(self.journal(), Military, Decision,
                    "Edge unit scouts for a soft city";
-                   "{TAG}: scouting: no rival city is known within {reach} tiles of the capital; the {} explore inside that reach until one is",
-                   plain(unit.as_str());
+                   "{TAG}: scouting: no rival city is known within {reach} tiles of the capital; up to {} {} explore inside that reach until one is",
+                   EDGE_RUSH_SCOUTS, plain(unit.as_str());
                    home);
         }
-        for uid in scouts {
+        for (half, uid) in scouts.into_iter().enumerate() {
             if g.units[&uid].hp < EDGE_HEAL_HP {
                 let _ = Self::edge_heal_step(g, pid, uid);
                 continue;
@@ -1669,22 +1867,23 @@ impl AdvancedAi {
                 if body.moves_left <= 0.0 {
                     break;
                 }
-                let stepped = if g.wdist(body.pos, home) > reach {
-                    g.route_step(uid, home, 0)
-                        .filter(|next| g.can_move(uid, *next))
-                        .is_some_and(|next| {
-                            g.apply(
-                                pid,
-                                &Action::Move {
-                                    unit: uid,
-                                    to: next,
-                                },
-                            )
-                            .is_ok()
-                        })
-                } else {
-                    self.base.explore_step(g, pid, uid)
-                };
+                let goals = Self::edge_rush_scout_goals(g, pid, uid, home, reach, half);
+                if goals.is_empty() {
+                    break;
+                }
+                let stepped = g
+                    .route_step_to_any(uid, &goals)
+                    .filter(|next| g.can_move(uid, *next))
+                    .is_some_and(|next| {
+                        g.apply(
+                            pid,
+                            &Action::Move {
+                                unit: uid,
+                                to: next,
+                            },
+                        )
+                        .is_ok()
+                    });
                 if !stepped {
                     break;
                 }
@@ -1694,11 +1893,13 @@ impl AdvancedAi {
 
     /// The rush, after a capture: the next city of `rival`. One whose centre
     /// we have explored, within [`EDGE_RUSH_CONTINUE_TILES`] of the force,
-    /// that the capture forecast reads taken at `DECLARE_P` or better with
-    /// every edge unit of the force at full health and beside it
-    /// ([`Self::edge_posed_forecast`]): the capital counts like any other,
-    /// and a walled city the forecast does not read taken is left alone.
-    /// The best reading first, then the nearest. `None` when none reads.
+    /// that the at-war capture forecast (`assault_forecast`, calibrated)
+    /// reads taken within [`EDGE_RUSH_CONTINUE_TURNS`] turns at `DECLARE_P`
+    /// or better with the force where it stands and at the health it has:
+    /// the capital counts like any other, and a walled city the forecast
+    /// does not read taken is left alone. The best reading first, then the
+    /// nearest. `None` when none reads (the force regroups and it is read
+    /// again next turn).
     fn edge_rush_next_city(
         &self,
         g: &Game,
@@ -1721,9 +1922,12 @@ impl AdvancedAi {
             else {
                 continue;
             };
-            let Some((chance, _)) = self.edge_posed_forecast(g, pid, cid, force, true) else {
+            let Some(forecast) = self.assault_forecast(g, pid, cid, force) else {
                 continue;
             };
+            let city = &g.cities[&cid];
+            let walls = g.city_max_wall_hp(city).max(city.wall_hp);
+            let chance = forecast.calibrated_within(EDGE_RUSH_CONTINUE_TURNS, walls);
             if chance < DECLARE_P {
                 continue;
             }
@@ -2249,6 +2453,28 @@ impl AdvancedAi {
             self.edge_rush_first_blows(g, pid, unit, soft.city, &name);
             return;
         }
+        // The rush declares on a turn its force can still move, so the
+        // declaration and the first blows come together: a turn is planned
+        // in several frames, and a muster that forms after the walk has
+        // spent the moves waits for the next turn's first frame.
+        if window.rushing() {
+            let movers = near
+                .iter()
+                .filter(|&&uid| {
+                    let body = &g.units[&uid];
+                    body.kind == unit && body.hp >= EDGE_MUSTER_HP && body.moves_left > 0.0
+                })
+                .count();
+            if movers < EDGE_MUSTER_BODIES {
+                let why = format!(
+                    "the forecast reads {:.0}% at {name}; {movers} of the {bodies} {} there can still move this turn, so the declaration waits for the next turn's first move",
+                    chance * 100.0,
+                    plain(unit.as_str())
+                );
+                self.edge_hold(g, pid, window, "held_moves", why);
+                return;
+            }
+        }
         // The rush does not wait out a denouncement's five turns at the
         // muster: every turn brings the rival's soldiers and walls.
         let opening = if window.rushing() {
@@ -2436,12 +2662,15 @@ impl AdvancedAi {
             // The rush stops when the forecast says the city will not fall
             // (walls raised behind the declaration, the rival's soldiers
             // arrived), before the force is spent on it.
-            if rush && g.turn > declared {
+            if rush && g.turn > declared && window.rush_hopeless_turn != Some(g.turn) {
+                window.rush_hopeless_turn = Some(g.turn);
                 if let Some(forecast) = self.assault_forecast(g, pid, target.city, &force) {
                     let p = forecast.p();
-                    if p < EDGE_RUSH_STOP_P {
+                    // A low reading while most of the force is still on the
+                    // march is about the march, not the city.
+                    if p < EDGE_RUSH_STOP_P && forecast.gathered() {
                         window.rush_hopeless += 1;
-                    } else {
+                    } else if p >= EDGE_RUSH_STOP_P {
                         window.rush_hopeless = 0;
                     }
                     if window.rush_hopeless >= EDGE_RUSH_STOP_STREAK {
@@ -2530,9 +2759,9 @@ impl AdvancedAi {
                 Some((soft, chance)) => (
                     Some(soft),
                     format!(
-                        ", forecast {:.0}% within {} turns with the {} {} healed and beside it",
+                        ", forecast {:.0}% within {} turns with the {} {} where they stand",
                         chance * 100.0,
-                        EDGE_FORECAST_TURNS,
+                        EDGE_RUSH_CONTINUE_TURNS,
                         force.len(),
                         plain(unit.as_str())
                     ),
@@ -2620,10 +2849,13 @@ impl AdvancedAi {
 
     /// The rush regroups after a capture: a wounded edge unit of the force
     /// heals (in a city of ours two tiles off when its tile is free, else
-    /// where it stands), and a healthy one explores with every move, inside
-    /// [`EDGE_RUSH_CONTINUE_TILES`] of the city it took, so the owner's next
-    /// city is charted. The garrison is not in `force`.
+    /// where it stands); the first healthy one explores with every move,
+    /// inside [`EDGE_RUSH_CONTINUE_TILES`] of the city it took, so the
+    /// owner's next city is charted; the other healthy ones hold where they
+    /// stand, fortified, so no later step of the turn walks them home. The
+    /// garrison is not in `force`.
     fn edge_rush_regroup(&mut self, g: &mut Game, pid: usize, force: &[u32], held: Pos) {
+        let mut scouted = false;
         for uid in force.iter().copied() {
             let Some(body) = g.units.get(&uid) else {
                 continue;
@@ -2635,6 +2867,13 @@ impl AdvancedAi {
                 let _ = Self::edge_heal_step(g, pid, uid);
                 continue;
             }
+            if scouted {
+                if body.moves_left > 0.0 {
+                    let _ = g.apply(pid, &Action::Fortify { unit: uid });
+                }
+                continue;
+            }
+            scouted = true;
             for _ in 0..6 {
                 let Some(body) = g.units.get(&uid) else {
                     break;
@@ -2665,12 +2904,71 @@ impl AdvancedAi {
         }
     }
 
+    /// The rush: an edge unit that cannot reach the city this turn. At
+    /// [`EDGE_RUSH_ENGAGE_HP`] or more it strikes the weakest hostile
+    /// soldier beside it (the forecast's own play: the soldiers, then the
+    /// city); otherwise, and with none there, it holds where it stands,
+    /// fortified, so no later step of the turn walks it home (round 2: the
+    /// objective board's Reserve took the force back toward the capital on
+    /// each of the first war turns).
+    fn edge_rush_engage_or_hold(g: &mut Game, pid: usize, uid: u32) {
+        let Some(body) = g.units.get(&uid) else {
+            return;
+        };
+        if body.moves_left <= 0.0 {
+            return;
+        }
+        let (here, hp) = (body.pos, body.hp);
+        if hp >= EDGE_RUSH_ENGAGE_HP {
+            let foe = g
+                .wring(here, 1)
+                .into_iter()
+                .filter(|tile| g.city_at(*tile).is_none())
+                .filter_map(|tile| {
+                    g.unit_ids_at(tile)
+                        .iter()
+                        .filter_map(|other| g.units.get(other))
+                        .filter(|other| {
+                            other.owner != pid
+                                && g.is_at_war(pid, other.owner)
+                                && g.rules
+                                    .units
+                                    .get(&other.kind)
+                                    .is_some_and(|spec| spec.class == "military")
+                        })
+                        .map(|other| (other.hp, tile))
+                        .min()
+                })
+                .min();
+            if let Some((_, tile)) = foe {
+                if g.apply(
+                    pid,
+                    &Action::Attack {
+                        unit: uid,
+                        target: tile,
+                    },
+                )
+                .is_ok()
+                {
+                    return;
+                }
+            }
+        }
+        let _ = g.apply(pid, &Action::Fortify { unit: uid });
+    }
+
     /// Press the assault on `cid` at the start of the turn: each breaker of
     /// ours steps to a free tile beside the city, then each edge unit with a
     /// move steps beside it and, at [`EDGE_STRIKE_MIN_HP`] or more, strikes
     /// it. Returns the blows struck and the city's health before and after.
-    /// `rush`: an edge unit garrisoning a city the rush took holds it, and a
-    /// wounded one inside our borders heals before it closes.
+    ///
+    /// `rush`: the nearest edge unit goes first and the column is walked
+    /// twice (a tile ahead may have been vacated); a unit aims at a tile
+    /// beside the city that holds no soldier of ours; an edge unit
+    /// garrisoning a city the rush took holds it; a wounded one inside our
+    /// borders heals before it closes; and one that cannot reach the city
+    /// this turn strikes a hostile soldier beside it or holds
+    /// ([`Self::edge_rush_engage_or_hold`]).
     fn edge_press_the_assault(
         &mut self,
         g: &mut Game,
@@ -2692,81 +2990,102 @@ impl AdvancedAi {
                 (body.kind == unit || breaker).then_some((!breaker, -body.hp, uid))
             })
             .collect();
-        // Breakers first, then the healthiest.
+        // Breakers first, then the healthiest (the rush: the nearest).
         bodies.sort_unstable();
+        if rush {
+            bodies.sort_by_key(|(striker, hp, uid)| {
+                (*striker, g.wdist(g.units[uid].pos, pos), *hp, *uid)
+            });
+        }
+        let passes = if rush { 2 } else { 1 };
         let mut blows = 0;
-        for (striker, _, uid) in bodies {
-            for _ in 0..6 {
-                let Some(body) = g.units.get(&uid) else {
-                    break;
-                };
-                if body.moves_left <= 0.0 || g.is_embarked(body) {
-                    break;
-                }
-                if !g.cities.get(&cid).is_some_and(|city| city.owner != pid) {
-                    break;
-                }
-                let here = body.pos;
-                if rush && striker && g.wdist(here, pos) > 1 {
-                    // The rush: the edge unit inside a city it took holds
-                    // it, and a wounded one inside our borders heals before
-                    // it closes on the next city.
-                    let home = g
-                        .map
-                        .get(here)
-                        .and_then(|tile| tile.owner_city)
-                        .and_then(|owner| g.cities.get(&owner))
-                        .is_some_and(|city| city.owner == pid);
-                    if Self::edge_rush_garrison(g, pid, uid) || (home && body.hp < EDGE_HEAL_HP) {
-                        let _ = g.apply(pid, &Action::Fortify { unit: uid });
+        for pass in 0..passes {
+            let last = pass + 1 == passes;
+            for (striker, _, uid) in bodies.iter().copied() {
+                for _ in 0..6 {
+                    let Some(body) = g.units.get(&uid) else {
+                        break;
+                    };
+                    if body.moves_left <= 0.0 || g.is_embarked(body) {
                         break;
                     }
-                }
-                if g.wdist(here, pos) <= 1 {
-                    let strikes = striker && body.hp >= EDGE_STRIKE_MIN_HP;
-                    if strikes
-                        && g.apply(
-                            pid,
-                            &Action::Attack {
-                                unit: uid,
-                                target: pos,
-                            },
-                        )
-                        .is_ok()
-                    {
-                        blows += 1;
+                    if !g.cities.get(&cid).is_some_and(|city| city.owner != pid) {
+                        break;
                     }
-                    break;
-                }
-                let beside: HashSet<Pos> = g
-                    .wring(pos, 1)
-                    .into_iter()
-                    .filter(|tile| {
-                        g.map
-                            .get(*tile)
-                            .is_some_and(|t| !g.rules.is_water(t) && g.rules.is_passable(t))
-                            && g.city_at(*tile).is_none()
-                            && g.unit_ids_at(*tile)
-                                .iter()
-                                .all(|other| g.units[other].owner == pid)
-                    })
-                    .collect();
-                let Some(next) = g
-                    .route_step_to_any(uid, &beside)
-                    .filter(|next| g.can_move(uid, *next))
-                else {
-                    break;
-                };
-                if g.apply(
-                    pid,
-                    &Action::Move {
-                        unit: uid,
-                        to: next,
-                    },
-                )
-                .is_err()
-                {
-                    break;
+                    let here = body.pos;
+                    if rush && striker && g.wdist(here, pos) > 1 {
+                        // The rush: the edge unit inside a city it took
+                        // holds it, and a wounded one inside our borders
+                        // heals before it closes on the next city.
+                        let home = g
+                            .map
+                            .get(here)
+                            .and_then(|tile| tile.owner_city)
+                            .and_then(|owner| g.cities.get(&owner))
+                            .is_some_and(|city| city.owner == pid);
+                        if Self::edge_rush_garrison(g, pid, uid) || (home && body.hp < EDGE_HEAL_HP)
+                        {
+                            let _ = g.apply(pid, &Action::Fortify { unit: uid });
+                            break;
+                        }
+                    }
+                    if g.wdist(here, pos) <= 1 {
+                        let strikes = striker && body.hp >= EDGE_STRIKE_MIN_HP;
+                        if strikes
+                            && g.apply(
+                                pid,
+                                &Action::Attack {
+                                    unit: uid,
+                                    target: pos,
+                                },
+                            )
+                            .is_ok()
+                        {
+                            blows += 1;
+                        }
+                        break;
+                    }
+                    let beside: HashSet<Pos> = g
+                        .wring(pos, 1)
+                        .into_iter()
+                        .filter(|tile| {
+                            g.map
+                                .get(*tile)
+                                .is_some_and(|t| !g.rules.is_water(t) && g.rules.is_passable(t))
+                                && g.city_at(*tile).is_none()
+                                && g.unit_ids_at(*tile).iter().all(|other| {
+                                    let other = &g.units[other];
+                                    other.owner == pid
+                                        // The rush: a soldier of ours already
+                                        // stands there.
+                                        && !(rush
+                                            && striker
+                                            && g.rules
+                                                .units
+                                                .get(&other.kind)
+                                                .is_some_and(|spec| spec.class == "military"))
+                                })
+                        })
+                        .collect();
+                    let step = g
+                        .route_step_to_any(uid, &beside)
+                        .filter(|next| g.can_move(uid, *next))
+                        .filter(|next| {
+                            g.apply(
+                                pid,
+                                &Action::Move {
+                                    unit: uid,
+                                    to: *next,
+                                },
+                            )
+                            .is_ok()
+                        });
+                    if step.is_none() {
+                        if rush && striker && last {
+                            Self::edge_rush_engage_or_hold(g, pid, uid);
+                        }
+                        break;
+                    }
                 }
             }
         }
@@ -3362,7 +3681,8 @@ impl AdvancedAi {
             && self
                 .edge_unit_window
                 .as_ref()
-                .filter(|w| w.mustering())
+                // The rush's force stays out of those rows through its war.
+                .filter(|w| w.mustering() || (w.rushing() && w.live()))
                 .and_then(|w| w.unit)
                 .is_some_and(|unit| g.units.get(&uid).is_some_and(|body| body.kind == unit))
     }
