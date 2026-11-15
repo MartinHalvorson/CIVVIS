@@ -6504,17 +6504,29 @@ local finished = false;
 -- Read native building Tourism before choosing whether a proposal is beneficial:
 -- a Curator or other city modifier must not turn a base-score gain into a loss.
 CivvisMuseumSwaps = { lastTurn = -1 };
+-- ★ A WORK COUNTS FOR WHAT IT IS WORTH. The score counted every work as
+-- one, and `read` refused a museum holding any work whose Tourism was not 2.
+-- The base game's Landscapes, Portraits and Sculptures are 2
+-- (Base/Assets/Gameplay/Data/GreatWorks.xml); the 23 works of the Babylon
+-- pack's artists (Hasegawa Tohaku, Wassily Kandinsky and the rest) are 4
+-- (DLC/Babylon/Data/Babylon_GreatWorks.xml). So a museum with one of them in
+-- it was "unknown inventory", and that was every swap the Culture seat sent
+-- in its two games of 2026-11-15: civvis-20261115T102552Z, three Kandinskys
+-- in the destination, 144 of 144 refused; 110627Z, three Tohakus in the
+-- source, 278 of 281. A work now weighs its Tourism over 2, so a museum of
+-- base works scores exactly as before and one with a 4 in it can be judged.
 function CivvisMuseumSwaps.score(slots)
-    local seen, count, unique, object, same = {}, 0, 0, nil, true;
+    local seen, count, mass, unique, object, same = {}, 0, 0, 0, nil, true;
     for slot = 1, 3 do
         local work = slots[slot];
         if work ~= nil then
             count = count + 1;
+            mass = mass + (tonumber(work.tourism) or 2) / 2;
             if not seen[work.creator] then seen[work.creator] = true; unique = unique + 1; end
             if object == nil then object = work.object; elseif object ~= work.object then same = false; end
         end
     end
-    local base = count + unique;
+    local base = mass + unique;
     if count == 3 and unique == 3 and same then base = base * 2; end
     return base;
 end
@@ -6540,14 +6552,16 @@ function CivvisMuseumSwaps.read(city, building)
             if info.GreatWorkObjectType ~= "GREATWORKOBJECT_SCULPTURE"
                 and info.GreatWorkObjectType ~= "GREATWORKOBJECT_LANDSCAPE"
                 and info.GreatWorkObjectType ~= "GREATWORKOBJECT_PORTRAIT" then return nil, "not_art"; end
-            if tonumber(info.Tourism) ~= 2 then return nil, "work_tourism"; end
+            local worth = tonumber(info.Tourism);
+            if worth == nil or not (worth > 0 and worth < math.huge) then return nil, "work_tourism"; end
             if data == nil or type(data.CreatorName) ~= "string" or data.CreatorName == "" then
                 return nil, "creator";
             end
             local created = tonumber(blds:GetTurnFromIndex(index));
             if created == nil then return nil, "created"; end
             slots[slot + 1] = { index = index, kind = info.GreatWorkType,
-                object = info.GreatWorkObjectType, creator = data.CreatorName, created = created };
+                object = info.GreatWorkObjectType, creator = data.CreatorName, created = created,
+                tourism = worth };
         end
     end
     local base = CivvisMuseumSwaps.score(slots);
