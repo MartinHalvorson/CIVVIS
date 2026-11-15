@@ -14331,6 +14331,174 @@ CivvisLedger.onUnitCaptured = function(currentUnitOwner, unitId, owningPlayer, c
 	});
 end;
 
+-- ★★★ DID THE SPY WORK? The denial genes send Spies to Disrupt Rocketry on a
+-- rival's Spaceport, and nothing recorded whether a mission landed, failed or
+-- cost the Spy. One `spy_mission_result` row per finished mission of OUR seat,
+-- and of a rival's against one of OUR cities. RECORD-ONLY: no decision reads it.
+-- Modelled on Base/Assets/UI/Popups/EspionagePopup.lua:418
+-- (`function OnSpyMissionCompleted( playerID:number, missionID:number )`,
+-- registered at :624 `Events.SpyMissionCompleted.Add( OnSpyMissionCompleted );`),
+-- which reads the mission back at :383
+-- (`mission = pPlayerDiplomacy:GetMission(playerID, missionID);`, 0 when none)
+-- and grades it with EspionageSupport.lua:123-190 `GetMissionOutcomeDetails`
+-- from `InitialResult` / `EscapeResult`. The fields are the ones
+-- EspionageOverview.lua:260-320 reads: Name, CityName, Operation, PlotIndex,
+-- InitialResult, EscapeResult, LootInfo, LevelAfter, CompletionTurn.
+-- A detected Spy's escape is chosen after the mission ends (the overview hides a
+-- `*_MUST_ESCAPE` mission while its EscapeResult is NO_RESULT, :262-266), so a
+-- mission read in that state is written as `spy_mission_pending` and re-read on
+-- SpyMissionUpdated, the next completion and our next turn until it settles.
+-- Disrupt Rocketry's effect is "Disable the Spaceport in the city"
+-- (Espionage_Text.xml:206): the target district's pillage flag, read as
+-- CitySupport.lua:665 does (`pCityDistricts:IsPillaged(district:GetType(), plotID)`).
+CivvisLedger.spy = { done = {}, pending = {} };
+
+CivvisLedger.spyResultName = function(value)
+	if value == nil then return nil; end
+	local names = CivvisLedger.spy.result_names;
+	if names == nil then
+		names = {};
+		pcall(function()
+			for name, v in pairs(EspionageResultTypes) do names[v] = name; end
+		end);
+		CivvisLedger.spy.result_names = names;
+	end
+	return names[value] or tostring(value);
+end;
+
+-- EspionageSupport.lua:123-190 as data: whether the mission's effect landed,
+-- and what became of the Spy. An escape result of FAIL_MUST_ESCAPE is the
+-- shipped "evaded capture" (:139 and :160).
+CivvisLedger.spyOutcome = function(op, initial, escape)
+	if op == "UNITOPERATION_SPY_COUNTERSPY" then return true, "home"; end
+	if initial == "SUCCESS_UNDETECTED" then return true, "undetected"; end
+	if initial == "FAIL_UNDETECTED" then return false, "undetected"; end
+	if initial == "KILLED" or initial == "CAPTURED" then return false, string.lower(initial); end
+	if initial == "SUCCESS_MUST_ESCAPE" or initial == "FAIL_MUST_ESCAPE" then
+		local landed = initial == "SUCCESS_MUST_ESCAPE";
+		if escape == nil or escape == "NO_RESULT" then return landed, "escape_pending"; end
+		if escape == "FAIL_MUST_ESCAPE" then return landed, "escaped"; end
+		if escape == "KILLED" or escape == "CAPTURED" then return landed, string.lower(escape); end
+		return landed, "escape_" .. string.lower(tostring(escape));
+	end
+	return nil, nil;
+end;
+
+-- Where the mission struck: its plot, the city that owns it, and the district
+-- the operation aims at (UnitOperations.TargetDistrict, else the plot's own).
+CivvisLedger.spyTarget = function(row, mission, opRow)
+	local plot = Map.GetPlotByIndex(mission.PlotIndex);
+	if plot == nil then return; end
+	row.x, row.y = plot:GetX(), plot:GetY();
+	local city = Cities.GetPlotPurchaseCity(plot);
+	if city == nil then return; end
+	row.target_player, row.city_id = city:GetOwner(), city:GetID();
+	row.city_x, row.city_y = city:GetX(), city:GetY();
+	row.city_name = try(function() return Locale.Lookup(city:GetName()); end, row.city_name);
+	local wanted = opRow ~= nil and opRow.TargetDistrict or nil;
+	if wanted == nil then
+		local here = GameInfo.Districts[plot:GetDistrictType()];
+		wanted = here ~= nil and here.DistrictType or nil;
+	end
+	row.district = wanted;
+	local districts = city:GetDistricts();
+	for _, district in districts:Members() do
+		local info = GameInfo.Districts[district:GetType()];
+		if info ~= nil and info.DistrictType == wanted then
+			row.district_x, row.district_y = district:GetX(), district:GetY();
+			row.district_pillaged = districts:IsPillaged(district:GetType(),
+				Map.GetPlot(district:GetX(), district:GetY()):GetIndex()) == true;
+		end
+	end
+	local project = GameInfo.Projects[city:GetBuildQueue():GetCurrentProductionTypeHash()];
+	row.target_project = project ~= nil and project.ProjectType or nil;
+end;
+
+CivvisLedger.spyMissionRow = function(player, missionId, mission, pid)
+	local opRow = try(function()
+		local row = GameInfo.UnitOperations[mission.Operation];
+		if row ~= nil then return row; end
+		for candidate in GameInfo.UnitOperations() do
+			if candidate.Hash == mission.Operation or candidate.Index == mission.Operation then
+				return candidate;
+			end
+		end
+	end, nil);
+	local op = opRow ~= nil and opRow.OperationType or nil;
+	local initial = CivvisLedger.spyResultName(mission.InitialResult);
+	local escape = CivvisLedger.spyResultName(mission.EscapeResult);
+	local succeeded, fate = CivvisLedger.spyOutcome(op, initial, escape);
+	local row = {
+		turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1,
+		completion_turn = tonumber(mission.CompletionTurn),
+		player = tonumber(player), mission_id = tonumber(missionId),
+		ours = tonumber(player) == pid,
+		operation = op or tostring(mission.Operation),
+		initial_result = initial, escape_result = escape,
+		succeeded = succeeded, spy_fate = fate,
+		spy_lost = fate == "killed" or fate == "captured",
+		spy_name = try(function() return Locale.Lookup(mission.Name); end, mission.Name),
+		spy_level_after = tonumber(mission.LevelAfter),
+		loot_info = tonumber(mission.LootInfo),
+		plot = tonumber(mission.PlotIndex),
+		city_name = try(function() return Locale.Lookup(mission.CityName); end, mission.CityName),
+	};
+	CivvisK.guard(function() CivvisLedger.spyTarget(row, mission, opRow); end);
+	-- The mission names its Spy, not the unit: ours is the Spy of that name,
+	-- and none when it was killed or captured.
+	if row.ours then
+		CivvisK.guard(function()
+			for _, unit in Players[pid]:GetUnits():Members() do
+				if unit:GetName() == mission.Name then
+					row.spy, row.spy_x, row.spy_y = unit:GetID(), unit:GetX(), unit:GetY();
+					break;
+				end
+			end
+		end);
+	end
+	return row;
+end;
+
+-- True once the mission is written (or is not ours to write); false while its
+-- escape is still open or the mission cannot be read.
+CivvisLedger.noteSpyMission = function(player, missionId, late)
+	local key = tostring(player) .. ":" .. tostring(missionId);
+	if CivvisLedger.spy.done[key] then return true; end
+	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
+	local mission = Players[player]:GetDiplomacy():GetMission(player, missionId);
+	if type(mission) ~= "table" then return false; end
+	local row = CivvisLedger.spyMissionRow(player, missionId, mission, pid);
+	if not row.ours and row.target_player ~= pid then
+		-- A rival's mission against another rival: not this seat's to see.
+		CivvisLedger.spy.done[key] = true;
+		CivvisLedger.spy.pending[key] = nil;
+		return true;
+	end
+	if row.spy_fate == "escape_pending" then
+		if CivvisLedger.spy.pending[key] == nil then
+			CivvisLedger.spy.pending[key] = { player = player, mission = missionId };
+			emit("spy_mission_pending", row);
+		end
+		return false;
+	end
+	CivvisLedger.spy.pending[key] = nil;
+	CivvisLedger.spy.done[key] = true;
+	row.after_escape = late == true or nil;
+	emit("spy_mission_result", row);
+	return true;
+end;
+
+CivvisLedger.flushSpyMissions = function()
+	for _, open in pairs(CivvisLedger.spy.pending) do
+		CivvisK.guard(function() CivvisLedger.noteSpyMission(open.player, open.mission, true); end);
+	end
+end;
+
+CivvisLedger.onSpyMissionCompleted = function(player, missionId)
+	CivvisK.guard(function() CivvisLedger.noteSpyMission(player, missionId, false); end);
+	CivvisLedger.flushSpyMissions();
+end;
+
 -- ★★★★★ THE REVERSE LEGALITY WITNESS. The bridge normally sends only actions
 -- CIVVIS already calls legal, so it can discover "CIVVIS allowed a host refusal"
 -- but never "the host allowed a CIVVIS refusal". `Events.UnitMoved` is the
@@ -28332,9 +28500,14 @@ function Initialize()
 		UnitRemovedFromMap = CivvisLedger.onUnitRemoved,
 		UnitCaptured = CivvisLedger.onUnitCaptured,
 		CityOccupationChanged = CivvisLedger.onCityOccupationChanged,
+		-- The espionage ledger: see CivvisLedger.spy.
+		SpyMissionCompleted = CivvisLedger.onSpyMissionCompleted,
+		SpyMissionUpdated = CivvisLedger.flushSpyMissions,
 	}) do
 		pcall(function() Events[name].Add(handler); end);
 	end
+	-- A second listener: an open escape is re-read when our turn begins.
+	pcall(function() Events.LocalPlayerTurnBegin.Add(CivvisLedger.flushSpyMissions); end);
 end
 
 Initialize();

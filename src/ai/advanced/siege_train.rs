@@ -90,7 +90,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use super::assault_forecast;
 use super::{AdvancedAi, AppliedAttack, ForceDomain, ForceGroup, StrategicPlan};
-use crate::game::{effective_strength, expected_damage, Action, Game};
+use crate::game::{effective_strength, expected_damage, Action, Game, RouteReach};
 use crate::think;
 use crate::Pos;
 
@@ -1796,14 +1796,79 @@ fn siege_posts(
     siege_posts_keeping(g, pid, city, force, taker, &BTreeMap::new())
 }
 
+/// [`siege_route_step`]'s "is there a route" for every unit and goal one
+/// [`siege_posts_keeping`] asks about, from one search per unit.
+///
+/// Every candidate post around a city used to cost its own route search, and
+/// a post the unit cannot reach floods the unit's whole region before saying
+/// so: two thirds of a siege assessment in a late game. The avoided tiles are
+/// the same for every question but the goal itself (the city's ring less the
+/// goal, every occupied tile, less the asker's own tile), which is exactly
+/// what [`RouteReach`] needs to answer them all from one search.
+struct SiegeRoutes {
+    ring: BTreeSet<Pos>,
+    occupied: BTreeSet<Pos>,
+    units: BTreeMap<u32, Option<(RouteReach, Pos, bool)>>,
+}
+
+impl SiegeRoutes {
+    fn new(g: &Game, pid: usize, city: Pos) -> Self {
+        // `siege_route_step`'s avoided units, the asker included: its own
+        // tile is taken back out below, as `siege_route_step` takes it out.
+        let occupied = g
+            .units
+            .values()
+            .filter(|other| {
+                g.rules.units[other.kind].domain.as_deref() != Some("air")
+                    && (other.owner != pid || g.rules.units[other.kind].class == "military")
+            })
+            .map(|other| other.pos)
+            .collect();
+        SiegeRoutes {
+            ring: g.wdisk(city, 1).into_iter().collect(),
+            occupied,
+            units: BTreeMap::new(),
+        }
+    }
+
+    /// `siege_route_step(g, pid, uid, goal, city).is_some()`, for the `pid`
+    /// and `city` this was built with, on the same unchanged board.
+    fn reaches(&mut self, g: &Game, uid: u32, goal: Pos) -> bool {
+        let SiegeRoutes {
+            ring,
+            occupied,
+            units,
+        } = self;
+        let Some((reach, start, land)) = units
+            .entry(uid)
+            .or_insert_with(|| {
+                g.route_reach(uid).and_then(|reach| {
+                    let start = g.units.get(&uid)?.pos;
+                    Some((reach, start, keeps_to_land(g, uid)))
+                })
+            })
+            .as_mut()
+        else {
+            return false;
+        };
+        let (start, land) = (*start, *land);
+        // The goal leaves the ring's avoided tiles but not the occupied ones.
+        let target_blocked = goal != start && occupied.contains(&goal);
+        reach.reaches(g, goal, target_blocked, |pos| {
+            (pos != start && (ring.contains(&pos) || occupied.contains(&pos)))
+                || (land && g.map.get(pos).is_some_and(|tile| g.rules.is_water(tile)))
+        })
+    }
+}
+
 fn firing_post_reachable(
     game: &Game,
-    player_id: usize,
+    routes: &mut SiegeRoutes,
     unit_id: u32,
     post: Pos,
     city: Pos,
 ) -> bool {
-    siege_route_step(game, player_id, unit_id, post, city).is_some()
+    routes.reaches(game, unit_id, post)
         || game.path_to(unit_id, post).is_some_and(|steps| {
             steps.iter().all(|position| {
                 dry_stand(game, unit_id, *position)
@@ -1824,6 +1889,7 @@ fn siege_posts_keeping(
 ) -> BTreeMap<u32, Pos> {
     let mut posts: BTreeMap<u32, Pos> = BTreeMap::new();
     let mut ring_taken: BTreeSet<Pos> = BTreeSet::new();
+    let mut routes = SiegeRoutes::new(g, pid, city.pos);
     let open_land = |pos: Pos| {
         g.map
             .get(pos)
@@ -1871,7 +1937,7 @@ fn siege_posts_keeping(
             ring_free.contains(pos)
                 && !ring_taken.contains(pos)
                 && g.unit_can_traverse(uid, *pos)
-                && siege_route_step(g, pid, uid, *pos, city.pos).is_some()
+                && routes.reaches(g, uid, *pos)
         }) {
             posts.insert(uid, kept);
             ring_taken.insert(kept);
@@ -1892,7 +1958,7 @@ fn siege_posts_keeping(
         });
         let best = candidates
             .into_iter()
-            .find(|pos| siege_route_step(g, pid, uid, *pos, city.pos).is_some());
+            .find(|pos| routes.reaches(g, uid, *pos));
         if let Some(pos) = best {
             posts.insert(uid, pos);
             ring_taken.insert(pos);
@@ -1955,7 +2021,7 @@ fn siege_posts_keeping(
                 && g.unit_can_traverse(uid, *pos)
                 && g.unit_has_line_of_sight_from(uid, *pos, city.pos)
                 && g.unit_ids_at(*pos).is_empty()
-                && firing_post_reachable(g, pid, uid, *pos, city.pos)
+                && firing_post_reachable(g, &mut routes, uid, *pos, city.pos)
         });
         if let Some(pos) = kept {
             posts.insert(uid, pos);
@@ -1997,7 +2063,7 @@ fn siege_posts_keeping(
             });
             candidates
                 .into_iter()
-                .find(|pos| firing_post_reachable(g, pid, uid, *pos, city.pos))
+                .find(|pos| firing_post_reachable(g, &mut routes, uid, *pos, city.pos))
         });
         if let Some(pos) = best {
             posts.insert(uid, pos);

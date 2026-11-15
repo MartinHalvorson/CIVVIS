@@ -272,5 +272,141 @@ impl Game {
     }
 }
 
+/// One unit's answers to many [`Game::route_step_avoiding_when`] (or
+/// [`Game::route_step_avoiding_tiles`]) reachability questions, from one
+/// breadth-first search grown only as far as each question needs.
+///
+/// The questions must share a blocked predicate everywhere except, possibly,
+/// at each question's own target: the siege train asks "can this gun reach
+/// this firing post" for every candidate post around a city, and its avoided
+/// tiles are the city's ring plus every occupied tile, less the one goal ring
+/// tile it is asking about. Asked one by one, every post that cannot be reached
+/// re-floods the unit's whole region.
+///
+/// The answer is exact. Before the per-target search discovers its target it
+/// explores exactly the tiles this search explores with the target blocked,
+/// because the two predicates agree everywhere else; and it discovers the
+/// target from the first explored tile beside it with a legal edge in. From
+/// the start that edge is `can_enter_neighbor`; from any other tile it is
+/// `can_path_through_neighbor(uid, target, ..)`, which the per-target search
+/// requires of its target before it begins, and which does not depend on the
+/// tile the edge leaves. So the target is reached exactly when the start can
+/// enter it, or when any other tile beside it is explored at all.
+pub(crate) struct RouteReach {
+    uid: u32,
+    start: Pos,
+    locked: bool,
+    access: std::sync::Arc<Vec<bool>>,
+    seen: Vec<bool>,
+    unindexed_seen: BTreeSet<Pos>,
+    queue: VecDeque<Pos>,
+}
+
+impl Game {
+    /// A [`RouteReach`] for `uid`, or `None` when the unit is gone (the
+    /// per-target routers answer `None` then too).
+    pub(crate) fn route_reach(&self, uid: u32) -> Option<RouteReach> {
+        let unit = self.units.get(&uid)?;
+        let start = unit.pos;
+        let mut seen = vec![false; self.map.tiles.len()];
+        let mut unindexed_seen = BTreeSet::new();
+        if let Some(index) = self.map.tiles.index_of(start) {
+            seen[index] = true;
+        } else {
+            unindexed_seen.insert(start);
+        }
+        Some(RouteReach {
+            uid,
+            start,
+            locked: self.formation_movement_locked_by_zoc(uid),
+            access: self.unit_territory_access(unit),
+            seen,
+            unindexed_seen,
+            queue: VecDeque::from([start]),
+        })
+    }
+}
+
+impl RouteReach {
+    fn explored(&self, g: &Game, pos: Pos) -> bool {
+        g.map.tiles.index_of(pos).map_or_else(
+            || self.unindexed_seen.contains(&pos),
+            |index| self.seen[index],
+        )
+    }
+
+    /// Whether the per-target router would find a route to `target`.
+    /// `target_blocked` is what its predicate says of `target` itself;
+    /// `blocked` is the shared predicate, consulted for every other tile and
+    /// never for `target`. Every call on one `RouteReach` must pass the same
+    /// `blocked` and the same unchanged `g`.
+    pub(crate) fn reaches(
+        &mut self,
+        g: &Game,
+        target: Pos,
+        target_blocked: bool,
+        blocked: impl Fn(Pos) -> bool,
+    ) -> bool {
+        if self.start == target || target_blocked || self.locked {
+            return false;
+        }
+        if !g.can_path_through_neighbor(self.uid, target, &self.access) {
+            return false;
+        }
+        let beside: Vec<Pos> = g
+            .nbrs(target)
+            .into_iter()
+            .filter(|pos| *pos != self.start)
+            .collect();
+        if g.nbrs(self.start).into_iter().any(|pos| pos == target)
+            && g.can_enter_neighbor(self.uid, self.start, target)
+        {
+            return true;
+        }
+        if beside.iter().any(|pos| self.explored(g, *pos)) {
+            return true;
+        }
+        let _memo = g.query_memo();
+        while let Some(current) = self.queue.pop_front() {
+            let mut found = false;
+            // `target` is searched by the shared predicate like any tile. If
+            // the search can enter it, a tile beside it was explored first.
+            // If it cannot, the per-target search stops on discovering it
+            // and never explores past it either.
+            for next in g.nbrs(current) {
+                let index = g.map.tiles.index_of(next);
+                let visited = index.map_or_else(
+                    || self.unindexed_seen.contains(&next),
+                    |index| self.seen[index],
+                );
+                if visited || blocked(next) {
+                    continue;
+                }
+                let allowed = if current == self.start {
+                    g.can_enter_neighbor(self.uid, current, next)
+                } else {
+                    g.can_path_through_neighbor(self.uid, next, &self.access)
+                };
+                if !allowed {
+                    continue;
+                }
+                if let Some(index) = index {
+                    self.seen[index] = true;
+                } else {
+                    self.unindexed_seen.insert(next);
+                }
+                found |= beside.contains(&next);
+                self.queue.push_back(next);
+            }
+            if found {
+                return true;
+            }
+        }
+        false
+    }
+}
+
 #[cfg(test)]
 mod native_dense_visit_tests;
+#[cfg(test)]
+mod route_reach_tests;
