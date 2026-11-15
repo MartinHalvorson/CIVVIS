@@ -107,7 +107,10 @@ impl BasicAi {
         if threatened {
             return None;
         }
-        let backlog = Self::unimproved_worked_tiles(g, pid);
+        // `builders-improve-the-idle-for-production`: the idle tiles the gene
+        // prices as worked; zero with the gene off. See
+        // `ai/advanced/idle_production.rs`.
+        let backlog = Self::unimproved_worked_tiles(g, pid) + self.idle_production_backlog;
         // `prod-tiles-call-the-builders`: the quota in charges. Off, it is
         // `WORKED_BACKLOG_COVER` of `backlog`, and the gates below are the
         // stock ones. See `ai/prod_tiles_call_the_builders.rs`.

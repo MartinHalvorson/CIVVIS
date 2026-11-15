@@ -54,6 +54,10 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> bool {
+        // `builders-improve-the-idle-for-production`: the turn's idle picks
+        // reach `BasicAi`'s backlog step before any claim or governor reads
+        // it. Zero while the gene is off. See `advanced/idle_production.rs`.
+        self.publish_idle_production_backlog(g, pid);
         // `forward-airfield-project`: a project already in flight takes
         // its producer's idle queue for the next stage before the routine
         // claims below refill it. Exact no-op while the gene is off or no

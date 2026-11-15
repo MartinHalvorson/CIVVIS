@@ -86,7 +86,9 @@ impl AdvancedAi {
         improvement: &str,
         strategy: GrandStrategy,
     ) -> f64 {
-        if !self.builders_improve_the_worked_for_production {
+        if !self.builders_improve_the_worked_for_production
+            && !self.builders_improve_the_idle_for_production
+        {
             return 0.0;
         }
         let Some(cid) = g.map.tiles.get(&pos).and_then(|tile| tile.owner_city) else {
@@ -100,7 +102,14 @@ impl AdvancedAi {
         };
         let production =
             spec.yields.production + Self::improvement_tree_yields(g, pid, improvement).production;
-        if production <= 0.0 || !self.city_works_the_tile(g, pid, cid, pos) {
+        // `builders-improve-the-idle-for-production`: the city's idle pick is
+        // priced as if a citizen worked it. False with that gene off, which
+        // leaves this gene's own test. See `advanced/idle_production.rs`.
+        let worked = self.builders_improve_the_worked_for_production
+            && self.city_works_the_tile(g, pid, cid, pos);
+        if production <= 0.0
+            || !(worked || self.idle_production_prices_as_worked(g, pid, cid, pos, improvement))
+        {
             return 0.0;
         }
         let surplus = g.city_yields(cid).food - 2.0 * city.pop as f64;

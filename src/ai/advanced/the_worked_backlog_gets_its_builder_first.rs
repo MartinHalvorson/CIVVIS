@@ -98,7 +98,7 @@ impl AdvancedAi {
         if !self.base.the_worked_backlog_gets_its_builder_first {
             return;
         }
-        let backlog = BasicAi::unimproved_worked_tiles(g, pid);
+        let backlog = self.worked_backlog_with_idle(g, pid);
         let cover = BasicAi::builder_charge_cover(g, pid);
         if !self.base.worked_backlog_runs_ahead(backlog, cover) {
             return;

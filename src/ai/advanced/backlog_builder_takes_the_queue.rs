@@ -128,7 +128,7 @@ impl AdvancedAi {
         if n_cities < 2 || Self::backlog_builders_in_hand(g, pid, Some(cid)) >= n_cities {
             return false;
         }
-        let backlog = BasicAi::unimproved_worked_tiles(g, pid);
+        let backlog = self.worked_backlog_with_idle(g, pid);
         let own = if city.queue.first() == Some(item) {
             g.builder_charges(pid).max(1)
         } else {
@@ -243,7 +243,7 @@ impl AdvancedAi {
         };
         let head = g.cities[&cid].queue.first().cloned();
         let name = g.cities[&cid].name.clone();
-        let backlog = BasicAi::unimproved_worked_tiles(g, pid);
+        let backlog = self.worked_backlog_with_idle(g, pid);
         let cover = BasicAi::builder_charge_cover(g, pid);
         if g.apply(
             pid,

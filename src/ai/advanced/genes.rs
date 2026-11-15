@@ -5486,6 +5486,12 @@ pub const GENES: &[Gene] = &[
     // assessed siege gets a capture forecast on the battle solver's board and
     // one journal line; no decision changes. See `advanced/assault_forecast.rs`.
     Gene { tag: "assault-forecast-is-read", field: "assault_forecast_is_read", kind: Kind::OptIn, enable: AdvancedAi::enable_assault_forecast_is_read, disable: AdvancedAi::disable_assault_forecast_is_read },
+    // Live Deity Rome 2026-11-15: six to eight owned bare hills idle at
+    // t50-t80 while citizens worked 0-1 Production tiles, and the Builders
+    // mined only hills already worked. A city's best idle Mine or Lumber
+    // Mill tile that would beat its weakest worked tile by two Production
+    // is priced as if worked. See `advanced/idle_production.rs`.
+    Gene { tag: "builders-improve-the-idle-for-production", field: "builders_improve_the_idle_for_production", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_improve_the_idle_for_production, disable: AdvancedAi::disable_builders_improve_the_idle_for_production },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.

@@ -1832,6 +1832,11 @@ pub struct BasicAi {
     /// Set from `AdvancedAi` by the opt-in gene
     /// `the-worked-backlog-gets-its-builder-first`.
     pub(crate) the_worked_backlog_gets_its_builder_first: bool,
+    /// `builders-improve-the-idle-for-production`: the idle tiles the gene
+    /// prices as worked this turn, added to the worked backlog the Builder
+    /// step reads. Set by `AdvancedAi` each turn; zero while the gene is off.
+    /// See `ai/advanced/idle_production.rs`.
+    pub(crate) idle_production_backlog: usize,
     /// From turn 90 standard (t60 Online), ahead of the military floor: the
     /// Market of a standing Commercial Hub, then a Trader while the empire's
     /// routes and Traders leave a route slot open, then a Commercial Hub on
@@ -4025,6 +4030,7 @@ impl BasicAi {
             builders_cover_the_worked_backlog: false,
             prod_tiles_call_the_builders: false,
             the_worked_backlog_gets_its_builder_first: false,
+            idle_production_backlog: 0,
             commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,
@@ -4486,6 +4492,7 @@ impl BasicAi {
             builders_cover_the_worked_backlog: false,
             prod_tiles_call_the_builders: false,
             the_worked_backlog_gets_its_builder_first: false,
+            idle_production_backlog: 0,
             commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,

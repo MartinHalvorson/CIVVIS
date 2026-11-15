@@ -5666,6 +5666,11 @@ pub struct AdvancedAi {
     /// `breaker-walks-under-a-shield`: where the breaker and its shield last
     /// stood, for the journal of its loss. `None` while the gene is off.
     breaker_shield_memory: Option<breaker_walks_under_a_shield::BreakerShieldMemory>,
+    /// `builders-improve-the-idle-for-production`: each city's best idle
+    /// tile a Mine or Lumber Mill would lift past its weakest worked tile is
+    /// priced as if worked and counts toward the Builder backlog. See
+    /// `advanced/idle_production.rs`. Opt-in.
+    builders_improve_the_idle_for_production: bool,
     // ---- append: c-d ------------------------------------------------
     /// `domination-seat-appoints-pingala-first`: a Domination target spends
     /// its first Governor titles on Pingala in its largest city and her
@@ -8200,6 +8205,10 @@ pub struct AdvancedAi {
     /// empire can hold, while a city founded now still repays. See
     /// `advanced/good_land_lifts_the_city_target.rs`. Off by default.
     good_land_lifts_the_city_target: bool,
+    /// `builders-improve-the-idle-for-production`: the turn's idle tile per
+    /// city, so the Builder sweep asks each city once. Untouched while the
+    /// gene is off.
+    idle_production_frame: RefCell<idle_production::IdleProductionFrame>,
     /// `great-works-never-wait`: a Culture seat never sells a Great Work,
     /// moves a Writing out of the Palace into an empty Amphitheater slot, and
     /// claims a slot building for an Artist or Musician the host cannot seat.
@@ -11944,6 +11953,9 @@ mod holdable_land_keeps_settling;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
 /// faith. See `advanced/holy_city_guard.rs`.
 mod holy_city_guard;
+/// `builders-improve-the-idle-for-production`: an idle Mine or Lumber Mill
+/// tile priced as if worked. See `advanced/idle_production.rs`.
+mod idle_production;
 /// `hopeless-army-yields-the-queue`: no soldiers for walls nothing breaches.
 /// See `advanced/hopeless_army_yields_the_queue.rs`.
 mod hopeless_army_yields_the_queue;
