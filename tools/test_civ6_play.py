@@ -2219,6 +2219,241 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertEqual(civ6_play.setup_drift(live, args(map_size="MAPSIZE_TINY")), [])
 
 
+class NativeCrashRowTest(unittest.TestCase):
+    """A game that dies under the harness describes its own crash."""
+
+    IMAGES = [{"name": "libsystem_kernel.dylib"}, {"name": "libsystem_c.dylib"},
+              {"name": "libc++abi.dylib"}, {"name": "Civ6_Exe_Child"},
+              {"name": "libtbb.dylib"}, {"name": "GameCore_XP2.dll"}]
+
+    def _report(self, folder, name, threads, signal="SIGABRT", kind="EXC_CRASH",
+                captured="2026-11-15 06:28:24.6174 -0600",
+                launched="2026-11-15 06:23:36.7380 -0600", mtime=None):
+        path = Path(folder) / name
+        body = {"captureTime": captured, "procLaunch": launched, "pid": 82962,
+                "exception": {"type": kind, "signal": signal},
+                "usedImages": self.IMAGES, "threads": threads}
+        path.write_text(json.dumps({"app_name": "Civ6_Exe_Child"}) + "\n"
+                        + json.dumps(body, indent=1))
+        if mtime is not None:
+            os.utime(path, (mtime, mtime))
+        return path
+
+    def _pure_virtual_threads(self):
+        # The crashed thread of Civ6_Exe_Child-2026-11-15-062825.ips.
+        return [
+            {"name": "WinMain (WinID 2)", "frames": [
+                {"imageIndex": 0, "imageOffset": 1, "symbol": "swtch_pri"}]},
+            {"name": "TBB (WinID 6)", "triggered": True, "frames": [
+                {"imageIndex": 0, "imageOffset": 8, "symbol": "__pthread_kill"},
+                {"imageIndex": 1, "imageOffset": 296, "symbol": "pthread_kill"},
+                {"imageIndex": 1, "imageOffset": 148, "symbol": "abort"},
+                {"imageIndex": 2, "imageOffset": 132, "symbol": "__abort_message"},
+                {"imageIndex": 2, "imageOffset": 24, "symbol": "__cxa_pure_virtual"},
+                {"imageIndex": 3, "imageOffset": 0x8cbbec},
+                {"imageIndex": 4, "imageOffset": 0x18eb0},
+                {"imageIndex": 4, "imageOffset": 0x126ac},
+                {"imageIndex": 4, "imageOffset": 0x11f14},
+            ]},
+        ]
+
+    def test_the_report_reads_as_signal_thread_and_first_real_frame(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = self._report(temporary, "Civ6_Exe_Child-2026-11-15-062825.ips",
+                                self._pure_virtual_threads())
+            row = civ6_play.read_crash_report(path)
+            self.assertEqual(row["signature"], "SIGABRT TBB __cxa_pure_virtual")
+            self.assertEqual(row["thread"], "TBB")
+            self.assertEqual(row["frames"], ["__cxa_pure_virtual", "Civ6_Exe_Child+0x8cbbec",
+                                             "libtbb.dylib+0x18eb0", "libtbb.dylib+0x126ac"])
+            # The report's local time, as the event stream's UTC.
+            self.assertEqual(row["captured"], "2026-11-15T12:28:24.617Z")
+            self.assertEqual(row["alive_s"], 287.9)
+            self.assertEqual(row["report"], path.name)
+            # The older fault: no symbol, so the image names it, without the
+            # offset that differs from one occurrence to the next.
+            older = self._report(temporary, "Civ6_Exe_Child-2026-11-13-115602.ips", [
+                {"name": "WinMain (WinID 2)", "triggered": True, "frames": [
+                    {"imageIndex": 5, "imageOffset": 0x484d84},
+                    {"imageIndex": 5, "imageOffset": 0xdd2e4},
+                    {"imageIndex": 3, "imageOffset": 0x977fc8}]}],
+                signal="SIGSEGV", kind="EXC_BAD_ACCESS")
+            row = civ6_play.read_crash_report(older)
+            self.assertEqual(row["signature"], "SIGSEGV WinMain GameCore_XP2.dll")
+            self.assertEqual(row["frames"][0], "GameCore_XP2.dll+0x484d84")
+            # A report with no crashed thread still reads.
+            bare = self._report(temporary, "Civ6_Exe_Child-bare.ips", [])
+            self.assertEqual(civ6_play.read_crash_report(bare)["signature"], "SIGABRT ?")
+
+    def test_only_a_report_written_since_the_attempt_began_is_this_games(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            old = self._report(folder, "Civ6_Exe_Child-2026-11-15-051836.ips", [], mtime=1_000)
+            new = self._report(folder, "Civ6_Exe_Child-2026-11-15-062825.ips", [], mtime=2_000)
+            self._report(folder, "Chrome-2026-11-15-070000.ips", [], mtime=3_000)
+            self.assertEqual(civ6_play.newest_crash_report(0.0, folder), new)
+            self.assertEqual(civ6_play.newest_crash_report(1_500, folder), new)
+            self.assertEqual(civ6_play.newest_crash_report(1_000, folder), new)
+            self.assertIsNone(civ6_play.newest_crash_report(2_500, folder))
+            self.assertIsNone(civ6_play.newest_crash_report(0.0, folder / "missing"))
+            self.assertEqual(civ6_play.newest_crash_report(500, folder), new)
+            os.utime(new, (900, 900))
+            self.assertEqual(civ6_play.newest_crash_report(950, folder), old)
+
+    def _events(self, folder, rows):
+        path = Path(folder) / "events.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        return path
+
+    def test_the_trail_says_whose_phase_and_what_the_mod_last_did(self) -> None:
+        died = civ6_play.datetime(2026, 11, 15, 12, 28, 24, 617000,
+                                  tzinfo=civ6_play.timezone.utc)
+
+        def at(clock):
+            return f"2026-11-15T12:28:{clock}Z"
+
+        with tempfile.TemporaryDirectory() as temporary:
+            # Measured civvis-20261115T122335Z: a leader screen released 11 s
+            # before, our end turn 3.2 s before, rival combat to 80 ms before.
+            rival = self._events(temporary, [
+                {"ctx": "autoclose", "kind": "event_lock", "op": "release",
+                 "screen": "DiplomacyActionView", "utc": at("13.467")},
+                {"ctx": "harness", "kind": "host_load", "load": [16.0, 17.0, 18.0],
+                 "utc": at("15.000")},
+                {"ctx": "agent", "kind": "orders", "turn": 79, "frame": 2, "utc": at("20.370")},
+                {"ctx": "agent", "kind": "end_turn_wait", "turn": 79, "blockers": [],
+                 "forced": 1, "utc": at("21.444")},
+                {"ctx": "agent", "kind": "combat", "turn": 79, "utc": at("23.134")},
+                {"ctx": "agent", "kind": "combat", "turn": 79, "utc": at("23.350")},
+                {"ctx": "agent", "kind": "combat", "turn": 79, "utc": at("24.537")},
+            ])
+            trail = civ6_play.crash_trail(rival, died)
+            self.assertEqual((trail["turn"], trail["phase"]), (79, "rival"))
+            self.assertEqual(trail["last_row_age_ms"], 80)
+            self.assertEqual(trail["trail_s"], 11.2)
+            self.assertEqual(trail["last_ui_row"], {
+                "age_ms": 11150, "kind": "event_lock", "ctx": "autoclose",
+                "op": "release", "screen": "DiplomacyActionView"})
+            # The three combats are one entry; the load sample is not a row
+            # of the game's.
+            self.assertEqual([row["kind"] for row in trail["last_rows"]],
+                             ["event_lock", "orders", "end_turn_wait", "combat"])
+            self.assertEqual(trail["last_rows"][-1], {"age_ms": 80, "kind": "combat",
+                                                      "turn": 79, "n": 3})
+            self.assertEqual(len(civ6_play.crash_trail(rival, died, keep=2)["last_rows"]), 2)
+            # An end turn the host still refuses is our phase, and so is a
+            # frame of orders after an accepted one (the next turn).
+            for rows in ([{"kind": "end_turn_wait", "turn": 165, "blockers": {"1385632321": 1},
+                           "utc": at("24.000")}],
+                         [{"kind": "end_turn_wait", "turn": 165, "blockers": [], "utc": at("20.000")},
+                          {"kind": "orders", "turn": 166, "utc": at("24.000")}]):
+                ours = civ6_play.crash_trail(self._events(temporary, rows), died)
+                self.assertEqual(ours["phase"], "ours")
+                self.assertIsNone(ours["last_ui_row"])
+            # Without a capture time the last row is the reference.
+            self.assertEqual(civ6_play.crash_trail(rival, None)["last_row_age_ms"], 0)
+            # Nothing readable is no trail, not an error.
+            self.assertEqual(civ6_play.crash_trail(self._events(temporary, []), died), {})
+            self.assertEqual(civ6_play.crash_trail(Path(temporary) / "absent.jsonl", died), {})
+            broken = Path(temporary) / "events.jsonl"
+            broken.write_text("not json\n{\"kind\": \"turn\"}\n{broken\n")
+            self.assertEqual(civ6_play.crash_trail(broken, died), {})
+
+    def test_the_crash_row_joins_the_report_the_trail_and_the_load(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary) / "reports"
+            folder.mkdir()
+            events = self._events(temporary, [
+                {"kind": "end_turn_wait", "turn": 79, "blockers": [],
+                 "utc": "2026-11-15T12:28:21.444Z"},
+                {"kind": "combat", "turn": 79, "utc": "2026-11-15T12:28:24.537Z"}])
+            naps = []
+            ticks = iter([0.0, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5])
+
+            def nap(seconds):
+                naps.append(seconds)
+                if len(naps) == 2:        # the report lands a second after the exit
+                    self._report(folder, "Civ6_Exe_Child-2026-11-15-062825.ips",
+                                 self._pure_virtual_threads(), mtime=5_000)
+
+            with patch.object(civ6_play, "host_load", return_value=[16.05, 16.14, 17.1]):
+                row = civ6_play.native_crash_row(events, 4_000, wait_s=6.0, folder=folder,
+                                                 sleep=nap, clock=lambda: next(ticks))
+            self.assertEqual(naps, [0.5, 0.5])
+            self.assertEqual((row["kind"], row["ctx"]), ("native_crash", "harness"))
+            self.assertEqual(row["signature"], "SIGABRT TBB __cxa_pure_virtual")
+            self.assertEqual((row["turn"], row["phase"], row["last_row_age_ms"]),
+                             (79, "rival", 80))
+            self.assertEqual(row["load"], [16.05, 16.14, 17.1])
+            json.dumps(row)                # it is a row: it must serialize
+
+            # No report within the wait: not a crash we can name.
+            clock = iter([0.0, 0.0, 3.0, 7.0])
+            self.assertIsNone(civ6_play.native_crash_row(
+                events, 9_000, wait_s=6.0, folder=folder, sleep=lambda _s: None,
+                clock=lambda: next(clock)))
+            # A report that cannot be parsed is still reported, by name.
+            (folder / "Civ6_Exe_Child-torn.ips").write_text("{}\n{not json")
+            os.utime(folder / "Civ6_Exe_Child-torn.ips", (9_500, 9_500))
+            torn = civ6_play.native_crash_row(events, 9_000, wait_s=0.0, folder=folder)
+            self.assertEqual(torn["report"], "Civ6_Exe_Child-torn.ips")
+            self.assertIsNone(torn["signature"])
+            self.assertIn("unreadable", torn)
+            self.assertEqual(torn["kind"], "native_crash")
+
+    def test_the_load_is_three_rounded_averages_or_nothing(self) -> None:
+        with patch.object(civ6_play.os, "getloadavg", return_value=(16.0546, 16.1409, 17.1)):
+            self.assertEqual(civ6_play.host_load(), [16.05, 16.14, 17.1])
+        with patch.object(civ6_play.os, "getloadavg", side_effect=OSError("unavailable")):
+            self.assertIsNone(civ6_play.host_load())
+
+    def test_the_load_is_noted_only_beside_a_row_of_the_games(self) -> None:
+        # The wedge watchdog reads the event file's mtime as the game's own
+        # voice; a load row on a timer would keep a parked game looking alive.
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "host_load", return_value=[15.0, 16.0, 17.0]):
+            events = self._events(temporary, [{"kind": "turn", "turn": 5}])
+            os.utime(events, (10_000.0, 10_000.0))
+            row = {"kind": "host_load", "ctx": "harness", "load": [15.0, 16.0, 17.0]}
+            # Due, and the game wrote a row 0.4 s ago.
+            self.assertEqual(civ6_play.host_load_row(events, 30.0, wall=10_000.4), row)
+            self.assertEqual(civ6_play.host_load_row(events, 500.0, wall=10_001.0), row)
+            # Not due yet.
+            self.assertIsNone(civ6_play.host_load_row(events, 29.9, wall=10_000.4))
+            # Due, but the game has said nothing for 1.5 s, or for a minute:
+            # the file is left alone, however long the row is overdue.
+            self.assertIsNone(civ6_play.host_load_row(events, 30.0, wall=10_001.5))
+            self.assertIsNone(civ6_play.host_load_row(events, 3_600.0, wall=10_060.0))
+            # No file, or no load to read: no row.
+            self.assertIsNone(civ6_play.host_load_row(Path(temporary) / "absent.jsonl",
+                                                      30.0, wall=10_000.4))
+            with patch.object(civ6_play, "host_load", return_value=None):
+                self.assertIsNone(civ6_play.host_load_row(events, 30.0, wall=10_000.4))
+        self.assertLessEqual(civ6_play.HOST_LOAD_BESIDE_S, 1.0)
+
+    def test_the_play_loop_records_both_rows(self) -> None:
+        import inspect
+        source = inspect.getsource(civ6_play._play)
+        # The load row rides the poll hook, gated by the interval.
+        hook = source.split("def keep_foreground() -> None:", 1)[1].split("def ", 1)[0]
+        self.assertIn("note_host_load()", hook)
+        noted = source.split("def note_host_load() -> None:", 1)[1].split("def ", 1)[0]
+        self.assertIn("row = host_load_row(events_path, now - load_noted[0])", noted)
+        self.assertIn("record(row)", noted)
+        # The crash row is written only when the game exited under the watch,
+        # after the stall rescues, and before the run lets go of the game.
+        self.assertIn('if reason == "game exited":\n        crash = native_crash_row('
+                      'events_path, watch_began_wall)', source)
+        self.assertLess(source.index("while reason.startswith(\"stalled\")"),
+                        source.index('if reason == "game exited":'))
+        block = source.split('if reason == "game exited":', 1)[1].split(
+            "# Whatever ended the run, it no longer holds a game.", 1)
+        self.assertEqual(len(block), 2)
+        self.assertIn("record(crash)", block[0])
+        self.assertIn("macOS filed no crash report", block[0])
+        self.assertEqual(civ6_play.HOST_LOAD_EVERY_S, 30.0)
+
+
 class MirrorSyncStartsBeforeSetupTest(unittest.TestCase):
     """Operator 11-02: "2, 3, 4 should all be present. no turns skipped".
 
