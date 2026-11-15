@@ -8098,8 +8098,12 @@ fn browser_orders_controls_interface_setup_and_logs() {
         EMBEDDED_INDEX.contains("{selector:\"#playerhud .watch-as-link\", min:9, max:12, slack:6}")
     );
     assert!(EMBEDDED_INDEX.contains("class=\"spectator-view-link\" data-hud-action=\"spectator\""));
-    assert!(EMBEDDED_INDEX.contains("Spectator mode: see everyone with full map visibility"));
-    assert!(EMBEDDED_INDEX.contains(">All</button>"));
+    // The way back out of a Watch-as view carries the turn box's own word for
+    // that view, "POV: Global" (operator 2026-11-15: "change all (above watch
+    // as) to Global").
+    assert!(EMBEDDED_INDEX.contains("Global view: see everyone with full map visibility"));
+    assert!(EMBEDDED_INDEX.contains(">Global</button>"));
+    assert!(!EMBEDDED_INDEX.contains(">All</button>"));
     assert!(EMBEDDED_INDEX.contains("data-hud-action=\"watch\" data-hud-civ=\"${p.id}\""));
     assert!(EMBEDDED_INDEX.contains("data-hud-action=\"dossier\" data-hud-civ=\"${p.id}\""));
     assert!(EMBEDDED_INDEX.contains("spectatePlayer(null);"));
@@ -8772,26 +8776,38 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
 
 /// The turn box says how the game is being played and whose eyes the map is
 /// drawn through (operator 2026-11-15: add a "Mode:" and a "POV:"). Mode is
-/// Self-play when every seat is an agent's, Single player when a person
-/// holds one, Civ VI beside a mirrored live game. POV is Global for the
-/// omniscient spectator and Single player for a played seat or a Watch-as
-/// view, whose tooltip names the civilization. The two rows open the
-/// settings list, above the setup line, and the plate's spoken label carries
-/// both. Two more rows do not fit beside a four-seat table, so the
-/// masthead's automatic height takes the box's measured content as a floor;
-/// a dragged height is still the viewer's own.
+/// CIVVIS Self-play when every seat is an agent's, CIVVIS Single Player when
+/// a person holds one, Firaxis Civ VI Testing beside a mirrored live game
+/// (operator, same day: "Change Civ VI to CIVVIS Self-play, Firaxis Civ VI
+/// Testing, and CIVVIS Single Player"). POV is Global for the omniscient
+/// spectator and Single Player for a played seat or a Watch-as view, whose
+/// tooltip names the civilization.
+///
+/// The two rows open the settings list, above the setup line. Live time and
+/// Max Speed stand above the age and the turn counter: they spent an
+/// afternoon under the counter and the operator moved them "back above age
+/// and turn counter like before", so Max Speed is again a line of its own.
+///
+/// A short roster's table ends above the box's last row, so the masthead's
+/// automatic height takes the box's measured content as a floor; a dragged
+/// height is still the viewer's own.
 #[test]
 fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
     for piece in [
         "const plateMode = livePause.available",
-        "? [\"Civ VI\", \"A live Civilization VI game, mirrored here turn by turn.\"]",
-        ": SPEC ? [\"Self-play\", \"Every civilization is played by an AI agent. Nobody holds a seat.\"]",
-        ": [\"Single player\", \"You play one civilization. AI agents play the rest.\"];",
+        "? [\"Firaxis Civ VI Testing\", \"A live Firaxis Civilization VI game under test, mirrored here turn by turn.\"]",
+        ": SPEC ? [\"CIVVIS Self-play\", \"Every civilization is played by a CIVVIS AI agent. Nobody holds a seat.\"]",
+        ": [\"CIVVIS Single Player\", \"You play one civilization. CIVVIS AI agents play the rest.\"];",
         "const platePov = !SPEC || playerView",
-        "? [\"Single player\", `The world as ${identity.civ || \"one civilization\"} sees it, behind its own fog.`]",
+        "? [\"Single Player\", `The world as ${identity.civ || \"one civilization\"} sees it, behind its own fog.`]",
         ": [\"Global\", \"The whole world at once, with no civilization's fog.\"];",
         "frameRow(\"Mode:\", plateMode) + frameRow(\"POV:\", platePov) +\n    `<div class=\"turn-setting turn-setup-line\"",
         "`mode ${plateMode[0]}; point of view ${platePov[0]}`;",
+        // The long Mode name is whole on the narrowest plate at 8px.
+        "{selector:\"#playerhud .turn-settings\", min:8, max:12, slack:4},",
+        // Max Speed is a line of its own, fitted and ruled as before.
+        "{selector:\"#playerhud .turn-pace-line\", min:8.5, max:12, slack:4},",
+        ".has-live-time .turn-pace-line { padding-bottom: 4px; border-bottom: 1px solid #d7b66a24; }",
         "function measureTurnPlateNeed(hud) {",
         "const last = plate?.querySelector(\".turn-settings\")?.lastElementChild;",
         "const plateNeed = measureTurnPlateNeed(hud);",
@@ -8802,6 +8818,33 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
             "the turn box's Mode and POV rows are missing {piece}"
         );
     }
+    // Live time, Max Speed, age, turn counter, then the list from Mode down.
+    let (_, plate) = EMBEDDED_INDEX
+        .split_once("function hudTurnPlate() {")
+        .expect("the turn plate");
+    let (_, markup) = plate
+        .split_once("hudFoldButton(\"turnplate\", \"turn box\", \"turn-plate-fold\") +")
+        .expect("the plate's markup");
+    let order = [
+        "<div class=\"turn-live\"",
+        "<span>Max Speed:</span>",
+        "<span class=\"turn-era\">",
+        "<span class=\"turn-label\">Turn</span>",
+        "frameRow(\"Mode:\", plateMode)",
+        "frameRow(\"POV:\", platePov)",
+        "turn-setup-line",
+        "rosterRow(\"Civs:\"",
+        "rosterRow(\"City states:\"",
+    ]
+    .map(|part| {
+        markup
+            .find(part)
+            .unwrap_or_else(|| panic!("the plate lost {part}"))
+    });
+    assert!(
+        order.windows(2).all(|pair| pair[0] < pair[1]),
+        "the turn box is out of the operator's order: {order:?}"
+    );
 }
 
 /// Player-row color is reserved for a current war. Friendships and

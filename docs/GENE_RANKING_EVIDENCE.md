@@ -217,7 +217,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `campus-above-the-sea` | off (unmeasured) | Prefer a safe legal site for a new native Science Campus. | 1 \| 1 |
 | `campus-and-library-before-the-claims` | off (unmeasured) | Opt-in `campus-and-library-before-the-claims`; see `advanced/campus_and_library_before_the_claims.rs`. | 1 \| 1 |
 | `campus-unlock-every-lane` | off (unmeasured) | Opt-in gene `campus-unlock-every-lane`; see `Self::campus_unlock_every_lane`. | 1 \| 1 |
-| `capital-archers-before-the-surprise` | off (unmeasured) | Opt-in gene `capital-archers-before-the-surprise`; see `advanced/capital_archers_before_the_surprise.rs`. | 1 \| 1 |
+| `capital-archers-before-the-surprise` | off (unmeasured) | Opt-in gene `capital-archers-before-the-surprise`; see `advanced/capital_archers_before_the_surprise.rs`. | — \| 2 |
+| `capital-archers-before-the-surprise-2` | off (unmeasured) | Opt-in gene `capital-archers-before-the-surprise-2`, version two of `capital-archers-before-the-surprise`; see `advanced/capital_archers_before_the_surprise.rs`. | — \| 2 |
 | `capital-keeps-its-defender` | off (unmeasured) | Opt-in gene `capital-keeps-its-defender`; see `Self::capital_keeps_its_defender`. | — \| 3 |
 | `capital-keeps-its-defender-2` | off (unmeasured) | Opt-in gene `capital-keeps-its-defender-2`; see `Self::capital_keeps_its_defender_2`. | — \| 3 |
 | `capital-keeps-its-defender-3` | off (unmeasured) | Opt-in gene `capital-keeps-its-defender-3`; see `Self::capital_keeps_its_defender_3`. | — \| 3 |
@@ -397,6 +398,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `old-techs-before-the-beeline` | off (unmeasured) | Opt-in gene `old-techs-before-the-beeline`; see `advanced/old_techs_before_the_beeline.rs`. | 1 \| 1 |
 | `one-owner-per-unit` | off (unmeasured) | Opt-in `one-owner-per-unit`; see `advanced/unit_owner.rs`. | 1 \| 1 |
 | `one-upgrade-lifts-every-city` | off (unmeasured) | Opt-in gene `one-upgrade-lifts-every-city`; see `advanced/one_upgrade_lifts_every_city.rs`. | 1 \| 1 |
+| `open-capital-declares-at-twice` | off (unmeasured) | Opt-in gene `open-capital-declares-at-twice`; see `advanced/open_capital_declares_at_twice.rs`. | 1 \| 1 |
 | `open-city-is-the-objective` | off (unmeasured) | Opt-in `open-city-is-the-objective`; see `advanced/open_city_objective.rs`. | 1 \| 1 |
 | `opening-builder-after-the-first-settler` | off (unmeasured) | Opt-in gene `opening-builder-after-the-first-settler`; see `BasicAi::opening_builder_after_the_first_settler`. | 1 \| 1 |
 | `opening-ranged-support` | off (unmeasured) | Replace the capital's first opening slot with legal ranged support. | 1 \| 1 |

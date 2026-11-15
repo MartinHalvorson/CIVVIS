@@ -1979,6 +1979,23 @@ enum ActionReach {
     OwnCities,
     /// Anything can.
     Board,
+    /// Only the acting unit was written: nothing kept is dropped. See the
+    /// ordinary-move note in `Game::apply`.
+    UnitOnly,
+}
+
+/// What [`Game::apply`] reads around an ordinary move to tell whether it did
+/// anything a kept city yield could notice.
+#[derive(PartialEq, Eq)]
+pub(super) struct OrdinaryMoveWatch {
+    /// The moving unit stands on a city centre (a garrison).
+    on_a_city_centre: bool,
+    /// How many seats every seat has met, summed.
+    contacts: usize,
+    /// Every unit's id and owner, folded.
+    units: u64,
+    /// Every city's id and owner, folded.
+    cities: u64,
 }
 
 impl QueryCache {
@@ -1997,7 +2014,7 @@ impl QueryCache {
     }
 
     fn drop_kept_yields(&self, reach: ActionReach) {
-        if !self.keeps_rival_yields.get() {
+        if !self.keeps_rival_yields.get() || reach == ActionReach::UnitOnly {
             return;
         }
         self.own_yields.borrow_mut().clear();
@@ -11787,9 +11804,13 @@ impl Game {
     }
 
     fn city_building_effect(&self, city: &City, effect: &str) -> f64 {
-        if !self.rules.effect_index.buildings(effect) {
+        // The index both rules the effect out and names it: every building's
+        // effect map is then asked by interned name, an integer comparison per
+        // entry, where it was asked by text once per building in the city.
+        let Some((effect, ())) = self.rules.effect_index.buildings.get_key_value(effect) else {
             return 0.0;
-        }
+        };
+        let effect = *effect;
         city.buildings
             .iter()
             .filter_map(|building| {
@@ -11798,10 +11819,7 @@ impl Game {
                 // effect, and deciding whether one's district is standing
                 // means walking the city's districts — far dearer than the
                 // table lookup that rules it out.
-                let value = self.rules.buildings[building]
-                    .effects
-                    .get(effect)
-                    .copied()?;
+                let value = self.rules.buildings[building].effects.get_name(effect)?;
                 (!city.pillaged_buildings.contains(building)
                     && self.building_district_is_active(city, building))
                 .then_some(value)
@@ -13755,6 +13773,8 @@ impl Game {
 #[cfg(test)]
 mod production_catalog_tests;
 
+#[cfg(test)]
+mod kept_yields_moves_tests;
 #[cfg(test)]
 mod yield_carry_tests;
 

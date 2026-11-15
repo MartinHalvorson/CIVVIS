@@ -2775,8 +2775,8 @@ function playerHudColumnHead(column) {
     return `<span class="hud-head-cell hud-head-identity hud-head-watch" ${attrs}>` +
       `<button type="button" class="spectator-view-link" data-hud-action="spectator" ` +
       `aria-pressed="${state.view_player === null || state.view_player === undefined}" ` +
-      `title="Spectator mode · see everyone with full map visibility" ` +
-      `aria-label="Spectator mode: see everyone with full map visibility">All</button></span>`;
+      `title="Global view · see everyone with full map visibility" ` +
+      `aria-label="Global view: see everyone with full map visibility">Global</button></span>`;
   }
   const [label, title, extra] = PLAYER_HUD_HEAD_LABELS[column.key];
   const classes = column.block === "stats"
@@ -3474,7 +3474,9 @@ const RESPONSIVE_TEXT_RULES = [
   // grid track holds the widest whole row, so the block's own overflow is the
   // exact amount it is too big by — and one size for every row is what keeps
   // four adjacent settings looking like one instrument.
-  {selector:"#playerhud .turn-settings", min:8.5, max:12, slack:4},
+  // "Mode: Firaxis Civ VI Testing" needs 126px at 8.5px and the narrowest
+  // plate has 124, so the floor is 8: smaller type, not a clipped letter.
+  {selector:"#playerhud .turn-settings", min:8, max:12, slack:4},
   // Max Speed sits alone above the age, so it is fitted on its own.
   {selector:"#playerhud .turn-pace-line", min:8.5, max:12, slack:4},
   {selector:"#victoryhud .hud-section-heading > span", min:8.5, max:12, parentWidth:true},
@@ -27505,6 +27507,7 @@ function victoryValue(victory, metric) {
       ? `${compactStat(metric.distance)}/${compactStat(metric.distance_target)}ly`
       : `${metric.techs || 0}/${metric.tech_total || 0}`;
   }
+  // Culture reads as the game prints it: visiting tourists over the tourists needed.
   // Tourist counts run into four digits, and at the victory rail's width that value
   // is wide enough to squeeze the civilization name beside it down to an
   // ellipsis. Compact it the way the science distance already is; the hover
@@ -27520,7 +27523,7 @@ function victoryValue(victory, metric) {
 
 function victoryTrackerSubheading(victory) {
   if (victory === "science") return `<span>Techs</span><span>Race</span>`;
-  if (victory === "culture") return `<span>Civics</span><span>Tourism</span>`;
+  if (victory === "culture") return `<span>Civics</span><span>Tourists</span>`;
   if (victory === "religious") return `<span></span><span>Civs</span>`;
   if (victory === "diplomatic") return `<span></span><span>Score</span>`;
   if (victory === "domination") return `<span></span><span>Capitals</span>`;
@@ -27534,11 +27537,14 @@ function victoryTrackerStats(victory, metric) {
       ? `${compactStat(metric.distance)}/${compactStat(metric.distance_target)}ly`
       : `${metric.projects || 0}/${target}`;
   }
-  if (victory === "culture") return compactStat(metric.tourists || 0);
-  if (victory === "religious") return `${metric.converted || 0}/${metric.target || 0}`;
-  if (victory === "diplomatic") return `${metric.points || 0}/${metric.target || 20}`;
-  if (victory === "domination") return `${metric.capitals || 0}/${metric.target || 0}`;
   return victoryValue(victory, metric);
+}
+
+// What a path's rows are ranked on. Culture is led on the figure its rows
+// print (operator, 2026-11-15); its meter's percent is rounded and capped.
+function victoryLead(road, metric) {
+  return road !== "culture" ? +metric.progress || 0
+    : (+metric.tourists || 0) / Math.max(1, +metric.target || 0);
 }
 
 function victoryDescription(victory, metric) {
@@ -27792,11 +27798,11 @@ function hudTurnPlate() {
   // Who is playing, and whose eyes the map is drawn through (operator
   // 2026-11-15: a "Mode:" and a "POV:" on the turn box).
   const plateMode = livePause.available
-    ? ["Civ VI", "A live Civilization VI game, mirrored here turn by turn."]
-    : SPEC ? ["Self-play", "Every civilization is played by an AI agent. Nobody holds a seat."]
-    : ["Single player", "You play one civilization. AI agents play the rest."];
+    ? ["Firaxis Civ VI Testing", "A live Firaxis Civilization VI game under test, mirrored here turn by turn."]
+    : SPEC ? ["CIVVIS Self-play", "Every civilization is played by a CIVVIS AI agent. Nobody holds a seat."]
+    : ["CIVVIS Single Player", "You play one civilization. CIVVIS AI agents play the rest."];
   const platePov = !SPEC || playerView
-    ? ["Single player", `The world as ${identity.civ || "one civilization"} sees it, behind its own fog.`]
+    ? ["Single Player", `The world as ${identity.civ || "one civilization"} sees it, behind its own fog.`]
     : ["Global", "The whole world at once, with no civilization's fog."];
   const mapScript = state.map.script || "tenins_ball";
   const mapName = mapScript === "tenins_ball" ? "Tennis Ball" : titleCase(mapScript);
@@ -27916,8 +27922,10 @@ function hudTurnPlate() {
   const frameRow = (label, [value, title]) => `<div class="turn-setting" title="${escapeAttr(title)}">` +
     `<span>${label}</span><b>${escapeAttr(value)}</b></div>`;
   // The stopwatch is the plate's own top section, above the age (operator
-  // 2026-10-14: "live time can be a very top section above the age"). Watch
-  // pace sits directly under it, still above the age (operator 2026-11-09).
+  // 2026-10-14: "live time can be a very top section above the age"). Max
+  // Speed sits directly under it, still above the age (operator 2026-11-09).
+  // Both spent 2026-11-15 under the turn counter and the operator moved them
+  // "back above age and turn counter like before"; Mode and POV stay below.
   return `<section class="victory-turn${liveTimeText !== null ? " has-live-time" : ""}" ` +
     `title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
     hudFoldButton("turnplate", "turn box", "turn-plate-fold") +
@@ -28016,9 +28024,9 @@ function playerHudOverview() {
     const ranked = [...contenders]
       .sort((a, b) => {
         const am = victoryMetric(a, track.id), bm = victoryMetric(b, track.id);
-        // Before launches or tourism move, researched-tree counts keep these
+        // Before launches or tourists move, researched-tree counts keep these
         // columns ordered by the same comparison their left meters draw.
-        return (+bm.progress || 0) - (+am.progress || 0)
+        return victoryLead(track.id, bm) - victoryLead(track.id, am)
           || (researchField ? (+bm[researchField] || 0) - (+am[researchField] || 0) : 0)
           || b.score - a.score || a.id - b.id;
       });
