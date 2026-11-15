@@ -1,16 +1,18 @@
 //! `band-plays-the-stage-at-hand`: a Rock Band plays a stage it can reach this
 //! turn instead of a long trip to a stage at most one level better.
 //!
-//! **Why (live Deity Greece 20261115T144245Z and Russia 20261115T114552Z,
-//! 34 bands, 579 band-turns, 82 concerts).** A band's concerts are worth more
-//! the longer it lives: album sales add onto every later concert, so the band
-//! that reached its 12th concert played its last ones for 9-15k Tourism. What
-//! limits careers is the road, not the stage. Bands already played the best
-//! level their host offered within 8 hexes in 75 of 82 concerts, but only 82
-//! of 579 band-turns held a concert: 40 times a band set out on a trip of two
-//! or more turns from beside a stage it could have played, and those trips
-//! took 266 band-turns. 15 of them ended at a stage no better than the one it
-//! left, and 6 never ended. 6160408 (Arena Rock) stood one hex from an
+//! **Why (live Deity Greece 20261115T144245Z and 20261115T151156Z, Russia
+//! 20261115T114552Z: 53 bands, 133 concerts, 819 band-turns once the 60 the
+//! bridge held a concert for a deal session are set aside).** A band's
+//! concerts are worth more the longer it lives: album sales add onto every
+//! later concert, so the bands that reached their 10th-13th concerts played
+//! their last ones for 9-15k Tourism. What limits careers is the road, not
+//! the stage. Bands already played the best level their host offered within
+//! 8 hexes in 117 of 133 concerts, but only 133 of 819 band-turns held a
+//! concert: 48 times a band set out on a trip of two or more turns from
+//! beside a stage it could have played, and those trips took 296
+//! band-turns. 17 of them ended at a stage no better than the one it left,
+//! and 7 never ended. 6160408 (Arena Rock) stood one hex from an
 //! Entertainment Complex at t140, turned for another one 15 hexes off in the
 //! bar holder's land, walked back, and played the first at t143.
 //! 8650773 (Music Festival, album 150) walked its last 28 turns toward
@@ -45,6 +47,13 @@
 //! to the highest-level one, the tour's order breaking ties. The tour resumes
 //! the next turn, and a stage once played is never offered again. Bands
 //! only; a band with no such stage at hand tours exactly as before.
+//!
+//! **Paired sim** (Immortal, 6p Continents, Greece on the Culture lane, 40
+//! seeds from 9100, the live genome of 20261115T144245Z with and without the
+//! tag): concerts 8.3 -> 9.5 a game (z +3.3), concerts per band-turn 0.22 ->
+//! 0.29 (z +3.5), concert Tourism +18% (z +2.8), visitors at the end 62 -> 69
+//! (z +2.6); breakups +0.6 a game (z +2.3; 0.38 -> 0.40 a concert); 2 Culture
+//! wins of 40 in each arm.
 
 use crate::ai::BasicAi;
 use crate::game::{Action, Game};

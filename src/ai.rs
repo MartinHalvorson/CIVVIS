@@ -2235,8 +2235,8 @@ pub struct BasicAi {
     /// `band-plays-the-stage-at-hand`: a Rock Band plays a stage it can reach
     /// this turn instead of its tour's stage when the trip there is longer
     /// than the levels it gains are worth: two turns for none, four for one,
-    /// no trip for two. Live, 40 trips set out from beside a playable stage
-    /// took 266 of 579 band-turns. Off by default; opt-in gene. See
+    /// no trip for two. Live, 48 trips set out from beside a playable stage
+    /// took 296 of 819 band-turns. Off by default; opt-in gene. See
     /// `advanced/band_plays_the_stage_at_hand.rs`.
     pub(crate) band_plays_the_stage_at_hand: bool,
     /// `band-stall-bars-no-host`: by [`BasicAi::band_memory_key`], the turn a
