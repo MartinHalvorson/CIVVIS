@@ -10,8 +10,9 @@
 //! the lock ran out: 69 `museum_art_locked` refusals in live
 //! civvis-20261115T123222Z, against one swap the host carried out.
 //!
-//! The state export now carries each work's turn of creation
-//! (`blds:GetTurnFromIndex`, the call the screen makes), and a swap whose
+//! The state export now carries the turn each of a city's works was created
+//! (`great_work_turns`, from `blds:GetTurnFromIndex`, the call the screen
+//! makes), and a swap whose
 //! work, or whose destination slot's work, is inside the lock is not sent. A
 //! state without the turn (an older mod) holds nothing back.
 
@@ -30,21 +31,22 @@ pub(super) fn locked(
     destination: i64,
     slot: i32,
 ) -> bool {
-    let inside = |created: Option<i64>| {
-        created.is_some_and(|turn| turn + ART_LOCK_TURNS > i64::from(state.turn))
+    let city = |id: i64| state.cities.iter().find(|candidate| candidate.id == id);
+    // Whether `kind`, housed in city `id`, is inside its lock.
+    let inside = |id: i64, kind: &str| {
+        city(id)
+            .and_then(|found| found.great_work_turns.as_ref())
+            .and_then(|turns| turns.get(kind))
+            .is_some_and(|made| made + ART_LOCK_TURNS > i64::from(state.turn))
     };
-    let museum = |city: i64| {
-        state
-            .cities
-            .iter()
-            .find(|candidate| candidate.id == city)
-            .and_then(|candidate| candidate.great_works.as_deref())
-            .unwrap_or_default()
-            .iter()
-            .filter(|held| held.building == "BUILDING_MUSEUM_ART")
-    };
-    museum(source).any(|held| held.kind == work && inside(held.created))
-        || museum(destination).any(|held| held.slot == slot && inside(held.created))
+    let in_the_slot = city(destination)
+        .and_then(|found| found.great_works.as_deref())
+        .and_then(|works| {
+            works
+                .iter()
+                .find(|held| held.building == "BUILDING_MUSEUM_ART" && held.slot == slot)
+        });
+    inside(source, work) || in_the_slot.is_some_and(|held| inside(destination, &held.kind))
 }
 
 #[cfg(test)]

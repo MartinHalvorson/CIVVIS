@@ -8331,6 +8331,8 @@ local function exportState(player, pid, turn, frame, eventKind)
 		-- not forget the yield, Tourism, theming identity, or consumed slot.
 		CivvisExportClock.lap("plots");
 		local greatWorks = nil;
+		-- nil, never an empty table: the row's map must not cross as a list.
+		local greatWorkTurns = nil;
 		if blds ~= nil then
 			greatWorks = {};
 			for buildingInfo in GameInfo.Buildings() do
@@ -8359,13 +8361,17 @@ local function exportState(player, pid, turn, frame, eventKind)
 									creator = instance and instance.CreatorName or "",
 									building = buildingInfo.BuildingType,
 									slot = slot,
-									-- The turn it was created, which starts the ten-turn
-									-- art lock (GreatWorksOverview.lua:782-799): the
-									-- decider holds a swap back until it has run out.
-									created = try(function()
-										return blds:GetTurnFromIndex(workIndex);
-									end, nil),
 								};
+								-- The turn it was created, which starts the ten-turn
+								-- art lock (GreatWorksOverview.lua:782-799): the
+								-- decider holds a swap back until it has run out.
+								local made = tonumber(try(function()
+									return blds:GetTurnFromIndex(workIndex);
+								end, nil));
+								if made ~= nil then
+									greatWorkTurns = greatWorkTurns or {};
+									greatWorkTurns[info.GreatWorkType] = made;
+								end
 							end
 						end
 					end
@@ -8426,6 +8432,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			worked = worked,
 			specialists = specialists,
 			great_works = greatWorks,
+			great_work_turns = greatWorkTurns,
 			yields = exactYields,
 			yield_sources = yieldSources,
 			incoming_routes = incomingRoutes[try(function() return city:GetID(); end, -1)],
