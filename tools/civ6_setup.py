@@ -108,6 +108,20 @@ VERIFICATION_OPTIONS = {
         "AutoSaveFrequency": 4,
     },
     "GraphicsOptions.txt": {
+        # ⚠ THESE TWO DO NOT HOLD ON A GPU THE GAME DOES NOT KNOW, as on the
+        # `martbot-mbp-m5-max-128` seat ("Device ID: 1007"). Startup.log there says
+        # "Successfully determined Graphics Performance Level. Default graphics
+        # settings to medium/medium." at each boot, and the game writes the
+        # file back with both at 1. So every play log repeats
+        # `[options] GraphicsOptions.txt: EnableShadows 1 -> 0`, and the game
+        # renders shadows all the same: seen 2026-11-15 on
+        # civvis-20261115T080955Z, where the file, last written in the launch
+        # minute, read `EnableShadows 1` and `EnableCloudShadows 1` while the
+        # game played. The two shadow passes the note above counts as saved
+        # are therefore still drawn, and every recording has had shadows. The
+        # keys stay for a host whose game keeps the file; making them hold
+        # here would change how the videos look, which is not this table's
+        # call.
         "EnableShadows": 0,
         "EnableCloudShadows": 0,
         # Pinned at the shipped value so the in-game VSync A/B

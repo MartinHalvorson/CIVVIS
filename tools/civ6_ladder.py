@@ -178,6 +178,32 @@ def ledger_lock(ledger: Path, *, timeout: float = 30.0,
                 pass
 
 
+def ledger_text(state: dict) -> str:
+    """The live ledger as text: the same JSON document, one attempt a line.
+
+    ★ THE LEDGER IS REWRITTEN WHOLE AT THE END OF EVERY GAME, AND INDENTING IT
+    WAS MOST OF THAT. ``json.dumps(..., indent=2)`` runs Python's pure-Python
+    encoder; without ``indent`` the C encoder does the work. Measured
+    2026-11-15 on this seat's ledger (5,571 attempts, 285 MB indented): 3.3 s
+    indented against 0.8 s here, inside a ``record_summary`` that holds the
+    game boundary for 4.4 s, and the file drops to 190 MB. One attempt a line
+    keeps it greppable by tag, which a single 190 MB line would not be.
+
+    Only the layout changes: ``json.loads`` of this text is ``state``
+    (``test_civ6_ladder.py`` holds that against the indented form). The
+    published snapshot (``publish``) keeps its indent; it is diffed in review.
+    """
+    attempts = state.get("attempts")
+    if not isinstance(attempts, list):
+        return json.dumps(state, sort_keys=True) + "\n"
+    rest = json.dumps({key: value for key, value in state.items() if key != "attempts"},
+                      sort_keys=True)
+    rows = ",\n".join(json.dumps(attempt, sort_keys=True) for attempt in attempts)
+    body = f"[\n{rows}\n]" if attempts else "[]"
+    tail = "}" if rest == "{}" else ", " + rest[1:]
+    return '{"attempts": ' + body + tail + "\n"
+
+
 def save(state: dict, ledger: Path) -> None:
     """Replace the ledger atomically.
 
@@ -190,7 +216,7 @@ def save(state: dict, ledger: Path) -> None:
     ledger.parent.mkdir(parents=True, exist_ok=True)
     scratch = ledger.parent / f".{ledger.name}.{os.getpid()}.tmp"
     try:
-        scratch.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+        scratch.write_text(ledger_text(state))
         os.replace(str(scratch), str(ledger))
     finally:
         try:

@@ -7838,6 +7838,16 @@ pub struct AdvancedAi {
     /// strike unless the rival's faith stands at match point. See
     /// `advanced/faithless_seat_holds_its_faith_strikes.rs`. Off by default.
     faithless_seat_holds_its_faith_strikes: bool,
+    /// `edge-unit-rushes-from-the-capital`: on a Score or Domination seat
+    /// whose civilization trains a unique land melee unit on turn one with
+    /// no technology and no strategic resource, at least 8 stronger than the
+    /// Warrior (Sumeria's War-Cart, the Aztec Eagle Warrior), the capital
+    /// trains three before anything else, they scout, the nearest unwalled
+    /// rival city is named from one city, the force declares on the capture
+    /// forecast, keeps what it takes and goes on while the forecast holds.
+    /// Runs the edge unit's window by itself. See
+    /// `advanced/edge_unit_takes_the_soft_city.rs`. Off by default.
+    edge_unit_rushes_from_the_capital: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -21963,6 +21973,10 @@ impl AdvancedAi {
         if !self.hint_city_in_reach_of_war(g, pid, city) {
             preview.claim_religion_seat_faith_hint(&mut board, pid, &plan, city);
         }
+        // `edge-unit-rushes-from-the-capital`: the hint for a rush queue is
+        // the next edge unit, in the opening book too. Exact no-op off the
+        // rush.
+        preview.claim_edge_rush_queue(&mut board, pid);
         preview.advanced_production(&mut board, pid, &plan, false);
         // `hint-runs-the-claims`: the defensive writers that follow the
         // governors on the main path, in the same order, so the hint is never
@@ -26278,6 +26292,12 @@ impl AdvancedAi {
             match action {
                 Action::KeepCity { .. } => {
                     value += development;
+                    // `edge-unit-rushes-from-the-capital`: the rush keeps the
+                    // cities its war takes. `false` off the rush. See
+                    // `advanced/edge_unit_takes_the_soft_city.rs`.
+                    if self.edge_rush_keeps(before, pid, city_id) {
+                        value += 1_000.0;
+                    }
                     if nearest_core > 9 && city.loyalty <= 50.0 {
                         value -= (nearest_core - 9) as f64 * 5.0;
                     }
@@ -27094,6 +27114,11 @@ impl AdvancedAi {
         self.claim_religion_seat_faith_economy(g, pid, &plan);
         // See `last_civ_standing`: in a final war every idle queue arms.
         self.arm_for_the_final_war(g, pid, &plan);
+        // `edge-unit-rushes-from-the-capital`: the rush's first bodies take
+        // the capital's idle queue ahead of the opening book and of the
+        // governor. Exact no-op off the rush. See
+        // `advanced/edge_unit_takes_the_soft_city.rs`.
+        self.claim_edge_rush_queue(g, pid);
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
         if self.base.book_pos < 4 {

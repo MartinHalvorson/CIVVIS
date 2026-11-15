@@ -1596,6 +1596,59 @@ fn one_trade_route_refusal_is_a_report_and_two_are_a_verdict() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A Trader bought this turn, or one that changed its origin city this turn,
+/// has no movement, and the host refuses any route it asks for.
+///
+/// Live game `civvis-20261115T071444Z`, turn 16: Trader 393220 was bought in
+/// frame 0 and its route (13,26) -> (19,31) was refused in frames 1 and 2 with
+/// `moves: 0`. The host listed that pair in `route_options` on all three
+/// frames. Two refusals retired it for the game.
+#[test]
+fn a_refusal_of_a_trader_with_no_movement_does_not_retire_the_route() {
+    let dir = std::env::temp_dir().join(format!("civvis-route3-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let path = dir.join("events.jsonl");
+    let refusal = |turn: u32, x: i32, y: i32, moves: Option<u32>| {
+        let moves = moves.map_or(String::new(), |moves| format!(r#","moves":{moves}"#));
+        format!(
+            r#"{{"kind":"trade_route_refused","turn":{turn},"unit":393220,"from_x":13,"from_y":26,"x":{x},"y":{y}{moves}}}"#
+        )
+    };
+    std::fs::write(
+        &path,
+        [
+            r#"{"kind":"state","turn":20}"#.to_string(),
+            // Bought this turn: refused in two frames, neither a reading.
+            refusal(16, 19, 31, Some(0)),
+            refusal(16, 19, 31, Some(0)),
+            // With movement to spend the host means it, and twice is a verdict.
+            refusal(17, 23, 19, Some(2)),
+            refusal(17, 23, 19, Some(2)),
+            // One reading with movement and one without is still one reading.
+            refusal(18, 26, 26, Some(2)),
+            refusal(19, 26, 26, Some(0)),
+            // An older mod sends no `moves`; its refusals count as they did.
+            refusal(18, 25, 30, None),
+            refusal(19, 25, 30, None),
+        ]
+        .join("\n")
+            + "\n",
+    )
+    .expect("write events");
+
+    let state = state_from_events(&path, Some(20)).expect("turn 20 state");
+    let origin = crate::hex::offset_to_axial(13, 26);
+    assert_eq!(
+        state.refused_trade_routes,
+        std::collections::BTreeSet::from([
+            (origin, crate::hex::offset_to_axial(23, 19)),
+            (origin, crate::hex::offset_to_axial(25, 30)),
+        ]),
+        "only refusals of a Trader that could have started a route retire one"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// ★★★★ Landmass identity comes from the export, and invented cliffs come off.
 ///
 /// Same defect as the rivers above, two fields over. On the live board 200 of 776

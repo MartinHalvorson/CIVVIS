@@ -17,11 +17,18 @@
 --      are guarded the same way; REBASE and PATROL move an aircraft between
 --      friendly plots and never ask the question;
 --   4. an absent API answers nil and the strike proceeds (the historical
---      behaviour), never a blanket refusal.
+--      behaviour), never a blanket refusal;
+--   5. all of the above with `rawget` unavailable, as it is on the live host.
+--      The guard read the host's answer with it and so raised on every answer
+--      that named a player: civvis-20261115T075055Z turn 54, "function
+--      expected instead of nil" at that read, on a Scout's MOVE_TO. Every
+--      check in this file passed while it did, because plain Lua 5.1 has it.
 --
 -- Run: lua5.1 tools/civ6_control/mod/accidental_war_test.lua
 
 local here = arg[0]:match("(.*)/[^/]*$") or "."
+-- This file's own use of the function, kept before the name is taken away.
+local rawRead = rawget
 
 local function stub()
 	return setmetatable({}, {
@@ -31,7 +38,7 @@ local function stub()
 	})
 end
 setmetatable(_G, { __index = function(_, key)
-	if key == "CivvisApplyOrder" or key == "CivvisResolveActions" then return rawget(_G, key); end
+	if key == "CivvisApplyOrder" or key == "CivvisResolveActions" then return rawRead(_G, key); end
 	return stub()
 end })
 
@@ -69,14 +76,18 @@ local ran, runtimeErr = pcall(chunk)
 assert(ran, "CivvisControlAgent.lua raised at chunk load: " .. tostring(runtimeErr))
 
 -- The operation hashes are resolved on game load, not at chunk load.
-local resolveActions = rawget(_G, "CivvisResolveActions")
+local resolveActions = rawRead(_G, "CivvisResolveActions")
 assert(type(resolveActions) == "function",
 	"CivvisControlAgent.lua did not export CivvisResolveActions")
 resolveActions()
 
-local applyOrder = rawget(_G, "CivvisApplyOrder")
+local applyOrder = rawRead(_G, "CivvisApplyOrder")
 assert(type(applyOrder) == "function",
 	"CivvisControlAgent.lua did not export CivvisApplyOrder")
+
+-- From here the agent runs as it does in the game: calling `rawget` raises
+-- what the live host raised.
+rawget = function() error("function expected instead of nil", 2) end
 
 local failures = 0
 local function check(name, got, want)

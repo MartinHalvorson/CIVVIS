@@ -356,13 +356,76 @@ end
     answer(DealProposalAction.ACCEPTED);
     check("an accepted response cannot substitute the purchased work", #substituted.sends, 2);
 
-    local passage = workSession({ incoming = {
+    -- An Open Borders quote takes the same two steps. The two full Pericles
+    -- games of 2026-11-15 asked 34 and 31 times; 24 and 25 answers were the
+    -- passage alone, priced inside the ceiling and sent REJECTED, and were
+    -- walked away from; 1 and 3 closed.
+    local function passageSession(opts)
+        opts = opts or {};
+        opts.incoming = opts.incoming or {
+            { kind = DealItemTypes.AGREEMENTS, from = 3, subType = DealAgreementTypes.OPEN_BORDERS },
+            { kind = DealItemTypes.GOLD, from = 7, amount = opts.price or 14 },
+        };
+        local state = workSession(opts);
+        trade.pending[3].want = "OPEN_BORDERS";
+        trade.pending[3].ceiling = opts.ceiling or 28;
+        return state;
+    end
+    local passage = passageSession();
+    answer(DealProposalAction.REJECTED);
+    check("a rejected affordable Open Borders quote is PROPOSED", passage.sends[2] and passage.sends[2][1], "proposed");
+    check("the passage is not accepted without the rival's verdict", #passage.sends, 2);
+    check("the proposal ledger names the passage", eventField(lastEvent("deal_reproposed"), "want"), "OPEN_BORDERS");
+    check("the passage proposal keeps its pending purchase", trade.pending[3] ~= nil, true);
+    check("the passage proposal keeps the MAKE_DEAL session open", #sessions.closed, 0);
+    check("the passage proposal renews the answer hold", holds[#holds] and holds[#holds].seconds, 30);
+    passage.pending = true;
+    answer(DealProposalAction.REJECTED);
+    check("the engine's pending passage proposal is not sent twice", #passage.sends, 2);
+    passage.pending = false;
+    answer(DealProposalAction.ADJUSTED);
+    check("the rival's ADJUSTED answer to the passage is accepted", passage.sends[3] and passage.sends[3][1], "accepted");
+    check("the accepted passage settles the pending request", trade.pending[3], nil);
+    check("the accepted passage closes the session once", #sessions.closed, 1);
+    check("the closed passage is on the ledger", eventField(lastEvent("deal_closed"), "want"), "OPEN_BORDERS");
+
+    local dear = passageSession({ price = 103 });
+    answer(DealProposalAction.REJECTED);
+    check("a passage priced above the ceiling is not proposed", #dear.sends, 1);
+    check("…and settles as declined", trade.pending[3], nil);
+    local free = passageSession({ incoming = {
         { kind = DealItemTypes.AGREEMENTS, from = 3, subType = DealAgreementTypes.OPEN_BORDERS },
+    } });
+    answer(DealProposalAction.REJECTED);
+    check("a refusal that names no price is not proposed", #free.sends, 1);
+    local padded = passageSession({ incoming = {
+        { kind = DealItemTypes.AGREEMENTS, from = 3, subType = DealAgreementTypes.OPEN_BORDERS },
+        { kind = DealItemTypes.GOLD, from = 7, amount = 14 },
+        { kind = DealItemTypes.RESOURCES, from = 7, valueType = 43, amount = 1 },
+    } });
+    answer(DealProposalAction.REJECTED);
+    check("a passage quote that also takes a resource of ours is not proposed", #padded.sends, 1);
+    local twoWay = passageSession({ incoming = {
+        { kind = DealItemTypes.AGREEMENTS, from = 3, subType = DealAgreementTypes.OPEN_BORDERS },
+        { kind = DealItemTypes.RESOURCES, from = 3, valueType = 43, amount = 1 },
+        { kind = DealItemTypes.GOLD, from = 7, amount = 14 },
+    } });
+    answer(DealProposalAction.REJECTED);
+    check("a passage quote with another item on their side is not proposed", #twoWay.sends, 1);
+    local busy = passageSession();
+    DealManager.HasPendingDeal = function() return nil; end;
+    answer(DealProposalAction.REJECTED);
+    check("unreadable pending state cannot propose a passage", #busy.sends, 1);
+
+    -- A resource ask keeps its own protocol (see the next block): the answer
+    -- handler never sends a second request for one.
+    local resource = workSession({ incoming = {
+        { kind = DealItemTypes.RESOURCES, from = 3, valueType = 43, amount = 1 },
         { kind = DealItemTypes.GOLD, from = 7, amount = 50 },
     } });
-    trade.pending[3].want = "OPEN_BORDERS";
+    trade.pending[3].want = "RESOURCES:43";
     answer(DealProposalAction.REJECTED);
-    check("other purchase protocols retain their existing behavior", #passage.sends, 1);
+    check("other purchase protocols retain their existing behavior", #resource.sends, 1);
 
     local unequal = workSession({ dealsEqual = false });
     answer(DealProposalAction.REJECTED);
@@ -1096,8 +1159,9 @@ do
 	trade.close(7, 3, "test_expired")
 	-- An opening queued behind another session waits for the end turn itself.
 	TURN = 606
+	check("the opening hold is three seconds", trade.OPENING_HOLD_SECONDS, 3)
 	trade.ask(7, 3, "EQUALIZE", "trade", TURN)
-	activeClock = activeClock + 7.9
+	activeClock = activeClock + trade.OPENING_HOLD_SECONDS - 0.1
 	check("an opening is held just inside its own bound", trade.holdsEndTurn(TURN), true)
 	activeClock = activeClock + 0.2
 	check("an opening nobody asked through stops holding", trade.holdsEndTurn(TURN), false)
@@ -1105,7 +1169,7 @@ do
 	trade.close(7, 3, "test_opening")
 	TURN = 607
 	trade.ask(7, 3, "EQUALIZE", "trade", TURN)
-	activeClock = activeClock + 7.5
+	activeClock = activeClock + trade.OPENING_HOLD_SECONDS - 0.5
 	onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 1402 })
 	activeClock = activeClock + 29.5
 	check("a question asked at the bound still gets its full reply window",

@@ -1927,3 +1927,119 @@ fn bandar_brunei_pays_again_for_the_owners_foreign_trading_posts() {
     game.players[minor].civ = "Hattusa".to_string();
     assert_close(game.trading_post_route_gold(0, cities[0], cities[1]), 1.0);
 }
+
+/// The two places a city-state's type is read ask a cheaper question first:
+/// the Suzerain count asks who the Suzerain is, and the Envoy yields ask how
+/// many Envoys the seat has there. Each must answer what it answered when
+/// the type was read first, for every seat, type and city, with Envoys at
+/// none, some and all of the city-states, a war, and a dead city-state.
+#[test]
+fn a_city_state_type_read_after_the_cheaper_test_answers_the_same() {
+    const KINDS: [&str; 7] = [
+        "scientific",
+        "cultural",
+        "religious",
+        "trade",
+        "militaristic",
+        "industrial",
+        "no-such-type",
+    ];
+    let (mut game, cities) = game_with_capitals(3, 89_021);
+    let states: Vec<usize> = [
+        "Hattusa",
+        "Geneva",
+        "Mohenjo-Daro",
+        "Yerevan",
+        "Zanzibar",
+        "Kabul",
+        "Auckland",
+        "A city-state the ruleset has never heard of",
+    ]
+    .into_iter()
+    .map(|name| add_city_state(&mut game, name))
+    .collect();
+    for city in &cities {
+        install_district(&mut game, *city, "campus");
+        install_district(&mut game, *city, "diplomatic_quarter");
+        game.cities.get_mut(city).unwrap().buildings.extend(
+            ["library", "university", "consulate", "chancery", "monument"]
+                .into_iter()
+                .map(Name::new),
+        );
+    }
+    let mut compared = 0;
+    let mut suzerainties = 0;
+    let mut paying = 0;
+    let mut check = |game: &Game, label: &str| {
+        for pid in 0..3 {
+            for kind in KINDS {
+                let count = game.suzerain_type_count(pid, kind);
+                assert_eq!(
+                    count,
+                    game.suzerain_type_count_reading_the_type_first(pid, kind),
+                    "{label}: seat {pid}, {kind}"
+                );
+                suzerainties += count;
+            }
+            for city in &cities {
+                let city = &game.cities[city];
+                let yields = game.envoy_yields(pid, city);
+                // Bit for bit, so a zero that changed its sign would show:
+                // `Yields` itself compares with `==`, which calls -0.0 and
+                // 0.0 equal.
+                let bits = |yields: Yields| {
+                    [
+                        yields.food,
+                        yields.production,
+                        yields.gold,
+                        yields.science,
+                        yields.culture,
+                        yields.faith,
+                    ]
+                    .map(f64::to_bits)
+                };
+                assert_eq!(
+                    bits(yields),
+                    bits(game.envoy_yields_reading_every_type(pid, city)),
+                    "{label}: seat {pid}, city {}",
+                    city.id
+                );
+                paying += usize::from(yields.total() > 0.0);
+                compared += 1;
+            }
+        }
+    };
+
+    check(&game, "no Envoys anywhere");
+    // Seat 0 is Suzerain of one of each type and of the unknown one; seat 1
+    // has Envoys short of a Suzerainty; seat 2 ties seat 0 at two of them.
+    for (at, state) in states.iter().enumerate() {
+        make_suzerain(&mut game, 0, *state);
+        game.players[1].envoys.push((*state, 1 + at as i64 % 2));
+    }
+    game.players[2].envoys = vec![(states[0], 3), (states[4], 6)];
+    check(&game, "Envoys placed");
+    game.players[0]
+        .envoys
+        .retain(|(state, _)| *state != states[1] && *state != states[2]);
+    game.players[0].envoys.push((states[1], 0));
+    game.players[0].envoys.push((states[2], -2));
+    check(&game, "a count of zero and a count below it");
+    game.at_war.insert(pair(0, states[3]));
+    game.at_war.insert(pair(1, states[4]));
+    assert!(game.is_at_war(0, states[3]) && game.is_at_war(states[4], 1));
+    check(&game, "at war with two of them");
+    game.players[states[5]].alive = false;
+    game.players[states[6]].is_barbarian = true;
+    check(&game, "one dead, one not a city-state");
+    for city in &cities {
+        game.cities.get_mut(city).unwrap().queue = vec![Item::Unit {
+            unit: crate::name!("warrior"),
+        }];
+    }
+    check(&game, "a unit at the head of every queue");
+
+    assert_eq!(compared, 6 * 3 * 3);
+    assert!(suzerainties > 0, "no Suzerainty was ever counted");
+    assert!(paying > 0, "no Envoy ever paid");
+}

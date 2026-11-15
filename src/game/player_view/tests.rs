@@ -285,3 +285,152 @@ fn a_wonder_finished_in_an_unseen_city_leaves_the_observers_build_list() {
         "a wonder finished in an unseen city must leave the view's build list"
     );
 }
+
+/// What a tile says about the frontier, and how often the map was opened
+/// for writing to say it.
+fn frontier_reading(view: &Game) -> (Vec<(Pos, bool, bool)>, u64) {
+    (
+        view.map
+            .tiles
+            .values()
+            .map(|tile| (tile.pos, tile.assumed_traversable, tile.assumed_navigable))
+            .collect(),
+        view.map.tiles.epoch(),
+    )
+}
+
+/// The frontier flood keeps what it has reached in a table in the map's own
+/// order. It must mark the tiles the ordered set marked, and open the map for
+/// writing exactly as often: the grid's epoch counts every `get_mut`, caches
+/// compare that number, and which neighbours get one is what the set decided.
+#[test]
+fn the_frontier_table_marks_what_the_ordered_set_marked_and_moves_the_epoch_as_far() {
+    // The opening, where nearly all of the map is unknown, and a played
+    // position, where each seat knows an irregular region with holes in it.
+    let opening = Game::new_full(6, 40, 28, 91, 40, 0, false);
+    let mut played = Game::new_with(GameOptions::new(4, 32, 22, 90_002, 400, 4));
+    let mut ais = crate::ai::AdvancedAi::fleet(&played);
+    while played.turn < 40 && played.winner.is_none() {
+        let pid = played.current;
+        crate::ai::Ai::take_turn(&mut ais[pid], &mut played, pid);
+        if played.winner.is_none() && played.current == pid {
+            let _ = played.apply(pid, &Action::EndTurn);
+        }
+    }
+    let mut compared = 0;
+    let mut marked = 0;
+    for (game, seats) in [(&opening, 6), (&played, 4)] {
+        for pid in 0..seats {
+            let view = game.player_decision_view(pid);
+            assert!(
+                view.map.tiles.values().any(|t| t.terrain == "unknown"),
+                "seat {pid} has nothing left to flood into"
+            );
+            for depth in [0, 1, 2, 6, 60] {
+                let mut table = view.clone();
+                let mut ordered_set = view.clone();
+                table.grow_player_frontier(depth);
+                ordered_set.grow_player_frontier_by_ordered_set(depth);
+                let reading = frontier_reading(&table);
+                assert_eq!(
+                    reading,
+                    frontier_reading(&ordered_set),
+                    "seat {pid} at depth {depth}, turn {}",
+                    game.turn
+                );
+                compared += 1;
+                marked += reading
+                    .0
+                    .iter()
+                    .filter(|(_, land, water)| *land || *water)
+                    .count();
+            }
+        }
+    }
+    assert_eq!(compared, 50);
+    assert!(
+        marked > 0,
+        "a comparison in which nothing was marked proves nothing"
+    );
+    // The view itself is built with the table, and at the depth it uses the
+    // two give one view.
+    let mut again = played.player_decision_view(0);
+    let built = frontier_reading(&again);
+    again.grow_player_frontier_by_ordered_set(6);
+    assert_eq!(built.0, frontier_reading(&again).0);
+}
+
+/// A map whose grid holds a tile outside its own rectangle has no slot for
+/// it, and a save can carry one. The flood must still treat it as the
+/// ordered set did.
+#[test]
+fn the_frontier_table_agrees_on_a_grid_with_a_tile_outside_its_rectangle() {
+    let game = Game::new_full(2, 30, 20, 918, 40, 0, false);
+    let mut view = game.player_decision_view(0);
+    let stray: Pos = (400, 400);
+    assert!(view.map.tiles.index_of(stray).is_none());
+    let mut saved = serde_json::to_value(&view.map).unwrap();
+    let known = view
+        .map
+        .tiles
+        .values()
+        .find(|tile| tile.terrain != "unknown")
+        .expect("the observer knows its own start");
+    let mut outside = known.clone();
+    outside.pos = stray;
+    saved["tiles"]
+        .as_array_mut()
+        .expect("a saved map lists its tiles")
+        .push(serde_json::to_value(&outside).unwrap());
+    view.map = serde_json::from_value(saved).unwrap();
+    assert_eq!(view.map.tiles.len(), game.map.tiles.len() + 1);
+    assert!(view.map.tiles.index_of(stray).is_none());
+    let mut table = view.clone();
+    let mut ordered_set = view.clone();
+    table.grow_player_frontier(6);
+    ordered_set.grow_player_frontier_by_ordered_set(6);
+    assert_eq!(frontier_reading(&table), frontier_reading(&ordered_set));
+    assert!(frontier_reading(&table)
+        .0
+        .iter()
+        .any(|(_, land, water)| *land || *water));
+}
+
+/// `Players::replace` is the assignment it stands in for: the same roster,
+/// the same epoch, and the board the roster was cloned from keeps its seat.
+#[test]
+fn replacing_a_seat_is_the_assignment_without_the_copy() {
+    let game = Game::new_full(3, 30, 20, 918, 40, 0, false);
+    let stand_in = Player::new(1, CIV_NAMES[0], false);
+    let mut assigned = game.clone();
+    let mut replaced = game.clone();
+    assigned.players[1] = stand_in.clone();
+    replaced.players.replace(1, stand_in);
+    assert_eq!(
+        serde_json::to_value(&assigned.players).unwrap(),
+        serde_json::to_value(&replaced.players).unwrap()
+    );
+    assert_eq!(assigned.players.epoch(), replaced.players.epoch());
+    assert_ne!(replaced.players.epoch(), game.players.epoch());
+    assert_ne!(
+        serde_json::to_value(&game.players[1]).unwrap(),
+        serde_json::to_value(&replaced.players[1]).unwrap(),
+        "the stand-in must differ from the seat it replaces for this to test anything"
+    );
+    let untouched = game.clone();
+    assert_eq!(
+        serde_json::to_value(&game.players).unwrap(),
+        serde_json::to_value(&untouched.players).unwrap(),
+        "the board the roster was cloned from keeps its own seat"
+    );
+    // A whole view built this way hides what the assignment hid.
+    let view = game.player_decision_view(0);
+    for other in 1..3 {
+        assert!(view.players[other].techs.is_empty(), "seat {other}");
+        assert_eq!(
+            view.players[other].remembered_tiles.iter().count(),
+            0,
+            "seat {other}"
+        );
+    }
+}
