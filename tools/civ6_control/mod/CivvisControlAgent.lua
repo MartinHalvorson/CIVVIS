@@ -20544,6 +20544,7 @@ CivvisQueue.reset = function(turn)
 	end
 	q.pending = {}; q.order = {}; q.count = 0; q.watching = 0; q.turn = turn; q.ticks = 0;
 	q.warRequests = {};
+	q.departing = {};
 	q.stats = { applied = 0, refused = 0, refusals = {}, strikes_landed = 0,
 	            strikes_planned = 0, queued = 0 };
 end;
@@ -20752,18 +20753,43 @@ CivvisQueue.moveDepartureWait = function(player, pid, row, rows, index)
 	end, nil);
 end;
 
--- Whether a unit the follower waits for still stands on the plot. A read that
--- fails answers "still there", and the short wait then refuses by name.
-CivvisQueue.moveDeparturePending = function(pid, dependency)
+-- What the units a follower waits for are doing: "clear" (none of them is
+-- on the plot any more), "leaving" (one still is, with its own order in
+-- flight), "queued" (one still is, and is itself waiting for the plot ahead of
+-- it), or "stuck" (one still is, with nothing left in the queue: its move was
+-- refused, or settled without leaving, so it is not going anywhere).
+--
+-- #5325 counted six ticks whatever the unit ahead was doing. Measured on its
+-- first two wartime games (civvis-20261115T100810Z, 101703Z): 50 and 48
+-- unit-turns timed out, about half of them the third or later unit of a
+-- column, whose occupant was itself waiting for the plot ahead of it; 16 and
+-- 11 of the timed-out units then stood still for the turn. A queued occupant
+-- cannot leave yet, so its ticks are not the follower's; an occupant with no
+-- order in flight never will, so waiting for it only holds the frame.
+-- A read that fails answers "leaving", and the short wait refuses by name.
+CivvisQueue.moveDepartureState = function(pid, dependency)
 	return try(function()
+		local state = "clear";
 		for _, id in ipairs(dependency.peers) do
 			local other = liveUnit(pid, id);
 			if other ~= nil and other:GetX() == dependency.x and other:GetY() == dependency.y then
-				return true;
+				local ahead = CivvisQueue.pending[id];
+				if ahead == nil then
+					-- A unit whose own queued move has just been issued has left
+					-- the queue and not yet the plot: see `departing` in the drain.
+					if CivvisQueue.departing == nil or not CivvisQueue.departing[id] then
+						return "stuck";
+					end
+					if state ~= "queued" then state = "leaving"; end
+				elseif ahead.departure_wait ~= nil and ahead.departure_wait.move then
+					state = "queued";
+				elseif state ~= "queued" then
+					state = "leaving";
+				end
 			end
 		end
-		return false;
-	end, true);
+		return state;
+	end, "leaving");
 end;
 
 -- The position an order should leave its unit at, when the next order must
@@ -21157,9 +21183,22 @@ CivvisQueue.drain = function(player, pid, turn)
 					end
 				end
 				if ready and entry.departure_wait ~= nil and entry.departure_wait.move then
-					-- See `moveDepartureWait`: the plot ahead, not this unit's own.
-					if CivvisQueue.moveDeparturePending(pid, entry.departure_wait) then
-						if entry.wait >= CivvisQueue.MOVE_DEPARTURE_TICKS then
+					-- See `moveDepartureWait`: the plot ahead, not this unit's own,
+					-- and `moveDepartureState` for what the unit ahead is doing.
+					local ahead = CivvisQueue.moveDepartureState(pid, entry.departure_wait);
+					if ahead ~= "clear" then
+						if ahead == "leaving" then
+							entry.departure_ticks = (entry.departure_ticks or 0) + 1;
+						end
+						-- A column resolves one unit at a time, so the whole wait is
+						-- bounded too: three units' worth.
+						if ahead == "stuck"
+								or (entry.departure_ticks or 0) >= CivvisQueue.MOVE_DEPARTURE_TICKS
+								or entry.wait >= 3 * CivvisQueue.MOVE_DEPARTURE_TICKS then
+							emit("queue_move_departure_abandoned", {
+								turn = turn, unit = subject, waited = entry.wait,
+								counted = entry.departure_ticks or 0, ahead = ahead,
+							});
 							CivvisQueue.refuseRest(subject, entry, "queue_move_departure_not_clear");
 						end
 						ready = false;
@@ -21268,6 +21307,12 @@ CivvisQueue.drain = function(player, pid, turn)
 								q.stats.applied = q.stats.applied + 1;
 								if CivvisQueue.isStrike(row) then
 									q.stats.strikes_landed = q.stats.strikes_landed + 1;
+								end
+								-- A move issued from the queue is under way with no
+								-- entry left to say so; the unit behind it reads this.
+								if verb == "MOVE_TO" then
+									q.departing = q.departing or {};
+									q.departing[subject] = true;
 								end
 							else
 								q.stats.refused = q.stats.refused + 1;
