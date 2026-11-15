@@ -107,7 +107,10 @@ impl AdvancedAi {
     /// with the hostile memory; the wall or Slinger-upgrade policy can ask
     /// for this observation without enabling the other policy's actions.
     pub(super) fn remember_capital_watch_sightings(&mut self, g: &Game, pid: usize) {
-        if !self.capital_walls_before_the_surprise && !self.capital_watch_arms_the_slinger {
+        if !self.capital_walls_before_the_surprise
+            && !self.capital_watch_arms_the_slinger
+            && !self.capital_archers_before_the_surprise
+        {
             return;
         }
         let Some(capital) = Self::capital_watch_city(g, pid) else {

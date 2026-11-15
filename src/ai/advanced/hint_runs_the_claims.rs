@@ -370,6 +370,8 @@ impl AdvancedAi {
     /// showed the claims alone displacing Walls on hint turns.
     pub(super) fn run_hint_defence_writers(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.claim_capital_walls_before_the_surprise(g, pid);
+        // `capital-archers-before-the-surprise`: no-op with the gene off.
+        self.claim_capital_archers_before_the_surprise(g, pid);
         self.claim_frontier_walls_before_the_surprise(g, pid);
         self.mobilize_surprise_defense_production(g, pid);
         self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);

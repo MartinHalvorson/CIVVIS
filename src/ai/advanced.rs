@@ -7002,6 +7002,12 @@ pub struct AdvancedAi {
     /// with a free district slot claims a Campus, a Commercial Hub or a
     /// Harbor. See `advanced/culture_fills_its_slots.rs`. Opt-in.
     culture_seat_fills_its_district_slots: bool,
+    /// `capital-archers-before-the-surprise`: under the capital watch at 2.5x
+    /// our power, Archery goes ahead of Masonry, the capital's Slingers upgrade
+    /// at once from held Gold, a second shooter is trained or bought ahead of
+    /// the next Settler, and the best shooter keeps the City Center. See
+    /// `advanced/capital_archers_before_the_surprise.rs`. Opt-in.
+    capital_archers_before_the_surprise: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -12301,6 +12307,12 @@ mod worked_backlog_claim;
 /// `advanced/world_religion_condemns.rs`.
 mod world_religion_condemns;
 
+/// Archery before Masonry, the capital's Slingers upgraded from held Gold,
+/// a second shooter trained or bought ahead of the next Settler, and the best
+/// shooter kept in the City Center, under the same watch. Opt-in gene
+/// `capital-archers-before-the-surprise`. See
+/// `advanced/capital_archers_before_the_surprise.rs`.
+mod capital_archers_before_the_surprise;
 /// Masonry, the capital's Walls and a bought defender before a stronger
 /// neighbour at peace can surprise the original capital. Opt-in gene
 /// `capital-walls-before-the-surprise`. See
@@ -21013,9 +21025,11 @@ impl AdvancedAi {
             });
             // `capital-walls-before-the-surprise`: the capital's claimed
             // Walls finish while they are armed.
-            let capital_walls_commitment = committed
-                .as_ref()
-                .is_some_and(|(_, item)| self.capital_walls_hold(g, pid, cid, item));
+            // `capital-archers-before-the-surprise`: its shooter likewise.
+            let capital_walls_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                self.capital_walls_hold(g, pid, cid, item)
+                    || self.capital_archers_hold(g, pid, cid, item)
+            });
             // `granary-claims-the-bound-queue`: the claimed Granary finishes
             // while the city is still housing-bound.
             let bound_granary_commitment = committed
@@ -26865,6 +26879,11 @@ impl AdvancedAi {
         }
         self.census.count(plan.strategy);
         self.advanced_research(g, pid, &plan);
+        // `capital-archers-before-the-surprise`: the Slingers at the watched
+        // capital take their Archer upgrade before any purchase below can
+        // spend its price. Exact no-op while the gene is off. See
+        // `advanced/capital_archers_before_the_surprise.rs`.
+        self.capital_archers_upgrade(g, pid);
         // A city that can fall next turn cannot wait for an upgrade, Great
         // Person patronage, or a generic reserve-aware purchase scorer. The
         // emergency spends at most one action and suppresses that later
@@ -26885,8 +26904,12 @@ impl AdvancedAi {
         // original capital while a stronger neighbour at peace stands at its
         // door owns the turn the same way. See
         // `advanced/capital_walls_before_the_surprise.rs`.
+        // `capital-archers-before-the-surprise`: likewise the capital's
+        // missing shooter, bought at once. `false` with the gene off.
         let surprise_defense_purchase = !emergency_city_defense
-            && (self.surprise_defense_purchase(g, pid) || self.capital_garrison_purchase(g, pid));
+            && (self.surprise_defense_purchase(g, pid)
+                || self.capital_garrison_purchase(g, pid)
+                || self.capital_archers_purchase(g, pid));
         // `breaker-bought-for-the-siege`: after the city-saving purchases,
         // the wall-breaker a held siege is waiting for. See
         // `advanced/siege_train/breaker_purchase.rs`.
@@ -26909,7 +26932,13 @@ impl AdvancedAi {
         // A watched prewar capital can arm one healthy Slinger before the
         // peaceful portfolio spends. Then `gold-buys-the-idle-trader` fills
         // an empty route slot. Both preserve the city-saving purchase lane.
-        if !emergency_city_defense && !surprise_defense_purchase {
+        // `capital-archers-before-the-surprise`: the Trader, Builder and tile
+        // purchases wait while a 2.5x major is watched at the unwalled
+        // capital. `false` with the gene off.
+        if !emergency_city_defense
+            && !surprise_defense_purchase
+            && !self.capital_archers_hold_the_chest(g, pid)
+        {
             self.capital_watch_slinger_upgrade(g, pid);
             // `gold-buys-the-opening-builder`: a builderless opening's Builder
             // before the route slot's Trader. See
@@ -27463,6 +27492,10 @@ impl AdvancedAi {
         // handoffs below. Exact no-op while the gene is off. See
         // `advanced/capital_walls_before_the_surprise.rs`.
         self.claim_capital_walls_before_the_surprise(g, pid);
+        // `capital-archers-before-the-surprise`: behind the walls' claim, the
+        // capital's second shooter ahead of the next Settler. Exact no-op
+        // while the gene is off.
+        self.claim_capital_archers_before_the_surprise(g, pid);
         // `unique-unit-closes-the-dark-age`: the first unique unit before
         // the era closes, when it turns a Dark Age Normal. Exact no-op while
         // the gene is off. See `advanced/unique_unit_closes_the_age.rs`.
