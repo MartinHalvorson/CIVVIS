@@ -13111,8 +13111,7 @@ fn browser_has_a_city_screen_that_can_spend() {
     // A district with more than one candidate tile names the tiles.
     assert!(EMBEDDED_INDEX.contains("entry.sites.length > 1"));
     // Actions are posted back exactly as the engine handed them over.
-    assert!(EMBEDDED_INDEX
-        .contains("onclick='sendFromCity(${JSON.stringify(action)})'>${label}</button>"));
+    assert!(EMBEDDED_INDEX.contains("onclick: `sendFromCity(${JSON.stringify(action)})`,"));
     // An idle city is a turn blocker; it must open the screen that
     // answers it rather than merely scrolling a sidebar.
     assert!(EMBEDDED_INDEX.contains("openCityScreen(city.id);"));

@@ -31352,10 +31352,6 @@ async function sendFromCity(action) {
   if (action.type === "produce") closeCityScreen();
   else if (cityScreenOpen()) drawCityScreen();
 }
-function cityAct(action, label, cls = "", title = "") {
-  return `<button class="${cls}" title="${escapeAttr(title)}" ` +
-    `onclick='sendFromCity(${JSON.stringify(action)})'>${label}</button>`;
-}
 // What kind of thing an Item is, in the order Civ 6's production list shows
 // them. Districts before buildings because a building usually waits on one.
 function itemCategory(item) {
