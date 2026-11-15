@@ -1322,7 +1322,7 @@ else
 	-- VERDICT WITH IT. A popup takes an event lock when its event fires
 	-- (`ms_eventID = UI.ReferenceCurrentEvent()`, DLC/Expansion2/UI/Additions/
 	-- RockBandMoviePopup.lua:138) and gives it back in its own `Close()`
-	-- (`UI.ReleaseEventID( ms_eventID )`, :32). Until then the game core
+	-- (`UI.ReleaseEventID( ms_eventID )`, :34). Until then the game core
 	-- dispatches nothing more. This shim closes such a popup 0.05 s after it
 	-- comes up, but a popup queued while a leader screen is showing does not
 	-- come up, and a hidden context does not tick (see the heartbeat note), so
