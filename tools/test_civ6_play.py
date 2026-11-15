@@ -1940,6 +1940,83 @@ class Civ6PlayTest(unittest.TestCase):
              call(1058, 181), call(1073, 491)],
         )
 
+    def _press(self, looks, starts_on=None, **kw):
+        """Run `press_load_game` against a screen that answers `looks` in
+        turn; the agent starts during the wait after press `starts_on`."""
+        presses, waits, seen = [], [], iter(looks)
+
+        def started(seconds):
+            waits.append(seconds)
+            return starts_on is not None and len(presses) >= starts_on
+
+        outcome = civ6_play.press_load_game(
+            presses.append, lambda _n: next(seen), started, **kw)
+        return outcome, presses, waits
+
+    def test_a_load_that_starts_is_pressed_once(self) -> None:
+        # The board arrives inside the first settle wait: nothing is read.
+        self.assertEqual(self._press([], starts_on=1), ("started", [1], [4.0]))
+        # The panel is gone at the first look (the loading screen is up).
+        self.assertEqual(self._press(["gone"]), ("loading", [1], [4.0]))
+        # A compatibility confirmation was answered at the first look.
+        self.assertEqual(self._press(["confirmed"]), ("loading", [1], [4.0]))
+
+    def test_a_dropped_press_is_pressed_again(self) -> None:
+        # Live civvis-20261115T110627Z-cont1: pressed once at +52.3 s, the
+        # panel unchanged ten seconds later, then 6 min of "still coming up".
+        self.assertEqual(self._press(["panel", "gone"]), ("loading", [1, 2], [4.0, 4.0]))
+        self.assertEqual(self._press(["panel", "panel"], starts_on=3),
+                         ("started", [1, 2, 3], [4.0, 4.0, 4.0]))
+
+    def test_a_panel_that_survives_every_press_ends_the_attempt_in_seconds(self) -> None:
+        outcome, presses, waits = self._press(["panel"] * 5)
+        self.assertEqual(outcome, "stuck")
+        self.assertEqual(presses, [1, 2, 3])
+        # Twelve seconds of waiting in all, not the 600 s loading patience.
+        self.assertEqual(sum(waits), civ6_play.LOAD_PRESS_TRIES * civ6_play.LOAD_PRESS_SETTLE_S)
+        self.assertLess(sum(waits), 15.0)
+        self.assertEqual(self._press(["panel"] * 5, tries=1)[1], [1])
+        self.assertEqual(self._press(["panel"] * 5, tries=0)[1], [1])
+
+    def test_the_load_panel_is_read_from_three_marks(self) -> None:
+        bounds = (0, 33, 864, 542)
+        low, high = (432, 520), (432, 100)       # y at 90% and 12% of the window
+
+        def reading(load=(), delete=(), row=None):
+            def points(_path, label, _bounds, strip=None):
+                self.assertEqual(strip, civ6_play.LOAD_GAME_ACTION_STRIP)
+                return list(load if label == "Load Game" else delete)
+
+            with patch.object(civ6_play, "_observed_label_points", side_effect=points), \
+                 patch.object(civ6_play, "_observed_label_point", return_value=row):
+                return civ6_play._load_panel_reading(Path("shot.png"), bounds, "civvis-resume")
+
+        self.assertEqual(reading(load=[low]), "its Load Game button reads")
+        # The LOAD GAME heading at the top is not the button.
+        self.assertIsNone(reading(load=[high]))
+        # Under the pointer the button's label fades; Delete beside it does not.
+        self.assertIn("Delete button reads", reading(load=[high], delete=[low]))
+        self.assertIn("disabled or under the pointer", reading(delete=[low]))
+        self.assertIn("save's row reads", reading(row=(351, 205)))
+        # A loading screen shows none of them.
+        self.assertIsNone(reading())
+
+    def test_the_saved_game_bootstrap_verifies_its_press(self) -> None:
+        import inspect
+        source = inspect.getsource(civ6_play.bootstrap_saved_game)
+        after = source.split('print(f"loading saved game {save_label} from observed row', 1)[1]
+        self.assertIn("pressed = press_load_game(press, look, started)", after)
+        # The press goes through the helper only: no bare click of the button
+        # is left before the first wait.
+        self.assertNotIn("click_at(*action)\n\n        # A save made with", after)
+        stuck = after.split('if pressed == "stuck":', 1)[1].split("return False", 1)[0]
+        self.assertIn("did not start loading", stuck)
+        self.assertIn("_load_panel_reading(shot, bounds, save_label)", after)
+        self.assertIn('_observed_label_point(shot, "Yes", bounds)', after)
+        # The old waits follow only once the panel has gone.
+        self.assertLess(after.index('if pressed == "stuck":'),
+                        after.index("still_loading=_loading_probe"))
+
     def test_latest_autosave_is_by_mtime_and_bounded_by_the_attempt_start(self) -> None:
         # The numbering wraps, so the newest file can carry a lower number; and a
         # resume must never reload a save from some earlier game.
