@@ -12515,6 +12515,43 @@ CivvisTrade.quarantinedUntil = function(subject)
 	end
 	return cache.last[subject];
 end;
+-- ★★ A ROCK BAND DOES NOT PLAY BEHIND A DEAL SESSION. A concert raises
+-- `RockBandMoviePopup`, which takes an engine event lock for its cinematic
+-- (`ms_eventID = UI.ReferenceCurrentEvent()`, DLC/Expansion2/UI/Additions/
+-- RockBandMoviePopup.lua:138) and gives it back in `Close()` (:34). A deal
+-- session's leader screen keeps that popup queued and hidden, and the game
+-- core, which owes us the rival's verdict, stands behind the lock. Two ways
+-- out were tried live and both cost a game now and then:
+--  - wait: the ask times out at 30 s and the rival's late verdict hangs its
+--    turn (civvis-20261115T071444Z t159 and its reload at t175);
+--  - have the hidden popup closed at once (`autoclose_behind_deal`, #5309):
+--    10 of 11 releases on 2026-11-15 went through, and 2.1 s after the 11th
+--    (civvis-20261115T110627Z t165, a band that retired on that concert)
+--    the game aborted on a worker thread with a pure virtual call from its
+--    per-frame job set, a crash none of the eight earlier reports on that
+--    seat shows. The game was allowed on while a cinematic it had never
+--    drawn was torn down.
+-- A concert that finds no leader screen up has neither problem: its popup
+-- shows and is closed on its ordinary path (140 of that day's 151 concerts).
+-- So the two are kept apart at the source. A `TOURISM_BOMB` order is refused
+-- for this frame, with its own reason, while any deal session is open or its
+-- answer still holds the turn, and in any frame whose orders can open one
+-- (`peace`, `friendship`, `alliance`, `sell`, `buy`). The band has spent
+-- nothing; the next frame's or the next turn's order plays it. The release
+-- behind a session stays for the popups no order of ours raises.
+CivvisTrade.SESSION_ORDER_KINDS = { peace = true, friendship = true, alliance = true,
+	sell = true, buy = true };
+CivvisTrade.concertWaits = function(rows)
+	local trade = CivvisTrade;
+	if next(trade.sessions) ~= nil or trade.turnHold ~= nil then return true; end
+	if type(rows) ~= "table" then return false; end
+	for _, row in ipairs(rows) do
+		if type(row) == "table" and trade.SESSION_ORDER_KINDS[tostring(row.kind or "")] then
+			return true;
+		end
+	end
+	return false;
+end;
 CivvisTrade.ask = function(pid, subject, action, kind, turn)
 	local trade = CivvisTrade;
 	local lastQuarantined = CivvisTrade.quarantinedUntil(subject);
@@ -23743,6 +23780,12 @@ local function applyOrders(player, pid, turn, rows)
 			countRefusal(kind, "settler_scout_capture_hold");
 			ordered[index] = true;
 			return false, "settler_scout_capture_hold";
+		end
+		-- See `CivvisTrade.concertWaits`: no concert behind a leader screen.
+		if kind == "unit" and verb == "TOURISM_BOMB" and CivvisTrade.concertWaits(rows) then
+			countRefusal(kind, "concert_waits_for_the_deal_session");
+			ordered[index] = true;
+			return false, "concert_waits_for_the_deal_session";
 		end
 		if row._civvis_settler_scout_guard_hold == true then
 			countRefusal(kind, "settler_scout_guard_hold");
