@@ -27508,6 +27508,7 @@ function victoryValue(victory, metric) {
       ? `${compactStat(metric.distance)}/${compactStat(metric.distance_target)}ly`
       : `${metric.techs || 0}/${metric.tech_total || 0}`;
   }
+  // Culture reads as the game prints it: visiting tourists over the tourists needed.
   // Tourist counts run into four digits, and at the victory rail's width that value
   // is wide enough to squeeze the civilization name beside it down to an
   // ellipsis. Compact it the way the science distance already is; the hover
@@ -27523,7 +27524,7 @@ function victoryValue(victory, metric) {
 
 function victoryTrackerSubheading(victory) {
   if (victory === "science") return `<span>Techs</span><span>Race</span>`;
-  if (victory === "culture") return `<span>Civics</span><span>Tourism</span>`;
+  if (victory === "culture") return `<span>Civics</span><span>Tourists</span>`;
   if (victory === "religious") return `<span></span><span>Civs</span>`;
   if (victory === "diplomatic") return `<span></span><span>Score</span>`;
   if (victory === "domination") return `<span></span><span>Capitals</span>`;
@@ -27537,11 +27538,14 @@ function victoryTrackerStats(victory, metric) {
       ? `${compactStat(metric.distance)}/${compactStat(metric.distance_target)}ly`
       : `${metric.projects || 0}/${target}`;
   }
-  if (victory === "culture") return compactStat(metric.tourists || 0);
-  if (victory === "religious") return `${metric.converted || 0}/${metric.target || 0}`;
-  if (victory === "diplomatic") return `${metric.points || 0}/${metric.target || 20}`;
-  if (victory === "domination") return `${metric.capitals || 0}/${metric.target || 0}`;
   return victoryValue(victory, metric);
+}
+
+// What a path's rows are ranked on. Culture is led on the figure its rows
+// print (operator, 2026-11-15); its meter's percent is rounded and capped.
+function victoryLead(road, metric) {
+  return road !== "culture" ? +metric.progress || 0
+    : (+metric.tourists || 0) / Math.max(1, +metric.target || 0);
 }
 
 function victoryDescription(victory, metric) {
@@ -28020,9 +28024,9 @@ function playerHudOverview() {
     const ranked = [...contenders]
       .sort((a, b) => {
         const am = victoryMetric(a, track.id), bm = victoryMetric(b, track.id);
-        // Before launches or tourism move, researched-tree counts keep these
+        // Before launches or tourists move, researched-tree counts keep these
         // columns ordered by the same comparison their left meters draw.
-        return (+bm.progress || 0) - (+am.progress || 0)
+        return victoryLead(track.id, bm) - victoryLead(track.id, am)
           || (researchField ? (+bm[researchField] || 0) - (+am[researchField] || 0) : 0)
           || b.score - a.score || a.id - b.id;
       });
