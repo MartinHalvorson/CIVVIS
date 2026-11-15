@@ -67,9 +67,12 @@ impl AdvancedAi {
     /// gene off.
     pub(super) fn deterrence_door_neighbour(&self, g: &Game, rival: usize) -> bool {
         self.near_rival_deterrence_opens_early
-            && self.capital_watch_sightings.get(&rival).is_some_and(|seen| {
-                *seen <= g.turn && g.turn - *seen <= g.standard_duration(CAPITAL_WATCH_STANDARD)
-            })
+            && self
+                .capital_watch_sightings
+                .get(&rival)
+                .is_some_and(|seen| {
+                    *seen <= g.turn && g.turn - *seen <= g.standard_duration(CAPITAL_WATCH_STANDARD)
+                })
     }
 
     /// Whether a known city of `rival` stands within

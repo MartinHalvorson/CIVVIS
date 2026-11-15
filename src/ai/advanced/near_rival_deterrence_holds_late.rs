@@ -103,8 +103,7 @@ impl AdvancedAi {
         let end = g.standard_duration(DETERRENCE_END_STANDARD);
         // `near-rival-deterrence-opens-early`: the window opens at live turn
         // 10. See `advanced/near_rival_deterrence_opens_early.rs`.
-        if self.near_rival_deterrence && g.turn >= self.deterrence_window_start(g) && g.turn < end
-        {
+        if self.near_rival_deterrence && g.turn >= self.deterrence_window_start(g) && g.turn < end {
             return Some(DeterrencePhase::Opening);
         }
         (self.near_rival_deterrence_holds_late

@@ -1,0 +1,15 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "near-rival-deterrence-opens-early",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Cases: live Immortal Brazil civvis-20261115T222931Z t14 and t19 (Rome met t12, its city 7 tiles from Rio de Janeiro, 63/126 and 53/150 power; Rome declared at t24) and live Immortal Sweden civvis-20261115T215049Z t24 and t38 (Australia's soldiers 1-3 tiles from Stockholm, none of its cities known, 34/69 and 78/168 power; Australia declared at t45), each events.jsonl cut after turn T+1 and queried with --resumed on a release civvis_orders built from this branch (67713e494a). Both arms carry the run's own why.log header genome (`forced`, each as --with), victory lane and civilization; the on arm adds the gene. Off, no deterrent is trained on any of the four frames (the opening window opens at t30, and Australia has no known city). On, near-rival-deterrence-opens-early trains a Warrior (t14) or an Archer (t19) in Manaus and a Slinger (t24) or an Archer (t38) in Stockholm.",
+  "archive": {
+    "path": "docs/eval/2026-11-15-near-rival-deterrence-opens-early.native-queries.tar.xz",
+    "sha256": "d5b65271d52218a986d4338a925fb686d8c3317966b1a94256951b4bd1ca4f6d"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json"
+  ]
+}

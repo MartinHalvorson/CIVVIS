@@ -133,7 +133,10 @@ fn a_soldier_at_the_door_opens_the_deterrent_before_its_window() {
     let reason = ai
         .deterrence_opens_early_reason(&game, 0, 1)
         .expect("this gene armed it");
-    assert!(reason.contains("its soldier stood within 8 tiles"), "{reason}");
+    assert!(
+        reason.contains("its soldier stood within 8 tiles"),
+        "{reason}"
+    );
     assert!(reason.contains("before the opening window"), "{reason}");
 
     let mut on = game.clone();
@@ -169,7 +172,10 @@ fn a_near_city_opens_the_window_early() {
     let alone = opening();
     assert!(alone.deterrence_threat(&game, 0).is_none(), "before t30");
     let ai = armed();
-    assert_eq!(ai.deterrence_threat(&game, 0).map(|(rival, _)| rival), Some(1));
+    assert_eq!(
+        ai.deterrence_threat(&game, 0).map(|(rival, _)| rival),
+        Some(1)
+    );
     let reason = ai.deterrence_opens_early_reason(&game, 0, 1).unwrap();
     assert!(reason.starts_with("a city within 10 tiles"), "{reason}");
 
@@ -187,7 +193,10 @@ fn the_door_stays_inside_the_opening_window() {
     let (game, _capital) = early_board(12..=14);
     let mut ai = armed();
     ai.observe_turn_start_hostiles(&game, 0);
-    assert!(ai.deterrence_threat(&game, 0).is_some(), "fixture: the door reads");
+    assert!(
+        ai.deterrence_threat(&game, 0).is_some(),
+        "fixture: the door reads"
+    );
 
     let mut lone = AdvancedAi::new();
     lone.enable_near_rival_deterrence_opens_early();
@@ -201,7 +210,10 @@ fn the_door_stays_inside_the_opening_window() {
     too_soon.turn = too_soon.standard_duration(EARLY_DETERRENCE_START_STANDARD) - 1;
     let mut soon = armed();
     soon.observe_turn_start_hostiles(&too_soon, 0);
-    assert!(soon.deterrence_threat(&too_soon, 0).is_none(), "before turn 10");
+    assert!(
+        soon.deterrence_threat(&too_soon, 0).is_none(),
+        "before turn 10"
+    );
 
     let mut stale = game.clone();
     stale.turn += stale.standard_duration(CAPITAL_WATCH_STANDARD) + 1;
