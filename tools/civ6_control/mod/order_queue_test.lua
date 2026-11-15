@@ -323,8 +323,8 @@ check("late arrival lands the queued strike", field(lastEvent("orders_queue"), "
 -- tick after the operation-ended event); its length was the cost:
 -- civvis-20261115T085920Z turn 143, a Skirmisher's walk named
 -- `hostile_adjacent` at tick 1 and its follow-up then held the frame 8.5 s. Of
--- 21 named legs that moved afterwards in the twelve logs of that day, 20 did
--- so in the instant the name was written.
+-- 21 legs named something other than `no_path` that moved afterwards in the
+-- twelve logs of that day, 20 did so within 0.21 s of the name being written.
 reset()
 host.units[145] = { id = 145, kind = "UNIT_TANK", x = 5, y = 5, moves = 5 }
 applyOrders(player, PID, 7, { row(145, "MOVE_TO", 6, 5), row(145, "ATTACK", 7, 5) })

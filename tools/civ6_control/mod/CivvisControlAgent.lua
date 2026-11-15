@@ -20768,12 +20768,13 @@ end;
 -- was then held until the 30-tick grace anyway, because an operation-ended
 -- event can precede the move it ends (the turn-204 tank below). The hold is
 -- right; its length was not. Measured on the twelve logs of 2026-11-15:
--- 21 legs named a no-op moved from that plot afterwards, 20 of them in the
--- same instant the name was written (the other after the grace, on a later
--- order), and none of the 28 named `hostile_adjacent`, `zoc` or
--- `hostile_on_plot` moved at all. civvis-20261115T085920Z turn 143 frame 2:
--- a Skirmisher's walk was named `hostile_adjacent` at tick 1 and its follow-up
--- then held the frame for 8.5 s. `no_path` already releases at once.
+-- 21 legs named something other than `no_path` moved from that plot
+-- afterwards, 20 of them within 0.21 s of the name being written (about one
+-- tick) and the other 18.7 s later, named at the grace itself; none of the 28
+-- named `hostile_adjacent`, `zoc` or `hostile_on_plot` moved at all.
+-- civvis-20261115T085920Z turn 143 frame 2: a Skirmisher's walk was named
+-- `hostile_adjacent` at tick 1 and its follow-up then held the frame for
+-- 8.5 s. `no_path` already releases at once.
 --
 -- So a named leg holds its follow-ups for three more ticks, and is released
 -- when the unit is still on its origin with the movement it had when the
