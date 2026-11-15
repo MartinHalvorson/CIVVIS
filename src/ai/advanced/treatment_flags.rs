@@ -141,6 +141,9 @@ impl AdvancedAi {
         /// Trader and Settler Gold buys test each city's own quote against
         /// the reserve. See `BasicAi::buy_gold_unit`.
         base.gold_unit_buys_read_the_host_quote => enable_gold_unit_buys_read_the_host_quote, disable_gold_unit_buys_read_the_host_quote;
+        /// Opt-in gene `band-plays-the-stage-at-hand`; see
+        /// `advanced/band_plays_the_stage_at_hand.rs`.
+        base.band_plays_the_stage_at_hand => enable_band_plays_the_stage_at_hand, disable_band_plays_the_stage_at_hand;
         // ---- append: c-d --------------------------------------------
         /// `domination-seat-appoints-pingala-first`: Pingala and Researcher
         /// take a Domination seat's first Governor titles. See

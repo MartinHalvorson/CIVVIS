@@ -11913,6 +11913,10 @@ mod band_hunt;
 /// `advanced/band_plays_at_level_three.rs`.
 mod band_plays_at_level_three;
 mod band_plays_its_stage;
+/// `band-plays-the-stage-at-hand`: a Rock Band plays a stage it can reach this
+/// turn instead of a long trip to a stage at most one level better. See
+/// `advanced/band_plays_the_stage_at_hand.rs`.
+mod band_plays_the_stage_at_hand;
 /// `band-plays-what-it-can-reach`: a Rock Band plays, or steps toward a
 /// stage it can really reach; a refused trip turns it to another host. See
 /// `advanced/band_plays_what_it_can_reach.rs`.
