@@ -13795,8 +13795,21 @@ end
 --
 -- ⚠ An absent or failing API answers nil and the strike proceeds — the
 -- historical behaviour — never a blanket refusal.
--- ⚠ `#results` and `rawget`, not `ipairs`: the answer is a host table and
--- the test harness stands in stubs whose `__index` invents members.
+-- ⚠ `#results` and a plain index, not `ipairs`: the answer is a host table
+-- and the test harness stands in stubs whose `__index` invents members. The
+-- length bounds the read, so an invented member is never reached.
+--
+-- ⚠⚠ AND NOT `rawget`: THE LIVE HOST DOES NOT HAVE IT. This read used
+-- `rawget(results, i)` from the day the guard shipped, so the guard raised on
+-- every answer that named a player, which is every time it had something to
+-- refuse. The order's `pcall` caught it, so the war was still not started,
+-- but the refusal was the anonymous `throw`: no `war_refused` event, no
+-- `would_declare_war` verdict, and the decider sent the same order again the
+-- next turn. Live game civvis-20261115T075055Z, turn 54, Scout 196608
+-- `MOVE_TO (60,23)`: "CivvisControlAgent.lua:8199: function expected instead
+-- of nil", and installed line 8199 is the read below. The game before it,
+-- civvis-20261115T071444Z, counted `throw` 36 times, each on a frame with a
+-- move onto ground the seat had not yet revealed.
 CivvisLedger.warStarters = function(actor, x, y, weapon)
 	if actor == nil or x == nil or y == nil then return nil; end
 	local results = try(function()
@@ -13810,7 +13823,7 @@ CivvisLedger.warStarters = function(actor, x, y, weapon)
 	if type(results) ~= "table" then return nil; end
 	local players = {};
 	for i = 1, #results do
-		local id = tonumber(rawget(results, i));
+		local id = tonumber(results[i]);
 		if id ~= nil then players[#players + 1] = id; end
 	end
 	if #players == 0 then return nil; end
@@ -18250,9 +18263,19 @@ local function applyOrder(player, pid, row, turn)
 				-- Geometric range is not a route. Carry both endpoints back so the
 				-- mirror can stop offering this exact unreachable pairing instead of
 				-- re-sending it forever (83 consecutive turns in the Poland trace).
+				--
+				-- `moves` says whether the Trader could have started ANY route. One
+				-- bought this turn, or one that changed its origin city this turn,
+				-- has none, and the host refuses it whatever the destination: over both
+				-- sittings of civvis-20261115T071444Z, 17 refusals answered a frame showing the
+				-- Trader at `moves: 0`, 13 of them for a pair `route_options` listed.
+				-- The mirror retires a pair refused twice, so it does not count these.
+				-- `kUnit:GetMovesRemaining()` as Base/Assets/UI/WorldInput.lua:971
+				-- reads it; -1 when the read fails, which the mirror counts.
 				emit("trade_route_refused", {
 					turn = turn, unit = subject,
 					from_x = fromX, from_y = fromY, x = x, y = y,
+					moves = try(function() return unit:GetMovesRemaining(); end, -1),
 				});
 			end
 			return routed, verb;
@@ -24985,7 +25008,15 @@ end;
 -- 6 and 29 s; the rest are queued behind another session and do not open
 -- until the end turn goes through, so holding for them only spent the whole
 -- window: 233 holds, 96 minutes, 12% of those games' wall clock.
-CivvisTrade.OPENING_HOLD_SECONDS = 8;
+-- ★ THREE SECONDS, WAS EIGHT. Live, 218 run segments of 2026-11-12..13
+-- (5,749 asks put in the turn their session was opened): 5,408 (94.1%) were
+-- put within 3 s of the opening, 301 (5.2%) only once the end turn had gone
+-- through, and 40 (0.7%) in between, ten of those at the 8 s bound itself.
+-- The hold ran out 448 times (`opening_unasked`), 2,562 s in all; bounded at
+-- 3 s those same holds are 556 s. A session that opens after the release is
+-- what it already was at 8 s: a peace or alliance ask is closed and asked
+-- again next turn (see "CLOSED, NOT ASKED"), a trade ask is put late.
+CivvisTrade.OPENING_HOLD_SECONDS = 3;
 CivvisTrade.holdsEndTurn = function(turn)
 	-- Opening, asked and counter-wait sessions still own a live UI reply.
 	-- Native 20261108T084123Z t147 forced EndTurn between a queued opening

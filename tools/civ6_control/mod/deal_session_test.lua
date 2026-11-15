@@ -1096,8 +1096,9 @@ do
 	trade.close(7, 3, "test_expired")
 	-- An opening queued behind another session waits for the end turn itself.
 	TURN = 606
+	check("the opening hold is three seconds", trade.OPENING_HOLD_SECONDS, 3)
 	trade.ask(7, 3, "EQUALIZE", "trade", TURN)
-	activeClock = activeClock + 7.9
+	activeClock = activeClock + trade.OPENING_HOLD_SECONDS - 0.1
 	check("an opening is held just inside its own bound", trade.holdsEndTurn(TURN), true)
 	activeClock = activeClock + 0.2
 	check("an opening nobody asked through stops holding", trade.holdsEndTurn(TURN), false)
@@ -1105,7 +1106,7 @@ do
 	trade.close(7, 3, "test_opening")
 	TURN = 607
 	trade.ask(7, 3, "EQUALIZE", "trade", TURN)
-	activeClock = activeClock + 7.5
+	activeClock = activeClock + trade.OPENING_HOLD_SECONDS - 0.5
 	onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 1402 })
 	activeClock = activeClock + 29.5
 	check("a question asked at the bound still gets its full reply window",

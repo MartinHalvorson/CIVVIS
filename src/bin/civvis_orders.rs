@@ -52,6 +52,8 @@ mod builder_diagnostics;
 #[path = "civvis_orders/builder_operation_refusals.rs"]
 mod builder_operation_refusals;
 
+#[path = "civvis_orders/spent_traders.rs"]
+mod spent_traders;
 #[path = "civvis_orders/trader_origin_coverage.rs"]
 mod trader_origin_coverage;
 
@@ -6019,6 +6021,13 @@ fn decide(
     if relocated_traders > 0 {
         note_bits.push(format!(
             "culture_trade_origin_transfers={relocated_traders}"
+        ));
+    }
+    // After the origin choice, so a transfer the Trader can still take stands.
+    let held_trader_routes = spent_traders::hold_routes(&mut orders, state);
+    if held_trader_routes > 0 {
+        note_bits.push(format!(
+            "trader_routes_wait_for_movement={held_trader_routes}"
         ));
     }
 
