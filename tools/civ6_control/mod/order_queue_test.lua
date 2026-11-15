@@ -759,6 +759,52 @@ end
 check("a flood of refusals writes a bounded number of rows", refusedRows, 80)
 for id = 400, 500 do host.refuse[id] = nil end
 
+-- 3c. A move the board has already overtaken. A replan board can show a unit
+-- on the plot it was leaving; the decider sends the move again, and by the
+-- time it is applied the unit is on the plot or has spent its movement.
+-- civvis-20261115T120431Z: 26 and 10 of the game's 63 refused unit orders.
+reset()
+LOG = {}
+local frames = rawget(_G, "CivvisFrames")
+queue.refusedTurn = nil
+host.units[33] = { id = 33, kind = "UNIT_WARRIOR", x = 2, y = 1, moves = 0 }
+applyOrders(player, PID, 7, { row(33, "MOVE_TO", 2, 1), row(33, "ATTACK", 3, 1) })
+check("a move for a unit already on the plot asks nothing of the host", ops(33), "")
+check("…and is not a refusal", lastEvent("order_refused"), nil)
+check("…nor counted as one", (lastEvent("orders") or ""):find("move_no_path", 1, true), nil)
+check("what was queued behind it is kept", queue.pendingCount(), 1)
+host.units[33].moves = 1
+queue.drain(player, PID, 7)
+check("…and runs", ops(33), "UNITOPERATION_MOVE_TO")
+-- A unit with no movement left, in a replan frame: refused by its own name,
+-- and the host is not asked for a path.
+reset()
+LOG = {}
+local pathReads = 0
+Map.GetPlotIndex = function(x, y) return y * 100 + x end
+UnitManager.GetMoveToPathEx = function(unit, destination)
+	pathReads = pathReads + 1
+	return { plots = { 101, destination }, turns = { 1, 2 } }
+end
+host.units[34] = { id = 34, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 0 }
+frames.current = 1
+queue.refusedTurn = nil -- the row bound is the turn's, and 3b spent it
+applyOrders(player, PID, 7, { row(34, "MOVE_TO", 2, 1) })
+check("a spent unit's move in a replan frame is refused by its own name",
+	field(lastEvent("order_refused"), "why"), "move_unit_spent")
+check("…with no path read", pathReads, 0)
+check("…and nothing asked of the host", ops(34), "")
+-- In the first frame the movement read is not trusted for this: the host's
+-- own path answers, as before.
+frames.current = 0
+LOG = {}
+applyOrders(player, PID, 7, { row(34, "MOVE_TO", 2, 1) })
+check("in the first frame the host's path still answers",
+	field(lastEvent("order_refused"), "why"), "move_no_moves_this_turn")
+check("…having been asked", pathReads > 0, true)
+UnitManager.GetMoveToPathEx = nil
+Map.GetPlotIndex = nil
+
 -- 4. A queued unit that dies is a named refusal, never a dereference.
 reset()
 host.units[12] = { id = 12, kind = "UNIT_WARRIOR", x = 5, y = 5, moves = 2 }
