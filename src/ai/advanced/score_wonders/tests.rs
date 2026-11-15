@@ -596,7 +596,10 @@ fn version_3_races_in_the_rear_city_through_a_threat_hold() {
     assert!(picked.tiles >= SCORE_WONDER_V3_REAR_TILES);
     v3.claim_queue_for_the_score_wonder(&mut g, 0, &plan, true);
     assert!(races(&g, rear), "the rear city races");
-    assert!(!races(&g, capital), "the capital beside the threat does not");
+    assert!(
+        !races(&g, capital),
+        "the capital beside the threat does not"
+    );
     assert!(!races(&g, front), "nor the frontier city");
     assert_eq!(counter(&g, "score_wonder_rear_starts"), 1);
     assert_eq!(counter(&g, "score_wonder_rear_turns"), 1);
@@ -608,7 +611,11 @@ fn version_3_races_in_the_rear_city_through_a_threat_hold() {
     for (mut ai, capital_races) in [(seat_v2(), false), (seat(true), true)] {
         let (mut g, capital, rear, front) = front_and_rear(150.0);
         ai.claim_queue_for_the_score_wonder(&mut g, 0, &plan, true);
-        assert_eq!(races(&g, capital), capital_races, "version 1 races: {capital_races}");
+        assert_eq!(
+            races(&g, capital),
+            capital_races,
+            "version 1 races: {capital_races}"
+        );
         assert!(!races(&g, rear) && !races(&g, front));
         assert_eq!(counter(&g, "score_wonder_rear_turns"), 0);
     }
@@ -662,10 +669,6 @@ fn version_3_races_in_the_capital_when_it_is_the_rear() {
 #[test]
 fn war_at_the_gates_closes_the_rear_lane() {
     let plan = plan_wanting(90, 3);
-    let threatened = StrategicPlan {
-        threatened_city: None,
-        ..plan.clone()
-    };
     let recovery = StrategicPlan {
         strategy: GrandStrategy::Recovery,
         ..plan.clone()
@@ -675,7 +678,7 @@ fn war_at_the_gates_closes_the_rear_lane() {
         let plan = match case {
             "threatened" => StrategicPlan {
                 threatened_city: Some(front),
-                ..threatened.clone()
+                ..plan.clone()
             },
             "recovery" => recovery.clone(),
             _ => {
@@ -687,10 +690,12 @@ fn war_at_the_gates_closes_the_rear_lane() {
         assert!(v3.score_wonder_v3_rear(&g, 0, &plan).is_err(), "{case}");
         v3.claim_queue_for_the_score_wonder(&mut g, 0, &plan, true);
         assert!(!races(&g, rear), "{case}: the rear city waits");
-        assert!(v3
-            .score_wonder_rear_note
-            .as_deref()
-            .is_some_and(|note| note.starts_with("the rear lane is shut")), "{case}");
+        assert!(
+            v3.score_wonder_rear_note
+                .as_deref()
+                .is_some_and(|note| note.starts_with("the rear lane is shut")),
+            "{case}"
+        );
     }
     // An attack five turns ago no longer closes it.
     let (mut g, capital, rear, _) = front_and_rear(150.0);

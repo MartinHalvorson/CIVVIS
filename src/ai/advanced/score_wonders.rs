@@ -255,7 +255,10 @@ impl AdvancedAi {
             return Err("a Recovery plan".to_string());
         }
         let city_ids = g.player_city_ids(pid);
-        if let Some(cid) = plan.threatened_city.filter(|cid| g.cities.contains_key(cid)) {
+        if let Some(cid) = plan
+            .threatened_city
+            .filter(|cid| g.cities.contains_key(cid))
+        {
             return Err(format!(
                 "war at the gates: {} is threatened",
                 g.cities[&cid].name
@@ -343,14 +346,18 @@ impl AdvancedAi {
             }
         }
         match (best, farthest) {
-            (Some((_, _, city, threat, tiles)), _) => Ok(ScoreWonderRear { city, threat, tiles }),
-            (None, Some((tiles, cid, threat))) if tiles >= SCORE_WONDER_V3_REAR_TILES => Err(
-                format!(
+            (Some((_, _, city, threat, tiles)), _) => Ok(ScoreWonderRear {
+                city,
+                threat,
+                tiles,
+            }),
+            (None, Some((tiles, cid, threat))) if tiles >= SCORE_WONDER_V3_REAR_TILES => {
+                Err(format!(
                     "no rear city may race: {} stands {tiles} tiles from {} but is unsafe or \
                      trains a Settler",
                     g.cities[&cid].name, g.players[threat].civ
-                ),
-            ),
+                ))
+            }
             (None, Some((tiles, cid, threat))) => Err(format!(
                 "no city stands {SCORE_WONDER_V3_REAR_TILES} tiles from the threat: the \
                  farthest, {}, is {tiles} from {}",
