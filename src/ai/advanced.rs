@@ -2073,6 +2073,9 @@ pub struct AdvancedAi {
     /// every later decision view for the rest of the game. Written only by
     /// the fog-honest executor; see `player::block_refused_city_sites`.
     pub(crate) refused_city_sites: BTreeSet<Pos>,
+    /// Whether this seat's planning views keep city yields between passes,
+    /// and how many they have answered that way; see `player::ViewYields`.
+    pub(crate) view_yields: crate::ai::player::ViewYieldKeeping,
     base: BasicAi,
     plan: Option<StrategicPlan>,
     /// Preserve victory objectives across temporary expansion and war postures.
