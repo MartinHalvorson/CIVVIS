@@ -17627,6 +17627,35 @@ local function applyOrder(player, pid, row, turn)
 			-- A melee ATTACK is a MOVE_TO onto the defender and is never capped.
 			-- The row's own x/y are rewritten so the queue expects the capped
 			-- plot; the original destination rides in `move_capped`.
+			-- ★ A MOVE THE BOARD HAS ALREADY OVERTAKEN IS NOT A REFUSAL. A
+			-- replan board can show a unit still on the plot it was leaving
+			-- (its walk was accepted and had not landed when the board was
+			-- read), and the decider then sends the same move again. By the
+			-- time that order is applied the unit stands on the plot, or has
+			-- spent its movement getting part of the way. Both came back
+			-- from `capToTurn` as refusals, `move_no_path` and
+			-- `move_no_moves_this_turn`: 26 and 10 of the 63 unit orders
+			-- refused in civvis-20261115T120431Z, every `move_no_path` in a
+			-- replan frame by turn 44 (7 of 7) and every
+			-- `move_no_moves_this_turn` (5 of 5, movement 0), which is why
+			-- neither count said anything about the host.
+			--   * Already on the plot: the move is done. It is accepted
+			--     without asking the host, so what was queued behind it
+			--     (a strike, a fortify) runs instead of being dropped.
+			--   * No movement left, in a replan frame: refused by its own
+			--     name, `move_unit_spent`, with no path read. Only in a
+			--     replan frame: the first frame's movement is read before
+			--     the host has finished restoring it on some turns.
+			if verb == "MOVE_TO" then
+				local hereX = tonumber(try(function() return unit:GetX(); end, nil));
+				local hereY = tonumber(try(function() return unit:GetY(); end, nil));
+				if hereX == x and hereY == y then return true, verb; end
+				local left = tonumber(try(function() return unit:GetMovesRemaining(); end, nil));
+				if left ~= nil and left <= 0 and CivvisFrames ~= nil
+						and (tonumber(CivvisFrames.current) or 0) >= 1 then
+					return false, "move_unit_spent";
+				end
+			end
 			if verb == "MOVE_TO" and cfg.CapMovesToReach ~= false then
 				local capped, why = CivvisBoard.capToTurn(unit, x, y);
 				if capped == false then
