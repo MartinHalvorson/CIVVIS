@@ -267,6 +267,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-seat-builds-past-the-deterrent` | off (unmeasured) | `culture-seat-builds-past-the-deterrent`: see `advanced/culture_past_the_deterrent.rs`. | 1 \| 1 |
 | `culture-seat-drama-before-government` | off (unmeasured) | `culture-seat-drama-before-government`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
 | `culture-seat-drama-first` | off (unmeasured) | `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
+| `culture-seat-fills-its-district-slots` | off (unmeasured) | Opt-in gene `culture-seat-fills-its-district-slots`; see `advanced/culture_fills_its_slots.rs`. | 1 \| 1 |
 | `culture-seat-monuments` | off (unmeasured) | Opt-in gene `culture-seat-monuments`; see `Self::culture_seat_monuments`. | — \| 2 |
 | `culture-seat-monuments-2` | off (unmeasured) | `culture-seat-monuments-2`: see `advanced/culture_monuments.rs`. | — \| 2 |
 | `culture-seat-theater-first` | off (unmeasured) | Opt-in gene `culture-seat-theater-first`; see `Self::culture_seat_theater_first`. | — \| 2 |

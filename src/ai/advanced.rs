@@ -6998,6 +6998,10 @@ pub struct AdvancedAi {
     /// `declaration-needs-a-capture`: the turn's verdicts by target, so a
     /// turn reads and journals once. Untouched while the gene is off.
     declaration_capture_memo: RefCell<declaration_needs_a_capture::CaptureMemo>,
+    /// `culture-seat-fills-its-district-slots`: a Culture seat's Theater city
+    /// with a free district slot claims a Campus, a Commercial Hub or a
+    /// Harbor. See `advanced/culture_fills_its_slots.rs`. Opt-in.
+    culture_seat_fills_its_district_slots: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11377,6 +11381,9 @@ mod culture_commerce_floor;
 /// `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`.
 mod culture_drama_first;
 mod culture_faith_sources;
+/// `culture-seat-fills-its-district-slots`: a Culture seat's free district
+/// slots. See `advanced/culture_fills_its_slots.rs`.
+mod culture_fills_its_slots;
 /// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
 mod culture_theater_first;
 /// `culture-road-takes-the-unique-first`: see `advanced/culture_unique_first.rs`.
