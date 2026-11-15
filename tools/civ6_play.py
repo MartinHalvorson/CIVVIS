@@ -6593,6 +6593,8 @@ def _play(args: argparse.Namespace) -> int:
         print(f"[{kind}] {how} {result} for {screen}",
               file=sys.stderr if not ok and not safe_skip else sys.stdout)
 
+    hung_rivals = watch.HungRivalSessions()
+
     def record(event: dict) -> None:
         # ★ RECEIPT TIME — the run's only wall-clock. `Automation.log` carries no
         # clock, so events.jsonl could say an opening board waited 20 polls but
@@ -6605,6 +6607,9 @@ def _play(args: argparse.Namespace) -> int:
         events.write(json.dumps(event, sort_keys=True) + "\n")
         events.flush()
         kind = event.get("kind")
+        # Deal sessions closed with the rival's reply still owed: the rival
+        # turn that hangs behind one is not waited out (`ai_stall_window`).
+        hung_rivals.note(event)
         # The mod's own word that the game stopped (or carries on), relayed to
         # the page beside it; see `civ6_control.live_pause`.
         if kind in ("operator_paused", "operator_pause_held"):
@@ -7287,7 +7292,8 @@ def _play(args: argparse.Namespace) -> int:
         frozen_s=args.frozen_seconds,
         pause_when=held_or_locked,
         finish_turn=args.max_turns, ceiling_s=ceiling_s,
-        ai_stall_s=args.ai_stall_seconds or None)
+        ai_stall_s=args.ai_stall_seconds or None,
+        ai_stall_window=hung_rivals.window)
     # ★★★ PHOTOGRAPH A STALL BEFORE KILLING IT. Stalls are now the dominant way runs
     # end — t87, t95, t106, t184 — and the event stream goes silent by definition, so
     # it cannot say what is on screen. One screen (`DiplomacyDealView`) was already
@@ -7340,6 +7346,13 @@ def _play(args: argparse.Namespace) -> int:
             print("a rival's turn is hung in the game core: there is no "
                   "screen to dismiss, so the attempt ends here and the climb "
                   "reloads an autosave", flush=True)
+            # The climb reads an exit this soon after the last turn as a
+            # finished game unless the run says otherwise in writing.
+            try:
+                watch.write_stall_handoff(run_dir, args.tag, state.get("turn"), reason)
+            except OSError as error:
+                print(f"could not write the reload handoff ({error}); the climb "
+                      "has only its stale-turn clock", file=sys.stderr, flush=True)
             break
         # A queued desktop rescue may be driving the same screen right now.
         desktop_rescues.drain(30.0)
@@ -7351,7 +7364,8 @@ def _play(args: argparse.Namespace) -> int:
                               frozen_s=args.frozen_seconds,
                               pause_when=held_or_locked,
                               finish_turn=args.max_turns, ceiling_s=ceiling_s,
-                              ai_stall_s=args.ai_stall_seconds or None)
+                              ai_stall_s=args.ai_stall_seconds or None,
+                              ai_stall_window=hung_rivals.window)
         if not reason.startswith("stalled"):
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
             consecutive = 0
@@ -8043,16 +8057,21 @@ def main(argv: list[str] | None = None) -> int:
     # while late in a large game (rival AI turns, a long animation), and this one
     # kills a run that is still emitting, so it must be the more patient of the two.
     # A rival's turn the mod itself reported hung (`ai_phase_stall`, 30 s into
-    # a "PLEASE WAIT" with the core idle) is given this many more silent
-    # seconds, not the 420 of `--stall-seconds` plus a dialogue rescue: there
-    # is no screen to dismiss. 240 and not less: the climb reads a player that
-    # exits with its turn stale for `EXIT_WHILE_STALE_S` (240 s) as frozen and
-    # reloads the autosave; an earlier exit would be filed as a finished game.
-    # 0 turns the fast path off.
-    ap.add_argument("--ai-stall-seconds", type=float, default=240.0,
+    # a "PLEASE WAIT" with the turn number unchanged) gets this many more
+    # seconds to reach the next turn, not the 420 of `--stall-seconds` plus a
+    # dialogue rescue: there is no screen to dismiss. It was 240, the climb's
+    # `EXIT_WHILE_STALE_S`, because an earlier exit was filed as a finished
+    # game; the exit now leaves `watch.write_stall_handoff`'s marker, which
+    # the climb reads as frozen whatever the clock says. 60: of the 40 reports
+    # in 483 live runs (2026-11-10 to 11-13) the four that were not hangs
+    # reached their next turn 0.7 to 29.9 s after the report and the 36 hangs
+    # never did; the longest of 63,600 healthy rival phases was 59.9 s end to
+    # end. A report that names the rival of a dead deal session waits
+    # `watch.AI_STALL_DEAD_SESSION_S` instead. 0 turns the fast path off.
+    ap.add_argument("--ai-stall-seconds", type=float, default=60.0,
                     help="after the game reports a hung rival turn, give up on "
-                         "the attempt once it has stayed silent this long "
-                         "(0 = wait for --stall-seconds as before)")
+                         "the attempt once the turn has stood still this much "
+                         "longer (0 = wait for --stall-seconds as before)")
     ap.add_argument("--frozen-seconds", type=float, default=480.0,
                     help="give up on a run whose TURN has not advanced for this "
                          "long, even though it is still emitting events")

@@ -1824,10 +1824,10 @@ pub struct QueryCache {
     // read-only pass to the next while a driver has asked for it. See
     // [`Game::keep_rival_yields`], which is the whole contract; like
     // `producible` this intentionally outlives `QueryMemo`.
-    rival_yields: std::cell::RefCell<BTreeMap<u32, Yields>>,
+    rival_yields: std::cell::RefCell<KeptDerivations>,
     // The acting seat's own cities, when `Game::keep_own_yields` asks. A
     // separate map because more drops it: see `ActionReach`.
-    own_yields: std::cell::RefCell<BTreeMap<u32, Yields>>,
+    own_yields: std::cell::RefCell<KeptDerivations>,
     // What the acting seat's governor settings were when `own_yields` was
     // derived: see `Game::own_settings_stamp`.
     own_yields_stamp: std::cell::Cell<u64>,
@@ -1835,6 +1835,10 @@ pub struct QueryCache {
     // changed hands, was improved or was pillaged moves it, whoever wrote it.
     rival_yields_epoch: std::cell::Cell<u64>,
     keeps_rival_yields: std::cell::Cell<bool>,
+    // How many citizen plans and luxury splits were answered from what was
+    // kept. See `Game::kept_plans_reused`.
+    kept_plans_reused: std::cell::Cell<u64>,
+    kept_luxuries_reused: std::cell::Cell<u64>,
     // The acting seat's own cities as well; see `Game::keep_own_yields`.
     keeps_own_yields: std::cell::Cell<bool>,
     // `Game::apply` calls in flight. The rules read yields while they are
@@ -1925,6 +1929,45 @@ impl Drop for PolicyReadTrace<'_> {
     fn drop(&mut self) {
         self.game.query_memo.policy_reads_on.set(false);
         *self.game.query_memo.policy_reads.borrow_mut() = PolicyReadSet::default();
+    }
+}
+
+/// What one side of [`Game::keep_rival_yields`] holds: the yields, and two
+/// things every yield is derived from that other callers ask for by
+/// themselves.
+///
+/// ★★★ THE YIELD WAS KEPT AND WHAT IT WAS MADE OF WAS THROWN AWAY. A city's
+/// yields are its citizen plan summed, and the plan reads the city's
+/// amenities, which read how the *empire's* luxuries are split between all
+/// its cities. Keeping only the yield left every other reader of those two
+/// paying in full: the Builder census, the worked-tile test and the state
+/// document each ask for the plan and never the yield, and a city whose yield
+/// had to be derived again re-split its whole empire's luxuries to learn one
+/// city's share, once per city, wherever the caller held no query scope
+/// across the cities. On the site's world the plan was 20% of the stepping
+/// thread and the luxury split 4.8% (`docs/SIMULATOR_PERFORMANCE.md`,
+/// 2026-11-11).
+///
+/// Nothing new decides when these are dropped. They live in the same two
+/// maps as the yields, are filled and read under the same conditions
+/// (`Game::kept_derivations_for`), and every `clear` that drops a yield drops
+/// them with it. That is the whole of the argument that they are exact: a
+/// plan and a split are functions of board state the yield already reads, so
+/// whatever must drop the yield is all that can change them.
+#[derive(Default)]
+pub(crate) struct KeptDerivations {
+    pub(crate) yields: BTreeMap<u32, Yields>,
+    /// By city: the unweighted citizen plan.
+    pub(crate) plans: BTreeMap<u32, CitizenPlan>,
+    /// By player: the luxury amenities allotted to each of its cities.
+    pub(crate) luxuries: BTreeMap<usize, BTreeMap<u32, i64>>,
+}
+
+impl KeptDerivations {
+    pub(crate) fn clear(&mut self) {
+        self.yields.clear();
+        self.plans.clear();
+        self.luxuries.clear();
     }
 }
 
