@@ -40,5 +40,14 @@ row={kind='museum_swap',subject=30,verb='B_2',x=40,y=0}
 ok,why=CivvisApplyOrder(player,0,row,20);assert(not ok and why=='museum_no_native_gain' and requests==2,tostring(why))
 -- Unknown native readback and religious-art channels do not invent a multiplier.
 data[cs[1]]=nil
-ok,why=CivvisApplyOrder(player,0,row,20);assert(not ok and why=='museum_unknown_inventory' and requests==2)
+ok,why=CivvisApplyOrder(player,0,row,20);assert(not ok and why=='museum_unknown_inventory:source_creator' and requests==2,tostring(why))
+-- The refusal names the museum and the read that stopped it: it was one word
+-- for nine gates, and every swap of two live Culture games was refused by it.
+data[cs[1]]={CreatorName='A'}
+local e,es=museum(50,{},1);cities={c,e};row={kind='museum_swap',subject=30,verb='B_2',x=50,y=0}
+ok,why=CivvisApplyOrder(player,0,row,20);assert(not ok and why=='museum_unknown_inventory:dest_empty' and requests==2,tostring(why))
+local f,fs=museum(60,{'F'},1);art[fs[1]].GreatWorkObjectType='GREATWORKOBJECT_RELIGIOUS';cities={c,f};row.x=60
+ok,why=CivvisApplyOrder(player,0,row,20);assert(not ok and why=='museum_unknown_inventory:dest_not_art' and requests==2,tostring(why))
+art[fs[1]].GreatWorkObjectType='GREATWORKOBJECT_LANDSCAPE';art[cs[2]].Tourism=3
+ok,why=CivvisApplyOrder(player,0,row,20);assert(not ok and why=='museum_unknown_inventory:source_work_tourism' and requests==2,tostring(why))
 print('museum_swap_test: passed')
