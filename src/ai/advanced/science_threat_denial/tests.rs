@@ -1530,3 +1530,60 @@ fn religion_denial_edge_keeps_existing_war_maintenance() {
     assert!(!ai.science_denial_war_diplomacy(&mut g, 0));
     assert!(ai.peace_offers.contains(&1), "paid raid still offers peace");
 }
+
+/// The cheap test the raid step asks first is a superset of the party: every
+/// soldier the party takes passes it, a land soldier passes exactly when it
+/// stands within reach of the at-war rival's explored pad, and a pad of a
+/// seat we are at peace with puts no one in reach.
+#[test]
+fn only_a_soldier_in_reach_of_an_enemy_pad_is_asked_for_the_raid() {
+    let (mut g, pad) = raid_board();
+    let ai = warrior();
+    let land: Vec<Pos> = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| {
+            g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))
+                && g.city_at(*pos).is_none()
+                && g.unit_ids_at(*pos).is_empty()
+        })
+        .collect();
+    let near = land
+        .iter()
+        .copied()
+        .filter(|pos| g.wdist(*pos, pad) <= DENIAL_RAID_REACH)
+        .take(3)
+        .collect::<Vec<_>>();
+    let far = land
+        .iter()
+        .copied()
+        .filter(|pos| g.wdist(*pos, pad) > DENIAL_RAID_REACH)
+        .take(3)
+        .collect::<Vec<_>>();
+    let mut soldiers: Vec<(u32, bool)> = Vec::new();
+    for pos in near {
+        soldiers.push((g.spawn_test_unit("warrior", 0, pos), true));
+    }
+    for pos in far {
+        soldiers.push((g.spawn_test_unit("warrior", 0, pos), false));
+    }
+    assert!(soldiers.iter().any(|(_, near)| *near) && soldiers.iter().any(|(_, near)| !*near));
+    for (uid, near) in &soldiers {
+        assert_eq!(
+            AdvancedAi::could_join_a_denial_raid(&g, 0, *uid),
+            *near,
+            "unit {uid}"
+        );
+    }
+    for uid in ai.science_denial_raid_party(&g, 0, pad) {
+        assert!(AdvancedAi::could_join_a_denial_raid(&g, 0, uid));
+    }
+
+    // At peace with the pad's owner, nobody is in reach of it.
+    g.at_war.clear();
+    for (uid, _) in &soldiers {
+        assert!(!AdvancedAi::could_join_a_denial_raid(&g, 0, *uid));
+    }
+}

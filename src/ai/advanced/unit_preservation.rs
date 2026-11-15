@@ -22,19 +22,50 @@ fn damage_floor(att: f64, def: f64) -> i32 {
         .clamp(1.0, 100.0) as i32
 }
 
+mod trial_reach;
+use trial_reach::TrialReach;
+
 /// Share the enemy movement forecasts among units on the same proposed board.
 /// The second field is built only when an immediate reply is survivable.
-struct ReplyForecast {
+struct ReplyForecast<'m> {
     first: DangerField,
     second: Option<DangerField>,
+    /// The retreat loop's reaches, when this board is one of its trials.
+    trials: Option<&'m std::cell::RefCell<TrialReach>>,
 }
 
-impl ReplyForecast {
+impl ReplyForecast<'static> {
     fn new(g: &Game, pid: usize) -> Self {
         Self {
             first: DangerField::with_reach(g, pid, true),
             second: None,
+            trials: None,
         }
+    }
+}
+
+impl<'m> ReplyForecast<'m> {
+    /// [`Self::new`] for a trial board of a retreat loop, reusing `trials`'
+    /// hostile reaches wherever the trial cannot have changed them.
+    fn for_trial(trial: &Game, trials: &'m std::cell::RefCell<TrialReach>) -> Self {
+        Self {
+            first: trials.borrow_mut().first_field(trial),
+            second: None,
+            trials: Some(trials),
+        }
+    }
+
+    /// The second-turn field on `g`, the board this forecast is for.
+    fn second(&mut self, g: &Game, pid: usize) -> &mut DangerField {
+        let Self {
+            first,
+            second,
+            trials,
+        } = self;
+        second.get_or_insert_with(|| match trials {
+            Some(trials) => trials.borrow_mut().second_field(first, g),
+            None => DangerField::second_turn(g, pid),
+        })
     }
 }
 
@@ -504,9 +535,7 @@ impl AdvancedAi {
         survivor.acted = false;
         survivor.zoc_stopped = false;
         survivor.started_turn_in_zoc = false;
-        let second = forecast
-            .second
-            .get_or_insert_with(|| DangerField::second_turn(g, pid));
+        let second = forecast.second(g, pid);
         let mut stands = vec![unit.pos];
         stands.extend(next.reachable(uid));
         stands.into_iter().any(|stand| {
@@ -667,6 +696,10 @@ impl AdvancedAi {
             }
         }
         let mut board = outcome.board;
+        // Every retreat below is tried on a copy of this board (as it stands
+        // after the retreats before it), so the hostiles' reaches are read
+        // once here and kept wherever a trial cannot have changed them.
+        let trials = std::cell::RefCell::new(TrialReach::new(&board, pid));
         for uid in blocked {
             // Companions move only with their guard's selected retreat.
             if !military(&board, pid, uid) {
@@ -732,7 +765,7 @@ impl AdvancedAi {
                 });
                 // Vacating the origin can open an enemy route; assess and rank
                 // the destination on the board after that actual move.
-                let mut forecast = ReplyForecast::new(&trial, pid);
+                let mut forecast = ReplyForecast::for_trial(&trial, &trials);
                 let safe = self.unit_reply_with_forecast(&trial, pid, uid, &mut forecast);
                 let incoming = reply_damage(&mut forecast.first, stand, uid, unit.hp);
                 choices.push((

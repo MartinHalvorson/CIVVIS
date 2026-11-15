@@ -11787,9 +11787,13 @@ impl Game {
     }
 
     fn city_building_effect(&self, city: &City, effect: &str) -> f64 {
-        if !self.rules.effect_index.buildings(effect) {
+        // The index both rules the effect out and names it: every building's
+        // effect map is then asked by interned name, an integer comparison per
+        // entry, where it was asked by text once per building in the city.
+        let Some((effect, ())) = self.rules.effect_index.buildings.get_key_value(effect) else {
             return 0.0;
-        }
+        };
+        let effect = *effect;
         city.buildings
             .iter()
             .filter_map(|building| {
@@ -11798,10 +11802,7 @@ impl Game {
                 // effect, and deciding whether one's district is standing
                 // means walking the city's districts — far dearer than the
                 // table lookup that rules it out.
-                let value = self.rules.buildings[building]
-                    .effects
-                    .get(effect)
-                    .copied()?;
+                let value = self.rules.buildings[building].effects.get_name(effect)?;
                 (!city.pillaged_buildings.contains(building)
                     && self.building_district_is_active(city, building))
                 .then_some(value)

@@ -8914,6 +8914,17 @@ pub struct AdvancedAi {
     /// t123. See `advanced/near_rival_deterrence_holds_late.rs`. Off by
     /// default.
     near_rival_deterrence_holds_late: bool,
+    /// `open-capital-declares-at-twice`: a Domination seat holding twice the
+    /// campaign target's steady military, with the target's original capital
+    /// standing without walls inside the declaration range and reachable by
+    /// land, declares as on prey: no home Defend row, no staged ring and no
+    /// Production parity is asked. The capture forecast, the march hold and
+    /// the denouncement's turns still apply. Live Immortal 2026-11-15:
+    /// civvis-20261115T172539Z (Arabia, Cairo unwalled, 2.0-2.3x from t106)
+    /// and 181018Z (Germany, Aachen unwalled, 2.0-2.1x t100-102) held for the
+    /// Siege row and the Defend row to retirement. See
+    /// `advanced/open_capital_declares_at_twice.rs`. Off by default.
+    open_capital_declares_at_twice: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -11347,6 +11358,9 @@ mod faithless_seat_holds_its_faith_strikes;
 /// `own-flip-faith-war-asks-no-power`: see `advanced/own_flip_faith_war.rs`.
 mod own_flip_faith_war;
 
+/// `open-capital-declares-at-twice`: see
+/// `advanced/open_capital_declares_at_twice.rs`.
+mod open_capital_declares_at_twice;
 /// `open-city-draws-the-front`: see `advanced/open_city_front.rs`.
 mod open_city_front;
 /// `open-city-is-the-objective`: see `advanced/open_city_objective.rs`.
