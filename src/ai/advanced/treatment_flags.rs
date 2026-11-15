@@ -5883,6 +5883,19 @@ impl AdvancedAi {
         self.score_seat_raises_wonders_2 = false;
     }
 
+    /// Opt-in gene `score-seat-raises-wonders-3`; version three of the family,
+    /// so versions one and two are turned off. See `advanced/score_wonders.rs`.
+    pub fn enable_score_seat_raises_wonders_3(&mut self) {
+        self.score_seat_raises_wonders = false;
+        self.score_seat_raises_wonders_2 = false;
+        self.score_seat_raises_wonders_3 = true;
+    }
+
+    /// The twin of `enable_score_seat_raises_wonders_3`.
+    pub fn disable_score_seat_raises_wonders_3(&mut self) {
+        self.score_seat_raises_wonders_3 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
