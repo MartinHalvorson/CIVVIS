@@ -73,7 +73,6 @@
 
 use super::near_rival_deterrence::{
     DETERRENCE_END_STANDARD, DETERRENCE_MAX_BUILD, DETERRENCE_NEAR_TILES, DETERRENCE_RATIO,
-    DETERRENCE_START_STANDARD,
 };
 use super::*;
 
@@ -102,9 +101,9 @@ impl AdvancedAi {
     /// gene's window.
     pub(super) fn deterrence_phase(&self, g: &Game) -> Option<DeterrencePhase> {
         let end = g.standard_duration(DETERRENCE_END_STANDARD);
-        if self.near_rival_deterrence
-            && g.turn >= g.standard_duration(DETERRENCE_START_STANDARD)
-            && g.turn < end
+        // `near-rival-deterrence-opens-early`: the window opens at live turn
+        // 10. See `advanced/near_rival_deterrence_opens_early.rs`.
+        if self.near_rival_deterrence && g.turn >= self.deterrence_window_start(g) && g.turn < end
         {
             return Some(DeterrencePhase::Opening);
         }
