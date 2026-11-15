@@ -6091,6 +6091,13 @@ pub const GENES: &[Gene] = &[
     // mission buys (Defend/Relieve/siege post 0.6, Destroy/Escort 0.3, march
     // 0.1, scout 0.05). Opt-in; see `advanced/priced_risk.rs`.
     Gene { tag: "risk-is-priced", field: "risk_is_priced", kind: Kind::OptIn, enable: AdvancedAi::enable_risk_is_priced, disable: AdvancedAi::disable_risk_is_priced },
+    // Live Deity 2026-11-15: once #5323 let the passage purchase close, rivals
+    // granted us Open Borders by turn 60 in 31 of 35 games (1 of 12 before)
+    // and declared on us by turn 60 in 12 of 35 (3 of 12), 9 of them a
+    // rival that had just granted passage. No purchase before Online turn 80,
+    // none after it from a rival over 1.5x our military. Opt-in; see
+    // `advanced/passage_waits_past_the_opening.rs`.
+    Gene { tag: "passage-waits-past-the-opening", field: "passage_waits_past_the_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_passage_waits_past_the_opening, disable: AdvancedAi::disable_passage_waits_past_the_opening },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
