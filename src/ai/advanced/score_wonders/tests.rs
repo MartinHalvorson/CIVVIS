@@ -770,7 +770,15 @@ fn an_unseen_threat_is_bounded_by_unexplored_land() {
     g.players[1].met.insert(0);
     g.at_war.insert((0, 1));
     // The seat's view knows no city of the rival's.
-    g.cities.retain(|_, city| city.owner != 1);
+    let theirs: Vec<u32> = g
+        .cities
+        .values()
+        .filter(|city| city.owner == 1)
+        .map(|city| city.id)
+        .collect();
+    for cid in theirs {
+        g.cities.remove(&cid);
+    }
     g.players[0].explored.clear();
     let monument = Item::Building {
         building: crate::name!("monument"),
