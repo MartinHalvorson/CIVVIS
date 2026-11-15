@@ -1198,6 +1198,48 @@ do
 	queue.drain(player, PID, 7)
 	check("stuck ahead: by name", (lastEvent("orders_queue") or ""):find("queue_move_departure_not_clear", 1, true) ~= nil, true)
 
+	-- A column of three: the last unit's occupant is itself waiting, and those
+	-- ticks are not counted against it. civvis-20261115T100810Z and 101703Z:
+	-- 50 and 48 unit-turns timed out at six ticks, about half of them a third
+	-- or later unit of a column.
+	local THIRD = 1572875
+	local function three()
+		column()
+		host.units[THIRD] = {id = THIRD, kind = "UNIT_WARRIOR", x = 3, y = 5, moves = 2}
+	end
+	three()
+	applyOrders(player, PID, 7, {row(THIRD, "MOVE_TO", 4, 5), follow(), lead()})
+	for _ = 1, 5 do queue.drain(player, PID, 7) end
+	check("three: both followers still wait while the head has not left", queue.pending[BEHIND] ~= nil and queue.pending[THIRD] ~= nil, true)
+	host.arrive(AHEAD)
+	queue.drain(player, PID, 7)
+	check("three: the second unit moves once the head has left", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+	check("three: the third is not refused because the second has left the queue", queue.pending[THIRD] ~= nil, true)
+	for _ = 1, 4 do queue.drain(player, PID, 7) end
+	check("three: the third still waits past six ticks in all: the first five were not its own", queue.pending[THIRD] ~= nil, true)
+	host.arrive(BEHIND)
+	queue.drain(player, PID, 7)
+	check("three: and moves once the second has left", ops(THIRD), "UNITOPERATION_MOVE_TO")
+	check("three: nothing was abandoned", lastEvent("queue_move_departure_abandoned"), nil)
+
+	-- The unit ahead was ordered to move and its move was refused: it has no
+	-- order in flight, so the follower is released at once, not at six ticks.
+	column()
+	host.refuse[AHEAD] = { UNITOPERATION_MOVE_TO = true }
+	applyOrders(player, PID, 7, {follow(), lead()})
+	check("refused ahead: the follower was queued", waited(), true)
+	queue.drain(player, PID, 7)
+	check("refused ahead: and is released on the first tick", queue.pending[BEHIND], nil)
+	check("refused ahead: by name", (lastEvent("queue_move_departure_abandoned") or ""):find('"ahead":"stuck"', 1, true) ~= nil, true)
+	check("refused ahead: nothing was asked of the host for it", ops(BEHIND), "")
+	host.refuse[AHEAD] = nil
+
+	-- The whole wait is bounded: a column whose head never leaves gives up.
+	three()
+	applyOrders(player, PID, 7, {row(THIRD, "MOVE_TO", 4, 5), follow(), lead()})
+	for _ = 1, 18 do queue.drain(player, PID, 7) end
+	check("bounded: the third unit gives up at three units' worth of ticks", queue.pending[THIRD], nil)
+
 	-- The unit ahead is gone (killed, consumed): nothing pins the follower.
 	column()
 	applyOrders(player, PID, 7, {follow(), lead()})
