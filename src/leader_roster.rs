@@ -151,9 +151,9 @@ struct LeaderRoster {
 ///
 /// Three bytes and the length, multiplied once: the first, the last and
 /// the middle byte tell the roster's names apart nearly as well as reading
-/// all of them does (nine names in ten sit in the slot their search starts
-/// at, which a test holds it to), and a search that starts in a crowded
-/// slot is still a correct search.
+/// all of them does (about nine names in ten sit in the slot their search
+/// starts at, and a test fails below eight), and a search that starts in a
+/// crowded slot is still a correct search.
 fn civ_slot(civ: &str, mask: usize) -> usize {
     let bytes = civ.as_bytes();
     let Some((&first, &last)) = bytes.first().zip(bytes.last()) else {
