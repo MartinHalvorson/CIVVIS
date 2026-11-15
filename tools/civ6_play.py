@@ -2445,10 +2445,13 @@ def focus_game(side: str = "left", fraction: float = 0.5) -> None:
 
 #: Logged on transitions only, so a person working beside the game does not
 #: fill the play log with one line per poll.
-_SHARED_DESKTOP_STATE: dict = {"deferring": False}
+_SHARED_DESKTOP_STATE: dict = {"deferring": False, "front_other_at": None}
+#: How long focus upkeep takes "another app is in front" as still true
+#: before it asks again (see `maintain_game_focus`).
+FOCUS_FRONT_SECONDS = 5.0
 
 
-def shared_desktop_in_use() -> bool:
+def shared_desktop_in_use(front_max_age: float = 0.0) -> bool:
     """Optional GUI recovery must leave other apps in front while a person is here.
 
     Two ways the desktop counts as shared, and the harness keeps its hands off
@@ -2465,6 +2468,13 @@ def shared_desktop_in_use() -> bool:
 
     In shared mode a Civ VI that is already frontmost is still fair game: the
     person put it there. Anything else in front is theirs.
+
+    ``front_max_age`` lets a caller that asks on a timer reuse the last
+    "another app is in front" answer for that many seconds. Only that answer
+    is ever reused, never "Civ VI is in front": a stale reading can then only
+    keep the harness's hands off a little longer, not raise the game over
+    someone. The marker and the idle clock are read every time, so removing
+    the marker, or the person leaving, still takes effect at once.
     """
     active = operator_presence.operator_active()
     marker = (Path.home() / ".civvis-shared-desktop").exists()
@@ -2474,12 +2484,19 @@ def shared_desktop_in_use() -> bool:
               if active else
               "[desktop] the Mac has been idle; resuming game upkeep", flush=True)
     if not (active or marker):
+        _SHARED_DESKTOP_STATE["front_other_at"] = None
         return False
+    now = time.monotonic()
+    seen = _SHARED_DESKTOP_STATE.get("front_other_at")
+    if front_max_age > 0 and seen is not None and 0 <= now - seen < front_max_age:
+        return True
     try:
-        return not popup_clear.frontmost().startswith("Civ6")
+        other = not popup_clear.frontmost().startswith("Civ6")
     except (OSError, subprocess.SubprocessError):
         # An unreadable foreground is not permission to take the keyboard.
-        return True
+        other = True
+    _SHARED_DESKTOP_STATE["front_other_at"] = now if other else None
+    return other
 
 
 def maintain_game_focus(interval: float, last_focus: float, *,
@@ -2491,11 +2508,22 @@ def maintain_game_focus(interval: float, last_focus: float, *,
     ~/.civvis-shared-desktop is the standing manual override on top of that.
     Background progress also depends on Civ VI's own ThrottleWhileInactive
     setting; this switch cannot change engine behavior.
+
+    ★ A DEFERRED UPKEEP ASKS AGAIN ON THE NEXT PASS, AND THE ASK IS A PROCESS.
+    Deferring returns the old stamp, so while another app stays in front the
+    question "which app is in front?" was put on every 0.25 s pass of the
+    watch, each time as a 0.25 s `osascript`. Measured 2026-11-15 on a live
+    game with the mirror page in front (`civvis-20261115T124823Z`): 2.20
+    launches a second from this line, half of the 4.4 on the host, and for
+    each one the harness relayed no board to the decider (the receipt stamps
+    of `events.jsonl` carry the 0.45 s rhythm). So the answer "another app
+    is in front" stands for `FOCUS_FRONT_SECONDS`; upkeep that could resume
+    resumes at most that much later.
     """
     now = time.monotonic()
     if interval <= 0 or now - last_focus < interval:
         return last_focus
-    if shared_desktop_in_use() or screen_locked():
+    if shared_desktop_in_use(front_max_age=FOCUS_FRONT_SECONDS) or screen_locked():
         return last_focus
     focus_game()
     if place:

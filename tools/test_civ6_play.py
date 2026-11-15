@@ -306,6 +306,104 @@ class SharedDesktopFocusTests(unittest.TestCase):
             focus.assert_called_once_with()
             place.assert_not_called()
 
+    def _shared(self, tmp, clock, front, active=False):
+        """Patches for a host with the shared-desktop marker in ``tmp``."""
+        return (patch.object(civ6_play.Path, "home", return_value=Path(tmp)),
+                patch.object(civ6_play.time, "monotonic", side_effect=lambda: clock[0]),
+                patch.object(civ6_play.operator_presence, "operator_active",
+                             return_value=active),
+                patch.object(civ6_play.popup_clear, "frontmost", side_effect=front),
+                patch.dict(civ6_play._SHARED_DESKTOP_STATE,
+                           {"deferring": active, "front_other_at": None}))
+
+    def test_another_app_in_front_is_asked_about_every_five_seconds(self):
+        # Measured civvis-20261115T124823Z: 2.20 `osascript` launches a second
+        # from the deferring upkeep, one per 0.25 s pass of the watch.
+        clock, asked, answer = [100.0], [], ["Google Chrome"]
+
+        def front():
+            asked.append(clock[0])
+            return answer[0]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / ".civvis-shared-desktop").touch()
+            home, mono, active, frontmost, state = self._shared(tmp, clock, front)
+            with home, mono, active, frontmost, state, \
+                 patch.object(civ6_play, "screen_locked", return_value=False), \
+                 patch.object(civ6_play, "focus_game") as focus, \
+                 patch.object(civ6_play, "place_game"):
+                last = 0.0
+                for _ in range(120):            # thirty seconds of passes
+                    last = civ6_play.maintain_game_focus(15, last, place=True)
+                    clock[0] += 0.25
+                self.assertEqual(asked, [100.0, 105.0, 110.0, 115.0, 120.0, 125.0])
+                self.assertEqual(last, 0.0)
+                focus.assert_not_called()
+                # The person brings Civ VI forward: upkeep resumes at the next
+                # ask, at most five seconds later, and then keeps its interval.
+                answer[0] = "Civ6_Exe_Child"
+                for _ in range(24):
+                    last = civ6_play.maintain_game_focus(15, last, place=True)
+                    clock[0] += 0.25
+                focus.assert_called_once_with()
+                self.assertEqual(last, 130.0)
+                self.assertEqual(asked[6:], [130.0])
+
+    def test_only_another_app_in_front_is_ever_remembered(self):
+        clock, answers, asked = [100.0], ["Terminal"], []
+
+        def front():
+            asked.append(clock[0])
+            if isinstance(answers[0], Exception):
+                raise answers[0]
+            return answers[0]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / ".civvis-shared-desktop"
+            marker.touch()
+            home, mono, active, frontmost, state = self._shared(tmp, clock, front)
+            with home, mono, active, frontmost, state:
+                self.assertTrue(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                clock[0] = 104.9
+                self.assertTrue(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                self.assertEqual(asked, [100.0])
+                # A caller about to act asks every time (the desktop rescue).
+                self.assertTrue(civ6_play.shared_desktop_in_use())
+                self.assertEqual(asked, [100.0, 104.9])
+                # Civ VI in front is never reused: the next call asks again.
+                clock[0], answers[0] = 110.0, "Civ6_Exe_Child"
+                self.assertFalse(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                clock[0] = 110.1
+                self.assertFalse(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                self.assertEqual(asked[2:], [110.0, 110.1])
+                # An unreadable foreground is "theirs", and stands as long.
+                clock[0], answers[0] = 120.0, OSError("no answer")
+                self.assertTrue(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                clock[0] = 123.0
+                self.assertTrue(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                self.assertEqual(asked[4:], [120.0])
+                # The marker is read every time: gone, the desktop is free at
+                # once, nothing is asked, and nothing stale is left behind.
+                marker.unlink()
+                self.assertFalse(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                self.assertEqual(len(asked), 5)
+                self.assertIsNone(civ6_play._SHARED_DESKTOP_STATE["front_other_at"])
+                marker.touch()
+                answers[0] = "Terminal"
+                self.assertTrue(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                self.assertEqual(len(asked), 6)
+
+    def test_only_the_timed_upkeep_reuses_the_answer(self):
+        source = Path(civ6_play.__file__).read_text()
+        upkeep = source[source.index("def maintain_game_focus("):]
+        upkeep = upkeep[:upkeep.index("\ndef ")]
+        self.assertIn("shared_desktop_in_use(front_max_age=FOCUS_FRONT_SECONDS)", upkeep)
+        self.assertEqual(source.count("front_max_age=FOCUS_FRONT_SECONDS"), 1)
+        rescue = source[source.index("    def desktop_rescue("):]
+        self.assertIn("if shared_desktop_in_use():", rescue[:rescue.index("\n    def ", 10)])
+        self.assertEqual(civ6_play.FOCUS_FRONT_SECONDS, 5.0)
+        self.assertLess(civ6_play.FOCUS_FRONT_SECONDS, 15.0)   # the upkeep interval
+
     def test_both_game_loops_use_shared_upkeep_and_retirement_stays_active(self):
         source = Path(civ6_play.__file__).read_text()
         attach = source[source.index("def _attach_running_game("):]
