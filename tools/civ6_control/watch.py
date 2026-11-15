@@ -260,7 +260,105 @@ class GameLiveness:
 
 #: How `follow` names a rival turn that hung after the mod reported it. Starts
 #: with "stalled" so every caller that already handles a stall handles this.
-AI_PHASE_STALL_REASON = "stalled: the AI phase stayed silent"
+AI_PHASE_STALL_REASON = "stalled: the AI phase hung"
+
+#: Seconds `follow` gives the turn to advance after a reported hang whose
+#: rival our seat left a dead deal session with that turn
+#: (`HungRivalSessions`). The mod has already watched the turn stand still
+#: for 30 s by then; this only lets a record that was in flight arrive.
+AI_STALL_DEAD_SESSION_S = 5.0
+
+
+class HungRivalSessions:
+    """Which rivals our seat left a dead deal session with this turn.
+
+    ★★ A RIVAL TURN THAT HANGS AFTER A DEAD SESSION NEVER COMES BACK. Every
+    `ai_phase_stall` in the 483 live runs of 2026-11-10 to 11-13 (64,083
+    turns, 40 reports): 36 were real hangs, and all 36 named one active rival
+    whose deal session with our seat had closed that same turn with the
+    rival's reply still owed: `closed` / `counter_not_sent` (32) or
+    `unanswered` (4). The game's own `DiplomacyManager.csv` shows why: the
+    rival's next statement to us is `Adding to pending` and is never
+    processed, and its turn waits on it. None of the 36 ever reached its next
+    turn. The other four reports did, 0.7 to 29.9 s after the report, and
+    none of them had such a session with an idle core (two were not idle:
+    `core_busy` true; one was our own turn).
+
+    So a stall that names such a rival is not waited out: `window` gives
+    `follow` `AI_STALL_DEAD_SESSION_S` for it, and None (the caller's own
+    window) for every other report.
+    """
+
+    def __init__(self) -> None:
+        self.turn: int | None = None
+        self.dead: dict[int, str] = {}
+
+    @staticmethod
+    def _int(value) -> int | None:
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    def note(self, event: dict) -> None:
+        """Record one relayed event; only `deal_session` rows matter."""
+        if not isinstance(event, dict) or event.get("kind") != "deal_session":
+            return
+        turn, target = self._int(event.get("turn")), self._int(event.get("target"))
+        if turn is None or target is None:
+            return
+        if turn != self.turn:
+            self.turn, self.dead = turn, {}
+        phase, why = event.get("phase"), event.get("why")
+        if phase == "unanswered" or (phase == "closed" and why == "counter_not_sent"):
+            self.dead[target] = f"{phase}/{why}"
+
+    def hung_after(self, stall: dict) -> str | None:
+        """How the dead session with the stalled rival closed, or None when
+        this stall report is not that hang."""
+        if not isinstance(stall, dict) or stall.get("core_busy") is not False:
+            return None
+        active = stall.get("active_players")
+        if (self._int(stall.get("turn")) is None or stall.get("turn") != self.turn
+                or not isinstance(active, list) or len(active) != 1):
+            return None
+        rival = self._int(active[0])
+        return None if rival is None else self.dead.get(rival)
+
+    def window(self, stall: dict) -> float | None:
+        """`follow`'s `ai_stall_window`: how long this report's turn gets to
+        advance, or None for the caller's own window."""
+        return AI_STALL_DEAD_SESSION_S if self.hung_after(stall) else None
+
+
+#: The file a run's directory carries when its attempt was ended for an
+#: autosave reload. `civ6_civvis_climb.py` (`WEDGE_HANDOFF_MARKER`) reads its
+#: presence as "frozen"; the wedge watchdog writes the same file when it is
+#: the one that ends the attempt. `test_civ6_watch.py` pins the two names.
+STALL_HANDOFF_MARKER = "wedge-handoff.json"
+
+
+def write_stall_handoff(run_dir: Path, tag: str, turn, reason: str) -> Path:
+    """Say in the run's own directory that this attempt ended on a hung rival
+    turn and its autosave is to be reloaded.
+
+    The climb used to learn that only from its clock: a player that exits
+    with its turn stale for 240 s is frozen, anything sooner finished. The
+    harness now ends a reported hang after 5 to 60 silent seconds, so it
+    writes what the watchdog writes. An existing marker is left alone: the
+    watchdog got there first and its record is the earlier one.
+    """
+    marker = Path(run_dir) / STALL_HANDOFF_MARKER
+    if marker.exists():
+        return marker
+    detail = {
+        "tag": tag,
+        "turn": turn if isinstance(turn, int) and not isinstance(turn, bool) else None,
+        "reason": reason,
+        "by": "civ6_play",
+        "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    scratch = marker.with_name(marker.name + ".tmp")
+    scratch.write_text(json.dumps(detail, sort_keys=True) + "\n")
+    os.replace(scratch, marker)
+    return marker
 
 
 def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
@@ -269,7 +367,8 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
            finish_turn: int | None = None,
            ceiling_s: float | None = None,
            read_s: float | None = None,
-           ai_stall_s: float | None = None) -> str:
+           ai_stall_s: float | None = None,
+           ai_stall_window=None) -> str:
     """Pump events to ``on_event`` until ``stop_when`` says so or time runs out.
 
     Returns a short reason string. The game exiting is reported as its own
@@ -343,32 +442,55 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
     first_turn, first_turn_at = None, now
     last_poll = now
     was_paused = False
-    # ★ A HUNG RIVAL TURN SAYS SO, THEN SAYS NOTHING. The control mod reports
-    # `ai_phase_stall` once a rival's turn has run 30 s with the core idle
-    # ("PLEASE WAIT", nothing queued, no session open), and a hang is then
-    # silent by definition. `stall_s` waited its full 420 s on that silence
-    # and the caller's dialogue rescue (there is no screen to dismiss) waited
-    # 420 s more: live 2026-11-12, four hangs cost 8, 16, 15 and 40 minutes
-    # of lane time (civvis-20261112T064834Z t150, T092252Z t116, T100013Z
-    # t71, T112009Z t90/t89/t88 across two reloads). `ai_stall_s` ends the
-    # watch that many silent seconds after the mod's own report, so the
-    # caller can go straight to the autosave. Any later event clears it: a
-    # rival turn that was merely slow is not a stall.
-    last_kind = None
+    # ★ A HUNG RIVAL TURN SAYS SO, AND THEN THE TURN NEVER MOVES. The control
+    # mod reports `ai_phase_stall` once a rival's turn has run 30 s past the
+    # end of ours with the turn number unchanged ("PLEASE WAIT", nothing
+    # queued, no session open). `stall_s` waited its full 420 s on the silence
+    # that follows and the caller's dialogue rescue (there is no screen to
+    # dismiss) waited 420 s more: live 2026-11-12, four hangs cost 8, 16, 15
+    # and 40 minutes of lane time (civvis-20261112T064834Z t150, T092252Z
+    # t116, T100013Z t71, T112009Z t90/t89/t88 across two reloads).
+    # `ai_stall_s` ends the watch that long after the mod's own report, so the
+    # caller can go straight to the autosave.
+    #
+    # ★★ ONLY THE TURN MOVING ON CLEARS THE REPORT. "Any later event clears
+    # it" was the first rule, and the game's UI keeps talking through a hung
+    # core: live civvis-20261115T071444Z-cont1 reported the hang of turn 175
+    # at 07:36:31, then relayed `ai_phase_stall_flush` and two
+    # `controller_wake` records (the HUD pulse, woken by a person using the
+    # Mac) at 07:39:01-08. Each one cleared the report and restarted the
+    # silence clock, and the attempt was still waiting six and a half minutes
+    # after the hang when the lane was restarted by hand. In the 483 live runs of
+    # 2026-11-10 to 11-13 the four reports that were not hangs saw their next
+    # turn 0.7, 1.4, 5.7 and 29.9 s later; the 36 that were never saw it.
+    # `ai_stall_window(event)` may shorten the wait for one report (never
+    # lengthen it, and never arm it when `ai_stall_s` is off): see
+    # `HungRivalSessions`.
+    stall_at: float | None = None
+    stall_turn: int | None = None
+    stall_window = ai_stall_s
 
     def consume() -> bool:
         """Relay whatever the tail holds; True once ``stop_when`` matched."""
         nonlocal last_event, last_turn, last_turn_at, first_turn, first_turn_at
-        nonlocal last_kind
+        nonlocal stall_at, stall_turn, stall_window
         for event in tail.poll():
             on_event(event)
             last_event = time.monotonic()
-            last_kind = event.get("kind") if isinstance(event, dict) else None
+            kind = event.get("kind") if isinstance(event, dict) else None
             turn = event.get("turn") if isinstance(event, dict) else None
             if isinstance(turn, int) and (last_turn is None or turn > last_turn):
                 last_turn, last_turn_at = turn, last_event
                 if first_turn is None:
                     first_turn, first_turn_at = turn, last_event
+                # The game moved on: whatever was reported hung was only slow.
+                stall_at = None
+            if kind == "ai_phase_stall" and ai_stall_s is not None:
+                stall_at, stall_turn, stall_window = last_event, last_turn, ai_stall_s
+                if ai_stall_window is not None:
+                    shorter = ai_stall_window(event)
+                    if shorter is not None and 0 <= shorter < stall_window:
+                        stall_window = shorter
             if stop_when is not None and stop_when(event):
                 return True
         return False
@@ -399,6 +521,8 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
                 last_turn_at += paused_for
             if first_turn is not None:
                 first_turn_at += paused_for
+            if stall_at is not None:
+                stall_at += paused_for
         last_poll = now
         was_paused = paused
         # Check only after refunding a paused interval.  Otherwise a session
@@ -428,10 +552,9 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
             if relay(poll_s):
                 return "stopped"
             continue
-        if (ai_stall_s is not None and last_kind == "ai_phase_stall"
-                and time.monotonic() - last_event > ai_stall_s):
-            return (f"{AI_PHASE_STALL_REASON} for {ai_stall_s:.0f}s after "
-                    f"the game reported a hung rival turn")
+        if stall_at is not None and time.monotonic() - stall_at > stall_window:
+            return (f"{AI_PHASE_STALL_REASON}: turn {stall_turn} had not advanced "
+                    f"{stall_window:.0f}s after the game reported a hung rival turn")
         if stall_s is not None and time.monotonic() - last_event > stall_s:
             return f"stalled: no event for {stall_s:.0f}s"
         # ⚠ Only once a turn has actually been SEEN. Setup emits no turn at all, and

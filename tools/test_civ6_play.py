@@ -233,7 +233,8 @@ class SharedDesktopRescueTests(unittest.TestCase):
              patch.object(civ6_play, "dismiss_world_congress_between_turns") as congress, \
              patch.object(civ6_play, "press_escape") as escape:
             namespace = dict(vars(civ6_play), events=ledger, state={"turn": 24},
-                             run_dir=Path("/unused"), desktop_rescues=InlineRescues())
+                             run_dir=Path("/unused"), desktop_rescues=InlineRescues(),
+                             hung_rivals=civ6_play.watch.HungRivalSessions())
             exec(code, namespace)
             for kind in ("autoclose_desktop", "autoclose_stuck"):
                 for screen in ("DiplomacyActionView", "WorldCongressBetweenTurns",
@@ -2119,9 +2120,21 @@ class Civ6PlayTest(unittest.TestCase):
         instead of sweeping clicks over a live map."""
         source = Path(civ6_play.__file__).read_text()
         self.assertEqual(source.count("ai_stall_s=args.ai_stall_seconds or None"), 2)
-        self.assertIn('ap.add_argument("--ai-stall-seconds", type=float, default=240.0', source)
+        self.assertIn('ap.add_argument("--ai-stall-seconds", type=float, default=60.0', source)
         self.assertIn("if reason.startswith(watch.AI_PHASE_STALL_REASON):", source)
         self.assertTrue(civ6_play.watch.AI_PHASE_STALL_REASON.startswith("stalled"))
+        # Both watch loops shorten the wait for the rival of a dead deal
+        # session, every relayed event feeds that tracker, and the exit says
+        # in the run directory that the attempt was frozen: the climb's own
+        # clock (240 s stale) would file a 35 s exit as a finished game.
+        self.assertEqual(source.count("ai_stall_window=hung_rivals.window"), 2)
+        self.assertIn("hung_rivals.note(event)", source)
+        branch = source.split("if reason.startswith(watch.AI_PHASE_STALL_REASON):", 1)[1]
+        self.assertIn("watch.write_stall_handoff(run_dir, args.tag, state.get(\"turn\"), reason)",
+                      branch.split("break", 1)[0])
+        import civ6_civvis_climb as climb
+        self.assertLess(civ6_play.watch.AI_STALL_DEAD_SESSION_S + 30.0,
+                        climb.EXIT_WHILE_STALE_S)
 
     def test_the_live_lane_seat_passes(self) -> None:
         """The seat every 2026-10-04 game reported (G61-G65)."""
