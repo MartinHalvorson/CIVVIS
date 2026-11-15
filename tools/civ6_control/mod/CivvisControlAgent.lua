@@ -6504,17 +6504,29 @@ local finished = false;
 -- Read native building Tourism before choosing whether a proposal is beneficial:
 -- a Curator or other city modifier must not turn a base-score gain into a loss.
 CivvisMuseumSwaps = { lastTurn = -1 };
+-- ★ A WORK COUNTS FOR WHAT IT IS WORTH. The score counted every work as
+-- one, and `read` refused a museum holding any work whose Tourism was not 2.
+-- The base game's Landscapes, Portraits and Sculptures are 2
+-- (Base/Assets/Gameplay/Data/GreatWorks.xml); the 23 works of the Babylon
+-- pack's artists (Hasegawa Tohaku, Wassily Kandinsky and the rest) are 4
+-- (DLC/Babylon/Data/Babylon_GreatWorks.xml). So a museum with one of them in
+-- it was "unknown inventory", and that was every swap the Culture seat sent
+-- in its two games of 2026-11-15: civvis-20261115T102552Z, three Kandinskys
+-- in the destination, 144 of 144 refused; 110627Z, three Tohakus in the
+-- source, 278 of 281. A work now weighs its Tourism over 2, so a museum of
+-- base works scores exactly as before and one with a 4 in it can be judged.
 function CivvisMuseumSwaps.score(slots)
-    local seen, count, unique, object, same = {}, 0, 0, nil, true;
+    local seen, count, mass, unique, object, same = {}, 0, 0, 0, nil, true;
     for slot = 1, 3 do
         local work = slots[slot];
         if work ~= nil then
             count = count + 1;
+            mass = mass + (tonumber(work.tourism) or 2) / 2;
             if not seen[work.creator] then seen[work.creator] = true; unique = unique + 1; end
             if object == nil then object = work.object; elseif object ~= work.object then same = false; end
         end
     end
-    local base = count + unique;
+    local base = mass + unique;
     if count == 3 and unique == 3 and same then base = base * 2; end
     return base;
 end
@@ -6540,14 +6552,16 @@ function CivvisMuseumSwaps.read(city, building)
             if info.GreatWorkObjectType ~= "GREATWORKOBJECT_SCULPTURE"
                 and info.GreatWorkObjectType ~= "GREATWORKOBJECT_LANDSCAPE"
                 and info.GreatWorkObjectType ~= "GREATWORKOBJECT_PORTRAIT" then return nil, "not_art"; end
-            if tonumber(info.Tourism) ~= 2 then return nil, "work_tourism"; end
+            local worth = tonumber(info.Tourism);
+            if worth == nil or not (worth > 0 and worth < math.huge) then return nil, "work_tourism"; end
             if data == nil or type(data.CreatorName) ~= "string" or data.CreatorName == "" then
                 return nil, "creator";
             end
             local created = tonumber(blds:GetTurnFromIndex(index));
             if created == nil then return nil, "created"; end
             slots[slot + 1] = { index = index, kind = info.GreatWorkType,
-                object = info.GreatWorkObjectType, creator = data.CreatorName, created = created };
+                object = info.GreatWorkObjectType, creator = data.CreatorName, created = created,
+                tourism = worth };
         end
     end
     local base = CivvisMuseumSwaps.score(slots);
@@ -12496,7 +12510,15 @@ CivvisTrade = { pending = {}, asked = {}, sessions = {}, unanswered = 0, disable
 -- whether a counter ever arrives between 4 and 30 seconds (`counter_answered`
 -- carries `waited`). `PeaceCounterHoldSeconds` / `AllianceCounterHoldSeconds`
 -- still override it, and 0 still closes at the refusal.
-CivvisTrade.COUNTER_HOLD_SECONDS = 30;
+-- ★ ...AND THE NEXT GAMES' LOGS SAID NO. With the 30-second wait, on the 28
+-- games of 2026-11-13..15 still on disk: the counter came 25 times, every
+-- one inside 0.7 s; once it did not come (civvis-20261115T104756Z t112), the
+-- session was held the full 30 seconds, closed `counter_not_sent`, and that
+-- rival's turn hung all the same. So a counter comes at once or not at all,
+-- the hang follows the unsent counter and not our closing, and the long wait
+-- only adds its length to a turn that is going to be recovered anyway. Three
+-- seconds is four times the slowest counter seen.
+CivvisTrade.COUNTER_HOLD_SECONDS = 3;
 -- The end turn is held from `reply_at` (`CivvisTrade.holdsEndTurn`). A
 -- refusal that took its time must not leave the counter wait outliving the
 -- turn's hold, so the window restarts when the refusal lands. An unreadable
@@ -17613,6 +17635,35 @@ local function applyOrder(player, pid, row, turn)
 			-- A melee ATTACK is a MOVE_TO onto the defender and is never capped.
 			-- The row's own x/y are rewritten so the queue expects the capped
 			-- plot; the original destination rides in `move_capped`.
+			-- ★ A MOVE THE BOARD HAS ALREADY OVERTAKEN IS NOT A REFUSAL. A
+			-- replan board can show a unit still on the plot it was leaving
+			-- (its walk was accepted and had not landed when the board was
+			-- read), and the decider then sends the same move again. By the
+			-- time that order is applied the unit stands on the plot, or has
+			-- spent its movement getting part of the way. Both came back
+			-- from `capToTurn` as refusals, `move_no_path` and
+			-- `move_no_moves_this_turn`: 26 and 10 of the 63 unit orders
+			-- refused in civvis-20261115T120431Z, every `move_no_path` in a
+			-- replan frame by turn 44 (7 of 7) and every
+			-- `move_no_moves_this_turn` (5 of 5, movement 0), which is why
+			-- neither count said anything about the host.
+			--   * Already on the plot: the move is done. It is accepted
+			--     without asking the host, so what was queued behind it
+			--     (a strike, a fortify) runs instead of being dropped.
+			--   * No movement left, in a replan frame: refused by its own
+			--     name, `move_unit_spent`, with no path read. Only in a
+			--     replan frame: the first frame's movement is read before
+			--     the host has finished restoring it on some turns.
+			if verb == "MOVE_TO" then
+				local hereX = tonumber(try(function() return unit:GetX(); end, nil));
+				local hereY = tonumber(try(function() return unit:GetY(); end, nil));
+				if hereX == x and hereY == y then return true, verb; end
+				local left = tonumber(try(function() return unit:GetMovesRemaining(); end, nil));
+				if left ~= nil and left <= 0 and CivvisFrames ~= nil
+						and (tonumber(CivvisFrames.current) or 0) >= 1 then
+					return false, "move_unit_spent";
+				end
+			end
 			if verb == "MOVE_TO" and cfg.CapMovesToReach ~= false then
 				local capped, why = CivvisBoard.capToTurn(unit, x, y);
 				if capped == false then
@@ -18534,6 +18585,17 @@ local function applyOrder(player, pid, row, turn)
 		-- SPREAD_RELIGION, REMOVE_HERESY, RELIGIOUS_HEAL, LAUNCH_INQUISITION,
 		-- CONVERT_BARBARIANS, PILLAGE. All parameterless -- `operate` selects
 		-- the shipped UnitPanel's two-argument request for these.
+		-- See `CivvisTrade.concertWaits`. Here as well as in the frame's own
+		-- loop, because that loop is not the only caller: a band that has to
+		-- walk to its site plays from the order queue (`CivvisQueue.drain`),
+		-- some ticks after the frame, when a session opened by that frame or
+		-- the next is already up. Live civvis-20261115T114552Z, the first game
+		-- with the frame's hold: one concert held in the loop (t158 frame 1)
+		-- and three more played from the queue behind the same turn's sessions
+		-- (t154, t158 twice), each closed while hidden as before.
+		if verb == "TOURISM_BOMB" and CivvisTrade.concertWaits(nil) then
+			return false, "concert_waits_for_the_deal_session";
+		end
 		local hash = OP["UNITOPERATION_" .. verb];
 		if hash == nil then return false, "unknown_op_" .. verb; end
 		-- ⚠ NAME THE REFUSAL, NOT THE VERB. This tail returned `verb` for BOTH
@@ -21071,11 +21133,18 @@ CivvisQueue.NOOP_CONFIRM_TICKS = 3;
 CivvisQueue.noopStands = function(entry, subject, turn, atOrigin, moves)
 	if entry.noop_named == nil or entry.noop_tick == nil or not atOrigin then return false; end
 	if entry.wait < entry.noop_tick + CivvisQueue.NOOP_CONFIRM_TICKS then return false; end
-	local attempt = CivvisBoard.moveAttempts[subject];
-	if attempt == nil or attempt.turn ~= turn or attempt.moves == nil or moves == nil then
-		return false;
+	-- The movement it had when it was named; a MOVE_TO also has its attempt
+	-- on record. A SWAP has no attempt record, so a SWAP named a no-op was
+	-- never released here and held its follow-up to the cap
+	-- (civvis-20261115T102552Z t79: an Archer's SWAP named at tick 3, its
+	-- FORTIFY refused at tick 30, 5.2 s).
+	local base = entry.noop_moves;
+	if base == nil then
+		local attempt = CivvisBoard.moveAttempts[subject];
+		if attempt ~= nil and attempt.turn == turn then base = attempt.moves; end
 	end
-	return moves >= attempt.moves;
+	if base == nil or moves == nil then return false; end
+	return moves >= base;
 end;
 
 -- ★ A WALK THAT STEPPED AND THEN STOOD STILL HAS STOPPED.
@@ -21109,6 +21178,36 @@ CivvisQueue.walkStalled = function(entry, ux, uy)
 	return #entry.rows > 0 and entry.expect ~= nil and entry.step_tick ~= nil
 		and entry.wait - entry.step_tick >= CivvisQueue.WALK_STALL_TICKS
 		and (ux ~= entry.expect.x or uy ~= entry.expect.y);
+end;
+
+-- ★ A REFUSED UNIT ORDER SAYS WHICH UNIT. The `orders` row counts refusals
+-- by reason (`refused_by`), and the reason carries no unit: the census of
+-- 2026-11-15 could say a game had 114 `move_no_path` and 62
+-- `move_no_moves_this_turn`, and had to guess from positions which units they
+-- were. `move_no_moves_this_turn` in particular (132 in three games, every
+-- one in a replan frame) could not be told apart from a unit with a movement
+-- point left being refused a step it could have taken. One row per refusal,
+-- with the unit, the plot, and the movement it had; bounded per turn so a bad
+-- turn cannot flood the log. Nothing reads it but the census.
+CivvisQueue.REFUSED_ROWS_PER_TURN = 80;
+CivvisQueue.noteRefused = function(pid, row, turn, why)
+	local q = CivvisQueue;
+	if q.refusedTurn ~= turn then q.refusedTurn, q.refusedRows = turn, 0; end
+	if q.refusedRows >= q.REFUSED_ROWS_PER_TURN then return; end
+	q.refusedRows = q.refusedRows + 1;
+	pcall(function()
+		local subject = tonumber(row.subject);
+		local unit = subject ~= nil and liveUnit(pid, subject) or nil;
+		emit("order_refused", {
+			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
+			unit = subject, unit_kind = unit ~= nil and unitTypeName(unit) or nil,
+			verb = tostring(row.verb or ""), x = tonumber(row.x), y = tonumber(row.y),
+			why = tostring(why),
+			at = unit ~= nil and { unit:GetX(), unit:GetY() } or nil,
+			moves = unit ~= nil and try(function() return unit:GetMovesRemaining(); end, nil) or nil,
+			max_moves = unit ~= nil and try(function() return unit:GetMaxMoves(); end, nil) or nil,
+		});
+	end);
 end;
 
 CivvisQueue.drain = function(player, pid, turn)
@@ -21336,6 +21435,34 @@ CivvisQueue.drain = function(player, pid, turn)
 							spent = spent, at = { ux, uy }, want = { entry.expect.x, entry.expect.y } });
 					end
 				end
+				-- ★ ...AND A WALK STALLED IN ITS OPERATION IS RELEASED AS A WATCH IS.
+				-- An accepted MOVE_TO can sit in ACTIVITY_OPERATION with its unit
+				-- on its origin and its movement intact for the whole turn. A
+				-- rows-less watch on such a walk is released at the probe tick
+				-- (`StalledOperationRelease`, live): of the 64 released in 36 games
+				-- of 2026-11-14..15, 63 never left their plot that turn. With a
+				-- follow-up behind it the same walk held the frame to the cap
+				-- (civvis-20261115T101703Z t64: a Scout's MOVE_TO then PILLAGE,
+				-- named `unknown` at tick 30, 7.0 s). Same evidence, same tick,
+				-- same switch: the follow-up is refused by the name the cap gives.
+				if active_operation and entry.expect ~= nil and not arrived and not spent
+						and not cannot_land and not entry.stall_checked
+						and cfg.StalledOperationRelease == true
+						and entry.origin ~= nil and ux == entry.origin.x and uy == entry.origin.y
+						and entry.wait >= (tonumber(cfg.OrderQueueNoopProbeTicks) or 8)
+						and entry.wait < grace
+						and try(function() return UI.IsGameCoreBusy(); end, false) ~= true then
+					entry.stall_checked = true;
+					local attempt = CivvisBoard.moveAttempts[subject];
+					if attempt ~= nil and attempt.turn == turn and attempt.moves ~= nil
+							and moves ~= nil and moves >= attempt.moves then
+						cannot_land, entry.cannot_land = true, true;
+						emit("stall_probe", { turn = turn, unit = subject,
+							unit_kind = unitTypeName(unit), tick = entry.wait, moves = moves,
+							from = { ux, uy }, want = { entry.expect.x, entry.expect.y },
+							released = true, follow_up = true });
+					end
+				end
 				-- See `walkStalled`: a walk that stepped and then stood still.
 				local stalled = not spent and entry.wait < grace
 					and CivvisQueue.walkStalled(entry, ux, uy);
@@ -21504,8 +21631,30 @@ CivvisQueue.drain = function(player, pid, turn)
 								q.stats.refusals[key] = (q.stats.refusals[key] or 0) + 1;
 							end
 							entry.next = entry.next + 1;
+							-- ★ A MOVE ISSUED FROM THE QUEUE IS WATCHED UNTIL IT LANDS, like
+							-- the walk of a first order (`CivvisQueue.watch`). A unit's last
+							-- queued row left nothing in the queue, so a move released from a
+							-- column or war wait went out, the queue read as drained, and the
+							-- replan frame was exported with the unit still on the plot it was
+							-- leaving. The decider then planned it from there: on
+							-- civvis-20261115T120431Z, 113645Z and 101703Z, 36, 40 and 61
+							-- units a game were shown unmoved in a replan board and then moved,
+							-- and the frame re-sent the same move (refused: the unit was
+							-- already there), sent the unit somewhere else from the wrong plot,
+							-- or sent it nothing. Before the column wait existed
+							-- (075925Z) there were none.
+							local landing = nil;
 							if entry.next > #entry.rows then
-								q.pending[subject] = nil;
+								if ok and verb == "MOVE_TO" then landing = CivvisQueue.expectFor(row); end
+								if landing ~= nil and (ux ~= landing.x or uy ~= landing.y) then
+									q.pending[subject] = {
+										rows = {}, next = 1, expect = landing, origin = { x = ux, y = uy },
+										ready = false, wait = 0, settle_passes = 0, opening_verb = "MOVE_TO",
+									};
+									q.watching = q.watching + 1;
+								else
+									q.pending[subject] = nil;
+								end
 							else
 								entry.expect = ok and CivvisQueue.expectFor(row) or nil;
 								entry.ready = false;
@@ -21514,6 +21663,7 @@ CivvisQueue.drain = function(player, pid, turn)
 								-- A new leg: what was learnt about the last one is not
 								-- about this one, and it starts from where the unit is.
 								entry.land_probed, entry.cannot_land = nil, nil;
+								entry.stall_checked, entry.noop_moves = nil, nil;
 								entry.step_tick, entry.seen_x, entry.seen_y = nil, ux, uy;
 								entry.settle_passes = ok
 									and verb == "MOVE_TO"
@@ -21954,8 +22104,10 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 		return false;
 	end
 	entry.noop_named = why;
-	-- See `CivvisQueue.noopStands`: the tick this leg was named on.
+	-- See `CivvisQueue.noopStands`: the tick this leg was named on, and the
+	-- movement its unit had then.
 	entry.noop_tick = entry.wait or 0;
+	entry.noop_moves = moves;
 	-- The host says no route exists, so waiting out the grace cannot change it:
 	-- of 293 such legs in seven games, none reached the wanted plot.
 	if why == "no_path" then entry.noop_no_path = true; end
@@ -23967,8 +24119,9 @@ local function applyOrders(player, pid, turn, rows)
 				CivvisQueue.push(subject, row, nil);
 				firstRun[subject] = { expect = nil };
 			else
-				local ok = runOrder(index, row);
+				local ok, why = runOrder(index, row);
 				if isUnit then
+					if not ok then CivvisQueue.noteRefused(pid, row, turn, why); end
 					firstRun[subject] = { expect = ok and CivvisQueue.expectFor(row) or nil };
 					if not ok then firstRefused[subject] = true; end
 					if ok and tostring(row.verb or "") == "MOVE_TO" then

@@ -349,6 +349,23 @@ the evidence for each is under "Live carriers of the merged rule"):
   victory, and it carries its own citizens' Loyalty), and the window turns
   from a city that is not a capital to a capital that comes into reach
   while no muster has formed. A Score seat's naming is unchanged.
+- *Every walk in one order (PR #5334)*: the walk to the stand, the walk
+  home, the walk to a city the rush holds and the approach to the city it
+  assaults each go, in one `MoveTo`, to the tile this turn's movement
+  reaches nearest the goal (`march_destination`, the reading the armed
+  `march-uses-its-moves` gives the siege train's marches); the single
+  steps remain behind it where no tile beats the router's step. Measured
+  over five games of the first version, the War-Carts made 1.52 tiles a
+  unit-turn on an allowance of 3.35, about half of them not progress: the
+  walk took the breadth-first router's first step, every tile priced at
+  one, stopped when the next tile cost more than was left, and fortified.
+- *The declaration wants an unwalked force (PR #5334)*: a unit counts
+  toward the declaration only with its turn's movement unspent. A turn is
+  planned in several frames; 104756Z walked three War-Carts in frame 0
+  (movement 3 to 1 and 2) and declared in frame 1 with them spent. (The
+  host also refuses moves and strikes issued in the frame of the
+  declaration, which is asynchronous; that is fixed in the control mod,
+  not here.)
 - *Deals*: the incoming-deal desk refuses a declared friendship from the
   target's owner (any major before a city is named) and a peace offer from
   the rival whose city is being pressed; the rival's peace is taken while

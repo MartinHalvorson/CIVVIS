@@ -900,7 +900,7 @@ check("the refusal is in the ledger", eventField(lastEvent("peace_response"), "a
 check("a refused peace keeps its session for the counter", trade.sessions[6] ~= nil, true)
 check("a peace refusal does not close under its counter", #sessions.closed, closedBeforePeaceRefusal)
 check("the peace counter wait is recorded", eventField(lastEvent("deal_session"), "phase"), "counter_wait")
-check("the peace counter hold is the answer's bound", holds[#holds] and holds[#holds].seconds, 30)
+check("the peace counter hold is three seconds", holds[#holds] and holds[#holds].seconds, 3)
 onStatement(6, 7, { StatementType = "MAKE_DEAL", SessionID = 9999, StatementSubType = "POSITIVE" })
 onStatement(6, 7, { StatementType = "GREETING", SessionID = 904, StatementSubType = "POSITIVE" })
 onStatement(7, 6, { StatementType = "MAKE_DEAL", SessionID = 904, StatementSubType = "POSITIVE" })
@@ -1264,9 +1264,10 @@ do
 		lateTrade.sends[1] and lateTrade.sends[1][1], "equalize")
 	trade.close(7, 34, "test_late_trade")
 
-	-- ── The counter after a refusal is waited for as long as the answer ──
-	-- 406 counters came inside 0.62 s; all 29 closes at the old 4-second
-	-- bound were followed by a hung rival turn.
+	-- ── The counter after a refusal is waited for three seconds ──
+	-- 406 counters came inside 0.62 s and 25 more inside 0.7 s; the one that
+	-- had not come was waited for 30 seconds and its rival's turn hung all
+	-- the same (civvis-20261115T104756Z t112).
 	TURN = 614
 	local slow = fixture()
 	trade.ask(7, 35, "PROPOSED", "alliance", TURN)
@@ -1275,13 +1276,14 @@ do
 	onStatement(35, 7, { StatementType = "MAKE_DEAL", SessionID = 1408,
 		DealAction = DealProposalAction.REJECTED })
 	check("a refused alliance waits for its counter", trade.sessions[35].counter_wait ~= nil, true)
-	check("the counter wait is the answer's bound", holds[#holds].seconds, 30)
-	activeClock = activeClock + 25
+	check("the counter wait is three seconds", holds[#holds].seconds, 3)
+	check("…and is the one constant", trade.COUNTER_HOLD_SECONDS, 3)
+	activeClock = activeClock + 2
 	check("the refusal restarts the reply window", trade.holdsEndTurn(TURN), true)
 	onStatement(35, 7, { StatementType = "MAKE_DEAL", SessionID = 1408, StatementSubType = "POSITIVE" })
-	check("a counter arriving late in the wait is still refused",
+	check("a counter arriving inside the wait is refused",
 		slow.sends[2] and slow.sends[2][1], "rejected")
-	check("…and says how long it took", eventField(lastEvent("counter_answered"), "waited"), "25")
+	check("…and says how long it took", eventField(lastEvent("counter_answered"), "waited"), "2")
 	check("…and the session closes", sessions.closed[#sessions.closed], 1408)
 	TURN = 602
 	trade.ask(7, 3, "EQUALIZE", "trade", TURN)
