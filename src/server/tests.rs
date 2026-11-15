@@ -8098,8 +8098,12 @@ fn browser_orders_controls_interface_setup_and_logs() {
         EMBEDDED_INDEX.contains("{selector:\"#playerhud .watch-as-link\", min:9, max:12, slack:6}")
     );
     assert!(EMBEDDED_INDEX.contains("class=\"spectator-view-link\" data-hud-action=\"spectator\""));
-    assert!(EMBEDDED_INDEX.contains("Spectator mode: see everyone with full map visibility"));
-    assert!(EMBEDDED_INDEX.contains(">All</button>"));
+    // The way back out of a Watch-as view carries the turn box's own word for
+    // that view, "POV: Global" (operator 2026-11-15: "change all (above watch
+    // as) to Global").
+    assert!(EMBEDDED_INDEX.contains("Global view: see everyone with full map visibility"));
+    assert!(EMBEDDED_INDEX.contains(">Global</button>"));
+    assert!(!EMBEDDED_INDEX.contains(">All</button>"));
     assert!(EMBEDDED_INDEX.contains("data-hud-action=\"watch\" data-hud-civ=\"${p.id}\""));
     assert!(EMBEDDED_INDEX.contains("data-hud-action=\"dossier\" data-hud-civ=\"${p.id}\""));
     assert!(EMBEDDED_INDEX.contains("spectatePlayer(null);"));
