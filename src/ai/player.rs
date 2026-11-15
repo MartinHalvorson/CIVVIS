@@ -17,6 +17,86 @@ pub const TRAINING_TARGETS: &str = "civvis,science,culture,religion,diplomatic,d
 /// Opening frame plus the live launcher's two default observation refreshes.
 pub const REPLAN_FRAMES: usize = 2;
 
+/// How a production player's planning view answers for a city yield it has
+/// already derived in the same frame.
+///
+/// ★★★ THE VIEW WAS THE ONE BOARD THAT KEPT NOTHING. A seat's planning asks
+/// what the same cities yield pass after pass, and `Game::keep_rival_yields`
+/// with `Game::keep_own_yields` answers the repeats from what the last pass
+/// derived until the board changes. The spectator session turned that on for
+/// civvis.ai's seats, which plan on the authoritative board. A production
+/// player plans on a disposable view instead (`Game::player_decision_view`),
+/// the view is a clone, and a clone keeps nothing: so the gene screen, the
+/// leader sweeps and every other native game of production players derived
+/// every repeat afresh. On the screen's Deity recipe a view answers 47% of
+/// its city-yield reads from what it kept, and the game costs 5% fewer
+/// instructions (`docs/SIMULATOR_PERFORMANCE.md`, 2026-11-15).
+///
+/// The contract is `Game::keep_rival_yields`'s and nothing is added to it:
+/// whatever is kept is dropped by every action the plan applies to the view,
+/// by every tile write, by `Game::board_written`, and for the seat's own
+/// cities by any change to its deck, food bias or directives; nothing is
+/// reused while a policy trace records. Keeping is switched on after the
+/// view is built and blocked, so no yield derived while the view was being
+/// corrected is ever kept, and the view is dropped at the end of its frame.
+///
+/// Only [`take_turn`] does this. The live Civilization VI seat calls
+/// [`plan_frame`] on its own mirror board and keeps nothing, as before.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ViewYields {
+    /// Kept between the plan's passes. What every production player does.
+    #[default]
+    Kept,
+    /// Derived afresh on every ask, as every view did before. The same game,
+    /// the slow way: `gene_screen --no-kept-yields` prices the difference.
+    Derived,
+    /// Kept, and every reused answer is derived again and compared; a
+    /// difference panics (`Game::audit_rival_yields`). Slower than `Derived`.
+    Audited,
+}
+
+/// One seat's [`ViewYields`] and what its views have answered so far.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ViewYieldKeeping {
+    pub mode: ViewYields,
+    /// City yields the seat's views answered from what they had kept.
+    pub reused: u64,
+    /// City yields the seat's views derived while keeping was on.
+    pub derived: u64,
+}
+
+impl ViewYieldKeeping {
+    /// Turn keeping on for a view that is built and about to be planned on.
+    fn begin(&self, view: &mut Game) {
+        if self.mode == ViewYields::Derived {
+            return;
+        }
+        view.audit_rival_yields(self.mode == ViewYields::Audited);
+        view.keep_rival_yields(true);
+        view.keep_own_yields(true);
+    }
+
+    /// Add what a planned view answered to the seat's running count.
+    fn count(&mut self, view: &Game) {
+        let (reused, derived) = view.rival_yields_reused();
+        self.reused += reused;
+        self.derived += derived;
+    }
+}
+
+impl AdvancedAi {
+    /// How this seat's planning views answer for city yields. See
+    /// [`ViewYields`]; every mode plays the same game.
+    pub fn set_view_yields(&mut self, mode: ViewYields) {
+        self.view_yields.mode = mode;
+    }
+
+    /// This seat's [`ViewYields`] and its views' running counts.
+    pub fn view_yields(&self) -> ViewYieldKeeping {
+        self.view_yields
+    }
+}
+
 /// The production decision sequence, shared rather than independently
 /// orchestrated by the native and live executors. The supplied board must be
 /// disposable observed state; the caller owns execution and re-observation.
@@ -131,7 +211,12 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
         block_refused_city_sites(&mut view, &ai.refused_city_sites);
         let mapped = view.units.keys().map(|id| (*id, i64::from(*id))).collect();
         let movement_memory = ai.observed_movement_memory();
+        // From here to the end of the frame only the plan writes the view,
+        // and it writes it through the routes that drop a kept yield. See
+        // `ViewYields`.
+        ai.view_yields.begin(&mut view);
         let (finishing, ordinary_begin) = plan_frame(ai, &mut view, pid, &mapped);
+        ai.view_yields.count(&view);
         // Governor preferences are player decisions, not predicted resources.
         game.players[pid].citizen_food_bias = view.players[pid].citizen_food_bias;
         game.players[pid].city_directives = view.players[pid].city_directives.clone();
@@ -456,3 +541,6 @@ mod execution_tests;
 
 #[cfg(test)]
 mod plot_refusal_tests;
+
+#[cfg(test)]
+mod kept_yields_tests;

@@ -627,6 +627,23 @@ enabling the gene for **one major seat**:
 Positive is slower. Old rows with absent timings produce an unknown cost rather
 than a false zero.
 
+What a game itself costs, and where it goes, is in
+`docs/SIMULATOR_PERFORMANCE.md` (2026-11-15). Two switches there play the
+same games the slow way and write the same rows, so neither makes a batch a
+probe:
+
+- `--no-kept-yields` derives every city yield a seat's planning view is
+  asked for, instead of keeping it between the plan's passes. It prices the
+  keeping: about 5% of a game's instructions on the Deity recipe.
+- `--audit-kept-yields` keeps them, derives every reused yield, citizen plan
+  and luxury split again on the spot, and panics with the city and the turn
+  when the two differ. Run a few games of it after adding a gene that writes
+  the planning board without an action: such a write must call
+  `Game::board_written`, and this is what shows that it does.
+
+The batch's closing lines say which of the three ran and how many yields the
+views answered from what they had kept.
+
 ## The rows file
 
 The first line is a header (`kind: header`, the gene order, the screened set,
