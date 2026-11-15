@@ -1092,6 +1092,123 @@ do
 	GameInfo.Units, UnitManager.CanStartOperation, Game.GetLocalPlayer = oldUnits, oldCan, oldLocal
 end
 
+-- 10d. A unit ordered onto a plot its own column is leaving waits for the plot.
+-- The host cannot path a unit onto a plot one of its own formation class
+-- holds, so the follower of a column was refused `move_no_path` and stood
+-- still while the unit ahead left: 9, 15, 1 and 26 unit-turns in four games of
+-- 2026-11-15. The fake host answers the path the way the live one does: one
+-- plot when a unit of ours of the same class stands on the destination.
+do
+	local oldUnits, oldLocal = GameInfo.Units, Game.GetLocalPlayer
+	queue.pending = {}
+	GameInfo.Units = {
+		UNIT_ARCHER = {UnitType = "UNIT_ARCHER", Domain = "DOMAIN_LAND", FormationClass = "FORMATION_CLASS_LAND_COMBAT", Combat = 15, RangedCombat = 25},
+		UNIT_WARRIOR = {UnitType = "UNIT_WARRIOR", Domain = "DOMAIN_LAND", FormationClass = "FORMATION_CLASS_LAND_COMBAT", Combat = 20, RangedCombat = 0},
+		UNIT_SETTLER = {UnitType = "UNIT_SETTLER", Domain = "DOMAIN_LAND", FormationClass = "FORMATION_CLASS_CIVILIAN", Combat = 0, RangedCombat = 0},
+	}
+	Game.GetLocalPlayer = function() return PID end
+	Map.GetPlotIndex = function(x, y) return y * 100 + x end
+	UnitManager.GetMoveToPathEx = function(unit, destination)
+		local mine = GameInfo.Units[unit.GetUnitType()]
+		for _, other in pairs(host.units) do
+			if not other.gone and other.id ~= unit.GetID() and other.y * 100 + other.x == destination
+					and GameInfo.Units[other.kind].FormationClass == mine.FormationClass then
+				return { plots = { 1 }, turns = { 0 } }
+			end
+		end
+		return { plots = { 1, destination }, turns = { 0, 1 } }
+	end
+	local AHEAD, BEHIND = 1310733, 1441804
+	local function column(followerKind)
+		reset(); LOG = {}
+		host.units[AHEAD] = {id = AHEAD, kind = "UNIT_WARRIOR", x = 5, y = 5, moves = 2}
+		host.units[BEHIND] = {id = BEHIND, kind = followerKind or "UNIT_ARCHER", x = 4, y = 5, moves = 2}
+	end
+	local follow = function() return row(BEHIND, "MOVE_TO", 5, 5) end
+	local lead = function() return row(AHEAD, "MOVE_TO", 6, 5) end
+	local waited = function() return lastEvent("queue_move_departure_wait") ~= nil end
+
+	-- The follower's row comes first, as the decider usually sends it.
+	column()
+	applyOrders(player, PID, 7, {follow(), lead()})
+	check("column: the follower is queued, not refused", waited(), true)
+	check("column: nothing is asked of the host for it yet", ops(BEHIND), "")
+	check("column: no refusal is counted", (lastEvent("orders") or ""):find("move_no_path", 1, true), nil)
+	check("column: the unit ahead is ordered as planned", ops(AHEAD), "UNITOPERATION_MOVE_TO")
+	queue.drain(player, PID, 7)
+	check("column: the follower waits while the plot is held", ops(BEHIND), "")
+	host.arrive(AHEAD)
+	queue.drain(player, PID, 7)
+	check("column: the follower moves once the plot is clear", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+	check("column: the release is on the log", lastEvent("queue_move_departure_released") ~= nil, true)
+	check("column: the queue drains", queue.pendingCount(), 0)
+
+	-- The same with the unit ahead named first in the batch.
+	column()
+	applyOrders(player, PID, 7, {lead(), follow()})
+	check("column, leader first: the follower still waits", waited(), true)
+	host.arrive(AHEAD)
+	queue.drain(player, PID, 7)
+	check("column, leader first: and moves once clear", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+
+	-- A follow-up behind the follower's walk keeps its place.
+	column()
+	applyOrders(player, PID, 7, {follow(), row(BEHIND, "FORTIFY"), lead()})
+	host.arrive(AHEAD)
+	queue.drain(player, PID, 7)
+	check("column: the follower's own follow-up waits for its walk", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+	check("column: …and is still queued", queue.pendingCount(), 1)
+	host.arrive(BEHIND)
+	queue.drain(player, PID, 7)
+	queue.drain(player, PID, 7)
+	check("column: …and runs once the walk lands", ops(BEHIND), "UNITOPERATION_MOVE_TO,UNITOPERATION_FORTIFY")
+
+	-- A unit that is not leaving is not waited for: refused at once, as before.
+	column()
+	applyOrders(player, PID, 7, {follow()})
+	check("held plot: no wait for a unit with no order", waited(), false)
+	check("held plot: refused by the host's own answer", (lastEvent("orders") or ""):find("move_no_path", 1, true) ~= nil, true)
+	column()
+	applyOrders(player, PID, 7, {follow(), row(AHEAD, "FORTIFY")})
+	check("held plot: no wait for a unit told to stay", waited(), false)
+
+	-- Two units trading plots is the decider's SWAP; waiting on each other only spends the wait.
+	column()
+	applyOrders(player, PID, 7, {follow(), row(AHEAD, "MOVE_TO", 4, 5)})
+	check("trade: units ordered onto each other's plots do not wait", waited(), false)
+
+	-- A civilian shares a plot with a soldier: the host has a path and nothing waits.
+	column("UNIT_SETTLER")
+	applyOrders(player, PID, 7, {follow(), lead()})
+	check("stack: a civilian onto a soldier's plot is not queued", waited(), false)
+	check("stack: it is simply moved", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+
+	-- The unit ahead never leaves: the wait ends by name after its few ticks.
+	column()
+	applyOrders(player, PID, 7, {follow(), lead()})
+	for _ = 1, 5 do queue.drain(player, PID, 7) end
+	check("stuck ahead: the follower is still waiting at five ticks", queue.pending[BEHIND] ~= nil, true)
+	queue.drain(player, PID, 7)
+	check("stuck ahead: at six it is released", queue.pending[BEHIND], nil)
+	check("stuck ahead: nothing was asked of the host for it", ops(BEHIND), "")
+	-- The queue's summary is written when the last watch (the unit ahead) settles.
+	host.arrive(AHEAD)
+	queue.drain(player, PID, 7)
+	check("stuck ahead: by name", (lastEvent("orders_queue") or ""):find("queue_move_departure_not_clear", 1, true) ~= nil, true)
+
+	-- The unit ahead is gone (killed, consumed): nothing pins the follower.
+	column()
+	applyOrders(player, PID, 7, {follow(), lead()})
+	host.units[AHEAD].gone = true
+	queue.drain(player, PID, 7)
+	check("gone ahead: the follower moves", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+
+	GameInfo.Units, Game.GetLocalPlayer = oldUnits, oldLocal
+	UnitManager.GetMoveToPathEx = nil
+	Map.GetPlotIndex = nil
+	reset()
+end
+
 -- 11. `StalledOperationRelease` (off everywhere above). With the switch on,
 -- a leg the probe marks as a stalled operation takes the early no-op answer at
 -- the probe tick instead of waiting out the grace. A walk not in an operation
