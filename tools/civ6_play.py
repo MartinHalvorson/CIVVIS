@@ -840,7 +840,8 @@ def early_city_reading(state: dict, event: dict, count: int) -> dict | None:
 # ★ A GAME THAT HAS LOST HALF ITS CITIES IS PLAYED OUT SLOWLY AND LOST. Lane
 # rule of 2026-11-15, under the operator's goal of that day (more games is
 # more tests): live civvis-20261115T075925Z lost five of six cities to a
-# joint war on turns 112-123 and had some sixty slow turns left to lose in.
+# joint war on turns 112-123 and was still being played, one city left, at
+# turn 129 of 250.
 #
 # The rule: once our city count has fallen by at least N from the most we
 # have held this run AND stands at or below half of that peak, on records of
