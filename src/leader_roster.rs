@@ -141,26 +141,68 @@ struct RosterDocument {
 
 struct LeaderRoster {
     leaders: Vec<LeaderRosterEntry>,
-    /// Positions in `leaders`, ordered by [`civ_order`] of the name there:
-    /// what [`entry`] searches. The loader refuses a repeated civilization,
-    /// so a name has one position.
+    /// Where [`entry`] looks a name up: a table of positions in `leaders`
+    /// plus one, zero for an empty slot, addressed by [`civ_slot`] and
+    /// probed forward. Built by [`index_by_civ`].
     by_civ: Vec<u32>,
 }
 
-/// The order [`LeaderRoster::by_civ`] is kept in: shorter names first, then
-/// byte order. Any total order would do; this one settles most comparisons
-/// on the two lengths without reading either name.
-fn civ_order(left: &str, right: &str) -> std::cmp::Ordering {
-    left.len().cmp(&right.len()).then_with(|| left.cmp(right))
+/// The slot a name's search starts at in a table of `mask + 1` slots.
+///
+/// Three bytes and the length, multiplied once: the first, the last and
+/// the middle byte tell the roster's names apart nearly as well as reading
+/// all of them does (nine names in ten sit in the slot their search starts
+/// at, which a test holds it to), and a search that starts in a crowded
+/// slot is still a correct search.
+fn civ_slot(civ: &str, mask: usize) -> usize {
+    let bytes = civ.as_bytes();
+    let Some((&first, &last)) = bytes.first().zip(bytes.last()) else {
+        return 0;
+    };
+    let word = u64::from(first)
+        | u64::from(last) << 8
+        | u64::from(bytes[bytes.len() / 2]) << 16
+        | (bytes.len() as u64) << 24;
+    (word.wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 40) as usize & mask
 }
 
-/// `leaders`' positions in [`civ_order`].
+/// The table [`entry`] searches: a power of two of slots, at least four
+/// times the roster, so a search always meets an empty slot and seldom
+/// takes a second step. Names go in in roster order, which leaves the first
+/// record of a name first on its path, as reading the roster would find it.
 fn index_by_civ(leaders: &[LeaderRosterEntry]) -> Vec<u32> {
-    let mut by_civ: Vec<u32> = (0..leaders.len() as u32).collect();
-    by_civ.sort_by(|left, right| {
-        civ_order(&leaders[*left as usize].civ, &leaders[*right as usize].civ)
-    });
+    let slots = (leaders.len() * 4).next_power_of_two().max(16);
+    let mask = slots - 1;
+    let mut by_civ = vec![0_u32; slots];
+    for (position, leader) in leaders.iter().enumerate() {
+        let mut slot = civ_slot(&leader.civ, mask);
+        while by_civ[slot] != 0 {
+            slot = (slot + 1) & mask;
+        }
+        by_civ[slot] = position as u32 + 1;
+    }
     by_civ
+}
+
+/// [`entry`] over any roster and its [`index_by_civ`] table.
+fn find_by_civ<'a>(
+    leaders: &'a [LeaderRosterEntry],
+    by_civ: &[u32],
+    civ: &str,
+) -> Option<&'a LeaderRosterEntry> {
+    let mask = by_civ.len() - 1;
+    let mut slot = civ_slot(civ, mask);
+    loop {
+        let position = by_civ[slot];
+        if position == 0 {
+            return None;
+        }
+        let leader = &leaders[position as usize - 1];
+        if leader.civ == civ {
+            return Some(leader);
+        }
+        slot = (slot + 1) & mask;
+    }
 }
 
 static ROSTER: OnceLock<LeaderRoster> = OnceLock::new();
@@ -172,21 +214,21 @@ pub fn all() -> &'static [LeaderRosterEntry] {
 
 /// Find a record by the exact civilization identity carried in a setup/save.
 ///
-/// ★ THIS IS ASKED MILLIONS OF TIMES A GAME, AND IT READ THE WHOLE ROSTER
-/// EVERY TIME. `Game::has_ability`, `civ_effect` and `owns_civ_unique` all
-/// begin by asking whether the seat is a Civilization VI identity
+/// ★ THIS IS ASKED MILLIONS OF TIMES A GAME, AND IT READ THE ROSTER EVERY
+/// TIME. `Game::has_ability`, `civ_effect` and `owns_civ_unique` all begin
+/// by asking whether the seat is a Civilization VI identity
 /// ([`uses_civ6_mechanics`]), which is this lookup, and the rules ask one of
 /// the three for almost every yield, strength and movement term. It walked
-/// the roster comparing names until one matched: 2.6% of a gene-screen game
-/// (`docs/SIMULATOR_PERFORMANCE.md`, 2026-11-15). The roster is read once
-/// and never changes, so its names are kept in order and searched.
+/// the roster comparing names until one matched, so what it cost depended on
+/// where the seat's name stood: next to nothing for the first six names,
+/// which is who `civvis simulate` seats, and 2.6% of a game for the shuffled
+/// civilizations a gene screen seats (`docs/SIMULATOR_PERFORMANCE.md`,
+/// 2026-11-15). The roster is read once and never changes, so a name is
+/// looked up in a table built when it is read, at the same price wherever
+/// it stands.
 pub fn entry(civ: &str) -> Option<&'static LeaderRosterEntry> {
     let roster = roster();
-    roster
-        .by_civ
-        .binary_search_by(|at| civ_order(&roster.leaders[*at as usize].civ, civ))
-        .ok()
-        .map(|found| &roster.leaders[roster.by_civ[found] as usize])
+    find_by_civ(&roster.leaders, &roster.by_civ, civ)
 }
 
 /// [`entry`] as it was written first: the first record whose name matches,
@@ -343,7 +385,6 @@ mod tests {
     /// miss of every length, a city-state, the wrong case.
     #[test]
     fn the_search_finds_the_record_that_reading_the_roster_found() {
-        assert_eq!(roster().by_civ.len(), all().len());
         for (position, record) in all().iter().enumerate() {
             let found = entry(&record.civ).expect("every roster name is found");
             assert!(
@@ -387,13 +428,78 @@ mod tests {
             assert!(!is_selectable(name));
             assert!(true_start(name).is_none());
         }
-        // The index is in the order the search compares by, with no ties.
-        for pair in roster().by_civ.windows(2) {
+        // The table holds every record once, leaves most slots empty so a
+        // search for a name it does not hold ends, and seldom makes a search
+        // take a second step.
+        let table = &roster().by_civ;
+        assert!(table.len().is_power_of_two() && table.len() >= 4 * all().len());
+        let mut held: Vec<u32> = table.iter().copied().filter(|at| *at != 0).collect();
+        held.sort_unstable();
+        assert_eq!(held, (1..=all().len() as u32).collect::<Vec<_>>());
+        let mask = table.len() - 1;
+        let at_home = all()
+            .iter()
+            .enumerate()
+            .filter(|(position, record)| table[civ_slot(&record.civ, mask)] == *position as u32 + 1)
+            .count();
+        assert!(
+            at_home * 10 >= all().len() * 8,
+            "only {at_home} of {} names sit where their search starts; the three-byte \
+             slot no longer tells this roster's names apart",
+            all().len()
+        );
+    }
+
+    /// The table is built for whatever roster it is given: an empty one, a
+    /// single record, and one that repeats a name, where the first record is
+    /// the one reading the roster finds.
+    #[test]
+    fn the_table_answers_for_a_small_roster_and_a_repeated_name() {
+        let record = |civ: &str, leader: &str| LeaderRosterEntry {
+            civ: civ.to_string(),
+            leader: leader.to_string(),
+            pool: LeaderPool::Civ6,
+            available: true,
+            true_start: TrueStartPoint {
+                latitude: 0.0,
+                longitude: 0.0,
+            },
+        };
+        let none: Vec<LeaderRosterEntry> = Vec::new();
+        let table = index_by_civ(&none);
+        assert!(find_by_civ(&none, &table, "Rome").is_none());
+        assert!(find_by_civ(&none, &table, "").is_none());
+
+        let one = vec![record("Rome", "Trajan")];
+        let table = index_by_civ(&one);
+        assert_eq!(find_by_civ(&one, &table, "Rome").unwrap().leader, "Trajan");
+        assert!(find_by_civ(&one, &table, "Roma").is_none());
+
+        // Same first, middle and last byte and the same length: these start
+        // in one slot and are told apart by the comparison alone.
+        let crowded = vec![
+            record("abcde", "first"),
+            record("abxde", "a different name"),
+            record("abcde", "repeated"),
+            record("aXcYe", "same three bytes"),
+            record("", "the empty name"),
+        ];
+        let table = index_by_civ(&crowded);
+        let mask = table.len() - 1;
+        assert_eq!(civ_slot("abcde", mask), civ_slot("aXcYe", mask));
+        for name in ["abcde", "abxde", "aXcYe", "", "abcdf", "abcd", "e"] {
+            let read = crowded.iter().find(|entry| entry.civ == name);
+            let found = find_by_civ(&crowded, &table, name);
             assert_eq!(
-                civ_order(&all()[pair[0] as usize].civ, &all()[pair[1] as usize].civ),
-                std::cmp::Ordering::Less
+                found.map(|entry| entry.leader.as_str()),
+                read.map(|entry| entry.leader.as_str()),
+                "{name:?}"
             );
         }
+        assert_eq!(
+            find_by_civ(&crowded, &table, "abcde").unwrap().leader,
+            "first"
+        );
     }
 
     #[test]
