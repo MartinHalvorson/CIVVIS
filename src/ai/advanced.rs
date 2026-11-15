@@ -8216,6 +8216,11 @@ pub struct AdvancedAi {
     /// or offensive bodies for a target whose walls nothing it can field
     /// will breach. See `advanced/hopeless_army_yields_the_queue.rs`. Opt-in.
     hopeless_army_yields_the_queue: bool,
+    /// `gold-clears-the-denial-spy-queue`: while a Spy slot stands free
+    /// against a space racer, Gold buys the head that keeps the best Spy
+    /// city from training one, and the Spy trains there. See
+    /// `advanced/gold_clears_the_denial_spy_queue.rs`. Opt-in.
+    gold_clears_the_denial_spy_queue: bool,
     // ---- append: l-o ------------------------------------------------
     /// Ask the host for a cash price for a native land upgrade material bill.
     /// Opt-in; see `advanced/army_upgrade_materials.rs`.
@@ -11947,6 +11952,10 @@ mod fresh_water_site;
 mod generals_lead_the_army;
 /// `gold-buys-the-backlog-builder`: see `advanced/gold_buys_the_backlog_builder.rs`.
 mod gold_buys_the_backlog_builder;
+/// `gold-clears-the-denial-spy-queue`: Gold buys the head that keeps the best
+/// Spy city from the denial's Spy. See
+/// `advanced/gold_clears_the_denial_spy_queue.rs`.
+mod gold_clears_the_denial_spy_queue;
 /// `gold-buys-the-opening-builder`: a builderless opening buys its Builder
 /// with the idle treasury. See `advanced/gold_buys_the_opening_builder.rs`.
 mod gold_buys_the_opening_builder;
@@ -27310,6 +27319,11 @@ impl AdvancedAi {
             // of the routine claims below (the defence redirects at the end of
             // the turn still win). Exact no-op while the gene is off. See
             // `advanced/science_denial_trains_spies.rs`.
+            // `gold-clears-the-denial-spy-queue`: first, Gold buys the head
+            // that keeps the best Spy city from a free slot's Spy. Exact
+            // no-op while the gene is off. See
+            // `advanced/gold_clears_the_denial_spy_queue.rs`.
+            self.clear_queue_for_denial_spy(g, pid, &plan);
             self.claim_queues_for_denial_spies(g, pid, &plan);
             // `spies-steal-the-lead`: before a racer exists, a Science seat
             // trains the Spies its steals need, one at a time, under the same

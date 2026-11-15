@@ -363,6 +363,9 @@ impl AdvancedAi {
         /// Opt-in gene `hopeless-army-yields-the-queue`; see
         /// `advanced/hopeless_army_yields_the_queue.rs`.
         hopeless_army_yields_the_queue => enable_hopeless_army_yields_the_queue, disable_hopeless_army_yields_the_queue;
+        /// Opt-in gene `gold-clears-the-denial-spy-queue`; see
+        /// `advanced/gold_clears_the_denial_spy_queue.rs`.
+        gold_clears_the_denial_spy_queue => enable_gold_clears_the_denial_spy_queue, disable_gold_clears_the_denial_spy_queue;
         // ---- append: l-o --------------------------------------------
         /// Native land upgrade materials use a bounded host cash quote.
         land_army_asks_the_host_price => enable_land_army_asks_the_host_price, disable_land_army_asks_the_host_price;
