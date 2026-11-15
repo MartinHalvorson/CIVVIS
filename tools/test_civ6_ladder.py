@@ -1008,6 +1008,61 @@ class ConcurrentWriters(LedgerCase):
         # Readable as JSON means the replace was whole-file, not a truncate.
         self.assertEqual(len(self.state()["attempts"]), 1)
 
+    def test_the_ledger_text_is_the_same_document_one_attempt_a_line(self):
+        for tag in ("civvis-1", "civvis-2", "civvis-3"):
+            civ6_ladder.record_summary(write_run(self.runs, summary(tag)))
+        text = self.ledger.read_text()
+        state = json.loads(text)
+        # Layout only: the indented form the ledger used to be written in
+        # reads back as the very same document.
+        self.assertEqual(json.loads(json.dumps(state, indent=2, sort_keys=True)), state)
+        self.assertEqual(civ6_ladder.ledger_text(state), text)
+        self.assertEqual(civ6_ladder.load(self.ledger), state)
+        lines = text.splitlines()
+        self.assertEqual(lines[0], '{"attempts": [')
+        rows = [line for line in lines if line.startswith('{"') and '"tag"' in line]
+        self.assertEqual(len(rows), 3)
+        for row, tag in zip(rows, ("civvis-1", "civvis-2", "civvis-3")):
+            self.assertEqual(json.loads(row.rstrip(","))["tag"], tag)
+        # Everything that is not an attempt still follows, on the last line.
+        self.assertTrue(lines[-1].startswith("], "), lines[-1][:40])
+        for key in state:
+            if key != "attempts":
+                self.assertIn(f'"{key}": ', lines[-1])
+        self.assertTrue(text.endswith("}\n"))
+
+    def test_the_ledger_text_survives_every_shape_a_state_can_take(self):
+        awkward = {"tag": 'a "quoted" tag\nwith a newline, a comma and a ] bracket',
+                   "nested": {"attempts": [1, 2], "x": None}, "pi": 3.5, "ok": True}
+        for state in (
+            {"attempts": [], "wins": {}},
+            {"attempts": []},
+            {"attempts": [awkward], "wins": {"DIFFICULTY_DEITY": 2}, "victory_types": ["a"]},
+            {"attempts": [awkward, {}, {"tag": "x"}]},
+            {"wins": {}},                       # no attempts key at all
+            {"attempts": None, "wins": {}},     # nor a list
+            {"attempts": [{"tag": "é\u2028"}], "Aardvark": 1, "zebra": [1, {"b": 2}]},
+        ):
+            with self.subTest(state=str(state)[:60]):
+                text = civ6_ladder.ledger_text(state)
+                self.assertEqual(json.loads(text), state)
+                self.assertTrue(text.endswith("\n"))
+                self.assertEqual(text.count("\n"),
+                                 1 + (len(state["attempts"]) + 1
+                                      if isinstance(state.get("attempts"), list)
+                                      and state["attempts"] else 0))
+
+    def test_an_indented_ledger_from_before_is_read_and_rewritten(self):
+        """The seat's existing ledger is the indented form; the first game
+        after this change loads it, adds its row and writes the new layout."""
+        old = {"attempts": [], "wins": {}}
+        civ6_ladder.apply(old, json.loads(write_run(self.runs, summary("civvis-0")).read_text()))
+        self.ledger.write_text(json.dumps(old, indent=2, sort_keys=True) + "\n")
+        civ6_ladder.record_summary(write_run(self.runs, summary("civvis-1")))
+        state = self.state()
+        self.assertEqual([a["tag"] for a in state["attempts"]], ["civvis-0", "civvis-1"])
+        self.assertEqual(self.ledger.read_text(), civ6_ladder.ledger_text(state))
+
     def test_a_lock_left_by_a_dead_writer_is_broken_not_waited_on(self):
         lock = self.ledger.parent / (self.ledger.name + ".lock")
         lock.write_text("99999\n")
