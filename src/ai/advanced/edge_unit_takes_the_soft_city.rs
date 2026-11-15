@@ -125,7 +125,12 @@
 //!   ([`AdvancedAi::edge_rush_scout`]), so the force is home when a city is
 //!   named; the others, and the scouts once all of it is charted, are the
 //!   unit pass's.
-//! - **March**: a force unit the walk moved, or one standing near the city,
+//! - **March**: each walk of the rush (to the stand, home, to a city it
+//!   holds, to the city it assaults) is one order to the tile this turn's
+//!   movement reaches nearest the goal ([`AdvancedAi::edge_rush_march`]),
+//!   where the first version took the router's single step. The
+//!   declaration counts only units that have not walked this turn. A
+//!   force unit the walk moved, or one standing near the city,
 //!   fortifies with the moves it has left, so no later step of the turn
 //!   takes it back; one with no stand in reach comes toward our city
 //!   nearest the target ([`AdvancedAi::edge_rush_hold_the_walk`]).
@@ -136,7 +141,9 @@
 //!   over [`EDGE_RUSH_EDGE_PER_TILE`]), only one the force can stand at
 //!   by turn [`EDGE_RUSH_ARRIVE_BY`], and, unless it is a capital, only one
 //!   within [`EDGE_RUSH_LOYAL_TILES`] of a city of ours (farther, it leaves
-//!   on Loyalty within turns of its capture); none is named past turn
+//!   on Loyalty within turns of its capture); a Domination seat names a
+//!   capital ahead of any other city and turns to one that comes into
+//!   reach before its muster forms; none is named past turn
 //!   [`EDGE_RUSH_NAME_TURN`]; kept while unwalled and the edge is
 //!   [`EDGE_UNWALLED_FLOOR`] or better, and at any edge while
 //!   [`EDGE_MUSTER_BODIES`] edge units stand mustered at it. While the rush
@@ -930,6 +937,12 @@ impl AdvancedAi {
     /// [`EDGE_MIN`] or better the nearest (the march is the rush's clock);
     /// with none that soft, the lowest march (tiles less the edge over
     /// [`EDGE_RUSH_EDGE_PER_TILE`]). Then the lowest id.
+    ///
+    /// A Domination seat names a rival capital that passes those rules ahead
+    /// of any other city: only a capital counts toward its victory, and a
+    /// capital carries its own citizens' Loyalty (live 100810Z: Tskhumi,
+    /// three tiles from Tbilisi, fell at turn 28 and left as a Free City at
+    /// turn 33; of the first six live carriers one named a capital).
     pub(crate) fn edge_rush_soft_city(
         &self,
         g: &Game,
@@ -940,6 +953,8 @@ impl AdvancedAi {
     ) -> Option<SoftCity> {
         let mut best: Option<SoftCity> = None;
         let arrive_by = harvest_floor(g, EDGE_RUSH_ARRIVE_BY);
+        let capital_first = self.victory_target == Some(VictoryTarget::Domination);
+        let is_capital = |cid: u32| g.cities.get(&cid).is_some_and(|city| city.is_capital);
         for city in g.cities.values() {
             let Some(soft) = self.edge_read_city(g, pid, strength, city.id, from, reach) else {
                 continue;
@@ -964,9 +979,11 @@ impl AdvancedAi {
             // at +3 and 4 tiles, with four War-Carts standing at Porto).
             let march =
                 |soft: &SoftCity| f64::from(soft.tiles) - soft.edge / EDGE_RUSH_EDGE_PER_TILE;
-            let better = best
-                .as_ref()
-                .is_none_or(|held| match (easy(&soft), easy(held)) {
+            let better = best.as_ref().is_none_or(|held| {
+                if capital_first && city.is_capital != is_capital(held.city) {
+                    return city.is_capital;
+                }
+                match (easy(&soft), easy(held)) {
                     (true, false) => true,
                     (false, true) => false,
                     (true, true) => (soft.tiles, soft.city) < (held.tiles, held.city),
@@ -977,7 +994,8 @@ impl AdvancedAi {
                             (soft.tiles, soft.city) < (held.tiles, held.city)
                         }
                     }
-                });
+                }
+            });
             if better {
                 best = Some(soft);
             }
@@ -1210,6 +1228,8 @@ impl AdvancedAi {
                    away.len(), plain(unit.as_str()), since + EDGE_RUSH_HOME_TURNS);
         }
         for (uid, home) in away {
+            let goals: HashSet<Pos> = g.wdisk(home, EDGE_RUSH_HOME_TILES).into_iter().collect();
+            let _ = self.edge_rush_march(g, pid, uid, &goals, None);
             for _ in 0..6 {
                 let Some(body) = g.units.get(&uid) else {
                     break;
@@ -1506,6 +1526,29 @@ impl AdvancedAi {
                     }
                 }
             }
+        };
+        // A Domination seat's rush turns to a rival capital that comes into
+        // reach while no muster has formed at the city it named.
+        let kept = match kept {
+            Some(soft)
+                if rush
+                    && naming
+                    && self.victory_target == Some(VictoryTarget::Domination)
+                    && window.mustered.is_none()
+                    && !g.cities.get(&soft.city).is_some_and(|city| city.is_capital) =>
+            {
+                match self.edge_rush_soft_city(g, pid, edge.strength, &ours, reach) {
+                    Some(capital)
+                        if g.cities
+                            .get(&capital.city)
+                            .is_some_and(|city| city.is_capital) =>
+                    {
+                        Some(capital)
+                    }
+                    _ => Some(soft),
+                }
+            }
+            other => other,
         };
         // Past the naming turn only the city already named is mustered on.
         let Some(soft) = kept.or_else(|| {
@@ -2331,8 +2374,13 @@ impl AdvancedAi {
             })
             .collect();
         for uid in force {
-            // One step a call; a body has at most a few moves.
             let mut walked = false;
+            // The rush: the whole of this turn's walk in one order.
+            if close {
+                let goals = Self::edge_stand_goals(g, pid, uid, city, true);
+                walked = self.edge_rush_march(g, pid, uid, &goals, spared);
+            }
+            // One step a call; a body has at most a few moves.
             for _ in 0..6 {
                 if Self::edge_stage_unit(g, pid, uid, city, close) != Some(true) {
                     break;
@@ -2342,6 +2390,54 @@ impl AdvancedAi {
             if close {
                 self.edge_rush_hold_the_walk(g, pid, uid, city, walked);
             }
+        }
+    }
+
+    /// The rush's march toward `goals`: one order for the whole of this
+    /// turn's walk, to the tile its movement reaches nearest them
+    /// (`march_destination`, the reading `march-uses-its-moves` gives the
+    /// siege train's marches), where the router's single step is not
+    /// already the best tile. Live, over five games of the first version,
+    /// the War-Carts made 1.5 tiles a turn on an allowance of 3.35 and about
+    /// half of those tiles were not progress: the staging walk took the
+    /// breadth-first router's first step, every tile priced at one, stopped
+    /// when the next tile cost more than was left, and fortified. `avoid`: a
+    /// player whose land the walk must not cross (the target's owner before
+    /// the war). `true` when it walked; `false` leaves the unit to the
+    /// caller's single steps.
+    fn edge_rush_march(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        goals: &HashSet<Pos>,
+        avoid: Option<usize>,
+    ) -> bool {
+        let ready = g
+            .units
+            .get(&uid)
+            .is_some_and(|body| body.moves_left > 0.0 && !goals.contains(&body.pos));
+        if goals.is_empty() || !ready {
+            return false;
+        }
+        let Some(next) = g.route_step_to_any(uid, goals) else {
+            return false;
+        };
+        let clear = |g: &Game, _: Pos, path: &[Pos]| {
+            avoid.is_none_or(|rival| {
+                path.iter().all(|pos| {
+                    g.map
+                        .get(*pos)
+                        .and_then(|tile| tile.owner_city)
+                        .and_then(|city| g.cities.get(&city))
+                        .map(|city| city.owner)
+                        != Some(rival)
+                })
+            })
+        };
+        match self.march_destination(g, uid, goals, next, clear) {
+            Some(dest) => self.base.path_walk_to(g, pid, uid, dest),
+            None => false,
         }
     }
 
@@ -2390,6 +2486,8 @@ impl AdvancedAi {
                 .map(|cid| g.cities[&cid].pos)
                 .min_by_key(|pos| (g.wdist(*pos, city), *pos));
             if let Some(home) = home {
+                let goals: HashSet<Pos> = g.wdisk(home, EDGE_RUSH_HOME_TILES).into_iter().collect();
+                walked = self.edge_rush_march(g, pid, uid, &goals, None);
                 for _ in 0..6 {
                     let Some(body) = g.units.get(&uid) else {
                         break;
@@ -2768,12 +2866,19 @@ impl AdvancedAi {
         // frames, and a muster that forms after the walk has spent the
         // moves waits for the next turn's first frame.
         if window.rushing() {
+            // Units that have not walked this turn: a turn is planned in
+            // several frames, and live 104756Z walked three War-Carts in
+            // frame 0 (movement 3 to 1 and 2) and declared in frame 1 with
+            // them spent.
+            let fresh = g.rules.units.get(&unit).map_or(1.0, |spec| spec.moves);
             let able: Vec<u32> = near
                 .iter()
                 .copied()
                 .filter(|uid| {
                     let body = &g.units[uid];
-                    body.kind == unit && body.hp >= EDGE_MUSTER_HP && body.moves_left > 0.0
+                    body.kind == unit
+                        && body.hp >= EDGE_MUSTER_HP
+                        && body.moves_left + 1e-9 >= fresh
                 })
                 .collect();
             let movers = able
@@ -2788,7 +2893,7 @@ impl AdvancedAi {
                 .is_some_and(|since| g.turn >= since + EDGE_RUSH_POSITION_TURNS);
             if movers < need && !(waited && able.len() >= need) {
                 let why = format!(
-                    "the forecast reads {:.0}% at {name}; {movers} of the {bodies} {} there stand on their stand with a move left, so the declaration waits for the turn {need} do",
+                    "the forecast reads {:.0}% at {name}; {movers} of the {bodies} {} there stand on their stand with their moves unspent, so the declaration waits for the turn {need} do",
                     chance * 100.0,
                     plain(unit.as_str())
                 );
@@ -3243,6 +3348,8 @@ impl AdvancedAi {
                 .filter(|uid| g.units.get(uid).is_some_and(|body| !g.is_embarked(body)))
                 .min_by_key(|uid| (g.wdist(g.units[uid].pos, held), *uid));
             if let Some(uid) = garrison {
+                let goals: HashSet<Pos> = std::iter::once(held).collect();
+                let _ = self.edge_rush_march(g, pid, uid, &goals, None);
                 for _ in 0..6 {
                     let Some(body) = g.units.get(&uid) else {
                         break;
@@ -3306,6 +3413,8 @@ impl AdvancedAi {
                 }
                 continue;
             }
+            let goals: HashSet<Pos> = g.wdisk(held, EDGE_RUSH_HOME_TILES).into_iter().collect();
+            let _ = self.edge_rush_march(g, pid, uid, &goals, None);
             for _ in 0..6 {
                 let Some(body) = g.units.get(&uid) else {
                     break;
@@ -3497,6 +3606,16 @@ impl AdvancedAi {
                                 })
                         })
                         .collect();
+                    // The rush: a unit still on its way walks the whole of
+                    // this turn's march in one order (live 101703Z and
+                    // 104756Z: fresh War-Carts 6-12 tiles off closed at a
+                    // tile a turn while the assault ended short).
+                    if rush
+                        && g.wdist(here, pos) > 2
+                        && self.edge_rush_march(g, pid, uid, &beside, None)
+                    {
+                        continue;
+                    }
                     let step = g
                         .route_step_to_any(uid, &beside)
                         .filter(|next| g.can_move(uid, *next))
@@ -4069,7 +4188,7 @@ impl AdvancedAi {
         if !self.edge_gene_on() {
             return None;
         }
-        let (_, city) = self.edge_staging_target(g, pid, uid)?;
+        let (rival, city) = self.edge_staging_target(g, pid, uid)?;
         // Version 2: a wounded edge unit heals before it marches.
         let unit = self.edge_unit_window.as_ref().and_then(|w| w.unit);
         if g.units
@@ -4079,6 +4198,12 @@ impl AdvancedAi {
             return Self::edge_heal_step(g, pid, uid).map(|_| false);
         }
         let close = self.edge_unit_window.as_ref().is_some_and(|w| w.rushing());
+        if close {
+            let goals = Self::edge_stand_goals(g, pid, uid, city, true);
+            if self.edge_rush_march(g, pid, uid, &goals, Some(rival)) {
+                return Some(true);
+            }
+        }
         Self::edge_stage_unit(g, pid, uid, city, close)
     }
 

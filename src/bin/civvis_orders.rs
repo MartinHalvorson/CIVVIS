@@ -52,10 +52,14 @@ mod builder_diagnostics;
 #[path = "civvis_orders/builder_operation_refusals.rs"]
 mod builder_operation_refusals;
 
+#[path = "civvis_orders/locked_art.rs"]
+mod locked_art;
 #[path = "civvis_orders/spent_traders.rs"]
 mod spent_traders;
 #[path = "civvis_orders/trader_origin_coverage.rs"]
 mod trader_origin_coverage;
+#[path = "civvis_orders/walk_steps.rs"]
+mod walk_steps;
 
 #[path = "civvis_orders/air_assault.rs"]
 mod air_assault;
@@ -5197,6 +5201,8 @@ fn decide(
         ));
     }
 
+    // See `walk_steps`: a one-order walk crosses with the steps it took.
+    let mut walk_reader = walk_steps::Reader::default();
     for (seat, action) in planned_game.log.since(ai_actions_begin) {
         if *seat != 0 {
             continue;
@@ -5207,6 +5213,17 @@ fn decide(
         ) {
             policy_changed = true;
             continue;
+        }
+        if let Action::MoveTo { unit, .. } | Action::Move { unit, .. } = action {
+            let unit = *unit;
+            let steps =
+                walk_reader.steps_before(&planned_game.unit_move_trails, planned_game.turn, action);
+            // Each step is the order a hand-stepped walk would have sent; the
+            // fold below sends the host the last hex, as before.
+            orders.extend(steps.into_iter().filter_map(|to| {
+                translate(&Action::Move { unit, to }, mirror_state, state)
+                    .filter(|order| order.verb.as_deref() == Some("MOVE_TO"))
+            }));
         }
         let order = translate(action, mirror_state, state);
         match order {
@@ -5998,9 +6015,15 @@ fn decide(
         }
     }
 
+    // See `locked_art`: a work inside its ten-turn lock is not proposed.
+    let mut art_locked = 0;
     for (source, work, destination, slot) in
         ai.native_art_museum_swaps(&mirror_state.game, 0, state)
     {
+        if locked_art::locked(state, source, &work, destination, slot) {
+            art_locked += 1;
+            continue;
+        }
         if let Ok(destination) = i32::try_from(destination) {
             orders.push(Order {
                 kind: "museum_swap",
@@ -6009,6 +6032,10 @@ fn decide(
                 pos: Some((destination, slot)),
             });
         }
+    }
+
+    if art_locked > 0 {
+        note_bits.push(format!("museum_swaps_wait_for_the_art_lock={art_locked}"));
     }
 
     let relocated_traders = trader_origin_coverage::apply(
@@ -7923,6 +7950,9 @@ const EVIDENCE_KINDS: &[&str] = &[
     // on the ledger is a named refusal, not a position diff.
     "move_noop",
     "move_fallback",
+    // A unit order the mod refused when it applied it, with its unit and the
+    // reason (#5339). Read for `move_no_path`: see `move_refusal_reason`.
+    "order_refused",
     // A policy change can be accepted by the host's queue but deferred when
     // another policy transaction is still in flight on the same turn. This
     // is the host's attribution for an otherwise indistinguishable missing
@@ -8457,6 +8487,22 @@ fn move_refusal_reason(evidence: &[serde_json::Value], turn: u32, unit: i64) -> 
             .filter(|w| !w.is_empty())
             .unwrap_or("unknown");
         return Some(format!("host_noop_{why}"));
+    }
+    // The mod asked the host for the path before sending the walk and the
+    // host had none (`order_refused`, `why: move_no_path`, since #5339 and
+    // #5345 only for a unit that is not on the plot and has movement). No
+    // request was made, so no `move_noop` follows; without this the verdict
+    // was the bare `did_not_move`, which nothing retries. Live
+    // civvis-20261115T120431Z: a War-Cart sent through a held pass got the
+    // same whole walk, and the same refusal, on four turns running.
+    if evidence.iter().any(|event| {
+        event.get("kind").and_then(|k| k.as_str()) == Some("order_refused")
+            && event.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(turn))
+            && event.get("unit").and_then(|u| u.as_i64()) == Some(unit)
+            && event.get("verb").and_then(|v| v.as_str()) == Some("MOVE_TO")
+            && event.get("why").and_then(|w| w.as_str()) == Some("move_no_path")
+    }) {
+        return Some("host_refused_no_path".to_string());
     }
     let event = of_kind("move_refused")?;
     let named = |key: &str| event.get(key).and_then(|v| v.as_bool()).unwrap_or(false);

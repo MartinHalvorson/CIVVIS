@@ -133,7 +133,19 @@ fn verify_order_with_context(
                 .iter()
                 .find(|work| work.building == building && work.slot == destination_slot)
                 .map(|work| work.kind.as_str());
-            if source_now == other
+            // The slot the work left holds what the destination slot held. A
+            // move into an EMPTY slot leaves it empty, unless a Great Person
+            // created a new work into it the same turn: live
+            // civvis-20261115T114552Z t143, the first swap the host ever
+            // carried out (a Hokusai from Astrakhan into Kazan's empty second
+            // slot) was reported `museum_swap_not_observed` because a new
+            // Monet stood in the vacated slot a turn later. A work the source
+            // museum already held is not a new one.
+            let vacated = match other {
+                Some(_) => source_now == other,
+                None => source_now.is_none_or(|kind| !source.iter().any(|work| work.kind == kind)),
+            };
+            if vacated
                 && destination_now == Some(verb)
                 && !source_after.iter().any(|work| work.kind == verb)
             {

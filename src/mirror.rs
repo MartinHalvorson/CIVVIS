@@ -2717,6 +2717,7 @@ const CITY_KEYS: &[&str] = &[
     "worked",
     "specialists",
     "great_works",
+    "great_work_turns",
     "yields",
     "producing",
     "producing_hash",

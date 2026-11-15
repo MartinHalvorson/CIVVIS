@@ -308,6 +308,8 @@ impl AdvancedAi {
                     && (!self.settler_threat_detour_on()
                         || !self.settler_threat_deferrals.contains_key(pos))
                     && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
+                    // `settler-keeps-its-named-site`: not beside a sibling's site.
+                    && !self.named_site_spaced_out(g, pid, uid, *pos)
                     // `settler-target-floor`: exhaustion asks wider, not worse.
                     && self.settler_target_clears_floor(g, from, *pos, *value)
             })
@@ -375,6 +377,8 @@ impl AdvancedAi {
                     && (!self.settler_threat_detour_on()
                         || !self.settler_threat_deferrals.contains_key(pos))
                     && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
+                    // `settler-keeps-its-named-site`: not beside a sibling's site.
+                    && !self.named_site_spaced_out(g, pid, uid, *pos)
             })
             .filter_map(|pos| {
                 if !live_fallback_safety {

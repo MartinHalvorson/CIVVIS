@@ -1839,6 +1839,80 @@ fn the_rush_names_no_city_its_force_cannot_reach_in_time() {
 }
 
 #[test]
+fn a_domination_seat_s_rush_names_the_capital_first() {
+    // Only a capital counts toward a Domination victory, and a capital
+    // carries its own citizens' Loyalty (live 100810Z: Tskhumi, three tiles
+    // from Tbilisi, left as a Free City five turns after it fell).
+    let (mut g, near) = rush_fixture();
+    let far = (16, 8);
+    let capital = g.found_city_for(1, far, None);
+    g.players[0].explored.insert(far);
+    g.cities.get_mut(&near).unwrap().is_capital = false;
+    g.cities.get_mut(&capital).unwrap().is_capital = true;
+    // A Score seat names the nearer city.
+    let score = rush_on(VictoryTarget::Score);
+    assert_eq!(
+        score
+            .edge_rush_soft_city(&g, 0, 30.0, &[CAPITAL], 15)
+            .map(|soft| soft.city),
+        Some(near)
+    );
+    // A Domination seat names the capital, twelve tiles off.
+    let mut ai = rush_on(VictoryTarget::Domination);
+    assert_eq!(
+        ai.edge_rush_soft_city(&g, 0, 30.0, &[CAPITAL], 15)
+            .map(|soft| soft.city),
+        Some(capital)
+    );
+    // Named on the nearer city before the capital was seen, it turns to
+    // the capital while no muster has formed.
+    g.players[0].explored.remove(&far);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(
+        window(&ai).target.as_ref().map(|target| target.city),
+        Some(near)
+    );
+    g.players[0].explored.insert(far);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert_eq!(
+        window(&ai).target.as_ref().map(|target| target.city),
+        Some(capital)
+    );
+}
+
+#[test]
+fn the_rush_marches_in_one_order_and_declares_only_unwalked() {
+    // The march: one order for the whole of this turn's walk toward the
+    // goal, where the first version took one tile a call (live: 1.5 tiles
+    // a turn on an allowance of 3.35).
+    let (mut g, _) = rush_fixture();
+    let mut ai = rush_on(VictoryTarget::Score);
+    let cart = g.spawn_test_unit("war_cart", 0, (4, 15));
+    let goals: std::collections::HashSet<Pos> = g.wdisk(CAPITAL, 1).into_iter().collect();
+    let before = g.wdist(g.units[&cart].pos, CAPITAL);
+    assert!(ai.edge_rush_march(&mut g, 0, cart, &goals, None));
+    assert!(before - g.wdist(g.units[&cart].pos, CAPITAL) >= 2);
+    // On a goal tile, or with no move, nothing is ordered.
+    let home = g.spawn_test_unit("war_cart", 0, (5, 8));
+    assert!(!ai.edge_rush_march(&mut g, 0, home, &goals, None));
+    g.units.get_mut(&cart).unwrap().moves_left = 0.0;
+    assert!(!ai.edge_rush_march(&mut g, 0, cart, &goals, None));
+
+    // The declaration counts only units that have not walked this turn
+    // (live 104756Z: frame 0 walked three War-Carts and frame 1 declared
+    // with them spent).
+    let (mut g, _) = rush_fixture();
+    let carts = war_carts(&mut g, &[(10, 8), (10, 9), (10, 10)]);
+    for uid in &carts {
+        g.units.get_mut(uid).unwrap().moves_left = 1.0;
+    }
+    let mut ai = rush_on(VictoryTarget::Score);
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(!g.is_at_war(0, 1));
+    assert_eq!(counter(&g, "held_moves"), 1);
+}
+
+#[test]
 fn a_scout_past_eight_tiles_walks_home() {
     // Nothing can be named (the rival's city is walled): a War-Cart twelve
     // tiles out comes back toward the capital, so the force is home when a

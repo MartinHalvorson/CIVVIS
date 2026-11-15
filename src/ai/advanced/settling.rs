@@ -696,6 +696,9 @@ impl AdvancedAi {
                     && (!self.settler_threat_detour_on()
                         || !self.settler_threat_deferrals.contains_key(position))
                     && !self.settler_target_reserved_by_other(g, pid, uid, *position)
+                    // `settler-keeps-its-named-site`: an unseen plot, or one
+                    // a sibling's site already spaces out, is not named.
+                    && !self.named_site_is_unkeepable(g, pid, uid, *position)
                     // `settler-target-floor`: not worth the walk is not a target.
                     && self.settler_target_clears_floor(g, from, *position, *value)
             })
@@ -1872,11 +1875,20 @@ impl AdvancedAi {
         })
     }
 
-    /// The Settler's turn: the decision routine below and — under
-    /// `settler-never-idles` — a watchdog that marches a Settler the routine
-    /// has held for `SETTLER_IDLE_PATIENCE` turns. See
-    /// `advanced/settler_never_idles.rs`.
+    /// The Settler's turn. Under `settler-keeps-its-named-site` the site it
+    /// names afterwards is compared with the one it named before and a change
+    /// is journalled; see `advanced/settler_keeps_its_named_site.rs`.
     pub(super) fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        let named = self.named_site_key(g, uid);
+        let acted = self.advanced_settler_step_watched(g, pid, uid);
+        self.note_named_site(g, pid, uid, named);
+        acted
+    }
+
+    /// The decision routine below and — under `settler-never-idles` — a
+    /// watchdog that marches a Settler the routine has held for
+    /// `SETTLER_IDLE_PATIENCE` turns. See `advanced/settler_never_idles.rs`.
+    fn advanced_settler_step_watched(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let acted = self.advanced_settler_step_inner(g, pid, uid);
         // `founding-voyage`: a cityless seat's embarked Settler with nowhere to
         // go sails toward land. See `advanced/maori_founds_from_the_sea.rs`.
