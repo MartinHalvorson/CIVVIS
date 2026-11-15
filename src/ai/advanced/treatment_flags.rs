@@ -284,6 +284,9 @@ impl AdvancedAi {
         /// Opt-in gene `culture-seat-fills-its-district-slots`; see
         /// `advanced/culture_fills_its_slots.rs`.
         culture_seat_fills_its_district_slots => enable_culture_seat_fills_its_district_slots, disable_culture_seat_fills_its_district_slots;
+        /// Opt-in gene `capital-archers-before-the-surprise`; see
+        /// `advanced/capital_archers_before_the_surprise.rs`.
+        capital_archers_before_the_surprise => enable_capital_archers_before_the_surprise, disable_capital_archers_before_the_surprise;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

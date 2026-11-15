@@ -5743,6 +5743,11 @@ pub const GENES: &[Gene] = &[
     // Amphitheater; Science 186 against the best rival's 488. See
     // `advanced/culture_fills_its_slots.rs`.
     Gene { tag: "culture-seat-fills-its-district-slots", field: "culture_seat_fills_its_district_slots", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_fills_its_district_slots, disable: AdvancedAi::disable_culture_seat_fills_its_district_slots },
+    // Live Deity 2026-11-15 (33 games): four surprise wars before turn 30 at
+    // 3.4-5.6x our power; two took the capital with its walls at 34 and 35
+    // of 40 and Archery two to four turns after Masonry. See
+    // `advanced/capital_archers_before_the_surprise.rs`.
+    Gene { tag: "capital-archers-before-the-surprise", field: "capital_archers_before_the_surprise", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_archers_before_the_surprise, disable: AdvancedAi::disable_capital_archers_before_the_surprise },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
