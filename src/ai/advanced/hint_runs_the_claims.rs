@@ -229,6 +229,13 @@ impl AdvancedAi {
         if growth_claims {
             self.claim_score_slots(g, pid, plan);
         }
+        // `culture-seat-fills-its-district-slots`: a Culture seat's Theater
+        // city takes a Campus, a Commercial Hub or a Harbor for its free slot,
+        // beside the Score claim and ahead of the Culture claims. Exact no-op
+        // while the gene is off. See `advanced/culture_fills_its_slots.rs`.
+        if growth_claims {
+            self.claim_culture_slots(g, pid, plan);
+        }
         // `domination-seat-raises-its-culture`: a Domination seat's Monuments,
         // after the Campus claims (whose heads they leave alone) and ahead of
         // the Prophet race and the routine claims. Under the war's hold, the

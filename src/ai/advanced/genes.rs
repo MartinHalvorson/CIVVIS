@@ -5736,6 +5736,13 @@ pub const GENES: &[Gene] = &[
     // forecast capture by the soldiers in reach. See
     // `advanced/declaration_needs_a_capture.rs`.
     Gene { tag: "declaration-needs-a-capture", field: "declaration_needs_a_capture", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_needs_a_capture, disable: AdvancedAi::disable_declaration_needs_a_capture },
+    // Live Deity Pericles Culture game 2026-11-15 (`civvis-20261115T071444Z`):
+    // 27 specialty slots against 20 districts at turn 100 and 47 against 39
+    // at 175, 500 city-turns with a free slot and a Campus or Commercial Hub
+    // on offer while the city built a Builder, a Neighborhood or an
+    // Amphitheater; Science 186 against the best rival's 488. See
+    // `advanced/culture_fills_its_slots.rs`.
+    Gene { tag: "culture-seat-fills-its-district-slots", field: "culture_seat_fills_its_district_slots", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_fills_its_district_slots, disable: AdvancedAi::disable_culture_seat_fills_its_district_slots },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

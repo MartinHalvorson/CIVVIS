@@ -294,6 +294,16 @@ impl AdvancedAi {
             })
     }
 
+    /// Whether [`Self::culture_faith_hold_the_slots`] keeps `cid`'s last free
+    /// slot for its Holy Site this turn: the gene on, the Faith sources open
+    /// and the city's own test. Read by `culture-seat-fills-its-district-slots`
+    /// (`advanced/culture_fills_its_slots.rs`), which never takes that slot.
+    pub(super) fn culture_faith_slot_is_kept(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        self.culture_faith_site_per_theater_3
+            && self.culture_faith_source_budget(g, pid).is_some()
+            && self.culture_faith_keeps_the_slot(g, pid, cid)
+    }
+
     /// `culture-faith-site-per-theater-3`: refuse every other specialty
     /// district in each city that [keeps its slot](Self::culture_faith_keeps_the_slot)
     /// for the production pass, through the board's own refusals (the district

@@ -281,6 +281,9 @@ impl AdvancedAi {
         /// Opt-in gene `declaration-needs-a-capture`; see
         /// `advanced/declaration_needs_a_capture.rs`.
         declaration_needs_a_capture => enable_declaration_needs_a_capture, disable_declaration_needs_a_capture;
+        /// Opt-in gene `culture-seat-fills-its-district-slots`; see
+        /// `advanced/culture_fills_its_slots.rs`.
+        culture_seat_fills_its_district_slots => enable_culture_seat_fills_its_district_slots, disable_culture_seat_fills_its_district_slots;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
