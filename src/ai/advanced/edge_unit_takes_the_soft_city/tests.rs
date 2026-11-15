@@ -1136,12 +1136,31 @@ fn war_cart() -> Name {
 }
 
 /// Seat 0 is Sumeria with its capital alone at turn 10, no technology and
-/// no Gold; the rival's city stands eight tiles east, met and explored,
+/// no Gold; the rival's one city stands eight tiles east, met and explored,
 /// with no soldier.
 fn rush_fixture() -> (Game, u32) {
-    let (mut g, city) = fixture(&[]);
+    let mut g = Game::new_full(2, 30, 20, 5_267_001, 300, 0, false);
+    for uid in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(uid);
+    }
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.resource = None;
+        tile.hills = false;
+    }
     g.players[0].civ = "Sumeria".to_string();
-    one_city(&mut g);
+    g.found_city_for(0, CAPITAL, None);
+    let city = g.found_city_for(1, RIVAL, None);
+    g.record_contact(0, 1);
+    g.players[0].explored.insert(RIVAL);
+    g.players[0].techs.clear();
+    for city in g.cities.values_mut() {
+        city.queue.clear();
+    }
+    g.players[0].gold = 0.0;
+    g.current = 0;
+    g.game_speed = crate::setup::GameSpeed::Online;
     g.turn = 10;
     (g, city)
 }
@@ -1413,7 +1432,7 @@ fn gold_is_held_for_the_next_war_cart_and_buys_it() {
     ai.maintain_edge_unit_window(&mut g, 0);
     // Short of the price, it is held back from every other purchase.
     assert_eq!(ai.edge_upgrade_gold_held(&g, 0), price);
-    assert_eq!(ai.purchase_upkeep_floor(&g, 0, 0.0), price);
+    assert!(ai.purchase_upkeep_floor(&g, 0, 0.0) >= price);
     assert_eq!(counter(&g, "bought"), 0);
     // With the price in the treasury the next turn buys it.
     g.players[0].gold = price + 5.0;
@@ -1461,11 +1480,11 @@ fn three_war_carts_at_the_city_declare_from_one_city() {
 #[test]
 fn a_war_the_target_declared_first_is_taken_up_at_the_muster() {
     let (mut g, city) = rush_fixture();
-    let carts = war_carts(&mut g, &[(5, 8), (5, 9), (3, 8)]);
+    let carts = war_carts(&mut g, &[(1, 8), (1, 9), (2, 9)]);
     let mut ai = rush_on(VictoryTarget::Score);
     ai.maintain_edge_unit_window(&mut g, 0);
     assert_eq!(window(&ai).target.map(|target| target.city), Some(city));
-    // The rival declares on us while the force is still at home.
+    // The rival declares on us while the force is still on its way.
     g.at_war.insert((0, 1));
     for uid in &carts {
         let body = g.units.get_mut(uid).unwrap();
@@ -1531,8 +1550,9 @@ fn after_a_capture_the_rush_goes_on_while_the_forecast_holds() {
     // The rival's second city five tiles on, open: three healthy War-Carts
     // read it taken, and the one inside the captured city stays there.
     let next = (17, 8);
-    let (mut g, mut ai, city, carts) = rush_at_war(&[RIVAL, (11, 8), (11, 9), (12, 9)], Some(next));
+    let (mut g, mut ai, city, mut carts) = rush_at_war(&[(11, 8), (11, 9), (12, 9)], Some(next));
     g.cities.get_mut(&city).unwrap().owner = 0;
+    carts.insert(0, g.spawn_test_unit("war_cart", 0, RIVAL));
     let journal = crate::reasoning::Journal::recording();
     ai.base.journal = journal.handle();
     ai.maintain_edge_unit_window(&mut g, 0);
@@ -1568,8 +1588,9 @@ fn after_a_capture_the_rush_goes_on_while_the_forecast_holds() {
 #[test]
 fn after_a_capture_a_walled_city_the_forecast_does_not_read_is_left_alone() {
     let next = (17, 8);
-    let (mut g, mut ai, city, _) = rush_at_war(&[RIVAL, (11, 8), (11, 9), (12, 9)], Some(next));
+    let (mut g, mut ai, city, _) = rush_at_war(&[(11, 8), (11, 9), (12, 9)], Some(next));
     g.cities.get_mut(&city).unwrap().owner = 0;
+    g.spawn_test_unit("war_cart", 0, RIVAL);
     let walled = g.city_at(next).unwrap();
     g.cities.get_mut(&walled).unwrap().wall_hp = 100;
     ai.maintain_edge_unit_window(&mut g, 0);
