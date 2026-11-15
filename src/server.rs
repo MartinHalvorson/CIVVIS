@@ -3821,11 +3821,10 @@ impl Hasher for MarkHasher {
     #[inline]
     fn write(&mut self, bytes: &[u8]) {
         self.mix(bytes.len() as u64);
-        let mut words = bytes.chunks_exact(8);
-        for word in &mut words {
-            self.mix(u64::from_le_bytes(word.try_into().expect("eight bytes")));
+        let (words, rest) = bytes.as_chunks::<8>();
+        for word in words {
+            self.mix(u64::from_le_bytes(*word));
         }
-        let rest = words.remainder();
         if !rest.is_empty() {
             let mut word = [0u8; 8];
             word[..rest.len()].copy_from_slice(rest);
