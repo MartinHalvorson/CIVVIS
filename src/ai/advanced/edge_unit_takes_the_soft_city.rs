@@ -133,7 +133,9 @@
 //!   [`edge_rush_reach`] of ours at an edge of [`EDGE_RUSH_MIN`] or better
 //!   (a walled one keeps the base rule), the nearest of those at
 //!   [`EDGE_MIN`] or better, else the lowest march (tiles less the edge
-//!   over [`EDGE_RUSH_EDGE_PER_TILE`]); kept while unwalled and the edge is
+//!   over [`EDGE_RUSH_EDGE_PER_TILE`]), and only one the force can stand at
+//!   by turn [`EDGE_RUSH_ARRIVE_BY`]; none is named past turn
+//!   [`EDGE_RUSH_NAME_TURN`]; kept while unwalled and the edge is
 //!   [`EDGE_UNWALLED_FLOOR`] or better, and at any edge while
 //!   [`EDGE_MUSTER_BODIES`] edge units stand mustered at it. While the rush
 //!   runs no declared
@@ -307,6 +309,19 @@ pub(crate) const EDGE_RUSH_SCOUT_TILES: i32 = 8;
 /// rival soldiers held the stands beside the city, so the first blows
 /// landed on turn two or three).
 pub(crate) const EDGE_RUSH_FORECAST_TURNS: usize = 8;
+/// The rush: the last Online turn it names a city on
+/// ([`EDGE_START_NAME_TURN`] for the opening from the start). Past it with
+/// none named the rush stands down and the capital has its builds back.
+pub(crate) const EDGE_RUSH_NAME_TURN: u32 = 32;
+/// The rush names a city only when its force can stand there by this Online
+/// turn, at [`EDGE_RUSH_TILES_PER_TURN`]. Live 094903Z (Gilgamesh, Deity,
+/// Score seat): Đồng Hới was named at turn 27, 14 tiles off, four more
+/// War-Carts were trained for it, and it stood walled at turn 34 with the
+/// nearest of them six tiles away.
+pub(crate) const EDGE_RUSH_ARRIVE_BY: u32 = 34;
+/// Tiles a turn the force covers on its march (live 094137Z: a War-Cart
+/// came 14 tiles in nine turns over hills, jungle and rivers).
+pub(crate) const EDGE_RUSH_TILES_PER_TURN: f64 = 1.5;
 /// The rush names the city with the lowest march: its tiles from our
 /// nearest city, less its edge over this (a city this much softer is worth
 /// one more tile).
@@ -899,12 +914,19 @@ impl AdvancedAi {
         reach: i32,
     ) -> Option<SoftCity> {
         let mut best: Option<SoftCity> = None;
+        let arrive_by = harvest_floor(g, EDGE_RUSH_ARRIVE_BY);
         for city in g.cities.values() {
             let Some(soft) = self.edge_read_city(g, pid, strength, city.id, from, reach) else {
                 continue;
             };
             let floor = if soft.walls { EDGE_MIN } else { EDGE_RUSH_MIN };
             if soft.edge + 1e-9 < floor {
+                continue;
+            }
+            // A city the force cannot stand at in time is not named: it is
+            // walled or garrisoned by the turn the march ends.
+            let march = (f64::from(soft.tiles) / EDGE_RUSH_TILES_PER_TURN).ceil() as u32;
+            if g.turn.saturating_add(march) > arrive_by {
                 continue;
             }
             let easy = |soft: &SoftCity| soft.edge + 1e-9 >= EDGE_MIN;
@@ -1308,7 +1330,9 @@ impl AdvancedAi {
         } else {
             EDGE_REACH_TILES
         };
-        let (name_by, muster_by) = if start {
+        let (name_by, muster_by) = if rush {
+            (EDGE_RUSH_NAME_TURN, EDGE_START_MUSTER_TURN)
+        } else if start {
             (EDGE_START_NAME_TURN, EDGE_START_MUSTER_TURN)
         } else {
             (EDGE_LAST_TURN, EDGE_MUSTER_LAST_TURN)

@@ -1795,6 +1795,29 @@ fn the_rush_names_the_near_city_over_a_slightly_softer_far_one() {
 }
 
 #[test]
+fn the_rush_names_no_city_its_force_cannot_reach_in_time() {
+    // Live 094903Z: a city 14 tiles off was named at turn 27, four more
+    // War-Carts were trained for it, and it stood walled at turn 34.
+    let (mut g, city) = rush_fixture();
+    let mut ai = rush_on(VictoryTarget::Score);
+    // Eight tiles off at turn 10: the force stands there by turn 16.
+    assert_eq!(
+        ai.edge_rush_soft_city(&g, 0, 30.0, &[CAPITAL], 15)
+            .map(|soft| soft.city),
+        Some(city)
+    );
+    // First seen at turn 30, it is six turns' march from a muster.
+    g.turn = 30;
+    assert!(ai
+        .edge_rush_soft_city(&g, 0, 30.0, &[CAPITAL], 15)
+        .is_none());
+    // Past the naming turn with no city named, the rush stands down.
+    g.turn = super::EDGE_RUSH_NAME_TURN + 1;
+    ai.maintain_edge_unit_window(&mut g, 0);
+    assert!(window(&ai).spent);
+}
+
+#[test]
 fn a_scout_past_eight_tiles_walks_home() {
     // Nothing can be named (the rival's city is walled): a War-Cart twelve
     // tiles out comes back toward the capital, so the force is home when a
