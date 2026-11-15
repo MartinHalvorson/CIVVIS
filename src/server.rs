@@ -4,7 +4,6 @@
 //! POST /action, POST /step, POST /autoplay, POST /view,
 //! POST /spectator-status, POST /next-game-settings, POST /new,
 //! POST /supervisor-new.
-use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -3756,7 +3755,7 @@ fn query_value<'a>(target: &'a str, key: &str) -> Option<&'a str> {
 /// and either way the same builder produces the same shape every turn. Kinds
 /// are tagged so that `null`, `false` and `0` cannot agree by coincidence, and
 /// numbers are tagged by how they read back so `1` and `1.0` do not either.
-fn hash_json(value: &Value, into: &mut DefaultHasher) {
+fn hash_json<H: Hasher>(value: &Value, into: &mut H) {
     match value {
         Value::Null => 0u8.hash(into),
         Value::Bool(flag) => {
@@ -3794,11 +3793,85 @@ fn hash_json(value: &Value, into: &mut DefaultHasher) {
     }
 }
 
+/// The hasher behind [`tile_mark`]: a multiply-xorshift over whole words.
+///
+/// A mark only ever meets the mark the same tile had a frame earlier, so all it
+/// needs is to change when the tile does; nothing adversarial chooses a tile's
+/// JSON. The standard `DefaultHasher` is SipHash-1-3, a keyed hash built to
+/// resist flooding, which costs several rounds per eight bytes; every tile of
+/// the map is marked on every frame the page asks for, so on the site's world
+/// that was half of the marking and the marking was most of a frame's patch.
+/// Integers and tags are mixed as one word each, text eight bytes at a time
+/// with its length first, and `finish` applies a full avalanche so marks that
+/// differ in one bit anywhere differ everywhere.
+#[derive(Default)]
+struct MarkHasher(u64);
+
+impl MarkHasher {
+    const MULTIPLIER: u64 = 0x9E37_79B9_7F4A_7C15;
+
+    #[inline]
+    fn mix(&mut self, word: u64) {
+        let state = (self.0 ^ word).wrapping_mul(Self::MULTIPLIER);
+        self.0 = state ^ (state >> 29);
+    }
+}
+
+impl Hasher for MarkHasher {
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        self.mix(bytes.len() as u64);
+        let mut words = bytes.chunks_exact(8);
+        for word in &mut words {
+            self.mix(u64::from_le_bytes(word.try_into().expect("eight bytes")));
+        }
+        let rest = words.remainder();
+        if !rest.is_empty() {
+            let mut word = [0u8; 8];
+            word[..rest.len()].copy_from_slice(rest);
+            self.mix(u64::from_le_bytes(word));
+        }
+    }
+
+    #[inline]
+    fn write_u8(&mut self, value: u8) {
+        self.mix(u64::from(value));
+    }
+
+    #[inline]
+    fn write_u64(&mut self, value: u64) {
+        self.mix(value);
+    }
+
+    #[inline]
+    fn write_i64(&mut self, value: i64) {
+        self.mix(value as u64);
+    }
+
+    #[inline]
+    fn write_usize(&mut self, value: usize) {
+        self.mix(value as u64);
+    }
+
+    fn finish(&self) -> u64 {
+        // MurmurHash3's 64-bit finalizer.
+        let mut state = self.0;
+        state ^= state >> 33;
+        state = state.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
+        state ^= state >> 33;
+        state = state.wrapping_mul(0xC4CE_B9FE_1A85_EC53);
+        state ^ (state >> 33)
+    }
+}
+
 fn tile_mark(tile: &Value) -> u64 {
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = MarkHasher::default();
     hash_json(tile, &mut hasher);
     hasher.finish()
 }
+
+#[cfg(test)]
+mod mark_tests;
 
 /// The frame a page says its own copy of the tiles is built from, written
 /// `world:turn:finished:sequence`. All four parts matter: a victory may be
