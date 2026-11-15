@@ -98,8 +98,9 @@ fn a_rival_over_half_our_power_is_not_declared_on() {
 #[test]
 fn a_rival_at_war_with_us_is_not_declared_on_again() {
     let mut game = open_board();
-    game.apply(0, &crate::game::Action::DeclareWar { player: 1 })
-        .expect("the war is legal on the board");
+    // `Action::DeclareWar` is refused on this bare board, so the war is
+    // written directly, as the engine's own tests do.
+    game.at_war.insert((0, 1));
     assert!(game.is_at_war(0, 1));
     assert_eq!(armed().open_capital_at_twice(&game, 0, 1), None);
 }
