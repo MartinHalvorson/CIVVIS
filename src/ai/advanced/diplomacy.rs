@@ -1648,8 +1648,15 @@ impl AdvancedAi {
                             // `advanced/open_city_objective.rs`.
                             || (deal.peace
                                 && self.open_city_keeps_the_war(g, pid, deal.from)));
+                    // `edge-unit-rushes-from-the-capital`: the rush takes no
+                    // friendship from the owner of its target (any major
+                    // before a city is named) and no peace from the rival
+                    // its war is pressing. `false` off the rush. See
+                    // `advanced/edge_unit_takes_the_soft_city.rs`.
+                    let rush_refuses =
+                        self.edge_rush_refuses_deal(g, deal.from, deal.friendship, deal.peace);
                     (
-                        worth >= 0.0 && !pins_objective,
+                        worth >= 0.0 && !pins_objective && !rush_refuses,
                         deal.peace,
                         worth,
                         deal.from,

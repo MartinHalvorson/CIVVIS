@@ -2018,6 +2018,35 @@ impl AdvancedAi {
         }
     }
 
+    /// `edge-unit-rushes-from-the-capital`: whether an incoming deal from
+    /// `other` is refused by the rush: a declared friendship while
+    /// [`Self::edge_rush_spares_friendship`] holds (rounds 1-5: the
+    /// simulator's rivals offered one on first contact, the deal desk took
+    /// it at +40, and five worlds that knew an open city by turn 13-17
+    /// named it at turn 28-37, when the friendship lapsed), or a peace offer
+    /// from the rival the rush's war is pressing. `false` off the rush.
+    pub(super) fn edge_rush_refuses_deal(
+        &self,
+        g: &Game,
+        other: usize,
+        friendship: bool,
+        peace: bool,
+    ) -> bool {
+        if friendship && self.edge_rush_spares_friendship(g, other) {
+            return true;
+        }
+        peace
+            && self.edge_gene_on()
+            && self
+                .edge_unit_window
+                .as_ref()
+                .filter(|w| w.rushing() && !w.spent && w.declared.is_some())
+                .and_then(|w| w.target.as_ref())
+                .is_some_and(|target| {
+                    player_by_civ(g, &target.owner_civ).unwrap_or(target.player) == other
+                })
+    }
+
     /// The Gold held back from every other purchase (`purchase_upkeep_floor`)
     /// and from `one-upgrade-lifts-every-city`'s other upgrades: the upgrade
     /// bill of up to [`EDGE_MUSTER_BODIES`] owned units that upgrade into the

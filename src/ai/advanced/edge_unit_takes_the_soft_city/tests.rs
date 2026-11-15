@@ -1767,11 +1767,23 @@ fn the_rush_makes_no_friend_of_its_target() {
     assert!(window(&ai).target.is_some());
     assert!(ai.edge_rush_spares_friendship(&g, 1));
     assert!(!ai.edge_rush_spares_friendship(&g, 0));
+    // The deal desk refuses their friendship too, and takes another deal.
+    assert!(ai.edge_rush_refuses_deal(&g, 1, true, false));
+    assert!(!ai.edge_rush_refuses_deal(&g, 1, false, false));
+    assert!(!ai.edge_rush_refuses_deal(&g, 1, false, true), "no war yet");
+    // At war for the city, their peace offer is refused.
+    let mut at_war = window(&ai);
+    at_war.declared = Some(g.turn);
+    ai.edge_unit_window = Some(at_war.clone());
+    assert!(ai.edge_rush_refuses_deal(&g, 1, false, true));
+    at_war.declared = None;
+    ai.edge_unit_window = Some(at_war);
     // Over: friendships are the seat's again.
     let mut over = window(&ai);
     over.spent = true;
     ai.edge_unit_window = Some(over);
     assert!(!ai.edge_rush_spares_friendship(&g, 1));
+    assert!(!ai.edge_rush_refuses_deal(&g, 1, true, true));
     // The base gene alone spares nobody.
     let (mut g, _) = fixture(&["mining", "bronze_working", "iron_working"]);
     g.players[0]
