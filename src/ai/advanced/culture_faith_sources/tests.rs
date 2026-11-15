@@ -987,7 +987,7 @@ fn version_four_passes_a_backlog_builder_unless_it_is_the_only_cover() {
             g.cities.get_mut(&cid).unwrap().queue.clear();
         }
         let center = g.cities[&cid].pos;
-        for position in g.cities[&cid].owned_tiles.to_vec() {
+        for position in g.cities[&cid].owned_tiles.iter().copied() {
             let tile = g.map.tiles.get_mut(&position).unwrap();
             if position == center || tile.district.is_some() {
                 continue;
