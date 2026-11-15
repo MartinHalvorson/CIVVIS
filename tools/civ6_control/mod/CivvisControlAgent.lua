@@ -20779,6 +20779,37 @@ end;
 
 -- Issue at most one queued order per unit whose previous order has settled.
 -- Returns how many orders ran on this call.
+-- ★ A LEG NAMED A NO-OP THAT IS STILL ONE THREE TICKS LATER WILL NOT MOVE.
+--
+-- A unit's follow-up (a strike, an improvement, a fortify) waits for its
+-- opening walk. When the host says the walk settled and the unit is still on
+-- its origin with its movement intact, `moveNoop` names it, and the follow-up
+-- was then held until the 30-tick grace anyway, because an operation-ended
+-- event can precede the move it ends (the turn-204 tank below). The hold is
+-- right; its length was not. Measured on the twelve logs of 2026-11-15:
+-- 21 legs named something other than `no_path` moved from that plot
+-- afterwards, 20 of them within 0.21 s of the name being written (about one
+-- tick) and the other 18.7 s later, named at the grace itself; none of the 28
+-- named `hostile_adjacent`, `zoc` or `hostile_on_plot` moved at all.
+-- civvis-20261115T085920Z turn 143 frame 2: a Skirmisher's walk was named
+-- `hostile_adjacent` at tick 1 and its follow-up then held the frame for
+-- 8.5 s. `no_path` already releases at once.
+--
+-- So a named leg holds its follow-ups for three more ticks, and is released
+-- when the unit is still on its origin with the movement it had when the
+-- walk was requested. A unit that has spent movement is under way and keeps
+-- the full grace.
+CivvisQueue.NOOP_CONFIRM_TICKS = 3;
+CivvisQueue.noopStands = function(entry, subject, turn, atOrigin, moves)
+	if entry.noop_named == nil or entry.noop_tick == nil or not atOrigin then return false; end
+	if entry.wait < entry.noop_tick + CivvisQueue.NOOP_CONFIRM_TICKS then return false; end
+	local attempt = CivvisBoard.moveAttempts[subject];
+	if attempt == nil or attempt.turn ~= turn or attempt.moves == nil or moves == nil then
+		return false;
+	end
+	return moves >= attempt.moves;
+end;
+
 CivvisQueue.drain = function(player, pid, turn)
 	local q = CivvisQueue;
 	if q.count + q.watching <= 0 then return 0; end
@@ -21056,7 +21087,8 @@ CivvisQueue.drain = function(player, pid, turn)
 				elseif ready and CivvisQueue.dropWatch(subject, entry) then
 					-- The opening walk has landed; nothing follows it.
 				elseif ready and entry.expect ~= nil and not arrived and not spent
-						and entry.wait < grace and not cannot_land and not entry.noop_no_path then
+						and entry.wait < grace and not cannot_land and not entry.noop_no_path
+						and not CivvisQueue.noopStands(entry, subject, turn, atOrigin, moves) then
 					-- (A walk the host's path lands on a later turn cannot be the
 					-- one that arrives later this tick: `cannot_land` above.)
 					-- An operation-ended event can precede the host's move
@@ -21075,6 +21107,24 @@ CivvisQueue.drain = function(player, pid, turn)
 					-- a real queued sequence must either arrive at its expectation or
 					-- refuse the remaining rows by name.
 					if entry.expect ~= nil and not arrived then
+						-- Name the unit whose follow-ups are refused and the state it
+						-- was in: the refusal is counted by reason only, so a frame
+						-- held to the cap could not say which unit held it or why.
+						if #entry.rows > 0 then
+							emit("queue_prior_refused", {
+								turn = turn, unit = subject, unit_kind = unitTypeName(unit),
+								tick = entry.wait, at_grace = entry.wait >= grace,
+								at = { ux, uy },
+								origin = entry.origin ~= nil and { entry.origin.x, entry.origin.y } or nil,
+								want = { entry.expect.x, entry.expect.y },
+								moves = moves, noop = entry.noop_named, noop_tick = entry.noop_tick,
+								cannot_land = cannot_land,
+								activity = try(function()
+									return CivvisBoard.activityName(UnitManager.GetActivityType(unit));
+								end, nil),
+								next_verb = tostring((entry.rows[entry.next] or {}).verb or ""),
+							});
+						end
 						CivvisQueue.refuseRest(subject, entry, "queue_prior_not_arrived");
 					else
 						local row = entry.rows[entry.next];
@@ -21550,6 +21600,8 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 		return false;
 	end
 	entry.noop_named = why;
+	-- See `CivvisQueue.noopStands`: the tick this leg was named on.
+	entry.noop_tick = entry.wait or 0;
 	-- The host says no route exists, so waiting out the grace cannot change it:
 	-- of 293 such legs in seven games, none reached the wanted plot.
 	if why == "no_path" then entry.noop_no_path = true; end
