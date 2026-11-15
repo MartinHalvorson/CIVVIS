@@ -45,7 +45,7 @@ GENERATED_BUILD_NAME = re.compile(r"^build-[0-9a-f]+-\d{8}T\d{6}Z$")
 TEMPLATE_TOKENS = ("MODE", "LABEL", "COMMIT", "COMMIT_TIME", "BUILT_AT", "REPO")
 DEFAULT_PRESET = (
     "AI simulation; Small 74x46 flat Continents; 6 majors;\n"
-    "9 city-states; free for all; Ancient; Online/250 turns; Blitz/500 ms;\n"
+    "9 city-states; free for all; Ancient; Online/250 turns; Max Speed/0 ms;\n"
     "hot equator and cold poles; science, culture, religious, diplomatic,\n"
     "domination, and score victories enabled."
 )

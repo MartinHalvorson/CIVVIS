@@ -541,22 +541,39 @@ impl BasicAi {
                     && (spec.is_melee_capable() || spec.has_ranged_attack())
             })
             .filter_map(|unit| {
-                // ⚠ Air units are never reused: `attack_reach` centres their
-                // disk on `air_operation_origin`, not the unit's tile, so a
-                // radius around the tile watches the wrong ground. They are a
-                // disk, not a flow field, and cost little to redo.
-                let reusable = g.rules.units[unit.kind].domain.as_deref() != Some("air");
-                if reusable {
+                // ★★ AN AIR UNIT IS KEPT BY ITS BASE, NOT BY ITS GROUND.
+                // `attack_reach` gives an air unit the disk of its attack range
+                // around `air_operation_origin` (its patrol tile, else its own),
+                // which a radius around the unit's tile cannot watch, so air
+                // units used to be recomputed on every ask, each a disk of its
+                // whole range, and then the strike reach's same disk again
+                // through `MovementReachCache`. The disk reads nothing but
+                // that tile, that range and the unit's kind, so an air envelope
+                // is kept exactly while those three stand (`EnemyEnvelope::air`).
+                let air = (g.rules.units[unit.kind].domain.as_deref() == Some("air")).then(|| {
+                    (
+                        unit.kind.id(),
+                        g.air_operation_origin(unit.id),
+                        g.unit_attack_range(unit.id),
+                    )
+                });
+                {
                     if let (Some(delta), Some(entry)) = (delta.as_ref(), store.get(&unit.id)) {
-                        if delta
-                            .iter()
-                            .all(|touched| !entry.sensitive.contains(touched))
-                            && written.iter().all(|tile| {
-                                entry
-                                    .sight
-                                    .is_some_and(|(centre, radius)| g.wdist(*tile, centre) > radius)
-                            })
-                        {
+                        let kept = match air {
+                            Some(key) => entry.air == Some(key),
+                            None => {
+                                entry.air.is_none()
+                                    && delta
+                                        .iter()
+                                        .all(|touched| !entry.sensitive.contains(touched))
+                                    && written.iter().all(|tile| {
+                                        entry.sight.is_some_and(|(centre, radius)| {
+                                            g.wdist(*tile, centre) > radius
+                                        })
+                                    })
+                            }
+                        };
+                        if kept {
                             // ⚠ DIAGNOSTIC ONLY. With CIVVIS_ENVELOPE_AUDIT set,
                             // every reuse is checked against a fresh computation
                             // and the first disagreement is described. This is
@@ -578,7 +595,7 @@ impl BasicAi {
                 let cached = g.cached_attack_reach_from_flood(reach_key, unit.id);
                 let reach: std::sync::Arc<EnvelopeReach> =
                     std::sync::Arc::new(EnvelopeReach::from_shared_tiles(cached.shared_targets()));
-                if reusable {
+                {
                     // How far out a written tile can still reach this
                     // envelope; see `envelope_board_change`.
                     let flood = cached.flood();
@@ -594,6 +611,7 @@ impl BasicAi {
                         unit.id,
                         EnemyEnvelope {
                             sight,
+                            air,
                             reach: std::sync::Arc::clone(&reach),
                             sensitive: std::sync::Arc::new(Self::envelope_sensitive_tiles(
                                 g,
@@ -635,5 +653,7 @@ impl BasicAi {
     }
 }
 
+#[cfg(test)]
+mod air_reach_tests;
 #[cfg(test)]
 mod own_inert_units_tests;

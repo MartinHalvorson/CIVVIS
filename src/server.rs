@@ -1660,6 +1660,11 @@ const STATE_LONG_POLL: Duration = Duration::from_millis(1_000);
 /// The unlimited pace still hands the accept loop a slot this often, so the
 /// page keeps loading state while the stepper runs flat out.
 const UNLIMITED_BREATH_MS: u64 = 100;
+/// The pace a new server opens at: Max, no wait between turns (operator
+/// 2026-11-15, after Max became the page's default). It was half a second a
+/// turn. The page's Max Speed control slows a world down, and the live
+/// mirror opens on its own game's pace.
+const DEFAULT_PACE_MS: u64 = 0;
 /// 2 turns/s (once Blitz) is the fastest Max Speed cap where every player's
 /// completed turn becomes its own frame. Max and 5 turns/s keep one frame per
 /// round; every offered cap at or above this threshold is seat-by-seat.
@@ -5567,6 +5572,26 @@ pub fn serve_opening(
     opening: Opening,
     initially_paused: bool,
 ) {
+    serve_opening_at_pace(
+        port,
+        open_browser,
+        params,
+        opening,
+        initially_paused,
+        DEFAULT_PACE_MS,
+    );
+}
+
+/// `serve_opening` with the first pace named, for callers that measure a
+/// world at a known pace rather than at whatever the default is.
+fn serve_opening_at_pace(
+    port: u16,
+    open_browser: bool,
+    params: Params,
+    opening: Opening,
+    initially_paused: bool,
+    pace_ms: u64,
+) {
     let listener = TcpListener::bind(("127.0.0.1", port))
         .unwrap_or_else(|e| panic!("cannot bind port {port}: {e}"));
     let actual = listener.local_addr().unwrap().port();
@@ -5596,12 +5621,12 @@ pub fn serve_opening(
         next_game_params: Mutex::new(session.take_resumed_next_game_params()),
         match_series: Mutex::new(None),
         session: Mutex::new(session),
-        // Half a second per turn by default; the live mirror starts on the
-        // pace its Civilization VI game is actually held to.
+        // Max by default; the live mirror starts on the pace its
+        // Civilization VI game is actually held to.
         pace_ms: AtomicU64::new(if civ6::live_pause_control() {
             civ6::live_pace_ms()
         } else {
-            500
+            pace_ms
         }),
         between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
         finale_rearm: AtomicBool::new(false),
