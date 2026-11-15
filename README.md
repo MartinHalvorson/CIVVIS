@@ -10,10 +10,10 @@ Posting progress videos on the [CIVVIS](https://www.youtube.com/@civvis) YouTube
 
 Highest Level Won by Victory Type:
 - Lv 8 - [Science - 206](https://www.youtube.com/watch?v=Gu5cxEIGTuE), [Diplo - 173](https://www.youtube.com/watch?v=CQQM2uk4AkA), [Religion - 167](https://youtu.be/a12Fevo-0DM)
-- Lv 7 - [Culture](https://youtu.be/oTJz4EYS4ME)
-- Lv 6 - [Domination](https://www.youtube.com/watch?v=DMdNOQT3NS0)
+- Lv 7 - [Culture - 190](https://youtu.be/oTJz4EYS4ME)
+- Lv 6 - [Domination (4P Pangaea) - 210](https://www.youtube.com/watch?v=DMdNOQT3NS0)
 - Lv 5 - ...
-- Lv 4 - [Score](https://www.youtube.com/watch?v=-ft0Ah99J1g) (score victory is less common on high levels as games are usually decided before the turn limit is reached)
+- Lv 4 - [Score - 250](https://www.youtube.com/watch?v=-ft0Ah99J1g) (score victory is less common on high levels as games are usually decided before the turn limit is reached)
 
 Quick real-time demo of the CIVVIS.ai simulator with a 193 turn Maori science victory (can click for the 4K video on YouTube):
 
