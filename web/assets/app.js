@@ -2775,8 +2775,8 @@ function playerHudColumnHead(column) {
     return `<span class="hud-head-cell hud-head-identity hud-head-watch" ${attrs}>` +
       `<button type="button" class="spectator-view-link" data-hud-action="spectator" ` +
       `aria-pressed="${state.view_player === null || state.view_player === undefined}" ` +
-      `title="Spectator mode · see everyone with full map visibility" ` +
-      `aria-label="Spectator mode: see everyone with full map visibility">All</button></span>`;
+      `title="Global view · see everyone with full map visibility" ` +
+      `aria-label="Global view: see everyone with full map visibility">Global</button></span>`;
   }
   const [label, title, extra] = PLAYER_HUD_HEAD_LABELS[column.key];
   const classes = column.block === "stats"
