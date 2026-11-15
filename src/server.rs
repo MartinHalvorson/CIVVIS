@@ -1660,9 +1660,9 @@ const STATE_LONG_POLL: Duration = Duration::from_millis(1_000);
 /// The unlimited pace still hands the accept loop a slot this often, so the
 /// page keeps loading state while the stepper runs flat out.
 const UNLIMITED_BREATH_MS: u64 = 100;
-/// Blitz is the first watch pace where every player's completed turn becomes
-/// its own frame. Faster custom paces retain Lightning's one-frame-per-round
-/// throughput; every offered pace at or above this threshold is seat-by-seat.
+/// 2 turns/s (once Blitz) is the fastest Max Speed cap where every player's
+/// completed turn becomes its own frame. Max and 5 turns/s keep one frame per
+/// round; every offered cap at or above this threshold is seat-by-seat.
 const PLAYER_TURN_FRAME_MIN_PACE_MS: u64 = 500;
 /// Minor civilizations and barbarians take a quarter of a major's slice.
 const MINOR_SHARE: f64 = 0.25;

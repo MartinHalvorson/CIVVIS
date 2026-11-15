@@ -89,9 +89,10 @@ the Tiny Tennis Ball planet, its heat scattered rather than banded by latitude,
 with an Ancient start, Online game speed, and every victory condition enabled.
 It is the world the desktop launchers open too, and the one that asks nothing
 of somebody who has just arrived. `stock_opening_params` in `src/server.rs`
-describes it. The site opens at Lightning watch pace, where the desktop builds
-open at Blitz; a pace the visitor picked by hand is remembered and wins, and a
-Tactics battle still opens at Blitz. The lobby is right there for anyone who
+describes it. The site opens at Max Speed "Max" (unpaced), where the desktop
+builds open at 2 turns/s; a cap the visitor picked by hand (5, 2, 1, 0.5, 0.25
+or 0.1 turns/s) is remembered and wins, and a Tactics battle still opens at
+2 turns/s. The lobby is right there for anyone who
 wants to play a seat instead.
 
 The lower-left build marker names the pinned revision and its commit time, then
