@@ -1,7 +1,5 @@
 use super::*;
-use crate::game::{
-    HostResearchQuote, HostUnitFacts, HostUnitUpgrade, HostUnitUpgradeResource, CITY_MAX_HP,
-};
+use crate::game::{HostResearchQuote, HostUnitFacts, HostUnitUpgrade, HostUnitUpgradeResource};
 
 /// Two majors who have met: our founded capital (population 4, idle, no
 /// Walls), the rival's city 9-12 tiles off, every unit removed, everything
@@ -197,7 +195,7 @@ fn the_threat_reads_the_watch_at_two_and_a_half_times_on_an_unwalled_capital() {
         .get_mut(&capital)
         .unwrap()
         .buildings
-        .insert(crate::name!("walls"));
+        .push(crate::name!("walls"));
     assert!(walled.city_max_wall_hp(&walled.cities[&capital]) > 0);
     assert!(
         ai.capital_archers_threat(&walled, 0).is_none(),
@@ -406,7 +404,7 @@ fn the_capitals_slingers_take_the_archer_upgrade_at_once() {
         .get_mut(&capital)
         .unwrap()
         .buildings
-        .insert(crate::name!("walls"));
+        .push(crate::name!("walls"));
     assert!(ai.capital_archers_threat(&walled, 0).is_none());
     assert_eq!(ai.capital_archers_upgrade(&mut walled, 0), 2);
 }
@@ -426,7 +424,7 @@ fn the_upgrade_bills_are_held_and_the_chest_waits() {
 
     slinger(&mut game, capital, 1);
     let bill = game
-        .unit_upgrade_price_in_formation(0, "slinger", "archer", 0)
+        .unit_upgrade_price_in_formation(0, crate::name!("slinger"), crate::name!("archer"), 0)
         .expect("fixture: a Slinger upgrades to an Archer")
         .0;
     assert!(bill > 0.0);
@@ -454,7 +452,7 @@ fn the_upgrade_bills_are_held_and_the_chest_waits() {
         .get_mut(&capital)
         .unwrap()
         .buildings
-        .insert(crate::name!("walls"));
+        .push(crate::name!("walls"));
     assert_eq!(ai.capital_archers_gold_held(&walled, 0), 0.0);
     assert!(!ai.capital_archers_hold_the_chest(&walled, 0));
 }
@@ -518,12 +516,7 @@ fn the_capital_trains_its_second_shooter_ahead_of_the_settler() {
     let mut nearly = game.clone();
     let cost = nearly.item_remaining_cost_for_city(0, capital, &settler);
     let production = nearly.city_yields(capital).production.max(0.1);
-    nearly
-        .cities
-        .get_mut(&capital)
-        .unwrap()
-        .progress
-        .insert(settler.clone(), cost - 1.5 * production);
+    nearly.cities.get_mut(&capital).unwrap().production = cost - 1.5 * production;
     ai.claim_capital_archers_before_the_surprise(&mut nearly, 0);
     assert_eq!(
         nearly.cities[&capital].queue.first(),
@@ -653,7 +646,7 @@ fn the_capital_buys_its_missing_shooter_above_the_held_bills() {
         .get_mut(&capital)
         .unwrap()
         .buildings
-        .insert(crate::name!("walls"));
+        .push(crate::name!("walls"));
     assert!(
         !ai.capital_archers_purchase(&mut walled, 0),
         "the Walls stand"
@@ -697,7 +690,7 @@ fn the_best_shooter_keeps_the_capitals_centre() {
         .get_mut(&capital)
         .unwrap()
         .buildings
-        .insert(crate::name!("walls"));
+        .push(crate::name!("walls"));
     assert_eq!(
         ai.capital_archers_keeper(&walled, 0),
         Some((sling, home)),

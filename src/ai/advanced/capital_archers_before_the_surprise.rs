@@ -463,7 +463,7 @@ impl AdvancedAi {
             return false;
         }
         think!(self.journal(), Military, Decision,
-            "{} buys a {} before {} can surprise it",
+            "{} buys its {} before {} can surprise it",
             g.cities[&capital].name, crate::reasoning::plain(unit.as_str()), g.players[rival].civ;
             "capital-archers-before-the-surprise: {} fields {ratio:.1}x our power and its soldiers \
              stood within {CAPITAL_WATCH_TILES} tiles; {near} of {CAPITAL_ARCHERS_WANTED} shooters \
@@ -665,7 +665,7 @@ impl AdvancedAi {
                 / g.city_yields(capital).production.max(0.1)
         });
         think!(self.journal(), Military, Decision,
-            "{} trains a {} before {} can surprise it",
+            "{} trains its {} before {} can surprise it",
             g.cities[&capital].name, crate::reasoning::plain(unit.as_str()), g.players[rival].civ;
             "capital-archers-before-the-surprise: {ratio:.1}x our power and its soldiers stood \
              within {CAPITAL_WATCH_TILES} tiles; {near} of {CAPITAL_ARCHERS_WANTED} shooters within \
