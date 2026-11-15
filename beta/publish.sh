@@ -117,6 +117,11 @@ download_page="$source_tree/beta/download.html"
 [ -f "$download_page" ] || download_page="$repo_root/beta/download.html"
 mkdir -p "$out/home"
 cp "$landing_page" "$out/home/index.html"
+# The home page's rankings column (Civ AI Agents by Elo, the head of the gene
+# ranking) is derived here from the lane's own revision rather than committed
+# as a copy that could drift. A landing page that predates the column has no
+# slot and is left as it is; a revision that predates a source shows the other.
+python3 "$repo_root/beta/home_rankings.py" "$source_tree" "$out/home/index.html"
 cp -R "$landing_assets" "$out/home/assets"
 # `/download/` rather than `/download.html`: the page outlives any one release
 # and gets linked around, so it should have the tidier address.

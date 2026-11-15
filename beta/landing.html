@@ -364,6 +364,56 @@
   .picker-card-meta,
   .picker-card-detail { display: block; margin-top: 3px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
 
+  /* The rankings column, down the right-hand side: the Civ AI Agents by
+     published Elo, and the head of the heuristic gene ranking. Its figures
+     are not written here. `beta/publish.sh` fills the `rankings-data` slot
+     below from the lane's own revision (`beta/home_rankings.py`), and until
+     a slot is filled the column does not exist: no `has-rankings`, the
+     original single-column page. With it, the shell widens by the column
+     and its gutter, so the menu keeps the width it always had. */
+  .home-main { min-width: 0; }
+  body.has-rankings .shell { width: min(1452px, 100%); }
+  body.has-rankings main.shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    column-gap: 32px;
+    align-items: start;
+  }
+  .rankings { display: grid; gap: 14px; align-content: start; min-width: 0; margin-top: 14px; }
+  .rank-card { min-width: 0; padding: 12px 14px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .rank-sub { margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
+  .rank-list { margin: 0; padding: 0; list-style: none; }
+  .rank-row {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: baseline;
+    padding: 4px 0;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .rank-n { color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
+  .rank-name { min-width: 0; overflow: hidden; color: var(--text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-name small { margin-left: 6px; color: var(--muted); font-size: 11.5px; font-weight: 400; }
+  .rank-name.is-gene { font: 500 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .rank-value { color: #fff; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+  .rank-value small { margin-left: 4px; color: var(--faint); font-size: 11px; font-weight: 400; }
+  /* A Civilization VI difficulty level: a landmark on the scale, not an entrant. */
+  .rank-row.is-rung .rank-name,
+  .rank-row.is-rung .rank-value { color: var(--faint); font-size: 12px; font-weight: 500; }
+  .rank-row.is-off .rank-name { color: var(--muted); }
+  .rank-note { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+  .rank-note a { color: var(--accent); }
+  @media (max-width: 1180px) {
+    /* Too narrow for a third column: the rankings follow the menu, side by
+       side while there is room for two. */
+    body.has-rankings .shell { width: min(1060px, 100%); }
+    body.has-rankings main.shell { grid-template-columns: minmax(0, 1fr); }
+    .rankings { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin-top: 22px; }
+  }
+
   @media (max-width: 760px) {
     /* One column of cards: the two column heads describe a pair standing
        side by side, and each card names who is at the keyboard itself. */
@@ -396,6 +446,7 @@
   </header>
 
   <main class="shell">
+    <div class="home-main">
     <p class="intro">
       CIVVIS is an open source re-implementation of the 4X turn-based strategy
       game <cite>Sid Meier&#8217;s Civilization VI</cite> &#8212; built with a
@@ -514,7 +565,112 @@
       </section>
 
     </section>
+    </div>
+
+    <!-- The rankings column. Two lists, both measured: the Civ AI Agents by
+         published Elo with Civilization VI's difficulty levels standing
+         between them as the scale's landmarks, and the heuristic genes by
+         the win rate a seat has with the gene on minus with it off. The
+         column is built by the script below from the `rankings-data` slot,
+         which `beta/publish.sh` fills at publish time; a page whose slot
+         still reads `null` (this file opened as it is committed, or a lane
+         whose revision has neither source) keeps the column hidden. -->
+    <aside class="rankings" id="rankings" hidden aria-label="Rankings">
+      <section class="rank-card" id="rank-strategies" hidden aria-labelledby="rank-strategies-title">
+        <h2 class="rank-title" id="rank-strategies-title">Player strategies</h2>
+        <p class="rank-sub">Civ AI Agents by Elo. Civilization VI&#8217;s Prince is 1000.</p>
+        <ol class="rank-list"></ol>
+        <p class="rank-note">
+          <span data-rank-note></span>
+          Ratings are refitted when new rating tables are played, not after each game on this site.
+          <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/ELO.md" target="_blank" rel="noreferrer">How the Elo works</a>
+        </p>
+      </section>
+      <section class="rank-card" id="rank-genes" hidden aria-labelledby="rank-genes-title">
+        <h2 class="rank-title" id="rank-genes-title">Heuristic genes</h2>
+        <p class="rank-sub">Win rate with the gene on, minus with it off, in tournament play.</p>
+        <ol class="rank-list"></ol>
+        <p class="rank-note">
+          <span data-rank-note></span>
+          <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/GENE_HEURISTIC_RANKING.md" target="_blank" rel="noreferrer">Full ranking</a>
+        </p>
+      </section>
+    </aside>
   </main>
+
+  <script type="application/json" id="rankings-data">null</script>
+  <script>
+  // The rankings column, built before first paint so the page never reflows
+  // around it. Every figure arrives through textContent: the slot holds a
+  // gene's own sentence, and none of it is trusted as markup.
+  (() => {
+    let data = null;
+    try { data = JSON.parse(document.getElementById("rankings-data").textContent); } catch (_) { return; }
+    if (!data) return;
+    const el = (tag, cls, text) => {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text != null) node.textContent = text;
+      return node;
+    };
+    const row = (cls, n, name, nameSub, value, valueSub, title) => {
+      const item = el("li", "rank-row" + (cls ? " " + cls : ""));
+      if (title) item.title = title;
+      item.append(el("span", "rank-n", n));
+      const label = el("span", "rank-name", name);
+      if (nameSub) label.append(el("small", "", nameSub));
+      const figure = el("span", "rank-value", value);
+      if (valueSub) figure.append(el("small", "", valueSub));
+      item.append(label, figure);
+      return item;
+    };
+    const show = (id, rows, note) => {
+      const card = document.getElementById(id);
+      if (!card || !rows.length) return false;
+      card.querySelector(".rank-list").append(...rows);
+      card.querySelector("[data-rank-note]").textContent = note;
+      card.hidden = false;
+      return true;
+    };
+    // An entrant that never lost is rated "at least", one that never won "at most".
+    const elo = (r) => (r.bound === "upper" ? "\u2264" : "") + Math.round(r.elo) + (r.bound === "lower" ? "+" : "");
+    let shown = false;
+
+    const strategies = data.strategies;
+    if (strategies && Array.isArray(strategies.rows)) {
+      let place = 0;
+      const rows = strategies.rows.map((r) => r.kind === "rung"
+        ? row("is-rung", "", "Civ VI " + r.name, "", elo(r), "", "Civilization VI difficulty: " + r.name)
+        : row("", String(++place), r.name, r.tilt, elo(r), r.sd ? "\u00b1" + Math.round(r.sd) : "",
+              r.name + ": won " + r.wins + " of " + r.games + " rated tables"));
+      const note = (strategies.tables ? strategies.tables + " " : "")
+        + (strategies.players === 4 ? "four-player " : "") + "tables"
+        + (strategies.turns ? " of " + strategies.turns + " turns" : "") + ".";
+      shown = show("rank-strategies", rows, note) || shown;
+    }
+
+    const genes = data.genes;
+    if (genes && Array.isArray(genes.rows)) {
+      const rows = genes.rows.map((g) => {
+        const item = row(g.on ? "" : "is-off", String(g.rank), g.tag, "",
+          g.diff == null ? "" : (g.diff > 0 ? "+" : "") + g.diff.toFixed(2), g.on ? "pts" : "pts \u00b7 off",
+          g.description + (g.p == null ? "" : " (" + g.p + "% likely to help)"));
+        item.querySelector(".rank-name").classList.add("is-gene");
+        return item;
+      });
+      const note = "Top " + rows.length + " of " + genes.total + " ranked genes; " + genes.on
+        + " are on in our best genome."
+        + (genes.last_batch_seats ? " Last tournament: " + genes.last_batch_seats + " seats"
+          + (genes.last_batch_end ? ", ended " + genes.last_batch_end : "") + "." : "");
+      shown = show("rank-genes", rows, note) || shown;
+    }
+
+    if (shown) {
+      document.getElementById("rankings").hidden = false;
+      document.body.classList.add("has-rankings");
+    }
+  })();
+  </script>
 
   <!-- The report dialog: feedback straight onto the project's GitHub issue
        tracker. Whoever wants their GitHub name on it gets GitHub's own
