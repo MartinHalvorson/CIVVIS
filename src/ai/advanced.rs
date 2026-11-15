@@ -11952,10 +11952,6 @@ mod fresh_water_site;
 mod generals_lead_the_army;
 /// `gold-buys-the-backlog-builder`: see `advanced/gold_buys_the_backlog_builder.rs`.
 mod gold_buys_the_backlog_builder;
-/// `gold-clears-the-denial-spy-queue`: Gold buys the head that keeps the best
-/// Spy city from the denial's Spy. See
-/// `advanced/gold_clears_the_denial_spy_queue.rs`.
-mod gold_clears_the_denial_spy_queue;
 /// `gold-buys-the-opening-builder`: a builderless opening buys its Builder
 /// with the idle treasury. See `advanced/gold_buys_the_opening_builder.rs`.
 mod gold_buys_the_opening_builder;
@@ -11964,6 +11960,10 @@ mod gold_buys_the_opening_builder;
 /// `advanced/gold_buys_the_production_tile.rs`.
 mod gold_buys_the_production_tile;
 mod gold_buys_the_settler;
+/// `gold-clears-the-denial-spy-queue`: Gold buys the head that keeps the best
+/// Spy city from the denial's Spy. See
+/// `advanced/gold_clears_the_denial_spy_queue.rs`.
+mod gold_clears_the_denial_spy_queue;
 /// `good-land-lifts-the-city-target`: the city target rises to at most twelve
 /// for good seats the empire can hold. See
 /// `advanced/good_land_lifts_the_city_target.rs`.

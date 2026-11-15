@@ -274,12 +274,12 @@ impl AdvancedAi {
         let action = match &buy.head {
             Item::Building { building } => Action::BuyBuilding {
                 city: buy.city,
-                building: building.clone(),
+                building: *building,
                 currency: "gold".into(),
             },
             Item::Unit { unit } => Action::Buy {
                 city: buy.city,
-                unit: unit.clone(),
+                unit: *unit,
                 formation: 0,
                 currency: "gold".into(),
             },
