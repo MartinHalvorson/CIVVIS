@@ -999,6 +999,18 @@ fn version_four_passes_a_backlog_builder_unless_it_is_the_only_cover() {
             tile.improvement = None;
         }
     }
+    // Slow enough that the Builder takes more than a turn (one finishing
+    // within the turn keeps its queue under every version).
+    let builder_cost = g.item_cost_for_city(0, kept, &builder);
+    let base = g.city_yields(kept).production - 20.0;
+    Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
+        kept,
+        Yields {
+            production: builder_cost * 0.6 - base,
+            ..Default::default()
+        },
+    );
+    assert!(builder_cost > g.city_yields(kept).production);
     assert!(ai.culture_faith_slot_is_kept(&g, 0, kept));
     assert!(
         ai.backlog_builder_holds(&g, 0, kept, &plan, &builder),
