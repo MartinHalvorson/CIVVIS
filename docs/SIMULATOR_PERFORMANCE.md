@@ -450,7 +450,7 @@ of it), `pick_item` still takes the backlog census once per city with a
 `Produce` between cities (1.2%), and the full purchase menu is still listed
 up to twice a seat-turn (3.5%).
 
-### What a kept yield is made of is kept with it (−2.1%)
+### What a kept yield is made of is kept with it (−2.1% when written, −0.5% when merged)
 
 After the three cuts above the citizen plan was still the largest single
 cost in a site game. `Game::keep_rival_yields` kept each city's *yields* between a seat's passes
@@ -465,6 +465,20 @@ the same conditions and dropped by the same events, so nothing new decides
 when a kept answer is stale. `--audit-kept-yields` re-derives every reused
 plan and split as it does every reused yield. Instructions for 150 turns,
 every checkpoint identical: −2.06%, −2.12%, −1.97% (seeds 7, 8, 9).
+
+⚠ **Those three readings are 2026-11-11's, and the site's world has shrunk
+since.** The change waited four days for a merge. Measured again on
+2026-11-15 with `main` at `afb11185a8` merged in, the release build, one run
+a seed, base and candidate alternating: 169.92 to 169.10, 154.29 to 153.46
+and 152.52 to 151.69 billion instructions, **−0.48%, −0.54%, −0.54%** (seeds
+7, 8, 9), every save and document checkpoint identical, and three audited
+games (seeds 7, 8, 11) reported nothing. It is a quarter of the first
+reading, and the game it is measured on is a smaller one: the majors end
+seed 7 on 9 to 14 cities where the profile above found 11 to 18, and that
+game's planning asks for 84,871 city yields with keeping on (37,802 reused,
+47,069 derived) where the table further up counted 200,782 (134,122 and
+66,660). Fewer cities asked about less often leaves less to keep. The
+profile shares in the next paragraph are the earlier world's as well.
 
 **What is left, and why it is not in this change.** A profile of the result
 (seed 7, turns 40 to 170) still has 26% of the thread deriving city yields
