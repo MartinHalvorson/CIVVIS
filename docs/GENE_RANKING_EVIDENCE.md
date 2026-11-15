@@ -267,6 +267,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-seat-builds-past-the-deterrent` | off (unmeasured) | `culture-seat-builds-past-the-deterrent`: see `advanced/culture_past_the_deterrent.rs`. | 1 \| 1 |
 | `culture-seat-drama-before-government` | off (unmeasured) | `culture-seat-drama-before-government`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
 | `culture-seat-drama-first` | off (unmeasured) | `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
+| `culture-seat-fills-its-district-slots` | off (unmeasured) | Opt-in gene `culture-seat-fills-its-district-slots`; see `advanced/culture_fills_its_slots.rs`. | 1 \| 1 |
 | `culture-seat-monuments` | off (unmeasured) | Opt-in gene `culture-seat-monuments`; see `Self::culture_seat_monuments`. | — \| 2 |
 | `culture-seat-monuments-2` | off (unmeasured) | `culture-seat-monuments-2`: see `advanced/culture_monuments.rs`. | — \| 2 |
 | `culture-seat-theater-first` | off (unmeasured) | Opt-in gene `culture-seat-theater-first`; see `Self::culture_seat_theater_first`. | — \| 2 |
@@ -308,6 +309,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `early-cities-keep-their-distance` | off (unmeasured) | Opt-in gene `early-cities-keep-their-distance`; see `Self::early_cities_keep_their_distance`. | 1 \| 1 |
 | `early-route-feeds-production` | off (unmeasured) | Opt-in gene `early-route-feeds-production`; see `Self::early_route_feeds_production`. | 1 \| 1 |
 | `edge-unit-opens-from-the-start` | off (unmeasured) | Opt-in gene `edge-unit-opens-from-the-start` (requires `edge-unit-takes-the-soft-city`); see `advanced/edge_unit_takes_the_soft_city.rs`. | 1 \| 1 |
+| `edge-unit-rushes-from-the-capital` | off (unmeasured) | Opt-in gene `edge-unit-rushes-from-the-capital`; see `advanced/edge_unit_takes_the_soft_city.rs`. | 1 \| 1 |
 | `edge-unit-takes-the-soft-city` | off (unmeasured) | Opt-in gene `edge-unit-takes-the-soft-city`; see `advanced/edge_unit_takes_the_soft_city.rs`. | 1 \| 1 |
 | `education-follows-the-library` | off (unmeasured) | Opt-in `education-follows-the-library`; see `advanced/research/domination_education.rs`. | 1 \| 1 |
 | `elimination-yields-to-a-launch-2` | off (unmeasured) | Enable the separately measured staged Culture air-interception version. | 1 \| 2 |

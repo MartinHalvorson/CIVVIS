@@ -281,6 +281,9 @@ impl AdvancedAi {
         /// Opt-in gene `declaration-needs-a-capture`; see
         /// `advanced/declaration_needs_a_capture.rs`.
         declaration_needs_a_capture => enable_declaration_needs_a_capture, disable_declaration_needs_a_capture;
+        /// Opt-in gene `culture-seat-fills-its-district-slots`; see
+        /// `advanced/culture_fills_its_slots.rs`.
+        culture_seat_fills_its_district_slots => enable_culture_seat_fills_its_district_slots, disable_culture_seat_fills_its_district_slots;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -339,6 +342,9 @@ impl AdvancedAi {
         /// Opt-in gene `faithless-seat-holds-its-faith-strikes`; see
         /// `advanced/faithless_seat_holds_its_faith_strikes.rs`.
         faithless_seat_holds_its_faith_strikes => enable_faithless_seat_holds_its_faith_strikes, disable_faithless_seat_holds_its_faith_strikes;
+        /// Opt-in gene `edge-unit-rushes-from-the-capital`; see
+        /// `advanced/edge_unit_takes_the_soft_city.rs`.
+        edge_unit_rushes_from_the_capital => enable_edge_unit_rushes_from_the_capital, disable_edge_unit_rushes_from_the_capital;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its

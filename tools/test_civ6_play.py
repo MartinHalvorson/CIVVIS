@@ -4392,6 +4392,63 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         # budget has run out at 21 s -- eight, where one flat sleep gave one.
         self.assertEqual(len(looks), 8)
 
+    def _looks(self, look_s: float, readable_at: float, **kw) -> tuple[list[float], float]:
+        """When each look starts, and when the poll returns, for a screen that
+        answers from ``readable_at``; a look takes ``look_s``."""
+        clock = {"now": 0.0}
+        looks: list[float] = []
+
+        def sleep(seconds: float) -> None:
+            clock["now"] += seconds
+
+        def read():
+            looks.append(round(clock["now"], 3))
+            clock["now"] += look_s
+            return "menu" if looks[-1] >= readable_at else None
+
+        with patch.object(civ6_play.time, "monotonic", lambda: clock["now"]), \
+             patch.object(civ6_play.time, "sleep", sleep):
+            result = civ6_play._poll_screen(read, **kw)
+        return looks, clock["now"] if result else float("inf")
+
+    def test_the_first_menu_poll_looks_about_every_second_late_in_the_boot(self) -> None:
+        # A look of 0.9 s: every 2.4 s for the first eight seconds of the
+        # poll, every 1.2 s after them (the look begun at 7.2 s ends at 8.1).
+        looks, _ = self._looks(0.9, 99.0, budget_s=14.0, poll_s=1.5,
+                               quick_after_s=8.0, quick_poll_s=0.3)
+        self.assertEqual(looks, [0.0, 2.4, 4.8, 7.2, 8.4, 9.6, 10.8, 12.0, 13.2])
+        # A menu that draws 12.5 s into the poll (about +25 s after launch) is
+        # read by the look at 13.2 s, not the one at 14.4 s.
+        quick, quick_done = self._looks(0.9, 12.5, budget_s=40.0, poll_s=1.5,
+                                        quick_after_s=8.0, quick_poll_s=0.3)
+        slow, slow_done = self._looks(0.9, 12.5, budget_s=40.0, poll_s=1.5)
+        self.assertEqual((quick[-1], slow[-1]), (13.2, 14.4))
+        self.assertAlmostEqual(slow_done - quick_done, 1.2, places=6)
+
+    def test_without_both_quick_settings_the_poll_is_what_it_was(self) -> None:
+        plain, _ = self._looks(0.9, 99.0, budget_s=14.0, poll_s=1.5)
+        self.assertEqual(plain, [0.0, 2.4, 4.8, 7.2, 9.6, 12.0, 14.4])
+        for kw in ({"quick_after_s": 8.0}, {"quick_poll_s": 0.3},
+                   {"quick_after_s": 8.0, "quick_poll_s": 1.5},     # not quicker
+                   {"quick_after_s": 8.0, "quick_poll_s": 9.0},     # never slower
+                   {"quick_after_s": 8.0, "quick_poll_s": -1.0}):
+            with self.subTest(kw=kw):
+                looks, _ = self._looks(0.9, 99.0, budget_s=14.0, poll_s=1.5, **kw)
+                self.assertEqual(looks, plain)
+
+    def test_only_the_first_top_menu_attempt_is_quickened(self) -> None:
+        import inspect
+        source = inspect.getsource(civ6_play.bootstrap_game)
+        call = source.split("top = _poll_screen(read_top_menu")[1].split("\n        menu_point")[0]
+        self.assertIn("quick_after_s=FIRST_MENU_QUICK_AFTER_S if attempt == 1 else None", call)
+        self.assertIn("quick_poll_s=FIRST_MENU_QUICK_POLL_S if attempt == 1 else None", call)
+        self.assertIn("sub = _poll_screen(read_submenu)", source)
+        self.assertLess(civ6_play.FIRST_MENU_QUICK_POLL_S, civ6_play.SCREEN_POLL_S)
+        # The quick phase starts before the earliest menu seen (+23.3 s after
+        # launch, the poll beginning at +11 to +13 s) and inside the budget.
+        self.assertLessEqual(civ6_play.FIRST_MENU_QUICK_AFTER_S, 10.0)
+        self.assertLess(civ6_play.FIRST_MENU_QUICK_AFTER_S, civ6_play.FIRST_MENU_POLL_BUDGET_S)
+
     def test_the_first_menu_attempt_outlasts_the_boot_logos(self) -> None:
         # 18 of 24 games on 2026-11-03 ran attempt 1's 20 s budget out seconds
         # before the menu drew (+30-34 s vs +31-41 s) and re-paid the attempt

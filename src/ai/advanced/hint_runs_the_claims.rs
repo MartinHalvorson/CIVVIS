@@ -86,9 +86,10 @@ impl AdvancedAi {
         // `advanced/score_builds_the_bath.rs`.
         self.claim_score_bath(g, pid, plan);
         self.claim_early_settler_floor(g, pid, plan);
-        // `edge-unit-takes-the-soft-city`: the capital and the city nearest
-        // the soft city train the edge force (and a breaker for walls) while
-        // its window is open. Exact no-op while the gene is off. See
+        // `edge-unit-takes-the-soft-city`: the capital and the two cities
+        // nearest the soft city train the edge force (and a breaker for
+        // walls) while its window is open, ahead of a deferrable item. Exact
+        // no-op while the gene is off. See
         // `advanced/edge_unit_takes_the_soft_city.rs`.
         self.claim_edge_unit_queue(g, pid);
         // `holdable-land-keeps-settling`: past the opening floor, a
@@ -275,6 +276,15 @@ impl AdvancedAi {
         // Exact no-op while the gene is off. See
         // `advanced/great_works_never_wait.rs`.
         self.claim_great_work_slot_building(g, pid, plan);
+        // `culture-seat-fills-its-district-slots`: a Culture seat's Theater
+        // city takes a Campus, a Commercial Hub or a Harbor for its free slot,
+        // after the Culture claims, so it takes only a queue none of them
+        // wanted (ahead of them, 60 paired sims lost 14 Culture at t150).
+        // Exact no-op while the gene is off. See
+        // `advanced/culture_fills_its_slots.rs`.
+        if growth_claims {
+            self.claim_culture_slots(g, pid, plan);
+        }
         // `diplo-seat-statue-harbor`: the Statue of Liberty's Harbor on a
         // Diplomacy seat. Exact no-op while the gene is off. See
         // `advanced/diplo_statue_harbor.rs`.
@@ -327,6 +337,13 @@ impl AdvancedAi {
         cid: u32,
         item: &Item,
     ) -> bool {
+        // `edge-unit-takes-the-soft-city`: the edge force's unit (or its
+        // breaker) in one of its training cities holds that queue too while
+        // the window is open. `false` with the gene off. See
+        // `advanced/edge_unit_takes_the_soft_city.rs`.
+        if self.edge_unit_training_holds(g, pid, cid, item) {
+            return true;
+        }
         if !self.first_capital_active()
             || !self.conquest_reservation_open(g)
             || g.player_city_ids(pid).len() < self.conquest_first_settler_cities()

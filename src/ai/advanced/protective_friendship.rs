@@ -300,6 +300,11 @@ impl AdvancedAi {
         if self.first_capital_spares_friendship(g, pid, other) {
             return Some("first-capital-before-the-walls: their capital is the opening's target");
         }
+        // `edge-unit-rushes-from-the-capital`: a declared friendship forbids
+        // the war the rush is for. `false` off the rush.
+        if self.edge_rush_spares_friendship(g, other) {
+            return Some("edge-unit-rushes-from-the-capital: a friendship forbids the rush's war");
+        }
         // `friendship-only-with-the-stronger`: a weaker rival is a conquest to
         // make, not a war to forestall.
         if self.friendship_only_with_the_stronger
