@@ -5431,6 +5431,21 @@ fn decide(
     if ai.unseen_capital_is_unseen() {
         exploration_targets.retain(|seat, _| passage_value(*seat) >= BORDER_BUY_CEILING_MIN as f64);
     }
+    // `passage-waits-past-the-opening`: this lane buys no passage before
+    // Online turn 80 either, nor after it from a rival over 1.5x our military;
+    // one journal line per target on the turns the lane would ask. See
+    // `AdvancedAi::passage_hold`.
+    if ai.passage_waits_past_the_opening_enabled() {
+        let asking = state.turn % BORDER_BUY_CADENCE == BORDER_BUY_PHASE;
+        exploration_targets.retain(|seat, priority| {
+            !ai.passage_withheld_on_the_bridge(
+                &mirror_state.game,
+                0,
+                *seat,
+                asking || priority.explorers >= SIEGE_PASSAGE_PRIORITY,
+            )
+        });
+    }
     match append_border_buy_order(
         &mirror_state.game.sealed_border_owners,
         &exploration_targets,

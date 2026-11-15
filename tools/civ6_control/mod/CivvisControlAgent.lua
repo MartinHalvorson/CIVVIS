@@ -12582,24 +12582,29 @@ end;
 --    drawn was torn down.
 -- A concert that finds no leader screen up has neither problem: its popup
 -- shows and is closed on its ordinary path (140 of that day's 151 concerts).
--- So the two are kept apart at the source. A `TOURISM_BOMB` order is refused
--- for this frame, with its own reason, while any deal session is open or its
--- answer still holds the turn, and in any frame whose orders can open one
--- (`peace`, `friendship`, `alliance`, `sell`, `buy`). The band has spent
--- nothing; the next frame's or the next turn's order plays it. The release
--- behind a session stays for the popups no order of ours raises.
+-- So the two are kept apart at the source, and a concert is never lost to it:
+--  - a frame's session asks (`SESSION_ORDER_KINDS`) go out after every unit
+--    order of that frame, so a band already on its stage plays first;
+--  - a concert waits only while a deal of THIS turn holds our end turn
+--    (`holdsEndTurn`: a session opening or awaiting its answer, or an
+--    unanswered ask's verdict), and it waits in the order queue, which
+--    retries it every tick and holds the turn until it has played. So it
+--    plays the same turn, as soon as the hold ends, and never later than our
+--    end turn would have gone out anyway.
+-- ★★ THE HOLD USED TO COST WHOLE TURNS. #5336/#5341 refused the order for
+-- the frame while ANY session sat in `CivvisTrade.sessions` or the frame
+-- carried an ask. civvis-20261115T151156Z: a session to 4 opened at t184 was
+-- never acknowledged and never closed, so it sat there for the rest of the
+-- game, and a level-4 band on its stage at (57,14) was refused three times a
+-- turn, t184-193, never playing again; the game was lost at t193 by about
+-- the ~9 concerts it missed. 100 band-turns of 31 turns were held that game.
+-- A session left from an earlier turn holds nothing here (`holdsEndTurn`
+-- counts this turn's only). The release behind a session (#5309) stays the
+-- fallback for the popups no order of ours raises.
 CivvisTrade.SESSION_ORDER_KINDS = { peace = true, friendship = true, alliance = true,
 	sell = true, buy = true };
-CivvisTrade.concertWaits = function(rows)
-	local trade = CivvisTrade;
-	if next(trade.sessions) ~= nil or trade.turnHold ~= nil then return true; end
-	if type(rows) ~= "table" then return false; end
-	for _, row in ipairs(rows) do
-		if type(row) == "table" and trade.SESSION_ORDER_KINDS[tostring(row.kind or "")] then
-			return true;
-		end
-	end
-	return false;
+CivvisTrade.concertWaits = function(turn)
+	return try(function() return CivvisTrade.holdsEndTurn(turn); end, false) == true;
 end;
 CivvisTrade.ask = function(pid, subject, action, kind, turn)
 	local trade = CivvisTrade;
@@ -14324,6 +14329,174 @@ CivvisLedger.onUnitCaptured = function(currentUnitOwner, unitId, owningPlayer, c
 		owner = tonumber(currentUnitOwner), original_owner = tonumber(owningPlayer),
 		captor = captor, captor_is_barbarian = barbarian,
 	});
+end;
+
+-- ★★★ DID THE SPY WORK? The denial genes send Spies to Disrupt Rocketry on a
+-- rival's Spaceport, and nothing recorded whether a mission landed, failed or
+-- cost the Spy. One `spy_mission_result` row per finished mission of OUR seat,
+-- and of a rival's against one of OUR cities. RECORD-ONLY: no decision reads it.
+-- Modelled on Base/Assets/UI/Popups/EspionagePopup.lua:418
+-- (`function OnSpyMissionCompleted( playerID:number, missionID:number )`,
+-- registered at :624 `Events.SpyMissionCompleted.Add( OnSpyMissionCompleted );`),
+-- which reads the mission back at :383
+-- (`mission = pPlayerDiplomacy:GetMission(playerID, missionID);`, 0 when none)
+-- and grades it with EspionageSupport.lua:123-190 `GetMissionOutcomeDetails`
+-- from `InitialResult` / `EscapeResult`. The fields are the ones
+-- EspionageOverview.lua:260-320 reads: Name, CityName, Operation, PlotIndex,
+-- InitialResult, EscapeResult, LootInfo, LevelAfter, CompletionTurn.
+-- A detected Spy's escape is chosen after the mission ends (the overview hides a
+-- `*_MUST_ESCAPE` mission while its EscapeResult is NO_RESULT, :262-266), so a
+-- mission read in that state is written as `spy_mission_pending` and re-read on
+-- SpyMissionUpdated, the next completion and our next turn until it settles.
+-- Disrupt Rocketry's effect is "Disable the Spaceport in the city"
+-- (Espionage_Text.xml:206): the target district's pillage flag, read as
+-- CitySupport.lua:665 does (`pCityDistricts:IsPillaged(district:GetType(), plotID)`).
+CivvisLedger.spy = { done = {}, pending = {} };
+
+CivvisLedger.spyResultName = function(value)
+	if value == nil then return nil; end
+	local names = CivvisLedger.spy.result_names;
+	if names == nil then
+		names = {};
+		pcall(function()
+			for name, v in pairs(EspionageResultTypes) do names[v] = name; end
+		end);
+		CivvisLedger.spy.result_names = names;
+	end
+	return names[value] or tostring(value);
+end;
+
+-- EspionageSupport.lua:123-190 as data: whether the mission's effect landed,
+-- and what became of the Spy. An escape result of FAIL_MUST_ESCAPE is the
+-- shipped "evaded capture" (:139 and :160).
+CivvisLedger.spyOutcome = function(op, initial, escape)
+	if op == "UNITOPERATION_SPY_COUNTERSPY" then return true, "home"; end
+	if initial == "SUCCESS_UNDETECTED" then return true, "undetected"; end
+	if initial == "FAIL_UNDETECTED" then return false, "undetected"; end
+	if initial == "KILLED" or initial == "CAPTURED" then return false, string.lower(initial); end
+	if initial == "SUCCESS_MUST_ESCAPE" or initial == "FAIL_MUST_ESCAPE" then
+		local landed = initial == "SUCCESS_MUST_ESCAPE";
+		if escape == nil or escape == "NO_RESULT" then return landed, "escape_pending"; end
+		if escape == "FAIL_MUST_ESCAPE" then return landed, "escaped"; end
+		if escape == "KILLED" or escape == "CAPTURED" then return landed, string.lower(escape); end
+		return landed, "escape_" .. string.lower(tostring(escape));
+	end
+	return nil, nil;
+end;
+
+-- Where the mission struck: its plot, the city that owns it, and the district
+-- the operation aims at (UnitOperations.TargetDistrict, else the plot's own).
+CivvisLedger.spyTarget = function(row, mission, opRow)
+	local plot = Map.GetPlotByIndex(mission.PlotIndex);
+	if plot == nil then return; end
+	row.x, row.y = plot:GetX(), plot:GetY();
+	local city = Cities.GetPlotPurchaseCity(plot);
+	if city == nil then return; end
+	row.target_player, row.city_id = city:GetOwner(), city:GetID();
+	row.city_x, row.city_y = city:GetX(), city:GetY();
+	row.city_name = try(function() return Locale.Lookup(city:GetName()); end, row.city_name);
+	local wanted = opRow ~= nil and opRow.TargetDistrict or nil;
+	if wanted == nil then
+		local here = GameInfo.Districts[plot:GetDistrictType()];
+		wanted = here ~= nil and here.DistrictType or nil;
+	end
+	row.district = wanted;
+	local districts = city:GetDistricts();
+	for _, district in districts:Members() do
+		local info = GameInfo.Districts[district:GetType()];
+		if info ~= nil and info.DistrictType == wanted then
+			row.district_x, row.district_y = district:GetX(), district:GetY();
+			row.district_pillaged = districts:IsPillaged(district:GetType(),
+				Map.GetPlot(district:GetX(), district:GetY()):GetIndex()) == true;
+		end
+	end
+	local project = GameInfo.Projects[city:GetBuildQueue():GetCurrentProductionTypeHash()];
+	row.target_project = project ~= nil and project.ProjectType or nil;
+end;
+
+CivvisLedger.spyMissionRow = function(player, missionId, mission, pid)
+	local opRow = try(function()
+		local row = GameInfo.UnitOperations[mission.Operation];
+		if row ~= nil then return row; end
+		for candidate in GameInfo.UnitOperations() do
+			if candidate.Hash == mission.Operation or candidate.Index == mission.Operation then
+				return candidate;
+			end
+		end
+	end, nil);
+	local op = opRow ~= nil and opRow.OperationType or nil;
+	local initial = CivvisLedger.spyResultName(mission.InitialResult);
+	local escape = CivvisLedger.spyResultName(mission.EscapeResult);
+	local succeeded, fate = CivvisLedger.spyOutcome(op, initial, escape);
+	local row = {
+		turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1,
+		completion_turn = tonumber(mission.CompletionTurn),
+		player = tonumber(player), mission_id = tonumber(missionId),
+		ours = tonumber(player) == pid,
+		operation = op or tostring(mission.Operation),
+		initial_result = initial, escape_result = escape,
+		succeeded = succeeded, spy_fate = fate,
+		spy_lost = fate == "killed" or fate == "captured",
+		spy_name = try(function() return Locale.Lookup(mission.Name); end, mission.Name),
+		spy_level_after = tonumber(mission.LevelAfter),
+		loot_info = tonumber(mission.LootInfo),
+		plot = tonumber(mission.PlotIndex),
+		city_name = try(function() return Locale.Lookup(mission.CityName); end, mission.CityName),
+	};
+	CivvisK.guard(function() CivvisLedger.spyTarget(row, mission, opRow); end);
+	-- The mission names its Spy, not the unit: ours is the Spy of that name,
+	-- and none when it was killed or captured.
+	if row.ours then
+		CivvisK.guard(function()
+			for _, unit in Players[pid]:GetUnits():Members() do
+				if unit:GetName() == mission.Name then
+					row.spy, row.spy_x, row.spy_y = unit:GetID(), unit:GetX(), unit:GetY();
+					break;
+				end
+			end
+		end);
+	end
+	return row;
+end;
+
+-- True once the mission is written (or is not ours to write); false while its
+-- escape is still open or the mission cannot be read.
+CivvisLedger.noteSpyMission = function(player, missionId, late)
+	local key = tostring(player) .. ":" .. tostring(missionId);
+	if CivvisLedger.spy.done[key] then return true; end
+	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
+	local mission = Players[player]:GetDiplomacy():GetMission(player, missionId);
+	if type(mission) ~= "table" then return false; end
+	local row = CivvisLedger.spyMissionRow(player, missionId, mission, pid);
+	if not row.ours and row.target_player ~= pid then
+		-- A rival's mission against another rival: not this seat's to see.
+		CivvisLedger.spy.done[key] = true;
+		CivvisLedger.spy.pending[key] = nil;
+		return true;
+	end
+	if row.spy_fate == "escape_pending" then
+		if CivvisLedger.spy.pending[key] == nil then
+			CivvisLedger.spy.pending[key] = { player = player, mission = missionId };
+			emit("spy_mission_pending", row);
+		end
+		return false;
+	end
+	CivvisLedger.spy.pending[key] = nil;
+	CivvisLedger.spy.done[key] = true;
+	row.after_escape = late == true or nil;
+	emit("spy_mission_result", row);
+	return true;
+end;
+
+CivvisLedger.flushSpyMissions = function()
+	for _, open in pairs(CivvisLedger.spy.pending) do
+		CivvisK.guard(function() CivvisLedger.noteSpyMission(open.player, open.mission, true); end);
+	end
+end;
+
+CivvisLedger.onSpyMissionCompleted = function(player, missionId)
+	CivvisK.guard(function() CivvisLedger.noteSpyMission(player, missionId, false); end);
+	CivvisLedger.flushSpyMissions();
 end;
 
 -- ★★★★★ THE REVERSE LEGALITY WITNESS. The bridge normally sends only actions
@@ -18598,15 +18771,14 @@ local function applyOrder(player, pid, row, turn)
 		-- SPREAD_RELIGION, REMOVE_HERESY, RELIGIOUS_HEAL, LAUNCH_INQUISITION,
 		-- CONVERT_BARBARIANS, PILLAGE. All parameterless -- `operate` selects
 		-- the shipped UnitPanel's two-argument request for these.
-		-- See `CivvisTrade.concertWaits`. Here as well as in the frame's own
-		-- loop, because that loop is not the only caller: a band that has to
-		-- walk to its site plays from the order queue (`CivvisQueue.drain`),
-		-- some ticks after the frame, when a session opened by that frame or
-		-- the next is already up. Live civvis-20261115T114552Z, the first game
-		-- with the frame's hold: one concert held in the loop (t158 frame 1)
-		-- and three more played from the queue behind the same turn's sessions
-		-- (t154, t158 twice), each closed while hidden as before.
-		if verb == "TOURISM_BOMB" and CivvisTrade.concertWaits(nil) then
+		-- See `CivvisTrade.concertWaits`. The frame's loop and the queue's
+		-- drain both keep a waiting concert in the queue instead of sending
+		-- it here; this is the backstop for any other caller (and the frame
+		-- with `OrderQueue = false`). A band that has to walk to its site
+		-- plays from the queue some ticks after the frame, when a session
+		-- opened by that frame is already up (civvis-20261115T114552Z t154,
+		-- t158: three concerts closed while hidden behind one).
+		if verb == "TOURISM_BOMB" and CivvisTrade.concertWaits(turn) then
 			return false, "concert_waits_for_the_deal_session";
 		end
 		local hash = OP["UNITOPERATION_" .. verb];
@@ -21681,6 +21853,13 @@ CivvisQueue.drain = function(player, pid, turn)
 								or CivvisQueue.isStrike(row)) then
 							-- Nothing that needs movement can run; say why, don't ask.
 							CivvisQueue.refuseRest(subject, entry, "queue_no_moves");
+						elseif verb == "TOURISM_BOMB" and CivvisTrade.concertWaits(turn) then
+							-- See `CivvisTrade.concertWaits`: kept, asked again next
+							-- tick, and the turn is held for it meanwhile.
+							if entry.concert_waits == nil then
+								emit("concert_deferred", { turn = turn, unit = subject, from = "queue" });
+							end
+							entry.concert_waits = (entry.concert_waits or 0) + 1;
 						else
 							local ok, why = false, "throw";
 							local safe, res1, res2 = pcall(function()
@@ -21690,6 +21869,11 @@ CivvisQueue.drain = function(player, pid, turn)
 							else CivvisK.orderThrew(res1, row, turn, "queued_order"); end
 							ran = ran + 1;
 							q.count = q.count - 1;
+							if verb == "TOURISM_BOMB" and entry.concert_waits ~= nil then
+								emit("concert_released", { turn = turn, unit = subject,
+									waited = entry.concert_waits, applied = ok == true,
+									why = tostring(why) });
+							end
 							if ok then
 								q.stats.applied = q.stats.applied + 1;
 								if CivvisQueue.isStrike(row) then
@@ -24024,7 +24208,8 @@ local function applyOrders(player, pid, turn, rows)
 			return false, "settler_scout_capture_hold";
 		end
 		-- See `CivvisTrade.concertWaits`: no concert behind a leader screen.
-		if kind == "unit" and verb == "TOURISM_BOMB" and CivvisTrade.concertWaits(rows) then
+		-- With the queue on, the dispatch below queues it instead.
+		if kind == "unit" and verb == "TOURISM_BOMB" and CivvisTrade.concertWaits(turn) then
 			countRefusal(kind, "concert_waits_for_the_deal_session");
 			ordered[index] = true;
 			return false, "concert_waits_for_the_deal_session";
@@ -24161,8 +24346,10 @@ local function applyOrders(player, pid, turn, rows)
 	CivvisQueue.plotClaims = nil;
 	-- See `moveDepartureState`: whose move the host accepted in this batch.
 	CivvisQueue.departing = {};
+	-- See `CivvisTrade.concertWaits`: a deal ask goes out after the frame's unit
+	-- orders, so a concert in the same frame plays before its leader screen.
 	for index, row in ipairs(rows) do
-		if not ordered[index] then
+		if not ordered[index] and not CivvisTrade.SESSION_ORDER_KINDS[tostring(row.kind or "")] then
 			local subject = tonumber(row.subject);
 			local isUnit = tostring(row.kind or "") == "unit" and subject ~= nil;
 			local departureWait;
@@ -24194,6 +24381,15 @@ local function applyOrders(player, pid, turn, rows)
 				ordered[index] = true;
 				CivvisQueue.push(subject, row, nil);
 				firstRun[subject] = { expect = nil };
+			elseif queueOn and isUnit and tostring(row.verb or "") == "TOURISM_BOMB"
+					and CivvisTrade.concertWaits(turn) then
+				-- A deal holds the turn: the queue plays it once the hold ends.
+				ordered[index] = true;
+				CivvisQueue.push(subject, row, nil);
+				CivvisQueue.pending[subject].concert_waits = 0;
+				firstRun[subject] = { expect = nil };
+				emit("concert_deferred", { turn = turn, unit = subject,
+					frame = awaiting.frame or 0, from = "frame" });
 			else
 				local ok, why = runOrder(index, row);
 				if isUnit then
@@ -24221,6 +24417,9 @@ local function applyOrders(player, pid, turn, rows)
 				end
 			end
 		end
+	end
+	for index, row in ipairs(rows) do
+		if not ordered[index] then runOrder(index, row); end
 	end
 
 	-- Great People go first, before the unmentioned-unit holding pass: they
@@ -28301,9 +28500,14 @@ function Initialize()
 		UnitRemovedFromMap = CivvisLedger.onUnitRemoved,
 		UnitCaptured = CivvisLedger.onUnitCaptured,
 		CityOccupationChanged = CivvisLedger.onCityOccupationChanged,
+		-- The espionage ledger: see CivvisLedger.spy.
+		SpyMissionCompleted = CivvisLedger.onSpyMissionCompleted,
+		SpyMissionUpdated = CivvisLedger.flushSpyMissions,
 	}) do
 		pcall(function() Events[name].Add(handler); end);
 	end
+	-- A second listener: an open escape is re-read when our turn begins.
+	pcall(function() Events.LocalPlayerTurnBegin.Add(CivvisLedger.flushSpyMissions); end);
 end
 
 Initialize();

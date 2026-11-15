@@ -1,11 +1,14 @@
 -- A Rock Band's concert raises a popup that locks the game core, and a deal
 -- session's leader screen keeps that popup hidden: live 2026-11-15 the two
--- together cost a 30 s ask and a hung rival turn (071444Z t159, t175), and
--- closing the hidden popup was followed once in eleven by a native crash
--- (110627Z t165). So the agent keeps them apart: a `TOURISM_BOMB` order is
--- refused for the frame while a deal session is open, its answer holds the
--- turn, or the frame's own orders can open one. This drives the shipped agent
--- against the small fake host of auto_explore_cancellation_test.lua.
+-- together cost a 30 s ask and a hung rival turn (071444Z t159, t175). So the
+-- agent keeps them apart without losing the concert: a frame's deal asks go
+-- out after its unit orders, and a concert that finds a deal of this turn
+-- holding our end turn waits in the order queue and plays the same turn as
+-- soon as that hold ends. #5336/#5341 refused it for the frame instead, while
+-- ANY session sat in the table: in civvis-20261115T151156Z a session opened at
+-- t184 was never closed, and a level-4 band on its stage never played again.
+-- This drives the shipped agent against the small fake host of
+-- auto_explore_cancellation_test.lua.
 --
 -- Run: lua5.1 tools/civ6_control/mod/concert_deal_session_order_test.lua
 
@@ -146,6 +149,10 @@ PlayersVisibility = setmetatable({}, { __index = function()
 	return { IsVisible = function() return true end, IsRevealed = function() return true end }
 end })
 Game = { GetLocalPlayer = function() return PID end, GetCurrentGameTurn = function() return 7 end }
+-- The agent's clock (`CivvisClock.now`) reads `UI.GetElapsedTime`.
+NOW = 100
+UI = setmetatable({ GetElapsedTime = function() return NOW end },
+	{ __index = function() return stub() end })
 
 local chunk, loadErr = loadfile(here .. "/CivvisControlAgent.lua")
 assert(chunk, "could not load agent: " .. tostring(loadErr))
@@ -202,22 +209,64 @@ end
 
 local trade = rawget(_G, "CivvisTrade")
 assert(type(trade) == "table", "CivvisTrade is not exported")
+local transitions = rawget(_G, "CivvisTransitions")
+assert(type(transitions) == "table", "CivvisTransitions is not exported")
 local BAND = 21
-local function band()
-	host.units[BAND] = { id = BAND, kind = "UNIT_ROCK_BAND", x = 5, y = 5, moves = 2,
+local function band(id)
+	host.units[id or BAND] = { id = id or BAND, kind = "UNIT_ROCK_BAND", x = 5, y = 5, moves = 4,
 		activity = "awake" }
 end
-local function concert() return row(BAND, "TOURISM_BOMB") end
-local function played() return calls(BAND):find("UNITOPERATION_TOURISM_BOMB", 1, true) ~= nil end
+local function concert(id) return row(id or BAND, "TOURISM_BOMB") end
+local function played(id)
+	return calls(id or BAND):find("UNITOPERATION_TOURISM_BOMB", 1, true) ~= nil
+end
 local function clear()
 	reset()
+	NOW = 100
 	for key in pairs(trade.sessions) do trade.sessions[key] = nil end
 	trade.turnHold = nil
 	band()
 end
 local function refusedWhy()
-	local line = lastEvent("orders")
-	return line ~= nil and line:find("concert_waits_for_the_deal_session", 1, true) ~= nil
+	for _, line in ipairs(LOG) do
+		if line:find("concert_waits_for_the_deal_session", 1, true) then return true end
+	end
+	return false
+end
+local function count(kind)
+	local n = 0
+	for _, line in ipairs(LOG) do
+		if line:find('"kind":"' .. kind .. '"', 1, true) then n = n + 1 end
+	end
+	return n
+end
+-- A session of this turn as `CivvisTrade.ask` leaves it: opening, then asked.
+local function session(target, asked, turn)
+	trade.sessions[target] = { kind = "buy", action = "EQUALIZE", turn = turn or 7,
+		sent = asked == true, opened_at = NOW, reply_at = asked and NOW or nil }
+end
+local function ticks(n, step)
+	for _ = 1, n do
+		NOW = NOW + (step or 0.1)
+		queue.drain(player, PID, 7)
+	end
+end
+
+-- The order in which the frame reached the host: unit orders through the
+-- real request, a deal ask as `CivvisTrade.ask` would open it (the shipped ask
+-- needs a whole rival behind it; what matters here is when it goes out).
+local SEQ = {}
+local realApply = transitions.apply
+transitions.apply = function(p, pid, order, turn)
+	local kind = tostring(order.kind or "")
+	if trade.SESSION_ORDER_KINDS[kind] then
+		SEQ[#SEQ + 1] = "ask:" .. kind
+		session(tonumber(order.subject), false, turn)
+		return true, "session"
+	end
+	local ok, why = realApply(p, pid, order, turn)
+	SEQ[#SEQ + 1] = tostring(order.verb) .. ":" .. tostring(ok)
+	return ok, why
 end
 
 -- 1. With no session anywhere the concert is requested as it always was.
@@ -225,92 +274,129 @@ clear()
 applyOrders(player, PID, 7, { concert() })
 check("a concert with no deal session is played", played(), true)
 check("…and is not reported as waiting", refusedWhy(), false)
-check("the predicate agrees", trade.concertWaits({ concert() }), false)
+check("…nor deferred", count("concert_deferred"), 0)
+check("the predicate agrees", trade.concertWaits(7), false)
 
--- 2. A session opened in an earlier frame and still waiting for its answer.
-clear()
-trade.sessions[4] = { kind = "buy", action = "EQUALIZE", turn = 7, sent = true }
-applyOrders(player, PID, 7, { concert() })
-check("a concert behind an open session is not requested", played(), false)
-check("…and is refused with its own reason", refusedWhy(), true)
-check("…counted as one refusal", field(lastEvent("orders"), "refused"), 1)
-
--- 3. The session has closed: the next frame's order plays the concert.
-trade.sessions[4] = nil
-host.calls = {}
-applyOrders(player, PID, 7, { concert() })
-check("the same order in the next frame is played", played(), true)
-
--- 4. An unanswered ask that still holds our turn for the rival's verdict.
-clear()
-trade.turnHold = { turn = 7, target = 4, at = 0 }
-applyOrders(player, PID, 7, { concert() })
-check("a concert behind a held turn is not requested", played(), false)
-check("…with the same reason", refusedWhy(), true)
-
--- 5. A frame whose own orders can open a session, whichever comes first.
+-- 2. civvis-20261115T151156Z t184/t185: a band on its stage with full moves,
+--    in a frame whose own trade ask opens a session. CIVVIS put the ask first;
+--    the concert still goes out before it, and plays.
 for _, kind in ipairs({ "peace", "friendship", "alliance", "sell", "buy" }) do
 	clear()
-	check("a frame with a " .. kind .. " order makes the concert wait",
-		trade.concertWaits({ concert(), { kind = kind, subject = "4" } }), true)
-	check("…also when the " .. kind .. " order comes first",
-		trade.concertWaits({ { kind = kind, subject = "4" }, concert() }), true)
+	SEQ = {}
+	applyOrders(player, PID, 7, { { kind = kind, subject = "4" }, concert() })
+	check("t184 shape (" .. kind .. "): the concert is played this frame", played(), true)
+	check("…before the ask goes out", table.concat(SEQ, ","), "TOURISM_BOMB:true,ask:" .. kind)
+	check("…and the ask still goes out", trade.sessions[4] ~= nil, true)
+	check("…nothing is refused", refusedWhy(), false)
 end
-clear()
--- The ask itself is stubbed out here: this frame is about the order beside it.
-local realAsk = trade.ask
-trade.ask = function() return "session" end
-applyOrders(player, PID, 7, { concert(), { kind = "peace", subject = "4" } })
-trade.ask = realAsk
-check("a concert in the same frame as a peace ask is not requested", played(), false)
-check("…and says why", refusedWhy(), true)
 
--- 6. Orders that open no session leave the concert alone, and so do other
---    units' orders in a frame that holds one.
+-- 3. A later frame of the same turn finds that session still opening: the
+--    concert waits in the queue, the turn is held for it, and it plays the
+--    moment the session has closed. Never a lost turn.
+clear()
+session(4, false)
+NOW = NOW + 0.4
+applyOrders(player, PID, 7, { concert() })
+check("behind an opening session the concert is not requested", played(), false)
+check("…not refused", refusedWhy(), false)
+check("…but deferred from the frame", count("concert_deferred"), 1)
+check("…and the queue holds the turn for it", queue.pendingCount(), 1)
+ticks(3)
+check("while the session is open it keeps waiting", played(), false)
+check("…still holding the turn", queue.pendingCount(), 1)
+trade.sessions[4] = nil -- answered and closed, ~0.3-1 s after it opened
+ticks(1)
+check("the session closed: the concert plays the same turn", played(), true)
+check("…released once", count("concert_released"), 1)
+check("…the queue lets the turn go", queue.pendingCount(), 0)
+check("…with no refusal anywhere", next(queue.stats.refusals) == nil and not refusedWhy(), true)
+
+-- 4. The t184 session itself: opened, never acknowledged, never closed. Its
+--    opening hold (3 s) ends and so does the concert's wait, although the
+--    session is still in the table.
+clear()
+session(4, false)
+applyOrders(player, PID, 7, { concert() })
+check("an unacknowledged opening holds the concert at first", played(), false)
+ticks(20, 0.1)
+check("…for no more than its 3 s opening hold", played(), false)
+ticks(15, 0.1)
+check("…after which the concert plays this turn", played(), true)
+check("…the session still sitting in the table", trade.sessions[4] ~= nil, true)
+
+-- 5. A session left from an earlier turn holds nothing: this is what refused
+--    the 151156Z band three times a turn from t185 to the end of the game.
+clear()
+session(4, false, 6)
+applyOrders(player, PID, 7, { concert() })
+check("a session from an earlier turn does not hold the concert", played(), true)
+check("…nothing deferred", count("concert_deferred"), 0)
+
+-- 6. An asked session waits for its answer; the answer comes, the band plays.
+clear()
+session(4, true)
+applyOrders(player, PID, 7, { concert() })
+ticks(5, 0.2)
+check("behind an asked session the concert waits", played(), false)
+trade.sessions[4] = nil
+ticks(1)
+check("…and plays once it is answered", played(), true)
+
+-- 7. An unanswered ask whose verdict still holds our turn: the concert waits
+--    while that hold lasts and plays when the rival speaks. One from an
+--    earlier turn holds nothing.
+clear()
+trade.turnHold = { turn = 7, target = 4, at = NOW }
+applyOrders(player, PID, 7, { concert() })
+ticks(5)
+check("behind a held turn the concert waits", played(), false)
+trade.turnHold = nil -- the rival spoke
+ticks(1)
+check("…and plays when the rival speaks", played(), true)
+clear()
+trade.turnHold = { turn = 6, target = 4, at = NOW }
+applyOrders(player, PID, 7, { concert() })
+check("a held turn from an earlier turn does not hold it", played(), true)
+
+-- 8. A band that walks first plays from the queue, some ticks after the
+--    frame, when the frame's session is up (114552Z t154, t158): it waits
+--    there too, and plays the same turn.
+clear()
+queue.push(BAND, concert(), nil, nil)
+session(4, true)
+ticks(40, 0.05)
+check("a queued concert behind an open session is not requested", played(), false)
+check("…not refused", (queue.stats.refusals or {})["concert_waits_for_the_deal_session"], nil)
+check("…and still holds the turn", queue.pendingCount(), 1)
+check("…deferred once", count("concert_deferred"), 1)
+trade.sessions[4] = nil
+ticks(1)
+check("…and plays as soon as the session closes", played(), true)
+check("…the queue drained", queue.pendingCount(), 0)
+
+-- 9. Only the concert waits: other units' orders in the same frame go out.
 clear()
 host.units[22] = { id = 22, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2, activity = "awake" }
-check("unit, research and production orders do not make it wait",
-	trade.concertWaits({ concert(), row(22, "MOVE_TO", 2, 1),
-		{ kind = "research", verb = "TECH_POTTERY" }, { kind = "produce", subject = "1" } }), false)
-applyOrders(player, PID, 7, { concert(), row(22, "MOVE_TO", 2, 1) })
-check("a concert beside a move is played", played(), true)
-clear()
-host.units[22] = { id = 22, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2, activity = "awake" }
-trade.sessions[4] = { kind = "sell", action = "EQUALIZE", turn = 7, sent = true }
+session(4, true)
 applyOrders(player, PID, 7, { concert(), row(22, "MOVE_TO", 2, 1) })
 check("behind a session only the concert waits", played(), false)
 check("…the move beside it is still requested",
 	calls(22):find("UNITOPERATION_MOVE_TO", 1, true) ~= nil, true)
 
--- 6b. A band that walks first plays from the order queue, some ticks after
---     the frame: live civvis-20261115T114552Z t154 and t158 played three
---     concerts that way behind sessions the frame's own check could not see.
-local function queued(session)
-	clear()
-	queue.push(BAND, concert(), nil, nil)
-	if session then
-		trade.sessions[4] = { kind = "buy", action = "EQUALIZE", turn = 7, sent = true }
-	end
-	for _ = 1, 40 do queue.drain(player, PID, 7) end
-	return played(), (queue.stats.refusals or {})["concert_waits_for_the_deal_session"]
-end
-local playedFree, refusedFree = queued(false)
-check("a queued concert with no session is played", playedFree, true)
-check("…and not counted as waiting", refusedFree, nil)
-local playedBehind, refusedBehind = queued(true)
-check("a queued concert behind an open session is not requested", playedBehind, false)
-check("…and the queue records why", refusedBehind, 1)
+-- 10. Two bands, one frame, an ask between them: both play, then the ask.
 clear()
-queue.push(BAND, concert(), nil, nil)
-trade.turnHold = { turn = 7, target = 4, at = 0 }
-for _ = 1, 40 do queue.drain(player, PID, 7) end
-check("a queued concert behind a held turn is not requested", played(), false)
+band(23)
+SEQ = {}
+applyOrders(player, PID, 7, { concert(), { kind = "sell", subject = "4" }, concert(23) })
+check("two bands around an ask both play first", table.concat(SEQ, ","),
+	"TOURISM_BOMB:true,TOURISM_BOMB:true,ask:sell")
 
--- 7. Malformed input never throws.
+-- 11. Malformed input never throws.
 clear()
-check("no rows", trade.concertWaits(nil), false)
-check("rows that are not orders", trade.concertWaits({ 5, "x", {}, { kind = 7 } }), false)
+check("no turn", trade.concertWaits(nil), false)
+check("a turn that is not a number", trade.concertWaits("x"), false)
 
+transitions.apply = realApply
 if failures > 0 then
 	print(string.format("%d failure(s)", failures))
 	os.exit(1)

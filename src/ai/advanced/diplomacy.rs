@@ -233,6 +233,14 @@ impl AdvancedAi {
         // sales that pay a rival's space race. Empty when the gene is off.
         // See `advanced/science_threat_denial.rs`.
         let science_threats = self.science_threat_seats(g, pid);
+        // `passage-waits-past-the-opening`: the rivals whose Open Borders this
+        // seat does not buy this turn, every one in the opening and after it
+        // any rival over 1.5x our military. Empty with the gene off. See
+        // `advanced/passage_waits_past_the_opening.rs`.
+        let passage_holds = self.passage_holds(g, pid);
+        if !passage_holds.is_empty() && g.turn % 6 == pid as u32 % 6 {
+            self.journal_withheld_passages(g, pid, excluded_partner, &passage_holds);
+        }
         // `culture-keeps-every-border-open`: every rival's passage, every
         // turn, once our tourism is worth multiplying. Exact no-op while the
         // gene is off. See `advanced/culture_open_borders.rs`.
@@ -255,6 +263,7 @@ impl AdvancedAi {
                 .filter(|deal| {
                     self.culture_deal_allowed(deal, &culture_threats)
                         && self.science_denial_deal_allowed(deal, &science_threats)
+                        && Self::passage_deal_allowed(deal, &passage_holds)
                 })
                 .filter(|deal| {
                     deal.item == "open_borders"
@@ -286,6 +295,7 @@ impl AdvancedAi {
                 .filter(|deal| {
                     self.culture_deal_allowed(deal, &culture_threats)
                         && self.science_denial_deal_allowed(deal, &science_threats)
+                        && Self::passage_deal_allowed(deal, &passage_holds)
                 })
                 .filter(|deal| {
                     deal.category == "great_work"
@@ -320,6 +330,7 @@ impl AdvancedAi {
                 .filter(|deal| {
                     self.culture_deal_allowed(deal, &culture_threats)
                         && self.science_denial_deal_allowed(deal, &science_threats)
+                        && Self::passage_deal_allowed(deal, &passage_holds)
                 })
                 .filter(|deal| {
                     !(deal.category == "great_work" && deal.direction == "sell")
@@ -337,7 +348,7 @@ impl AdvancedAi {
             }
             return;
         }
-        if culture_threats.is_empty() && science_threats.is_empty() {
+        if culture_threats.is_empty() && science_threats.is_empty() && passage_holds.is_empty() {
             self.base
                 .bilateral_trade_excluding(g, pid, excluded_partner);
         } else if !self.base.minor && !self.base.barb && g.turn % 6 == pid as u32 % 6 {
@@ -348,6 +359,7 @@ impl AdvancedAi {
                 .filter(|deal| {
                     self.culture_deal_allowed(deal, &culture_threats)
                         && self.science_denial_deal_allowed(deal, &science_threats)
+                        && Self::passage_deal_allowed(deal, &passage_holds)
                 })
                 .max_by(|left, right| {
                     self.base

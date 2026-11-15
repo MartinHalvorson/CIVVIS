@@ -463,6 +463,10 @@ impl AdvancedAi {
         /// Opt-in gene `risk-is-priced`: one death chance per pathed move,
         /// refused over the mission's allowance; see `advanced/priced_risk.rs`.
         risk_is_priced => enable_risk_is_priced, disable_risk_is_priced;
+        /// Opt-in gene `passage-waits-past-the-opening`: no Open Borders bought
+        /// in the opening, none after it from a rival over 1.5x our military;
+        /// see `advanced/passage_waits_past_the_opening.rs`.
+        passage_waits_past_the_opening => enable_passage_waits_past_the_opening, disable_passage_waits_past_the_opening;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
