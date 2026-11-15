@@ -12510,7 +12510,15 @@ CivvisTrade = { pending = {}, asked = {}, sessions = {}, unanswered = 0, disable
 -- whether a counter ever arrives between 4 and 30 seconds (`counter_answered`
 -- carries `waited`). `PeaceCounterHoldSeconds` / `AllianceCounterHoldSeconds`
 -- still override it, and 0 still closes at the refusal.
-CivvisTrade.COUNTER_HOLD_SECONDS = 30;
+-- ★ ...AND THE NEXT GAMES' LOGS SAID NO. With the 30-second wait, on the 28
+-- games of 2026-11-13..15 still on disk: the counter came 25 times, every
+-- one inside 0.7 s; once it did not come (civvis-20261115T104756Z t112), the
+-- session was held the full 30 seconds, closed `counter_not_sent`, and that
+-- rival's turn hung all the same. So a counter comes at once or not at all,
+-- the hang follows the unsent counter and not our closing, and the long wait
+-- only adds its length to a turn that is going to be recovered anyway. Three
+-- seconds is four times the slowest counter seen.
+CivvisTrade.COUNTER_HOLD_SECONDS = 3;
 -- The end turn is held from `reply_at` (`CivvisTrade.holdsEndTurn`). A
 -- refusal that took its time must not leave the counter wait outliving the
 -- turn's hold, so the window restarts when the refusal lands. An unreadable
