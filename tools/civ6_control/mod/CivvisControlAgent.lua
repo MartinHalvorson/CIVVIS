@@ -6518,33 +6518,46 @@ function CivvisMuseumSwaps.score(slots)
     if count == 3 and unique == 3 and same then base = base * 2; end
     return base;
 end
+-- Returns the museum's inventory, or nil and which read stopped it. The
+-- refusal used to be one word for nine different gates, and on the two
+-- Culture games of 2026-11-15 it was every museum swap the decider sent:
+-- 144 of 144 (civvis-20261115T102552Z) and 278 of 281 (110627Z, from t142,
+-- up to 27 a turn), for two Art Museums the state export showed holding
+-- three Landscapes by one artist and one by another. The word now carries
+-- the gate, so the next Culture game says which one it is.
 function CivvisMuseumSwaps.read(city, building)
     local blds = city:GetBuildings();
-    if not blds:HasBuilding(building) or blds:GetNumGreatWorkSlots(building) ~= 3 then return nil; end
+    if not blds:HasBuilding(building) then return nil, "no_museum"; end
+    if blds:GetNumGreatWorkSlots(building) ~= 3 then return nil, "slot_count"; end
     local slots = {};
     for slot = 0, 2 do
         local index = blds:GetGreatWorkInSlot(building, slot);
-        if index == nil then return nil; end
+        if index == nil then return nil, "slot_read"; end
         if index >= 0 then
             local info = GameInfo.GreatWorks[blds:GetGreatWorkTypeFromIndex(index)];
             local data = Game.GetGreatWorkDataFromIndex(index);
-            if info == nil or (info.GreatWorkObjectType ~= "GREATWORKOBJECT_SCULPTURE"
+            if info == nil then return nil, "work_type"; end
+            if info.GreatWorkObjectType ~= "GREATWORKOBJECT_SCULPTURE"
                 and info.GreatWorkObjectType ~= "GREATWORKOBJECT_LANDSCAPE"
-                and info.GreatWorkObjectType ~= "GREATWORKOBJECT_PORTRAIT")
-                or tonumber(info.Tourism) ~= 2 or data == nil
-                or type(data.CreatorName) ~= "string" or data.CreatorName == "" then return nil; end
+                and info.GreatWorkObjectType ~= "GREATWORKOBJECT_PORTRAIT" then return nil, "not_art"; end
+            if tonumber(info.Tourism) ~= 2 then return nil, "work_tourism"; end
+            if data == nil or type(data.CreatorName) ~= "string" or data.CreatorName == "" then
+                return nil, "creator";
+            end
             local created = tonumber(blds:GetTurnFromIndex(index));
-            if created == nil then return nil; end
+            if created == nil then return nil, "created"; end
             slots[slot + 1] = { index = index, kind = info.GreatWorkType,
                 object = info.GreatWorkObjectType, creator = data.CreatorName, created = created };
         end
     end
     local base = CivvisMuseumSwaps.score(slots);
-    if base <= 0 then return nil; end
+    if base <= 0 then return nil, "empty"; end
     local tourism = tonumber(blds:GetBuildingTourismFromGreatWorks(false, building));
     local religious = tonumber(blds:GetBuildingTourismFromGreatWorks(true, building));
-    if tourism == nil or tourism ~= tourism or tourism < 0 or tourism == math.huge
-        or religious ~= 0 then return nil; end
+    if tourism == nil or tourism ~= tourism or tourism < 0 or tourism == math.huge then
+        return nil, "tourism_read";
+    end
+    if religious ~= 0 then return nil, "religious_tourism"; end
     return { city = city:GetID(), blds = blds, slots = slots, factor = tourism / base, tourism = tourism };
 end
 -- GreatWorksOverview.lua:843-856 permits a writing in an empty matching slot;
@@ -6629,9 +6642,10 @@ function CivvisMuseumSwaps.attempt(player, pid, row, turn)
             if city:GetID() == row.x then dest = city; end
         end);
         if source == nil or dest == nil or row.subject == row.x then return false, "museum_not_ours"; end
-        local a = CivvisMuseumSwaps.read(source, info.Index);
-        local b = CivvisMuseumSwaps.read(dest, info.Index);
-        if a == nil or b == nil then return false, "museum_unknown_inventory"; end
+        local a, whyA = CivvisMuseumSwaps.read(source, info.Index);
+        local b, whyB = CivvisMuseumSwaps.read(dest, info.Index);
+        if a == nil then return false, "museum_unknown_inventory:source_" .. tostring(whyA); end
+        if b == nil then return false, "museum_unknown_inventory:dest_" .. tostring(whyB); end
         local target = tonumber(row.y);
         if target == nil or target < 0 or target > 2 or target ~= math.floor(target) then return false, "museum_slot_invalid"; end
         local sourceSlot, work;
