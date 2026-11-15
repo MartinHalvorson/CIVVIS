@@ -112,16 +112,18 @@
 //! - **Unit**: that unit is the edge unit, ahead of a stronger one that is
 //!   technologies away (for Sumeria on turn one the base rule names the
 //!   Swordsman, 35, three technologies and Iron off).
-//! - **Force**: the capital trains [`EDGE_RUSH_FIRST`] of them before
-//!   anything else, the opening book included, and the hint for the
-//!   capital's next item is the same. Once a city is named the version-2
+//! - **Force**: the capital trains [`EDGE_RUSH_FIRST_UNMET`] of them before
+//!   anything else, the opening book included, and [`EDGE_RUSH_FIRST`] once
+//!   a rival major is met; the hint for the capital's next item is the
+//!   same. Once a city is named the version-2
 //!   claim trains on to [`EDGE_FORCE_MAX`]. Gold is held for one more and
 //!   buys it in a training city that quotes a price
 //!   ([`AdvancedAi::edge_rush_buy`]).
 //! - **Scouting**: while no city is named up to [`EDGE_RUSH_SCOUTS`] edge
-//!   units walk to the nearest unexplored land inside the rush's reach of
-//!   the capital, a rival's border we have seen first
-//!   ([`AdvancedAi::edge_rush_scout`]); the others are the unit pass's.
+//!   units explore inside the rush's reach of the capital, the fog beside
+//!   a rival's border we have seen first ([`AdvancedAi::edge_rush_scout`]);
+//!   the others, and the scouts once all of it is charted, are the unit
+//!   pass's.
 //! - **Target**: named from one city. An unwalled rival city within
 //!   [`edge_rush_reach`] of ours at an edge of [`EDGE_RUSH_MIN`] or better
 //!   (a walled one keeps the base rule), the nearest of those at
@@ -134,7 +136,8 @@
 //!   every turn as the force grows. The muster does not wait out the
 //!   denouncement: the Formal War when it is legal, else a surprise war
 //!   ([`AdvancedAi::edge_rush_opening`]), on a turn the force can still
-//!   move, and the force strikes on the turn it declares. A war the target
+//!   move, and the force, mustered as near as [`EDGE_RUSH_STAND_MIN_TILES`]
+//!   tiles, strikes on the turn it declares. A war the target
 //!   declares on us first is the window's war.
 //! - **Stopping**: the at-war forecast under [`EDGE_RUSH_STOP_P`] on
 //!   [`EDGE_RUSH_STOP_STREAK`] war turns running, [`EDGE_RUSH_WAR_PATIENCE`]
@@ -248,11 +251,22 @@ pub(crate) const EDGE_RUSH_MIN: f64 = 0.0;
 pub(crate) const EDGE_RUSH_REACH_TURNS: i32 = 5;
 /// See [`EDGE_RUSH_REACH_TURNS`].
 pub(crate) const EDGE_RUSH_REACH_MAX: i32 = 15;
-/// The rush: edge units the capital trains before anything else, and the
-/// force's size until a city is named.
+/// The rush: edge units the capital trains before anything else once a
+/// rival major is met, and the force's size until a city is named.
 pub(crate) const EDGE_RUSH_FIRST: usize = EDGE_MUSTER_BODIES;
+/// The rush: the same while no rival major is met. Rounds 1-2 (24 Sumeria
+/// Score pairs): 8 worlds met a rival by turn 17 and those named a city
+/// within reach; in the worlds that met none by then the third unit bought
+/// nothing and the first Settler came ten turns late.
+pub(crate) const EDGE_RUSH_FIRST_UNMET: usize = 2;
 /// The rush: tiles from the force the next city may stand after a capture.
 pub(crate) const EDGE_RUSH_CONTINUE_TILES: i32 = 12;
+/// The rush: the nearest stand its force takes before the war, where the
+/// rival's border leaves one free (a young city owns only its first ring).
+/// From [`EDGE_STAND_MIN_TILES`] the War-Cart spent the declaration turn
+/// walking: round 3 struck no blow on the turn it declared in 11 of 11
+/// wars, and the chairs raised walls one to four turns later.
+pub(crate) const EDGE_RUSH_STAND_MIN_TILES: i32 = 2;
 /// The rush: edge units that scout while no city is named. The others are
 /// the unit pass's (the camps, the escorts, the capital's defence): round 2
 /// sent every one out, and in the worlds that named no city the capital sat
@@ -1182,9 +1196,10 @@ impl AdvancedAi {
                 Self::edge_count(g, pid, "rush");
                 think!(self.journal(), Military, Strategy,
                        "Edge unit rush from the capital: {}", plain(edge.unit.as_str());
-                       "{TAG}: rush: {} ({:.0}) is trainable from turn {} with no technology and no resource, {:+.0} over the basic melee unit; the capital trains {} before anything else, they scout, and an unwalled rival city within {} tiles is named from one city",
+                       "{TAG}: rush: {} ({:.0}) is trainable from turn {} with no technology and no resource, {:+.0} over the basic melee unit; the capital trains {} before anything else ({} once a rival is met), they scout, and an unwalled rival city within {} tiles is named from one city",
                        plain(edge.unit.as_str()), edge.strength, g.turn,
-                       edge.strength - edge_basic_strength(g), EDGE_RUSH_FIRST, reach);
+                       edge.strength - edge_basic_strength(g), EDGE_RUSH_FIRST_UNMET,
+                       EDGE_RUSH_FIRST, reach);
             } else if !self.edge_unit_takes_the_soft_city {
                 // The rush flag alone and nothing to rush with: the window
                 // never runs this game.
@@ -1655,9 +1670,30 @@ impl AdvancedAi {
             .is_some_and(|city| city.owner == pid && city.original_owner != pid)
     }
 
+    /// The rush's force, owned and queued: [`EDGE_FORCE_MAX`] once a city is
+    /// named; before that [`EDGE_RUSH_FIRST`] with a rival major met and
+    /// [`EDGE_RUSH_FIRST_UNMET`] with none.
+    fn edge_rush_cap(g: &Game, pid: usize, named: bool) -> usize {
+        if named {
+            return EDGE_FORCE_MAX;
+        }
+        let met = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && !player.is_free_city
+                && g.has_met(pid, player.id)
+        });
+        if met {
+            EDGE_RUSH_FIRST
+        } else {
+            EDGE_RUSH_FIRST_UNMET
+        }
+    }
+
     /// The rush: the city that buys the next edge unit and its Gold price,
-    /// while the force has room for one: [`EDGE_RUSH_FIRST`] owned and
-    /// queued before a city is named, [`EDGE_FORCE_MAX`] after. The training
+    /// while the force has room for one ([`Self::edge_rush_cap`]). The training
     /// city nearest the target (the capital before one is named) that quotes
     /// a price: the host buys a land soldier into the City Center, so a city
     /// with a soldier on its tile or at the head of its queue quotes none
@@ -1674,12 +1710,7 @@ impl AdvancedAi {
             return None;
         }
         let (owned, queued) = Self::edge_force(g, pid, unit);
-        let cap = if window.target.is_none() {
-            EDGE_RUSH_FIRST
-        } else {
-            EDGE_FORCE_MAX
-        };
-        if owned + queued >= cap {
+        if owned + queued >= Self::edge_rush_cap(g, pid, window.target.is_some()) {
             return None;
         }
         let capital = Self::conquest_capital(g, pid)?;
@@ -1735,19 +1766,17 @@ impl AdvancedAi {
     }
 
     /// The rush's scouting goals for `uid`: the unexplored land within
-    /// `reach` of `home` it can walk on. Tiles within
-    /// [`EDGE_RUSH_BORDER_TILES`] of a rival major's border we have seen come
-    /// first (its city stands beside it); otherwise scout `half` 0 takes
-    /// the east of the capital and 1 the west, and the whole of it when its
-    /// own half is charted. Empty when everything in reach is charted.
+    /// `reach` of `home` it can walk on, and of it the tiles within
+    /// [`EDGE_RUSH_BORDER_TILES`] of a rival major's border we have seen
+    /// (its city stands beside it). Both empty when everything in reach is
+    /// charted.
     fn edge_rush_scout_goals(
         g: &Game,
         pid: usize,
         uid: u32,
         home: Pos,
         reach: i32,
-        half: usize,
-    ) -> HashSet<Pos> {
+    ) -> (HashSet<Pos>, HashSet<Pos>) {
         let explored = &g.players[pid].explored;
         let goals: HashSet<Pos> = g
             .wdisk(home, reach)
@@ -1784,30 +1813,19 @@ impl AdvancedAi {
                     .any(rival_border)
             })
             .collect();
-        if !by_a_border.is_empty() {
-            return by_a_border;
-        }
-        let mine: HashSet<Pos> = goals
-            .iter()
-            .copied()
-            .filter(|pos| (pos.0 >= home.0) == (half == 0))
-            .collect();
-        if mine.is_empty() {
-            goals
-        } else {
-            mine
-        }
+        (goals, by_a_border)
     }
 
     /// The rush, while no city is named: up to [`EDGE_RUSH_SCOUTS`] edge
-    /// units look for one. Each walks with every move toward the nearest
-    /// unexplored land inside `reach` of the capital
-    /// ([`Self::edge_rush_scout_goals`]); nothing it found farther out could
-    /// be named. A wounded one heals first. With everything in reach
-    /// charted, and for the edge units past the first
-    /// [`EDGE_RUSH_SCOUTS`], nothing is ordered here: the unit pass has
-    /// them (the camps, the escorts, the capital's defence). Not while a
-    /// city of ours is threatened or a major is at war with us.
+    /// units look for one, with every move. Toward the fog beside a rival's
+    /// border we have seen first ([`Self::edge_rush_scout_goals`]);
+    /// otherwise the Scout's own step (`BasicAi::explore_step`), and one
+    /// past `reach` tiles from the capital walks back toward it, since
+    /// nothing it found out there could be named. A wounded one heals
+    /// first. With every land tile in reach charted, and for the edge units
+    /// past the first [`EDGE_RUSH_SCOUTS`], nothing is ordered here: the
+    /// unit pass has them (the camps, the escorts, the capital's defence).
+    /// Not while a city of ours is threatened or a major is at war with us.
     fn edge_rush_scout(
         &mut self,
         g: &mut Game,
@@ -1855,7 +1873,7 @@ impl AdvancedAi {
                    EDGE_RUSH_SCOUTS, plain(unit.as_str());
                    home);
         }
-        for (half, uid) in scouts.into_iter().enumerate() {
+        for uid in scouts {
             if g.units[&uid].hp < EDGE_HEAL_HP {
                 let _ = Self::edge_heal_step(g, pid, uid);
                 continue;
@@ -1867,23 +1885,33 @@ impl AdvancedAi {
                 if body.moves_left <= 0.0 {
                     break;
                 }
-                let goals = Self::edge_rush_scout_goals(g, pid, uid, home, reach, half);
+                let here = body.pos;
+                let (goals, by_a_border) = Self::edge_rush_scout_goals(g, pid, uid, home, reach);
                 if goals.is_empty() {
                     break;
                 }
-                let stepped = g
-                    .route_step_to_any(uid, &goals)
-                    .filter(|next| g.can_move(uid, *next))
-                    .is_some_and(|next| {
-                        g.apply(
-                            pid,
-                            &Action::Move {
-                                unit: uid,
-                                to: next,
-                            },
-                        )
-                        .is_ok()
-                    });
+                let walk = |g: &mut Game, next: Option<Pos>| {
+                    next.filter(|next| g.can_move(uid, *next))
+                        .is_some_and(|next| {
+                            g.apply(
+                                pid,
+                                &Action::Move {
+                                    unit: uid,
+                                    to: next,
+                                },
+                            )
+                            .is_ok()
+                        })
+                };
+                let stepped = if g.wdist(here, home) > reach {
+                    let next = g.route_step(uid, home, 0);
+                    walk(&mut *g, next)
+                } else {
+                    let next = (!by_a_border.is_empty())
+                        .then(|| g.route_step_to_any(uid, &by_a_border))
+                        .flatten();
+                    walk(&mut *g, next) || self.base.explore_step(g, pid, uid)
+                };
                 if !stepped {
                     break;
                 }
@@ -2099,6 +2127,7 @@ impl AdvancedAi {
         }
         let guards = self.all_reserved_civilian_guards();
         let withdraw = self.base.w.withdraw_hp;
+        let close = window.rushing();
         // Heal before the march: a wounded edge unit of the force holds (or
         // steps into a city of ours two tiles off) and does not walk. One at
         // or below the withdraw line is the unit pass's recovery, as before.
@@ -2152,10 +2181,44 @@ impl AdvancedAi {
         for uid in force {
             // One step a call; a body has at most a few moves.
             for _ in 0..6 {
-                if Self::edge_stage_unit(g, pid, uid, city) != Some(true) {
+                if Self::edge_stage_unit(g, pid, uid, city, close) != Some(true) {
                     break;
                 }
             }
+        }
+    }
+
+    /// The stands `uid` may take before the war: the free tiles
+    /// [`EDGE_STAND_MIN_TILES`]-[`EDGE_MUSTER_TILES`] tiles from `city`
+    /// outside a border closed to us (its own tile counts), and with none,
+    /// out to two tiles farther. `close` (the rush): the free stands of the
+    /// nearest ring from [`EDGE_RUSH_STAND_MIN_TILES`] out that has one.
+    fn edge_stand_goals(g: &Game, pid: usize, uid: u32, city: Pos, close: bool) -> HashSet<Pos> {
+        let Some(here) = g.units.get(&uid).map(|body| body.pos) else {
+            return HashSet::new();
+        };
+        let stands = |near: i32, far: i32| -> HashSet<Pos> {
+            g.wdisk(city, far)
+                .into_iter()
+                .filter(|pos| {
+                    g.wdist(*pos, city) >= near
+                        && edge_stand(g, pid, Some(uid), *pos)
+                        && (*pos == here || g.unit_ids_at(*pos).is_empty())
+                })
+                .collect()
+        };
+        let goals = if close {
+            (EDGE_RUSH_STAND_MIN_TILES..=EDGE_MUSTER_TILES)
+                .map(|ring| stands(ring, ring))
+                .find(|ring| !ring.is_empty())
+                .unwrap_or_default()
+        } else {
+            stands(EDGE_STAND_MIN_TILES, EDGE_MUSTER_TILES)
+        };
+        if goals.is_empty() {
+            stands(EDGE_STAND_MIN_TILES, EDGE_MUSTER_TILES + 2)
+        } else {
+            goals
         }
     }
 
@@ -2164,26 +2227,17 @@ impl AdvancedAi {
     /// (outside a border closed to us; 3-6 tiles when none is free), or, on
     /// the stand, fortify. `Some(true)` when it stepped, `Some(false)` when it
     /// holds, `None` when it has no move or no stand is reachable.
-    fn edge_stage_unit(g: &mut Game, pid: usize, uid: u32, city: Pos) -> Option<bool> {
+    ///
+    /// `close` (the rush): the stand is taken in the nearest ring from
+    /// [`EDGE_RUSH_STAND_MIN_TILES`] out that has a free one, so the force
+    /// stands one move from the city when it declares.
+    fn edge_stage_unit(g: &mut Game, pid: usize, uid: u32, city: Pos, close: bool) -> Option<bool> {
         let body = g.units.get(&uid)?;
         if body.moves_left <= 0.0 {
             return None;
         }
         let here = body.pos;
-        let stands = |g: &Game, far: i32| -> HashSet<Pos> {
-            g.wdisk(city, far)
-                .into_iter()
-                .filter(|pos| {
-                    g.wdist(*pos, city) >= EDGE_STAND_MIN_TILES
-                        && edge_stand(g, pid, Some(uid), *pos)
-                        && (*pos == here || g.unit_ids_at(*pos).is_empty())
-                })
-                .collect()
-        };
-        let mut goals = stands(&*g, EDGE_MUSTER_TILES);
-        if goals.is_empty() {
-            goals = stands(&*g, EDGE_MUSTER_TILES + 2);
-        }
+        let goals = Self::edge_stand_goals(g, pid, uid, city, close);
         if goals.contains(&here) {
             let _ = g.apply(pid, &Action::Fortify { unit: uid });
             return Some(false);
@@ -2453,21 +2507,25 @@ impl AdvancedAi {
             self.edge_rush_first_blows(g, pid, unit, soft.city, &name);
             return;
         }
-        // The rush declares on a turn its force can still move, so the
-        // declaration and the first blows come together: a turn is planned
-        // in several frames, and a muster that forms after the walk has
-        // spent the moves waits for the next turn's first frame.
+        // The rush declares on a turn three of its force stand on their
+        // stands (as near as two tiles) with a move left, so the declaration
+        // and the first blows come together: a turn is planned in several
+        // frames, and a muster that forms after the walk has spent the
+        // moves waits for the next turn's first frame.
         if window.rushing() {
             let movers = near
                 .iter()
                 .filter(|&&uid| {
                     let body = &g.units[&uid];
-                    body.kind == unit && body.hp >= EDGE_MUSTER_HP && body.moves_left > 0.0
+                    body.kind == unit
+                        && body.hp >= EDGE_MUSTER_HP
+                        && body.moves_left > 0.0
+                        && Self::edge_stand_goals(g, pid, uid, city_pos, true).contains(&body.pos)
                 })
                 .count();
             if movers < EDGE_MUSTER_BODIES {
                 let why = format!(
-                    "the forecast reads {:.0}% at {name}; {movers} of the {bodies} {} there can still move this turn, so the declaration waits for the next turn's first move",
+                    "the forecast reads {:.0}% at {name}; {movers} of the {bodies} {} there stand on their stand with a move left, so the declaration waits for the turn three do",
                     chance * 100.0,
                     plain(unit.as_str())
                 );
@@ -3337,8 +3395,8 @@ impl AdvancedAi {
         let target = window.target.clone();
         // The rush trains its first bodies before a city is named, and the
         // whole force once one is.
-        let cap = if rush && target.is_none() {
-            EDGE_RUSH_FIRST
+        let cap = if rush {
+            Self::edge_rush_cap(g, pid, target.is_some())
         } else {
             EDGE_FORCE_MAX
         };
@@ -3648,7 +3706,8 @@ impl AdvancedAi {
         {
             return Self::edge_heal_step(g, pid, uid).map(|_| false);
         }
-        Self::edge_stage_unit(g, pid, uid, city)
+        let close = self.edge_unit_window.as_ref().is_some_and(|w| w.rushing());
+        Self::edge_stage_unit(g, pid, uid, city, close)
     }
 
     /// `edge-unit-takes-the-soft-city`: where the objective board's Reserve

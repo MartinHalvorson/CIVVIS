@@ -316,6 +316,25 @@ only tag to arm):
   does not read taken is left alone. Training and buying go on through the
   war.
 
+### Rush rounds (CI farm on #5305; Sumeria, Score target, 120 turns)
+
+**Method.** A temporary workflow on the PR built `gene_screen` once and
+played the lane recipe on runners in shards, the control arm and the gene
+arm on the same seeds, with the measured seat's journal kept
+(`--journal`): `--players 6 --width 74 --height 46 --city-states 9 --map
+continents --difficulty deity --rivals firaxis-faithful --handicap rivals
+--rival-chairs 5 --rival-rung -2 --rival-pace --target-mix score --seat-civ
+Sumeria --turns 120 --deployment-genome --live-genome <genome> --trace`,
+seeds 52680000-23 (24 pairs a recipe), the genome the live force list of
+2026-11-15 07:2xZ (717 treatments) with and without the tag. A second
+recipe adds `--rival-walls 15`. Score at the marks comes from a local probe
+on the trace sample (not shipped). The workflow, the genomes and the probe
+were scaffolding and are not in the merged tree; the reader scripts are
+`~/civvis-score-tools/rush-20261115/` (`fetch_ci.py`, `pairs.py`). Paired
+differences are mean ± standard error, `*` at 1.5 standard errors.
+
+ROUNDS_TABLE
+
 ## Live evidence (Rome, Score lane)
 
 The two census scripts (`window.py`, `iron.py`) read every run of 11-12/13
