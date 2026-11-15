@@ -771,7 +771,7 @@ pub struct BuildingSpec {
     /// Free-form numeric rule primitives used by named effects that are not
     /// plain yields (production modifiers, combat strength, tourism, etc.).
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
     /// Worship buildings are selected by this religion belief and purchased
     /// with Faith rather than constructed with Production.
     #[serde(default)]
@@ -1244,7 +1244,7 @@ pub struct PolicySpec {
     pub note: String,
     /// Numeric, data-driven policy primitives consumed by the game engine.
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
     /// Unit-Production cards apply only to units of these eras. Agoge boosts
     /// Ancient and Classical infantry and nothing later; an empty list means
     /// the card is not era-gated. `ADJUST_UNIT_TAG_ERA_PRODUCTION` ships one

@@ -62,6 +62,7 @@ pub mod idmap;
 pub mod leader_roster;
 pub mod mapgen;
 pub mod mirror;
+pub mod effect_map;
 pub mod name;
 pub mod obs;
 pub mod odds;
