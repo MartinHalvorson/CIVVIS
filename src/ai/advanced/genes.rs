@@ -5996,6 +5996,13 @@ pub const GENES: &[Gene] = &[
     // keeps 120 Gold at peace. The first unit into a tier upgrades ahead of
     // that floor. See `advanced/one_upgrade_lifts_every_city.rs`.
     Gene { tag: "one-upgrade-lifts-every-city", field: "one_upgrade_lifts_every_city", kind: Kind::OptIn, enable: AdvancedAi::enable_one_upgrade_lifts_every_city, disable: AdvancedAi::disable_one_upgrade_lifts_every_city },
+    // Live Deity Pericles civvis-20261115T075925Z: near-rival-deterrence fired
+    // 43 times to t79 and never after; Russia's power 478 -> 1094 t90-105
+    // against our 461 -> 553, its declaration at t108 at 0.39, five of six
+    // cities lost t112-123. The deterrent, upgrades and the next Walls tier
+    // past the window at 0.8 of a near neighbour's power, not on Domination.
+    // Opt-in; see `advanced/near_rival_deterrence_holds_late.rs`.
+    Gene { tag: "near-rival-deterrence-holds-late", field: "near_rival_deterrence_holds_late", kind: Kind::OptIn, enable: AdvancedAi::enable_near_rival_deterrence_holds_late, disable: AdvancedAi::disable_near_rival_deterrence_holds_late },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
