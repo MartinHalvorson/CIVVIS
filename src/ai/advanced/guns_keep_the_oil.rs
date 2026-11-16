@@ -19,13 +19,17 @@
 //!   180, when the 179 barter landed. Across the 49 live games of 11-12 to
 //!   11-16 that reached turn 140, a damaged Oil unit that stood still healed
 //!   on 11 of 36 turns with its fuel unpaid (4 games). Fed, it healed on 44
-//!   of 51, and units that burn nothing healed on 3,773 of 5,193. The engine models only the -1 Strength per
-//!   unpaid unit (`Game::process_strategic_resources`).
+//!   of 51, and units that burn nothing healed on 3,773 of 5,193. The
+//!   engine models only the -1 Strength per unpaid unit
+//!   (`Game::process_strategic_resources`).
 //! - Immortal civvis-20261115T230117Z had 2 Artillery from turns 128-130, +3
 //!   Oil a turn and 12 in stock. Three Line Infantry upgrades and one
 //!   Infantry at 135-138 spent the stock. From 138 to 153 six Oil units drew
 //!   on +0-3 a turn with none in stock, and the guns fired 4 shots all game.
-//! - Neither game burned Oil for power. Their plants burned Coal, which stood
+//! - Emperor civvis-20261116T024741Z drew +3 Oil from turn 150. Four cities
+//!   queued Infantry at 151-155 while Bombards became Artillery, and from 157
+//!   seven Oil units drew on +3 with none in stock. The guns fired 0 shots.
+//! - None of the games burned Oil for power. Their plants burned Coal, which stood
 //!   at its cap, and the one reactor conversion went to Uranium.
 //!
 //! **What the gene does (Domination seat, on).** Suppose the strongest land
@@ -35,7 +39,8 @@
 //! head of a queue under half paid only if it leaves the guns enough. The
 //! stock, less its cost, plus [`GUN_RESOURCE_FUEL_TURNS`] of income, less the
 //! upkeep of every other fielded non-gun unit and its own, must still carry
-//! the guns fielded and queued, and one more gun, for as many turns. The
+//! the guns for as many turns: those fielded and queued and one more, or as
+//! many as the campaign target's walls ask for (`breaker_guns_wanted`). The
 //! surplus sale never offers that fuel either (`siege_gun_resources_held`).
 //! Capture bodies that burn nothing stay open: AT Crews took three of the six
 //! cities in 021437Z.
@@ -126,9 +131,12 @@ impl AdvancedAi {
 
     /// The fuel left over once a consumer costing `cost` now and `upkeep` a
     /// turn has drawn on it, after the guns' [`GUN_RESOURCE_FUEL_TURNS`]
-    /// turns. Negative when the guns would go short. With it, the numbers the
-    /// journal prints: stock, income, the others' upkeep, the guns' need.
+    /// turns. The guns are those fielded and queued and one more, or as many
+    /// as the campaign target's walls ask for, whichever burns more. Negative
+    /// when the guns would go short. With it, the numbers the journal prints:
+    /// stock, income, the others' upkeep, the guns' need.
     fn guns_fuel_margin(
+        &self,
         g: &Game,
         pid: usize,
         (fuel, gun_cost, gun_upkeep): (Name, f64, f64),
@@ -136,11 +144,19 @@ impl AdvancedAi {
         upkeep: f64,
     ) -> (f64, [f64; 4]) {
         let (guns, others) = Self::fuel_upkeep_split(g, pid, fuel);
+        let walls = self
+            .plan
+            .as_ref()
+            .and_then(|plan| plan.target_city)
+            .and_then(|cid| g.cities.get(&cid))
+            .filter(|city| city.owner != pid)
+            .map_or(0, super::objective_board::breaker_guns_wanted);
+        let burn = (guns + gun_upkeep).max(walls as f64 * gun_upkeep);
         let stock = g.strategic_stockpile(pid, fuel);
         let income = g.strategic_resource_rate(pid, fuel.as_str());
         let turns = GUN_RESOURCE_FUEL_TURNS;
         let carried = stock - cost + turns * (income - others - upkeep);
-        let needed = gun_cost + turns * (guns + gun_upkeep);
+        let needed = gun_cost + turns * burn;
         (carried - needed, [stock, income, others, needed])
     }
 
@@ -169,7 +185,7 @@ impl AdvancedAi {
             return true;
         };
         spec.requires_resource != Some(gun.0)
-            || Self::guns_fuel_margin(g, pid, gun, cost, upkeep).0 >= -1e-9
+            || self.guns_fuel_margin(g, pid, gun, cost, upkeep).0 >= -1e-9
     }
 
     /// `guns-keep-the-oil`: [`Self::guns_keep_the_oil_allows`] for a
@@ -221,7 +237,7 @@ impl AdvancedAi {
             return;
         };
         let (margin, [stock, income, others, needed]) =
-            Self::guns_fuel_margin(g, pid, gun, 1.0, 1.0);
+            self.guns_fuel_margin(g, pid, gun, 1.0, 1.0);
         if margin >= -1e-9 {
             return;
         }

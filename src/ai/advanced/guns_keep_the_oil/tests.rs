@@ -125,6 +125,23 @@ fn a_first_infantry_waits_on_a_bank_the_first_gun_needs() {
 }
 
 #[test]
+fn the_target_walls_size_the_guns_the_oil_waits_for() {
+    // 024741Z at t151: +3 Oil and a few in stock, no gun fielded yet. One
+    // more gun is carried (3 - 1 + 10 * 2 = 22 against 11), but three for
+    // 300 walls are not (against 1 + 10 * 3 = 31).
+    let (mut g, ai, city) = fixture(3.0, 3.0, STEEL_AGE);
+    assert!(ai.guns_keep_the_oil_item(&g, 0, city, &unit("infantry")));
+    let objective = ai.plan.as_ref().unwrap().target_city.unwrap();
+    g.cities.get_mut(&objective).unwrap().wall_hp = 300;
+    assert!(!ai.guns_keep_the_oil_item(&g, 0, city, &unit("infantry")));
+    // A stock that carries all three still trains it: 25 - 1 + 20 = 44.
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("oil"), 25.0);
+    assert!(ai.guns_keep_the_oil_item(&g, 0, city, &unit("infantry")));
+}
+
+#[test]
 fn an_empire_rich_in_oil_trains_its_infantry() {
     // 230117Z at t170: 25 Oil and +9 a turn feed two Artillery, three
     // Infantry and a Tank: 25 - 1 + 10 * (9 - 4 - 1) = 64 against 31.
