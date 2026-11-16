@@ -647,10 +647,7 @@ impl DangerField {
     /// Whether two fields price the same hostiles over the same reaches.
     #[cfg(test)]
     pub(super) fn same_reaches(&self, other: &DangerField) -> bool {
-        self.pid == other.pid
-            && self.reaches == other.reaches
-            && self.floods == other.floods
-            && self.widened == other.widened
+        self.same_reaches_as(other)
     }
 
     /// [`Self::second_turn`] on `g`, from the first-turn field `first` that
@@ -737,6 +734,15 @@ impl DangerField {
             floods,
             reads_the_tile_it_leaves: false,
         }
+    }
+
+    /// Whether `self` prices the same hostiles over the same reaches as
+    /// `other` (the audit of [`AdvancedAi::danger_field`]).
+    fn same_reaches_as(&self, other: &DangerField) -> bool {
+        self.pid == other.pid
+            && self.reaches == other.reaches
+            && self.floods == other.floods
+            && self.widened == other.widened
     }
 
     /// `field-reads-the-tile-it-leaves`: whether `enemy`, which cannot strike
@@ -1582,6 +1588,143 @@ pub(super) fn melee_health_floor(g: &Game, pid: usize, action: &Action) -> Optio
         .map(|damage| (*unit, attacker.hp - damage))
 }
 
+thread_local! {
+    /// Each hostile's strike reach beside the envelope it was read with:
+    /// (seat, hostile) → (that envelope, strike reach). See
+    /// [`AdvancedAi::danger_field`]. Holding the envelope keeps its address
+    /// from being reused, so a pointer match cannot be a different envelope.
+    static KEPT_STRIKE_REACH: std::cell::RefCell<KeptStrikeReach> =
+        const { std::cell::RefCell::new(BTreeMap::new()) };
+}
+
+type KeptStrikeReach = BTreeMap<(usize, u32), (Arc<crate::ai::EnvelopeReach>, Arc<[Pos]>)>;
+
+#[cfg(test)]
+thread_local! {
+    /// How many strike reaches [`AdvancedAi::danger_field`] read fresh.
+    pub(super) static STRIKE_REACH_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn danger_field_audit_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("CIVVIS_DANGER_FIELD_AUDIT").is_some())
+}
+
+impl AdvancedAi {
+    /// [`DangerField::with_reach`] on the board this seat is acting on, with
+    /// each hostile's reach read from the seat's envelope table instead of
+    /// flooded again.
+    ///
+    /// The planner, the siege stage and the muster each built a fresh field
+    /// several times a turn, and every field flooded every visible hostile
+    /// twice: `attack_reach`, then `strike_reach_of`. The envelope table
+    /// (`BasicAi::enemy_attack_envelopes`) already holds the first, as the
+    /// same `attack_reach`, and keeps a hostile's entry — the same `Arc` —
+    /// exactly while nothing it read has changed (#5361: no unit that differs
+    /// on its sensitive tiles, no map write within its sight; #5366 for air).
+    /// The strike reach reads no more than that (its arrivals stay inside the
+    /// attack flood and shoot from inside it), so it is kept beside the
+    /// envelope and re-read only when the envelope is: the argument
+    /// `movement_risk`'s `MovementReachCache` already rests on. A hostile the
+    /// table does not hold (an empty attack reach) is read fresh.
+    ///
+    /// ⚠ Only for the board the seat acts on. Asking the envelope table about
+    /// a speculative copy feeds it another branch, and its next ask on the
+    /// real board would then recompute every envelope; those callers keep
+    /// `with_reach`. With `envelope_cache_across_own_moves` (an evaluator arm,
+    /// off in play) the table can lag our own units, so this falls back to
+    /// `with_reach` too. `CIVVIS_DANGER_FIELD_AUDIT=1` builds both and reports
+    /// any difference.
+    pub(super) fn danger_field(&self, g: &Game, pid: usize, strike_reach: bool) -> DangerField {
+        if self.base.envelope_cache_across_own_moves {
+            return DangerField::with_reach(g, pid, strike_reach);
+        }
+        let envelopes = self.base.enemy_attack_envelopes(g, pid);
+        let field = KEPT_STRIKE_REACH.with(|slot| {
+            let mut kept = slot.borrow_mut();
+            // Bound what a reused worker thread carries between games.
+            if kept.len() > 4096 {
+                kept.clear();
+            }
+            let hostiles = g
+                .units
+                .values()
+                .filter(|unit| hostile_in_field(g, pid, unit))
+                .map(|unit| {
+                    let id = unit.id;
+                    let Ok(at) = envelopes.binary_search_by_key(&id, |(hostile, _)| *hostile)
+                    else {
+                        return (
+                            id,
+                            g.attack_reach(id),
+                            strike_reach.then(|| strike_reach_of(g, pid, id)),
+                        );
+                    };
+                    let envelope = &envelopes[at].1;
+                    let strike = strike_reach.then(|| match kept.get(&(pid, id)) {
+                        Some((seen, strike)) if Arc::ptr_eq(seen, envelope) => strike.to_vec(),
+                        _ => {
+                            #[cfg(test)]
+                            STRIKE_REACH_READS.with(|reads| reads.set(reads.get() + 1));
+                            let strike = strike_reach_of(g, pid, id);
+                            kept.insert((pid, id), (Arc::clone(envelope), Arc::from(&strike[..])));
+                            strike
+                        }
+                    });
+                    (id, envelope.iter().copied().collect(), strike)
+                })
+                .collect();
+            DangerField::from_hostiles(g, pid, hostiles)
+        });
+        if danger_field_audit_enabled() {
+            let fresh = DangerField::with_reach(g, pid, strike_reach);
+            if !field.same_reaches_as(&fresh) {
+                eprintln!(
+                    "danger-field: STALE field, seat {pid} turn {}: kept {} hostiles, fresh {}",
+                    g.turn,
+                    field.reaches.len(),
+                    fresh.reaches.len()
+                );
+                for unit in g
+                    .units
+                    .values()
+                    .filter(|unit| hostile_in_field(g, pid, unit))
+                {
+                    let id = unit.id;
+                    let envelope = envelopes
+                        .binary_search_by_key(&id, |(hostile, _)| *hostile)
+                        .ok()
+                        .map(|at| envelopes[at].1.iter().copied().collect::<Vec<_>>());
+                    let flood = g.attack_reach(id);
+                    let kept_flood = field.floods.get(&id);
+                    let kept_reach = field.reaches.iter().find(|(hostile, _)| *hostile == id);
+                    let fresh_reach = fresh.reaches.iter().find(|(hostile, _)| *hostile == id);
+                    if envelope.as_ref().is_some_and(|tiles| *tiles != flood)
+                        || kept_flood != fresh.floods.get(&id)
+                        || kept_reach != fresh_reach
+                    {
+                        eprintln!(
+                            "  hostile {id} {} owner {} at {:?} air {}: envelope {} flood {} \
+                             (envelope==flood {}), strike kept {} fresh {}",
+                            unit.kind.as_str(),
+                            unit.owner,
+                            unit.pos,
+                            g.rules.units[unit.kind].domain.as_deref() == Some("air"),
+                            envelope.as_ref().map_or(-1, |tiles| tiles.len() as i64),
+                            flood.len(),
+                            envelope.as_ref().is_none_or(|tiles| *tiles == flood),
+                            kept_reach.map_or(0, |(_, reach)| reach.len()),
+                            fresh_reach.map_or(0, |(_, reach)| reach.len()),
+                        );
+                    }
+                }
+            }
+            return fresh;
+        }
+        field
+    }
+}
+
 impl AdvancedAi {
     /// `falling-city-outranks-the-heal`: whether a melee land unit fit to
     /// fight ([`ROTATE_HP`] or more) but still recovering toward
@@ -1732,7 +1875,7 @@ impl AdvancedAi {
                         }
             })
         });
-        let mut field = DangerField::with_reach(g, pid, self.strike_reach);
+        let mut field = self.danger_field(g, pid, self.strike_reach);
         field.reads_the_tile_it_leaves = self.field_reads_the_tile_it_leaves;
         if self.shared_danger {
             field.share(g);
@@ -1763,7 +1906,7 @@ impl AdvancedAi {
             self.credit_orders(g, OrderStep::BattlePlanner);
         }
         if struck {
-            field = DangerField::with_reach(g, pid, self.strike_reach);
+            field = self.danger_field(g, pid, self.strike_reach);
             field.reads_the_tile_it_leaves = self.field_reads_the_tile_it_leaves;
             if self.shared_danger {
                 field.share(g);
