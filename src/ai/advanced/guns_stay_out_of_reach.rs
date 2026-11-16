@@ -83,7 +83,13 @@ impl AdvancedAi {
         } else {
             std::collections::BTreeSet::new()
         };
+        // `wounded-gun-counts-every-blow`: empty with that gene off.
+        let wounded = self.wounded_guns(g, pid);
         if !self.guns_stay_out_of_reach && !every_unit {
+            if !wounded.is_empty() {
+                let mut field = DangerField::with_reach(g, pid, self.strike_reach);
+                self.mark_wounded_gun_tiles(g, &mut field, &wounded);
+            }
             return;
         }
         let guns: Vec<u32> = g
@@ -118,7 +124,7 @@ impl AdvancedAi {
         } else {
             Vec::new()
         };
-        if guns.is_empty() && others.is_empty() {
+        if guns.is_empty() && others.is_empty() && wounded.is_empty() {
             return;
         }
         let mut field = DangerField::with_reach(g, pid, self.strike_reach);
@@ -144,6 +150,7 @@ impl AdvancedAi {
                 self.base.gun_lethal_tiles.insert(uid, lethal);
             }
         }
+        self.mark_wounded_gun_tiles(g, &mut field, &wounded);
     }
 
     /// Version two: for each of `units`, every tile it can reach this turn
@@ -206,7 +213,18 @@ impl AdvancedAi {
             else {
                 continue;
             };
-            if self.base.path_walk_to(g, pid, uid, to) {
+            // `wounded-gun-counts-every-blow`: its marks read the whole field.
+            let summed = self.wounded_gun_marked(g, uid);
+            if !self.base.path_walk_to(g, pid, uid, to) {
+                continue;
+            }
+            if summed {
+                crate::think!(self.journal(), Military, Decision,
+                    "wounded-gun-counts-every-blow: the {} steps off a tile where the blows add up to its health", g.units[&uid].kind;
+                    "the blows that reach {:?} read {:.0} against {} health, the city's and Encampment's strikes included; {:?} lies under less",
+                    pos, blow, g.units[&uid].hp, to;
+                    to);
+            } else {
                 crate::think!(self.journal(), Military, Decision,
                     "The {} steps out of a one-blow kill", g.units[&uid].kind;
                     "a visible hostile's blow reads {:.0} where it stood against {} health; {:?} lies outside every such blow",

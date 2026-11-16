@@ -10911,6 +10911,12 @@ pub struct AdvancedAi {
     /// unlocked successor the treasury cannot pay for. See
     /// `advanced/upgrade_card_for_the_backlog.rs`. Off by default.
     upgrade_card_for_the_backlog: bool,
+    /// `wounded-gun-counts-every-blow`: a damaged siege gun or land ranged
+    /// unit does not end a step where every blow that reaches the tile, the
+    /// City Center's and Encampment's strikes included, adds up to its
+    /// health, and one standing on such a tile steps off it. See
+    /// `advanced/wounded_gun_counts_every_blow.rs`. Off by default.
+    wounded_gun_counts_every_blow: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -11979,6 +11985,9 @@ mod wonder_clearance;
 /// unseen ring of a natural wonder near home before it picks a frontier. Two
 /// opt-in genes; see `advanced/wonder_sites.rs`.
 mod wonder_sites;
+/// `wounded-gun-counts-every-blow`: see
+/// `advanced/wounded_gun_counts_every_blow.rs`.
+mod wounded_gun_counts_every_blow;
 /// `wounded-ship-sails-on`: see `advanced/wounded_ship_sails_on.rs`.
 mod wounded_ship_sails_on;
 
