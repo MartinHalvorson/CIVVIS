@@ -5931,6 +5931,21 @@ impl AdvancedAi {
         self.score_seat_raises_wonders_3 = false;
     }
 
+    /// Opt-in gene `score-seat-sprints-to-the-tally-2`, version two of
+    /// `score-seat-sprints-to-the-tally`: Great People priced with their
+    /// Historic Moment, patronized with the idle currency from thirty Online
+    /// turns before the limit. A seat plays one version, so this turns
+    /// version one off. See `advanced/score_sprints_to_the_tally.rs`.
+    pub fn enable_score_seat_sprints_to_the_tally_2(&mut self) {
+        self.score_seat_sprints_to_the_tally = false;
+        self.score_seat_sprints_to_the_tally_2 = true;
+    }
+
+    /// The twin of `enable_score_seat_sprints_to_the_tally_2`.
+    pub fn disable_score_seat_sprints_to_the_tally_2(&mut self) {
+        self.score_seat_sprints_to_the_tally_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
