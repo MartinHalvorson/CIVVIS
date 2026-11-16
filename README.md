@@ -15,6 +15,6 @@ Highest Level Won by Victory Type (6p continents online unless otherwise noted):
 - Lv 7 - [Culture - 190](https://youtu.be/oTJz4EYS4ME)
 - Lv 6 - [Domination (4P Pangaea) - 210](https://www.youtube.com/watch?v=DMdNOQT3NS0), [Score - capped at 180](https://www.youtube.com/watch?v=d6zFjTwR_10)
 
-Quick real-time demo of the CIVVIS.ai simulator with a 193 turn Maori science victory (can click for the 4K video on YouTube):
+Quick real-time demos of CIVVIS.ai: a full match in 14 seconds from the single player POV, then a self-play game in 14 seconds that ends in a Phoenicia culture win (4K on YouTube: [single player POV](https://www.youtube.com/watch?v=9c8m87e3rCg&list=PLPI7k77hCAR4), [self-play](https://www.youtube.com/watch?v=2K2mHKYZ9Rg&list=PLPI7k77hCAR4), or click the clip):
 
-[![CIVVIS spectate mode — four AI civilizations play a full game on a planet world, from the Ancient Era to a Maori science victory on turn 193](https://github.com/MartinHalvorson/CIVVIS/releases/download/media-exhibition/spectate.avif)](https://www.youtube.com/watch?v=mTelnTvAJZo)
+[![CIVVIS.ai — a full Civ 6 match from the single player point of view, from a lone settler to an England culture victory on turn 154, then a four-civilization self-play game on a planet world that ends in a Phoenicia culture victory on turn 143](https://github.com/MartinHalvorson/CIVVIS/releases/download/media-exhibition/singleplayer-selfplay.avif)](https://www.youtube.com/watch?v=9c8m87e3rCg&list=PLPI7k77hCAR4)

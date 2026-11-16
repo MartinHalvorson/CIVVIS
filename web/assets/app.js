@@ -2353,7 +2353,7 @@ function ratedTableInPlay() {
   return Boolean(state?.players?.some(player => playerHudEloValue(player) !== null));
 }
 // A named table says who is really playing each seat: those rated agents, or
-// the mirror of a Civilization VI game ("Civ 6 Deity AI", "CIVVIS Science").
+// the mirror of a Civilization VI game ("8 Deity Firaxis AI", "CIVVIS Science").
 function namedTableInPlay() {
   return Boolean(state?.players?.some(player => player.ai_username));
 }

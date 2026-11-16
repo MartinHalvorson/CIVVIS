@@ -409,41 +409,18 @@ pub(super) fn hostile_in_field(g: &Game, pid: usize, unit: &crate::game::Unit) -
 /// One hostile's `reach` (its strike reach) widened by everything it could
 /// strike after a turn to reposition: it is stood on `probe` at the start of
 /// a fresh turn, on every tile it can reach, and its strike reach from each
-/// is added. `probe` is put back as it was. With `relaxed`, every tile those
-/// floods relaxed (and each stand) is pushed there, which with the attack
-/// range is everything the answer read off the board.
+/// is added. `probe` is put back as it was. A caller that keeps the pieces
+/// reads them through [`fresh_turn_stands`] and [`strike_reach_from`].
 pub(super) fn widen_to_the_second_turn(
     probe: &mut Game,
     pid: usize,
     uid: u32,
     reach: &mut Vec<Pos>,
-    mut relaxed: Option<&mut Vec<Pos>>,
 ) {
-    let saved = probe.units[&uid].clone();
-    let moves = probe.unit_max_moves(uid);
-    if let Some(unit) = probe.units.get_mut(&uid) {
-        unit.moves_left = moves;
-        unit.moved = false;
-        unit.acted = false;
-        unit.zoc_stopped = false;
-        unit.started_turn_in_zoc = false;
-    }
-    let stands = match relaxed.as_deref_mut() {
-        Some(relaxed) => {
-            let (stands, flood) = probe.reachable_with_flood(uid);
-            relaxed.extend(flood);
-            stands
-        }
-        None => probe.reachable(uid),
-    };
-    for stand in stands {
+    let saved = stand_on_a_fresh_turn(probe, uid);
+    for stand in probe.reachable(uid) {
         probe.relocate(uid, stand);
-        reach.extend(strike_reach_reading(
-            probe,
-            pid,
-            uid,
-            relaxed.as_deref_mut(),
-        ));
+        reach.extend(strike_reach_of(probe, pid, uid));
     }
     probe.relocate(uid, saved.pos);
     *probe.units.get_mut(&uid).expect("forecast retains enemy") = saved;
@@ -662,7 +639,7 @@ impl DangerField {
         let mut field = Self::with_reach(g, pid, true);
         let mut probe = g.speculative_clone();
         for (uid, reach) in &mut field.reaches {
-            widen_to_the_second_turn(&mut probe, pid, *uid, reach, None);
+            widen_to_the_second_turn(&mut probe, pid, *uid, reach);
         }
         field
     }

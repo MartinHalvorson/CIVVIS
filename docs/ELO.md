@@ -151,8 +151,8 @@ What the page shows of it:
 
 A mirrored game of Civilization VI (`civvis play --mirror`, the page beside a
 validation game) is not a watched table and is dealt nobody. PLAYER there says
-who is really at each seat: every rival reads **Civ 6 Deity AI**, or whatever
-level the host reports (`strategies::civ6_ai_seat_json`), and our own seat reads
+who is really at each seat: every rival reads **8 Deity Firaxis AI**, the
+number and name of whatever level the host reports (`strategies::civ6_ai_seat_json`), and our own seat reads
 the lane the live decider is playing, **CIVVIS Diplomatic** for
 `--victory diplomatic` (`strategies::live_seat_json`). `tools/follow.py` reads
 the lane from the decider's own first record in `why.log` and sends it with
