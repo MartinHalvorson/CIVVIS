@@ -451,6 +451,62 @@ pub(super) fn widen_to_the_second_turn(
     reach.dedup();
 }
 
+/// Stand `uid` on `probe` at the start of a fresh turn (full movement, no
+/// zone-of-control or action memory), as [`widen_to_the_second_turn`] does.
+/// Returns the record to put back.
+fn stand_on_a_fresh_turn(probe: &mut Game, uid: u32) -> crate::game::Unit {
+    let saved = probe.units[&uid].clone();
+    let moves = probe.unit_max_moves(uid);
+    if let Some(unit) = probe.units.get_mut(&uid) {
+        unit.moves_left = moves;
+        unit.moved = false;
+        unit.acted = false;
+        unit.zoc_stopped = false;
+        unit.started_turn_in_zoc = false;
+    }
+    saved
+}
+
+/// The first half of [`widen_to_the_second_turn`] for a caller that keeps
+/// the pieces: every tile `uid` can reach on a fresh turn. `probe` is put
+/// back. With `relaxed`, every tile the flood relaxed is pushed there.
+pub(super) fn fresh_turn_stands(
+    probe: &mut Game,
+    uid: u32,
+    relaxed: Option<&mut Vec<Pos>>,
+) -> Vec<Pos> {
+    let saved = stand_on_a_fresh_turn(probe, uid);
+    let stands = match relaxed {
+        Some(relaxed) => {
+            let (stands, flood) = probe.reachable_with_flood(uid);
+            relaxed.extend(flood);
+            stands
+        }
+        None => probe.reachable(uid),
+    };
+    *probe.units.get_mut(&uid).expect("forecast retains enemy") = saved;
+    stands
+}
+
+/// The second half of [`widen_to_the_second_turn`] for one stand: `uid`'s
+/// strike reach once it stands on `stand` at the start of a fresh turn.
+/// `probe` is put back. With `relaxed`, the tiles the answer read are pushed
+/// there (see [`strike_reach_reading`]).
+pub(super) fn strike_reach_from(
+    probe: &mut Game,
+    pid: usize,
+    uid: u32,
+    stand: Pos,
+    relaxed: Option<&mut Vec<Pos>>,
+) -> Vec<Pos> {
+    let saved = stand_on_a_fresh_turn(probe, uid);
+    probe.relocate(uid, stand);
+    let reach = strike_reach_reading(probe, pid, uid, relaxed);
+    probe.relocate(uid, saved.pos);
+    *probe.units.get_mut(&uid).expect("forecast retains enemy") = saved;
+    reach
+}
+
 /// The reference for [`strike_reach_of`]: the route it took before it read
 /// the board, standing the hostile up on a board it may write to.
 #[cfg(test)]
