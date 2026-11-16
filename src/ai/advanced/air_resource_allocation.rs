@@ -166,6 +166,11 @@ impl AdvancedAi {
         } else {
             to.resource_maintenance - existing
         };
+        // `guns-keep-the-oil`: nor the siege guns' fuel. See
+        // `advanced/guns_keep_the_oil.rs`.
+        if !self.guns_keep_the_oil_allows(g, pid, target, cost, extra) {
+            return false;
+        }
         self.air_resource_spending_preserves_wing(g, pid, resource, extra, cost)
     }
 
