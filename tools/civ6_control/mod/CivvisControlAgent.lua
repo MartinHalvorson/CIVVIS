@@ -13009,12 +13009,13 @@ end;
 -- a leader screen opened in the same frame as the refusal (the screen's
 -- `event_lock` ref 0-17 ms before it), against 47 of the 109 delivered.
 -- Firaxis's own screen never proposes inside that dispatch: a person presses
--- Propose on a screen already up (DiplomacyDealView.lua
--- `OnProposeOrAcceptDeal`). Whether asking from the tick saves the counter is
--- what this switch is for; the ledger says `ask_deferred` when it waits. A
--- session our end turn has overtaken is not asked, as the statement handler
--- does: it is closed now if the rival has acknowledged it, otherwise on that
--- acknowledgement, when nothing of the rival's is in flight.
+-- Propose on a screen already up (`OnProposeOrAcceptDeal`,
+-- DLC/Expansion2/UI/Replacements/DiplomacyDealView.lua:526). Whether asking
+-- from the tick saves the counter is what this switch is for; the ledger
+-- says `ask_deferred` when it waits. A session our end turn has overtaken is
+-- not asked, as the statement handler does: it is closed now if the rival
+-- has acknowledged it, otherwise on that acknowledgement, when nothing of
+-- the rival's is in flight.
 CivvisTrade.askDeferred = function()
 	local trade = CivvisTrade;
 	if cfg.DealAskOnTick ~= true then return; end
@@ -13329,6 +13330,11 @@ CivvisOnDealSessionClosed = function(sessionID)
 				-- question went out, so nothing is unanswered and no turn is
 				-- held for a verdict.
 				CivvisTrade.close(pid, subject, "opened_after_end_turn", true);
+			elseif session.ask_on_tick ~= nil and not session.sent then
+				-- `DealAskOnTick`: closed before the tick put the question.
+				-- Nothing went out either, and the next turn asks again.
+				CivvisTrade.restoreAskMarker(session.kind, subject);
+				CivvisTrade.close(pid, subject, "closed_before_asked", true);
 			elseif session.counter_wait ~= nil then
 				-- A refused offer whose counter never came: the rival did
 				-- answer, so this is no unanswered ask and holds no turn.

@@ -328,6 +328,21 @@ onStatement(8, 7, { StatementType = "MAKE_DEAL", SessionID = 964, StatementSubTy
 check("…the acknowledgement closes it", sessions.closed[#sessions.closed], 964)
 check("…and nothing was sent", #expired.sends, 0)
 
+-- ── Closed before the tick asked: no unanswered ask, the marker goes back ──
+local shut, shutPlayer = fixture({ stateIndex = 1 })
+alliance(shutPlayer, 10)
+onStatement(7, 10, { StatementType = "MAKE_DEAL", SessionID = 966 })
+local unansweredBeforeShut = trade.unanswered
+onClosed(966)
+check("a session closed before its question is not an unanswered ask", trade.unanswered,
+	unansweredBeforeShut)
+check("…its close says so", eventField(lastEvent("deal_session"), "why"), "closed_before_asked")
+check("…it holds no turn", trade.turnHold, nil)
+check("…it is forgotten", trade.sessions[10], nil)
+check("…and its retry marker is put back", CivvisK.allianceAsked and CivvisK.allianceAsked[10], nil)
+askDeferred()
+check("…and the tick then sends nothing", #shut.sends, 0)
+
 -- ── Turned off again, a pending wait is left to the ordinary closer ──
 local parked, parkedPlayer = fixture({ stateIndex = 1 })
 alliance(parkedPlayer, 9)
