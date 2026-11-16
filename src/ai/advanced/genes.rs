@@ -5970,6 +5970,11 @@ pub const GENES: &[Gene] = &[
     // was affordable on 28 of them (27 of the 71 Niter turns) and none was
     // made. Opt-in; see `advanced/gun_resource_tile.rs`.
     Gene { tag: "gun-resource-buys-the-tile", field: "gun_resource_buys_the_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_gun_resource_buys_the_tile, disable: AdvancedAi::disable_gun_resource_buys_the_tile },
+    // Live Emperor Gilgamesh civvis-20261116T021437Z: two Infantry spent the
+    // 14 Oil the first Artillery came out to at t158; it never fired, and sat
+    // at 36 hp unable to heal t164-179 for want of its fuel. Opt-in; see
+    // `advanced/guns_keep_the_oil.rs`.
+    Gene { tag: "guns-keep-the-oil", field: "guns_keep_the_oil", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_keep_the_oil, disable: AdvancedAi::disable_guns_keep_the_oil },
     // ---- append: l-o ------------------------------------------------
     // Native Deity Macedon 100029Z: model-priced horse/iron barter was
     // declined at51/55 and refused as barter_short at61. Ask the host for
@@ -6273,6 +6278,19 @@ pub const GENES: &[Gene] = &[
     // own city founded within three tiles of a sibling's site. See
     // `advanced/settler_keeps_its_named_site.rs`.
     Gene { tag: "settler-keeps-its-named-site", field: "settler_keeps_its_named_site", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_keeps_its_named_site, disable: AdvancedAi::disable_settler_keeps_its_named_site },
+    // Live 6p Continents 11-15/16: 27 games lost the original capital. In 21
+    // the Anvil's one-blow rewrite at the capital sent posted soldiers back to
+    // tiles four or more out (261 rewrites), and at the first blow a median
+    // 25% of our land soldiers stood within three. Rome fell to two
+    // Cuirassiers with ten soldiers four to six out. See
+    // `advanced/spared_soldiers_come_to_the_capital.rs`.
+    Gene { tag: "spared-soldiers-come-to-the-capital", field: "spared_soldiers_come_to_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_spared_soldiers_come_to_the_capital, disable: AdvancedAi::disable_spared_soldiers_come_to_the_capital },
+    // Live Emperor Rome Score civvis-20261116T005841Z, turn limit 180: led at
+    // t170 (1,043 against 1,037) and lost the tally 1,086 to 1,136. Turns
+    // 161-180 put 2,346 of 8,169 Production on projects, 621 on a Spaceport
+    // and 1,004 on soldiers and Spies, with 357-849 Gold banked every turn.
+    // See `advanced/score_sprints_to_the_tally.rs`.
+    Gene { tag: "score-seat-sprints-to-the-tally", field: "score_seat_sprints_to_the_tally", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_sprints_to_the_tally, disable: AdvancedAi::disable_score_seat_sprints_to_the_tally },
     // Live Immortal civvis-20261115T230117Z, turns 104-123: our escorts held
     // the near side of Puel Mapu's range-2 band, so two Bombards were posted
     // across the city behind Roraima and kept there six turns while a route

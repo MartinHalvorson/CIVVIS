@@ -1,0 +1,42 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "guns-keep-the-oil",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 31 boards from four live Gilgamesh Domination runs: Emperor civvis-20261116T021437Z (t149-182), Emperor civvis-20261116T024741Z (t150-160), Emperor civvis-20261116T023139Z (t184-190, never held Oil: a no-change control) and Immortal civvis-20261115T230117Z (t135-137). Each board is the run's events.jsonl cut after turn N+1. Both arms run one frozen release civvis_orders --resumed --explain built from the branch at 7810518ecb, with the run's own why.log-header genome as --with. The on arm adds --with guns-keep-the-oil. Orders differ on 6 of 31 boards, all in the two Oil-poor Emperor runs. In 021437Z: at t150 the off arm offers Rome 10 Oil (sell RESOURCE_OIL=10) and the on arm keeps it; at t151 two produce_next orders turn from Infantry to Artillery; at t153 and t154 Isin and Ur take Artillery where the off arm queues Infantry ('displacing infantry at -10000'). In 024741Z: at t151 and t155, one and then two produce_next orders turn from Infantry to Artillery. The 023139Z control agrees on all 3 boards. The 230117Z boards agree, but neither arm issued an upgrade on those frames, so they do not test the upgrade hook.",
+  "archive": {
+    "path": "docs/eval/2026-11-16-guns-keep-the-oil.native-queries.tar.xz",
+    "sha256": "75386eeac9bb3d82528871cd928cc62e4d331440652da7992181bf490320ec28"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json",
+    "native-queries-01/0012/result.json",
+    "native-queries-01/0013/result.json",
+    "native-queries-01/0014/result.json",
+    "native-queries-01/0015/result.json",
+    "native-queries-01/0016/result.json",
+    "native-queries-01/0017/result.json",
+    "native-queries-01/0018/result.json",
+    "native-queries-01/0019/result.json",
+    "native-queries-01/0020/result.json",
+    "native-queries-01/0021/result.json",
+    "native-queries-01/0022/result.json",
+    "native-queries-01/0023/result.json",
+    "native-queries-01/0024/result.json",
+    "native-queries-01/0025/result.json",
+    "native-queries-01/0026/result.json",
+    "native-queries-01/0027/result.json",
+    "native-queries-01/0028/result.json",
+    "native-queries-01/0029/result.json",
+    "native-queries-01/0030/result.json"
+  ]
+}

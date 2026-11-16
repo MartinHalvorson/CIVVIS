@@ -84,7 +84,7 @@ pub struct BarterSpare {
 }
 
 /// A land siege gun, as `breakers_matched_to_walls` reads one.
-fn land_gun(spec: &crate::rules::UnitSpec) -> bool {
+pub(super) fn land_gun(spec: &crate::rules::UnitSpec) -> bool {
     spec.class == "military"
         && spec.siege
         && spec.has_ranged_attack()
@@ -100,14 +100,19 @@ impl AdvancedAi {
     /// metal while the air wing wants Bombers. Shared with army upgrade
     /// materials. The planner's surplus sale reads a stockpile as
     /// surplus once it holds more than a block, so a purchase would otherwise
-    /// go back out as the next sale. Empty when both resource policies are off.
+    /// go back out as the next sale. `guns-keep-the-oil` adds the next gun's
+    /// fuel before the first is fielded (`siege_gun_fuel`). Empty when every
+    /// one of those policies is off.
     pub fn siege_gun_resources_held(
         &self,
         g: &Game,
         pid: usize,
         wants: &[GunResourceWant],
     ) -> BTreeSet<String> {
-        if !self.siege_buys_the_gun_resource && !self.army_upgrade_materials {
+        if !self.siege_buys_the_gun_resource
+            && !self.army_upgrade_materials
+            && !self.guns_keep_the_oil
+        {
             return BTreeSet::new();
         }
         let fielded = g
@@ -139,6 +144,8 @@ impl AdvancedAi {
                     .flatten()
                     .and_then(|bomber| g.rules.units[bomber].requires_resource),
             )
+            // `guns-keep-the-oil`: the next gun's fuel, fielded or not.
+            .chain(self.siege_gun_fuel(g, pid).map(|(fuel, _, _)| fuel))
             .map(|resource| format!("RESOURCE_{}", resource.as_str().to_ascii_uppercase()))
             .chain(wants.iter().map(|want| want.resource.clone()))
             .collect()

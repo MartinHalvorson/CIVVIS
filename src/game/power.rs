@@ -99,16 +99,9 @@ impl Game {
     }
 
     pub fn city_is_powered(&self, city: &City) -> bool {
-        if let Some(memo) = self.query_memo.powered.borrow().as_ref() {
-            if let Some(powered) = memo.get(&city.id) {
-                return *powered;
-            }
-        }
-        let powered = self.city_is_powered_uncached(city);
-        if let Some(memo) = self.query_memo.powered.borrow_mut().as_mut() {
-            memo.insert(city.id, powered);
-        }
-        powered
+        crate::game::remembered(&self.query_memo.powered, city.id, || {
+            self.city_is_powered_uncached(city)
+        })
     }
 
     pub(super) fn city_is_powered_uncached(&self, city: &City) -> bool {

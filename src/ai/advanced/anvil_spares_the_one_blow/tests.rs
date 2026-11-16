@@ -49,14 +49,14 @@ fn the_city_tile_is_never_left_to_nobody() {
     let warrior = g.spawn_test_unit("warrior", 1, ring);
     let mut orders = BTreeMap::from([(warrior, ring)]);
     let mut field = DangerField::new(&g, 1);
-    let spared = spare_the_one_blow(&g, 1, city, &[warrior], &mut orders, &mut field);
+    let spared = spare_the_one_blow(&g, 1, city, &[warrior], &mut orders, &mut field, None);
     assert_eq!(spared.filled, Some(warrior));
     assert_eq!(orders[&warrior], city);
     // A soldier of ours outside the force already holds it: nothing changes.
     let mut orders = BTreeMap::from([(warrior, ring)]);
     g.spawn_test_unit("warrior", 1, city);
     let mut field = DangerField::new(&g, 1);
-    let spared = spare_the_one_blow(&g, 1, city, &[warrior], &mut orders, &mut field);
+    let spared = spare_the_one_blow(&g, 1, city, &[warrior], &mut orders, &mut field, None);
     assert_eq!(spared, Spared::default());
     assert_eq!(orders[&warrior], ring);
 }
@@ -99,7 +99,15 @@ fn a_post_one_blow_removes_its_soldier_on_is_moved() {
         "its own tile is out of reach"
     );
     let mut orders = BTreeMap::from([(archer, city), (warrior, front)]);
-    let spared = spare_the_one_blow(&g, 1, city, &[archer, warrior], &mut orders, &mut field);
+    let spared = spare_the_one_blow(
+        &g,
+        1,
+        city,
+        &[archer, warrior],
+        &mut orders,
+        &mut field,
+        None,
+    );
     assert_eq!(spared.filled, None, "the Archer holds the city");
     assert_eq!(spared.moved, vec![(warrior, front, safe)]);
     assert_eq!(orders[&archer], city);

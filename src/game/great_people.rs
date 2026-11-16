@@ -1312,16 +1312,11 @@ impl Game {
     }
 
     pub(crate) fn can_house_great_works(&self, pid: usize, kind: &str, additional: usize) -> bool {
-        if let Some(memo) = self.query_memo.gw_housing.borrow().as_ref() {
-            if let Some(answer) = memo.get(&(pid, kind.to_string(), additional)) {
-                return *answer;
-            }
-        }
-        let answer = self.can_house_great_works_uncached(pid, kind, additional);
-        if let Some(memo) = self.query_memo.gw_housing.borrow_mut().as_mut() {
-            memo.insert((pid, kind.to_string(), additional), answer);
-        }
-        answer
+        crate::game::remembered(
+            &self.query_memo.gw_housing,
+            (pid, kind.to_string(), additional),
+            || self.can_house_great_works_uncached(pid, kind, additional),
+        )
     }
 
     fn can_house_great_works_uncached(&self, pid: usize, kind: &str, additional: usize) -> bool {

@@ -241,16 +241,9 @@ impl Game {
 
     /// Suzerain: at least 3 envoys and strictly more than every other major.
     pub fn suzerain_of(&self, minor: usize) -> Option<usize> {
-        if let Some(memo) = self.query_memo.suzerain.borrow().as_ref() {
-            if let Some(suzerain) = memo.get(&minor) {
-                return *suzerain;
-            }
-        }
-        let suzerain = self.suzerain_of_stable(minor);
-        if let Some(memo) = self.query_memo.suzerain.borrow_mut().as_mut() {
-            memo.insert(minor, suzerain);
-        }
-        suzerain
+        crate::game::remembered(&self.query_memo.suzerain, minor, || {
+            self.suzerain_of_stable(minor)
+        })
     }
 
     /// `suzerain_of_uncached` kept for as long as nothing it reads can have
