@@ -1283,9 +1283,22 @@ impl EnvelopeUnit {
 
 /// The board the per-enemy envelopes were last measured against.
 struct EnvelopeBoard {
-    /// The belligerence fingerprint and the city fingerprint. Either moving
-    /// is treated as "everything changed": they are rare and global.
-    stamp: (u64, u64),
+    /// The belligerence fingerprint, the city fingerprint, and the turn and
+    /// the seat to act. Any of them moving is treated as "everything
+    /// changed".
+    ///
+    /// ⚠ THE SEAT-TURN IS AN INPUT. An enemy's reach also reads its owner's
+    /// own state: technologies and civics (embarking, ocean entry, the
+    /// movement trees), policies, wonders, its units' promotions
+    /// (`unit_base_max_moves_at`). None of that moves a unit, writes a tile or
+    /// touches a city, and all of it changes on the owner's own turn, never
+    /// during another seat's. An envelope is asked for by the seat whose turn
+    /// it is, so keeping the per-enemy store for one seat-turn at a time is
+    /// exact. Before #5361 a tile write anywhere emptied the store and border
+    /// growth wrote tiles at nearly every turn's start, which hid this; once
+    /// tile writes were reported by position, entries outlived the turn and
+    /// a reach grown by its owner's new movement was read stale.
+    stamp: (u64, u64, u32, usize),
     /// Where the map's write history stood ([`crate::world::TileGrid::write_chain`]).
     /// The tiles written since are reported by position; a history that
     /// cannot be followed back here is "everything changed".

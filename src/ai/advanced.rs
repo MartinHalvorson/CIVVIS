@@ -7017,6 +7017,16 @@ pub struct AdvancedAi {
     /// the original capital, by owner, under
     /// `capital-archers-before-the-surprise-2`.
     capital_archers_door_sightings: BTreeMap<usize, u32>,
+    /// `denial-spies-cover-every-racer`: the space racers are ranked by their
+    /// progress (projects, then the expedition's trip), Science only breaking
+    /// a tie, and every racer within one project of the lead gets a Spy of
+    /// ours before any gets a second. See
+    /// `advanced/denial_spies_cover_every_racer.rs`. Opt-in.
+    denial_spies_cover_every_racer: bool,
+    /// `denial-spies-fill-every-slot-2`: version one, and on a Score aim as
+    /// well as a Culture or Domination one. See
+    /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
+    denial_spies_fill_every_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -8925,6 +8935,16 @@ pub struct AdvancedAi {
     /// Siege row and the Defend row to retirement. See
     /// `advanced/open_capital_declares_at_twice.rs`. Off by default.
     open_capital_declares_at_twice: bool,
+    /// `near-rival-deterrence-opens-early`: `near-rival-deterrence` opens at
+    /// live turn 10 instead of 30, and a met major whose soldier stood within
+    /// eight tiles of our original capital in the capital watch's ten turns
+    /// is a neighbour in the opening window even with none of its cities
+    /// known within ten tiles. Live Immortal 2026-11-15: the last four
+    /// original capitals fell to opening wars (t24-59, 0.39-0.77 of the
+    /// attacker's power) without one deterrent trained before the
+    /// declaration. See `advanced/near_rival_deterrence_opens_early.rs`. Off
+    /// by default.
+    near_rival_deterrence_opens_early: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -11397,6 +11417,8 @@ mod denial_nearest_finish;
 mod denial_needs_a_road;
 /// `denial-spies-count-their-losses`: see `advanced/denial_spies_count_their_losses.rs`.
 mod denial_spies_count_their_losses;
+/// `denial-spies-cover-every-racer`: see `advanced/denial_spies_cover_every_racer.rs`.
+mod denial_spies_cover_every_racer;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;
@@ -11855,6 +11877,10 @@ mod near_rival_deterrence;
 /// next tier of Walls past the opening window. One opt-in gene; see
 /// `advanced/near_rival_deterrence_holds_late.rs`.
 mod near_rival_deterrence_holds_late;
+/// `near-rival-deterrence-opens-early`: the opening deterrent from live turn
+/// 10, and a soldier at the capital's door makes a neighbour. One opt-in
+/// gene; see `advanced/near_rival_deterrence_opens_early.rs`.
+mod near_rival_deterrence_opens_early;
 /// `rival-pace`: a calibrated rival chair's city horizon follows the live
 /// Immortal field's city count by turn. Not a gene — set only by
 /// `gene_screen --rival-pace` on its rival chairs; see

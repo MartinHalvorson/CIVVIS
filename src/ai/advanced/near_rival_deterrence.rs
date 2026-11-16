@@ -35,6 +35,9 @@
 //! `near-rival-deterrence-holds-late` carries the same claim, its holds and
 //! its exemptions past the window at a lower target; see
 //! `advanced/near_rival_deterrence_holds_late.rs`.
+//! `near-rival-deterrence-opens-early` opens the window at live turn 10 and
+//! counts a soldier at the capital's door as a neighbour; see
+//! `advanced/near_rival_deterrence_opens_early.rs`.
 
 use super::near_rival_deterrence_holds_late::DeterrencePhase;
 use super::*;
@@ -65,7 +68,7 @@ impl AdvancedAi {
         // `near-rival-deterrence-holds-late`: past the window the late gene
         // answers the same neighbour. See
         // `advanced/near_rival_deterrence_holds_late.rs`.
-        self.deterrence_phase(g)?;
+        let phase = self.deterrence_phase(g)?;
         let ours: Vec<Pos> = g
             .player_city_ids(pid)
             .into_iter()
@@ -89,12 +92,12 @@ impl AdvancedAi {
                     && !self.deterrence_spares_a_friend(g, pid, other.id)
             })
             .filter(|other| {
-                g.cities.values().any(|city| {
-                    city.owner == other.id
-                        && ours
-                            .iter()
-                            .any(|home| g.wdist(*home, city.pos) <= DETERRENCE_NEAR_TILES)
-                })
+                Self::deterrence_city_near(g, &ours, other.id)
+                    // `near-rival-deterrence-opens-early`: in the opening, a
+                    // soldier at the capital's door makes a neighbour too. See
+                    // `advanced/near_rival_deterrence_opens_early.rs`.
+                    || (phase == DeterrencePhase::Opening
+                        && self.deterrence_door_neighbour(g, other.id))
             })
             .map(|other| (other.id, g.military_power(other.id)))
             .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)))
@@ -345,10 +348,30 @@ impl AdvancedAi {
             return;
         };
         let displaced = g.cities[&cid].queue.first().cloned();
+        // `near-rival-deterrence-opens-early`: why this gene, not the opening
+        // gene alone, armed the claim. `None` with the gene off.
+        let early = (phase == DeterrencePhase::Opening)
+            .then(|| self.deterrence_opens_early_reason(g, pid, rival))
+            .flatten();
         let item = Item::Unit {
             unit: Name::new(&unit),
         };
         if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
+            if let Some(reason) = early {
+                think!(self.journal(), Military, Decision,
+                "{} trains a deterrent against {}", g.cities[&cid].name, g.players[rival].civ;
+                "near-rival-deterrence-opens-early: {} for {ours:.0} power against their \
+                 {theirs:.0}, {reason}; {turns:.1} turns{}{}",
+                unit.replace('_', " "),
+                displaced.map_or(String::new(), |item| format!(
+                    "; {} keeps its progress", Self::plain_item(&item))),
+                if out_of_reach {
+                    "; deterrence-stops-at-a-garrison: out of reach, a ranged garrison only"
+                } else {
+                    ""
+                });
+                return;
+            }
             if phase == DeterrencePhase::Late {
                 think!(self.journal(), Military, Decision,
                 "{} trains a deterrent against {}", g.cities[&cid].name, g.players[rival].civ;

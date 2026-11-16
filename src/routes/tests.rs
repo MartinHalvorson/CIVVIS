@@ -79,7 +79,8 @@ fn mirror_load_never_publishes_an_unseated_frame() {
 /// validation games, the player should just be something like "Civ 6 Deity
 /// AI" or whatever the level is. for self-play games where we control the
 /// player ai strategy, then we should list out the actual strategy being
-/// used."
+/// used." And 2026-11-16: "change civ 6 ai player name template to: "8 Deity
+/// Firaxis AI" or whatever for the level".
 #[test]
 fn a_mirrored_table_names_civilization_vis_ai_and_the_lane_we_play() {
     let mut setup = params();
@@ -114,7 +115,7 @@ fn a_mirrored_table_names_civilization_vis_ai_and_the_lane_we_play() {
         if seat["id"] == json!(0) {
             assert_eq!(seat["ai_username"], json!("CIVVIS Diplomatic"));
         } else {
-            assert_eq!(seat["ai_username"], json!("Civ 6 Deity AI"));
+            assert_eq!(seat["ai_username"], json!("8 Deity Firaxis AI"));
             assert_eq!(seat["ai_strat_label"], json!("Civilization VI's own AI"));
         }
         // Nobody at this table is one of our rated agents, and nothing in
@@ -134,7 +135,7 @@ fn a_mirrored_table_names_civilization_vis_ai_and_the_lane_we_play() {
     .unwrap();
     let seats = majors(&session.state());
     assert_eq!(seats[0]["ai_username"], json!("CIVVIS Adaptive"));
-    assert_eq!(seats[1]["ai_username"], json!("Civ 6 Immortal AI"));
+    assert_eq!(seats[1]["ai_username"], json!("7 Immortal Firaxis AI"));
 
     // A follower that names no lane, or one the decider would refuse, still
     // publishes its frame: our seat is then our agent without a lane.
@@ -146,7 +147,7 @@ fn a_mirrored_table_names_civilization_vis_ai_and_the_lane_we_play() {
         load_uploaded(&mut session, &body).unwrap();
         let seats = majors(&session.state());
         assert_eq!(seats[0]["ai_username"], json!("CIVVIS Advanced AI"));
-        assert_eq!(seats[1]["ai_username"], json!("Civ 6 Immortal AI"));
+        assert_eq!(seats[1]["ai_username"], json!("7 Immortal Firaxis AI"));
     }
 
     // The same board as a world of our own is still dealt our agents: the
