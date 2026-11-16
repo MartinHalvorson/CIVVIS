@@ -6196,6 +6196,11 @@ pub const GENES: &[Gene] = &[
     // expansion before t80 and beside a 1.5x neighbour. See
     // `advanced/score_wonders.rs`.
     Gene { tag: "score-seat-raises-wonders-2", field: "score_seat_raises_wonders_2", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_raises_wonders_2, disable: AdvancedAi::disable_score_seat_raises_wonders_2 },
+    // Version 3: in 3 of 5 live Rome Score games of 11-15 v2's "safety first"
+    // held every lane from t80 to the tally and built nothing, with 200-
+    // Production wonders on offer for 40 turns; one lane stays open in a city
+    // ten tiles or more from every threat. See `advanced/score_wonders.rs`.
+    Gene { tag: "score-seat-raises-wonders-3", field: "score_seat_raises_wonders_3", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_raises_wonders_3, disable: AdvancedAi::disable_score_seat_raises_wonders_3 },
     // Live Deity Rome Score lane 2026-11-12, 11 games: Settlers were born at
     // the same pace in the fast and the slow games, but took a mean 8.7
     // turns from birth to founding in the three fastest against 23.8 in the

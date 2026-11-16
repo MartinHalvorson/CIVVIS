@@ -1098,7 +1098,7 @@ class Civ6PlayTest(unittest.TestCase):
         run_dir = Path(tempfile.mkdtemp())
         patience = {"left": 3.0, "spent": 0.0}
         with mock.patch.object(civ6_play, "screenshot", lambda _p: None), \
-             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p: False):
+             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p, _b: False):
             first = civ6_play._loading_probe(run_dir, 1, patience, 1.0)
             self.assertEqual([first(), first(), first()], [True, True, True])
             self.assertFalse(first(), "the pool is spent, so stop vouching")
@@ -1126,7 +1126,7 @@ class Civ6PlayTest(unittest.TestCase):
         patience = {"left": 600.0, "spent": 0.0}
         bounds = (0, 0, 2880, 1864)
         with mock.patch.object(civ6_play, "screenshot", lambda _p: None), \
-             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p: False), \
+             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p, _b: False), \
              mock.patch.object(civ6_play, "_observed_label_point",
                                lambda *a, **k: (100, 200)):
             probe = civ6_play._loading_probe(run_dir, 1, patience, 120.0,
@@ -1140,7 +1140,7 @@ class Civ6PlayTest(unittest.TestCase):
         run_dir = Path(tempfile.mkdtemp())
         patience = {"left": 600.0, "spent": 0.0}
         with mock.patch.object(civ6_play, "screenshot", lambda _p: None), \
-             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p: False), \
+             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p, _b: False), \
              mock.patch.object(civ6_play, "_observed_label_point",
                                lambda *a, **k: (100, 200)):
             probe = civ6_play._loading_probe(run_dir, 1, patience, 120.0)
@@ -1152,7 +1152,7 @@ class Civ6PlayTest(unittest.TestCase):
         patience = {"left": 600.0, "spent": 0.0}
         bounds = (0, 0, 2880, 1864)
         with mock.patch.object(civ6_play, "screenshot", lambda _p: None), \
-             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p: False), \
+             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p, _b: False), \
              mock.patch.object(civ6_play, "_observed_label_point",
                                lambda *a, **k: None):
             probe = civ6_play._loading_probe(run_dir, 1, patience, 120.0,
@@ -1165,7 +1165,7 @@ class Civ6PlayTest(unittest.TestCase):
         run_dir = Path(tempfile.mkdtemp())
         patience = {"left": 600.0, "spent": 0.0}
         with mock.patch.object(civ6_play, "screenshot", lambda _p: None), \
-             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p: True):
+             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p, _b: True):
             probe = civ6_play._loading_probe(run_dir, 1, patience, 120.0)
             self.assertFalse(probe())
         self.assertEqual(patience["left"], 600.0,
@@ -1829,9 +1829,12 @@ class Civ6PlayTest(unittest.TestCase):
 
     def test_setup_recovery_backs_out_until_main_menu_is_verified(self) -> None:
         bounds = (756, 33, 756, 480)
-        observations = [[], [], [{"text": "Single Player"}]]
+        menu = [{"text": "Single Player", "x": 0.70, "y": 0.25, "width": 0.05, "height": 0.01},
+                {"text": "Multiplayer", "x": 0.70, "y": 0.28, "width": 0.05, "height": 0.01}]
+        observations = [[], [], menu]
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "screenshot"), \
+             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
              patch.object(civ6_play.macos_ocr, "recognize", side_effect=observations), \
              patch.object(civ6_play, "click_at") as click, \
              patch.object(civ6_play.time, "sleep"):
@@ -3627,11 +3630,14 @@ class SafeScreenCaptureWaitTests(unittest.TestCase):
 
     def test_main_menu_visibility_survives_an_unavailable_ocr(self) -> None:
         civ6_play._OCR_CACHE.clear()
-        with patch.object(
+        with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+             patch.object(
                 civ6_play.macos_ocr, "recognize",
-                side_effect=civ6_play.macos_ocr.OCRUnavailable("0 x 0")):
-            visible = civ6_play._main_menu_visible(Path("zero-sized-menu.png"))
+                side_effect=civ6_play.macos_ocr.OCRUnavailable("0 x 0")) as recognize:
+            visible = civ6_play._main_menu_visible(Path("zero-sized-menu.png"),
+                                                   (0, 33, 864, 542))
         self.assertFalse(visible)
+        self.assertTrue(recognize.called, "the read was attempted, not skipped")
 
 
 class LiveControlArmTests(unittest.TestCase):
@@ -4979,10 +4985,13 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         for fn, call in ((civ6_play._setup_current_value, "recognize_once(path, bounds)"),
                          (civ6_play._setup_current_leader, "recognize_once(path, bounds)"),
                          (civ6_play._map_picker_labels, "_menu_ocr_observations(path, bounds)"),
-                         (civ6_play._observed_label_points, "_menu_ocr_observations(path, bounds)")):
+                         (civ6_play._observed_label_points, "_menu_ocr_observations(path, bounds)"),
+                         (civ6_play._main_menu_rows, "_menu_ocr_observations(path, bounds)")):
             self.assertIn(call, inspect.getsource(fn), fn.__name__)
-        # Recovery's menu check keeps the whole desktop (no window bounds there).
-        self.assertIn("_menu_ocr_observations(path)", inspect.getsource(civ6_play._main_menu_visible))
+        # The main-menu check reads the window too: the desktop beside it holds
+        # the CIVVIS mirror, whose turn box reads "POV: Single Player".
+        self.assertNotIn("_menu_ocr_observations(path)",
+                         inspect.getsource(civ6_play._main_menu_rows))
 
     def test_a_missing_capture_is_not_cached_and_still_raises(self) -> None:
         with patch.object(civ6_play.macos_ocr, "recognize",
@@ -5597,19 +5606,86 @@ class PollCadenceKeepsItsWallClock(unittest.TestCase):
 
 
 class StallMainMenuTests(unittest.TestCase):
-    """A stall photographed on the main menu ends the attempt at once."""
+    """A stall photographed on the main menu ends the attempt at once, and a
+    stall photographed anywhere else does not.
 
-    def test_the_main_menu_is_read_from_the_stall_photograph(self) -> None:
-        shot = Path("/tmp/stalled-1.png")
-        with mock.patch.object(civ6_play, "_menu_ocr_observations",
-                               return_value=[{"text": "Single Player"},
-                                             {"text": "Multiplayer"}]):
-            self.assertTrue(civ6_play.stall_screen_is_main_menu(shot))
-        with mock.patch.object(civ6_play, "_menu_ocr_observations",
-                               return_value=[{"text": "Next Turn"}]):
-            self.assertFalse(civ6_play.stall_screen_is_main_menu(shot))
-        with mock.patch.object(civ6_play, "_menu_ocr_observations", return_value=[]):
-            self.assertFalse(civ6_play.stall_screen_is_main_menu(shot))
+    The observations are Vision's reads of live captures
+    (`fixtures/stall_main_menu_ocr.json`). Live civvis-20261115T225114Z was
+    ended at turn 60 of 160 as "stalled: main menu" on a photograph of the game
+    on its map: the read took the CIVVIS mirror's "POV: Single Player", beside
+    the game window, for the menu's Single Player row.
+    """
+
+    FIXTURE = json.loads((Path(__file__).resolve().parent / "fixtures"
+                          / "stall_main_menu_ocr.json").read_text())
+    WINDOW = tuple(FIXTURE["window"])
+
+    def _is_menu(self, window: list[dict], crop: list[dict],
+                 bounds: tuple[int, int, int, int] | None = WINDOW) -> bool:
+        with mock.patch.object(civ6_play, "desktop_size",
+                               return_value=tuple(self.FIXTURE["desktop"])), \
+             mock.patch.object(civ6_play, "_menu_ocr_observations",
+                               return_value=window), \
+             mock.patch.object(civ6_play, "_menu_crop_ocr", return_value=crop):
+            return civ6_play.stall_screen_is_main_menu(Path("stalled-1.png"), bounds)
+
+    def _capture(self, name: str) -> dict:
+        return self.FIXTURE["captures"][name]
+
+    def test_the_stall_photograph_of_a_live_game_is_not_the_main_menu(self) -> None:
+        stall = self._capture("stalled_in_game")
+        mirror = [observation for observation in stall["full_desktop"]
+                  if civ6_play._menu_label_matches(observation["text"], "Single Player")]
+        # The trap is in the photograph: the old whole-desktop read matched it.
+        self.assertEqual(len(mirror), 1)
+        self.assertGreater(mirror[0]["x"] * self.FIXTURE["desktop"][0],
+                           self.WINDOW[0] + self.WINDOW[2],
+                           "the Single Player that was read lies right of the game window")
+        self.assertFalse(self._is_menu(stall["window"], stall["crop"]))
+
+    def test_a_whole_desktop_read_still_counts_only_the_window(self) -> None:
+        """The window pass reads the whole capture when it cannot crop (no
+        Pillow on CI); an observation's position is what keeps the mirror out."""
+        stall = self._capture("stalled_in_game")
+        self.assertFalse(self._is_menu(stall["full_desktop"], []))
+
+    def test_a_real_main_menu_still_reads_as_the_main_menu(self) -> None:
+        menu = self._capture("main_menu")
+        self.assertTrue(self._is_menu(menu["window"], menu["crop"]))
+        # Either pass alone carries it.
+        self.assertTrue(self._is_menu(menu["window"], []))
+        self.assertTrue(self._is_menu([], menu["crop"]))
+
+    def test_the_load_game_page_is_not_the_main_menu(self) -> None:
+        """Its "Game Options" and "Additional Content" headings are two menu
+        labels, so two rows alone would read it as the menu."""
+        load = self._capture("load_game")
+        rows = set()
+        with mock.patch.object(civ6_play, "desktop_size",
+                               return_value=tuple(self.FIXTURE["desktop"])), \
+             mock.patch.object(civ6_play, "_menu_ocr_observations",
+                               return_value=load["window"]), \
+             mock.patch.object(civ6_play, "_menu_crop_ocr", return_value=load["crop"]):
+            rows = civ6_play._main_menu_rows(Path("startup-wait2-1.png"), self.WINDOW)
+        self.assertGreaterEqual(len(rows), civ6_play.MAIN_MENU_MIN_ROWS)
+        self.assertNotIn("single player", rows)
+        self.assertFalse(self._is_menu(load["window"], load["crop"]))
+
+    def test_one_stray_single_player_in_the_window_is_not_the_menu(self) -> None:
+        menu = self._capture("main_menu")
+        single = [observation for observation in menu["window"]
+                  if civ6_play._menu_label_matches(observation["text"], "Single Player")]
+        self.assertEqual(len(single), 1)
+        self.assertFalse(self._is_menu(single, []))
+
+    def test_without_the_game_window_nothing_reads_as_the_menu(self) -> None:
+        menu = self._capture("main_menu")
+        self.assertFalse(self._is_menu(menu["window"], menu["crop"], bounds=None))
+
+    def test_the_stall_reads_the_menu_in_the_window_it_finds(self) -> None:
+        import inspect
+        self.assertIn("stall_screen_is_main_menu(shot, game_window())",
+                      inspect.getsource(civ6_play))
 
 
 class VSyncABSwitchTest(unittest.TestCase):

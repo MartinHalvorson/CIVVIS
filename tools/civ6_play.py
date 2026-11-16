@@ -3269,7 +3269,8 @@ def _menu_crop_ocr(path: Path, bounds: tuple[int, int, int, int],
         crop_path = path.with_name(f"{path.stem}-{tag}-crop.png")
         crop.save(crop_path)
         observations = _menu_ocr_observations(crop_path)
-    except (OSError, ValueError):
+    except (ImportError, OSError, ValueError):
+        # No Pillow (CI) reads nothing, as `_recognize_window` falls back.
         return []
 
     left, crop_top, right, crop_bottom = rect
@@ -4246,15 +4247,74 @@ def confirm_exit_dialog(run_dir: Path | None = None) -> bool:
     return True
 
 
-def _main_menu_visible(path: Path) -> bool:
-    """Return whether a screenshot visibly contains Firaxis's Single Player row."""
-    return any(
-        _menu_label_matches(str(observation.get("text", "")), "Single Player")
-        for observation in _menu_ocr_observations(path)
-    )
+#: Distinct main-menu rows (`MAIN_MENU_LABELS`), Single Player among them, a
+#: capture must show inside the game window to read as the main menu. A real
+#: menu shows about eight; one row on its own is a coincidence. Single Player
+#: is required because two of the others are headings elsewhere too: the Load
+#: Game page reads "Game Options" and "Additional Content" above a save's
+#: settings and its DLC list (civvis-20261115T110627Z-cont1, startup-wait2-1).
+MAIN_MENU_MIN_ROWS = 2
 
 
-def stall_screen_is_main_menu(shot: Path) -> bool:
+def _main_menu_rows(path: Path, bounds: tuple[int, int, int, int]) -> set[str]:
+    """The main menu's own rows read inside the game window of a capture.
+
+    Both window passes are read, the window itself and the enlarged menu crop,
+    and an observation counts only where its centre lies inside ``bounds``:
+    the window pass falls back to the whole desktop when it cannot crop, so
+    the position, not the pass, is what keeps the rest of the desktop out.
+    """
+    screen = desktop_size()
+    if screen is None:
+        return set()
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    rows: set[str] = set()
+    for observation in (_menu_ocr_observations(path, bounds)
+                        + _menu_crop_ocr(path, bounds)):
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = point[0] * screen_w, point[1] * screen_h
+        if not (x <= px <= x + w and y <= py <= y + h):
+            continue
+        text = str(observation.get("text", ""))
+        rows.update(label for label in MAIN_MENU_LABELS
+                    if _menu_label_matches(text, label))
+    return rows
+
+
+def _main_menu_visible(path: Path, bounds: tuple[int, int, int, int] | None) -> bool:
+    """Whether a desktop capture shows Firaxis's main menu in the game window.
+
+    ⚠⚠ "SINGLE PLAYER" IS NOT ONLY ON THE MAIN MENU. This read used to be one
+    "Single Player" anywhere in the whole desktop capture, and the desktop also
+    holds the CIVVIS mirror, whose turn box reads "POV: Single Player" all game,
+    and the terminals, which print whatever their agents are reading. Live
+    Immortal civvis-20261115T225114Z stalled at turn 60 of 160 with seven
+    cities; its stalled-1.png shows the game on its map, and the one
+    "Single Player" Vision read in it sits at x=0.557 of the desktop -- the
+    mirror's turn box, right of the 864-point game window. The stall read it
+    as the main menu and ended a healthy game the rescue was there to keep.
+    The other callers saw the same thing: re-read over 173 captures of 40
+    runs of 2026-11-15, the old read called 23 of 35 Create Game pages, 27 of
+    39 setup pages and two Firaxis logo screens the main menu.
+
+    So the menu is read only inside ``bounds``, the game window, and only when
+    Single Player and `MAIN_MENU_MIN_ROWS` of its rows in all are there. On
+    the same captures that calls none of those the menu, and still reads 35 of
+    39 first menu captures (the other four: two logos, two menus still fading
+    in with only Single Player drawn) and all 37 Single Player submenus. No
+    window, no menu: without the bounds nothing tells the menu from the mirror.
+    """
+    if bounds is None:
+        return False
+    rows = _main_menu_rows(path, bounds)
+    return "single player" in rows and len(rows) >= MAIN_MENU_MIN_ROWS
+
+
+def stall_screen_is_main_menu(shot: Path,
+                              bounds: tuple[int, int, int, int] | None) -> bool:
     """Whether a stall's photograph shows Firaxis's main menu.
 
     A stalled run whose screen is the main menu has lost its game session, so
@@ -4264,8 +4324,13 @@ def stall_screen_is_main_menu(shot: Path) -> bool:
     clock would have killed it at fifteen. Ending the attempt on the first
     photograph hands it straight to the climb, which restarts a game frozen
     before turn 20 and reloads the newest autosave of a later one.
+
+    ``bounds`` is the game window at the stall; see `_main_menu_visible` for
+    why the menu is read only there. Without it the stall is rescued as any
+    other: a wrong "menu" ends a live game, a wrong "not menu" costs only the
+    bounded rescue.
     """
-    return _main_menu_visible(shot)
+    return _main_menu_visible(shot, bounds)
 
 
 #: The main menu's own rows. The enlarged menu crop reads them on every real
@@ -4462,20 +4527,20 @@ def return_to_main_menu(bounds: tuple[int, int, int, int], run_dir: Path,
 
     A setup failure may leave the leader list, map picker, or Create Game page
     open. Retrying the main-menu coordinates from any of those screens changes
-    an unrelated setting. Only a screenshot containing Single Player licenses
-    another bootstrap attempt.
+    an unrelated setting. Only a screenshot showing the main menu inside the
+    game window licenses another bootstrap attempt.
     """
     x, y, w, h = bounds
     for depth in range(4):
         shot = run_dir / f"recover-attempt{attempt}-{depth}.png"
         screenshot(shot)
-        if _main_menu_visible(shot):
+        if _main_menu_visible(shot, bounds):
             return True
         click_at(int(x + w * BACK[0]), int(y + h * BACK[1]))
         time.sleep(1.5)
     shot = run_dir / f"recover-attempt{attempt}-final.png"
     screenshot(shot)
-    return _main_menu_visible(shot)
+    return _main_menu_visible(shot, bounds)
 
 
 def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float,
@@ -4513,7 +4578,8 @@ def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float,
 
     So the page is proved the same way the launch click was licensed: by reading
     `Start Game` where it lives. `bounds` is optional only so an old call site
-    keeps working; without it this degrades to the main-menu read alone.
+    keeps working; without it neither read runs (the menu is read only inside
+    the game window), and the wait is bounded by ``patience`` alone.
 
     ``patience`` is spent from ONE pool shared by every attempt, because the
     per-wait hard bound alone does not bound the bootstrap: 16 attempts each
@@ -4528,7 +4594,7 @@ def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float,
         looks["n"] += 1
         shot = run_dir / f"startup-wait{attempt}-{looks['n']}.png"
         screenshot(shot)
-        if _main_menu_visible(shot):
+        if _main_menu_visible(shot, bounds):
             print(f"attempt {attempt}: the main menu is back after "
                   f"{looks['n']} silent wait(s) -- the launch did not take",
                   file=sys.stderr)
@@ -7867,7 +7933,7 @@ def _play(args: argparse.Namespace) -> int:
         print(f"stalled — photographed to {shot}; rescue attempt {consecutive} "
               f"of {args.stall_rescues} on this screen ({rescues} this run)",
               flush=True)
-        if stall_screen_is_main_menu(shot):
+        if stall_screen_is_main_menu(shot, game_window()):
             print("stalled at Civilization VI's main menu: the game session is "
                   "gone and no dialogue rescue can recover it; ending the "
                   "attempt so the climb restarts or reloads it", flush=True)

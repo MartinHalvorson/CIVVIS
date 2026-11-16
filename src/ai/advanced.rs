@@ -9576,6 +9576,13 @@ pub struct AdvancedAi {
     score_seat_raises_wonders_2: bool,
     /// `score-seat-raises-wonders-2`: the hold last journalled.
     score_wonder_hold: Option<String>,
+    /// `score-seat-raises-wonders-3`: version 3, carrying version 2. Through a
+    /// "safety first" hold one lane stays open in a rear city, ten tiles or
+    /// more from every major at war with us or out-gunning us; war at the
+    /// gates closes it. See `advanced/score_wonders.rs`. Off by default.
+    score_seat_raises_wonders_3: bool,
+    /// `score-seat-raises-wonders-3`: the rear lane's state last journalled.
+    score_wonder_rear_note: Option<String>,
     /// `siege-goes-on-the-forecast`: the siege train goes, holds and stands
     /// down on the capture forecast, and the Objective Board ranks Siege rows
     /// by value x P / expected turns. Implies the reading. See
