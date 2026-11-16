@@ -33,8 +33,9 @@
 //!    war, seat and walker tests unchanged), a Campus-family district, a
 //!    Library or a University at the head of the queue no longer keeps it,
 //!    unless it finishes within [`SCORE_SETTLES_FIRST_KEEP_TURNS`] turns. The
-//!    displaced item keeps its progress and waits behind the Settler. Every
-//!    other head keeps its queue as before.
+//!    displaced item keeps its progress (the Settler takes the queue as any
+//!    claim does; the Campus claims and `paused-district-finishes` take the
+//!    saved work up again). Every other head keeps its queue as before.
 //! 2. **The Settler stays first.** `campus-and-library-before-the-claims`
 //!    would put a first Campus or a Library back ahead of a Settler with at
 //!    most half its cost paid (from six and four cities), which runs after

@@ -141,8 +141,8 @@ fn off_the_first_campus_keeps_its_queue() {
 }
 
 /// The blocked case: with the gene a Settler takes one of the two queues,
-/// the Campus keeps its place and progress behind it, and the line names
-/// the Campus.
+/// the Campus's 5 Production stays saved for it, and the line names the
+/// Campus.
 #[test]
 fn a_campus_head_gives_way_to_the_settler_on_a_score_seat() {
     let (game, _, _) = two_campus_cities();
@@ -154,11 +154,11 @@ fn a_campus_head_gives_way_to_the_settler_on_a_score_seat() {
     assert_eq!(queued.len(), 1, "one Settler: {details:?}");
     let cid = queued[0];
     let campus = campus(&on, cid);
-    assert!(
-        on.cities[&cid].queue.contains(&campus),
-        "the Campus waits behind the Settler"
+    assert_eq!(
+        on.item_invested_production(cid, &campus),
+        5.0,
+        "the Campus keeps its progress"
     );
-    assert_eq!(on.item_invested_production(cid, &campus), 5.0);
     assert!(
         details
             .iter()
