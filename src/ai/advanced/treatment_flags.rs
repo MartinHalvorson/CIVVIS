@@ -376,6 +376,9 @@ impl AdvancedAi {
         /// Opt-in gene `hopeless-army-yields-the-queue`; see
         /// `advanced/hopeless_army_yields_the_queue.rs`.
         hopeless_army_yields_the_queue => enable_hopeless_army_yields_the_queue, disable_hopeless_army_yields_the_queue;
+        /// Opt-in gene `gun-resource-buys-the-tile`; see
+        /// `advanced/gun_resource_tile.rs`.
+        gun_resource_buys_the_tile => enable_gun_resource_buys_the_tile, disable_gun_resource_buys_the_tile;
         /// Opt-in gene `guns-keep-the-oil`; see
         /// `advanced/guns_keep_the_oil.rs`.
         guns_keep_the_oil => enable_guns_keep_the_oil, disable_guns_keep_the_oil;

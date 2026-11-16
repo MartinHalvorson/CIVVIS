@@ -8241,6 +8241,11 @@ pub struct AdvancedAi {
     /// or offensive bodies for a target whose walls nothing it can field
     /// will breach. See `advanced/hopeless_army_yields_the_queue.rs`. Opt-in.
     hopeless_army_yields_the_queue: bool,
+    /// `gun-resource-buys-the-tile`: while a land siege gun the Domination
+    /// seat can build waits on a Niter or Oil it draws none of, the purchase
+    /// pass buys the deposit a city can buy, or the tile beside one in a
+    /// city's third ring. See `advanced/gun_resource_tile.rs`. Off by default.
+    gun_resource_buys_the_tile: bool,
     /// `guns-keep-the-oil`: a Domination seat's Infantry, Tanks and
     /// oil-burning ships spend only the Oil its siege guns do not need. See
     /// `advanced/guns_keep_the_oil.rs`. Opt-in.
@@ -11785,6 +11790,9 @@ mod siege_road;
 /// waits on, bought from a rival's trade screen. See
 /// `advanced/gun_resource.rs`.
 mod gun_resource;
+/// `gun-resource-buys-the-tile`: the deposit of the guns' Niter or Oil,
+/// bought as a tile. See `advanced/gun_resource_tile.rs`.
+mod gun_resource_tile;
 pub use gun_resource::{BarterSpare, GunResourceWant};
 mod army_upgrade_materials;
 pub use army_upgrade_materials::ArmyUpgradeMaterialWant;
@@ -18401,7 +18409,13 @@ impl AdvancedAi {
         // instead. `reserve` with the gene off.
         let aluminum_reserve = self.aluminum_tile_reserve(g, pid, plan, reserve);
         let bought_aluminum = self.aluminum_tile_purchase(g, pid, aluminum_reserve);
-        let mut purchased = bought_out_an_outpost || bought_a_first_asset || bought_aluminum;
+        // `gun-resource-buys-the-tile`: the deposit the siege guns' Niter or
+        // Oil waits on, or the tile beside it, out of the upkeep floor.
+        // False, and nothing touched, with the gene off. See
+        // `advanced/gun_resource_tile.rs`.
+        let bought_gun_tile = self.gun_resource_tile_purchase(g, pid, plan, reserve);
+        let mut purchased =
+            bought_out_an_outpost || bought_a_first_asset || bought_aluminum || bought_gun_tile;
         let mut purchased_units = 0;
         for _ in 0..purchase_limit {
             let bank = g.players[pid].gold;

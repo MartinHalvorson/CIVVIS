@@ -5965,6 +5965,11 @@ pub const GENES: &[Gene] = &[
     // the unit bill jumped. `buy_gold_unit` tests each city's own quote
     // against the reserve. Opt-in; see `BasicAi::buy_gold_unit`.
     Gene { tag: "gold-unit-buys-read-the-host-quote", field: "gold_unit_buys_read_the_host_quote", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_unit_buys_read_the_host_quote, disable: AdvancedAi::disable_gold_unit_buys_read_the_host_quote },
+    // Live Emperor Domination 11-16: 274 turns with a siege gun's tech and
+    // no Niter or Oil; a land-deposit tile buy (direct or the first of two)
+    // was affordable on 28 of them (27 of the 71 Niter turns) and none was
+    // made. Opt-in; see `advanced/gun_resource_tile.rs`.
+    Gene { tag: "gun-resource-buys-the-tile", field: "gun_resource_buys_the_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_gun_resource_buys_the_tile, disable: AdvancedAi::disable_gun_resource_buys_the_tile },
     // Live Emperor Gilgamesh civvis-20261116T021437Z: two Infantry spent the
     // 14 Oil the first Artillery came out to at t158; it never fired, and sat
     // at 36 hp unable to heal t164-179 for want of its fuel. Opt-in; see
