@@ -951,19 +951,52 @@ CivvisControlConfig.DealSessions = true
 CivvisControlConfig.DealSessionQuarantine = "41:95,42:88"
 TURN = 87
 local requestedBeforeQuarantine = #sessions.requested
+-- ★★ ...AND IS SENT NOTHING. The quarantine used to take the direct send;
+-- live 2026-11-16 that send hung the rival whenever a friendship or
+-- delegation session of ours opened to it in the same frame (014237Z-cont1
+-- to -cont3 t81, 041918Z-cont2 t81, -cont3 t76), and no direct send was ever
+-- answered. So nothing goes out, the working deal is cleared, and the arm
+-- reports the ask as not submitted.
 local held, heldSeller = fixture()
-applyOrder(heldSeller, 7, { kind = "sell", subject = "41", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
-check("a quarantined rival's ask takes the direct send", held.sends[1] and held.sends[1][1], "equalize")
+local okHeld, whyHeld = applyOrder(heldSeller, 7,
+	{ kind = "sell", subject = "41", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
+check("a quarantined rival is sent nothing", #held.sends, 0)
 check("a quarantined rival opens no session", #sessions.requested, requestedBeforeQuarantine)
 check("a quarantined ask owns no session", trade.sessions[41], nil)
 check("the quarantine is in the ledger", eventField(lastEvent("deal_session"), "phase"), "quarantined")
 check("…with its last turn", eventField(lastEvent("deal_session"), "until_turn"), "95")
+check("…and says nothing went out", eventField(lastEvent("deal_session"), "sent"), "false")
+check("a quarantined sale clears its working deal", held.cleared, DealDirection.OUTGOING)
+check("a quarantined sale is not submitted", okHeld, false)
+check("…and says why", whyHeld, "quarantined")
+check("the sale ledger says it was not submitted", eventField(lastEvent("deal_offer"), "submitted"), "false")
+check("…because of the quarantine", eventField(lastEvent("deal_offer"), "reason"), "quarantined")
+check("a quarantined sale leaves no pending ask", trade.pending[41], nil)
+check("a quarantined sale keeps its retry wait", trade.asked[41], TURN)
 check("the quarantine is read per rival", trade.quarantinedUntil(42), 88)
 check("a rival not named is not quarantined", trade.quarantinedUntil(6), nil)
+local heldBuy, heldBuyer = fixture()
+local okBuy, whyBuy = applyOrder(heldBuyer, 7, { kind = "buy", subject = "42", verb = "OPEN_BORDERS", x = 90 }, TURN)
+check("a quarantined purchase is sent nothing", #heldBuy.sends, 0)
+check("a quarantined purchase is not submitted", okBuy, false)
+check("…and says why", whyBuy, "quarantined")
+check("a quarantined purchase leaves no pending ask", trade.pending[42], nil)
+check("a quarantined purchase keeps its retry wait", trade.asked[42], TURN)
 local heldPeace, heldPeacePlayer = fixture({ atWar = true })
-applyOrder(heldPeacePlayer, 7, { kind = "peace", subject = "42" }, TURN)
+local okPeace, whyPeace = applyOrder(heldPeacePlayer, 7, { kind = "peace", subject = "42" }, TURN)
 check("a quarantined peace opens no session", #sessions.requested, requestedBeforeQuarantine)
 check("a quarantined peace registers no counter wait", trade.sessions[42], nil)
+check("a quarantined peace is sent nothing", #heldPeace.sends, 0)
+check("a quarantined peace is not submitted", okPeace, false)
+check("…and says why", whyPeace, "quarantined")
+check("the peace ledger says it was not submitted", eventField(lastEvent("peace_request"), "submitted"), "false")
+-- The retry window holds, so the next turn's order is not asked again.
+TURN = 88
+local againPeace, againPeacePlayer = fixture({ atWar = true })
+local _, whyAgain = applyOrder(againPeacePlayer, 7, { kind = "peace", subject = "42" }, TURN)
+check("a quarantined peace waits out its retry window", whyAgain, "peace_cooldown")
+check("…sending nothing then either", #againPeace.sends, 0)
+TURN = 87
 -- Another rival keeps its session.
 local free, freePlayer = fixture({ atWar = true })
 applyOrder(freePlayer, 7, { kind = "peace", subject = "43" }, TURN)

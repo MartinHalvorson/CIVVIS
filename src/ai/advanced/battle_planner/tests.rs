@@ -1911,3 +1911,76 @@ fn the_field_reads_a_hostile_stepping_into_the_tile_the_unit_leaves() {
         "where it stands the blow reads as it always did"
     );
 }
+
+/// `AdvancedAi::danger_field` is `DangerField::with_reach` on the board the
+/// seat acts on, through every kind of change a turn makes, and a board that
+/// has not changed re-reads no hostile's strike reach.
+#[test]
+fn the_seats_danger_field_is_the_fresh_field_and_keeps_what_did_not_change() {
+    let mut g = open_field();
+    let ours = g.spawn_unit("horseman", 0, at(10, 7));
+    let other = g.spawn_unit("spearman", 0, at(10, 9));
+    let origin = g.units[&ours].pos;
+    let open_land = |g: &Game, near: i32, far: i32| -> Vec<Pos> {
+        g.map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| {
+                let distance = g.wdist(origin, *pos);
+                distance >= near
+                    && distance <= far
+                    && g.map
+                        .get(*pos)
+                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                    && g.unit_ids_at(*pos).is_empty()
+                    && g.city_at(*pos).is_none()
+            })
+            .collect()
+    };
+    let close = open_land(&g, 2, 3);
+    let distant = open_land(&g, 7, 10);
+    assert!(close.len() >= 2 && distant.len() >= 2, "the arena has room");
+    let near_warrior = g.spawn_unit("warrior", 1, close[0]);
+    g.spawn_unit("archer", 1, close[close.len() - 1]);
+    let far_spear = g.spawn_unit("spearman", 1, distant[0]);
+    g.spawn_unit("archer", 1, distant[distant.len() - 1]);
+    let ai = AdvancedAi::new();
+    let check = |g: &Game, step: &str| {
+        for strike in [true, false] {
+            assert!(
+                ai.danger_field(g, 0, strike)
+                    .same_reaches(&DangerField::with_reach(g, 0, strike)),
+                "{step}, strike reach {strike}"
+            );
+        }
+    };
+    let reads = || STRIKE_REACH_READS.with(std::cell::Cell::get);
+
+    check(&g, "first ask");
+    let before = reads();
+    check(&g, "unchanged board");
+    assert_eq!(reads(), before, "an unchanged board re-reads nothing");
+
+    let step = g.reachable(ours).into_iter().next().expect("a step");
+    g.apply(
+        0,
+        &Action::MoveTo {
+            unit: ours,
+            to: step,
+        },
+    )
+    .expect("the move is legal");
+    check(&g, "our unit moved");
+    wound(&mut g, near_warrior, 40);
+    check(&g, "a hostile wounded");
+    let far_tile = g.nbrs(g.units[&far_spear].pos)[0];
+    g.map.tiles.get_mut(&far_tile).expect("tile").terrain = crate::name!("mountain");
+    check(&g, "a map write beside a distant hostile");
+    g.spawn_unit("swordsman", 1, close[1]);
+    check(&g, "a hostile arrived");
+    g.remove_unit(near_warrior);
+    check(&g, "a hostile left");
+    g.remove_unit(other);
+    check(&g, "one of ours left");
+}

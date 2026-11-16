@@ -7017,6 +7017,16 @@ pub struct AdvancedAi {
     /// the original capital, by owner, under
     /// `capital-archers-before-the-surprise-2`.
     capital_archers_door_sightings: BTreeMap<usize, u32>,
+    /// `denial-spies-cover-every-racer`: the space racers are ranked by their
+    /// progress (projects, then the expedition's trip), Science only breaking
+    /// a tie, and every racer within one project of the lead gets a Spy of
+    /// ours before any gets a second. See
+    /// `advanced/denial_spies_cover_every_racer.rs`. Opt-in.
+    denial_spies_cover_every_racer: bool,
+    /// `denial-spies-fill-every-slot-2`: version one, and on a Score aim as
+    /// well as a Culture or Domination one. See
+    /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
+    denial_spies_fill_every_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -10460,6 +10470,17 @@ pub struct AdvancedAi {
     /// keyed by its stable Civ VI id so the live mirror's per-frame board ids
     /// cannot lose it. Empty with the gene off.
     settler_named_sites: BTreeMap<i64, Pos>,
+    /// `siege-guns-take-a-reachable-post`: a siege gun that has held one
+    /// firing post for two turns without standing on it takes a post it can
+    /// reach this turn or next, a soldier of ours on that post steps off it,
+    /// and a Stage escort stops holding at the muster line once one gun
+    /// stands in range. See `advanced/siege_train/reachable_post.rs`. Off by
+    /// default.
+    siege_guns_take_a_reachable_post: bool,
+    /// `siege-guns-take-a-reachable-post`: each siege gun's post, the turn
+    /// it was drawn there and whether the gene drew it, carried through the
+    /// live rebuild by `remap_siege_memory`. Empty with the gene off.
+    siege_gun_posts_held: BTreeMap<u32, siege_train::HeldPost>,
     /// `spared-soldiers-come-to-the-capital`: at our original capital the
     /// Anvil's one-blow rewrite leaves no posted soldier standing more than
     /// two tiles out. Acts only through `anvil-spares-the-one-blow`. See
@@ -11406,6 +11427,8 @@ mod denial_nearest_finish;
 mod denial_needs_a_road;
 /// `denial-spies-count-their-losses`: see `advanced/denial_spies_count_their_losses.rs`.
 mod denial_spies_count_their_losses;
+/// `denial-spies-cover-every-racer`: see `advanced/denial_spies_cover_every_racer.rs`.
+mod denial_spies_cover_every_racer;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;

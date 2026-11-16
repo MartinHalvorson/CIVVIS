@@ -61,21 +61,29 @@
 //! The eligibility, displacement, siege, threat and launch-pad rules of the
 //! claim are unchanged, and the governor keeps a Spy it trains for the gene
 //! as it keeps the denial's own.
+//!
+//! **`denial-spies-fill-every-slot-2`.** Version one, and on a Score aim as
+//! well. Operator 2026-11-15: the live focus is a Score win (Rome, Level 6,
+//! a 180-turn cap), and a rival's Science Victory ends most Score games
+//! before the cap. A seat plays one version: enabling version two turns
+//! version one off.
 
 use super::*;
 
 impl AdvancedAi {
     /// Whether the gene reshapes the Spy claim on this board: the flag, the
     /// denial claim it reshapes, the Science Victory, and a Culture or
-    /// Domination aim.
+    /// Domination aim (or, under `denial-spies-fill-every-slot-2`, a Score
+    /// aim too).
     pub(super) fn denial_spies_fill_every_slot_on(&self, g: &Game) -> bool {
-        self.denial_spies_fill_every_slot
+        (self.denial_spies_fill_every_slot || self.denial_spies_fill_every_slot_2)
             && self.science_denial_trains_spies
             && g.victory_conditions.science
-            && matches!(
-                self.active_victory_target(g),
-                Some(VictoryTarget::Culture | VictoryTarget::Domination)
-            )
+            && match self.active_victory_target(g) {
+                Some(VictoryTarget::Culture | VictoryTarget::Domination) => true,
+                Some(VictoryTarget::Score) => self.denial_spies_fill_every_slot_2,
+                _ => false,
+            }
     }
 
     /// The rivals the Spy claim trains against: the denial board
