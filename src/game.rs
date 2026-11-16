@@ -2009,8 +2009,8 @@ enum ActionReach {
     OwnCities,
     /// Anything can.
     Board,
-    /// Only the acting unit was written: nothing kept is dropped. See the
-    /// ordinary-move note in `Game::apply`.
+    /// Only the acting unit was written, or nothing was: nothing kept is
+    /// dropped. See the ordinary-move and refused-card notes in `Game::apply`.
     UnitOnly,
 }
 
@@ -13813,6 +13813,8 @@ mod production_catalog_tests;
 
 #[cfg(test)]
 mod kept_yields_moves_tests;
+#[cfg(test)]
+mod refused_deck_tests;
 #[cfg(test)]
 mod yield_carry_tests;
 
