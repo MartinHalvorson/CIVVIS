@@ -10501,6 +10501,12 @@ pub struct AdvancedAi {
     /// two tiles out. Acts only through `anvil-spares-the-one-blow`. See
     /// `advanced/spared_soldiers_come_to_the_capital.rs`. Off by default.
     spared_soldiers_come_to_the_capital: bool,
+    /// `score-seat-settles-before-the-campus`: under twelve cities and before
+    /// turn 120 Online, a Score seat's holdable-land Settler passes a Campus,
+    /// Library or University head more than two turns from done, and the
+    /// first Campus and the Library no longer pass that Settler back. See
+    /// `advanced/score_settles_before_the_campus.rs`. Off by default.
+    score_seat_settles_before_the_campus: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11616,6 +11622,10 @@ mod score_seat_founds_early;
 /// `score-seat-holds-its-faith-strikes`: see
 /// `advanced/score_seat_holds_its_faith_strikes.rs`.
 mod score_seat_holds_its_faith_strikes;
+/// `score-seat-settles-before-the-campus`: a Score seat's Settler passes the
+/// science head under twelve cities. See
+/// `advanced/score_settles_before_the_campus.rs`.
+mod score_settles_before_the_campus;
 /// `score-seat-sprints-to-the-tally`: see
 /// `advanced/score_sprints_to_the_tally.rs`.
 mod score_sprints_to_the_tally;

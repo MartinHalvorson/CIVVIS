@@ -493,6 +493,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `score-seat-raises-wonders` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders`; see `advanced/score_wonders.rs`. | — \| 3 |
 | `score-seat-raises-wonders-2` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders-2`; version two of the family, so version one is turned off. | — \| 3 |
 | `score-seat-raises-wonders-3` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders-3`; version three of the family, so versions one and two are turned off. | — \| 3 |
+| `score-seat-settles-before-the-campus` | off (unmeasured) | Opt-in gene `score-seat-settles-before-the-campus`; see `advanced/score_settles_before_the_campus.rs`. | 1 \| 1 |
 | `score-seat-sprints-to-the-tally` | off (unmeasured) | Opt-in gene `score-seat-sprints-to-the-tally`; see `advanced/score_sprints_to_the_tally.rs`. | 1 \| 1 |
 | `score-seat-takes-what-pays` | off (unmeasured) | Opt-in `score-seat-takes-what-pays`; see `advanced/score_takes_what_pays.rs`. | — \| 3 |
 | `score-seat-takes-what-pays-2` | off (unmeasured) | Opt-in `score-seat-takes-what-pays-2`; see `advanced/score_takes_what_pays.rs`. | — \| 3 |

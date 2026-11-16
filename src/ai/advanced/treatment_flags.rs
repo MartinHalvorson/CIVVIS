@@ -563,6 +563,9 @@ impl AdvancedAi {
         /// Opt-in gene `siege-guns-take-a-reachable-post`; see
         /// `advanced/siege_train/reachable_post.rs`.
         siege_guns_take_a_reachable_post => enable_siege_guns_take_a_reachable_post, disable_siege_guns_take_a_reachable_post;
+        /// Opt-in gene `score-seat-settles-before-the-campus`; see
+        /// `advanced/score_settles_before_the_campus.rs`.
+        score_seat_settles_before_the_campus => enable_score_seat_settles_before_the_campus, disable_score_seat_settles_before_the_campus;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
