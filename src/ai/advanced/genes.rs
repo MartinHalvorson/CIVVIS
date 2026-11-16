@@ -5768,6 +5768,12 @@ pub const GENES: &[Gene] = &[
     // Spy before any gets a second. See
     // `advanced/denial_spies_cover_every_racer.rs`.
     Gene { tag: "denial-spies-cover-every-racer", field: "denial_spies_cover_every_racer", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_cover_every_racer, disable: AdvancedAi::disable_denial_spies_cover_every_racer },
+    // Operator 2026-11-15: the live focus is a Score win, and a rival's
+    // Science Victory ends most Score games early. Version two of
+    // `denial-spies-fill-every-slot` fills the Spy slots on a Score aim as
+    // well as a Culture or Domination one; otherwise identical. See
+    // `advanced/denial_spies_fill_every_slot.rs`.
+    Gene { tag: "denial-spies-fill-every-slot-2", field: "denial_spies_fill_every_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_fill_every_slot_2, disable: AdvancedAi::disable_denial_spies_fill_every_slot_2 },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

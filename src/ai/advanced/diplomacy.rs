@@ -3737,11 +3737,15 @@ impl AdvancedAi {
                                 .map_or_else(String::new, |city| city.name.clone());
                             let landed = racer_spy_leader
                                 .map_or(0, |leader| Self::science_denial_stages(g, leader));
-                            // The racer this Spy searches: under
-                            // `denial-spies-cover-every-racer` the co-leader it
-                            // covers, otherwise `racer_spy_unseen_cities`' leader.
-                            let unseen = racer_spy_leader
-                                .map_or(0, |leader| Self::racer_unseen_cities(g, leader));
+                            // `denial-spies-cover-every-racer`: the unseen
+                            // cities of the co-leader this Spy covers.
+                            let unseen = if racer_cover.is_empty() {
+                                self.racer_spy_unseen_cities(g, pid)
+                                    .map_or(0, |(_, unseen)| unseen)
+                            } else {
+                                racer_spy_leader
+                                    .map_or(0, |leader| Self::racer_unseen_cities(g, leader))
+                            };
                             think!(self.journal(), Military, Decision,
                                    "A Spy searches {racer}'s {city_name} for the Spaceport";
                                    "racer-spies-search-for-the-pad: {racer} has landed \

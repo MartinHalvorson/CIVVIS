@@ -5886,6 +5886,20 @@ impl AdvancedAi {
         self.score_seat_raises_wonders_2 = false;
     }
 
+    /// Opt-in gene `denial-spies-fill-every-slot-2`, version two of
+    /// `denial-spies-fill-every-slot`: a Score aim fills its slots too; see
+    /// `advanced/denial_spies_fill_every_slot.rs`. A seat plays one version,
+    /// so this turns version one off.
+    pub fn enable_denial_spies_fill_every_slot_2(&mut self) {
+        self.denial_spies_fill_every_slot_2 = true;
+        self.denial_spies_fill_every_slot = false;
+    }
+
+    /// The twin of `enable_denial_spies_fill_every_slot_2`.
+    pub fn disable_denial_spies_fill_every_slot_2(&mut self) {
+        self.denial_spies_fill_every_slot_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

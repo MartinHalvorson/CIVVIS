@@ -7023,6 +7023,10 @@ pub struct AdvancedAi {
     /// ours before any gets a second. See
     /// `advanced/denial_spies_cover_every_racer.rs`. Opt-in.
     denial_spies_cover_every_racer: bool,
+    /// `denial-spies-fill-every-slot-2`: version one, and on a Score aim as
+    /// well as a Culture or Domination one. See
+    /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
+    denial_spies_fill_every_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See

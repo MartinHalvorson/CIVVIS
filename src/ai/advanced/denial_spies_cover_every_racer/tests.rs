@@ -138,7 +138,11 @@ fn plan() -> StrategicPlan {
 /// The live arming the gene joins: the Rocketry-trigger network with
 /// `racer-keeps-the-spies`.
 fn keeps() -> AdvancedAi {
-    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    keeps_on(VictoryTarget::Culture)
+}
+
+fn keeps_on(target: VictoryTarget) -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(target);
     ai.enable_space_denial_spies_from_rocketry();
     ai.enable_racer_keeps_the_spies();
     ai
@@ -214,8 +218,8 @@ fn level_racers_with_one_far_ahead_on_science_get_a_spy_each() {
         "off: Persia's two cities take two Spies: {off:?}"
     );
     assert!(
-        !off.contains(&Some(INDIA)) && !off.contains(&Some(SCYTHIA)),
-        "off: no Spy covers India or Scythia: {off:?}"
+        !off.contains(&Some(SCYTHIA)),
+        "off: no Spy covers Scythia: {off:?}"
     );
     let on: BTreeSet<Option<usize>> = run(covers()).into_iter().collect();
     assert_eq!(
@@ -390,4 +394,42 @@ fn the_reason_names_the_tag_the_racers_and_their_projects() {
         reason.contains(&format!("further back: {scythia} 1 project")),
         "{reason}"
     );
+}
+
+#[test]
+fn a_score_seat_spreads_its_spies_too() {
+    // The live focus of 2026-11-15 is a Score seat (Rome, 180-turn cap),
+    // which a rival Science Victory ends early: the spread reads no aim.
+    let run = |ai: AdvancedAi| {
+        let mut g = board();
+        race(
+            &mut g,
+            [(INDIA, 3, 344.0), (PERSIA, 2, 532.0), (SCYTHIA, 2, 435.0)],
+        );
+        outbuilds(&mut g, PERSIA);
+        let home = g.player_city_ids(0)[0];
+        let spies: Vec<u32> = (0..2).map(|_| idle_spy(&mut g, home)).collect();
+        let mut ai = ai;
+        let score = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            ..plan()
+        };
+        ai.advanced_spies(&mut g, 0, &score);
+        spies
+            .iter()
+            .map(|spy| {
+                g.spies[spy]
+                    .city
+                    .and_then(|city| g.cities.get(&city))
+                    .map(|city| city.owner)
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        run(keeps_on(VictoryTarget::Score)),
+        vec![Some(PERSIA), Some(PERSIA)]
+    );
+    let mut on = keeps_on(VictoryTarget::Score);
+    on.enable_denial_spies_cover_every_racer();
+    assert_eq!(run(on), vec![Some(INDIA), Some(PERSIA)]);
 }

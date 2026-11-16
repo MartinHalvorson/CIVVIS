@@ -4788,6 +4788,15 @@
           "defend-force-holds-the-city-2": null
         }
       },
+      "denial-spies-fill-every-slot": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "denial-spies-fill-every-slot": null,
+          "denial-spies-fill-every-slot-2": null
+        }
+      },
       "diplomatic-contender-kept": {
         "rule_on": [],
         "head": null,
