@@ -5951,6 +5951,11 @@ pub const GENES: &[Gene] = &[
     // the unit bill jumped. `buy_gold_unit` tests each city's own quote
     // against the reserve. Opt-in; see `BasicAi::buy_gold_unit`.
     Gene { tag: "gold-unit-buys-read-the-host-quote", field: "gold_unit_buys_read_the_host_quote", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_unit_buys_read_the_host_quote, disable: AdvancedAi::disable_gold_unit_buys_read_the_host_quote },
+    // Live Emperor Gilgamesh civvis-20261116T021437Z: two Infantry spent the
+    // 14 Oil the first Artillery came out to at t158; it never fired, and sat
+    // at 36 hp unable to heal t164-179 for want of its fuel. Opt-in; see
+    // `advanced/guns_keep_the_oil.rs`.
+    Gene { tag: "guns-keep-the-oil", field: "guns_keep_the_oil", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_keep_the_oil, disable: AdvancedAi::disable_guns_keep_the_oil },
     // ---- append: l-o ------------------------------------------------
     // Native Deity Macedon 100029Z: model-priced horse/iron barter was
     // declined at51/55 and refused as barter_short at61. Ask the host for

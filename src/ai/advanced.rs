@@ -8231,6 +8231,10 @@ pub struct AdvancedAi {
     /// or offensive bodies for a target whose walls nothing it can field
     /// will breach. See `advanced/hopeless_army_yields_the_queue.rs`. Opt-in.
     hopeless_army_yields_the_queue: bool,
+    /// `guns-keep-the-oil`: a Domination seat's Infantry, Tanks and
+    /// oil-burning ships spend only the Oil its siege guns do not need. See
+    /// `advanced/guns_keep_the_oil.rs`. Opt-in.
+    guns_keep_the_oil: bool,
     // ---- append: l-o ------------------------------------------------
     /// Ask the host for a cash price for a native land upgrade material bill.
     /// Opt-in; see `advanced/army_upgrade_materials.rs`.
@@ -11686,6 +11690,8 @@ mod battle_planner;
 pub(super) mod battle_solver;
 /// `defenders-hold-the-walls`: see `advanced/defenders_hold_the_walls.rs`.
 mod defenders_hold_the_walls;
+/// `guns-keep-the-oil`: see `advanced/guns_keep_the_oil.rs`.
+mod guns_keep_the_oil;
 mod guns_stay_out_of_reach;
 mod guru_walks_to_the_wounded;
 /// `risk-is-priced`: see `advanced/priced_risk.rs`.
@@ -20823,6 +20829,8 @@ impl AdvancedAi {
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
         // `upkeep-waits-for-the-income`: see `advanced/upkeep_waits_for_the_income.rs`.
         self.note_upkeep_wait_state(g, pid);
+        // `guns-keep-the-oil`: see `advanced/guns_keep_the_oil.rs`.
+        self.note_guns_keep_the_oil(g, pid);
         let sanctuary = self.adopted_faith_sanctuary_choice(g, pid, plan.threatened_city);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
         let science_specialized = self.phase_specialization_active(g) && science_targeted;
@@ -23057,6 +23065,10 @@ impl AdvancedAi {
         let city = &g.cities[&cid];
         let city_count = g.player_city_ids(pid).len();
         if !self.air_resource_item_preserves_wing(g, pid, cid, item) {
+            return -10_000.0;
+        }
+        // `guns-keep-the-oil`: see `advanced/guns_keep_the_oil.rs`.
+        if !self.guns_keep_the_oil_item(g, pid, cid, item) {
             return -10_000.0;
         }
         // The undermanned-war exception permits defenders, not another Spy
