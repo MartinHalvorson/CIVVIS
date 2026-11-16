@@ -3469,6 +3469,7 @@ impl AdvancedAi {
         let stalled = if self.siege_guns_take_a_reachable_post {
             reachable_post::stalled_guns(
                 g,
+                pid,
                 city.pos,
                 &record.posts,
                 &self.siege_gun_posts_held,

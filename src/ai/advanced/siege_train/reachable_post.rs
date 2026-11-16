@@ -50,11 +50,12 @@ pub(in crate::ai::advanced) struct HeldPost {
 /// [`GUN_POST_PATIENCE_TURNS`] turns or more without standing on it, and
 /// those still walking to a post this gene drew: their search runs again each
 /// turn until they stand on it, so a post one of ours has not yet stepped off
-/// is not dropped for the old far one meanwhile. A gun whose walk to its
-/// post stands within its range of the city this turn is not stalled (see
-/// [`walk_reaches_range_now`]).
+/// is not dropped for the old far one meanwhile. A gun whose next step to its
+/// post lands within its range of the city is not stalled (see
+/// [`steps_into_range`]).
 pub(super) fn stalled_guns(
     g: &Game,
+    pid: usize,
     city: Pos,
     posts: &BTreeMap<u32, Pos>,
     held: &BTreeMap<u32, HeldPost>,
@@ -70,31 +71,25 @@ pub(super) fn stalled_guns(
                         && (held.repicked
                             || turn.saturating_sub(held.since) >= GUN_POST_PATIENCE_TURNS)
                 })
-                && !walk_reaches_range_now(g, **uid, **post, city)
+                && !steps_into_range(g, pid, **uid, **post, city)
         })
         .map(|(uid, _)| *uid)
         .collect()
 }
 
-/// Whether `uid`'s walk to `post` ends this turn on a free tile within its
-/// range of the city with a line to it (off the first ring when the range
-/// reaches past it). Replayed on live Immortal civvis-20261115T230117Z's
-/// turn-108 frame, a Bombard three tiles out had held (17, 12) for two
-/// turns; its walk there ends this turn on (17, 13), two from Puel Mapu, and
-/// it fired from there on turns 109-111. Drawn a new post, it stepped to
-/// (16, 15) instead, still three out, and would have fired a turn later.
-fn walk_reaches_range_now(g: &Game, uid: u32, post: Pos, city: Pos) -> bool {
+/// Whether the train's next step for `uid` toward `post` (the step
+/// `approach` takes, [`siege_route_step`]) lands within its range of the
+/// city, off the first ring when the range reaches past it. Replayed on live
+/// Immortal civvis-20261115T230117Z's turn-108 frame, a Bombard three tiles
+/// out had held (17, 12) for two turns; its next step there is (17, 13), two
+/// from Puel Mapu, and it fired from there on turns 109-111. Drawn a new
+/// post, it stepped to (16, 15) instead, still three out, a turn later.
+fn steps_into_range(g: &Game, pid: usize, uid: u32, post: Pos, city: Pos) -> bool {
     let range = g.unit_attack_range(uid).max(1);
     let nearest = if range >= 2 { 2 } else { 1 };
-    let Some(walk) = g.route_preview(uid, post) else {
-        return false;
-    };
-    let Some((stand, _)) = walk.iter().take_while(|(_, turn)| *turn == 0).last() else {
-        return false;
-    };
-    (nearest..=range).contains(&g.wdist(*stand, city))
-        && g.unit_ids_at(*stand).is_empty()
-        && g.unit_has_line_of_sight_from(uid, *stand, city)
+    siege_route_step(g, pid, uid, post, city).is_some_and(|next| {
+        (nearest..=range).contains(&g.wdist(next, city)) && g.can_move(uid, next)
+    })
 }
 
 /// Record this turn's gun posts for `force`. A gun on its post, or without
