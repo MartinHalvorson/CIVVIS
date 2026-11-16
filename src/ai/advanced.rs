@@ -10491,6 +10491,11 @@ pub struct AdvancedAi {
     /// it was drawn there and whether the gene drew it, carried through the
     /// live rebuild by `remap_siege_memory`. Empty with the gene off.
     siege_gun_posts_held: BTreeMap<u32, siege_train::HeldPost>,
+    /// `spared-soldiers-come-to-the-capital`: at our original capital the
+    /// Anvil's one-blow rewrite leaves no posted soldier standing more than
+    /// two tiles out. Acts only through `anvil-spares-the-one-blow`. See
+    /// `advanced/spared_soldiers_come_to_the_capital.rs`. Off by default.
+    spared_soldiers_come_to_the_capital: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -12159,6 +12164,9 @@ mod spaceport_above_sea;
 /// The Science lane's launch sites: how many Spaceports it wants, which cities
 /// carry them, and what those cities build. See `advanced/spaceports.rs`.
 mod spaceports;
+/// `spared-soldiers-come-to-the-capital`: see
+/// `advanced/spared_soldiers_come_to_the_capital.rs`.
+mod spared_soldiers_come_to_the_capital;
 mod spears_answer_the_horse;
 mod spies_price_the_science_head;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
