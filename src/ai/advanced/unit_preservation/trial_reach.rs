@@ -353,7 +353,7 @@ impl TrialReach {
             };
             match kept {
                 Some((widened, _kept)) if audit_enabled() => {
-                    widen_to_the_second_turn(trial_probe(&mut probe, trial), pid, id, reach, None);
+                    widen_to_the_second_turn(trial_probe(&mut probe, trial), pid, id, reach);
                     if *reach != widened {
                         eprintln!(
                             "trial-reach: STALE second-turn reach, seat {pid} hostile {id} turn {}: \
@@ -371,9 +371,7 @@ impl TrialReach {
                     }
                     *reach = widened;
                 }
-                None => {
-                    widen_to_the_second_turn(trial_probe(&mut probe, trial), pid, id, reach, None)
-                }
+                None => widen_to_the_second_turn(trial_probe(&mut probe, trial), pid, id, reach),
             }
         })
     }
