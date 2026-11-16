@@ -1150,7 +1150,7 @@ applyOverlayVisibility();
 // seconds to itself.
 const anim = { moves: new Map(), floats: [], sparks: [], deaths: [],
                claims: [], strike: null, blasts: [],
-               skyLaunches: [], skySettledOrbits: new Map() };
+               skyLaunches: [], skySettledOrbits: new Map(), skyOrbitSlots: new Map() };
 // Detonations already shown. The engine gives every strike a unique id
 // precisely so a client can answer this without comparing fields: two devices
 // can land on one tile on one turn, and a re-poll of the same state must not
@@ -1211,6 +1211,7 @@ function resetAnim() {
   anim.blasts.length = 0;
   anim.skyLaunches.length = 0;
   anim.skySettledOrbits.clear();
+  anim.skyOrbitSlots.clear();
   seenBlasts = new Set();
   anim.strike = null;
   pendingStrike = null;
@@ -2353,7 +2354,7 @@ function ratedTableInPlay() {
   return Boolean(state?.players?.some(player => playerHudEloValue(player) !== null));
 }
 // A named table says who is really playing each seat: those rated agents, or
-// the mirror of a Civilization VI game ("Civ 6 Deity AI", "CIVVIS Science").
+// the mirror of a Civilization VI game ("8 Deity Firaxis AI", "CIVVIS Science").
 function namedTableInPlay() {
   return Boolean(state?.players?.some(player => player.ai_username));
 }
@@ -17808,13 +17809,19 @@ const SKY_LAUNCH_FLIGHTS = {
   moon:{project:SKY_CHAIN.moon, duration:2800, body:"moon", rocket:"saturn_v"},
   mars:{project:SKY_CHAIN.mars, duration:3600, body:"mars", rocket:"starship"},
   expedition:{project:SKY_CHAIN.expedition, duration:3000, body:"exo", rocket:"starship_xl"},
+  // A Lagrange Laser Station goes up the way the first satellite did and stays
+  // up. It is the one launch a civilization makes more than once, so it is
+  // counted in `laser_stations` and is no row of `science_projects`.
+  laser:{project:"lagrange_laser_station", duration:3200, rocket:"orbital", station:true},
 };
 // A mission lifts off from the Spaceport that ran its project, not from the
 // palace lawn. The completion frame no longer says which city built it, but
 // the frame before still holds the project at the head of one city's queue;
 // failing that, any city of the empire with a Spaceport is still the pad the
 // rocket must have used, and only an empire with no visible Spaceport at all
-// falls back to its anchor city.
+// falls back to its anchor city. Seen through one civilization's eyes a rival
+// city keeps its districts to itself, but the map still shows the Spaceport
+// standing on its tile, so the tiles are asked before giving up on it.
 function citySpaceportPos(city) {
   for (const [district, encoded] of Object.entries(city?.districts || {})) {
     if (district !== "spaceport" &&
@@ -17829,8 +17836,10 @@ function skyLaunchOrigin(prev, next, pid, project) {
   const launcher = owned(prev).find(city => (city.queue || [])[0]?.project === project);
   const launched = launcher &&
     (owned(next).find(city => city.id === launcher.id) || launcher);
-  return citySpaceportPos(launched) ||
-    owned(next).map(citySpaceportPos).find(Boolean) || null;
+  return citySpaceportPos(launched) || owned(next).map(citySpaceportPos).find(Boolean) ||
+    (next.map?.tiles || []).find(tile => tile.owner === pid && tile.district &&
+      (tile.district === "spaceport" ||
+       RULES?.districts?.[tile.district]?.replaces === "spaceport"))?.pos || null;
 }
 function queueSkyLaunches(prev, next, now = performance.now()) {
   if (!SHOW_ROCKET_ANIMATIONS || !prev || !next || prev.seed !== next.seed || REDUCED_MOTION_QUERY.matches) return;
@@ -17844,7 +17853,8 @@ function queueSkyLaunches(prev, next, now = performance.now()) {
     const oldProjects = old.science_projects || [];
     const newProjects = player.science_projects || [];
     for (const [mission, flight] of Object.entries(SKY_LAUNCH_FLIGHTS)) {
-      if (oldProjects.includes(flight.project) || !newProjects.includes(flight.project)) continue;
+      if (flight.station || oldProjects.includes(flight.project) ||
+          !newProjects.includes(flight.project)) continue;
       // Repeated snapshots of one transition must restart neither the flight
       // nor its exhaust. A project is permanent, but keeping the guard here
       // also makes synthetic/recovery state streams harmless.
@@ -17872,6 +17882,8 @@ function queueSkyLaunches(prev, next, now = performance.now()) {
           (+player.exoplanet_distance || 0) / target)),
       });
     }
+    // And a rocket for every laser station the frame added (app_launches.js).
+    queueSkyLaserLaunches(prev, next, player, old, now);
     // The expedition left many turns ago, so there is no flight to watch come
     // in. Its landing is queued for the frame its distance runs out.
     if (skyExpeditionArrived(player) && !skyExpeditionArrived(old) &&
@@ -17905,20 +17917,23 @@ function skyLaunchInFlight(playerId, mission, now = performance.now()) {
 // over to the other and there is never a moment with both or neither on the
 // screen.
 const SKY_SATELLITE_HANDOVER = .88;
-function skyCraftDeployed(playerId, mission, now) {
-  const launch = activeSkyLaunches(now).find(candidate =>
-    candidate.playerId === playerId && candidate.mission === mission);
-  if (!launch) return 1;
+function skyLaunchHandover(launch, now) {
   const flown = (now - launch.t0) / launch.duration;
   return Math.max(0, Math.min(1,
     (flown - SKY_SATELLITE_HANDOVER) / (1 - SKY_SATELLITE_HANDOVER)));
+}
+function skyCraftDeployed(playerId, mission, now) {
+  const launch = activeSkyLaunches(now).find(candidate =>
+    candidate.playerId === playerId && candidate.mission === mission);
+  return launch ? skyLaunchHandover(launch, now) : 1;
 }
 function skySatelliteDeployed(playerId, now) {
   return skyCraftDeployed(playerId, "satellite", now);
 }
 // What a launch is called on screen: whose it is, then where it is going.
 function skyLaunchLabel(launch) {
-  const goal = launch.mission === "expedition" ? "exoplanet" : launch.mission;
+  const goal = launch.mission === "expedition" ? "exoplanet"
+    : launch.mission === "laser" ? "laser station" : launch.mission;
   return `${civName(launch.playerId)} – ${goal}`.toUpperCase();
 }
 // A rocket is at its fastest as it leaves the picture and would take its name
@@ -20864,9 +20879,18 @@ function skyOrbit(player) {
 // keeping the surface itself at one Earth radius.
 const SKY_SATELLITE_ALTITUDE_SCALE = 1.7;
 
+// Which ring a civilization's craft flies: the next one out when it went up,
+// and that one from then on. Counting its place in the crew instead moved every
+// later civilization out a ring the moment an earlier one launched, and two
+// satellites jumped fifty pixels for a third's rocket. Minus one if it has none.
+function skyOrbitSlot(crew, player) {
+  const slots = anim.skyOrbitSlots;
+  for (const member of crew) if (!slots.has(member.id)) slots.set(member.id, slots.size);
+  return crew.some(member => member.id === player.id) ? slots.get(player.id) : -1;
+}
 // The circle one civilization's craft flies around the globe, in the planet's
-// own frame. `index` is its place in the whole crew, launches still in flight
-// included, so a rocket arriving does not shuffle every other orbit.
+// own frame. `index` is its ring, launches still in flight included, so a
+// rocket arriving does not shuffle every other orbit.
 function skySatelliteOrbit(player, index, radius, elements = skyOrbit(player)) {
   const {inclination, node, phase, pace} = elements;
   // Kept in Earth radii so the ring stands off the limb by the same margin
@@ -20906,8 +20930,8 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
   // camera the tiles are, gives the real thing — the plane leans over with the
   // ground it is over, and a satellite over one continent stays over it.
   const view = {...camera, radius:1};
-  const flight = crew.map((player, index) => {
-    const basis = skySatelliteOrbit(player, index, radius);
+  const flight = crew.map(player => {
+    const basis = skySatelliteOrbit(player, skyOrbitSlot(crew, player), radius);
     const at = planetProject(skySatelliteSite(basis, skySatelliteAngle(basis, now)),
                              view, radius, centerX, centerY);
     return {player, basis, x:at.x, y:at.y, behind:at.z < 0,
@@ -20953,6 +20977,8 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
       cx.fillRect(x + size * 1.2, y - size * .3, size * 1.4, size * .6);
     }
   }
+  // Then every laser station, on the orbit its own launch flew.
+  drawSkyLaserStations(crew, view, radius, centerX, centerY, size, shown, now);
   cx.restore();
 }
 
@@ -21137,165 +21163,8 @@ function skyLaunchFilm(start, end, margin) {
     ? seen : null;
 }
 
-// All launch views use one silhouette vocabulary. Apollo 11's Saturn V is a
-// long, staged white stack; Mars uses the compact stainless Starship outline;
-// the exoplanet ship is that same outline at exactly twice the scale — still
-// unmistakably a rocket, just monumental. Widening it faster than lengthening
-// it (an earlier 4x width) squashed the aspect ratio to ~1.5:1 and read as an
-// egg with fins. `plume` scales the engine flame with the hull, so the doubled
-// ship is not pushed by a normal-size flame. Keeping the dimensions here makes
-// the doubling exact in both projections rather than two hand-tuned
-// approximations.
-function skyRocketGeometry(rocket, size) {
-  // Low orbit needs far less rocket than the Moon does: the satellite rides the
-  // short, slim R-7 that carried Sputnik.
-  if (rocket === "orbital") return {
-    family:"orbital", length:size * 3, halfWidth:size * .42, plume:.75,
-  };
-  const starshipLength = size * 3.4;
-  const starshipHalfWidth = size * .55;
-  if (rocket === "starship_xl") return {
-    family:"starship", length:starshipLength * 2,
-    halfWidth:starshipHalfWidth * 2, plume:2,
-  };
-  if (rocket === "starship") return {
-    family:"starship", length:starshipLength, halfWidth:starshipHalfWidth,
-    plume:1,
-  };
-  return {family:"saturn_v", length:size * 4.7, halfWidth:size * .52, plume:1};
-}
-
-// Draw in a local frame whose +x axis is the flight direction. `pixel` is one
-// screen pixel in the caller's coordinate system: one on the globe, inverse
-// zoom on the flat board. The return value lets labels and culling respect the
-// very different silhouettes without duplicating their dimensions.
-function drawMissionRocket(rocket, player, size, now, pixel = 1, alpha = 1, thrust = 1) {
-  const shape = skyRocketGeometry(rocket, size);
-  const nose = shape.length / 2, tail = -shape.length / 2;
-  const colour = pcol(player.id), dark = pcol2(player.id);
-  const flame = size * (shape.plume || 1);
-  const flicker = thrust * flame * (1.8 + .32 * Math.sin(now / 75 + player.id));
-  const flameHalf = Math.max(flame * .42, shape.halfWidth * .32);
-
-  cx.save();
-  // A warm, transparent plume ties the diagrammatic craft to the rest of the
-  // game's effects without turning any of the silhouettes into clip art.
-  if (thrust > 0) {
-    const plume = cx.createLinearGradient(tail - flicker, 0, tail + flame * .3, 0);
-    plume.addColorStop(0, "rgba(255,173,69,0)");
-    plume.addColorStop(.62, "rgba(255,176,70,.68)");
-    plume.addColorStop(1, "rgba(255,244,191,.94)");
-    cx.globalAlpha = alpha * .92; cx.fillStyle = plume;
-    cx.beginPath(); cx.moveTo(tail + flame * .18, 0);
-    cx.lineTo(tail - flicker, -flameHalf);
-    cx.lineTo(tail - flicker * .82, flameHalf); cx.closePath(); cx.fill();
-  }
-
-  cx.globalAlpha = alpha;
-  cx.strokeStyle = "#071018"; cx.lineWidth = Math.max(.8 * pixel, size * .11);
-  if (shape.family === "orbital") {
-    // The R-7: strap-on boosters flaring out around the base of a slim core,
-    // and the jersey band just under the payload it is carrying.
-    cx.fillStyle = "#c3ccd0";
-    for (const side of [-1, 1]) {
-      cx.beginPath();
-      cx.moveTo(tail + shape.length * .52, side * shape.halfWidth * .72);
-      cx.lineTo(tail, side * shape.halfWidth * 1.95);
-      cx.lineTo(tail, side * shape.halfWidth * .8);
-      cx.closePath(); cx.fill(); cx.stroke();
-    }
-    cx.fillStyle = "#edf1eb";
-    cx.beginPath(); cx.moveTo(nose, 0);
-    cx.lineTo(nose - shape.length * .2, -shape.halfWidth * .66);
-    cx.lineTo(nose - shape.length * .48, -shape.halfWidth * .74);
-    cx.lineTo(tail, -shape.halfWidth);
-    cx.lineTo(tail, shape.halfWidth);
-    cx.lineTo(nose - shape.length * .48, shape.halfWidth * .74);
-    cx.lineTo(nose - shape.length * .2, shape.halfWidth * .66);
-    cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = colour;
-    cx.fillRect(nose - shape.length * .46, -shape.halfWidth * .74,
-                shape.length * .1, shape.halfWidth * 1.48);
-  } else if (shape.family === "saturn_v") {
-    // Apollo 11's Saturn V: command-module point, narrow staged cylinder,
-    // alternating roll bands, and the fins around the first-stage engines.
-    cx.fillStyle = "#edf1eb";
-    cx.beginPath(); cx.moveTo(nose, 0);
-    cx.lineTo(nose - shape.length * .14, -shape.halfWidth * .68);
-    cx.lineTo(tail + shape.length * .08, -shape.halfWidth);
-    cx.lineTo(tail, -shape.halfWidth * .72);
-    cx.lineTo(tail, shape.halfWidth * .72);
-    cx.lineTo(tail + shape.length * .08, shape.halfWidth);
-    cx.lineTo(nose - shape.length * .14, shape.halfWidth * .68);
-    cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = "#111820";
-    for (const band of [.18, .43, .68])
-      cx.fillRect(tail + shape.length * band, -shape.halfWidth,
-                  shape.length * .075, shape.halfWidth * 2);
-    cx.fillStyle = colour;
-    cx.fillRect(tail + shape.length * .76, -shape.halfWidth * .7,
-                shape.length * .045, shape.halfWidth * 1.4);
-    cx.strokeStyle = "#58616a"; cx.lineWidth = Math.max(.55 * pixel, size * .055);
-    for (const seam of [.34, .61]) {
-      const x = tail + shape.length * seam;
-      cx.beginPath(); cx.moveTo(x, -shape.halfWidth); cx.lineTo(x, shape.halfWidth); cx.stroke();
-    }
-    cx.fillStyle = dark;
-    cx.beginPath(); cx.moveTo(tail + shape.length * .12, -shape.halfWidth * .75);
-    cx.lineTo(tail - shape.length * .055, -shape.halfWidth * 1.75);
-    cx.lineTo(tail + shape.length * .035, -.05 * pixel); cx.closePath(); cx.fill();
-    cx.beginPath(); cx.moveTo(tail + shape.length * .12, shape.halfWidth * .75);
-    cx.lineTo(tail - shape.length * .055, shape.halfWidth * 1.75);
-    cx.lineTo(tail + shape.length * .035, .05 * pixel); cx.closePath(); cx.fill();
-  } else {
-    // Starship: a stainless tapered hull, dark heat-shield belly, forward
-    // flaps and broad aft fins. The XL craft uses precisely the same drawing;
-    // only skyRocketGeometry doubles every dimension.
-    const steel = cx.createLinearGradient(0, -shape.halfWidth, 0, shape.halfWidth);
-    steel.addColorStop(0, "#f2f5f3"); steel.addColorStop(.48, "#aeb9bd");
-    steel.addColorStop(1, "#65737a");
-    cx.fillStyle = steel;
-    cx.beginPath(); cx.moveTo(nose, 0);
-    cx.quadraticCurveTo(nose - shape.length * .12, -shape.halfWidth,
-                        nose - shape.length * .25, -shape.halfWidth);
-    cx.lineTo(tail + shape.length * .08, -shape.halfWidth);
-    cx.lineTo(tail, -shape.halfWidth * .58);
-    cx.lineTo(tail, shape.halfWidth * .58);
-    cx.lineTo(tail + shape.length * .08, shape.halfWidth);
-    cx.lineTo(nose - shape.length * .25, shape.halfWidth);
-    cx.quadraticCurveTo(nose - shape.length * .12, shape.halfWidth, nose, 0);
-    cx.closePath(); cx.fill(); cx.stroke();
-    cx.globalAlpha = alpha * .58; cx.fillStyle = "#172129";
-    cx.beginPath(); cx.moveTo(tail + shape.length * .08, 0);
-    cx.lineTo(nose - shape.length * .2, 0);
-    cx.quadraticCurveTo(nose - shape.length * .1, shape.halfWidth * .42, nose, 0);
-    cx.lineTo(nose - shape.length * .25, shape.halfWidth);
-    cx.lineTo(tail + shape.length * .08, shape.halfWidth); cx.closePath(); cx.fill();
-    cx.globalAlpha = alpha; cx.fillStyle = dark;
-    const front = nose - shape.length * .28, rear = tail + shape.length * .13;
-    cx.beginPath(); cx.moveTo(front, -shape.halfWidth * .72);
-    cx.lineTo(front - shape.length * .13, -shape.halfWidth * 1.72);
-    cx.lineTo(front + shape.length * .04, -shape.halfWidth * .92); cx.closePath(); cx.fill();
-    cx.beginPath(); cx.moveTo(rear, -shape.halfWidth * .72);
-    cx.lineTo(tail - shape.length * .06, -shape.halfWidth * 1.62);
-    cx.lineTo(rear + shape.length * .1, -shape.halfWidth * .9); cx.closePath(); cx.fill();
-    cx.beginPath(); cx.moveTo(rear, shape.halfWidth * .72);
-    cx.lineTo(tail - shape.length * .06, shape.halfWidth * 1.62);
-    cx.lineTo(rear + shape.length * .1, shape.halfWidth * .9); cx.closePath(); cx.fill();
-    cx.fillStyle = colour;
-    cx.fillRect(tail + shape.length * .48, -shape.halfWidth,
-                shape.length * .055, shape.halfWidth * 2);
-    cx.fillStyle = "#1b313e";
-    const windows = rocket === "starship_xl" ? 5 : 3;
-    for (let index = 0; index < windows; index++) {
-      const x = nose - shape.length * (.2 + index * .035);
-      cx.beginPath(); cx.arc(x, -shape.halfWidth * .38,
-        Math.max(.5 * pixel, shape.halfWidth * .07), 0, 7); cx.fill();
-    }
-  }
-  cx.restore();
-  return shape;
-}
+// The rockets themselves (`skyRocketGeometry`, `drawMissionRocket`) and the
+// laser stations live in app_launches.js, loaded ahead of this script.
 
 // A launch has one clock and one curve. The clock says how much of the route
 // has been flown and the curve says where that puts the rocket; both are
@@ -21328,7 +21197,8 @@ function skyLaunchesToPaint(now) {
     const player = launch.player ||
       (state.players || []).find(candidate => candidate.id === launch.playerId);
     const flight = SKY_LAUNCH_FLIGHTS[launch.mission];
-    return player && flight ? [{launch, player, flight}] : [];
+    // A station waiting its turn in a volley has not lit its engines.
+    return player && flight && now >= launch.t0 ? [{launch, player, flight}] : [];
   });
 }
 function skyLaunchPad(launch, player) {
@@ -21416,14 +21286,6 @@ function skyRayLeavesBox(origin, delta, box) {
   return leave > Math.max(enter, 0) ? leave : null;
 }
 
-function skyStageEdge(stage, dx, dy, margin) {
-  const span = Math.hypot(dx, dy) || 1, ux = dx / span, uy = dy / span;
-  const reach = Math.min(
-    ux ? ((stage.right - stage.left) / 2 + margin) / Math.abs(ux) : Infinity,
-    uy ? ((stage.bottom - stage.top) / 2 + margin) / Math.abs(uy) : Infinity);
-  return {x:(stage.left + stage.right) / 2 + ux * reach,
-          y:(stage.top + stage.bottom) / 2 + uy * reach};
-}
 // Parked out at another world, with home nowhere in the picture, a rocket on its
 // way somewhere else has no pad to leave here and nothing to land on. It goes by:
 // one straight line along the top of the frame, left to right, at one speed and
@@ -21473,26 +21335,6 @@ function skyLaunchFlyby(launch, stage, margin) {
   const y = base + launch.flybyLane * SKY_FLYBY_LANE;
   return {start:{x:left, y}, end:{x:right, y}, entering:true, leaving:true, law:skyCoastLaw,
           flyby:true, pointAt:progress => ({x:left + (right - left) * progress, y})};
-}
-
-// A launch the camera cannot see from where it is, zoomed in on the other side
-// of the world. Everyone watching still gets to see it go, so it comes in over
-// the edge of the frame on the bearing of its Spaceport and leaves on the
-// bearing of where it is going.
-function skyLaunchCrossing(from, goal, stage, margin) {
-  const midX = (stage.left + stage.right) / 2, midY = (stage.top + stage.bottom) / 2;
-  const inX = from.x - midX, inY = from.y - midY;
-  // Out through the far side, leaning toward where it is going by no more than
-  // the frame can carry. Leaving by the bearing of the goal alone sent a rocket
-  // whose pad and goal lay the same way along the outside of the frame.
-  const through = Math.atan2(-inY, -inX);
-  let lean = Math.atan2(goal.y - midY, goal.x - midX) - through;
-  lean = Math.atan2(Math.sin(lean), Math.cos(lean));
-  const out = through + Math.max(-.8, Math.min(.8, lean));
-  const start = skyStageEdge(stage, inX, inY, margin);
-  const end = skyStageEdge(stage, Math.cos(out), Math.sin(out), margin);
-  return {start, end, entering:true, leaving:true, law:skyCoastLaw,
-          pointAt:progress => skyLaunchPoint(start, end, progress, .5, ease => ease)};
 }
 
 // Off the true east by this many radians, and pitching over between these two
@@ -21554,6 +21396,8 @@ function skyBestAscent(launch, pad, camera, radius, centerX, centerY, stage, mar
       for (let step = 0; step <= 24; step++)
         if (inSight(skyAscentAt(shape, law(step / 24), skyFlightLens(camera, launch, step / 24),
                                 radius, centerX, centerY))) seen++;
+      // Coming into sight mid-flight for an instant is a blink, not a launch.
+      if (from > 0 && seen < 2) continue;
       // How the heading swings on the screen, and how flat-on it gets.
       let swing = 0, least = Infinity, most = 0, prior = null;
       for (let step = 0; step <= 8; step++) {
@@ -21647,7 +21491,8 @@ function skyTransferRoute(launch, player, place, crews, view, radius, centerX, c
   // What is near home for the expedition is only where its lane begins. The trip
   // is light-years long, so it departs, as it always has, unless that beginning
   // is itself some way off.
-  const hop = span < (launch.mission === "expedition" ? 30 : SKY_TRIP_APART)
+  const hop = radius <= SKY_WORLD_IS_A_DOT &&
+    span < (launch.mission === "expedition" ? 30 : SKY_TRIP_APART)
     ? skyDotDeparture(start, dx, dy, SKY_HOP_MOST, radius, centerX, centerY) : null;
   const end = hop ? hop.end : goal;
   const route = launch.route || {};
@@ -21676,14 +21521,23 @@ function skyPlanMission(launch, player, place, crews, camera, radius, centerX, c
   const pad = skyLaunchPad(launch, player);
   const site = planetProject(pad, view, radius, centerX, centerY);
   const goal = skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY);
+  const home = skyOnStage(site.x, site.y, 0);
   if (skyOnStage(goal.x, goal.y, 0)) {
-    const home = skyOnStage(site.x, site.y, 0);
-    if (home && radius <= SKY_WORLD_IS_A_DOT) return {kind:"transfer"};
-    if (!home && skyArrivalRoute(site, goal, margin)) return {kind:"arrive"};
+    // Both ends in the picture: the rocket flies from the one to the other,
+    // however big the world it leaves is drawn.
+    if (home) return {kind:"transfer"};
+    if (skyArrivalRoute(site, goal, margin)) return {kind:"arrive"};
   }
   if (!skyHomeInPicture(radius, centerX, centerY, stage)) return {kind:"crossing"};
+  // A world too small to show its cities has no east to climb into. Its rocket
+  // leaves on the bearing of where it is going: a Moon rocket from a small
+  // Earth heads for the Moon, where a climb went wherever its pad pointed.
+  if (home && radius <= SKY_MARKERS && skyArrivalRoute(site, goal, margin))
+    return {kind:"depart"};
+  // A launch this camera cannot see any of is not drawn at all. It used to be
+  // flown across the picture from the edge of the frame, a rocket out of nowhere.
   const shape = skyBestAscent(launch, pad, camera, radius, centerX, centerY, stage, margin);
-  return shape ? {kind:"ascent", shape} : {kind:"crossing"};
+  return shape ? {kind:"ascent", shape} : {kind:"unseen"};
 }
 
 // A satellite climbs inside the plane of the orbit it is going to, and reaches
@@ -21718,6 +21572,16 @@ function skySatelliteClimb(orbit, from, range, sweep, settle = .4) {
 // that is the limit; past it the rocket would have to overtake the orbit and
 // then brake into it. Within that, take the one that joins the ring in open sky
 // and spends the most of its film in view.
+//
+// A flight that starts behind the world would spend its first seconds out of
+// sight. It is not hurried through them, which would mean a rocket that sprints
+// and then has to slow down to match its orbit: it simply started that much
+// earlier, and everything after that is the same flight. From a Spaceport round
+// the back that can be most of it, up to `SKY_HIDDEN_START`, and what is left
+// is the rocket coming up over the limb into its orbit. One that comes into
+// sight for fewer than `SKY_LEAST_SIGHT` thirty-seconds of its film is a blink,
+// and is not drawn; a lift-off from a pad in sight always is.
+const SKY_HIDDEN_START = .8, SKY_LEAST_SIGHT = 4;
 function skySatellitePlan(launch, player, index, pad, camera, radius, centerX, centerY) {
   const base = skyOrbit(player);
   const lap = skySatelliteOrbit(player, index, radius, base).lap;
@@ -21727,8 +21591,10 @@ function skySatellitePlan(launch, player, index, pad, camera, radius, centerX, c
   const rise = Math.max(-1, Math.min(1, pad[2] / Math.sin(inclination)));
   const sweep = launch.duration / lap * 6.283;
   const view = {...camera, radius:1};
-  const project = (point, p) => planetProject(point, skyFlightLens(camera, launch, p),
-                                              radius, centerX, centerY);
+  // Where a climb is on the screen `p` of the way along, when its film opened
+  // with `skip` of it already flown: a turning world has turned that much less.
+  const project = (point, p, skip) => planetProject(point,
+    skyFlightLens(camera, launch, p - skip), radius, centerX, centerY);
   const inSight = skySightTest(radius, centerX, centerY);
   let best = null, score = -Infinity;
   for (const from of [Math.asin(rise), Math.PI - Math.asin(rise)]) {
@@ -21738,14 +21604,21 @@ function skySatellitePlan(launch, player, index, pad, camera, radius, centerX, c
     for (const settle of [.4, 1, 2.5, 7]) for (let share = .5; share <= 2 / 3 + 1e-6; share += 1 / 24) {
       const range = sweep * share;
       const climb = skySatelliteClimb(orbit, from, range, sweep, settle);
-      const end = project(climb(1), 1);
+      let opens = 0;
+      for (let step = 0; step <= 40; step++)
+        if (inSight(planetProject(climb(step / 40), view, radius, centerX, centerY))) {
+          opens = step / 40; break;
+        }
+      const skip = Math.max(0, Math.min(SKY_HIDDEN_START, opens - .03));
+      const end = project(climb(1), 1, skip);
       const openSky = end.x >= 24 && end.x <= MAPW - 24 && end.y >= 24 && end.y <= MAPH - 24 &&
         skyOnStage(end.x, end.y, 12) && Math.hypot(end.x - centerX, end.y - centerY) > radius * 1.04;
-      let seen = 0, first = -1, earlier = null, fastest = 0, slowest = Infinity;
+      let seen = 0, sight = 0, first = -1, earlier = null, fastest = 0, slowest = Infinity;
       const headings = [];
       for (let step = 0; step <= 32; step++) {
-        const point = project(climb(step / 32), step / 32);
-        if (inSight(point)) {
+        const point = project(climb(step / 32), step / 32, skip);
+        if (step / 32 >= skip && inSight(point)) {
+          sight++;
           if (step % 4 === 0) seen++;
           if (first < 0) first = step / 32;
         }
@@ -21766,30 +21639,25 @@ function skySatellitePlan(launch, player, index, pad, camera, radius, centerX, c
         Math.max(most, Math.abs(Math.atan2(Math.sin(heading - final), Math.cos(heading - final)))), 0);
       const worth = seen / 9 * 8 / 3 + (openSky ? 2 : 0) - share - settle * .06 -
         Math.max(0, doubled - 1.5) * 8 - (slowest < fastest * .18 ? 3 : 0);
-      if (worth > score) { score = worth; best = {from, node, range, orbit, first, settle, seen}; }
+      if (worth > score) { score = worth; best = {from, node, range, orbit, settle, sight, skip}; }
     }
   }
-  if (!best || best.seen < 3) {
-    // No way of flying it can be seen for long enough from here. The orbit still
-    // has to pass over the pad; the rocket simply crosses the picture.
+  if (!best) {
+    // No way of flying it comes into sight from here. The orbit still has to
+    // pass over the pad.
     const from = Math.asin(rise);
     best = {from, node:Math.atan2(pad[1], pad[0]) -
       Math.atan2(Math.sin(from) * Math.cos(inclination), Math.cos(from)), range:sweep * .5};
-    launch.route = {kind:"crossing"};
   }
-  if (best.orbit) {
-    // A flight that starts behind the world would spend its first seconds out
-    // of sight. It is not hurried through them, which would mean a rocket that
-    // sprints and then has to slow down to match its orbit: it simply started
-    // that much earlier, and everything after that is the same flight.
-    const climb = skySatelliteClimb(best.orbit, best.from, best.range, sweep, best.settle);
-    let first = 0;
-    for (let step = 0; step <= 40; step++) {
-      const point = planetProject(climb(step / 40), view, radius, centerX, centerY);
-      if (inSight(point)) { first = step / 40; break; }
-    }
-    const skip = Math.max(0, Math.min(.55, first - .03)) * launch.duration;
-    launch.t0 -= skip; launch.endsAt -= skip;
+  if (!(best.sight >= (best.skip === 0 && inSight(planetProject(pad, view, radius, centerX, centerY))
+                       ? 1 : SKY_LEAST_SIGHT))) {
+    // The rocket is not drawn, and the craft comes round on its orbit. One
+    // flown across the picture instead came in over the edge of the frame
+    // hundreds of pixels from its Spaceport and left its craft to appear
+    // somewhere else again.
+    launch.route = {kind:"unseen"};
+  } else {
+    launch.t0 -= best.skip * launch.duration; launch.endsAt -= best.skip * launch.duration;
   }
   anim.skySettledOrbits.set(player.id, {inclination, node:best.node,
     phase:best.from + best.range - launch.endsAt / lap * 6.283});
@@ -21810,11 +21678,16 @@ function skySatelliteRoute(launch, player, index, view, radius, centerX, centerY
 function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, centerY,
                         stage, margin) {
   const view = {...camera, radius:1};
-  const index = crews.satellite.findIndex(candidate => candidate.id === player.id);
+  // A laser station flies to its own orbit, half a ring out from the ring its
+  // civilization's satellite keeps.
+  const orbiter = skyOrbiter(launch, player);
+  const index = launch.mission === "laser"
+    ? Math.max(0, skyOrbitSlot(crews.satellite, player)) + SKY_LASER_RING
+    : skyOrbitSlot(crews.satellite, player);
   if (!place && index < 0) return null;
   const pad = skyLaunchPad(launch, player);
   if (!place && !launch.ascent)
-    skySatellitePlan(launch, player, index, pad, camera, radius, centerX, centerY);
+    skySatellitePlan(launch, orbiter, index, pad, camera, radius, centerX, centerY);
   // From far enough out the world is a dot and low orbit has no size at all;
   // all there is to see is something leaving it.
   if (!place && radius <= 10 && skyHomeInPicture(radius, centerX, centerY, stage)) {
@@ -21825,14 +21698,27 @@ function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, c
             pointAt:progress => skyLaunchPoint(start, end, progress, -.5, ease => ease)};
   }
   if (!launch.route) {
-    launch.route = place
+    // An empire whose lands this viewer has never seen has no Spaceport to be
+    // watched leaving, and a stand-in pad out at sea is a rocket from nowhere.
+    launch.route = radius > SKY_MARKERS && skyHomeInPicture(radius, centerX, centerY, stage) &&
+        !(launch.originPos && PLANET?.cells.get(key(launch.originPos))) ? {kind:"unseen"}
+      : place
       ? skyPlanMission(launch, player, place, crews, camera, radius, centerX, centerY, stage, margin)
       : {kind:"orbit"};
   }
   const {route} = launch;
-  if (route.kind === "orbit") return skySatelliteRoute(launch, player, index, view, radius, centerX, centerY);
+  if (route.kind === "unseen") return null;
+  if (route.kind === "orbit") return skySatelliteRoute(launch, orbiter, index, view, radius, centerX, centerY);
   if (route.kind === "transfer")
     return skyTransferRoute(launch, player, place, crews, view, radius, centerX, centerY);
+  if (route.kind === "depart") {
+    const site = planetProject(pad, view, radius, centerX, centerY);
+    const film = skyArrivalRoute(site,
+      skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY), margin);
+    // From a pad round the back it comes out from behind the world.
+    return film && {...film, law:skyThrustLaw(0, film.entering ? SKY_ROLLING_START : 0),
+      pointAt:progress => ({...film.pointAt(progress), z:site.z * (1 - progress)})};
+  }
   if (route.kind === "arrive") {
     const goal = skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY);
     const approach = skyLandingApproach(launch, place, goal, stage);
@@ -21848,17 +21734,12 @@ function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, c
     return {start:pointAt(0), end:pointAt(1), entering:shape.from > 0, leaving:true,
             law:shape.law, pointAt};
   }
-  if (!route.crossing && !skyHomeInPicture(radius, centerX, centerY, stage)) {
+  if (!route.crossing) {
+    // Going by is for a camera parked at another world. With home back in the
+    // picture there is a pad the rocket did not leave, and it is not drawn.
+    if (skyHomeInPicture(radius, centerX, centerY, stage)) return null;
     if (!skyLaunchPassesHere(place, centerX, centerY, stage)) return null;
     route.crossing = skyLaunchFlyby(launch, stage, margin);
-  }
-  if (!route.crossing) {
-    const east = skyPadEast(pad);
-    route.crossing = skyLaunchCrossing(planetProject(pad, view, radius, centerX, centerY), place
-      ? skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY)
-      : planetProject([0, 1, 2].map(axis => pad[axis] + 2 * east[axis]), view,
-                      radius, centerX, centerY),
-      stage, margin);
   }
   return route.crossing;
 }
@@ -21890,9 +21771,9 @@ function drawChartLaunches(camera, radius, centerX, centerY) {
     const site = planetProject(pad, view, radius, centerX, centerY);
     const aside = planetProject([0, 1, 2].map(axis => pad[axis] + .02 * east[axis]), view,
                                 radius, centerX, centerY);
-    const route = skyClimbRoute(launch, site, aside.x < site.x ? -1 : 1, stage, 36);
-    drawLaunchFlight(launch, player, flight, skyBoardFlight(launch, route, stage, 36),
-                     4.2, now, 1, stage);
+    const film = skyBoardFlight(launch,
+      skyClimbRoute(launch, site, aside.x < site.x ? -1 : 1, stage, 36), stage);
+    if (film) drawLaunchFlight(launch, player, flight, film, 4.2, now, 1, stage);
   }
 }
 
@@ -21936,6 +21817,7 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   // A satellite becomes its craft; anything else that is somehow still in the
   // picture at the end of its film goes out rather than switching off.
   const trailFade = launch.mission === "satellite" ? 1 - skySatelliteDeployed(player.id, now)
+    : launch.mission === "laser" ? 1 - skyLaunchHandover(launch, now)
     : 1 - skySmooth((clock - .9) / .1);
   // A rocket going by flies all the way out of the frame; only its trail thins.
   // One coming down to land stays solid too, and its landing takes over.
@@ -22409,7 +22291,7 @@ function flatSkyProject(worldX, worldY) {
 // further over it pitches. Kept in the frame's own units so that the same
 // completion is legible at every map zoom, and settled once.
 function skyClimbRoute(launch, start, east, stage, margin) {
-  const order = {satellite:-1, moon:0, mars:1}[launch.mission] ?? 2;
+  const order = {satellite:-1, laser:-1, moon:0, mars:1}[launch.mission] ?? 2;
   const arc = skyPitchArc(1.46, 1.02 - order * .13);
   if (launch.reach === undefined) {
     const tip = arc(1);
@@ -22424,7 +22306,7 @@ function skyClimbRoute(launch, start, east, stage, margin) {
     const {up, along} = arc(Math.max(0, Math.min(1, progress)));
     return {x:start.x + east * along * reach, y:start.y - up * reach};
   };
-  return {start, end:pointAt(1), leaving:true, law:skyThrustLaw(), east, pointAt};
+  return {start, end:pointAt(1), leaving:true, law:skyThrustLaw(), pointAt};
 }
 function flatBoardStage(pixel) {
   return {left:-MAPW / 2 * pixel, right:MAPW / 2 * pixel,
@@ -22440,9 +22322,9 @@ function flatLaunchRoute(launch, player) {
 }
 // A board has no horizon, only the edge of the frame, so the one thing to settle
 // is how soon the route is in the picture. A rocket whose pad is off the frame
-// comes in already moving; one that would never be in the picture still passes
-// up through it, because up is the only way a launch goes on a board.
-function skyBoardFlight(launch, route, stage, margin) {
+// comes in already moving. One that would never be in the picture is not drawn:
+// it used to pass up through the frame from the bottom edge, from no Spaceport.
+function skyBoardFlight(launch, route, stage) {
   if (launch.firstSeen === undefined) {
     launch.firstSeen = -1;
     for (let step = 0; step <= 40 && launch.firstSeen < 0; step++) {
@@ -22450,16 +22332,8 @@ function skyBoardFlight(launch, route, stage, margin) {
       if (at.x >= stage.left && at.x <= stage.right && at.y >= stage.top && at.y <= stage.bottom)
         launch.firstSeen = step / 40;
     }
-    if (launch.firstSeen < 0) {
-      const east = route.east ?? 1, wide = stage.right - stage.left;
-      const low = {x:Math.max(stage.left + margin, Math.min(stage.right - margin, route.start.x)),
-                   y:stage.bottom + margin};
-      const high = {x:low.x + east * wide * .16, y:stage.top - margin};
-      launch.passing = {start:low, end:high, entering:true, leaving:true, law:skyCoastLaw,
-                        pointAt:progress => skyLaunchPoint(low, high, progress, -east * .4, ease => ease)};
-    }
   }
-  if (launch.passing) return launch.passing;
+  if (launch.firstSeen < 0) return null;
   if (launch.firstSeen > 0 && route.keepsClock !== true) {
     const from = Math.max(0, launch.firstSeen - .02);
     return {...route, entering:true, law:skyThrustLaw(from, SKY_ROLLING_START)};
@@ -22488,7 +22362,8 @@ function flatSatelliteRoute(launch, player) {
   const pixel = 1 / cam.scale;
   const lift = flatSatelliteLift();
   const halfW = MAPW / 2 * pixel - 24 * pixel, halfH = MAPH / 2 * pixel - 24 * pixel;
-  const base = skyOrbit(player);
+  const orbiter = skyOrbiter(launch, player);
+  const base = skyOrbit(orbiter);
   const lap = FLAT_SAT_LAP * (.82 + .5 * base.pace);
   const sweep = launch.duration / lap * 6.283185;
   const climbFrom = (orbit, from, range) => {
@@ -22523,19 +22398,21 @@ function flatSatelliteRoute(launch, player) {
         const range = sweep * share;
         const path = climbFrom({...base, inclination, node}, from, range);
         const end = path(1);
-        if (Math.abs(end.x) >= halfW || Math.abs(end.y) >= halfH) continue;
         // Of the two ways round, the one that climbs the picture: a rocket is
-        // pointing up as it leaves its pad and should go that way.
-        const worth = -range - (end.y > path(0).y ? 10 : 0);
+        // pointing up as it leaves its pad and should go that way. Joining the
+        // track outside the frame is the last choice but still a flight along
+        // it; with no orbit settled over the pad the craft turned up somewhere
+        // its rocket never went.
+        const worth = -range - (end.y > path(0).y ? 10 : 0) -
+          (Math.abs(end.x) >= halfW || Math.abs(end.y) >= halfH ? 100 : 0);
         if (worth > score) { score = worth; best = {from, node, range}; }
       }
     }
-    if (!best) return route;
-    anim.skySettledOrbits.set(player.id, {inclination, node:best.node,
+    anim.skySettledOrbits.set(orbiter.id, {inclination, node:best.node,
       phase:best.from + best.range - launch.endsAt / lap * 6.283185});
     launch.ascent = {from:best.from, range:best.range};
   }
-  const pointAt = climbFrom(skyOrbit(player), launch.ascent.from, launch.ascent.range);
+  const pointAt = climbFrom(skyOrbit(orbiter), launch.ascent.from, launch.ascent.range);
   return {start:pointAt(0), end:pointAt(1), leaving:false, law:skyCoastLaw, keepsClock:true, pointAt};
 }
 
@@ -22543,10 +22420,10 @@ function drawFlatLaunches(now) {
   const pixel = 1 / cam.scale, size = 4.2 * pixel;
   const stage = flatBoardStage(pixel);
   for (const {launch, player, flight} of skyLaunchesToPaint(now)) {
-    const route = launch.mission === "satellite"
+    const route = launch.mission === "satellite" || launch.mission === "laser"
       ? flatSatelliteRoute(launch, player) : flatLaunchRoute(launch, player);
-    if (route) drawLaunchFlight(launch, player, flight,
-      skyBoardFlight(launch, route, stage, 36 * pixel), size, now, pixel, stage);
+    const film = route && skyBoardFlight(launch, route, stage);
+    if (film) drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage);
   }
 }
 
@@ -22637,6 +22514,8 @@ function drawFlatSatellites(now) {
     panel(here.x + size * 1.2, top - size * .3, size * 1.4, size * .6, wing);
     panel(here.x - size, top - size * .55, size * 2, size * 1.1, colour);
   }
+  // And the laser stations, each over its own point on the ground.
+  drawFlatLaserStations(crew, shown, pixel, lift, halfW, halfH, now);
   cx.restore();
 }
 

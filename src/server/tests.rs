@@ -7666,7 +7666,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     ));
     assert!(EMBEDDED_INDEX.contains("for (const key of playerHudShedOrder()) {"));
     // The mirror of a Civilization VI game names its seats without rating
-    // them ("Civ 6 Deity AI"), and those names are what the operator reads
+    // them ("8 Deity Firaxis AI"), and those names are what the operator reads
     // the column for, so a named table holds Player as a rated one does. The
     // first cut shed the column at a 1728 px window the moment the mirror
     // stopped borrowing the site agents' ratings (real page, 2026-11-13).
@@ -9547,6 +9547,12 @@ fn a_game_has_a_start_a_pause_and_its_payoffs() {
         .find(r#"<script src="/assets/app.js?instance=7"></script>"#)
         .expect("the renderer is served under the instance");
     assert!(arena < renderer, "app_arena.js loads before app.js");
+    // So are the rockets and the laser stations the renderer launches.
+    assert!(super::EMBEDDED_APP_LAUNCHES_JS.starts_with("\"use strict\";"));
+    let launches = served
+        .find(r#"<script src="/assets/app_launches.js?instance=7"></script>"#)
+        .expect("the launches script is served under the instance");
+    assert!(launches < renderer, "app_launches.js loads before app.js");
     for id in [
         "moments",
         "fd-pause",
@@ -16979,6 +16985,7 @@ fn no_two_page_scripts_declare_the_same_function() {
     let scripts = [
         ("app_palette.js", super::EMBEDDED_APP_PALETTE_JS),
         ("app_arena.js", super::EMBEDDED_APP_ARENA_JS),
+        ("app_launches.js", super::EMBEDDED_APP_LAUNCHES_JS),
         ("app.js", EMBEDDED_APP_JS),
         ("app_setup.js", EMBEDDED_APP_SETUP_JS),
         ("app_moments.js", EMBEDDED_APP_MOMENTS_JS),

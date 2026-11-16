@@ -1112,10 +1112,12 @@ fn a_launched_satellite_crosses_a_flat_board_as_a_ground_track() {
 #[test]
 fn space_race_launches_use_mission_specific_rockets_on_both_maps() {
     // Mixed contract: markup lives in the document, renderer code in its
-    // external script - assert the whole page source.
+    // external scripts - assert the whole page source. The rockets themselves
+    // are in app_launches.js, loaded ahead of the renderer that flies them.
     let index_owned = format!(
-        "{}{}",
+        "{}{}{}",
         include_str!("../../web/index.html"),
+        include_str!("../../web/assets/app_launches.js"),
         include_str!("../../web/assets/app.js")
     );
     let index: &str = &index_owned;
@@ -1263,7 +1265,7 @@ fn a_launch_film_plays_over_the_part_of_its_route_in_view() {
         .split_once("function skyLaunchFilm(")
         .unwrap()
         .1
-        .split_once("function skyRocketGeometry(")
+        .split_once("// The rockets themselves (`skyRocketGeometry`, `drawMissionRocket`)")
         .unwrap()
         .0;
     // A route wholly in the picture keeps its true endpoints however short it
@@ -1308,14 +1310,90 @@ fn launches_name_their_civ_and_a_satellite_hands_over_to_its_orbit() {
     assert!(app.contains("deployed:skySatelliteDeployed(player.id, now)"));
     assert!(app.contains("deployed = skySatelliteDeployed(player.id, now);"));
     assert!(app.contains(
-        "launch.mission === \"satellite\" ? 1 - skySatelliteDeployed(player.id, now)\n    : 1 - skySmooth((clock - .9) / .1);"
+        "launch.mission === \"satellite\" ? 1 - skySatelliteDeployed(player.id, now)\n    : launch.mission === \"laser\" ? 1 - skyLaunchHandover(launch, now)\n    : 1 - skySmooth((clock - .9) / .1);"
     ));
+}
+
+/// Operator, 2026-11-16: "lets add animation every time a satelite is launched
+/// to speed up exoplanet. from the correct place it was launched. assuming
+/// tehese satellites would go into orbit". The one launch a civilization makes
+/// more than once is its Lagrange Laser Station, and a repeatable project is a
+/// count rather than a row of `science_projects`, so the viewer had nothing to
+/// see go up. Every station is now counted for whoever may know of it, launched
+/// from the Spaceport that built it and kept in an orbit of its own.
+#[test]
+fn every_laser_station_is_counted_and_launched_into_its_own_orbit() {
+    let mut game = Game::new(2, 18, 12, 4_412, 25, 0);
+    for project in ["lagrange_laser_station", "terrestrial_laser_station"] {
+        assert!(
+            game.rules.projects.contains_key(project),
+            "{project} must name a shipped project",
+        );
+    }
+    let stations =
+        |observed: &Value, pid: usize| observed["players"][pid]["laser_stations"].as_i64();
+    // An unmet civilization reports nothing at all, its stations included.
+    for pid in 0..2 {
+        game.players[pid].met.clear();
+    }
+    assert!(observation(&game, 1)["players"][0]["laser_stations"].is_null());
+    game.record_contact(0, 1);
+    assert_eq!(stations(&observation(&game, 1), 0), Some(0));
+    // The counter is the one the engine bumps when the project completes.
+    game.players[0]
+        .counters
+        .insert("project:lagrange_laser_station".to_string(), 2);
+    // A Terrestrial station is built where it stands: nothing leaves the
+    // ground, so it is no launch and is not counted as one.
+    game.players[0]
+        .counters
+        .insert("project:terrestrial_laser_station".to_string(), 3);
+    assert_eq!(stations(&observation(&game, 1), 0), Some(2));
+    assert_eq!(stations(&observation(&game, 0), 0), Some(2));
+    assert_eq!(stations(&observation_spectator(&game, 0), 0), Some(2));
+    assert_eq!(stations(&observation_spectator(&game, 0), 1), Some(0));
+
+    let app = include_str!("../../web/assets/app.js");
+    let launches = include_str!("../../web/assets/app_launches.js");
+    // It flies the satellite's rocket and climb, and is the one flight that is
+    // not a row of `science_projects`.
+    assert!(app.contains(
+        "laser:{project:\"lagrange_laser_station\", duration:3200, rocket:\"orbital\", station:true},"
+    ));
+    assert!(app.contains("if (flight.station || oldProjects.includes(flight.project) ||"));
+    assert!(app.contains("queueSkyLaserLaunches(prev, next, player, old, now);"));
+    assert!(launches.contains("Math.floor(+player?.laser_stations || 0)"));
+    // From the Spaceport that built it: the cities that were running the
+    // project and have since dropped it or started their production over.
+    assert!(launches.contains("function skyLaserOrigins(prev, next, pid, count) {"));
+    assert!(launches.contains("const pads = skyLaserOrigins(prev, next, player.id, fresh);"));
+    assert!(launches.contains("(+after.get(city.id).production || 0) < (+city.production || 0);"));
+    // Into an orbit of its own, planned and kept under the station's id, so a
+    // station's launch never swings its civilization's satellite onto a new
+    // orbit.
+    assert!(launches
+        .contains("return launch.mission === \"laser\" ? skyLaserOrbiter(player.id, launch.station) : player;"));
+    assert!(app.contains(
+        "skySatellitePlan(launch, orbiter, index, pad, camera, radius, centerX, centerY);"
+    ));
+    assert!(app.contains(
+        "if (route.kind === \"orbit\") return skySatelliteRoute(launch, orbiter, index, view, radius, centerX, centerY);"
+    ));
+    assert!(app.contains("anim.skySettledOrbits.set(orbiter.id, {inclination, node:best.node,"));
+    // And it stays up on both maps, held back while its own rocket flies.
+    assert!(app
+        .contains("drawSkyLaserStations(crew, view, radius, centerX, centerY, size, shown, now);"));
+    assert!(app.contains("drawFlatLaserStations(crew, shown, pixel, lift, halfW, halfH, now);"));
+    assert!(app.contains(
+        "const route = launch.mission === \"satellite\" || launch.mission === \"laser\""
+    ));
+    assert!(launches.contains("const deployed = skyLaserDeployed(player.id, station, now);"));
 }
 
 /// A launch is a flight through the world rather than a line drawn on the
 /// picture: it leaves the real Spaceport, goes east the way the planet turns,
-/// and is hidden by the planet for as long as the planet is in the way. Whoever
-/// is watching still gets to see it, from any camera.
+/// and is hidden by the planet for as long as the planet is in the way. A
+/// camera that can see none of that flight is shown none of it.
 #[test]
 fn launches_climb_from_their_spaceports_and_come_round_the_planet() {
     let app = include_str!("../../web/assets/app.js");
@@ -1341,10 +1419,16 @@ fn launches_climb_from_their_spaceports_and_come_round_the_planet() {
     );
     assert!(app.contains("if (limb && at.z < 0) {"));
 
-    // Nobody misses one: a film opens where the rocket comes into sight, a
-    // launch nowhere in the picture crosses it, and a chart still shows them.
+    // A film opens where the rocket comes into sight, and a chart still shows
+    // them. A launch nowhere in the picture is not drawn: flown across it from
+    // the edge of the frame instead, it was a rocket from no Spaceport at all,
+    // and a satellite's craft then appeared somewhere its rocket never went.
     assert!(app.contains("const law = skyThrustLaw(from, from > 0 ? SKY_ROLLING_START : 0);"));
-    assert!(app.contains("launch.route = {kind:\"crossing\"};"));
+    assert!(app.contains("launch.route = {kind:\"unseen\"};"));
+    assert!(app.contains("return shape ? {kind:\"ascent\", shape} : {kind:\"unseen\"};"));
+    assert!(app.contains("if (route.kind === \"unseen\") return null;"));
+    assert!(!app.contains("function skyLaunchCrossing("));
+    assert!(!app.contains("launch.passing"));
     assert!(app.contains("if (camera.chart) drawChartLaunches(camera, radius, centerX, centerY);"));
 }
 
@@ -1398,8 +1482,9 @@ fn a_launch_flies_one_curve_on_one_clock() {
     // Never stops in the frame: what is left at the end of its film goes out.
     assert!(painter.contains(": 1 - skySmooth((clock - .9) / .1);"));
 
-    // A crossing goes through the picture, not along the edge of it.
-    assert!(app.contains("const through = Math.atan2(-inY, -inX);"));
+    // Going by is for a camera parked at another world. With home in the
+    // picture nothing crosses it.
+    assert!(flight.contains("if (skyHomeInPicture(radius, centerX, centerY, stage)) return null;"));
 
     // A satellite is a gravity turn that cannot overrun its orbit and brake.
     assert!(app.contains("const steep = Math.log(orbit.ring) /"));

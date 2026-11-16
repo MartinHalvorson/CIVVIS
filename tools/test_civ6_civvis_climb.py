@@ -2918,6 +2918,30 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             self.assertEqual(climb.deal_sessions_mode(None, {}, policy, warnings.append), "off")
         self.assertEqual(len(warnings), 1)
 
+    def test_the_deferred_deal_question_is_opt_in_and_reaches_the_play_command(self):
+        import tempfile
+        base = climb.play_command(self._play_args(), "t",
+                                  Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertNotIn("--deal-ask-on-tick", base)
+        armed = climb.play_command(self._play_args(deal_ask_on_tick=True), "t",
+                                   Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertEqual([word for word in armed if word != "--deal-ask-on-tick"], base)
+        self.assertEqual(armed.count("--deal-ask-on-tick"), 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            policy = Path(tmp) / "policy"
+            missing = Path(tmp) / "absent"
+            self.assertIs(climb.deal_ask_on_tick_mode(None, {}, missing), False)
+            policy.write_text("# comment\nCIVVIS_DEAL_ASK_ON_TICK=1  # trial\n")
+            self.assertIs(climb.deal_ask_on_tick_mode(None, {}, policy), True)
+            self.assertIs(climb.deal_ask_on_tick_mode(False, {}, policy), False)
+            self.assertIs(
+                climb.deal_ask_on_tick_mode(None, {"CIVVIS_DEAL_ASK_ON_TICK": "off"}, policy),
+                False)
+            self.assertIs(
+                climb.deal_ask_on_tick_mode(None, {"CIVVIS_DEAL_ASK_ON_TICK": "yes"}, missing),
+                True)
+            self.assertIs(climb.deal_ask_on_tick_mode(True, {}, missing), True)
+
     def test_the_leader_score_line_reaches_the_play_command_only_when_set(self):
         """Legacy launchers retain their argv shape; live play ignores it and
         defaults to the full-game policy when the option is absent."""

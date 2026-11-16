@@ -294,6 +294,9 @@ impl AdvancedAi {
         /// of `capital-archers-before-the-surprise`; see
         /// `advanced/capital_archers_before_the_surprise.rs`.
         capital_archers_before_the_surprise_2 => enable_capital_archers_before_the_surprise_2, disable_capital_archers_before_the_surprise_2;
+        /// Opt-in gene `denial-spies-cover-every-racer`; see
+        /// `advanced/denial_spies_cover_every_racer.rs`.
+        denial_spies_cover_every_racer => enable_denial_spies_cover_every_racer, disable_denial_spies_cover_every_racer;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -373,6 +376,9 @@ impl AdvancedAi {
         /// Opt-in gene `hopeless-army-yields-the-queue`; see
         /// `advanced/hopeless_army_yields_the_queue.rs`.
         hopeless_army_yields_the_queue => enable_hopeless_army_yields_the_queue, disable_hopeless_army_yields_the_queue;
+        /// Opt-in gene `guns-keep-the-oil`; see
+        /// `advanced/guns_keep_the_oil.rs`.
+        guns_keep_the_oil => enable_guns_keep_the_oil, disable_guns_keep_the_oil;
         // ---- append: l-o --------------------------------------------
         /// Native land upgrade materials use a bounded host cash quote.
         land_army_asks_the_host_price => enable_land_army_asks_the_host_price, disable_land_army_asks_the_host_price;
@@ -545,6 +551,15 @@ impl AdvancedAi {
         /// Opt-in gene `settler-keeps-its-named-site`; see
         /// `advanced/settler_keeps_its_named_site.rs`.
         settler_keeps_its_named_site => enable_settler_keeps_its_named_site, disable_settler_keeps_its_named_site;
+        /// Opt-in gene `spared-soldiers-come-to-the-capital`; see
+        /// `advanced/spared_soldiers_come_to_the_capital.rs`.
+        spared_soldiers_come_to_the_capital => enable_spared_soldiers_come_to_the_capital, disable_spared_soldiers_come_to_the_capital;
+        /// Opt-in gene `score-seat-sprints-to-the-tally`; see
+        /// `advanced/score_sprints_to_the_tally.rs`.
+        score_seat_sprints_to_the_tally => enable_score_seat_sprints_to_the_tally, disable_score_seat_sprints_to_the_tally;
+        /// Opt-in gene `siege-guns-take-a-reachable-post`; see
+        /// `advanced/siege_train/reachable_post.rs`.
+        siege_guns_take_a_reachable_post => enable_siege_guns_take_a_reachable_post, disable_siege_guns_take_a_reachable_post;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
@@ -5884,6 +5899,20 @@ impl AdvancedAi {
     /// The twin of `enable_score_seat_raises_wonders_2`.
     pub fn disable_score_seat_raises_wonders_2(&mut self) {
         self.score_seat_raises_wonders_2 = false;
+    }
+
+    /// Opt-in gene `denial-spies-fill-every-slot-2`, version two of
+    /// `denial-spies-fill-every-slot`: a Score aim fills its slots too; see
+    /// `advanced/denial_spies_fill_every_slot.rs`. A seat plays one version,
+    /// so this turns version one off.
+    pub fn enable_denial_spies_fill_every_slot_2(&mut self) {
+        self.denial_spies_fill_every_slot_2 = true;
+        self.denial_spies_fill_every_slot = false;
+    }
+
+    /// The twin of `enable_denial_spies_fill_every_slot_2`.
+    pub fn disable_denial_spies_fill_every_slot_2(&mut self) {
+        self.denial_spies_fill_every_slot_2 = false;
     }
 
     /// Opt-in gene `score-seat-raises-wonders-3`; version three of the family,

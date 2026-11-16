@@ -286,7 +286,9 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `defenders-keep-the-city-in-reach` | off (unmeasured) | Keep defensive formations near their assigned threatened city. | 1 \| 1 |
 | `denial-charts-the-racer` | off (unmeasured) | `denial-charts-the-racer`: see `advanced/denial_charts_the_racer.rs`. | 1 \| 1 |
 | `denial-spies-count-their-losses` | off (unmeasured) | Opt-in gene `denial-spies-count-their-losses`; see `advanced/denial_spies_count_their_losses.rs`. | 1 \| 1 |
-| `denial-spies-fill-every-slot` | off (unmeasured) | `denial-spies-fill-every-slot`: see `advanced/denial_spies_fill_every_slot.rs`. | 1 \| 1 |
+| `denial-spies-cover-every-racer` | off (unmeasured) | Opt-in gene `denial-spies-cover-every-racer`; see `advanced/denial_spies_cover_every_racer.rs`. | 1 \| 1 |
+| `denial-spies-fill-every-slot` | off (unmeasured) | `denial-spies-fill-every-slot`: see `advanced/denial_spies_fill_every_slot.rs`. | — \| 2 |
+| `denial-spies-fill-every-slot-2` | off (unmeasured) | Opt-in gene `denial-spies-fill-every-slot-2`, version two of `denial-spies-fill-every-slot`: a Score aim fills its slots too; see `advanced/denial_spies_fill_every_slot.rs`. | — \| 2 |
 | `denial-spies-skip-the-upkeep-wait` | off (unmeasured) | Opt-in `denial-spies-skip-the-upkeep-wait`; see `advanced/denial_spies_skip_the_upkeep_wait.rs`. | 1 \| 1 |
 | `denial-war-needs-the-lane-edge` | off (unmeasured) | `denial-war-needs-the-lane-edge`: see `advanced/denial_war_needs_the_lane_edge.rs`. | 1 \| 1 |
 | `denounce-only-to-declare` | off (unmeasured) | Opt-in gene `denounce-only-to-declare`; see `advanced/denounce_only_to_declare.rs`. | 1 \| 1 |
@@ -358,6 +360,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `government-reach-pays-the-switch` | off (unmeasured) | Opt-in gene `government-reach-pays-the-switch`; see `advanced/government_reach.rs`. | 1 \| 1 |
 | `great-works-never-wait` | off (unmeasured) | Opt-in gene `great-works-never-wait`; see `advanced/great_works_never_wait.rs`. | 1 \| 1 |
 | `group-steps-read-the-field` | off (unmeasured) | Opt-in gene `group-steps-read-the-field`; see `Self::group_steps_read_the_field`. | 1 \| 1 |
+| `guns-keep-the-oil` | off (unmeasured) | Opt-in gene `guns-keep-the-oil`; see `advanced/guns_keep_the_oil.rs`. | 1 \| 1 |
 | `guns-stay-out-of-reach-2` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-2`; version two of the family, so version one is turned off. | 1 \| 3 |
 | `guns-stay-out-of-reach-3` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-3`; version three of the family, so versions one and two are turned off. | 1 \| 3 |
 | `guru-walks-to-the-wounded` | off (unmeasured) | Opt-in gene `guru-walks-to-the-wounded`; see `advanced/guru_walks_to_the_wounded.rs`. | 1 \| 1 |
@@ -489,6 +492,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `score-seat-raises-wonders` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders`; see `advanced/score_wonders.rs`. | — \| 3 |
 | `score-seat-raises-wonders-2` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders-2`; version two of the family, so version one is turned off. | — \| 3 |
 | `score-seat-raises-wonders-3` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders-3`; version three of the family, so versions one and two are turned off. | — \| 3 |
+| `score-seat-sprints-to-the-tally` | off (unmeasured) | Opt-in gene `score-seat-sprints-to-the-tally`; see `advanced/score_sprints_to_the_tally.rs`. | 1 \| 1 |
 | `score-seat-takes-what-pays` | off (unmeasured) | Opt-in `score-seat-takes-what-pays`; see `advanced/score_takes_what_pays.rs`. | — \| 3 |
 | `score-seat-takes-what-pays-2` | off (unmeasured) | Opt-in `score-seat-takes-what-pays-2`; see `advanced/score_takes_what_pays.rs`. | — \| 3 |
 | `score-seat-takes-what-pays-3` | off (unmeasured) | Opt-in `score-seat-takes-what-pays-3`; see `advanced/score_takes_what_pays.rs`. | — \| 3 |
@@ -502,6 +506,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `settler-stall-counts-turns` | off (unmeasured) | Opt-in gene `settler-stall-counts-turns`; see `advanced/settler_stall_counts_turns.rs`. | 1 \| 1 |
 | `siege-at-the-walls-dies-first` | off (unmeasured) | Opt-in gene `siege-at-the-walls-dies-first`; see `advanced/siege_at_the_walls_dies_first.rs`. | 1 \| 1 |
 | `siege-goes-on-the-forecast` | off (unmeasured) | Opt-in gene `siege-goes-on-the-forecast`: the siege train goes, holds and stands down on the capture forecast, and Siege rows rank by value x P / expected turns; implies the reading. | 1 \| 1 |
+| `siege-guns-take-a-reachable-post` | off (unmeasured) | Opt-in gene `siege-guns-take-a-reachable-post`; see `advanced/siege_train/reachable_post.rs`. | 1 \| 1 |
 | `siege-moves-under-the-wing` | off (unmeasured) | Opt-in gene `siege-moves-under-the-wing`; see `Self::siege_moves_under_the_wing`. | 1 \| 1 |
 | `siege-shortfall-claims-the-projects` | off (unmeasured) | Let a siege short of its bill take the repeatable-project queues. | 1 \| 1 |
 | `siege-tier-yields-to-the-bombers-2` | off (unmeasured) | Opt-in gene `siege-tier-yields-to-the-bombers-2`; see `Self::siege_tier_yields_to_the_bombers_2`. | 1 \| 2 |
@@ -511,6 +516,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `space-denial-slots-the-spy-cards` | off (unmeasured) | Opt-in gene `space-denial-slots-the-spy-cards`; see `advanced/space_denial_spy_cards.rs`. | 1 \| 1 |
 | `space-people-call-the-projects` | off (unmeasured) | `space-people-call-the-projects`: while a Great Person who speeds the space race is on offer, a Science seat's district projects earn that class's points. | 1 \| 1 |
 | `spaceport-above-the-sea` | off (unmeasured) | Prefer a legal non-lowland site when starting a native Spaceport. | 1 \| 1 |
+| `spared-soldiers-come-to-the-capital` | off (unmeasured) | Opt-in gene `spared-soldiers-come-to-the-capital`; see `advanced/spared_soldiers_come_to_the_capital.rs`. | 1 \| 1 |
 | `spears-answer-the-horse` | off (unmeasured) | Prefer a timely anti-cavalry defender against a visible mounted threat. | 1 \| 1 |
 | `spies-price-the-science-head` | off (unmeasured) | Rank Spy producers by native turns, sparing science on ties. | 1 \| 1 |
 | `spies-steal-the-lead` | off (unmeasured) | Opt-in gene `spies-steal-the-lead`; see `advanced/spies_steal_the_lead.rs`. | 1 \| 1 |

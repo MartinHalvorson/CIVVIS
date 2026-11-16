@@ -7017,6 +7017,16 @@ pub struct AdvancedAi {
     /// the original capital, by owner, under
     /// `capital-archers-before-the-surprise-2`.
     capital_archers_door_sightings: BTreeMap<usize, u32>,
+    /// `denial-spies-cover-every-racer`: the space racers are ranked by their
+    /// progress (projects, then the expedition's trip), Science only breaking
+    /// a tie, and every racer within one project of the lead gets a Spy of
+    /// ours before any gets a second. See
+    /// `advanced/denial_spies_cover_every_racer.rs`. Opt-in.
+    denial_spies_cover_every_racer: bool,
+    /// `denial-spies-fill-every-slot-2`: version one, and on a Score aim as
+    /// well as a Culture or Domination one. See
+    /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
+    denial_spies_fill_every_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -8231,6 +8241,10 @@ pub struct AdvancedAi {
     /// or offensive bodies for a target whose walls nothing it can field
     /// will breach. See `advanced/hopeless_army_yields_the_queue.rs`. Opt-in.
     hopeless_army_yields_the_queue: bool,
+    /// `guns-keep-the-oil`: a Domination seat's Infantry, Tanks and
+    /// oil-burning ships spend only the Oil its siege guns do not need. See
+    /// `advanced/guns_keep_the_oil.rs`. Opt-in.
+    guns_keep_the_oil: bool,
     // ---- append: l-o ------------------------------------------------
     /// Ask the host for a cash price for a native land upgrade material bill.
     /// Opt-in; see `advanced/army_upgrade_materials.rs`.
@@ -10460,6 +10474,28 @@ pub struct AdvancedAi {
     /// keyed by its stable Civ VI id so the live mirror's per-frame board ids
     /// cannot lose it. Empty with the gene off.
     settler_named_sites: BTreeMap<i64, Pos>,
+    /// `score-seat-sprints-to-the-tally`: from twenty Online turns before the
+    /// turn limit, a Score seat's queues take the item with the most tally
+    /// points per Production that finishes in time (no project, no
+    /// Spaceport) and its Gold and Faith above a small reserve buy the fewest
+    /// coins a point. See `advanced/score_sprints_to_the_tally.rs`. Opt-in.
+    score_seat_sprints_to_the_tally: bool,
+    /// `siege-guns-take-a-reachable-post`: a siege gun that has held one
+    /// firing post for two turns without standing on it takes a post it can
+    /// reach this turn or next, a soldier of ours on that post steps off it,
+    /// and a Stage escort stops holding at the muster line once one gun
+    /// stands in range. See `advanced/siege_train/reachable_post.rs`. Off by
+    /// default.
+    siege_guns_take_a_reachable_post: bool,
+    /// `siege-guns-take-a-reachable-post`: each siege gun's post, the turn
+    /// it was drawn there and whether the gene drew it, carried through the
+    /// live rebuild by `remap_siege_memory`. Empty with the gene off.
+    siege_gun_posts_held: BTreeMap<u32, siege_train::HeldPost>,
+    /// `spared-soldiers-come-to-the-capital`: at our original capital the
+    /// Anvil's one-blow rewrite leaves no posted soldier standing more than
+    /// two tiles out. Acts only through `anvil-spares-the-one-blow`. See
+    /// `advanced/spared_soldiers_come_to_the_capital.rs`. Off by default.
+    spared_soldiers_come_to_the_capital: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11401,6 +11437,8 @@ mod denial_nearest_finish;
 mod denial_needs_a_road;
 /// `denial-spies-count-their-losses`: see `advanced/denial_spies_count_their_losses.rs`.
 mod denial_spies_count_their_losses;
+/// `denial-spies-cover-every-racer`: see `advanced/denial_spies_cover_every_racer.rs`.
+mod denial_spies_cover_every_racer;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;
@@ -11573,6 +11611,9 @@ mod score_seat_founds_early;
 /// `score-seat-holds-its-faith-strikes`: see
 /// `advanced/score_seat_holds_its_faith_strikes.rs`.
 mod score_seat_holds_its_faith_strikes;
+/// `score-seat-sprints-to-the-tally`: see
+/// `advanced/score_sprints_to_the_tally.rs`.
+mod score_sprints_to_the_tally;
 /// `score-seat-raises-wonders`: a Score seat's wonder program, a queue claim
 /// that acts natively and live. See `advanced/score_wonders.rs`.
 mod score_wonders;
@@ -11686,6 +11727,8 @@ mod battle_planner;
 pub(super) mod battle_solver;
 /// `defenders-hold-the-walls`: see `advanced/defenders_hold_the_walls.rs`.
 mod defenders_hold_the_walls;
+/// `guns-keep-the-oil`: see `advanced/guns_keep_the_oil.rs`.
+mod guns_keep_the_oil;
 mod guns_stay_out_of_reach;
 mod guru_walks_to_the_wounded;
 /// `risk-is-priced`: see `advanced/priced_risk.rs`.
@@ -12121,6 +12164,9 @@ mod spaceport_above_sea;
 /// The Science lane's launch sites: how many Spaceports it wants, which cities
 /// carry them, and what those cities build. See `advanced/spaceports.rs`.
 mod spaceports;
+/// `spared-soldiers-come-to-the-capital`: see
+/// `advanced/spared_soldiers_come_to_the_capital.rs`.
+mod spared_soldiers_come_to_the_capital;
 mod spears_answer_the_horse;
 mod spies_price_the_science_head;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
@@ -20823,6 +20869,8 @@ impl AdvancedAi {
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
         // `upkeep-waits-for-the-income`: see `advanced/upkeep_waits_for_the_income.rs`.
         self.note_upkeep_wait_state(g, pid);
+        // `guns-keep-the-oil`: see `advanced/guns_keep_the_oil.rs`.
+        self.note_guns_keep_the_oil(g, pid);
         let sanctuary = self.adopted_faith_sanctuary_choice(g, pid, plan.threatened_city);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
         let science_specialized = self.phase_specialization_active(g) && science_targeted;
@@ -23057,6 +23105,10 @@ impl AdvancedAi {
         let city = &g.cities[&cid];
         let city_count = g.player_city_ids(pid).len();
         if !self.air_resource_item_preserves_wing(g, pid, cid, item) {
+            return -10_000.0;
+        }
+        // `guns-keep-the-oil`: see `advanced/guns_keep_the_oil.rs`.
+        if !self.guns_keep_the_oil_item(g, pid, cid, item) {
             return -10_000.0;
         }
         // The undermanned-war exception permits defenders, not another Spy
@@ -27104,6 +27156,14 @@ impl AdvancedAi {
             let reserve = self.war_faith_reserve(g, pid);
             self.military_faith_spending_above(g, pid, &plan, reserve);
         }
+        // `score-seat-sprints-to-the-tally`: inside the tally window the Gold
+        // and Faith above a small reserve buy the fewest coins a point,
+        // after the defence purchases above and before patronage and the
+        // stock purchase pass. Exact no-op while the gene is off. See
+        // `advanced/score_sprints_to_the_tally.rs`.
+        if !emergency_city_defense && !surprise_defense_purchase {
+            self.score_sprint_purchases(g, pid, &plan);
+        }
         self.advanced_great_people(g, pid, self.great_person_lane(g, pid, &plan));
         // `religion-seat-fields-apostles`: a positive saving decision below
         // reaches the later city governor, and expires before the next pass.
@@ -27575,6 +27635,12 @@ impl AdvancedAi {
         // Satellite until it lands, bridging the pad hold and
         // `launch-commits-the-endgame`.
         self.claim_satellite_holds_the_pad(g, pid, &plan);
+        // `score-seat-sprints-to-the-tally`: inside the tally window every
+        // queue takes what scores most a Production and finishes in time,
+        // after every ordinary writer and the pad holds, before the defence
+        // handoffs below, which keep the last word. Exact no-op while the
+        // gene is off. See `advanced/score_sprints_to_the_tally.rs`.
+        self.claim_score_sprint_queues(g, pid, &plan);
         self.claim_frontier_walls_before_the_surprise(g, pid);
         // Make the declaration response the final authority over queues this
         // turn. Earlier governors can continue to express their peaceful
