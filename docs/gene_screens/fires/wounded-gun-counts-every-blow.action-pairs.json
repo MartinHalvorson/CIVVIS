@@ -1,0 +1,37 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "wounded-gun-counts-every-blow",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 26 boards of four live Emperor Domination games of 2026-11-15/16 (4p Pangaea; civvis-20261116T095002Z Gran Colombia, 20261115T230117Z, 20261116T035719Z and 20261116T054247Z Gilgamesh): every turn on which one of our siege guns or Field Cannons died in combat, each the run's events.jsonl cut after the turn's first agent state row. Both arms run one frozen ci-profile civvis_orders --resumed built from the branch at 226fa0225b with the run's own requested genome (summary.json forced, each as --with); the on arm adds --with wounded-gun-counts-every-blow. Orders differ on 5 boards, 3 of them the dying gun's: 230117Z t124 the Field Cannon at 32 health holds at (28,12) instead of walking to (27,13) inside the Encampment's strike (live: killed there by two district strikes); 035719Z t112 the Trebuchet at 93 walks to (17,31), four tiles from Chinguetti, instead of (19,33), two from it (live: killed at (18,33) by the city's strike and a Warrior Monk); 035719Z t222 the Rocket Artillery at 25 steps to (13,23) instead of fortifying at (14,24) (live: killed there by a Modern Armor). On the other two (035719Z t155, 095002Z t134) another damaged unit's step changes. Full-health guns are never read.",
+  "archive": {
+    "path": "docs/eval/2026-11-16-wounded-gun-counts-every-blow.native-queries.tar.xz",
+    "sha256": "a3b2bb3da81a85dc7e22489e2c334aff8d946820fc126e96881897c4e1c8e9e4"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json",
+    "native-queries-01/0012/result.json",
+    "native-queries-01/0013/result.json",
+    "native-queries-01/0014/result.json",
+    "native-queries-01/0015/result.json",
+    "native-queries-01/0016/result.json",
+    "native-queries-01/0017/result.json",
+    "native-queries-01/0018/result.json",
+    "native-queries-01/0019/result.json",
+    "native-queries-01/0020/result.json",
+    "native-queries-01/0021/result.json",
+    "native-queries-01/0022/result.json",
+    "native-queries-01/0023/result.json",
+    "native-queries-01/0024/result.json",
+    "native-queries-01/0025/result.json"
+  ]
+}

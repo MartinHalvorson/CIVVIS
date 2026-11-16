@@ -270,6 +270,12 @@ impl Game {
         };
         let major = !self.players[killer].is_minor && !self.players[killer].is_barbarian;
         if military {
+            // LOCAL PROBE, NOT COMMITTED: guns and bombers lost, per seed.
+            if std::env::var_os("CIVVIS_GUNS_PROBE").is_some()
+                && matches!(spec.promotion_class.as_str(), "siege" | "ranged" | "air_bomber")
+            {
+                eprintln!("PROBE_LOST seed={} turn={} owner={} kind={} class={}", self.seed, self.turn, owner, kind.as_str(), spec.promotion_class);
+            }
             self.players[killer].combat_ledger.units_killed += 1;
             let lost = &mut self.players[owner].combat_ledger;
             lost.units_lost += 1;
