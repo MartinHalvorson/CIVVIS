@@ -57,11 +57,18 @@ impl Game {
         let t = &self.map.tiles[&u.pos];
         // Founding clears the centre tile's feature, so a Settler standing on
         // a natural wonder would erase it. Oasis likewise ships
-        // `Settlement=false`; Civ VI blocks both sites outright.
+        // `Settlement=false`; Civ VI blocks both sites outright. So do the four
+        // fire features (`GranColombia_Maya_Expansion2.xml`, `Features`): no
+        // city on burning or burnt ground until it has regrown.
         if self.rules.is_water(t)
             || !self.rules.is_passable(t)
             || self.tile_is_natural_wonder(t)
-            || t.feature.as_deref() == Some("oasis")
+            || matches!(
+                t.feature.as_deref(),
+                Some(
+                    "oasis" | "burning_forest" | "burnt_forest" | "burning_jungle" | "burnt_jungle"
+                )
+            )
         {
             return false;
         }

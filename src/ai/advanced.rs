@@ -8935,6 +8935,16 @@ pub struct AdvancedAi {
     /// Siege row and the Defend row to retirement. See
     /// `advanced/open_capital_declares_at_twice.rs`. Off by default.
     open_capital_declares_at_twice: bool,
+    /// `near-rival-deterrence-opens-early`: `near-rival-deterrence` opens at
+    /// live turn 10 instead of 30, and a met major whose soldier stood within
+    /// eight tiles of our original capital in the capital watch's ten turns
+    /// is a neighbour in the opening window even with none of its cities
+    /// known within ten tiles. Live Immortal 2026-11-15: the last four
+    /// original capitals fell to opening wars (t24-59, 0.39-0.77 of the
+    /// attacker's power) without one deterrent trained before the
+    /// declaration. See `advanced/near_rival_deterrence_opens_early.rs`. Off
+    /// by default.
+    near_rival_deterrence_opens_early: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -9576,6 +9586,13 @@ pub struct AdvancedAi {
     score_seat_raises_wonders_2: bool,
     /// `score-seat-raises-wonders-2`: the hold last journalled.
     score_wonder_hold: Option<String>,
+    /// `score-seat-raises-wonders-3`: version 3, carrying version 2. Through a
+    /// "safety first" hold one lane stays open in a rear city, ten tiles or
+    /// more from every major at war with us or out-gunning us; war at the
+    /// gates closes it. See `advanced/score_wonders.rs`. Off by default.
+    score_seat_raises_wonders_3: bool,
+    /// `score-seat-raises-wonders-3`: the rear lane's state last journalled.
+    score_wonder_rear_note: Option<String>,
     /// `siege-goes-on-the-forecast`: the siege train goes, holds and stands
     /// down on the capture forecast, and the Objective Board ranks Siege rows
     /// by value x P / expected turns. Implies the reading. See
@@ -11851,6 +11868,10 @@ mod near_rival_deterrence;
 /// next tier of Walls past the opening window. One opt-in gene; see
 /// `advanced/near_rival_deterrence_holds_late.rs`.
 mod near_rival_deterrence_holds_late;
+/// `near-rival-deterrence-opens-early`: the opening deterrent from live turn
+/// 10, and a soldier at the capital's door makes a neighbour. One opt-in
+/// gene; see `advanced/near_rival_deterrence_opens_early.rs`.
+mod near_rival_deterrence_opens_early;
 /// `rival-pace`: a calibrated rival chair's city horizon follows the live
 /// Immortal field's city count by turn. Not a gene — set only by
 /// `gene_screen --rival-pace` on its rival chairs; see

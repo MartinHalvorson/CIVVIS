@@ -70,6 +70,19 @@ impl BasicAi {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(cache) = slot.as_ref() {
             if cache.key == key {
+                // ⚠ DIAGNOSTIC ONLY, beside the per-enemy audit: a table handed
+                // back whole on a key hit must read as each enemy's reach does
+                // now. The per-enemy audit never sees these.
+                if Self::envelope_audit_enabled() {
+                    for (uid, reach) in cache.envelopes.iter() {
+                        let fresh = EnvelopeReach::from_tiles(g.attack_reach(*uid));
+                        if fresh != **reach {
+                            if let Some(unit) = g.units.get(uid) {
+                                Self::report_stale_envelope(g, unit, reach, &fresh);
+                            }
+                        }
+                    }
+                }
                 return std::sync::Arc::clone(&cache.envelopes);
             }
         }
@@ -137,7 +150,20 @@ impl BasicAi {
             hash ^= hash >> 29;
         };
         mix(g.map.tiles.epoch());
-        mix(g.wars.len() as u64);
+        // ⚠ The epoch alone does not name a map: a copy made to plan on (a
+        // fog-honest decision view, a speculative branch) numbers its writes
+        // from the epoch it was copied at, so a copy and the board it came
+        // from can show the same epoch over different tiles. The write chain
+        // tells two histories apart (`TileGrid::write_chain`).
+        mix(g.map.tiles.write_chain());
+        // ⚠ Who is at war with whom, not how many wars: an envelope's flood
+        // reads `is_at_war` between the mover and every unit beside its path,
+        // and a city-state's belligerence follows its suzerain. The same
+        // reading the per-enemy board stamps itself with.
+        mix(Self::envelope_belligerence_fingerprint(g));
+        // The seat to act: an enemy's reach reads its owner's own state, which
+        // only its owner's turn changes (see `EnvelopeBoard::stamp`).
+        mix(g.current as u64);
         for unit in g
             .units
             .values()
@@ -150,6 +176,25 @@ impl BasicAi {
             mix(u64::from(unit.kind.id()));
             mix(unit.formation as u64);
             mix(u64::from(unit.zoc_stopped));
+            // ★★ THE LOCK, THE LINK AND THE PATROL. `formation_movement_locked_by_zoc`
+            // reads these three flags and the linked peer, and a fighter's
+            // patrol refuses entry to the tile it flies over; none of them moves
+            // the unit. The table handed back whole on a key hit must answer for
+            // them as the per-enemy delta (`EnvelopeUnit`) does: a unit locked
+            // in place since the key was taken has an empty flood, and the old
+            // table gave it its whole reach. Found by the outer-table audit on a
+            // production-player gene screen.
+            mix(u64::from(unit.started_turn_in_zoc)
+                | (u64::from(unit.acted) << 1)
+                | (u64::from(unit.moved) << 2));
+            mix(unit.linked_to.map_or(u64::MAX, u64::from));
+            mix(unit
+                .air_patrol
+                .then_some(unit.air_patrol_pos)
+                .flatten()
+                .map_or(u64::MAX, |(q, r)| {
+                    (u64::from(q as u32) << 32) | u64::from(r as u32)
+                }));
         }
         mix(g.cities.len() as u64);
         for city in g.cities.values() {
@@ -362,6 +407,8 @@ impl BasicAi {
         let stamp = (
             Self::envelope_belligerence_fingerprint(g),
             Self::envelope_city_fingerprint(g),
+            g.turn,
+            g.current,
         );
         let map_chain = g.map.tiles.write_chain();
         let inert = |unit: &crate::game::Unit| {
@@ -529,6 +576,7 @@ impl BasicAi {
             written,
             removed,
         } = self.envelope_board_change(g, Some(pid));
+        let mut asked: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
         let out: AttackEnvelopes = g
             .units
             .values()
@@ -541,6 +589,7 @@ impl BasicAi {
                     && (spec.is_melee_capable() || spec.has_ranged_attack())
             })
             .filter_map(|unit| {
+                asked.insert(unit.id);
                 // ★★ AN AIR UNIT IS KEPT BY ITS BASE, NOT BY ITS GROUND.
                 // `attack_reach` gives an air unit the disk of its attack range
                 // around `air_operation_origin` (its patrol tile, else its own),
@@ -649,11 +698,38 @@ impl BasicAi {
         if removed {
             store.retain(|id, _| g.units.contains_key(id));
         }
+        // ★★★ AN ENTRY THIS ASK DID NOT LOOK AT MUST STILL HAVE SEEN ITS CHANGES.
+        // The delta is consumed by the ask: the next ask is told only what
+        // changed after this one. An enemy out of sight, or not at war, is not
+        // looked at above, so its entry was neither checked against this
+        // ask's changes nor refreshed, and when it comes back into view the
+        // next delta no longer mentions them. A full invalidation was lost the
+        // same way. So an entry left unread survives only if nothing this ask
+        // reports could have reached it, by the very test a reuse applies. An
+        // air entry is read by its key against the unit as it stands, which
+        // needs no delta. Found by the reuse audit on a production-player
+        // gene screen: a barbarian seat's envelope of a city-state musketman
+        // that had become locked in place while out of its sight.
+        store.retain(|id, entry| {
+            asked.contains(id)
+                || entry.air.is_some()
+                || (delta.as_ref().is_some_and(|delta| {
+                    delta
+                        .iter()
+                        .all(|touched| !entry.sensitive.contains(touched))
+                }) && written.iter().all(|tile| {
+                    entry
+                        .sight
+                        .is_some_and(|(centre, radius)| g.wdist(*tile, centre) > radius)
+                }))
+        });
         out
     }
 }
 
 #[cfg(test)]
 mod air_reach_tests;
+#[cfg(test)]
+mod exactness_tests;
 #[cfg(test)]
 mod own_inert_units_tests;

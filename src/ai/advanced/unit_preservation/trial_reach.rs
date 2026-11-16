@@ -29,6 +29,13 @@
 //!   envelopes key on, a fighter's patrol (it blocks entry anywhere), or a map
 //!   history that cannot be followed back. Then every hostile is read fresh.
 //!
+//! The second turn is kept by piece rather than whole (see [`SecondTurn`]):
+//! where the hostile can stand on a fresh turn, and its strike reach from each
+//! stand. A whole two-turn reach covers so much ground that a retreat near the
+//! front touched it on nearly every trial; each piece reads a small patch, and
+//! a trial re-reads only the pieces whose patch it touched. A hostile that
+//! itself differs between the boards keeps no piece.
+//!
 //! Air units are always read fresh: their disk follows the operation origin,
 //! not a flood. Nothing is kept on a mirrored board, whose strike reach is
 //! the host's. `CIVVIS_TRIAL_REACH_AUDIT=1` re-reads every kept answer and
@@ -38,8 +45,8 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use super::super::battle_planner::{
-    hostile_in_field, mirrored_board, strike_reach_of, strike_reach_reading,
-    widen_to_the_second_turn, DangerField,
+    fresh_turn_stands, hostile_in_field, mirrored_board, strike_reach_from, strike_reach_of,
+    strike_reach_reading, widen_to_the_second_turn, DangerField,
 };
 use crate::ai::BasicAi;
 use crate::game::Game;
@@ -82,15 +89,6 @@ impl Reads {
         }
     }
 
-    /// Both readings at once: what either read.
-    fn and(mut self, other: Reads) -> Self {
-        self.tiles.extend(other.tiles);
-        self.tiles.sort_unstable();
-        self.tiles.dedup();
-        self.radius = self.radius.max(other.radius);
-        self
-    }
-
     fn hold(&self, g: &Game, change: &Change) -> bool {
         change
             .units
@@ -117,9 +115,21 @@ struct Hostile {
     flood: Vec<Pos>,
     strike: Vec<Pos>,
     first: Reads,
-    /// `widen_to_the_second_turn` from `strike`, and what the two together
-    /// read. Filled the first time a trial asks.
-    second: Option<(Vec<Pos>, Reads)>,
+    /// Its second turn, by piece. Filled the first time a trial asks.
+    second: Option<SecondTurn>,
+}
+
+/// One hostile's second turn on the base board, kept by piece, because a
+/// retreat trial moves one of our units and touches few of them: where the
+/// hostile can stand on a fresh turn, and its strike reach from each of those
+/// stands, each beside what it read. A hostile near the front sees a trial
+/// touch some of its stands every time, and the rest are kept.
+struct SecondTurn {
+    /// `fresh_turn_stands` and what that flood read.
+    stands: Vec<Pos>,
+    stands_read: Reads,
+    /// `strike_reach_from` each stand, and what it read.
+    from: BTreeMap<Pos, (Vec<Pos>, Reads)>,
 }
 
 /// The hostiles' reaches on the board a retreat loop starts from, kept for
@@ -236,8 +246,8 @@ impl TrialReach {
         })
     }
 
-    /// One hostile's second-turn reach on the base board, read once.
-    fn second(&mut self, id: u32) -> Option<&(Vec<Pos>, Reads)> {
+    /// One hostile's second turn on the base board, read once, by piece.
+    fn second(&mut self, id: u32) -> Option<&SecondTurn> {
         self.hostile(id)?;
         let Self {
             pid,
@@ -248,12 +258,24 @@ impl TrialReach {
         } = self;
         let hostile = hostiles.get_mut(&id)?.as_mut()?;
         if hostile.second.is_none() {
-            let mut reach = hostile.strike.clone();
+            let centre = base.units[&id].pos;
+            let range = base.unit_attack_range(id);
             let mut relaxed = Vec::new();
-            widen_to_the_second_turn(probe, *pid, id, &mut reach, Some(&mut relaxed));
-            let unit = &base.units[&id];
-            let reads = Reads::of(base, unit.pos, &relaxed, base.unit_attack_range(id));
-            hostile.second = Some((reach, hostile.first.clone().and(reads)));
+            let stands = fresh_turn_stands(probe, id, Some(&mut relaxed));
+            let stands_read = Reads::of(base, centre, &relaxed, range);
+            let from = stands
+                .iter()
+                .map(|stand| {
+                    let mut read = Vec::new();
+                    let strike = strike_reach_from(probe, *pid, id, *stand, Some(&mut read));
+                    (*stand, (strike, Reads::of(base, *stand, &read, range)))
+                })
+                .collect();
+            hostile.second = Some(SecondTurn {
+                stands,
+                stands_read,
+                from,
+            });
         }
         hostile.second.as_ref()
     }
@@ -317,34 +339,91 @@ impl TrialReach {
         let change = self.change(trial);
         let mut probe: Option<Game> = None;
         DangerField::second_turn_from(first, trial, |id, reach| {
-            let kept = change.as_ref().and_then(|change| {
-                let (second, reads) = self.second(id)?;
-                reads.hold(trial, change).then(|| second.clone())
-            });
-            #[cfg(test)]
-            {
-                self.kept += usize::from(kept.is_some());
-            }
-            let mut widen = |reach: &mut Vec<Pos>| {
-                let probe = probe.get_or_insert_with(|| trial.speculative_clone());
-                widen_to_the_second_turn(probe, pid, id, reach, None);
+            // The pieces are read around each stand, not around the hostile,
+            // so a hostile that itself differs keeps none of them.
+            let unchanged = match (trial.units.get(&id), self.base.units.get(&id)) {
+                (Some(now), Some(was)) => std::ptr::eq(now, was) || now == was,
+                _ => false,
+            };
+            let kept = match change.as_ref().filter(|_| unchanged) {
+                Some(change) => self
+                    .second(id)
+                    .map(|second| assemble(second, change, trial, &mut probe, pid, id, reach)),
+                None => None,
             };
             match kept {
-                Some(kept) if audit_enabled() => {
-                    widen(reach);
-                    if *reach != kept {
+                Some((widened, _kept)) if audit_enabled() => {
+                    widen_to_the_second_turn(trial_probe(&mut probe, trial), pid, id, reach);
+                    if *reach != widened {
                         eprintln!(
                             "trial-reach: STALE second-turn reach, seat {pid} hostile {id} turn {}: \
                              kept {} tiles, fresh {}",
                             trial.turn,
-                            kept.len(),
+                            widened.len(),
                             reach.len()
                         );
                     }
                 }
-                Some(kept) => *reach = kept,
-                None => widen(reach),
+                Some((widened, _kept)) => {
+                    #[cfg(test)]
+                    {
+                        self.kept += _kept;
+                    }
+                    *reach = widened;
+                }
+                None => widen_to_the_second_turn(trial_probe(&mut probe, trial), pid, id, reach),
             }
         })
     }
+}
+
+/// The trial's own copy for whatever must be read fresh on it, made once.
+fn trial_probe<'p>(probe: &'p mut Option<Game>, trial: &Game) -> &'p mut Game {
+    probe.get_or_insert_with(|| trial.speculative_clone())
+}
+
+/// `widen_to_the_second_turn(trial, ..)` from `reach`, assembled from the
+/// base board's pieces that the trial left alone and fresh reads of the rest:
+/// the stands, if their flood held, and each stand's strike reach, if its read
+/// held. Returns the widened reach and how many pieces were kept.
+fn assemble(
+    second: &SecondTurn,
+    change: &Change,
+    trial: &Game,
+    probe: &mut Option<Game>,
+    pid: usize,
+    id: u32,
+    reach: &[Pos],
+) -> (Vec<Pos>, usize) {
+    let fresh_stands;
+    let stands: &[Pos] = if second.stands_read.hold(trial, change) {
+        &second.stands
+    } else {
+        fresh_stands = fresh_turn_stands(trial_probe(probe, trial), id, None);
+        &fresh_stands
+    };
+    let mut kept = usize::from(std::ptr::eq(stands, second.stands.as_slice()));
+    let mut widened = reach.to_vec();
+    for stand in stands {
+        match second
+            .from
+            .get(stand)
+            .filter(|(_, read)| read.hold(trial, change))
+        {
+            Some((strike, _)) => {
+                kept += 1;
+                widened.extend_from_slice(strike);
+            }
+            None => widened.extend(strike_reach_from(
+                trial_probe(probe, trial),
+                pid,
+                id,
+                *stand,
+                None,
+            )),
+        }
+    }
+    widened.sort_unstable();
+    widened.dedup();
+    (widened, kept)
 }
