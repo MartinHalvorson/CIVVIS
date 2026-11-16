@@ -316,6 +316,12 @@ fn one_great_person(game: &mut Game) -> String {
     kind
 }
 
+/// Great People of `kind` recruited: a live-offer board counts a native
+/// recruitment in `gp_claimed` (`claim_great_person`).
+fn claimed(game: &Game, kind: &str) -> i64 {
+    game.players[0].gp_claimed.get(kind).copied().unwrap_or(0)
+}
+
 fn great_person_buy<'a>(buys: &'a [SprintBuy], kind: &str) -> &'a SprintBuy {
     buys.iter()
         .find(|buy| {
@@ -395,7 +401,7 @@ fn version_two_off_its_window_is_an_exact_no_op() {
         let plan = ai.assess(&g, 0);
         ai.score_sprint_purchases(&mut g, 0, &plan);
         assert_eq!(g.cities[&city].buildings, board.cities[&city].buildings);
-        assert_eq!(g.players[0].great_people, board.players[0].great_people);
+        assert_eq!(g.players[0].gp_claimed, board.players[0].gp_claimed);
         assert_eq!(g.players[0].gold, 5_000.0);
         assert_eq!(g.players[0].faith, 5_000.0);
     }
@@ -443,10 +449,7 @@ fn faith_patronizes_when_gold_is_short() {
     assert_eq!(patrons.get(&kind), Some(&"faith"));
     let mut bought = game.clone();
     ai.score_sprint_purchases(&mut bought, 0, &plan);
-    assert_eq!(
-        bought.players[0].great_people.len(),
-        game.players[0].great_people.len() + 1
-    );
+    assert_eq!(claimed(&bought, &kind), claimed(&game, &kind) + 1);
     assert!((bought.players[0].faith - (TALLY_SPRINT_FAITH_RESERVE + 1.0)).abs() < 1e-6);
     assert_eq!(bought.players[0].gold, 100.0);
     let mut deep = game.clone();
@@ -549,10 +552,10 @@ fn the_great_person_window_opens_at_thirty() {
         .expect("a Gold price");
     game.players[0].gold = price + building_price + TALLY_SPRINT_GOLD_RESERVE + 1.0;
     let before = game.cities[&city].buildings.clone();
-    let people = game.players[0].great_people.len();
+    let people = claimed(&game, &kind);
     let plan = ai.assess(&game, 0);
     ai.score_sprint_purchases(&mut game, 0, &plan);
-    assert_eq!(game.players[0].great_people.len(), people + 1);
+    assert_eq!(claimed(&game, &kind), people + 1);
     assert_eq!(
         game.cities[&city].buildings, before,
         "no building before turn 160"
