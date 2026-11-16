@@ -5901,6 +5901,8 @@ impl AdvancedAi {
     /// The twin of `enable_denial_spies_fill_every_slot_2`.
     pub fn disable_denial_spies_fill_every_slot_2(&mut self) {
         self.denial_spies_fill_every_slot_2 = false;
+    }
+
     /// Opt-in gene `score-seat-raises-wonders-3`; version three of the family,
     /// so versions one and two are turned off. See `advanced/score_wonders.rs`.
     pub fn enable_score_seat_raises_wonders_3(&mut self) {
