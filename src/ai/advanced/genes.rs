@@ -5760,6 +5760,20 @@ pub const GENES: &[Gene] = &[
     // soldier stood within six tiles. See
     // `advanced/capital_archers_before_the_surprise.rs`.
     Gene { tag: "capital-archers-before-the-surprise-2", field: "capital_archers_before_the_surprise_2", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_archers_before_the_surprise_2, disable: AdvancedAi::disable_capital_archers_before_the_surprise_2 },
+    // Live Immortal civvis-20261115T212021Z (Brazil, Culture): India, Persia
+    // and Scythia ran within a project of each other from 176 and all
+    // launched by 198; `racer-keeps-the-spies` read Persia the leader on its
+    // Science edge, 9 of 13 Disrupt Rocketry went there and India won at
+    // 212. Under the gene every racer within one project of the lead gets a
+    // Spy before any gets a second. See
+    // `advanced/denial_spies_cover_every_racer.rs`.
+    Gene { tag: "denial-spies-cover-every-racer", field: "denial_spies_cover_every_racer", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_cover_every_racer, disable: AdvancedAi::disable_denial_spies_cover_every_racer },
+    // Operator 2026-11-15: the live focus is a Score win, and a rival's
+    // Science Victory ends most Score games early. Version two of
+    // `denial-spies-fill-every-slot` fills the Spy slots on a Score aim as
+    // well as a Culture or Domination one; otherwise identical. See
+    // `advanced/denial_spies_fill_every_slot.rs`.
+    Gene { tag: "denial-spies-fill-every-slot-2", field: "denial_spies_fill_every_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_fill_every_slot_2, disable: AdvancedAi::disable_denial_spies_fill_every_slot_2 },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -6259,6 +6273,12 @@ pub const GENES: &[Gene] = &[
     // own city founded within three tiles of a sibling's site. See
     // `advanced/settler_keeps_its_named_site.rs`.
     Gene { tag: "settler-keeps-its-named-site", field: "settler_keeps_its_named_site", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_keeps_its_named_site, disable: AdvancedAi::disable_settler_keeps_its_named_site },
+    // Live Immortal civvis-20261115T230117Z, turns 104-123: our escorts held
+    // the near side of Puel Mapu's range-2 band, so two Bombards were posted
+    // across the city behind Roraima and kept there six turns while a route
+    // existed; 72 "stops short of its post" lines, the city never fell. See
+    // `advanced/siege_train/reachable_post.rs`.
+    Gene { tag: "siege-guns-take-a-reachable-post", field: "siege_guns_take_a_reachable_post", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_guns_take_a_reachable_post, disable: AdvancedAi::disable_siege_guns_take_a_reachable_post },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

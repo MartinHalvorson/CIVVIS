@@ -2047,6 +2047,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # `deal_session_quarantine` and `CivvisTrade.quarantinedUntil`.
         "DealSessionQuarantine": ",".join(
             getattr(args, "deal_session_quarantine", None) or []),
+        # A peace or alliance question put on the next tick instead of inside
+        # the statement that opened its session (`CivvisTrade.askDeferred`):
+        # the lost counters behind every hung rival turn after a refused
+        # proposal were queued during that statement. Off unless set.
+        "DealAskOnTick": bool(getattr(args, "deal_ask_on_tick", False)),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -8864,6 +8869,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="open no deal session with this rival through this game "
                          "turn (repeatable); the climb passes it when it reloads "
                          "a game whose rival turn hung")
+    ap.add_argument("--deal-ask-on-tick", dest="deal_ask_on_tick", action="store_true",
+                    help="put a peace or alliance question on the next tick, not "
+                         "inside the statement that opened its session (opt-in)")
     # Wins always finish the native movie. This setting retains a minimum
     # presentation time; it cannot shorten a winning cinematic.
     ap.add_argument("--end-game-seconds", type=float, default=10.0,
