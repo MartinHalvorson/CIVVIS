@@ -12547,10 +12547,25 @@ end;
 -- alliance ask, `022036Z` five, `171033Z` four; 18 of the 34 stalls were such
 -- repeats. The climb names the rival and a last turn when it reloads
 -- (`--deal-session-quarantine PLAYER:TURN` to civ6_play, baked here as
--- `DealSessionQuarantine = "5:164,1:150"`), and through that turn every ask to
--- that rival takes the direct send, the lane's own no-session path
--- (`DealSessions = false`): no screen opens and the rival evaluates nothing.
--- Other rivals keep their sessions. Unset, nothing changes.
+-- `DealSessionQuarantine = "5:164,1:150"`), and through that turn no ask goes
+-- to that rival at all: `CivvisTrade.ask` sends nothing, clears the working
+-- deal the arm built and says "quarantined", and the arm records the ask as
+-- not submitted. Other rivals keep their sessions. Unset, nothing changes.
+-- ★★ THE DIRECT SEND IT USED TO TAKE HUNG THE RIVAL ITSELF. The quarantine
+-- first sent the ask session-less (`SendWorkingDeal`, the `DealSessions =
+-- false` path), assuming the rival evaluates nothing outside a session. It
+-- does when one of ours to it opens that turn. Live 2026-11-15..16: 13
+-- quarantined EQUALIZE sales; the 5 that hung (civvis-20261116T014237Z-cont1,
+-- -cont2 and -cont3 at t81, T041918Z-cont2 at t81, -cont3 at t76) each had a
+-- DECLARE_FRIEND or DIPLOMATIC_DELEGATION session of ours open with the same
+-- rival in the same frame, and DiplomacyManager.csv shows the rival's verdict
+-- landing in it with no session of its own ("81, 1, 0, -1, MAKE_DEAL,
+-- POSITIVE, POSITIVE, Processing Statement"), after which that rival's turn
+-- never ended. The 8 that did not hang had no such session, and all 8
+-- expired unanswered (`deal_expired`); none of the 12 quarantined peace and
+-- alliance proposals was answered either ("0 of 636" above, the same
+-- finding). Reloading the autosave played the same board into the same send,
+-- so one hang became three. Sending nothing gives up nothing.
 CivvisTrade.quarantinedUntil = function(subject)
 	local spec = cfg.DealSessionQuarantine;
 	if type(spec) ~= "string" or spec == "" then return nil; end
@@ -12612,10 +12627,12 @@ CivvisTrade.ask = function(pid, subject, action, kind, turn)
 	local quarantined = lastQuarantined ~= nil and type(turn) == "number"
 		and turn <= lastQuarantined;
 	if quarantined then
+		pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject); end);
 		emit("deal_session", { turn = turn, target = subject, kind = kind, action = action,
-			phase = "quarantined", until_turn = lastQuarantined });
+			phase = "quarantined", until_turn = lastQuarantined, sent = false });
+		return "quarantined";
 	end
-	if quarantined or cfg.DealSessions == false
+	if cfg.DealSessions == false
 			or (cfg.DealSessions == "peace" and kind ~= "peace")
 			or (cfg.DealSessions == "trade" and kind == "peace")
 			or trade.disabled then
@@ -14781,7 +14798,10 @@ local function applyOrder(player, pid, row, turn)
 		-- session), because a session-less PROPOSED is never evaluated — 253 of
 		-- them were submitted over 42 runs without one answer. With
 		-- `DealSessions = false` this is the direct send it used to be.
-		CivvisTrade.ask(pid, subject, "PROPOSED", "peace", turn);
+		local sent = CivvisTrade.ask(pid, subject, "PROPOSED", "peace", turn);
+		if sent == "quarantined" then
+			return false, 0, "quarantined";
+		end
 		return true, concession, "submitted";
 	end
 
@@ -15472,7 +15492,7 @@ local function applyOrder(player, pid, row, turn)
 		if not ok then concession = 0; end
 		-- A pending offer is already inside the engine.  Retrying it on every
 		-- turn cannot improve its chance and only muddies the action ledger.
-		if ok or reason == "pending" then
+		if ok or reason == "pending" or reason == "quarantined" then
 			CivvisTrade.noteAskMarker("peace", subject, asked);
 			peaceAsked[subject] = turn;
 		end
@@ -15651,7 +15671,10 @@ local function applyOrder(player, pid, row, turn)
 			item:SetLocked(true);
 			deal:Validate();
 			if not deal:IsValid() then return false, "invalid_deal"; end
-			CivvisTrade.ask(pid, subject, "PROPOSED", "alliance", turn);
+			local sent = CivvisTrade.ask(pid, subject, "PROPOSED", "alliance", turn);
+			if sent == "quarantined" then
+				return false, "quarantined";
+			end
 			return true, "alliance_asked";
 		end);
 		if not ran then ok, reason = false, "throw"; end
@@ -15914,7 +15937,11 @@ local function applyOrder(player, pid, row, turn)
 			trade.pending[subject] = {
 				turn = turn, floor = floor, gave = gave, verb = table.concat(text, ","),
 			};
-			CivvisTrade.ask(pid, subject, "EQUALIZE", "sell", turn);
+			-- A quarantined rival is sent nothing (`CivvisTrade.ask`).
+			local sent = CivvisTrade.ask(pid, subject, "EQUALIZE", "sell", turn);
+			if sent == "quarantined" then
+				return false, "quarantined", gave, table.concat(text, ",");
+			end
 			return true, "asked", gave, table.concat(text, ",");
 		end);
 		if not ran then
@@ -15926,7 +15953,8 @@ local function applyOrder(player, pid, row, turn)
 			-- The ask itself threw after registering; nothing is in flight.
 			trade.pending[subject] = nil;
 		end
-		if not submitted and (reason == "nothing_tradeable" or reason == "invalid_deal") then
+		if not submitted and (reason == "nothing_tradeable" or reason == "invalid_deal"
+				or reason == "quarantined") then
 			-- The engine has nothing to sell here right now; do not re-ask
 			-- every turn for the same answer.
 			trade.asked[subject] = turn;
@@ -16251,7 +16279,10 @@ local function applyOrder(player, pid, row, turn)
 				gold_cap = workGoldCap, gpt_cap = workGptCap,
 				cash_bid_requested = cashBid ~= nil, cash_offer_bid = cashBid, cash_reserve = cashReserve,
 			};
-			CivvisTrade.ask(pid, subject, cashBid ~= nil and "PROPOSED" or "EQUALIZE", "buy", turn);
+			local sent = CivvisTrade.ask(pid, subject, cashBid ~= nil and "PROPOSED" or "EQUALIZE", "buy", turn);
+			if sent == "quarantined" then
+				return false, "quarantined", name, cashBid, cashReserve;
+			end
 			return true, "asked", name, cashBid, cashReserve;
 		end);
 		if not ran then
@@ -16274,7 +16305,7 @@ local function applyOrder(player, pid, row, turn)
 				or reason == "cash_budget_unreadable" or reason == "no_gold_item"
 				or reason == "cash_maximum_unreadable" or reason == "cash_offer_invalid"
 				or reason == "strategic_invalid" or reason == "barter_nothing"
-				or reason == "barter_short") then
+				or reason == "barter_short" or reason == "quarantined") then
 			-- The engine will not sell passage here right now — usually a
 			-- missing Early Empire on one side — or has no luxury the seat
 			-- lacks on its table; do not re-ask every turn for the same

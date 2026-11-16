@@ -542,6 +542,10 @@ mod completion;
 /// Disasters and climate: natural disasters and their damage, climate
 /// change and sea level, reactor accidents. See `game/disasters.rs`.
 mod disasters;
+/// Forest and jungle fires: ignite, spread, burn out and regrow. See
+/// `game/fires.rs`.
+mod fires;
+pub use fires::{Fire, FireKind};
 /// Embarkation: embarked units and their strength. See
 /// `game/embarkation.rs`.
 mod embarkation;
@@ -641,6 +645,9 @@ mod age_tests;
 
 #[cfg(test)]
 mod disaster_tests;
+
+#[cfg(test)]
+mod fire_tests;
 
 #[cfg(test)]
 mod city_trade_tests;
@@ -7829,6 +7836,9 @@ pub struct Game {
     /// Droughts in progress, with the tiles they hold and when they lift.
     #[serde(default)]
     pub droughts: Vec<Drought>,
+    /// Forest and jungle tiles burning or burnt, each with the turn it caught.
+    #[serde(default)]
+    pub fires: Vec<Fire>,
     /// Retired named Great People leave the global market permanently.
     pub retired_great_people: BTreeSet<String>,
     /// Recruitment price fixed when each named person enters the market.
@@ -8204,6 +8214,8 @@ struct GameSer {
     #[serde(default)]
     droughts: Vec<Drought>,
     #[serde(default)]
+    fires: Vec<Fire>,
+    #[serde(default)]
     retired_great_people: BTreeSet<String>,
     #[serde(default)]
     great_person_offer_costs: BTreeMap<String, f64>,
@@ -8444,6 +8456,7 @@ impl From<GameSer> for Game {
             game_modes: s.game_modes,
             storms: s.storms,
             droughts: s.droughts,
+            fires: s.fires,
             retired_great_people: s.retired_great_people,
             great_person_offer_costs: s.great_person_offer_costs,
             pending_deals: s.pending_deals,
@@ -8693,6 +8706,7 @@ impl From<Game> for GameSer {
             game_modes: g.game_modes,
             storms: g.storms,
             droughts: g.droughts,
+            fires: g.fires,
             retired_great_people: g.retired_great_people,
             great_person_offer_costs: g.great_person_offer_costs,
             pending_deals: g.pending_deals,
@@ -9232,6 +9246,7 @@ impl Game {
             game_modes,
             storms: Vec::new(),
             droughts: Vec::new(),
+            fires: Vec::new(),
             retired_great_people: BTreeSet::new(),
             great_person_offer_costs: BTreeMap::new(),
             pending_deals: Vec::new(),

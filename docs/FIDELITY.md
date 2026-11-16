@@ -2362,6 +2362,38 @@ Two honest boundaries around it:
   Production) and `DisasterSpec` carries one rate per severity, so the
   three are averaged. Tornado and Drought have no rows and stay at zero.
 
+**Tenth wave (the fires):** forest and jungle fires break out, spread and
+regrow (`src/game/fires.rs`). Like the meteor shower they are **not** a game
+mode: their rows sit in `GranColombia_Maya_Expansion2.xml`, which
+`GranColombia_Maya.modinfo` loads under the `GranColombiaMaya_Expansion2`
+criteria that any Gathering Storm game meets, so a CPL lobby with every mode
+off has them. Live games agree: 69 of the 100 live games recorded on
+2026-11-12..15, every mode off, showed Burning Woods or Burning Rainforest in
+the tiles export.
+
+| Shipped row | CIVVIS |
+|---|---|
+| `RandomEvent_Frequencies`: Minimal 3, Light 4, Moderate 6, Heavy 10, Hyperreal 15 per class | `per_intensity` in `data/disasters.json`: 0, 4, 6, 10, 15 at `--disasters 0..4` (0 is CIVVIS's "no disasters", as for the meteor) |
+| `RandomEvent_Features`: Forest for `RANDOM_EVENT_FOREST_FIRE`, Jungle for `RANDOM_EVENT_JUNGLE_FIRE`; no `AvoidTerritory` | the fire breaks out on any tile of its feature, owned or not |
+| `RandomEvent_Yields` Turn 0 / 2 / 6 | the tile turns Burning on the turn it catches, Burnt with +1 Food on its second turn, and its own feature again with +1 Production on its sixth |
+| `SPREAD` 50%, turns 1–2 | on each of its next two turns a burning tile lights each neighbour of its own feature half the time; a lit tile keeps its own clock |
+| `UNIT_KILLED_CIVILIAN`, `UNIT_DAMAGE_LAND` 50–100 HP, `IMPROVEMENT_PILLAGED`, turns 0–2 | each burning turn kills civilians, takes 50–100 HP from every other unit and pillages a buildable improvement; Reinforced Materials spares the tile |
+| `Features.Settlement="false"` on the four fire features | no city is founded on Burning or Burnt ground |
+
+The timing and the spread were also measured from those exports. On 40 of
+the games (233 tiles catching), every one of the 204 regrowths seen came six
+turns after the tile caught, two of them Burning and four Burnt; the regrown
+tile paid +1 Food +1 Production over what it paid before in 146 of them (the
+rest had been pillaged or worked differently in between); and all 102
+spreads stayed in the fire's own feature. On 60 of them, a burning tile lit
+each eligible neighbour on a given turn 49% of the time with one such
+neighbour (164 tile-turns) and 54% with two (60).
+
+Two rows are not modelled. `POPULATION_LOSS` needs a city centre on the
+tile, and founding a city clears the feature a fire needs. And
+`ChanceIncreasePerDegree="50"` goes through the one climate multiplier
+every class shares, as the storms' and floods' own values do.
+
 **Both halves of every Dedication.** A Dedication in Civ VI is two rules,
 not one: the Normal-Age half that turns the behaviour it names into Era
 Score, and the Golden-Age half that only a Golden or Heroic Age switches

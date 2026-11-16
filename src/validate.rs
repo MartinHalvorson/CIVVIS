@@ -218,6 +218,17 @@ fn world_events(check: &mut Check) {
         if spec.severities == 0 {
             check.error(subject.clone(), "rolls no severity tiers");
         }
+        // One count per `--disasters` setting, 0 to 4, or the rate reads the
+        // generic ladder at the settings the list leaves out.
+        if !spec.per_intensity.is_empty() && spec.per_intensity.len() != 5 {
+            check.error(
+                subject.clone(),
+                format!(
+                    "per_intensity has {} entries for the five intensity settings",
+                    spec.per_intensity.len()
+                ),
+            );
+        }
         for (name, len) in [
             ("pillage_chance", spec.pillage_chance.len()),
             ("fertility_chance", spec.fertility_chance.len()),
