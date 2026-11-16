@@ -155,13 +155,19 @@ fn the_line_infantry_keeps_its_rifle_while_the_guns_are_short() {
     }
     let rifle = g.spawn_test_unit("line_infantry", 0, pos);
     let infantry = crate::name!("infantry");
-    assert_eq!(g.unit_upgrade_target(0, "line_infantry"), Some(infantry));
+    assert_eq!(
+        g.unit_upgrade_target(0, crate::name!("line_infantry")),
+        Some(infantry)
+    );
     assert!(!ai.air_resource_upgrade_preserves_wing(&g, 0, rifle, infantry, 1.0));
     assert!(off(&ai).air_resource_upgrade_preserves_wing(&g, 0, rifle, infantry, 1.0));
     // A Bombard becoming an Artillery is the guns' own upgrade.
     let bombard = g.spawn_test_unit("bombard", 0, pos);
     let artillery = crate::name!("artillery");
-    assert_eq!(g.unit_upgrade_target(0, "bombard"), Some(artillery));
+    assert_eq!(
+        g.unit_upgrade_target(0, crate::name!("bombard")),
+        Some(artillery)
+    );
     assert!(ai.air_resource_upgrade_preserves_wing(&g, 0, bombard, artillery, 1.0));
 }
 
