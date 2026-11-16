@@ -12952,6 +12952,103 @@ CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
 	return "friendship", "friendship";
 end;
 
+-- The question of a live session: `sent` goes first so an answer delivered
+-- from inside the send is read as the answer. Called from the statement that
+-- says the session is live, or from the tick under `DealAskOnTick`.
+CivvisTrade.putQuestion = function(pid, other, session, sessionID, turn)
+	local trade = CivvisTrade;
+	local pending = trade.pending[other];
+	session.sent = true;
+	session.reply_at = try(function() return CivvisClock.now(); end, nil);
+	session.end_turn_hold_expired = nil;
+	session.end_turn_hold_reported = nil;
+	-- ★★★★ THE ANSWER IS WAITED FOR, NOT TIMED OUT. The rival evaluates
+	-- the question in the game core, behind every unit command this turn
+	-- already queued ("The AI will send, ACCEPT, REJECT, etc. as the
+	-- automatic evaluation of the deal occurs", DiplomacyActionView.lua:
+	-- 2582; the shipped screen has no timer and leaves the session open
+	-- until that statement lands). Late game that takes seconds: over 37
+	-- runs every one of 488 asks was answered, p99 4.9 s, max 14.7 s. The
+	-- 4-second opening hold closed the session first on exactly four of
+	-- them (G52 t216, t240 twice, G61 t216), and all four froze the game:
+	-- the rival's answer then opened its OWN `MAKE_DEAL` session to us,
+	-- which sat "Adding to pending" behind the closed one and was never
+	-- processed, so end turn waited until the wedge watchdog restarted
+	-- the game. The same t240 save survived when its answer beat the
+	-- ladder by a frame. Re-arm the hold for the answer window BEFORE the
+	-- send: an answer delivered inside the send closes the session, and
+	-- its release must be the last word the closer hears.
+	CivvisK.guard(function()
+		LuaEvents.CivvisDealSession(other, true, cfg.DealAnswerHoldSeconds or 30);
+	end);
+	local ok = CivvisK.attempt(function()
+		DealManager.SendWorkingDeal(DealProposalAction[session.action], pid, other);
+	end);
+	emit("deal_session", { turn = turn, target = other, kind = session.kind,
+		action = session.action, session = sessionID or -1, phase = "asked", sent = ok,
+		hold = cfg.DealAnswerHoldSeconds or 30 });
+	if not ok then
+		if pending ~= nil and pending.cash_bid_requested then trade.pending[other] = nil; end
+		CivvisTrade.close(pid, other, "send_threw");
+	end
+end;
+
+-- ★★ OPT-IN: A PEACE OR ALLIANCE QUESTION GOES OUT ON THE NEXT TICK, NOT
+-- INSIDE THE STATEMENT THAT OPENED THE SESSION (`DealAskOnTick`, off unless
+-- set). Every hung rival turn after a refused proposal is the rival's counter
+-- that never arrived: live 2026-11-12..16, 7 of 116 refused peace and
+-- alliance asks still on disk (`closed` / `counter_not_sent`), and all 7 of
+-- those rivals' turns hung. DiplomacyManager.csv shows the same thing each
+-- time: the refusal is processed inline, inside the statement that carried
+-- our question ("AI_REFUSE_DEAL, NEGATIVE, Processing Statement" with no
+-- "Adding to pending" before it), and the counter that follows is queued
+-- ("MAKE_DEAL, POSITIVE, POSITIVE, Adding to pending" or "NONE, 00000000")
+-- and is either processed on the next line or never. A trade ask's counter
+-- is processed inline and never queued (civvis-20261115T071444Z, 170549Z),
+-- and no trade ask's counter was lost. Six of the seven lost counters came on
+-- a leader screen opened in the same frame as the refusal (the screen's
+-- `event_lock` ref 0-17 ms before it), against 47 of the 109 delivered.
+-- Firaxis's own screen never proposes inside that dispatch: a person presses
+-- Propose on a screen already up (`OnProposeOrAcceptDeal`,
+-- DLC/Expansion2/UI/Replacements/DiplomacyDealView.lua:526). Whether asking
+-- from the tick saves the counter is what this switch is for; the ledger
+-- says `ask_deferred` when it waits. A session our end turn has overtaken is
+-- not asked, as the statement handler does: it is closed now if the rival
+-- has acknowledged it, otherwise on that acknowledgement, when nothing of
+-- the rival's is in flight.
+CivvisTrade.askDeferred = function()
+	local trade = CivvisTrade;
+	if cfg.DealAskOnTick ~= true then return; end
+	local waiting = {};
+	for other, session in pairs(trade.sessions) do
+		if session.ask_on_tick ~= nil and not session.sent then
+			waiting[#waiting + 1] = { other = other, session = session };
+		end
+	end
+	if #waiting == 0 then return; end
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if pid == nil or pid < 0 then return; end
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	for _, entry in ipairs(waiting) do
+		local other, session = entry.other, entry.session;
+		local wait = session.ask_on_tick;
+		session.ask_on_tick = nil;
+		if trade.sessions[other] == session and not session.sent then
+			if session.end_turn_hold_expired or wait.turn ~= turn then
+				session.sent = true;
+				session.unasked = { turn = turn };
+				CivvisTrade.restoreAskMarker(session.kind, other);
+				emit("deal_session", { turn = turn, target = other, kind = session.kind,
+					action = session.action, session = wait.session or -1, phase = "unasked",
+					why = "opened_after_end_turn" });
+				if wait.acknowledged then CivvisTrade.close(pid, other, "opened_after_end_turn"); end
+			else
+				CivvisTrade.putQuestion(pid, other, session, wait.session, turn);
+			end
+		end
+	end
+end;
+
 -- Every diplomacy statement that touches the local seat. Ours opens the
 -- question; the rival's carries the verdict. Bare global for the offline
 -- regression (`deal_session_test.lua`).
@@ -13026,41 +13123,19 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 			end
 			return;
 		end
-		-- The session is live: put the question. `sent` goes first so an
-		-- answer delivered from inside the send is read as the answer.
-		session.sent = true;
-		session.reply_at = try(function() return CivvisClock.now(); end, nil);
-		session.end_turn_hold_expired = nil;
-		session.end_turn_hold_reported = nil;
-		-- ★★★★ THE ANSWER IS WAITED FOR, NOT TIMED OUT. The rival evaluates
-		-- the question in the game core, behind every unit command this turn
-		-- already queued ("The AI will send, ACCEPT, REJECT, etc. as the
-		-- automatic evaluation of the deal occurs", DiplomacyActionView.lua:
-		-- 2582; the shipped screen has no timer and leaves the session open
-		-- until that statement lands). Late game that takes seconds: over 37
-		-- runs every one of 488 asks was answered, p99 4.9 s, max 14.7 s. The
-		-- 4-second opening hold closed the session first on exactly four of
-		-- them (G52 t216, t240 twice, G61 t216), and all four froze the game:
-		-- the rival's answer then opened its OWN `MAKE_DEAL` session to us,
-		-- which sat "Adding to pending" behind the closed one and was never
-		-- processed, so end turn waited until the wedge watchdog restarted
-		-- the game. The same t240 save survived when its answer beat the
-		-- ladder by a frame. Re-arm the hold for the answer window BEFORE the
-		-- send: an answer delivered inside the send closes the session, and
-		-- its release must be the last word the closer hears.
-		CivvisK.guard(function()
-			LuaEvents.CivvisDealSession(other, true, cfg.DealAnswerHoldSeconds or 30);
-		end);
-		local ok = CivvisK.attempt(function()
-			DealManager.SendWorkingDeal(DealProposalAction[session.action], pid, other);
-		end);
-		emit("deal_session", { turn = turn, target = other, kind = session.kind,
-			action = session.action, session = sessionID or -1, phase = "asked", sent = ok,
-			hold = cfg.DealAnswerHoldSeconds or 30 });
-		if not ok then
-			if pending ~= nil and pending.cash_bid_requested then trade.pending[other] = nil; end
-			CivvisTrade.close(pid, other, "send_threw");
+		-- The session is live: put the question (`CivvisTrade.putQuestion`),
+		-- now or, under `DealAskOnTick`, on the next tick.
+		if cfg.DealAskOnTick == true
+				and (session.kind == "peace" or session.kind == "alliance") then
+			if session.ask_on_tick == nil then
+				session.ask_on_tick = { session = sessionID, turn = turn };
+				emit("deal_session", { turn = turn, target = other, kind = session.kind,
+					action = session.action, session = sessionID or -1, phase = "ask_deferred" });
+			end
+			if fromPlayer == other then session.ask_on_tick.acknowledged = true; end
+			return;
 		end
+		CivvisTrade.putQuestion(pid, other, session, sessionID, turn);
 		return;
 	end
 	if fromPlayer ~= other then return; end
@@ -13255,6 +13330,11 @@ CivvisOnDealSessionClosed = function(sessionID)
 				-- question went out, so nothing is unanswered and no turn is
 				-- held for a verdict.
 				CivvisTrade.close(pid, subject, "opened_after_end_turn", true);
+			elseif session.ask_on_tick ~= nil and not session.sent then
+				-- `DealAskOnTick`: closed before the tick put the question.
+				-- Nothing went out either, and the next turn asks again.
+				CivvisTrade.restoreAskMarker(session.kind, subject);
+				CivvisTrade.close(pid, subject, "closed_before_asked", true);
 			elseif session.counter_wait ~= nil then
 				-- A refused offer whose counter never came: the rival did
 				-- answer, so this is no unanswered ask and holds no turn.
@@ -27882,6 +27962,7 @@ local function onGameCoreTick()
 	if CivvisBoard.restart.deferred then pcall(CivvisBoard.restartFromCore); return; end
 	ensureStarted();
 	CivvisTrade.pollPeace();
+	CivvisK.guard(CivvisTrade.askDeferred);
 	ticksSeen = ticksSeen + 1;
 	if ticksSeen % (cfg.TickEvery or 16) ~= 0 then
 		if not CivvisQueue.ordersLanded() then return; end
@@ -27959,6 +28040,8 @@ CivvisQueue.onUiPulse = function(source)
 		or cfg.Play == false and "disabled" or not cfg.CivvisDecides and "standalone";
 	if rejected then CivvisQueue.noteUiPulse(source, rejected); return; end
 	pcall(CivvisQueue.checkAiPhaseStall);
+	-- A leader screen up can hold the game-core tick back; its pulse asks too.
+	CivvisK.guard(CivvisTrade.askDeferred);
 	-- A held game is quiet on purpose: tick every pulse so a lifted pause is
 	-- noticed even while the core publishes nothing, and do not call it a wake.
 	if CivvisBoard.hold.held then
