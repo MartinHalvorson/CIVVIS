@@ -2309,6 +2309,13 @@ pub struct GoodyRewardSpec {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct DisasterSpec {
     pub per_game: f64,
+    /// Expected occurrences per game at each `--disasters` setting, indexed by
+    /// that setting (0 none, 1 Light, 2 Moderate, 3 Heavy, 4 Hyperreal), when
+    /// the class has the shipped `RandomEvent_Frequencies` rows. A class with
+    /// this list uses it in place of `per_game` times the generic intensity
+    /// ladder; an absent list keeps that ladder.
+    #[serde(default)]
+    pub per_intensity: Vec<f64>,
     #[serde(default = "one_u8")]
     pub severities: u8,
     /// HP removed from every unit caught in the affected area.

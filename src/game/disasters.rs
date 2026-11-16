@@ -8,7 +8,8 @@
 //! (`disaster_rate`, `disaster_rng`, `roll_severity`), which tiles and
 //! cities are immune or protected, eruptions, river floods, droughts and
 //! storms (`trigger_*`, `resolve_*`, `advance_storms`), the population a
-//! disaster takes, and the turn's `process_disasters`.
+//! disaster takes, and the turn's `process_disasters`. Forest and jungle
+//! fires roll here too and burn in `game/fires.rs`.
 //!
 //! Climate: CO2 emissions and climate points, the climate phase
 //! (`apply_climate_phase`, the live mirror's `mirror_set_climate_phase`),
@@ -156,7 +157,7 @@ impl Game {
 
     /// Permanent fertility left behind by a disaster. Land keeps what a storm's
     /// silt leaves; the sea keeps nothing.
-    fn fertilize_tile(&mut self, position: Pos, kind: Fertility) {
+    pub(super) fn fertilize_tile(&mut self, position: Pos, kind: Fertility) {
         if self
             .map
             .get(position)
@@ -308,9 +309,15 @@ impl Game {
         let Some(spec) = self.rules.disasters.get(class) else {
             return 0.0;
         };
-        let intensity = DISASTER_INTENSITY_SCALE[self.disaster_intensity() as usize];
+        let setting = self.disaster_intensity() as usize;
         let climate = 1.0 + CLIMATE_DISASTER_SCALE * f64::from(self.climate_phase);
-        spec.per_game * intensity * climate
+        // A class with the shipped per-setting rows reads them as written: the
+        // fires' 4, 6, 10 and 15 are not the generic ladder's 3, 6, 10.5 and
+        // 16.5.
+        if let Some(per_game) = spec.per_intensity.get(setting) {
+            return per_game * climate;
+        }
+        spec.per_game * DISASTER_INTENSITY_SCALE[setting] * climate
     }
 
     /// Disasters draw from a turn-keyed stream of their own so that adding or
@@ -410,7 +417,7 @@ impl Game {
     /// Tell whoever has something at stake on the tile what just happened to
     /// it: the civilization that owns it, and anyone with a unit standing
     /// there when it hit.
-    fn note_disaster(&mut self, position: Pos, text: String) {
+    pub(super) fn note_disaster(&mut self, position: Pos, text: String) {
         let mut told: BTreeSet<usize> = BTreeSet::new();
         let owner = self
             .map
@@ -680,11 +687,13 @@ impl Game {
     }
 
     /// One turn of Gathering Storm's random disasters: drift the storms
-    /// already on the map, lift the droughts whose time is up, then roll each
-    /// class for a new event.
+    /// already on the map, lift the droughts whose time is up, carry every
+    /// fire one turn along (`game/fires.rs`), then roll each class for a new
+    /// event.
     pub(super) fn process_disasters(&mut self) {
         self.advance_storms();
         self.lift_expired_droughts();
+        self.advance_fires();
         if self.disaster_intensity() == 0 || self.max_turns == 0 {
             return;
         }
@@ -703,6 +712,7 @@ impl Game {
                 "volcanic_eruption" => self.trigger_eruption(severity, &mut rng),
                 "river_flood" => self.trigger_river_flood(severity, &mut rng),
                 "drought" => self.trigger_drought(severity, &mut rng),
+                "forest_fire" | "jungle_fire" => self.trigger_fire(&class, &mut rng),
                 _ => self.trigger_storm(&class, severity, &mut rng),
             }
         }
