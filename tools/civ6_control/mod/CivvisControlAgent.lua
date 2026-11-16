@@ -12540,6 +12540,100 @@ CivvisTrade.restartReplyWindow = function(session)
 	local now = try(function() return CivvisClock.now(); end, nil);
 	if type(now) == "number" then session.reply_at = now; end
 end;
+-- ★★ OPT-IN (`DealCounterRefuse`, off unless set): A REFUSAL LEFT ON THE DEAL
+-- SCREEN IS DECLINED, NOT JUST CLOSED. Live 2026-11-15..16, 68 refused
+-- (REJECTED) peace and alliance asks waited out the counter hold and closed
+-- `counter_not_sent`. The 59 that did not hang all showed the refusal as
+-- conversation: the leader screen applied `MAKE_DEAL, AI_REFUSE_DEAL` as a
+-- dialogue (MakeDeal_ApplyStatement's "coming back from the deal screen"
+-- branch, Base/Assets/UI/DiplomacyActionView.lua:2559-2572) and the closer
+-- answered it CHOICE_EXIT (`diplomacy_choice`). All 9 that hung had no such
+-- dialogue, the deal screen still up, and were closed with a bare
+-- `CloseSession`. DiplomacyManager.csv on every hang ends with the rival's
+-- counter "Adding to pending", never processed, 42-73 s after our close; a
+-- longer wait does not bring it (civvis-20261115T104756Z t112 waited 30 s).
+-- Every one of the 131 closes after a counter that did arrive sent REJECTED
+-- first (`counter_answered`), and none hung. So under this switch, when the
+-- counter hold runs out on a REJECTED answer with no refusal dialogue and the
+-- deal screen up, the closer hands the session back here
+-- (`LuaEvents.CivvisDealHoldExpired`): REJECTED goes out, the game is left
+-- to close the session (`closed why=rejected_working_deal closer=game`), and
+-- the session stays registered for `DealCounterRefuseGraceSeconds` so a
+-- counter that is then processed is refused like any other
+-- (`counter_answered after_refusal`). If the grace runs out the ordinary
+-- closer takes it (`closer=ladder`). Whether REJECTED releases a counter that
+-- is already pending is what turning this on measures. The dialogue path,
+-- ADJUSTED answers, trade asks and the default are untouched.
+CivvisTrade.COUNTER_REFUSE_GRACE_SECONDS = 2;
+-- The leader screen applied a statement as conversation (the closer's
+-- `ApplyStatement` wrapper, `LuaEvents.CivvisDealDialogue`).
+CivvisTrade.onDealDialogue = function(fromPlayer, statementType, subType)
+	local session = CivvisTrade.sessions[tonumber(fromPlayer) or -1];
+	if session ~= nil and statementType == "MAKE_DEAL" and subType == "AI_REFUSE_DEAL" then
+		session.refusal_dialogue = true;
+	end
+end;
+-- A deal screen's hold ran out (`LuaEvents.CivvisDealHoldExpired`). Re-arming
+-- the hold here keeps that screen's closer waiting; returning without it
+-- lets the closer run exactly as before. `dealUp` is true from the deal view
+-- itself, the action view's reading of its conversation panel otherwise
+-- (false = the conversation is showing, nil = unreadable).
+CivvisTrade.onHoldExpired = function(screen, subject, dealUp)
+	if cfg.DealCounterRefuse ~= true then return; end
+	local trade = CivvisTrade;
+	subject = tonumber(subject);
+	local session = subject ~= nil and trade.sessions[subject] or nil;
+	if session == nil or not session.sent then return; end
+	local wait = session.counter_wait;
+	if wait == nil or wait.resource_cash or wait.refuse_failed then return; end
+	if session.kind ~= "peace" and session.kind ~= "alliance" then return; end
+	if wait.refused ~= nil then
+		-- The grace ran out with the session still open: the closer takes it.
+		wait.refused.ladder = true;
+		return;
+	end
+	if wait.refusal ~= DealProposalAction.REJECTED or session.refusal_dialogue
+			or dealUp == false then
+		return;
+	end
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if pid == nil or pid < 0 then return; end
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	local grace = tonumber(cfg.DealCounterRefuseGraceSeconds) or trade.COUNTER_REFUSE_GRACE_SECONDS;
+	wait.refused = { at = try(function() return CivvisClock.now(); end, nil) };
+	emit("deal_session", { turn = turn, target = subject, kind = session.kind,
+		session = session.sessionID or -1, phase = "refusing", screen = screen,
+		deal_up = dealUp, grace = grace });
+	-- Re-armed before the send, as `putQuestion` does: a close delivered
+	-- inside the send releases the hold, and that must be the last word.
+	pcall(function() LuaEvents.CivvisDealSession(subject, true, grace); end);
+	local sent = CivvisK.attempt(function()
+		DealManager.SendWorkingDeal(DealProposalAction.REJECTED, pid, subject);
+	end);
+	if not sent and trade.sessions[subject] == session then
+		-- Nothing went out: hand the screen straight back to the closer.
+		wait.refused = nil;
+		wait.refuse_failed = true;
+		emit("deal_session", { turn = turn, target = subject, kind = session.kind,
+			session = session.sessionID or -1, phase = "refuse_failed" });
+		pcall(function() LuaEvents.CivvisDealSession(subject, true, 0); end);
+	end
+end;
+-- Backstop for the close above: a declined session the game has closed
+-- without a `DiplomacySessionClosed` reaching us is settled from the tick,
+-- so it cannot sit registered and hold the end turn (`holdsEndTurn`).
+CivvisTrade.settleRefused = function()
+	if cfg.DealCounterRefuse ~= true then return; end
+	for subject, session in pairs(CivvisTrade.sessions) do
+		local refused = session.counter_wait and session.counter_wait.refused;
+		if refused ~= nil and session.sessionID ~= nil and try(function()
+				return DiplomacyManager.IsSessionIDOpen(session.sessionID);
+			end, nil) == false then
+			CivvisOnDealSessionClosed(session.sessionID);
+			return;
+		end
+	end
+end;
 -- ★★ A RIVAL WHOSE TURN HUNG IS NOT ASKED AGAIN AFTER THE RELOAD. A hung
 -- rival turn follows a deal session with that rival (33 of 34 live stalls,
 -- 105 games of 2026-11-12..13), and the reload plays the same board into the
@@ -12647,7 +12741,7 @@ CivvisTrade.ask = function(pid, subject, action, kind, turn)
 	return "session";
 end;
 
-CivvisTrade.close = function(pid, subject, why, already_closed)
+CivvisTrade.close = function(pid, subject, why, already_closed, detail)
 	local trade = CivvisTrade;
 	local session = trade.sessions[subject];
 	trade.sessions[subject] = nil;
@@ -12655,11 +12749,13 @@ CivvisTrade.close = function(pid, subject, why, already_closed)
 		pcall(function() DiplomacyManager.CloseSession(session.sessionID); end);
 	end
 	pcall(function() LuaEvents.CivvisDealSession(subject, false, 0); end);
-	emit("deal_session", {
+	local payload = {
 		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
 		target = subject, phase = "closed", why = why,
 		kind = session and session.kind or nil,
-	});
+	};
+	for key, value in pairs(detail or {}) do payload[key] = value; end
+	emit("deal_session", payload);
 end;
 
 -- An ask that never reached the rival must not start its retry wait. The
@@ -13177,12 +13273,23 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 				reason = "duplicate_refusal" });
 			return;
 		end
+		local afterRefusal = session.counter_wait.refused ~= nil;
+		if afterRefusal and try(function()
+				return DiplomacyManager.GetKeyName(kVariants.StatementSubType);
+			end, nil) == "HUMAN_REFUSE_DEAL" then
+			-- `DealCounterRefuse`: the rival's echo of our own REJECTED is
+			-- not its counter. Keep waiting for that, or for the close.
+			emit("counter_wait", { turn = turn, target = other, kind = session.kind,
+				reason = "refusal_echo" });
+			return;
+		end
 		if session.counter_wait.resource_cash then session.counter_wait.answering = true; end
 		local rejected = CivvisK.attempt(function()
 			DealManager.SendWorkingDeal(DealProposalAction.REJECTED, pid, other);
 		end);
 		emit("counter_answered", { turn = turn, target = other, kind = session.kind,
 			session = session.sessionID or -1, rejected = rejected,
+			after_refusal = afterRefusal or nil,
 			waited = try(function()
 				return math.floor((CivvisClock.now() - session.reply_at) * 100 + 0.5) / 100;
 			end, nil),
@@ -13270,7 +13377,7 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 			local counterHold = tonumber(cfg.PeaceCounterHoldSeconds)
 				or CivvisTrade.COUNTER_HOLD_SECONDS;
 			if counterHold > 0 then
-				session.counter_wait = { turn = turn };
+				session.counter_wait = { turn = turn, refusal = dealAction };
 				CivvisTrade.restartReplyWindow(session);
 				pcall(function() LuaEvents.CivvisDealSession(other, true, counterHold); end);
 				emit("deal_session", { turn = turn, target = other, kind = session.kind,
@@ -13299,7 +13406,7 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		local counterHold = tonumber(cfg.AllianceCounterHoldSeconds)
 			or CivvisTrade.COUNTER_HOLD_SECONDS;
 		if not accepted and counterHold > 0 then
-			session.counter_wait = { turn = turn };
+			session.counter_wait = { turn = turn, refusal = dealAction };
 			CivvisTrade.restartReplyWindow(session);
 			pcall(function() LuaEvents.CivvisDealSession(other, true, counterHold); end);
 			emit("deal_session", { turn = turn, target = other, kind = session.kind,
@@ -13335,6 +13442,16 @@ CivvisOnDealSessionClosed = function(sessionID)
 				-- Nothing went out either, and the next turn asks again.
 				CivvisTrade.restoreAskMarker(session.kind, subject);
 				CivvisTrade.close(pid, subject, "closed_before_asked", true);
+			elseif session.counter_wait ~= nil and session.counter_wait.refused ~= nil then
+				-- `DealCounterRefuse`: we declined on the deal screen. `game`
+				-- = closed before the grace ran out, `ladder` = by the closer.
+				local refused = session.counter_wait.refused;
+				CivvisTrade.close(pid, subject, "rejected_working_deal", true, {
+					closer = refused.ladder and "ladder" or "game",
+					waited = try(function()
+						return math.floor((CivvisClock.now() - refused.at) * 100 + 0.5) / 100;
+					end, nil),
+				});
 			elseif session.counter_wait ~= nil then
 				-- A refused offer whose counter never came: the rival did
 				-- answer, so this is no unanswered ask and holds no turn.
@@ -27963,6 +28080,7 @@ local function onGameCoreTick()
 	ensureStarted();
 	CivvisTrade.pollPeace();
 	CivvisK.guard(CivvisTrade.askDeferred);
+	CivvisK.guard(CivvisTrade.settleRefused);
 	ticksSeen = ticksSeen + 1;
 	if ticksSeen % (cfg.TickEvery or 16) ~= 0 then
 		if not CivvisQueue.ordersLanded() then return; end
@@ -28042,6 +28160,7 @@ CivvisQueue.onUiPulse = function(source)
 	pcall(CivvisQueue.checkAiPhaseStall);
 	-- A leader screen up can hold the game-core tick back; its pulse asks too.
 	CivvisK.guard(CivvisTrade.askDeferred);
+	CivvisK.guard(CivvisTrade.settleRefused);
 	-- A held game is quiet on purpose: tick every pulse so a lifted pause is
 	-- noticed even while the core publishes nothing, and do not call it a wake.
 	if CivvisBoard.hold.held then
@@ -28564,6 +28683,13 @@ function Initialize()
 	CivvisQueue.timescalePending = true;
 	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse); end);
 	pcall(function() LuaEvents.CivvisControlPeek.Add(CivvisQueue.onPeekPulse); end);
+	-- `DealCounterRefuse`: the leader screens' closer says what it saw.
+	pcall(function() LuaEvents.CivvisDealDialogue.Add(function(from, statement, subType)
+		CivvisK.guard(function() CivvisTrade.onDealDialogue(from, statement, subType); end);
+	end); end);
+	pcall(function() LuaEvents.CivvisDealHoldExpired.Add(function(screen, subject, dealUp)
+		CivvisK.guard(function() CivvisTrade.onHoldExpired(screen, subject, dealUp); end);
+	end); end);
 	for name, handler in pairs({
 		LocalPlayerTurnBegin = onLocalPlayerTurnBegin,
 		LocalPlayerTurnEnd = function() CivvisQueue.onLocalTurnEnd(); end,

@@ -2052,6 +2052,12 @@ def build_config(args: argparse.Namespace) -> dict:
         # the lost counters behind every hung rival turn after a refused
         # proposal were queued during that statement. Off unless set.
         "DealAskOnTick": bool(getattr(args, "deal_ask_on_tick", False)),
+        # When a refused peace or alliance ask's counter hold runs out with the
+        # refusal left on the deal screen (no refusal dialogue), decline it with
+        # REJECTED and let the game close the session (`CivvisTrade.onHoldExpired`)
+        # instead of a bare close: every hung rival turn after such a refusal
+        # followed the bare close. Off unless set.
+        "DealCounterRefuse": bool(getattr(args, "deal_counter_refuse", False)),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -8872,6 +8878,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--deal-ask-on-tick", dest="deal_ask_on_tick", action="store_true",
                     help="put a peace or alliance question on the next tick, not "
                          "inside the statement that opened its session (opt-in)")
+    ap.add_argument("--deal-counter-refuse", dest="deal_counter_refuse", action="store_true",
+                    help="decline a refused peace or alliance ask left on the deal "
+                         "screen with REJECTED when its counter hold runs out (opt-in)")
     # Wins always finish the native movie. This setting retains a minimum
     # presentation time; it cannot shorten a winning cinematic.
     ap.add_argument("--end-game-seconds", type=float, default=10.0,
