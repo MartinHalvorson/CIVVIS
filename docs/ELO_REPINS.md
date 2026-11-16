@@ -2408,3 +2408,21 @@ The engine before this change measures **18,761 decisions /
 `0x89ea_660b_d416_d1c8`**. The legacy planning configuration and the five
 anchor profiles are unchanged. This re-pin records a rules boundary and does
 not establish stronger play.
+
+## v54 (2026-11-16) — forest and jungle fires break out, spread and regrow
+
+A rules addition in `src/game/fires.rs`, read from
+`DLC/GranColombia_Maya/Data/GranColombia_Maya_Expansion2.xml`, which every
+Gathering Storm game loads with every game mode off. A fire breaks out at the
+shipped 4, 6, 10 or 15 per class per game (`--disasters 1..4`), burns two turns,
+lies burnt four and regrows richer, spreads into its own feature, kills
+civilians, damages other units and pillages what was built; no city is founded
+on burning or burnt ground. Every controller, `AdvancedAi::legacy()` included,
+now plays on a board where woods and rainforest can burn. `docs/FIDELITY.md`
+has the rows and the live measurements.
+
+The engine before this change measures **19,739 decisions /
+`0x89ea_660b_d416_d1c8`**. The corrected engine measures **19,866 decisions /
+`0xf971_70e9_be13_b1e2`**. The legacy planning configuration and the five
+anchor profiles are unchanged. This re-pin records a rules boundary and does
+not establish stronger play.

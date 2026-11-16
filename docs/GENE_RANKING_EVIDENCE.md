@@ -391,6 +391,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `naval-crossing-keeps-going` | off (unmeasured) | Opt-in gene `naval-crossing-keeps-going`; see `Self::naval_crossing_keeps_going`. | 1 \| 1 |
 | `near-done-work-finishes` | off (unmeasured) | Opt-in gene `near-done-work-finishes`; see `advanced/near_done_work_finishes.rs`. | 1 \| 1 |
 | `near-rival-deterrence-holds-late` | off (unmeasured) | Opt-in gene `near-rival-deterrence-holds-late`; see `advanced/near_rival_deterrence_holds_late.rs`. | 1 \| 1 |
+| `near-rival-deterrence-opens-early` | off (unmeasured) | Opt-in gene `near-rival-deterrence-opens-early`; see `advanced/near_rival_deterrence_opens_early.rs`. | 1 \| 1 |
 | `no-city-limit` | off (unmeasured) | Opt-in gene `no-city-limit`; see `advanced/no_city_limit.rs`. | 1 \| 1 |
 | `nuclear-goal-needs-a-launcher` | off (unmeasured) | Opt-in gene `nuclear-goal-needs-a-launcher`; see `Self::nuclear_goal_needs_a_launcher`. | 1 \| 1 |
 | `nusantara-reads-the-coast` | off (unmeasured) | Opt-in gene `nusantara-reads-the-coast`; see `Self::nusantara_reads_the_coast`. | 1 \| 1 |
@@ -485,8 +486,9 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `score-seat-holds-its-faith-strikes` | off (unmeasured) | Opt-in gene `score-seat-holds-its-faith-strikes`; see `advanced/score_seat_holds_its_faith_strikes.rs`. | 1 \| 1 |
 | `score-seat-keeps-friends` | off (unmeasured) | Opt-in gene `score-seat-keeps-friends`; see `advanced/score_keeps_friends.rs`. | 1 \| 1 |
 | `score-seat-plays-for-points` | off (unmeasured) | Opt-in gene `score-seat-plays-for-points`; see `advanced/score_seat.rs`. | 1 \| 1 |
-| `score-seat-raises-wonders` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders`; see `advanced/score_wonders.rs`. | — \| 2 |
-| `score-seat-raises-wonders-2` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders-2`; version two of the family, so version one is turned off. | — \| 2 |
+| `score-seat-raises-wonders` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders`; see `advanced/score_wonders.rs`. | — \| 3 |
+| `score-seat-raises-wonders-2` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders-2`; version two of the family, so version one is turned off. | — \| 3 |
+| `score-seat-raises-wonders-3` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders-3`; version three of the family, so versions one and two are turned off. | — \| 3 |
 | `score-seat-takes-what-pays` | off (unmeasured) | Opt-in `score-seat-takes-what-pays`; see `advanced/score_takes_what_pays.rs`. | — \| 3 |
 | `score-seat-takes-what-pays-2` | off (unmeasured) | Opt-in `score-seat-takes-what-pays-2`; see `advanced/score_takes_what_pays.rs`. | — \| 3 |
 | `score-seat-takes-what-pays-3` | off (unmeasured) | Opt-in `score-seat-takes-what-pays-3`; see `advanced/score_takes_what_pays.rs`. | — \| 3 |

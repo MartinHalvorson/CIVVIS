@@ -1930,6 +1930,105 @@ impl AdvancedAi {
     /// Evaluate infrastructure bombing on an exact cloned position. Besides
     /// the pillaged layer, this prices interception losses and the operational
     /// disruption from scattering aircraft out of a disabled air base.
+    /// The best air pillage among `legal`: the highest
+    /// [`Self::air_pillage_value`], ties to the lower position.
+    pub(super) fn best_air_pillage(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        legal: &[Action],
+    ) -> Option<(f64, Pos, Action)> {
+        // ★★ BOUND BEFORE SIMULATING. `air_pillage_value` plays the pillage
+        // on a copy of the whole game, and a bomber in range of a developed
+        // empire has dozens of legal targets: in a late site game this one
+        // choice was 3.3% of the stepping thread. A target can never be worth
+        // more than `air_pillage_bound` (what it could pay, before the
+        // attacker's losses), so the targets are tried best bound first and
+        // one is simulated only while its bound could still beat the best
+        // value found. The order of comparison is the `max_by` this replaced:
+        // the higher value, then the lower position, so the same target wins.
+        let better = |left: (f64, Pos), right: (f64, Pos)| {
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| right.1.cmp(&left.1))
+        };
+        let mut pillages: Vec<(f64, Pos, Action)> = legal
+            .iter()
+            .filter_map(|action| match action {
+                Action::AirPillage { unit, target } if *unit == uid => Some((
+                    self.air_pillage_bound(g, pid, *target),
+                    *target,
+                    action.clone(),
+                )),
+                _ => None,
+            })
+            .collect();
+        pillages.sort_by(|left, right| better((right.0, right.1), (left.0, left.1)));
+        let mut best_pillage: Option<(f64, Pos, Action)> = None;
+        for (bound, target, action) in pillages {
+            if best_pillage.as_ref().is_some_and(|(value, at, _)| {
+                better((bound, target), (*value, *at)) != std::cmp::Ordering::Greater
+            }) {
+                continue;
+            }
+            let value = self.air_pillage_value(g, pid, uid, target);
+            if best_pillage.as_ref().is_none_or(|(best, at, _)| {
+                better((value, target), (*best, *at)) != std::cmp::Ordering::Less
+            }) {
+                best_pillage = Some((value, target, action));
+            }
+        }
+        best_pillage
+    }
+
+    /// The most [`Self::air_pillage_value`] could give `target`: every gain
+    /// it counts, as if every one were collected, and no loss. Each term is
+    /// the value's own term or larger, added in the value's order, and the
+    /// whole is padded by a point, so floating-point rounding cannot put a
+    /// value above its bound.
+    pub(super) fn air_pillage_bound(&self, g: &Game, pid: usize, target: Pos) -> f64 {
+        let Some(tile) = g.map.tiles.get(&target) else {
+            return f64::INFINITY;
+        };
+        let mut bound = 1.0;
+        if let Some(improvement) = tile.improvement.as_deref() {
+            if !tile.pillaged {
+                bound += match improvement {
+                    "airstrip" => 185.0,
+                    "oil_well" | "offshore_oil_rig" | "mine" | "quarry" => 115.0,
+                    "farm" | "fishing_boats" => 65.0,
+                    _ => 85.0,
+                };
+            }
+        } else if let Some(district) = tile.district {
+            if !tile.pillaged {
+                bound += match g.district_family(district).as_str() {
+                    "aerodrome" | "industrial_zone" | "campus" | "spaceport" => 175.0,
+                    "commercial_hub" | "harbor" | "holy_site" | "theater_square" => 145.0,
+                    _ => 115.0,
+                };
+            }
+            if let Some(city) = tile.owner_city.and_then(|city| g.cities.get(&city)) {
+                bound += city
+                    .buildings
+                    .iter()
+                    .filter(|building| !city.pillaged_buildings.contains(*building))
+                    .map(|building| 80.0 + g.rules.buildings[building].cost * 0.32)
+                    .sum::<f64>();
+            }
+        }
+        for unit in g.unit_ids_at(target) {
+            let candidate = &g.units[unit];
+            if candidate.owner != pid
+                && g.rules.units[candidate.kind].domain.as_deref() == Some("air")
+            {
+                bound += 150.0 + g.rules.units[candidate.kind].cost * 0.55;
+            }
+        }
+        bound
+    }
+
     pub(super) fn air_pillage_value(&self, g: &Game, pid: usize, uid: u32, target: Pos) -> f64 {
         let attacker = &g.units[&uid];
         let attacker_spec = &g.rules.units[attacker.kind];
@@ -2071,21 +2170,7 @@ impl AdvancedAi {
                     .total_cmp(&right.0)
                     .then_with(|| right.1.cmp(&left.1))
             });
-        let best_pillage = legal
-            .iter()
-            .filter_map(|action| match action {
-                Action::AirPillage { unit, target } if *unit == uid => Some((
-                    self.air_pillage_value(g, pid, uid, *target),
-                    *target,
-                    action.clone(),
-                )),
-                _ => None,
-            })
-            .max_by(|left, right| {
-                left.0
-                    .total_cmp(&right.0)
-                    .then_with(|| right.1.cmp(&left.1))
-            });
+        let best_pillage = self.best_air_pillage(g, pid, uid, &legal);
         let best_priority = legal
             .iter()
             .filter_map(|action| match action {
@@ -2281,3 +2366,6 @@ impl AdvancedAi {
         patrol
     }
 }
+
+#[cfg(test)]
+mod air_pillage_bound_tests;

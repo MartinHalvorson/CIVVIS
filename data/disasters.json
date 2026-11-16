@@ -77,5 +77,15 @@
     "duration": [3, 3],
     "radius": [1, 1],
     "terrains": ["desert"]
+  },
+  "forest_fire": {
+    "per_game": 6.0,
+    "per_intensity": [0.0, 4.0, 6.0, 10.0, 15.0],
+    "severities": 1
+  },
+  "jungle_fire": {
+    "per_game": 6.0,
+    "per_intensity": [0.0, 4.0, 6.0, 10.0, 15.0],
+    "severities": 1
   }
 }

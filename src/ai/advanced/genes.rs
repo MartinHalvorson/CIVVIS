@@ -6027,6 +6027,15 @@ pub const GENES: &[Gene] = &[
     // unwalled original capital at twice the target's steady power declares
     // as prey. Opt-in; see `advanced/open_capital_declares_at_twice.rs`.
     Gene { tag: "open-capital-declares-at-twice", field: "open_capital_declares_at_twice", kind: Kind::OptIn, enable: AdvancedAi::enable_open_capital_declares_at_twice, disable: AdvancedAi::disable_open_capital_declares_at_twice },
+    // Live Immortal 2026-11-15: the last four original capitals (215049Z,
+    // 222126Z, 222931Z, 223324Z) fell to opening wars declared t24-59 at
+    // 0.39-0.77 of the attacker's power, with no deterrent trained before the
+    // declaration: one war came before turn 30, and in two games the
+    // attacker's soldiers stood at the capital while none of its cities was
+    // known within ten tiles. The opening deterrent from live turn 10, and a
+    // soldier at the capital's door makes a neighbour. Opt-in; see
+    // `advanced/near_rival_deterrence_opens_early.rs`.
+    Gene { tag: "near-rival-deterrence-opens-early", field: "near_rival_deterrence_opens_early", kind: Kind::OptIn, enable: AdvancedAi::enable_near_rival_deterrence_opens_early, disable: AdvancedAi::disable_near_rival_deterrence_opens_early },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
@@ -6187,6 +6196,11 @@ pub const GENES: &[Gene] = &[
     // expansion before t80 and beside a 1.5x neighbour. See
     // `advanced/score_wonders.rs`.
     Gene { tag: "score-seat-raises-wonders-2", field: "score_seat_raises_wonders_2", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_raises_wonders_2, disable: AdvancedAi::disable_score_seat_raises_wonders_2 },
+    // Version 3: in 3 of 5 live Rome Score games of 11-15 v2's "safety first"
+    // held every lane from t80 to the tally and built nothing, with 200-
+    // Production wonders on offer for 40 turns; one lane stays open in a city
+    // ten tiles or more from every threat. See `advanced/score_wonders.rs`.
+    Gene { tag: "score-seat-raises-wonders-3", field: "score_seat_raises_wonders_3", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_raises_wonders_3, disable: AdvancedAi::disable_score_seat_raises_wonders_3 },
     // Live Deity Rome Score lane 2026-11-12, 11 games: Settlers were born at
     // the same pace in the fast and the slow games, but took a mean 8.7
     // turns from birth to founding in the three fastest against 23.8 in the

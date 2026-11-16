@@ -358,6 +358,7 @@ impl Game {
             .saturating_add(1);
         view.storms.clear();
         view.droughts.clear();
+        view.fires.clear();
         view.log = Default::default();
         view.events = Vec::new().into();
         // A simulator's future random stream is not observable in the game.

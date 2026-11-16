@@ -33,7 +33,9 @@ import sys
 #: How many genes the column shows. The full table is one link away.
 TOP_GENES = 15
 
-#: Civilization VI's own ladder, lowest first: the order pooled rungs are named in.
+#: Civilization VI's own ladder, lowest first: the order pooled rungs are named
+#: in, and a rung's place in it is its level number (Settler is Lv 1, Deity
+#: Lv 8). `home_rankings_test.py` holds it equal to `strategies::CIV6_RUNGS`.
 CIV6_RUNGS = ["settler", "chieftain", "warlord", "prince", "king", "emperor", "immortal", "deity"]
 
 SLOT = re.compile(
@@ -91,6 +93,7 @@ def strategies(source: pathlib.Path) -> dict | None:
             {
                 "kind": "rung",
                 "name": " · ".join(rung.title() for rung in rungs),
+                "levels": [CIV6_RUNGS.index(rung) + 1 for rung in rungs if rung in CIV6_RUNGS],
                 "elo": elo,
                 "bound": bounds.pop() if len(bounds) == 1 else "",
             }

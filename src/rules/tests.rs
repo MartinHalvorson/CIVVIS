@@ -347,9 +347,12 @@ fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
     // civvis-20261110T192354Z held the card t171-185 and the band's Faith
     // quote kept its +50 step (450, 500, 550, 600, 650), so a band is no
     // longer free under it; every other unit still costs +100%.
+    // Moved again by the forest and jungle fires: `forest_fire` and
+    // `jungle_fire` in `data/disasters.json`, with their shipped
+    // `RandomEvent_Frequencies` rows as `per_intensity`.
     assert_eq!(
         Rules::shipped().source_fingerprint(),
-        "fnv1a64:526e959f1ebf836c"
+        "fnv1a64:f68a1c804ce764ac"
     );
 }
 
