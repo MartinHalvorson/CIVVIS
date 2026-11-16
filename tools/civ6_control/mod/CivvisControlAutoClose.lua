@@ -483,6 +483,13 @@ if NAME == "DiplomacyActionView" and type(DefaultHandlers) == "table" then
             -- otherwise refused both while trying to keep a peaceful Culture
             -- lane. Other requests keep the conservative decline policy.
             dialogueObserved = true;
+            -- `DealCounterRefuse` (opt-in): the agent tells a refusal shown as
+            -- conversation from one left on the deal screen.
+            if cfg.DealCounterRefuse == true then
+                pcall(function()
+                    LuaEvents.CivvisDealDialogue(statement.FromPlayer, statementType, subType);
+                end);
+            end
             local rank = { CHOICE_NEGATIVE = 3, CHOICE_IGNORE = 2, CHOICE_EXIT = 1 };
             local visitorText = statementType == "DIPLOMATIC_DELEGATION"
                 and "LOC_DIPLO_DELEGATION_CHOICE_POSITIVE"
@@ -1158,6 +1165,7 @@ else
 	-- session is refused and closed the way every other screen is. Contexts
 	-- do not share globals; LuaEvents are the one channel there is.
 	local dealHold = 0;
+	local dealSubject = nil;
 	local holdReported = false;
 	-- A Civvis-owned deal is allowed to use the opening hold while the
 	-- shipped diplomacy fade settles.  If that fade never reports stopped,
@@ -1170,6 +1178,7 @@ else
 		LuaEvents.CivvisDealSession.Add(function(subject, open, seconds)
 				if open then
 					dealHold = tonumber(seconds) or 4;
+					dealSubject = subject;
 					holdReported = false;
 					dealForceClose = false;
 				else
@@ -1491,6 +1500,21 @@ else
 			-- context holds the game (see `closeLocksBehindDeal`).
 			pcall(closeLocksBehindDeal, dt);
 			if dealHold > 0 then return; end
+			-- `DealCounterRefuse` (opt-in): before closing, hand an expired
+			-- hold back to the agent, which may decline a refusal left on the
+			-- deal screen (`CivvisTrade.onHoldExpired`) and re-arm the hold.
+			-- The deal view is up by being here; the action view's deal mode
+			-- hides its conversation panel (DiplomacyActionView.lua:2552).
+			if cfg.DealCounterRefuse == true then
+				local dealUp = nil;
+				if NAME == "DiplomacyDealView" then
+					dealUp = true;
+				else
+					pcall(function() dealUp = Controls.ConversationContainer:IsHidden() == true; end);
+				end
+				pcall(function() LuaEvents.CivvisDealHoldExpired(NAME, dealSubject, dealUp); end);
+				if dealHold > 0 then return; end
+			end
 			-- A deal session with no rival statement can leave BlackFadeAnim
 			-- running forever.  The hold is our explicit ownership proof, so the
 			-- close ladder may act even when the ordinary dialogue readiness gate

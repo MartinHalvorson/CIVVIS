@@ -307,7 +307,11 @@ class HungRivalSessions:
         if turn != self.turn:
             self.turn, self.dead = turn, {}
         phase, why = event.get("phase"), event.get("why")
-        if phase == "unanswered" or (phase == "closed" and why == "counter_not_sent"):
+        # `rejected_working_deal` (`DealCounterRefuse`, opt-in) is the same
+        # owed counter declined instead of dropped; if it hangs all the same,
+        # it is this hang.
+        if phase == "unanswered" or (phase == "closed" and why in (
+                "counter_not_sent", "rejected_working_deal")):
             self.dead[target] = f"{phase}/{why}"
 
     def hung_after(self, stall: dict) -> str | None:

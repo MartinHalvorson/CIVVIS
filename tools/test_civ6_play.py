@@ -3354,6 +3354,13 @@ class DealSessionConfigTests(unittest.TestCase):
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
         self.assertIn('ap.add_argument("--deal-ask-on-tick", dest="deal_ask_on_tick",', source)
 
+    def test_declining_a_refusal_left_on_the_deal_screen_is_opt_in(self):
+        self.assertIs(self._config()["DealCounterRefuse"], False)
+        self.assertIs(self._config(deal_counter_refuse=True)["DealCounterRefuse"], True)
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('ap.add_argument("--deal-counter-refuse", dest="deal_counter_refuse",',
+                      source)
+
     def test_civvis_decider_keeps_non_modal_deals_by_default(self):
         self.assertIs(self._config(civvis_decides=True)["DealSessions"], False)
 
