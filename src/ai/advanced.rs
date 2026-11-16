@@ -10443,6 +10443,11 @@ pub struct AdvancedAi {
     /// keyed by its stable Civ VI id so the live mirror's per-frame board ids
     /// cannot lose it. Empty with the gene off.
     settler_named_sites: BTreeMap<i64, Pos>,
+    /// `stranded-settler-studies-shipbuilding`: while no Settler of ours can
+    /// walk to a legal site, the research slot takes Shipbuilding, coast or
+    /// no coast. See `advanced/stranded_settler_studies_shipbuilding.rs`.
+    /// Off by default.
+    stranded_settler_studies_shipbuilding: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -12263,6 +12268,9 @@ mod siege_response;
 /// A Settler past its walk allowance takes a safe site within reach. One
 /// opt-in gene; see `advanced/stalled_settler_site.rs`.
 mod stalled_settler_site;
+/// A Settler with nowhere to walk sends research to Shipbuilding. One
+/// opt-in gene; see `advanced/stranded_settler_studies_shipbuilding.rs`.
+mod stranded_settler_studies_shipbuilding;
 /// `the-worked-backlog-gets-its-builder-first`: a worked backlog two or more
 /// tiles ahead of the Builder charges calls a Builder ahead of the other
 /// idle-queue claims. See

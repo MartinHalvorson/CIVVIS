@@ -542,6 +542,9 @@ impl AdvancedAi {
         /// Opt-in gene `settler-keeps-its-named-site`; see
         /// `advanced/settler_keeps_its_named_site.rs`.
         settler_keeps_its_named_site => enable_settler_keeps_its_named_site, disable_settler_keeps_its_named_site;
+        /// Opt-in gene `stranded-settler-studies-shipbuilding`; see
+        /// `advanced/stranded_settler_studies_shipbuilding.rs`.
+        stranded_settler_studies_shipbuilding => enable_stranded_settler_studies_shipbuilding, disable_stranded_settler_studies_shipbuilding;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
