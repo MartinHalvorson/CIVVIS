@@ -3467,7 +3467,13 @@ impl AdvancedAi {
         // `siege-guns-take-a-reachable-post`: the guns that held last turn's
         // post too long without closing. Empty with the gene off.
         let stalled = if self.siege_guns_take_a_reachable_post {
-            reachable_post::stalled_guns(g, &record.posts, &self.siege_gun_posts_held, turn)
+            reachable_post::stalled_guns(
+                g,
+                city.pos,
+                &record.posts,
+                &self.siege_gun_posts_held,
+                turn,
+            )
         } else {
             BTreeSet::new()
         };

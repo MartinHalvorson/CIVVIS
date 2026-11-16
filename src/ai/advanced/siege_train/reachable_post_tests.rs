@@ -112,7 +112,7 @@ fn off_the_gun_keeps_its_post_across_the_city() {
     );
     let held: BTreeMap<u32, HeldPost> = BTreeMap::new();
     assert!(
-        stalled_guns(&g, &previous, &held, 40).is_empty(),
+        stalled_guns(&g, city.pos, &previous, &held, 40).is_empty(),
         "a gun with no clock (the gene off keeps none) is never stalled"
     );
 }
@@ -134,10 +134,10 @@ fn a_gun_blocked_by_our_own_unit_gets_a_reachable_post() {
     .into_iter()
     .collect();
     assert!(
-        stalled_guns(&g, &previous, &held, 30 - 1).is_empty(),
+        stalled_guns(&g, city.pos, &previous, &held, 30 - 1).is_empty(),
         "within its patience the gun keeps walking"
     );
-    let stalled = stalled_guns(&g, &previous, &held, 30);
+    let stalled = stalled_guns(&g, city.pos, &previous, &held, 30);
     assert_eq!(stalled, [gun].into_iter().collect());
     let (posts, drawn) = siege_posts_reaching(&g, 0, &city, &[gun], None, &previous, &stalled);
     assert_eq!(
@@ -146,6 +146,40 @@ fn a_gun_blocked_by_our_own_unit_gets_a_reachable_post() {
         "the near tile our Spearman holds, a step from the gun's next stand"
     );
     assert_eq!(drawn, [gun].into_iter().collect());
+}
+
+/// Live Immortal civvis-20261115T230117Z turn 108: a Bombard three tiles
+/// out had held (17, 12) two turns, and its walk there stood on (17, 13), in
+/// range, that turn. A gun whose walk to its post ends this turn on a free
+/// tile within its range of the city keeps walking it.
+#[test]
+fn a_gun_whose_walk_stands_in_range_this_turn_is_not_stalled() {
+    let (mut g, cid, gun, spear, near, _) = boxed_gun();
+    g.remove_unit(spear);
+    let city = g.cities[&cid].pos;
+    let walk = g
+        .route_preview(gun, near)
+        .expect("fixture: the near tile is a step away");
+    assert_eq!(
+        walk.last(),
+        Some(&(near, 0)),
+        "fixture: reached this turn, {walk:?}"
+    );
+    let previous: BTreeMap<u32, Pos> = [(gun, near)].into_iter().collect();
+    let held: BTreeMap<u32, HeldPost> = [(
+        gun,
+        HeldPost {
+            post: near,
+            since: 30 - GUN_POST_PATIENCE_TURNS,
+            repicked: false,
+        },
+    )]
+    .into_iter()
+    .collect();
+    assert!(
+        stalled_guns(&g, city, &previous, &held, 30).is_empty(),
+        "two turns on the post, but this turn's walk stands in range"
+    );
 }
 
 #[test]
