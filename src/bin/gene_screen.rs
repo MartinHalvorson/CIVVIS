@@ -1416,6 +1416,12 @@ struct Row {
     /// The other half of the city ledger. See `cities_taken`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cities_lost: Option<usize>,
+    /// Whether this seat holds its own original capital when the game ends
+    /// (the city it founded as its capital, `is_capital`, still its own).
+    /// The live corpus's `capital_kpi` column; `None` in every file written
+    /// before the field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    capital_held: Option<bool>,
     /// ⭐ THE UNIT LEDGER, the city ledger's twin for the army (2026-11-12):
     /// enemy military units this seat's units, cities and districts killed;
     /// its own military units lost, and of those the ones a major and the
@@ -3239,6 +3245,10 @@ fn play_game(
                     .filter(|city| city.original_owner == seat && city.owner != seat)
                     .count(),
             );
+            row.capital_held =
+                Some(world.cities.values().any(|city| {
+                    city.is_capital && city.original_owner == seat && city.owner == seat
+                }));
             match this_rival {
                 Some(offset) => {
                     row.player_target = String::new();
@@ -3416,6 +3426,7 @@ fn row_for_seat(
         buildings: None,
         cities_taken: None,
         cities_lost: None,
+        capital_held: None,
         units_killed: Some(game.combat_ledger(seat).units_killed),
         units_lost: Some(game.combat_ledger(seat).units_lost),
         units_lost_to_majors: Some(game.combat_ledger(seat).units_lost_to_majors),
@@ -8203,6 +8214,7 @@ mod tests {
             buildings: None,
             cities_taken: None,
             cities_lost: None,
+            capital_held: None,
             units_killed: None,
             units_lost: None,
             units_lost_to_majors: None,

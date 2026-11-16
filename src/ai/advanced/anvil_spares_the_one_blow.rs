@@ -29,8 +29,13 @@
 //!    least such danger, nearest the city — when that reading is lower.
 //!
 //! Off, the Anvil's posts are unchanged.
+//!
+//! `spared-soldiers-come-to-the-capital` narrows step 2 at our original
+//! capital: a soldier standing more than two tiles out is not offered its own
+//! tile. See `advanced/spared_soldiers_come_to_the_capital.rs`.
 
 use super::battle_planner::DangerField;
+use super::spared_soldiers_come_to_the_capital::CAPITAL_STAND_OFF;
 use super::*;
 use std::cmp::Reverse;
 
@@ -59,14 +64,19 @@ fn open_post(g: &Game, pid: usize, pos: Pos) -> bool {
 }
 
 /// What the rewrite did, for the journal: the soldier given the empty city
-/// tile, and each soldier moved off a one-blow post `(unit, from, to)`.
+/// tile, each soldier moved off a one-blow post `(unit, from, to)`, and each
+/// soldier `stand_off` refused its own tile `(unit, where it stands, its
+/// order)`.
 #[derive(Debug, Default, PartialEq)]
 pub(super) struct Spared {
     pub filled: Option<u32>,
     pub moved: Vec<(u32, Pos, Pos)>,
+    pub called_in: Vec<(u32, Pos, Pos)>,
 }
 
 /// Rewrite `orders` (the Anvil's posts for `city`) as the module docs say.
+/// With `stand_off` (`spared-soldiers-come-to-the-capital`), a soldier
+/// standing farther than that from the city is not offered its own tile.
 pub(super) fn spare_the_one_blow(
     g: &Game,
     pid: usize,
@@ -74,6 +84,7 @@ pub(super) fn spare_the_one_blow(
     members: &[u32],
     orders: &mut BTreeMap<u32, Pos>,
     field: &mut DangerField,
+    stand_off: Option<i32>,
 ) -> Spared {
     let mut spared = Spared::default();
     let soldiers: Vec<u32> = members
@@ -132,7 +143,8 @@ pub(super) fn spare_the_one_blow(
             .into_iter()
             .filter(|pos| *pos != city && !taken.contains(pos) && open_post(g, pid, *pos))
             .collect();
-        if here != city && !taken.contains(&here) && !options.contains(&here) {
+        let stands_off = stand_off.is_some_and(|limit| g.wdist(here, city) > limit);
+        if here != city && !taken.contains(&here) && !options.contains(&here) && !stands_off {
             options.push(here);
         }
         let best = options
@@ -151,6 +163,9 @@ pub(super) fn spare_the_one_blow(
                 orders.insert(uid, to);
                 spared.moved.push((uid, post, to));
             }
+        }
+        if stands_off {
+            spared.called_in.push((uid, here, orders[&uid]));
         }
     }
     spared
@@ -175,7 +190,10 @@ impl AdvancedAi {
         };
         let mut field = DangerField::with_reach(g, pid, self.strike_reach);
         let mut orders = std::mem::take(&mut self.anvil_orders);
-        let spared = spare_the_one_blow(g, pid, city, members, &mut orders, &mut field);
+        // `spared-soldiers-come-to-the-capital`: `None` with the gene off or
+        // away from our original capital.
+        let stand_off = self.capital_stand_off(g, pid, cid);
+        let spared = spare_the_one_blow(g, pid, city, members, &mut orders, &mut field, stand_off);
         self.anvil_orders = orders;
         if !self.journal().wants(crate::reasoning::Level::Decision) {
             return;
@@ -193,6 +211,14 @@ impl AdvancedAi {
             think!(self.journal(), Military, Decision,
                 "Anvil at {name}: the {kind} posted at {from:?} takes {to:?}";
                 "anvil-spares-the-one-blow: one blow at the top of its roll removes it at the post";
+                to);
+        }
+        for (uid, here, to) in spared.called_in {
+            let kind = g.units[&uid].kind.to_string();
+            let out = g.wdist(here, city);
+            think!(self.journal(), Military, Decision,
+                "Anvil at {name}: the {kind} {out} tiles out comes in to {to:?}";
+                "spared-soldiers-come-to-the-capital: our original capital does not leave a posted soldier standing off past {CAPITAL_STAND_OFF} tiles";
                 to);
         }
     }

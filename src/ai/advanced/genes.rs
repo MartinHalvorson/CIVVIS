@@ -6254,6 +6254,13 @@ pub const GENES: &[Gene] = &[
     // own city founded within three tiles of a sibling's site. See
     // `advanced/settler_keeps_its_named_site.rs`.
     Gene { tag: "settler-keeps-its-named-site", field: "settler_keeps_its_named_site", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_keeps_its_named_site, disable: AdvancedAi::disable_settler_keeps_its_named_site },
+    // Live 6p Continents 11-15/16: 27 games lost the original capital. In 21
+    // the Anvil's one-blow rewrite at the capital sent posted soldiers back to
+    // tiles four or more out (261 rewrites), and at the first blow a median
+    // 25% of our land soldiers stood within three. Rome fell to two
+    // Cuirassiers with ten soldiers four to six out. See
+    // `advanced/spared_soldiers_come_to_the_capital.rs`.
+    Gene { tag: "spared-soldiers-come-to-the-capital", field: "spared_soldiers_come_to_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_spared_soldiers_come_to_the_capital, disable: AdvancedAi::disable_spared_soldiers_come_to_the_capital },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
