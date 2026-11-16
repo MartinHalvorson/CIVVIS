@@ -548,6 +548,9 @@ impl AdvancedAi {
         /// Opt-in gene `settler-keeps-its-named-site`; see
         /// `advanced/settler_keeps_its_named_site.rs`.
         settler_keeps_its_named_site => enable_settler_keeps_its_named_site, disable_settler_keeps_its_named_site;
+        /// Opt-in gene `score-seat-sprints-to-the-tally`; see
+        /// `advanced/score_sprints_to_the_tally.rs`.
+        score_seat_sprints_to_the_tally => enable_score_seat_sprints_to_the_tally, disable_score_seat_sprints_to_the_tally;
         /// Opt-in gene `siege-guns-take-a-reachable-post`; see
         /// `advanced/siege_train/reachable_post.rs`.
         siege_guns_take_a_reachable_post => enable_siege_guns_take_a_reachable_post, disable_siege_guns_take_a_reachable_post;

@@ -10470,6 +10470,12 @@ pub struct AdvancedAi {
     /// keyed by its stable Civ VI id so the live mirror's per-frame board ids
     /// cannot lose it. Empty with the gene off.
     settler_named_sites: BTreeMap<i64, Pos>,
+    /// `score-seat-sprints-to-the-tally`: from twenty Online turns before the
+    /// turn limit, a Score seat's queues take the item with the most tally
+    /// points per Production that finishes in time (no project, no
+    /// Spaceport) and its Gold and Faith above a small reserve buy the fewest
+    /// coins a point. See `advanced/score_sprints_to_the_tally.rs`. Opt-in.
+    score_seat_sprints_to_the_tally: bool,
     /// `siege-guns-take-a-reachable-post`: a siege gun that has held one
     /// firing post for two turns without standing on it takes a post it can
     /// reach this turn or next, a soldier of ours on that post steps off it,
@@ -11596,6 +11602,9 @@ mod score_seat_founds_early;
 /// `score-seat-holds-its-faith-strikes`: see
 /// `advanced/score_seat_holds_its_faith_strikes.rs`.
 mod score_seat_holds_its_faith_strikes;
+/// `score-seat-sprints-to-the-tally`: see
+/// `advanced/score_sprints_to_the_tally.rs`.
+mod score_sprints_to_the_tally;
 /// `score-seat-raises-wonders`: a Score seat's wonder program, a queue claim
 /// that acts natively and live. See `advanced/score_wonders.rs`.
 mod score_wonders;
@@ -27127,6 +27136,14 @@ impl AdvancedAi {
             let reserve = self.war_faith_reserve(g, pid);
             self.military_faith_spending_above(g, pid, &plan, reserve);
         }
+        // `score-seat-sprints-to-the-tally`: inside the tally window the Gold
+        // and Faith above a small reserve buy the fewest coins a point,
+        // after the defence purchases above and before patronage and the
+        // stock purchase pass. Exact no-op while the gene is off. See
+        // `advanced/score_sprints_to_the_tally.rs`.
+        if !emergency_city_defense && !surprise_defense_purchase {
+            self.score_sprint_purchases(g, pid, &plan);
+        }
         self.advanced_great_people(g, pid, self.great_person_lane(g, pid, &plan));
         // `religion-seat-fields-apostles`: a positive saving decision below
         // reaches the later city governor, and expires before the next pass.
@@ -27598,6 +27615,12 @@ impl AdvancedAi {
         // Satellite until it lands, bridging the pad hold and
         // `launch-commits-the-endgame`.
         self.claim_satellite_holds_the_pad(g, pid, &plan);
+        // `score-seat-sprints-to-the-tally`: inside the tally window every
+        // queue takes what scores most a Production and finishes in time,
+        // after every ordinary writer and the pad holds, before the defence
+        // handoffs below, which keep the last word. Exact no-op while the
+        // gene is off. See `advanced/score_sprints_to_the_tally.rs`.
+        self.claim_score_sprint_queues(g, pid, &plan);
         self.claim_frontier_walls_before_the_surprise(g, pid);
         // Make the declaration response the final authority over queues this
         // turn. Earlier governors can continue to express their peaceful
