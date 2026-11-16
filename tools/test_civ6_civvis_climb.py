@@ -2942,6 +2942,30 @@ class BatchRefreshSecondsTests(unittest.TestCase):
                 True)
             self.assertIs(climb.deal_ask_on_tick_mode(True, {}, missing), True)
 
+    def test_declining_a_left_refusal_is_opt_in_and_reaches_the_play_command(self):
+        import tempfile
+        base = climb.play_command(self._play_args(), "t",
+                                  Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertNotIn("--deal-counter-refuse", base)
+        armed = climb.play_command(self._play_args(deal_counter_refuse=True), "t",
+                                   Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertEqual([word for word in armed if word != "--deal-counter-refuse"], base)
+        self.assertEqual(armed.count("--deal-counter-refuse"), 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            policy = Path(tmp) / "policy"
+            missing = Path(tmp) / "absent"
+            self.assertIs(climb.deal_counter_refuse_mode(None, {}, missing), False)
+            policy.write_text("CIVVIS_DEAL_ASK_ON_TICK=1\n")
+            self.assertIs(climb.deal_counter_refuse_mode(None, {}, policy), False)
+            policy.write_text("CIVVIS_DEAL_ASK_ON_TICK=1\nCIVVIS_DEAL_COUNTER_REFUSE=on  # trial\n")
+            self.assertIs(climb.deal_counter_refuse_mode(None, {}, policy), True)
+            self.assertIs(climb.deal_counter_refuse_mode(False, {}, policy), False)
+            self.assertIs(climb.deal_counter_refuse_mode(
+                None, {"CIVVIS_DEAL_COUNTER_REFUSE": "0"}, policy), False)
+            self.assertIs(climb.deal_counter_refuse_mode(
+                None, {"CIVVIS_DEAL_COUNTER_REFUSE": "1"}, missing), True)
+            self.assertIs(climb.deal_ask_on_tick_mode(None, {}, policy), True)
+
     def test_the_leader_score_line_reaches_the_play_command_only_when_set(self):
         """Legacy launchers retain their argv shape; live play ignores it and
         defaults to the full-game policy when the option is absent."""
