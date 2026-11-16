@@ -96,7 +96,12 @@ impl AdvancedAi {
     /// a science head (see [`Self::score_settles_first_science_head`]) more
     /// than [`SCORE_SETTLES_FIRST_KEEP_TURNS`] turns from done, while the
     /// window is open. `None` with the gene off.
-    pub(super) fn score_settles_first_passes(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
+    pub(super) fn score_settles_first_passes(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> Option<Item> {
         if !self.score_settles_first_open(g, pid) {
             return None;
         }

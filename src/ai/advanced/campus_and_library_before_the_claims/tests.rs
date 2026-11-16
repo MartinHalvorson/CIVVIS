@@ -517,7 +517,10 @@ fn a_score_seat_settling_first_keeps_its_settler_ahead_of_the_first_campus() {
     assert_eq!(head(&off, cid), Some(campus), "off, the Campus goes first");
 
     ai.enable_score_seat_settles_before_the_campus();
-    assert!(ai.score_settles_first_open(&g, 0), "fixture: the window is open");
+    assert!(
+        ai.score_settles_first_open(&g, 0),
+        "fixture: the window is open"
+    );
     let mut on = g.clone();
     ai.claim_free_slot_campus(&mut on, 0, &plan);
     assert_eq!(head(&on, cid), Some(settler), "the Settler stays first");

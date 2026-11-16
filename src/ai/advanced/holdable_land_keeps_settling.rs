@@ -210,6 +210,40 @@ impl AdvancedAi {
                 > super::paused_district_finish::PAUSED_DISTRICT_FINISH_TURNS
     }
 
+    /// Whether `cid`'s queue head keeps its queue against the Settler claim.
+    /// `score-seat-settles-before-the-campus`: under the city target a Score
+    /// seat's Campus, Library or University head gives way, and a head the
+    /// stock rules would have kept is recorded in `science_heads` for the
+    /// journal. Exactly the stock test with that gene off. See
+    /// `advanced/score_settles_before_the_campus.rs`.
+    pub(super) fn holdable_land_queue_keeps(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        science_heads: &mut BTreeMap<u32, Item>,
+    ) -> bool {
+        let keeps = || {
+            self.science_campus_holds_repeat_settler(g, pid, cid, plan)
+                // `score-seat-expands-hard`: the Ancestral Hall its claim
+                // raised is not this claim's to displace either.
+                || (self.score_expands_hard_now(g) && Self::score_expands_keeps_the_hall(g, cid))
+                // `score-seat-builds-the-bath`: nor is the Bath.
+                || self.score_bath_holds(g, pid, cid)
+                || !Self::holdable_land_may_displace(g, pid, cid)
+        };
+        match self.score_settles_first_passes(g, pid, cid) {
+            Some(head) => {
+                if keeps() {
+                    science_heads.insert(cid, head);
+                }
+                false
+            }
+            None => keeps(),
+        }
+    }
+
     /// The land soldier test shared by both soldier filters: a unit that can
     /// fight on land and is not recon.
     pub(super) fn holdable_land_soldier(g: &Game, unit: &crate::game::Unit) -> bool {
@@ -530,31 +564,7 @@ impl AdvancedAi {
                 None => Self::early_settler_raider_near(g, city.pos),
             } {
                 Some("a raider in its ring")
-            } else if {
-                let keeps = || {
-                    self.science_campus_holds_repeat_settler(g, pid, cid, plan)
-                        // `score-seat-expands-hard`: the Ancestral Hall its
-                        // claim raised is not this claim's to displace either.
-                        || (self.score_expands_hard_now(g)
-                            && Self::score_expands_keeps_the_hall(g, cid))
-                        // `score-seat-builds-the-bath`: nor is the Bath.
-                        || self.score_bath_holds(g, pid, cid)
-                        || !Self::holdable_land_may_displace(g, pid, cid)
-                };
-                // `score-seat-settles-before-the-campus`: under the city
-                // target a Score seat's Campus, Library or University head
-                // gives way. `None` with the gene off. See
-                // `advanced/score_settles_before_the_campus.rs`.
-                match self.score_settles_first_passes(g, pid, cid) {
-                    Some(head) => {
-                        if keeps() {
-                            science_heads.insert(cid, head);
-                        }
-                        false
-                    }
-                    None => keeps(),
-                }
-            } {
+            } else if self.holdable_land_queue_keeps(g, pid, cid, plan, &mut science_heads) {
                 Some("its queue keeps its item")
             } else if !g.can_produce(pid, cid, &item) {
                 Some("cannot train a Settler")
