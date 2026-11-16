@@ -1667,6 +1667,29 @@ struct RegionalSlot {
 /// sweep. Hashing the interned name avoids ordering it by ruleset text.
 type PurchasePriceMemo = HashMap<(usize, u32, Name, u8, bool), Option<f64>>;
 
+/// Answer `key` from one query-memo slot, or compute it and keep it there.
+///
+/// Every slot of [`QueryCache`] is `None` outside a [`Game::query_memo`]
+/// scope, when every ask computes afresh, and a table inside one, filled by
+/// the first ask for each key. No borrow of the slot is held while `compute`
+/// runs, so it may consult this slot or any other. This is the lookup the
+/// engine's memoised reads used to write out one by one.
+#[inline]
+pub(crate) fn remembered<K: Ord, V: Clone>(
+    slot: &std::cell::RefCell<Option<BTreeMap<K, V>>>,
+    key: K,
+    compute: impl FnOnce() -> V,
+) -> V {
+    if let Some(value) = slot.borrow().as_ref().and_then(|memo| memo.get(&key)) {
+        return value.clone();
+    }
+    let value = compute();
+    if let Some(memo) = slot.borrow_mut().as_mut() {
+        memo.insert(key, value.clone());
+    }
+    value
+}
+
 #[derive(Default)]
 pub struct QueryCache {
     yields: std::cell::RefCell<Option<BTreeMap<u32, Yields>>>,

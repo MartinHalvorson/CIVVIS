@@ -42,16 +42,9 @@ impl Game {
     /// The [`TraversalClass`] a unit moves as, folding its kind and its
     /// owner's unlocks into the flags the tile predicate reads.
     pub(crate) fn traversal_class(&self, uid: u32) -> TraversalClass {
-        if let Some(memo) = self.query_memo.traversal.borrow().as_ref() {
-            if let Some(class) = memo.get(&uid) {
-                return *class;
-            }
-        }
-        let class = self.traversal_class_uncached(uid);
-        if let Some(memo) = self.query_memo.traversal.borrow_mut().as_mut() {
-            memo.insert(uid, class);
-        }
-        class
+        crate::game::remembered(&self.query_memo.traversal, uid, || {
+            self.traversal_class_uncached(uid)
+        })
     }
 
     /// Every unit flying a patrol right now, as `(owner, tile)`.

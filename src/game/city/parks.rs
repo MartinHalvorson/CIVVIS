@@ -24,16 +24,9 @@ impl Game {
     /// under. Outside a scope this computes as it always did, so a caller that
     /// is mutating between reads cannot see a stale figure.
     pub fn tile_appeal(&self, position: Pos) -> i32 {
-        if let Some(memo) = self.query_memo.appeal.borrow().as_ref() {
-            if let Some(appeal) = memo.get(&position) {
-                return *appeal;
-            }
-        }
-        let appeal = self.tile_appeal_uncached(position);
-        if let Some(memo) = self.query_memo.appeal.borrow_mut().as_mut() {
-            memo.insert(position, appeal);
-        }
-        appeal
+        crate::game::remembered(&self.query_memo.appeal, position, || {
+            self.tile_appeal_uncached(position)
+        })
     }
 
     pub(in crate::game) fn tile_appeal_uncached(&self, position: Pos) -> i32 {
@@ -253,16 +246,9 @@ impl Game {
     }
 
     pub(in crate::game) fn established_national_parks(&self, pid: usize) -> Vec<(u32, [Pos; 4])> {
-        if let Some(memo) = self.query_memo.national_parks.borrow().as_ref() {
-            if let Some(parks) = memo.get(&pid) {
-                return parks.clone();
-            }
-        }
-        let parks = self.established_national_parks_uncached(pid);
-        if let Some(memo) = self.query_memo.national_parks.borrow_mut().as_mut() {
-            memo.insert(pid, parks.clone());
-        }
-        parks
+        crate::game::remembered(&self.query_memo.national_parks, pid, || {
+            self.established_national_parks_uncached(pid)
+        })
     }
 
     pub(in crate::game) fn established_national_parks_uncached(
