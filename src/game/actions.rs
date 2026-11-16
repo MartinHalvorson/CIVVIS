@@ -456,9 +456,26 @@ impl Game {
             }
             _ => None,
         };
+        //
+        // ★★ A REFUSED POLICY CARD WROTE NOTHING. The seat's deck review asks
+        // to slot and unslot cards the rules turn down (site seed 7: a fifth
+        // of the city yields derived after an action followed a refused
+        // `SlotPolicy`), and every one dropped all that was kept. Both
+        // handlers check everything before they write the deck, and so does
+        // everything `apply_unbracketed` runs ahead of them, but the host
+        // gate, which may write: so with no host gate a refused card leaves
+        // the board as it found it and what was kept stands. A card that is
+        // slotted or unslotted drops everything at the end instead of at the
+        // start, which is the same: nothing kept is read or filled while an
+        // action is in flight.
+        let deck_card = self.host_gate.is_none()
+            && matches!(
+                action,
+                Action::SlotPolicy { .. } | Action::UnslotPolicy { .. }
+            );
         let reach = match action {
             Action::Produce { .. } => ActionReach::OwnCities,
-            _ if ordinary.is_some() => ActionReach::UnitOnly,
+            _ if ordinary.is_some() || deck_card => ActionReach::UnitOnly,
             _ => ActionReach::Board,
         };
         let watch = ordinary.map(|uid| self.ordinary_move_watch(uid));
@@ -473,6 +490,8 @@ impl Game {
                     ActionReach::UnitOnly
                 }
             }
+            _ if deck_card && result.is_err() => ActionReach::UnitOnly,
+            _ if deck_card => ActionReach::Board,
             _ => reach,
         };
         self.query_memo.action_ends(reached);
