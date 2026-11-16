@@ -433,3 +433,44 @@ fn a_score_seat_spreads_its_spies_too() {
     on.enable_denial_spies_cover_every_racer();
     assert_eq!(run(on), vec![Some(INDIA), Some(PERSIA)]);
 }
+
+#[test]
+fn a_lone_spy_leaves_its_co_leader_only_for_one_ahead_in_progress() {
+    // 212021Z from turn 176: the one Spy afield stood in Persia's cities
+    // (two projects) while India had landed its third.
+    let run = |ai: AdvancedAi, india: usize| {
+        let mut g = board();
+        race(
+            &mut g,
+            [
+                (INDIA, india, 344.0),
+                (PERSIA, 2, 532.0),
+                (SCYTHIA, 2, 435.0),
+            ],
+        );
+        outbuilds(&mut g, PERSIA);
+        let persia = g.player_city_ids(PERSIA)[0];
+        let spy = idle_spy(&mut g, persia);
+        let mut ai = ai;
+        ai.advanced_spies(&mut g, 0, &plan());
+        g.spies[&spy]
+            .city
+            .and_then(|city| g.cities.get(&city))
+            .map(|city| city.owner)
+    };
+    assert_eq!(
+        run(keeps(), 3),
+        Some(PERSIA),
+        "off: Persia leads on its edge"
+    );
+    assert_eq!(
+        run(covers(), 3),
+        Some(INDIA),
+        "on: India is a project ahead"
+    );
+    assert_eq!(
+        run(covers(), 2),
+        Some(PERSIA),
+        "level on progress: Science alone does not move it"
+    );
+}

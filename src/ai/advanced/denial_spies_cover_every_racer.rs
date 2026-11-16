@@ -31,10 +31,13 @@
 //! 2. every racer within [`RACER_COVER_STEP`] of the leader's progress (one
 //!    project, or the whole trip once every one of them has launched) is a
 //!    co-leader;
-//! 3. each Spy answers one co-leader ([`AdvancedAi::racer_cover_target`]): a
-//!    Spy alone in a co-leader's cities answers that co-leader. A Spy that
-//!    shares a co-leader with another Spy of ours answers the best-ranked
-//!    co-leader no Spy of ours covers, unless it can run the Disrupt Rocketry
+//! 3. each Spy answers one co-leader ([`AdvancedAi::racer_cover_target`]). A
+//!    Spy standing in a co-leader's cities answers that co-leader unless it
+//!    can leave for the best-ranked co-leader no Spy of ours covers: always
+//!    when another Spy of ours shares its co-leader, and when it is alone
+//!    there only for a co-leader ahead of it in progress (Science alone never
+//!    moves it, so a tie that flips from turn to turn cannot walk it back and
+//!    forth). Either way it stays while it can run the Disrupt Rocketry
 //!    offered where it stands. Any other Spy answers the co-leader with the
 //!    fewest Spies of ours, the best-ranked on a tie.
 //!
@@ -163,12 +166,18 @@ impl AdvancedAi {
             .map(|city| city.owner)
             .filter(|owner| co_leaders.contains(owner));
         match here {
-            Some(here) if covering(here) == 0 => Some(here),
             Some(here) => {
-                let uncovered = co_leaders
-                    .iter()
-                    .copied()
-                    .find(|racer| *racer != here && covering(*racer) == 0);
+                // A Spy sharing its co-leader leaves for the best-ranked
+                // uncovered one; a Spy alone there only for one ahead of it
+                // in progress (never on Science alone, so a tie that flips
+                // from turn to turn cannot walk it back and forth).
+                let shared = covering(here) > 0;
+                let standing = Self::racer_space_progress(g, here);
+                let uncovered = co_leaders.iter().copied().find(|racer| {
+                    *racer != here
+                        && covering(*racer) == 0
+                        && (shared || Self::racer_space_progress(g, *racer) > standing + 1e-9)
+                });
                 match uncovered {
                     Some(next) if !Self::racer_spy_disrupt_runnable(g, spy, legal, refile) => {
                         Some(next)
