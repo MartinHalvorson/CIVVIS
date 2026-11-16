@@ -17809,6 +17809,10 @@ const SKY_LAUNCH_FLIGHTS = {
   moon:{project:SKY_CHAIN.moon, duration:2800, body:"moon", rocket:"saturn_v"},
   mars:{project:SKY_CHAIN.mars, duration:3600, body:"mars", rocket:"starship"},
   expedition:{project:SKY_CHAIN.expedition, duration:3000, body:"exo", rocket:"starship_xl"},
+  // A Lagrange Laser Station goes up the way the first satellite did and stays
+  // up. It is the one launch a civilization makes more than once, so it is
+  // counted in `laser_stations` and is no row of `science_projects`.
+  laser:{project:"lagrange_laser_station", duration:3200, rocket:"orbital", station:true},
 };
 // A mission lifts off from the Spaceport that ran its project, not from the
 // palace lawn. The completion frame no longer says which city built it, but
@@ -17849,7 +17853,8 @@ function queueSkyLaunches(prev, next, now = performance.now()) {
     const oldProjects = old.science_projects || [];
     const newProjects = player.science_projects || [];
     for (const [mission, flight] of Object.entries(SKY_LAUNCH_FLIGHTS)) {
-      if (oldProjects.includes(flight.project) || !newProjects.includes(flight.project)) continue;
+      if (flight.station || oldProjects.includes(flight.project) ||
+          !newProjects.includes(flight.project)) continue;
       // Repeated snapshots of one transition must restart neither the flight
       // nor its exhaust. A project is permanent, but keeping the guard here
       // also makes synthetic/recovery state streams harmless.
@@ -17877,6 +17882,8 @@ function queueSkyLaunches(prev, next, now = performance.now()) {
           (+player.exoplanet_distance || 0) / target)),
       });
     }
+    // And a rocket for every laser station the frame added (app_launches.js).
+    queueSkyLaserLaunches(prev, next, player, old, now);
     // The expedition left many turns ago, so there is no flight to watch come
     // in. Its landing is queued for the frame its distance runs out.
     if (skyExpeditionArrived(player) && !skyExpeditionArrived(old) &&
@@ -17910,20 +17917,23 @@ function skyLaunchInFlight(playerId, mission, now = performance.now()) {
 // over to the other and there is never a moment with both or neither on the
 // screen.
 const SKY_SATELLITE_HANDOVER = .88;
-function skyCraftDeployed(playerId, mission, now) {
-  const launch = activeSkyLaunches(now).find(candidate =>
-    candidate.playerId === playerId && candidate.mission === mission);
-  if (!launch) return 1;
+function skyLaunchHandover(launch, now) {
   const flown = (now - launch.t0) / launch.duration;
   return Math.max(0, Math.min(1,
     (flown - SKY_SATELLITE_HANDOVER) / (1 - SKY_SATELLITE_HANDOVER)));
+}
+function skyCraftDeployed(playerId, mission, now) {
+  const launch = activeSkyLaunches(now).find(candidate =>
+    candidate.playerId === playerId && candidate.mission === mission);
+  return launch ? skyLaunchHandover(launch, now) : 1;
 }
 function skySatelliteDeployed(playerId, now) {
   return skyCraftDeployed(playerId, "satellite", now);
 }
 // What a launch is called on screen: whose it is, then where it is going.
 function skyLaunchLabel(launch) {
-  const goal = launch.mission === "expedition" ? "exoplanet" : launch.mission;
+  const goal = launch.mission === "expedition" ? "exoplanet"
+    : launch.mission === "laser" ? "laser station" : launch.mission;
   return `${civName(launch.playerId)} – ${goal}`.toUpperCase();
 }
 // A rocket is at its fastest as it leaves the picture and would take its name
@@ -20967,6 +20977,8 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
       cx.fillRect(x + size * 1.2, y - size * .3, size * 1.4, size * .6);
     }
   }
+  // Then every laser station, on the orbit its own launch flew.
+  drawSkyLaserStations(crew, view, radius, centerX, centerY, size, shown, now);
   cx.restore();
 }
 
@@ -21151,165 +21163,8 @@ function skyLaunchFilm(start, end, margin) {
     ? seen : null;
 }
 
-// All launch views use one silhouette vocabulary. Apollo 11's Saturn V is a
-// long, staged white stack; Mars uses the compact stainless Starship outline;
-// the exoplanet ship is that same outline at exactly twice the scale — still
-// unmistakably a rocket, just monumental. Widening it faster than lengthening
-// it (an earlier 4x width) squashed the aspect ratio to ~1.5:1 and read as an
-// egg with fins. `plume` scales the engine flame with the hull, so the doubled
-// ship is not pushed by a normal-size flame. Keeping the dimensions here makes
-// the doubling exact in both projections rather than two hand-tuned
-// approximations.
-function skyRocketGeometry(rocket, size) {
-  // Low orbit needs far less rocket than the Moon does: the satellite rides the
-  // short, slim R-7 that carried Sputnik.
-  if (rocket === "orbital") return {
-    family:"orbital", length:size * 3, halfWidth:size * .42, plume:.75,
-  };
-  const starshipLength = size * 3.4;
-  const starshipHalfWidth = size * .55;
-  if (rocket === "starship_xl") return {
-    family:"starship", length:starshipLength * 2,
-    halfWidth:starshipHalfWidth * 2, plume:2,
-  };
-  if (rocket === "starship") return {
-    family:"starship", length:starshipLength, halfWidth:starshipHalfWidth,
-    plume:1,
-  };
-  return {family:"saturn_v", length:size * 4.7, halfWidth:size * .52, plume:1};
-}
-
-// Draw in a local frame whose +x axis is the flight direction. `pixel` is one
-// screen pixel in the caller's coordinate system: one on the globe, inverse
-// zoom on the flat board. The return value lets labels and culling respect the
-// very different silhouettes without duplicating their dimensions.
-function drawMissionRocket(rocket, player, size, now, pixel = 1, alpha = 1, thrust = 1) {
-  const shape = skyRocketGeometry(rocket, size);
-  const nose = shape.length / 2, tail = -shape.length / 2;
-  const colour = pcol(player.id), dark = pcol2(player.id);
-  const flame = size * (shape.plume || 1);
-  const flicker = thrust * flame * (1.8 + .32 * Math.sin(now / 75 + player.id));
-  const flameHalf = Math.max(flame * .42, shape.halfWidth * .32);
-
-  cx.save();
-  // A warm, transparent plume ties the diagrammatic craft to the rest of the
-  // game's effects without turning any of the silhouettes into clip art.
-  if (thrust > 0) {
-    const plume = cx.createLinearGradient(tail - flicker, 0, tail + flame * .3, 0);
-    plume.addColorStop(0, "rgba(255,173,69,0)");
-    plume.addColorStop(.62, "rgba(255,176,70,.68)");
-    plume.addColorStop(1, "rgba(255,244,191,.94)");
-    cx.globalAlpha = alpha * .92; cx.fillStyle = plume;
-    cx.beginPath(); cx.moveTo(tail + flame * .18, 0);
-    cx.lineTo(tail - flicker, -flameHalf);
-    cx.lineTo(tail - flicker * .82, flameHalf); cx.closePath(); cx.fill();
-  }
-
-  cx.globalAlpha = alpha;
-  cx.strokeStyle = "#071018"; cx.lineWidth = Math.max(.8 * pixel, size * .11);
-  if (shape.family === "orbital") {
-    // The R-7: strap-on boosters flaring out around the base of a slim core,
-    // and the jersey band just under the payload it is carrying.
-    cx.fillStyle = "#c3ccd0";
-    for (const side of [-1, 1]) {
-      cx.beginPath();
-      cx.moveTo(tail + shape.length * .52, side * shape.halfWidth * .72);
-      cx.lineTo(tail, side * shape.halfWidth * 1.95);
-      cx.lineTo(tail, side * shape.halfWidth * .8);
-      cx.closePath(); cx.fill(); cx.stroke();
-    }
-    cx.fillStyle = "#edf1eb";
-    cx.beginPath(); cx.moveTo(nose, 0);
-    cx.lineTo(nose - shape.length * .2, -shape.halfWidth * .66);
-    cx.lineTo(nose - shape.length * .48, -shape.halfWidth * .74);
-    cx.lineTo(tail, -shape.halfWidth);
-    cx.lineTo(tail, shape.halfWidth);
-    cx.lineTo(nose - shape.length * .48, shape.halfWidth * .74);
-    cx.lineTo(nose - shape.length * .2, shape.halfWidth * .66);
-    cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = colour;
-    cx.fillRect(nose - shape.length * .46, -shape.halfWidth * .74,
-                shape.length * .1, shape.halfWidth * 1.48);
-  } else if (shape.family === "saturn_v") {
-    // Apollo 11's Saturn V: command-module point, narrow staged cylinder,
-    // alternating roll bands, and the fins around the first-stage engines.
-    cx.fillStyle = "#edf1eb";
-    cx.beginPath(); cx.moveTo(nose, 0);
-    cx.lineTo(nose - shape.length * .14, -shape.halfWidth * .68);
-    cx.lineTo(tail + shape.length * .08, -shape.halfWidth);
-    cx.lineTo(tail, -shape.halfWidth * .72);
-    cx.lineTo(tail, shape.halfWidth * .72);
-    cx.lineTo(tail + shape.length * .08, shape.halfWidth);
-    cx.lineTo(nose - shape.length * .14, shape.halfWidth * .68);
-    cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = "#111820";
-    for (const band of [.18, .43, .68])
-      cx.fillRect(tail + shape.length * band, -shape.halfWidth,
-                  shape.length * .075, shape.halfWidth * 2);
-    cx.fillStyle = colour;
-    cx.fillRect(tail + shape.length * .76, -shape.halfWidth * .7,
-                shape.length * .045, shape.halfWidth * 1.4);
-    cx.strokeStyle = "#58616a"; cx.lineWidth = Math.max(.55 * pixel, size * .055);
-    for (const seam of [.34, .61]) {
-      const x = tail + shape.length * seam;
-      cx.beginPath(); cx.moveTo(x, -shape.halfWidth); cx.lineTo(x, shape.halfWidth); cx.stroke();
-    }
-    cx.fillStyle = dark;
-    cx.beginPath(); cx.moveTo(tail + shape.length * .12, -shape.halfWidth * .75);
-    cx.lineTo(tail - shape.length * .055, -shape.halfWidth * 1.75);
-    cx.lineTo(tail + shape.length * .035, -.05 * pixel); cx.closePath(); cx.fill();
-    cx.beginPath(); cx.moveTo(tail + shape.length * .12, shape.halfWidth * .75);
-    cx.lineTo(tail - shape.length * .055, shape.halfWidth * 1.75);
-    cx.lineTo(tail + shape.length * .035, .05 * pixel); cx.closePath(); cx.fill();
-  } else {
-    // Starship: a stainless tapered hull, dark heat-shield belly, forward
-    // flaps and broad aft fins. The XL craft uses precisely the same drawing;
-    // only skyRocketGeometry doubles every dimension.
-    const steel = cx.createLinearGradient(0, -shape.halfWidth, 0, shape.halfWidth);
-    steel.addColorStop(0, "#f2f5f3"); steel.addColorStop(.48, "#aeb9bd");
-    steel.addColorStop(1, "#65737a");
-    cx.fillStyle = steel;
-    cx.beginPath(); cx.moveTo(nose, 0);
-    cx.quadraticCurveTo(nose - shape.length * .12, -shape.halfWidth,
-                        nose - shape.length * .25, -shape.halfWidth);
-    cx.lineTo(tail + shape.length * .08, -shape.halfWidth);
-    cx.lineTo(tail, -shape.halfWidth * .58);
-    cx.lineTo(tail, shape.halfWidth * .58);
-    cx.lineTo(tail + shape.length * .08, shape.halfWidth);
-    cx.lineTo(nose - shape.length * .25, shape.halfWidth);
-    cx.quadraticCurveTo(nose - shape.length * .12, shape.halfWidth, nose, 0);
-    cx.closePath(); cx.fill(); cx.stroke();
-    cx.globalAlpha = alpha * .58; cx.fillStyle = "#172129";
-    cx.beginPath(); cx.moveTo(tail + shape.length * .08, 0);
-    cx.lineTo(nose - shape.length * .2, 0);
-    cx.quadraticCurveTo(nose - shape.length * .1, shape.halfWidth * .42, nose, 0);
-    cx.lineTo(nose - shape.length * .25, shape.halfWidth);
-    cx.lineTo(tail + shape.length * .08, shape.halfWidth); cx.closePath(); cx.fill();
-    cx.globalAlpha = alpha; cx.fillStyle = dark;
-    const front = nose - shape.length * .28, rear = tail + shape.length * .13;
-    cx.beginPath(); cx.moveTo(front, -shape.halfWidth * .72);
-    cx.lineTo(front - shape.length * .13, -shape.halfWidth * 1.72);
-    cx.lineTo(front + shape.length * .04, -shape.halfWidth * .92); cx.closePath(); cx.fill();
-    cx.beginPath(); cx.moveTo(rear, -shape.halfWidth * .72);
-    cx.lineTo(tail - shape.length * .06, -shape.halfWidth * 1.62);
-    cx.lineTo(rear + shape.length * .1, -shape.halfWidth * .9); cx.closePath(); cx.fill();
-    cx.beginPath(); cx.moveTo(rear, shape.halfWidth * .72);
-    cx.lineTo(tail - shape.length * .06, shape.halfWidth * 1.62);
-    cx.lineTo(rear + shape.length * .1, shape.halfWidth * .9); cx.closePath(); cx.fill();
-    cx.fillStyle = colour;
-    cx.fillRect(tail + shape.length * .48, -shape.halfWidth,
-                shape.length * .055, shape.halfWidth * 2);
-    cx.fillStyle = "#1b313e";
-    const windows = rocket === "starship_xl" ? 5 : 3;
-    for (let index = 0; index < windows; index++) {
-      const x = nose - shape.length * (.2 + index * .035);
-      cx.beginPath(); cx.arc(x, -shape.halfWidth * .38,
-        Math.max(.5 * pixel, shape.halfWidth * .07), 0, 7); cx.fill();
-    }
-  }
-  cx.restore();
-  return shape;
-}
+// The rockets themselves (`skyRocketGeometry`, `drawMissionRocket`) and the
+// laser stations live in app_launches.js, loaded ahead of this script.
 
 // A launch has one clock and one curve. The clock says how much of the route
 // has been flown and the curve says where that puts the rocket; both are
@@ -21342,7 +21197,8 @@ function skyLaunchesToPaint(now) {
     const player = launch.player ||
       (state.players || []).find(candidate => candidate.id === launch.playerId);
     const flight = SKY_LAUNCH_FLIGHTS[launch.mission];
-    return player && flight ? [{launch, player, flight}] : [];
+    // A station waiting its turn in a volley has not lit its engines.
+    return player && flight && now >= launch.t0 ? [{launch, player, flight}] : [];
   });
 }
 function skyLaunchPad(launch, player) {
@@ -21822,11 +21678,16 @@ function skySatelliteRoute(launch, player, index, view, radius, centerX, centerY
 function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, centerY,
                         stage, margin) {
   const view = {...camera, radius:1};
-  const index = skyOrbitSlot(crews.satellite, player);
+  // A laser station flies to its own orbit, half a ring out from the ring its
+  // civilization's satellite keeps.
+  const orbiter = skyOrbiter(launch, player);
+  const index = launch.mission === "laser"
+    ? Math.max(0, skyOrbitSlot(crews.satellite, player)) + SKY_LASER_RING
+    : skyOrbitSlot(crews.satellite, player);
   if (!place && index < 0) return null;
   const pad = skyLaunchPad(launch, player);
   if (!place && !launch.ascent)
-    skySatellitePlan(launch, player, index, pad, camera, radius, centerX, centerY);
+    skySatellitePlan(launch, orbiter, index, pad, camera, radius, centerX, centerY);
   // From far enough out the world is a dot and low orbit has no size at all;
   // all there is to see is something leaving it.
   if (!place && radius <= 10 && skyHomeInPicture(radius, centerX, centerY, stage)) {
@@ -21847,7 +21708,7 @@ function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, c
   }
   const {route} = launch;
   if (route.kind === "unseen") return null;
-  if (route.kind === "orbit") return skySatelliteRoute(launch, player, index, view, radius, centerX, centerY);
+  if (route.kind === "orbit") return skySatelliteRoute(launch, orbiter, index, view, radius, centerX, centerY);
   if (route.kind === "transfer")
     return skyTransferRoute(launch, player, place, crews, view, radius, centerX, centerY);
   if (route.kind === "depart") {
@@ -21956,6 +21817,7 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   // A satellite becomes its craft; anything else that is somehow still in the
   // picture at the end of its film goes out rather than switching off.
   const trailFade = launch.mission === "satellite" ? 1 - skySatelliteDeployed(player.id, now)
+    : launch.mission === "laser" ? 1 - skyLaunchHandover(launch, now)
     : 1 - skySmooth((clock - .9) / .1);
   // A rocket going by flies all the way out of the frame; only its trail thins.
   // One coming down to land stays solid too, and its landing takes over.
@@ -22429,7 +22291,7 @@ function flatSkyProject(worldX, worldY) {
 // further over it pitches. Kept in the frame's own units so that the same
 // completion is legible at every map zoom, and settled once.
 function skyClimbRoute(launch, start, east, stage, margin) {
-  const order = {satellite:-1, moon:0, mars:1}[launch.mission] ?? 2;
+  const order = {satellite:-1, laser:-1, moon:0, mars:1}[launch.mission] ?? 2;
   const arc = skyPitchArc(1.46, 1.02 - order * .13);
   if (launch.reach === undefined) {
     const tip = arc(1);
@@ -22500,7 +22362,8 @@ function flatSatelliteRoute(launch, player) {
   const pixel = 1 / cam.scale;
   const lift = flatSatelliteLift();
   const halfW = MAPW / 2 * pixel - 24 * pixel, halfH = MAPH / 2 * pixel - 24 * pixel;
-  const base = skyOrbit(player);
+  const orbiter = skyOrbiter(launch, player);
+  const base = skyOrbit(orbiter);
   const lap = FLAT_SAT_LAP * (.82 + .5 * base.pace);
   const sweep = launch.duration / lap * 6.283185;
   const climbFrom = (orbit, from, range) => {
@@ -22545,11 +22408,11 @@ function flatSatelliteRoute(launch, player) {
         if (worth > score) { score = worth; best = {from, node, range}; }
       }
     }
-    anim.skySettledOrbits.set(player.id, {inclination, node:best.node,
+    anim.skySettledOrbits.set(orbiter.id, {inclination, node:best.node,
       phase:best.from + best.range - launch.endsAt / lap * 6.283185});
     launch.ascent = {from:best.from, range:best.range};
   }
-  const pointAt = climbFrom(skyOrbit(player), launch.ascent.from, launch.ascent.range);
+  const pointAt = climbFrom(skyOrbit(orbiter), launch.ascent.from, launch.ascent.range);
   return {start:pointAt(0), end:pointAt(1), leaving:false, law:skyCoastLaw, keepsClock:true, pointAt};
 }
 
@@ -22557,7 +22420,7 @@ function drawFlatLaunches(now) {
   const pixel = 1 / cam.scale, size = 4.2 * pixel;
   const stage = flatBoardStage(pixel);
   for (const {launch, player, flight} of skyLaunchesToPaint(now)) {
-    const route = launch.mission === "satellite"
+    const route = launch.mission === "satellite" || launch.mission === "laser"
       ? flatSatelliteRoute(launch, player) : flatLaunchRoute(launch, player);
     const film = route && skyBoardFlight(launch, route, stage);
     if (film) drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage);
@@ -22651,6 +22514,8 @@ function drawFlatSatellites(now) {
     panel(here.x + size * 1.2, top - size * .3, size * 1.4, size * .6, wing);
     panel(here.x - size, top - size * .55, size * 2, size * 1.1, colour);
   }
+  // And the laser stations, each over its own point on the ground.
+  drawFlatLaserStations(crew, shown, pixel, lift, halfW, halfH, now);
   cx.restore();
 }
 

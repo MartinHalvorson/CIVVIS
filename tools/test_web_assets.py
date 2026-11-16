@@ -1275,6 +1275,12 @@ function everywhere(count) {
 }
 '''
 
+    def orbiters(self):
+        """Whose orbit a launch flies to, out of app_launches.js."""
+        launches = (ASSETS / "app_launches.js").read_text(encoding="utf-8")
+        start = launches.index("const SKY_LASER_SEAT")
+        return launches[start:launches.index("// Which Spaceports sent up the stations")]
+
     def projection(self):
         return (self.cut("const PLANET_PROJECT_TRIG", "function planetProjectTrig(")
                 + self.fn("planetProjectTrig") + self.fn("planetProject")
@@ -1290,7 +1296,7 @@ function everywhere(count) {
                  + self.line("const SKY_HIDDEN_START") + self.fn("skySatellitePlan")
                  + self.fn("skySatelliteRoute") + self.fn("skyHomeInPicture")
                  + self.line("const SKY_WORLD_IS_A_DOT") + self.line("const SKY_MARKERS")
-                 + self.fn("skyGlobeFlight"))
+                 + self.orbiters() + self.fn("skyGlobeFlight"))
         scenarios = r'''
 function key(pos) { return pos[0] + "," + pos[1]; }
 const PLANET = {cells:new Map([["3,4", {}]])};
@@ -1298,7 +1304,9 @@ let pad = [1, 0, 0];
 function skyLaunchPad() { return pad; }
 const stage = {left:0, top:0, right:MAPW, bottom:MAPH};
 // The whole globe in the picture, as the page opens; pulled back; and zoomed
-// in on one face, where most of the world's pads are out of the picture.
+// in on one face, where most of the world's pads are out of the picture. A
+// laser station flies the same climb to an orbit of its own, half a ring out.
+for (const mission of ["satellite", "laser"])
 for (const [R, least] of [[404.5, .7], [150, .8], [900, .1]]) {
   const CX = MAPW / 2, CY = MAPH / 2;
   const camera = {latitude:.35, longitude:1.1, roll:0}, view = {...camera, radius:1};
@@ -1309,14 +1317,19 @@ for (const [R, least] of [[404.5, .7], [150, .8], [900, .1]]) {
     pad = place;
     anim.skySettledOrbits.clear(); anim.skyOrbitSlots.clear();
     const player = {id:index % 9 + 1}, now = 1000;
-    const launch = {mission:"satellite", duration:3200, t0:now, endsAt:now + 3200, originPos:[3, 4]};
+    const launch = {mission, station:2, duration:3200, t0:now, endsAt:now + 3200, originPos:[3, 4]};
     const film = skyGlobeFlight(launch, player, undefined, {satellite:[player]}, camera, R, CX, CY, stage, 36);
-    expect(launch.route.kind === (film ? "orbit" : "unseen"), "a satellite launch is its climb or nothing: " + launch.route.kind);
+    expect(launch.route.kind === (film ? "orbit" : "unseen"), "a launch to orbit is its climb or nothing: " + launch.route.kind);
+    // A station settles its own orbit and leaves its civilization's alone, or
+    // the satellite already up there would jump onto a new one.
+    const flyer = skyOrbiter(launch, player), ring = mission === "laser" ? SKY_LASER_RING : 0;
+    expect(anim.skySettledOrbits.has(flyer.id) &&
+           (mission === "satellite" || !anim.skySettledOrbits.has(player.id)), "the wrong orbit was settled");
     // Whatever is drawn of it, the climb is the one from this pad to this orbit.
-    const climb = skySatelliteRoute(launch, player, 0, view, R, CX, CY);
+    const climb = skySatelliteRoute(launch, flyer, ring, view, R, CX, CY);
     const site = planetProject(pad, view, R, CX, CY);
     expect(far(climb.pointAt(0), site) < 1e-6, "the climb does not start on the pad");
-    const orbit = skySatelliteOrbit(player, 0, R);
+    const orbit = skySatelliteOrbit(flyer, ring, R);
     const craft = planetProject(skySatelliteSite(orbit, skySatelliteAngle(orbit, launch.endsAt)), view, R, CX, CY);
     expect(far(climb.pointAt(1), craft) < 1e-3, "the climb does not end where the craft is: " + far(climb.pointAt(1), craft));
     if (!film) return;
@@ -1342,8 +1355,8 @@ for (const [R, least] of [[404.5, .7], [150, .8], [900, .1]]) {
       `pad ${index}: appears in open sky, ${limb.toFixed(0)} px off the limb and ${edge.toFixed(0)} px inside the frame`);
     round++;
   });
-  expect(drawn >= pads.length * least, `radius ${R}: only ${drawn} of ${pads.length} launches are drawn`);
-  expect(lifted > 0 && (R > 500 || round > 0), `radius ${R}: ${lifted} lift-offs and ${round} round the limb`);
+  expect(drawn >= pads.length * least, `${mission}, radius ${R}: only ${drawn} of ${pads.length} launches are drawn`);
+  expect(lifted > 0 && (R > 500 || round > 0), `${mission}, radius ${R}: ${lifted} lift-offs and ${round} round the limb`);
 }
 '''
         self.run_node(block + scenarios)
@@ -1356,7 +1369,8 @@ for (const [R, least] of [[404.5, .7], [150, .8], [900, .1]]) {
                  + self.fn("skyHomeInPicture") + self.fn("skyLaunchPassesHere")
                  + self.line("const SKY_WORLD_IS_A_DOT") + self.line("const SKY_MARKERS")
                  + self.fn("skyArrivalRoute")
-                 + self.fn("skyPlanMission") + self.fn("skyOrbitSlot") + self.fn("skyGlobeFlight"))
+                 + self.fn("skyPlanMission") + self.fn("skyOrbitSlot") + self.orbiters()
+                 + self.fn("skyGlobeFlight"))
         scenarios = r'''
 function key(pos) { return pos[0] + "," + pos[1]; }
 const PLANET = {cells:new Map([["3,4", {center:[0, -1, 0]}]])};
@@ -1478,5 +1492,92 @@ expect(skyOrbitSlot([b, c], b) === 0 && skyOrbitSlot([b, c], c) === 1, "rings ar
 expect(skyOrbitSlot([a, b, c], b) === 0 && skyOrbitSlot([a, b, c], c) === 1, "a launch moved the craft already up");
 expect(skyOrbitSlot([a, b, c], a) === 2, "the newcomer did not take the next ring");
 expect(skyOrbitSlot([b, c], a) === -1, "a civilization with no craft was given a ring");
+'''
+        self.run_node(block + scenarios)
+
+    def test_every_laser_station_leaves_the_spaceport_that_built_it(self):
+        """A Lagrange Laser Station is the one launch a civilization repeats.
+
+        It is a count, not a row of `science_projects`, and several can finish
+        in one frame from different Spaceports. These run the queueing and the
+        choice of pad themselves, out of the script the page loads.
+        """
+        launches = (ASSETS / "app_launches.js").read_text(encoding="utf-8")
+        start = launches.index("const SKY_LASER_SEAT")
+        block = (self.STUBS + self.fn("districtIconPositions") + self.fn("citySpaceportPos")
+                 + self.fn("statePlayerAnchor")
+                 + launches[start:launches.index("// How much of one station is out of its rocket")])
+        scenarios = r'''
+const RULES = {districts:{spaceport:{}, campus:{}, cosmodrome:{replaces:"spaceport"}}};
+const SKY_LAUNCH_FLIGHTS = {laser:{project:"lagrange_laser_station", duration:3200, rocket:"orbital", station:true}};
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const laser = {project:"lagrange_laser_station"};
+const city = (id, pad, queue, production) =>
+  ({id, owner:2, queue, production, districts:{spaceport:pad}});
+// Three cities were building stations. One has gone on to something else, one
+// started a second station (its production began again), one is still at it.
+let prev = {cities:[city(1, [3, 3], [laser], 400), city(2, [5, 6], [laser], 590),
+                    city(3, [8, 1], [laser], 580), city(4, [9, 9], [{unit:"tank"}], 50)]};
+let next = {cities:[city(1, [3, 3], [laser], 460), city(2, [5, 6], [{unit:"tank"}], 20),
+                    city(3, [8, 1], [laser], 12), city(4, [9, 9], [{unit:"tank"}], 90)],
+            map:{tiles:[]}};
+expect(same(skyLaserOrigins(prev, next, 2, 2), [[5, 6], [8, 1]]),
+       "not the two Spaceports that finished: " + JSON.stringify(skyLaserOrigins(prev, next, 2, 2)));
+expect(same(skyLaserOrigins(prev, next, 2, 1), [[5, 6]]), "one station, and not from the city that finished it");
+// More stations than cities seen finishing: the one still building is the
+// likeliest of the rest, then any other Spaceport of the empire.
+expect(same(skyLaserOrigins(prev, next, 2, 4), [[5, 6], [8, 1], [3, 3], [9, 9]]),
+       "the spare pads are out of order: " + JSON.stringify(skyLaserOrigins(prev, next, 2, 4)));
+// Through another civilization's eyes no queue is shown and no districts, but
+// the map still has the Spaceport on its tile.
+const fogged = {cities:[{id:2, owner:2}],
+                map:{tiles:[{pos:[7, 2], owner:3, district:"spaceport"}, {pos:[8, 3], owner:2, district:"cosmodrome"}]}};
+expect(same(skyLaserOrigins({cities:[]}, fogged, 2, 2), [[8, 3], [8, 3]]), "the map's own Spaceport was not found");
+expect(same(skyLaserOrigins({cities:[]}, {cities:[], map:{tiles:[]}}, 2, 1), [null]), "a pad was made up");
+
+// The count is what launches. One more station is one rocket, from its pad.
+const seat = count => ({id:2, laser_stations:count});
+queueSkyLaserLaunches(prev, next, seat(1), seat(0), 1000);
+expect(anim.skyLaunches.length === 1, "one station did not queue one launch");
+let [first] = anim.skyLaunches;
+expect(first.mission === "laser" && first.station === 1 && first.playerId === 2, "the launch is not the station's");
+expect(same(first.originPos, [5, 6]) && first.t0 === 1000 && first.endsAt === 4200, "wrong pad or clock");
+// The same transition seen twice is still one launch, and a count that did
+// not move, or a server that sends none, launches nothing.
+queueSkyLaserLaunches(prev, next, seat(1), seat(0), 1500);
+queueSkyLaserLaunches(prev, next, seat(1), seat(1), 1500);
+queueSkyLaserLaunches(prev, next, {id:2}, {id:2}, 1500);
+queueSkyLaserLaunches(prev, next, seat(0), seat(1), 1500);
+expect(anim.skyLaunches.length === 1, "a launch was queued for no new station");
+// Two in one frame go up one after the other, each from its own Spaceport.
+anim.skyLaunches.length = 0;
+queueSkyLaserLaunches(prev, next, seat(3), seat(1), 2000);
+expect(same(anim.skyLaunches.map(l => [l.station, l.t0, l.originPos]),
+            [[2, 2000, [5, 6]], [3, 2000 + SKY_LASER_STAGGER, [8, 1]]]), "two stations are not a volley of two");
+// A page that fell a long way behind is not owed a rocket for every station
+// it missed: the newest few fly and the rest are simply up there.
+anim.skyLaunches.length = 0;
+queueSkyLaserLaunches(prev, next, seat(9), seat(1), 3000);
+expect(same(anim.skyLaunches.map(l => l.station), [7, 8, 9]), "the volley is not the newest stations");
+expect(SKY_LASER_VOLLEY === 3 && skyLaserStations(seat(9)) === 9 && skyLaserStations({}) === 0 &&
+       skyLaserStations(seat(1e6)) === SKY_LASER_MOST, "the count is not bounded");
+// Nobody was seen building it and no Spaceport is in sight: the empire's city.
+anim.skyLaunches.length = 0;
+queueSkyLaserLaunches({cities:[]}, {cities:[{id:7, owner:2, is_capital:true, pos:[2, 2]}], map:{tiles:[]}},
+                      seat(1), seat(0), 0);
+expect(same(anim.skyLaunches[0].originPos, [2, 2]), "the fallback is not the empire's own city");
+
+// A station's orbit is its own. No two stations share one and none is a
+// civilization's, for any seat a game can hold.
+const ids = new Set();
+for (let player = 0; player < 64; player++) {
+  ids.add(player);
+  for (let station = 1; station <= SKY_LASER_MOST; station++)
+    ids.add(skyLaserOrbiter(player, station).id);
+}
+expect(ids.size === 64 * (SKY_LASER_MOST + 1), "two craft share an orbit");
+expect(skyOrbiter({mission:"laser", station:3}, {id:5}).id === skyLaserOrbiter(5, 3).id, "a station flew to another orbit");
+const civ = {id:5};
+expect(skyOrbiter({mission:"satellite"}, civ) === civ, "a satellite did not fly to its civilization's orbit");
 '''
         self.run_node(block + scenarios)
