@@ -404,6 +404,9 @@ impl AdvancedAi {
         /// Opt-in gene `open-capital-declares-at-twice`; see
         /// `advanced/open_capital_declares_at_twice.rs`.
         open_capital_declares_at_twice => enable_open_capital_declares_at_twice, disable_open_capital_declares_at_twice;
+        /// Opt-in gene `near-rival-deterrence-opens-early`; see
+        /// `advanced/near_rival_deterrence_opens_early.rs`.
+        near_rival_deterrence_opens_early => enable_near_rival_deterrence_opens_early, disable_near_rival_deterrence_opens_early;
         // ---- append: p-r --------------------------------------------
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;
