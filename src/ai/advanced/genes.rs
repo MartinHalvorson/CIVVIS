@@ -5965,6 +5965,11 @@ pub const GENES: &[Gene] = &[
     // the unit bill jumped. `buy_gold_unit` tests each city's own quote
     // against the reserve. Opt-in; see `BasicAi::buy_gold_unit`.
     Gene { tag: "gold-unit-buys-read-the-host-quote", field: "gold_unit_buys_read_the_host_quote", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_unit_buys_read_the_host_quote, disable: AdvancedAi::disable_gold_unit_buys_read_the_host_quote },
+    // Live Emperor Domination 11-16: 274 turns with a siege gun's tech and
+    // no Niter or Oil; a tile buy (direct or the first of two) was affordable
+    // on 57 of them and none was made. Opt-in; see
+    // `advanced/gun_resource_tile.rs`.
+    Gene { tag: "gun-resource-buys-the-tile", field: "gun_resource_buys_the_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_gun_resource_buys_the_tile, disable: AdvancedAi::disable_gun_resource_buys_the_tile },
     // ---- append: l-o ------------------------------------------------
     // Native Deity Macedon 100029Z: model-priced horse/iron barter was
     // declined at51/55 and refused as barter_short at61. Ask the host for
