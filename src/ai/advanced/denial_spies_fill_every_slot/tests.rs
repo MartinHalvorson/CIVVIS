@@ -327,3 +327,59 @@ fn the_culture_aim_keeps_its_culture_heads() {
         "Domination: the old displacement rule"
     );
 }
+
+#[test]
+fn fill_every_slot_2_is_opt_in() {
+    opt_in_off_in_both_controllers("denial-spies-fill-every-slot-2", |ai| {
+        ai.denial_spies_fill_every_slot_2
+    });
+}
+
+#[test]
+fn version_two_turns_version_one_off() {
+    let mut ai = seat(VictoryTarget::Culture, true);
+    ai.enable_denial_spies_fill_every_slot_2();
+    assert!(ai.denial_spies_fill_every_slot_2);
+    assert!(!ai.denial_spies_fill_every_slot, "a seat plays one version");
+}
+
+#[test]
+fn version_two_fills_the_slots_on_a_score_aim() {
+    let (g, ours) = board(false);
+    let ranked = by_production(&g, &ours);
+    let run = |version: u8| {
+        let mut ai = seat(VictoryTarget::Score, version == 1);
+        if version == 2 {
+            ai.enable_denial_spies_fill_every_slot_2();
+        }
+        let mut board = g.clone();
+        let on = ai.denial_spies_fill_every_slot_on(&board);
+        let racers = ai.denial_training_racers(&board, 0);
+        ai.claim_queues_for_denial_spies(&mut board, 0, &plan(GrandStrategy::Expansion));
+        (on, racers, training(&board))
+    };
+    let (on, racers, trained) = run(1);
+    assert!(!on, "version one: no Score aim");
+    assert!(
+        racers.is_empty() && trained.is_empty(),
+        "version one: no stand-in, no Spy"
+    );
+    let (on, racers, trained) = run(2);
+    assert!(on, "version two reads the Score aim");
+    assert_eq!(racers, BTreeSet::from([1]), "the met rival stands in");
+    assert_eq!(
+        trained,
+        ranked.iter().take(2).copied().collect::<BTreeSet<u32>>(),
+        "both slots, the two best cities"
+    );
+    // Version two keeps version one's aims.
+    let mut culture = seat(VictoryTarget::Culture, false);
+    culture.enable_denial_spies_fill_every_slot_2();
+    assert!(culture.denial_spies_fill_every_slot_on(&g));
+    let mut science = seat(VictoryTarget::Science, false);
+    science.enable_denial_spies_fill_every_slot_2();
+    assert!(
+        !science.denial_spies_fill_every_slot_on(&g),
+        "never a Science aim"
+    );
+}
