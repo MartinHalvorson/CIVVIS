@@ -211,3 +211,32 @@ fn artillery_wants_its_oil() {
         .gun_tile_resources_wanted(&g, 0)
         .contains(&crate::name!("oil")));
 }
+
+/// A land deposit already inside our borders waits on its Builder, so no
+/// tile is wanted; a sea one (an Offshore Oil Rig waits on Plastics) does not
+/// stand in for it.
+#[test]
+fn an_owned_land_deposit_stops_the_want_and_a_sea_one_does_not() {
+    let (mut g, city, _) = niter_case(2, true);
+    g.players[0]
+        .techs
+        .extend(["steel", "refining"].map(crate::name::Name::new));
+    let centre = g.cities[&city].pos;
+    let ours = g
+        .wdisk(centre, 1)
+        .into_iter()
+        .find(|pos| *pos != centre && g.map.tiles[pos].owner_city == Some(city))
+        .expect("a ring-one tile of ours");
+    {
+        let tile = g.map.tiles.get_mut(&ours).unwrap();
+        tile.terrain = crate::name!("desert");
+        tile.feature = None;
+        tile.district = None;
+        tile.wonder = None;
+        tile.resource = Some(crate::name!("oil"));
+    }
+    let oil = crate::name!("oil");
+    assert!(!armed().gun_tile_resources_wanted(&g, 0).contains(&oil));
+    g.map.tiles.get_mut(&ours).unwrap().terrain = crate::name!("coast");
+    assert!(armed().gun_tile_resources_wanted(&g, 0).contains(&oil));
+}

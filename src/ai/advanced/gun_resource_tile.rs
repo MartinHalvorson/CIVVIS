@@ -28,9 +28,13 @@
 //! resource we draw none of and hold less than one gun's block of
 //! (`gun_tile_resources_wanted`), the purchase pass buys, out of the upkeep
 //! floor (the threatened city's defender when that reserve is on), the
-//! cheapest deposit of it a city can buy; failing one, the cheapest tile a
-//! city can buy beside an unowned deposit in that city's third ring, so the
-//! deposit is on the city's menu the next turn. One tile a turn.
+//! cheapest land deposit of it a city can buy; failing one, the cheapest
+//! tile a city can buy beside an unowned land deposit in that city's third
+//! ring, so the deposit is on the city's menu the next turn. One tile a
+//! turn, and none once a workable land deposit of it lies inside our borders
+//! (a sea deposit is not workable before Plastics: civvis-20261116T024741Z
+//! owned an offshore Oil deposit from 144 while Lagash's menu quoted a land
+//! one).
 
 use super::*;
 use crate::name::Name;
@@ -60,11 +64,13 @@ impl AdvancedAi {
         }
         let player = &g.players[pid];
         let cities: BTreeSet<u32> = g.player_city_ids(pid).into_iter().collect();
-        // A workable deposit inside our borders already: its Builder brings
-        // the income, and another tile would only wait beside it.
+        // A workable land deposit inside our borders already: its Builder
+        // brings the income, and another tile would only wait beside it. A
+        // sea deposit is not one (its Offshore Oil Rig waits on Plastics).
         let owned = |resource: Name| {
             g.map.tiles.values().any(|tile| {
                 tile.resource == Some(resource)
+                    && !g.rules.is_water(tile)
                     && tile.district.is_none()
                     && tile.wonder.is_none()
                     && tile.owner_city.is_some_and(|cid| cities.contains(&cid))
@@ -145,10 +151,14 @@ impl AdvancedAi {
         if wanted.is_empty() {
             return false;
         }
+        // An unowned land deposit of a wanted resource: a Builder can work it.
         let deposit_of = |g: &Game, pos: Pos| -> Option<Name> {
             g.map.get(pos).and_then(|tile| {
-                tile.resource
-                    .filter(|resource| tile.owner_city.is_none() && wanted.contains(resource))
+                tile.resource.filter(|resource| {
+                    tile.owner_city.is_none()
+                        && !g.rules.is_water(tile)
+                        && wanted.contains(resource)
+                })
             })
         };
         // (step, cost, pos, the deposit, its resource, the buying city, action)
