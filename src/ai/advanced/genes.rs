@@ -6245,6 +6245,13 @@ pub const GENES: &[Gene] = &[
     // own city founded within three tiles of a sibling's site. See
     // `advanced/settler_keeps_its_named_site.rs`.
     Gene { tag: "settler-keeps-its-named-site", field: "settler_keeps_its_named_site", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_keeps_its_named_site, disable: AdvancedAi::disable_settler_keeps_its_named_site },
+    // Live Immortal Rome Score 11-15 (civvis-20261115T232529Z): an inland
+    // capital with every free site behind a closed border or a few tiles of
+    // coast; two Settlers stood "stranded" on the shore t79-t117 while
+    // Shipbuilding, ~4 turns of research, waited until t118, because the
+    // naval research goal asks for a coastal city first. One city at t160.
+    // See `advanced/stranded_settler_studies_shipbuilding.rs`.
+    Gene { tag: "stranded-settler-studies-shipbuilding", field: "stranded_settler_studies_shipbuilding", kind: Kind::OptIn, enable: AdvancedAi::enable_stranded_settler_studies_shipbuilding, disable: AdvancedAi::disable_stranded_settler_studies_shipbuilding },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

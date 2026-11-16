@@ -396,6 +396,10 @@ impl AdvancedAi {
             // edge unit's resource, then its own, while its window is open.
             // `None` with the gene off.
             let edge_unit_goal = self.edge_unit_research_goal(g, pid);
+            // `stranded-settler-studies-shipbuilding`: Shipbuilding while no
+            // Settler of ours can walk to a legal site. `None` with the gene
+            // off. See `advanced/stranded_settler_studies_shipbuilding.rs`.
+            let stranded_sea_goal = self.stranded_settler_sea_goal(g, pid);
             let defensive_walls_goal = self
                 .frontier_walls_research_goal(g, pid)
                 .or_else(|| self.defensive_walls_research_goal(g, pid, plan));
@@ -519,6 +523,11 @@ impl AdvancedAi {
                 // opening Archery and the openings above, ahead of every lane
                 // beeline. See `advanced/edge_unit_takes_the_soft_city.rs`.
                 _ if edge_unit_goal.is_some() => edge_unit_goal.as_deref(),
+                // `stranded-settler-studies-shipbuilding`: behind the openings,
+                // the walls, the stepping stone and the edge unit, ahead of
+                // every war, lane and bargain goal. A Settler with nowhere to
+                // walk is a city the empire has already paid for.
+                _ if stranded_sea_goal.is_some() => stranded_sea_goal,
                 // `diplo-match-point-beelines-the-points`: from match point the
                 // last points in the tree, whatever the plan reads, ahead of
                 // every war and lane arm below. Live Immortal
@@ -873,6 +882,15 @@ impl AdvancedAi {
                     }
                 }
             }
+            // `stranded-settler-studies-shipbuilding`: every legal step toward
+            // Shipbuilding while it owns the forced goal.
+            if let Some(goal) = stranded_sea_goal.filter(|goal| forced_goal == Some(*goal)) {
+                for tech in g.available_techs(pid) {
+                    if self.tech_leads_to(g, &tech, goal) && !available.contains(&tech) {
+                        available.push(tech);
+                    }
+                }
+            }
             // `siege-tier-before-the-beeline`: Metal Casting and Ballistics sit
             // a Renaissance step beyond a Medieval backlog the rolling window
             // still holds; admit every legal step toward the siege technology
@@ -1056,6 +1074,8 @@ impl AdvancedAi {
                                 }
                             } else if first_capital_army_goal.as_deref() == Some(goal) {
                                 format!("research-follows-the-first-capital: the {step} step toward {}, keeping the named capital's breaker and unique melee line ahead of the economic beeline", plain(goal))
+                            } else if stranded_sea_goal == Some(goal) {
+                                format!("stranded-settler-studies-shipbuilding: the {step} step toward {}; no Settler of ours can walk to a legal site, and a land unit embarks only with Shipbuilding", plain(goal))
                             } else if edge_unit_goal.as_deref() == Some(goal) {
                                 format!("edge-unit-takes-the-soft-city: the {step} step toward {}, which the edge unit outclassing a nearby rival city needs", plain(goal))
                             } else if barbarian_military_goal.as_deref() == Some(goal) {
