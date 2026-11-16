@@ -68,11 +68,12 @@ fn a_refused_card_keeps_every_kept_yield_and_a_slotted_one_drops_them() {
 
     // Seated, the card drops everything, and the capital reads it.
     game.players[0].civics.insert(crate::name!("code_of_laws"));
+    game.players[0].government = Some("chiefdom".to_string());
     game.board_written();
     game.city_yields(ours);
     game.city_yields(theirs);
     game.apply(0, &card)
-        .expect("Code of Laws opens a slot for it");
+        .expect("Chiefdom has an Economic slot for it");
     assert_eq!(kept(&game), (vec![], vec![]));
     let seated = game.city_yields(ours);
     assert!(seated.gold > before.0.gold && seated.faith > before.0.faith);
