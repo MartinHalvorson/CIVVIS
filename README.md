@@ -10,7 +10,7 @@ Posting progress videos on the YouTube channel [CIVVIS](https://www.youtube.com/
 - [Lv 8 wins playlist](https://www.youtube.com/playlist?list=PLWcKlP8e8iy4)
 - [Self-play performance demos](https://www.youtube.com/playlist?list=PLPI7k77hCAR4)
 
-Highest Level Won by Victory Type:
+Highest Level Won by Victory Type (6p continents online unless otherwise noted):
 - Lv 8 - [Science - 206](https://www.youtube.com/watch?v=Gu5cxEIGTuE), [Diplo - 173](https://www.youtube.com/watch?v=CQQM2uk4AkA), [Religion - 167](https://youtu.be/a12Fevo-0DM)
 - Lv 7 - [Culture - 190](https://youtu.be/oTJz4EYS4ME)
 - Lv 6 - [Domination (4P Pangaea) - 210](https://www.youtube.com/watch?v=DMdNOQT3NS0), [Score - capped at 180](https://www.youtube.com/watch?v=d6zFjTwR_10)
