@@ -10,19 +10,20 @@
 //! answered (23 REJECTED, 17 of the 22 Niter or Oil answers from a rival that
 //! had denounced us), and over 11-15/16 no Gold-only Niter or Oil ask closed
 //! (0 of 8, 200 Gold for 10 Niter among them). Our own cities' purchase menus
-//! were the sure source the seat left on the table:
+//! were a sure source the seat left on the table:
 //! - civvis-20261116T035719Z: Metal Casting at turn 75, a Niter deposit
 //!   unowned in Akshak's third ring until turn 103, one 50-Gold tile from
 //!   its menu ((21,32), Gold 104-213 those turns); the seat drew no Niter
-//!   until 121, and fielded its first Bombard after that.
-//! - civvis-20261116T023139Z: Steel at 176, an Oil deposit in Ur's third ring
-//!   one 90-Gold tile away, then on Ur's own menu at 140 Gold from 186 to the
-//!   end (Gold 180-317); the seat never drew Oil, built no Artillery.
-//! - civvis-20261116T024741Z: Lagash's menu quoted its Oil at 125 at 142-144.
+//!   until 121 and fielded its first Bombard at 132.
+//! - civvis-20261116T024741Z: Lagash's menu quoted a desert Oil deposit at
+//!   125 at 142-144, while the only Oil inside our borders was offshore.
 //!
-//! Over the seven games a tile buy (direct, or the first of two) was
-//! affordable on 57 of the 274 starved turns (Niter 31 of 71, Oil 26 of 203),
-//! against 0 tile buys made.
+//! Over the seven games a land-deposit buy (direct, or the first of two) was
+//! affordable on 28 of the 274 starved turns (Niter 27 of 71, Oil 1 of 203),
+//! against none made. It is the Niter half of the problem: the seats' Oil
+//! deposits within reach lay offshore (civvis-20261116T023139Z's on Ur's menu
+//! at 140 from 186), and only a captured or settled land deposit, or a sale,
+//! brings Oil before Plastics.
 //!
 //! The rule: while a land siege gun we can build needs a revealed strategic
 //! resource we draw none of and hold less than one gun's block of
