@@ -7666,7 +7666,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     ));
     assert!(EMBEDDED_INDEX.contains("for (const key of playerHudShedOrder()) {"));
     // The mirror of a Civilization VI game names its seats without rating
-    // them ("Civ 6 Deity AI"), and those names are what the operator reads
+    // them ("8 Deity Firaxis AI"), and those names are what the operator reads
     // the column for, so a named table holds Player as a rated one does. The
     // first cut shed the column at a 1728 px window the moment the mirror
     // stopped borrowing the site agents' ratings (real page, 2026-11-13).

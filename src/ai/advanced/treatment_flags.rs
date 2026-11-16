@@ -294,6 +294,9 @@ impl AdvancedAi {
         /// of `capital-archers-before-the-surprise`; see
         /// `advanced/capital_archers_before_the_surprise.rs`.
         capital_archers_before_the_surprise_2 => enable_capital_archers_before_the_surprise_2, disable_capital_archers_before_the_surprise_2;
+        /// Opt-in gene `denial-spies-cover-every-racer`; see
+        /// `advanced/denial_spies_cover_every_racer.rs`.
+        denial_spies_cover_every_racer => enable_denial_spies_cover_every_racer, disable_denial_spies_cover_every_racer;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -5887,6 +5890,20 @@ impl AdvancedAi {
     /// The twin of `enable_score_seat_raises_wonders_2`.
     pub fn disable_score_seat_raises_wonders_2(&mut self) {
         self.score_seat_raises_wonders_2 = false;
+    }
+
+    /// Opt-in gene `denial-spies-fill-every-slot-2`, version two of
+    /// `denial-spies-fill-every-slot`: a Score aim fills its slots too; see
+    /// `advanced/denial_spies_fill_every_slot.rs`. A seat plays one version,
+    /// so this turns version one off.
+    pub fn enable_denial_spies_fill_every_slot_2(&mut self) {
+        self.denial_spies_fill_every_slot_2 = true;
+        self.denial_spies_fill_every_slot = false;
+    }
+
+    /// The twin of `enable_denial_spies_fill_every_slot_2`.
+    pub fn disable_denial_spies_fill_every_slot_2(&mut self) {
+        self.denial_spies_fill_every_slot_2 = false;
     }
 
     /// Opt-in gene `score-seat-raises-wonders-3`; version three of the family,
