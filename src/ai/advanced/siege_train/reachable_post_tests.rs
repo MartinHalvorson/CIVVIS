@@ -107,8 +107,8 @@ fn off_the_gun_keeps_its_post_across_the_city() {
     assert_eq!(kept.get(&gun), Some(&far), "and keeps it there");
     assert_eq!(
         siege_posts_reaching(&g, 0, &city, &[gun], None, &previous, &BTreeSet::new()),
-        kept,
-        "no stalled gun is the old search"
+        (kept, BTreeSet::new()),
+        "no stalled gun is the old search, and nothing is drawn again"
     );
     let held: BTreeMap<u32, HeldPost> = BTreeMap::new();
     assert!(
@@ -139,11 +139,31 @@ fn a_gun_blocked_by_our_own_unit_gets_a_reachable_post() {
     );
     let stalled = stalled_guns(&g, &previous, &held, 30);
     assert_eq!(stalled, [gun].into_iter().collect());
-    let posts = siege_posts_reaching(&g, 0, &city, &[gun], None, &previous, &stalled);
+    let (posts, drawn) = siege_posts_reaching(&g, 0, &city, &[gun], None, &previous, &stalled);
     assert_eq!(
         posts.get(&gun),
         Some(&near),
         "the near tile our Spearman holds, a step from the gun's next stand"
+    );
+    assert_eq!(drawn, [gun].into_iter().collect());
+}
+
+#[test]
+fn a_shooter_on_the_band_is_never_asked_to_step_off() {
+    let (mut g, cid, gun, spear, near, far) = boxed_gun();
+    g.remove_unit(spear);
+    let crossbow = g.spawn_unit("crossbowman", 0, near);
+    assert_eq!(arm_of(&g, crossbow), Arm::Shooter);
+    let city = CityView::of(&g, cid).unwrap();
+    let previous: BTreeMap<u32, Pos> = [(gun, far)].into_iter().collect();
+    let stalled: BTreeSet<u32> = [gun].into_iter().collect();
+    let (posts, drawn) =
+        siege_posts_reaching(&g, 0, &city, &[gun, crossbow], None, &previous, &stalled);
+    assert_ne!(posts.get(&gun), Some(&near), "the shooter keeps its tile");
+    assert_eq!(posts.get(&crossbow), Some(&near), "and fires from it");
+    assert!(
+        drawn.is_empty(),
+        "no other band tile off the first ring: the old search's post stands"
     );
 }
 

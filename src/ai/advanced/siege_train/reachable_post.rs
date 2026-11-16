@@ -1,7 +1,7 @@
 //! `siege-guns-take-a-reachable-post`: a siege gun that has held one firing
 //! post for [`GUN_POST_PATIENCE_TURNS`] assessments without standing on it
-//! gives that post up for one it can reach this turn or next; a soldier of
-//! ours (not a gun, not the taker) standing on such a post steps off it; and
+//! gives that post up for one it can reach this turn or next; a melee soldier
+//! of ours (not the taker) standing on such a post steps off it; and
 //! once one of our guns stands within its range of the city, the Stage
 //! escorts stop holding at the muster line "while the train cannot close".
 //!
@@ -112,13 +112,17 @@ pub(super) fn note_posts(
 }
 
 /// Whether the soldiers on `pos` would step off a gun's post: every one is
-/// ours, a land soldier, neither a gun nor the siege's taker.
+/// ours, a melee soldier and not the siege's taker. Nothing that fires steps
+/// off: a Field Cannon or Crossbowman on the band is itself shooting at the
+/// walls. Replayed on 230117Z's frames with shooters let off, the Field
+/// Cannon firing from (17, 14) was walked off it for a Bombard on turns 108
+/// and 111, and the guns fired twice less.
 fn clears_for_a_gun(g: &Game, pid: usize, pos: Pos, taker: Option<u32>) -> bool {
     let here = g.unit_ids_at(pos);
     !here.is_empty()
         && here.iter().all(|other| {
             g.units.get(other).is_some_and(|unit| unit.owner == pid)
-                && matches!(arm_of(g, *other), Arm::Melee | Arm::Shooter)
+                && arm_of(g, *other) == Arm::Melee
                 && Some(*other) != taker
         })
 }
@@ -164,9 +168,10 @@ fn reach_turns(
 type PostRank = (bool, Reverse<i32>, bool, u32, bool, bool, usize, i32, Pos);
 
 /// A firing post for a stalled gun among the tiles it can stand on this turn
-/// or next: within `range` of the city with a line to it, dry open land, off
+/// or next: within `range` of the city (off its first ring when the range
+/// reaches past it) with a line to it, dry open land, off
 /// the taker's corridor and every post already drawn, free or held only by
-/// soldiers of ours that step off it (see [`clears_for_a_gun`]). Ranked as
+/// melee soldiers of ours that step off it (see [`clears_for_a_gun`]). Ranked as
 /// [`PostRank`] reads. `None` when no such tile exists.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn repick(
@@ -185,7 +190,11 @@ pub(super) fn repick(
     let here = g.units.get(&uid)?.pos;
     let this_turn: BTreeSet<Pos> = g.reachable(uid).into_iter().collect();
     let mut best: Option<PostRank> = None;
-    for distance in 1..=range {
+    // Off the city's first ring for a gun that can shoot from further out:
+    // the ring is the melee's seal, and a gun beside the city stands in its
+    // garrison's reach.
+    let nearest = if range >= 2 { 2 } else { 1 };
+    for distance in nearest..=range {
         for pos in g.wring(city.pos, distance) {
             let open_land = g
                 .map

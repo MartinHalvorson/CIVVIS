@@ -1887,12 +1887,13 @@ fn siege_posts_keeping(
     taker: Option<u32>,
     previous: &BTreeMap<u32, Pos>,
 ) -> BTreeMap<u32, Pos> {
-    siege_posts_reaching(g, pid, city, force, taker, previous, &BTreeSet::new())
+    siege_posts_reaching(g, pid, city, force, taker, previous, &BTreeSet::new()).0
 }
 
 /// [`siege_posts_keeping`], drawing each gun of `stalled` a post it can reach
 /// this turn or next when there is one (`siege-guns-take-a-reachable-post`,
-/// see `reachable_post::repick`). An empty `stalled` is the old search.
+/// see `reachable_post::repick`), and the guns whose post that search drew.
+/// An empty `stalled` is the old search.
 fn siege_posts_reaching(
     g: &Game,
     pid: usize,
@@ -1901,7 +1902,8 @@ fn siege_posts_reaching(
     taker: Option<u32>,
     previous: &BTreeMap<u32, Pos>,
     stalled: &BTreeSet<u32>,
-) -> BTreeMap<u32, Pos> {
+) -> (BTreeMap<u32, Pos>, BTreeSet<u32>) {
+    let mut drawn: BTreeSet<u32> = BTreeSet::new();
     let mut posts: BTreeMap<u32, Pos> = BTreeMap::new();
     let mut ring_taken: BTreeSet<Pos> = BTreeSet::new();
     let mut routes = SiegeRoutes::new(g, pid, city.pos);
@@ -2038,6 +2040,7 @@ fn siege_posts_reaching(
             ) {
                 posts.insert(uid, pos);
                 fire_taken.insert(pos);
+                drawn.insert(uid);
                 continue;
             }
         }
@@ -2106,7 +2109,7 @@ fn siege_posts_reaching(
             fire_taken.insert(pos);
         }
     }
-    posts
+    (posts, drawn)
 }
 
 /// `siege-counts-posted-shooters`: does this shooter put its shot on the
@@ -3463,32 +3466,28 @@ impl AdvancedAi {
         }
         // `siege-guns-take-a-reachable-post`: the guns that held last turn's
         // post too long without closing. Empty with the gene off.
-        let (stalled, before) = if self.siege_guns_take_a_reachable_post {
-            (
-                reachable_post::stalled_guns(g, &record.posts, &self.siege_gun_posts_held, turn),
-                record.posts.clone(),
-            )
+        let stalled = if self.siege_guns_take_a_reachable_post {
+            reachable_post::stalled_guns(g, &record.posts, &self.siege_gun_posts_held, turn)
         } else {
-            (BTreeSet::new(), BTreeMap::new())
+            BTreeSet::new()
         };
-        record.posts = if matches!(
+        let before = std::mem::take(&mut record.posts);
+        let drawn;
+        (record.posts, drawn) = if matches!(
             stage,
             SiegeStage::Invest | SiegeStage::Reduce | SiegeStage::Take
         ) {
-            siege_posts_reaching(g, pid, &city, &force, taker, &record.posts, &stalled)
+            siege_posts_reaching(g, pid, &city, &force, taker, &before, &stalled)
         } else {
-            BTreeMap::new()
+            (BTreeMap::new(), BTreeSet::new())
         };
         let mut repicked: Vec<(u32, Pos, Pos)> = Vec::new();
         if self.siege_guns_take_a_reachable_post {
-            for uid in &stalled {
+            for uid in &drawn {
                 if let (Some(old), Some(new)) = (before.get(uid), record.posts.get(uid)) {
-                    if old != new {
-                        repicked.push((*uid, *old, *new));
-                    }
+                    repicked.push((*uid, *old, *new));
                 }
             }
-            let drawn: BTreeSet<u32> = repicked.iter().map(|(uid, _, _)| *uid).collect();
             reachable_post::note_posts(
                 g,
                 &force,
