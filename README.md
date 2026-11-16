@@ -2,7 +2,7 @@
 
 On a quest to fix Civ 6 AI.
 
-All for fun. Everything is free, open source, and runs locally. Only ask is don't use AI against other players in multiplayer without them agreeing.
+All for fun. Everything is free, open source, and runs locally. Only ask is don't use AI against other players in multiplayer online.
 
 Design & watch Civ 6 AI simulations yourself, or try a single player game against CIVVIS AI at [civvis.ai](https://www.civvis.ai). Single player is still a WIP.
 
