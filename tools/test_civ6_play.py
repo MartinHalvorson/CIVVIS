@@ -3348,6 +3348,12 @@ class DealSessionConfigTests(unittest.TestCase):
         self.assertIn('ap.add_argument("--deal-session-quarantine", '
                       'dest="deal_session_quarantine",', source)
 
+    def test_the_deferred_deal_question_is_opt_in(self):
+        self.assertIs(self._config()["DealAskOnTick"], False)
+        self.assertIs(self._config(deal_ask_on_tick=True)["DealAskOnTick"], True)
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('ap.add_argument("--deal-ask-on-tick", dest="deal_ask_on_tick",', source)
+
     def test_civvis_decider_keeps_non_modal_deals_by_default(self):
         self.assertIs(self._config(civvis_decides=True)["DealSessions"], False)
 

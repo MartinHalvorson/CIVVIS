@@ -2287,6 +2287,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
            if getattr(args, "restart_below_leader_ratio", None) is not None else [])
         + (["--no-peace-deterrence"] if args.no_peace_deterrence else [])
         + DEAL_SESSION_FLAGS.get(getattr(args, "deal_sessions", None) or "off", [])
+        + (["--deal-ask-on-tick"] if getattr(args, "deal_ask_on_tick", False) else [])
         + [word for player, last_turn in sorted((quarantine or {}).items())
            for word in ("--deal-session-quarantine", f"{player}:{last_turn}")]
         + (["--no-counter-resolutions"] if args.no_counter_resolutions else [])
@@ -2725,6 +2726,39 @@ def deal_sessions_mode(requested: str | None, environ=None, path: Path | None = 
              f"{'|'.join(DEAL_SESSION_FLAGS)}; sending deals directly")
         return "off"
     return value
+
+
+#: Policy-file and environment values that turn `deal_ask_on_tick` on.
+DEAL_ASK_ON_TICK_ON = ("1", "true", "yes", "on")
+
+
+def deal_ask_on_tick_mode(requested: bool | None, environ=None,
+                          path: Path | None = None) -> bool:
+    """Whether a game's peace and alliance questions go out on the next tick
+    (`civ6_play.py --deal-ask-on-tick`, `CivvisTrade.askDeferred`).
+
+    An explicit `--deal-ask-on-tick` / `--no-deal-ask-on-tick` wins; then
+    `CIVVIS_DEAL_ASK_ON_TICK` in the environment; then the same key in the
+    verification policy file, re-read at every game like
+    `CIVVIS_DEAL_SESSIONS`; else off. Opt-in: whether asking from the tick
+    saves the rival's counter (the hang behind every `counter_not_sent`) is
+    what turning it on measures.
+    """
+    if requested is not None:
+        return bool(requested)
+    environ = os.environ if environ is None else environ
+    path = VERIFICATION_POLICY_FILE if path is None else path
+    value = (environ.get("CIVVIS_DEAL_ASK_ON_TICK") or "").strip()
+    if not value:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        for line in text.splitlines():
+            line = line.split("#", 1)[0].strip()
+            if line.startswith("CIVVIS_DEAL_ASK_ON_TICK="):
+                value = line.split("=", 1)[1].strip().strip("\"'")
+    return value.lower() in DEAL_ASK_ON_TICK_ON
 
 
 def operator_victory_lane(requested: str, path: Path | None = None,
@@ -3237,6 +3271,12 @@ def main() -> int:
                     help="forwarded to civ6_play.py: sessions for trades, peace sent directly")
     ap.add_argument("--no-deal-sessions", dest="deal_sessions", action="store_const",
                     const="off", help="send every deal directly, whatever the policy says")
+    ap.add_argument("--deal-ask-on-tick", dest="deal_ask_on_tick", action="store_const",
+                    const=True, default=None,
+                    help="forwarded to civ6_play.py: put peace and alliance questions "
+                         "on the next tick (default: CIVVIS_DEAL_ASK_ON_TICK, else off)")
+    ap.add_argument("--no-deal-ask-on-tick", dest="deal_ask_on_tick", action="store_const",
+                    const=False, help="ask inside the opening statement, whatever the policy says")
     ap.add_argument("--tile-export-every", type=int, default=4,
                     help="turns between map exports; the operator watches this against the game")
     ap.add_argument("--combat-frames", type=int, default=0,
@@ -3276,6 +3316,7 @@ def main() -> int:
     args.victory = operator_victory_lane(args.victory)
     # Re-read per game as well: the deal channel is a policy-file key.
     args.deal_sessions = deal_sessions_mode(args.deal_sessions)
+    args.deal_ask_on_tick = deal_ask_on_tick_mode(args.deal_ask_on_tick)
     # The game's score clock: the speed's own limit unless `--max-turns` names
     # one, then the operator's per-batch cap over either. See TURN_CAP_FILE.
     args.max_turns = operator_turn_cap(

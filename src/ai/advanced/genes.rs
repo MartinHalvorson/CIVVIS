@@ -6274,6 +6274,12 @@ pub const GENES: &[Gene] = &[
     // and 1,004 on soldiers and Spies, with 357-849 Gold banked every turn.
     // See `advanced/score_sprints_to_the_tally.rs`.
     Gene { tag: "score-seat-sprints-to-the-tally", field: "score_seat_sprints_to_the_tally", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_sprints_to_the_tally, disable: AdvancedAi::disable_score_seat_sprints_to_the_tally },
+    // Live Immortal civvis-20261115T230117Z, turns 104-123: our escorts held
+    // the near side of Puel Mapu's range-2 band, so two Bombards were posted
+    // across the city behind Roraima and kept there six turns while a route
+    // existed; 72 "stops short of its post" lines, the city never fell. See
+    // `advanced/siege_train/reachable_post.rs`.
+    Gene { tag: "siege-guns-take-a-reachable-post", field: "siege_guns_take_a_reachable_post", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_guns_take_a_reachable_post, disable: AdvancedAi::disable_siege_guns_take_a_reachable_post },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

@@ -505,6 +505,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `settler-stall-counts-turns` | off (unmeasured) | Opt-in gene `settler-stall-counts-turns`; see `advanced/settler_stall_counts_turns.rs`. | 1 \| 1 |
 | `siege-at-the-walls-dies-first` | off (unmeasured) | Opt-in gene `siege-at-the-walls-dies-first`; see `advanced/siege_at_the_walls_dies_first.rs`. | 1 \| 1 |
 | `siege-goes-on-the-forecast` | off (unmeasured) | Opt-in gene `siege-goes-on-the-forecast`: the siege train goes, holds and stands down on the capture forecast, and Siege rows rank by value x P / expected turns; implies the reading. | 1 \| 1 |
+| `siege-guns-take-a-reachable-post` | off (unmeasured) | Opt-in gene `siege-guns-take-a-reachable-post`; see `advanced/siege_train/reachable_post.rs`. | 1 \| 1 |
 | `siege-moves-under-the-wing` | off (unmeasured) | Opt-in gene `siege-moves-under-the-wing`; see `Self::siege_moves_under_the_wing`. | 1 \| 1 |
 | `siege-shortfall-claims-the-projects` | off (unmeasured) | Let a siege short of its bill take the repeatable-project queues. | 1 \| 1 |
 | `siege-tier-yields-to-the-bombers-2` | off (unmeasured) | Opt-in gene `siege-tier-yields-to-the-bombers-2`; see `Self::siege_tier_yields_to_the_bombers_2`. | 1 \| 2 |

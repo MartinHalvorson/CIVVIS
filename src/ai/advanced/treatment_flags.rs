@@ -551,6 +551,9 @@ impl AdvancedAi {
         /// Opt-in gene `score-seat-sprints-to-the-tally`; see
         /// `advanced/score_sprints_to_the_tally.rs`.
         score_seat_sprints_to_the_tally => enable_score_seat_sprints_to_the_tally, disable_score_seat_sprints_to_the_tally;
+        /// Opt-in gene `siege-guns-take-a-reachable-post`; see
+        /// `advanced/siege_train/reachable_post.rs`.
+        siege_guns_take_a_reachable_post => enable_siege_guns_take_a_reachable_post, disable_siege_guns_take_a_reachable_post;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

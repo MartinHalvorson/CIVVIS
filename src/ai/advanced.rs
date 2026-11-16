@@ -10476,6 +10476,17 @@ pub struct AdvancedAi {
     /// Spaceport) and its Gold and Faith above a small reserve buy the fewest
     /// coins a point. See `advanced/score_sprints_to_the_tally.rs`. Opt-in.
     score_seat_sprints_to_the_tally: bool,
+    /// `siege-guns-take-a-reachable-post`: a siege gun that has held one
+    /// firing post for two turns without standing on it takes a post it can
+    /// reach this turn or next, a soldier of ours on that post steps off it,
+    /// and a Stage escort stops holding at the muster line once one gun
+    /// stands in range. See `advanced/siege_train/reachable_post.rs`. Off by
+    /// default.
+    siege_guns_take_a_reachable_post: bool,
+    /// `siege-guns-take-a-reachable-post`: each siege gun's post, the turn
+    /// it was drawn there and whether the gene drew it, carried through the
+    /// live rebuild by `remap_siege_memory`. Empty with the gene off.
+    siege_gun_posts_held: BTreeMap<u32, siege_train::HeldPost>,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
