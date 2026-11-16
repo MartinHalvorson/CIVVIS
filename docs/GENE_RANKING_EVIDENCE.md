@@ -511,6 +511,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `space-denial-slots-the-spy-cards` | off (unmeasured) | Opt-in gene `space-denial-slots-the-spy-cards`; see `advanced/space_denial_spy_cards.rs`. | 1 \| 1 |
 | `space-people-call-the-projects` | off (unmeasured) | `space-people-call-the-projects`: while a Great Person who speeds the space race is on offer, a Science seat's district projects earn that class's points. | 1 \| 1 |
 | `spaceport-above-the-sea` | off (unmeasured) | Prefer a legal non-lowland site when starting a native Spaceport. | 1 \| 1 |
+| `spared-soldiers-come-to-the-capital` | off (unmeasured) | Opt-in gene `spared-soldiers-come-to-the-capital`; see `advanced/spared_soldiers_come_to_the_capital.rs`. | 1 \| 1 |
 | `spears-answer-the-horse` | off (unmeasured) | Prefer a timely anti-cavalry defender against a visible mounted threat. | 1 \| 1 |
 | `spies-price-the-science-head` | off (unmeasured) | Rank Spy producers by native turns, sparing science on ties. | 1 \| 1 |
 | `spies-steal-the-lead` | off (unmeasured) | Opt-in gene `spies-steal-the-lead`; see `advanced/spies_steal_the_lead.rs`. | 1 \| 1 |
