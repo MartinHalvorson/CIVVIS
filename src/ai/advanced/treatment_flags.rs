@@ -542,6 +542,9 @@ impl AdvancedAi {
         /// Opt-in gene `settler-keeps-its-named-site`; see
         /// `advanced/settler_keeps_its_named_site.rs`.
         settler_keeps_its_named_site => enable_settler_keeps_its_named_site, disable_settler_keeps_its_named_site;
+        /// Opt-in gene `score-seat-sprints-to-the-tally`; see
+        /// `advanced/score_sprints_to_the_tally.rs`.
+        score_seat_sprints_to_the_tally => enable_score_seat_sprints_to_the_tally, disable_score_seat_sprints_to_the_tally;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
