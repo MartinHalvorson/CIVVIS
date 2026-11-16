@@ -550,6 +550,16 @@ class HungRivalSessionsTest(RelayCadenceTest):
         stall = dict(T159_STALL, turn=51)
         self.assertEqual(tracker.hung_after(stall), "closed/counter_not_sent")
 
+    def test_a_declined_refusal_that_still_hangs_is_recognised(self) -> None:
+        tracker = self._tracker(
+            {"kind": "deal_session", "phase": "refusing", "session": 4,
+             "target": 4, "turn": 51, "screen": "DiplomacyDealView"},
+            {"kind": "deal_session", "phase": "closed", "target": 4, "turn": 51,
+             "why": "rejected_working_deal", "closer": "game"})
+        stall = dict(T159_STALL, turn=51)
+        self.assertEqual(tracker.hung_after(stall), "closed/rejected_working_deal")
+        self.assertEqual(tracker.window(stall), watch.AI_STALL_DEAD_SESSION_S)
+
     def test_every_other_report_keeps_the_callers_window(self) -> None:
         dead = self._tracker(T159_UNANSWERED)
         for name, tracker, stall in (
