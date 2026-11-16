@@ -162,7 +162,7 @@ fn a_campus_head_gives_way_to_the_settler_on_a_score_seat() {
     assert!(
         details
             .iter()
-            .any(|detail| detail.starts_with(TAG) && detail.contains("Campus")),
+            .any(|detail| detail.starts_with(TAG) && detail.contains("campus gives way")),
         "{details:?}"
     );
 }
