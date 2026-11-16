@@ -393,7 +393,8 @@ fn version_two_off_its_window_is_an_exact_no_op() {
     science.enable_score_seat_sprints_to_the_tally_2();
     let early = {
         let mut early = game.clone();
-        early.turn = LIMIT - 31;
+        // One turn before the Great Person window, at the fixture's speed.
+        early.turn = LIMIT - early.standard_duration(TALLY_SPRINT_GREAT_PERSON_STANDARD_TURNS) - 1;
         early
     };
     for (ai, board) in [(science, &game), (seat_two(), &early)] {
@@ -529,6 +530,9 @@ fn a_wonder_is_priced_fifteen_plus_four() {
 #[test]
 fn the_great_person_window_opens_at_thirty() {
     let (mut game, city) = late_city();
+    // The live Score seat's speed; the fixture opens at Standard, where the
+    // window is 45 turns.
+    game.game_speed = crate::setup::GameSpeed::Online;
     assert_eq!(
         game.standard_duration(TALLY_SPRINT_GREAT_PERSON_STANDARD_TURNS),
         30
