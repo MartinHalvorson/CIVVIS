@@ -270,3 +270,34 @@ fn a_fire_survives_a_save() {
         Some(crate::name!("jungle"))
     );
 }
+
+#[test]
+fn fires_break_out_on_their_own_over_a_whole_game() {
+    // The scheduler, not a hand-lit tile: a whole game at Hyperreal through
+    // the real turn loop, counting every tile that catches.
+    let mut game = Game::new_full(2, 60, 40, 4243, 250, 0, false);
+    game.disaster_intensity = 4;
+    // Capitals, so a fire that kills a Settler cannot end the game early.
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("each major starts with a settler");
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+    }
+    let mut caught: BTreeSet<(Pos, u32)> = BTreeSet::new();
+    let mut seen_kinds: BTreeSet<&'static str> = BTreeSet::new();
+    while game.turn < 249 && game.winner.is_none() {
+        advance(&mut game, 1);
+        for fire in &game.fires {
+            caught.insert((fire.pos, fire.ignited));
+            seen_kinds.insert(fire.kind.class());
+        }
+    }
+    // 15 outbreaks a class are expected before spread; far fewer would mean
+    // the scheduler never reaches `trigger_fire`.
+    assert!(caught.len() >= 10, "only {} tiles caught", caught.len());
+    assert!(seen_kinds.contains("forest_fire"), "{seen_kinds:?}");
+}
