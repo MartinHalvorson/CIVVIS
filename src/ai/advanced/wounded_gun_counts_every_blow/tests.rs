@@ -50,7 +50,7 @@ fn off_the_gene_is_an_exact_no_op() {
     );
     ai.guns_step_out_of_reach(&mut g, 0);
     assert_eq!(g.units[&gun].pos, (16, 10));
-    assert!(ai.base.path_move(&mut g, 0, gun, (18, 10)));
+    assert!(ai.base.path_walk_to(&mut g, 0, gun, (18, 10)));
 }
 
 /// On: a wounded gun does not step into a walled city's strike that takes
@@ -84,7 +84,7 @@ fn a_whole_gun_is_left_alone() {
     assert!(ai.wounded_guns(&g, 0).is_empty());
     ai.mark_gun_lethal_tiles(&g, 0);
     assert!(ai.base.gun_lethal_tiles.is_empty());
-    assert!(ai.base.path_move(&mut g, 0, gun, (18, 10)));
+    assert!(ai.base.path_walk_to(&mut g, 0, gun, (18, 10)));
 }
 
 /// A wounded gun standing in the strike steps off it; off, it stays.
@@ -93,7 +93,7 @@ fn a_wounded_gun_inside_the_strike_steps_out() {
     for on in [false, true] {
         let (mut g, mut ai, gun, cid) = fixture(10);
         let city = g.cities[&cid].pos;
-        assert!(ai.base.path_move(&mut g, 0, gun, (18, 10)));
+        assert!(ai.base.path_walk_to(&mut g, 0, gun, (18, 10)));
         g.units.get_mut(&gun).unwrap().moves_left = 2.0;
         if on {
             ai.enable_wounded_gun_counts_every_blow();
@@ -114,38 +114,80 @@ fn a_wounded_gun_inside_the_strike_steps_out() {
 /// `guns-stay-out-of-reach` leaves the tile open; this gene marks it.
 #[test]
 fn two_blows_short_of_the_health_alone_are_counted_together() {
-    let probe = |hp: i32, both: bool| {
-        let (mut g, mut ai, gun, _) = fixture(hp);
-        let crossbow = g.spawn_test_unit("crossbowman", 1, (21, 12));
-        g.spawn_test_unit("warrior", 0, (22, 13));
+    const TILE: Pos = (18, 10);
+    // A board with a visible hostile Crossbowman at `at`, a spotter of ours
+    // beside it, and the gun at `hp`.
+    let board = |hp: i32, at: Pos| {
+        let (mut g, ai, gun, cid) = fixture(hp);
+        let city = g.cities[&cid].pos;
+        let crossbow = g.spawn_test_unit("crossbowman", 1, at);
+        let spot = g
+            .wdisk(at, 1)
+            .into_iter()
+            .find(|pos| *pos != at && *pos != city && *pos != TILE && g.units_at(*pos).is_empty())
+            .expect("a free tile beside the hostile");
+        g.spawn_test_unit("warrior", 0, spot);
         assert!(g.unit_visible_to(crossbow, 0));
-        ai.enable_guns_stay_out_of_reach();
-        if both {
-            ai.enable_wounded_gun_counts_every_blow();
+        (g, ai, gun)
+    };
+    // The structure's and the unit's blows on the gun standing on TILE.
+    let blows = |g: &Game, ai: &AdvancedAi, gun: u32| {
+        let mut field = DangerField::with_reach(g, 0, ai.strike_reach);
+        let (mut structure, mut unit) = (0.0_f64, 0.0_f64);
+        for (source, blow) in field.contributions(TILE, gun).iter() {
+            match source {
+                Some(id) if id & STRUCTURE_SOURCE != 0 => structure += blow,
+                Some(_) => unit = unit.max(*blow),
+                None => {}
+            }
         }
-        let mut field = DangerField::with_reach(&g, 0, ai.strike_reach);
-        let blows = field.contributions((18, 10), gun);
-        let structure = blows
-            .iter()
-            .any(|(source, _)| source.is_some_and(|id| id & STRUCTURE_SOURCE != 0));
-        let unit = blows
-            .iter()
-            .any(|(source, _)| source.is_some_and(|id| id & STRUCTURE_SOURCE == 0));
+        (structure, unit)
+    };
+    let (g, _, _) = fixture(50);
+    let at = g
+        .wdisk(TILE, 2)
+        .into_iter()
+        .filter(|pos| g.wdist(*pos, TILE) >= 1 && *pos != (20, 10) && *pos != (16, 10))
+        .find(|at| {
+            let (g, ai, gun) = board(50, *at);
+            let (structure, unit) = blows(&g, &ai, gun);
+            structure > 0.0 && unit > 0.0
+        })
+        .expect("a tile from which a Crossbowman's blow reaches the city's strike ring");
+    let mut seen = Vec::new();
+    let found = (1..FULL_HEALTH).rev().find(|&hp| {
+        let (g, mut ai, gun) = board(hp, at);
+        let (structure, unit) = blows(&g, &ai, gun);
+        seen.push((hp, structure, unit));
+        // Each blow alone, at the top of its roll, leaves the gun standing;
+        // the two together do not.
+        let top = crate::ai::COMBAT_ROLL_MAX;
+        if structure * top >= f64::from(hp)
+            || unit * top >= f64::from(hp)
+            || (structure + unit) * top < f64::from(hp)
+        {
+            return false;
+        }
+        ai.enable_guns_stay_out_of_reach();
         ai.mark_gun_lethal_tiles(&g, 0);
-        let marked = ai
+        let one_blow = ai
             .base
             .gun_lethal_tiles
             .get(&gun)
-            .is_some_and(|marks| marks.contains_key(&(18, 10)));
-        (structure && unit, marked)
-    };
-    let found = (1..FULL_HEALTH).rev().find(|&hp| {
-        let (two_sources, one_blow) = probe(hp, false);
-        let (_, summed) = probe(hp, true);
-        two_sources && !one_blow && summed
+            .is_some_and(|marks| marks.contains_key(&TILE));
+        let (g, mut ai, gun) = board(hp, at);
+        ai.enable_guns_stay_out_of_reach();
+        ai.enable_wounded_gun_counts_every_blow();
+        ai.mark_gun_lethal_tiles(&g, 0);
+        let summed = ai
+            .base
+            .gun_lethal_tiles
+            .get(&gun)
+            .is_some_and(|marks| marks.contains_key(&TILE));
+        !one_blow && summed
     });
     assert!(
         found.is_some(),
-        "some health is safe from each blow and not from both"
+        "some health is safe from each blow and not from both: {seen:?}"
     );
 }

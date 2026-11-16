@@ -27,10 +27,11 @@
 //!
 //! **What the gene does.** For each of our land units whose force role is
 //! Siege or Ranged, with movement left and under full health, every tile it
-//! can reach this turn (its own included) where the whole danger field
-//! (`DangerField::danger`: every visible hostile's expected blow, a walled
-//! City Center's and a standing Encampment's strike within two tiles, and
-//! the tile's movement hazard) meets its health is marked in
+//! can reach this turn (its own included) where the roll-top total of the
+//! danger field (`DangerField::contributions`: every visible hostile's blow,
+//! a walled City Center's and a standing Encampment's strike within two
+//! tiles, each at the top of its roll as `wounded-out-of-reach` reads it,
+//! and the tile's movement hazard) meets its health is marked in
 //! `BasicAi::gun_lethal_tiles`, beside `guns-stay-out-of-reach`'s marks (the
 //! larger reading kept). `path_step_allowed` then refuses a step onto a
 //! marked tile unless the step lowers the danger the unit stands under, and
@@ -39,7 +40,7 @@
 //! fresh gun still enters a city's strike ring with the others; a garrison
 //! tile reads no strike, so a damaged gun can always come home.
 //!
-//! Off, nothing is read: `wounded_gun_tiles` returns before the board.
+//! Off, nothing is read: `wounded_guns` returns before the board.
 use super::battle_planner::DangerField;
 use super::{AdvancedAi, ForceRole};
 use crate::game::Game;
@@ -77,7 +78,8 @@ impl AdvancedAi {
     }
 
     /// For each of `guns`, the tiles it can reach this turn (its own
-    /// included) where the whole danger field meets its health, merged into
+    /// included) where the roll-top total of every blow meets its health
+    /// ([`roll_top_total`](Self::roll_top_total)), merged into
     /// `BasicAi::gun_lethal_tiles` keeping the larger reading per tile.
     /// Journals each unit it marks.
     pub(super) fn mark_wounded_gun_tiles(
@@ -94,7 +96,7 @@ impl AdvancedAi {
             let summed: HashMap<Pos, f64> = tiles
                 .into_iter()
                 .filter_map(|tile| {
-                    let danger = field.danger(tile, uid);
+                    let danger = Self::roll_top_total(field, tile, uid);
                     (danger >= hp).then_some((tile, danger))
                 })
                 .collect();
@@ -113,6 +115,20 @@ impl AdvancedAi {
                 *mark = mark.max(danger);
             }
         }
+    }
+
+    /// Every blow that lands on `uid` standing on `tile` next turn, each
+    /// strike at the top of its roll (`COMBAT_ROLL_MAX`), plus the tile's
+    /// movement hazard as the field reads it.
+    pub(super) fn roll_top_total(field: &mut DangerField, tile: Pos, uid: u32) -> f64 {
+        field
+            .contributions(tile, uid)
+            .iter()
+            .map(|(source, blow)| match source {
+                Some(_) => blow * crate::ai::COMBAT_ROLL_MAX,
+                None => *blow,
+            })
+            .sum()
     }
 
     /// Whether the gene marked `uid` this frame: a damaged unit it reads.
