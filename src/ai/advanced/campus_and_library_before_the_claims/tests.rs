@@ -503,6 +503,26 @@ fn a_five_city_empire_keeps_the_floor_settler_ahead_of_its_first_campus() {
     }
 }
 
+/// `score-seat-settles-before-the-campus`: on a Score seat under its city
+/// target the six-city first Campus leaves the fresh Settler first; off, it
+/// goes ahead as on a Domination seat.
+#[test]
+fn a_score_seat_settling_first_keeps_its_settler_ahead_of_the_first_campus() {
+    let (g, mut ai, cid, plan, campus) = floor_settler_board(6, 0.0);
+    ai.victory_target = Some(VictoryTarget::Score);
+    let settler = AdvancedAi::early_settler_item();
+
+    let mut off = g.clone();
+    ai.claim_free_slot_campus(&mut off, 0, &plan);
+    assert_eq!(head(&off, cid), Some(campus), "off, the Campus goes first");
+
+    ai.enable_score_seat_settles_before_the_campus();
+    assert!(ai.score_settles_first_open(&g, 0), "fixture: the window is open");
+    let mut on = g.clone();
+    ai.claim_free_slot_campus(&mut on, 0, &plan);
+    assert_eq!(head(&on, cid), Some(settler), "the Settler stays first");
+}
+
 #[test]
 fn a_half_built_floor_settler_keeps_the_queue() {
     let (mut g, ai, cid, plan, _) = floor_settler_board(6, 50.0);

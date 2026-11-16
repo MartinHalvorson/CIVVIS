@@ -82,6 +82,7 @@
 //! Off (the default) nothing here runs.
 
 use super::early_settler_floor::{EARLY_SETTLER_FLOOR_STANDARD_TURN, EARLY_SETTLER_MAX_BUILD};
+use super::score_settles_before_the_campus::SCORE_SETTLES_FIRST_CITY_TARGET;
 use super::settler_admission_journal::SETTLER_ADMISSION_JOURNAL_STRIDE;
 use super::*;
 
@@ -499,6 +500,9 @@ impl AdvancedAi {
         // Why each city was passed over, for the decline line.
         let mut passed: BTreeMap<&'static str, usize> = BTreeMap::new();
         let mut seat_miss: Option<String> = None;
+        // `score-seat-settles-before-the-campus`: the cities whose science
+        // head the stock rules keep and the gene passes. Empty with it off.
+        let mut science_heads: BTreeMap<u32, Item> = BTreeMap::new();
         for &cid in &city_ids {
             let city = &g.cities[&cid];
             let skip = if Some(cid) == opening_capital {
@@ -526,14 +530,31 @@ impl AdvancedAi {
                 None => Self::early_settler_raider_near(g, city.pos),
             } {
                 Some("a raider in its ring")
-            } else if self.science_campus_holds_repeat_settler(g, pid, cid, plan)
-                // `score-seat-expands-hard`: the Ancestral Hall its claim
-                // raised is not this claim's to displace either.
-                || (self.score_expands_hard_now(g) && Self::score_expands_keeps_the_hall(g, cid))
-                // `score-seat-builds-the-bath`: nor is the Bath.
-                || self.score_bath_holds(g, pid, cid)
-                || !Self::holdable_land_may_displace(g, pid, cid)
-            {
+            } else if {
+                let keeps = || {
+                    self.science_campus_holds_repeat_settler(g, pid, cid, plan)
+                        // `score-seat-expands-hard`: the Ancestral Hall its
+                        // claim raised is not this claim's to displace either.
+                        || (self.score_expands_hard_now(g)
+                            && Self::score_expands_keeps_the_hall(g, cid))
+                        // `score-seat-builds-the-bath`: nor is the Bath.
+                        || self.score_bath_holds(g, pid, cid)
+                        || !Self::holdable_land_may_displace(g, pid, cid)
+                };
+                // `score-seat-settles-before-the-campus`: under the city
+                // target a Score seat's Campus, Library or University head
+                // gives way. `None` with the gene off. See
+                // `advanced/score_settles_before_the_campus.rs`.
+                match self.score_settles_first_passes(g, pid, cid) {
+                    Some(head) => {
+                        if keeps() {
+                            science_heads.insert(cid, head);
+                        }
+                        false
+                    }
+                    None => keeps(),
+                }
+            } {
                 Some("its queue keeps its item")
             } else if !g.can_produce(pid, cid, &item) {
                 Some("cannot train a Settler")
@@ -613,6 +634,15 @@ impl AdvancedAi {
                  {turns:.1} turns{}",
                 displaced.map_or(String::new(), |item| format!(
                     "; {} keeps its progress", Self::plain_item(&item))); site);
+            if let Some(head) = science_heads.get(&cid) {
+                think!(self.journal(), Expansion, Decision,
+                    "{} trains its Settler before its {}", g.cities[&cid].name,
+                    Self::plain_item(head);
+                    "score-seat-settles-before-the-campus: {} gives way to the Settler at \
+                     {n_cities} cities and {walkers} walking, under {SCORE_SETTLES_FIRST_CITY_TARGET}; \
+                     {:.0} of {:.0} Production paid, kept", Self::plain_item(head),
+                    g.item_invested_production(cid, head), g.item_cost_for_city(pid, cid, head));
+            }
         }
     }
 }

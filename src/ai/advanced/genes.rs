@@ -6292,6 +6292,12 @@ pub const GENES: &[Gene] = &[
     // existed; 72 "stops short of its post" lines, the city never fell. See
     // `advanced/siege_train/reachable_post.rs`.
     Gene { tag: "siege-guns-take-a-reachable-post", field: "siege_guns_take_a_reachable_post", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_guns_take_a_reachable_post, disable: AdvancedAi::disable_siege_guns_take_a_reachable_post },
+    // 21 live Immortal Rome Score games, 11-15/16: score over the leader's
+    // 0.71-1.04 at 12-13 cities and 0.40-0.63 at 6-8; the holdable-land claim
+    // passed cities over for "its queue keeps its item" 734 times in turns
+    // 40-120, and the heads it kept were a Campus 21%, a Library 11% and a
+    // University 3%. See `advanced/score_settles_before_the_campus.rs`.
+    Gene { tag: "score-seat-settles-before-the-campus", field: "score_seat_settles_before_the_campus", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_settles_before_the_campus, disable: AdvancedAi::disable_score_seat_settles_before_the_campus },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

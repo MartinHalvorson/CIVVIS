@@ -307,10 +307,15 @@ impl AdvancedAi {
                 }
                 // A Settler with at most half its cost paid waits for the
                 // Library from four cities and the first Campus from six.
+                // `score-seat-settles-before-the-campus`: under its city
+                // target a Score seat's Settler stays first. Always false
+                // with that gene off. See
+                // `advanced/score_settles_before_the_campus.rs`.
                 if *unit == "settler" {
                     let cost = g.item_cost_for_city(pid, cid, item);
                     return (Self::campus_and_library_passes_settlers(g, pid, what)
-                        && invested * 2.0 <= cost)
+                        && invested * 2.0 <= cost
+                        && !self.score_settles_first_open(g, pid))
                         .then(|| {
                             format!("the Settler ({invested:.0} of {cost:.0} Production paid)")
                         });
