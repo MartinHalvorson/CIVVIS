@@ -1604,16 +1604,9 @@ impl Game {
     /// [`Self::workable_tile_yields`] pays on a native game, and the number the
     /// mirror measures the host's per-plot export against.
     pub fn modeled_tile_yields(&self, pos: Pos) -> Yields {
-        if let Some(memo) = self.query_memo.tile_yields.borrow().as_ref() {
-            if let Some(yields) = memo.get(&pos) {
-                return *yields;
-            }
-        }
-        let yields = self.modeled_tile_yields_uncached(pos);
-        if let Some(memo) = self.query_memo.tile_yields.borrow_mut().as_mut() {
-            memo.insert(pos, yields);
-        }
-        yields
+        crate::game::remembered(&self.query_memo.tile_yields, pos, || {
+            self.modeled_tile_yields_uncached(pos)
+        })
     }
 
     fn modeled_tile_yields_uncached(&self, pos: Pos) -> Yields {

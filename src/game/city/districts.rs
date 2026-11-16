@@ -312,16 +312,9 @@ impl Game {
 
     pub fn district_yields(&self, dname: impl AsName, dpos: Pos) -> Yields {
         let dname = dname.as_name();
-        if let Some(memo) = self.query_memo.district_yields.borrow().as_ref() {
-            if let Some(yields) = memo.get(&(dname, dpos)) {
-                return *yields;
-            }
-        }
-        let yields = self.district_yields_uncached(dname, dpos);
-        if let Some(memo) = self.query_memo.district_yields.borrow_mut().as_mut() {
-            memo.insert((dname, dpos), yields);
-        }
-        yields
+        crate::game::remembered(&self.query_memo.district_yields, (dname, dpos), || {
+            self.district_yields_uncached(dname, dpos)
+        })
     }
 
     fn district_yields_uncached(&self, dname: Name, dpos: Pos) -> Yields {
