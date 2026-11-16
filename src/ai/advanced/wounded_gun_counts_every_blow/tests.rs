@@ -143,7 +143,7 @@ fn two_blows_short_of_the_health_alone_are_counted_together() {
         }
         (structure, unit)
     };
-    let (g, _, _) = fixture(50);
+    let (g, _, _, _) = fixture(50);
     let at = g
         .wdisk(TILE, 2)
         .into_iter()
