@@ -47,7 +47,10 @@ pub(in crate::ai::advanced) struct HeldPost {
 }
 
 /// The guns of last turn's `posts` that have held the same post for
-/// [`GUN_POST_PATIENCE_TURNS`] turns or more without standing on it.
+/// [`GUN_POST_PATIENCE_TURNS`] turns or more without standing on it, and
+/// those still walking to a post this gene drew: their search runs again each
+/// turn until they stand on it, so a post one of ours has not yet stepped off
+/// is not dropped for the old far one meanwhile.
 pub(super) fn stalled_guns(
     g: &Game,
     posts: &BTreeMap<u32, Pos>,
@@ -61,7 +64,8 @@ pub(super) fn stalled_guns(
                 && g.units.get(uid).is_some_and(|unit| unit.pos != **post)
                 && held.get(uid).is_some_and(|held| {
                     held.post == **post
-                        && turn.saturating_sub(held.since) >= GUN_POST_PATIENCE_TURNS
+                        && (held.repicked
+                            || turn.saturating_sub(held.since) >= GUN_POST_PATIENCE_TURNS)
                 })
         })
         .map(|(uid, _)| *uid)
@@ -318,7 +322,13 @@ impl AdvancedAi {
     /// `siege-guns-take-a-reachable-post`: before gun `uid` walks to `post`,
     /// the soldier of ours standing on it steps off (see
     /// [`Self::clear_gun_post`]). Nothing with the gene off.
-    pub(super) fn clear_post_for_gun(&mut self, g: &mut Game, pid: usize, post: Pos, city: &CityView) {
+    pub(super) fn clear_post_for_gun(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        post: Pos,
+        city: &CityView,
+    ) {
         if !self.siege_guns_take_a_reachable_post {
             return;
         }

@@ -47,7 +47,9 @@ fn boxed_gun() -> (Game, u32, u32, u32, Pos, Pos) {
     assert_eq!(g.unit_attack_range(gun), 2);
     assert!(g.unit_has_line_of_sight_from(gun, near, city));
     assert!(g.unit_has_line_of_sight_from(gun, far, city));
-    let far_walk = g.route_preview(gun, far).expect("fixture: a road round the city");
+    let far_walk = g
+        .route_preview(gun, far)
+        .expect("fixture: a road round the city");
     assert!(
         far_walk.last().unwrap().1 > 1,
         "fixture: the far post is more than a turn away, {far_walk:?}"
