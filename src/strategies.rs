@@ -296,15 +296,18 @@ impl LiveLane {
 /// What a seat says when Civilization VI's own AI is playing it: every rival
 /// of a mirrored game (operator, 2026-11-13: "for validation games, the
 /// player should just be something like "Civ 6 Deity AI" or whatever the
-/// level is"). `difficulty` is the rung id the host reported. Nothing of ours
+/// level is"; 2026-11-16: "change civ 6 ai player name template to: "8 Deity
+/// Firaxis AI" or whatever for the level"). The number is the level as Civ VI
+/// counts it, Settler 1 to Deity 8, and `difficulty` is the rung id the host
+/// reported. Nothing of ours
 /// plays the seat, so it carries no agent id and no rating: the published
 /// rung ratings were measured on our stand-in for that AI, not on it.
 pub fn civ6_ai_seat_json(difficulty: &str) -> Value {
-    let rung = CIV6_RUNGS.iter().find(|(id, _)| *id == difficulty);
+    let rung = CIV6_RUNGS.iter().position(|(id, _)| *id == difficulty);
     json!({
         "ai_username": match rung {
-            Some((_, name)) => format!("Civ 6 {name} AI"),
-            None => "Civ 6 AI".to_string(),
+            Some(at) => format!("{} {} Firaxis AI", at + 1, CIV6_RUNGS[at].1),
+            None => "Firaxis AI".to_string(),
         },
         "ai_strat_label": "Civilization VI's own AI",
     })
@@ -638,19 +641,24 @@ mod tests {
     #[test]
     fn a_mirrored_rival_is_named_for_civilization_vis_own_ai() {
         let deity = civ6_ai_seat_json("deity");
-        assert_eq!(deity["ai_username"], json!("Civ 6 Deity AI"));
+        assert_eq!(deity["ai_username"], json!("8 Deity Firaxis AI"));
         assert_eq!(deity["ai_strat_label"], json!("Civilization VI's own AI"));
         // Nothing of ours is in the seat: no roster id and no rating.
         assert!(deity["ai_agent"].is_null());
         assert!(deity["ai_elo"].is_null());
-        for (id, name) in CIV6_RUNGS {
+        // The number is the level as Civ VI counts it: Settler 1, Deity 8.
+        for (level, (id, name)) in (1..).zip(CIV6_RUNGS) {
             assert_eq!(
                 civ6_ai_seat_json(id)["ai_username"],
-                json!(format!("Civ 6 {name} AI"))
+                json!(format!("{level} {name} Firaxis AI"))
             );
         }
+        assert_eq!(
+            civ6_ai_seat_json("settler")["ai_username"],
+            json!("1 Settler Firaxis AI")
+        );
         // A level the ladder does not hold still says whose AI it is.
-        assert_eq!(civ6_ai_seat_json("")["ai_username"], json!("Civ 6 AI"));
+        assert_eq!(civ6_ai_seat_json("")["ai_username"], json!("Firaxis AI"));
     }
 
     #[test]
