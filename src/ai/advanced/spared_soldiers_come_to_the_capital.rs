@@ -37,7 +37,8 @@
 //! **Scope.** Only the one-blow rewrite, only at a city of ours that is our
 //! original capital, and only for a soldier standing farther than
 //! [`CAPITAL_STAND_OFF`] from it. A soldier the posts left alone, a soldier
-//! within two, and every other city are unchanged. With
+//! within two, a soldier holding another city of ours, and every other city
+//! are unchanged. With
 //! `anvil-spares-the-one-blow` off there is no rewrite, so nothing changes.
 //! One journal line per soldier called in.
 

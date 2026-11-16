@@ -76,7 +76,8 @@ pub(super) struct Spared {
 
 /// Rewrite `orders` (the Anvil's posts for `city`) as the module docs say.
 /// With `stand_off` (`spared-soldiers-come-to-the-capital`), a soldier
-/// standing farther than that from the city is not offered its own tile.
+/// standing farther than that from the city, outside our other cities, is not
+/// offered its own tile.
 pub(super) fn spare_the_one_blow(
     g: &Game,
     pid: usize,
@@ -143,7 +144,13 @@ pub(super) fn spare_the_one_blow(
             .into_iter()
             .filter(|pos| *pos != city && !taken.contains(pos) && open_post(g, pid, *pos))
             .collect();
-        let stands_off = stand_off.is_some_and(|limit| g.wdist(here, city) > limit);
+        // `spared-soldiers-come-to-the-capital`: a soldier farther out than
+        // `stand_off` is not offered its own tile, unless it holds the City
+        // Center of another city of ours.
+        let stands_off = stand_off.is_some_and(|limit| g.wdist(here, city) > limit)
+            && !g
+                .city_at(here)
+                .is_some_and(|cid| g.cities[&cid].owner == pid);
         if here != city && !taken.contains(&here) && !options.contains(&here) && !stands_off {
             options.push(here);
         }

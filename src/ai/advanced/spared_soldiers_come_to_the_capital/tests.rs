@@ -195,3 +195,53 @@ fn a_soldier_within_two_is_left_as_it_was() {
         }
     );
 }
+
+/// A soldier holding another city of ours keeps that city's centre when it
+/// stands far out: the limit does not strip a garrison.
+#[test]
+fn a_soldier_holding_another_city_keeps_it() {
+    let (mut g, _, city) = bare_town();
+    let (front, musket_at, far) = g
+        .wring(city, 1)
+        .into_iter()
+        .filter(|pos| land(&g, *pos))
+        .find_map(|front| {
+            let musket = g
+                .nbrs(front)
+                .into_iter()
+                .find(|pos| g.wdist(*pos, city) == 2 && land(&g, *pos))?;
+            let far = g
+                .wdisk(city, 6)
+                .into_iter()
+                .filter(|pos| {
+                    land(&g, *pos)
+                        && g.wdist(*pos, city) > CAPITAL_STAND_OFF + 1
+                        && g.wdist(*pos, musket) >= 5
+                })
+                .min()?;
+            Some((front, musket, far))
+        })
+        .expect("a front tile, land beside it, and land well beyond both");
+    g.place_city(1, far, None);
+    let archer = g.spawn_test_unit("archer", 1, city);
+    let warrior = g.spawn_test_unit("warrior", 1, far);
+    g.units.get_mut(&warrior).unwrap().hp = 30;
+    g.spawn_test_unit("musketman", 0, musket_at);
+    let mut field = DangerField::new(&g, 1);
+    let posts = BTreeMap::from([(archer, city), (warrior, front)]);
+    let mut off = posts.clone();
+    let without = spare_the_one_blow(&g, 1, city, &[archer, warrior], &mut off, &mut field, None);
+    let mut on = posts.clone();
+    let with = spare_the_one_blow(
+        &g,
+        1,
+        city,
+        &[archer, warrior],
+        &mut on,
+        &mut field,
+        Some(CAPITAL_STAND_OFF),
+    );
+    assert_eq!(off, on);
+    assert_eq!(without, with);
+    assert!(with.called_in.is_empty());
+}
