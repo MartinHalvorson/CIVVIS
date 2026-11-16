@@ -85,47 +85,96 @@ pub(super) fn empire_reading(
     let _memo = g.query_memo();
     let mut value = 0.0;
     for cid in g.player_city_ids(pid) {
-        let y = g.city_yields(cid);
-        // Production is read as production *toward what this city is actually
-        // building*. `city_yields` carries flat adders -- Urban Planning's
-        // `city_production` -- but the whole `*_production_pct` family reaches
-        // the game only through `item_prod_mult`, so without this factor Agoge,
-        // Colonization, Ilkum, Maritime Industries, Limes and
-        // Maneuver all score exactly 0.0 and lose every tie to a card worth a
-        // rounding error of gold. That is the failure `PolicyAi` was retired
-        // for, one layer up.
-        let queued = g.cities.get(&cid).and_then(|city| city.queue.first());
-        let toward_item = g.item_prod_mult(pid, cid, queued);
-        value += w.pol_food * y.food
-            + w.pol_production * y.production * toward_item
-            + w.pol_gold * y.gold
-            + w.pol_science * y.science
-            + w.pol_culture * y.culture
-            + w.pol_faith * y.faith;
-        // `deck-prices-growth`: the Food that reaches the growth bank after
-        // the housing, amenity and loyalty throttles. Skipped at zero, so the
-        // shipped reading is untouched.
-        if w.pol_growth != 0.0 {
-            if let Some(city) = g.cities.get(&cid) {
-                let surplus = g.city_growth_surplus(
-                    pid,
-                    cid,
-                    y.food,
-                    g.city_housing(city),
-                    g.city_amenity_surplus(city),
-                );
-                value += w.pol_growth * surplus.max(0.0);
-            }
+        let (yields, growth) = city_reading(g, pid, w, cid);
+        value += yields;
+        if let Some(growth) = growth {
+            value += growth;
         }
     }
-    if let Some(y) = g.observed_yield_adjustments.get(&pid) {
-        value += w.pol_food * y.food
+    empire_terms(g, pid, w, net_maintenance, player_income).finish(w, value)
+}
+
+/// One city's share of [`empire_reading`], as the two terms it adds: the
+/// yields toward what the city builds, and its growth when that is priced.
+/// Kept as two because the reading adds them one after the other, and
+/// floating-point addition does not regroup.
+pub(super) fn city_reading(g: &Game, pid: usize, w: &Weights, cid: u32) -> (f64, Option<f64>) {
+    let y = g.city_yields(cid);
+    // Production is read as production *toward what this city is actually
+    // building*. `city_yields` carries flat adders -- Urban Planning's
+    // `city_production` -- but the whole `*_production_pct` family reaches
+    // the game only through `item_prod_mult`, so without this factor Agoge,
+    // Colonization, Ilkum, Maritime Industries, Limes and
+    // Maneuver all score exactly 0.0 and lose every tie to a card worth a
+    // rounding error of gold. That is the failure `PolicyAi` was retired
+    // for, one layer up.
+    let queued = g.cities.get(&cid).and_then(|city| city.queue.first());
+    let toward_item = g.item_prod_mult(pid, cid, queued);
+    let yields = w.pol_food * y.food
+        + w.pol_production * y.production * toward_item
+        + w.pol_gold * y.gold
+        + w.pol_science * y.science
+        + w.pol_culture * y.culture
+        + w.pol_faith * y.faith;
+    // `deck-prices-growth`: the Food that reaches the growth bank after
+    // the housing, amenity and loyalty throttles. Skipped at zero, so the
+    // shipped reading is untouched.
+    let growth = if w.pol_growth != 0.0 {
+        g.cities.get(&cid).map(|city| {
+            let surplus = g.city_growth_surplus(
+                pid,
+                cid,
+                y.food,
+                g.city_housing(city),
+                g.city_amenity_surplus(city),
+            );
+            w.pol_growth * surplus.max(0.0)
+        })
+    } else {
+        None
+    };
+    (yields, growth)
+}
+
+/// The empire-wide terms of [`empire_reading`], each as it is added after the
+/// cities: observed adjustments, the army's strength, influence, unit
+/// maintenance and policy income paid to the player.
+#[derive(Clone, Copy)]
+pub(super) struct EmpireTerms {
+    observed: Option<f64>,
+    strength: f64,
+    influence: f64,
+    maintenance: f64,
+    income: f64,
+}
+
+impl EmpireTerms {
+    /// `value`, the cities' terms summed in order, with these added in
+    /// [`empire_reading`]'s order.
+    fn finish(self, w: &Weights, mut value: f64) -> f64 {
+        if let Some(observed) = self.observed {
+            value += observed;
+        }
+        value + w.pol_military * self.strength + w.pol_influence * self.influence - self.maintenance
+            + self.income
+    }
+}
+
+pub(super) fn empire_terms(
+    g: &Game,
+    pid: usize,
+    w: &Weights,
+    net_maintenance: bool,
+    player_income: bool,
+) -> EmpireTerms {
+    let observed = g.observed_yield_adjustments.get(&pid).map(|y| {
+        w.pol_food * y.food
             + w.pol_production * y.production
             + w.pol_gold * y.gold
             + w.pol_science * y.science
             + w.pol_culture * y.culture
-            + w.pol_faith * y.faith;
-    }
+            + w.pol_faith * y.faith
+    });
     // Combat cards move no yield. Ask the units themselves instead: a card
     // worth +5 strength to a standing army is visible here and nowhere else.
     let mut strength = 0.0;
@@ -195,9 +244,13 @@ pub(super) fn empire_reading(
     } else {
         0.0
     };
-    value + w.pol_military * strength + w.pol_influence * g.policy_effect(pid, "influence_per_turn")
-        - maintenance
-        + income
+    EmpireTerms {
+        observed,
+        strength,
+        influence: g.policy_effect(pid, "influence_per_turn"),
+        maintenance,
+        income,
+    }
 }
 
 /// Take the Dedications this age offers, best first.
@@ -431,6 +484,156 @@ pub(super) fn policy_card_score(
     (gain + hysteresis, *priority, slot.clone(), *card)
 }
 
+/// [`empire_reading`] taken apart: each city's terms with the record of what
+/// that city alone asked the policy deck, and the empire-wide terms with
+/// theirs.
+///
+/// ★★ A CARD RE-READS ONLY THE CITIES IT CAN REACH. A card that is not inert
+/// for the empire as a whole used to re-derive every city's yields, but
+/// most cards are read by few of them: an adjacency card by the cities with
+/// that district, a capital card by the capital, a combat card by none.
+/// The same argument that lets [`PolicyReadSet::card_is_inert`] skip a card
+/// for the whole sweep holds city by city, if each city's record is
+/// complete. Within one memo scope it would not be: a derivation the second
+/// city shares with the first (the empire's luxury split, say) answers from
+/// the memo and asks the deck nothing, so the second city's record would
+/// miss it. So the records are taken on a copy of the board (a copy starts
+/// with no memo and no kept yields), each city under a scope of its own.
+pub(super) struct ReadingParts {
+    cities: Vec<(u32, (f64, Option<f64>), PolicyReadSet)>,
+    empire: EmpireTerms,
+    empire_reads: PolicyReadSet,
+}
+
+impl ReadingParts {
+    pub(super) fn new(
+        g: &Game,
+        pid: usize,
+        w: &Weights,
+        net_maintenance: bool,
+        player_income: bool,
+    ) -> Self {
+        let probe = g.clone();
+        let cities = probe
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| {
+                let trace = probe.trace_policy_reads(pid);
+                let terms = {
+                    let _memo = probe.query_memo();
+                    city_reading(&probe, pid, w, cid)
+                };
+                (cid, terms, trace.finish())
+            })
+            .collect();
+        let trace = probe.trace_policy_reads(pid);
+        let empire = {
+            let _memo = probe.query_memo();
+            empire_terms(&probe, pid, w, net_maintenance, player_income)
+        };
+        ReadingParts {
+            cities,
+            empire,
+            empire_reads: trace.finish(),
+        }
+    }
+
+    /// The reading of the unchanged deck: [`empire_reading`]'s own sum.
+    pub(super) fn reading(&self, w: &Weights) -> f64 {
+        let mut value = 0.0;
+        for (_, (yields, growth), _) in &self.cities {
+            value += yields;
+            if let Some(growth) = growth {
+                value += growth;
+            }
+        }
+        self.empire.finish(w, value)
+    }
+
+    /// Whether `card` is inert for every part: then no reading moves.
+    fn inert(&self, g: &Game, card: Name) -> bool {
+        self.empire_reads.card_is_inert(&g.rules, card)
+            && self
+                .cities
+                .iter()
+                .all(|(_, _, reads)| reads.card_is_inert(&g.rules, card))
+    }
+
+    /// [`empire_reading`] on `g`, whose deck differs from the one these parts
+    /// were taken on by `card` alone: each part the card cannot reach keeps
+    /// its terms, every other is read again, and the terms are added in the
+    /// reading's own order.
+    fn reading_with(
+        &self,
+        g: &Game,
+        pid: usize,
+        w: &Weights,
+        card: Name,
+        net_maintenance: bool,
+        player_income: bool,
+    ) -> f64 {
+        let _memo = g.query_memo();
+        let mut value = 0.0;
+        for (cid, terms, reads) in &self.cities {
+            let (yields, growth) = if reads.card_is_inert(&g.rules, card) {
+                *terms
+            } else {
+                city_reading(g, pid, w, *cid)
+            };
+            value += yields;
+            if let Some(growth) = growth {
+                value += growth;
+            }
+        }
+        let empire = if self.empire_reads.card_is_inert(&g.rules, card) {
+            self.empire
+        } else {
+            empire_terms(g, pid, w, net_maintenance, player_income)
+        };
+        empire.finish(w, value)
+    }
+}
+
+/// [`policy_card_score`] for a review that took [`ReadingParts`].
+#[allow(clippy::too_many_arguments)]
+pub(super) fn policy_card_score_by_parts(
+    g: &mut Game,
+    pid: usize,
+    w: &Weights,
+    candidate: &(usize, String, Name),
+    parts: &ReadingParts,
+    current_reading: f64,
+    net_maintenance: bool,
+    player_income: bool,
+) -> (f64, usize, String, Name) {
+    let (priority, slot, card) = candidate;
+    let incumbent = g.players[pid].policies.contains(card);
+    let (without, with) = if parts.inert(g, *card) {
+        (current_reading, current_reading)
+    } else if incumbent {
+        g.players[pid].policies.remove(card);
+        g.board_written();
+        let without = parts.reading_with(g, pid, w, *card, net_maintenance, player_income);
+        g.players[pid].policies.insert(*card);
+        g.board_written();
+        (without, current_reading)
+    } else {
+        g.players[pid].policies.insert(*card);
+        g.board_written();
+        let with = parts.reading_with(g, pid, w, *card, net_maintenance, player_income);
+        g.players[pid].policies.remove(card);
+        g.board_written();
+        (current_reading, with)
+    };
+    let gain = with - without;
+    let hysteresis = if incumbent {
+        w.pol_swap_margin * gain.abs()
+    } else {
+        0.0
+    };
+    (gain + hysteresis, *priority, slot.clone(), *card)
+}
+
 /// The unchanged reading every candidate is compared against, together with
 /// the record of what it asked `pid`'s policy deck.
 ///
@@ -560,18 +763,18 @@ pub(super) fn revise_policy_deck(
                 )
             }
             None => {
-                let (current_reading, reads) =
-                    reading_with_policy_trace(g, pid, w, net_maintenance, player_income);
+                let parts = ReadingParts::new(g, pid, w, net_maintenance, player_income);
+                let current_reading = parts.reading(w);
                 candidates
                     .iter()
                     .map(|candidate| {
-                        policy_card_score(
+                        policy_card_score_by_parts(
                             g,
                             pid,
                             w,
                             candidate,
+                            &parts,
                             current_reading,
-                            &reads,
                             net_maintenance,
                             player_income,
                         )
@@ -630,3 +833,6 @@ pub(super) fn revise_policy_deck(
         }
     }
 }
+
+#[cfg(test)]
+mod parts_tests;
