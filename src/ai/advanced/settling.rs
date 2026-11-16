@@ -953,6 +953,9 @@ impl AdvancedAi {
             return BTreeMap::new();
         };
         let start = unit.pos;
+        // `unit_can_traverse`, with the unit's half read once for the flood
+        // rather than once per neighbour (see `Game::unit_traversal`).
+        let class = g.unit_traversal(uid);
         let mut best: BTreeMap<Pos, f64> = BTreeMap::new();
         best.insert(start, 0.0);
         // (cost, pos) min-heap keyed on the cost in thousandths so it orders;
@@ -966,7 +969,9 @@ impl AdvancedAi {
                 continue;
             }
             for next in g.nbrs(cur) {
-                if g.wdist(start, next) > radius || !g.unit_can_traverse(uid, next) {
+                if g.wdist(start, next) > radius
+                    || !class.is_some_and(|class| g.class_can_enter(class, next))
+                {
                     continue;
                 }
                 let total = cost + g.step_cost(cur, next);
