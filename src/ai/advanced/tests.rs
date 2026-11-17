@@ -6069,7 +6069,7 @@ fn apostles_complete_one_worship_and_one_enhancer_belief_for_the_plan() {
         game.players[0]
             .religion_beliefs
             .iter()
-            .filter(|belief| game.rules.beliefs.enhancer.contains_key(*belief))
+            .filter(|belief| game.rules.beliefs.enhancer.contains_key(belief))
             .count(),
         1
     );
@@ -6077,7 +6077,7 @@ fn apostles_complete_one_worship_and_one_enhancer_belief_for_the_plan() {
         game.players[0]
             .religion_beliefs
             .iter()
-            .filter(|belief| game.rules.beliefs.worship.contains_key(*belief))
+            .filter(|belief| game.rules.beliefs.worship.contains_key(belief))
             .count(),
         1
     );

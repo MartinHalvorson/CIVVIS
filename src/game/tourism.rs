@@ -459,7 +459,7 @@ impl Game {
             if let Some(observed) = &self.observed_great_work_housing {
                 return observed
                     .iter()
-                    .filter(|(city, _)| self.cities.get(*city).is_some_and(|c| c.owner == pid))
+                    .filter(|(city, _)| self.cities.get(city).is_some_and(|c| c.owner == pid))
                     .map(|(city, kinds)| (*city, kinds.clone()))
                     .collect();
             }

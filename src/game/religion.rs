@@ -91,7 +91,7 @@ impl Game {
         self.players[pid]
             .religion_beliefs
             .iter()
-            .filter(|belief| !self.rules.beliefs.pantheon.contains_key(*belief))
+            .filter(|belief| !self.rules.beliefs.pantheon.contains_key(belief))
             .count()
     }
 

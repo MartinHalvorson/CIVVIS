@@ -51,7 +51,7 @@ impl AdvancedAi {
                     .districts
                     .iter()
                     .filter(|(district, pad)| {
-                        g.district_family(**district) == "spaceport" && explored.contains(*pad)
+                        g.district_family(**district) == "spaceport" && explored.contains(pad)
                     })
                     .count()
             })
