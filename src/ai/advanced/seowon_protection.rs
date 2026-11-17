@@ -90,13 +90,14 @@ impl AdvancedAi {
                     g.map.get(near)
                 };
             }
-            let after = g.district_adjacency_assuming_with_family_and_neighbors(
+            let after = g.district_adjacency_with_neighbors(
                 crate::name!("seowon"),
                 seowon_pos,
                 Some(&assume),
                 track_threshold.then_some(&mut after_sources),
                 crate::name!("campus"),
                 &neighbors,
+                None,
             );
             loss += (self.yield_value(before, lane) - self.yield_value(after, lane)).max(0.0);
             if track_threshold {

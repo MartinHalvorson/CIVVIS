@@ -406,49 +406,18 @@ impl Game {
         for (index, pos) in self.nbrs(dpos).into_iter().enumerate() {
             neighbors[index] = self.map.get(pos);
         }
-        self.district_adjacency_assuming_with_family_and_neighbors(
-            dname, dpos, assume, detail, family, &neighbors,
+        self.district_adjacency_with_neighbors(
+            dname, dpos, assume, detail, family, &neighbors, None,
         )
     }
 
-    pub(crate) fn district_adjacency_assuming_with_family_and_neighbors(
-        &self,
-        dname: Name,
-        dpos: Pos,
-        assume: Option<&crate::game::adjacency::PlanAssumption>,
-        detail: Option<&mut Vec<AdjacencySource>>,
-        family: Name,
-        neighbors: &[Option<&crate::world::Tile>; 6],
-    ) -> Yields {
-        self.district_adjacency_assuming_with_family_and_neighbors_cached(
-            dname, dpos, assume, detail, family, neighbors, None,
-        )
-    }
-
+    /// The adjacency count itself, for a caller that already holds the
+    /// plot's six neighbouring tiles (in `nbrs` order, `None` off the map)
+    /// and the district's `family`. A caller that has already counted the
+    /// neighbours the `district` key counts passes that as `district_count`;
+    /// `None` counts them here.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn district_adjacency_assuming_with_family_and_neighbors_and_district_count(
-        &self,
-        dname: Name,
-        dpos: Pos,
-        assume: Option<&crate::game::adjacency::PlanAssumption>,
-        detail: Option<&mut Vec<AdjacencySource>>,
-        family: Name,
-        neighbors: &[Option<&crate::world::Tile>; 6],
-        district_count: usize,
-    ) -> Yields {
-        self.district_adjacency_assuming_with_family_and_neighbors_cached(
-            dname,
-            dpos,
-            assume,
-            detail,
-            family,
-            neighbors,
-            Some(district_count),
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(in crate::game) fn district_adjacency_assuming_with_family_and_neighbors_cached(
+    pub(crate) fn district_adjacency_with_neighbors(
         &self,
         dname: Name,
         dpos: Pos,
@@ -456,7 +425,7 @@ impl Game {
         mut detail: Option<&mut Vec<AdjacencySource>>,
         family: Name,
         neighbors: &[Option<&crate::world::Tile>; 6],
-        cached_district_count: Option<usize>,
+        district_count: Option<usize>,
     ) -> Yields {
         let spec = &self.rules.districts[dname];
         let mut adj = Yields::default();
@@ -530,7 +499,7 @@ impl Game {
                     // "+6" from the turn after the Holy Site was pillaged
                     // (t82) until it was repaired (t96), Natural Philosophy
                     // doubling a base that had lost its district pair.
-                    AdjacencyCount::District => cached_district_count.unwrap_or_else(|| {
+                    AdjacencyCount::District => district_count.unwrap_or_else(|| {
                         neighbors
                             .iter()
                             .flatten()
