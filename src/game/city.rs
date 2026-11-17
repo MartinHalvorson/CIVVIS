@@ -3107,12 +3107,6 @@ impl Game {
             {
                 continue;
             }
-            if matches!(name.as_str(), "archaeological_dig" | "shipwreck_excavation")
-                && !*artifact_home
-                    .get_or_insert_with(|| self.can_house_additional_great_work(pid, "artifact"))
-            {
-                continue;
-            }
             // Every disqualifier below is a pure read of this tile, this
             // improvement and the empire, so the order they are asked in
             // cannot change the answer, only the work. The tile-local siting
@@ -3300,6 +3294,18 @@ impl Game {
                         .as_deref()
                         .is_some_and(|owner| self.owns_civ_unique(pid, owner))
             }) {
+                continue;
+            }
+            // Whether the empire has a slot for another Artifact is asked
+            // last, of a tile a dig could stand on. It assigns every Great
+            // Work the player owns across every slot it has, twice, and asked
+            // before the siting tests it ran for every bare tile a Builder
+            // considered (0.7% of a late site game). It is a pure read like
+            // the rest, so where it stands changes only the work.
+            if matches!(name.as_str(), "archaeological_dig" | "shipwreck_excavation")
+                && !*artifact_home
+                    .get_or_insert_with(|| self.can_house_additional_great_work(pid, "artifact"))
+            {
                 continue;
             }
             out.push(*name);

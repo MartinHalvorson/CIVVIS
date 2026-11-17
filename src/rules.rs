@@ -610,7 +610,7 @@ pub struct UnitSpec {
     /// `adjacent_siege_range`, `adjacent_siege_bombard`, `adjacent_heal`, and
     /// `adjacent_movement`; unknown entries remain forward-compatible.
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
     /// `Units.WMDCapable`: this unit can carry a nuclear or thermonuclear
     /// device to its target. The shipped rows are the Bomber, the Jet Bomber
     /// and the Nuclear Submarine (`Base/Assets/Gameplay/Data/Units.xml`).
@@ -837,7 +837,7 @@ pub struct WonderSpec {
     #[serde(default)]
     pub placement: String,
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
 }
 
 /// A named entry in the global Great Person market. Effects deliberately use
@@ -861,7 +861,7 @@ pub struct GovernorPromotionSpec {
     #[serde(default)]
     pub requires: Vec<Name>,
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -870,7 +870,7 @@ pub struct GovernorSpec {
     pub title: String,
     pub establish_turns: u32,
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
     #[serde(default)]
     pub promotions: BTreeMap<String, GovernorPromotionSpec>,
 }
@@ -1174,7 +1174,7 @@ pub struct CivSpec {
     /// engine cannot express this way — Rome's free monument, Scythia's
     /// healing — stays keyed by name in `has_ability` instead.
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
     #[serde(default)]
     pub unique_unit: Option<String>,
     #[serde(default)]
@@ -1293,7 +1293,7 @@ pub struct PromotionSpec {
     #[serde(default)]
     pub requires: Vec<Name>,
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
     #[serde(default)]
     pub note: String,
 }
