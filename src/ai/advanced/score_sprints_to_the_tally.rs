@@ -57,12 +57,72 @@
 //!
 //! Journal reasons start `score-seat-sprints-to-the-tally:` and state the
 //! points, the cost and the turns.
+//!
+//! ## Version 2: `score-seat-sprints-to-the-tally-2` (opt-in; turns version 1 off)
+//!
+//! Live Immortal Rome `civvis-20261116T102757Z` (v1 armed, turn limit 180)
+//! lost the tally 1,196 to 1,242: 53 of the gap was Era Score and 120 the
+//! districts, buildings, Great People and religion. Era Score counts one
+//! point a point at the tally (`Game::score_parts`), and v1 priced only the
+//! wonders' moment. Its Gold saved turns 160-162 for a 2,510-Gold Merchant
+//! priced at five points, which Faith bought at turn 172 for 790; three of
+//! the seven classes on offer were exhausted by turn 174 and all of them by
+//! the tally. Version 2 is version 1 plus three things:
+//!
+//! 1. **A Great Person's Historic Moment in its price**
+//!    ([`AdvancedAi::score_sprint_patronage_era`]): every recruitment pays
+//!    one (`MOMENT_GREAT_PERSON_CREATED_GAME_ERA` / `_PAST_ERA`, Era Score 1
+//!    each), and a patronage whose coins cover more than half the person's
+//!    points pays `MOMENT_GREAT_PERSON_CREATED_PATRONAGE_GOLD_OVER_HALF` /
+//!    `_FAITH_OVER_HALF` (3) in its place (`Expansion1_Moments.xml`; neither
+//!    row has an era window or a cooldown, and the host fired the Faith row
+//!    instead of the era row at turn 89 of `civvis-20261116T034312Z`). A
+//!    wonder keeps version 1's 15 plus 4 (its own era) or 3. The
+//!    high-adjacency district rows are not priced: each is "your
+//!    civilization's first" of its type (the 102757Z board held each once),
+//!    so none repeats at the end of a game; a National Park is no purchase.
+//! 2. **One currency a Great Person** ([`AdvancedAi::score_sprint_patrons`]):
+//!    each class goes to the currency that reaches its price before the
+//!    tally and gives up the fewest points of its other purchases — none
+//!    for an idle bank, which Faith is wherever it buys no building — then
+//!    the one that pays it sooner, then the smaller share of that bank. The
+//!    other currency neither buys nor saves for it.
+//! 3. **The Great People open first**: the purchase pass opens
+//!    [`TALLY_SPRINT_GREAT_PERSON_STANDARD_TURNS`] standard turns before the
+//!    limit (30 at Online: turn 150 of 180) and buys only patronage until
+//!    version 1's window opens: a class whose last person a rival claims is
+//!    gone. The queues keep version 1's window.
+//!
+//! Its journal reasons start `score-seat-sprints-to-the-tally-2:` and give
+//! the Era Score part of each price.
+//!
+//! **What the replay reads.** Both versions' bank passes over turns 150-180
+//! of 102757Z and `civvis-20261116T005841Z`, on each turn's own menus,
+//! patron prices, points and income: 32 against 32 and 46 against 45 points
+//! when every coin above the reserve is the sprint's, 25 against 25 and 15
+//! against 15 on the live banks (the version 1 arm reproduces 102757Z's
+//! thirteen buildings and Merchant). The over-half moment never paid: a
+//! class more than half short cost 1,820-7,790 Faith or 2,705-11,660 Gold
+//! there (230-970 Faith a point with the moment), and neither arm ever chose
+//! one.
 
 use super::*;
 
 /// The window, in standard turns before the turn limit: 30 standard is 20
 /// at Online (`GameSpeed::scale_turns`), turn 160 of a 180-turn game.
 pub(crate) const TALLY_SPRINT_STANDARD_TURNS: u32 = 30;
+
+/// `score-seat-sprints-to-the-tally-2`: the Great Person purchases open this
+/// many standard turns before the turn limit, 30 at Online (turn 150 of 180).
+pub(crate) const TALLY_SPRINT_GREAT_PERSON_STANDARD_TURNS: u32 = 45;
+
+/// Historic Moments a patronized Great Person pays (`Expansion1_Moments.xml`).
+const MOMENT_PATRONAGE_GOLD_OVER_HALF: &str =
+    "MOMENT_GREAT_PERSON_CREATED_PATRONAGE_GOLD_OVER_HALF";
+const MOMENT_PATRONAGE_FAITH_OVER_HALF: &str =
+    "MOMENT_GREAT_PERSON_CREATED_PATRONAGE_FAITH_OVER_HALF";
+const MOMENT_GREAT_PERSON_GAME_ERA: &str = "MOMENT_GREAT_PERSON_CREATED_GAME_ERA";
+const MOMENT_GREAT_PERSON_PAST_ERA: &str = "MOMENT_GREAT_PERSON_CREATED_PAST_ERA";
 
 /// Gold the purchase pass leaves in the bank: one emergency defender's
 /// worth of the 2026-11-16 game's late prices was 330-540.
@@ -97,12 +157,14 @@ pub(crate) const TALLY_SPRINT_ATTACK_MEMORY: u32 = 3;
 /// At most this many purchases per currency a turn.
 const TALLY_SPRINT_MAX_BUYS: usize = 16;
 
-/// What an item pays at the tally: its points, the Production it still owes
-/// (with the follow-up building for a district) and the turns to finish.
+/// What an item pays at the tally: its points (`era` of them Era Score), the
+/// Production it still owes (with the follow-up building for a district) and
+/// the turns to finish.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct SprintOffer {
     pub(crate) item: Item,
     pub(crate) points: f64,
+    pub(crate) era: f64,
     pub(crate) cost: f64,
     pub(crate) turns: f64,
 }
@@ -114,12 +176,14 @@ impl SprintOffer {
     }
 }
 
-/// A purchase the bank may make: the action, its points and its price.
+/// A purchase the bank may make: the action, its points (`era` of them Era
+/// Score) and its price.
 #[derive(Clone, Debug)]
 pub(crate) struct SprintBuy {
     pub(crate) action: Action,
     pub(crate) label: String,
     pub(crate) points: f64,
+    pub(crate) era: f64,
     pub(crate) price: f64,
 }
 
@@ -131,20 +195,100 @@ impl SprintBuy {
 }
 
 impl AdvancedAi {
-    /// The gene is on and the seat aims at Score.
+    /// A version of the gene is on and the seat aims at Score.
     pub(super) fn score_sprint_on(&self) -> bool {
-        self.score_seat_sprints_to_the_tally && self.victory_target == Some(VictoryTarget::Score)
+        (self.score_seat_sprints_to_the_tally || self.score_seat_sprints_to_the_tally_2)
+            && self.victory_target == Some(VictoryTarget::Score)
+    }
+
+    /// The tag journal reasons start with: the version that plays.
+    fn score_sprint_tag(&self) -> &'static str {
+        if self.score_seat_sprints_to_the_tally_2 {
+            "score-seat-sprints-to-the-tally-2"
+        } else {
+            "score-seat-sprints-to-the-tally"
+        }
+    }
+
+    /// Version 2 names the Era Score part of a price; version 1 says nothing.
+    fn score_sprint_era_note(&self, era: f64) -> String {
+        if self.score_seat_sprints_to_the_tally_2 {
+            format!(" ({era:.1} of them Era Score)")
+        } else {
+            String::new()
+        }
+    }
+
+    /// Turns left before the tally (this turn's own end of turn included)
+    /// inside a window of `standard` standard turns; `None` off and outside.
+    fn score_sprint_window(&self, g: &Game, standard: u32) -> Option<u32> {
+        if !self.score_sprint_on() || g.max_turns == 0 || g.turn > g.max_turns {
+            return None;
+        }
+        let left = g.max_turns - g.turn + 1;
+        (left <= g.standard_duration(standard) + 1).then_some(left)
     }
 
     /// Turns of production left before the tally (this turn's own end of
     /// turn included) while the sprint is open; `None` off and outside the
     /// window.
     pub(super) fn score_sprint_left(&self, g: &Game) -> Option<u32> {
-        if !self.score_sprint_on() || g.max_turns == 0 || g.turn > g.max_turns {
-            return None;
+        self.score_sprint_window(g, TALLY_SPRINT_STANDARD_TURNS)
+    }
+
+    /// Turns left before the tally while the bank may patronize Great People:
+    /// version 2 opens [`TALLY_SPRINT_GREAT_PERSON_STANDARD_TURNS`] before the
+    /// limit, version 1 with the rest of the sprint.
+    pub(super) fn score_sprint_great_person_left(&self, g: &Game) -> Option<u32> {
+        if self.score_seat_sprints_to_the_tally_2 {
+            self.score_sprint_window(g, TALLY_SPRINT_GREAT_PERSON_STANDARD_TURNS)
+        } else {
+            self.score_sprint_left(g)
         }
-        let left = g.max_turns - g.turn + 1;
-        (left <= g.standard_duration(TALLY_SPRINT_STANDARD_TURNS) + 1).then_some(left)
+    }
+
+    /// Era Score a Historic Moment pays in the world's era: its catalogue
+    /// value, nothing outside its era window.
+    fn score_sprint_moment(g: &Game, moment: &str) -> f64 {
+        g.rules
+            .historic_moments
+            .get(moment)
+            .filter(|spec| {
+                spec.minimum_game_era.is_none_or(|era| g.world_era >= era)
+                    && spec.maximum_game_era.is_none_or(|era| g.world_era <= era)
+                    && spec.obsolete_era.is_none_or(|era| g.world_era < era)
+            })
+            .map_or(0.0, |spec| spec.era_score.max(0) as f64)
+    }
+
+    /// `score-seat-sprints-to-the-tally-2`: the Era Score `pid` gains when it
+    /// patronizes the Great `kind` with `currency` now. The host pays one
+    /// Historic Moment a recruitment: the patronage row (3) when the coins
+    /// cover more than half the person's points (`claim_great_person`:
+    /// missing points above half the cost), else the era row (1).
+    pub(crate) fn score_sprint_patronage_era(
+        g: &Game,
+        pid: usize,
+        kind: &str,
+        currency: &str,
+    ) -> f64 {
+        let points = g.players[pid].gpp.get(kind).copied().unwrap_or(0.0);
+        let cost = g.gp_cost(pid, kind);
+        let moment = if (cost - points).max(0.0) > cost / 2.0 {
+            if currency == "faith" {
+                MOMENT_PATRONAGE_FAITH_OVER_HALF
+            } else {
+                MOMENT_PATRONAGE_GOLD_OVER_HALF
+            }
+        } else if g
+            .current_great_person(kind)
+            .is_some_and(|(_, spec)| spec.era < g.world_era)
+        {
+            MOMENT_GREAT_PERSON_PAST_ERA
+        } else {
+            MOMENT_GREAT_PERSON_GAME_ERA
+        };
+        Self::score_sprint_moment(g, moment)
     }
 
     /// Whether a major is at war with `pid`.
@@ -216,19 +360,33 @@ impl AdvancedAi {
         if turns.ceil() > left {
             return None;
         }
+        // A wonder: 15 points and its Era Score moment, both times the chance
+        // of finishing first.
         let wonder = |name: &Name| {
             let era = Self::score_wonder_era(g, name);
             let moment = Self::score_wonder_moment(era, g.world_era) as f64;
-            (TALLY_SPRINT_WONDER_POINTS + moment)
-                * Self::score_wonder_chance(era, g.world_era, turns)
+            let chance = Self::score_wonder_chance(era, g.world_era, turns);
+            (
+                (TALLY_SPRINT_WONDER_POINTS + moment) * chance,
+                moment * chance,
+            )
         };
+        let mut era = 0.0;
         let (points, cost) = match item {
             Item::Building { building } => match g.rules.buildings.get(building) {
-                Some(spec) if spec.wonder => (wonder(building), cost),
+                Some(spec) if spec.wonder => {
+                    let (points, moment) = wonder(building);
+                    era = moment;
+                    (points, cost)
+                }
                 Some(_) => (1.0, cost),
                 None => return None,
             },
-            Item::Wonder { wonder: name, .. } => (wonder(name), cost),
+            Item::Wonder { wonder: name, .. } => {
+                let (points, moment) = wonder(name);
+                era = moment;
+                (points, cost)
+            }
             Item::District { district, .. } => {
                 if g.district_family(*district).as_str() == "spaceport" {
                     return None;
@@ -268,6 +426,7 @@ impl AdvancedAi {
         (points > 0.0).then(|| SprintOffer {
             item: item.clone(),
             points,
+            era,
             cost,
             turns,
         })
@@ -360,11 +519,12 @@ impl AdvancedAi {
                         100.0 * held.rate()
                     ),
                 };
+                let tag = self.score_sprint_tag();
+                let era = self.score_sprint_era_note(best.era);
                 think!(self.journal(), Economy, Decision,
                     "{name} sprints to the tally with {label}";
-                    "score-seat-sprints-to-the-tally: {:.1} points for {:.0} Production in \
-                     {:.0} turns ({:.1} a hundred), {left} turns before the tally; it replaces \
-                     {replaced}",
+                    "{tag}: {:.1} points{era} for {:.0} Production in {:.0} turns ({:.1} a \
+                     hundred), {left} turns before the tally; it replaces {replaced}",
                     best.points, best.cost, best.turns.ceil(), 100.0 * best.rate());
             }
         }
@@ -434,6 +594,7 @@ impl AdvancedAi {
                     action,
                     label,
                     points,
+                    era: 0.0,
                     price,
                 })
             })
@@ -459,6 +620,7 @@ impl AdvancedAi {
                         currency: currency.to_string(),
                     },
                     points: TALLY_SPRINT_GREAT_PERSON_POINTS,
+                    era: 0.0,
                     price,
                 });
             }
@@ -486,33 +648,145 @@ impl AdvancedAi {
         self.reserve_for_the_threatened_city(g, pid, plan, reserve)
     }
 
+    /// The bank of `currency`.
+    fn score_sprint_bank(g: &Game, pid: usize, currency: &str) -> f64 {
+        if currency == "gold" {
+            g.players[pid].gold
+        } else {
+            g.players[pid].faith
+        }
+    }
+
+    /// The income of `currency` a turn, never below zero.
+    fn score_sprint_income(g: &Game, pid: usize, currency: &str) -> f64 {
+        if currency == "gold" {
+            g.players[pid].gold_per_turn
+        } else {
+            Self::score_sprint_faith_income(g, pid)
+        }
+        .max(0.0)
+    }
+
+    /// The bank's menu in `currency`: version 1's
+    /// ([`Self::score_sprint_buys`]). Version 2 adds each Great Person's
+    /// Historic Moment to its points, leaves a class to the currency
+    /// `patrons` names, and before version 1's window (`full` false) offers
+    /// Great People only.
+    fn score_sprint_menu(
+        &self,
+        g: &Game,
+        pid: usize,
+        currency: &str,
+        full: bool,
+        patrons: &BTreeMap<String, &'static str>,
+    ) -> Vec<SprintBuy> {
+        let mut buys = Self::score_sprint_buys(g, pid, currency);
+        if !self.score_seat_sprints_to_the_tally_2 {
+            return buys;
+        }
+        buys.retain_mut(|buy| match &buy.action {
+            Action::PatronizeGreatPerson { kind, .. } => {
+                if patrons.get(kind).is_some_and(|patron| *patron != currency) {
+                    return false;
+                }
+                buy.era = Self::score_sprint_patronage_era(g, pid, kind, currency);
+                buy.points += buy.era;
+                true
+            }
+            _ => full,
+        });
+        buys
+    }
+
+    /// `score-seat-sprints-to-the-tally-2`: the currency that patronizes each
+    /// Great Person class on offer (see the module, version 2 point 2): of
+    /// the currencies whose bank reaches the price before the tally, the one
+    /// that gives up the fewest points of its other purchases (an idle bank
+    /// gives up none), then the one that pays it sooner, then the one the
+    /// price takes the smaller share of. Empty with version 1 and for a class
+    /// neither currency reaches.
+    pub(crate) fn score_sprint_patrons(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        left: u32,
+        full: bool,
+    ) -> BTreeMap<String, &'static str> {
+        if !self.score_seat_sprints_to_the_tally_2 {
+            return BTreeMap::new();
+        }
+        // Per class: (points given up, turns until paid, share of the bank)
+        // and the currency.
+        let mut best: BTreeMap<String, ([f64; 3], &'static str)> = BTreeMap::new();
+        for currency in ["faith", "gold"] {
+            let reserve = self.score_sprint_reserve(g, pid, plan, currency, left);
+            let bank = Self::score_sprint_bank(g, pid, currency);
+            let income = Self::score_sprint_income(g, pid, currency);
+            let reach = bank + income * left.saturating_sub(1) as f64 - reserve;
+            let buys = self.score_sprint_menu(g, pid, currency, full, &BTreeMap::new());
+            // Coins a point of the best other purchase the bank reaches.
+            let other = buys
+                .iter()
+                .filter(|buy| {
+                    !matches!(buy.action, Action::PatronizeGreatPerson { .. })
+                        && buy.price <= reach + f64::EPSILON
+                })
+                .map(SprintBuy::per_point)
+                .min_by(f64::total_cmp);
+            for buy in &buys {
+                let Action::PatronizeGreatPerson { kind, .. } = &buy.action else {
+                    continue;
+                };
+                if buy.price > reach + f64::EPSILON {
+                    continue;
+                }
+                let forgone = other.map_or(0.0, |rate| buy.price / rate.max(f64::EPSILON));
+                let short = (buy.price + reserve - bank).max(0.0);
+                let wait = if short > 1e-9 {
+                    short / income.max(1e-9)
+                } else {
+                    0.0
+                };
+                let key = [forgone, wait, buy.price / reach.max(1.0)];
+                let better = best.get(kind).is_none_or(|(was, _)| {
+                    key.iter()
+                        .zip(was)
+                        .find(|(now, then)| (*now - *then).abs() > 1e-9)
+                        .is_some_and(|(now, then)| now < then)
+                });
+                if better {
+                    best.insert(kind.clone(), (key, currency));
+                }
+            }
+        }
+        best.into_iter()
+            .map(|(kind, (_, currency))| (kind, currency))
+            .collect()
+    }
+
     /// See the module, point 2: Gold and Faith above their reserves buy the
     /// fewest coins a point. Exact no-op off and outside the window.
     pub(super) fn score_sprint_purchases(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        let Some(left) = self.score_sprint_left(g) else {
+        let Some(left) = self.score_sprint_great_person_left(g) else {
             return;
         };
+        // Version 2 opens for Great People only before version 1's window.
+        let full = self.score_sprint_left(g).is_some();
+        let patrons = self.score_sprint_patrons(g, pid, plan, left, full);
+        let tag = self.score_sprint_tag();
         // Faith first: it buys only Great People and a few buildings, while
         // Gold also buys every building. At turn 180 of the 2026-11-16 game
         // an Admiral cost 630 Faith or 1,025 Gold, and Gold's next best was
         // a 580-Gold Bank.
         for currency in ["faith", "gold"] {
             let reserve = self.score_sprint_reserve(g, pid, plan, currency, left);
-            let income = if currency == "gold" {
-                g.players[pid].gold_per_turn
-            } else {
-                Self::score_sprint_faith_income(g, pid)
-            }
-            .max(0.0);
+            let income = Self::score_sprint_income(g, pid, currency);
             // Income still to come before the tally's last purchase.
             let coming = income * left.saturating_sub(1) as f64;
             for _ in 0..TALLY_SPRINT_MAX_BUYS {
-                let bank = if currency == "gold" {
-                    g.players[pid].gold
-                } else {
-                    g.players[pid].faith
-                };
-                let mut buys = Self::score_sprint_buys(g, pid, currency);
+                let bank = Self::score_sprint_bank(g, pid, currency);
+                let mut buys = self.score_sprint_menu(g, pid, currency, full, &patrons);
                 buys.sort_by(|a, b| a.per_point().total_cmp(&b.per_point()));
                 // The best offer the bank can still reach before the tally.
                 let saving = buys
@@ -529,22 +803,23 @@ impl AdvancedAi {
                             || after + coming + f64::EPSILON >= saving.price + reserve)
                 });
                 let Some(pick) = pick else {
+                    let era = self.score_sprint_era_note(saving.era);
                     think!(self.journal(), Economy, Detail,
                         "The bank saves for {}", saving.label;
-                        "score-seat-sprints-to-the-tally: {:.0} points for {:.0} {currency} \
-                         ({:.0} a point); {bank:.0} in the bank, +{income:.0} a turn, {left} \
-                         turns before the tally",
+                        "{tag}: {:.0} points{era} for {:.0} {currency} ({:.0} a point); \
+                         {bank:.0} in the bank, +{income:.0} a turn, {left} turns before the \
+                         tally",
                         saving.points, saving.price, saving.per_point());
                     break;
                 };
                 if g.apply(pid, &pick.action).is_err() {
                     break;
                 }
+                let era = self.score_sprint_era_note(pick.era);
                 think!(self.journal(), Economy, Decision,
                     "Buying {} for the tally", pick.label;
-                    "score-seat-sprints-to-the-tally: {:.0} points for {:.0} {currency} ({:.0} \
-                     a point), {left} turns before the tally; {:.0} left over a {reserve:.0} \
-                     reserve",
+                    "{tag}: {:.0} points{era} for {:.0} {currency} ({:.0} a point), {left} turns \
+                     before the tally; {:.0} left over a {reserve:.0} reserve",
                     pick.points, pick.price, pick.per_point(), bank - pick.price);
             }
         }

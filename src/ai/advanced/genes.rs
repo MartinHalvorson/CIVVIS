@@ -6297,6 +6297,14 @@ pub const GENES: &[Gene] = &[
     // existed; 72 "stops short of its post" lines, the city never fell. See
     // `advanced/siege_train/reachable_post.rs`.
     Gene { tag: "siege-guns-take-a-reachable-post", field: "siege_guns_take_a_reachable_post", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_guns_take_a_reachable_post, disable: AdvancedAi::disable_siege_guns_take_a_reachable_post },
+    // Version 2 of `score-seat-sprints-to-the-tally`. Live Immortal Rome
+    // civvis-20261116T102757Z (v1 armed, limit 180) lost the tally 1,196 to
+    // 1,242, 53 of it Era Score; its Gold saved for a Merchant priced at five
+    // points. A Great Person is priced with its Historic Moment (3 when the
+    // coins pay over half, else 1), each class goes to the idle currency that
+    // reaches it, and patronage opens at turn 150. See
+    // `advanced/score_sprints_to_the_tally.rs`.
+    Gene { tag: "score-seat-sprints-to-the-tally-2", field: "score_seat_sprints_to_the_tally_2", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_sprints_to_the_tally_2, disable: AdvancedAi::disable_score_seat_sprints_to_the_tally_2 },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
