@@ -33,25 +33,66 @@ pub struct SpecMap<T> {
     by_id: Vec<u32>,
 }
 
-/// A multiply-shift hash over whole eight-byte words. Ruleset keys are short
-/// identifiers, so this is two multiplies for a typical name — cheaper than
-/// the tree descent it replaces.
-fn hash_key(key: &str) -> u64 {
+/// A multiply-shift hash over whole eight-byte words, seeded with `state`.
+/// Ruleset keys are short identifiers, so this is two multiplies for a
+/// typical name — cheaper than the tree descent it replaces. The name
+/// registry hashes with it too (`name::NameHasher`).
+#[inline]
+pub(crate) fn hash_bytes(state: u64, bytes: &[u8]) -> u64 {
     const SEED: u64 = 0x9E37_79B9_7F4A_7C15;
-    let bytes = key.as_bytes();
-    let mut hash = SEED ^ (bytes.len() as u64);
-    let mut chunks = bytes.chunks_exact(8);
-    for chunk in &mut chunks {
-        let word = u64::from_le_bytes(chunk.try_into().unwrap());
-        hash = (hash ^ word).wrapping_mul(SEED);
+    let mut hash = state ^ SEED ^ (bytes.len() as u64);
+    let (words, rest) = bytes.as_chunks::<8>();
+    for word in words {
+        hash = (hash ^ u64::from_le_bytes(*word)).wrapping_mul(SEED);
     }
-    let rest = chunks.remainder();
     if !rest.is_empty() {
-        let mut word = [0u8; 8];
-        word[..rest.len()].copy_from_slice(rest);
-        hash = (hash ^ u64::from_le_bytes(word)).wrapping_mul(SEED);
+        hash = (hash ^ short_word(rest)).wrapping_mul(SEED);
     }
     hash ^ (hash >> 31)
+}
+
+fn hash_key(key: &str) -> u64 {
+    hash_bytes(0, key.as_bytes())
+}
+
+/// One to seven bytes as one word, read in place. Copying them into a zeroed
+/// buffer instead compiles to a call to the C library's `memcpy`, which cost
+/// more than the rest of the hash. Two overlapping reads cover every byte, so
+/// two runs of the same length give the same word only when they are equal.
+#[inline]
+fn short_word(bytes: &[u8]) -> u64 {
+    let n = bytes.len();
+    debug_assert!((1..8).contains(&n), "{n} bytes is not a short word");
+    if n >= 4 {
+        let low = u32::from_le_bytes(bytes[..4].try_into().unwrap());
+        let high = u32::from_le_bytes(bytes[n - 4..].try_into().unwrap());
+        u64::from(low) | (u64::from(high) << 32)
+    } else {
+        // The first, middle and last bytes: all of them, for three or fewer.
+        u64::from(bytes[0]) | (u64::from(bytes[n / 2]) << 8) | (u64::from(bytes[n - 1]) << 16)
+    }
+}
+
+/// `a == b`, a word at a time and inline. A slice comparison calls the C
+/// library's `memcmp`, and every string-keyed lookup pays one to confirm its
+/// hit; for keys this short the call costs more than the comparison.
+#[inline]
+fn same_bytes(a: &[u8], b: &[u8]) -> bool {
+    let n = a.len();
+    if n != b.len() {
+        return false;
+    }
+    if n < 8 {
+        return n == 0 || short_word(a) == short_word(b);
+    }
+    let last = |bytes: &[u8]| u64::from_ne_bytes(bytes[n - 8..].try_into().unwrap());
+    let (a_words, _) = a.as_chunks::<8>();
+    let (b_words, _) = b.as_chunks::<8>();
+    a_words
+        .iter()
+        .zip(b_words)
+        .all(|(x, y)| u64::from_ne_bytes(*x) == u64::from_ne_bytes(*y))
+        && last(a) == last(b)
 }
 
 impl<T> Default for SpecMap<T> {
@@ -140,7 +181,7 @@ impl<T> SpecMap<T> {
             if index == EMPTY {
                 return None;
             }
-            if self.keys[index as usize] == *key {
+            if same_bytes(self.keys[index as usize].as_bytes(), key.as_bytes()) {
                 return Some(index as usize);
             }
             slot = (slot + 1) & mask;
@@ -374,7 +415,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for SpecMap<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Name, SpecMap};
+    use super::{same_bytes, Name, SpecMap};
 
     #[test]
     fn keeps_entries_in_key_order() {
@@ -410,5 +451,42 @@ mod tests {
         assert_eq!(map.get("bb"), None);
         assert_eq!(map.get_key_value("bb"), None);
         assert_eq!(map.len(), 5);
+    }
+
+    /// Every length a word boundary can split, each with a one-byte change
+    /// at every position: the inline comparison agrees with `==` on every
+    /// pair, and the table finds every key.
+    #[test]
+    fn keys_of_every_length_compare_and_hash_exactly() {
+        let keys: Vec<String> = (0..=24u8)
+            .flat_map(|len| {
+                let base: Vec<u8> = (0..len).map(|i| b'a' + i % 26).collect();
+                let changed = (0..usize::from(len)).map({
+                    let base = base.clone();
+                    move |at| {
+                        let mut bytes = base.clone();
+                        bytes[at] = b'Z';
+                        bytes
+                    }
+                });
+                std::iter::once(base).chain(changed)
+            })
+            .map(|bytes| String::from_utf8(bytes).unwrap())
+            .collect();
+        for a in &keys {
+            for b in &keys {
+                assert_eq!(
+                    same_bytes(a.as_bytes(), b.as_bytes()),
+                    a == b,
+                    "{a:?} vs {b:?}"
+                );
+            }
+        }
+        let map: SpecMap<usize> = keys.iter().cloned().zip(0..).collect();
+        assert_eq!(map.len(), keys.len());
+        for (index, key) in keys.iter().enumerate() {
+            assert_eq!(map.get(key), Some(&index), "{key:?}");
+        }
+        assert_eq!(map.get("Zabc"), None);
     }
 }
