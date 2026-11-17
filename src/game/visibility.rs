@@ -583,6 +583,7 @@ impl Game {
     /// `known_distance` is `from`'s distance to `to` when the caller already
     /// walked it (the sight sweep's ring table); it saves asking the globe
     /// again and is ignored on a flat map.
+    #[allow(clippy::too_many_arguments)]
     fn tile_has_line_to(
         &self,
         heights: &mut HeightField,
