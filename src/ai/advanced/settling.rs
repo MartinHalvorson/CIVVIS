@@ -956,7 +956,10 @@ impl AdvancedAi {
         // `unit_can_traverse`, with the unit's half read once for the flood
         // rather than once per neighbour (see `Game::unit_traversal`).
         let class = g.unit_traversal(uid);
-        let mut best: BTreeMap<Pos, f64> = BTreeMap::new();
+        // Hashed while the flood runs: it asks and updates one tile at a time,
+        // and the heap, not the map, decides the order tiles are settled in.
+        // The ordered map callers read is built once at the end.
+        let mut best: crate::fast_map::FastMap<Pos, f64> = Default::default();
         best.insert(start, 0.0);
         // (cost, pos) min-heap keyed on the cost in thousandths so it orders;
         // `Pos` breaks ties deterministically.
@@ -981,7 +984,7 @@ impl AdvancedAi {
                 }
             }
         }
-        best
+        best.into_iter().collect()
     }
 
     /// `settle_sooner_walk_costs` for one Settler decision, built at most
