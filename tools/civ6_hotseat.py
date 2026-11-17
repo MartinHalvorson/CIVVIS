@@ -1057,6 +1057,8 @@ def run(args: argparse.Namespace) -> int:
     args.tag = args.tag or "hotseat-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
+    # A stop request is for the harness it was sent to, not a later --attach.
+    (run_dir / "stop.json").unlink(missing_ok=True)
     log = Log(run_dir / "hotseat.log")
     orders_db = (Path(attach_config["OrdersDb"]) if attach_config
                  else run_dir / "orders.sqlite")
