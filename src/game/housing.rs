@@ -290,8 +290,8 @@ impl Game {
             .iter()
             .filter(|building| {
                 !city.pillaged_buildings.contains(*building)
-                    && self.building_district_is_active(city, building)
                     && self.rules.buildings[building].outer_defense > 0
+                    && self.building_district_is_active(city, building)
             })
             .count() as f64;
         s.other += government.wall_level_housing * active_wall_levels;
