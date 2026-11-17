@@ -1884,17 +1884,15 @@ impl Shared {
         frame: SpectatorFrame,
         have: Option<SpectatorFrame>,
         o: &mut Value,
+        bytes: Option<crate::obs::TileBytes>,
     ) {
         // Lift the array out of the map rather than blanking it in place: a
         // patched response carries no `tiles` key at all, and a null one would
         // read to the page as a world with no ground in it.
-        let Some(Value::Object(map)) = o.get_mut("map") else {
+        let Some(tiles) = FrameTiles::take(o, bytes) else {
             return;
         };
-        let Some(Value::Array(tiles)) = map.remove("tiles") else {
-            return;
-        };
-        let marks: Vec<u64> = tiles.iter().map(tile_mark).collect();
+        let marks: Vec<u64> = tiles.marks();
         let now = Instant::now();
         let mut delivery = lock_or_recover(&self.frame_delivery);
         let seat = delivery.seat(viewer, now);
@@ -1904,14 +1902,7 @@ impl Shared {
             .filter(|(held, cached)| {
                 held.seed == frame.seed && Some(*held) == have && cached.len() == marks.len()
             })
-            .map(|(_, cached)| {
-                tiles
-                    .iter()
-                    .enumerate()
-                    .filter(|(at, _)| cached[*at] != marks[*at])
-                    .map(|(at, tile)| json!([at, tile]))
-                    .collect()
-            });
+            .map(|(_, cached)| tiles.changed(cached, &marks));
         match changed {
             Some(changed) => {
                 // The map key carries the patch and no `tiles` at all: a page
@@ -1920,7 +1911,7 @@ impl Shared {
                 o["map"]["tiles_from"] = json!(have.map(|held| held.turn));
                 o["map"]["tiles_changed"] = Value::Array(changed);
             }
-            None => o["map"]["tiles"] = Value::Array(tiles),
+            None => o["map"]["tiles"] = tiles.into_array(),
         }
         seat.tiles = Some((frame, marks));
     }
@@ -3880,6 +3871,66 @@ fn tile_mark(tile: &Value) -> u64 {
     hasher.finish()
 }
 
+/// A frame's tiles, lifted out of its document: the values it carried, or the
+/// bytes its observation serialized them into instead
+/// ([`crate::obs::with_tile_bytes`]). A mark is compared only with marks made
+/// the same way, and two tiles mark alike exactly when they are the same
+/// tile, so either way the same tiles are sent.
+pub(crate) enum FrameTiles {
+    Values(Vec<Value>),
+    Bytes(crate::obs::TileBytes),
+}
+
+impl FrameTiles {
+    /// Lift `map.tiles` out of `o`.
+    pub(crate) fn take(o: &mut Value, bytes: Option<crate::obs::TileBytes>) -> Option<Self> {
+        let Some(Value::Object(map)) = o.get_mut("map") else {
+            return None;
+        };
+        let Some(Value::Array(tiles)) = map.remove("tiles") else {
+            return None;
+        };
+        Some(match bytes {
+            Some(bytes) => FrameTiles::Bytes(bytes),
+            None => FrameTiles::Values(tiles),
+        })
+    }
+
+    pub(crate) fn marks(&self) -> Vec<u64> {
+        match self {
+            FrameTiles::Values(tiles) => tiles.iter().map(tile_mark).collect(),
+            FrameTiles::Bytes(bytes) => (0..bytes.len())
+                .map(|at| {
+                    let mut hasher = MarkHasher::default();
+                    hasher.write(bytes.get(at));
+                    hasher.finish()
+                })
+                .collect(),
+        }
+    }
+
+    /// `[index, tile]` for every tile whose mark moved from `prior` to `now`.
+    pub(crate) fn changed(&self, prior: &[u64], now: &[u64]) -> Vec<Value> {
+        (0..now.len())
+            .filter(|at| prior[*at] != now[*at])
+            .map(|at| match self {
+                FrameTiles::Values(tiles) => json!([at, tiles[at]]),
+                FrameTiles::Bytes(bytes) => json!([at, bytes.value(at)]),
+            })
+            .collect()
+    }
+
+    /// Every tile, as the document's `tiles` array.
+    pub(crate) fn into_array(self) -> Value {
+        match self {
+            FrameTiles::Values(tiles) => Value::Array(tiles),
+            FrameTiles::Bytes(bytes) => {
+                Value::Array((0..bytes.len()).map(|at| bytes.value(at)).collect())
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod mark_tests;
 
@@ -4998,11 +5049,17 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             // none of them are reading the reasoning log.
             let wants_reasoning = query_value(&request_target, "think")
                 .map(|cursor| cursor.parse::<u64>().unwrap_or(0));
-            let (mut o, frame) = {
+            let (mut o, frame, tile_bytes) = {
                 let session = lock_or_recover(&sh.session);
                 let frame =
                     spectator_frame(&session.game, sh.frame_sequence.load(Ordering::Relaxed));
-                let mut observed = session.state();
+                // A painting viewer is sent only the tiles that changed: ask
+                // for them as bytes and build values only for those.
+                let (mut observed, tile_bytes) = if painting_viewer.is_some() {
+                    crate::obs::with_tile_bytes(|| session.state())
+                } else {
+                    (session.state(), None)
+                };
                 observed["frame_sequence"] = json!(frame.sequence);
                 if wants_planet {
                     if let Some(geometry) = crate::obs::planet_geometry(&session.game) {
@@ -5012,11 +5069,11 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 if let Some(cursor) = wants_reasoning {
                     observed["ai_reasoning"] = session.reasoning_json(cursor);
                 }
-                (observed, frame)
+                (observed, frame, tile_bytes)
             };
             decorate(&mut o, sh);
             if painting_viewer.is_some() {
-                sh.deliver_tiles(&viewer, frame, have, &mut o);
+                sh.deliver_tiles(&viewer, frame, have, &mut o, tile_bytes);
             }
             if respond_json(stream, &o) && painting_viewer.is_some() {
                 // Remember which exact snapshot this page is allowed to

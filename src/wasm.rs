@@ -230,16 +230,21 @@ fn browser_civ6_status() -> Value {
 /// changed worlds, or a stale `have=` token must receive a complete map rather
 /// than a patch it would apply to the wrong terrain. The viewer's
 /// `adoptTiles()` already applies this wire shape.
-fn deliver_browser_tiles(frame: SpectatorFrame, have: Option<SpectatorFrame>, state: &mut Value) {
+fn deliver_browser_tiles(
+    frame: SpectatorFrame,
+    have: Option<SpectatorFrame>,
+    state: &mut Value,
+    bytes: Option<crate::obs::TileBytes>,
+) {
     // Lift the array out only while considering a patch. A full response keeps
     // the original values in place; the cache itself is just one u64 per tile.
+    let Some(tiles) = crate::server::FrameTiles::take(state, bytes) else {
+        return;
+    };
     let Some(Value::Object(map)) = state.get_mut("map") else {
         return;
     };
-    let Some(Value::Array(tiles)) = map.remove("tiles") else {
-        return;
-    };
-    let marks = tiles.iter().map(tile_mark).collect::<Vec<_>>();
+    let marks = tiles.marks();
     let changed = BROWSER_TILE_MARKS.with(|cached| {
         cached
             .borrow()
@@ -247,21 +252,14 @@ fn deliver_browser_tiles(frame: SpectatorFrame, have: Option<SpectatorFrame>, st
             .filter(|(held, prior)| {
                 held.seed == frame.seed && Some(*held) == have && prior.len() == marks.len()
             })
-            .map(|(_, prior)| {
-                tiles
-                    .iter()
-                    .enumerate()
-                    .filter(|(at, _)| prior[*at] != marks[*at])
-                    .map(|(at, tile)| json!([at, tile]))
-                    .collect::<Vec<_>>()
-            })
+            .map(|(_, prior)| tiles.changed(prior, &marks))
     });
 
     if let Some(changed) = changed {
         map.insert("tiles_from".to_string(), json!(have.map(|held| held.turn)));
         map.insert("tiles_changed".to_string(), Value::Array(changed));
     } else {
-        map.insert("tiles".to_string(), Value::Array(tiles));
+        map.insert("tiles".to_string(), tiles.into_array());
     }
     BROWSER_TILE_MARKS.with(|cached| *cached.borrow_mut() = Some((frame, marks)));
 }
@@ -308,7 +306,9 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
             let held = query_value(target, "have").and_then(held_frame);
             let budget = held.map_or(0, |held| advance_one_frame(session, held));
             let frame = current_frame(session);
-            let mut o = session.state();
+            // Only the tiles that changed are sent: ask for them as bytes and
+            // build values only for those.
+            let (mut o, tile_bytes) = crate::obs::with_tile_bytes(|| session.state());
             if query_value(target, "planet") == Some("1") {
                 if let Some(geometry) = crate::obs::planet_geometry(&session.game) {
                     o["map"]["planet"] = geometry;
@@ -327,7 +327,7 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
             // What the frame in this answer costs on the wall clock; the shim
             // spends it, because a wasm module cannot sleep.
             o["frame_budget_ms"] = json!(budget);
-            deliver_browser_tiles(frame, held, &mut o);
+            deliver_browser_tiles(frame, held, &mut o, tile_bytes);
             o
         }),
 
