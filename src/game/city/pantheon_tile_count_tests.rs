@@ -28,8 +28,7 @@ fn fixture() -> (Game, u32) {
         .pantheon
         .get_mut("god_of_the_forge")
         .unwrap()
-        .effects
-        .clear();
+        .effects = Default::default();
     (game, city)
 }
 

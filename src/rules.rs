@@ -1189,18 +1189,18 @@ pub struct BeliefSpec {
     #[serde(default)]
     pub note: String,
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct BeliefsData {
-    pub pantheon: BTreeMap<String, BeliefSpec>,
-    pub founder: BTreeMap<String, BeliefSpec>,
-    pub follower: BTreeMap<String, BeliefSpec>,
+    pub pantheon: SpecMap<BeliefSpec>,
+    pub founder: SpecMap<BeliefSpec>,
+    pub follower: SpecMap<BeliefSpec>,
     #[serde(default)]
-    pub enhancer: BTreeMap<String, BeliefSpec>,
+    pub enhancer: SpecMap<BeliefSpec>,
     #[serde(default)]
-    pub worship: BTreeMap<String, BeliefSpec>,
+    pub worship: SpecMap<BeliefSpec>,
 }
 
 /// Read `"replaces": "x"` and `"replaces": ["x", "y"]` alike.
