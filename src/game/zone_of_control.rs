@@ -183,7 +183,7 @@ impl Game {
         let has_zoc = self
             .rules
             .districts
-            .get(district.as_str())
+            .get_interned(district)
             .is_some_and(|spec| spec.effects.get("zone_of_control").copied().unwrap_or(0.0) > 0.0);
         if !has_zoc {
             return None;
