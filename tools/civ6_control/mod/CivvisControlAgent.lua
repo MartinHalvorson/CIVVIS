@@ -12565,6 +12565,27 @@ end;
 -- is already pending is what turning this on measures. The dialogue path,
 -- ADJUSTED answers, trade asks and the default are untouched.
 CivvisTrade.COUNTER_REFUSE_GRACE_SECONDS = 2;
+-- ★★ THE ASKS A REFUSAL IS FOLLOWED BY A COUNTER TO: a peace or alliance
+-- proposal, and a PROPOSED buy, the Domination seat's cash bid for a strategic
+-- resource (`StrategicCashCeilingBid`, the buy arm's `cashBid`). That bid is
+-- the one other PROPOSED ask, and `DealAskOnTick` and `DealCounterRefuse`
+-- both left it out by kind. Live civvis-20261116T234151Z (both switches on)
+-- hung twice on it, t118 and -cont1 t152, rival 3, `RESOURCE_IRON=10` for 145
+-- and 55 Gold: asked from the opening statement (no `ask_deferred`), REJECTED,
+-- `counter_wait hold=4`, deal view still up with no refusal dialogue, bare
+-- close `counter_not_sent`, then `ai_phase_stall` on that rival.
+-- DiplomacyManager.csv ends both on the rival's counter "MAKE_DEAL, NONE,
+-- 00000000" / "POSITIVE, POSITIVE, Adding to pending", never processed, the
+-- same signature as the peace and alliance hangs. Of the 29 refused cash bids
+-- still on disk that closed `counter_not_sent`, the 27 that did not hang all
+-- showed the refusal as conversation (`diplomacy_choice`) and timed out on
+-- the action view alone; the 2 that hung are those two. So the two switches
+-- take this bid the way they take peace and alliance (`proposes`), under the
+-- same keys. An EQUALIZE buy and every sale are left as they were.
+CivvisTrade.proposes = function(session)
+	return session.kind == "peace" or session.kind == "alliance"
+		or (session.kind == "buy" and session.action == "PROPOSED");
+end;
 -- The leader screen applied a statement as conversation (the closer's
 -- `ApplyStatement` wrapper, `LuaEvents.CivvisDealDialogue`).
 CivvisTrade.onDealDialogue = function(fromPlayer, statementType, subType)
@@ -12585,8 +12606,9 @@ CivvisTrade.onHoldExpired = function(screen, subject, dealUp)
 	local session = subject ~= nil and trade.sessions[subject] or nil;
 	if session == nil or not session.sent then return; end
 	local wait = session.counter_wait;
-	if wait == nil or wait.resource_cash or wait.refuse_failed then return; end
-	if session.kind ~= "peace" and session.kind ~= "alliance" then return; end
+	-- `answering`: a cash bid's counter is being refused already.
+	if wait == nil or wait.answering or wait.refuse_failed then return; end
+	if not trade.proposes(session) then return; end
 	if wait.refused ~= nil then
 		-- The grace ran out with the session still open: the closer takes it.
 		wait.refused.ladder = true;
@@ -12773,6 +12795,13 @@ CivvisTrade.noteAskMarker = function(kind, subject, was)
 	if was == nil then before[subject] = false; else before[subject] = was; end
 end;
 CivvisTrade.restoreAskMarker = function(kind, subject)
+	if "buy" == kind then
+		-- A cash bid that never went out (`DealAskOnTick`, see
+		-- `CivvisTrade.proposes`) is owed no verdict: its pending offer goes
+		-- with it, or it would block the next buy until it expired.
+		local pending = CivvisTrade.pending[subject];
+		if pending ~= nil and pending.direction == "buy" then CivvisTrade.pending[subject] = nil; end
+	end
 	local before = CivvisK.askMarkerBefore and CivvisK.askMarkerBefore[kind];
 	if type(before) ~= "table" or before[subject] == nil then return false; end
 	local was = before[subject];
@@ -12784,6 +12813,8 @@ CivvisTrade.restoreAskMarker = function(kind, subject)
 		if type(CivvisK.allianceAsked) == "table" then CivvisK.allianceAsked[subject] = was; end
 	elseif "peace" == kind then
 		peaceAsked[subject] = was;
+	elseif "buy" == kind then
+		CivvisTrade.asked[subject] = was;
 	else
 		return false;
 	end
@@ -13048,6 +13079,22 @@ CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
 	return "friendship", "friendship";
 end;
 
+-- A cash bid whose Gold was spent before its question went out is not asked:
+-- the session is closed (`cash_budget_changed`) and true is returned. Read
+-- from the opening statement and again from the tick under `DealAskOnTick`.
+CivvisTrade.cashBidLapsed = function(pid, other)
+	local pending = CivvisTrade.pending[other];
+	if pending == nil or not pending.cash_bid_requested then return false; end
+	local cash = try(function() return Players[pid]:GetTreasury():GetGoldBalance(); end, nil);
+	if type(cash) == "number" and cash < math.huge
+			and cash - pending.cash_offer_bid >= pending.cash_reserve then
+		return false;
+	end
+	CivvisTrade.pending[other] = nil;
+	CivvisTrade.close(pid, other, "cash_budget_changed");
+	return true;
+end;
+
 -- The question of a live session: `sent` goes first so an answer delivered
 -- from inside the send is read as the answer. Called from the statement that
 -- says the session is live, or from the tick under `DealAskOnTick`.
@@ -13101,7 +13148,9 @@ end;
 -- ("MAKE_DEAL, POSITIVE, POSITIVE, Adding to pending" or "NONE, 00000000")
 -- and is either processed on the next line or never. A trade ask's counter
 -- is processed inline and never queued (civvis-20261115T071444Z, 170549Z),
--- and no trade ask's counter was lost. Six of the seven lost counters came on
+-- and no trade ask's counter was lost; the exception found since is the one
+-- trade ask that PROPOSES, the strategic cash bid (`CivvisTrade.proposes`),
+-- which is deferred with peace and alliance. Six of the seven lost counters came on
 -- a leader screen opened in the same frame as the refusal (the screen's
 -- `event_lock` ref 0-17 ms before it), against 47 of the 109 delivered.
 -- Firaxis's own screen never proposes inside that dispatch: a person presses
@@ -13138,7 +13187,7 @@ CivvisTrade.askDeferred = function()
 					action = session.action, session = wait.session or -1, phase = "unasked",
 					why = "opened_after_end_turn" });
 				if wait.acknowledged then CivvisTrade.close(pid, other, "opened_after_end_turn"); end
-			else
+			elseif not CivvisTrade.cashBidLapsed(pid, other) then
 				CivvisTrade.putQuestion(pid, other, session, wait.session, turn);
 			end
 		end
@@ -13175,16 +13224,7 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 	if statementType ~= "MAKE_DEAL" then return; end
 	if session.sessionID == nil then session.sessionID = sessionID; end
 	if not session.sent then
-		local pending = trade.pending[other];
-		if pending ~= nil and pending.cash_bid_requested then
-			local cash = try(function() return Players[pid]:GetTreasury():GetGoldBalance(); end, nil);
-			if type(cash) ~= "number" or not (cash < math.huge
-					and cash - pending.cash_offer_bid >= pending.cash_reserve) then
-				trade.pending[other] = nil;
-				CivvisTrade.close(pid, other, "cash_budget_changed");
-				return;
-			end
-		end
+		if CivvisTrade.cashBidLapsed(pid, other) then return; end
 		-- ★★★ A PEACE OR ALLIANCE SESSION THAT OPENS AFTER THE END TURN IS
 		-- CLOSED, NOT ASKED. A session still queued when its opening hold
 		-- runs out (`CivvisTrade.holdsEndTurn`, `opening_unasked`) opens the
@@ -13220,9 +13260,9 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 			return;
 		end
 		-- The session is live: put the question (`CivvisTrade.putQuestion`),
-		-- now or, under `DealAskOnTick`, on the next tick.
-		if cfg.DealAskOnTick == true
-				and (session.kind == "peace" or session.kind == "alliance") then
+		-- now or, under `DealAskOnTick`, on the next tick (`proposes`: peace,
+		-- alliance and the strategic cash bid).
+		if cfg.DealAskOnTick == true and trade.proposes(session) then
 			if session.ask_on_tick == nil then
 				session.ask_on_tick = { session = sessionID, turn = turn };
 				emit("deal_session", { turn = turn, target = other, kind = session.kind,
@@ -13264,6 +13304,18 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 	-- (SendWorkingDeal REJECTED, then CloseSession).
 	if session.counter_wait ~= nil then
 		if session.counter_wait.resource_cash and session.counter_wait.answering then return; end
+		local afterRefusal = session.counter_wait.refused ~= nil;
+		if afterRefusal and try(function()
+				return DiplomacyManager.GetKeyName(kVariants.StatementSubType);
+			end, nil) == "HUMAN_REFUSE_DEAL" then
+			-- `DealCounterRefuse`: the rival's echo of our own REJECTED is
+			-- not its counter. Keep waiting for that, or for the close.
+			-- (Read before the cash bid's duplicates below, which the echo's
+			-- REJECTED would otherwise be logged as.)
+			emit("counter_wait", { turn = turn, target = other, kind = session.kind,
+				reason = "refusal_echo" });
+			return;
+		end
 		if session.counter_wait.resource_cash and
 				(kVariants.DealAction == DealProposalAction.REJECTED
 					or kVariants.DealAction == DealProposalAction.EQUALIZE_FAILED) then
@@ -13271,16 +13323,6 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 			-- Keep ownership for its following counter or the bounded closer.
 			emit("counter_wait", { turn = turn, target = other, kind = session.kind,
 				reason = "duplicate_refusal" });
-			return;
-		end
-		local afterRefusal = session.counter_wait.refused ~= nil;
-		if afterRefusal and try(function()
-				return DiplomacyManager.GetKeyName(kVariants.StatementSubType);
-			end, nil) == "HUMAN_REFUSE_DEAL" then
-			-- `DealCounterRefuse`: the rival's echo of our own REJECTED is
-			-- not its counter. Keep waiting for that, or for the close.
-			emit("counter_wait", { turn = turn, target = other, kind = session.kind,
-				reason = "refusal_echo" });
 			return;
 		end
 		if session.counter_wait.resource_cash then session.counter_wait.answering = true; end
@@ -13709,7 +13751,8 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		if counterHold > 0 then
 			-- As for peace/alliance refusals, do not close under the rival's
 			-- following counter. OnRefuseDeal sends REJECTED, then closes.
-			activeSession.counter_wait = { turn = turn, resource_cash = true };
+			-- `refusal` is what `DealCounterRefuse` reads (`onHoldExpired`).
+			activeSession.counter_wait = { turn = turn, resource_cash = true, refusal = action };
 			pcall(function() LuaEvents.CivvisDealSession(fromPlayer, true, counterHold); end);
 			emit("deal_session", { turn = turn, target = fromPlayer, kind = "buy",
 				phase = "counter_wait", hold = counterHold });
@@ -16486,6 +16529,8 @@ local function applyOrder(player, pid, row, turn)
 			submitted, reason, wantName = false, "throw", nil;
 		end
 		if submitted then
+			-- A cash bid may yet go unasked (`DealAskOnTick`), which puts this back.
+			if offeredCash ~= nil then CivvisTrade.noteAskMarker("buy", subject, asked); end
 			trade.asked[subject] = turn;
 		elseif trade.pending[subject] ~= nil and trade.pending[subject].turn == turn
 				and trade.pending[subject].direction == "buy" then
