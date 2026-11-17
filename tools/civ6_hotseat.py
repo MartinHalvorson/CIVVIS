@@ -11,6 +11,7 @@ seats are named "CIVVIS jack 1..N" in the game.
     tools/civ6_hotseat.py --leader LEADER_SALADIN --difficulty DIFFICULTY_KING
     tools/civ6_hotseat.py --stop               # stop the automation, leave the game up
     tools/civ6_hotseat.py --stop --quit-game   # ...and close Civ VI (it saves every 10 turns)
+    tools/civ6_hotseat.py --resume             # load the newest hotseat save and play on
     tools/civ6_hotseat.py --attach             # pick a running hotseat game back up
     tools/civ6_hotseat.py --status
 
@@ -31,13 +32,12 @@ plays on the mod's own fallback ladder, so save or ``--attach`` again soon.
 ``--stop --quit-game`` also closes Civ VI (when this harness started it) and
 removes the mod; closing Civ VI yourself ends the harness the same way.
 
-Saves. Civ VI autosaves every turn, and the mod also saves
-``<tag>-T<turn>`` every ``--save-every`` turns (Load Game in the Hot Seat
-setup). ``--attach`` picks up a hotseat game that is still running with this
-mod (after ``--stop`` or a closed terminal). A save loaded into a fresh Civ VI
-needs the mod installed for that run first, so a resumed save is: start the
-harness's game as usual, then Load Game from the Hot Seat setup page instead of
-the staging room; the run's mod reads the save's seats the same way.
+Saves and resuming. Civ VI autosaves, and the mod also saves ``<tag>-T<turn>``
+every ``--save-every`` turns (Saves/Hotseat). ``--resume`` starts Civ VI and
+loads the newest hotseat save or autosave (``--resume PATH`` for a particular
+one) through the Hot Seat page's Load Game, then plays on exactly like a new
+game. ``--attach`` picks up a hotseat game that is still running with the mod
+(after ``--stop`` or a closed terminal).
 
 Known limits: you are always seat 0 (the host row). Diplomacy between you and a
 jack seat works the way hotseat diplomacy does (proposals wait for the other
@@ -684,10 +684,14 @@ def quit_civ(run_dir: Path, log: Log, timeout_s: float = 60.0) -> bool:
         if yes and find(rows, "ARE YOU SURE", exact=False):
             play.click_at(yes[0]["x"], yes[0]["y"])
             continue
-        # On a setup screen: the EXIT TO DESKTOP / OK / Cancel modal.
-        ok = find(rows, "OK")
-        if ok and find(rows, "EXIT TO DESKTOP"):
-            play.click_at(ok[0]["x"], ok[0]["y"])
+        # On a setup screen: the EXIT TO DESKTOP / OK / Cancel modal, whose OK
+        # the live lane finds as Cancel mirrored about the heading.
+        if find(rows, "EXIT TO DESKTOP") and not find(rows, "RETURN TO GAME"):
+            ok = find(rows, "OK")
+            if ok:
+                play.click_at(ok[0]["x"], ok[0]["y"])
+            else:
+                play.confirm_exit_dialog(run_dir / "setup")
             continue
         # The pause menu without its question yet.
         exit_row = find(rows, "EXIT TO DESKTOP")
@@ -1089,12 +1093,16 @@ def run(args: argparse.Namespace) -> int:
             binary = run_dir / "civvis_orders"
         log(f"jack seats {seats} play with {binary}")
         if not args.attach:
+            if args.resume_save is not None:
+                args.leader = None
             config = hotseat_config(args, run_dir, orders_db)
             reset_orders_db(orders_db)
             target = modinstall.install(config)
             (run_dir / "config.json").write_text(json.dumps(config, indent=2, sort_keys=True))
             log(f"installed the control mod for hotseat at {target}")
             if args.resume_save is not None:
+                # The save names every seat's leader; a pinned one is "Invalid
+                # Option" in its staging room (measured: one row, NO HUMAN PLAYERS).
                 staged = stage_save(args.resume_save)
                 log(f"resuming {args.resume_save} (staged as {staged.name})")
             log(f"game: {args.players} players on {args.map} {args.map_size}, "
