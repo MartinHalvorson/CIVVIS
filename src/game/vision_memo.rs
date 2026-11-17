@@ -469,7 +469,7 @@ impl Game {
     fn with_suzerain_read_memo<R>(&self, pass: impl FnOnce() -> R) -> R {
         let installed = self.query_memo.suzerain.borrow().is_none();
         if installed {
-            *self.query_memo.suzerain.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.suzerain.borrow_mut() = Some(Default::default());
         }
         let result = pass();
         if installed {

@@ -1815,7 +1815,7 @@ pub struct QueryCache {
     // A city-state's patron, which is a poll of every major's effective envoy
     // count. Deciding whether a step crosses a hostile border asks it, so a
     // route search asks it of the same city-state at every tile it considers.
-    suzerain: std::cell::RefCell<Option<BTreeMap<usize, Option<usize>>>>,
+    suzerain: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, Option<usize>>>>,
     // Every Great Work slot the empire owns, and whether one more work of a
     // kind would find a home. Deciding what a Builder or an Archaeologist may
     // do on a tile asks the second of these, and the answer is the same at

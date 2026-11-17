@@ -1732,7 +1732,7 @@ impl Game {
     fn with_suzerain_memo<R>(&mut self, pass: impl FnOnce(&mut Game) -> R) -> R {
         let installed = self.query_memo.suzerain.borrow().is_none();
         if installed {
-            *self.query_memo.suzerain.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.suzerain.borrow_mut() = Some(Default::default());
         }
         let result = pass(self);
         if installed {
