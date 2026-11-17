@@ -576,6 +576,9 @@ impl AdvancedAi {
         /// Opt-in gene `upgrade-card-for-the-backlog`; see
         /// `advanced/upgrade_card_for_the_backlog.rs`.
         upgrade_card_for_the_backlog => enable_upgrade_card_for_the_backlog, disable_upgrade_card_for_the_backlog;
+        /// Opt-in gene `wounded-gun-counts-every-blow`; see
+        /// `advanced/wounded_gun_counts_every_blow.rs`.
+        wounded_gun_counts_every_blow => enable_wounded_gun_counts_every_blow, disable_wounded_gun_counts_every_blow;
     }
 
     toggles! {
