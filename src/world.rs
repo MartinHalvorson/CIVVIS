@@ -509,6 +509,13 @@ impl TileGrid {
     }
 }
 
+/// Cells in a hex disk of `radius`, `1 + 3r(r + 1)`, the count `hex::disk`
+/// reserves; in `u64` so a map-wide radius cannot overflow it.
+fn hex_disk_cells(radius: i32) -> u64 {
+    let radius = radius.max(0) as u64;
+    1 + 3 * radius * (radius + 1)
+}
+
 #[cfg(test)]
 mod write_log_tests;
 
@@ -516,15 +523,17 @@ mod write_log_tests;
 mod tests {
     use super::*;
 
-    /// `disk` skips its sort when no cell wrapped; on a wrapping and a walled
-    /// map it still returns exactly the folded, on-map, sorted, de-duplicated
-    /// cells the unconditional sort returned.
+    /// `disk` skips its sort when no cell wrapped, and reads a disk with more
+    /// cells than the map has tiles off the tiles instead; on a wrapping and
+    /// a walled map it still returns exactly the folded, on-map, sorted,
+    /// de-duplicated cells the unconditional sort returned. The radii run
+    /// past twice the width, where a cell wraps more than once.
     #[test]
     fn a_disk_is_the_sorted_folded_cells_with_or_without_a_wrap() {
         for world in [WorldMap::new(9, 7), WorldMap::arena(9, 7)] {
             for x in -2..11 {
                 for y in -2..9 {
-                    for radius in 0..8 {
+                    for radius in 0..24 {
                         let mut reference: Vec<Pos> = hex::disk((x, y), radius)
                             .into_iter()
                             .map(|pos| world.fold(pos))
@@ -960,6 +969,23 @@ impl WorldMap {
         if let Some(sphere) = self.sphere() {
             return sphere.disk(center, radius);
         }
+        // A disk with more cells than the map has tiles is cheaper to read off
+        // the tiles. The settle-site scans ask for radius `width + height`,
+        // whose disk has at least twelve cells for every tile of the map
+        // (3(w + h)² ≥ 12wh), each folded and looked up, and on a cylinder
+        // those that land back on the map sorted with their wrap duplicates.
+        //
+        // The two agree when the centre is one of the map's own longitudes
+        // (`fold` leaves it alone, always true on a walled map): a tile is a
+        // folded cell of the disk exactly when some east-west copy of it lies
+        // within `radius`, and between two on-map columns the nearest copy is
+        // at most one map width away, which is all `distance` measures.
+        if radius >= 0
+            && hex_disk_cells(radius) > self.tiles.len() as u64
+            && self.fold(center) == center
+        {
+            return self.tiles_within(center, radius);
+        }
         // `hex::disk` yields its cells in ascending order without repeats, and
         // dropping off-map cells keeps that order. Only a wrap fold can move
         // a cell out of order or onto another, so only then is the sort and
@@ -978,6 +1004,24 @@ impl WorldMap {
             out.sort_unstable();
             out.dedup();
         }
+        out
+    }
+
+    /// [`Self::disk`] read off the tile vector: every tile within `radius`
+    /// of `center`, sorted. Only a tile its own position addresses counts,
+    /// which is the tile a folded cell would have found.
+    fn tiles_within(&self, center: Pos, radius: i32) -> Vec<Pos> {
+        let mut out: Vec<Pos> = self
+            .tiles
+            .values()
+            .enumerate()
+            .filter(|(index, tile)| {
+                self.tiles.index_of(tile.pos) == Some(*index)
+                    && self.distance(center, tile.pos) <= radius
+            })
+            .map(|(_, tile)| tile.pos)
+            .collect();
+        out.sort_unstable();
         out
     }
 
