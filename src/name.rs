@@ -68,20 +68,7 @@ struct NameHasher(u64);
 
 impl Hasher for NameHasher {
     fn write(&mut self, bytes: &[u8]) {
-        const SEED: u64 = 0x9E37_79B9_7F4A_7C15;
-        let mut hash = self.0 ^ SEED ^ (bytes.len() as u64);
-        let mut chunks = bytes.chunks_exact(8);
-        for chunk in &mut chunks {
-            let word = u64::from_le_bytes(chunk.try_into().unwrap());
-            hash = (hash ^ word).wrapping_mul(SEED);
-        }
-        let rest = chunks.remainder();
-        if !rest.is_empty() {
-            let mut word = [0u8; 8];
-            word[..rest.len()].copy_from_slice(rest);
-            hash = (hash ^ u64::from_le_bytes(word)).wrapping_mul(SEED);
-        }
-        self.0 = hash ^ (hash >> 31);
+        self.0 = crate::specmap::hash_bytes(self.0, bytes);
     }
 
     fn finish(&self) -> u64 {

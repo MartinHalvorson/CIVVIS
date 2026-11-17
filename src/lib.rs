@@ -51,6 +51,7 @@ pub mod doctrine;
 pub mod effect_map;
 pub mod elo;
 pub mod evolve;
+pub mod explored_set;
 pub(crate) mod fast_map;
 pub mod fractal;
 pub mod game;

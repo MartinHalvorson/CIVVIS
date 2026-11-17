@@ -5336,7 +5336,7 @@ pub struct Player {
     /// Cumulative CO2 emitted by this civilization's power generation.
     #[serde(default)]
     pub co2_emissions: f64,
-    pub explored: BTreeSet<Pos>,
+    pub explored: crate::explored_set::ExploredSet,
     /// Tiles this civilization has seen at any point during its active player
     /// turn. Current sight remains authoritative for rules and targeting; this
     /// short-lived union exists so the map can keep the just-seen frame lit
@@ -5704,7 +5704,7 @@ impl Player {
             city_power: BTreeMap::new(),
             power_fuel_consumed: BTreeMap::new(),
             co2_emissions: 0.0,
-            explored: BTreeSet::new(),
+            explored: Default::default(),
             turn_visible: BTreeSet::new(),
             turn_units: BTreeMap::new(),
             went_around: false,
