@@ -188,8 +188,8 @@ impl Game {
     /// this separate preserves the borrowed census API used by luxury and
     /// strategic-resource callers while letting the long-lived cache own its
     /// keys safely.
-    fn connected_resource_census_owned(&self, pid: usize) -> BTreeMap<Name, i32> {
-        let mut counts: BTreeMap<Name, i32> = BTreeMap::new();
+    fn connected_resource_census_owned(&self, pid: usize) -> crate::fast_map::FastMap<Name, i32> {
+        let mut counts = crate::fast_map::FastMap::default();
         for city in self.cities.values().filter(|city| city.owner == pid) {
             for position in &city.owned_tiles {
                 let tile = &self.map.tiles[position];
@@ -252,8 +252,8 @@ impl Game {
     }
 
     /// How many copies of every resource the world holds, in one pass.
-    fn world_resource_counts(&self) -> BTreeMap<Name, i32> {
-        let mut counts: BTreeMap<Name, i32> = BTreeMap::new();
+    fn world_resource_counts(&self) -> crate::fast_map::FastMap<Name, i32> {
+        let mut counts = crate::fast_map::FastMap::default();
         for tile in self.map.tiles.values() {
             if tile.submerged {
                 continue;
@@ -442,7 +442,7 @@ impl Game {
         // Resource control is queried for every luxury below. Build each
         // player's connected holdings once rather than walking all of their
         // city tiles again for every resource and every foreign player.
-        let connected: Vec<BTreeMap<Name, i32>> = (0..self.players.len())
+        let connected: Vec<crate::fast_map::FastMap<Name, i32>> = (0..self.players.len())
             .map(|player| self.connected_resource_census_owned(player))
             .collect();
         MonopolyContext {
