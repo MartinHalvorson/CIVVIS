@@ -166,7 +166,10 @@ mod tests {
         for probe in [(1, 1), (2, 2), (3, 4), (5, 5), (7, 7), (9, 9)] {
             assert_eq!(set.contains(&probe), set.iter().any(|pos| *pos == probe));
         }
-        assert_eq!(set.iter().copied().collect::<Vec<_>>(), vec![(1, 1), (3, 4), (7, 7)]);
+        assert_eq!(
+            set.iter().copied().collect::<Vec<_>>(),
+            vec![(1, 1), (3, 4), (7, 7)]
+        );
         set.clear();
         assert!(!set.contains(&(1, 1)));
     }
