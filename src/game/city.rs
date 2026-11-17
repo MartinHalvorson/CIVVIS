@@ -1639,34 +1639,34 @@ impl Game {
     pub fn query_memo(&self) -> QueryMemo<'_> {
         let outermost = self.query_memo.yields.borrow().is_none();
         if outermost {
-            *self.query_memo.yields.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.appeal.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.tile_yields.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.district_yields.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.traversal.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.yields.borrow_mut() = Some(Default::default());
+            *self.query_memo.appeal.borrow_mut() = Some(Default::default());
+            *self.query_memo.tile_yields.borrow_mut() = Some(Default::default());
+            *self.query_memo.district_yields.borrow_mut() = Some(Default::default());
+            *self.query_memo.traversal.borrow_mut() = Some(Default::default());
             *self.query_memo.air_patrols.borrow_mut() = None;
             *self.query_memo.passage_improvements.borrow_mut() = None;
-            *self.query_memo.movement.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.movement.borrow_mut() = Some(Default::default());
+            *self.query_memo.amenities.borrow_mut() = Some(Default::default());
             *self.query_memo.purchase_price.borrow_mut() = Some(PurchasePriceMemo::new());
-            *self.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.worked_backlog.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.unit_territory_access.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.city_ids.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.lux_alloc.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.lux_names.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.housed_works.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.housed_pieces.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.suzerain.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.gw_slots.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.gw_housing.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.regional.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.powered.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.national_parks.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.regional_slots.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.wonder_effects.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.tourism.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.domestic_tourists.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.unit_ids.borrow_mut() = Some(Default::default());
+            *self.query_memo.worked_backlog.borrow_mut() = Some(Default::default());
+            *self.query_memo.unit_territory_access.borrow_mut() = Some(Default::default());
+            *self.query_memo.city_ids.borrow_mut() = Some(Default::default());
+            *self.query_memo.lux_alloc.borrow_mut() = Some(Default::default());
+            *self.query_memo.lux_names.borrow_mut() = Some(Default::default());
+            *self.query_memo.housed_works.borrow_mut() = Some(Default::default());
+            *self.query_memo.housed_pieces.borrow_mut() = Some(Default::default());
+            *self.query_memo.suzerain.borrow_mut() = Some(Default::default());
+            *self.query_memo.gw_slots.borrow_mut() = Some(Default::default());
+            *self.query_memo.gw_housing.borrow_mut() = Some(Default::default());
+            *self.query_memo.regional.borrow_mut() = Some(Default::default());
+            *self.query_memo.powered.borrow_mut() = Some(Default::default());
+            *self.query_memo.national_parks.borrow_mut() = Some(Default::default());
+            *self.query_memo.regional_slots.borrow_mut() = Some(Default::default());
+            *self.query_memo.wonder_effects.borrow_mut() = Some(Default::default());
+            *self.query_memo.tourism.borrow_mut() = Some(Default::default());
+            *self.query_memo.domestic_tourists.borrow_mut() = Some(Default::default());
         }
         QueryMemo {
             game: self,
