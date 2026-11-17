@@ -86,12 +86,51 @@ fn registry() -> &'static RwLock<Registry> {
     REGISTRY.get_or_init(|| RwLock::new(Registry::default()))
 }
 
+#[inline]
 fn head_of(text: &str) -> u64 {
-    let bytes = text.as_bytes();
-    let mut head = [0u8; 8];
-    let take = bytes.len().min(8);
-    head[..take].copy_from_slice(&bytes[..take]);
-    u64::from_be_bytes(head)
+    head_of_bytes(text.as_bytes())
+}
+
+impl Entry {
+    /// Whether this entry's text is `other`.
+    ///
+    /// Names are compared with literals throughout the engine (`kind ==
+    /// "settler"`), and `str` equality calls the platform `memcmp` whenever
+    /// the lengths agree: it was the largest self-time leaf of a late site
+    /// game. Equal lengths make the zero-padded heads equal exactly when the
+    /// first eight bytes are, so most text is decided by one word, and the
+    /// rest is compared eight bytes at a time.
+    #[inline]
+    fn is(&self, other: &str) -> bool {
+        let text = self.text.as_bytes();
+        let other = other.as_bytes();
+        if text.len() != other.len() || self.head != head_of_bytes(other) {
+            return false;
+        }
+        let (mut left, mut right) = (text.get(8..).unwrap_or(&[]), other.get(8..).unwrap_or(&[]));
+        while let (Some(a), Some(b)) = (left.first_chunk::<8>(), right.first_chunk::<8>()) {
+            if u64::from_ne_bytes(*a) != u64::from_ne_bytes(*b) {
+                return false;
+            }
+            left = &left[8..];
+            right = &right[8..];
+        }
+        left.iter().zip(right).all(|(a, b)| a == b)
+    }
+}
+
+/// The first eight bytes, big-endian, zero padded. Shorter text places byte
+/// `i` where `from_be_bytes` would, without a variable-length copy.
+#[inline]
+fn head_of_bytes(bytes: &[u8]) -> u64 {
+    if let Some(first) = bytes.first_chunk::<8>() {
+        return u64::from_be_bytes(*first);
+    }
+    let mut head = 0u64;
+    for (index, byte) in bytes.iter().enumerate() {
+        head |= u64::from(*byte) << (56 - 8 * index);
+    }
+    head
 }
 
 /// An interned ruleset identifier: a name by value, comparable in one
@@ -254,42 +293,42 @@ impl From<Name> for String {
 impl PartialEq<str> for Name {
     #[inline]
     fn eq(&self, other: &str) -> bool {
-        self.entry().text == other
+        self.entry().is(other)
     }
 }
 
 impl PartialEq<&str> for Name {
     #[inline]
     fn eq(&self, other: &&str) -> bool {
-        self.entry().text == *other
+        self.entry().is(other)
     }
 }
 
 impl PartialEq<String> for Name {
     #[inline]
     fn eq(&self, other: &String) -> bool {
-        self.entry().text == other.as_str()
+        self.entry().is(other)
     }
 }
 
 impl PartialEq<Name> for str {
     #[inline]
     fn eq(&self, other: &Name) -> bool {
-        self == other.entry().text
+        other.entry().is(self)
     }
 }
 
 impl PartialEq<Name> for &str {
     #[inline]
     fn eq(&self, other: &Name) -> bool {
-        *self == other.entry().text
+        other.entry().is(self)
     }
 }
 
 impl PartialEq<Name> for String {
     #[inline]
     fn eq(&self, other: &Name) -> bool {
-        self.as_str() == other.entry().text
+        other.entry().is(self)
     }
 }
 
@@ -352,6 +391,54 @@ macro_rules! name {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A name equals exactly its own text, against every length around the
+    /// eight-byte head and every byte position that can differ.
+    #[test]
+    fn a_name_equals_exactly_its_own_text() {
+        let texts = [
+            "",
+            "a",
+            "ab",
+            "abcdefg",
+            "abcdefgh",
+            "abcdefghi",
+            "abcdefghijklmnop",
+            "abcdefghijklmnopq",
+            "city_center",
+            "city_centre",
+            "settler",
+            "settlers",
+            "a\0",
+            "a\0\0",
+            "\0",
+        ];
+        for text in texts {
+            let name = Name::new(text);
+            for other in texts {
+                assert_eq!(name == other, text == other, "{text:?} == {other:?}");
+                assert_eq!(name == *other, text == other);
+                assert_eq!(name == other.to_string(), text == other);
+                assert_eq!(other == name, text == other);
+                assert_eq!(*other == name, text == other);
+                assert_eq!(other.to_string() == name, text == other);
+            }
+            // Every single-byte change in the text, anywhere, is told apart.
+            for index in 0..text.len() {
+                let mut bytes = text.as_bytes().to_vec();
+                bytes[index] ^= 1;
+                if let Ok(changed) = String::from_utf8(bytes) {
+                    assert!(name != changed.as_str(), "{text:?} vs {changed:?}");
+                }
+            }
+            assert_eq!(head_of(text), {
+                let mut head = [0u8; 8];
+                let take = text.len().min(8);
+                head[..take].copy_from_slice(&text.as_bytes()[..take]);
+                u64::from_be_bytes(head)
+            });
+        }
+    }
 
     #[test]
     fn equal_text_interns_to_one_name() {
