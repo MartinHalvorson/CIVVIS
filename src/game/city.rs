@@ -251,10 +251,12 @@ impl Game {
     }
 
     pub(super) fn city_has_active_building_family(&self, city: &City, family: impl AsName) -> bool {
+        // The family test first: it fails for nearly every building, and the
+        // district-activity walk it spares reads every district in the city.
         city.buildings.iter().any(|building| {
-            !city.pillaged_buildings.contains(building)
+            self.building_is_family(building, family)
+                && !city.pillaged_buildings.contains(building)
                 && self.building_district_is_active(city, building)
-                && self.building_is_family(building, family)
         })
     }
 

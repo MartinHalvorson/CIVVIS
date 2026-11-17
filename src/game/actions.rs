@@ -2054,7 +2054,15 @@ impl Game {
     /// players route Builders there without enumerating the global action set.
     pub(crate) fn project_contribution_target(&self, pid: usize, cid: u32) -> Option<Pos> {
         let city = self.cities.get(&cid)?;
-        if city.owner != pid
+        if city.owner != pid {
+            return None;
+        }
+        // The city's own queue first: it is almost never a project, and the
+        // Royal Society test below walks every building in the empire.
+        let Some(Item::Project { project }) = city.queue.first() else {
+            return None;
+        };
+        if project.starts_with("repair_")
             || self.empire_building_sum(pid, |building| {
                 building
                     .effects
@@ -2067,12 +2075,6 @@ impl Game {
                 .get(&format!("royal_society_city:{cid}"))
                 .is_some_and(|last_turn| *last_turn == self.turn as i64)
         {
-            return None;
-        }
-        let Some(Item::Project { project }) = city.queue.first() else {
-            return None;
-        };
-        if project.starts_with("repair_") {
             return None;
         }
         let spec = &self.rules.projects[project];
