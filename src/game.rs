@@ -2487,6 +2487,17 @@ impl<V> MovementFloodOutput<V> for BTreeMap<Pos, V> {
     }
 }
 
+/// A flood output for a caller that runs a flood only for its parents.
+struct DiscardReached;
+
+impl<V> MovementFloodOutput<V> for DiscardReached {
+    #[inline]
+    fn reserve_reached(&mut self, _count: usize) {}
+
+    #[inline]
+    fn push_reached(&mut self, _pos: Pos, _value: V) {}
+}
+
 impl<V> MovementFloodOutput<V> for Vec<(Pos, V)> {
     #[inline]
     fn reserve_reached(&mut self, count: usize) {

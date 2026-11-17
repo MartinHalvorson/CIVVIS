@@ -61,7 +61,8 @@ impl Game {
         paths.insert(start, Vec::new());
         if !self.formation_movement_locked_by_zoc(uid) {
             let _memo = self.query_memo();
-            let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
+            let mut parent: crate::fast_map::FastMap<Pos, Pos> =
+                crate::fast_map::FastMap::default();
             let reach: BTreeMap<Pos, f64> = self.relax_movement(
                 uid,
                 start,
@@ -893,10 +894,12 @@ impl Game {
             return None;
         }
         let _memo = self.query_memo();
-        let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
+        let mut parent: crate::fast_map::FastMap<Pos, Pos> = crate::fast_map::FastMap::default();
         // Run for its parents: `f64` is the zone-of-control rule `flow` uses,
-        // which is what this path has always been read against.
-        let _reach: BTreeMap<Pos, f64> = self.relax_movement(
+        // which is what this path has always been read against. What the
+        // flood reached is not read, so it is not kept; the parents are only
+        // ever asked one tile at a time, so they are hashed.
+        self.relax_movement_into::<f64, _, _, _>(
             uid,
             start,
             moves,
@@ -904,6 +907,7 @@ impl Game {
             |n, cur| {
                 parent.insert(n, cur);
             },
+            &mut DiscardReached,
         );
         parent.get(&to)?;
         let mut path = vec![to];
@@ -952,7 +956,7 @@ impl Game {
         let _memo = self.query_memo();
         // Per tile: movement kept on arrival, and whether the arrival stopped
         // the unit (zone of control) so nothing expands from it.
-        let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
+        let mut parent: crate::fast_map::FastMap<Pos, Pos> = crate::fast_map::FastMap::default();
         let best: BTreeMap<Pos, (f64, bool)> = self.relax_movement(
             uid,
             start,
