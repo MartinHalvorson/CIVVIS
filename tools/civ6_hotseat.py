@@ -473,6 +473,17 @@ def difficulty_cells(rows: list[dict], bounds: tuple) -> list[dict]:
     return out
 
 
+def dropdown_picks(listed: list[dict], cells: list[dict], cell: dict, want: str,
+                   height: int) -> list[dict]:
+    """The open list's `want` entries: near the clicked cell, and not another
+    seat's own cell showing the same word (measured: King on the row above
+    read as the list's King, and the click landed there)."""
+    def is_cell(row: dict) -> bool:
+        return any(abs(row["x"] - c["x"]) <= 6 and abs(row["y"] - c["y"]) <= 4 for c in cells)
+    return [r for r in find(listed, want) if abs(r["x"] - cell["x"]) < 90
+            and 4 < abs(r["y"] - cell["y"]) <= 0.2 * height and not is_cell(r)]
+
+
 def set_difficulties(run_dir: Path, bounds: tuple, difficulty: str, log: Log) -> bool:
     """Set every seat's Difficulty (hotseat difficulty is per player; the setup
     page has no game row for it) and read the column back."""
@@ -492,8 +503,7 @@ def set_difficulties(run_dir: Path, bounds: tuple, difficulty: str, log: Log) ->
         click(log, (cell["x"] + 20, cell["y"]))
         time.sleep(1.2)
         _, listed = read_screen(run_dir, f"difficulty-{step}-open")
-        picks = [r for r in find(listed, want) if abs(r["x"] - cell["x"]) < 90
-                 and 4 < abs(r["y"] - cell["y"]) <= 0.2 * h]
+        picks = dropdown_picks(listed, cells, cell, want, h)
         if not picks:
             log(f"[setup] the difficulty list did not offer {want!r}; closing it")
             play.macos_input.press_key("escape")
@@ -524,11 +534,81 @@ def start_game(run_dir: Path, bounds: tuple, log: Log) -> bool:
     return not find(rows, "STAGING ROOM")
 
 
+#: Where Civ VI keeps hotseat saves (`auto/` holds its autosaves). A save to
+#: resume is copied here under one constant name, so the Load Game list shows it
+#: as a row the screen reader can find without scrolling or filters.
+HOTSEAT_SAVES = play.AUTOSAVE_DIR.parent.parent / "Hotseat"
+RESUME_STEM = "civvis-hotseat-resume"
+
+
+def newest_save(directory: Path = HOTSEAT_SAVES) -> Path | None:
+    saves = [p for p in list(directory.glob("*.Civ6Save"))
+             + list(directory.glob("auto/*.Civ6Save"))
+             if p.is_file() and p.stem != RESUME_STEM]
+    return max(saves, key=lambda p: p.stat().st_mtime) if saves else None
+
+
+def stage_save(save: Path, directory: Path = HOTSEAT_SAVES) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    staged = directory / f"{RESUME_STEM}.Civ6Save"
+    if save.resolve() != staged.resolve():
+        shutil.copy2(save, staged)
+    return staged
+
+
+def load_saved_game(run_dir: Path, bounds: tuple, log: Log) -> bool:
+    """From the Hot Seat setup page: Load Game -> the staged save -> Load Game."""
+    _, rows = read_screen(run_dir, "load-open")
+    button = find(rows, "Load Game")
+    if not button:
+        log("[setup] the setup page shows no Load Game button")
+        return False
+    click(log, (button[0]["x"], button[0]["y"]))
+    time.sleep(3.0)
+    for attempt in range(1, 6):
+        shot = run_dir / "setup" / f"load-{attempt}.png"
+        _, rows = read_screen(run_dir, f"load-{attempt}")
+        row = find(rows, RESUME_STEM, exact=False)
+        if not row:
+            time.sleep(2.0)
+            continue
+        click(log, (row[0]["x"], row[0]["y"]))
+        time.sleep(1.5)
+        play.screenshot(shot)
+        actions = play._observed_label_points(shot, "Load Game", bounds,
+                                              strip=play.LOAD_GAME_ACTION_STRIP)
+        low = [p for p in actions if p[1] >= bounds[1] + 0.75 * bounds[3]]
+        if not low:
+            time.sleep(1.5)
+            continue
+        click(log, max(low, key=lambda p: p[1]))
+        time.sleep(5.0)
+        _, rows = read_screen(run_dir, f"load-{attempt}-after")
+        if find(rows, "START GAME") or find(rows, "STAGING ROOM"):
+            return True
+    log("[setup] the staged save never loaded into the staging room")
+    return False
+
+
 def set_up_game(run_dir: Path, args: argparse.Namespace, log: Log) -> bool:
     bounds = open_hotseat_setup(run_dir, log)
     if bounds is None:
         log("[setup] never reached the Hot Seat setup page")
         return False
+    if args.resume_save is not None:
+        if not load_saved_game(run_dir, bounds, log):
+            return False
+        _, rows = read_screen(run_dir, "resume-staging")
+        kinds = [s["slot"] for s in slot_rows(rows, bounds)]
+        log(f"[setup] the save's seats: {kinds}")
+        if len(kinds) != args.players or any(k not in ("host", "player") for k in kinds):
+            log(f"[setup] ⚠ the save does not read as {args.players} hotseat humans; "
+                "the jack seats are the seats after yours")
+        if not start_game(run_dir, bounds, log):
+            log("[setup] START GAME did not start the saved game")
+            return False
+        log("[setup] saved game starting")
+        return True
     _, rows = read_screen(run_dir, "host-settings")
     problems = check_host_settings(rows, args)
     if problems:
@@ -599,12 +679,19 @@ def quit_civ(run_dir: Path, log: Log, timeout_s: float = 60.0) -> bool:
             return True
         step += 1
         _, rows = read_screen(run_dir, f"quit-{step}")
+        # In a game: the pause menu's inline ARE YOU SURE? / YES.
         yes = find(rows, "YES")
         if yes and find(rows, "ARE YOU SURE", exact=False):
             play.click_at(yes[0]["x"], yes[0]["y"])
             continue
+        # On a setup screen: the EXIT TO DESKTOP / OK / Cancel modal.
+        ok = find(rows, "OK")
+        if ok and find(rows, "EXIT TO DESKTOP"):
+            play.click_at(ok[0]["x"], ok[0]["y"])
+            continue
+        # The pause menu without its question yet.
         exit_row = find(rows, "EXIT TO DESKTOP")
-        if exit_row:
+        if exit_row and find(rows, "RETURN TO GAME"):
             play.click_at(exit_row[0]["x"], exit_row[0]["y"])
             continue
         if step % 5 == 0:
@@ -901,6 +988,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stall-seconds", type=float, default=180.0,
                     help="a jack seat silent this long gets the popup rescue")
     ap.add_argument("--no-notify", action="store_true", help="no macOS notifications")
+    ap.add_argument("--resume", nargs="?", const="latest", default=None, metavar="SAVE",
+                    help="start Civ VI and load a hotseat save instead of a new game: "
+                         "a .Civ6Save path, or the newest hotseat save/autosave")
     ap.add_argument("--attach", action="store_true",
                     help="drive a hotseat game that is already running (a resumed save, "
                          "or after --stop or a closed terminal)")
@@ -923,6 +1013,14 @@ def main(argv: list[str] | None = None) -> int:
         args.leader = None
     if args.max_turns is None:
         args.max_turns = default_max_turns(args.speed)
+    args.resume_save = None
+    if args.resume is not None:
+        save = newest_save() if args.resume == "latest" else Path(args.resume).expanduser()
+        if save is None or not save.is_file():
+            print(f"no hotseat save to resume ({args.resume}); saves live in {HOTSEAT_SAVES}",
+                  file=sys.stderr)
+            return 2
+        args.resume_save = save
     current = read_current()
     if current and harness_alive(current.get("pid", -1)):
         print(f"a hotseat harness is already running (pid {current['pid']}, "
@@ -996,6 +1094,9 @@ def run(args: argparse.Namespace) -> int:
             target = modinstall.install(config)
             (run_dir / "config.json").write_text(json.dumps(config, indent=2, sort_keys=True))
             log(f"installed the control mod for hotseat at {target}")
+            if args.resume_save is not None:
+                staged = stage_save(args.resume_save)
+                log(f"resuming {args.resume_save} (staged as {staged.name})")
             log(f"game: {args.players} players on {args.map} {args.map_size}, "
                 f"{args.speed}, {args.difficulty}, turn limit {args.max_turns}; "
                 f"you: {args.leader or 'random leader'}; save every {args.save_every} turns")
@@ -1016,9 +1117,18 @@ def run(args: argparse.Namespace) -> int:
                 run_dir / modinstall.hotseat_seat_tag(args.tag, seat),
                 tag=modinstall.hotseat_seat_tag(args.tag, seat)))
         if not args.attach and not set_up_game(run_dir, args, log):
-            log("setup failed; the game window is left as it is for a look")
-            stop_reason = "setup failed"
-            return 5
+            if args.auto_human:
+                log("setup failed; the game window is left as it is for a look")
+                stop_reason = "setup failed"
+                return 5
+            # A person is at the Mac: the rest of the setup is a few clicks, and
+            # everything after it is the same game. Wait for it instead of quitting.
+            print(f"\a\nSetup could not finish by itself (see above). Finish it in Civ VI:\n"
+                  f"  Hot Seat setup -> Confirm Settings; in the staging room make Players 2-"
+                  f"{args.players} 'Human', then START GAME.\n"
+                  f"  CIVVIS takes over the jack seats as soon as the game starts.\n",
+                  flush=True)
+            log("setup handed to the operator; waiting for the game to start")
         brains = Brains(run_dir, args.tag, seats, orders_db, binary, args.victory, log)
         brains.start_all()
         monitor = Monitor(run_dir, args.tag, seats, args, log)

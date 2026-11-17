@@ -193,6 +193,17 @@ class DifficultyCellTest(unittest.TestCase):
         self.assertEqual([c["norm"] for c in cells[:3]], ["prince", "king", "prince"])
         self.assertEqual([c["y"] for c in cells[:3]], [440, 466, 492])
 
+    def test_another_seats_cell_is_not_a_list_entry(self) -> None:
+        # Seat 1 already at King; seat 2's list open below it (2026-11-17 frames).
+        before = STAGING + ocr(("King", 527, 441), ("Prince", 526, 467),
+                               ("Prince", 526, 492), ("Prince", 526, 517))
+        cells = hotseat.difficulty_cells(before, BOUNDS)
+        listed = before + ocr(("Settler", 526, 479), ("Chieftain", 527, 492),
+                              ("Warlord", 527, 504), ("King", 527, 528),
+                              ("Emperor", 526, 540))
+        picks = hotseat.dropdown_picks(listed, cells, cells[1], "king", 1084)
+        self.assertEqual([(p["x"], p["y"]) for p in picks], [(527, 528)])
+
 
 class MonitorTest(unittest.TestCase):
     def setUp(self) -> None:
