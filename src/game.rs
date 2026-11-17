@@ -1865,6 +1865,10 @@ pub struct QueryCache {
     // The tile-grid epoch `rival_yields` was derived under. A tile that
     // changed hands, was improved or was pillaged moves it, whoever wrote it.
     rival_yields_epoch: std::cell::Cell<u64>,
+    /// Whether any tile holds a wonder that multiplies a trade route's district
+    /// Gold, and the tile grid's epoch it was read at. See
+    /// `Game::route_gold_wonder_stands`.
+    route_gold_wonders: std::cell::Cell<Option<(u64, bool)>>,
     keeps_rival_yields: std::cell::Cell<bool>,
     // How many citizen plans and luxury splits were answered from what was
     // kept. See `Game::kept_plans_reused`.
@@ -13828,6 +13832,8 @@ mod kept_yields_moves_tests;
 mod produce_reach_tests;
 #[cfg(test)]
 mod refused_deck_tests;
+#[cfg(test)]
+mod route_wonder_tests;
 #[cfg(test)]
 mod yield_carry_tests;
 
