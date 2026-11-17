@@ -1033,6 +1033,22 @@ impl WorldMap {
     /// Visit every in-map tile within `radius` steps without allocating the
     /// result. This is for consumers that immediately filter or fold the
     /// answer; [`Self::disk`] remains the owned, sorted form.
+    /// [`WorldMap::for_each_disk`], with each tile's distance from the centre
+    /// where the globe's ring table already holds it. `None` on a flat map
+    /// and beyond the ring table, where the caller measures as it always did.
+    pub(crate) fn for_each_disk_with_distance(
+        &self,
+        center: Pos,
+        radius: i32,
+        mut visit: impl FnMut(Pos, Option<i32>),
+    ) {
+        if let Some(sphere) = self.sphere() {
+            sphere.for_each_disk_with_distance(center, radius, visit);
+            return;
+        }
+        self.for_each_disk(center, radius, |pos| visit(pos, None));
+    }
+
     pub(crate) fn for_each_disk(&self, center: Pos, radius: i32, mut visit: impl FnMut(Pos)) {
         if let Some(sphere) = self.sphere() {
             sphere.for_each_disk(center, radius, visit);
