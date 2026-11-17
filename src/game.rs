@@ -12238,8 +12238,10 @@ impl Game {
     /// tile. Effects of the same family do not stack, so a maximum also
     /// handles a Medic beside a Supply Convoy or a Balloon beside a Drone.
     fn adjacent_support_effect(&self, unit: &Unit, effect: &str) -> f64 {
-        self.wdisk(unit.pos, 1)
-            .into_iter()
+        // The tile and its neighbours, without building the disk's Vec; the
+        // max of the effects is the same whatever order they arrive in.
+        std::iter::once(unit.pos)
+            .chain(self.nbrs(unit.pos))
             .flat_map(|position| self.unit_ids_at(position))
             .filter(|other| self.units[other].owner == unit.owner)
             .filter_map(|other| {
@@ -12254,8 +12256,8 @@ impl Game {
     /// support-only family above, unique-unit formation bonuses such as the
     /// Tagma's apply from an ordinary military unit and never to itself.
     fn adjacent_friendly_unit_effect(&self, unit: &Unit, effect: &str) -> f64 {
-        self.wdisk(unit.pos, 1)
-            .into_iter()
+        std::iter::once(unit.pos)
+            .chain(self.nbrs(unit.pos))
             .flat_map(|position| self.unit_ids_at(position))
             .filter(|other| **other != unit.id && self.units[other].owner == unit.owner)
             .map(|other| {
