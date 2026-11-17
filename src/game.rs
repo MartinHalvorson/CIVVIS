@@ -7959,7 +7959,7 @@ pub struct Game {
     /// reach, so it is hashed rather than ordered: nothing iterates it.
     occ: pos_map::PosMap<Vec<u32>>,
     /// The city on each city-centre tile. Hashed for the same reason.
-    city_by_pos: pos_map::PosMap<u32>,
+    city_by_pos: pos_map::CityIndex,
     /// Every successfully applied action, in order — the game is exactly
     /// f(seed+params, log), so this is the replay/desync-detection record.
     /// Runtime-only (not in saves yet).
@@ -8543,7 +8543,7 @@ impl From<GameSer> for Game {
             pending_emergencies: s.pending_emergencies,
             active_emergencies: s.active_emergencies,
             occ: pos_map::PosMap::default(),
-            city_by_pos: pos_map::PosMap::default(),
+            city_by_pos: pos_map::CityIndex::default(),
             log: crate::actionlog::ActionLog::new(),
         };
         g.set_host_research_prerequisites(s.host_research_prerequisites)
@@ -8555,7 +8555,7 @@ impl From<GameSer> for Game {
             g.occ.entry(u.pos).or_default().push(u.id);
         }
         for c in g.cities.values() {
-            g.city_by_pos.insert(c.pos, c.id);
+            g.city_by_pos.insert(&g.map.tiles, c.pos, c.id);
         }
         let legacy: Vec<u32> = g
             .cities
@@ -8900,7 +8900,7 @@ impl Game {
             Item::District { pos, .. } | Item::Wonder { pos, .. } => Some(*pos),
             _ => None,
         }));
-        self.city_by_pos.remove(&city.pos);
+        self.city_by_pos.remove(&self.map.tiles, city.pos);
         for tile in self.map.tiles.values_mut() {
             if tile.owner_city == Some(cid) {
                 tile.owner_city = None;
@@ -9333,7 +9333,7 @@ impl Game {
             pending_emergencies: Vec::new(),
             active_emergencies: Vec::new(),
             occ: pos_map::PosMap::default(),
-            city_by_pos: pos_map::PosMap::default(),
+            city_by_pos: pos_map::CityIndex::default(),
             log: crate::actionlog::ActionLog::new(),
             events: EventLog::default(),
         };
@@ -10475,7 +10475,7 @@ impl Game {
     }
 
     pub fn city_at(&self, pos: Pos) -> Option<u32> {
-        self.city_by_pos.get(&pos).copied()
+        self.city_by_pos.get(&self.map.tiles, pos)
     }
 
     #[inline]
