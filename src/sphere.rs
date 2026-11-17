@@ -759,6 +759,37 @@ impl Sphere {
         }
     }
 
+    /// [`Sphere::for_each_disk`], also handing each tile's distance from the
+    /// centre when the ring table already holds it (radius up to
+    /// `RING_RADIUS`); `None` beyond, where the disk comes from a search.
+    /// The ring distances are the same exact distances [`Sphere::distance`]
+    /// answers, so a caller can use them instead of asking again.
+    pub(crate) fn for_each_disk_with_distance(
+        &self,
+        center: Pos,
+        radius: i32,
+        mut visit: impl FnMut(Pos, Option<i32>),
+    ) {
+        let Some(from) = self.index_of(center) else {
+            return;
+        };
+        if radius <= 0 {
+            visit(center, Some(0));
+            return;
+        }
+        if radius <= RING_RADIUS {
+            for &(pos, distance) in &self.rings[from as usize] {
+                if distance as i32 <= radius {
+                    visit(pos, Some(distance as i32));
+                }
+            }
+            return;
+        }
+        for pos in self.search_disk(from, radius) {
+            visit(pos, None);
+        }
+    }
+
     /// Every tile exactly `radius` steps away.
     ///
     /// Within the cached ring radius this is a filter over a table the globe
@@ -1424,6 +1455,29 @@ mod tests {
             // A tile's outline has one corner per neighbour.
             for cell in globe.cells() {
                 assert_eq!(cell.corners.len(), globe.degree(cell.pos));
+            }
+        }
+    }
+
+    #[test]
+    fn the_disk_walk_hands_out_the_distance_the_globe_answers() {
+        let globe = sphere(7);
+        for center in globe.positions().step_by(37) {
+            for radius in [0, 1, 3, RING_RADIUS, RING_RADIUS + 2] {
+                let mut walked = Vec::new();
+                globe.for_each_disk_with_distance(center, radius, |pos, distance| {
+                    if let Some(distance) = distance {
+                        assert_eq!(
+                            distance,
+                            globe.distance(center, pos),
+                            "{center:?} -> {pos:?}"
+                        );
+                    }
+                    walked.push(pos);
+                });
+                let mut plain = Vec::new();
+                globe.for_each_disk(center, radius, |pos| plain.push(pos));
+                assert_eq!(walked, plain, "{center:?} radius {radius}");
             }
         }
     }
