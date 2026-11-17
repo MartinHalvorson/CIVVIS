@@ -1072,7 +1072,115 @@ local function endScreen(attempt)
 	return false;
 end
 
-if not haveScreen() then
+-- ★★ HOTSEAT. Two jobs, both only in a game installed for hotseat play
+-- (`cfg.Hotseat`; the installer adds the PlayerChange context only then).
+--
+-- 1. The operator's turn is theirs. While the local player is one of
+--    `HotseatHumanSeats`, no screen here is closed, answered or escaped: the
+--    announcement, the leader and the deal are the person's to read.
+-- 2. PlayerChange is the hand-over screen. PlayerChange.lua shows it on every
+--    human seat's turn (BuildTurnControls :121, which also pauses the game)
+--    and only its Start Turn button (`OnOk` :54) unpauses and dequeues it. On
+--    a CIVVIS seat this presses it; on the operator's seat it waits for them.
+--    It also says, for the harness, whose turn begins and ends: the seat
+--    agents are silent outside their own turns, and so is the operator.
+-- Every save the harness asks for is made here, at the start of the first
+-- CIVVIS seat's turn, through InGameTopOptionsMenu.lua:183's own call.
+CivvisHotseatScreen = { waited = 0, pressedFor = nil, savedTurn = -1 };
+function CivvisHotseatScreen.listed(list, pid)
+	if type(list) ~= "table" or pid == nil then return false; end
+	for _, seat in ipairs(list) do
+		if tonumber(seat) == pid then return true; end
+	end
+	return false;
+end
+function CivvisHotseatScreen.localPlayer()
+	local pid = -1;
+	pcall(function() pid = Game.GetLocalPlayer(); end);
+	return tonumber(pid) or -1;
+end
+function CivvisHotseatScreen.turn()
+	local turn = -1;
+	pcall(function() turn = Game.GetCurrentGameTurn(); end);
+	return tonumber(turn) or -1;
+end
+function CivvisHotseatScreen.humanTurn()
+	if cfg.Hotseat ~= true then return false; end
+	return CivvisHotseatScreen.listed(cfg.HotseatHumanSeats,
+		CivvisHotseatScreen.localPlayer());
+end
+function CivvisHotseatScreen.announce(phase)
+	local pid = CivvisHotseatScreen.localPlayer();
+	report("hotseat_turn", string.format(
+		',"phase":"%s","player":%d,"turn":%d,"human":%s,"civvis":%s',
+		phase, pid, CivvisHotseatScreen.turn(),
+		tostring(CivvisHotseatScreen.listed(cfg.HotseatHumanSeats, pid)),
+		tostring(CivvisHotseatScreen.listed(cfg.HotseatSeats, pid))));
+end
+function CivvisHotseatScreen.save(pid, turn)
+	local every = tonumber(cfg.HotseatSaveEvery) or 0;
+	local first = nil;
+	for _, seat in ipairs(cfg.HotseatSeats or {}) do
+		seat = tonumber(seat);
+		if seat ~= nil and (first == nil or seat < first) then first = seat; end
+	end
+	if every <= 0 or pid ~= first or turn < 1 or turn % every ~= 0
+			or CivvisHotseatScreen.savedTurn == turn then
+		return;
+	end
+	CivvisHotseatScreen.savedTurn = turn;
+	local name = string.format("%s-T%03d", tostring(cfg.HotseatSaveName or RUN), turn);
+	local saved = pcall(function()
+		local gameFile = {};
+		gameFile.Name = name;
+		gameFile.Location = SaveLocations.LOCAL_STORAGE;
+		gameFile.Type = Network.GetGameConfigurationSaveType();
+		gameFile.IsAutosave = false;
+		gameFile.IsQuicksave = false;
+		Network.SaveGame(gameFile);
+	end);
+	report("hotseat_saved", string.format(',"name":"%s","turn":%d,"requested":%s',
+		name, turn, tostring(saved)));
+end
+-- One press per seat and turn, after the screen has been up a moment (its
+-- own slide-in) and retried every two seconds while it stays up.
+function CivvisHotseatScreen.frame(fDTime)
+	local dialog = false;
+	pcall(function() dialog = not Controls.PopupAlphaIn:IsHidden(); end);
+	local pid = CivvisHotseatScreen.localPlayer();
+	if not dialog or pid < 0 or CivvisHotseatScreen.humanTurn()
+			or not (CivvisHotseatScreen.listed(cfg.HotseatSeats, pid)
+				or CivvisHotseatScreen.listed(cfg.HotseatStubSeats, pid)) then
+		CivvisHotseatScreen.waited = 0;
+		return;
+	end
+	CivvisHotseatScreen.waited = CivvisHotseatScreen.waited + (tonumber(fDTime) or 0);
+	local turn = CivvisHotseatScreen.turn();
+	local key = pid .. ":" .. turn;
+	local pause = CivvisHotseatScreen.pressedFor == key and 2.0
+		or (tonumber(cfg.HotseatPressSeconds) or 0.3);
+	if CivvisHotseatScreen.waited < pause then return; end
+	CivvisHotseatScreen.waited = 0;
+	pcall(CivvisHotseatScreen.save, pid, turn);
+	local pressed = type(OnOk) == "function" and pcall(OnOk);
+	report("hotseat_start_turn", string.format(',"player":%d,"turn":%d,"pressed":%s,"again":%s',
+		pid, turn, tostring(pressed), tostring(CivvisHotseatScreen.pressedFor == key)));
+	CivvisHotseatScreen.pressedFor = key;
+end
+function CivvisHotseatScreen.arm()
+	pcall(function()
+		Events.LocalPlayerTurnBegin.Add(function() CivvisHotseatScreen.announce("begin"); end);
+	end);
+	pcall(function()
+		Events.LocalPlayerTurnEnd.Add(function() CivvisHotseatScreen.announce("end"); end);
+	end);
+	ContextPtr:SetUpdate(function(fDTime) pcall(CivvisHotseatScreen.frame, fDTime); end);
+	report("hotseat_armed", string.format(',"start_turn":%s', tostring(type(OnOk) == "function")));
+end
+
+if NAME == "PlayerChange" then
+	CivvisHotseatScreen.arm();
+elseif not haveScreen() then
 	-- The failure that has to be loud. A replacement whose include did not
 	-- land leaves the context with no shipped code at all, which does not look
 	-- like a broken mod: the announcement simply never appears, and a run
@@ -1402,7 +1510,8 @@ else
 	end
 	pcall(function()
 		LuaEvents.CivvisCloseBehindDeal.Add(function(holder, id)
-			if holder ~= NAME or END_SCREENS[NAME] or operatorHolds() then return; end
+			if holder ~= NAME or END_SCREENS[NAME] or operatorHolds()
+					or CivvisHotseatScreen.humanTurn() then return; end
 			if NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView"
 					or NAME == "WonderBuiltPopup" then return; end
 			-- Only while this context still holds that lock: a popup that
@@ -1482,7 +1591,10 @@ else
 		end
 		-- After the pulse above, which is how a held agent hears the resume
 		-- while a leader screen hides TopPanel. The clock restarts on resume.
-		if operatorHolds() then showing = false; return; end
+		if operatorHolds() or CivvisHotseatScreen.humanTurn() then
+			showing = false;
+			return;
+		end
 		if not showing then
 			showing = true;
 			remaining = SECONDS;

@@ -83,7 +83,7 @@ class ProtectedInstallTest(unittest.TestCase):
             deployed = (Path(tmp) / name).read_text()
             self.assertTrue(deployed.startswith(install.prelude({"Play": True, "CivvisDecides": True})))
         agent = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
-        self.assertIn("LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse)", agent)
+        self.assertIn("LuaEvents.CivvisControlPulse.Add(CivvisSeat.gate(CivvisQueue.onUiPulse))", agent)
 
     def test_city_export_preserves_great_works_citizens_yields_and_progress(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
@@ -1054,7 +1054,7 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("voteWorldCongress(ballotPid, ballotTurn)", ballot)
         self.assertIn("envoyTally.ballot_turn", ballot)
         self.assertIn("favor_before = before", ballot)
-        self.assertIn('LuaEvents.CivvisCongressBallot.Add(function() castBallot("popup"); end);', source)
+        self.assertIn('LuaEvents.CivvisCongressBallot.Add(CivvisSeat.gate(function() castBallot("popup"); end));', source)
         self.assertIn('Events.WorldCongressStage1.Add(function(playerID)', source)
         stage = source.split("Events.WorldCongressStage1.Add(function(playerID)", 1)[1].split("end);", 1)[0]
         self.assertNotIn("castBallot(", stage)
@@ -1133,7 +1133,7 @@ class ProtectedInstallTest(unittest.TestCase):
         """
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         registrations = source.split("function Initialize()", 1)[1].split(
-            "pcall(function() Events[name].Add(handler); end);", 1
+            "pcall(function() Events[name].Add(CivvisSeat.gate(handler)); end);", 1
         )[0]
         self.assertIn("UnitRemovedFromMap = CivvisLedger.onUnitRemoved,", registrations)
         self.assertIn("UnitCaptured = CivvisLedger.onUnitCaptured,", registrations)

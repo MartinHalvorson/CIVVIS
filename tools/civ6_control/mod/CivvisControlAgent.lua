@@ -30,6 +30,36 @@ local cfg = CivvisControlConfig or {};
 -- and 66de612ed lost the whole agent at 212). Rarely used constants and
 -- per-run tables live here instead; add new ones here, not as top-level locals.
 CivvisK = {};
+-- ★★ HOTSEAT: ONE CONTEXT PER SEAT, AND IT ACTS ONLY ON ITS OWN SEAT'S TURN.
+-- In a hotseat game `Game.GetLocalPlayer()` follows whichever human seat is
+-- playing, so a single agent would play the operator's turns too and share
+-- every per-turn and per-unit table between three empires (`lastTurnSeen`
+-- alone would make seat 2 skip the turn seat 1 just played). Instead the
+-- installer writes one copy of this script per CIVVIS seat, each with its own
+-- `HotseatSeat` and run tag; UI contexts do not share globals, so each copy
+-- keeps its own state. `gate` wraps every engine and LuaEvents entry point, so
+-- outside its seat's turn a copy does nothing at all: no tick, no order, no
+-- popup answer, no camera. `HotseatSeat` absent (every single-player run) makes
+-- `gate` the identity and changes nothing.
+CivvisSeat = { seat = tonumber(cfg.HotseatSeat) };
+-- ...and not while that seat's hand-over screen is still up: PlayerChange.lua
+-- pauses the game for it (`SetPause(true)`, :121) until Start Turn (`OnOk`,
+-- :54). A turn ended under that screen was measured coming back to the same
+-- seat, its moves already spent.
+function CivvisSeat.mine()
+	if CivvisSeat.seat == nil then return true; end
+	local ok, pid = pcall(function() return Game.GetLocalPlayer(); end);
+	if not ok or pid ~= CivvisSeat.seat then return false; end
+	local held = false;
+	pcall(function() held = PlayerConfigurations[pid]:GetWantsPause() == true; end);
+	return not held;
+end
+function CivvisSeat.gate(handler)
+	if CivvisSeat.seat == nil or type(handler) ~= "function" then return handler; end
+	return function(...)
+		if CivvisSeat.mine() then return handler(...); end
+	end;
+end
 -- Whether `name` is a civilization's own Holy Site. Russia's Lavra is ordered
 -- under its own type (`DistrictReplaces`, Districts.xml:34), so a test for
 -- DISTRICT_HOLY_SITE alone never sees it.
@@ -12256,14 +12286,20 @@ local function attachOrders()
 	-- Prove the attach by reading through it, not by the absence of a throw:
 	-- `applied = true` on a request the engine discarded is this project's
 	-- signature bug.
+	-- ⚠ A hotseat game runs one agent context per seat against ONE database
+	-- connection, so the second seat's ATTACH fails on the alias the first
+	-- seat already holds. There the read alone is the proof: it reaches the
+	-- same file, because every seat is installed with the same `OrdersDb`.
+	local shared = not ok and CivvisSeat.seat ~= nil;
 	local reads = false;
-	if ok then
+	if ok or shared then
 		reads = pcall(function()
 			DB.Query("SELECT count(*) AS n FROM civvis.ready");
 		end);
 	end
-	ordersAttached = ok and reads;
-	emit("orders_channel", { attached = ordersAttached, path = tostring(path) });
+	ordersAttached = (ok or shared) and reads;
+	emit("orders_channel", { attached = ordersAttached, path = tostring(path),
+		shared = shared or nil });
 	return ordersAttached;
 end
 
@@ -27404,7 +27440,7 @@ local function tick()
 		if not envoyTally.ballot_hooked then
 			envoyTally.ballot_hooked = true;
 			local hookedLua = CivvisK.attempt(function()
-				LuaEvents.CivvisCongressBallot.Add(function() castBallot("popup"); end);
+				LuaEvents.CivvisCongressBallot.Add(CivvisSeat.gate(function() castBallot("popup"); end));
 			end);
 			local hookedStage = CivvisK.attempt(function()
 				Events.WorldCongressStage1.Add(function(playerID)
@@ -28010,6 +28046,27 @@ end
 
 -- ------------------------------------------------------------------- events
 
+-- A hotseat seat's first turn: put its name on the seat, so the hand-over
+-- screen and the score board say "CIVVIS jack 2" rather than the staging
+-- room's "Player 3". EditHotseatPlayer.lua:120 names a seat this way. Read
+-- back, never assumed: the name is what the operator sees.
+function CivvisSeat.claim()
+	local pid = CivvisSeat.seat;
+	local name = cfg.HotseatName;
+	local applied = false;
+	if type(name) == "string" and name ~= "" then
+		applied = CivvisK.attempt(function()
+			PlayerConfigurations[pid]:SetHotseatName(name);
+		end);
+	end
+	emit("hotseat_seat", {
+		seat = pid, name = name, applied = applied,
+		shown = try(function() return PlayerConfigurations[pid]:GetPlayerName(); end, "?"),
+		hotseat = try(function() return GameConfiguration.IsHotseat(); end, false),
+		human = try(function() return Players[pid]:IsHuman(); end, false),
+	});
+end
+
 local started = false;
 local ticks = 0;
 
@@ -28056,6 +28113,15 @@ local function ensureStarted()
 	end
 
 	CivvisK.guard(survey);
+	-- A hotseat seat names itself and skips the load-screen dismissals below:
+	-- a multiplayer load screen activates itself (LoadScreen.lua:461-466,
+	-- `IsAnyMultiplayer`), and a `LoadScreenClose` raised mid-game re-runs
+	-- PlayerChange.lua's OnLoadScreenClose, which pauses the game and raises
+	-- the hand-over screen again in the middle of this seat's turn.
+	if CivvisSeat.seat ~= nil then
+		CivvisK.guard(CivvisSeat.claim);
+		return;
+	end
 	-- The load screen waits on a keypress before the first turn runs, and
 	-- nothing in any log says so -- a harness watching for turn data sees only
 	-- a hang. Both dismissals the shipped screen offers are attempted.
@@ -28726,15 +28792,15 @@ function Initialize()
 	});
 	-- The timescale waits for turn 1: see CivvisQueue.startPendingTimescale.
 	CivvisQueue.timescalePending = true;
-	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse); end);
-	pcall(function() LuaEvents.CivvisControlPeek.Add(CivvisQueue.onPeekPulse); end);
+	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisSeat.gate(CivvisQueue.onUiPulse)); end);
+	pcall(function() LuaEvents.CivvisControlPeek.Add(CivvisSeat.gate(CivvisQueue.onPeekPulse)); end);
 	-- `DealCounterRefuse`: the leader screens' closer says what it saw.
-	pcall(function() LuaEvents.CivvisDealDialogue.Add(function(from, statement, subType)
+	pcall(function() LuaEvents.CivvisDealDialogue.Add(CivvisSeat.gate(function(from, statement, subType)
 		CivvisK.guard(function() CivvisTrade.onDealDialogue(from, statement, subType); end);
-	end); end);
-	pcall(function() LuaEvents.CivvisDealHoldExpired.Add(function(screen, subject, dealUp)
+	end)); end);
+	pcall(function() LuaEvents.CivvisDealHoldExpired.Add(CivvisSeat.gate(function(screen, subject, dealUp)
 		CivvisK.guard(function() CivvisTrade.onHoldExpired(screen, subject, dealUp); end);
-	end); end);
+	end)); end);
 	for name, handler in pairs({
 		LocalPlayerTurnBegin = onLocalPlayerTurnBegin,
 		LocalPlayerTurnEnd = function() CivvisQueue.onLocalTurnEnd(); end,
@@ -28789,10 +28855,10 @@ function Initialize()
 		SpyMissionCompleted = CivvisLedger.onSpyMissionCompleted,
 		SpyMissionUpdated = CivvisLedger.flushSpyMissions,
 	}) do
-		pcall(function() Events[name].Add(handler); end);
+		pcall(function() Events[name].Add(CivvisSeat.gate(handler)); end);
 	end
 	-- A second listener: an open escape is re-read when our turn begins.
-	pcall(function() Events.LocalPlayerTurnBegin.Add(CivvisLedger.flushSpyMissions); end);
+	pcall(function() Events.LocalPlayerTurnBegin.Add(CivvisSeat.gate(CivvisLedger.flushSpyMissions)); end);
 end
 
 Initialize();

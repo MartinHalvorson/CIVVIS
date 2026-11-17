@@ -48,6 +48,15 @@
 			</Set>
 		</Update>
 		<Update>
+			<!-- Per-player difficulty: what a hotseat staging room shows each
+			     seat. Rendered to Prince (no change) unless a hotseat run names
+			     one; the single-player row above is GameDifficulty. -->
+			<Where ParameterId="PlayerDifficulty" DefaultValue="DIFFICULTY_PRINCE"/>
+			<Set>
+				<DefaultValue>CIVVIS_DEFAULT_PLAYER_DIFFICULTY</DefaultValue>
+			</Set>
+		</Update>
+		<Update>
 			<!-- This is the single-player row; the multiplayer row is already
 			     Online and must remain independent. -->
 			<Where ParameterId="GameSpeeds" DefaultValue="GAMESPEED_STANDARD"/>

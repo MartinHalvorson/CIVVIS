@@ -308,19 +308,24 @@ def acquire(
     poll_s: float = 15.0,
     *,
     require_verification_intent: bool = False,
+    honour_operator_halt: bool = True,
 ) -> bool:
     """Take the lock, optionally waiting. False when play is not allowed.
 
     ``require_verification_intent`` is used by the game launcher itself. Cleanup
     callers leave it false so an operator turning the lane off can still acquire
     ownership long enough to stop a game that was already running.
+
+    ``honour_operator_halt=False`` is for a game the operator starts and plays
+    in person (`tools/civ6_hotseat.py`): the halt stops the unattended lanes, and
+    this lock still keeps those lanes out of the operator's game while it runs.
     """
     deadline = time.monotonic() + wait_s
     while True:
         # This check belongs here as well as in the supervisors.  It prevents a
         # manual or legacy launcher from bypassing the operator's explicit
         # halt simply because it did not use the current host script.
-        if operator_halt() is not None:
+        if honour_operator_halt and operator_halt() is not None:
             return False
         # The launcher is the Terminal-window chain itself, so `terminal`
         # authorizes it as well as `running`.
