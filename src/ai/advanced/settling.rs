@@ -429,13 +429,19 @@ impl AdvancedAi {
         };
         let (city_exclusion, city_state_exclusion) = exclusions.get_or_insert_with(|| {
             (
-                g.cities
-                    .values()
-                    .flat_map(|city| g.wdisk(city.pos, 3))
-                    .collect::<BTreeSet<_>>(),
-                self.city_state_settlement_exclusion(g, pid),
+                tile_bits(g, g.cities.values().flat_map(|city| g.wdisk(city.pos, 3))),
+                tile_bits(g, self.city_state_settlement_exclusion(g, pid)),
             )
         });
+        // `index_of` gives every on-map plot its own index and no position
+        // off the map one, so a bit answers exactly what a set of positions
+        // did for every plot the filter below reaches (it has a tile).
+        let excluded = |bits: &TileBits, pos: Pos| {
+            g.map
+                .tiles
+                .index_of(pos)
+                .is_some_and(|index| bits.contains(index))
+        };
         let mut candidates = g
             .wdisk(from, radius)
             .into_iter()
@@ -447,8 +453,8 @@ impl AdvancedAi {
                     || g.rules.is_water(tile)
                     || !g.rules.is_passable(tile)
                     || g.tile_is_natural_wonder(tile)
-                    || city_exclusion.contains(&pos)
-                    || city_state_exclusion.contains(&pos)
+                    || excluded(city_exclusion, pos)
+                    || excluded(city_state_exclusion, pos)
                     || tile.owner_city.is_some_and(|cid| {
                         // A tile can name a city absent from the current table.
                         // Keep that unresolved claim out of settlement candidates.
@@ -3398,4 +3404,17 @@ impl AdvancedAi {
         }
         None
     }
+}
+
+/// `positions` as one bit per tile, for a scan that asks membership plot by
+/// plot. A position with no tile has no index and is left out; nothing asks
+/// about one.
+fn tile_bits(g: &Game, positions: impl IntoIterator<Item = Pos>) -> TileBits {
+    let mut bits = TileBits::with_capacity(g.map.tiles.len());
+    for pos in positions {
+        if let Some(index) = g.map.tiles.index_of(pos) {
+            bits.insert(index);
+        }
+    }
+    bits
 }
