@@ -370,7 +370,10 @@ impl Game {
         for unit in view.units.values() {
             view.occ.entry(unit.pos).or_default().push(unit.id);
         }
-        view.city_by_pos = view.cities.values().map(|c| (c.pos, c.id)).collect();
+        view.city_by_pos.clear();
+        for city in view.cities.values() {
+            view.city_by_pos.insert(&view.map.tiles, city.pos, city.id);
+        }
         // Unrevealed resources are hidden even on remembered terrain.
         for tile in view.map.tiles.values_mut() {
             if tile

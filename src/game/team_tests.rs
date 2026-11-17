@@ -109,8 +109,8 @@ fn teammate_population_is_neutral_to_loyalty_pressure() {
         .find(|position| *position != own_pos)
         .unwrap();
     let old = teamed.cities[&teammate].pos;
-    teamed.city_by_pos.remove(&old);
-    teamed.city_by_pos.insert(near, teammate);
+    teamed.city_by_pos.remove(&teamed.map.tiles, old);
+    teamed.city_by_pos.insert(&teamed.map.tiles, near, teammate);
     teamed.cities.get_mut(&teammate).unwrap().pos = near;
     teamed.cities.get_mut(&teammate).unwrap().pop = 20;
     teamed.cities.get_mut(&own).unwrap().loyalty = 50.0;
