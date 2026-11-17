@@ -213,16 +213,15 @@ impl Game {
                 ) {
                     continue;
                 }
-                let yields = self
-                    .district_adjacency_assuming_with_family_and_neighbors_and_district_count(
-                        district,
-                        pos,
-                        Some(&assume),
-                        None,
-                        family,
-                        &neighbor_tiles,
-                        district_count,
-                    );
+                let yields = self.district_adjacency_with_neighbors(
+                    district,
+                    pos,
+                    Some(&assume),
+                    None,
+                    family,
+                    &neighbor_tiles,
+                    Some(district_count),
+                );
                 if yields.total() > bests[district_index].0 {
                     bests[district_index] = (yields.total(), yields);
                 }
