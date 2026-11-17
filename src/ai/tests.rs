@@ -6783,7 +6783,7 @@ fn an_unmet_city_state_sends_a_scout_on_a_long_contact_sweep() {
 
     let scout = game.spawn_test_unit("scout", 0, home);
     let charted: std::collections::BTreeSet<Pos> = game.map.tiles.keys().copied().collect();
-    game.players[0].explored = charted;
+    game.players[0].explored = charted.into();
     for position in &ray {
         game.players[0].explored.remove(position);
     }
