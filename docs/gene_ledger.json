@@ -5316,6 +5316,15 @@
           "score-seat-raises-wonders-3": null
         }
       },
+      "score-seat-sprints-to-the-tally": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "score-seat-sprints-to-the-tally": null,
+          "score-seat-sprints-to-the-tally-2": null
+        }
+      },
       "score-seat-takes-what-pays": {
         "rule_on": [],
         "head": null,

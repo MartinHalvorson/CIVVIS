@@ -10501,6 +10501,12 @@ pub struct AdvancedAi {
     /// two tiles out. Acts only through `anvil-spares-the-one-blow`. See
     /// `advanced/spared_soldiers_come_to_the_capital.rs`. Off by default.
     spared_soldiers_come_to_the_capital: bool,
+    /// `score-seat-sprints-to-the-tally-2`: version 2 of
+    /// `score-seat-sprints-to-the-tally`. A Great Person is priced with its
+    /// Historic Moment, each class goes to the currency that is idle and
+    /// reaches it, and patronage opens thirty Online turns before the limit.
+    /// See `advanced/score_sprints_to_the_tally.rs`. Opt-in.
+    score_seat_sprints_to_the_tally_2: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
