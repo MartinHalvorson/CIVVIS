@@ -482,17 +482,28 @@ impl Game {
         // project converts and powers only its own city, and the envoy
         // bonuses ask the city's own head of queue; the empire-wide count of
         // unworked improvements that reads every plan feeds the builders,
-        // not a yield. `do_produce` writes the city's queue, its production
-        // and its progress map, and two more things that are watched instead:
-        // a District places its foundation (so a District keeps the old,
-        // empire-wide reach), and a unit that needs a strategic resource
+        // not a yield. A project is the exception: Industrial Zone
+        // Logistics fully powers its city while it runs, and a powered city's
+        // Factory and Power Plant reach its neighbours' production (the
+        // kept-yield audit caught it on site seed 7, turn 143), so a
+        // `Produce` that starts a project or replaces one keeps the old,
+        // empire-wide reach. `do_produce` writes the city's queue, its
+        // production and its progress map, and two more things that are
+        // watched instead: a District places its foundation (so a District
+        // keeps the old reach too), and a unit that needs a strategic resource
         // takes it from the seat's stockpile, which is read back before and
         // after with the seat's counters (the first-monopoly moment
         // `apply_unbracketed` may record afterwards). If either moved, the
         // old reach applies; if neither did, only that city's kept answers
         // and its seat's luxury split are dropped.
         let produce_watch = match action {
-            Action::Produce { city, item } if !matches!(item, Item::District { .. }) => {
+            Action::Produce { city, item }
+                if !matches!(item, Item::District { .. } | Item::Project { .. })
+                    && !matches!(
+                        self.cities.get(city).and_then(|held| held.queue.first()),
+                        Some(Item::Project { .. })
+                    ) =>
+            {
                 Some((*city, self.produce_watch(pid)))
             }
             _ => None,

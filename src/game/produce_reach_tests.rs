@@ -131,3 +131,30 @@ fn a_produce_that_takes_from_the_stockpile_drops_every_own_city() {
     );
     assert_eq!(kept(&game), (vec![theirs], vec![]));
 }
+
+/// A project can power its city, and a powered city's Factory reaches its
+/// neighbours' production: replacing one keeps the old, empire-wide reach.
+#[test]
+fn a_produce_that_replaces_a_project_drops_every_own_city() {
+    let (mut game, ours, theirs) = empire();
+    let project = *game
+        .rules
+        .projects
+        .keys()
+        .find(|project| project.as_str() == "industrial_zone_logistics")
+        .expect("the ruleset has Industrial Zone Logistics");
+    game.cities.get_mut(&ours[1]).unwrap().queue = vec![Item::Project { project }];
+    game.board_written();
+    read_all(&game, ours, theirs);
+    game.apply(
+        0,
+        &Action::Produce {
+            city: ours[1],
+            item: Item::Unit {
+                unit: crate::name!("warrior"),
+            },
+        },
+    )
+    .expect("every city can train a Warrior");
+    assert_eq!(kept(&game), (vec![theirs], vec![]));
+}
