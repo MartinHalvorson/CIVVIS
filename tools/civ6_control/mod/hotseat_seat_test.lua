@@ -12,14 +12,18 @@ local agent = read("CivvisControlAgent.lua")
 local closer = read("CivvisControlAutoClose.lua")
 
 -- 1. The seat gate. --------------------------------------------------------
-local gateBlock = assert(agent:match("(CivvisSeat = { seat = .-\nend\nfunction CivvisSeat%.gate.-\nend\n)"),
+local gateBlock = assert(agent:match("(CivvisSeat = { seat = .-\nfunction CivvisSeat%.gate.-\nend\n)"),
 	"the agent defines CivvisSeat.mine and CivvisSeat.gate")
 local localPlayer = 0
+local paused = false
 local function seatEnv(seat)
 	local env = {
 		cfg = { HotseatSeat = seat },
 		tonumber = tonumber, type = type, pcall = pcall,
 		Game = { GetLocalPlayer = function() return localPlayer end },
+		PlayerConfigurations = setmetatable({}, { __index = function()
+			return { GetWantsPause = function() return paused end }
+		end }),
 	}
 	local chunk = assert(loadstring(gateBlock))
 	setfenv(chunk, env)
@@ -44,6 +48,11 @@ localPlayer = 1
 assert(gated(1, 2) == nil and calls == 0, "another jack seat's turn reaches no handler")
 localPlayer = 2
 assert(gated(1, 2) == 3 and calls == 1, "its own turn passes arguments and results through")
+-- Not while its hand-over screen still holds the game paused.
+paused = true
+assert(gated(1, 2) == nil and calls == 1, "the hand-over screen is pressed first")
+paused = false
+assert(gated(1, 2) == 3 and calls == 2)
 -- An unreadable local player is not this seat.
 local broken = seatEnv(2)
 localPlayer = nil

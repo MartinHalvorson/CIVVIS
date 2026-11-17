@@ -42,10 +42,17 @@ CivvisK = {};
 -- popup answer, no camera. `HotseatSeat` absent (every single-player run) makes
 -- `gate` the identity and changes nothing.
 CivvisSeat = { seat = tonumber(cfg.HotseatSeat) };
+-- ...and not while that seat's hand-over screen is still up: PlayerChange.lua
+-- pauses the game for it (`SetPause(true)`, :121) until Start Turn (`OnOk`,
+-- :54). A turn ended under that screen was measured coming back to the same
+-- seat, its moves already spent.
 function CivvisSeat.mine()
 	if CivvisSeat.seat == nil then return true; end
 	local ok, pid = pcall(function() return Game.GetLocalPlayer(); end);
-	return ok and pid == CivvisSeat.seat;
+	if not ok or pid ~= CivvisSeat.seat then return false; end
+	local held = false;
+	pcall(function() held = PlayerConfigurations[pid]:GetWantsPause() == true; end);
+	return not held;
 end
 function CivvisSeat.gate(handler)
 	if CivvisSeat.seat == nil or type(handler) ~= "function" then return handler; end

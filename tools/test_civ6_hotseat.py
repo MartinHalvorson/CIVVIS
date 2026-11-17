@@ -253,6 +253,26 @@ class MonitorTest(unittest.TestCase):
         self.assertEqual(stats["last"]["orders_source"], "civvis")
 
 
+class ResumeTest(unittest.TestCase):
+    def test_the_newest_hotseat_save_is_staged_under_one_name(self) -> None:
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            saves = Path(tmp)
+            (saves / "auto").mkdir()
+            old = saves / "hotseat-x-T010.Civ6Save"
+            new = saves / "auto" / "AutoSave_0012.Civ6Save"
+            old.write_text("old")
+            new.write_text("new")
+            os.utime(old, (1, 1))
+            self.assertEqual(hotseat.newest_save(saves), new)
+            staged = hotseat.stage_save(new, saves)
+            self.assertEqual(staged.name, "civvis-hotseat-resume.Civ6Save")
+            self.assertEqual(staged.read_text(), "new")
+            # The staged copy is never itself "the newest save".
+            os.utime(staged, (10 ** 10, 10 ** 10))
+            self.assertEqual(hotseat.newest_save(saves), new)
+
+
 class LockTest(unittest.TestCase):
     def test_the_operators_own_game_is_not_held_by_the_lane_halt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
