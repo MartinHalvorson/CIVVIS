@@ -1164,9 +1164,9 @@ type CoveredTiles = (std::sync::Arc<AttackEnvelopes>, std::sync::Arc<Vec<Pos>>);
 /// can share one full-map scan instead of repeating it per unit.
 #[derive(Debug, PartialEq, Eq)]
 struct SafeHealingTargets {
-    cities: HashSet<Pos>,
-    friendly_tiles: HashSet<Pos>,
-    neutral_tiles: HashSet<Pos>,
+    cities: crate::fast_map::FastSet<Pos>,
+    friendly_tiles: crate::fast_map::FastSet<Pos>,
+    neutral_tiles: crate::fast_map::FastSet<Pos>,
 }
 
 /// A cache slot that a clone does NOT inherit.
