@@ -496,7 +496,11 @@ impl Game {
     /// First step toward the nearest reachable member of `goals`. This is
     /// useful for exploration, where the geometrically nearest hidden tile
     /// may be on the far side of an impassable ridge or pre-embarkation sea.
-    pub fn route_step_to_any(&self, uid: u32, goals: &HashSet<Pos>) -> Option<Pos> {
+    pub fn route_step_to_any<S: std::hash::BuildHasher>(
+        &self,
+        uid: u32,
+        goals: &HashSet<Pos, S>,
+    ) -> Option<Pos> {
         if goals.is_empty() {
             return None;
         }
@@ -1377,10 +1381,10 @@ impl Game {
     /// number of route steps from it to the nearest of `goals` (`i32::MAX`
     /// where none is reachable), cached per traversal class, territory access
     /// and goal set within the routing epoch.
-    pub(super) fn reverse_goal_distance(
+    pub(super) fn reverse_goal_distance<S: std::hash::BuildHasher>(
         &self,
         uid: u32,
-        goals: &HashSet<Pos>,
+        goals: &HashSet<Pos, S>,
         zones: &[u32],
     ) -> Option<Arc<Vec<i32>>> {
         let _memo = self.query_memo();
@@ -1447,10 +1451,10 @@ impl Game {
     /// `None` wherever `route_step_to_any` declines before reading its field,
     /// for a unit that moves as a formation, and for one without movement.
     #[allow(clippy::type_complexity)]
-    pub(crate) fn march_reach_toward_any(
+    pub(crate) fn march_reach_toward_any<S: std::hash::BuildHasher>(
         &self,
         uid: u32,
-        goals: &HashSet<Pos>,
+        goals: &HashSet<Pos, S>,
     ) -> Option<(i32, Vec<(Pos, i32, f64)>)> {
         if goals.is_empty() {
             return None;
