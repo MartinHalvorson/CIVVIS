@@ -473,7 +473,43 @@ impl Game {
                 action,
                 Action::SlotPolicy { .. } | Action::UnslotPolicy { .. }
             );
+        //
+        // ★★ A PRODUCE WRITES ONE CITY. Naming what a city builds next
+        // dropped every kept yield of the acting seat's own cities (site seed
+        // 7: 5,308 of them derived again after a `Produce`), though a city's
+        // yields read only its own queue: its citizen plan works the city's
+        // own `owned_tiles` with weights from its own head of queue, a running
+        // project converts and powers only its own city, and the envoy
+        // bonuses ask the city's own head of queue; the empire-wide count of
+        // unworked improvements that reads every plan feeds the builders,
+        // not a yield. A project is the exception: Industrial Zone
+        // Logistics fully powers its city while it runs, and a powered city's
+        // Factory and Power Plant reach its neighbours' production (the
+        // kept-yield audit caught it on site seed 7, turn 143), so a
+        // `Produce` that starts a project or replaces one keeps the old,
+        // empire-wide reach. `do_produce` writes the city's queue, its
+        // production and its progress map, and two more things that are
+        // watched instead: a District places its foundation (so a District
+        // keeps the old reach too), and a unit that needs a strategic resource
+        // takes it from the seat's stockpile, which is read back before and
+        // after with the seat's counters (the first-monopoly moment
+        // `apply_unbracketed` may record afterwards). If either moved, the
+        // old reach applies; if neither did, only that city's kept answers
+        // and its seat's luxury split are dropped.
+        let produce_watch = match action {
+            Action::Produce { city, item }
+                if !matches!(item, Item::District { .. } | Item::Project { .. })
+                    && !matches!(
+                        self.cities.get(city).and_then(|held| held.queue.first()),
+                        Some(Item::Project { .. })
+                    ) =>
+            {
+                Some((*city, self.produce_watch(pid)))
+            }
+            _ => None,
+        };
         let reach = match action {
+            Action::Produce { city, .. } if produce_watch.is_some() => ActionReach::OwnCity(*city),
             Action::Produce { .. } => ActionReach::OwnCities,
             _ if ordinary.is_some() || deck_card => ActionReach::UnitOnly,
             _ => ActionReach::Board,
@@ -492,10 +528,38 @@ impl Game {
             }
             _ if deck_card && result.is_err() => ActionReach::UnitOnly,
             _ if deck_card => ActionReach::Board,
-            _ => reach,
+            _ => match produce_watch {
+                Some((cid, before)) if self.produce_watch(pid) == before => {
+                    ActionReach::OwnCity(cid)
+                }
+                Some(_) => ActionReach::OwnCities,
+                None => reach,
+            },
         };
         self.query_memo.action_ends(reached);
         result
+    }
+
+    /// What a `Produce` must leave alone for its seat's other cities' kept
+    /// yields to stand: the seat's strategic stockpile and its counters,
+    /// folded. See the `Produce` note in [`Game::apply`].
+    fn produce_watch(&self, pid: usize) -> u64 {
+        const SEED: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mix = |hash: u64, value: u64| {
+            let state = (hash ^ value).wrapping_mul(SEED);
+            state ^ (state >> 29)
+        };
+        let Some(seat) = self.players.get(pid) else {
+            return 0;
+        };
+        let stockpile = seat.strategic_resources.iter().fold(
+            seat.strategic_resources.len() as u64,
+            |hash, (resource, amount)| mix(mix(hash, u64::from(resource.id())), amount.to_bits()),
+        );
+        mix(
+            mix(stockpile, seat.counters.len() as u64),
+            seat.era_score as u64,
+        )
     }
 
     /// What an ordinary move must leave alone for the yields kept for every

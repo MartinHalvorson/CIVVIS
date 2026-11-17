@@ -2012,6 +2012,10 @@ enum ActionReach {
     /// Only the acting unit was written, or nothing was: nothing kept is
     /// dropped. See the ordinary-move and refused-card notes in `Game::apply`.
     UnitOnly,
+    /// Only one of the acting seat's own cities was written, and only what
+    /// it builds: that city's kept answers are dropped and its seat's luxury
+    /// split, nothing else. See the `Produce` note in `Game::apply`.
+    OwnCity(u32),
 }
 
 /// What [`Game::apply`] reads around an ordinary move to tell whether it did
@@ -2045,6 +2049,13 @@ impl QueryCache {
 
     fn drop_kept_yields(&self, reach: ActionReach) {
         if !self.keeps_rival_yields.get() || reach == ActionReach::UnitOnly {
+            return;
+        }
+        if let ActionReach::OwnCity(cid) = reach {
+            let mut own = self.own_yields.borrow_mut();
+            own.yields.remove(&cid);
+            own.plans.remove(&cid);
+            own.luxuries.clear();
             return;
         }
         self.own_yields.borrow_mut().clear();
@@ -13813,6 +13824,8 @@ mod production_catalog_tests;
 
 #[cfg(test)]
 mod kept_yields_moves_tests;
+#[cfg(test)]
+mod produce_reach_tests;
 #[cfg(test)]
 mod refused_deck_tests;
 #[cfg(test)]
