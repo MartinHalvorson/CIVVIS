@@ -195,7 +195,7 @@ fn losing_a_governors_city_clears_live_and_legacy_assignments() {
     // assignment after the city was razed. Recreate that stale shape and
     // run the exact Loyalty path that used to index the missing city.
     let removed = game.cities.remove(&second).unwrap();
-    game.city_by_pos.remove(&removed.pos);
+    game.city_by_pos.remove(&game.map.tiles, removed.pos);
     for position in removed.owned_tiles {
         if game.map.tiles[&position].owner_city == Some(second) {
             game.map.tiles.get_mut(&position).unwrap().owner_city = None;

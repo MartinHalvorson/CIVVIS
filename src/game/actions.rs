@@ -1494,7 +1494,7 @@ impl Game {
             city.building_eras
                 .insert(crate::name!("monument"), self.world_era);
         }
-        self.city_by_pos.insert(pos, cid);
+        self.city_by_pos.insert(&self.map.tiles, pos, cid);
         let founded = city.name.clone();
         self.cities.insert(cid, city);
         if is_capital {

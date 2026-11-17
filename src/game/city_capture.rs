@@ -567,7 +567,7 @@ impl Game {
         }
         // Wonder tiles remain as inert ruins. `wonder_built` includes them so
         // a unique World Wonder cannot be constructed for a second time.
-        self.city_by_pos.remove(&city.pos);
+        self.city_by_pos.remove(&self.map.tiles, city.pos);
         self.cities.remove(&cid);
         self.check_elimination(defeated);
         self.city_state_elimination_grievances(defeated, pid, true);
