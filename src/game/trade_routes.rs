@@ -451,7 +451,7 @@ impl Game {
     /// tile only by a tile write, every tile write moves the grid's epoch, the
     /// grid is never replaced whole, and a cloned or loaded game starts with
     /// no answer kept.
-    fn route_gold_wonder_stands(&self) -> bool {
+    pub(super) fn route_gold_wonder_stands(&self) -> bool {
         let epoch = self.map.tiles.epoch();
         let kept = &self.query_memo.route_gold_wonders;
         if let Some((at, stands)) = kept.get() {
