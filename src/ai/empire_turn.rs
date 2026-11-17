@@ -55,7 +55,7 @@ impl BasicAi {
         };
         let mut founders: Vec<String> = listed
             .into_iter()
-            .filter(|belief| g.rules.beliefs.founder.contains_key(*belief))
+            .filter(|belief| g.rules.beliefs.founder.contains_key(belief))
             .map(str::to_string)
             .collect();
         for belief in g.rules.beliefs.founder.keys() {
@@ -374,7 +374,7 @@ impl BasicAi {
             let mut pantheons: Vec<String> = prefix
                 .iter()
                 .copied()
-                .filter(|belief| g.rules.beliefs.pantheon.contains_key(*belief))
+                .filter(|belief| g.rules.beliefs.pantheon.contains_key(belief))
                 .map(str::to_string)
                 .collect();
             for belief in g.rules.beliefs.pantheon.keys() {
@@ -438,7 +438,7 @@ impl BasicAi {
                 "zen_meditation",
             ]
             .into_iter()
-            .filter(|belief| g.rules.beliefs.follower.contains_key(*belief))
+            .filter(|belief| g.rules.beliefs.follower.contains_key(belief))
             .map(str::to_string)
             .collect();
             for belief in g.rules.beliefs.follower.keys() {

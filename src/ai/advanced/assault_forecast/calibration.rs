@@ -945,8 +945,10 @@ enum Job {
     Pair(u64),
 }
 
+/// One job's result. A calibration row carries a full forecast and is many
+/// times a pair row's size, so it is boxed.
 enum Row {
-    Calibrated(CalibrationRow),
+    Calibrated(Box<CalibrationRow>),
     Paired(PairRow),
 }
 
@@ -989,7 +991,7 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
             );
             let go = (*solvent && *family == Family::Mixed)
                 .then(|| play_world(&w, live_seat(tags, true), HORIZON as u32, false, true));
-            Row::Calibrated(CalibrationRow {
+            Row::Calibrated(Box::new(CalibrationRow {
                 seed: *seed,
                 family: *family,
                 solvent: *solvent,
@@ -1001,7 +1003,7 @@ fn run(job: &Job, tags: &BTreeSet<&'static str>) -> Row {
                 forecast_ms,
                 outcome,
                 go,
-            })
+            }))
         }
         Job::Pair(seed) => {
             let w = world(*seed, true);
@@ -2204,7 +2206,7 @@ fn assault_forecast_calibration() {
     let mut pairs = Vec::new();
     for (_, row) in rows {
         match row {
-            Row::Calibrated(row) => calibrated.push(row),
+            Row::Calibrated(row) => calibrated.push(*row),
             Row::Paired(row) => pairs.push(row),
         }
     }
