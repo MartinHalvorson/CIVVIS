@@ -461,9 +461,10 @@ impl Game {
         }
         let stands = self.map.tiles.values().any(|tile| {
             tile.wonder.is_some_and(|wonder| {
-                self.rules.wonders.get_interned(wonder).is_some_and(|spec| {
-                    spec.effects.get("route_district_gold_multiplier").is_some()
-                })
+                self.rules
+                    .wonders
+                    .get_interned(wonder)
+                    .is_some_and(|spec| spec.effects.contains_key("route_district_gold_multiplier"))
             })
         });
         kept.set(Some((epoch, stands)));
