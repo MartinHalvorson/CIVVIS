@@ -2502,3 +2502,48 @@ fn world_politics_is_silent_on_a_battlefield() {
     );
     assert_eq!(politics["attitudes"]["rows"], json!([]));
 }
+
+/// A tile serialized once for a frame parses back to the very tile the
+/// document carries, the document is otherwise unchanged (the barbarian camps
+/// included, which are read off the tiles), and only the first observation a
+/// frame makes is asked for bytes.
+#[test]
+fn a_frame_tile_serialized_once_is_the_tile_the_document_carries() {
+    let mut game = Game::new(3, 32, 20, 77_001, 60, 0);
+    let mut positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    positions.sort();
+    {
+        let tile = game.map.tiles.get_mut(&positions[5]).unwrap();
+        tile.improvement = Some(crate::name!("barbarian_camp"));
+    }
+    {
+        let tile = game.map.tiles.get_mut(&positions[9]).unwrap();
+        tile.storm = Some("blizzard".to_string());
+        tile.disaster_food = 1.5;
+        tile.fallout_until = 7;
+    }
+    let observers: [fn(&Game, usize) -> Value; 2] =
+        [observation_spectator, observation_player_view];
+    for observe in observers {
+        let plain = observe(&game, 0);
+        let (document, bytes) = with_tile_bytes(|| observe(&game, 0));
+        let bytes = bytes.expect("the observation serialized its tiles");
+        let tiles = plain["map"]["tiles"].as_array().expect("tiles");
+        assert_eq!(bytes.len(), tiles.len());
+        for (at, tile) in tiles.iter().enumerate() {
+            assert_eq!(&bytes.value(at), tile, "tile {at}");
+        }
+        let mut expected = plain.clone();
+        expected["map"]["tiles"] = json!([]);
+        assert_eq!(document, expected, "the rest of the document is unchanged");
+    }
+    let ((first, second), bytes) = with_tile_bytes(|| {
+        (
+            observation_spectator(&game, 0),
+            observation_spectator(&game, 0),
+        )
+    });
+    assert!(bytes.is_some());
+    assert_eq!(first["map"]["tiles"], json!([]));
+    assert_eq!(second, observation_spectator(&game, 0));
+}
