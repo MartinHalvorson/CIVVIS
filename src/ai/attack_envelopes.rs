@@ -164,6 +164,27 @@ impl BasicAi {
         // The seat to act: an enemy's reach reads its owner's own state, which
         // only its owner's turn changes (see `EnvelopeBoard::stamp`).
         mix(g.current as u64);
+        // The units are most of the key and the part least often changed
+        // between two asks: kept while no unit is written.
+        mix(g.units_fold_kept(skip_owner, || Self::envelope_units_fold(g, skip_owner)));
+        mix(g.cities.len() as u64);
+        for city in g.cities.values() {
+            mix(u64::from(city.id));
+            mix(city.owner as u64);
+            mix(city.pos.0 as u64);
+            mix(city.pos.1 as u64);
+        }
+        hash
+    }
+
+    /// The units' part of [`Self::attack_envelope_fingerprint`]: every unit
+    /// but `skip_owner`'s, by what an enemy's reach reads of it.
+    fn envelope_units_fold(g: &Game, skip_owner: Option<usize>) -> u64 {
+        let mut hash = FINGERPRINT_SEED;
+        let mut mix = |value: u64| {
+            hash = (hash ^ value).wrapping_mul(FINGERPRINT_SEED);
+            hash ^= hash >> 29;
+        };
         for unit in g
             .units
             .values()
@@ -195,13 +216,6 @@ impl BasicAi {
                 .map_or(u64::MAX, |(q, r)| {
                     (u64::from(q as u32) << 32) | u64::from(r as u32)
                 }));
-        }
-        mix(g.cities.len() as u64);
-        for city in g.cities.values() {
-            mix(u64::from(city.id));
-            mix(city.owner as u64);
-            mix(city.pos.0 as u64);
-            mix(city.pos.1 as u64);
         }
         hash
     }
