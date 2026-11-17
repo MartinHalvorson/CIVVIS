@@ -17,6 +17,7 @@
 //! `settlement_value.rs`.
 
 use super::*;
+use crate::game::adjacency::PlotAdjacencies;
 
 impl AdvancedAi {
     /// Does this turn resolve the delay `settler_blocked_turns` measures?
@@ -46,7 +47,13 @@ impl AdvancedAi {
             return 0.0;
         }
         let positions = g.wdisk(pos, 2);
-        self.settlement_adjacency_value_from_positions(g, pid, pos, &positions)
+        self.settlement_adjacency_value_from_positions(
+            g,
+            pid,
+            pos,
+            &positions,
+            &mut PlotAdjacencies::default(),
+        )
     }
 
     /// The historical score retained for the frozen Advanced control and for
