@@ -355,6 +355,13 @@ impl Game {
     /// crosses. TradeRoute remains compact in saves while wonder behavior is
     /// still derived from the actual route geometry.
     pub(super) fn route_district_gold_multiplier(&self, from: Pos, to: Pos) -> f64 {
+        // Only a wonder on the walk can lift the multiplier above 1. Until one
+        // that can (the Golden Gate Bridge, the Panama Canal) stands anywhere
+        // on the map, no walk can find one, and every city's every route paid
+        // up to forty steps of it on every derivation of its yields.
+        if !self.route_gold_wonder_stands() {
+            return 1.0;
+        }
         let mut current = from;
         let mut multiplier: f64 = 1.0;
         for _ in 0..40 {
@@ -438,6 +445,31 @@ impl Game {
     /// in the host and 0 in the model from the turn it opened (t33) to the turn
     /// it closed (t47), and Antium -> Arpinum through Ostia read **+2** — one per
     /// Roman city on the way. Nothing else in the route ledger moved.
+    /// Whether any tile holds a wonder with `route_district_gold_multiplier`.
+    ///
+    /// Read once per state of the tile grid: a wonder reaches or leaves a
+    /// tile only by a tile write, every tile write moves the grid's epoch, the
+    /// grid is never replaced whole, and a cloned or loaded game starts with
+    /// no answer kept.
+    fn route_gold_wonder_stands(&self) -> bool {
+        let epoch = self.map.tiles.epoch();
+        let kept = &self.query_memo.route_gold_wonders;
+        if let Some((at, stands)) = kept.get() {
+            if at == epoch {
+                return stands;
+            }
+        }
+        let stands = self.map.tiles.values().any(|tile| {
+            tile.wonder.is_some_and(|wonder| {
+                self.rules.wonders.get_interned(wonder).is_some_and(|spec| {
+                    spec.effects.get("route_district_gold_multiplier").is_some()
+                })
+            })
+        });
+        kept.set(Some((epoch, stands)));
+        stands
+    }
+
     pub(super) fn trading_post_route_gold(&self, owner: usize, origin: u32, dest: u32) -> f64 {
         let (Some(origin_city), Some(dest_city)) =
             (self.cities.get(&origin), self.cities.get(&dest))
