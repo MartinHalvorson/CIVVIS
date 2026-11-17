@@ -538,7 +538,7 @@ mod tests {
             })
             .collect::<std::collections::BTreeSet<_>>();
         assert!(explored.contains(&wonder));
-        game.players[0].explored = explored;
+        game.players[0].explored = explored.into();
         // The Scout on the disk's west edge, five tiles west of the city.
         let edge = game
             .wdisk(city_pos, 5)

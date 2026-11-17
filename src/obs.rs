@@ -157,7 +157,7 @@ pub fn observation_spectator(g: &Game, pid: usize) -> Value {
 pub fn visibility(g: &Game, pid: usize) -> (BTreeSet<Pos>, BTreeSet<Pos>) {
     let p = &g.players[pid];
     let vis = g.player_visibility(pid);
-    let mut explored = p.explored.clone();
+    let mut explored = p.explored.to_btree();
     for (partner, alliance) in &p.alliances {
         if alliance.ends > g.turn && alliance.kind == "military" && alliance.level >= 2 {
             explored.extend(g.players[*partner].explored.iter().copied());
@@ -261,7 +261,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
     let mut explored = if omniscient {
         vis.clone()
     } else {
-        p.explored.clone()
+        p.explored.to_btree()
     };
     if !omniscient {
         for viewer in &viewers {

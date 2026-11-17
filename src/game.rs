@@ -1897,6 +1897,10 @@ pub struct QueryCache {
     /// Gold, and the tile grid's epoch it was read at. See
     /// `Game::route_gold_wonder_stands`.
     route_gold_wonders: std::cell::Cell<Option<(u64, bool)>>,
+    /// The attack-envelope key's fold over the units (every unit but one
+    /// owner's, or every unit), and the units' version it was taken at. See
+    /// `Game::units_fold_kept`.
+    units_fold: std::cell::Cell<Option<(u64, Option<usize>, u64)>>,
     keeps_rival_yields: std::cell::Cell<bool>,
     // How many citizen plans and luxury splits were answered from what was
     // kept. See `Game::kept_plans_reused`.
@@ -5332,7 +5336,7 @@ pub struct Player {
     /// Cumulative CO2 emitted by this civilization's power generation.
     #[serde(default)]
     pub co2_emissions: f64,
-    pub explored: BTreeSet<Pos>,
+    pub explored: crate::explored_set::ExploredSet,
     /// Tiles this civilization has seen at any point during its active player
     /// turn. Current sight remains authoritative for rules and targeting; this
     /// short-lived union exists so the map can keep the just-seen frame lit
@@ -5700,7 +5704,7 @@ impl Player {
             city_power: BTreeMap::new(),
             power_fuel_consumed: BTreeMap::new(),
             co2_emissions: 0.0,
-            explored: BTreeSet::new(),
+            explored: Default::default(),
             turn_visible: BTreeSet::new(),
             turn_units: BTreeMap::new(),
             went_around: false,
@@ -10476,6 +10480,27 @@ impl Game {
 
     pub fn city_at(&self, pos: Pos) -> Option<u32> {
         self.city_by_pos.get(&self.map.tiles, pos)
+    }
+
+    #[inline]
+    /// `fold`, a pure function of the units (every unit but `skip`'s, or
+    /// every unit), kept from one call to the next while no unit is written.
+    ///
+    /// Every route that writes a unit moves the roster's version (see
+    /// `Units::mark_mutated`), the version is never reset within one game, and
+    /// a clone keeps nothing (`QueryCache::clone`), so an equal version on the
+    /// same game is an unchanged roster.
+    pub(crate) fn units_fold_kept(&self, skip: Option<usize>, fold: impl FnOnce() -> u64) -> u64 {
+        let version = self.units.vision_epoch();
+        let kept = &self.query_memo.units_fold;
+        if let Some((at, for_skip, value)) = kept.get() {
+            if at == version && for_skip == skip {
+                return value;
+            }
+        }
+        let value = fold();
+        kept.set(Some((version, skip, value)));
+        value
     }
 
     #[inline]
