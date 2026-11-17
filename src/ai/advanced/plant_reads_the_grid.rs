@@ -158,7 +158,7 @@ impl AdvancedAi {
         }
         let Some(&(fuel, _, plant)) = FUELLED_PLANTS
             .iter()
-            .find(|(_, key, _)| spec.effects.get(*key).copied().unwrap_or(0.0) > 0.0)
+            .find(|(_, key, _)| spec.effects.get(key).copied().unwrap_or(0.0) > 0.0)
         else {
             return nothing;
         };

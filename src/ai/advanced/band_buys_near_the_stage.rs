@@ -58,7 +58,7 @@ fn band_stages(g: &Game, pid: usize) -> BTreeSet<Pos> {
                 && !owner.is_minor
                 && !owner.is_barbarian
                 && g.has_met(pid, city.owner)
-                && g.players[pid].explored.contains(*pos)
+                && g.players[pid].explored.contains(pos)
                 && !g.is_at_war(pid, city.owner)
                 && !g.bars_foreign_rock_bands(city.owner, pid)
         })
