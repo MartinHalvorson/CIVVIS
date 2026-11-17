@@ -1225,7 +1225,7 @@ struct SafeHealingTargetCache {
 /// so each envelope carries a key over its own neighbourhood instead.
 struct EnemyEnvelope {
     reach: std::sync::Arc<EnvelopeReach>,
-    sensitive: std::sync::Arc<std::collections::HashSet<Pos>>,
+    sensitive: std::sync::Arc<crate::fast_map::FastSet<Pos>>,
     /// The disk a written tile must fall inside to be able to change this
     /// envelope: centred on the unit, out to its farthest flood tile plus its
     /// attack range. `None` when its flood was empty (a unit locked in place

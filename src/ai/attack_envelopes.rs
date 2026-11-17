@@ -226,8 +226,14 @@ impl BasicAi {
         g: &Game,
         unit: &crate::game::Unit,
         flood: &[Pos],
-    ) -> std::collections::HashSet<Pos> {
-        let mut tiles = std::collections::HashSet::with_capacity(flood.len() * 7 + 7);
+    ) -> crate::fast_map::FastSet<Pos> {
+        // Only ever asked whether it holds a tile, so hashed without the
+        // standard library's SipHash, which is built to resist an adversary
+        // and was most of what this set cost.
+        let mut tiles = crate::fast_map::FastSet::with_capacity_and_hasher(
+            flood.len() * 7 + 7,
+            Default::default(),
+        );
         // ★★★★★ AN EMPTY FLOOD IS NOT AN EMPTY SENSITIVITY. `flow_past` returns
         // nothing at all when `formation_movement_locked_by_zoc` holds, and a
         // set built only from the flood is then empty — so no board change ever
@@ -242,7 +248,7 @@ impl BasicAi {
         // tile — so its own tile and their neighbours are always sensitive,
         // flood or no flood. The same goes for a linked peer, whose lock locks
         // the leader.
-        let seed = |pos: Pos, tiles: &mut std::collections::HashSet<Pos>| {
+        let seed = |pos: Pos, tiles: &mut crate::fast_map::FastSet<Pos>| {
             tiles.insert(pos);
             for neighbour in g.nbrs(pos) {
                 tiles.insert(neighbour);

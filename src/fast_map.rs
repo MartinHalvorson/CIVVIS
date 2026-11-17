@@ -83,6 +83,10 @@ impl Hasher for FastHasher {
 /// walking in key order.
 pub(crate) type FastMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<FastHasher>>;
 
+/// A hash set keyed through [`FastHasher`]: for membership, never for walking
+/// in key order.
+pub(crate) type FastSet<K> = std::collections::HashSet<K, BuildHasherDefault<FastHasher>>;
+
 #[cfg(test)]
 mod tests {
     use super::*;
