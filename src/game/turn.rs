@@ -226,12 +226,23 @@ impl Game {
             faith = 0.0;
         }
         if !self.players[pid].is_minor {
-            let (mut tourism, film_studio_tourism) = self.tourism_components_per_turn(pid);
-            if let Some(partner) = cultural_alliance_partner {
-                tourism += self.tourism_components_per_turn(partner).0 * 0.20;
+            // Three read-only sweeps over every city's yields, which split each
+            // empire's luxuries between its cities: without a scope across them
+            // each city derived the empire's split again. Nothing is written
+            // until the scope is dropped (its guard borrows the game).
+            let ((mut tourism, film_studio_tourism), partner_tourism, religious) = {
+                let _memo = self.query_memo();
+                (
+                    self.tourism_components_per_turn(pid),
+                    cultural_alliance_partner
+                        .map(|partner| self.tourism_components_per_turn(partner).0),
+                    self.religious_tourism_components_per_turn(pid),
+                )
+            };
+            if let Some(partner_tourism) = partner_tourism {
+                tourism += partner_tourism * 0.20;
             }
-            let (religious_tourism, film_studio_religious) =
-                self.religious_tourism_components_per_turn(pid);
+            let (religious_tourism, film_studio_religious) = religious;
             self.players[pid].culture_lifetime += cul;
             self.add_passive_tourism(
                 pid,
