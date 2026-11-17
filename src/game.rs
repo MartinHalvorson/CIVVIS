@@ -1642,14 +1642,14 @@ const GREAT_WORK_COUNTERS: [(&str, &str); 6] = [
     ("music", "great_work:music"),
     ("relic", "great_work:relic"),
 ];
-type HousedWorksByPlayer = BTreeMap<usize, Arc<GreatWorksByCity>>;
+type HousedWorksByPlayer = crate::fast_map::FastMap<usize, Arc<GreatWorksByCity>>;
 type GreatWorkPiecesByCity = BTreeMap<u32, Vec<GreatWorkPiece>>;
-type HousedPiecesByPlayer = BTreeMap<usize, Arc<GreatWorkPiecesByCity>>;
-type GreatWorkSlotsByPlayer = BTreeMap<usize, Vec<(u32, String)>>;
-type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
-type WonderEffectsByPlayer = BTreeMap<usize, BTreeMap<String, f64>>;
-type NationalParksByPlayer = BTreeMap<usize, Vec<(u32, [Pos; 4])>>;
-type RegionalSlotsByPlayer = BTreeMap<usize, Arc<Vec<RegionalSlot>>>;
+type HousedPiecesByPlayer = crate::fast_map::FastMap<usize, Arc<GreatWorkPiecesByCity>>;
+type GreatWorkSlotsByPlayer = crate::fast_map::FastMap<usize, Vec<(u32, String)>>;
+type GreatWorkHousing = crate::fast_map::FastMap<(usize, String, usize), bool>;
+type WonderEffectsByPlayer = crate::fast_map::FastMap<usize, BTreeMap<String, f64>>;
+type NationalParksByPlayer = crate::fast_map::FastMap<usize, Vec<(u32, [Pos; 4])>>;
+type RegionalSlotsByPlayer = crate::fast_map::FastMap<usize, Arc<Vec<RegionalSlot>>>;
 
 /// One active regional building of an empire and the ground it reaches, in
 /// the empire's city then building order. What it sends is still read per
@@ -1676,31 +1676,57 @@ type PurchasePriceMemo = HashMap<(usize, u32, Name, u8, bool), Option<f64>>;
 /// runs, so it may consult this slot or any other. This is the lookup the
 /// engine's memoised reads used to write out one by one.
 #[inline]
-pub(crate) fn remembered<K: Ord, V: Clone>(
-    slot: &std::cell::RefCell<Option<BTreeMap<K, V>>>,
+pub(crate) fn remembered<K, V: Clone, M: MemoMap<K, V>>(
+    slot: &std::cell::RefCell<Option<M>>,
     key: K,
     compute: impl FnOnce() -> V,
 ) -> V {
-    if let Some(value) = slot.borrow().as_ref().and_then(|memo| memo.get(&key)) {
+    if let Some(value) = slot.borrow().as_ref().and_then(|memo| memo.recall(&key)) {
         return value.clone();
     }
     let value = compute();
     if let Some(memo) = slot.borrow_mut().as_mut() {
-        memo.insert(key, value.clone());
+        memo.keep(key, value.clone());
     }
     value
 }
 
+/// A map a memo scope keeps its answers in: asked by key, never walked.
+pub(crate) trait MemoMap<K, V> {
+    fn recall(&self, key: &K) -> Option<&V>;
+    fn keep(&mut self, key: K, value: V);
+}
+
+impl<K: Ord, V> MemoMap<K, V> for BTreeMap<K, V> {
+    fn recall(&self, key: &K) -> Option<&V> {
+        self.get(key)
+    }
+
+    fn keep(&mut self, key: K, value: V) {
+        self.insert(key, value);
+    }
+}
+
+impl<K: std::hash::Hash + Eq, V> MemoMap<K, V> for crate::fast_map::FastMap<K, V> {
+    fn recall(&self, key: &K) -> Option<&V> {
+        self.get(key)
+    }
+
+    fn keep(&mut self, key: K, value: V) {
+        self.insert(key, value);
+    }
+}
+
 #[derive(Default)]
 pub struct QueryCache {
-    yields: std::cell::RefCell<Option<BTreeMap<u32, Yields>>>,
+    yields: std::cell::RefCell<Option<crate::fast_map::FastMap<u32, Yields>>>,
     // Appeal is read far more often than anything else in this cache: the
     // settle and district planners sweep whole regions of the map, and every
     // sweep asks the same tiles again. Measured over a 150-turn six-player
     // game, `tile_appeal` was called 1,240,472 times and 97.1% of those calls
     // recomputed an answer the engine had already produced for that tile that
     // turn -- 34 evaluations per tile per turn, of which one was new.
-    appeal: std::cell::RefCell<Option<BTreeMap<Pos, i32>>>,
+    appeal: std::cell::RefCell<Option<crate::fast_map::FastMap<Pos, i32>>>,
     /// `modeled_tile_yields` per plot.
     ///
     /// ★★★★ THE SAME PLOT PRICED TWICE PER CITY, EVERY TIME. One city-yield
@@ -1711,14 +1737,14 @@ pub struct QueryCache {
     /// techs, civics and policies and its neighbours — nothing a `&self`
     /// query can change — so the answer is kept for the memo scope, exactly
     /// like `appeal`.
-    tile_yields: std::cell::RefCell<Option<BTreeMap<Pos, Yields>>>,
+    tile_yields: std::cell::RefCell<Option<crate::fast_map::FastMap<Pos, Yields>>>,
     /// `district_yields` per standing district. One city-yield derivation
     /// asks each of its districts three times — the citizen strategy, the
     /// citizen plan's fixed food, then the sum — and a district's yields
     /// read only the board, so the answer is kept for the memo scope like
     /// `tile_yields`.
-    district_yields: std::cell::RefCell<Option<BTreeMap<(Name, Pos), Yields>>>,
-    traversal: std::cell::RefCell<Option<BTreeMap<u32, TraversalClass>>>,
+    district_yields: std::cell::RefCell<Option<crate::fast_map::FastMap<(Name, Pos), Yields>>>,
+    traversal: std::cell::RefCell<Option<crate::fast_map::FastMap<u32, TraversalClass>>>,
     /// Every unit currently flying a patrol, as `(owner, tile)`.
     ///
     /// ★★★★ A WHOLE-BOARD FACT ASKED ONCE PER NEIGHBOUR. `can_enter_past`
@@ -1750,8 +1776,8 @@ pub struct QueryCache {
     /// sweep for the support aura. None of it depends on the tile, so a flood
     /// over three hundred tiles asked the same questions three hundred times.
     /// The answers are computed once per unit per memo scope instead.
-    movement: std::cell::RefCell<Option<BTreeMap<u32, MovementProfile>>>,
-    amenities: std::cell::RefCell<Option<BTreeMap<u32, i64>>>,
+    movement: std::cell::RefCell<Option<crate::fast_map::FastMap<u32, MovementProfile>>>,
+    amenities: std::cell::RefCell<Option<crate::fast_map::FastMap<u32, i64>>>,
     // `legal_purchase_actions_for_city` asks `unit_purchase_cost_for_formation`
     // for every unit kind in the ruleset, at all three formations and both
     // currencies, and `legal_actions_within`'s purchase family repeats the
@@ -1768,21 +1794,22 @@ pub struct QueryCache {
     // Ownership-filtered ids are requested throughout AI evaluation. A
     // 100-seat game otherwise rescans every world entity for each request,
     // even when a read-only phase asks for the same empire repeatedly.
-    unit_ids: std::cell::RefCell<Option<BTreeMap<usize, Arc<Vec<u32>>>>>,
+    unit_ids: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, Arc<Vec<u32>>>>>,
     /// Per-player Builder work count within one immutable decision. Several
     /// production gates ask for the same empire census; keep the integer
     /// rather than copying citizen plans. Policy tracing bypasses it.
-    worked_backlog: std::cell::RefCell<Option<BTreeMap<usize, usize>>>,
+    worked_backlog: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, usize>>>,
     // Territory access is a unit-level route predicate. Cache it by unit id
     // while a route call runs, because the same access gates both local and
     // cached planning steps.
-    unit_territory_access: std::cell::RefCell<Option<BTreeMap<u32, Arc<Vec<bool>>>>>,
-    city_ids: std::cell::RefCell<Option<BTreeMap<usize, Vec<u32>>>>,
+    unit_territory_access:
+        std::cell::RefCell<Option<crate::fast_map::FastMap<u32, Arc<Vec<bool>>>>>,
+    city_ids: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, Vec<u32>>>>,
     // Four empire-wide derivations that callers reach for one city at a
     // time. Each is keyed by player, because that is the scope it is
     // computed over, not the scope it is read at.
-    lux_alloc: std::cell::RefCell<Option<BTreeMap<usize, BTreeMap<u32, i64>>>>,
-    lux_names: std::cell::RefCell<Option<BTreeMap<usize, BTreeSet<Name>>>>,
+    lux_alloc: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, BTreeMap<u32, i64>>>>,
+    lux_names: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, BTreeSet<Name>>>>,
     housed_works: std::cell::RefCell<Option<HousedWorksByPlayer>>,
     housed_pieces: std::cell::RefCell<Option<HousedPiecesByPlayer>>,
     // A city-state's patron, which is a poll of every major's effective envoy
@@ -1798,13 +1825,13 @@ pub struct QueryCache {
     // What every regional building in the empire sends this city. Both its
     // yields and its Amenities are read through it, so a single valuation of
     // one city walks the whole empire's buildings twice.
-    regional: std::cell::RefCell<Option<BTreeMap<u32, (Yields, f64)>>>,
+    regional: std::cell::RefCell<Option<crate::fast_map::FastMap<u32, (Yields, f64)>>>,
     // Two facts the luxury allocation asks of every city while it values
     // the whole empire's Amenities. Each city's regional sources ask whether
     // every source city is powered, and each city's own Amenities walk every
     // owned tile of the empire looking for National Parks, so one allocation
     // repeated both empire-wide answers once per city.
-    powered: std::cell::RefCell<Option<BTreeMap<u32, bool>>>,
+    powered: std::cell::RefCell<Option<crate::fast_map::FastMap<u32, bool>>>,
     national_parks: std::cell::RefCell<Option<NationalParksByPlayer>>,
     // Where each empire's regional buildings stand and how far they reach.
     // Every city's regional effects walked every building of every city of
@@ -1820,7 +1847,7 @@ pub struct QueryCache {
     /// `tourism_components_per_turn` per player. A Culture seat's Trader prices
     /// every origin and destination pair, and each pair asks for the whole
     /// empire's Tourism.
-    tourism: std::cell::RefCell<Option<BTreeMap<usize, (f64, f64)>>>,
+    tourism: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, (f64, f64)>>>,
     /// The air-patrol list from the last unit-roster epoch it was built on.
     /// Every route search is its own memo scope, and on a 250-seat world each
     /// one walked every unit in the game to learn that nobody is patrolling.
@@ -1832,7 +1859,7 @@ pub struct QueryCache {
     /// `domestic_tourists` per player. Each seat's victory tracker reads every
     /// rival's count and each count walks every player, which made one frame
     /// cubic in the number of civilizations.
-    domestic_tourists: std::cell::RefCell<Option<BTreeMap<usize, i64>>>,
+    domestic_tourists: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, i64>>>,
     // `note_first_monopoly_moments` runs after successful actions. Its answer
     // is player-independent until a connected resource, city owner, world
     // resource, or suzerainty changes, so retain the expensive census across
