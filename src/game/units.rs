@@ -145,7 +145,7 @@ impl Game {
         self.next_id += 1;
         let id = u.id;
         let sight = spec.sight;
-        self.occ.entry(pos).or_default().push(id);
+        self.occ.push(&self.map.tiles, pos, id);
         self.units.insert(id, u);
         self.reveal(owner, pos, sight);
         self.note_unit_created_moments(owner, kind);
@@ -254,12 +254,7 @@ impl Game {
                     peer.linked_to = None;
                 }
             }
-            if let Some(ids) = self.occ.get_mut(&u.pos) {
-                ids.retain(|i| *i != uid);
-                if ids.is_empty() {
-                    self.occ.remove(&u.pos);
-                }
-            }
+            self.occ.remove(&self.map.tiles, u.pos, uid);
         }
         for aircraft in carried_aircraft {
             self.remove_unit(aircraft);
@@ -346,17 +341,12 @@ impl Game {
             let u = &self.units[&uid];
             (u.pos, u.owner)
         };
-        if let Some(ids) = self.occ.get_mut(&old) {
-            ids.retain(|i| *i != uid);
-            if ids.is_empty() {
-                self.occ.remove(&old);
-            }
-        }
+        self.occ.remove(&self.map.tiles, old, uid);
         let fortification = self.improvement_fortification_at(pos);
         let unit = self.units.get_mut(&uid).unwrap();
         unit.pos = pos;
         unit.fortify_turns = unit.fortify_turns.max(fortification);
-        self.occ.entry(pos).or_default().push(uid);
+        self.occ.push(&self.map.tiles, pos, uid);
         let sight = self.unit_sight(uid);
         self.reveal(owner, pos, sight);
         // Taking the ENEMY's flag decides a capture-the-flag battle on the

@@ -7957,7 +7957,7 @@ pub struct Game {
     /// The units on each tile, in the order they arrived. Asked about one
     /// tile at a time by every movement flood, zone-of-control test and combat
     /// reach, so it is hashed rather than ordered: nothing iterates it.
-    occ: pos_map::PosMap<Vec<u32>>,
+    occ: pos_map::UnitIndex,
     /// The city on each city-centre tile. Hashed for the same reason.
     city_by_pos: pos_map::CityIndex,
     /// Every successfully applied action, in order — the game is exactly
@@ -8542,7 +8542,7 @@ impl From<GameSer> for Game {
             last_special_session: s.last_special_session,
             pending_emergencies: s.pending_emergencies,
             active_emergencies: s.active_emergencies,
-            occ: pos_map::PosMap::default(),
+            occ: pos_map::UnitIndex::default(),
             city_by_pos: pos_map::CityIndex::default(),
             log: crate::actionlog::ActionLog::new(),
         };
@@ -8552,7 +8552,7 @@ impl From<GameSer> for Game {
         // seat. Appending it preserves every existing player id.
         g.ensure_free_city_player();
         for u in g.units.values() {
-            g.occ.entry(u.pos).or_default().push(u.id);
+            g.occ.push(&g.map.tiles, u.pos, u.id);
         }
         for c in g.cities.values() {
             g.city_by_pos.insert(&g.map.tiles, c.pos, c.id);
@@ -9332,7 +9332,7 @@ impl Game {
             last_special_session: 0,
             pending_emergencies: Vec::new(),
             active_emergencies: Vec::new(),
-            occ: pos_map::PosMap::default(),
+            occ: pos_map::UnitIndex::default(),
             city_by_pos: pos_map::CityIndex::default(),
             log: crate::actionlog::ActionLog::new(),
             events: EventLog::default(),
@@ -10480,8 +10480,7 @@ impl Game {
 
     #[inline]
     pub fn unit_ids_at(&self, pos: Pos) -> &[u32] {
-        const EMPTY: &[u32] = &[];
-        self.occ.get(&pos).map_or(EMPTY, Vec::as_slice)
+        self.occ.get(&self.map.tiles, pos)
     }
 
     /// Prefer [`unit_ids_at`](Self::unit_ids_at) at a read-only call site — it
