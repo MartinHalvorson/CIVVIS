@@ -303,12 +303,9 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         }
     }
     let revealed = revealed_resources(g, pid, omniscient);
-    let as_bytes = TILE_BYTES.with(|slot| matches!(*slot.borrow(), Some(None)));
-    let mut tile_bytes = as_bytes.then(|| TileBytes {
-        bytes: Vec::new(),
-        ends: Vec::new(),
-    });
-    let mut camps_from_bytes: Vec<Value> = Vec::new();
+    let marks_asked = tile_marks_asked();
+    let as_marks = marks_asked.is_some();
+    let mut tile_docs: Vec<TileDoc> = Vec::new();
     let tiles: Vec<Value> = explored
         .iter()
         .filter_map(|pos| {
@@ -335,16 +332,16 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 (&memory.tile, memory.owner)
             };
             let planned = planned.get(pos).copied().filter(|_| live);
-            if let Some(out) = tile_bytes.as_mut() {
-                let doc = tile_doc(g, tile, owner, &revealed, live, &tourism_by_tile, planned);
-                if doc
-                    .improvement
-                    .is_some_and(|improvement| improvement == "barbarian_camp")
-                {
-                    camps_from_bytes.push(json!(doc.pos));
-                }
-                serde_json::to_writer(&mut out.bytes, &doc).ok()?;
-                out.ends.push(out.bytes.len());
+            if as_marks {
+                tile_docs.push(tile_doc(
+                    g,
+                    tile,
+                    owner,
+                    &revealed,
+                    live,
+                    &tourism_by_tile,
+                    planned,
+                ));
                 return None;
             }
             Some(tile_json(
@@ -358,8 +355,28 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             ))
         })
         .collect();
-    if let Some(out) = tile_bytes {
-        TILE_BYTES.with(|slot| *slot.borrow_mut() = Some(Some(out)));
+    let mut camps_from_docs: Vec<Value> = Vec::new();
+    if let Some(held) = marks_asked {
+        let marks: Vec<u64> = tile_docs.iter().map(tile_mark::mark_of).collect();
+        let held = held.filter(|held| held.len() == marks.len());
+        let values = tile_docs
+            .iter()
+            .enumerate()
+            .map(|(at, doc)| {
+                if doc
+                    .improvement
+                    .is_some_and(|improvement| improvement == "barbarian_camp")
+                {
+                    camps_from_docs.push(json!(doc.pos));
+                }
+                held.as_ref()
+                    .is_none_or(|held| held[at] != marks[at])
+                    .then(|| serde_json::to_value(doc).unwrap_or(Value::Null))
+            })
+            .collect();
+        TILE_MARKS.with(|slot| {
+            *slot.borrow_mut() = Some(MarkRequest::Answered(FrameTileMarks { marks, values }))
+        });
     }
     let mut known_units: BTreeMap<u32, &Unit> = g
         .units
@@ -492,8 +509,8 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             KnownCity::Live(city) => live_city_json(g, pid, city, omniscient, &vis),
         })
         .collect();
-    let camps: Vec<Value> = if as_bytes {
-        camps_from_bytes
+    let camps: Vec<Value> = if as_marks {
+        camps_from_docs
     } else {
         tiles
             .iter()
@@ -1888,52 +1905,75 @@ fn tile_json(
     .unwrap_or(Value::Null)
 }
 
-/// A frame's tiles, each serialized once into one buffer, in document order.
+/// A frame's tiles for delivery: every tile's mark, and the tile itself as a
+/// `Value` for each tile the frame sends.
 ///
-/// ★★★ A FRAME BUILT EVERY TILE'S JSON TO SEND THE FEW THAT CHANGED. The
-/// spectator delivers only the tiles whose mark moved since the page's last
-/// frame, but marking them meant building every tile as a `serde_json::Value`
-/// (thirty-one keys, each an allocated string in a tree) every frame: on a
-/// whole site game the frame document was 10.8% of the engine thread and the
-/// tile values most of it. The frame paths now ask for the tiles as bytes,
-/// mark the bytes, and build a `Value` only for a tile they send.
-pub(crate) struct TileBytes {
-    bytes: Vec<u8>,
-    ends: Vec<usize>,
+/// ★★★ A FRAME BUILT EVERY TILE'S JSON TO SEND THE FEW THAT CHANGED. A page is
+/// sent only the tiles whose mark moved since the frame it holds, but marking
+/// them meant building every tile as a `serde_json::Value` (thirty-one keys,
+/// each an allocated string in a tree) and walking it, every frame: on a whole
+/// site game the frame document was 10.8% of the engine thread. Now each tile
+/// is marked straight off its typed document (`tile_mark::mark_of`), and a
+/// `Value` is built only for a tile whose mark differs from the one the page
+/// holds, or for every tile when the page holds none.
+pub(crate) struct FrameTileMarks {
+    pub(crate) marks: Vec<u64>,
+    values: Vec<Option<Value>>,
 }
 
-impl TileBytes {
-    pub(crate) fn len(&self) -> usize {
-        self.ends.len()
+impl FrameTileMarks {
+    /// The tile at `at` as the document carries it. Built for every tile the
+    /// frame sends, as decided by the marks the page was found to hold.
+    pub(crate) fn take(&mut self, at: usize) -> Value {
+        self.values[at].take().unwrap_or(Value::Null)
     }
+}
 
-    pub(crate) fn get(&self, at: usize) -> &[u8] {
-        let start = if at == 0 { 0 } else { self.ends[at - 1] };
-        &self.bytes[start..self.ends[at]]
-    }
-
-    /// The tile as the `Value` the document used to carry.
-    pub(crate) fn value(&self, at: usize) -> Value {
-        serde_json::from_slice(self.get(at)).unwrap_or(Value::Null)
-    }
+enum MarkRequest {
+    /// The marks of the tiles the page holds, if it holds a frame.
+    Asked(Option<Vec<u64>>),
+    Answered(FrameTileMarks),
 }
 
 thread_local! {
-    /// `None`: the next observation builds its tiles as values. `Some(None)`:
-    /// it serializes them here instead. `Some(Some(_))`: it has.
-    static TILE_BYTES: std::cell::RefCell<Option<Option<TileBytes>>> =
+    static TILE_MARKS: std::cell::RefCell<Option<MarkRequest>> =
         const { std::cell::RefCell::new(None) };
 }
 
-/// Run `observe` with the first observation it makes serializing its tiles
-/// into [`TileBytes`] (and leaving the document's `map.tiles` empty), and
-/// hand them back beside its answer. `None` if it made no observation.
-pub(crate) fn with_tile_bytes<T>(observe: impl FnOnce() -> T) -> (T, Option<TileBytes>) {
-    TILE_BYTES.with(|slot| *slot.borrow_mut() = Some(None));
+/// Run `observe` with the first observation it makes marking its tiles into
+/// [`FrameTileMarks`] (and leaving the document's `map.tiles` empty), given the
+/// marks of the tiles the page holds (`held`, `None` when it holds none or
+/// cannot be sent a patch). A tile is built as a `Value` when the page holds
+/// no tiles, holds a different number of them, or holds a different mark for
+/// it: exactly the tiles a delivery comparing the same marks sends.
+pub(crate) fn with_tile_marks<T>(
+    held: Option<Vec<u64>>,
+    observe: impl FnOnce() -> T,
+) -> (T, Option<FrameTileMarks>) {
+    TILE_MARKS.with(|slot| *slot.borrow_mut() = Some(MarkRequest::Asked(held)));
     let answer = observe();
-    let tiles = TILE_BYTES.with(|slot| slot.borrow_mut().take().flatten());
+    let tiles = TILE_MARKS.with(|slot| match slot.borrow_mut().take() {
+        Some(MarkRequest::Answered(tiles)) => Some(tiles),
+        _ => None,
+    });
     (answer, tiles)
 }
+
+/// The held marks, if this observation is the first asked to mark its tiles.
+fn tile_marks_asked() -> Option<Option<Vec<u64>>> {
+    TILE_MARKS.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        match slot.take() {
+            Some(MarkRequest::Asked(held)) => Some(held),
+            other => {
+                *slot = other;
+                None
+            }
+        }
+    })
+}
+
+mod tile_mark;
 
 struct PublicCity<'a> {
     id: u32,

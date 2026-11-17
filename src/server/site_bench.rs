@@ -143,13 +143,13 @@ fn checkpoint(session: &Session) -> Checkpoint {
 /// The document one frame sends: the state, what the agents thought since the
 /// page last asked, and the tiles that changed since the frame it holds.
 fn frame_document(session: &Session, marks: &mut Option<Vec<u64>>, cursor: &mut u64) -> String {
-    let (mut document, tile_bytes) = crate::obs::with_tile_bytes(|| session.state());
+    let (mut document, tile_marks) = crate::obs::with_tile_marks(marks.clone(), || session.state());
     let thoughts = session.reasoning_json(*cursor);
     if let Some(next) = thoughts["cursor"].as_u64() {
         *cursor = next;
     }
     document["ai_reasoning"] = thoughts;
-    if let Some(tiles) = FrameTiles::take(&mut document, tile_bytes) {
+    if let Some(tiles) = FrameTiles::take(&mut document, tile_marks) {
         if let Some(Value::Object(map)) = document.get_mut("map") {
             let now: Vec<u64> = tiles.marks();
             match marks.as_ref().filter(|prior| prior.len() == now.len()) {

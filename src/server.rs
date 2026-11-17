@@ -1884,27 +1884,27 @@ impl Shared {
         frame: SpectatorFrame,
         have: Option<SpectatorFrame>,
         o: &mut Value,
-        bytes: Option<crate::obs::TileBytes>,
     ) {
         // Lift the array out of the map rather than blanking it in place: a
         // patched response carries no `tiles` key at all, and a null one would
         // read to the page as a world with no ground in it.
-        let Some(tiles) = FrameTiles::take(o, bytes) else {
+        let Some(tiles) = FrameTiles::take(o, None) else {
             return;
         };
         let marks: Vec<u64> = tiles.marks();
         let now = Instant::now();
         let mut delivery = lock_or_recover(&self.frame_delivery);
         let seat = delivery.seat(viewer, now);
-        let changed: Option<Vec<Value>> = seat
+        let prior: Option<&Vec<u64>> = seat
             .tiles
             .as_ref()
             .filter(|(held, cached)| {
                 held.seed == frame.seed && Some(*held) == have && cached.len() == marks.len()
             })
-            .map(|(_, cached)| tiles.changed(cached, &marks));
-        match changed {
-            Some(changed) => {
+            .map(|(_, cached)| cached);
+        match prior {
+            Some(prior) => {
+                let changed = tiles.changed(prior, &marks);
                 // The map key carries the patch and no `tiles` at all: a page
                 // that reported a baseline is holding one, and a full array
                 // arriving anyway would be a megabyte saying nothing.
@@ -3871,27 +3871,30 @@ fn tile_mark(tile: &Value) -> u64 {
     hasher.finish()
 }
 
-/// A frame's tiles, lifted out of its document: the values it carried, or the
-/// bytes its observation serialized them into instead
-/// ([`crate::obs::with_tile_bytes`]). A mark is compared only with marks made
-/// the same way, and two tiles mark alike exactly when they are the same
-/// tile, so either way the same tiles are sent.
+/// A frame's tiles, lifted out of its document: the values it carried, or
+/// the marks its observation took instead ([`crate::obs::with_tile_marks`]),
+/// with a value for every tile that is sent. A mark is compared only with
+/// marks made the same way, and two tiles mark alike exactly when they are
+/// the same tile, so either way the same tiles are sent, as the same values.
 pub(crate) enum FrameTiles {
     Values(Vec<Value>),
-    Bytes(crate::obs::TileBytes),
+    Marked(crate::obs::FrameTileMarks),
 }
 
 impl FrameTiles {
     /// Lift `map.tiles` out of `o`.
-    pub(crate) fn take(o: &mut Value, bytes: Option<crate::obs::TileBytes>) -> Option<Self> {
+    pub(crate) fn take(
+        o: &mut Value,
+        marked: Option<crate::obs::FrameTileMarks>,
+    ) -> Option<Self> {
         let Some(Value::Object(map)) = o.get_mut("map") else {
             return None;
         };
         let Some(Value::Array(tiles)) = map.remove("tiles") else {
             return None;
         };
-        Some(match bytes {
-            Some(bytes) => FrameTiles::Bytes(bytes),
+        Some(match marked {
+            Some(marked) => FrameTiles::Marked(marked),
             None => FrameTiles::Values(tiles),
         })
     }
@@ -3899,33 +3902,27 @@ impl FrameTiles {
     pub(crate) fn marks(&self) -> Vec<u64> {
         match self {
             FrameTiles::Values(tiles) => tiles.iter().map(tile_mark).collect(),
-            FrameTiles::Bytes(bytes) => (0..bytes.len())
-                .map(|at| {
-                    let mut hasher = MarkHasher::default();
-                    hasher.write(bytes.get(at));
-                    hasher.finish()
-                })
-                .collect(),
+            FrameTiles::Marked(marked) => marked.marks.clone(),
         }
     }
 
     /// `[index, tile]` for every tile whose mark moved from `prior` to `now`.
-    pub(crate) fn changed(&self, prior: &[u64], now: &[u64]) -> Vec<Value> {
-        (0..now.len())
-            .filter(|at| prior[*at] != now[*at])
-            .map(|at| match self {
-                FrameTiles::Values(tiles) => json!([at, tiles[at]]),
-                FrameTiles::Bytes(bytes) => json!([at, bytes.value(at)]),
-            })
-            .collect()
+    pub(crate) fn changed(self, prior: &[u64], now: &[u64]) -> Vec<Value> {
+        let changed = (0..now.len()).filter(|at| prior[*at] != now[*at]);
+        match self {
+            FrameTiles::Values(tiles) => changed.map(|at| json!([at, tiles[at]])).collect(),
+            FrameTiles::Marked(mut marked) => {
+                changed.map(|at| json!([at, marked.take(at)])).collect()
+            }
+        }
     }
 
     /// Every tile, as the document's `tiles` array.
     pub(crate) fn into_array(self) -> Value {
         match self {
             FrameTiles::Values(tiles) => Value::Array(tiles),
-            FrameTiles::Bytes(bytes) => {
-                Value::Array((0..bytes.len()).map(|at| bytes.value(at)).collect())
+            FrameTiles::Marked(mut marked) => {
+                Value::Array((0..marked.marks.len()).map(|at| marked.take(at)).collect())
             }
         }
     }
@@ -5049,17 +5046,11 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             // none of them are reading the reasoning log.
             let wants_reasoning = query_value(&request_target, "think")
                 .map(|cursor| cursor.parse::<u64>().unwrap_or(0));
-            let (mut o, frame, tile_bytes) = {
+            let (mut o, frame) = {
                 let session = lock_or_recover(&sh.session);
                 let frame =
                     spectator_frame(&session.game, sh.frame_sequence.load(Ordering::Relaxed));
-                // A painting viewer is sent only the tiles that changed: ask
-                // for them as bytes and build values only for those.
-                let (mut observed, tile_bytes) = if painting_viewer.is_some() {
-                    crate::obs::with_tile_bytes(|| session.state())
-                } else {
-                    (session.state(), None)
-                };
+                let mut observed = session.state();
                 observed["frame_sequence"] = json!(frame.sequence);
                 if wants_planet {
                     if let Some(geometry) = crate::obs::planet_geometry(&session.game) {
@@ -5069,11 +5060,11 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 if let Some(cursor) = wants_reasoning {
                     observed["ai_reasoning"] = session.reasoning_json(cursor);
                 }
-                (observed, frame, tile_bytes)
+                (observed, frame)
             };
             decorate(&mut o, sh);
             if painting_viewer.is_some() {
-                sh.deliver_tiles(&viewer, frame, have, &mut o, tile_bytes);
+                sh.deliver_tiles(&viewer, frame, have, &mut o);
             }
             if respond_json(stream, &o) && painting_viewer.is_some() {
                 // Remember which exact snapshot this page is allowed to

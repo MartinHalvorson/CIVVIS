@@ -2503,12 +2503,13 @@ fn world_politics_is_silent_on_a_battlefield() {
     assert_eq!(politics["attitudes"]["rows"], json!([]));
 }
 
-/// A tile serialized once for a frame parses back to the very tile the
-/// document carries, the document is otherwise unchanged (the barbarian camps
-/// included, which are read off the tiles), and only the first observation a
-/// frame makes is asked for bytes.
+/// A frame that marks its tiles builds, for every tile it sends, the very tile
+/// the document carries; it builds every tile for a page that holds none, and
+/// only the tiles whose mark moved for a page that holds a frame. The rest of
+/// the document is unchanged (the barbarian camps included, which are read off
+/// the tiles), and only the first observation a frame makes marks its tiles.
 #[test]
-fn a_frame_tile_serialized_once_is_the_tile_the_document_carries() {
+fn a_marked_frame_builds_exactly_the_tiles_it_sends() {
     let mut game = Game::new(3, 32, 20, 77_001, 60, 0);
     let mut positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
     positions.sort();
@@ -2526,24 +2527,60 @@ fn a_frame_tile_serialized_once_is_the_tile_the_document_carries() {
         [observation_spectator, observation_player_view];
     for observe in observers {
         let plain = observe(&game, 0);
-        let (document, bytes) = with_tile_bytes(|| observe(&game, 0));
-        let bytes = bytes.expect("the observation serialized its tiles");
-        let tiles = plain["map"]["tiles"].as_array().expect("tiles");
-        assert_eq!(bytes.len(), tiles.len());
+        let tiles = plain["map"]["tiles"].as_array().expect("tiles").clone();
+
+        // Holding nothing: every tile is built, as the document carries it.
+        let (document, marked) = with_tile_marks(None, || observe(&game, 0));
+        let mut marked = marked.expect("the observation marked its tiles");
+        assert_eq!(marked.marks.len(), tiles.len());
+        let marks = marked.marks.clone();
         for (at, tile) in tiles.iter().enumerate() {
-            assert_eq!(&bytes.value(at), tile, "tile {at}");
+            assert_eq!(&marked.take(at), tile, "tile {at}");
         }
         let mut expected = plain.clone();
         expected["map"]["tiles"] = json!([]);
         assert_eq!(document, expected, "the rest of the document is unchanged");
+
+        // Holding the same marks but two: only those two are built, and
+        // nothing about an unchanged tile moves its mark.
+        let mut held = marks.clone();
+        held[3] ^= 1;
+        held[9] ^= 1;
+        let (_, marked) = with_tile_marks(Some(held), || observe(&game, 0));
+        let mut marked = marked.expect("marked");
+        assert_eq!(marked.marks, marks);
+        for at in 0..tiles.len() {
+            let built = marked.take(at);
+            if at == 3 || at == 9 {
+                assert_eq!(&built, &tiles[at]);
+            } else {
+                assert_eq!(built, Value::Null, "tile {at} was built though it is held");
+            }
+        }
+
+        // Holding a different number of tiles: every tile is built.
+        let (_, marked) = with_tile_marks(Some(vec![0; 3]), || observe(&game, 0));
+        let mut marked = marked.expect("marked");
+        assert_eq!(&marked.take(0), &tiles[0]);
     }
-    let ((first, second), bytes) = with_tile_bytes(|| {
+
+    // A tile that changes marks apart.
+    let (_, before) = with_tile_marks(None, || observation_spectator(&game, 0));
+    game.map.tiles.get_mut(&positions[12]).unwrap().road = 2;
+    let (_, after) = with_tile_marks(None, || observation_spectator(&game, 0));
+    let (before, after) = (before.unwrap().marks, after.unwrap().marks);
+    let moved: Vec<usize> = (0..before.len())
+        .filter(|at| before[*at] != after[*at])
+        .collect();
+    assert!(!moved.is_empty(), "a road moves its tile's mark");
+
+    let ((first, second), marked) = with_tile_marks(None, || {
         (
             observation_spectator(&game, 0),
             observation_spectator(&game, 0),
         )
     });
-    assert!(bytes.is_some());
+    assert!(marked.is_some());
     assert_eq!(first["map"]["tiles"], json!([]));
     assert_eq!(second, observation_spectator(&game, 0));
 }
