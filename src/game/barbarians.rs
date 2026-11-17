@@ -162,7 +162,7 @@ impl Game {
             }
             if t.owner_city.is_some()
                 || t.improvement.is_some()
-                || self.city_by_pos.contains_key(pos)
+                || self.city_at(*pos).is_some()
                 || !self.unit_ids_at(*pos).is_empty()
             {
                 continue;
