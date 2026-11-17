@@ -435,46 +435,24 @@ mod tests {
         }
     }
 
-    /// Every adjacency key any district ships must be one the engine's
-    /// `count` recognises — a typo'd key would otherwise score zero forever
-    /// and no live path would ever notice.
+    /// Every adjacency key any district ships must be one the engine counts —
+    /// a typo'd key would otherwise score zero forever and no live path would
+    /// ever notice — and the table the count reads must say the same of it as
+    /// the key's own text.
     #[test]
     fn every_shipped_adjacency_key_is_recognised() {
         let (game, _, _) = flattened_game();
-        let known = [
-            "self",
-            "river",
-            "mountain",
-            "forest",
-            "woods",
-            "rainforest",
-            "jungle",
-            "natural_wonder",
-            "reef",
-            "great_barrier_reef",
-            "geothermal_fissure",
-            "pamukkale",
-            "district",
-            "city_center",
-            "wonder",
-            "coast_resource",
-            "sea_resource",
-            "strategic_resource",
-            "luxury_resource",
-            "resource",
-            "mine",
-            "quarry",
-            "lumber_mill",
-            "plantation",
-            "farm",
-        ];
         for (district, spec) in &game.rules.districts {
-            for key in spec.adjacency.keys() {
-                assert!(
-                    known.contains(&key.as_str())
-                        || game.rules.districts.contains_key(key.as_str()),
+            let table = &game.rules.district_adjacency_counts[district.as_str()];
+            assert_eq!(table.len(), spec.adjacency.len(), "{district}");
+            for (key, kind) in spec.adjacency.keys().zip(table) {
+                let read = game.rules.adjacency_count_of(key);
+                assert_ne!(
+                    read,
+                    crate::rules::AdjacencyCount::Nothing,
                     "{district} adjacency key {key} is neither a counted kind nor a district"
                 );
+                assert_eq!(*kind, read, "{district} adjacency key {key}");
             }
         }
     }
