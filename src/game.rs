@@ -11940,9 +11940,10 @@ impl Game {
         // No wonder in the ruleset grants anything towards this, so no
         // arrangement of built wonders can either — and the alternative is
         // walking every city in the world to reach that same zero.
-        if !self.rules.effect_index.wonders(effect) {
+        // A key the index holds comes back interned, for the scalar path.
+        let Some((&effect_name, _)) = self.rules.effect_index.wonders.get_key_value(effect) else {
             return 0.0;
-        }
+        };
         // The memo is deliberately guard-scoped. `QueryMemo` borrows the
         // world immutably, so a cached aggregate cannot survive a wonder
         // completion, capture, or raze and become stale. Outside a memo
@@ -11957,8 +11958,7 @@ impl Game {
                 .map(|wonder| {
                     self.rules.wonders[wonder]
                         .effects
-                        .get(effect)
-                        .copied()
+                        .get_name(effect_name)
                         .unwrap_or(0.0)
                 })
                 .sum();
@@ -12630,9 +12630,9 @@ impl Game {
     pub(crate) fn governor_effect(&self, pid: usize, cid: u32, effect: &str) -> f64 {
         // Deciding whether a Governor is established walks the roster and the
         // city; no title or promotion granting this makes that moot.
-        if !self.rules.effect_index.governors(effect) {
+        let Some((&effect, _)) = self.rules.effect_index.governors.get_key_value(effect) else {
             return 0.0;
-        }
+        };
         self.players[pid]
             .governor_roster
             .iter()
@@ -12641,12 +12641,12 @@ impl Game {
             })
             .map(|(governor, state)| {
                 let spec = &self.rules.governors[governor];
-                spec.effects.get(effect).copied().unwrap_or(0.0)
+                spec.effects.get_name(effect).unwrap_or(0.0)
                     + state
                         .promotions
                         .iter()
                         .filter_map(|promotion| spec.promotions.get(promotion))
-                        .filter_map(|promotion| promotion.effects.get(effect))
+                        .filter_map(|promotion| promotion.effects.get_name(effect))
                         .sum::<f64>()
             })
             .sum()
