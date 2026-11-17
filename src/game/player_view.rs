@@ -368,7 +368,7 @@ impl Game {
         // referring to a city founded earlier in this plan remain replayable.
         view.occ.clear();
         for unit in view.units.values() {
-            view.occ.entry(unit.pos).or_default().push(unit.id);
+            view.occ.push(&view.map.tiles, unit.pos, unit.id);
         }
         view.city_by_pos.clear();
         for city in view.cities.values() {
