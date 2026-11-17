@@ -488,6 +488,7 @@ mod city;
 /// `game/congress.rs`.
 mod congress;
 mod defending_district;
+mod pos_map;
 pub use defending_district::DefendingDistrict;
 #[cfg(test)]
 pub(crate) mod defending_district_tests;
@@ -7926,8 +7927,12 @@ pub struct Game {
     pub last_special_session: u32,
     pub pending_emergencies: Vec<EmergencyProposal>,
     pub active_emergencies: Vec<Emergency>,
-    occ: BTreeMap<Pos, Vec<u32>>,
-    city_by_pos: BTreeMap<Pos, u32>,
+    /// The units on each tile, in the order they arrived. Asked about one
+    /// tile at a time by every movement flood, zone-of-control test and combat
+    /// reach, so it is hashed rather than ordered: nothing iterates it.
+    occ: pos_map::PosMap<Vec<u32>>,
+    /// The city on each city-centre tile. Hashed for the same reason.
+    city_by_pos: pos_map::PosMap<u32>,
     /// Every successfully applied action, in order — the game is exactly
     /// f(seed+params, log), so this is the replay/desync-detection record.
     /// Runtime-only (not in saves yet).
@@ -8510,8 +8515,8 @@ impl From<GameSer> for Game {
             last_special_session: s.last_special_session,
             pending_emergencies: s.pending_emergencies,
             active_emergencies: s.active_emergencies,
-            occ: BTreeMap::new(),
-            city_by_pos: BTreeMap::new(),
+            occ: pos_map::PosMap::default(),
+            city_by_pos: pos_map::PosMap::default(),
             log: crate::actionlog::ActionLog::new(),
         };
         g.set_host_research_prerequisites(s.host_research_prerequisites)
@@ -9300,8 +9305,8 @@ impl Game {
             last_special_session: 0,
             pending_emergencies: Vec::new(),
             active_emergencies: Vec::new(),
-            occ: BTreeMap::new(),
-            city_by_pos: BTreeMap::new(),
+            occ: pos_map::PosMap::default(),
+            city_by_pos: pos_map::PosMap::default(),
             log: crate::actionlog::ActionLog::new(),
             events: EventLog::default(),
         };
