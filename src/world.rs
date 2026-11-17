@@ -137,7 +137,12 @@ pub struct TileMemory {
     /// it is kept out of the shared map. Restamping it in place would copy
     /// every remembered tile — a few hundred hexes, each with its own
     /// strings — which is most of what refreshing a seat's map used to cost.
-    stamps: BTreeMap<Pos, u32>,
+    ///
+    /// Hashed, not ordered: it is only ever asked about one position at a
+    /// time (`mark_seen` runs for every freshly seen tile of every refresh),
+    /// and saves are written from `tiles` in order, reading each stamp back
+    /// by position.
+    stamps: crate::fast_map::FastMap<Pos, u32>,
 }
 
 impl TileMemory {
