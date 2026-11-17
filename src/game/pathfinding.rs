@@ -1173,7 +1173,7 @@ impl Game {
             None => return vec![],
         };
         let best = self.flow(uid, start, moves);
-        self.stops_in(uid, start, best.into_keys())
+        self.stops_in(uid, start, best.into_iter().map(|(pos, _)| pos))
     }
 
     /// [`Self::reachable`], and every tile its flood relaxed (the start
@@ -1183,9 +1183,12 @@ impl Game {
             return (vec![], vec![]);
         };
         let best = self.flow(uid, start, moves);
-        let mut relaxed: Vec<Pos> = best.keys().copied().collect();
+        let mut relaxed: Vec<Pos> = best.iter().map(|(pos, _)| *pos).collect();
         relaxed.push(start);
-        (self.stops_in(uid, start, best.into_keys()), relaxed)
+        (
+            self.stops_in(uid, start, best.into_iter().map(|(pos, _)| pos)),
+            relaxed,
+        )
     }
 
     fn stops_in(&self, uid: u32, start: Pos, tiles: impl Iterator<Item = Pos>) -> Vec<Pos> {
@@ -1222,7 +1225,10 @@ impl Game {
             return vec![];
         };
         let best = self.flow_past(uid, start, self.unit_max_moves(uid), true);
-        best.into_keys().filter(|p| *p != start).collect()
+        best.into_iter()
+            .map(|(pos, _)| pos)
+            .filter(|p| *p != start)
+            .collect()
     }
 
     /// Every legal single step inside this turn's remaining movement, as
@@ -1251,7 +1257,7 @@ impl Game {
         let _memo = self.query_memo();
         let best = self.flow(uid, start, moves);
         let mut steps = Vec::new();
-        for (&from, &rem) in &best {
+        for &(from, rem) in &best {
             if rem <= 0.0 {
                 continue;
             }
@@ -1554,7 +1560,7 @@ impl Game {
         distance
     }
 
-    pub(super) fn flow(&self, uid: u32, start: Pos, moves: f64) -> BTreeMap<Pos, f64> {
+    pub(super) fn flow(&self, uid: u32, start: Pos, moves: f64) -> Vec<(Pos, f64)> {
         self.flow_past(uid, start, moves, false)
     }
 
@@ -1597,9 +1603,14 @@ impl Game {
         start: Pos,
         moves: f64,
         through_units: bool,
-    ) -> BTreeMap<Pos, f64> {
-        let mut best = BTreeMap::new();
+    ) -> Vec<(Pos, f64)> {
+        // Every caller walks the flood in map order and none asks it for one
+        // tile, so it is a list sorted by position: the same pairs in the same
+        // order the ordered map it used to be iterated, without a tree node
+        // allocated for every tile reached. The flood reaches each tile once.
+        let mut best = Vec::new();
         self.flow_past_into(uid, start, moves, through_units, &mut best);
+        best.sort_unstable_by_key(|(pos, _)| *pos);
         best
     }
 }
