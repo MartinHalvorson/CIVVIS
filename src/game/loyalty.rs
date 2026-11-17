@@ -491,9 +491,30 @@ impl Game {
             Join(u32, usize),
         }
 
+        // ★★ EVERY CITY'S CHANGE IS READ FIRST, UNDER ONE MEMO. Each city's
+        // change used to open a scope of its own, and each asked for its
+        // Amenities, which split the empire's luxuries between all of its
+        // cities: so the empire's split, and every city's local Amenities, were
+        // derived once per city, every turn (1.8% of a late site game).
+        //
+        // Reading them all before writing any is the same: the loop below
+        // writes a city's `loyalty` and `free_city_pressure`, and a change
+        // reads neither of another city's. `free_city_pressure` is read
+        // only here, of the city just written. A city's loyalty is read
+        // by its own change (when a wonder locks it), its own yields (the
+        // loyalty band, a full-loyalty building) and its own growth; the
+        // pressure a city exerts reads its population, palace, age and
+        // projects, and the luxury split reads Amenities and population.
+        // Cities change hands only after the loop.
+        let changes: Vec<(u32, LoyaltyChange)> = {
+            let _memo = self.query_memo();
+            self.player_city_ids(pid)
+                .into_iter()
+                .map(|cid| (cid, self.loyalty_change_for_city(pid, cid)))
+                .collect()
+        };
         let mut flips = Vec::new();
-        for cid in self.player_city_ids(pid) {
-            let change = self.loyalty_change_for_city(pid, cid);
+        for (cid, change) in changes {
             if change.locked {
                 self.cities.get_mut(&cid).unwrap().loyalty = 100.0;
                 continue;
