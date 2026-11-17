@@ -24,11 +24,20 @@ orders are issued in-game, and the turn ends. Every line of what happened is in
 ``~/civvis-civ6-runs/hotseat/<tag>/`` (``hotseat.log``, ``turns.jsonl``, one
 directory per jack seat with its ``events.jsonl``/``brain.log``/``why.log``).
 
+Stopping. ``--stop`` (or Ctrl-C in the harness's terminal) stops the decision
+workers and the harness and leaves Civ VI and the control mod up: until a
+worker is back, a jack seat's turn waits out the mod's order poll and then
+plays on the mod's own fallback ladder, so save or ``--attach`` again soon.
+``--stop --quit-game`` also closes Civ VI (when this harness started it) and
+removes the mod; closing Civ VI yourself ends the harness the same way.
+
 Saves. Civ VI autosaves every turn, and the mod also saves
-``<tag>-T<turn>`` every ``--save-every`` turns (Saves/Hotseat in Civ VI's load
-menu). To resume a stopped game: start Civ VI, Multiplayer -> Hot Seat -> Load
-Game, then run ``--attach`` once the game is up. ``--attach`` also re-drives a
-game whose terminal was closed.
+``<tag>-T<turn>`` every ``--save-every`` turns (Load Game in the Hot Seat
+setup). ``--attach`` picks up a hotseat game that is still running with this
+mod (after ``--stop`` or a closed terminal). A save loaded into a fresh Civ VI
+needs the mod installed for that run first, so a resumed save is: start the
+harness's game as usual, then Load Game from the Hot Seat setup page instead of
+the staging room; the run's mod reads the save's seats the same way.
 
 Known limits: you are always seat 0 (the host row). Diplomacy between you and a
 jack seat works the way hotseat diplomacy does (proposals wait for the other
@@ -143,7 +152,10 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
     config.update({
         "Hotseat": True,
         "HotseatSeats": seats,
-        "HotseatHumanSeats": [] if args.auto_human else [HUMAN_SEAT],
+        # `--auto-human gated` keeps seat 0 the operator's in every gate, with
+        # the stub playing it once its hand-over is pressed: the operator path,
+        # testable without a person.
+        "HotseatHumanSeats": ([] if args.auto_human == "stub" else [HUMAN_SEAT]),
         "HotseatStubSeats": [HUMAN_SEAT] if args.auto_human else [],
         "HotseatNames": {str(seat): seat_name(i) for i, seat in enumerate(seats, 1)},
         "HotseatSaveEvery": args.save_every,
@@ -233,8 +245,14 @@ class Brains:
         out.close()
 
     def start_all(self) -> None:
+        # Create the shared database, WAL and all, before three workers race to:
+        # concurrent `PRAGMA journal_mode=WAL` calls fail "database is locked"
+        # (measured: two of three workers died on their first line).
+        import civ6_brain
+        civ6_brain.connect(self.orders_db).close()
         for seat in self.seats:
             self.start(seat)
+            time.sleep(0.3)
         self.log(f"decision workers up for seats {self.seats} "
                  f"(strategy {STRATEGY}, victory {self.victory}, bin {self.binary})")
 
@@ -439,6 +457,55 @@ def seat_the_players(run_dir: Path, bounds: tuple, players: int, log: Log) -> bo
     return False
 
 
+DIFFICULTY_LABELS = {_norm(play._setup_option_label(d)) for d in play.LADDER}
+
+
+def difficulty_cells(rows: list[dict], bounds: tuple) -> list[dict]:
+    """Each seat's Difficulty cell, top to bottom, paired with its seat row."""
+    x, _, w, _ = bounds
+    cells = [r for r in rows if r["norm"] in DIFFICULTY_LABELS
+             and x + 0.52 * w <= r["x"] <= x + 0.72 * w]
+    out = []
+    for seat in slot_rows(rows, bounds):
+        near = [c for c in cells if abs(c["y"] - seat["y"]) <= 14]
+        if near:
+            out.append(min(near, key=lambda c: abs(c["y"] - seat["y"])))
+    return out
+
+
+def set_difficulties(run_dir: Path, bounds: tuple, difficulty: str, log: Log) -> bool:
+    """Set every seat's Difficulty (hotseat difficulty is per player; the setup
+    page has no game row for it) and read the column back."""
+    want = _norm(play._setup_option_label(difficulty))
+    _, _, _, h = bounds
+    for step in range(1, 16):
+        _, rows = read_screen(run_dir, f"difficulty-{step}")
+        cells = difficulty_cells(rows, bounds)
+        wrong = [c for c in cells if c["norm"] != want]
+        if cells and not wrong:
+            log(f"[setup] every seat at {play._setup_option_label(difficulty)}, verified")
+            return True
+        if not cells:
+            time.sleep(1.5)
+            continue
+        cell = wrong[0]
+        click(log, (cell["x"] + 20, cell["y"]))
+        time.sleep(1.2)
+        _, listed = read_screen(run_dir, f"difficulty-{step}-open")
+        picks = [r for r in find(listed, want) if abs(r["x"] - cell["x"]) < 90
+                 and 4 < abs(r["y"] - cell["y"]) <= 0.2 * h]
+        if not picks:
+            log(f"[setup] the difficulty list did not offer {want!r}; closing it")
+            play.macos_input.press_key("escape")
+            time.sleep(0.8)
+            continue
+        pick = min(picks, key=lambda r: abs(r["y"] - cell["y"]))
+        click(log, (pick["x"], pick["y"]))
+        time.sleep(1.2)
+    log(f"[setup] could not set every seat to {difficulty}")
+    return False
+
+
 def start_game(run_dir: Path, bounds: tuple, log: Log) -> bool:
     """Press START GAME (the orb above its label) and see the staging room go."""
     _, _, _, h = bounds
@@ -474,13 +541,8 @@ def set_up_game(run_dir: Path, args: argparse.Namespace, log: Log) -> bool:
     time.sleep(4.0)
     if not seat_the_players(run_dir, bounds, args.players, log):
         return False
-    _, rows = read_screen(run_dir, "staging-final")
-    seats = slot_rows(rows, bounds)
-    difficulty = play._setup_option_label(args.difficulty)
-    shown = [r["text"] for r in rows if _norm(r["text"]) == _norm(difficulty)]
-    if len(shown) < args.players:
-        log(f"[setup] ⚠ the Difficulty column does not read {difficulty} on every seat "
-            f"({len(shown)} of {len(seats)})")
+    if not set_difficulties(run_dir, bounds, args.difficulty, log):
+        return False
     if not start_game(run_dir, bounds, log):
         log("[setup] START GAME did not start the game")
         return False
@@ -517,6 +579,41 @@ class Journal:
         return out
 
 
+def quit_civ(run_dir: Path, log: Log, timeout_s: float = 60.0) -> bool:
+    """Close Civ VI from its own menu and answer its question.
+
+    In a hotseat game the menu quit opens the in-game pause menu with an inline
+    ARE YOU SURE? / YES (InGameTopOptionsMenu); nothing answers it on the
+    operator's turn, because every CIVVIS context stands down then. This is the
+    operator's own request, so the harness answers it, then falls back to the
+    launcher's ordinary stop.
+    """
+    if not env.game_pids():
+        return True
+    env.request_macos_quit()
+    deadline = time.monotonic() + timeout_s
+    step = 0
+    while time.monotonic() < deadline:
+        time.sleep(2.0)
+        if not env.game_pids():
+            return True
+        step += 1
+        _, rows = read_screen(run_dir, f"quit-{step}")
+        yes = find(rows, "YES")
+        if yes and find(rows, "ARE YOU SURE", exact=False):
+            play.click_at(yes[0]["x"], yes[0]["y"])
+            continue
+        exit_row = find(rows, "EXIT TO DESKTOP")
+        if exit_row:
+            play.click_at(exit_row[0]["x"], exit_row[0]["y"])
+            continue
+        if step % 5 == 0:
+            env.request_macos_quit()
+    if env.game_pids():
+        launcher.stop(timeout_s=30)
+    return not env.game_pids()
+
+
 def notify(title: str, message: str) -> None:
     """A macOS notification: on screen, touching no window."""
     script = (f"display notification {json.dumps(message)} "
@@ -551,6 +648,23 @@ class Monitor:
         self.timings = (run_dir / "turns.jsonl").open("a", buffering=1)
         self.notified_turn = -1
         self.rescued_at = 0.0
+        self.quiet = False
+
+    def catch_up(self) -> None:
+        """Read the record so far without replaying it (`--attach`): learn whose
+        turn it is, then say so once."""
+        self.quiet = True
+        try:
+            self.poll()
+        finally:
+            self.quiet = False
+        if self.active is None:
+            self.log(f"attached at turn {self.turn}; waiting for the next seat")
+        elif self.active_human:
+            self.notified_turn = -1
+            self.your_turn(self.turn)
+        else:
+            self.log(f"attached: turn {self.turn}, {self.name(self.active)} is playing")
 
     def name(self, player: int) -> str:
         if player == HUMAN_SEAT:
@@ -566,10 +680,14 @@ class Monitor:
                 self.last_event = time.monotonic()
                 self.on_seat(seat, event)
 
+    def say(self, message: str) -> None:
+        if not self.quiet:
+            self.log(message)
+
     def on_base(self, event: dict) -> None:
         kind = event.get("kind")
         if kind == "hotseat_armed":
-            self.log("the hand-over screen is under CIVVIS control")
+            self.say("the hand-over screen is under CIVVIS control")
         elif kind == "hotseat_turn":
             self.started = True
             player, turn = int(event.get("player", -1)), int(event.get("turn", -1))
@@ -578,26 +696,28 @@ class Monitor:
                 self.active, self.turn, self.active_since = player, turn, now
                 self.active_human = bool(event.get("human"))
                 if self.active_human:
-                    self.your_turn(turn)
+                    if not self.quiet:
+                        self.your_turn(turn)
                 else:
-                    self.log(f"turn {turn}: {self.name(player)} is playing")
+                    self.say(f"turn {turn}: {self.name(player)} is playing")
             elif event.get("phase") == "end":
                 took = now - self.active_since if self.active == player else None
                 row = {"utc": utc(), "turn": turn, "player": player,
                        "human": bool(event.get("human")),
                        "seconds": round(took, 1) if took is not None else None}
-                self.timings.write(json.dumps(row) + "\n")
+                if not self.quiet:
+                    self.timings.write(json.dumps(row) + "\n")
                 took_text = f" in {took:.1f} s" if took is not None else ""
                 if event.get("human"):
-                    self.log(f"turn {turn}: you ended your turn{took_text}; the jack seats play now")
+                    self.say(f"turn {turn}: you ended your turn{took_text}; the jack seats play now")
                 else:
-                    self.log(f"turn {turn}: {self.name(player)} ended its turn{took_text}")
+                    self.say(f"turn {turn}: {self.name(player)} ended its turn{took_text}")
                 if self.active == player:
                     self.active = None
         elif kind == "hotseat_saved":
-            self.log(f"saved the game as {event.get('name')!r} (Load Game -> Hot Seat)")
+            self.say(f"saved the game as {event.get('name')!r} (Load Game -> Hot Seat)")
         elif kind == "hotseat_start_turn" and event.get("pressed") is False:
-            self.log(f"⚠ could not press Start Turn for seat {event.get('player')}")
+            self.say(f"⚠ could not press Start Turn for seat {event.get('player')}")
 
     def your_turn(self, turn: int) -> None:
         if turn == self.notified_turn:
@@ -615,10 +735,10 @@ class Monitor:
         kind = event.get("kind")
         stats = self.stats[seat]
         if kind == "hotseat_seat":
-            self.log(f"seat {seat} is {event.get('shown')!r} "
+            self.say(f"seat {seat} is {event.get('shown')!r} "
                      f"(asked {event.get('name')!r}, applied {event.get('applied')})")
         elif kind == "seat":
-            self.log(f"{self.name(seat)} plays {event.get('leader')} / {event.get('civ')} "
+            self.say(f"{self.name(seat)} plays {event.get('leader')} / {event.get('civ')} "
                      f"at {event.get('difficulty')}, {event.get('speed')}, "
                      f"{event.get('map')} {event.get('size')}, modes {event.get('modes')}")
         elif kind == "turn":
@@ -627,7 +747,7 @@ class Monitor:
             stats["last"] = {k: event.get(k) for k in
                              ("turn", "cities", "units", "army", "score", "met",
                               "orders_source", "orders_applied", "gold")}
-            self.log(f"turn {event.get('turn')}: {self.name(seat)} — "
+            self.say(f"turn {event.get('turn')}: {self.name(seat)} — "
                      f"{event.get('orders_applied')} orders applied "
                      f"({event.get('orders_source')}), cities {event.get('cities')}, "
                      f"units {event.get('units')}, score {event.get('score')}")
@@ -636,7 +756,7 @@ class Monitor:
         elif kind == "error":
             stats["errors"] += 1
             if stats["errors"] <= 5:
-                self.log(f"⚠ {self.name(seat)} mod error: {str(event)[:200]}")
+                self.say(f"⚠ {self.name(seat)} mod error: {str(event)[:200]}")
 
     def stalled(self, seconds: float) -> bool:
         return (self.active is not None and not self.active_human
@@ -788,8 +908,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--quit-game", action="store_true",
                     help="with --stop: also close Civ VI if the harness started it")
     ap.add_argument("--status", action="store_true")
-    ap.add_argument("--auto-human", action="store_true",
-                    help="TEST: a stub plays seat 0 instead of you")
+    ap.add_argument("--auto-human", nargs="?", const="stub", choices=["stub", "gated"],
+                    default=None,
+                    help="TEST: a stub plays seat 0 instead of you; `gated` keeps seat 0 "
+                         "the operator's in every gate (its Start Turn is not pressed)")
     ap.add_argument("--turns", type=int, default=None,
                     help="stop after this game turn (with --auto-human: then report)")
     args = ap.parse_args(argv)
@@ -823,7 +945,8 @@ def run(args: argparse.Namespace) -> int:
             return 2
         args.tag = attach_config["RunTag"]
         args.players = len(attach_config.get("HotseatSeats") or []) + 1
-        args.auto_human = bool(attach_config.get("HotseatStubSeats"))
+        args.auto_human = (None if not attach_config.get("HotseatStubSeats")
+                           else "gated" if attach_config.get("HotseatHumanSeats") else "stub")
         args.victory = attach_config.get("VictoryLane") or args.victory
     elif env.game_pids():
         print("Civ VI is already running. Quit it first (this starts a fresh game), "
@@ -899,6 +1022,10 @@ def run(args: argparse.Namespace) -> int:
         brains = Brains(run_dir, args.tag, seats, orders_db, binary, args.victory, log)
         brains.start_all()
         monitor = Monitor(run_dir, args.tag, seats, args, log)
+        if args.attach:
+            for bridge in bridges:
+                bridge.pump()
+            monitor.catch_up()
         log("running. `tools/civ6_hotseat.py --stop` (or Ctrl-C) stops the automation; "
             "the game itself stays up.")
         waited_for_game = time.monotonic()
@@ -949,7 +1076,8 @@ def run(args: argparse.Namespace) -> int:
                                   or (args.auto_human and args.turns is not None))
         if quit_game and env.game_pids():
             log("closing Civ VI")
-            launcher.stop(timeout_s=60)
+            if not quit_civ(run_dir, log):
+                log("Civ VI did not close; quit it from its menu")
         if not env.game_pids():
             try:
                 modinstall.uninstall()

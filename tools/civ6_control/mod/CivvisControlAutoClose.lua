@@ -1149,7 +1149,8 @@ function CivvisHotseatScreen.frame(fDTime)
 	pcall(function() dialog = not Controls.PopupAlphaIn:IsHidden(); end);
 	local pid = CivvisHotseatScreen.localPlayer();
 	if not dialog or pid < 0 or CivvisHotseatScreen.humanTurn()
-			or not CivvisHotseatScreen.listed(cfg.HotseatSeats, pid) then
+			or not (CivvisHotseatScreen.listed(cfg.HotseatSeats, pid)
+				or CivvisHotseatScreen.listed(cfg.HotseatStubSeats, pid)) then
 		CivvisHotseatScreen.waited = 0;
 		return;
 	end
