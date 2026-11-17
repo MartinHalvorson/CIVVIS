@@ -1614,11 +1614,13 @@ impl Clone for VisionCache {
 /// resource's world count, connected ownership, or city-state patronage.
 #[derive(Clone)]
 struct MonopolyContext {
-    world_counts: BTreeMap<Name, i32>,
+    /// Every resource's count on the map. Only ever asked by resource, so
+    /// hashed (as `connected` is).
+    world_counts: crate::fast_map::FastMap<Name, i32>,
     /// Each player's suzerained city-states, whose holdings count as theirs.
     minors: Vec<Vec<usize>>,
     /// Each player's connected holdings, by resource.
-    connected: Vec<BTreeMap<Name, i32>>,
+    connected: Vec<crate::fast_map::FastMap<Name, i32>>,
 }
 
 /// Memoized answers to expensive read-only queries.
