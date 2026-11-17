@@ -192,7 +192,8 @@ impl Game {
             promotion_movement: self.promotion_effect(unit, "movement"),
             civilization_movement: self.civ_effect(unit.owner, "unit_movement"),
             guru_adjacent: spec.class == "religious"
-                && self.wdisk(unit.pos, 1).into_iter().any(|position| {
+                // The tile and its neighbours, without building the disk's Vec.
+                && std::iter::once(unit.pos).chain(self.nbrs(unit.pos)).any(|position| {
                     self.unit_ids_at(position).iter().any(|other| {
                         self.units[other].owner == unit.owner
                             && self.units[other].kind == "guru"
