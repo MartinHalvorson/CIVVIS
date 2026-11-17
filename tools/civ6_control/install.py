@@ -133,6 +133,10 @@ def _frontend_defaults_xml(source: str, config: dict) -> str:
         "CIVVIS_DEFAULT_MAP": config.get("MapScript") or "Continents.lua",
         "CIVVIS_DEFAULT_MAP_SIZE": config.get("MapSize") or "MAPSIZE_SMALL",
         "CIVVIS_DEFAULT_RULESET": config.get("RuleSet") or "RULESET_EXPANSION_2",
+        # Multiplayer (hotseat) difficulty is per player, not the game row
+        # above (SetupParameters.xml: GameDifficulty has SupportsHotSeat=0).
+        # Prince, the shipped default, unless a hotseat run names one.
+        "CIVVIS_DEFAULT_PLAYER_DIFFICULTY": config.get("PlayerDifficulty") or "DIFFICULTY_PRINCE",
     }
     try:
         max_turns = int(config.get("MaxTurns") or 500)
@@ -197,24 +201,96 @@ def check_syntax(path: Path) -> str | None:
     return (result.stderr or result.stdout).strip()
 
 
+def _write_script(written: Path, script: str) -> None:
+    """Write one configured script, refusing a size or syntax Civ VI would drop."""
+    size = len(script.encode("utf-8"))
+    if size > LUA_SIZE_KNOWN_GOOD:
+        raise SystemExit(
+            f"{written.name} would install at {size} bytes, above the "
+            f"{LUA_SIZE_KNOWN_GOOD} known to load; Civ VI drops a "
+            f"larger script without a word (pin 2ddcd5889, G86)")
+    written.write_text(script)
+    error = check_syntax(written)
+    if error:
+        raise SystemExit(f"{written.name} does not parse: {error}")
+
+
+# ★★ HOTSEAT. In a hotseat game the local player is whichever human seat is
+# playing, so the agent runs as one CONTEXT PER CIVVIS SEAT: a copy of
+# CivvisControlAgent.lua per seat, each with its own `HotseatSeat`, name and run
+# tag, listed in place of the single agent context. UI contexts keep separate
+# globals, so no seat's turn bookkeeping, tile cache or unit memory can leak into
+# another's, and `CivvisSeat.gate` keeps every copy silent outside its own turn.
+# PlayerChange (the hand-over screen) joins the screen closer only here.
+HOTSEAT_AGENT = "CivvisControlAgentSeat{seat}"
+HOTSEAT_PLAYER_CHANGE = """		<!-- Hotseat only (install.py): the hand-over screen. On a CIVVIS seat the
+		     closer presses its Start Turn; on the operator's it waits for them. -->
+		<ReplaceUIScript id="CivvisControlHotseatPlayerChange">
+			<Properties>
+				<LuaContext>PlayerChange</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+"""
+
+
+def hotseat_seat_tag(tag: str | None, seat: int) -> str:
+    """The run tag one hotseat seat's agent writes and its brain reads."""
+    return f"{tag or 'unset'}-p{int(seat)}"
+
+
+def hotseat_agent_seats(config: dict) -> list[int]:
+    """Every seat that gets an agent context: CIVVIS seats, then test stubs."""
+    if not config.get("Hotseat"):
+        return []
+    seats = [int(s) for s in config.get("HotseatSeats") or []]
+    seats += [int(s) for s in config.get("HotseatStubSeats") or [] if int(s) not in seats]
+    return seats
+
+
+def hotseat_seat_config(config: dict, seat: int) -> dict:
+    """One seat context's settings: the run's, under that seat's tag and name.
+
+    A stub seat (`HotseatStubSeats`, the `--auto-human` test stand-in for the
+    operator) plays the mod's own fallback ladder with no decision worker.
+    """
+    names = config.get("HotseatNames") or {}
+    seat_config = dict(config)
+    seat_config.pop("HotseatNames", None)
+    seat_config.update({
+        "RunTag": hotseat_seat_tag(config.get("RunTag"), seat),
+        "HotseatSeat": int(seat),
+        "HotseatName": names.get(str(seat)) or names.get(seat),
+    })
+    if int(seat) in {int(s) for s in config.get("HotseatStubSeats") or []}:
+        seat_config["CivvisDecides"] = False
+    return seat_config
+
+
+def hotseat_modinfo(text: str, seats: list[int]) -> str:
+    """The modinfo for a hotseat install: seat agents, and the hand-over screen."""
+    names = [HOTSEAT_AGENT.format(seat=seat) for seat in seats]
+    action = re.search(r'(<AddUserInterfaces id="CivvisControlAgentUI">.*?)'
+                       r'(\t*<File>CivvisControlAgent\.xml</File>\n)(.*?</AddUserInterfaces>)',
+                       text, flags=re.S)
+    if action is None or "</Files>" not in text or "</InGameActions>" not in text:
+        raise SystemExit("CivvisControl.modinfo has no agent context to split per seat")
+    indent = re.match(r"\t*", action.group(2)).group(0)
+    files = "".join(f"{indent}<File>{name}.xml</File>\n" for name in names)
+    text = text[:action.start(2)] + files + text[action.end(2):]
+    listed = "".join(f"\t\t<File>{name}.xml</File>\n\t\t<File>{name}.lua</File>\n"
+                     for name in names)
+    text = text.replace("\t</Files>", listed + "\t</Files>", 1)
+    return text.replace("\t</InGameActions>", HOTSEAT_PLAYER_CHANGE + "\t</InGameActions>", 1)
+
+
 def _write_mod(target: Path, config: dict) -> None:
     """Materialize a fully configured control mod into a writable directory."""
     target.mkdir(parents=True, exist_ok=True)
     text = prelude(config)
     for src in sorted(MOD_SOURCE.iterdir()):
         if src.name in SCRIPTS:
-            written = target / src.name
-            script = text + installed_lua(src.read_text())
-            size = len(script.encode("utf-8"))
-            if size > LUA_SIZE_KNOWN_GOOD:
-                raise SystemExit(
-                    f"{src.name} would install at {size} bytes, above the "
-                    f"{LUA_SIZE_KNOWN_GOOD} known to load; Civ VI drops a "
-                    f"larger script without a word (pin 2ddcd5889, G86)")
-            written.write_text(script)
-            error = check_syntax(written)
-            if error:
-                raise SystemExit(f"{src.name} does not parse: {error}")
+            _write_script(target / src.name, text + installed_lua(src.read_text()))
         elif src.name == "CivvisControlConfig.xml":
             # The setup defaults are applied through the one FrontEnd hook shipped
             # content actually uses (`UpdateDatabase`). This seed branch is only
@@ -233,6 +309,18 @@ def _write_mod(target: Path, config: dict) -> None:
             (target / src.name).write_text(text_xml)
         else:
             shutil.copy2(src, target / src.name)
+    seats = hotseat_agent_seats(config)
+    if seats:
+        agent = installed_lua((MOD_SOURCE / "CivvisControlAgent.lua").read_text())
+        context = (MOD_SOURCE / "CivvisControlAgent.xml").read_text()
+        for seat in seats:
+            name = HOTSEAT_AGENT.format(seat=seat)
+            _write_script(target / f"{name}.lua",
+                          prelude(hotseat_seat_config(config, seat)) + agent)
+            (target / f"{name}.xml").write_text(context)
+        modinfo = target / "CivvisControl.modinfo"
+        modinfo.write_text(hotseat_modinfo(
+            (MOD_SOURCE / "CivvisControl.modinfo").read_text(), seats))
     # Kept beside the scripts so the active settings are readable in the
     # install without reading a whole script.
     # ⚠⚠ THE RUN TAG IN THIS FILE IS THE GAME LOCK'S IDENTITY. `gamelock.foreign_run`

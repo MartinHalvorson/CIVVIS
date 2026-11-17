@@ -8473,6 +8473,31 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    ap = build_parser()
+    args = ap.parse_args(raw_argv)
+    apply_tree_mod_arms(args)
+    try:
+        order_queue_timing_config(args)
+    except ValueError as exc:
+        ap.error(str(exc))
+    global GAME_SIDE, GAME_FRACTION, GAME_VFRACTION
+    GAME_SIDE, GAME_FRACTION = args.window_side, args.window_frac
+    GAME_VFRACTION = args.window_vfrac
+
+    if args.status:
+        return status()
+    args.leader = resolve_live_leader(args.leader)
+    if args.leader.lower() == RANDOM_LEADER:
+        args.leader = None  # Civ VI's Random Leader row stays selected; see RANDOM_LEADER
+    if args.tag is None:
+        args.tag = (args.difficulty.replace("DIFFICULTY_", "").lower()
+                    + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+    return play(args)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Every `civ6_play` option, so another launcher can start from the same
+    defaults (`tools/civ6_hotseat.py` builds its mod settings from them)."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--tag", default=None, help="run tag; names the run directory")
     ap.add_argument("--difficulty", default="DIFFICULTY_SETTLER", choices=LADDER)
@@ -8924,25 +8949,7 @@ def main(argv: list[str] | None = None) -> int:
                          "~/.civvis-shared-desktop also disables periodic raising "
                          "and placement live; setup/recovery may still use the GUI")
     ap.add_argument("--status", action="store_true")
-    args = ap.parse_args(raw_argv)
-    apply_tree_mod_arms(args)
-    try:
-        order_queue_timing_config(args)
-    except ValueError as exc:
-        ap.error(str(exc))
-    global GAME_SIDE, GAME_FRACTION, GAME_VFRACTION
-    GAME_SIDE, GAME_FRACTION = args.window_side, args.window_frac
-    GAME_VFRACTION = args.window_vfrac
-
-    if args.status:
-        return status()
-    args.leader = resolve_live_leader(args.leader)
-    if args.leader.lower() == RANDOM_LEADER:
-        args.leader = None  # Civ VI's Random Leader row stays selected; see RANDOM_LEADER
-    if args.tag is None:
-        args.tag = (args.difficulty.replace("DIFFICULTY_", "").lower()
-                    + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
-    return play(args)
+    return ap
 
 
 # The setup clock's instrumented steps (see SETUP_CLOCK): rebound in place,
