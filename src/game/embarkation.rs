@@ -167,13 +167,16 @@ impl Game {
                 s -= self.strategic_shortage_penalty(u.owner, Name::new(resource)) as f64;
             }
         }
-        let friendly = self.wdisk(u.pos, 1).into_iter().any(|position| {
-            self.map
-                .get(position)
-                .and_then(|tile| tile.owner_city)
-                .and_then(|cid| self.cities.get(&cid))
-                .is_some_and(|city| city.owner == u.owner)
-        });
+        // The tile and its neighbours, without building the disk's Vec.
+        let friendly = std::iter::once(u.pos)
+            .chain(self.nbrs(u.pos))
+            .any(|position| {
+                self.map
+                    .get(position)
+                    .and_then(|tile| tile.owner_city)
+                    .and_then(|cid| self.cities.get(&cid))
+                    .is_some_and(|city| city.owner == u.owner)
+            });
         if friendly {
             s += self.policy_effect(u.owner, "friendly_combat");
         }

@@ -932,7 +932,7 @@ impl Game {
                 {
                     acts.push(Action::EvangelizeBelief {
                         unit: uid,
-                        belief: Name::new(belief),
+                        belief: *belief,
                     });
                 }
             }
@@ -1435,9 +1435,7 @@ impl Game {
                     .iter()
                     .any(|o| o.pantheon.as_deref() == Some(b.as_str()))
                 {
-                    acts.push(Action::ChoosePantheon {
-                        belief: Name::new(b),
-                    });
+                    acts.push(Action::ChoosePantheon { belief: *b });
                 }
             }
         }
@@ -1450,8 +1448,8 @@ impl Game {
             for fo in self.rules.beliefs.follower.keys().filter(|b| !taken(b)) {
                 for fu in self.rules.beliefs.founder.keys().filter(|b| !taken(b)) {
                     acts.push(Action::FoundReligion {
-                        follower: Name::new(fo),
-                        founder: Name::new(fu),
+                        follower: *fo,
+                        founder: *fu,
                     });
                 }
             }
