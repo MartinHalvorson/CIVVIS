@@ -5783,6 +5783,20 @@ pub const GENES: &[Gene] = &[
     // put income under Recovery's line waits. See
     // `advanced/deterrence_waits_for_the_income.rs`.
     Gene { tag: "deterrence-waits-for-the-income", field: "deterrence_waits_for_the_income", kind: Kind::OptIn, enable: AdvancedAi::enable_deterrence_waits_for_the_income, disable: AdvancedAi::disable_deterrence_waits_for_the_income },
+    // Live Deity Rome 11-13, five Diplomatic games ending on 11-19 of twenty
+    // points: Civil Engineering came 36 and 41 turns after Mercantilism, last
+    // of the seven steps toward Class Struggle, and the Statue of Liberty (four
+    // points) at t152 and t166. A Diplomatic seat with the Statue's Harbor
+    // takes Civil Engineering first. See `advanced/diplo_statue_harbor.rs`.
+    Gene { tag: "diplo-seat-statue-civic-first", field: "diplo_seat_statue_civic_first", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_statue_civic_first, disable: AdvancedAi::disable_diplo_seat_statue_civic_first },
+    // Live Deity 11-18, three Diplomatic games: the Statue of Liberty landed
+    // at t149 on 8 points and the seat was voted from 17 to 15 at t175 and
+    // lost on 18 (Khmer); it was on offer for 23 and 12 turns before the
+    // 30-turn claim took it (Gaul, never finished; Hungary, won the turn it
+    // landed). A racing seat starts it at once, builds it to its last turn
+    // and holds it there until its four points make twenty. See
+    // `advanced/diplo_wonder_claim.rs`.
+    Gene { tag: "diplo-seat-statue-is-the-finisher", field: "diplo_seat_statue_is_the_finisher", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_statue_is_the_finisher, disable: AdvancedAi::disable_diplo_seat_statue_is_the_finisher },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
