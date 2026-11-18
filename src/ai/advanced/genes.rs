@@ -5797,6 +5797,20 @@ pub const GENES: &[Gene] = &[
     // and holds it there until its four points make twenty. See
     // `advanced/diplo_wonder_claim.rs`.
     Gene { tag: "diplo-seat-statue-is-the-finisher", field: "diplo_seat_statue_is_the_finisher", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_statue_is_the_finisher, disable: AdvancedAi::disable_diplo_seat_statue_is_the_finisher },
+    // Live Deity Rome 11-13: the first World Games the seat was a member of
+    // was won with 60 points (a Training Athletes project is 50) and it was
+    // the only member of an Aid Request for which the planner named Send Aid
+    // thirty times and no city built it; the delegated governor fills the
+    // queue. A Diplomatic seat lends one city to the competition's project.
+    // See `advanced/diplo_competition_claim.rs`.
+    Gene { tag: "diplo-seat-claims-the-competition", field: "diplo_seat_claims_the_competition", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_claims_the_competition, disable: AdvancedAi::disable_diplo_seat_claims_the_competition },
+    // Live Deity Rome 11-13, six Diplomatic games ending on 11-19 of twenty
+    // points: Favor income 3-8 a turn sized every claim that lost, the seat
+    // held 1.5 declared friends a turn and 0.04 allies, and each alliance is
+    // one Favor a turn. A Diplomatic seat asks every declared friend for an
+    // alliance, a different kind each. See
+    // `advanced/diplo_allies_every_friend.rs`.
+    Gene { tag: "diplo-seat-allies-every-friend", field: "diplo_seat_allies_every_friend", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_allies_every_friend, disable: AdvancedAi::disable_diplo_seat_allies_every_friend },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
