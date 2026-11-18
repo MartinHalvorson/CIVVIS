@@ -106,6 +106,48 @@ class ScienceOutOfReachLiveGames(unittest.TestCase):
         self.assertEqual(min(round(ours / best, 2) for _, ours, best in WON_050334Z[0]), 0.84)
 
 
+class ScienceOutOfReachSparesTheCongressRoad(unittest.TestCase):
+    """`CIVVIS_RESTART_SCIENCE_BEHIND_SPARE_DVP`: a seat on 10 or more
+    Diplomatic Victory points plays its Congress road out (live Deity
+    2026-11-18: civvis-20261118T214750Z, America, retired at t152 on 43 of
+    68 techs with 10 points against the best rival's 7)."""
+
+    @staticmethod
+    def read(records, spare):
+        state: dict = {}
+        return [civ6_play.science_out_of_reach_reading(state, record, 0.70, 150, spare)
+                for record in records], state
+
+    def test_ten_points_waits_and_nine_retire(self):
+        held, state = self.read([tech_record(t, 43, 68, dvp=10) for t in (150, 151, 152, 153)], 10)
+        self.assertEqual(held, [None] * 4)
+        self.assertNotIn("science_out_of_reach", state)
+        short, _ = self.read([tech_record(t, 43, 68, dvp=9) for t in (150, 151, 152)], 10)
+        self.assertEqual(short[2]["rule"], "science_out_of_reach")
+
+    def test_points_falling_under_the_spare_start_the_count_again(self):
+        records = ([tech_record(150, 43, 68, dvp=9), tech_record(151, 43, 68, dvp=9),
+                    tech_record(152, 43, 68, dvp=11)]
+                   + [tech_record(t, 43, 68, dvp=8) for t in (153, 154, 155)])
+        results, _ = self.read(records, 10)
+        self.assertEqual(results[:5], [None] * 5)
+        self.assertEqual((results[5]["since"], results[5]["turn"]), (153, 155))
+
+    def test_off_or_unread_points_change_nothing(self):
+        for spare, extra in ((0, {"dvp": 15}), (10, {}), (10, {"dvp": None}), (10, {"dvp": True})):
+            with self.subTest(spare=spare, extra=extra):
+                results, _ = self.read([tech_record(t, 43, 68, **extra) for t in (150, 151, 152)], spare)
+                self.assertEqual(results[2]["rule"], "science_out_of_reach")
+
+    def test_the_policy_reads_a_count_of_points(self):
+        self.assertEqual(civ6_play.parse_science_behind_spare_dvp(None), 0)
+        self.assertEqual(civ6_play.parse_science_behind_spare_dvp(""), 0)
+        self.assertEqual(civ6_play.parse_science_behind_spare_dvp("10"), 10)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(civ6_play.parse_science_behind_spare_dvp("ten"), 0)
+            self.assertEqual(civ6_play.parse_science_behind_spare_dvp("-3"), 0)
+
+
 class ScienceOutOfReachReading(unittest.TestCase):
     def test_fires_on_the_third_turn_running_under_the_line(self):
         # 38 techs against the best met rival's 60 is 63%.
@@ -424,7 +466,8 @@ class ScienceOutOfReachPolicy(unittest.TestCase):
         applied = source.split("reading = science_out_of_reach_reading(", 1)
         self.assertEqual(len(applied), 2)
         self.assertIn("if science_behind > 0:", applied[0][-200:])
-        self.assertIn("state, event, science_behind, science_behind_from)", applied[1][:120])
+        self.assertIn("state, event, science_behind, science_behind_from,", applied[1][:120])
+        self.assertIn('getattr(args, "restart_science_behind_spare_dvp", 0) or 0)', applied[1][:200])
         self.assertIn("return abandon_with_retire(reading)", applied[1][:700])
 
 
