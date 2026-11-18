@@ -319,7 +319,7 @@ fn the_nearest_free_shooters_are_called() {
     // An engine calls every free shooter within twelve tiles, and still
     // not the other city's garrison.
     spawn_east(&mut g, "catapult", 1, home, 8);
-    let beyond = spawn_west(&mut g, "archer", 0, home, 13);
+    let beyond = spawn_east(&mut g, "archer", 0, home, 13);
     let reading = ai.shooters_man_reading(&g, 0).expect("an engine");
     let called = ai.shooters_man_called(&g, 0, &reading);
     assert_eq!(called, vec![near, mid, out, farther]);

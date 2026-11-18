@@ -5,11 +5,11 @@
 //!
 //! ## Why (live Deity, 6 players, Small Continents, Online; 2026-11-18)
 //!
-//! Seven of the day's 26 games were retired because the original capital
-//! fell, one to nine turns after a rival's declaration. Read from their
+//! Eight of the day's 29 games were retired because the original capital
+//! fell, one to eight turns after a rival's declaration. Read from their
 //! `events.jsonl` (`~/civvis-score-tools/deity-18/capital-guard/`):
 //!
-//! - **A siege gun took the walls and we let it stand.** In six of the seven
+//! - **A siege gun took the walls and we let it stand.** In six of the eight
 //!   a Trebuchet, Bombard or Catapult stood two or three tiles from the City
 //!   Center for one to four turns before the walls were gone. We owned four
 //!   to eight land shooters in each of those wars and they fired on a gun
@@ -31,12 +31,17 @@
 //!   - `civvis-20261118T090535Z` (Kongo): England's Trebuchet stood two tiles
 //!     from Mbanza Kongo for three turns and took two Archer shots; one of
 //!     four to six shooters stood within one tile.
-//! - **The party was in sight before it declared.** Over the day's 29
-//!   finished games, "two land soldiers of one major that is neither friend
-//!   nor ally within six tiles of the capital, or its engine within eight"
-//!   read at peace on 266 of the 4,042 turns we held the capital (7%). It
-//!   read in the three turns before 14 of the 34 declarations made on us
-//!   while we held the capital, and before all seven that took it.
+//!   - `civvis-20261118T104821Z` (Brazil), the opening rush: three Warriors
+//!     and a Slinger took an unwalled Rio de Janeiro on turn 30, four turns
+//!     after Norway declared. The City Center held nobody on turns 24-28;
+//!     our two Archers stood four and five tiles out with the new cities.
+//! - **The party was in sight before it declared.** Over the day's 31 game
+//!   logs, "two land soldiers of one major that is neither friend nor ally
+//!   within six tiles of the capital, or its engine within eight" read at
+//!   peace on 266 of the 4,228 turns we held the capital (6%). It read in
+//!   the three turns before 14 of the 36 declarations made on us while we
+//!   held the capital, and before seven of the eight that took it (not
+//!   Brazil's: one Warrior was seen, one turn before).
 //!
 //! The armed readers did not answer this: `garrison-before-the-surprise`
 //! walks one soldier into a city that holds none, at 1.5 times our power;
