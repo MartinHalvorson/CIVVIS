@@ -38,6 +38,8 @@
 //! `near-rival-deterrence-opens-early` opens the window at live turn 10 and
 //! counts a soldier at the capital's door as a neighbour; see
 //! `advanced/near_rival_deterrence_opens_early.rs`.
+//! `deterrence-waits-for-the-income` passes over a unit whose upkeep the
+//! income cannot pay; see `advanced/deterrence_waits_for_the_income.rs`.
 
 use super::near_rival_deterrence_holds_late::DeterrencePhase;
 use super::*;
@@ -275,6 +277,9 @@ impl AdvancedAi {
         // trains only that garrison.
         let out_of_reach = self.deterrence_out_of_reach(g, pid, theirs);
         let mut garrisoned = 0usize;
+        // `deterrence-waits-for-the-income`: the first candidate the income
+        // cannot pay for. `None` with the gene off.
+        let mut unpaid = None;
         let mut best: Option<(f64, i32, u32, String)> = None;
         for &cid in &city_ids {
             if self.deterrence_spares_the_city(g, pid, cid, plan)
@@ -327,6 +332,13 @@ impl AdvancedAi {
             if turns > max_turns {
                 continue;
             }
+            // `deterrence-waits-for-the-income`: at peace, a unit whose upkeep
+            // the income cannot pay is not trained. See
+            // `advanced/deterrence_waits_for_the_income.rs`.
+            if let Some(shortfall) = self.deterrent_income_shortfall(g, pid, cid, &item, plan) {
+                unpaid.get_or_insert((cid, unit, shortfall));
+                continue;
+            }
             let home = g.cities[&cid].pos;
             let border = rival_cities
                 .iter()
@@ -341,6 +353,9 @@ impl AdvancedAi {
             }
         }
         let Some((turns, _, cid, unit)) = best else {
+            if let Some((cid, unit, shortfall)) = unpaid {
+                self.note_deterrent_waits(g, rival, cid, &unit, shortfall);
+            }
             if out_of_reach && garrisoned > 0 {
                 think!(self.journal(), Military, Detail,
                     "No deterrent against {}: it is out of reach", g.players[rival].civ;
