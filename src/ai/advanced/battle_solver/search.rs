@@ -22,6 +22,7 @@ use super::model::{
     Aim, Board, Line, Objective, Posture, Sim, State, Weights, F_MELEE, NO_TILE, NO_UNIT, OURS,
     THEIRS,
 };
+use crate::shared_sort::SharedSort;
 
 /// How much search a decision gets.
 #[derive(Clone, Copy, Debug)]
@@ -250,7 +251,7 @@ impl<'b> Searcher<'b> {
                             stands.push((t, stand_cost(t)));
                         }
                     }
-                    stands.sort_by(|a, b| a.1.total_cmp(&b.1));
+                    stands.sort_by_shared(|a, b| a.1.total_cmp(&b.1));
                     for (t, cost) in stands.into_iter().take(self.budget.melee_stands) {
                         let value = blow_prior(dealt, taken, other, me) - cost;
                         lines.push((
@@ -335,9 +336,9 @@ impl<'b> Searcher<'b> {
                 (*t, -stand_cost(*t) + closes * 0.6 + heal)
             })
             .collect();
-        stands.sort_by(|a, b| b.1.total_cmp(&a.1));
+        stands.sort_by_shared(|a, b| b.1.total_cmp(&a.1));
         let mut safest: Vec<(u16, f32)> = stands.clone();
-        safest.sort_by(|a, b| {
+        safest.sort_by_shared(|a, b| {
             self.threat[a.0 as usize]
                 .total_cmp(&self.threat[b.0 as usize])
                 .then(b.1.total_cmp(&a.1))
@@ -357,7 +358,7 @@ impl<'b> Searcher<'b> {
             ));
         }
         let _ = in_reach;
-        lines.sort_by(|a, b| b.1.total_cmp(&a.1));
+        lines.sort_by_shared(|a, b| b.1.total_cmp(&a.1));
         let mut seen = Vec::new();
         lines.retain(|(line, _)| {
             if seen.contains(line) {
@@ -505,7 +506,7 @@ impl<'b> Searcher<'b> {
                     )
                 })
                 .collect();
-            blows.sort_by_key(|(melee, _)| *melee);
+            blows.sort_by_key_shared(|(melee, _)| *melee);
             let blows: Vec<(f32, f32)> = blows.into_iter().map(|(_, blow)| blow).collect();
             f.kills.push((
                 Aim::Unit(j),

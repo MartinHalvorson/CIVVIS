@@ -70,6 +70,7 @@ use super::{
 };
 use crate::ai::BasicAi;
 use crate::game::{Action, Game};
+use crate::shared_sort::SharedSort;
 use crate::think;
 use crate::Pos;
 use std::collections::HashSet;
@@ -327,7 +328,7 @@ impl AdvancedAi {
                     .unwrap_or_else(|| g.wdist(from, *position) as f64 * moves.max(1.0) / 2.0);
                 *value -= Self::settle_sooner_walk_cost(turn_price, movement_cost);
             }
-            ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+            ranked.sort_by_shared(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
         }
         self.set_aside_unpriceable_sites(g, pid, &mut ranked);
         for _ in 0..=STRANDED_FORECAST_RETRIES {
@@ -423,7 +424,7 @@ impl AdvancedAi {
                 ))
             })
             .collect();
-        legal.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        legal.sort_by_shared(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         self.set_aside_unpriceable_sites(g, pid, &mut legal);
         if self.exhaustion_loyalty_guard || science_targeted {
             // This tier ran no forecast at all: of the sixteen nearest-legal
@@ -675,7 +676,7 @@ impl AdvancedAi {
                 *covering < here_covering || (*covering == here_covering && *nearest > here_nearest)
             })
             .collect();
-        retreats.sort_by(|a, b| {
+        retreats.sort_by_shared(|a, b| {
             a.0.cmp(&b.0)
                 .then_with(|| b.1.cmp(&a.1))
                 .then_with(|| a.2.cmp(&b.2))
@@ -764,7 +765,7 @@ impl AdvancedAi {
             .into_iter()
             .filter(|next| !steps.contains(next) && g.wdist(*next, target) < distance)
             .collect();
-        progressing.sort_by_key(|next| (g.wdist(*next, target), *next));
+        progressing.sort_by_key_shared(|next| (g.wdist(*next, target), *next));
         steps.extend(progressing);
         let streak = self.settler_idle_streak(uid);
         for next in steps {

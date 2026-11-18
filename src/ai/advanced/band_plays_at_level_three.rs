@@ -41,6 +41,7 @@
 
 use crate::ai::BasicAi;
 use crate::game::Game;
+use crate::shared_sort::SharedSort;
 use crate::Pos;
 
 /// The performance level from which a concert's breakup odds drop to 25%.
@@ -98,7 +99,7 @@ impl BasicAi {
                 (group, pos)
             })
             .collect();
-        grouped.sort_by_key(|(group, _)| *group);
+        grouped.sort_by_key_shared(|(group, _)| *group);
         grouped.into_iter().map(|(_, pos)| pos).collect()
     }
 

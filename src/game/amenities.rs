@@ -11,6 +11,7 @@
 //! methods stay public; the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl Game {
     /// Montezuma: he approves of luxuries he already enjoys, and covets the
@@ -617,7 +618,7 @@ impl Game {
             .collect();
         let mut neediest: Vec<u32> = cities.iter().map(|city| city.id).collect();
         for reach in reaches {
-            neediest.sort_by_key(|cid| (surplus[cid], *cid));
+            neediest.sort_by_key_shared(|cid| (surplus[cid], *cid));
             for cid in neediest.iter().copied().take(reach) {
                 *allocations.get_mut(&cid).unwrap() += 1;
                 *surplus.get_mut(&cid).unwrap() += 1;

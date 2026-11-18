@@ -13,6 +13,7 @@
 //! the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 mod culture_ski_resorts;
 mod diagnostics;
@@ -435,7 +436,7 @@ impl AdvancedAi {
             })
             .filter(|(value, _)| *value > current_value + 0.5)
             .collect();
-        choices.sort_by(|(a_value, a), (b_value, b)| {
+        choices.sort_by_shared(|(a_value, a), (b_value, b)| {
             b_value.partial_cmp(a_value).unwrap().then(a.cmp(b))
         });
         choices
@@ -658,7 +659,7 @@ impl AdvancedAi {
             .map(|cid| self.city_production_foundation_shortfall(g, pid, cid))
             .unwrap_or(0.0);
         if here_shortfall > 0.0 {
-            here.sort_by(|left, right| {
+            here.sort_by_shared(|left, right| {
                 self.production_foundation_improvement_value(
                     g,
                     pid,
@@ -916,7 +917,7 @@ impl AdvancedAi {
         }
         // Descending by score, position as the tiebreak: exactly the order the
         // untreated branch's running `best` would have settled on.
-        scored.sort_by(|(a, ap), (b, bp)| {
+        scored.sort_by_shared(|(a, ap), (b, bp)| {
             b.partial_cmp(a)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then(ap.cmp(bp))

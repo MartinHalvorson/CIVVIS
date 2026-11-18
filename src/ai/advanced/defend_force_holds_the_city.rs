@@ -130,6 +130,7 @@ use super::centre_keeps_its_garrison::CENTRE_THREAT_REACH;
 use super::objective_board::ObjectiveKey;
 use super::*;
 use crate::game::expected_damage;
+use crate::shared_sort::SharedSort;
 
 /// Our land soldiers this close to a held city join its posts (its Defend
 /// and Relieve task force members join from anywhere).
@@ -329,7 +330,7 @@ impl AdvancedAi {
                 });
             }
         }
-        out.sort_by_key(|threat| threat.uid);
+        out.sort_by_key_shared(|threat| threat.uid);
         out
     }
 

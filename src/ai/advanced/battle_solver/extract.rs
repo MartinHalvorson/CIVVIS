@@ -1,5 +1,6 @@
 //! From the board to a battle: which fights exist, and what each one is.
 
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeMap;
 
 use super::super::{AdvancedAi, StrategicPlan};
@@ -177,7 +178,7 @@ pub(super) fn snapshot(
     let mut hostiles = theater.hostiles.clone();
     if hostiles.len() > MAX_HOSTILES {
         let anchor = g.units.get(members.first()?)?.pos;
-        hostiles.sort_by_key(|h| g.wdist(anchor, g.units[h].pos));
+        hostiles.sort_by_key_shared(|h| g.wdist(anchor, g.units[h].pos));
         hostiles.truncate(MAX_HOSTILES);
     }
     let mut ground: Vec<Pos> = Vec::new();
@@ -193,7 +194,7 @@ pub(super) fn snapshot(
             .chain(hostiles.iter())
             .map(|uid| g.units[uid].pos)
             .collect();
-        ground.sort_by_key(|p| anchors.iter().map(|a| g.wdist(*p, *a)).min().unwrap_or(99));
+        ground.sort_by_key_shared(|p| anchors.iter().map(|a| g.wdist(*p, *a)).min().unwrap_or(99));
         ground.truncate(MAX_TILES);
         ground.sort_unstable();
     }

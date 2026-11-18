@@ -33,6 +33,7 @@
 //! `ValueNet::load` is a single cwd-relative read. A translation table that
 //! silently comes back empty would put the simulator on ground that does not
 //! exist, which is a worse failure than any of those.
+use crate::shared_sort::SharedSort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -1407,7 +1408,7 @@ fn turn_upper_bound(line: &str) -> (Option<u32>, bool) {
 /// Candidate state lines, most promising first: the highest turn bound, and on
 /// a tie the later line (the newest board wins a tie).
 fn by_turn_bound_newest_first(order: &mut [(u32, (usize, usize))]) {
-    order.sort_unstable_by(|a, b| b.0.cmp(&a.0).then(b.1 .0.cmp(&a.1 .0)));
+    order.sort_unstable_by_shared(|a, b| b.0.cmp(&a.0).then(b.1 .0.cmp(&a.1 .0)));
 }
 
 /// ★★★ THE NEWEST BOARD WITHOUT PARSING EVERY OLDER ONE.
@@ -2229,7 +2230,7 @@ fn congress_seat_of_host(
         .iter()
         .filter(|entry| entry.player != ours && !congress_seats.contains_key(&entry.player))
         .collect();
-    unmet.sort_by_key(|entry| entry.player);
+    unmet.sort_by_key_shared(|entry| entry.player);
     let occupied: BTreeSet<usize> = congress_seats.values().copied().collect();
     let free_seats = (1..major_seats).filter(|seat| !occupied.contains(seat));
     for (seat, entry) in free_seats.zip(unmet) {

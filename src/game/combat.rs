@@ -21,6 +21,7 @@
 //! methods stay public; the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl Game {
     /// Charge one bout of fighting. `WAR_WEARINESS_PER_COMBAT_IN_FOREIGN_LANDS`
@@ -802,8 +803,9 @@ impl Game {
             || (class == "religious_apostle"
                 && !self.grants_city_state_unique_bonus(unit.owner, "Yerevan"));
         if limited_offer {
-            available
-                .sort_by_key(|name| (Self::promotion_offer_key(unit.id, unit.level, name), *name));
+            available.sort_by_key_shared(|name| {
+                (Self::promotion_offer_key(unit.id, unit.level, name), *name)
+            });
             available.truncate(3);
         }
         available

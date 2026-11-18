@@ -33,6 +33,7 @@ use super::*;
 use crate::ai::Ai;
 use crate::game::{Action, Game, GameOptions};
 use crate::reasoning::{Journal, Thought};
+use crate::shared_sort::SharedSort;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// One Settler from the turn it was first seen to the turn it was gone.
@@ -521,7 +522,7 @@ fn run_arm(arm: &str, maps: u64, opt_ins: &[String]) {
         .into_iter()
         .map(|(label, (all, city))| (label, all, city))
         .collect();
-    rows.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+    rows.sort_by_shared(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
     println!("  why the settler stood still            idle turns   of which in a city");
     for (label, all, city) in rows {
         println!(
@@ -531,7 +532,7 @@ fn run_arm(arm: &str, maps: u64, opt_ins: &[String]) {
     }
     // The worst lives, so a reader can go and look at one.
     let mut worst: Vec<&Life> = lives.to_vec();
-    worst.sort_by(|a, b| {
+    worst.sort_by_shared(|a, b| {
         b.idle_in_city
             .cmp(&a.idle_in_city)
             .then(b.idle.cmp(&a.idle))
@@ -547,7 +548,7 @@ fn run_arm(arm: &str, maps: u64, opt_ins: &[String]) {
                 acc
             });
         let mut reasons: Vec<(&str, u32)> = reasons.into_iter().collect();
-        reasons.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+        reasons.sort_by_key_shared(|(_, count)| std::cmp::Reverse(*count));
         println!(
             "    seat {} born t{} at {:?}: {} idle-in-city of {} turns, first move {:?}, {:?}; {}",
             life.owner,

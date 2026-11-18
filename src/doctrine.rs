@@ -77,6 +77,7 @@
 //! mean it failed. The profile is for reading beside a swing, to say what a
 //! change to the tactical layer actually changed about its behaviour.
 
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -2002,7 +2003,7 @@ fn muster(g: &Game, wanted: Pos, rng: &mut Rng) -> Option<Pos> {
     // not ordered by distance, so sorting is what makes "the nearest usable
     // tile" true rather than "some usable tile within three".
     let mut outward = g.wdisk(wanted, 3);
-    outward.sort_by_key(|pos| (g.wdist(wanted, *pos), *pos));
+    outward.sort_by_key_shared(|pos| (g.wdist(wanted, *pos), *pos));
     candidates.extend(outward);
     candidates.into_iter().find(|pos| usable(g, *pos))
 }

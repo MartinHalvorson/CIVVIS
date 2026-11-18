@@ -62,6 +62,7 @@ use super::open_city_front::{OPEN_CITY_MARCH, OPEN_CITY_ROAD_STEPS, OPEN_CITY_TI
 use super::soft_city_window::SOFT_CITY_GARRISON_BONUS;
 use super::{one_war, AdvancedAi, CITY_MAX_HP};
 use crate::game::{effective_strength, expected_damage, Game};
+use crate::shared_sort::SharedSort;
 use crate::think;
 
 /// Turns, the march included, within which the takers must bring the city
@@ -194,7 +195,7 @@ impl AdvancedAi {
         if takers.is_empty() {
             return None;
         }
-        takers.sort_by_key(|taker| (taker.3, taker.0));
+        takers.sort_by_key_shared(|taker| (taker.3, taker.0));
         let best = takers.iter().map(|taker| taker.1).fold(f64::MIN, f64::max);
         let visible = self.battlefront_visibility(g, pid);
         let defenders: Vec<&crate::game::Unit> = g

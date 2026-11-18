@@ -14,6 +14,7 @@
 //! the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     /// Whether God-King's Faith is what stands between this empire and its
@@ -837,8 +838,9 @@ impl AdvancedAi {
                     .then_some((name.as_str(), favor_per_turn))
             })
             .collect();
-        nobel_peace_direct_favor_cards
-            .sort_by(|left, right| right.1.total_cmp(&left.1).then_with(|| left.0.cmp(right.0)));
+        nobel_peace_direct_favor_cards.sort_by_shared(|left, right| {
+            right.1.total_cmp(&left.1).then_with(|| left.0.cmp(right.0))
+        });
         let nobel_peace_direct_favor_cards: Vec<&str> = nobel_peace_direct_favor_cards
             .into_iter()
             .map(|(card, _)| card)
@@ -1343,7 +1345,7 @@ impl AdvancedAi {
                     false
                 });
             }
-            replaceable.sort_by(|first, second| {
+            replaceable.sort_by_shared(|first, second| {
                 let key = |current: &str| {
                     let policy = &g.rules.policies[current];
                     let era = policy

@@ -49,6 +49,7 @@
 //! and a seat aiming elsewhere keep the shipped score. Off, nothing changes.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// Charges past which a city reads as out of one corps' reach.
 pub(super) const CHARGE_CAP: u32 = 12;
@@ -141,7 +142,7 @@ impl FlipRows {
         let mut seats: Vec<i32> = quota.iter().map(|(whole, _)| *whole as i32).collect();
         let left = (self.pop - seats.iter().sum::<i32>()).max(0) as usize;
         let mut order: Vec<usize> = (0..rows.len()).filter(|i| rows[*i] > 0.0).collect();
-        order.sort_by(|a, b| {
+        order.sort_by_shared(|a, b| {
             quota[*b]
                 .1
                 .total_cmp(&quota[*a].1)
@@ -323,7 +324,7 @@ impl AdvancedAi {
                     ))
                 })
                 .collect();
-            open.sort_by_key(|row| (row.0, row.1));
+            open.sort_by_key_shared(|row| (row.0, row.1));
             for (rank, (reference, cid, rows)) in open.iter().enumerate() {
                 let city = &g.cities[cid];
                 let shipped = if self.religion_seat_flips_the_cheapest {

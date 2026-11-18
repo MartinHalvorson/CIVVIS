@@ -76,6 +76,7 @@
 //! hopeless streak is kept by the city's tile, as live city ids change
 //! between frames.
 
+use crate::shared_sort::SharedSort;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
@@ -452,7 +453,7 @@ fn members_of(g: &Game, pid: usize, center: Pos, force: &[u32]) -> Vec<u32> {
         .collect();
     members.sort_unstable();
     members.dedup();
-    members.sort_by_key(|uid| (g.wdist(g.units[uid].pos, center), *uid));
+    members.sort_by_key_shared(|uid| (g.wdist(g.units[uid].pos, center), *uid));
     members.truncate(MAX_MEMBERS);
     members
 }
@@ -471,7 +472,7 @@ fn hostiles_of(g: &Game, pid: usize, center: Pos) -> Vec<u32> {
         })
         .map(|unit| unit.id)
         .collect();
-    hostiles.sort_by_key(|uid| (g.wdist(g.units[uid].pos, center), *uid));
+    hostiles.sort_by_key_shared(|uid| (g.wdist(g.units[uid].pos, center), *uid));
     hostiles.truncate(MAX_HOSTILES);
     hostiles
 }
@@ -1143,7 +1144,7 @@ fn best_kind(
         .filter(|(_, spec)| fits(spec))
         .map(|(kind, spec)| (*kind, key(spec)))
         .collect();
-    kinds.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    kinds.sort_by_shared(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     kinds
         .into_iter()
         .find(|(kind, _)| {
@@ -1310,7 +1311,7 @@ fn spawn_recruits(
         .flat_map(|r| board.wring(center, r))
         .filter(|pos| free(board, *pos))
         .collect();
-    spots.sort_by_key(|pos| (board.wdist(*pos, anchor), *pos));
+    spots.sort_by_key_shared(|pos| (board.wdist(*pos, anchor), *pos));
     spots.dedup();
     let mut spots = spots.into_iter();
     let mut spawned = Vec::new();
@@ -1411,7 +1412,7 @@ fn forecast_short_of(
                 && g.unit_ids_at(*pos).is_empty()
         })
         .collect();
-    spots.sort_by_key(|pos| (g.wdist(*pos, anchor), *pos));
+    spots.sort_by_key_shared(|pos| (g.wdist(*pos, anchor), *pos));
     let mut board = g.clone();
     let mut extras = Vec::new();
     let mut spots = spots.into_iter();

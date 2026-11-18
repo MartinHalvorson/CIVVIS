@@ -17,6 +17,7 @@
 //! With less cash than the transport minimum, retain the existing barter path:
 //! the initial implementation removed a native Iron barter at091313Z/59.
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// One material purchase, with the cash that must remain for its upgrade.
 #[derive(Clone, Debug, PartialEq)]
@@ -85,7 +86,7 @@ impl AdvancedAi {
                 })
             })
             .collect();
-        wants.sort_by(|a, b| {
+        wants.sort_by_shared(|a, b| {
             b.gain
                 .total_cmp(&a.gain)
                 .then_with(|| a.gold_reserve.total_cmp(&b.gold_reserve))

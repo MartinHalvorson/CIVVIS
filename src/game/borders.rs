@@ -10,6 +10,7 @@
 //! methods stay public; the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl Game {
     pub(super) fn culture_bomb(&mut self, cid: u32, center: Pos) {
@@ -72,7 +73,7 @@ impl Game {
         scored.retain(|(_, score)| *score == best_score);
         // Stock chooses randomly among exactly tied influence scores. Sort
         // first so a fixed game seed remains reproducible across save loads.
-        scored.sort_by_key(|(position, _)| *position);
+        scored.sort_by_key_shared(|(position, _)| *position);
         let n = scored[self.rng.below(scored.len())].0;
         {
             self.map.tiles.get_mut(&n).unwrap().owner_city = Some(cid);

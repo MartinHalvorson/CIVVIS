@@ -14,6 +14,7 @@
 //! uses are `pub(super)`.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// Plant the map's Natural Wonders, and hand the map back.
 pub(super) fn place_natural_wonders(
@@ -100,7 +101,7 @@ pub(super) fn place_natural_wonders(
         .filter(|index| !anchors[*index].is_empty())
         .map(|index| (rng.below(100), index))
         .collect();
-    draw.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    draw.sort_by_shared(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     // A map that asks for more wonders than the roster can seat still gets its
     // count: the ones with no legal anchor come last and are shaped in.
     let mut order: Vec<usize> = draw.into_iter().map(|(_, index)| index).collect();
@@ -246,7 +247,7 @@ pub(super) fn place_natural_wonders(
                         })
                     })
                     .collect();
-                by_distance.sort_by(|a, b| {
+                by_distance.sort_by_shared(|a, b| {
                     dot(wm.direction(*b), toward)
                         .partial_cmp(&dot(wm.direction(*a), toward))
                         .unwrap_or(std::cmp::Ordering::Equal)

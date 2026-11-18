@@ -12,6 +12,7 @@
 //! methods stay public; the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// Every city, then every unit, as `(owner, tile index)`.
 struct ContactRoster {
@@ -1011,7 +1012,7 @@ impl Game {
         }
         memory
             .defending_districts
-            .sort_unstable_by_key(|state| state.pos);
+            .sort_unstable_by_key_shared(|state| state.pos);
         memory
     }
 

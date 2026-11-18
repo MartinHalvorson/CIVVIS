@@ -12,6 +12,7 @@
 //! methods stay public; the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl Game {
     pub(super) fn apply_wonder_completion_effects(
@@ -203,7 +204,7 @@ impl Game {
                     })
                     .map(|(building, _)| *building)
                     .collect();
-                candidates.sort_by(|a, b| {
+                candidates.sort_by_shared(|a, b| {
                     self.rules.buildings[a]
                         .cost
                         .partial_cmp(&self.rules.buildings[b].cost)
@@ -873,7 +874,7 @@ impl Game {
             })
             .map(|(name, _)| *name)
             .collect();
-        candidates.sort_by(|a, b| {
+        candidates.sort_by_shared(|a, b| {
             self.rules.units[b]
                 .cost
                 .partial_cmp(&self.rules.units[a].cost)
@@ -903,7 +904,7 @@ impl Game {
             bases.extend(self.nbrs(pos));
             bases.sort();
             bases.dedup();
-            bases.sort_by_key(|base| usize::from(*base == pos));
+            bases.sort_by_key_shared(|base| usize::from(*base == pos));
             if let Some(base) = bases
                 .into_iter()
                 .find(|base| self.can_air_base_at(owner, *base, None))

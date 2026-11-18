@@ -2,6 +2,7 @@
 //! position so a city can hold more than one.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// A non-center district's independent combat state. Encampment-family saves
 /// continue to use City's existing inline fields; the other districts use a
@@ -129,7 +130,7 @@ impl Game {
         );
         memory
             .defending_districts
-            .sort_unstable_by_key(|state| state.pos);
+            .sort_unstable_by_key_shared(|state| state.pos);
     }
 
     pub(crate) fn set_defending_district_state(&mut self, cid: u32, state: DefendingDistrict) {
@@ -153,7 +154,8 @@ impl Game {
             *previous = state;
         } else {
             city.defending_districts.push(state);
-            city.defending_districts.sort_unstable_by_key(|d| d.pos);
+            city.defending_districts
+                .sort_unstable_by_key_shared(|d| d.pos);
         }
     }
 

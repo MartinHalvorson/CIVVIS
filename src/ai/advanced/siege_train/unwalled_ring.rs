@@ -22,6 +22,7 @@
 //! Off, nothing runs.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     /// See the module. `None` where the gene is off or no ring tile is
@@ -60,7 +61,7 @@ impl AdvancedAi {
                         .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
             })
             .collect();
-        ring.sort_by_key(|pos| (g.wdist(unit.pos, *pos), *pos));
+        ring.sort_by_key_shared(|pos| (g.wdist(unit.pos, *pos), *pos));
         for dest in ring {
             let mut after = g.speculative_clone();
             if after

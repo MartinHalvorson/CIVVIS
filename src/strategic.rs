@@ -19,6 +19,7 @@ use crate::ai::{run_game, AdvancedAi, Ai, PlanReport, VictoryTarget, Weights};
 use crate::evolve::features;
 use crate::game::{Action, ActionFamilies, Game, Item};
 use crate::obs_tensor::obs_tensor;
+use crate::shared_sort::SharedSort;
 use crate::valuenet::ValueNet;
 
 const TARGET_COMMITMENT_MARGIN: f64 = 0.01;
@@ -891,7 +892,7 @@ impl StrategicAi {
             (VictoryTarget::Diplomacy, diplomacy),
         ];
         lanes.retain(|(target, _)| Self::target_enabled(g, *target));
-        lanes.sort_by_key(|right| std::cmp::Reverse(right.1));
+        lanes.sort_by_key_shared(|right| std::cmp::Reverse(right.1));
         let (target, progress) = *lanes.first()?;
         let runner_up = lanes.get(1).map_or(0, |(_, progress)| *progress);
         // Thirty is the first point at which technology progress has moved

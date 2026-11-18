@@ -192,6 +192,7 @@
 use super::city_state_harvest::harvest_floor;
 use super::declaration_needs_a_capture::DECLARE_P;
 use super::*;
+use crate::shared_sort::SharedSort;
 use crate::think;
 use std::collections::{BTreeSet, HashSet};
 
@@ -1012,7 +1013,7 @@ impl AdvancedAi {
             .into_iter()
             .filter(|cid| Some(*cid) != capital)
             .collect();
-        others.sort_by_key(|cid| (g.wdist(g.cities[cid].pos, target), *cid));
+        others.sort_by_key_shared(|cid| (g.wdist(g.cities[cid].pos, target), *cid));
         let mut cities: Vec<u32> = capital.into_iter().collect();
         let room = count.saturating_sub(cities.len());
         cities.extend(others.into_iter().take(room));
@@ -2257,7 +2258,7 @@ impl AdvancedAi {
                     .map(|(gold, _)| gold)
             })
             .collect();
-        bills.sort_by(f64::total_cmp);
+        bills.sort_by_shared(f64::total_cmp);
         bills.into_iter().take(room).sum()
     }
 
@@ -3532,7 +3533,7 @@ impl AdvancedAi {
         // Breakers first, then the healthiest (the rush: the nearest).
         bodies.sort_unstable();
         if rush {
-            bodies.sort_by_key(|(striker, hp, uid)| {
+            bodies.sort_by_key_shared(|(striker, hp, uid)| {
                 (*striker, g.wdist(g.units[uid].pos, pos), *hp, *uid)
             });
         }

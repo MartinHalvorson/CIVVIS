@@ -11,6 +11,7 @@
 //! the rules moved, only the text.  See `docs/VERSION_CONTROL.md`.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// Combat actions: attack, ranged, air, WMD and city strikes, pillage. See
 /// `game/actions/combat.rs`.
@@ -3198,7 +3199,7 @@ impl Game {
                 .filter(|base| *base != pos && self.wdist(pos, *base) <= range)
                 .filter(|base| self.can_air_base_at(owner, *base, Some(uid)))
                 .collect();
-            bases.sort_by_key(|base| (self.wdist(pos, *base), *base));
+            bases.sort_by_key_shared(|base| (self.wdist(pos, *base), *base));
             if let Some(base) = bases.first().copied() {
                 self.relocate(uid, base);
                 let unit = self.units.get_mut(&uid).unwrap();
@@ -5982,7 +5983,7 @@ impl Game {
                 (maintenance > 0.0).then_some((uid, maintenance))
             })
             .collect();
-        candidates.sort_by(|left, right| {
+        candidates.sort_by_shared(|left, right| {
             right
                 .1
                 .total_cmp(&left.1)
@@ -6658,7 +6659,7 @@ impl Game {
             .collect();
         // Move carriers and other bases before their aircraft so the latter
         // can select the newly relocated carrier as a valid destination.
-        units.sort_by_key(|unit| {
+        units.sort_by_key_shared(|unit| {
             (
                 self.rules.units[self.units[unit].kind].domain.as_deref() == Some("air"),
                 *unit,
@@ -6980,7 +6981,7 @@ impl Game {
                 deals.push(deal);
             }
         }
-        deals.sort_by(|left, right| {
+        deals.sort_by_shared(|left, right| {
             Self::war_eve_net_gold(right)
                 .partial_cmp(&Self::war_eve_net_gold(left))
                 .unwrap()

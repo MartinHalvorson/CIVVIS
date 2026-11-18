@@ -23,6 +23,7 @@
 //! unchanged. Price and every other purchase rule are unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// The tiles a new band could play: the host's highlights for our bands,
 /// else the wonders and Theater Squares of open rivals we have seen.
@@ -83,7 +84,7 @@ impl AdvancedAi {
                 .min()
                 .unwrap_or(i32::MAX)
         };
-        cities.sort_by_key(reach);
+        cities.sort_by_key_shared(reach);
         if let Some(first) = cities.first() {
             think!(self.journal(), Faith, Detail,
                    "Rock Bands are bought in {}", g.cities[first].name;

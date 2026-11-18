@@ -15,6 +15,7 @@ use crate::name::Name;
 use crate::parallel::WorkPool;
 use crate::reasoning::{plain, Journal};
 use crate::rules::Yields;
+use crate::shared_sort::SharedSort;
 use crate::think;
 use crate::world::TileBits;
 use crate::Pos;
@@ -13974,7 +13975,7 @@ impl AdvancedAi {
                 quotes.push((gold * multiplier, u32::MAX - cid));
             }
         }
-        quotes.sort_by(|left, right| left.0.total_cmp(&right.0).then(left.1.cmp(&right.1)));
+        quotes.sort_by_shared(|left, right| left.0.total_cmp(&right.0).then(left.1.cmp(&right.1)));
         quotes.into_iter().take(needed).map(|(gold, _)| gold).sum()
     }
 
@@ -14220,7 +14221,8 @@ impl AdvancedAi {
                 .then_some((gold, uid))
             })
             .collect::<Vec<_>>();
-        candidates.sort_by(|left, right| left.0.total_cmp(&right.0).then(left.1.cmp(&right.1)));
+        candidates
+            .sort_by_shared(|left, right| left.0.total_cmp(&right.0).then(left.1.cmp(&right.1)));
         for (gold, uid) in candidates {
             if needed == 0 {
                 break;
@@ -16152,7 +16154,7 @@ impl AdvancedAi {
             })
             .map(|other| (g.tourism_per_turn(other.id), other.id))
             .collect();
-        rivals.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        rivals.sort_by_shared(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
         let (best, leader) = *rivals.first()?;
         let runner_up = rivals.get(1).map_or(0.0, |(tourism, _)| *tourism);
         (best >= TOURISM_LEADER_FLOOR && best >= TOURISM_LEADER_MARGIN * runner_up)
@@ -18788,7 +18790,7 @@ impl AdvancedAi {
             // Governor districts already proved an immediate strategic need,
             // so they keep priority whenever one clears the score floor.
             if candidates.is_empty() {
-                plot_options.sort_by(|left, right| {
+                plot_options.sort_by_shared(|left, right| {
                     right
                         .0
                         .total_cmp(&left.0)
@@ -18820,7 +18822,7 @@ impl AdvancedAi {
             // is tried, and a refusal ends the turn's spending as before.
             let keep = 1 + self.order_retry_budget();
             let mut ranked: Vec<(f64, std::cmp::Reverse<String>, Action)> = if keep > 1 {
-                candidates.sort_by(|left, right| {
+                candidates.sort_by_shared(|left, right| {
                     right
                         .0
                         .total_cmp(&left.0)
@@ -19253,7 +19255,7 @@ impl AdvancedAi {
                     .contains_key(crate::name!("holy_site"))
             })
             .collect();
-        candidates.sort_by_key(|cid| (Some(*cid) != holy_city, *cid));
+        candidates.sort_by_key_shared(|cid| (Some(*cid) != holy_city, *cid));
         for building in ["shrine", "temple"] {
             for &cid in &candidates {
                 if owns(g, cid, building) {
@@ -20610,7 +20612,7 @@ impl AdvancedAi {
                 )
             })
             .collect::<Vec<_>>();
-        endangered.sort_by(|left, right| {
+        endangered.sort_by_shared(|left, right| {
             left.2
                 .total_cmp(&right.2)
                 .then_with(|| left.0.cmp(&right.0))
@@ -21953,7 +21955,7 @@ impl AdvancedAi {
                 let keep = 1 + self.order_retry_budget();
                 if keep > 1 {
                     let mut menu: Vec<(f64, String, Item)> = menu.collect();
-                    menu.sort_by(|left, right| {
+                    menu.sort_by_shared(|left, right| {
                         right
                             .0
                             .total_cmp(&left.0)
@@ -23062,7 +23064,8 @@ impl AdvancedAi {
             })
             .map(|candidate| (self.settler_factory_turns(g, pid, candidate), candidate))
             .collect::<Vec<_>>();
-        factories.sort_by(|left, right| left.0.total_cmp(&right.0).then(left.1.cmp(&right.1)));
+        factories
+            .sort_by_shared(|left, right| left.0.total_cmp(&right.0).then(left.1.cmp(&right.1)));
         let Some(fastest) = factories.first().map(|factory| factory.0) else {
             return false;
         };
@@ -23154,7 +23157,9 @@ impl AdvancedAi {
                     Some((position, value - detour * SETTLER_ROUTE_DETOUR_PENALTY))
                 })
                 .collect::<Vec<_>>();
-            practical.sort_by(|left, right| right.1.total_cmp(&left.1).then(left.0.cmp(&right.0)));
+            practical.sort_by_shared(|left, right| {
+                right.1.total_cmp(&left.1).then(left.0.cmp(&right.0))
+            });
             practical.into_iter().next()
         };
         choose(self.settle_sites(g, pid, origin, 11)).or_else(|| {
@@ -23187,7 +23192,7 @@ impl AdvancedAi {
             .filter(|city| g.cities[city].queue.first() == Some(&settler))
             .map(|city| (self.settler_factory_turns(g, pid, city), city))
             .collect::<Vec<_>>();
-        queued.sort_by(|left, right| left.0.total_cmp(&right.0).then(left.1.cmp(&right.1)));
+        queued.sort_by_shared(|left, right| left.0.total_cmp(&right.0).then(left.1.cmp(&right.1)));
         for (_, city) in queued {
             let site = self.coordinated_site_from(g, pid, g.cities[&city].pos, &reserved);
             if city == cid {
@@ -25497,7 +25502,7 @@ impl AdvancedAi {
             .iter()
             .map(|(why, count)| (why.clone(), *count))
             .collect();
-        rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        rows.sort_by_shared(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         rows
     }
 

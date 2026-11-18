@@ -60,6 +60,7 @@ use crate::game::{Game, Item};
 use crate::name::Name;
 use crate::reasoning::plain;
 use crate::rules::BoostSpec;
+use crate::shared_sort::SharedSort;
 use crate::think;
 
 /// The furthest an Inspiration may be, in standard turns, and still hold its
@@ -244,7 +245,7 @@ impl AdvancedAi {
                 Some(turns.ceil().max(1.0))
             })
             .collect();
-        turns.sort_by(f64::total_cmp);
+        turns.sort_by_shared(f64::total_cmp);
         usize::try_from(count)
             .ok()
             .filter(|count| *count >= 1)

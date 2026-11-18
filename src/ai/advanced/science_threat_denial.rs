@@ -102,6 +102,7 @@
 //! to that city — no other city of the rival is read — and it is the same
 //! reach `science_project_build_turns` has on our own cities.
 
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeSet;
 
 use super::opportunistic_war::RAID_PEACE_EARLIEST;
@@ -302,7 +303,7 @@ impl AdvancedAi {
                 })
             })
             .collect();
-        threats.sort_by_key(ScienceThreat::rank);
+        threats.sort_by_key_shared(ScienceThreat::rank);
         threats
     }
 

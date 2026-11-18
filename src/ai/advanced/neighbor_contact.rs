@@ -5,6 +5,7 @@
 
 use super::AdvancedAi;
 use crate::game::Game;
+use crate::shared_sort::SharedSort;
 use crate::{think, Pos};
 
 impl AdvancedAi {
@@ -110,7 +111,7 @@ impl AdvancedAi {
                 Some((score, pos))
             })
             .collect();
-        candidates.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        candidates.sort_by_shared(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
         candidates
             .into_iter()
             .take(12)

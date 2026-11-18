@@ -10,6 +10,7 @@ use crate::name::{AsName, Name};
 use crate::parallel::WorkPool;
 use crate::reasoning::{plain, Journal};
 use crate::rng::Rng;
+use crate::shared_sort::SharedSort;
 use crate::think;
 use crate::Pos;
 use std::cell::RefCell;
@@ -7420,7 +7421,7 @@ impl BasicAi {
             let here = g.wdist(cur, target);
             local.retain(|p| g.wdist(*p, target) < here);
         }
-        local.sort_by_key(|p| {
+        local.sort_by_key_shared(|p| {
             let wet = prefer_dry && g.map.get(*p).is_some_and(|tile| g.rules.is_water(tile));
             (wet, g.wdist(*p, target), *p)
         });
@@ -7882,7 +7883,7 @@ impl BasicAi {
                 Some((value / (1.0 + travel_turns), distance, position))
             })
             .collect();
-        venues.sort_by(|left, right| {
+        venues.sort_by_shared(|left, right| {
             right
                 .0
                 .total_cmp(&left.0)
@@ -7943,7 +7944,7 @@ impl BasicAi {
                 ))
             })
             .collect();
-        venues.sort_by(|left, right| {
+        venues.sort_by_shared(|left, right| {
             right
                 .0
                 .total_cmp(&left.0)

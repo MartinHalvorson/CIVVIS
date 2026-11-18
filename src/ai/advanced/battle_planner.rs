@@ -203,6 +203,7 @@
 //! the kill plan's own vetoes and values are unchanged. Census
 //! `battle_plan_doomed`; one Decision line per plan when it fires.
 
+use crate::shared_sort::SharedSort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -723,7 +724,7 @@ impl DangerField {
                 reaches.push((id, reach));
             }
         }
-        reaches.sort_by_key(|(id, _)| *id);
+        reaches.sort_by_key_shared(|(id, _)| *id);
         DangerField {
             pid,
             probe,
@@ -1485,7 +1486,7 @@ fn search_kill_sequence(
         }
         // Best first; equal scores by the sequence itself, so the plan is a
         // function of the board alone.
-        next.sort_by(|a, b| {
+        next.sort_by_shared(|a, b| {
             b.score
                 .total_cmp(&a.score)
                 .then_with(|| a.blows.cmp(&b.blows))
@@ -1989,7 +1990,7 @@ impl AdvancedAi {
                 )
             })
             .collect();
-        ranked.sort_by(|a, b| {
+        ranked.sort_by_shared(|a, b| {
             b.0.total_cmp(&a.0)
                 .then_with(|| a.1.cmp(&b.1))
                 .then_with(|| a.2.cmp(&b.2))
@@ -2385,7 +2386,7 @@ impl AdvancedAi {
                         )
                     })
                     .collect();
-                keyed.sort_by(|a, b| {
+                keyed.sort_by_shared(|a, b| {
                     a.0.cmp(&b.0)
                         .then_with(|| a.1.total_cmp(&b.1))
                         .then_with(|| a.2.total_cmp(&b.2))
@@ -2425,7 +2426,7 @@ impl AdvancedAi {
                     .any(|candidate| candidate.target == *index)
             })
             .collect();
-        target_order.sort_by(|a, b| {
+        target_order.sort_by_shared(|a, b| {
             // `siege-at-the-walls-dies-first`: wall threats are never the
             // targets trimmed away. Constant false with the gene off.
             targets[*b]
@@ -2452,7 +2453,7 @@ impl AdvancedAi {
         };
         let mut shooter_order: Vec<usize> =
             (0..shooters.len()).filter(|s| heaviest(*s) > 0.0).collect();
-        shooter_order.sort_by(|a, b| {
+        shooter_order.sort_by_shared(|a, b| {
             heaviest(*b)
                 .total_cmp(&heaviest(*a))
                 .then_with(|| shooters[*a].uid.cmp(&shooters[*b].uid))
@@ -3394,7 +3395,7 @@ impl AdvancedAi {
                     && !(self.battle_planner_3 && self.unit_is_reserved(*uid))
             })
             .collect();
-        members.sort_by_key(|uid| (g.wdist(g.units[uid].pos, target), *uid));
+        members.sort_by_key_shared(|uid| (g.wdist(g.units[uid].pos, target), *uid));
         members.truncate(MAX_PLANNED_UNITS);
         members.sort_unstable();
         members
@@ -3423,7 +3424,7 @@ impl AdvancedAi {
                 uid: other.id,
             })
             .collect();
-        contacts.sort_by_key(|contact| (contact.hp, contact.uid));
+        contacts.sort_by_key_shared(|contact| (contact.hp, contact.uid));
         contacts
     }
 
@@ -3471,7 +3472,7 @@ impl AdvancedAi {
         // next turn's shot is from where they stand. A stable sort; nothing
         // moves with the gene off.
         if self.siege_at_the_walls_dies_first {
-            contacts.sort_by_key(|contact| !self.wall_threat(g, pid, contact.uid));
+            contacts.sort_by_key_shared(|contact| !self.wall_threat(g, pid, contact.uid));
         }
         if let Some(anchor) = defense_anchor {
             contacts.retain(|contact| {
@@ -3561,7 +3562,7 @@ impl AdvancedAi {
                     (score, g.wdist(tile, group.anchor), tile)
                 })
                 .collect();
-            candidates.sort_by(|a, b| {
+            candidates.sort_by_shared(|a, b| {
                 b.0.total_cmp(&a.0)
                     .then_with(|| a.1.cmp(&b.1))
                     .then_with(|| a.2.cmp(&b.2))
@@ -3634,7 +3635,7 @@ impl AdvancedAi {
                     ))
                 })
                 .collect();
-            candidates.sort_by(|a, b| {
+            candidates.sort_by_shared(|a, b| {
                 a.0.cmp(&b.0)
                     .then_with(|| b.1.total_cmp(&a.1))
                     .then_with(|| a.2.cmp(&b.2))
@@ -3680,7 +3681,7 @@ impl AdvancedAi {
                     )
                 })
                 .collect();
-            candidates.sort_by(|a, b| {
+            candidates.sort_by_shared(|a, b| {
                 b.0.cmp(&a.0)
                     .then_with(|| b.1.cmp(&a.1))
                     .then_with(|| b.2.total_cmp(&a.2))
@@ -3718,7 +3719,7 @@ impl AdvancedAi {
                     )
                 })
                 .collect();
-            candidates.sort_by(|a, b| {
+            candidates.sort_by_shared(|a, b| {
                 b.0.cmp(&a.0)
                     .then_with(|| b.1.total_cmp(&a.1))
                     .then_with(|| a.2.cmp(&b.2))
@@ -3798,7 +3799,8 @@ impl AdvancedAi {
                 });
             }
         }
-        placements.sort_by_key(|placement| (placement.depth, placement.role, placement.unit));
+        placements
+            .sort_by_key_shared(|placement| (placement.depth, placement.role, placement.unit));
 
         // The pace floor, on the approach only.
         let pace_floor = (!in_contact).then(|| {

@@ -17,6 +17,7 @@
 //! uses are `pub(super)`.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// How even a finished layout came out. Nothing in the generator consults it —
 /// region division is what produces the spread — but it is the vocabulary the
@@ -76,7 +77,7 @@ pub(super) fn start_quality(rules: &Rules, wm: &WorldMap, pos: Pos) -> i32 {
                 + yields.faith) as i32,
         );
     }
-    nearby_yields.sort_unstable_by(|a, b| b.cmp(a));
+    nearby_yields.sort_unstable_by_shared(|a, b| b.cmp(a));
     let best_nearby: i32 = nearby_yields.into_iter().take(8).sum();
     best_nearby
         + workable_land * 2
@@ -187,7 +188,7 @@ pub fn assign_starts_by_bias(rules: &Rules, wm: &WorldMap, sites: &mut [Pos], ci
     }
     // Strongest pull first; ties resolve by seat then site so a given map and
     // roster always produce the same assignment.
-    pairs.sort_by(|left, right| {
+    pairs.sort_by_shared(|left, right| {
         right
             .0
             .cmp(&left.0)
@@ -685,7 +686,7 @@ pub(super) fn apportion(weights: &[i64], seats: usize) -> Vec<usize> {
         .map(|weight| (seats as i64 * weight / total) as usize)
         .collect();
     let mut order: Vec<usize> = (0..weights.len()).collect();
-    order.sort_by_key(|index| {
+    order.sort_by_key_shared(|index| {
         let remainder = seats as i64 * weights[*index] - given[*index] as i64 * total;
         (std::cmp::Reverse(remainder), *index)
     });
@@ -837,7 +838,7 @@ pub(super) fn archipelago_minor_regions(
     let baseline = seats / majors.len();
     let mut allocation = vec![baseline; majors.len()];
     let mut order: Vec<usize> = (0..majors.len()).collect();
-    order.sort_by_key(|index| (std::cmp::Reverse(weights[*index]), *index));
+    order.sort_by_key_shared(|index| (std::cmp::Reverse(weights[*index]), *index));
     for index in order.into_iter().take(seats % majors.len()) {
         allocation[index] += 1;
     }
@@ -1190,7 +1191,7 @@ pub(super) fn balance_territory(
                     && cached_start_quality(&mut quality_cache, rules, wm, *position) >= keep
             })
             .collect();
-        trials.sort_by_key(|position| (wm.distance(*position, current), *position));
+        trials.sort_by_key_shared(|position| (wm.distance(*position, current), *position));
         trials.truncate(32);
         let Some((score, site)) = trials
             .into_iter()

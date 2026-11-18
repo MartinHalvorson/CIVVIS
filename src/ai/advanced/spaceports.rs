@@ -21,6 +21,7 @@
 //! code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     /// The number of Spaceports the current Science plan is allowed to keep
@@ -180,7 +181,7 @@ impl AdvancedAi {
                         }))
             })
             .collect();
-        candidates.sort_by(|left, right| {
+        candidates.sort_by_shared(|left, right| {
             g.city_yields(*right)
                 .production
                 .total_cmp(&g.city_yields(*left).production)

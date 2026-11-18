@@ -69,6 +69,7 @@
 //! version one off.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     /// Whether the gene reshapes the Spy claim on this board: the flag, the
@@ -200,7 +201,7 @@ impl AdvancedAi {
         if !candidates.iter().all(|(_, cid)| quote(*cid).is_some()) {
             return;
         }
-        candidates.sort_by(|(left, left_city), (right, right_city)| {
+        candidates.sort_by_shared(|(left, left_city), (right, right_city)| {
             quote(*left_city)
                 .unwrap()
                 .total_cmp(&quote(*right_city).unwrap())

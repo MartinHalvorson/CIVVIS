@@ -1,5 +1,6 @@
 //! Finish useful interrupted work after urgent reservations, before new bids.
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     pub(super) fn reconcile_production_commitments(
@@ -87,7 +88,7 @@ impl AdvancedAi {
                 })
                 .collect::<Vec<_>>()
         };
-        candidates.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        candidates.sort_by_shared(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
         for (_, _, item) in candidates {
             if g.apply(
                 pid,
@@ -177,7 +178,7 @@ impl AdvancedAi {
         };
         // Wonders are contested; otherwise realize the nearest useful payoff.
         // Stable tie-breaking makes menu order irrelevant on every platform.
-        candidates.sort_by(|a, b| {
+        candidates.sort_by_shared(|a, b| {
             b.0.cmp(&a.0)
                 .then_with(|| a.1.total_cmp(&b.1))
                 .then_with(|| b.2.total_cmp(&a.2))

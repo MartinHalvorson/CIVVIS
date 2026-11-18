@@ -28,6 +28,7 @@
 use super::siege_production::{matched_guns, BREAKER_MATCH_DEFAULT_TURNS, BREAKER_MATCH_MIN_HIT};
 use super::*;
 use crate::game::expected_damage;
+use crate::shared_sort::SharedSort;
 
 /// A shortfall that our own income makes up for one gun within this many
 /// turns is not bought.
@@ -231,7 +232,7 @@ impl AdvancedAi {
                 })
             })
             .collect();
-        spares.sort_by(|left, right| {
+        spares.sort_by_shared(|left, right| {
             right
                 .luxury
                 .cmp(&left.luxury)
@@ -563,7 +564,7 @@ impl AdvancedAi {
                 renewal,
             });
         }
-        wants.sort_by(|left, right| {
+        wants.sort_by_shared(|left, right| {
             right
                 .hit
                 .partial_cmp(&left.hit)

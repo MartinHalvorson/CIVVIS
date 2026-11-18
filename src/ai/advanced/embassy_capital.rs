@@ -34,6 +34,7 @@
 //! The plan's target goes first: an Embassy is no friendship and no promise,
 //! so it leaves the war open. The stock cadence keeps everything else.
 use super::{Action, AdvancedAi, BasicAi, Game, VictoryTarget};
+use crate::shared_sort::SharedSort;
 
 /// Turns between two asks of the same rival: the bridge refuses a repeat
 /// inside its `PeaceRetryTurns` (5) window anyway.
@@ -113,7 +114,7 @@ impl AdvancedAi {
                     .is_none_or(|asked| g.turn >= asked + EMBASSY_CAPITAL_ASK_TURNS)
             })
             .collect();
-        rivals.sort_by_key(|rival| {
+        rivals.sort_by_key_shared(|rival| {
             (
                 // `embassy-finds-the-capital-2`: under a Science aim the rival
                 // knowing the most technologies goes first.

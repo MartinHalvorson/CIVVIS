@@ -3,6 +3,7 @@
 use super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
 use crate::game::{Action, Game, Item};
 use crate::name::Name;
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeSet;
 
 impl AdvancedAi {
@@ -75,7 +76,7 @@ impl AdvancedAi {
                     .then_some((*cost, *pos, resource, action))
             })
             .collect::<Vec<_>>();
-        options.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+        options.sort_by_shared(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
         for (_, pos, resource, action) in options {
             let connects = |board: &Game, at| {
                 board.valid_improvements(pid, at).iter().any(|name| {

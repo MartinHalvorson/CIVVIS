@@ -3,6 +3,7 @@
 //! conservative damage used to price losing an individual unit.
 use super::{AttackEnvelopes, BasicAi, EnvelopeReach, COMBAT_ROLL_MAX};
 use crate::game::{effective_strength, Game};
+use crate::shared_sort::SharedSort;
 use crate::Pos;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -168,7 +169,7 @@ impl BasicAi {
                 };
                 let mut positions = vec![friend.pos];
                 positions.extend(g.reachable(friend.id));
-                positions.sort_by_key(|pos| (g.wdist(*pos, target), *pos));
+                positions.sort_by_key_shared(|pos| (g.wdist(*pos, target), *pos));
                 let positions: Vec<_> = positions
                     .into_iter()
                     .filter(|pos| {
@@ -309,7 +310,7 @@ impl BasicAi {
             .into_iter()
             .map(|pos| (pos, score(pos)))
             .collect();
-        scored.sort_by(|(a, left), (b, right)| right.total_cmp(left).then(a.cmp(b)));
+        scored.sort_by_shared(|(a, left), (b, right)| right.total_cmp(left).then(a.cmp(b)));
         let candidates: Vec<Pos> = scored
             .into_iter()
             .take_while(|(_, value)| self.move_beats_holding(g, uid, *value, stay))

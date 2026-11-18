@@ -20,6 +20,7 @@
 
 use super::*;
 use crate::game::adjacency::PlotAdjacencies;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     pub(super) fn settlement_base_housing(g: &Game, pid: usize, pos: Pos) -> f64 {
@@ -132,7 +133,7 @@ impl AdvancedAi {
                 resource_value,
             });
         }
-        candidates.sort_by_key(|tile| (tile.ring, tile.pos));
+        candidates.sort_by_key_shared(|tile| (tile.ring, tile.pos));
         if candidates.is_empty() {
             return SettlementGrowthForecast {
                 score: Self::settlement_output_value(center, 1) - 20.0,
@@ -219,7 +220,7 @@ impl AdvancedAi {
                 next.select_nth_unstable_by(SETTLEMENT_FORECAST_BEAM - 1, &mut forecast_order);
                 next.truncate(SETTLEMENT_FORECAST_BEAM);
             }
-            next.sort_by(&mut forecast_order);
+            next.sort_by_shared(&mut forecast_order);
             beam = next;
             if beam.is_empty() {
                 break;

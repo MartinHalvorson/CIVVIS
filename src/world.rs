@@ -1,4 +1,5 @@
 //! Tiles and the world map (mirrors civvis/world.py).
+use crate::shared_sort::SharedSort;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
@@ -377,7 +378,7 @@ impl TileGrid {
 
     fn rebuild(&mut self, mut tiles: Vec<Tile>) {
         self.note_write(None);
-        tiles.sort_unstable_by_key(|tile| tile.pos);
+        tiles.sort_unstable_by_key_shared(|tile| tile.pos);
         tiles.dedup_by_key(|tile| tile.pos);
         let cells = (self.width.max(0) as usize) * (self.height.max(0) as usize);
         let mut slot = vec![EMPTY_SLOT; cells];

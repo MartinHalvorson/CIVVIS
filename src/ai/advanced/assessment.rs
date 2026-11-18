@@ -12,6 +12,7 @@
 //! the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     /// Whether every live major war against `pid` was opened by the other
@@ -1797,7 +1798,7 @@ impl AdvancedAi {
                 &mut shared,
             ));
         }
-        sites.sort_by(|a, b| {
+        sites.sort_by_shared(|a, b| {
             b.1.partial_cmp(&a.1)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| a.0.cmp(&b.0))

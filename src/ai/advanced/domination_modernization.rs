@@ -2,6 +2,7 @@
 //! ground and funds the cheapest resource-ready upgrades.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     /// Bring an obsolete, otherwise available land combat unit back to upgrade
@@ -284,7 +285,7 @@ impl AdvancedAi {
         if prices.len() < 2 {
             return false;
         }
-        prices.sort_by(f64::total_cmp);
+        prices.sort_by_shared(f64::total_cmp);
         let income = g.players[pid].gold_per_turn;
         let needed = prices[0] + prices[1] + 30.0 + (-income).max(0.0);
         g.players[pid].gold + 4.0 * income.max(0.0) < needed

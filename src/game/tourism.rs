@@ -15,6 +15,7 @@
 //! methods stay public; the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl Game {
     pub(super) fn starting_major_count(&self) -> usize {
@@ -298,7 +299,7 @@ impl Game {
                     // slot model and filled typed cultural-building slots.
                     .filter(|(_, (_, kind))| kind != "any")
                     .collect();
-                ranked_slots.sort_by(
+                ranked_slots.sort_by_shared(
                     |(left_index, (left_city, left_kind)),
                      (right_index, (right_city, right_kind))| {
                         let left_value = self.great_work_tourism(pid, left_kind)
@@ -381,7 +382,7 @@ impl Game {
                 .filter(|(index, (_, slot))| !used.contains(index) && compatible(work, slot))
                 .map(|(index, _)| index)
                 .collect();
-            candidates.sort_by(|left, right| {
+            candidates.sort_by_shared(|left, right| {
                 let left_city = &self.cities[&slots[*left].0];
                 let right_city = &self.cities[&slots[*right].0];
                 self.great_work_local_multiplier(right_city, work)
@@ -408,7 +409,7 @@ impl Game {
             .filter(|(index, (_, slot))| !used.contains(index) && slot == "any")
             .map(|(index, _)| index)
             .collect();
-        any_slots.sort_by_key(|index| (slots[*index].0, *index));
+        any_slots.sort_by_key_shared(|index| (slots[*index].0, *index));
         for index in any_slots {
             let city = &self.cities[&slots[index].0];
             let best = available

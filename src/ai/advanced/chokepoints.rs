@@ -137,6 +137,7 @@
 //! in `genes.rs`, and read nothing when off: every entry point returns before
 //! it touches the board. Fires probes under `docs/gene_screens/fires/`.
 
+use crate::shared_sort::SharedSort;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use super::AdvancedAi;
@@ -517,7 +518,7 @@ impl AdvancedAi {
                 worth.push(value);
             }
         }
-        worth.sort_by(|left, right| right.total_cmp(left));
+        worth.sort_by_shared(|left, right| right.total_cmp(left));
         worth
             .into_iter()
             .take(SITE_TILES)
@@ -679,7 +680,7 @@ impl AdvancedAi {
             }
         }
         let mut ordered: Vec<(Gate, i32)> = gates.into_values().collect();
-        ordered.sort_by(|(left, left_reach), (right, right_reach)| {
+        ordered.sort_by_shared(|(left, left_reach), (right, right_reach)| {
             right
                 .detour
                 .total_cmp(&left.detour)

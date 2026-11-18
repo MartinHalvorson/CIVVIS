@@ -13,6 +13,7 @@
 //! the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl BasicAi {
     /// What a pantheon would pay this empire per turn, on the land it already
@@ -401,7 +402,7 @@ impl BasicAi {
                 .collect();
             // Descending score, and the shipped order breaks every tie, so the
             // result is a total order and does not depend on map iteration.
-            ranked.sort_by(|left, right| {
+            ranked.sort_by_shared(|left, right| {
                 right
                     .2
                     .partial_cmp(&left.2)
@@ -579,7 +580,7 @@ impl BasicAi {
             .collect();
         // Determinism matters for same-seed evaluation. The rules map order is
         // stable today, but make the intended order explicit at this boundary.
-        recruits.sort_by(|left, right| format!("{left:?}").cmp(&format!("{right:?}")));
+        recruits.sort_by_shared(|left, right| format!("{left:?}").cmp(&format!("{right:?}")));
         recruits
             .into_iter()
             .filter(|action| g.apply(pid, action).is_ok())

@@ -44,6 +44,7 @@
 //! was. A unit refused [`VALVE`] times in one turn has its moves and attacks
 //! spent, so an AI loop that retries a refused order still ends.
 
+use crate::shared_sort::SharedSort;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ai::host_enemy::{
@@ -778,7 +779,7 @@ fn govern(
         .into_iter()
         .filter(|uid| land_fighter(g, &g.units[uid]))
         .collect();
-    ours.sort_by_key(|uid| (!shooter(g, &g.units[uid]), *uid));
+    ours.sort_by_key_shared(|uid| (!shooter(g, &g.units[uid]), *uid));
     for uid in ours {
         let Some(unit) = g.units.get(&uid).cloned() else {
             continue;

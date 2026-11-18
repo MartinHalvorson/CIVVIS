@@ -8,6 +8,7 @@
 use super::battle_planner::{melee_health_floor, DangerField};
 use super::AdvancedAi;
 use crate::game::{expected_damage, Action, Game, Unit};
+use crate::shared_sort::SharedSort;
 use crate::think;
 use crate::Pos;
 use std::collections::{BTreeMap, BTreeSet};
@@ -74,7 +75,7 @@ impl<'m> ReplyForecast<'m> {
 fn reply_damage(field: &mut DangerField, pos: Pos, uid: u32, hp: i32) -> f64 {
     let blows = field.contributions_at_hp(pos, uid, hp);
     let mut order: Vec<usize> = (0..blows.len()).collect();
-    order.sort_by(|a, b| blows[*b].1.total_cmp(&blows[*a].1).then(a.cmp(b)));
+    order.sort_by_shared(|a, b| blows[*b].1.total_cmp(&blows[*a].1).then(a.cmp(b)));
     let mut left = hp;
     for index in order {
         let current = field.contributions_at_hp(pos, uid, left.max(1));

@@ -96,6 +96,7 @@ pub mod rules;
 pub mod selfplay;
 pub mod server;
 pub mod setup;
+pub mod shared_sort;
 pub mod simultaneous;
 pub mod skirmish;
 pub mod specmap;

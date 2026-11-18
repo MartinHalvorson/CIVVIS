@@ -13,6 +13,7 @@
 //! code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     /// Candidate attacks on one tactical victim. `Game::legal_actions` also
@@ -237,7 +238,7 @@ impl AdvancedAi {
         // focus-fire action. The tie-break Debug text is built lazily,
         // inside `then_with`, so it is only paid for the rare pair of
         // candidates that actually share the same primary score.
-        ordered.sort_by(|left, right| {
+        ordered.sort_by_shared(|left, right| {
             right.0.total_cmp(&left.0).then_with(|| {
                 Self::forcing_reply_label(&left.1, &left.2)
                     .cmp(&Self::forcing_reply_label(&right.1, &right.2))
