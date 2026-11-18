@@ -214,6 +214,146 @@ class ReligionLostReading(unittest.TestCase):
                 self.assertIs(civ6_play.religion_lost_policy(path), expected)
 
 
+def spreader(charges: int, kind="UNIT_MISSIONARY", religion="RELIGION_BUDDHISM") -> dict:
+    unit = {"kind": kind, "spread_charges": charges}
+    if religion is not None:
+        unit["religion"] = religion
+    return unit
+
+
+class ReligionLostWaitsForTheSpreaders(unittest.TestCase):
+    """2026-11-18: civvis-20261118T092027Z, retired at turn 62 with two
+    Missionaries of its own faith holding four charges beside a tied city."""
+
+    def read(self, records, wait_turns):
+        state: dict = {}
+        return [civ6_play.religion_lost_reading(state, record, wait_turns)
+                for record in records]
+
+    def test_the_default_wait_is_the_rule_as_it_was(self):
+        # Spreaders on the board change nothing while the wait is the hold itself.
+        records = [religion_record(57, 1), religion_record(60, 0, units=[spreader(3)]),
+                   religion_record(61, 0, units=[spreader(3), spreader(1)]),
+                   religion_record(62, 0, units=[spreader(3), spreader(1)])]
+        for results in (self.read(records, civ6_play.RELIGION_LOST_TURNS),
+                        [civ6_play.religion_lost_reading(state, record)
+                         for state in [{}] for record in records]):
+            self.assertEqual(results[:3], [None, None, None])
+            self.assertTrue(results[3]["fires"])
+            self.assertEqual(results[3]["turn"], 62)
+            self.assertEqual(results[3]["lost_turn"], 60)
+            self.assertEqual(results[3]["spread_charges"], 4)
+            self.assertNotIn("waiting", results[3])
+
+    def test_a_charge_on_the_board_holds_the_retire_until_the_bound(self):
+        units = [spreader(3), spreader(1)]
+        records = ([religion_record(57, 1)]
+                   + [religion_record(turn, 0, units=units) for turn in range(60, 73)])
+        results = self.read(records, 12)
+        # Turns 60 and 61: the ordinary hold. Turn 62: one note that it waits.
+        self.assertEqual(results[:3], [None, None, None])
+        note = results[3]
+        self.assertEqual((note["fires"], note["waiting"], note["turn"]), (False, True, 62))
+        self.assertEqual((note["lost_turn"], note["wait_until"], note["spread_charges"]),
+                         (60, 71, 4))
+        # Turns 63 to 70: silence. Turn 71 is the twelfth at zero: it retires.
+        self.assertEqual(results[4:12], [None] * 8)
+        self.assertTrue(results[12]["fires"])
+        self.assertEqual((results[12]["turn"], results[12]["lost_turn"]), (71, 60))
+        self.assertEqual(results[12]["spread_charges"], 4)
+
+    def test_the_note_is_said_once_for_several_records_in_a_turn(self):
+        units = [spreader(2)]
+        records = ([religion_record(57, 1), religion_record(60, 0), religion_record(61, 0)]
+                   + [religion_record(62, 0, units=units)] * 3
+                   + [religion_record(63, 0, units=units)] * 2)
+        results = self.read(records, 12)
+        self.assertEqual([bool(r and r.get("waiting")) for r in results],
+                         [False, False, False, True, False, False, False, False])
+        self.assertFalse(any(r and r.get("fires") for r in results))
+
+    def test_no_charge_left_retires_at_three_turns_whatever_the_wait(self):
+        for units in (None, [], [spreader(0)], [spreader(2, kind="UNIT_GURU")],
+                      [spreader(3, religion="RELIGION_CONFUCIANISM")],
+                      [{"kind": "UNIT_MISSIONARY", "spread_charges": True}],
+                      [{"kind": "UNIT_APOSTLE"}], ["not a unit"]):
+            extra = {} if units is None else {"units": units}
+            results = self.read([religion_record(57, 1)]
+                                + [religion_record(turn, 0, **extra) for turn in (60, 61, 62)],
+                                12)
+            self.assertEqual(results[:3], [None, None, None], units)
+            self.assertTrue(results[3]["fires"], units)
+            self.assertEqual(results[3]["spread_charges"], 0, units)
+
+    def test_the_last_charge_spent_during_the_wait_retires_on_that_reading(self):
+        records = [religion_record(57, 1), religion_record(60, 0, units=[spreader(1)]),
+                   religion_record(61, 0, units=[spreader(1)]),
+                   religion_record(62, 0, units=[spreader(1)]),
+                   religion_record(63, 0, units=[spreader(1)]),
+                   religion_record(64, 0, units=[])]
+        results = self.read(records, 12)
+        self.assertTrue(results[3]["waiting"])
+        self.assertIsNone(results[4])
+        self.assertTrue(results[5]["fires"])
+        self.assertEqual((results[5]["turn"], results[5]["lost_turn"]), (64, 60))
+
+    def test_a_follower_back_during_the_wait_clears_it_and_the_next_loss_starts_over(self):
+        units = [spreader(3)]
+        records = [religion_record(57, 1), religion_record(60, 0, units=units),
+                   religion_record(61, 0, units=units), religion_record(62, 0, units=units),
+                   religion_record(63, 1, units=units),            # Tver is back
+                   religion_record(70, 0, units=units), religion_record(71, 0, units=units),
+                   religion_record(72, 0, units=units), religion_record(73, 0, units=units)]
+        results = self.read(records, 12)
+        self.assertTrue(results[3]["waiting"])
+        self.assertEqual(results[4:7], [None, None, None])
+        # The second loss says its own note, counted from its own first turn.
+        self.assertEqual((results[7]["waiting"], results[7]["lost_turn"],
+                          results[7]["wait_until"]), (True, 70, 81))
+        self.assertIsNone(results[8])
+
+    def test_an_apostle_and_a_unit_with_no_religion_named_count(self):
+        self.assertEqual(civ6_play.religion_spread_charges(
+            {"units": [spreader(3, kind="UNIT_APOSTLE"), spreader(2, religion=None),
+                       spreader(1, religion=""), spreader(4, religion="RELIGION_ISLAM"),
+                       spreader(5, kind="UNIT_INQUISITOR"), {"kind": "UNIT_BUILDER"}]},
+            "RELIGION_BUDDHISM"), 6)
+        self.assertEqual(civ6_play.religion_spread_charges({}, "RELIGION_BUDDHISM"), 0)
+        self.assertEqual(civ6_play.religion_spread_charges({"units": "x"}, "RELIGION_BUDDHISM"), 0)
+
+    def test_the_wait_key_reads_turns_and_never_under_the_hold(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "policy"
+            for text, expected in (("CIVVIS_RELIGION_LOST_WAIT_TURNS=12\n", 12),
+                                   ("CIVVIS_RELIGION_LOST_WAIT_TURNS=12 # Online\n", 12),
+                                   ("CIVVIS_RELIGION_LOST_WAIT_TURNS=3\n", 3),
+                                   ("CIVVIS_RELIGION_LOST_WAIT_TURNS=2\n", 3),
+                                   ("CIVVIS_RELIGION_LOST_WAIT_TURNS=0\n", 3),
+                                   ("CIVVIS_RELIGION_LOST_WAIT_TURNS=-4\n", 3),
+                                   ("CIVVIS_RELIGION_LOST_WAIT_TURNS=many\n", 3),
+                                   ("CIVVIS_RELIGION_LOST_WAIT_TURNS=\n", 3),
+                                   ("OTHER=12\n", 3)):
+                path.write_text(text)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(civ6_play.religion_lost_wait_policy(path), expected, text)
+        self.assertEqual(civ6_play.parse_religion_lost_wait(None), 3)
+
+    def test_the_russia_game_of_2026_11_18_is_not_retired_at_turn_62(self):
+        # Frame 0 of each turn of civvis-20261118T092027Z: followers and the
+        # Buddhist Missionaries' charges.
+        rows = [(56, 1, [1]), (57, 1, [1, 3]), (58, 0, [1, 3]), (59, 1, [3, 1, 2]),
+                (60, 0, [3, 1, 2]), (61, 0, [3, 2]), (62, 0, [3, 1])]
+        records = [religion_record(turn, followers, units=[spreader(c) for c in charges])
+                   for turn, followers, charges in rows]
+        as_played = self.read(records, civ6_play.RELIGION_LOST_TURNS)
+        self.assertTrue(as_played[-1]["fires"])
+        self.assertEqual((as_played[-1]["turn"], as_played[-1]["lost_turn"]), (62, 60))
+        waited = self.read(records, 12)
+        self.assertFalse(any(r and r.get("fires") for r in waited))
+        self.assertEqual((waited[-1]["waiting"], waited[-1]["wait_until"],
+                          waited[-1]["spread_charges"]), (True, 71, 4))
+
+
 
 def founding_record(turn: int, religion=None, pending=False,
                     exhausted=("GREAT_PERSON_CLASS_PROPHET",), **extra) -> dict:

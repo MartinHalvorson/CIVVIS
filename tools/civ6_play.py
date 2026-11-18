@@ -939,8 +939,31 @@ def city_collapse_reading(state: dict, event: dict, lost: int) -> dict | None:
 # cannot trip it, and only after three game turns running, so one city flipping
 # back and forth cannot. Applies to a seat whose target is the religious victory.
 # On with CIVVIS_RESTART_ON_RELIGION_LOST=1 in the verification policy.
+#
+# ★ 2026-11-18: A RELIGION WITH SPREADERS IN THE FIELD IS NOT LOST YET. Russia
+# civvis-20261118T092027Z was retired at turn 62, three turns after a rival's
+# Missionaries took its three cities by a tie or one follower each (Tver 3
+# against 3), with two Missionaries of its own faith holding four charges one
+# and two tiles from Tver. The same game had read zero at turn 58 and had Tver
+# back at 59. The rule is about a religion that cannot come back, and the one
+# way back from zero is a charge already on the board: Faith is not one, because
+# a city sells only its own majority's units. Before the rule existed, two games
+# stayed at zero for 41 and 116 turns with 580 to 2,596 Faith banked and never
+# had a follower again (civvis-20261109T073552Z, whose last two spreaders were
+# gone within 25 turns, and 142418Z, which had none). Of the 18 games the rule
+# has retired, the last board of five survives: three had no spreader left and
+# two had spreaders (201821Z four units, 092027Z two with four charges).
+#
+# So the three-turn retire holds off while a Missionary or an Apostle of our
+# religion still carries a spread charge, up to
+# CIVVIS_RELIGION_LOST_WAIT_TURNS game turns at zero in all. The key's default
+# is the same three turns, which is the rule as it was: a host that does not set
+# it changes nothing. A game with no charge left still retires at three turns,
+# and one whose last charge goes during the wait retires on that reading.
 RELIGION_LOST_POLICY_KEY = "CIVVIS_RESTART_ON_RELIGION_LOST"
 RELIGION_LOST_TURNS = 3
+RELIGION_LOST_WAIT_POLICY_KEY = "CIVVIS_RELIGION_LOST_WAIT_TURNS"
+RELIGION_SPREADER_KINDS = ("UNIT_MISSIONARY", "UNIT_APOSTLE")
 
 
 def religion_lost_policy(path: Path | None = None) -> bool:
@@ -948,8 +971,59 @@ def religion_lost_policy(path: Path | None = None) -> bool:
     return read_policy_value(RELIGION_LOST_POLICY_KEY, path) == "1"
 
 
-def religion_lost_reading(state: dict, event: dict) -> dict | None:
-    """Fold one record into the religion watch; a verdict once the loss holds."""
+def parse_religion_lost_wait(value: str | None) -> int:
+    """Game turns at zero the retire may wait for a spreader, from `12`.
+
+    Never under `RELIGION_LOST_TURNS`, which is also what unset or invalid reads.
+    """
+    if value is None or value == "":
+        return RELIGION_LOST_TURNS
+    try:
+        turns = int(value)
+    except ValueError:
+        turns = -1
+    if turns < RELIGION_LOST_TURNS:
+        print(f"[policy] ignoring {RELIGION_LOST_WAIT_POLICY_KEY}={value!r}: not a "
+              f"count of turns of {RELIGION_LOST_TURNS} or more such as 12", flush=True)
+        return RELIGION_LOST_TURNS
+    return turns
+
+
+def religion_lost_wait_policy(path: Path | None = None) -> int:
+    """The policy's wait for a spreader; `RELIGION_LOST_TURNS` when unset or invalid."""
+    return parse_religion_lost_wait(read_policy_value(RELIGION_LOST_WAIT_POLICY_KEY, path))
+
+
+def religion_spread_charges(event: dict, religion: str) -> int:
+    """Spread charges our Missionaries and Apostles of `religion` hold in this record.
+
+    A unit bought in a city another faith has taken carries that faith and is
+    not counted. A unit whose record names no religion (an export older than
+    the field) is counted: the wait errs toward not retiring.
+    """
+    units = event.get("units")
+    if not isinstance(units, list):
+        return 0
+    charges = 0
+    for unit in units:
+        if not isinstance(unit, dict) or unit.get("kind") not in RELIGION_SPREADER_KINDS:
+            continue
+        if unit.get("religion") not in (None, "", religion):
+            continue
+        held = unit.get("spread_charges")
+        if isinstance(held, int) and not isinstance(held, bool) and held > 0:
+            charges += held
+    return charges
+
+
+def religion_lost_reading(state: dict, event: dict,
+                          wait_turns: int = RELIGION_LOST_TURNS) -> dict | None:
+    """Fold one record into the religion watch; a verdict once the loss holds.
+
+    `wait_turns` is how long at zero the retire waits while a spreader of ours
+    still holds a charge. The record that starts such a wait returns one
+    non-firing note (`fires` False, `waiting` True) so the caller can say so.
+    """
     if event.get("kind") != "state" or event.get("ctx") != "agent":
         return None
     turn = event.get("turn")
@@ -961,19 +1035,30 @@ def religion_lost_reading(state: dict, event: dict) -> dict | None:
     if followers > 0:
         state["religion_followed"] = True
         state.pop("religion_lost_since", None)
+        state.pop("religion_lost_waiting", None)
         return None
     if not state.get("religion_followed"):
         return None
     since = state.setdefault("religion_lost_since", turn)
-    if turn - since + 1 < RELIGION_LOST_TURNS:
+    held = turn - since + 1
+    if held < RELIGION_LOST_TURNS:
         return None
-    return {
+    charges = religion_spread_charges(event, religion)
+    reading = {
         "rule": "religion_lost",
         "turn": turn,
         "lost_turn": since,
         "religion": religion,
+        "spread_charges": charges,
         "fires": True,
     }
+    if charges > 0 and held < wait_turns:
+        if state.get("religion_lost_waiting"):
+            return None
+        state["religion_lost_waiting"] = True
+        return {**reading, "fires": False, "waiting": True,
+                "wait_until": since + wait_turns - 1}
+    return reading
 
 
 # ★ OPERATOR 2026-11-09: "if we are targeting a religious victory and don't
@@ -6446,10 +6531,18 @@ def play(args: argparse.Namespace) -> int:
     religion_lost = getattr(args, "restart_on_religion_lost", None)
     religion_lost = religion_lost_policy() if religion_lost is None else bool(religion_lost)
     args.restart_on_religion_lost = religion_lost
+    religion_wait = getattr(args, "religion_lost_wait_turns", None)
+    religion_wait = (religion_lost_wait_policy() if religion_wait is None
+                     else parse_religion_lost_wait(str(religion_wait)))
+    args.religion_lost_wait_turns = religion_wait
     if religion_lost and getattr(args, "civvis_victory", None) == "religious":
         print(f"[policy] a religious-victory game that cannot found a religion, or "
               f"whose religion has no followers, for {RELIGION_LOST_TURNS} turns "
               "running is retired (operator 2026-11-09)", flush=True)
+        if religion_wait > RELIGION_LOST_TURNS:
+            print(f"[policy] a lost religion with a Missionary or an Apostle of ours "
+                  f"still holding a charge is given up to {religion_wait} turns at "
+                  "zero before that retire (2026-11-18)", flush=True)
     # Operator 2026-11-10: see `domination_no_capital_reading`.
     no_capital_from = getattr(args, "restart_domination_no_capital_from_turn", None)
     no_capital_from = (domination_no_capital_policy() if no_capital_from is None
@@ -7208,6 +7301,10 @@ def _play(args: argparse.Namespace) -> int:
     city_deficit = getattr(args, "restart_on_city_deficit", None) or 0
     religion_lost_rule = (bool(getattr(args, "restart_on_religion_lost", None))
                           and getattr(args, "civvis_victory", None) == "religious")
+    religion_lost_wait = getattr(args, "religion_lost_wait_turns", None)
+    if (not isinstance(religion_lost_wait, int) or isinstance(religion_lost_wait, bool)
+            or religion_lost_wait < RELIGION_LOST_TURNS):
+        religion_lost_wait = RELIGION_LOST_TURNS
     no_capital_from = domination_no_capital_turn(args)
     science_behind, science_behind_from = science_out_of_reach_line(args)
     run_dir = RUN_ROOT / args.tag
@@ -7964,7 +8061,13 @@ def _play(args: argparse.Namespace) -> int:
         # ★ OPERATOR 2026-11-09: a religious win cannot happen without our
         # religion. See `religion_lost_reading`.
         if religion_lost_rule:
-            reading = religion_lost_reading(state, event)
+            reading = religion_lost_reading(state, event, religion_lost_wait)
+            if reading is not None and reading.get("waiting"):
+                print(f"[hold] turn {reading['turn']}: no city has followed "
+                      f"{reading['religion']} since turn {reading['lost_turn']}, but "
+                      f"{reading['spread_charges']} spread charge(s) of it are still "
+                      f"on the board — the retire waits until turn "
+                      f"{reading['wait_until']} (2026-11-18)", flush=True)
             if reading is not None and reading.get("fires"):
                 print(f"[abandon] turn {reading['turn']}: no city has followed "
                       f"{reading['religion']} since turn {reading['lost_turn']} — "
@@ -9041,6 +9144,12 @@ def build_parser() -> argparse.ArgumentParser:
                          "(1 = on, 0 = off); unset reads "
                          f"{RELIGION_LOST_POLICY_KEY} from the host's verification "
                          "policy file (operator 2026-11-09)")
+    ap.add_argument("--religion-lost-wait-turns", type=int, default=None,
+                    help="game turns at zero followers the lost-religion retire "
+                         "waits while a Missionary or an Apostle of ours still holds "
+                         f"a charge (never under {RELIGION_LOST_TURNS}, which is also "
+                         f"the default); unset reads {RELIGION_LOST_WAIT_POLICY_KEY} "
+                         "from the host's verification policy file (2026-11-18)")
     ap.add_argument("--restart-domination-no-capital-from-turn", type=int, default=None,
                     help="retire a domination-victory game that holds no rival "
                          f"original capital for {DOMINATION_NO_CAPITAL_TURNS} turns "
