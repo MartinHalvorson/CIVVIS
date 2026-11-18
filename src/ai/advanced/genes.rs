@@ -5826,6 +5826,12 @@ pub const GENES: &[Gene] = &[
     // alliance, a different kind each. See
     // `advanced/diplo_allies_every_friend.rs`.
     Gene { tag: "diplo-seat-allies-every-friend", field: "diplo_seat_allies_every_friend", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_allies_every_friend, disable: AdvancedAi::disable_diplo_seat_allies_every_friend },
+    // Live Deity 11-18, 62 games: 217 of our 302 Disrupt Rocketry launches
+    // left a sure Gain Sources on the host's menu, and a quote below 0.7 lost
+    // the Spy 43-59% of the time; Gain Sources lifts the quote two steps. A
+    // long-odds Spy in a racer's city prepares first, any lane, any level.
+    // See `advanced/disrupt_waits_for_the_sources.rs`.
+    Gene { tag: "disrupt-waits-for-the-sources", field: "disrupt_waits_for_the_sources", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_waits_for_the_sources, disable: AdvancedAi::disable_disrupt_waits_for_the_sources },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
