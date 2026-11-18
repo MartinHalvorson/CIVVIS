@@ -10556,6 +10556,14 @@ pub struct AdvancedAi {
     /// reaches it, and patronage opens thirty Online turns before the limit.
     /// See `advanced/score_sprints_to_the_tally.rs`. Opt-in.
     score_seat_sprints_to_the_tally_2: bool,
+    /// `science-seat-campus-before-the-claims`: on a Science seat the empire's
+    /// first Campus goes ahead of the floor's Settler once two cities stand,
+    /// a first Campus of at most seven Online turns goes ahead of a Builder,
+    /// a Granary, an Aqueduct, an Industrial Zone and a Commercial Hub, and
+    /// the Government Plaza never takes the last slot of a city with no
+    /// Campus. No soldier and no later Settler is passed. See
+    /// `advanced/science_seat_campus_before_the_claims.rs`. Opt-in.
+    science_seat_campus_before_the_claims: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -12210,6 +12218,9 @@ mod science_denial_trains_spies;
 mod science_endgame;
 mod science_foundation_research;
 mod science_power_fuel;
+/// `science-seat-campus-before-the-claims`: see
+/// `advanced/science_seat_campus_before_the_claims.rs`.
+mod science_seat_campus_before_the_claims;
 mod science_suppression_pads;
 mod science_threat_denial;
 mod science_trade;

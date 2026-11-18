@@ -42,6 +42,9 @@
 //! pass the claims' heads (from four cities the Library passes the floor's
 //! Settler too), and claims in every such city each turn. See
 //! `advanced/campus_and_library_before_the_claims.rs`.
+//!
+//! `science-seat-campus-before-the-claims` does not open it: a Science
+//! seat's Library and University keep this claim's own rules.
 
 use super::campus_and_library_before_the_claims::ScienceFirstItem;
 use super::*;
@@ -114,7 +117,7 @@ impl AdvancedAi {
         });
         // The gene's Library or quick University goes ahead of the Granary
         // too; anything else keeps this claim's own rules.
-        let science_first = reach.is_some() && Self::campus_and_library_building(g, rank, turns);
+        let science_first = reach.is_some() && self.campus_and_library_puts_first(g, rank, turns);
         if !science_first && (granary_first || !self.campus_building_claims_the_queue) {
             return None;
         }
@@ -195,7 +198,7 @@ impl AdvancedAi {
             // `None` with the gene off.
             let reach = self
                 .campus_and_library_reach(g, pid, cid, plan)
-                .filter(|_| Self::campus_and_library_building(g, rank, turns));
+                .filter(|_| self.campus_and_library_puts_first(g, rank, turns));
             if science_first_only && reach.is_none() {
                 continue;
             }

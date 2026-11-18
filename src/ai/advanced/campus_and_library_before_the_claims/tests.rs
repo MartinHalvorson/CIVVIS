@@ -7,29 +7,29 @@ use std::sync::Arc;
 
 const TAG: &str = "campus-and-library-before-the-claims:";
 
-fn unit(name: &str) -> Item {
+pub(in crate::ai::advanced) fn unit(name: &str) -> Item {
     Item::Unit {
         unit: Name::new(name),
     }
 }
 
-fn granary() -> Item {
+pub(in crate::ai::advanced) fn granary() -> Item {
     Item::Building {
         building: crate::name!("granary"),
     }
 }
 
-fn library() -> Item {
+pub(in crate::ai::advanced) fn library() -> Item {
     Item::Building {
         building: crate::name!("library"),
     }
 }
 
-fn head(g: &Game, cid: u32) -> Option<Item> {
+pub(in crate::ai::advanced) fn head(g: &Game, cid: u32) -> Option<Item> {
     g.cities[&cid].queue.first().cloned()
 }
 
-fn calm_plan(g: &Game) -> StrategicPlan {
+pub(in crate::ai::advanced) fn calm_plan(g: &Game) -> StrategicPlan {
     StrategicPlan {
         strategy: GrandStrategy::Expansion,
         target_player: None,
@@ -41,7 +41,7 @@ fn calm_plan(g: &Game) -> StrategicPlan {
     }
 }
 
-fn quote(g: &mut Game, cid: u32, item: &Item, turns: f64, cost: f64) {
+pub(in crate::ai::advanced) fn quote(g: &mut Game, cid: u32, item: &Item, turns: f64, cost: f64) {
     Arc::make_mut(&mut g.host_buildable)
         .entry(cid)
         .or_default()
@@ -55,7 +55,7 @@ fn quote(g: &mut Game, cid: u32, item: &Item, turns: f64, cost: f64) {
 }
 
 /// Run `claim` with a recording journal and return its thoughts' details.
-fn journalled(
+pub(in crate::ai::advanced) fn journalled(
     ai: &mut AdvancedAi,
     g: &mut Game,
     claim: impl FnOnce(&AdvancedAi, &mut Game),
@@ -82,7 +82,9 @@ fn campus_board() -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
 }
 
 /// [`campus_board`] with `cities` founded cities (three to six).
-fn campus_board_with(cities: usize) -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
+pub(in crate::ai::advanced) fn campus_board_with(
+    cities: usize,
+) -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
     let mut g = Game::new_full(2, 36, 20, 95_345, 250, 0, false);
     g.units.clear();
     for tile in g.map.tiles.values_mut() {
@@ -147,7 +149,7 @@ fn campus_board_with(cities: usize) -> (Game, AdvancedAi, u32, StrategicPlan, It
 /// city making 10 Production and building a Commercial Hub with 2 paid, so
 /// the Hub is several turns from done. The gene is armed;
 /// `near-done-work-finishes` is off.
-fn library_board() -> (Game, Vec<u32>, AdvancedAi, StrategicPlan) {
+pub(in crate::ai::advanced) fn library_board() -> (Game, Vec<u32>, AdvancedAi, StrategicPlan) {
     let (mut g, ranked) = producer_empire("CAMPUSLIBRARYFIRST", 94_131, 1);
     for cid in &ranked {
         let hub = BasicAi::civ_district(&g, 0, "commercial_hub");
@@ -200,7 +202,7 @@ fn library_board() -> (Game, Vec<u32>, AdvancedAi, StrategicPlan) {
     (g, ranked, ai, plan)
 }
 
-fn hub_head(g: &Game, cid: u32) -> bool {
+pub(in crate::ai::advanced) fn hub_head(g: &Game, cid: u32) -> bool {
     matches!(head(g, cid), Some(Item::District { district, .. })
         if g.district_family(district) == "commercial_hub")
 }
@@ -543,7 +545,7 @@ fn every_library_goes_ahead_of_a_builder_only_with_the_gene() {
     );
 }
 
-fn university() -> Item {
+pub(in crate::ai::advanced) fn university() -> Item {
     Item::Building {
         building: crate::name!("university"),
     }
@@ -552,7 +554,7 @@ fn university() -> Item {
 /// The six-city empire of `producer_empire` with its Libraries standing and
 /// Education in hand, every city making 15 Production (a University well
 /// inside ten Online turns), its queue set by `heads`.
-fn university_board() -> (Game, Vec<u32>, AdvancedAi, StrategicPlan) {
+pub(in crate::ai::advanced) fn university_board() -> (Game, Vec<u32>, AdvancedAi, StrategicPlan) {
     let (mut g, ranked) = producer_empire("CAMPUSUNIVERSITYFIRST", 94_133, 1);
     for tech in ["education", "mathematics"] {
         g.players[0].techs.insert(Name::new(tech));

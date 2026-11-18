@@ -190,7 +190,13 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> Option<ScienceFirstReach> {
         // A Score seat too: see [`AdvancedAi::conquest_or_score_seat`].
-        if !self.campus_and_library_before_the_claims || !self.conquest_or_score_seat(g) {
+        // `science-seat-campus-before-the-claims` opens the same ordering on
+        // a Science seat, for a quick first Campus alone and never past a
+        // soldier. See `advanced/science_seat_campus_before_the_claims.rs`.
+        let science_seat = self.science_seat_campus_first(g);
+        if !(self.campus_and_library_before_the_claims && self.conquest_or_score_seat(g))
+            && !science_seat
+        {
             return None;
         }
         let city = g.cities.get(&cid)?;
@@ -214,6 +220,9 @@ impl AdvancedAi {
         match (at_major_war, pressed) {
             (true, true) => None,
             (true, false) | (false, true) => Some(ScienceFirstReach::Economy),
+            // A Science seat's soldiers keep their queue at peace too: the
+            // deterrent and the garrison writers are its armed defence.
+            (false, false) if science_seat => Some(ScienceFirstReach::Economy),
             (false, false) => Some(ScienceFirstReach::EconomyAndArmy),
         }
     }
@@ -231,11 +240,16 @@ impl AdvancedAi {
     /// [`CAMPUS_AND_LIBRARY_SETTLER_MIN_CITIES`] for the Library, never for
     /// the University.
     pub(super) fn campus_and_library_passes_settlers(
+        &self,
         g: &Game,
         pid: usize,
         what: ScienceFirstItem,
     ) -> bool {
         let floor = match what {
+            // `science-seat-campus-before-the-claims`: on a Science seat only
+            // the empire's first Campus passes a Settler, by the two-city
+            // rule of `first-campus-before-the-settler`.
+            ScienceFirstItem::FirstCampus if self.science_seat_campus_first(g) => return false,
             ScienceFirstItem::FirstCampus => FIRST_CAMPUS_SETTLER_MIN_CITIES,
             ScienceFirstItem::Library => CAMPUS_AND_LIBRARY_SETTLER_MIN_CITIES,
             ScienceFirstItem::University => return false,
@@ -251,6 +265,14 @@ impl AdvancedAi {
             || (rank == 1
                 && turns.is_finite()
                 && turns <= Self::campus_and_library_university_turns(g))
+    }
+
+    /// [`Self::campus_and_library_building`] on this seat:
+    /// `science-seat-campus-before-the-claims` reaches the first Campus
+    /// alone, so a Science seat's Library and University keep the building
+    /// claim's own rules.
+    pub(super) fn campus_and_library_puts_first(&self, g: &Game, rank: u8, turns: f64) -> bool {
+        Self::campus_and_library_building(g, rank, turns) && !self.science_seat_campus_first(g)
     }
 
     /// The head `item` of `cid` that the gene's `what` goes ahead of, as the
@@ -297,6 +319,9 @@ impl AdvancedAi {
                 .race_site_city(g, pid)
                 .is_some_and(|(site, _)| site == cid)
         };
+        // `science-seat-campus-before-the-claims` leaves the faith defence
+        // its queue: a Science seat's Holy Site and Shrine are never passed.
+        let faith_waits = !self.science_seat_campus_first(g);
         match item {
             Item::Unit { unit } => {
                 // The first Campus and the Library pass a Builder; the
@@ -309,7 +334,7 @@ impl AdvancedAi {
                 // Library from four cities and the first Campus from six.
                 if *unit == "settler" {
                     let cost = g.item_cost_for_city(pid, cid, item);
-                    return (Self::campus_and_library_passes_settlers(g, pid, what)
+                    return (self.campus_and_library_passes_settlers(g, pid, what)
                         && invested * 2.0 <= cost)
                         .then(|| {
                             format!("the Settler ({invested:.0} of {cost:.0} Production paid)")
@@ -342,7 +367,7 @@ impl AdvancedAi {
                     "granary" if economy => Some("the Granary".to_string()),
                     "market" => Some("the Market".to_string()),
                     // A Campus passes only a Shrine with nothing paid.
-                    "shrine" if (library || invested <= 0.0) && !race_site() => {
+                    "shrine" if faith_waits && (library || invested <= 0.0) && !race_site() => {
                         Some("the Shrine".to_string())
                     }
                     _ => None,
@@ -354,7 +379,7 @@ impl AdvancedAi {
                 "industrial_zone" if economy => Some("the Industrial Zone".to_string()),
                 // A Campus passes only a Holy Site with nothing paid: one
                 // with progress finishes first.
-                "holy_site" if (library || invested <= 0.0) && !race_site() => {
+                "holy_site" if faith_waits && (library || invested <= 0.0) && !race_site() => {
                     Some("the Holy Site".to_string())
                 }
                 _ => None,
@@ -376,6 +401,14 @@ impl AdvancedAi {
         item: &Item,
     ) -> Option<String> {
         let reach = self.campus_and_library_reach(g, pid, cid, plan)?;
+        // `science-seat-campus-before-the-claims`: only a quick first Campus.
+        if self.science_seat_campus_first(g)
+            && !self
+                .free_slot_campus_item(g, pid, cid, plan)
+                .is_some_and(|(campus, _)| Self::science_seat_campus_is_quick(g, pid, cid, &campus))
+        {
+            return None;
+        }
         self.campus_and_library_passes(
             g,
             pid,
@@ -399,7 +432,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
-        if !self.campus_and_library_before_the_claims {
+        if !self.campus_and_library_armed() {
             return false;
         }
         match item {
@@ -407,12 +440,17 @@ impl AdvancedAi {
                 g.district_family(*district) == "campus"
                     && self.campus_and_library_reach(g, pid, cid, plan).is_some()
                     && self.free_slot_campus_holds(g, pid, cid, plan, item)
+                    // `science-seat-campus-before-the-claims`: only a quick
+                    // first Campus, or one with Production in.
+                    && (!self.science_seat_campus_first(g)
+                        || g.item_invested_production(cid, item) > 0.0
+                        || Self::science_seat_campus_is_quick(g, pid, cid, item))
             }
             Item::Building { .. } => self
                 .campus_building_claim_item(g, pid, cid, plan)
                 .is_some_and(|(building, rank, turns)| {
                     building == *item
-                        && Self::campus_and_library_building(g, rank, turns)
+                        && self.campus_and_library_puts_first(g, rank, turns)
                         && self.campus_and_library_reach(g, pid, cid, plan).is_some()
                 }),
             _ => false,
@@ -431,7 +469,7 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> bool {
-        self.campus_and_library_before_the_claims
+        self.campus_and_library_armed()
             && g.cities
                 .get(&cid)
                 .and_then(|city| city.queue.first())
@@ -449,7 +487,7 @@ impl AdvancedAi {
                     };
                     let started = what == ScienceFirstItem::FirstCampus
                         && g.item_invested_production(cid, item) > 0.0;
-                    (started || Self::campus_and_library_passes_settlers(g, pid, what))
+                    (started || self.campus_and_library_passes_settlers(g, pid, what))
                         && self.campus_and_library_holds(g, pid, cid, plan, item)
                 })
     }
@@ -466,6 +504,9 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> bool {
         self.campus_and_library_before_the_claims
+            // `science-seat-campus-before-the-claims` does not hold the faith
+            // writers off: on its Science seat they keep the rule they had.
+            && !self.science_seat_campus_first(g)
             && g.cities
                 .get(&cid)
                 .and_then(|city| city.queue.first())
@@ -475,9 +516,10 @@ impl AdvancedAi {
     /// The journal line for a first Campus the gene put ahead of `passed`.
     pub(super) fn explain_first_campus_passes(&self, g: &Game, cid: u32, turns: f64, passed: &str) {
         let name = &g.cities[&cid].name;
+        let tag = self.campus_and_library_tag(g);
         think!(self.journal(), Cities, Decision,
                "{name} starts its first Campus ahead of {passed}";
-               "campus-and-library-before-the-claims: {name}'s first Campus goes ahead of {passed} \
+               "{tag}: {name}'s first Campus goes ahead of {passed} \
                 (it keeps its progress); {turns:.1} turns");
     }
 
@@ -497,12 +539,13 @@ impl AdvancedAi {
             Some(1) => "University".to_string(),
             _ => Self::plain_item(building),
         };
+        let tag = self.campus_and_library_tag(g);
         think!(self.journal(), Cities, Decision,
                "{name} puts its {what} first";
-               "campus-and-library-before-the-claims: {name}'s {what} goes ahead of {passed}; \
+               "{tag}: {name}'s {what} goes ahead of {passed}; \
                 {turns:.1} turns");
     }
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
