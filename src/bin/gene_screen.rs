@@ -1189,6 +1189,29 @@ struct TraceSample {
     units_lost_to_barbarians: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     civilians_lost: Option<u32>,
+    /// ⭐ The seat's trade at the mark: route capacity (`Game::trade_capacity`),
+    /// routes running, how many of those end in another player's city, and
+    /// what the routes pay their origins a turn before policies
+    /// (`Game::trade_route_yields`): Gold, and every other yield summed. The
+    /// live state rows carry the same readings as `trade_capacity` and
+    /// `trade_routes[].yields`. Absent in older batches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trade_capacity: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trade_routes: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trade_routes_foreign: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    route_gold: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    route_other_yields: Option<f64>,
+    /// ⭐ The treasury and the net Gold a turn the last budget settled
+    /// (`Player::gold_per_turn`: income less upkeep, with deals), where
+    /// `gold` above is the cities' gross yield. Absent in older batches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    treasury: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    net_gold: Option<f64>,
 }
 
 impl TraceSample {
@@ -1216,6 +1239,13 @@ impl TraceSample {
                 wonders += city.wonders.len();
                 districts += city.districts.len();
                 holy_site |= g.city_has_district_family(city, civvis::name!("holy_site"));
+            }
+        }
+        let routes: Vec<_> = g.routes.iter().filter(|route| route.owner == pid).collect();
+        let mut route_yields = civvis::rules::Yields::default();
+        for route in &routes {
+            if g.cities.contains_key(&route.dest) {
+                route_yields.add(g.trade_route_yields(pid, route.dest));
             }
         }
         Self {
@@ -1259,6 +1289,22 @@ impl TraceSample {
             units_lost_to_majors: Some(g.combat_ledger(pid).units_lost_to_majors),
             units_lost_to_barbarians: Some(g.combat_ledger(pid).units_lost_to_barbarians),
             civilians_lost: Some(g.combat_ledger(pid).civilians_lost),
+            trade_capacity: Some(g.trade_capacity(pid)),
+            trade_routes: Some(routes.len() as i64),
+            trade_routes_foreign: Some(
+                routes
+                    .iter()
+                    .filter(|route| {
+                        g.cities
+                            .get(&route.dest)
+                            .is_some_and(|city| city.owner != pid)
+                    })
+                    .count() as i64,
+            ),
+            route_gold: Some(route_yields.gold),
+            route_other_yields: Some(route_yields.total() - route_yields.gold),
+            treasury: Some(g.players[pid].gold),
+            net_gold: Some(g.players[pid].gold_per_turn),
         }
     }
 }
@@ -9864,6 +9910,13 @@ mod tests {
             units_lost_to_majors: Some(4),
             units_lost_to_barbarians: Some(1),
             civilians_lost: None,
+            trade_capacity: Some(3),
+            trade_routes: Some(2),
+            trade_routes_foreign: Some(1),
+            route_gold: Some(9.0),
+            route_other_yields: Some(4.0),
+            treasury: Some(120.5),
+            net_gold: Some(-3.5),
         }];
         let text = serde_json::to_string(&traced).expect("serializes");
         let back: Row = serde_json::from_str(&text).expect("parses");

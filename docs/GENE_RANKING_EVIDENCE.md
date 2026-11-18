@@ -201,6 +201,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `score-seat-sprints-to-the-tally-2` | off (unmeasured) | Opt-in gene `score-seat-sprints-to-the-tally-2`, version two of `score-seat-sprints-to-the-tally`: Great People priced with their Historic Moment, patronized with the idle currency from thirty Online turns before the limit. | — \| 2 |
 | `siege-guns-take-a-reachable-post` | off (unmeasured) | Opt-in gene `siege-guns-take-a-reachable-post`; see `advanced/siege_train/reachable_post.rs`. | 1 \| 1 |
 | `spared-soldiers-come-to-the-capital` | off (unmeasured) | Opt-in gene `spared-soldiers-come-to-the-capital`; see `advanced/spared_soldiers_come_to_the_capital.rs`. | 1 \| 1 |
+| `trade-district-follows-the-campus` | off (unmeasured) | Opt-in gene `trade-district-follows-the-campus`; see `advanced/trade_district_follows_the_campus.rs`. | 1 \| 1 |
 
 ## Removed from the code
 
