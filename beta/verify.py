@@ -166,8 +166,9 @@ def fresh_profile(prefix: str) -> str:
 # either invocation rejects a bundle whose lane is missing its landing page.
 #
 # The atlases are republished as WebP when Pillow is available and stay PNG
-# when it is not, so the required-files list asks for a strategic map atlas in
-# whichever form this build actually chose.
+# when it is not, so the required-files list asks for the unit-flag atlas the
+# viewer draws in whichever form this build actually chose. (publish.sh leaves
+# out art the viewer no longer references, so a retired atlas is no witness.)
 def required(mount: str) -> list:
     lane = "" if mount == "root" else "test/"
     return [
@@ -176,7 +177,7 @@ def required(mount: str) -> list:
         f"{lane}shim.js",
         f"{lane}worker.js",
         f"{lane}build.json",
-        (f"{lane}assets/feature-atlas.webp", f"{lane}assets/feature-atlas.png"),
+        (f"{lane}assets/civ6-unit-flags.webp", f"{lane}assets/civ6-unit-flags.png"),
         # The landing photographs are deliberately not pinned by name here:
         # each lane ships its own revision's art, so the stable lane's set
         # legitimately differs from head's. The page's own references are
@@ -907,23 +908,37 @@ def main(argv: list[str] | None = None) -> int:
             app_js.read_text(encoding="utf-8") if app_js.is_file() else ""
         )
         wasm_bytes = build.get("wasm_bytes")
-        marker_has_build_size = all(
-            token in viewer_source
-            for token in ("formatBuildSize", "server_artifact_bytes", "Build size")
+        download_bytes = build.get("download_bytes")
+
+        def positive(value):
+            return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+        # Both lanes run head's shim, which hands every viewer the manifest's
+        # compressed download when it records one and the module otherwise.
+        shown_bytes = download_bytes if positive(download_bytes) else wasm_bytes
+        # A current viewer labels it "Build"; a pinned one still says
+        # "Build size". Whitespace-insensitive: the published scripts are
+        # minified, and `(bytes / 1e6)` arrives as `(bytes/1e6)`.
+        compact_source = re.sub(r"\s+", "", viewer_source)
+        marker_contract = ("formatBuildSize", "server_artifact_bytes")
+        marker_has_build_size = all(token in viewer_source for token in marker_contract) and (
+            "buildmark-size" in viewer_source or "Build size" in viewer_source
         )
+        expected_size = None
         if marker_has_build_size:
-            if not isinstance(wasm_bytes, int) or isinstance(wasm_bytes, bool) or wasm_bytes <= 0:
+            if not positive(shown_bytes):
                 problems.append(
-                    f"the build manifest has no positive integer wasm_bytes for its new marker: "
-                    f"{wasm_bytes!r}"
+                    f"the build manifest has no positive integer size for its marker: "
+                    f"download_bytes={download_bytes!r} wasm_bytes={wasm_bytes!r}"
                 )
             else:
+                label = "Build" if "buildmark-size" in viewer_source else "Build size"
                 # A pinned root lane can still carry the MiB formatter;
                 # expect whichever units this viewer's own source renders.
-                if "(bytes / 1e6).toFixed(1)} MB" in viewer_source:
-                    expected_size = f"Build size {wasm_bytes / 1e6:.1f} MB"
+                if "(bytes/1e6).toFixed(1)}MB" in compact_source:
+                    expected_size = f"{label} {shown_bytes / 1e6:.1f} MB"
                 else:
-                    expected_size = f"Build size {wasm_bytes / 1048576:.1f} MiB"
+                    expected_size = f"{label} {shown_bytes / 1048576:.1f} MiB"
                 if expected_size not in build_marker:
                     problems.append(
                         f"the build marker does not show {expected_size!r}: {build_marker!r}"
@@ -938,10 +953,10 @@ def main(argv: list[str] | None = None) -> int:
             build_marker.find("Commit is"),
             build_marker.find("Build is"),
         ]
-        if marker_has_build_size:
-            order.append(build_marker.find("Build size"))
+        if expected_size:
+            order.append(build_marker.find(expected_size))
         order_contract = "commit, commit age, build age"
-        if marker_has_build_size:
+        if expected_size:
             order_contract += ", build size"
         if any(position < 0 for position in order) or order != sorted(order):
             problems.append(
@@ -957,10 +972,12 @@ def main(argv: list[str] | None = None) -> int:
         problems.extend(uncaught_problems(fatal))
 
         print(f"    build       {build['short']}")
-        if isinstance(wasm_bytes, int) and not isinstance(wasm_bytes, bool):
+        if positive(wasm_bytes):
             print(f"    engine      {wasm_bytes:,} bytes")
         else:
             print("    engine      size not recorded")
+        if positive(download_bytes):
+            print(f"    download    {download_bytes:,} bytes compressed")
         print(f"    marker      {build_marker}")
         print(f"    turns       {report.get('turns', 0)} (reached turn {report.get('lastTurn')})")
         full_frame_bytes = full_bytes / max(1, full_frames)

@@ -371,7 +371,8 @@ def main() -> int:
     (stage / "index.html").write_text(HARNESS, encoding="utf-8")
     build = stage / "build.json"
     build.write_text(
-        '{"commit":"test","wasm_bytes":7340032,"built_at":"2026-11-10T04:00:00Z"}\n',
+        '{"commit":"test","wasm_bytes":7340032,"download_bytes":2500000,'
+        '"built_at":"2026-11-10T04:00:00Z"}\n',
         encoding="utf-8"
     )
 
@@ -522,8 +523,9 @@ def main() -> int:
         first = dev.evaluate("fetch('/state?have=226').then(r => r.json())")
         assert first["seed"] == 7 and first["restart_in"] == 3, first
         assert first["server_wasm_bytes"] == 7 * 1024 * 1024, first
-        assert first["server_artifact_bytes"] == 7 * 1024 * 1024, first
-        assert first["server_artifact_kind"] == "WASM", first
+        # The Build size is the page's compressed download, not the module.
+        assert first["server_artifact_bytes"] == 2_500_000, first
+        assert first["server_artifact_kind"] == "download", first
         # The module no longer says when it was built; the manifest does.
         assert first["server_built_at"] == "2026-11-10T04:00:00Z", first
 
@@ -532,8 +534,8 @@ def main() -> int:
         dev.evaluate("window.fakeNow = 2000")
         runtime = dev.evaluate("fetch('/runtime').then(r => r.json())")
         assert runtime["commit"] == "test", runtime
-        assert runtime["artifact_bytes"] == 7 * 1024 * 1024, runtime
-        assert runtime["artifact_kind"] == "WASM", runtime
+        assert runtime["artifact_bytes"] == 2_500_000, runtime
+        assert runtime["artifact_kind"] == "download", runtime
         assert runtime["built_at"] == "2026-11-10T04:00:00Z", runtime
         dev.evaluate("window.fakeNow = 3100")
         successor = dev.evaluate("fetch('/state?have=227').then(r => r.json())")
