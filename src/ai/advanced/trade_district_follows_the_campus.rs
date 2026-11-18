@@ -82,6 +82,30 @@
 //! Trader comes from `trader-fills-the-idle-route` and
 //! `gold-buys-the-idle-trader`. Off, nothing runs. Grep the journal for
 //! `trade-district-follows-the-campus:`.
+//!
+//! ## Measured (2026-11-18)
+//!
+//! Science lane, 40 paired seeds (63000-63039: `gene_screen
+//! --deployment-genome --live-genome`, the live Kongo genome with and without
+//! the gene, Deity, six players, Online, 250 turns, the faithful rival
+//! field). All 40 differ; no win in either arm. Trade capacity 1.27 to 2.55
+//! at turn 100 (+1.27, SE 0.18) and 3.56 to 6.76 at turn 150 (+3.20, SE 0.42,
+//! the 25 pairs that reached it); routes +1.12 (0.19) and +2.72 (0.55); net
+//! Gold a turn +4.4 (2.7) and +10.1 (5.7); Science +1.7 (2.0) and +18.3
+//! (8.3); Production +2.8 (3.0) and +23.2 (11.6); Culture at turn 100 -2.4
+//! (1.1); final score +4.4 (9.2). More trade, and nothing measured down but
+//! that Culture reading.
+//!
+//! The simulator cannot price the Gold a live route pays. Its seat runs
+//! domestic routes (about 80% of them, where the live games ran about 78%
+//! international) and its international routes pay 3.6-4.0 Gold against the
+//! live 6-10 from turn 100. The Diplomatic lane was not simulated.
+//!
+//! On 76 live boards of the four games
+//! (`docs/gene_screens/fires/trade-district-follows-the-campus.action-pairs.json`)
+//! the gene changes the orders on 31 and journals 40 claims. 28 end the
+//! frame as the city's order; `near-done-work-finishes` hands 9 back to a
+//! head within two turns of done, and a later Caravel or Spy claim takes 3.
 
 use super::*;
 
