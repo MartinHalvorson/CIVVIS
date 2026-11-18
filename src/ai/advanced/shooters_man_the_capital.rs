@@ -71,10 +71,10 @@
 //! largest watched party's size plus one, and at least [`MAN_GUARD_MIN`].
 //! The nearest are called first. A free shooter is a land unit with a ranged
 //! attack that reaches [`MAN_SHOOTER_REACH`] tiles and is no siege gun, not
-//! embarked, not a civilian's guard and not standing on another City Center
-//! of ours. A member of a siege of ours is free only while a power at war
-//! with us is in sight of the capital: the siege of their city waits for
-//! ours.
+//! embarked, not linked or guarding a civilian, and not standing on another
+//! City Center of ours. A member of a siege of ours is free only while a
+//! power at war with us is in sight of the capital: the siege of their city
+//! waits for ours.
 //!
 //! **The orders**, before the battle is planned, nearest shooter first:
 //!
@@ -91,10 +91,12 @@
 //! A called shooter is held for the turn: the battle plan, the Anvil and the
 //! per-unit ladder do not order it again.
 //!
-//! A civilian's guard that stands in or beside the City Center is not called
-//! and not held. At war it fires from its tile by the same rule, the gun
-//! first: on Beijing's boards the Archer on the centre was a waiting
-//! Settler's guard, the one shooter with the Trebuchet in reach.
+//! A shooter linked to a civilian or a support unit, or guarding a Settler or
+//! a Builder, that stands in or beside the City Center is not called and not
+//! held. At war it fires from its tile by the same rule, the gun first: on
+//! Beijing's boards of turns 70-72 the Archer on the centre was linked to a
+//! Battering Ram of ours, and it was the one shooter two tiles from the
+//! Trebuchet.
 //!
 //! **What it costs, by design.** A shooter beside the centre can be struck;
 //! one on it cannot. The gene accepts that for the gun's death: the capital's
@@ -285,8 +287,9 @@ impl AdvancedAi {
         })
     }
 
-    /// Whether `uid` guards a civilian: linked to one, bound to a Settler or
-    /// reserved for a Builder.
+    /// Whether `uid` is another unit's: linked in a formation (a civilian's
+    /// escort, or a support unit's carrier), bound to a Settler or reserved
+    /// for a Builder.
     fn man_guard(&self, g: &Game, uid: u32) -> bool {
         g.units[&uid].linked_to.is_some()
             || self.guard_is_bound_to_any_settler(uid)
@@ -311,8 +314,8 @@ impl AdvancedAi {
                     && !self.staging_siege_member(g, pid, uid)))
     }
 
-    /// A civilian's guard standing in or beside the City Center: it keeps its
-    /// charge and its tile, and fires from it.
+    /// The guards and linked shooters standing in or beside the City Center:
+    /// each keeps its charge and its tile, and fires from it.
     fn man_standing_guards(&self, g: &Game, pid: usize, home: Pos) -> Vec<u32> {
         let mut guards: Vec<u32> = g
             .player_unit_ids(pid)
@@ -607,8 +610,8 @@ impl AdvancedAi {
         let Some(reading) = self.shooters_man_reading(g, pid) else {
             return BTreeSet::new();
         };
-        // A civilian's guard in or beside the centre fires from its tile and
-        // is not held: it stays its charge's.
+        // A guard or a linked shooter in or beside the centre fires from its
+        // tile and is not held: it stays its charge's.
         for guard in self.man_standing_guards(g, pid, reading.home) {
             self.man_fire(g, pid, guard, &reading);
         }
