@@ -6355,9 +6355,11 @@ pub const GENES: &[Gene] = &[
     // a median t55 / t68 / t79 and no seat passed 0.71 of the best rival's
     // techs at t150. The Campus claim yields to the Settler, Builder and
     // Granary claims, and the two genes that let it pass them act on
-    // Domination and Score seats alone. This plays their first-Campus and
-    // Library rules on a Science seat, never past a soldier. See
-    // `advanced/science_seat_campus_before_the_claims.rs`.
+    // Domination and Score seats alone; the Science seat's own Plaza claim
+    // took a new city's only slot at t35-49 in all five. This plays the
+    // first-Campus and Library rules on a Science seat, never past a
+    // soldier, and keeps the Plaza out of a city's last slot before its
+    // Campus. See `advanced/science_seat_campus_before_the_claims.rs`.
     Gene { tag: "science-seat-campus-before-the-claims", field: "science_seat_campus_before_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_campus_before_the_claims, disable: AdvancedAi::disable_science_seat_campus_before_the_claims },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4

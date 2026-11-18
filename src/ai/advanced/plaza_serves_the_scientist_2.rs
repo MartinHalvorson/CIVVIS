@@ -128,6 +128,9 @@ impl AdvancedAi {
                 .iter()
                 .copied()
                 .filter(|cid| Some(*cid) != capital && self.plaza_may_claim(g, plan, *cid))
+                // `science-seat-campus-before-the-claims`: not the last slot
+                // of a city with no Campus. Always open with that gene off.
+                .filter(|cid| !self.plaza_would_take_the_campus_slot(g, pid, *cid))
                 .filter_map(|cid| {
                     BasicAi::plaza_site_item(g, pid, cid)
                         .map(|item| (g.city_yields(cid).production, cid, item))

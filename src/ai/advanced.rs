@@ -10543,7 +10543,8 @@ pub struct AdvancedAi {
     /// first Campus and its Library go ahead of a Builder, a Granary, an
     /// Aqueduct, an Industrial Zone, a Commercial Hub and, from four cities,
     /// a Settler; the empire's first Campus goes ahead of the floor's Settler
-    /// once two cities stand. No soldier is passed. See
+    /// once two cities stand; the Government Plaza never takes the last slot
+    /// of a city with no Campus. No soldier is passed. See
     /// `advanced/science_seat_campus_before_the_claims.rs`. Opt-in.
     science_seat_campus_before_the_claims: bool,
     // ---- append: t-z ------------------------------------------------

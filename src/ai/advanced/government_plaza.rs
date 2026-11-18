@@ -99,7 +99,11 @@ impl AdvancedAi {
                 // for the Plaza hands it to the idle city that produces most.
                 let capital_cannot = self.base.kristina_builds_here(g, pid)
                     && BasicAi::capital_cannot_hold_the_plaza(g, pid);
-                if free(g, capital) && !capital_cannot {
+                // `science-seat-campus-before-the-claims`: a Science seat's
+                // Plaza never takes the last slot of a city with no Campus,
+                // the capital included. Always false with that gene off.
+                let keeps_its_slot = |cid: u32| self.plaza_would_take_the_campus_slot(g, pid, cid);
+                if free(g, capital) && !capital_cannot && !keeps_its_slot(capital) {
                     return BasicAi::plaza_site_item(g, pid, capital).map(|item| (capital, item));
                 }
                 // The capital is building a wonder or a Holy Site: the
@@ -119,7 +123,7 @@ impl AdvancedAi {
                 city_ids
                     .iter()
                     .copied()
-                    .filter(|cid| *cid != capital && free(g, *cid))
+                    .filter(|cid| *cid != capital && free(g, *cid) && !keeps_its_slot(*cid))
                     .filter_map(|cid| {
                         BasicAi::plaza_site_item(g, pid, cid)
                             .map(|item| (g.city_yields(cid).production, cid, item))

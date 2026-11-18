@@ -181,7 +181,9 @@ fn no_soldier_is_passed_and_the_deterrent_does_not_spare_the_city() {
     // The deterrent's rule is the one it had: a first Campus at the head
     // spares the city on a Domination seat with its gene, never here.
     let mut claimed = g.clone();
-    claimed.cities.get_mut(&cid).unwrap().queue = vec![campus.clone()];
+    let capital = claimed.cities.get_mut(&cid).unwrap();
+    capital.queue = vec![campus.clone()];
+    capital.production = 0.0;
     let mut off = ai.clone();
     off.disable_science_seat_campus_before_the_claims();
     assert!(ai.campus_and_library_holds(&claimed, 0, cid, &plan, &campus));
@@ -369,4 +371,100 @@ fn the_university_keeps_the_building_claims_own_rules() {
     );
     // With the building gene off, this gene alone claims no University.
     assert!(ai.campus_building_claim_item(&g, 0, cid, &plan).is_none());
+}
+
+fn plaza_head(g: &Game, cid: u32) -> bool {
+    matches!(head(g, cid), Some(Item::District { district, .. })
+        if g.district_family(district) == "government_plaza")
+}
+
+#[test]
+fn the_plaza_leaves_a_city_its_last_slot_until_its_campus() {
+    let (mut g, mut ai, cid, plan, campus) = science_board(3);
+    g.players[0].civics.insert(crate::name!("state_workforce"));
+    g.cities.get_mut(&cid).unwrap().is_capital = true;
+    let others: Vec<u32> = g
+        .player_city_ids(0)
+        .into_iter()
+        .filter(|other| *other != cid)
+        .collect();
+    for other in &others {
+        let city = g.cities.get_mut(other).unwrap();
+        city.is_capital = false;
+        city.queue = vec![unit("builder")];
+    }
+    ai.enable_plaza_serves_the_scientist_3();
+    let mut off = ai.clone();
+    off.disable_science_seat_campus_before_the_claims();
+
+    // The capital's five citizens leave a slot beside the Plaza; a city of
+    // one citizen has only the one.
+    assert!(!ai.plaza_would_take_the_campus_slot(&g, 0, cid));
+    assert!(ai.plaza_would_take_the_campus_slot(&g, 0, others[0]));
+    assert!(!off.plaza_would_take_the_campus_slot(&g, 0, others[0]));
+    let mut diplomat = ai.clone();
+    diplomat.victory_target = Some(VictoryTarget::Diplomacy);
+    assert!(!diplomat.plaza_would_take_the_campus_slot(&g, 0, others[0]));
+    let mut queued = g.clone();
+    let there = Item::District {
+        district: crate::name!("campus"),
+        pos: queued.cities[&others[0]].pos,
+    };
+    queued.cities.get_mut(&others[0]).unwrap().queue.push(there);
+    assert!(
+        !ai.plaza_would_take_the_campus_slot(&queued, 0, others[0]),
+        "its Campus is queued"
+    );
+
+    // `plaza-serves-the-scientist-3`: the capital has no Campus yet, so the
+    // Plaza claim turns to the other cities.
+    let mut control = g.clone();
+    off.claim_queue_for_the_plaza_district(&mut control, 0, &plan);
+    assert!(
+        others.iter().any(|other| plaza_head(&control, *other)),
+        "off: a one-citizen city's only slot goes to the Plaza"
+    );
+    let mut on = g.clone();
+    ai.claim_queue_for_the_plaza_district(&mut on, 0, &plan);
+    assert!(
+        others
+            .iter()
+            .all(|other| head(&on, *other) == Some(unit("builder"))),
+        "on: every one-slot city keeps it"
+    );
+    assert!(!plaza_head(&on, cid), "the capital's Campus comes first");
+
+    // A city with a second slot may hold the Plaza.
+    let mut grown = g.clone();
+    grown.cities.get_mut(&others[0]).unwrap().pop = 4;
+    assert!(!ai.plaza_would_take_the_campus_slot(&grown, 0, others[0]));
+    ai.claim_queue_for_the_plaza_district(&mut grown, 0, &plan);
+    assert!(plaza_head(&grown, others[0]));
+
+    // `plaza-in-the-district-list`: while the capital builds its Campus the
+    // Plaza goes to the idle city that produces most, unless that is its
+    // last slot.
+    let mut generic = science_seat();
+    generic.enable_plaza_in_the_district_list();
+    generic.enable_capital_campus_before_the_plaza();
+    generic.base.w.city_target = 1.0;
+    let mut board = g.clone();
+    board.cities.get_mut(&cid).unwrap().queue = vec![campus];
+    for other in &others {
+        board.cities.get_mut(other).unwrap().queue.clear();
+    }
+    let mut generic_off = generic.clone();
+    generic_off.disable_science_seat_campus_before_the_claims();
+    let mut control = board.clone();
+    generic_off.reserve_government_plaza(&mut control, 0, &plan);
+    assert!(
+        others.iter().any(|other| plaza_head(&control, *other)),
+        "off: the idle one-citizen city takes the Plaza"
+    );
+    let mut on = board.clone();
+    generic.reserve_government_plaza(&mut on, 0, &plan);
+    assert!(
+        others.iter().all(|other| head(&on, *other).is_none()),
+        "on: the idle one-slot cities keep their slot"
+    );
 }

@@ -1,6 +1,7 @@
 //! `science-seat-campus-before-the-claims`: on a Science seat a city's first
 //! Campus, then its Library, go ahead of the economy claims that keep the
-//! queue, and the empire's first Campus goes ahead of the floor's Settler.
+//! queue, the empire's first Campus goes ahead of the floor's Settler, and
+//! the Government Plaza never takes the last slot of a city with no Campus.
 //!
 //! **Why (live Deity, 6-player Continents, Online, 250 turns, the nine games
 //! of 2026-11-18 04:58Z to 11:16Z: five on Science, four on Diplomacy).** No
@@ -29,8 +30,25 @@
 //! 179 the Campus took over the claim's fifteen-turn budget, 172 fell under
 //! the war's hold and 85 in a city of one citizen.
 //!
-//! **This is not a Science-lane rule.** The claim chain is the same on every
-//! seat: the Campus claim runs after the Settler, Builder, Monument, Granary,
+//! **One claim is the Science lane's own.** `plaza-serves-the-scientist-3`
+//! (armed, Science aim only; `claim_queue_for_the_plaza_district`) starts the
+//! Government Plaza in the capital once its Campus stands, and until then in
+//! the most productive other city with routine work at its head. In all five
+//! Science games it went, at t35-49, to a second-to-fourth city of one to
+//! three citizens, and in four it took that city's only specialty slot:
+//! Dumfries (one citizen, t35), Funchal (two, t40), Mbamba (three, t42) and
+//! New York (three, t49), whose Campuses were placed 63, 99, 37 and 6 turns
+//! later (Germany's Aachen has a second slot). The Plaza, the Diplomatic
+//! Quarter and their buildings held 4.9 turns a city of the Campus wait
+//! against the Diplomatic seats' 0.9. The generic
+//! `plaza-in-the-district-list` has the same hand-off while the capital
+//! builds its Campus (Nippur, one citizen, t38, on the one Diplomatic seat
+//! that did it; its Campus came at t108); the other three Diplomatic seats
+//! placed the Plaza at t49, t82 and t96 in cities of four to seven citizens
+//! with a slot to spare.
+//!
+//! **The rest is not a Science-lane rule.** The claim chain is the same on
+//! every seat: the Campus claim runs after the Settler, Builder, Monument, Granary,
 //! deterrent, Trader, Aqueduct and Industrial Zone claims
 //! (`run_idle_queue_claims`) and yields to each one's head, and the two genes
 //! that let it pass them, `first-campus-before-the-settler` and
@@ -72,6 +90,13 @@
 //!    cities plus Settlers walking. Every such city claims its Library each
 //!    turn; a first Campus with Production in keeps its queue against both
 //!    Settler claims at any count.
+//!
+//! 3. Both Plaza claims pass by a city that has no Campus standing, founded
+//!    or queued, has a site for one, and has one specialty slot left
+//!    ([`AdvancedAi::plaza_would_take_the_campus_slot`]). The Plaza then
+//!    goes to the first city with a slot to spare: the capital once its
+//!    Campus is placed and it holds four citizens, or any city of four
+//!    citizens.
 //!
 //! **What keeps its queue.** Every soldier: unlike the Domination gene this
 //! one never passes the near-rival deterrent, a siege reservation's gun or a
@@ -124,6 +149,62 @@ impl AdvancedAi {
     /// ([`Self::campus_and_library_reach`]).
     pub(super) fn campus_and_library_armed(&self) -> bool {
         self.campus_and_library_before_the_claims || self.science_seat_campus_before_the_claims
+    }
+
+    /// Whether a Government Plaza in `cid` would take the last specialty
+    /// slot of a city of ours that has no Campus standing, founded or
+    /// queued and has a site for one: both Plaza claims pass such a city by,
+    /// so the slot stays the Campus's. A city with two slots free may still
+    /// hold the Plaza. Always false with the gene off or off a Science seat.
+    pub(super) fn plaza_would_take_the_campus_slot(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        if !self.science_seat_campus_first(g) {
+            return false;
+        }
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        if city.owner != pid {
+            return false;
+        }
+        let founded = |specialty_only: bool, family: Option<&str>| {
+            city.owned_tiles
+                .iter()
+                .filter_map(|pos| g.map.get(*pos)?.district_foundation.as_ref())
+                .filter(|foundation| {
+                    (!specialty_only
+                        || g.rules
+                            .districts
+                            .get(&foundation.district)
+                            .is_some_and(|spec| spec.specialty))
+                        && family
+                            .is_none_or(|family| g.district_family(foundation.district) == family)
+                })
+                .count()
+        };
+        let has_campus = g.city_has_district_family(city, crate::name!("campus"))
+            || founded(false, Some("campus")) > 0
+            || city.queue.iter().any(|item| {
+                matches!(item, Item::District { district, .. }
+                    if g.district_family(*district) == "campus")
+            });
+        if has_campus {
+            return false;
+        }
+        let used = city
+            .districts
+            .keys()
+            .filter(|name| {
+                g.rules
+                    .districts
+                    .get(*name)
+                    .is_some_and(|spec| spec.specialty)
+            })
+            .count()
+            + founded(true, None);
+        g.city_specialty_district_capacity(city) <= used + 1
+            && !g
+                .district_sites(cid, BasicAi::civ_district(g, pid, "campus"))
+                .is_empty()
     }
 
     /// The gene a first Campus or Library put first is journalled under on
