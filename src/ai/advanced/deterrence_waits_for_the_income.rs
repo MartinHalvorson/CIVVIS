@@ -3,10 +3,12 @@
 //! income cannot pay for.
 //!
 //! **The finding (live Deity Kongo, Science lane, 6 players, Continents,
-//! Online; `civvis-20261118T045850Z`).** Canada fielded 4-6 times our power
-//! within ten tiles from turn 13, and the deterrent trained a Warrior, an
-//! Archer or a Horseman 26 times on 22 turns from t39 to t78 (military units
-//! 8 at t50, 14 at t65, 23 at t74, 27 at t80). An Archer is 1 Gold a turn
+//! Online; `civvis-20261118T045850Z`).** Canada, with a city within ten
+//! tiles, read 4.0-6.5 times our power on the capital watch at t13-29 and
+//! never declared. The deterrent trained a Warrior, an Archer or a Horseman
+//! 26 times on 22 turns from t39 to t78, against 6.6 times our power at t39,
+//! 1.9 at t60, 1.04 at t72 and 1.33 at t73 as Canada's own army grew (military
+//! units 8 at t50, 14 at t65, 23 at t74, 27 at t80). An Archer is 1 Gold a turn
 //! and a Warrior none: the unit bill went 3 → 16 Gold while gross income
 //! stood at 5-15, so income read +1 at t50, 0 at t65, −1 at t68, −3 at
 //! t74-80 and −10 at t84 on a treasury of 45-90 Gold. Sixteen of the 26 were
