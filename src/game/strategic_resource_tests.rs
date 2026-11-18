@@ -106,7 +106,10 @@ fn alternate_water_resources_connect_and_repair_without_builder_charges() {
         .resources
         .contains(&crate::name!("oil")));
     assert_eq!(game.connected_resource_count(0, "oil"), 1);
-    assert_eq!(game.connected_resource_census(0).get("oil"), Some(&1));
+    assert_eq!(
+        game.connected_resource_census(0).get(&Name::new("oil")),
+        Some(&1)
+    );
     assert_eq!(
         game.city_connected_strategic_resources(&game.cities[&city]),
         1
@@ -115,7 +118,10 @@ fn alternate_water_resources_connect_and_repair_without_builder_charges() {
 
     game.map.tiles.get_mut(&position).unwrap().pillaged = true;
     assert_eq!(game.connected_resource_count(0, "oil"), 0);
-    assert_eq!(game.connected_resource_census(0).get("oil"), None);
+    assert_eq!(
+        game.connected_resource_census(0).get(&Name::new("oil")),
+        None
+    );
     assert_eq!(
         game.city_connected_strategic_resources(&game.cities[&city]),
         0
@@ -128,7 +134,10 @@ fn alternate_water_resources_connect_and_repair_without_builder_charges() {
         .unwrap();
     assert_eq!(game.units[&builder].charges, charges);
     assert_eq!(game.connected_resource_count(0, "oil"), 1);
-    assert_eq!(game.connected_resource_census(0).get("oil"), Some(&1));
+    assert_eq!(
+        game.connected_resource_census(0).get(&Name::new("oil")),
+        Some(&1)
+    );
     assert_eq!(game.strategic_resource_rate(0, "oil"), 3.0);
 
     set_resource_tile(&mut game, position, "amber", "fishing_boats", false);
@@ -136,7 +145,10 @@ fn alternate_water_resources_connect_and_repair_without_builder_charges() {
         .resources
         .contains(&crate::name!("amber")));
     assert_eq!(game.connected_resource_count(0, "amber"), 1);
-    assert_eq!(game.connected_resource_census(0).get("amber"), Some(&1));
+    assert_eq!(
+        game.connected_resource_census(0).get(&Name::new("amber")),
+        Some(&1)
+    );
     assert_eq!(game.empire_luxuries(0), 1);
 
     game.map.tiles.get_mut(&position).unwrap().pillaged = true;
@@ -147,7 +159,10 @@ fn alternate_water_resources_connect_and_repair_without_builder_charges() {
         .unwrap();
     assert_eq!(game.units[&builder].charges, charges);
     assert_eq!(game.connected_resource_count(0, "amber"), 1);
-    assert_eq!(game.connected_resource_census(0).get("amber"), Some(&1));
+    assert_eq!(
+        game.connected_resource_census(0).get(&Name::new("amber")),
+        Some(&1)
+    );
     assert_eq!(game.empire_luxuries(0), 1);
 }
 
@@ -185,10 +200,16 @@ fn shared_resource_connection_contract_preserves_defaults_and_rejects_mismatches
 
     set_resource_tile(&mut game, position, "amber", "mine", false);
     assert_eq!(game.connected_resource_count(0, "amber"), 1);
-    assert_eq!(game.connected_resource_census(0).get("amber"), Some(&1));
+    assert_eq!(
+        game.connected_resource_census(0).get(&Name::new("amber")),
+        Some(&1)
+    );
     set_resource_tile(&mut game, position, "amber", "farm", false);
     assert_eq!(game.connected_resource_count(0, "amber"), 0);
-    assert_eq!(game.connected_resource_census(0).get("amber"), None);
+    assert_eq!(
+        game.connected_resource_census(0).get(&Name::new("amber")),
+        None
+    );
 
     // The Grand Bazaar's per-city Luxury effect follows the same live
     // connection, including alternate improvements and pillage state.
