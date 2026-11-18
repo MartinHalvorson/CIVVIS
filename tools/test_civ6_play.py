@@ -1660,9 +1660,13 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertEqual(civ6_play.leader_display_name("LEADER_JAYAVARMAN"),
                          "Jayavarman VII")
         self.assertEqual(civ6_play.leader_display_name("LEADER_PETER_GREAT"), "Peter")
+        # With the persona packs installed the base leader's own row is
+        # replaced, so the plain names are on no picker row; the whole table
+        # is pinned in `test_civ6_play_leader_picker.py`.
         self.assertEqual(civ6_play.leader_display_name("LEADER_T_ROOSEVELT"),
-                         "Teddy Roosevelt")
-        self.assertEqual(civ6_play.leader_display_name("LEADER_QIN"), "Qin Shi Huang")
+                         "Teddy Roosevelt (Bull Moose)")
+        self.assertEqual(civ6_play.leader_display_name("LEADER_QIN"),
+                         "Qin (Mandate of Heaven)")
 
     @needs_pillow
     def test_leader_picker_scans_past_the_old_harald_cutoff(self) -> None:
