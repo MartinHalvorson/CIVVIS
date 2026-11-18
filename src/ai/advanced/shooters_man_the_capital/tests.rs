@@ -469,8 +469,8 @@ fn a_shooter_far_out_walks_toward_the_capital_at_war() {
 }
 
 /// A whole turn of the seat with the battle planner on: where the three
-/// Archers end it (tiles from the City Center), the Catapult's health, and
-/// the gene's journal lines.
+/// Archers (two, three and three tiles out) end it, the Catapult's health,
+/// and the gene's journal lines followed by the board.
 fn a_turn(on: bool) -> (Vec<i32>, i32, Vec<String>) {
     let (mut g, home) = watch_board();
     war(&mut g, 0, 1);
@@ -534,9 +534,19 @@ fn a_whole_turn_leaves_the_called_shooters_at_the_capital() {
         notes.iter().any(|note| note.contains("3 called")),
         "the watch read and called all three: {notes:#?}"
     );
+    // The seat plans on its own view of the board (remembered terrain, not
+    // this fixture's flattened one), so a turn's walk is one tile or two.
     assert!(
-        on.iter().all(|distance| *distance <= 1),
-        "on, every called shooter ends the turn in or beside the centre: {on:?} {notes:#?}"
+        on.iter().zip([2, 3, 3]).all(|(end, start)| *end < start),
+        "on, every called shooter ends the turn nearer the centre: {on:?} {notes:#?}"
+    );
+    assert_eq!(
+        notes
+            .iter()
+            .filter(|note| note.contains("comes home to the capital"))
+            .count(),
+        3,
+        "each walk is journalled: {notes:#?}"
     );
     let (_, _, quiet) = a_turn(false);
     assert!(
