@@ -25,7 +25,8 @@
 //!
 //! ⚠ A std comparator sort in shipping code brings its private copy back.
 //! The guard at the bottom of this file fails on one; test code (test files
-//! and every `#[cfg(test)]` item) and `src/bin/` are free to use std's.
+//! and every `#[cfg(test)]` item) and the native binaries (`src/main.rs`,
+//! `src/bin/`) are free to use std's.
 
 use core::cmp::Ordering;
 
@@ -308,7 +309,12 @@ mod tests {
         let mut offenders = Vec::new();
         for path in files {
             let relative = path.strip_prefix(&src).expect("under src/");
-            if relative.starts_with("bin") || is_test_file(relative) {
+            // The native binaries (`main.rs`, `bin/`) never reach the
+            // browser build, so std's sorts cost them nothing.
+            if relative.starts_with("bin")
+                || relative == Path::new("main.rs")
+                || is_test_file(relative)
+            {
                 continue;
             }
             if relative == Path::new("shared_sort.rs") {
