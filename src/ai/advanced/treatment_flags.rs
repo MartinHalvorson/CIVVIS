@@ -287,6 +287,9 @@ impl AdvancedAi {
         /// Opt-in gene `diplo-seat-statue-civic-first`; see
         /// `advanced/diplo_statue_harbor.rs`.
         diplo_seat_statue_civic_first => enable_diplo_seat_statue_civic_first, disable_diplo_seat_statue_civic_first;
+        /// Opt-in gene `diplo-seat-allies-every-friend`; see
+        /// `advanced/diplo_allies_every_friend.rs`.
+        diplo_seat_allies_every_friend => enable_diplo_seat_allies_every_friend, disable_diplo_seat_allies_every_friend;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
