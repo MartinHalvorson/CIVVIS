@@ -6,6 +6,7 @@
 
 use super::{AdvancedAi, GrandStrategy, VictoryFocus, VictoryTarget};
 use crate::game::Game;
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeMap;
 
 /// The science reading at which a Domination army answers a rival's launch
@@ -224,7 +225,7 @@ impl AdvancedAi {
                 )
             })
             .collect();
-        pressures.sort_by(|left, right| {
+        pressures.sort_by_shared(|left, right| {
             right
                 .1
                 .progress
@@ -500,7 +501,7 @@ impl AdvancedAi {
                 clocks.push((rival, culture));
             }
         }
-        clocks.sort_by(|left, right| {
+        clocks.sort_by_shared(|left, right| {
             right
                 .1
                 .progress

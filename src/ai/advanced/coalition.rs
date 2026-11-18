@@ -80,6 +80,7 @@
 //! it neither spends Envoys nor asks for a Joint War, so a ready army never
 //! waits on a speculative diplomatic answer.
 
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeMap;
 
 use super::{AdvancedAi, GrandStrategy, StrategicPlan, WarPhase};
@@ -672,7 +673,7 @@ impl AdvancedAi {
                 })
                 .collect();
         if self.coalition_before_war_2 {
-            partners.sort_by(|left, right| {
+            partners.sort_by_shared(|left, right| {
                 let grievance = |partner: usize| {
                     g.players[partner]
                         .grievances

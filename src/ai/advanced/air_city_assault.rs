@@ -1,6 +1,7 @@
 //! A bounded city assault: preserve sight and a cavalry exit around the volley.
 use super::{battle_planner, AdvancedAi, GrandStrategy, StrategicPlan};
 use crate::game::{Action, Game};
+use crate::shared_sort::SharedSort;
 use crate::Pos;
 use std::collections::BTreeSet;
 
@@ -110,7 +111,7 @@ impl AdvancedAi {
             })
             .map(|city| city.id)
             .collect();
-        breached.sort_by_key(|cid| {
+        breached.sort_by_key_shared(|cid| {
             let city = &g.cities[cid];
             (Some(*cid) != plan.target_city, !city.is_capital, *cid)
         });
@@ -609,7 +610,7 @@ impl AdvancedAi {
                     && g.wdist(unit.pos, target) <= AIR_ASSAULT_TAKER_REACH
             })
             .collect();
-        cavalry.sort_by_key(|uid| (g.wdist(g.units[uid].pos, target), *uid));
+        cavalry.sort_by_key_shared(|uid| (g.wdist(g.units[uid].pos, target), *uid));
         let mut best: Option<Opening> = None;
         for uid in cavalry.into_iter().take(4) {
             let origin = g.units[&uid].pos;
@@ -621,7 +622,7 @@ impl AdvancedAi {
             spots.retain(|pos| {
                 *pos == origin || (ready && (1..=2).contains(&g.wdist(*pos, target)))
             });
-            spots.sort_by_key(|pos| (g.wdist(origin, *pos), *pos));
+            spots.sort_by_key_shared(|pos| (g.wdist(origin, *pos), *pos));
             for spot in spots.into_iter().take(12) {
                 let mut board = g.speculative_clone();
                 let mut actions = Vec::new();
@@ -693,12 +694,12 @@ impl AdvancedAi {
                     && g.wdist(unit.pos, target) <= AIR_ASSAULT_TAKER_REACH
             })
             .collect();
-        soldiers.sort_by_key(|uid| (g.wdist(g.units[uid].pos, target), *uid));
+        soldiers.sort_by_key_shared(|uid| (g.wdist(g.units[uid].pos, target), *uid));
         for uid in soldiers.into_iter().take(4) {
             let origin = g.units[&uid].pos;
             // Nearest the city first: those are the tiles that see it.
             let mut spots = g.reachable(uid);
-            spots.sort_by_key(|pos| (g.wdist(*pos, target), g.wdist(origin, *pos), *pos));
+            spots.sort_by_key_shared(|pos| (g.wdist(*pos, target), g.wdist(origin, *pos), *pos));
             for spot in spots.into_iter().take(16) {
                 let mut board = g.speculative_clone();
                 let Some(action) = walk(&mut board, pid, uid, spot) else {
@@ -787,7 +788,7 @@ impl AdvancedAi {
                     && g.wdist(unit.pos, target) <= AIR_ASSAULT_TAKER_REACH
             })
             .collect();
-        takers.sort_by(|left, right| {
+        takers.sort_by_shared(|left, right| {
             let blow = |uid: &u32| {
                 let unit = &g.units[uid];
                 g.unit_strength(unit, false) * f64::from(unit.hp.clamp(0, 100)) / 100.0
@@ -828,7 +829,7 @@ impl AdvancedAi {
         let target = g.cities[&cid].pos;
         let mut ring = g.wdisk(target, 1);
         ring.retain(|pos| *pos != target);
-        ring.sort_by_key(|pos| (g.wdist(g.units[&uid].pos, *pos), *pos));
+        ring.sort_by_key_shared(|pos| (g.wdist(g.units[&uid].pos, *pos), *pos));
         // `wounded-taker-finishes-the-breach`: a taker down to
         // BREACH_TAKER_MIN_HP may strike the blow that takes the city. Live
         // Emperor civvis-20261006T151813Z (game 242) held Tüngliyou at walls
@@ -927,7 +928,7 @@ impl AdvancedAi {
                 (1..here).contains(&distance) && g.city_at(*pos).is_none()
             })
             .collect();
-        candidates.sort_by_key(|pos| (g.wdist(*pos, target), g.wdist(origin, *pos), *pos));
+        candidates.sort_by_key_shared(|pos| (g.wdist(*pos, target), g.wdist(origin, *pos), *pos));
         for to in candidates.into_iter().take(24) {
             let mut after = g.speculative_clone();
             let Some(action) = walk(&mut after, pid, uid, to) else {
@@ -967,7 +968,7 @@ impl AdvancedAi {
             return None;
         }
         let mut candidates = g.reachable(uid);
-        candidates.sort_by_key(|pos| (g.wdist(origin, *pos), *pos));
+        candidates.sort_by_key_shared(|pos| (g.wdist(origin, *pos), *pos));
         for to in candidates.into_iter().take(24) {
             let mut after = g.speculative_clone();
             let Some(action) = walk(&mut after, pid, uid, to) else {

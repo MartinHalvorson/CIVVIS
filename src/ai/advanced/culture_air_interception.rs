@@ -1,6 +1,7 @@
 //! A default-off physical air interception beside a slower elimination war.
 //! Staging is a forecast; only two fresh, selected sorties authorize a war.
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     fn culture_air_policy_allowed(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
@@ -220,7 +221,7 @@ impl AdvancedAi {
                     .map(|clock| (clock, p.id))
             })
             .collect();
-        rivals.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+        rivals.sort_by_shared(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
         rivals.into_iter().map(|(_, pid)| pid).collect()
     }
 

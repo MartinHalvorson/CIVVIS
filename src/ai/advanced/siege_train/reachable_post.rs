@@ -27,6 +27,7 @@
 //! as before.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// Turns a gun may hold one firing post without standing on it before the
 /// post is drawn again among tiles it can reach. A post on the gun's own
@@ -325,7 +326,7 @@ impl AdvancedAi {
                 )
             })
             .collect();
-        stands.sort_by(|a, b| {
+        stands.sort_by_shared(|a, b| {
             a.0.total_cmp(&b.0)
                 .then_with(|| a.1.cmp(&b.1))
                 .then_with(|| a.2.cmp(&b.2))

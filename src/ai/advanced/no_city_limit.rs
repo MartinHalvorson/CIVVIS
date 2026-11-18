@@ -129,6 +129,7 @@
 use super::holdable_land_keeps_settling::HOLDABLE_LAND_RIVAL_CITY_TILES;
 use super::settler_admission_journal::SETTLER_ADMISSION_JOURNAL_STRIDE;
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// The share of the turn limit at which the game is expected to end: Online
 /// turn 195 of 250. The site's worlds end near 193 and Deity rivals win near
@@ -430,7 +431,7 @@ impl AdvancedAi {
             }
         }
         let mut sites: Vec<(Pos, f64)> = worth_at.into_iter().collect();
-        sites.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        sites.sort_by_shared(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
         let mut seats: Vec<(Pos, f64)> = Vec::new();
         for (site, worth) in sites {
             if seats.len() >= NO_CITY_LIMIT_SEATS_COUNTED + unseated {

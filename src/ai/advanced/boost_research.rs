@@ -89,6 +89,7 @@ use super::deity_habits::EurekaChase;
 use super::AdvancedAi;
 use crate::game::{Game, Item};
 use crate::name::Name;
+use crate::shared_sort::SharedSort;
 
 /// The flat credit `tech_value` and `civic_value` pay for a boost in hand.
 /// Unconditional, exactly as before the genes: `boost_first_research` scales
@@ -409,7 +410,7 @@ impl AdvancedAi {
             };
             opened.push((chase.research / rate).min(BOOST_TURNS_CAP));
         }
-        opened.sort_by(|left, right| right.total_cmp(left));
+        opened.sort_by_shared(|left, right| right.total_cmp(left));
         let turns: f64 = opened
             .iter()
             .enumerate()

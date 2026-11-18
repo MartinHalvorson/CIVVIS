@@ -109,6 +109,7 @@
 //! `shooters-man-the-capital:`.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// How near the original capital an engine is watched: the capital watch's
 /// own eight tiles, three turns of a siege gun's march.
@@ -343,7 +344,7 @@ impl AdvancedAi {
             .into_iter()
             .filter(|uid| self.man_free_shooter(g, pid, *uid, reading.home, reading.war))
             .collect();
-        free.sort_by_key(|uid| {
+        free.sort_by_key_shared(|uid| {
             let unit = &g.units[uid];
             let spec = &g.rules.units[unit.kind];
             (

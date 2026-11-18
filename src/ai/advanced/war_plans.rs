@@ -13,6 +13,7 @@
 //! the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     /// Actual unit names available to this civilization, with generic units
@@ -342,7 +343,7 @@ impl AdvancedAi {
                 .values()
                 .filter(|city| city.owner == target.id)
                 .collect();
-            objectives.sort_by(|left, right| {
+            objectives.sort_by_shared(|left, right| {
                 self.campaign_city_value(g, pid, left, GrandStrategy::Conquest)
                     .total_cmp(&self.campaign_city_value(g, pid, right, GrandStrategy::Conquest))
                     .then(left.id.cmp(&right.id))
@@ -433,7 +434,7 @@ impl AdvancedAi {
                         march_turns,
                     ));
                 }
-                unlocks.sort_by(|left, right| {
+                unlocks.sort_by_shared(|left, right| {
                     left.0
                         .total_cmp(&right.0)
                         .then(left.1.cmp(&right.1))

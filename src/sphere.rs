@@ -50,6 +50,7 @@
 //! geometry is a pure function of its frequency, so it is built once per
 //! frequency and shared by every map and every cloned game that uses it.
 
+use crate::shared_sort::SharedSort;
 use std::cell::RefCell;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
@@ -1275,7 +1276,7 @@ fn build(frequency: i32) -> Sphere {
     // Storage order follows the rectangle, so the map iterates in the same
     // order it always has.
     let mut order: Vec<u32> = (0..points.len() as u32).collect();
-    order.sort_by_key(|id| position[*id as usize].unwrap());
+    order.sort_by_key_shared(|id| position[*id as usize].unwrap());
     let mut rank = vec![0u32; points.len()];
     for (index, id) in order.iter().enumerate() {
         rank[*id as usize] = index as u32;
@@ -1316,7 +1317,7 @@ fn build(frequency: i32) -> Sphere {
                 (trig::atan2(y, x), rank[*other as usize])
             })
             .collect();
-        sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        sorted.sort_by_shared(|a, b| a.0.partial_cmp(&b.0).unwrap());
         let mut neighbors = [0u32; 6];
         let mut positions = [(0, 0); 6];
         for (at, (_, cell)) in sorted.iter().enumerate() {
@@ -1441,7 +1442,7 @@ impl Sphere {
             .into_iter()
             .map(|(cell, distance)| (self.pos[cell as usize], distance))
             .collect();
-        out.sort_by_key(|(pos, _)| *pos);
+        out.sort_by_key_shared(|(pos, _)| *pos);
         out.into_boxed_slice()
     }
 }

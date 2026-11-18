@@ -33,6 +33,7 @@
 
 use super::{AdvancedAi, SETTLER_STEP_RISK_LIMIT};
 use crate::game::Game;
+use crate::shared_sort::SharedSort;
 use crate::think;
 use crate::world::Tile;
 use crate::Pos;
@@ -200,7 +201,7 @@ impl AdvancedAi {
                 Some((*pos, frost, Self::frost_look_unseen(g, *pos), *cost))
             })
             .collect::<Vec<_>>();
-        steps.sort_by(|a, b| {
+        steps.sort_by_shared(|a, b| {
             a.1.total_cmp(&b.1)
                 .then(b.2.cmp(&a.2))
                 .then(a.3.total_cmp(&b.3))

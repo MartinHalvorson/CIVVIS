@@ -11,6 +11,7 @@
 //! methods stay public; the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl Game {
     pub(super) fn ensure_free_city_player(&mut self) -> usize {
@@ -32,7 +33,7 @@ impl Game {
         }
         let want_sea = self.rules.units[kind].domain.as_deref() == Some("sea");
         let mut candidates = self.wdisk(center, 6);
-        candidates.sort_by_key(|position| (self.wdist(center, *position), *position));
+        candidates.sort_by_key_shared(|position| (self.wdist(center, *position), *position));
         let position = candidates.into_iter().find(|position| {
             self.map.get(*position).is_some_and(|tile| {
                 self.rules.is_passable(tile)

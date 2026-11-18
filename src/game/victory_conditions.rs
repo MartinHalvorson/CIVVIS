@@ -1,4 +1,5 @@
 use super::*;
+use crate::shared_sort::SharedSort;
 
 fn game_with_capitals(players: usize, seed: u64, max_turns: u32) -> Game {
     let mut g = Game::new_full(players, 26, 16, seed, max_turns, 0, false);
@@ -3861,7 +3862,7 @@ fn every_shipped_source_of_a_diplomatic_victory_point_is_modelled() {
         .collect();
 
     let mut all: Vec<(&str, f64)> = from_wonders.into_iter().chain(from_tree).collect();
-    all.sort_by(|left, right| left.0.cmp(right.0));
+    all.sort_by_shared(|left, right| left.0.cmp(right.0));
     assert_eq!(
         all,
         vec![
@@ -4504,7 +4505,7 @@ fn every_competition_that_pays_a_diplomatic_victory_point_is_seated_natively() {
         })
         .collect();
     let mut sorted = table.clone();
-    sorted.sort_by(|left, right| left.0.cmp(right.0));
+    sorted.sort_by_shared(|left, right| left.0.cmp(right.0));
     assert_eq!(
         sorted,
         vec![

@@ -834,9 +834,10 @@
 
   // ------------------------------------------------------- the interception
 
-  // Publication records the optimized module after `wasm-opt` has finished.
-  // Rust cannot truthfully bake that size into the module itself: changing the
-  // embedded number changes the file, and optimization happens afterwards.
+  // Publication records the page's download after `wasm-opt` and brotli have
+  // finished. Rust cannot truthfully bake that size into the module itself:
+  // changing the embedded number changes the file, and optimization happens
+  // afterwards.
   // Read the adjacent manifest once and attach its exact byte count only when
   // it names the same revision as the running module. That prevents a page
   // caught during a deployment from showing the successor's size.
@@ -864,15 +865,21 @@
         answer.built_at = builtAt;
       }
     }
-    const bytes = build.wasm_bytes;
+    // The Build size a visitor is shown is what their browser downloads for
+    // the game: every file of the page, compressed as it is served. A
+    // manifest from before that was recorded still names the module.
+    const download = build.download_bytes;
+    const counted = Number.isSafeInteger(download) && download > 0;
+    const bytes = counted ? download : build.wasm_bytes;
+    const kind = counted ? "download" : "WASM";
     if (!Number.isSafeInteger(bytes) || bytes <= 0) return answer;
     if (Object.prototype.hasOwnProperty.call(answer, "server_commit")) {
       answer.server_artifact_bytes = bytes;
-      answer.server_artifact_kind = "WASM";
+      answer.server_artifact_kind = kind;
     }
     if (Object.prototype.hasOwnProperty.call(answer, "commit")) {
       answer.artifact_bytes = bytes;
-      answer.artifact_kind = "WASM";
+      answer.artifact_kind = kind;
     }
     report.artifactBytes = bytes;
     return answer;

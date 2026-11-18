@@ -1,4 +1,5 @@
 //! Ruleset loaded from the shared JSON data files (embedded at compile time).
+use crate::shared_sort::SharedSort;
 use serde::{Deserialize, Serialize};
 
 use crate::name::Name;
@@ -3260,7 +3261,7 @@ impl Rules {
         }
         for spec in self.techs.values_mut().chain(self.civics.values_mut()) {
             spec.unlocks
-                .sort_by(|a, b| (&a.kind, &a.id).cmp(&(&b.kind, &b.id)));
+                .sort_by_shared(|a, b| (&a.kind, &a.id).cmp(&(&b.kind, &b.id)));
         }
     }
 

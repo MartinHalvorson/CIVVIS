@@ -42,6 +42,7 @@
 
 use super::AdvancedAi;
 use crate::game::{Action, Game};
+use crate::shared_sort::SharedSort;
 use crate::Pos;
 
 /// How far off a rival is read at all: its full turn's reach plus ours, with
@@ -211,7 +212,7 @@ impl AdvancedAi {
             })
             .map(|(dealt, _, _)| dealt * BLOW_AT_THE_QUARTILE)
             .collect();
-        blows.sort_by(|a, b| b.total_cmp(a));
+        blows.sort_by_shared(|a, b| b.total_cmp(a));
         let heaviest: f64 = blows.iter().take(BLOWS_IN_A_TURN).sum();
         if heaviest >= f64::from(unit.hp) {
             blows.len()

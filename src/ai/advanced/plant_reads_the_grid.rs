@@ -44,6 +44,7 @@
 use super::*;
 use crate::game::City;
 use crate::rules::BuildingSpec;
+use crate::shared_sort::SharedSort;
 
 /// The turns a fuel stockpile is spread over when sizing what a plant can
 /// feed: long enough that a banked 25 feeds one city, not five for a moment.
@@ -170,7 +171,7 @@ impl AdvancedAi {
         };
         let pid = city.owner;
         let mut ours: Vec<&City> = g.cities.values().filter(|c| c.owner == pid).collect();
-        ours.sort_by_key(|c| c.id);
+        ours.sort_by_key_shared(|c| c.id);
         // Plants already burning: their zone, and the fuel they burn.
         let burning: Vec<(Pos, &str)> = FUELLED_PLANTS
             .iter()

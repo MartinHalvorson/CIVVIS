@@ -6340,6 +6340,13 @@ function formatBuildSize(bytes) {
   if (!Number.isSafeInteger(bytes) || bytes <= 0) return "";
   return `${(bytes / 1e6).toFixed(1)} MB`;
 }
+// The Build size's hover, by what was measured. civvis.ai reports what a
+// browser downloads for the game; a desktop server reports its own binary.
+const BUILD_SIZE_MEANING = {
+  download: "Compressed download size of the whole game",
+  WASM: "Uncompressed size of the game engine",
+  native: "Size of the running game server",
+};
 function updateBuildMarker(st = state) {
   const marker = document.getElementById("buildmark");
   const commitLink = document.getElementById("buildmark-commit");
@@ -6367,11 +6374,18 @@ function updateBuildMarker(st = state) {
   const legacyWasm = Number.isSafeInteger(wasmBytes) && wasmBytes > 0;
   details.textContent = ` · Commit is ${formatBuildAge(commitDate)} old · ` +
     `Build is ${formatBuildAge(buildDate)} old` +
-    (artifactSize ? ` · Build size ${artifactSize}` : "") +
     (!artifactSize && legacyWasm ? ` · WASM is ${formatBinarySize(wasmBytes)}` : "");
+  if (artifactSize) {
+    const size = document.createElement("span");
+    size.id = "buildmark-size";
+    size.textContent = ` · Build ${artifactSize}`;
+    size.title = BUILD_SIZE_MEANING[artifactKind] || "Size of this build";
+    details.append(size);
+  }
+  const sizeLabel = artifactKind === "download" ? "Download (compressed)" : artifactKind || "Artifact";
   marker.title = `${commit}\nCommitted ${commitTime}\nBuilt ${builtAt}` +
     (artifactSize
-      ? `\n${artifactKind || "Artifact"} ${Math.round(artifactBytes).toLocaleString()} bytes`
+      ? `\n${sizeLabel} ${Math.round(artifactBytes).toLocaleString()} bytes`
       : legacyWasm ? `\nWASM ${wasmBytes.toLocaleString()} bytes` : "");
   marker.hidden = false;
   syncBuildMarkerPosition();

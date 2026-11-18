@@ -15,6 +15,7 @@
 //! `pick_item`, stays in `ai.rs` for now because an open PR edits it.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl BasicAi {
     /// Prefer a Native-quoted non-resort Campus site over a standing resort.
@@ -1183,7 +1184,8 @@ impl BasicAi {
                 .into_iter()
                 .map(|item| (g.item_cost_for(pid, &item), format!("{item:?}"), item))
                 .collect();
-            ranked.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| a.1.cmp(&b.1)));
+            ranked
+                .sort_by_shared(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| a.1.cmp(&b.1)));
             if let Some((_, _, project)) = ranked.into_iter().next() {
                 return Some(project);
             }
@@ -1535,7 +1537,7 @@ impl BasicAi {
                 entry.1 = top + 1.0;
             }
         }
-        dpri.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        dpri.sort_by_shared(|a, b| b.1.partial_cmp(&a.1).unwrap());
         for (family, _) in dpri {
             if family == "holy_site" && g.players[pid].religion.is_none() {
                 // `skip-the-prophet-race-2`: never open the tab. See the flag's
@@ -1677,7 +1679,7 @@ impl BasicAi {
                     })
                     .sum()
             };
-            buildable.sort_by(|a, b| {
+            buildable.sort_by_shared(|a, b| {
                 makes_science(&b.1)
                     .cmp(&makes_science(&a.1))
                     .then_with(|| a.0.cmp(&b.0))
@@ -1744,7 +1746,8 @@ impl BasicAi {
                 .into_iter()
                 .map(|item| (g.item_cost_for(pid, &item), format!("{item:?}"), item))
                 .collect();
-            ranked.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| a.1.cmp(&b.1)));
+            ranked
+                .sort_by_shared(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| a.1.cmp(&b.1)));
             if let Some((_, _, project)) = ranked.into_iter().next() {
                 return Some(project);
             }

@@ -4,6 +4,7 @@
 
 use super::AdvancedAi;
 use crate::game::Game;
+use crate::shared_sort::SharedSort;
 use crate::Pos;
 
 const CLEARANCE_TURNS: u32 = 16;
@@ -84,7 +85,7 @@ impl AdvancedAi {
             .into_iter()
             .filter(|uid| self.clearance_unit_available(g, pid, *uid, request.site))
             .collect();
-        candidates.sort_by_key(|uid| {
+        candidates.sort_by_key_shared(|uid| {
             (
                 !request.units.contains(uid),
                 g.wdist(g.units[uid].pos, request.site),

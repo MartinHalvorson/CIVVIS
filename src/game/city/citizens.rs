@@ -14,6 +14,7 @@
 //! `pub(in crate::game)`, the same reach; the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 #[cfg(test)]
 thread_local! {
@@ -602,7 +603,7 @@ impl Game {
                 fallback_tier: SPECIALIST_TIER,
             });
         }
-        cands.sort_by(|a, b| {
+        cands.sort_by_shared(|a, b| {
             a.fallback_tier
                 .cmp(&b.fallback_tier)
                 .then_with(|| b.value.partial_cmp(&a.value).unwrap())

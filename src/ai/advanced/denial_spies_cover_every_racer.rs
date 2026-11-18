@@ -51,6 +51,7 @@
 //! `racer_spy_leader`'s.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// `denial-spies-cover-every-racer`: how far behind the leader's space
 /// progress a racer still counts as a co-leader: one project, or the whole
@@ -89,7 +90,7 @@ impl AdvancedAi {
                 )
             })
             .collect();
-        ranked.sort_by(|left, right| {
+        ranked.sort_by_shared(|left, right| {
             right
                 .1
                 .total_cmp(&left.1)

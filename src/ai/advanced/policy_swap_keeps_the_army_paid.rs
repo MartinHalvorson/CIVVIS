@@ -38,6 +38,7 @@
 //! nothing is computed.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// What each card pays and the deck the turn began with: the projection the
 /// policy pass keeps above zero.
@@ -109,7 +110,7 @@ impl ArmyPay {
             .map(|card| (*card, self.income(card.as_str())))
             .filter(|(_, income)| *income > 0.0)
             .collect();
-        given_up.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        given_up.sort_by_shared(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
         let mut back = Vec::new();
         for (card, income) in given_up {
             if projected > 0.0 {

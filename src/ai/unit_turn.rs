@@ -15,6 +15,7 @@
 //! the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl BasicAi {
     /// A remembered capture objective is actionable only while the city still
@@ -937,7 +938,7 @@ impl BasicAi {
         if wanting.is_empty() {
             return Vec::new();
         }
-        wanting.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+        wanting.sort_by_shared(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
 
         let mut responders: Vec<u32> = g
             .units
@@ -1191,7 +1192,7 @@ impl BasicAi {
         if threats.is_empty() {
             return None;
         }
-        threats.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+        threats.sort_by_shared(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
 
         // Land units only: a ship cannot answer a raider inland, and pulling air
         // units out of the offensive buys nothing a fighter on patrol does not
@@ -1510,7 +1511,7 @@ impl BasicAi {
             .into_iter()
             .filter(|pos| g.unit_can_traverse(uid, *pos))
             .collect();
-        approaches.sort_by_key(|pos| (g.wdist(current, *pos), *pos));
+        approaches.sort_by_key_shared(|pos| (g.wdist(current, *pos), *pos));
         approaches
             .into_iter()
             .find(|pos| *pos == current || g.route_step(uid, *pos, 0).is_some())

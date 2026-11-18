@@ -92,6 +92,7 @@ use super::{
 };
 use crate::game::{Action, Game};
 use crate::reasoning::plain;
+use crate::shared_sort::SharedSort;
 use crate::think;
 use crate::Pos;
 use std::collections::BTreeSet;
@@ -278,7 +279,7 @@ impl AdvancedAi {
                     && super::battle_planner::strike_danger(g, pid, *pos, uid) == 0.0
             })
             .collect();
-        dry.sort_by_key(|pos| (g.wdist(*pos, target), *pos));
+        dry.sort_by_key_shared(|pos| (g.wdist(*pos, target), *pos));
         for pos in dry {
             if self.base.path_move(g, pid, uid, pos) {
                 think!(self.journal(), Expansion, Detail, "Guard follows on land";
@@ -778,7 +779,7 @@ impl AdvancedAi {
         // farthest from any raider. Failing a safe tile, the fewest raiders
         // reaching it, then distance from them — and only when that beats
         // standing still.
-        options.sort_by(|a, b| {
+        options.sort_by_shared(|a, b| {
             b.0.cmp(&a.0)
                 .then_with(|| a.1.cmp(&b.1))
                 .then_with(|| if a.0 { a.2.cmp(&b.2) } else { a.3.cmp(&b.3) })
@@ -1405,7 +1406,7 @@ impl AdvancedAi {
                 )
             })
             .collect();
-        options.sort_by(|a, b| {
+        options.sort_by_shared(|a, b| {
             b.0.cmp(&a.0)
                 .then_with(|| b.1.cmp(&a.1))
                 .then_with(|| if a.0 { a.4.cmp(&b.4) } else { b.2.cmp(&a.2) })

@@ -16,6 +16,7 @@
 //! Gold-limited.
 use super::BasicAi;
 use crate::game::{Game, Item};
+use crate::shared_sort::SharedSort;
 use crate::think;
 
 /// Standard turns before the step opens: turn 60 at the live seat's Online
@@ -229,7 +230,7 @@ impl BasicAi {
                     .then(|| (g.city_yields(city).production, city, pos))
             })
             .collect();
-        ranked.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        ranked.sort_by_shared(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
         let pos = ranked
             .iter()
             .take(open)

@@ -15,6 +15,7 @@
 //! `pub(super)`.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 pub(super) const POLICY_PRIORITY: [&str; 20] = [
     "urban_planning",
@@ -299,7 +300,7 @@ pub(crate) fn choose_dedications(g: &mut Game, pid: usize, choice: DedicationCho
             DedicationChoice::Banking => banking,
         };
         if rank {
-            offered.sort_by(|left, right| {
+            offered.sort_by_shared(|left, right| {
                 g.projected_dedication_score(pid, right)
                     .cmp(&g.projected_dedication_score(pid, left))
                     .then(left.cmp(right))
@@ -389,7 +390,7 @@ pub(crate) fn choose_conquest_dedications(
         if offered.is_empty() {
             return chosen;
         }
-        offered.sort_by(|left, right| place(left).cmp(&place(right)).then(left.cmp(right)));
+        offered.sort_by_shared(|left, right| place(left).cmp(&place(right)).then(left.cmp(right)));
         let Some(dedication) = offered.into_iter().find(|dedication| {
             g.apply(
                 pid,
@@ -783,7 +784,7 @@ pub(super) fn revise_policy_deck(
             }
         };
 
-    scored.sort_by(|a, b| {
+    scored.sort_by_shared(|a, b| {
         b.0.partial_cmp(&a.0)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then(a.1.cmp(&b.1))

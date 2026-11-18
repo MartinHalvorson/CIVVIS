@@ -315,7 +315,7 @@ def main(argv: list[str] | None = None) -> int:
         check(problems, "ROOT_REDIRECT=off still serves the site",
               off["status"] == 200 and off["body"].strip() == "asset:/")
 
-        print("==> the engine and renderer are served at maximum compression")
+        print("==> the game page is served at maximum compression")
         engine = hit(path="/test/civvis.wasm?v=abc", accepts="gzip, br", compressed=True)
         check(problems, "the engine is served from its .br copy",
               engine["body"] == "asset:/test/civvis.wasm.br" and engine["contentEncoding"] == "br",
@@ -339,9 +339,29 @@ def main(argv: list[str] | None = None) -> int:
         check(problems, "a build with no copies falls back to the plain file",
               missing["body"] == "asset:/test/civvis.wasm" and missing["contentEncoding"] is None,
               f"got {missing['body']!r} {missing['contentEncoding']!r}")
-        other = hit(path="/test/assets/app_setup.js?v=abc", accepts="br", compressed=True)
-        check(problems, "only the named files look for a copy",
-              other["body"] == "asset:/test/assets/app_setup.js", f"got {other['body']!r}")
+        setup = hit(path="/test/assets/app_setup.js?v=abc", accepts="br", compressed=True)
+        check(problems, "every viewer script has its copy",
+              setup["body"] == "asset:/test/assets/app_setup.js.br"
+              and "javascript" in (setup["contentType"] or ""),
+              f"got {setup['body']!r} {setup['contentType']!r}")
+        shim = hit(path="/shim.js?v=abc", accepts="br", compressed=True)
+        check(problems, "and the shim",
+              shim["body"] == "asset:/shim.js.br" and "javascript" in (shim["contentType"] or ""),
+              f"got {shim['body']!r} {shim['contentType']!r}")
+        for door, copy in (("/", "/index.html.br"), ("/test/", "/test/index.html.br")):
+            page = hit(path=door + "?mode=play", accepts="br", compressed=True)
+            check(problems, f"{door} serves the page's own copy",
+                  page["body"] == "asset:" + copy and page["contentEncoding"] == "br"
+                  and (page["contentType"] or "").startswith("text/html"),
+                  f"got {page['body']!r} {page['contentEncoding']!r} {page['contentType']!r}")
+            check(problems, f"{door} is still revalidated on every visit",
+                  "must-revalidate" in (page["cacheControl"] or ""), f"got {page['cacheControl']!r}")
+        art = hit(path="/test/assets/civ6-unit-flags.webp?v=abc", accepts="br", compressed=True)
+        check(problems, "images, already compressed, look for no copy",
+              art["body"] == "asset:/test/assets/civ6-unit-flags.webp", f"got {art['body']!r}")
+        landing = hit(path="/home/", accepts="br", compressed=True)
+        check(problems, "nor does a page outside the game",
+              landing["body"] == "asset:/home/", f"got {landing['body']!r}")
         root = hit(path="/civvis.wasm?v=abc", accepts="br", compressed=True)
         check(problems, "the front page serves its own copy",
               root["body"] == "asset:/civvis.wasm.br" and root["contentEncoding"] == "br"

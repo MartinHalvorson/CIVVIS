@@ -5,6 +5,7 @@
 //! the existing market transport. Only native observations enter this path.
 use super::gun_resource::{GUN_RESOURCE_FUEL_LOW_TURNS, GUN_RESOURCE_FUEL_TURNS};
 use super::*;
+use crate::shared_sort::SharedSort;
 
 #[derive(Default)]
 struct Material {
@@ -116,7 +117,7 @@ impl AdvancedAi {
             let fuel = (to.resource_maintenance - previous).max(0.0);
             upgrades.push((gain, uid, target, resource, gold, bill.cost, fuel));
         }
-        upgrades.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        upgrades.sort_by_shared(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
         for (gain, uid, target, resource, gold, bill, fuel) in upgrades {
             let material = materials.entry(resource).or_default();
             let rate = g.strategic_resource_rate(pid, resource.as_str());
@@ -166,7 +167,7 @@ impl AdvancedAi {
                 gain: material.gain,
             });
         }
-        wants.sort_by(|a, b| {
+        wants.sort_by_shared(|a, b| {
             b.gain
                 .total_cmp(&a.gain)
                 .then_with(|| a.resource.cmp(&b.resource))

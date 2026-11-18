@@ -57,6 +57,7 @@
 
 use super::faith_war_before_the_flip::{FaithWar, FAITH_WAR_CLEAR_TURNS, FAITH_WAR_NOTE_TURNS};
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// `faith-war-at-match-point`: a founder's faith at match point against us.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -290,7 +291,7 @@ impl AdvancedAi {
             .collect();
         // Most cities of ours on the faith first, then most spreaders at our
         // cities; the lower seat breaks a tie.
-        candidates.sort_by(|a, b| {
+        candidates.sort_by_shared(|a, b| {
             b.1.leaning
                 .cmp(&a.1.leaning)
                 .then(b.2.cmp(&a.2))

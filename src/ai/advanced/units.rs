@@ -16,6 +16,7 @@
 
 use super::last_orders::OrderStep;
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     pub(super) fn guard_is_bound_to_any_settler(&self, guard: u32) -> bool {
@@ -252,7 +253,7 @@ impl AdvancedAi {
                     )
                 })
                 .collect();
-        targets.sort_by(|left, right| right.cmp(left));
+        targets.sort_by_shared(|left, right| right.cmp(left));
         // See `founder_home_targets` (`founder-converts-its-own-cities`): a
         // founder's spreader converts our own cities before any foreign one.
         self.founder_home_targets(g, pid, &religion, &mut targets, |(_, _, _, pos)| *pos);
@@ -532,7 +533,7 @@ impl AdvancedAi {
                 })
             })
             .collect();
-        cities.sort_by(|left, right| {
+        cities.sort_by_shared(|left, right| {
             self.conversion_garrison_priority(g, left)
                 .total_cmp(&self.conversion_garrison_priority(g, right))
                 .then_with(|| left.id.cmp(&right.id))
@@ -894,7 +895,7 @@ impl AdvancedAi {
                     Some((30.0 * ((attack - defence) / 25.0).exp()).clamp(1.0, 100.0))
                 })
                 .collect();
-            mean_blows.sort_by(|a, b| b.total_cmp(a));
+            mean_blows.sort_by_shared(|a, b| b.total_cmp(a));
             let heaviest_pair: f64 = mean_blows.iter().take(2).sum();
             if heaviest_pair * 1.5 < survivor.hp as f64 {
                 return None;
@@ -2009,7 +2010,7 @@ impl AdvancedAi {
                     })
                 })
                 .collect();
-            volley_indices.sort_by(|left, right| {
+            volley_indices.sort_by_shared(|left, right| {
                 let left = &scored[*left];
                 let right = &scored[*right];
                 (focus == Some(right.target))
@@ -2865,7 +2866,7 @@ impl AdvancedAi {
         // the bodies that hold for it read where it stands. `None` with the
         // gene off, which keeps the shipped order.
         let shield_first = self.shield_moves_first(g, pid);
-        ids.sort_by_key(|uid| {
+        ids.sort_by_key_shared(|uid| {
             let u = &g.units[uid];
             let spec = &g.rules.units[u.kind];
             let order = match u.kind.as_str() {

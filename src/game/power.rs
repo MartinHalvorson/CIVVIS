@@ -9,6 +9,7 @@
 //! methods stay public; the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl Game {
     pub fn city_power_demand(&self, city: &City) -> f64 {
@@ -183,7 +184,7 @@ impl Game {
                     Some((*resource, *power + bonus, *co2, *advanced))
                 })
                 .collect();
-            candidates.sort_by(|a, b| {
+            candidates.sort_by_shared(|a, b| {
                 b.1.partial_cmp(&a.1)
                     .unwrap()
                     .then_with(|| {

@@ -3,6 +3,7 @@
 use super::{AdvancedAi, StrategicPlan};
 use crate::game::{Action, Game, Item};
 use crate::name::Name;
+use crate::shared_sort::SharedSort;
 use crate::think;
 use crate::Pos;
 use std::collections::BTreeSet;
@@ -201,7 +202,7 @@ impl AdvancedAi {
                 }
             }
         }
-        options.sort_by(|a, b| a.0.total_cmp(&b.0).then((a.1, a.2).cmp(&(b.1, b.2))));
+        options.sort_by_shared(|a, b| a.0.total_cmp(&b.0).then((a.1, a.2).cmp(&(b.1, b.2))));
         options
     }
 

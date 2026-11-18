@@ -204,20 +204,30 @@ async function fileReport(request, env, url) {
   return answer(201, { url: issue.html_url || "", number: issue.number });
 }
 
-// The two files that are most of a first visit. publish.sh writes a `.br` beside
-// each at brotli's slowest setting; Cloudflare's own on-the-fly compression
-// favours speed and comes out about 30% larger on the engine.
-const PRECOMPRESSED = /^(?:\/test)?\/(?:civvis\.wasm|assets\/app\.js)$/;
+// Every compressible file of the game page. publish.sh writes a `.br` beside
+// each at brotli's slowest setting, and build.json's `download_bytes` — the
+// Build size the viewer shows — counts exactly those copies; Cloudflare's own
+// on-the-fly compression favours speed and comes out about 30% larger on the
+// engine. A lane's front door (`/`, `/test/`) is its index.html.
+const PRECOMPRESSED =
+  /^(?:\/test)?\/(?:civvis\.wasm|shim\.js|worker\.js|index\.html|assets\/[^/]+\.(?:js|json|css))$/;
+
+/// The file a request names, if publish.sh may have precompressed it.
+function precompressedPath(pathname) {
+  const file = /^(?:\/test)?\/$/.test(pathname) ? `${pathname}index.html` : pathname;
+  return PRECOMPRESSED.test(file) ? file : null;
+}
 
 /// The harder-compressed copy of this file, if there is one and the browser
 /// can read it. Workers rewrites a request's own `Accept-Encoding`, so what the
 /// visitor's browser actually said comes from `request.cf`.
 async function precompressedCopy(request, env, url) {
-  if (request.method !== "GET" || !PRECOMPRESSED.test(url.pathname)) return null;
+  const path = precompressedPath(url.pathname);
+  if (request.method !== "GET" || !path) return null;
   const accepted = request.cf?.clientAcceptEncoding ?? request.headers.get("Accept-Encoding") ?? "";
   if (!/\bbr\b/.test(accepted)) return null;
   const file = new URL(url);
-  file.pathname += ".br";
+  file.pathname = `${path}.br`;
   file.search = "";
   const copy = await env.ASSETS.fetch(new Request(file, {
     method: "GET",
@@ -261,7 +271,11 @@ async function asset(request, env, gated) {
   if (copy) {
     headers.set("Content-Encoding", "br");
     headers.set("Vary", "Accept-Encoding");
-    if (path.endsWith(".js")) headers.set("Content-Type", "text/javascript; charset=utf-8");
+    const served = precompressedPath(path);
+    if (served.endsWith(".js")) headers.set("Content-Type", "text/javascript; charset=utf-8");
+    if (served.endsWith(".html")) headers.set("Content-Type", "text/html; charset=utf-8");
+    if (served.endsWith(".json")) headers.set("Content-Type", "application/json");
+    if (served.endsWith(".css")) headers.set("Content-Type", "text/css; charset=utf-8");
     // `manual`: these bytes are already encoded, so the runtime must not encode
     // them again or decode them to re-encode at a weaker setting.
     return new Response(response.body, { status: response.status, headers, encodeBody: "manual" });

@@ -15,6 +15,7 @@
 //! method of `ai` had; the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl BasicAi {
     /// Whether the opening book's Settler slot is still waiting for the
@@ -434,7 +435,7 @@ impl BasicAi {
                 (pos, score)
             })
             .collect();
-        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        candidates.sort_by_shared(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         Self::first_reachable_settle_site(g, uid, &candidates)
     }
 

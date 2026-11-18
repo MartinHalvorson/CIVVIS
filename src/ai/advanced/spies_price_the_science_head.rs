@@ -17,6 +17,7 @@
 //! future production, unchanged delivery time or victory strength.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     pub(super) fn rank_spy_producers(&self, g: &Game, candidates: &mut [(f64, u32)]) {
@@ -35,7 +36,7 @@ impl AdvancedAi {
                 .first()
                 .is_some_and(|head| Self::science_head(g, head))
         };
-        candidates.sort_by(|(left, left_city), (right, right_city)| {
+        candidates.sort_by_shared(|(left, left_city), (right, right_city)| {
             let native_order = if quoted {
                 // `quoted` validated the complete menu before this sort.
                 g.host_production_turns(*left_city, &spy)

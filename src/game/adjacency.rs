@@ -17,6 +17,7 @@
 use super::{AdjacencySource, Game};
 use crate::name::Name;
 use crate::rules::Yields;
+use crate::shared_sort::SharedSort;
 use crate::Pos;
 
 /// District adjacency one settlement scan has already priced, by plot and
@@ -409,7 +410,7 @@ impl Game {
 
 /// Best site first: adjacency total, then position for determinism.
 fn rank(mut sites: Vec<SiteForecast>) -> Vec<SiteForecast> {
-    sites.sort_by(|a, b| {
+    sites.sort_by_shared(|a, b| {
         b.yields
             .total()
             .partial_cmp(&a.yields.total())

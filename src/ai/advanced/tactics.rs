@@ -13,6 +13,7 @@
 //! the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     /// Drive one melee unit of an ancient rush directly at the objective
@@ -131,7 +132,7 @@ impl AdvancedAi {
             return None;
         }
         // Spread first, then nearness to us, then position for determinism.
-        ring.sort_by_key(|pos| {
+        ring.sort_by_key_shared(|pos| {
             let spread = held
                 .iter()
                 .map(|other| g.wdist(*pos, *other))
@@ -1388,7 +1389,7 @@ impl AdvancedAi {
                 local_strength_ratio,
             });
         }
-        self.force_groups.sort_by_key(|group| group.id);
+        self.force_groups.sort_by_key_shared(|group| group.id);
         // What the armies have been told to do. This is the layer between the
         // grand strategy and the individual attacks below it, and it is the
         // one an observer cannot infer from watching units move: a group that
@@ -1964,7 +1965,7 @@ impl AdvancedAi {
                 _ => None,
             })
             .collect();
-        pillages.sort_by(|left, right| better((right.0, right.1), (left.0, left.1)));
+        pillages.sort_by_shared(|left, right| better((right.0, right.1), (left.0, left.1)));
         let mut best_pillage: Option<(f64, Pos, Action)> = None;
         for (bound, target, action) in pillages {
             if best_pillage.as_ref().is_some_and(|(value, at, _)| {

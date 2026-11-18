@@ -12,6 +12,7 @@
 //! clause held the counter, once per rival per [`SILENT_COUNTER_NOTE_TURNS`]
 //! standard turns or when the clause changes. It decides nothing.
 
+use crate::shared_sort::SharedSort;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use super::{denial_nearest_finish, AdvancedAi, GrandStrategy, VictoryFocus, VictoryTarget};
@@ -276,7 +277,7 @@ fn land_road_blocker(g: &Game, pid: usize, rival: usize) -> Option<usize> {
         })
         .map(|player| player.id)
         .collect();
-    candidates.sort_by_key(|id| (g.players[*id].is_minor, *id));
+    candidates.sort_by_key_shared(|id| (g.players[*id].is_minor, *id));
     candidates
         .into_iter()
         .find(|blocker| reachable_through(g, pid, rival, Some(*blocker), false))

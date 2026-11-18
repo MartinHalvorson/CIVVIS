@@ -2075,7 +2075,12 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
     assert!(EMBEDDED_INDEX.contains("st?.server_artifact_kind"));
     assert!(EMBEDDED_INDEX.contains("function formatBuildSize(bytes)"));
     assert!(EMBEDDED_INDEX.contains("(bytes / 1e6).toFixed(1)} MB"));
-    assert!(EMBEDDED_INDEX.contains("(artifactSize ? ` · Build size ${artifactSize}` : \"\")"));
+    // The size reads "Build 4.7 MB" and says on hover what was measured: on
+    // civvis.ai, the game's compressed download.
+    assert!(EMBEDDED_INDEX.contains("size.textContent = ` · Build ${artifactSize}`;"));
+    assert!(EMBEDDED_INDEX.contains("size.title = BUILD_SIZE_MEANING[artifactKind]"));
+    assert!(EMBEDDED_INDEX.contains("download: \"Compressed download size of the whole game\","));
+    assert!(EMBEDDED_INDEX.contains("native: \"Size of the running game server\","));
     assert!(EMBEDDED_INDEX.contains("commit.slice(0, 7)"));
     assert!(EMBEDDED_INDEX.contains("id=\"buildmark-commit\""));
     assert!(EMBEDDED_INDEX.contains(

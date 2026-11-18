@@ -88,6 +88,11 @@ if command -v wasm-opt >/dev/null; then
   echo "==> shrinking the module"
   # -O3 keeps the optimiser aimed at speed: this module simulates whole games,
   # and -Oz costs more turn time than it saves bytes over the wire.
+  # Measured 2026-11-18 at 241674c, three paired full games a side with
+  # identical trace and save hashes: rustc `opt-level = "s"` shrank the module
+  # 18.37 -> 12.50 MB (3.97 -> 3.05 MB brotli) and cost about 23% engine time
+  # (median 94.7 s against 76.9 s a game). wasm-opt alone barely matters:
+  # -O3, -Os and -Oz on the same input land within 0.5% of each other.
   if [ -n "$symbols_out" ]; then
     # The printing pass leaves the optimized module byte-for-byte unchanged.
     # Its indexes name the final functions, after inlining and reordering.
@@ -211,7 +216,7 @@ if leaked:
         "a lane page must link relatively so /test stays /test"
     )
 
-# The sprite atlases, republished as lossless WebP.
+# The sprite atlases, republished as WebP: lossless unless named below.
 #
 # They are the heaviest thing here — heavier than the engine — and they grow
 # every time somebody draws something. Lossless WebP is *pixel-identical* to
@@ -223,6 +228,28 @@ if leaked:
 # Optional, because a machine cutting a build should not need a wheel
 # installed to do it. Without Pillow the atlases publish as they are and the
 # only cost is the budget at the end of this script.
+#
+# Before any of that, the copy keeps only what the viewer asks for. `web/assets`
+# is copied whole, and art the viewer stopped drawing stays there for the
+# desktop build: on 2026-11-18 the two feature atlases #4865 retired were still
+# 1.7 MB of every deployment, fetched by nobody. A reference is any quoted
+# `assets/...` or CSS `url(assets/...)` in the page or a script; the check
+# after the WebP pass still fails a build whose viewer names a file it lacks.
+referenced = set(re.findall(
+    r"""(?:["'`]|url\(\s*)assets/([^"'`)?#\s]+)""", page + "".join(scripts.values())))
+unreferenced = sorted(p for p in assets.iterdir() if p.is_file() and p.name not in referenced)
+for stale in unreferenced:
+    scripts.pop(stale, None)
+    stale.unlink()
+if unreferenced:
+    print(f"   left out {len(unreferenced)} asset(s) the viewer never asks for: "
+          + ", ".join(p.name for p in unreferenced))
+
+# Lossy where nobody can see the loss: the hidden-map marginalia are ink
+# engravings painted under a multiply blend at a fraction of their 256 px
+# cells. At quality 80 they are 195 KB instead of 881 KB lossless (measured
+# 2026-11-18), with no visible difference even at full cell size.
+LOSSY_QUALITY = {"hidden-map-monsters.png": 80}
 try:
     from PIL import Image
 except ImportError:
@@ -233,7 +260,10 @@ else:
         webp = png.with_suffix(".webp")
         image = Image.open(png)
         image.load()
-        image.save(webp, "WEBP", lossless=True, quality=100, method=5)
+        if png.name in LOSSY_QUALITY:
+            image.save(webp, "WEBP", quality=LOSSY_QUALITY[png.name], method=6)
+        else:
+            image.save(webp, "WEBP", lossless=True, quality=100, method=5)
         before += png.stat().st_size
         after += webp.stat().st_size
         png.unlink()
@@ -242,7 +272,7 @@ else:
             scripts[path] = scripts[path].replace(
                 f'"assets/{png.name}"', f'"assets/{webp.name}"')
     if before:
-        print(f"   atlases {before:,} -> {after:,} bytes as lossless WebP")
+        print(f"   atlases {before:,} -> {after:,} bytes as WebP")
 
 # Every atlas the page asks for has to be one this build actually ships. This
 # is what catches a rewrite that half-happened: a reference the loop above
@@ -275,6 +305,32 @@ page = page.replace(
 target.write_text(page, encoding="utf-8")
 print(f"   viewer written to {target} ({len(page):,} bytes)")
 PY
+
+# The viewer's scripts, without their comments and indentation. The source is
+# written to be read — app.js was 2.0 MB, about half of it prose — and none
+# of that reaches a browser usefully: measured 2026-11-18, stripping it took
+# app.js from 471 KB to 261 KB brotli. Whitespace only: no identifier is
+# renamed and no expression rewritten, so the scripts' shared top-level names
+# and every string the page or a check reads survive unchanged.
+#
+# Optional like Pillow: a machine without Node publishes the scripts as
+# written. The version is pinned so every build strips the same way.
+ESBUILD="esbuild@0.24.0"
+if command -v npx >/dev/null && compgen -G "$out/assets/*.js" >/dev/null; then
+  minified="$(mktemp -d)"
+  scripts_before=$(cat "$out"/assets/*.js | wc -c | tr -d ' ')
+  npx --yes "$ESBUILD" "$out"/assets/*.js --minify-whitespace --charset=utf8 \
+    --legal-comments=none --log-level=warning --outdir="$minified"
+  for script in "$out"/assets/*.js; do
+    [ -s "$minified/$(basename "$script")" ] \
+      || { echo "esbuild wrote nothing for $(basename "$script")" >&2; exit 1; }
+    mv "$minified/$(basename "$script")" "$script"
+  done
+  rmdir "$minified"
+  echo "   viewer scripts $(printf "%'d" "$scripts_before") -> $(printf "%'d" "$(cat "$out"/assets/*.js | wc -c | tr -d ' ')") bytes without comments"
+else
+  echo "   npx is not installed; publishing the viewer scripts as written"
+fi
 
 # The landing and download pages are lane content too, so the same rule
 # holds: every link between pages stays inside the lane. Head's sources are
@@ -325,14 +381,34 @@ PY
 # asks for fresh content while unchanged files remain reusable across builds.
 python3 "$repo_root/beta/cache_bust.py" "$out"
 
-# The two files that are most of a first visit, at brotli's slowest setting.
-# `_worker.js` serves these when the browser accepts them. They are alternate
-# encodings of files already counted, so the budget below does not count them.
+# Every compressible file of the game page, at brotli's slowest setting.
+# `_worker.js` serves the `.br` beside a file when the browser accepts it;
+# Cloudflare's own on-the-fly compression favours speed and comes out about
+# 30% larger on the engine. They are alternate encodings of files already
+# counted, so the on-disk budget below does not count them.
+viewer_files() {
+  { find "$out/civvis.wasm" "$out/index.html" "$out/shim.js" "$out/worker.js" "$out/assets" \
+      -type f ! -name '*.br' 2>/dev/null || true; } | sort
+}
 if command -v brotli >/dev/null; then
-  for file in "$out/civvis.wasm" "$out/assets/app.js"; do
-    brotli -q 11 --lgwin=24 -f -o "$file.br" "$file"
+  viewer_files | while read -r file; do
+    case "$file" in
+      *.wasm|*.html|*.js|*.json|*.css) brotli -q 11 --lgwin=24 -f -o "$file.br" "$file" ;;
+    esac
   done
 fi
+
+# The Build size civvis.ai shows: what a browser downloads for the game page —
+# each file's brotli copy where there is one, the file itself where there is
+# not (the images are already compressed). It counts the whole viewer, the
+# map art a played game fetches later included, and nothing the landing or
+# download pages carry.
+download_bytes=0
+while read -r file; do
+  served="$file"
+  [ -f "$file.br" ] && served="$file.br"
+  download_bytes=$(( download_bytes + $(wc -c < "$served" | tr -d ' ') ))
+done < <(viewer_files)
 
 wasm_bytes=$(wc -c < "$out/civvis.wasm" | tr -d ' ')
 bundle_bytes=$(find "$out" -type f ! -name '*.br' -exec wc -c {} + | tail -1 | awk '{print $1}')
@@ -343,6 +419,7 @@ cat > "$out/build.json" <<JSON
   "commit_time": "$commit_time",
   "built_at": "$built_at",
   "wasm_bytes": $wasm_bytes,
+  "download_bytes": $download_bytes,
   "bundle_bytes": $bundle_bytes
 }
 JSON
@@ -350,9 +427,10 @@ JSON
 echo
 echo "published build $short -> $out"
 echo "  engine      $(printf "%'d" "$wasm_bytes") bytes"
-if command -v brotli >/dev/null; then
-  echo "  over a wire $(printf "%'d" "$(brotli -q 11 -c "$out/civvis.wasm" | wc -c | tr -d ' ')") bytes brotli"
+if [ -f "$out/civvis.wasm.br" ]; then
+  echo "  over a wire $(printf "%'d" "$(wc -c < "$out/civvis.wasm.br" | tr -d ' ')") bytes brotli"
 fi
+echo "  download    $(printf "%'d" "$download_bytes") bytes for the whole game page"
 echo "  bundle      $(printf "%'d" "$bundle_bytes") bytes on disk"
 
 # The whole point of publishing this way is that it stays something a person

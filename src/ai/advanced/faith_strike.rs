@@ -114,6 +114,7 @@
 //! Off: unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The condemnations a strike must be able to carry out this turn are worth
@@ -211,7 +212,7 @@ impl AdvancedAi {
                 .into_iter()
                 .filter(|uid| !self.preserve_competing_faith(g, pid, &g.units[uid]))
                 .collect();
-        targets.sort_by_key(|uid| {
+        targets.sort_by_key_shared(|uid| {
             (
                 std::cmp::Reverse(spreader_value(g.units[uid].kind.as_str())),
                 *uid,

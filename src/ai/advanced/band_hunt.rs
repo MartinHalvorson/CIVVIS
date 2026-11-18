@@ -42,6 +42,7 @@
 //! Tourism read a flat 130-135 a turn over turns 172-184 while its visiting
 //! tourists went 23 → 105 — the concerts, again.
 
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeSet;
 
 use super::{AdvancedAi, StrategicPlan};
@@ -87,7 +88,7 @@ impl AdvancedAi {
             })
             .map(|unit| (unit.id, unit.pos))
             .collect();
-        bands.sort_by_key(|(id, _)| *id);
+        bands.sort_by_key_shared(|(id, _)| *id);
         for (band, at) in bands {
             if !g.units.contains_key(&band) {
                 continue;

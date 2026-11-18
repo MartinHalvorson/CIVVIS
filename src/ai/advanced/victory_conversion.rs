@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::game::{expected_damage, QuickDeal};
+use crate::shared_sort::SharedSort;
 use std::collections::VecDeque;
 
 /// The production picker has already priced construction and its raw value.
@@ -357,7 +358,7 @@ impl AdvancedAi {
             future.players[pid].civics.insert(crate::name!("cold_war"));
         }
         let mut parks = future.national_park_sites(pid);
-        parks.sort_by_key(|site| {
+        parks.sort_by_key_shared(|site| {
             (
                 std::cmp::Reverse(site.iter().map(|pos| g.tile_appeal(*pos)).sum::<i32>()),
                 *site,
@@ -372,7 +373,7 @@ impl AdvancedAi {
         // Bound the route search to the three closest purchase cities. Each
         // probe starts at a real purchase city, never at a veteran overseas.
         let mut cities = g.player_city_ids(pid);
-        cities.sort_by_key(|cid| {
+        cities.sort_by_key_shared(|cid| {
             (
                 parks
                     .iter()
@@ -439,7 +440,7 @@ impl AdvancedAi {
                         ))
                     })
                     .collect();
-                venues.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+                venues.sort_by_shared(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
                 let best = venues
                     .into_iter()
                     .take(12)
@@ -522,7 +523,7 @@ impl AdvancedAi {
             future.map.tiles.get_mut(pos).unwrap().feature = Some(crate::name!("forest"));
         }
         let mut sites = future.national_park_sites(pid);
-        sites.sort_by_key(|site| {
+        sites.sort_by_key_shared(|site| {
             (
                 std::cmp::Reverse(site.iter().map(|p| g.tile_appeal(*p)).sum::<i32>()),
                 *site,
@@ -708,7 +709,7 @@ impl AdvancedAi {
                 spec.class == "military" && spec.is_melee_capable()
             })
             .collect();
-        units.sort_by_key(|id| (g.wdist(g.units[id].pos, city.pos), *id));
+        units.sort_by_key_shared(|id| (g.wdist(g.units[id].pos, city.pos), *id));
         let march = units
             .into_iter()
             .take(4)
@@ -723,7 +724,7 @@ impl AdvancedAi {
                             self.campaign_staging_position(g, pid, city.owner, id, city.pos, *pos)
                         })
                         .collect();
-                    posts.sort_by_key(|pos| (g.wdist(g.units[&id].pos, *pos), *pos));
+                    posts.sort_by_key_shared(|pos| (g.wdist(g.units[&id].pos, *pos), *pos));
                     posts
                         .into_iter()
                         .take(4)

@@ -17,6 +17,7 @@
 //! `pub(in crate::game)`, the same reach; the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl Game {
     pub fn item_cost(&self, item: &Item) -> f64 {
@@ -1191,7 +1192,7 @@ impl Game {
                     )
                 })
                 .collect();
-            ranked.sort_by(|a, b| {
+            ranked.sort_by_shared(|a, b| {
                 b.0.cmp(&a.0)
                     .then_with(|| b.1.partial_cmp(&a.1).unwrap())
                     .then(a.2.cmp(&b.2))

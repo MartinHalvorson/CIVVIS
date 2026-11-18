@@ -57,6 +57,7 @@
 
 use super::AdvancedAi;
 use crate::game::{Action, Game, Item};
+use crate::shared_sort::SharedSort;
 
 /// Below this share of full health a spreader is spending a whole charge for
 /// a fraction of a charge's pressure, because `do_spread` scales the pressure
@@ -208,7 +209,7 @@ impl AdvancedAi {
             .collect();
         // The biggest city first: pressure scales with followers, and a
         // stable id breaks the tie so two runs of the same game agree.
-        slipping.sort_by_key(|cid| (std::cmp::Reverse(g.cities[cid].pop), *cid));
+        slipping.sort_by_key_shared(|cid| (std::cmp::Reverse(g.cities[cid].pop), *cid));
         for cid in slipping {
             let district = crate::ai::BasicAi::civ_district(g, pid, "holy_site");
             let Some(item) = g

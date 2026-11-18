@@ -64,6 +64,7 @@ use super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
 use crate::game::{Action, Game, Item};
 use crate::name::Name;
 use crate::reasoning::plain;
+use crate::shared_sort::SharedSort;
 use crate::think;
 use crate::Pos;
 
@@ -1122,8 +1123,9 @@ impl AdvancedAi {
                     )
                 })
                 .collect();
-            objectives
-                .sort_by(|left, right| left.0.total_cmp(&right.0).then(left.1.id.cmp(&right.1.id)));
+            objectives.sort_by_shared(|left, right| {
+                left.0.total_cmp(&right.0).then(left.1.id.cmp(&right.1.id))
+            });
             for (score, city) in objectives {
                 // The wing has to be able to hit it from home, and the escort
                 // has to be able to walk to it. Either alone is half a surge.
@@ -2224,7 +2226,7 @@ impl AdvancedAi {
                 )
             })
             .collect();
-        rates.sort_by(|left, right| right.0.total_cmp(&left.0).then(left.1.cmp(&right.1)));
+        rates.sort_by_shared(|left, right| right.0.total_cmp(&left.0).then(left.1.cmp(&right.1)));
         rates
             .into_iter()
             .find(|(_, cid)| match item {

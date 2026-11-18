@@ -4,6 +4,7 @@
 //! POST /action, POST /step, POST /autoplay, POST /view,
 //! POST /spectator-status, POST /next-game-settings, POST /new,
 //! POST /supervisor-new.
+use crate::shared_sort::SharedSort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -1015,7 +1016,7 @@ fn chronicle_world_events(
         .filter(|(position, _)| !before.districts.contains_key(position))
         .map(|(_, district)| district)
         .collect();
-    new_districts.sort_by_key(|district| district.city);
+    new_districts.sort_by_key_shared(|district| district.city);
     for district in new_districts {
         if chronicle.districts.insert(Name::new(&district.district)) {
             let city = after
@@ -1034,7 +1035,7 @@ fn chronicle_world_events(
         .iter()
         .filter(|(key, _)| !before.buildings.contains_key(*key))
         .collect();
-    new_buildings.sort_by_key(|((city, building), _)| (*city, building.as_str()));
+    new_buildings.sort_by_key_shared(|((city, building), _)| (*city, building.as_str()));
     for ((city_id, building), owner) in new_buildings {
         if chronicle.buildings.insert(*building) {
             let city = after.cities.get(city_id).map(|city| city.name.as_str());
@@ -3586,7 +3587,7 @@ fn list_saves() -> Vec<Value> {
             }))
         })
         .collect();
-    saves.sort_by_key(|save| std::cmp::Reverse(save["turn"].as_u64().unwrap_or(0)));
+    saves.sort_by_key_shared(|save| std::cmp::Reverse(save["turn"].as_u64().unwrap_or(0)));
     saves
 }
 
@@ -3608,7 +3609,7 @@ fn prune_autosaves() {
             Some((turn, path))
         })
         .collect();
-    stamped.sort_by_key(|(turn, _)| std::cmp::Reverse(*turn));
+    stamped.sort_by_key_shared(|(turn, _)| std::cmp::Reverse(*turn));
     for (_, path) in stamped.into_iter().skip(AUTOSAVES) {
         let _ = std::fs::remove_file(path);
     }
@@ -3988,7 +3989,7 @@ fn victory_eta_json(game: &Game, pid: usize) -> Option<Value> {
             })
         })
         .collect();
-    etas.sort_by_key(|&(_, turns)| turns);
+    etas.sort_by_key_shared(|&(_, turns)| turns);
     Some(json!(etas))
 }
 

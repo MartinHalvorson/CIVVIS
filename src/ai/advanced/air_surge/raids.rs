@@ -22,6 +22,7 @@
 
 use super::*;
 use crate::ai::advanced::{GrandStrategy, StrategicPlan};
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeSet;
 
 /// A raider stays at least this healthy.
@@ -116,7 +117,7 @@ impl AdvancedAi {
                     && !reserved.contains(uid)
             })
             .collect();
-        bodies.sort_by_key(|uid| (g.wdist(g.units[uid].pos, objective), *uid));
+        bodies.sort_by_key_shared(|uid| (g.wdist(g.units[uid].pos, objective), *uid));
         // The capture needs its nearest bodies where they are.
         let takers: BTreeSet<u32> = bodies
             .iter()
@@ -217,7 +218,7 @@ impl AdvancedAi {
             .chain(std::iter::once(origin))
             .filter(|pos| g.pillageable_at(pid, *pos))
             .collect();
-        tiles.sort_by_key(|pos| (g.wdist(*pos, objective), *pos));
+        tiles.sort_by_key_shared(|pos| (g.wdist(*pos, objective), *pos));
         tiles.dedup();
         let mut best: Option<(f64, Pos, Vec<Action>)> = None;
         for tile in tiles.into_iter().take(RAID_TILES) {

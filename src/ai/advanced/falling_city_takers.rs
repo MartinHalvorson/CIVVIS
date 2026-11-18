@@ -20,6 +20,7 @@
 
 use super::{AdvancedAi, StrategicPlan};
 use crate::game::Game;
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeSet;
 
 /// A falling city: walls down and at most this much health
@@ -62,7 +63,7 @@ impl AdvancedAi {
             })
             .map(|city| city.id)
             .collect();
-        falling.sort_by_key(|cid| {
+        falling.sort_by_key_shared(|cid| {
             let city = &g.cities[cid];
             (
                 Some(*cid) != plan.target_city,
@@ -145,7 +146,7 @@ impl AdvancedAi {
                     f64::from(g.wdist(unit.pos, target)) <= unit.moves_left.ceil() + 1.0
                 })
                 .collect();
-            ready.sort_by(|left, right| {
+            ready.sort_by_shared(|left, right| {
                 let blow = |uid: &u32| {
                     let unit = &g.units[uid];
                     g.unit_strength(unit, false) * f64::from(unit.hp.clamp(0, 100)) / 100.0

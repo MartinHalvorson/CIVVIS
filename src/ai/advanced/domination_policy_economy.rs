@@ -3,6 +3,7 @@
 //! multiplier with no current yield.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     /// Keep the income card that is funding a Domination army through a cash
@@ -176,7 +177,7 @@ impl AdvancedAi {
         .map(|card| (card, value(card)))
         .filter(|(_, value)| *value > f64::EPSILON)
         .collect();
-        fallbacks.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(b.0)));
+        fallbacks.sort_by_shared(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(b.0)));
         for (card, _) in fallbacks {
             if !desired.contains(&card) {
                 desired.push(card);

@@ -26,6 +26,7 @@
 use super::{AdvancedAi, SETTLEMENT_FORECAST_POPULATION};
 use crate::game::Game;
 use crate::rules::Yields;
+use crate::shared_sort::SharedSort;
 use crate::world::Tile;
 use crate::Pos;
 
@@ -120,7 +121,7 @@ impl AdvancedAi {
             })
             .filter(|science| *science > 0.0)
             .collect::<Vec<_>>();
-        science.sort_by(|left, right| right.total_cmp(left));
+        science.sort_by_shared(|left, right| right.total_cmp(left));
         science.truncate(SETTLEMENT_FORECAST_POPULATION);
         science
     }

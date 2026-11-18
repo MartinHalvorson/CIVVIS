@@ -35,6 +35,7 @@
 //! Orientation is stated per battle in its own comment, because it is the
 //! first thing a reader needs and the easiest thing to get backwards.
 
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeSet;
 
 use crate::hex;
@@ -408,7 +409,7 @@ pub fn front_tiles(wm: &WorldMap, plan: &Plan, side: usize, water: bool) -> Vec<
             )
         })
         .collect();
-    tiles.sort_by_key(|(rank, pos)| (*rank, *pos));
+    tiles.sort_by_key_shared(|(rank, pos)| (*rank, *pos));
     tiles.into_iter().map(|(_, pos)| pos).collect()
 }
 

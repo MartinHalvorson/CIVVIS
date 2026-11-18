@@ -28,6 +28,7 @@
 //! Off, and on every other lane: unchanged.
 use super::{AdvancedAi, StrategicPlan, VictoryTarget};
 use crate::game::{Action, Game, Item};
+use crate::shared_sort::SharedSort;
 use crate::think;
 
 impl AdvancedAi {
@@ -125,7 +126,7 @@ impl AdvancedAi {
         if source_stands {
             return;
         }
-        candidates.sort_by_key(|(pop, cid, _)| (std::cmp::Reverse(*pop), *cid));
+        candidates.sort_by_key_shared(|(pop, cid, _)| (std::cmp::Reverse(*pop), *cid));
         for (_, cid, faith) in candidates {
             let district = crate::ai::BasicAi::civ_district(g, pid, "holy_site");
             let Some(item) = g
