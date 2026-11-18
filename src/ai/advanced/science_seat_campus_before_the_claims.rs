@@ -6,26 +6,28 @@
 //! of 2026-11-18 04:58Z to 11:16Z: five on Science, four on Diplomacy).** No
 //! Science seat won, and none held more than 0.71 of the best rival's techs
 //! at t150 (a Science win has needed 0.82). Writing landed at t27-37 in every
-//! game, but in cities founded by t70 the Science seats placed the first
-//! Campus at a median t79 against the Diplomatic seats' t73, and the
-//! empire's first three Campuses at t55 / t68 / t79 against t38 / t58 / t64.
-//! The Science capitals placed theirs at t35, t68, t80, t83 and t104; Lisbon
-//! (`civvis-20261118T084012Z`) held a four-to-seven-turn Campus on offer for
-//! 77 turns and trained five Settlers, five soldiers, three Traders, two
-//! Catapults, a Siege Tower, Walls, two Granaries, a Harbor and an
-//! Entertainment Complex first.
+//! game. In the cities founded by t70 the Science seats placed the first
+//! Campus at a median t79 (37 turns after the host first offered it) against
+//! the Diplomatic seats' t73 (21 turns), and the empire's first three
+//! Campuses at t55 / t68 / t79 against t38 / t58 / t64. The Science capitals
+//! placed theirs at t35, t68, t80, t83 and t104. Lisbon
+//! (`civvis-20261118T084012Z`) had a four-to-seven-turn Campus on offer for
+//! 77 turns while its queue held a Settler (29 turns), soldiers and siege
+//! (19), a Builder (8), a Harbor (7), a Trader (6), Walls (4), a Granary (2)
+//! and an Entertainment Complex (2). The Library was not late: it started a
+//! mean 2.1 turns after its Campus stood (7.8 on the Diplomatic seats).
 //!
-//! Over the 1,405 city-turns between a Campus on the host's menu and its
-//! placing (39 Science cities), `campus-claims-the-free-slot` journalled
-//! what held it on 560: the early floor's Settler 162, the backlog Builder
-//! 100, near-rival deterrence 86, a head it may not defer 82 (Walls 58, a
-//! Harbor with progress 16), the bound Granary 77, an item finishing that
-//! turn 28. Of the Settler's 162, 93 were turns with no Campus anywhere in
-//! the empire, at three to five cities; of the other 69, 52 came at six
-//! cities or more and 17 at four or five. The rest wrote no line: 264 turns the Campus
-//! took over the claim's fifteen-turn budget, 249 the city's slot had gone to
-//! a Government Plaza or Diplomatic Quarter, 206 fell under the war's hold,
-//! 113 in a city of one citizen.
+//! Over the 1,203 city-turns between a Campus on the host's menu and its
+//! placing (31 Science cities), `campus-claims-the-free-slot` journalled what
+//! held it on 536: the early floor's Settler 162, the backlog Builder 100,
+//! near-rival deterrence 86, a head it may not defer 78 (Walls 55, a Harbor
+//! with progress 16), the bound Granary 70, an item finishing that turn 26.
+//! Of the Settler's 162, 93 were turns with no Campus anywhere in the empire,
+//! at three to five cities, and of the other 69, 24 came at four or five
+//! cities and 45 at six or more. The rest wrote no line: on 214 the city's
+//! slot had gone to a Government Plaza, a Diplomatic Quarter or a Harbor, on
+//! 179 the Campus took over the claim's fifteen-turn budget, 172 fell under
+//! the war's hold and 85 in a city of one citizen.
 //!
 //! **This is not a Science-lane rule.** The claim chain is the same on every
 //! seat: the Campus claim runs after the Settler, Builder, Monument, Granary,
@@ -34,16 +36,20 @@
 //! that let it pass them, `first-campus-before-the-settler` and
 //! `campus-and-library-before-the-claims`, read
 //! [`AdvancedAi::conquest_or_score_seat`], so they do nothing on a Science or
-//! Diplomatic seat. The Diplomatic seats' holds have the same shape (per
-//! city: Settler 2.4, Builder 2.4, Granary 1.8 turns against the Science
-//! seats' 4.2, 2.6 and 2.0). What separated the nine games was not the lane:
-//! three of the four Diplomatic games, both wins among them, ran without six
-//! early-defence genes that all five Science games carried (Walls and
-//! soldiers took 23% of Science production over t30-100 against 12%), three
-//! of the five Science games were at war before t100 and no Diplomatic game
-//! was, and three Diplomatic capitals stood idle the turn Writing landed.
-//! The paired simulator, one genome on both lanes, reads the Science lane
-//! ahead (Science 79 against 68 at t100).
+//! a Diplomatic seat. Seven of the nine capitals got their Campus the first
+//! turn the claim met an idle queue: t31, t36 and t40 on three Diplomatic
+//! seats, t68 to t83 on three Science seats and the fourth Diplomatic one.
+//! The Diplomatic seats' holds have the same shape (turns per city: Settler
+//! 2.6, Builder 2.4, Granary 1.6, against the Science seats' 5.2, 3.2 and
+//! 2.3). What separated the nine games was not the lane. Three of the four
+//! Diplomatic games, both wins among them, ran without six early-defence
+//! genes that all five Science games carried (Walls, soldiers and siege took
+//! 23% of the Science seats' production over t30-100 against those three
+//! games' 12%; the fourth Diplomatic game carried them and read Science 40 at
+//! t100, below every Science seat). Three of the five Science games were at
+//! war with a major before t100 and no Diplomatic game was. The paired
+//! simulator, one genome on both lanes, reads the Science lane ahead (Science
+//! 79 against 68 at t100, `deity-18/defence-sim`, 40 seeds a lane).
 //!
 //! **The gene.** While the active victory target is Science, it plays the
 //! two Domination genes' rules for the first Campus and the Library, with or

@@ -56,8 +56,11 @@ fn settler_board(
             .into_iter()
             .find(|other| *other != cid)
             .unwrap();
-        let theirs = BasicAi::first_campus_item(&g, 0, other).expect("a site in the second city");
-        g.cities.get_mut(&other).unwrap().queue = vec![theirs];
+        let there = Item::District {
+            district: crate::name!("campus"),
+            pos: g.cities[&other].pos,
+        };
+        g.cities.get_mut(&other).unwrap().queue.push(there);
         assert!(AdvancedAi::empire_has_a_campus(&g, 0));
     }
     ai.enable_early_settler_floor();
