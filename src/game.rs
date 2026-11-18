@@ -488,6 +488,7 @@ mod city;
 /// `game/congress.rs`.
 mod congress;
 mod defending_district;
+mod pos_map;
 pub use defending_district::DefendingDistrict;
 #[cfg(test)]
 pub(crate) mod defending_district_tests;
@@ -501,6 +502,7 @@ mod growth;
 mod policy_ledger;
 mod research_quotes;
 mod route_avoidance;
+pub(crate) use route_avoidance::RouteReach;
 
 /// Amenities: luxuries, required and local amenities, war weariness. See
 /// `game/amenities.rs`.
@@ -541,6 +543,10 @@ mod completion;
 /// Disasters and climate: natural disasters and their damage, climate
 /// change and sea level, reactor accidents. See `game/disasters.rs`.
 mod disasters;
+/// Forest and jungle fires: ignite, spread, burn out and regrow. See
+/// `game/fires.rs`.
+mod fires;
+pub use fires::{Fire, FireKind};
 /// Embarkation: embarked units and their strength. See
 /// `game/embarkation.rs`.
 mod embarkation;
@@ -640,6 +646,9 @@ mod age_tests;
 
 #[cfg(test)]
 mod disaster_tests;
+
+#[cfg(test)]
+mod fire_tests;
 
 #[cfg(test)]
 mod city_trade_tests;
@@ -1605,11 +1614,13 @@ impl Clone for VisionCache {
 /// resource's world count, connected ownership, or city-state patronage.
 #[derive(Clone)]
 struct MonopolyContext {
-    world_counts: BTreeMap<Name, i32>,
+    /// Every resource's count on the map. Only ever asked by resource, so
+    /// hashed (as `connected` is).
+    world_counts: crate::fast_map::FastMap<Name, i32>,
     /// Each player's suzerained city-states, whose holdings count as theirs.
     minors: Vec<Vec<usize>>,
     /// Each player's connected holdings, by resource.
-    connected: Vec<BTreeMap<Name, i32>>,
+    connected: Vec<crate::fast_map::FastMap<Name, i32>>,
 }
 
 /// Memoized answers to expensive read-only queries.
@@ -1633,14 +1644,14 @@ const GREAT_WORK_COUNTERS: [(&str, &str); 6] = [
     ("music", "great_work:music"),
     ("relic", "great_work:relic"),
 ];
-type HousedWorksByPlayer = BTreeMap<usize, Arc<GreatWorksByCity>>;
+type HousedWorksByPlayer = crate::fast_map::FastMap<usize, Arc<GreatWorksByCity>>;
 type GreatWorkPiecesByCity = BTreeMap<u32, Vec<GreatWorkPiece>>;
-type HousedPiecesByPlayer = BTreeMap<usize, Arc<GreatWorkPiecesByCity>>;
-type GreatWorkSlotsByPlayer = BTreeMap<usize, Vec<(u32, String)>>;
-type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
-type WonderEffectsByPlayer = BTreeMap<usize, BTreeMap<String, f64>>;
-type NationalParksByPlayer = BTreeMap<usize, Vec<(u32, [Pos; 4])>>;
-type RegionalSlotsByPlayer = BTreeMap<usize, Arc<Vec<RegionalSlot>>>;
+type HousedPiecesByPlayer = crate::fast_map::FastMap<usize, Arc<GreatWorkPiecesByCity>>;
+type GreatWorkSlotsByPlayer = crate::fast_map::FastMap<usize, Vec<(u32, String)>>;
+type GreatWorkHousing = crate::fast_map::FastMap<(usize, String, usize), bool>;
+type WonderEffectsByPlayer = crate::fast_map::FastMap<usize, BTreeMap<String, f64>>;
+type NationalParksByPlayer = crate::fast_map::FastMap<usize, Vec<(u32, [Pos; 4])>>;
+type RegionalSlotsByPlayer = crate::fast_map::FastMap<usize, Arc<Vec<RegionalSlot>>>;
 
 /// One active regional building of an empire and the ground it reaches, in
 /// the empire's city then building order. What it sends is still read per
@@ -1659,16 +1670,65 @@ struct RegionalSlot {
 /// sweep. Hashing the interned name avoids ordering it by ruleset text.
 type PurchasePriceMemo = HashMap<(usize, u32, Name, u8, bool), Option<f64>>;
 
+/// Answer `key` from one query-memo slot, or compute it and keep it there.
+///
+/// Every slot of [`QueryCache`] is `None` outside a [`Game::query_memo`]
+/// scope, when every ask computes afresh, and a table inside one, filled by
+/// the first ask for each key. No borrow of the slot is held while `compute`
+/// runs, so it may consult this slot or any other. This is the lookup the
+/// engine's memoised reads used to write out one by one.
+#[inline]
+pub(crate) fn remembered<K, V: Clone, M: MemoMap<K, V>>(
+    slot: &std::cell::RefCell<Option<M>>,
+    key: K,
+    compute: impl FnOnce() -> V,
+) -> V {
+    if let Some(value) = slot.borrow().as_ref().and_then(|memo| memo.recall(&key)) {
+        return value.clone();
+    }
+    let value = compute();
+    if let Some(memo) = slot.borrow_mut().as_mut() {
+        memo.keep(key, value.clone());
+    }
+    value
+}
+
+/// A map a memo scope keeps its answers in: asked by key, never walked.
+pub(crate) trait MemoMap<K, V> {
+    fn recall(&self, key: &K) -> Option<&V>;
+    fn keep(&mut self, key: K, value: V);
+}
+
+impl<K: Ord, V> MemoMap<K, V> for BTreeMap<K, V> {
+    fn recall(&self, key: &K) -> Option<&V> {
+        self.get(key)
+    }
+
+    fn keep(&mut self, key: K, value: V) {
+        self.insert(key, value);
+    }
+}
+
+impl<K: std::hash::Hash + Eq, V> MemoMap<K, V> for crate::fast_map::FastMap<K, V> {
+    fn recall(&self, key: &K) -> Option<&V> {
+        self.get(key)
+    }
+
+    fn keep(&mut self, key: K, value: V) {
+        self.insert(key, value);
+    }
+}
+
 #[derive(Default)]
 pub struct QueryCache {
-    yields: std::cell::RefCell<Option<BTreeMap<u32, Yields>>>,
+    yields: std::cell::RefCell<Option<crate::fast_map::FastMap<u32, Yields>>>,
     // Appeal is read far more often than anything else in this cache: the
     // settle and district planners sweep whole regions of the map, and every
     // sweep asks the same tiles again. Measured over a 150-turn six-player
     // game, `tile_appeal` was called 1,240,472 times and 97.1% of those calls
     // recomputed an answer the engine had already produced for that tile that
     // turn -- 34 evaluations per tile per turn, of which one was new.
-    appeal: std::cell::RefCell<Option<BTreeMap<Pos, i32>>>,
+    appeal: std::cell::RefCell<Option<crate::fast_map::FastMap<Pos, i32>>>,
     /// `modeled_tile_yields` per plot.
     ///
     /// ★★★★ THE SAME PLOT PRICED TWICE PER CITY, EVERY TIME. One city-yield
@@ -1679,14 +1739,14 @@ pub struct QueryCache {
     /// techs, civics and policies and its neighbours — nothing a `&self`
     /// query can change — so the answer is kept for the memo scope, exactly
     /// like `appeal`.
-    tile_yields: std::cell::RefCell<Option<BTreeMap<Pos, Yields>>>,
+    tile_yields: std::cell::RefCell<Option<crate::fast_map::FastMap<Pos, Yields>>>,
     /// `district_yields` per standing district. One city-yield derivation
     /// asks each of its districts three times — the citizen strategy, the
     /// citizen plan's fixed food, then the sum — and a district's yields
     /// read only the board, so the answer is kept for the memo scope like
     /// `tile_yields`.
-    district_yields: std::cell::RefCell<Option<BTreeMap<(Name, Pos), Yields>>>,
-    traversal: std::cell::RefCell<Option<BTreeMap<u32, TraversalClass>>>,
+    district_yields: std::cell::RefCell<Option<crate::fast_map::FastMap<(Name, Pos), Yields>>>,
+    traversal: std::cell::RefCell<Option<crate::fast_map::FastMap<u32, TraversalClass>>>,
     /// Every unit currently flying a patrol, as `(owner, tile)`.
     ///
     /// ★★★★ A WHOLE-BOARD FACT ASKED ONCE PER NEIGHBOUR. `can_enter_past`
@@ -1718,8 +1778,8 @@ pub struct QueryCache {
     /// sweep for the support aura. None of it depends on the tile, so a flood
     /// over three hundred tiles asked the same questions three hundred times.
     /// The answers are computed once per unit per memo scope instead.
-    movement: std::cell::RefCell<Option<BTreeMap<u32, MovementProfile>>>,
-    amenities: std::cell::RefCell<Option<BTreeMap<u32, i64>>>,
+    movement: std::cell::RefCell<Option<crate::fast_map::FastMap<u32, MovementProfile>>>,
+    amenities: std::cell::RefCell<Option<crate::fast_map::FastMap<u32, i64>>>,
     // `legal_purchase_actions_for_city` asks `unit_purchase_cost_for_formation`
     // for every unit kind in the ruleset, at all three formations and both
     // currencies, and `legal_actions_within`'s purchase family repeats the
@@ -1736,27 +1796,28 @@ pub struct QueryCache {
     // Ownership-filtered ids are requested throughout AI evaluation. A
     // 100-seat game otherwise rescans every world entity for each request,
     // even when a read-only phase asks for the same empire repeatedly.
-    unit_ids: std::cell::RefCell<Option<BTreeMap<usize, Arc<Vec<u32>>>>>,
+    unit_ids: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, Arc<Vec<u32>>>>>,
     /// Per-player Builder work count within one immutable decision. Several
     /// production gates ask for the same empire census; keep the integer
     /// rather than copying citizen plans. Policy tracing bypasses it.
-    worked_backlog: std::cell::RefCell<Option<BTreeMap<usize, usize>>>,
+    worked_backlog: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, usize>>>,
     // Territory access is a unit-level route predicate. Cache it by unit id
     // while a route call runs, because the same access gates both local and
     // cached planning steps.
-    unit_territory_access: std::cell::RefCell<Option<BTreeMap<u32, Arc<Vec<bool>>>>>,
-    city_ids: std::cell::RefCell<Option<BTreeMap<usize, Vec<u32>>>>,
+    unit_territory_access:
+        std::cell::RefCell<Option<crate::fast_map::FastMap<u32, Arc<Vec<bool>>>>>,
+    city_ids: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, Vec<u32>>>>,
     // Four empire-wide derivations that callers reach for one city at a
     // time. Each is keyed by player, because that is the scope it is
     // computed over, not the scope it is read at.
-    lux_alloc: std::cell::RefCell<Option<BTreeMap<usize, BTreeMap<u32, i64>>>>,
-    lux_names: std::cell::RefCell<Option<BTreeMap<usize, BTreeSet<Name>>>>,
+    lux_alloc: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, BTreeMap<u32, i64>>>>,
+    lux_names: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, BTreeSet<Name>>>>,
     housed_works: std::cell::RefCell<Option<HousedWorksByPlayer>>,
     housed_pieces: std::cell::RefCell<Option<HousedPiecesByPlayer>>,
     // A city-state's patron, which is a poll of every major's effective envoy
     // count. Deciding whether a step crosses a hostile border asks it, so a
     // route search asks it of the same city-state at every tile it considers.
-    suzerain: std::cell::RefCell<Option<BTreeMap<usize, Option<usize>>>>,
+    suzerain: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, Option<usize>>>>,
     // Every Great Work slot the empire owns, and whether one more work of a
     // kind would find a home. Deciding what a Builder or an Archaeologist may
     // do on a tile asks the second of these, and the answer is the same at
@@ -1766,13 +1827,13 @@ pub struct QueryCache {
     // What every regional building in the empire sends this city. Both its
     // yields and its Amenities are read through it, so a single valuation of
     // one city walks the whole empire's buildings twice.
-    regional: std::cell::RefCell<Option<BTreeMap<u32, (Yields, f64)>>>,
+    regional: std::cell::RefCell<Option<crate::fast_map::FastMap<u32, (Yields, f64)>>>,
     // Two facts the luxury allocation asks of every city while it values
     // the whole empire's Amenities. Each city's regional sources ask whether
     // every source city is powered, and each city's own Amenities walk every
     // owned tile of the empire looking for National Parks, so one allocation
     // repeated both empire-wide answers once per city.
-    powered: std::cell::RefCell<Option<BTreeMap<u32, bool>>>,
+    powered: std::cell::RefCell<Option<crate::fast_map::FastMap<u32, bool>>>,
     national_parks: std::cell::RefCell<Option<NationalParksByPlayer>>,
     // Where each empire's regional buildings stand and how far they reach.
     // Every city's regional effects walked every building of every city of
@@ -1788,7 +1849,7 @@ pub struct QueryCache {
     /// `tourism_components_per_turn` per player. A Culture seat's Trader prices
     /// every origin and destination pair, and each pair asks for the whole
     /// empire's Tourism.
-    tourism: std::cell::RefCell<Option<BTreeMap<usize, (f64, f64)>>>,
+    tourism: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, (f64, f64)>>>,
     /// The air-patrol list from the last unit-roster epoch it was built on.
     /// Every route search is its own memo scope, and on a 250-seat world each
     /// one walked every unit in the game to learn that nobody is patrolling.
@@ -1800,7 +1861,7 @@ pub struct QueryCache {
     /// `domestic_tourists` per player. Each seat's victory tracker reads every
     /// rival's count and each count walks every player, which made one frame
     /// cubic in the number of civilizations.
-    domestic_tourists: std::cell::RefCell<Option<BTreeMap<usize, i64>>>,
+    domestic_tourists: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, i64>>>,
     // `note_first_monopoly_moments` runs after successful actions. Its answer
     // is player-independent until a connected resource, city owner, world
     // resource, or suzerainty changes, so retain the expensive census across
@@ -1824,17 +1885,29 @@ pub struct QueryCache {
     // read-only pass to the next while a driver has asked for it. See
     // [`Game::keep_rival_yields`], which is the whole contract; like
     // `producible` this intentionally outlives `QueryMemo`.
-    rival_yields: std::cell::RefCell<BTreeMap<u32, Yields>>,
+    rival_yields: std::cell::RefCell<KeptDerivations>,
     // The acting seat's own cities, when `Game::keep_own_yields` asks. A
     // separate map because more drops it: see `ActionReach`.
-    own_yields: std::cell::RefCell<BTreeMap<u32, Yields>>,
+    own_yields: std::cell::RefCell<KeptDerivations>,
     // What the acting seat's governor settings were when `own_yields` was
     // derived: see `Game::own_settings_stamp`.
     own_yields_stamp: std::cell::Cell<u64>,
     // The tile-grid epoch `rival_yields` was derived under. A tile that
     // changed hands, was improved or was pillaged moves it, whoever wrote it.
     rival_yields_epoch: std::cell::Cell<u64>,
+    /// Whether any tile holds a wonder that multiplies a trade route's district
+    /// Gold, and the tile grid's epoch it was read at. See
+    /// `Game::route_gold_wonder_stands`.
+    route_gold_wonders: std::cell::Cell<Option<(u64, bool)>>,
+    /// The attack-envelope key's fold over the units (every unit but one
+    /// owner's, or every unit), and the units' version it was taken at. See
+    /// `Game::units_fold_kept`.
+    units_fold: std::cell::Cell<Option<(u64, Option<usize>, u64)>>,
     keeps_rival_yields: std::cell::Cell<bool>,
+    // How many citizen plans and luxury splits were answered from what was
+    // kept. See `Game::kept_plans_reused`.
+    kept_plans_reused: std::cell::Cell<u64>,
+    kept_luxuries_reused: std::cell::Cell<u64>,
     // The acting seat's own cities as well; see `Game::keep_own_yields`.
     keeps_own_yields: std::cell::Cell<bool>,
     // `Game::apply` calls in flight. The rules read yields while they are
@@ -1928,6 +2001,45 @@ impl Drop for PolicyReadTrace<'_> {
     }
 }
 
+/// What one side of [`Game::keep_rival_yields`] holds: the yields, and two
+/// things every yield is derived from that other callers ask for by
+/// themselves.
+///
+/// ★★★ THE YIELD WAS KEPT AND WHAT IT WAS MADE OF WAS THROWN AWAY. A city's
+/// yields are its citizen plan summed, and the plan reads the city's
+/// amenities, which read how the *empire's* luxuries are split between all
+/// its cities. Keeping only the yield left every other reader of those two
+/// paying in full: the Builder census, the worked-tile test and the state
+/// document each ask for the plan and never the yield, and a city whose yield
+/// had to be derived again re-split its whole empire's luxuries to learn one
+/// city's share, once per city, wherever the caller held no query scope
+/// across the cities. On the site's world the plan was 20% of the stepping
+/// thread and the luxury split 4.8% (`docs/SIMULATOR_PERFORMANCE.md`,
+/// 2026-11-11).
+///
+/// Nothing new decides when these are dropped. They live in the same two
+/// maps as the yields, are filled and read under the same conditions
+/// (`Game::kept_derivations_for`), and every `clear` that drops a yield drops
+/// them with it. That is the whole of the argument that they are exact: a
+/// plan and a split are functions of board state the yield already reads, so
+/// whatever must drop the yield is all that can change them.
+#[derive(Default)]
+pub(crate) struct KeptDerivations {
+    pub(crate) yields: BTreeMap<u32, Yields>,
+    /// By city: the unweighted citizen plan.
+    pub(crate) plans: BTreeMap<u32, CitizenPlan>,
+    /// By player: the luxury amenities allotted to each of its cities.
+    pub(crate) luxuries: BTreeMap<usize, BTreeMap<u32, i64>>,
+}
+
+impl KeptDerivations {
+    pub(crate) fn clear(&mut self) {
+        self.yields.clear();
+        self.plans.clear();
+        self.luxuries.clear();
+    }
+}
+
 /// How far an action reaches into the yields `Game::keep_rival_yields` holds.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ActionReach {
@@ -1935,6 +2047,27 @@ enum ActionReach {
     OwnCities,
     /// Anything can.
     Board,
+    /// Only the acting unit was written, or nothing was: nothing kept is
+    /// dropped. See the ordinary-move and refused-card notes in `Game::apply`.
+    UnitOnly,
+    /// Only one of the acting seat's own cities was written, and only what
+    /// it builds: that city's kept answers are dropped and its seat's luxury
+    /// split, nothing else. See the `Produce` note in `Game::apply`.
+    OwnCity(u32),
+}
+
+/// What [`Game::apply`] reads around an ordinary move to tell whether it did
+/// anything a kept city yield could notice.
+#[derive(PartialEq, Eq)]
+pub(super) struct OrdinaryMoveWatch {
+    /// The moving unit stands on a city centre (a garrison).
+    on_a_city_centre: bool,
+    /// How many seats every seat has met, summed.
+    contacts: usize,
+    /// Every unit's id and owner, folded.
+    units: u64,
+    /// Every city's id and owner, folded.
+    cities: u64,
 }
 
 impl QueryCache {
@@ -1953,7 +2086,14 @@ impl QueryCache {
     }
 
     fn drop_kept_yields(&self, reach: ActionReach) {
-        if !self.keeps_rival_yields.get() {
+        if !self.keeps_rival_yields.get() || reach == ActionReach::UnitOnly {
+            return;
+        }
+        if let ActionReach::OwnCity(cid) = reach {
+            let mut own = self.own_yields.borrow_mut();
+            own.yields.remove(&cid);
+            own.plans.remove(&cid);
+            own.luxuries.clear();
             return;
         }
         self.own_yields.borrow_mut().clear();
@@ -2349,6 +2489,17 @@ impl<V> MovementFloodOutput<V> for BTreeMap<Pos, V> {
     }
 }
 
+/// A flood output for a caller that runs a flood only for its parents.
+struct DiscardReached;
+
+impl<V> MovementFloodOutput<V> for DiscardReached {
+    #[inline]
+    fn reserve_reached(&mut self, _count: usize) {}
+
+    #[inline]
+    fn push_reached(&mut self, _pos: Pos, _value: V) {}
+}
+
 impl<V> MovementFloodOutput<V> for Vec<(Pos, V)> {
     #[inline]
     fn reserve_reached(&mut self, count: usize) {
@@ -2565,6 +2716,22 @@ impl Players {
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Player> {
         self.1 = self.1.wrapping_add(1);
         self.0.iter_mut().map(Arc::make_mut)
+    }
+
+    /// Seat `player` at `index`, in place of whoever sat there.
+    ///
+    /// `players[index] = player` says the same thing and costs a whole seat
+    /// more: indexing mutably copies a shared seat before handing it out, so
+    /// the assignment copied everything the old player had ever learned and
+    /// dropped the copy on the next line. A decision view replaces every
+    /// seat but the observer's with a redacted one, and it is a fresh clone,
+    /// so every one of those seats was shared (`Game::player_decision_view`).
+    /// The roster's epoch moves exactly as it does for the assignment.
+    ///
+    /// Panics when `index` is out of range, as the assignment does.
+    pub fn replace(&mut self, index: usize, player: Player) {
+        self.1 = self.1.wrapping_add(1);
+        self.0[index] = Arc::new(player);
     }
 
     /// See the tuple field's doc comment.
@@ -5182,7 +5349,7 @@ pub struct Player {
     /// Cumulative CO2 emitted by this civilization's power generation.
     #[serde(default)]
     pub co2_emissions: f64,
-    pub explored: BTreeSet<Pos>,
+    pub explored: crate::explored_set::ExploredSet,
     /// Tiles this civilization has seen at any point during its active player
     /// turn. Current sight remains authoritative for rules and targeting; this
     /// short-lived union exists so the map can keep the just-seen frame lit
@@ -5550,7 +5717,7 @@ impl Player {
             city_power: BTreeMap::new(),
             power_fuel_consumed: BTreeMap::new(),
             co2_emissions: 0.0,
-            explored: BTreeSet::new(),
+            explored: Default::default(),
             turn_visible: BTreeSet::new(),
             turn_units: BTreeMap::new(),
             went_around: false,
@@ -7752,6 +7919,9 @@ pub struct Game {
     /// Droughts in progress, with the tiles they hold and when they lift.
     #[serde(default)]
     pub droughts: Vec<Drought>,
+    /// Forest and jungle tiles burning or burnt, each with the turn it caught.
+    #[serde(default)]
+    pub fires: Vec<Fire>,
     /// Retired named Great People leave the global market permanently.
     pub retired_great_people: BTreeSet<String>,
     /// Recruitment price fixed when each named person enters the market.
@@ -7801,8 +7971,12 @@ pub struct Game {
     pub last_special_session: u32,
     pub pending_emergencies: Vec<EmergencyProposal>,
     pub active_emergencies: Vec<Emergency>,
-    occ: BTreeMap<Pos, Vec<u32>>,
-    city_by_pos: BTreeMap<Pos, u32>,
+    /// The units on each tile, in the order they arrived. Asked about one
+    /// tile at a time by every movement flood, zone-of-control test and combat
+    /// reach, so it is hashed rather than ordered: nothing iterates it.
+    occ: pos_map::UnitIndex,
+    /// The city on each city-centre tile. Hashed for the same reason.
+    city_by_pos: pos_map::CityIndex,
     /// Every successfully applied action, in order — the game is exactly
     /// f(seed+params, log), so this is the replay/desync-detection record.
     /// Runtime-only (not in saves yet).
@@ -8127,6 +8301,8 @@ struct GameSer {
     #[serde(default)]
     droughts: Vec<Drought>,
     #[serde(default)]
+    fires: Vec<Fire>,
+    #[serde(default)]
     retired_great_people: BTreeSet<String>,
     #[serde(default)]
     great_person_offer_costs: BTreeMap<String, f64>,
@@ -8367,6 +8543,7 @@ impl From<GameSer> for Game {
             game_modes: s.game_modes,
             storms: s.storms,
             droughts: s.droughts,
+            fires: s.fires,
             retired_great_people: s.retired_great_people,
             great_person_offer_costs: s.great_person_offer_costs,
             pending_deals: s.pending_deals,
@@ -8382,8 +8559,8 @@ impl From<GameSer> for Game {
             last_special_session: s.last_special_session,
             pending_emergencies: s.pending_emergencies,
             active_emergencies: s.active_emergencies,
-            occ: BTreeMap::new(),
-            city_by_pos: BTreeMap::new(),
+            occ: pos_map::UnitIndex::default(),
+            city_by_pos: pos_map::CityIndex::default(),
             log: crate::actionlog::ActionLog::new(),
         };
         g.set_host_research_prerequisites(s.host_research_prerequisites)
@@ -8392,10 +8569,10 @@ impl From<GameSer> for Game {
         // seat. Appending it preserves every existing player id.
         g.ensure_free_city_player();
         for u in g.units.values() {
-            g.occ.entry(u.pos).or_default().push(u.id);
+            g.occ.push(&g.map.tiles, u.pos, u.id);
         }
         for c in g.cities.values() {
-            g.city_by_pos.insert(c.pos, c.id);
+            g.city_by_pos.insert(&g.map.tiles, c.pos, c.id);
         }
         let legacy: Vec<u32> = g
             .cities
@@ -8616,6 +8793,7 @@ impl From<Game> for GameSer {
             game_modes: g.game_modes,
             storms: g.storms,
             droughts: g.droughts,
+            fires: g.fires,
             retired_great_people: g.retired_great_people,
             great_person_offer_costs: g.great_person_offer_costs,
             pending_deals: g.pending_deals,
@@ -8739,7 +8917,7 @@ impl Game {
             Item::District { pos, .. } | Item::Wonder { pos, .. } => Some(*pos),
             _ => None,
         }));
-        self.city_by_pos.remove(&city.pos);
+        self.city_by_pos.remove(&self.map.tiles, city.pos);
         for tile in self.map.tiles.values_mut() {
             if tile.owner_city == Some(cid) {
                 tile.owner_city = None;
@@ -9155,6 +9333,7 @@ impl Game {
             game_modes,
             storms: Vec::new(),
             droughts: Vec::new(),
+            fires: Vec::new(),
             retired_great_people: BTreeSet::new(),
             great_person_offer_costs: BTreeMap::new(),
             pending_deals: Vec::new(),
@@ -9170,8 +9349,8 @@ impl Game {
             last_special_session: 0,
             pending_emergencies: Vec::new(),
             active_emergencies: Vec::new(),
-            occ: BTreeMap::new(),
-            city_by_pos: BTreeMap::new(),
+            occ: pos_map::UnitIndex::default(),
+            city_by_pos: pos_map::CityIndex::default(),
             log: crate::actionlog::ActionLog::new(),
             events: EventLog::default(),
         };
@@ -10313,13 +10492,33 @@ impl Game {
     }
 
     pub fn city_at(&self, pos: Pos) -> Option<u32> {
-        self.city_by_pos.get(&pos).copied()
+        self.city_by_pos.get(&self.map.tiles, pos)
+    }
+
+    #[inline]
+    /// `fold`, a pure function of the units (every unit but `skip`'s, or
+    /// every unit), kept from one call to the next while no unit is written.
+    ///
+    /// Every route that writes a unit moves the roster's version (see
+    /// `Units::mark_mutated`), the version is never reset within one game, and
+    /// a clone keeps nothing (`QueryCache::clone`), so an equal version on the
+    /// same game is an unchanged roster.
+    pub(crate) fn units_fold_kept(&self, skip: Option<usize>, fold: impl FnOnce() -> u64) -> u64 {
+        let version = self.units.vision_epoch();
+        let kept = &self.query_memo.units_fold;
+        if let Some((at, for_skip, value)) = kept.get() {
+            if at == version && for_skip == skip {
+                return value;
+            }
+        }
+        let value = fold();
+        kept.set(Some((version, skip, value)));
+        value
     }
 
     #[inline]
     pub fn unit_ids_at(&self, pos: Pos) -> &[u32] {
-        const EMPTY: &[u32] = &[];
-        self.occ.get(&pos).map_or(EMPTY, Vec::as_slice)
+        self.occ.get(&self.map.tiles, pos)
     }
 
     /// Prefer [`unit_ids_at`](Self::unit_ids_at) at a read-only call site — it
@@ -11727,9 +11926,13 @@ impl Game {
     }
 
     fn city_building_effect(&self, city: &City, effect: &str) -> f64 {
-        if !self.rules.effect_index.buildings(effect) {
+        // The index both rules the effect out and names it: every building's
+        // effect map is then asked by interned name, an integer comparison per
+        // entry, where it was asked by text once per building in the city.
+        let Some((effect, ())) = self.rules.effect_index.buildings.get_key_value(effect) else {
             return 0.0;
-        }
+        };
+        let effect = *effect;
         city.buildings
             .iter()
             .filter_map(|building| {
@@ -11738,10 +11941,7 @@ impl Game {
                 // effect, and deciding whether one's district is standing
                 // means walking the city's districts — far dearer than the
                 // table lookup that rules it out.
-                let value = self.rules.buildings[building]
-                    .effects
-                    .get(effect)
-                    .copied()?;
+                let value = self.rules.buildings[building].effects.get_name(effect)?;
                 (!city.pillaged_buildings.contains(building)
                     && self.building_district_is_active(city, building))
                 .then_some(value)
@@ -11753,9 +11953,10 @@ impl Game {
         // No wonder in the ruleset grants anything towards this, so no
         // arrangement of built wonders can either — and the alternative is
         // walking every city in the world to reach that same zero.
-        if !self.rules.effect_index.wonders(effect) {
+        // A key the index holds comes back interned, for the scalar path.
+        let Some((&effect_name, _)) = self.rules.effect_index.wonders.get_key_value(effect) else {
             return 0.0;
-        }
+        };
         // The memo is deliberately guard-scoped. `QueryMemo` borrows the
         // world immutably, so a cached aggregate cannot survive a wonder
         // completion, capture, or raze and become stale. Outside a memo
@@ -11770,8 +11971,7 @@ impl Game {
                 .map(|wonder| {
                     self.rules.wonders[wonder]
                         .effects
-                        .get(effect)
-                        .copied()
+                        .get_name(effect_name)
                         .unwrap_or(0.0)
                 })
                 .sum();
@@ -12040,8 +12240,10 @@ impl Game {
     /// tile. Effects of the same family do not stack, so a maximum also
     /// handles a Medic beside a Supply Convoy or a Balloon beside a Drone.
     fn adjacent_support_effect(&self, unit: &Unit, effect: &str) -> f64 {
-        self.wdisk(unit.pos, 1)
-            .into_iter()
+        // The tile and its neighbours, without building the disk's Vec; the
+        // max of the effects is the same whatever order they arrive in.
+        std::iter::once(unit.pos)
+            .chain(self.nbrs(unit.pos))
             .flat_map(|position| self.unit_ids_at(position))
             .filter(|other| self.units[other].owner == unit.owner)
             .filter_map(|other| {
@@ -12056,8 +12258,8 @@ impl Game {
     /// support-only family above, unique-unit formation bonuses such as the
     /// Tagma's apply from an ordinary military unit and never to itself.
     fn adjacent_friendly_unit_effect(&self, unit: &Unit, effect: &str) -> f64 {
-        self.wdisk(unit.pos, 1)
-            .into_iter()
+        std::iter::once(unit.pos)
+            .chain(self.nbrs(unit.pos))
             .flat_map(|position| self.unit_ids_at(position))
             .filter(|other| **other != unit.id && self.units[other].owner == unit.owner)
             .map(|other| {
@@ -12443,9 +12645,9 @@ impl Game {
     pub(crate) fn governor_effect(&self, pid: usize, cid: u32, effect: &str) -> f64 {
         // Deciding whether a Governor is established walks the roster and the
         // city; no title or promotion granting this makes that moot.
-        if !self.rules.effect_index.governors(effect) {
+        let Some((&effect, _)) = self.rules.effect_index.governors.get_key_value(effect) else {
             return 0.0;
-        }
+        };
         self.players[pid]
             .governor_roster
             .iter()
@@ -12454,12 +12656,12 @@ impl Game {
             })
             .map(|(governor, state)| {
                 let spec = &self.rules.governors[governor];
-                spec.effects.get(effect).copied().unwrap_or(0.0)
+                spec.effects.get_name(effect).unwrap_or(0.0)
                     + state
                         .promotions
                         .iter()
                         .filter_map(|promotion| spec.promotions.get(promotion))
-                        .filter_map(|promotion| promotion.effects.get(effect))
+                        .filter_map(|promotion| promotion.effects.get_name(effect))
                         .sum::<f64>()
             })
             .sum()
@@ -13695,6 +13897,14 @@ impl Game {
 #[cfg(test)]
 mod production_catalog_tests;
 
+#[cfg(test)]
+mod kept_yields_moves_tests;
+#[cfg(test)]
+mod produce_reach_tests;
+#[cfg(test)]
+mod refused_deck_tests;
+#[cfg(test)]
+mod route_wonder_tests;
 #[cfg(test)]
 mod yield_carry_tests;
 

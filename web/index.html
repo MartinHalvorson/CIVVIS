@@ -981,7 +981,7 @@
   /* Neither half of a row gives up width, and nothing here ellipsizes: a
      setting is shown whole or the block is drawn a quarter-point smaller. */
   .turn-setting > span, .turn-setting > b, .turn-setting > .turn-pace-choice { flex: 0 0 auto; }
-  /* Watch pace sits alone between the stopwatch and the age, in the settings
+  /* Max Speed sits alone between the stopwatch and the age, in the settings
      block's type. `safe` starts an overflowing row at its left edge, so the
      type fitter's scrollWidth still measures all of it. */
   .turn-pace-line {
@@ -6190,13 +6190,15 @@
               <option value="spectator">Spectator - Full Map Visablity</option>
             </select>
           </div>
-          <div class="speed-row"><span>Watch pace</span>
-            <select id="specspeed" title="Simulation watch pace">
-              <option value="0">Lightning</option>
-              <option value="500" selected>Blitz</option>
-              <option value="1000">Fast</option>
-              <option value="2000">Standard</option>
-              <option value="4000">Slow</option>
+          <div class="speed-row"><span>Max Speed</span>
+            <select id="specspeed" title="The fastest the simulation may play: Max is unpaced, every other choice caps the turns per second">
+              <option value="0" selected>Max</option>
+              <option value="200">5 turns/s</option>
+              <option value="500">2 turns/s</option>
+              <option value="1000">1 turn/s</option>
+              <option value="2000">0.5 turns/s</option>
+              <option value="4000">0.25 turns/s</option>
+              <option value="10000">0.1 turns/s</option>
             </select>
           </div>
           <div class="speed-row"><span>Unit Tail (Turns)</span>
@@ -6958,6 +6960,7 @@
 </div>
 <script src="/assets/app_palette.js"></script>
 <script src="/assets/app_arena.js"></script>
+<script src="/assets/app_launches.js"></script>
 <script src="/assets/app.js"></script>
 <script src="/assets/app_setup.js"></script>
 <script src="/assets/app_moments.js"></script>

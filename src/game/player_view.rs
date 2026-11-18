@@ -286,7 +286,9 @@ impl Game {
                     .map(|(p, v)| (*p, v.clone()))
                     .collect();
             }
-            view.players[other] = player;
+            // Not `view.players[other] = player`, which copies the seat it
+            // is about to overwrite. See `Players::replace`.
+            view.players.replace(other, player);
             if known {
                 Arc::make_mut(&mut view.observed_military_power)
                     .insert(other, self.military_power(other));
@@ -356,6 +358,7 @@ impl Game {
             .saturating_add(1);
         view.storms.clear();
         view.droughts.clear();
+        view.fires.clear();
         view.log = Default::default();
         view.events = Vec::new().into();
         // A simulator's future random stream is not observable in the game.
@@ -365,9 +368,12 @@ impl Game {
         // referring to a city founded earlier in this plan remain replayable.
         view.occ.clear();
         for unit in view.units.values() {
-            view.occ.entry(unit.pos).or_default().push(unit.id);
+            view.occ.push(&view.map.tiles, unit.pos, unit.id);
         }
-        view.city_by_pos = view.cities.values().map(|c| (c.pos, c.id)).collect();
+        view.city_by_pos.clear();
+        for city in view.cities.values() {
+            view.city_by_pos.insert(&view.map.tiles, city.pos, city.id);
+        }
         // Unrevealed resources are hidden even on remembered terrain.
         for tile in view.map.tiles.values_mut() {
             if tile
@@ -467,7 +473,93 @@ impl Game {
     }
 
     /// Domain-specific exploration priors, derived only from known terrain.
+    ///
+    /// Every decision view ends with this, and a seat builds up to three
+    /// views a turn, so it runs a few thousand times a game. What has been
+    /// reached is a table in the map's own order, one flag a tile: it used
+    /// to be an ordered set of positions, filled with every known tile of
+    /// the domain and then searched once for every neighbour the flood
+    /// looked at, twice a call, and that was 2.5% of a gene-screen game
+    /// (`docs/SIMULATOR_PERFORMANCE.md`, 2026-11-15).
+    ///
+    /// The flood itself is untouched, down to the tile writes it opens: the
+    /// grid's epoch moves once for every `get_mut`, a cache elsewhere may
+    /// compare that number, and the set this replaces decided which
+    /// neighbours got one. `grow_player_frontier_by_ordered_set` is the old
+    /// body, kept for the test that compares the two tile by tile and epoch
+    /// for epoch.
     pub fn grow_player_frontier(&mut self, depth: u32) {
+        for tile in self
+            .map
+            .tiles
+            .values_mut()
+            .filter(|t| t.terrain == "unknown")
+        {
+            tile.assumed_traversable = false;
+            tile.assumed_navigable = false;
+        }
+        let mut seen = vec![false; self.map.tiles.len()];
+        for water in [false, true] {
+            seen.fill(false);
+            // A tile the grid holds outside its own rectangle has no slot to
+            // look a neighbour up by. No map the game builds has one; a
+            // hand-built one that does keeps the ordered set for those tiles.
+            let mut unslotted: BTreeSet<Pos> = BTreeSet::new();
+            let mut edge: Vec<Pos> = Vec::new();
+            for (index, tile) in self.map.tiles.values().enumerate() {
+                if !self.rules.is_unknown(tile)
+                    && self.rules.is_water(tile) == water
+                    && (!water || self.rules.is_passable(tile))
+                {
+                    seen[index] = true;
+                    edge.push(tile.pos);
+                    if self.map.tiles.index_of(tile.pos) != Some(index) {
+                        unslotted.insert(tile.pos);
+                    }
+                }
+            }
+            for _ in 0..depth {
+                let mut next = Vec::new();
+                for pos in edge {
+                    for neighbour in self.map.neighbors(pos) {
+                        let slot = self.map.tiles.index_of(neighbour);
+                        let reached = match slot {
+                            Some(index) => seen[index],
+                            None => unslotted.contains(&neighbour),
+                        };
+                        if reached {
+                            continue;
+                        }
+                        if let Some(tile) = self.map.tiles.get_mut(&neighbour) {
+                            if tile.terrain != "unknown" {
+                                continue;
+                            }
+                            if water {
+                                tile.assumed_navigable = true;
+                            } else {
+                                tile.assumed_traversable = true;
+                            }
+                            // `get_mut` found the tile, so it has a slot.
+                            if let Some(index) = slot {
+                                seen[index] = true;
+                            }
+                            next.push(neighbour);
+                        }
+                    }
+                }
+                edge = next;
+                if edge.is_empty() {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// [`Self::grow_player_frontier`] as it was written first, with what has
+    /// been reached held in an ordered set of positions. Test-only: it is
+    /// what the table is compared against.
+    #[cfg(test)]
+    pub(crate) fn grow_player_frontier_by_ordered_set(&mut self, depth: u32) {
         for tile in self
             .map
             .tiles

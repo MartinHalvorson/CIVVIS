@@ -62,7 +62,7 @@ KNOWN_GLOBALS = {
     # Engine type enumerations, same family as the ones above.
     "ActionTypes", "CityCommandResults", "CivilizationLevelTypes", "EndTurnBlockingTypes",
     "InterfaceModeTypes", "Modding", "Network", "PlayerOperations",
-    "ServerType", "SlotStatus", "TurnLimitTypes",
+    "SaveLocations", "ServerType", "SlotStatus", "TurnLimitTypes",
     "ActivityTypes", "AutoProfiler", "Cities", "CityDestroyDirectives",
     "CityOperationResults", "CityProductionDirectives", "CombatManager",
     "CombatResultParameters", "CombatTypes", "CombatVisType", "ComponentType",

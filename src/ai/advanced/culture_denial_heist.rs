@@ -90,16 +90,6 @@ impl AdvancedAi {
             .collect()
     }
 
-    /// The spy of ours that holds `cid`: the lowest id posted or travelling
-    /// there, so of two in one city exactly one stays.
-    fn culture_heist_holder(g: &Game, pid: usize, cid: u32) -> Option<u32> {
-        g.spies
-            .values()
-            .filter(|spy| spy.owner == pid && spy.captured_by.is_none() && spy.city == Some(cid))
-            .map(|spy| spy.id)
-            .min()
-    }
-
     /// What posting `spy` to `cid` is worth under the gene:
     /// [`CULTURE_HEIST_ASSIGN_PRIORITY`] for a heist city no other spy of
     /// ours holds, nothing elsewhere or with the gene off (`cities` empty).
@@ -110,26 +100,7 @@ impl AdvancedAi {
         cities: &BTreeSet<u32>,
         cid: u32,
     ) -> i32 {
-        if !cities.contains(&cid) {
-            return 0;
-        }
-        let held = g
-            .spies
-            .values()
-            .any(|other| other.owner == pid && other.id != spy && other.city == Some(cid));
-        if held {
-            0
-        } else {
-            CULTURE_HEIST_ASSIGN_PRIORITY
-        }
-    }
-
-    /// Whether the host lists the heist on `spy`'s own menu.
-    fn culture_heist_host_offers(g: &Game, spy: u32) -> bool {
-        g.host_unit_facts
-            .get(&spy)
-            .and_then(|facts| facts.spy_missions.as_ref())
-            .is_some_and(|menu| menu.contains("great_work_heist"))
+        Self::unheld_spy_target_bonus(g, pid, spy, cities, cid, CULTURE_HEIST_ASSIGN_PRIORITY)
     }
 
     /// The free heist city an idle `spy` standing in a foreign city should
@@ -142,19 +113,7 @@ impl AdvancedAi {
         current_city: Option<u32>,
         cities: &BTreeSet<u32>,
     ) -> Option<u32> {
-        let here = current_city?;
-        let city = g.cities.get(&here)?;
-        if city.owner == pid || Self::culture_heist_host_offers(g, spy) {
-            return None;
-        }
-        if cities.contains(&here) && Self::culture_heist_holder(g, pid, here) == Some(spy) {
-            return None;
-        }
-        cities
-            .iter()
-            .copied()
-            .filter(|cid| *cid != here && Self::culture_heist_holder(g, pid, *cid).is_none())
-            .min_by_key(|cid| (g.wdist(city.pos, g.cities[cid].pos), *cid))
+        Self::spy_repost_to_free_target(g, pid, spy, current_city, cities, "great_work_heist")
     }
 
     /// The heist to run for `spy` in a target's city, if one is legal.

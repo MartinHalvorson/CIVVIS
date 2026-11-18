@@ -1154,19 +1154,21 @@ pub(crate) type AttackEnvelopes = Vec<(u32, std::sync::Arc<EnvelopeReach>)>;
 
 /// One envelope table and the union of every tile in it, kept together so a
 /// reader can tell whether the union still describes the table it holds. See
-/// [`BasicAi::covered_tiles`]. Unlike one raw envelope target list, the union
-/// is freshly assembled here, so its outer `Arc<Vec<_>>` keeps that buffer
-/// without converting it to a second shared slice allocation.
-type CoveredTiles = (std::sync::Arc<AttackEnvelopes>, std::sync::Arc<Vec<Pos>>);
+/// [`BasicAi::covered_tiles`]. The union is only ever asked whether it holds
+/// a tile, so it is a hashed set: no sort, no dedup, no binary search.
+type CoveredTiles = (
+    std::sync::Arc<AttackEnvelopes>,
+    std::sync::Arc<crate::fast_map::FastSet<Pos>>,
+);
 
 /// The three route priorities used by a recovering unit. They are immutable
 /// while a board and hostile-envelope table are unchanged, so frontier clones
 /// can share one full-map scan instead of repeating it per unit.
 #[derive(Debug, PartialEq, Eq)]
 struct SafeHealingTargets {
-    cities: HashSet<Pos>,
-    friendly_tiles: HashSet<Pos>,
-    neutral_tiles: HashSet<Pos>,
+    cities: crate::fast_map::FastSet<Pos>,
+    friendly_tiles: crate::fast_map::FastSet<Pos>,
+    neutral_tiles: crate::fast_map::FastSet<Pos>,
 }
 
 /// A cache slot that a clone does NOT inherit.
@@ -1225,7 +1227,19 @@ struct SafeHealingTargetCache {
 /// so each envelope carries a key over its own neighbourhood instead.
 struct EnemyEnvelope {
     reach: std::sync::Arc<EnvelopeReach>,
-    sensitive: std::sync::Arc<std::collections::HashSet<Pos>>,
+    sensitive: std::sync::Arc<crate::fast_map::FastSet<Pos>>,
+    /// The disk a written tile must fall inside to be able to change this
+    /// envelope: centred on the unit, out to its farthest flood tile plus its
+    /// attack range. `None` when its flood was empty (a unit locked in place
+    /// this turn), so every write is taken to touch it. See
+    /// [`BasicAi::envelope_board_change`].
+    sight: Option<(Pos, i32)>,
+    /// For an air unit, what its reach is a function of: its kind, the tile
+    /// it operates from (`Game::air_operation_origin`) and its attack range.
+    /// Its reach is the disk of that range around that tile and nothing else,
+    /// so it is kept exactly while the three stand. `None` for every other
+    /// unit, which is kept by `sensitive` and `sight` instead.
+    air: Option<(u32, Pos, i32)>,
 }
 
 /// The multiplier and the seed the three envelope fingerprints mix with — the
@@ -1271,10 +1285,26 @@ impl EnvelopeUnit {
 
 /// The board the per-enemy envelopes were last measured against.
 struct EnvelopeBoard {
-    /// Map epoch, the belligerence fingerprint and the city fingerprint. Any
-    /// of these moving is treated as "everything changed": they are rare and
-    /// global.
-    stamp: (u64, u64, u64),
+    /// The belligerence fingerprint, the city fingerprint, and the turn and
+    /// the seat to act. Any of them moving is treated as "everything
+    /// changed".
+    ///
+    /// ⚠ THE SEAT-TURN IS AN INPUT. An enemy's reach also reads its owner's
+    /// own state: technologies and civics (embarking, ocean entry, the
+    /// movement trees), policies, wonders, its units' promotions
+    /// (`unit_base_max_moves_at`). None of that moves a unit, writes a tile or
+    /// touches a city, and all of it changes on the owner's own turn, never
+    /// during another seat's. An envelope is asked for by the seat whose turn
+    /// it is, so keeping the per-enemy store for one seat-turn at a time is
+    /// exact. Before #5361 a tile write anywhere emptied the store and border
+    /// growth wrote tiles at nearly every turn's start, which hid this; once
+    /// tile writes were reported by position, entries outlived the turn and
+    /// a reach grown by its owner's new movement was read stale.
+    stamp: (u64, u64, u32, usize),
+    /// Where the map's write history stood ([`crate::world::TileGrid::write_chain`]).
+    /// The tiles written since are reported by position; a history that
+    /// cannot be followed back here is "everything changed".
+    map_chain: u64,
     /// Every field of a unit that the board key hashes, plus the tile it is
     /// flying a patrol over.
     ///
@@ -1303,6 +1333,12 @@ struct EnvelopeBoard {
     /// `HashMap` and the diff hashed each id twice, once to build the new
     /// board and once to look the old one up.
     units: Vec<(u32, EnvelopeUnit)>,
+    /// The seat whose own inert units' changes this board has left out of a
+    /// delta since every change was last reported, if any. See
+    /// [`BasicAi::envelope_board_change`]: what an inert unit cannot touch is
+    /// an envelope of an enemy *at war with its owner*, so a later ask on
+    /// behalf of any other seat starts over from "everything changed".
+    skipped_for: Option<usize>,
 }
 
 /// What [`BasicAi::envelope_board_change`] found, for the two questions the
@@ -1310,6 +1346,11 @@ struct EnvelopeBoard {
 struct EnvelopeChange {
     /// The tiles a change touched, or `None` for "assume everything changed".
     touched: Option<Vec<Pos>>,
+    /// The map tiles opened for writing since the last ask, when `touched` is
+    /// `Some`. Tested against each envelope's `sight`, not its sensitive set:
+    /// a tile can change a ranged unit's line of sight as far out as its
+    /// range reaches.
+    written: Vec<Pos>,
     /// Whether any unit the previous board held is gone from this one — or,
     /// conservatively, `true` whenever the delta is `None` and nothing is
     /// known. Only the per-enemy store's cleanup reads it; see the call site.
@@ -2232,6 +2273,13 @@ pub struct BasicAi {
     /// well; one stalled turn bars nothing. Off by default; opt-in gene. See
     /// `advanced/band_stall_bars_no_host.rs`.
     pub(crate) band_stall_bars_no_host: bool,
+    /// `band-plays-the-stage-at-hand`: a Rock Band plays a stage it can reach
+    /// this turn instead of its tour's stage when the trip there is longer
+    /// than the levels it gains are worth: two turns for none, four for one,
+    /// no trip for two. Live, 48 trips set out from beside a playable stage
+    /// took 296 of 819 band-turns. Off by default; opt-in gene. See
+    /// `advanced/band_plays_the_stage_at_hand.rs`.
+    pub(crate) band_plays_the_stage_at_hand: bool,
     /// `band-stall-bars-no-host`: by [`BasicAi::band_memory_key`], the turn a
     /// band was last walked nowhere and the civilization it was walking to.
     band_stall_strikes: RefCell<HashMap<i64, (u32, String)>>,
@@ -3975,216 +4023,7 @@ impl BasicAi {
     }
 
     pub fn new() -> BasicAi {
-        BasicAi {
-            minor: false,
-            barb: false,
-            barbarian_tactics: true,
-            amenity_districts: false,
-            garrison_under_fire: false,
-            reserve_floor: 0.0,
-            legacy_defender_purchases: false,
-            gold_unit_buys_read_the_host_quote: false,
-            district_coverage: false,
-            district_coverage_2: false,
-            slot_kind_tiebreak: false,
-            pursue_religion: true,
-            bank_faith_for_apostle: false,
-            charts_rival_majorities: false,
-            lane_charting_gap: false,
-            skip_prophet_race: false,
-            enter_prophet_race: false,
-            prophet_race_takes_a_district_slot: false,
-            prophet_race_takes_a_district_slot_2: false,
-            victor_first_for_a_short_runway: false,
-            capital_keeps_its_governor: false,
-            science_building_first: false,
-            housing_reserve: false,
-            campus_before_harbor: false,
-            capital_campus_first: false,
-            monument_first: false,
-            builder_before_the_army: false,
-            builder_before_the_army_2: false,
-            builder_before_the_army_3: false,
-            builders_before_the_lent_floor: false,
-            unique_unit_preference: false,
-            prefers_priced_melee: false,
-            campus_before_the_army: false,
-            campus_before_the_army_2: false,
-            campus_before_the_army_3: false,
-            settler_before_the_navy: false,
-            granary_before_the_army: false,
-            front_weighted_floor: false,
-            front_objective: None,
-            front_weighted_floor_2: false,
-            activation_resume_waits: false,
-            activation_keeps_its_building: false,
-            artifact_before_more_museums: false,
-            granary_before_the_army_2: false,
-            housing_bound_city_builds_its_granary: false,
-            housing_cap_builds_the_aqueduct: false,
-            builders_cover_the_worked_backlog: false,
-            prod_tiles_call_the_builders: false,
-            the_worked_backlog_gets_its_builder_first: false,
-            commercial_hub_and_traders: false,
-            plan_threatened_city: None,
-            industry_before_the_army: false,
-            industry_before_the_army_2: false,
-            industry_before_the_army_3: false,
-            industry_in_the_district_list: false,
-            plaza_in_the_district_list: false,
-            kristina_builds_the_bibliotheque: false,
-            kristina_fills_to_theme: false,
-            industrial_hub: false,
-            industrial_zone_in_the_producers: false,
-            district_buildings_first: false,
-            capital_library_first: false,
-            campus_buildings_first: false,
-            nuclear_goal_needs_a_launcher: false,
-            culture_defense_theater: false,
-            lent_military_floor_base: None,
-            exclude_space_race: false,
-            exclude_fossil_power: false,
-            defer_low_impact_science_activation_paths: false,
-            pantheon_reads_the_board: false,
-            apostle_promotion_by_role: false,
-            band_plays_its_stage: false,
-            bands_draw_from_the_bar: false,
-            band_plays_what_it_can_reach: false,
-            bands_wait_at_the_door: false,
-            band_plays_at_level_three: false,
-            band_stall_bars_no_host: false,
-            band_stall_strikes: RefCell::new(HashMap::new()),
-            band_trips: RefCell::new(HashMap::new()),
-            band_refused_hosts: RefCell::new(HashMap::new()),
-            bank_envoys: false,
-            live_religious_purchase_guard: false,
-            recon_replacement: false,
-            naval_recon: false,
-            naval_recon_2: false,
-            naval_recon_3: false,
-            island_exploration: false,
-            contact_fleet: false,
-            camp_party: false,
-            come_ashore: false,
-            barbarian_settler_capture: false,
-            loyalty_rate_alarm: false,
-            pingala_loyalty_runway: None,
-            recorded_tactical_step: false,
-            live_motion_turn_accounting: false,
-            whole_turn_backtrack_guard: false,
-            legal_tactical_candidates: false,
-            unit_objective_memory: false,
-            precise_evacuation: true,
-            veteran_retreat_margin: false,
-            ranged_hp_reserve: false,
-            one_shot_recovery: false,
-            w: Weights::default(),
-            book_pos: 0,
-            book_settler_pending: false,
-            recovering_units: HashSet::new(),
-            patrol_targets: HashMap::new(),
-            patrol_posts: HashMap::new(),
-            patrol_posts_by_class: HashMap::new(),
-            settler_targets: HashMap::new(),
-            open_water_navy: false,
-            unit_memories: RefCell::new(BTreeMap::new()),
-            attack_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            enemy_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
-            envelope_board: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            covered_tiles_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            safe_healing_targets_cache: FreshOnClone::default(),
-            envelope_cache_across_own_moves: false,
-            last_path_step_from: RefCell::new(HashMap::new()),
-            explore_dead_targets: false,
-            explore_last: RefCell::new(HashMap::new()),
-            explore_dead: RefCell::new(HashMap::new()),
-            explore_commit: false,
-            wonder_ring_recon: false,
-            opening_defense_preempts: 0,
-            opening_defense_preempts_once: false,
-            wonder_ring_recon_2: false,
-            hut_collection: false,
-            village_seeking: false,
-            sea_answers: false,
-            camp_bounty: false,
-            adjacent_camp_clear: true,
-            enemy_of_my_enemy: false,
-            quest_camp_errand: false,
-            contested_land_first: false,
-            exchange_is_the_engines: false,
-            defend_where_you_stand: false,
-            legacy_movement: false,
-            barbarian_heretic_hunt: true,
-            deals_for_our_gain: false,
-            deals_at_the_ceiling: false,
-            no_free_passage: false,
-            barbarian_bargain: false,
-            barbarian_ranged_answer: false,
-            city_strikes_left_to_the_planner: false,
-            siege_preempts_the_queue: false,
-            camp_bounty_claims: BTreeMap::new(),
-            maintenance_aware_deck: false,
-            deck_reads_player_income: false,
-            retainers_garrison_the_short_cities: false,
-            retainers_garrison_claims: BTreeMap::new(),
-            garrison_before_the_surprise: false,
-            garrison_call_cache: None,
-            spy_training_paused: false,
-            obsolete_military_buys_barred: false,
-            obsolete_buys_read_our_techs: false,
-            plaza_serves_science: false,
-            plaza_hall_first: false,
-            launch_pad_resumes_its_foundation: false,
-            digs_one_museum: false,
-            dig_museums_wanted: 0,
-            curator_keeps_his_seat: false,
-            founder_takes_the_faith_beliefs: false,
-            preserve_culture_resort_sites: false,
-            deck_prices_growth: false,
-            deck_follows_the_queue: false,
-            deck_queue_signature: RefCell::new(BTreeMap::new()),
-            solvency_first_trade_slot: false,
-            builder_tries_the_next_tile: false,
-            naval_threat_triage: false,
-            explore_goal: RefCell::new(HashMap::new()),
-            unit_motion: BTreeMap::new(),
-            move_refusal_break: false,
-            move_refusal_watch: RefCell::new(HashMap::new()),
-            move_refusal_strikes: HashMap::new(),
-            move_refusal_blocks: HashMap::new(),
-            own_column_is_not_a_refusal: false,
-            host_move_feedback: HashMap::new(),
-            host_move_feedback_active: false,
-            move_refusal_congested: RefCell::new(HashMap::new()),
-            frame_own_tiles: HashMap::new(),
-            gun_lethal_tiles: HashMap::new(),
-            unit_lethal_blows: HashMap::new(),
-            priced_risk: Default::default(),
-            rush_military_floor: 0,
-            settler_strand_discount: false,
-            settler_backlog_brake: false,
-            settler_backlog_brake_2: false,
-            parallel_settlers: false,
-            host_settler_pop: false,
-            land_grab: false,
-            rapid_city_expansion_2: false,
-            capital_settler_after_completion: false,
-            opening_builder_after_the_first_settler: false,
-            opening_builder_paid: false,
-            first_pad_in_the_forge: false,
-            scout_first_opening: false,
-            opening_scout_comes_back: false,
-            opening_scout_owed_at: None,
-            opening_recon_fielded: false,
-            opening_scout_replaced: false,
-            opening_ranged_support: false,
-            expansion_pantheon: false,
-            pantheon_for_the_prophet_race: false,
-            opening_settler_waits: false,
-            settler_idle: BTreeMap::new(),
-            settler_idle_turn: None,
-            journal: Journal::default(),
-        }
+        BasicAi::with_weights(Weights::default())
     }
 
     pub(crate) fn barbarian_tactics_enabled(&self) -> bool {
@@ -4514,6 +4353,7 @@ impl BasicAi {
             bands_wait_at_the_door: false,
             band_plays_at_level_three: false,
             band_stall_bars_no_host: false,
+            band_plays_the_stage_at_hand: false,
             band_stall_strikes: RefCell::new(HashMap::new()),
             band_trips: RefCell::new(HashMap::new()),
             band_refused_hosts: RefCell::new(HashMap::new()),
@@ -7817,6 +7657,13 @@ impl BasicAi {
         let Some(here) = g.units.get(&uid).map(|unit| unit.pos) else {
             return false;
         };
+        // `band-plays-the-stage-at-hand`: a long trip gives way to a stage
+        // this turn can reach. See `advanced/band_plays_the_stage_at_hand.rs`.
+        if self.band_plays_the_stage_at_hand {
+            if let Some(acted) = self.rock_band_stage_at_hand(g, pid, uid, here) {
+                return acted;
+            }
+        }
         let mut can_perform_here = g.rock_concert_tourism(pid, uid).is_some();
         if can_perform_here && self.band_plays_at_level_three {
             // `band-plays-at-level-three`: no lower-level show while a

@@ -157,7 +157,7 @@ pub fn observation_spectator(g: &Game, pid: usize) -> Value {
 pub fn visibility(g: &Game, pid: usize) -> (BTreeSet<Pos>, BTreeSet<Pos>) {
     let p = &g.players[pid];
     let vis = g.player_visibility(pid);
-    let mut explored = p.explored.clone();
+    let mut explored = p.explored.to_btree();
     for (partner, alliance) in &p.alliances {
         if alliance.ends > g.turn && alliance.kind == "military" && alliance.level >= 2 {
             explored.extend(g.players[*partner].explored.iter().copied());
@@ -261,7 +261,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
     let mut explored = if omniscient {
         vis.clone()
     } else {
-        p.explored.clone()
+        p.explored.to_btree()
     };
     if !omniscient {
         for viewer in &viewers {
@@ -920,6 +920,13 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "domestic_tourists": g.domestic_tourists(o.id),
                 "foreign_tourists": g.foreign_tourists(o.id),
                 "science_projects": o.science_projects,
+                // Lagrange Laser Stations this civilization has put up to
+                // hurry its expedition. The project is repeatable, so it is a
+                // count and no row of `science_projects`, and the viewer
+                // launches one rocket for each it sees added. A Terrestrial
+                // Laser Station is not counted: it is built where it stands
+                // and nothing leaves the ground.
+                "laser_stations": devices("project:lagrange_laser_station"),
                 "exoplanet_distance": round1(g.science_victory_points(o.id)),
                 "government": o.government,
                 "anarchy_turns": o.anarchy_turns,

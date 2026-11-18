@@ -1878,7 +1878,11 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
             # write it.
             handoff = wedge_handoff(tag)
             if handoff is not None:
-                print(f"[watchdog] the wedge watchdog handed {tag} over at turn "
+                # The play harness writes the same marker when it ends a hung
+                # rival turn itself (`civ6_control.watch.write_stall_handoff`).
+                who = ("the play harness" if handoff.get("by") == "civ6_play"
+                       else "the wedge watchdog")
+                print(f"[watchdog] {who} handed {tag} over at turn "
                       f"{handoff.get('turn', last_turn)} "
                       f"({handoff.get('reason') or 'no reason recorded'}); "
                       f"treating the attempt as frozen so its autosave can be "
@@ -1995,7 +1999,9 @@ EXIT_WHILE_STALE_S = 240.0
 #: The file `civvis-agent-wedge-watchdog.sh` writes into a run's directory the
 #: moment it hands that run to the climb for an autosave reload — BEFORE it
 #: signals the player, so the climb finds it however quickly the player exits.
-#: The name is pinned on both sides by `test_ops_wedge_watchdog.py`.
+#: The name is pinned on both sides by `test_ops_wedge_watchdog.py`. The play
+#: harness writes it too, when it ends a hung rival turn itself
+#: (`civ6_control.watch.STALL_HANDOFF_MARKER`, pinned by `test_civ6_watch.py`).
 WEDGE_HANDOFF_MARKER = "wedge-handoff.json"
 
 
@@ -2281,6 +2287,8 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
            if getattr(args, "restart_below_leader_ratio", None) is not None else [])
         + (["--no-peace-deterrence"] if args.no_peace_deterrence else [])
         + DEAL_SESSION_FLAGS.get(getattr(args, "deal_sessions", None) or "off", [])
+        + (["--deal-ask-on-tick"] if getattr(args, "deal_ask_on_tick", False) else [])
+        + (["--deal-counter-refuse"] if getattr(args, "deal_counter_refuse", False) else [])
         + [word for player, last_turn in sorted((quarantine or {}).items())
            for word in ("--deal-session-quarantine", f"{player}:{last_turn}")]
         + (["--no-counter-resolutions"] if args.no_counter_resolutions else [])
@@ -2719,6 +2727,61 @@ def deal_sessions_mode(requested: str | None, environ=None, path: Path | None = 
              f"{'|'.join(DEAL_SESSION_FLAGS)}; sending deals directly")
         return "off"
     return value
+
+
+#: Policy-file and environment values that turn an opt-in deal switch on.
+DEAL_ASK_ON_TICK_ON = ("1", "true", "yes", "on")
+
+
+def policy_switch(key: str, requested: bool | None, environ=None,
+                  path: Path | None = None) -> bool:
+    """An opt-in boolean switch: an explicit flag wins; then `key` in the
+    environment; then the same key in the verification policy file, re-read
+    at every game like `CIVVIS_DEAL_SESSIONS`; else off."""
+    if requested is not None:
+        return bool(requested)
+    environ = os.environ if environ is None else environ
+    path = VERIFICATION_POLICY_FILE if path is None else path
+    value = (environ.get(key) or "").strip()
+    if not value:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        for line in text.splitlines():
+            line = line.split("#", 1)[0].strip()
+            if line.startswith(key + "="):
+                value = line.split("=", 1)[1].strip().strip("\"'")
+    return value.lower() in DEAL_ASK_ON_TICK_ON
+
+
+def deal_ask_on_tick_mode(requested: bool | None, environ=None,
+                          path: Path | None = None) -> bool:
+    """Whether a game's peace and alliance questions go out on the next tick
+    (`civ6_play.py --deal-ask-on-tick`, `CivvisTrade.askDeferred`).
+
+    `--deal-ask-on-tick` / `--no-deal-ask-on-tick`, else
+    `CIVVIS_DEAL_ASK_ON_TICK` (see `policy_switch`). Opt-in: whether asking
+    from the tick saves the rival's counter (the hang behind every
+    `counter_not_sent`) is what turning it on measures.
+    """
+    return policy_switch("CIVVIS_DEAL_ASK_ON_TICK", requested, environ, path)
+
+
+def deal_counter_refuse_mode(requested: bool | None, environ=None,
+                             path: Path | None = None) -> bool:
+    """Whether a refused peace or alliance ask left on the deal screen is
+    declined with REJECTED when its counter hold runs out
+    (`civ6_play.py --deal-counter-refuse`, `CivvisTrade.onHoldExpired`).
+
+    `--deal-counter-refuse` / `--no-deal-counter-refuse`, else
+    `CIVVIS_DEAL_COUNTER_REFUSE` (see `policy_switch`). Opt-in: all nine hung
+    rival turns after a `counter_not_sent` close on 2026-11-15..16 followed a
+    bare close of that screen; whether declining instead releases the
+    rival's pending counter is what turning it on measures (ledger: `closed`
+    `why=rejected_working_deal`).
+    """
+    return policy_switch("CIVVIS_DEAL_COUNTER_REFUSE", requested, environ, path)
 
 
 def operator_victory_lane(requested: str, path: Path | None = None,
@@ -3231,6 +3294,19 @@ def main() -> int:
                     help="forwarded to civ6_play.py: sessions for trades, peace sent directly")
     ap.add_argument("--no-deal-sessions", dest="deal_sessions", action="store_const",
                     const="off", help="send every deal directly, whatever the policy says")
+    ap.add_argument("--deal-ask-on-tick", dest="deal_ask_on_tick", action="store_const",
+                    const=True, default=None,
+                    help="forwarded to civ6_play.py: put peace and alliance questions "
+                         "on the next tick (default: CIVVIS_DEAL_ASK_ON_TICK, else off)")
+    ap.add_argument("--no-deal-ask-on-tick", dest="deal_ask_on_tick", action="store_const",
+                    const=False, help="ask inside the opening statement, whatever the policy says")
+    ap.add_argument("--deal-counter-refuse", dest="deal_counter_refuse", action="store_const",
+                    const=True, default=None,
+                    help="forwarded to civ6_play.py: decline a refusal left on the deal "
+                         "screen with REJECTED (default: CIVVIS_DEAL_COUNTER_REFUSE, else off)")
+    ap.add_argument("--no-deal-counter-refuse", dest="deal_counter_refuse",
+                    action="store_const", const=False,
+                    help="close an expired counter wait as before, whatever the policy says")
     ap.add_argument("--tile-export-every", type=int, default=4,
                     help="turns between map exports; the operator watches this against the game")
     ap.add_argument("--combat-frames", type=int, default=0,
@@ -3270,6 +3346,8 @@ def main() -> int:
     args.victory = operator_victory_lane(args.victory)
     # Re-read per game as well: the deal channel is a policy-file key.
     args.deal_sessions = deal_sessions_mode(args.deal_sessions)
+    args.deal_ask_on_tick = deal_ask_on_tick_mode(args.deal_ask_on_tick)
+    args.deal_counter_refuse = deal_counter_refuse_mode(args.deal_counter_refuse)
     # The game's score clock: the speed's own limit unless `--max-turns` names
     # one, then the operator's per-batch cap over either. See TURN_CAP_FILE.
     args.max_turns = operator_turn_cap(

@@ -61,7 +61,8 @@ impl Game {
         paths.insert(start, Vec::new());
         if !self.formation_movement_locked_by_zoc(uid) {
             let _memo = self.query_memo();
-            let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
+            let mut parent: crate::fast_map::FastMap<Pos, Pos> =
+                crate::fast_map::FastMap::default();
             let reach: BTreeMap<Pos, f64> = self.relax_movement(
                 uid,
                 start,
@@ -495,7 +496,11 @@ impl Game {
     /// First step toward the nearest reachable member of `goals`. This is
     /// useful for exploration, where the geometrically nearest hidden tile
     /// may be on the far side of an impassable ridge or pre-embarkation sea.
-    pub fn route_step_to_any(&self, uid: u32, goals: &HashSet<Pos>) -> Option<Pos> {
+    pub fn route_step_to_any<S: std::hash::BuildHasher>(
+        &self,
+        uid: u32,
+        goals: &HashSet<Pos, S>,
+    ) -> Option<Pos> {
         if goals.is_empty() {
             return None;
         }
@@ -893,10 +898,12 @@ impl Game {
             return None;
         }
         let _memo = self.query_memo();
-        let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
+        let mut parent: crate::fast_map::FastMap<Pos, Pos> = crate::fast_map::FastMap::default();
         // Run for its parents: `f64` is the zone-of-control rule `flow` uses,
-        // which is what this path has always been read against.
-        let _reach: BTreeMap<Pos, f64> = self.relax_movement(
+        // which is what this path has always been read against. What the
+        // flood reached is not read, so it is not kept; the parents are only
+        // ever asked one tile at a time, so they are hashed.
+        self.relax_movement_into::<f64, _, _, _>(
             uid,
             start,
             moves,
@@ -904,6 +911,7 @@ impl Game {
             |n, cur| {
                 parent.insert(n, cur);
             },
+            &mut DiscardReached,
         );
         parent.get(&to)?;
         let mut path = vec![to];
@@ -952,7 +960,7 @@ impl Game {
         let _memo = self.query_memo();
         // Per tile: movement kept on arrival, and whether the arrival stopped
         // the unit (zone of control) so nothing expands from it.
-        let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
+        let mut parent: crate::fast_map::FastMap<Pos, Pos> = crate::fast_map::FastMap::default();
         let best: BTreeMap<Pos, (f64, bool)> = self.relax_movement(
             uid,
             start,
@@ -1023,19 +1031,50 @@ impl Game {
     /// routes equal over every military unit of a played game, with the
     /// flags set every way round.
     pub(crate) fn approach_arrivals_on_a_fresh_turn(&self, uid: u32) -> Vec<(Pos, f64)> {
-        let Some(unit) = self.units.get(&uid) else {
+        let Some((start, moves)) = self.fresh_turn_approach(uid) else {
             return Vec::new();
         };
-        let (start, moves) = (unit.pos, self.unit_max_moves(uid));
-        if moves <= 0.0 || self.formation_movement_locked_on_a_fresh_turn(uid) {
-            return Vec::new();
-        }
         self.approach_arrivals_with(uid, start, moves)
+    }
+
+    /// [`Self::approach_arrivals_on_a_fresh_turn`], and every tile its flood
+    /// relaxed: the start, each arrival and each tile it only crossed. For a
+    /// caller that must know how far out the answer read the board (see
+    /// `unit_preservation`'s `TrialReach`).
+    pub(crate) fn approach_arrivals_on_a_fresh_turn_with_flood(
+        &self,
+        uid: u32,
+    ) -> (Vec<(Pos, f64)>, Vec<Pos>) {
+        let Some(unit) = self.units.get(&uid) else {
+            return (Vec::new(), Vec::new());
+        };
+        let Some((start, moves)) = self.fresh_turn_approach(uid) else {
+            return (Vec::new(), vec![unit.pos]);
+        };
+        let flood = self.approach_flood(uid, start, moves);
+        let mut relaxed: Vec<Pos> = flood.iter().map(|(pos, _)| *pos).collect();
+        relaxed.push(start);
+        (self.approach_stops(uid, start, flood), relaxed)
+    }
+
+    /// Where a fresh turn's approach starts and with how much movement, or
+    /// `None` when it cannot move at all (no movement, or locked in place).
+    fn fresh_turn_approach(&self, uid: u32) -> Option<(Pos, f64)> {
+        let unit = self.units.get(&uid)?;
+        let (start, moves) = (unit.pos, self.unit_max_moves(uid));
+        (moves > 0.0 && !self.formation_movement_locked_on_a_fresh_turn(uid))
+            .then_some((start, moves))
     }
 
     /// The flood both of the above run, once each has settled where the unit
     /// starts and with how much movement.
     fn approach_arrivals_with(&self, uid: u32, start: Pos, moves: f64) -> Vec<(Pos, f64)> {
+        let flood = self.approach_flood(uid, start, moves);
+        self.approach_stops(uid, start, flood)
+    }
+
+    /// Every tile the approach relaxes, with the movement it keeps there.
+    fn approach_flood(&self, uid: u32, start: Pos, moves: f64) -> Vec<(Pos, (f64, bool))> {
         let _memo = self.query_memo();
         let mut arrivals: Vec<(Pos, (f64, bool))> = Vec::new();
         self.relax_movement_into(
@@ -1047,6 +1086,16 @@ impl Game {
             &mut arrivals,
         );
         arrivals
+    }
+
+    /// The tiles of an approach flood the unit may end on.
+    fn approach_stops(
+        &self,
+        uid: u32,
+        start: Pos,
+        flood: Vec<(Pos, (f64, bool))>,
+    ) -> Vec<(Pos, f64)> {
+        flood
             .into_iter()
             .filter(|(pos, _)| *pos != start && self.can_stop(uid, *pos))
             .map(|(pos, (kept, _))| (pos, kept))
@@ -1124,7 +1173,26 @@ impl Game {
             None => return vec![],
         };
         let best = self.flow(uid, start, moves);
-        best.into_keys()
+        self.stops_in(uid, start, best.into_iter().map(|(pos, _)| pos))
+    }
+
+    /// [`Self::reachable`], and every tile its flood relaxed (the start
+    /// included), for a caller that must know how far out it read the board.
+    pub(crate) fn reachable_with_flood(&self, uid: u32) -> (Vec<Pos>, Vec<Pos>) {
+        let Some((start, moves)) = self.units.get(&uid).map(|u| (u.pos, u.moves_left)) else {
+            return (vec![], vec![]);
+        };
+        let best = self.flow(uid, start, moves);
+        let mut relaxed: Vec<Pos> = best.iter().map(|(pos, _)| *pos).collect();
+        relaxed.push(start);
+        (
+            self.stops_in(uid, start, best.into_iter().map(|(pos, _)| pos)),
+            relaxed,
+        )
+    }
+
+    fn stops_in(&self, uid: u32, start: Pos, tiles: impl Iterator<Item = Pos>) -> Vec<Pos> {
+        tiles
             .filter(|p| *p != start && self.can_stop(uid, *p))
             .collect()
     }
@@ -1157,7 +1225,10 @@ impl Game {
             return vec![];
         };
         let best = self.flow_past(uid, start, self.unit_max_moves(uid), true);
-        best.into_keys().filter(|p| *p != start).collect()
+        best.into_iter()
+            .map(|(pos, _)| pos)
+            .filter(|p| *p != start)
+            .collect()
     }
 
     /// Every legal single step inside this turn's remaining movement, as
@@ -1186,7 +1257,7 @@ impl Game {
         let _memo = self.query_memo();
         let best = self.flow(uid, start, moves);
         let mut steps = Vec::new();
-        for (&from, &rem) in &best {
+        for &(from, rem) in &best {
             if rem <= 0.0 {
                 continue;
             }
@@ -1316,10 +1387,10 @@ impl Game {
     /// number of route steps from it to the nearest of `goals` (`i32::MAX`
     /// where none is reachable), cached per traversal class, territory access
     /// and goal set within the routing epoch.
-    pub(super) fn reverse_goal_distance(
+    pub(super) fn reverse_goal_distance<S: std::hash::BuildHasher>(
         &self,
         uid: u32,
-        goals: &HashSet<Pos>,
+        goals: &HashSet<Pos, S>,
         zones: &[u32],
     ) -> Option<Arc<Vec<i32>>> {
         let _memo = self.query_memo();
@@ -1386,10 +1457,10 @@ impl Game {
     /// `None` wherever `route_step_to_any` declines before reading its field,
     /// for a unit that moves as a formation, and for one without movement.
     #[allow(clippy::type_complexity)]
-    pub(crate) fn march_reach_toward_any(
+    pub(crate) fn march_reach_toward_any<S: std::hash::BuildHasher>(
         &self,
         uid: u32,
-        goals: &HashSet<Pos>,
+        goals: &HashSet<Pos, S>,
     ) -> Option<(i32, Vec<(Pos, i32, f64)>)> {
         if goals.is_empty() {
             return None;
@@ -1489,7 +1560,7 @@ impl Game {
         distance
     }
 
-    pub(super) fn flow(&self, uid: u32, start: Pos, moves: f64) -> BTreeMap<Pos, f64> {
+    pub(super) fn flow(&self, uid: u32, start: Pos, moves: f64) -> Vec<(Pos, f64)> {
         self.flow_past(uid, start, moves, false)
     }
 
@@ -1532,9 +1603,14 @@ impl Game {
         start: Pos,
         moves: f64,
         through_units: bool,
-    ) -> BTreeMap<Pos, f64> {
-        let mut best = BTreeMap::new();
+    ) -> Vec<(Pos, f64)> {
+        // Every caller walks the flood in map order and none asks it for one
+        // tile, so it is a list sorted by position: the same pairs in the same
+        // order the ordered map it used to be iterated, without a tree node
+        // allocated for every tile reached. The flood reaches each tile once.
+        let mut best = Vec::new();
         self.flow_past_into(uid, start, moves, through_units, &mut best);
+        best.sort_unstable_by_key(|(pos, _)| *pos);
         best
     }
 }

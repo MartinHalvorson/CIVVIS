@@ -532,6 +532,72 @@ class TheVictoryTrackerFitsItsRoom(unittest.TestCase):
         self.assertIn("victory fit checks passed", done.stdout)
 
 
+CULTURE_RANK_SCENARIOS = r"""
+__FIGURES__
+__COMPACT__
+const victoryMetric = (player, road) => player.victories[road];
+const track = {id:"culture"}, researchField = "civics";
+const seat = (id, tourists, target, civics, progress) =>
+  ({id, score:0, victories:{culture:{tourists, target, civics, civic_total:50, progress}}});
+const order = contenders => {
+__RANKED__
+  return ranked.map(player => player.id);
+};
+const eq = (actual, wanted, note) => {
+  if (JSON.stringify(actual) !== JSON.stringify(wanted))
+    throw new Error(`${note}: got ${JSON.stringify(actual)}, wanted ${JSON.stringify(wanted)}`);
+};
+// The row prints what the game prints, and the heading names what is counted.
+eq(victoryTrackerStats("culture", {tourists:34, target:87}), "34/87", "tourists over the tourists needed");
+eq(victoryTrackerStats("culture", {tourists:1234, target:5678}), "1.2k/5.7k", "long counts are compacted");
+eq(victoryTrackerStats("culture", {}), "0/1", "a seat with no figures yet");
+eq(victoryTrackerSubheading("culture"), "<span>Civics</span><span>Tourists</span>", "the heading");
+// Nearest its own bar leads, not the larger crowd.
+eq(order([seat(0, 60, 120, 9, 50), seat(1, 40, 50, 3, 80)]), [1, 0], "the ratio outranks the count");
+// One tourist against a far bar rounds to 0.0% on the meter. It still leads a
+// seat with none, whatever that seat's civics.
+eq(order([seat(0, 0, 10, 30, 0), seat(1, 1, 3000, 5, 0)]), [1, 0], "counts decide under the rounding");
+// The meter stops at a hundred; the ratio does not.
+eq(order([seat(0, 101, 100, 40, 100), seat(1, 150, 100, 2, 100)]), [1, 0], "past the bar");
+// With no tourists anywhere the civics the left meter draws keep the order.
+eq(order([seat(0, 0, 1, 4, 0), seat(1, 0, 1, 11, 0), seat(2, 0, 1, 7, 0)]), [1, 2, 0], "civics break a tie");
+// Every other path still ranks on its meter and prints what it printed.
+eq(victoryLead("science", {progress:45, tourists:9, target:1}), 45, "other paths rank on progress");
+eq(victoryTrackerStats("science", {projects:1, project_target:4, techs:30, tech_total:77}), "1/4", "launches");
+eq(victoryTrackerStats("religious", {converted:2, target:5}), "2/5", "religious");
+eq(victoryTrackerStats("diplomatic", {points:7}), "7/20", "diplomatic");
+eq(victoryTrackerStats("domination", {capitals:1, target:6}), "1/6", "domination");
+eq(victoryTrackerStats("score", {points:412}), "412", "score");
+console.log("culture rank checks passed");
+"""
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class CultureIsLedOnTouristsOverTheTouristsNeeded(unittest.TestCase):
+    """Operator, 2026-11-15: the culture path should read "tourists / required
+    tourists to win" like the game, sorted "by whoever is leading this ratio".
+    It printed a bare tourist count under "Tourism" and ranked on the meter's
+    percent, which is rounded to a tenth and stops at a hundred."""
+
+    def test_the_rows_and_their_order(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        figures = source[source.index("function victoryValue("):
+                         source.index("function victoryDescription(")]
+        compact = source[source.index("function compactStat("):]
+        compact = compact[:compact.index("\n}\n") + 3]
+        overview = source[source.index("function playerHudOverview()"):]
+        overview = overview[:overview.index("\n}\n")]
+        ranked = overview[overview.index("const ranked = [...contenders]"):]
+        ranked = ranked[:ranked.index("      });\n") + len("      });")]
+        # The tracker's own comparator is what runs below, not a copy of it.
+        self.assertIn("victoryLead(track.id, bm) - victoryLead(track.id, am)", ranked)
+        script = (CULTURE_RANK_SCENARIOS.replace("__FIGURES__", figures)
+                  .replace("__COMPACT__", compact).replace("__RANKED__", ranked))
+        done = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr.strip())
+        self.assertIn("culture rank checks passed", done.stdout)
+
+
 HUD_WINDOW_SCENARIOS = r"""
 const SPEC = false;
 __CONSTS__
@@ -1074,6 +1140,7 @@ class LaunchesBetweenDots(unittest.TestCase):
 
         block = (cut("function skyFade(", "// ---")
                  + cut("function skyLaunchPoint(", "// How much of the straight line")
+                 + cut("const SKY_WORLD_IS_A_DOT =", "\n") + "\n"
                  + cut("const SKY_HULL_SHARE =", "// The camera is parked at the destination"))
         scenarios = r'''
 const easeIO = t => t;
@@ -1156,3 +1223,361 @@ expect(far(film.end, goal) < 1e-9 && film.hull >= 20.4 && !film.leaving, "a trip
         self.assertIn('cost += place.id === "sun" ? 3 : 1;', sky)
         # A launch's own name is kept off home's name and off the Sun.
         self.assertIn("drawSkyLaunches(crews, placements, camera, radius, centerX, centerY, now, crowd);", sky)
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class LaunchesLeaveTheirSpaceport(unittest.TestCase):
+    """A launch starts at its Spaceport and flies its own path, or is not drawn.
+
+    Looking at the whole globe, one satellite launch in six came in over the
+    edge of the frame hundreds of pixels from its Spaceport, flew straight
+    across the picture and left, and its craft then appeared in orbit somewhere
+    else: the pad was round the back, and a climb seen for under a third of its
+    film was swapped for a "crossing". Zoomed in, every launch whose pad was off
+    the frame did the same. These run the planners themselves.
+    """
+
+    def setUp(self):
+        self.source = (ASSETS / "app.js").read_text(encoding="utf-8")
+
+    def cut(self, start, end):
+        begin = self.source.index(start)
+        return self.source[begin:self.source.index(end, begin)]
+
+    def fn(self, name):
+        return self.cut(f"function {name}(", "\n}\n") + "\n}\n"
+
+    def line(self, start):
+        return self.cut(start, "\n") + "\n"
+
+    def run_node(self, code):
+        done = subprocess.run([NODE, "-e", code], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr[-3000:])
+        return done.stdout
+
+    STUBS = r'''
+const MAPW = 1188, MAPH = 850;
+let boxes = [];
+function skyWidgetBoxes() { return boxes; }
+function spinRunning() { return false; }
+let worldSpinPeriodMs = 36000;
+const anim = {skySettledOrbits:new Map(), skyOrbitSlots:new Map(), skyLaunches:[]};
+function expect(condition, message) { if (!condition) throw Error(message); }
+const far = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+// Places spread evenly over the whole world, the far side included.
+function everywhere(count) {
+  const out = [];
+  for (let index = 0; index < count; index++) {
+    const height = 1 - (2 * index + 1) / count, across = Math.sqrt(1 - height * height);
+    out.push([Math.cos(index * 2.39996) * across, Math.sin(index * 2.39996) * across, height]);
+  }
+  return out;
+}
+'''
+
+    def orbiters(self):
+        """Whose orbit a launch flies to, out of app_launches.js."""
+        launches = (ASSETS / "app_launches.js").read_text(encoding="utf-8")
+        start = launches.index("const SKY_LASER_SEAT")
+        return launches[start:launches.index("// Which Spaceports sent up the stations")]
+
+    def projection(self):
+        return (self.cut("const PLANET_PROJECT_TRIG", "function planetProjectTrig(")
+                + self.fn("planetProjectTrig") + self.fn("planetProject")
+                + self.fn("hash2") + self.fn("skyOnStage"))
+
+    def test_a_satellite_starts_on_its_pad_or_comes_round_the_limb(self):
+        block = (self.STUBS + self.projection()
+                 + self.fn("skyOrbit") + self.line("const SKY_SATELLITE_ALTITUDE_SCALE")
+                 + self.fn("skyOrbitSlot") + self.fn("skySatelliteOrbit")
+                 + self.fn("skySatelliteAngle") + self.fn("skySatelliteSite")
+                 + self.fn("skyCameraIn") + self.fn("skyFlightLens") + self.fn("skySightTest")
+                 + self.line("const skyCoastLaw") + self.fn("skySatelliteClimb")
+                 + self.line("const SKY_HIDDEN_START") + self.fn("skySatellitePlan")
+                 + self.fn("skySatelliteRoute") + self.fn("skyHomeInPicture")
+                 + self.line("const SKY_WORLD_IS_A_DOT") + self.line("const SKY_MARKERS")
+                 + self.orbiters() + self.fn("skyGlobeFlight"))
+        scenarios = r'''
+function key(pos) { return pos[0] + "," + pos[1]; }
+const PLANET = {cells:new Map([["3,4", {}]])};
+let pad = [1, 0, 0];
+function skyLaunchPad() { return pad; }
+const stage = {left:0, top:0, right:MAPW, bottom:MAPH};
+// The whole globe in the picture, as the page opens; pulled back; and zoomed
+// in on one face, where most of the world's pads are out of the picture. A
+// laser station flies the same climb to an orbit of its own, half a ring out.
+for (const mission of ["satellite", "laser"])
+for (const [R, least] of [[404.5, .7], [150, .8], [900, .1]]) {
+  const CX = MAPW / 2, CY = MAPH / 2;
+  const camera = {latitude:.35, longitude:1.1, roll:0}, view = {...camera, radius:1};
+  const inSight = skySightTest(R, CX, CY);
+  const pads = everywhere(240);
+  let drawn = 0, lifted = 0, round = 0;
+  pads.forEach((place, index) => {
+    pad = place;
+    anim.skySettledOrbits.clear(); anim.skyOrbitSlots.clear();
+    const player = {id:index % 9 + 1}, now = 1000;
+    const launch = {mission, station:2, duration:3200, t0:now, endsAt:now + 3200, originPos:[3, 4]};
+    const film = skyGlobeFlight(launch, player, undefined, {satellite:[player]}, camera, R, CX, CY, stage, 36);
+    expect(launch.route.kind === (film ? "orbit" : "unseen"), "a launch to orbit is its climb or nothing: " + launch.route.kind);
+    // A station settles its own orbit and leaves its civilization's alone, or
+    // the satellite already up there would jump onto a new one.
+    const flyer = skyOrbiter(launch, player), ring = mission === "laser" ? SKY_LASER_RING : 0;
+    expect(anim.skySettledOrbits.has(flyer.id) &&
+           (mission === "satellite" || !anim.skySettledOrbits.has(player.id)), "the wrong orbit was settled");
+    // Whatever is drawn of it, the climb is the one from this pad to this orbit.
+    const climb = skySatelliteRoute(launch, flyer, ring, view, R, CX, CY);
+    const site = planetProject(pad, view, R, CX, CY);
+    expect(far(climb.pointAt(0), site) < 1e-6, "the climb does not start on the pad");
+    const orbit = skySatelliteOrbit(flyer, ring, R);
+    const craft = planetProject(skySatelliteSite(orbit, skySatelliteAngle(orbit, launch.endsAt)), view, R, CX, CY);
+    expect(far(climb.pointAt(1), craft) < 1e-3, "the climb does not end where the craft is: " + far(climb.pointAt(1), craft));
+    if (!film) return;
+    drawn++;
+    // The film opens with the rocket standing on a pad in sight, or out of sight.
+    const clock = (now - launch.t0) / launch.duration, opens = film.pointAt(clock);
+    if (inSight(site) && clock === 0) { lifted++; return; }
+    expect(!inSight(opens) || far(opens, site) < 30,
+      `pad ${index}: the film opens ${far(opens, site).toFixed(0)} px from a hidden pad, in plain sight`);
+    // And where it first shows is the limb or the edge of the frame on its own
+    // climb, never open sky, and it is in sight for longer than a blink.
+    let first = null, shown = 0;
+    for (let step = 0; step <= 800; step++) {
+      const point = film.pointAt(clock + (1 - clock) * step / 800);
+      if (!inSight(point)) continue;
+      first = first || point;
+      shown += (1 - clock) * launch.duration / 800;
+    }
+    expect(first && shown >= 200, `pad ${index}: a drawn launch in sight for ${shown.toFixed(0)} ms`);
+    const limb = Math.abs(Math.hypot(first.x - CX, first.y - CY) - R);
+    const edge = Math.min(first.x, MAPW - first.x, first.y, MAPH - first.y);
+    expect(Math.min(limb, edge) < 14 || far(first, site) < 30,
+      `pad ${index}: appears in open sky, ${limb.toFixed(0)} px off the limb and ${edge.toFixed(0)} px inside the frame`);
+    round++;
+  });
+  expect(drawn >= pads.length * least, `${mission}, radius ${R}: only ${drawn} of ${pads.length} launches are drawn`);
+  expect(lifted > 0 && (R > 500 || round > 0), `${mission}, radius ${R}: ${lifted} lift-offs and ${round} round the limb`);
+}
+'''
+        self.run_node(block + scenarios)
+
+    def test_the_mission_planner_never_flies_a_rocket_in_from_the_edge(self):
+        block = (self.STUBS + self.projection()
+                 + self.fn("skyLineSpanInBox") + self.fn("skyLaunchVisibleStretch") + self.fn("skyLaunchFilm")
+                 + self.line("const SKY_THRUST_POWER") + self.fn("skyThrustLaw")
+                 + self.line("const skyCoastLaw") + self.cut("const skyBrakeLaw", "};") + "};\n"
+                 + self.fn("skyHomeInPicture") + self.fn("skyLaunchPassesHere")
+                 + self.line("const SKY_WORLD_IS_A_DOT") + self.line("const SKY_MARKERS")
+                 + self.fn("skyArrivalRoute")
+                 + self.fn("skyPlanMission") + self.fn("skyOrbitSlot") + self.orbiters()
+                 + self.fn("skyGlobeFlight"))
+        scenarios = r'''
+function key(pos) { return pos[0] + "," + pos[1]; }
+const PLANET = {cells:new Map([["3,4", {center:[0, -1, 0]}]])};
+let pad = [0, -1, 0], goal = {x:0, y:0}, ascent = null;
+function skyLaunchPad() { return pad; }
+function skyLaunchEnd() { return goal; }
+function skyBestAscent() { return ascent; }
+function skyAscentAt(shape, progress) { return {x:progress * 100, y:0, z:1}; }
+function skyLandingApproach() { return null; }
+function skyLaunchFlyby() { return {flyby:true}; }
+function skyTransferRoute() { return {transfer:true}; }
+function skySatellitePlan() { throw Error("not a satellite"); }
+function skyDotDeparture() { throw Error("not a satellite"); }
+const stage = {left:0, top:0, right:MAPW, bottom:MAPH};
+const camera = {latitude:0, longitude:-Math.PI / 2, roll:0};
+const crews = {satellite:[], moon:[], mars:[], expedition:[]};
+function fly(radius, centerX, centerY, known = true) {
+  const launch = {mission:"moon", duration:2800, t0:0, endsAt:2800, originPos:known ? [3, 4] : null};
+  const film = skyGlobeFlight(launch, {id:1}, {id:"moon", x:goal.x, y:goal.y, r:6}, crews,
+                              camera, radius, centerX, centerY, stage, 36);
+  return {launch, film, kind:launch.route.kind};
+}
+const CX = MAPW / 2, CY = MAPH / 2;
+
+// The world fills its share of the picture, the Moon is far off the frame, and
+// no climb from this pad can be seen: nothing is drawn. It was a crossing.
+goal = {x:-20000, y:-9000}; ascent = null;
+let flown = fly(404.5, CX, CY);
+expect(flown.kind === "unseen" && flown.film === null, "an unseen launch was drawn: " + flown.kind);
+// One that can be seen is the climb from its pad.
+ascent = {from:0, law:clock => clock};
+flown = fly(404.5, CX, CY);
+expect(flown.kind === "ascent" && flown.film && !flown.film.entering, "a visible climb was not flown");
+
+// Home a marble and the Moon off the frame up and to the left: the rocket
+// leaves the marble on the Moon's bearing, whatever way east is at its pad.
+ascent = {from:0, law:clock => clock};
+flown = fly(8, CX, CY);
+expect(flown.kind === "depart", "a marble's rocket climbed east instead of leaving: " + flown.kind);
+const out = {x:flown.film.end.x - flown.film.start.x, y:flown.film.end.y - flown.film.start.y};
+const bearing = {x:goal.x - CX, y:goal.y - CY};
+const cosine = (out.x * bearing.x + out.y * bearing.y) / (Math.hypot(out.x, out.y) * Math.hypot(bearing.x, bearing.y));
+expect(far(flown.film.start, {x:CX, y:CY}) <= 8 + 1e-6, "the departure does not start at home");
+expect(cosine > .999 && flown.film.leaving, "the departure is not on the Moon's bearing: " + cosine);
+expect(flown.film.law(0) === 0 && flown.film.law(.5) < .3, "a departure starts from rest");
+// Too small to show its cities is still a marble, and a pad round the back of
+// it is behind it: the rocket comes out from behind the world.
+pad = [0, 1, 0];
+flown = fly(40, CX, CY);
+expect(flown.kind === "depart" && flown.film.pointAt(0).z < 0 && flown.film.pointAt(1).z === 0,
+  "a far-side departure was drawn across the face of the world");
+pad = [0, -1, 0];
+
+// Both ends in the picture: the whole trip, however big home is drawn.
+goal = {x:CX + 420, y:CY - 60};
+expect(fly(150, CX, CY).kind === "transfer", "a trip in the picture was not flown whole");
+expect(fly(3, CX, CY).kind === "transfer", "a trip between dots was not flown whole");
+
+// An empire whose lands were never seen has no pad to be watched leaving.
+goal = {x:-20000, y:-9000};
+expect(fly(404.5, CX, CY, false).kind === "unseen", "a rocket left a stand-in pad");
+expect(fly(40, CX, CY, false).kind === "depart", "a marble needs no pad to leave from");
+
+// Parked at another world with home far out of the picture: it goes by, as
+// before. Home back in the picture before it has: nothing is flown across it.
+goal = {x:MAPW * 4, y:CY};
+flown = fly(40, -6000, CY);
+expect(flown.kind === "crossing" && flown.film && flown.film.flyby, "the flyby went away");
+const late = {mission:"moon", duration:2800, t0:0, endsAt:2800, originPos:[3, 4], route:{kind:"crossing"}};
+expect(skyGlobeFlight(late, {id:1}, {id:"moon", x:goal.x, y:goal.y, r:6}, crews,
+                      camera, 404.5, CX, CY, stage, 36) === null, "a crossing was flown over home");
+'''
+        self.run_node(block + scenarios)
+
+    def test_a_board_shows_only_the_climb_that_is_in_its_frame(self):
+        block = (self.STUBS + self.line("const SKY_THRUST_POWER") + self.fn("skyThrustLaw")
+                 + self.fn("skyBoardFlight"))
+        scenarios = r'''
+const stage = {left:-500, right:500, top:-300, bottom:300};
+const climb = (x, y) => ({start:{x, y}, law:clock => clock,
+                          pointAt:progress => ({x:x + 40 * progress, y:y - 900 * progress})});
+// A pad above the frame climbs away from it: not drawn. It used to come up
+// through the picture from the bottom edge.
+expect(skyBoardFlight({}, climb(0, -400), stage) === null, "a launch off the board was drawn passing through");
+// A pad below the frame climbs up into it, already moving.
+const entering = skyBoardFlight({}, climb(0, 500), stage);
+expect(entering && entering.entering && entering.law(0) > .15, "a climb into the frame did not come in moving");
+// A pad in the frame is the route as planned.
+const plain = climb(0, 100);
+expect(skyBoardFlight({}, plain, stage) === plain, "a launch in the frame was changed");
+'''
+        self.run_node(block + scenarios)
+
+    def test_the_pad_is_the_spaceport_and_a_craft_keeps_its_ring(self):
+        block = (self.STUBS + self.fn("districtIconPositions") + self.fn("citySpaceportPos")
+                 + self.fn("skyLaunchOrigin") + self.fn("skyOrbitSlot"))
+        scenarios = r'''
+const RULES = {districts:{spaceport:{}, campus:{}, cosmodrome:{replaces:"spaceport"}}};
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const project = "launch_earth_satellite";
+// The city that ran the project, then any Spaceport of the empire.
+let prev = {cities:[{id:1, owner:2, queue:[{unit:"settler"}], districts:{spaceport:[9, 9]}},
+                    {id:2, owner:2, queue:[{project}], districts:{campus:[1, 1], spaceport:[5, 6]}}]};
+let next = {cities:prev.cities.map(city => ({...city, queue:[]})), map:{tiles:[]}};
+expect(same(skyLaunchOrigin(prev, next, 2, project), [5, 6]), "not the Spaceport that ran the project");
+expect(same(skyLaunchOrigin({cities:[]}, next, 2, project), [9, 9]), "not a Spaceport of the empire");
+// Through another civilization's eyes the rival's cities keep their districts
+// to themselves, but the map shows the Spaceport on its tile.
+next = {cities:[{id:2, owner:2, queue:[]}],
+        map:{tiles:[{pos:[4, 4], owner:2, district:"campus"}, {pos:[7, 2], owner:3, district:"spaceport"},
+                    {pos:[8, 3], owner:2, district:"cosmodrome"}]}};
+expect(same(skyLaunchOrigin({cities:[]}, next, 2, project), [8, 3]), "the map's own Spaceport was not found");
+expect(skyLaunchOrigin({cities:[]}, {cities:[], map:{tiles:[]}}, 2, project) === null, "a pad was made up");
+
+// Two craft up, then a civilization earlier in the roster launches: the two
+// keep their rings and the newcomer takes the next one out.
+const a = {id:0}, b = {id:1}, c = {id:2};
+expect(skyOrbitSlot([b, c], b) === 0 && skyOrbitSlot([b, c], c) === 1, "rings are not dealt in order");
+expect(skyOrbitSlot([a, b, c], b) === 0 && skyOrbitSlot([a, b, c], c) === 1, "a launch moved the craft already up");
+expect(skyOrbitSlot([a, b, c], a) === 2, "the newcomer did not take the next ring");
+expect(skyOrbitSlot([b, c], a) === -1, "a civilization with no craft was given a ring");
+'''
+        self.run_node(block + scenarios)
+
+    def test_every_laser_station_leaves_the_spaceport_that_built_it(self):
+        """A Lagrange Laser Station is the one launch a civilization repeats.
+
+        It is a count, not a row of `science_projects`, and several can finish
+        in one frame from different Spaceports. These run the queueing and the
+        choice of pad themselves, out of the script the page loads.
+        """
+        launches = (ASSETS / "app_launches.js").read_text(encoding="utf-8")
+        start = launches.index("const SKY_LASER_SEAT")
+        block = (self.STUBS + self.fn("districtIconPositions") + self.fn("citySpaceportPos")
+                 + self.fn("statePlayerAnchor")
+                 + launches[start:launches.index("// How much of one station is out of its rocket")])
+        scenarios = r'''
+const RULES = {districts:{spaceport:{}, campus:{}, cosmodrome:{replaces:"spaceport"}}};
+const SKY_LAUNCH_FLIGHTS = {laser:{project:"lagrange_laser_station", duration:3200, rocket:"orbital", station:true}};
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const laser = {project:"lagrange_laser_station"};
+const city = (id, pad, queue, production) =>
+  ({id, owner:2, queue, production, districts:{spaceport:pad}});
+// Three cities were building stations. One has gone on to something else, one
+// started a second station (its production began again), one is still at it.
+let prev = {cities:[city(1, [3, 3], [laser], 400), city(2, [5, 6], [laser], 590),
+                    city(3, [8, 1], [laser], 580), city(4, [9, 9], [{unit:"tank"}], 50)]};
+let next = {cities:[city(1, [3, 3], [laser], 460), city(2, [5, 6], [{unit:"tank"}], 20),
+                    city(3, [8, 1], [laser], 12), city(4, [9, 9], [{unit:"tank"}], 90)],
+            map:{tiles:[]}};
+expect(same(skyLaserOrigins(prev, next, 2, 2), [[5, 6], [8, 1]]),
+       "not the two Spaceports that finished: " + JSON.stringify(skyLaserOrigins(prev, next, 2, 2)));
+expect(same(skyLaserOrigins(prev, next, 2, 1), [[5, 6]]), "one station, and not from the city that finished it");
+// More stations than cities seen finishing: the one still building is the
+// likeliest of the rest, then any other Spaceport of the empire.
+expect(same(skyLaserOrigins(prev, next, 2, 4), [[5, 6], [8, 1], [3, 3], [9, 9]]),
+       "the spare pads are out of order: " + JSON.stringify(skyLaserOrigins(prev, next, 2, 4)));
+// Through another civilization's eyes no queue is shown and no districts, but
+// the map still has the Spaceport on its tile.
+const fogged = {cities:[{id:2, owner:2}],
+                map:{tiles:[{pos:[7, 2], owner:3, district:"spaceport"}, {pos:[8, 3], owner:2, district:"cosmodrome"}]}};
+expect(same(skyLaserOrigins({cities:[]}, fogged, 2, 2), [[8, 3], [8, 3]]), "the map's own Spaceport was not found");
+expect(same(skyLaserOrigins({cities:[]}, {cities:[], map:{tiles:[]}}, 2, 1), [null]), "a pad was made up");
+
+// The count is what launches. One more station is one rocket, from its pad.
+const seat = count => ({id:2, laser_stations:count});
+queueSkyLaserLaunches(prev, next, seat(1), seat(0), 1000);
+expect(anim.skyLaunches.length === 1, "one station did not queue one launch");
+let [first] = anim.skyLaunches;
+expect(first.mission === "laser" && first.station === 1 && first.playerId === 2, "the launch is not the station's");
+expect(same(first.originPos, [5, 6]) && first.t0 === 1000 && first.endsAt === 4200, "wrong pad or clock");
+// The same transition seen twice is still one launch, and a count that did
+// not move, or a server that sends none, launches nothing.
+queueSkyLaserLaunches(prev, next, seat(1), seat(0), 1500);
+queueSkyLaserLaunches(prev, next, seat(1), seat(1), 1500);
+queueSkyLaserLaunches(prev, next, {id:2}, {id:2}, 1500);
+queueSkyLaserLaunches(prev, next, seat(0), seat(1), 1500);
+expect(anim.skyLaunches.length === 1, "a launch was queued for no new station");
+// Two in one frame go up one after the other, each from its own Spaceport.
+anim.skyLaunches.length = 0;
+queueSkyLaserLaunches(prev, next, seat(3), seat(1), 2000);
+expect(same(anim.skyLaunches.map(l => [l.station, l.t0, l.originPos]),
+            [[2, 2000, [5, 6]], [3, 2000 + SKY_LASER_STAGGER, [8, 1]]]), "two stations are not a volley of two");
+// A page that fell a long way behind is not owed a rocket for every station
+// it missed: the newest few fly and the rest are simply up there.
+anim.skyLaunches.length = 0;
+queueSkyLaserLaunches(prev, next, seat(9), seat(1), 3000);
+expect(same(anim.skyLaunches.map(l => l.station), [7, 8, 9]), "the volley is not the newest stations");
+expect(SKY_LASER_VOLLEY === 3 && skyLaserStations(seat(9)) === 9 && skyLaserStations({}) === 0 &&
+       skyLaserStations(seat(1e6)) === SKY_LASER_MOST, "the count is not bounded");
+// Nobody was seen building it and no Spaceport is in sight: the empire's city.
+anim.skyLaunches.length = 0;
+queueSkyLaserLaunches({cities:[]}, {cities:[{id:7, owner:2, is_capital:true, pos:[2, 2]}], map:{tiles:[]}},
+                      seat(1), seat(0), 0);
+expect(same(anim.skyLaunches[0].originPos, [2, 2]), "the fallback is not the empire's own city");
+
+// A station's orbit is its own. No two stations share one and none is a
+// civilization's, for any seat a game can hold.
+const ids = new Set();
+for (let player = 0; player < 64; player++) {
+  ids.add(player);
+  for (let station = 1; station <= SKY_LASER_MOST; station++)
+    ids.add(skyLaserOrbiter(player, station).id);
+}
+expect(ids.size === 64 * (SKY_LASER_MOST + 1), "two craft share an orbit");
+expect(skyOrbiter({mission:"laser", station:3}, {id:5}).id === skyLaserOrbiter(5, 3).id, "a station flew to another orbit");
+const civ = {id:5};
+expect(skyOrbiter({mission:"satellite"}, civ) === civ, "a satellite did not fly to its civilization's orbit");
+'''
+        self.run_node(block + scenarios)

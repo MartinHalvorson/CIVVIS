@@ -19,6 +19,10 @@ use crate::name::Name;
 use crate::rules::Yields;
 use crate::Pos;
 
+/// District adjacency one settlement scan has already priced, by plot and
+/// district. See [`Game::settlement_adjacency_summary_from_positions`].
+pub(crate) type PlotAdjacencies = crate::fast_map::FastMap<(Pos, Name), Yields>;
+
 /// Planning assumptions layered onto the live adjacency rules.  `None`
 /// everywhere reproduces live yields exactly.
 #[derive(Clone, Copy, Default)]
@@ -174,11 +178,18 @@ impl Game {
     /// map.  A family whose best plot is negative (a hemmed-in Seowon)
     /// contributes nothing rather than a penalty: the planner simply would
     /// not build it there.
+    ///
+    /// `plots` carries what earlier centers of the same scan already priced.
+    /// The center reaches a plot's adjacency only through a neighbour that is
+    /// the center itself (the `city_center` key, and the `district` key's
+    /// count); a plot with no such neighbour pays the same for every center,
+    /// so it is priced once per scan. Pass an empty table for a single site.
     pub(crate) fn settlement_adjacency_summary_from_positions(
         &self,
         pid: usize,
         center: Pos,
         positions: &[Pos],
+        plots: &mut PlotAdjacencies,
     ) -> Yields {
         let assume = PlanAssumption {
             city_center: Some(center),
@@ -203,6 +214,10 @@ impl Game {
             }
             let district_count =
                 self.settlement_neighbor_district_count(pos, &neighbor_tiles, &assume);
+            let beside_center = neighbor_tiles
+                .iter()
+                .flatten()
+                .any(|tile| assume.treats_as_city_center(tile.pos));
             for (district_index, (district, family)) in districts.iter().copied().enumerate() {
                 if !self.plot_fits_placement_with_neighbors(
                     pid,
@@ -213,16 +228,22 @@ impl Game {
                 ) {
                     continue;
                 }
-                let yields = self
-                    .district_adjacency_assuming_with_family_and_neighbors_and_district_count(
+                let price = || {
+                    self.district_adjacency_with_neighbors(
                         district,
                         pos,
                         Some(&assume),
                         None,
                         family,
                         &neighbor_tiles,
-                        district_count,
-                    );
+                        Some(district_count),
+                    )
+                };
+                let yields = if beside_center {
+                    price()
+                } else {
+                    *plots.entry((pos, district)).or_insert_with(price)
+                };
                 if yields.total() > bests[district_index].0 {
                     bests[district_index] = (yields.total(), yields);
                 }
@@ -435,48 +456,79 @@ mod tests {
         }
     }
 
-    /// Every adjacency key any district ships must be one the engine's
-    /// `count` recognises — a typo'd key would otherwise score zero forever
-    /// and no live path would ever notice.
+    /// Every adjacency key any district ships must be one the engine counts —
+    /// a typo'd key would otherwise score zero forever and no live path would
+    /// ever notice — and the table the count reads must say the same of it as
+    /// the key's own text.
     #[test]
     fn every_shipped_adjacency_key_is_recognised() {
         let (game, _, _) = flattened_game();
-        let known = [
-            "self",
-            "river",
-            "mountain",
-            "forest",
-            "woods",
-            "rainforest",
-            "jungle",
-            "natural_wonder",
-            "reef",
-            "great_barrier_reef",
-            "geothermal_fissure",
-            "pamukkale",
-            "district",
-            "city_center",
-            "wonder",
-            "coast_resource",
-            "sea_resource",
-            "strategic_resource",
-            "luxury_resource",
-            "resource",
-            "mine",
-            "quarry",
-            "lumber_mill",
-            "plantation",
-            "farm",
-        ];
         for (district, spec) in &game.rules.districts {
-            for key in spec.adjacency.keys() {
-                assert!(
-                    known.contains(&key.as_str())
-                        || game.rules.districts.contains_key(key.as_str()),
+            let table = &game.rules.district_adjacency_counts[district.as_str()];
+            assert_eq!(table.len(), spec.adjacency.len(), "{district}");
+            for (key, kind) in spec.adjacency.keys().zip(table) {
+                let read = game.rules.adjacency_count_of(key);
+                assert_ne!(
+                    read,
+                    crate::rules::AdjacencyCount::Nothing,
                     "{district} adjacency key {key} is neither a counted kind nor a district"
                 );
+                assert_eq!(*kind, read, "{district} adjacency key {key}");
             }
         }
+    }
+
+    /// A settlement scan shares one `PlotAdjacencies` table across all the
+    /// centers it prices. Every center must read exactly what it reads with
+    /// a table of its own, so the table may only ever answer for plots that
+    /// no center reaches. Centers ring a real capital with a district beside
+    /// it, so the `city_center`, `district` and family keys all count.
+    #[test]
+    fn a_shared_plot_table_prices_every_center_as_its_own_table_does() {
+        let (mut game, _, capital) = flattened_game();
+        let campus = game
+            .wdisk(capital, 2)
+            .into_iter()
+            .find(|position| {
+                game.wdist(capital, *position) == 2 && game.map.get(*position).is_some()
+            })
+            .expect("a plot two from the capital");
+        game.map.tiles.get_mut(&campus).unwrap().district = Some(crate::name!("campus"));
+        let bits = |yields: Yields| {
+            [
+                yields.food,
+                yields.production,
+                yields.gold,
+                yields.science,
+                yields.culture,
+                yields.faith,
+            ]
+            .map(f64::to_bits)
+        };
+        let mut shared = PlotAdjacencies::default();
+        let mut paying = 0;
+        for center in game.wdisk(capital, 6) {
+            let positions = game.wdisk(center, 2);
+            let alone = game.settlement_adjacency_summary_from_positions(
+                0,
+                center,
+                &positions,
+                &mut PlotAdjacencies::default(),
+            );
+            let sharing = game.settlement_adjacency_summary_from_positions(
+                0,
+                center,
+                &positions,
+                &mut shared,
+            );
+            assert_eq!(bits(sharing), bits(alone), "center {center:?}");
+            paying += usize::from(alone.total() > 0.0);
+        }
+        assert!(
+            paying > 0,
+            "no center paid any adjacency; the test reads nothing"
+        );
+        assert!(!shared.is_empty(), "the scan shared no plot");
     }
 
     /// The calculator covers every buildable district for the seat's civ and

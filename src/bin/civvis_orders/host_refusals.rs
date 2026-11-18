@@ -79,6 +79,10 @@ pub(super) struct HostMoveRefusals {
     /// so only a refused queue or a fresh observed Wall handoff can replace it.
     pub(super) same_turn_production_orders: std::collections::BTreeMap<i64, HostProductionLease>,
     pub(super) same_turn: Option<u32>,
+    /// Fog plots closed this turn because the host refused a move onto them
+    /// as a war starter (`closed_ground::Ledger::closed_on`), for the reply's
+    /// note only; the ledger itself closes them on the board.
+    pub(super) closed_fog_plots: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -397,7 +401,15 @@ impl HostMoveRefusals {
                     row.kind == "order_failed"
                         && row.subject == Some(unit)
                         && row.pos == Some((attempt.turn as i32, -1))
-                        && row.verb.as_deref() == Some("unit:MOVE_TO host_noop_no_path")
+                        && matches!(
+                            row.verb.as_deref(),
+                            // The host walked nowhere, or had no path to
+                            // give when the mod asked before sending.
+                            Some(
+                                "unit:MOVE_TO host_noop_no_path"
+                                    | "unit:MOVE_TO host_refused_no_path"
+                            )
+                        )
                 })
             {
                 self.local_retry.insert(unit, (state.turn, attempt.from));

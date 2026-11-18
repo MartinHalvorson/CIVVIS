@@ -52,8 +52,14 @@ mod builder_diagnostics;
 #[path = "civvis_orders/builder_operation_refusals.rs"]
 mod builder_operation_refusals;
 
+#[path = "civvis_orders/locked_art.rs"]
+mod locked_art;
+#[path = "civvis_orders/spent_traders.rs"]
+mod spent_traders;
 #[path = "civvis_orders/trader_origin_coverage.rs"]
 mod trader_origin_coverage;
+#[path = "civvis_orders/walk_steps.rs"]
+mod walk_steps;
 
 #[path = "civvis_orders/air_assault.rs"]
 mod air_assault;
@@ -63,6 +69,8 @@ mod air_assault_continuation;
 mod campus_above_sea;
 #[path = "civvis_orders/citizen_growth.rs"]
 mod citizen_growth;
+#[path = "civvis_orders/closed_ground.rs"]
+mod closed_ground;
 #[path = "civvis_orders/culture_ski_resorts.rs"]
 mod culture_ski_resorts;
 #[path = "civvis_orders/diagnostics.rs"]
@@ -5193,6 +5201,8 @@ fn decide(
         ));
     }
 
+    // See `walk_steps`: a one-order walk crosses with the steps it took.
+    let mut walk_reader = walk_steps::Reader::default();
     for (seat, action) in planned_game.log.since(ai_actions_begin) {
         if *seat != 0 {
             continue;
@@ -5203,6 +5213,17 @@ fn decide(
         ) {
             policy_changed = true;
             continue;
+        }
+        if let Action::MoveTo { unit, .. } | Action::Move { unit, .. } = action {
+            let unit = *unit;
+            let steps =
+                walk_reader.steps_before(&planned_game.unit_move_trails, planned_game.turn, action);
+            // Each step is the order a hand-stepped walk would have sent; the
+            // fold below sends the host the last hex, as before.
+            orders.extend(steps.into_iter().filter_map(|to| {
+                translate(&Action::Move { unit, to }, mirror_state, state)
+                    .filter(|order| order.verb.as_deref() == Some("MOVE_TO"))
+            }));
         }
         let order = translate(action, mirror_state, state);
         match order {
@@ -5409,6 +5430,21 @@ fn decide(
     // never seen.
     if ai.unseen_capital_is_unseen() {
         exploration_targets.retain(|seat, _| passage_value(*seat) >= BORDER_BUY_CEILING_MIN as f64);
+    }
+    // `passage-waits-past-the-opening`: this lane buys no passage before
+    // Online turn 80 either, nor after it from a rival over 1.5x our military;
+    // one journal line per target on the turns the lane would ask. See
+    // `AdvancedAi::passage_hold`.
+    if ai.passage_waits_past_the_opening_enabled() {
+        let asking = state.turn % BORDER_BUY_CADENCE == BORDER_BUY_PHASE;
+        exploration_targets.retain(|seat, priority| {
+            !ai.passage_withheld_on_the_bridge(
+                &mirror_state.game,
+                0,
+                *seat,
+                asking || priority.explorers >= SIEGE_PASSAGE_PRIORITY,
+            )
+        });
     }
     match append_border_buy_order(
         &mirror_state.game.sealed_border_owners,
@@ -5994,9 +6030,15 @@ fn decide(
         }
     }
 
+    // See `locked_art`: a work inside its ten-turn lock is not proposed.
+    let mut art_locked = 0;
     for (source, work, destination, slot) in
         ai.native_art_museum_swaps(&mirror_state.game, 0, state)
     {
+        if locked_art::locked(state, source, &work, destination, slot) {
+            art_locked += 1;
+            continue;
+        }
         if let Ok(destination) = i32::try_from(destination) {
             orders.push(Order {
                 kind: "museum_swap",
@@ -6005,6 +6047,10 @@ fn decide(
                 pos: Some((destination, slot)),
             });
         }
+    }
+
+    if art_locked > 0 {
+        note_bits.push(format!("museum_swaps_wait_for_the_art_lock={art_locked}"));
     }
 
     let relocated_traders = trader_origin_coverage::apply(
@@ -6017,6 +6063,13 @@ fn decide(
     if relocated_traders > 0 {
         note_bits.push(format!(
             "culture_trade_origin_transfers={relocated_traders}"
+        ));
+    }
+    // After the origin choice, so a transfer the Trader can still take stands.
+    let held_trader_routes = spent_traders::hold_routes(&mut orders, state);
+    if held_trader_routes > 0 {
+        note_bits.push(format!(
+            "trader_routes_wait_for_movement={held_trader_routes}"
         ));
     }
 
@@ -6158,6 +6211,12 @@ fn decide(
     host_move_refusals.record(&orders, state, &first_unknown_steps);
     if !host_move_refusals.dead.is_empty() {
         note_bits.push(format!("host_dead_plots={}", host_move_refusals.dead.len()));
+    }
+    if host_move_refusals.closed_fog_plots > 0 {
+        note_bits.push(format!(
+            "host_closed_fog_plots={}",
+            host_move_refusals.closed_fog_plots
+        ));
     }
     let (governor_safe, deferred_governor_followups) = defer_governor_followups(orders);
     orders = governor_safe;
@@ -7906,6 +7965,9 @@ const EVIDENCE_KINDS: &[&str] = &[
     // on the ledger is a named refusal, not a position diff.
     "move_noop",
     "move_fallback",
+    // A unit order the mod refused when it applied it, with its unit and the
+    // reason (#5339). Read for `move_no_path`: see `move_refusal_reason`.
+    "order_refused",
     // A policy change can be accepted by the host's queue but deferred when
     // another policy transaction is still in flight on the same turn. This
     // is the host's attribution for an otherwise indistinguishable missing
@@ -8440,6 +8502,22 @@ fn move_refusal_reason(evidence: &[serde_json::Value], turn: u32, unit: i64) -> 
             .filter(|w| !w.is_empty())
             .unwrap_or("unknown");
         return Some(format!("host_noop_{why}"));
+    }
+    // The mod asked the host for the path before sending the walk and the
+    // host had none (`order_refused`, `why: move_no_path`, since #5339 and
+    // #5345 only for a unit that is not on the plot and has movement). No
+    // request was made, so no `move_noop` follows; without this the verdict
+    // was the bare `did_not_move`, which nothing retries. Live
+    // civvis-20261115T120431Z: a War-Cart sent through a held pass got the
+    // same whole walk, and the same refusal, on four turns running.
+    if evidence.iter().any(|event| {
+        event.get("kind").and_then(|k| k.as_str()) == Some("order_refused")
+            && event.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(turn))
+            && event.get("unit").and_then(|u| u.as_i64()) == Some(unit)
+            && event.get("verb").and_then(|v| v.as_str()) == Some("MOVE_TO")
+            && event.get("why").and_then(|w| w.as_str()) == Some("move_no_path")
+    }) {
+        return Some("host_refused_no_path".to_string());
     }
     let event = of_kind("move_refused")?;
     let named = |key: &str| event.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
@@ -9585,6 +9663,8 @@ fn main() {
     let mut spy_losses = SpyLossLedger::default();
     // `luxury-asks-pay-in-strategics-2`: partners our barter could not reach.
     let mut barter_shorts = BarterShortLedger::default();
+    // Fog the host refused a move onto as a war starter. See `closed_ground`.
+    let mut closed_ground = closed_ground::Ledger::default();
     let mut explain_cursor: u64 = 0;
     // What left for the host on each frame, until the next turn's frame answers
     // for it. See "order postconditions" above.
@@ -9619,6 +9699,8 @@ fn main() {
                 // frontier probe. Read it before rebuilding the mirror so a
                 // transient failure cannot be mistaken for dead terrain.
                 host_move_refusals.observe(&state, &verdicts);
+                closed_ground.refresh(&events);
+                host_move_refusals.closed_fog_plots = closed_ground.closed_on(state.turn);
                 // ★★★★★ FRESH BOARD, PERSISTENT AGENT — the one combination that works.
                 //
                 // Three of the four quadrants were measured: fresh board + fresh agent
@@ -9733,6 +9815,7 @@ fn main() {
                     host_city_strikes.apply(&mut board, state.turn);
                     host_air_strikes.apply(&mut board, state.turn);
                     host_move_refusals.apply(&mut board);
+                    closed_ground.apply(&mut board, state.turn);
                     let reply = decide(
                         &mut board,
                         &mut ai,
@@ -9769,6 +9852,7 @@ fn main() {
                             host_city_strikes.apply(&mut fresh, state.turn);
                             host_air_strikes.apply(&mut fresh, state.turn);
                             host_move_refusals.apply(&mut fresh);
+                            closed_ground.apply(&mut fresh, state.turn);
                             let reply = decide(
                                 &mut fresh,
                                 &mut ai,
@@ -9797,6 +9881,7 @@ fn main() {
                             host_city_strikes.apply(existing, state.turn);
                             host_air_strikes.apply(existing, state.turn);
                             host_move_refusals.apply(existing);
+                            closed_ground.apply(existing, state.turn);
                             // `--fresh-ai` isolates the two halves of persistence: keep the
                             // mirror, throw away the agent. If orders come back, the empty
                             // turns are the AGENT's carried state; if they stay empty, they

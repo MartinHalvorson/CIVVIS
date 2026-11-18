@@ -147,13 +147,14 @@ impl BasicAi {
     /// envelopes change and hands the same one back on a hit, so pointer
     /// identity says "the same table"; and the entry holds that `Arc`, so the
     /// allocation cannot be freed and reused underneath the comparison while
-    /// the cache is alive. The union is the identical sorted set
-    /// `safe_healing_step` used to rebuild — every recovering unit of one
-    /// seat-turn shares one board and therefore one union.
+    /// the cache is alive. The union is the same set `safe_healing_step` used
+    /// to rebuild — every recovering unit of one seat-turn shares one board
+    /// and therefore one union. It is only asked whether it holds a tile, so
+    /// it is hashed rather than sorted.
     pub(super) fn covered_tiles(
         &self,
         envelopes: &std::sync::Arc<AttackEnvelopes>,
-    ) -> std::sync::Arc<Vec<Pos>> {
+    ) -> std::sync::Arc<crate::fast_map::FastSet<Pos>> {
         let mut slot = self
             .covered_tiles_cache
             .lock()
@@ -163,14 +164,10 @@ impl BasicAi {
                 return std::sync::Arc::clone(covered);
             }
         }
-        let mut tiles: Vec<Pos> =
-            Vec::with_capacity(envelopes.iter().map(|(_, reach)| reach.len()).sum());
+        let mut tiles = crate::fast_map::FastSet::<Pos>::default();
+        tiles.reserve(envelopes.iter().map(|(_, reach)| reach.len()).sum());
         for (_, reach) in envelopes.iter() {
-            tiles.extend_from_slice(reach.as_slice());
-        }
-        if tiles.windows(2).any(|pair| pair[0] >= pair[1]) {
-            tiles.sort_unstable();
-            tiles.dedup();
+            tiles.extend(reach.iter().copied());
         }
         let covered = std::sync::Arc::new(tiles);
         *slot = Some((
@@ -229,14 +226,21 @@ impl BasicAi {
 
         let covered = self.covered_tiles(envelopes);
         let strike_sources = Self::district_strike_sources(g, pid);
-        let struck = |position: Pos| {
-            strike_sources.iter().any(|source| {
-                g.wdist(*source, position) <= 2 && g.line_of_sight_from(*source, position)
-            })
-        };
-        let mut cities = HashSet::new();
-        let mut friendly_tiles = HashSet::new();
-        let mut neutral_tiles = HashSet::new();
+        // Every tile a district can strike, gathered from each source's own
+        // two-tile disk: asking every source about every tile of the map was
+        // a globe distance per pair, most of what building these targets cost.
+        let mut struck_tiles = crate::fast_map::FastSet::<Pos>::default();
+        for source in &strike_sources {
+            g.map.for_each_disk(*source, 2, |position| {
+                if g.wdist(*source, position) <= 2 && g.line_of_sight_from(*source, position) {
+                    struck_tiles.insert(position);
+                }
+            });
+        }
+        let struck = |position: Pos| struck_tiles.contains(&position);
+        let mut cities = crate::fast_map::FastSet::default();
+        let mut friendly_tiles = crate::fast_map::FastSet::default();
+        let mut neutral_tiles = crate::fast_map::FastSet::default();
         for position in g.map.tiles.keys().copied() {
             let Some(tile) = g.map.get(position) else {
                 continue;
@@ -251,7 +255,7 @@ impl BasicAi {
             }
             let city_here = g.city_at(position);
             let garrisoned = city_here.is_some() || g.defending_district_at(position).is_some();
-            if !garrisoned && (covered.binary_search(&position).is_ok() || struck(position)) {
+            if !garrisoned && (covered.contains(&position) || struck(position)) {
                 continue;
             }
             let city = city_here.is_some_and(|city| {

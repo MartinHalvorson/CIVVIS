@@ -60,6 +60,7 @@ to be movable.
 | `beta/shim.js` | Intercepts `fetch` before it reaches the network. Also owns the three things that genuinely became the page's job: the turn clock, the selected between-game finale countdown, and saved games in IndexedDB. |
 | `beta/_worker.js` | The whole site's routing: the two lanes, the optional gates on `/` and `/test`, and the response headers. |
 | `beta/landing.html` | `civvis.ai/home` (and `/test/home` from head's revision) — the landing page: project links and the two-card game menu, Watch CIVVIS and Play CIVVIS. Both are settings-carrying links into the simulator, and either card opens the world picker in place — worlds, world sizes, victory lanes, seats — whose cards are such links too. |
+| `beta/home_rankings.py` | The home page's rankings column: the Civ AI Agents by published Elo (`data/strategy_elo.json`, handles from `strategies::ROSTER`) and the head of `GENE_HEURISTIC_RANKING.md`. `publish.sh` runs it against the lane's own revision and writes the result into the landing page's `rankings-data` slot, so nothing is committed as a copy; a page whose slot is still `null` hides the column. `home_rankings_test.py` holds the parse and the slot. |
 | `beta/download.html` | `civvis.ai/download` (and `/test/download`). Links `releases/latest/download/<asset>`, so it never needs republishing when a release is cut. |
 | `.github/workflows/release.yml` | Builds those assets for Windows, macOS (both architectures) and Linux on a `v*` tag. |
 | `.github/workflows/to-test-auto-30.yml` | Builds both lanes, checks them, and deploys — half-hourly behind the gate, and on demand. Without the Cloudflare secrets it degrades to a dry run, so the schedule is safe before the account exists. |
@@ -89,9 +90,10 @@ the Tiny Tennis Ball planet, its heat scattered rather than banded by latitude,
 with an Ancient start, Online game speed, and every victory condition enabled.
 It is the world the desktop launchers open too, and the one that asks nothing
 of somebody who has just arrived. `stock_opening_params` in `src/server.rs`
-describes it. The site opens at Lightning watch pace, where the desktop builds
-open at Blitz; a pace the visitor picked by hand is remembered and wins, and a
-Tactics battle still opens at Blitz. The lobby is right there for anyone who
+describes it. The site and every server open at Max Speed "Max" (unpaced; a
+server opened at 2 turns/s until 2026-11-15); a cap the visitor picked by hand
+(5, 2, 1, 0.5, 0.25 or 0.1 turns/s) is remembered and wins, and a Tactics
+battle still opens at 2 turns/s. The lobby is right there for anyone who
 wants to play a seat instead.
 
 The lower-left build marker names the pinned revision and its commit time, then

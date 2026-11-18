@@ -1362,7 +1362,7 @@ fn the_pantheon_charges_exactly_what_it_asked_for() {
     game.game_speed = crate::setup::GameSpeed::Online;
     game.players[0].pantheon = None;
     game.players[0].faith = 13.0;
-    let belief = game.rules.beliefs.pantheon.keys().next().unwrap().clone();
+    let belief = *game.rules.beliefs.pantheon.keys().next().unwrap();
     assert!(game.do_choose_pantheon(0, &belief).is_ok());
     assert_eq!(
         game.players[0].faith, 0.5,
@@ -1374,14 +1374,7 @@ fn the_pantheon_charges_exactly_what_it_asked_for() {
     standard.game_speed = crate::setup::GameSpeed::Standard;
     standard.players[0].pantheon = None;
     standard.players[0].faith = 30.0;
-    let belief = standard
-        .rules
-        .beliefs
-        .pantheon
-        .keys()
-        .next()
-        .unwrap()
-        .clone();
+    let belief = *standard.rules.beliefs.pantheon.keys().next().unwrap();
     assert!(standard.do_choose_pantheon(0, &belief).is_ok());
     assert_eq!(standard.players[0].faith, 5.0);
 }
@@ -1490,7 +1483,7 @@ fn the_pantheon_price_follows_the_game_speed_like_every_other_cost() {
     // The gate and the action must agree, or one of them is decorative.
     game.players[0].pantheon = None;
     game.players[0].faith = 13.0;
-    let belief = game.rules.beliefs.pantheon.keys().next().unwrap().clone();
+    let belief = *game.rules.beliefs.pantheon.keys().next().unwrap();
     assert!(
         game.legal_actions(0)
             .iter()

@@ -511,6 +511,302 @@ class AiPhaseStallTest(RelayCadenceTest):
         self.assertGreater(elapsed, 420.0)
 
 
+#: The record the live seat wrote at 2026-11-15 07:27:34Z (civvis-20261115T071444Z
+#: turn 159) and the two session rows before it, fields as relayed.
+T159_UNANSWERED = {"kind": "deal_session", "phase": "unanswered", "queued": False,
+                   "sent": True, "target": 4, "turn": 159, "unanswered": 1,
+                   "why": "session_closed"}
+T159_STALL = {"kind": "ai_phase_stall", "turn": 159, "waited": 30, "core_busy": False,
+              "processing": False, "queued": False, "active_players": [4],
+              "open_sessions": [], "visible": [], "held_locks": [], "lock_overflow": 0}
+
+
+class HungRivalSessionsTest(RelayCadenceTest):
+    """A stall report naming the rival of a dead deal session is not waited
+    out; every other report keeps the caller's window."""
+
+    def _tracker(self, *events):
+        tracker = watch.HungRivalSessions()
+        for event in events:
+            tracker.note(event)
+        return tracker
+
+    def test_the_live_hang_of_turn_159_is_recognised(self) -> None:
+        tracker = self._tracker(
+            {"kind": "deal_session", "action": "EQUALIZE", "phase": "opening",
+             "target": 4, "turn": 159},
+            {"kind": "deal_session", "action": "EQUALIZE", "hold": 30, "phase": "asked",
+             "sent": True, "session": 4, "target": 4, "turn": 159},
+            T159_UNANSWERED)
+        self.assertEqual(tracker.hung_after(T159_STALL), "unanswered/session_closed")
+        self.assertEqual(tracker.window(T159_STALL), watch.AI_STALL_DEAD_SESSION_S)
+
+    def test_a_refusal_whose_counter_never_came_is_recognised(self) -> None:
+        tracker = self._tracker(
+            {"kind": "deal_session", "phase": "counter_wait", "session": 4,
+             "target": 4, "turn": 51, "hold": 4},
+            {"kind": "deal_session", "phase": "closed", "target": 4, "turn": 51,
+             "why": "counter_not_sent"})
+        stall = dict(T159_STALL, turn=51)
+        self.assertEqual(tracker.hung_after(stall), "closed/counter_not_sent")
+
+    def test_a_declined_refusal_that_still_hangs_is_recognised(self) -> None:
+        tracker = self._tracker(
+            {"kind": "deal_session", "phase": "refusing", "session": 4,
+             "target": 4, "turn": 51, "screen": "DiplomacyDealView"},
+            {"kind": "deal_session", "phase": "closed", "target": 4, "turn": 51,
+             "why": "rejected_working_deal", "closer": "game"})
+        stall = dict(T159_STALL, turn=51)
+        self.assertEqual(tracker.hung_after(stall), "closed/rejected_working_deal")
+        self.assertEqual(tracker.window(stall), watch.AI_STALL_DEAD_SESSION_S)
+
+    def test_every_other_report_keeps_the_callers_window(self) -> None:
+        dead = self._tracker(T159_UNANSWERED)
+        for name, tracker, stall in (
+            ("no session this turn", self._tracker(), T159_STALL),
+            ("a session that closed answered",
+             self._tracker(dict(T159_UNANSWERED, phase="closed", why="answered")),
+             T159_STALL),
+            ("a counter that was answered",
+             self._tracker(dict(T159_UNANSWERED, phase="closed", why="counter_answered")),
+             T159_STALL),
+            ("another rival's turn", dead, dict(T159_STALL, active_players=[2])),
+            ("two active players", dead, dict(T159_STALL, active_players=[4, 2])),
+            ("our own turn", dead, dict(T159_STALL, active_players=[0])),
+            ("a busy core", dead, dict(T159_STALL, core_busy=True)),
+            ("no core reading", dead, {k: v for k, v in T159_STALL.items()
+                                       if k != "core_busy"}),
+            ("the dead session was a turn earlier", dead, dict(T159_STALL, turn=160)),
+            ("no active list", dead, dict(T159_STALL, active_players=None)),
+            ("a boolean player", dead, dict(T159_STALL, active_players=[True])),
+        ):
+            with self.subTest(name):
+                self.assertIsNone(tracker.hung_after(stall))
+                self.assertIsNone(tracker.window(stall))
+
+    def test_a_new_turn_forgets_the_last_turns_sessions(self) -> None:
+        tracker = self._tracker(
+            T159_UNANSWERED,
+            {"kind": "deal_session", "phase": "closed", "target": 2, "turn": 160,
+             "why": "answered"})
+        self.assertIsNone(tracker.hung_after(dict(T159_STALL, turn=160)))
+        self.assertIsNone(tracker.hung_after(T159_STALL))
+
+    def test_rows_that_are_not_sessions_or_carry_no_rival_are_ignored(self) -> None:
+        tracker = self._tracker(
+            {"kind": "deal_active_hold", "phase": "holding", "target": 4, "turn": 159},
+            {"kind": "deal_session", "phase": "unanswered", "turn": 159},
+            {"kind": "deal_session", "phase": "unanswered", "target": "4", "turn": 159},
+            "not an event")
+        self.assertIsNone(tracker.hung_after(T159_STALL))
+
+    def _tail(self, events, later=None):
+        class Tail:
+            polls = 0
+
+            def poll(self):
+                Tail.polls += 1
+                if Tail.polls == 2:
+                    return list(events)
+                if later is not None and Tail.polls == later[0]:
+                    return list(later[1])
+                return []
+
+        return Tail()
+
+    def test_the_hang_behind_a_dead_session_ends_the_watch_in_seconds(self) -> None:
+        tracker = watch.HungRivalSessions()
+        tail = self._tail([T159_UNANSWERED, {"kind": "end_turn_wait", "turn": 159},
+                           T159_STALL])
+        now = {"t": 0.0}
+        with patch.object(watch.time, "monotonic", lambda: now["t"]), \
+             patch.object(watch.time, "sleep",
+                          lambda s: now.__setitem__("t", now["t"] + s)), \
+             patch.object(watch.env, "game_pids", lambda: [1]):
+            reason = watch.follow(tail, on_event=tracker.note, timeout_s=3600.0,
+                                  poll_s=0.25, stall_s=420.0, ai_stall_s=60.0,
+                                  ai_stall_window=tracker.window)
+        self.assertTrue(reason.startswith(watch.AI_PHASE_STALL_REASON), reason)
+        self.assertIn("turn 159 had not advanced 5s after", reason)
+        self.assertGreater(now["t"], watch.AI_STALL_DEAD_SESSION_S)
+        self.assertLess(now["t"], watch.AI_STALL_DEAD_SESSION_S + 1.0)
+
+    def test_a_report_without_a_dead_session_waits_the_callers_window(self) -> None:
+        tracker = watch.HungRivalSessions()
+        reason, elapsed, _ = self._run(
+            self._tail([dict(T159_UNANSWERED, phase="closed", why="answered"),
+                        T159_STALL]),
+            timeout_s=3600.0, poll_s=0.25, stall_s=420.0, ai_stall_s=60.0,
+            ai_stall_window=tracker.window)
+        self.assertTrue(reason.startswith(watch.AI_PHASE_STALL_REASON), reason)
+        self.assertIn("had not advanced 60s after", reason)
+        self.assertGreater(elapsed, 60.0)
+        self.assertLess(elapsed, 61.0)
+
+    def test_a_record_inside_the_short_window_clears_the_report(self) -> None:
+        tracker = watch.HungRivalSessions()
+        now = {"t": 0.0}
+        # Poll 2 is the stall; poll 10 (2 s later at 0.25 s a pass) is the
+        # rival's turn going on after all.
+        tail = self._tail([T159_UNANSWERED, T159_STALL],
+                          later=(10, [{"kind": "state", "turn": 160}]))
+        with patch.object(watch.time, "monotonic", lambda: now["t"]), \
+             patch.object(watch.time, "sleep",
+                          lambda s: now.__setitem__("t", now["t"] + s)), \
+             patch.object(watch.env, "game_pids", lambda: [1]):
+            reason = watch.follow(tail, on_event=tracker.note, timeout_s=3600.0,
+                                  poll_s=0.25, stall_s=420.0, ai_stall_s=60.0,
+                                  ai_stall_window=tracker.window)
+        self.assertEqual(reason, "stalled: no event for 420s")
+        self.assertGreater(now["t"], 420.0)
+
+    def test_the_records_of_a_hung_game_do_not_clear_the_report(self) -> None:
+        """Live civvis-20261115T071444Z-cont1, turn 175: the flush record and
+        two HUD wakes arrived 150 s after the report and the old rule (any
+        later event clears it) then waited on a hang for good."""
+        stall = dict(T159_STALL, turn=175, active_players=[1])
+        after = [{"kind": "ai_phase_stall_flush", "turn": 175},
+                 {"kind": "controller_wake", "active": False, "frame": 1, "pending": 0,
+                  "source": "TopPanel", "turn": 175},
+                 {"kind": "ui_heartbeat", "frames": 600, "screen": "TopPanel"},
+                 {"kind": "combat", "turn": 175, "our_turn": False},
+                 {"kind": "order_verified", "turn": 174, "checked_on": 175}]
+        # The report is poll 2; the later records land 10 s into a 60 s window.
+        reason, elapsed, _ = self._run(
+            self._tail([{"kind": "state", "turn": 175}, stall], later=(12, after)),
+            timeout_s=3600.0, poll_s=1.0, stall_s=420.0, ai_stall_s=60.0)
+        self.assertTrue(reason.startswith(watch.AI_PHASE_STALL_REASON), reason)
+        self.assertIn("turn 175 had not advanced 60s after", reason)
+        self.assertGreater(elapsed, 60.0)
+        self.assertLess(elapsed, 63.0)
+
+    def test_only_a_later_turn_clears_the_report(self) -> None:
+        stall = dict(T159_STALL, turn=175, active_players=[1])
+        for name, later, cleared in (
+            ("the next turn's board", {"kind": "state", "turn": 176}, True),
+            ("the next turn's first small record", {"kind": "moves_restored", "turn": 176}, True),
+            ("the same turn again", {"kind": "state", "turn": 175}, False),
+            ("a record with no turn", {"kind": "autoclose", "screen": "InGamePopup"}, False),
+            ("a boolean turn", {"kind": "turn", "turn": True}, False),
+        ):
+            with self.subTest(name):
+                reason, elapsed, _ = self._run(
+                    self._tail([{"kind": "state", "turn": 175}, stall], later=(12, [later])),
+                    timeout_s=3600.0, poll_s=1.0, stall_s=420.0, ai_stall_s=60.0)
+                if cleared:
+                    self.assertEqual(reason, "stalled: no event for 420s")
+                else:
+                    self.assertTrue(reason.startswith(watch.AI_PHASE_STALL_REASON), reason)
+                    self.assertLess(elapsed, 63.0)
+
+    def test_a_locked_console_or_an_operator_pause_holds_the_window(self) -> None:
+        """`pause_when` credits its time to the report as to every other clock."""
+        stall = dict(T159_STALL, turn=175, active_players=[1])
+        now = {"t": 0.0}
+        tail = self._tail([{"kind": "state", "turn": 175}, stall])
+        with patch.object(watch.time, "monotonic", lambda: now["t"]), \
+             patch.object(watch.time, "sleep",
+                          lambda s: now.__setitem__("t", now["t"] + s)), \
+             patch.object(watch.env, "game_pids", lambda: [1]):
+            reason = watch.follow(tail, on_event=lambda _e: None, timeout_s=3600.0,
+                                  poll_s=1.0, stall_s=420.0, ai_stall_s=60.0,
+                                  pause_when=lambda: 10.0 <= now["t"] < 310.0)
+        self.assertTrue(reason.startswith(watch.AI_PHASE_STALL_REASON), reason)
+        self.assertGreater(now["t"], 360.0)
+        self.assertLess(now["t"], 364.0)
+
+    def test_the_window_is_only_ever_shortened_and_never_armed_from_off(self) -> None:
+        stall = [{"kind": "ai_phase_stall", "turn": 90}]
+        reason, elapsed, _ = self._run(
+            self._tail(stall), timeout_s=3600.0, poll_s=1.0, stall_s=420.0,
+            ai_stall_s=60.0, ai_stall_window=lambda _event: 900.0)
+        self.assertIn("had not advanced 60s after", reason)
+        reason, elapsed, _ = self._run(
+            self._tail(stall), timeout_s=3600.0, poll_s=1.0, stall_s=420.0,
+            ai_stall_s=60.0, ai_stall_window=lambda _event: -1.0)
+        self.assertIn("had not advanced 60s after", reason)
+        reason, elapsed, _ = self._run(
+            self._tail(stall), timeout_s=3600.0, poll_s=1.0, stall_s=420.0,
+            ai_stall_window=lambda _event: 5.0)
+        self.assertEqual(reason, "stalled: no event for 420s")
+
+    def test_a_second_report_gets_its_own_window(self) -> None:
+        """A short window chosen for one report does not leak into the next."""
+        tracker = watch.HungRivalSessions()
+        # Stall with a dead session, cleared 2 s later; then a plain stall.
+        tail = self._tail([T159_UNANSWERED, T159_STALL],
+                          later=(10, [{"kind": "state", "turn": 160},
+                                      dict(T159_STALL, turn=160)]))
+        now = {"t": 0.0}
+        with patch.object(watch.time, "monotonic", lambda: now["t"]), \
+             patch.object(watch.time, "sleep",
+                          lambda s: now.__setitem__("t", now["t"] + s)), \
+             patch.object(watch.env, "game_pids", lambda: [1]):
+            reason = watch.follow(tail, on_event=tracker.note, timeout_s=3600.0,
+                                  poll_s=0.25, stall_s=420.0, ai_stall_s=60.0,
+                                  ai_stall_window=tracker.window)
+        self.assertIn("had not advanced 60s after", reason)
+        self.assertGreater(now["t"], 62.0)
+
+
+class StallHandoffTest(unittest.TestCase):
+    """The marker that tells the climb a quickly-ended attempt was frozen."""
+
+    def test_the_marker_is_the_one_the_climb_and_the_watchdog_use(self) -> None:
+        import civ6_civvis_climb as climb
+        self.assertEqual(watch.STALL_HANDOFF_MARKER, climb.WEDGE_HANDOFF_MARKER)
+        script = (Path(__file__).resolve().parent / "ops"
+                  / "civvis-agent-wedge-watchdog.sh").read_text()
+        self.assertIn(f":-{watch.STALL_HANDOFF_MARKER}}}", script)
+
+    def test_the_climb_reads_the_harness_marker_as_frozen_at_any_staleness(self) -> None:
+        import civ6_civvis_climb as climb
+
+        class Exited:
+            def wait(self, timeout=None):
+                return 0
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "run").mkdir()
+            (root / "run" / "events.jsonl").write_text(
+                json.dumps({"kind": "turn", "turn": 159}) + "\n")
+            original = climb.RUN_ROOT
+            climb.RUN_ROOT = root
+            try:
+                # No marker and a fresh turn: the exit is a finished game.
+                self.assertEqual(climb.wait_watching_the_turn(
+                    Exited(), "run", 1000.0, 900.0,
+                    locked_probe=lambda: False, paused_probe=lambda: False), "exited")
+                reason = (f"{watch.AI_PHASE_STALL_REASON}: turn 159 had not advanced "
+                          "5s after the game reported a hung rival turn")
+                marker = watch.write_stall_handoff(root / "run", "run", 159, reason)
+                self.assertEqual(marker.name, climb.WEDGE_HANDOFF_MARKER)
+                self.assertEqual(climb.wedge_handoff("run"), {
+                    "tag": "run", "turn": 159, "reason": reason, "by": "civ6_play",
+                    "utc": json.loads(marker.read_text())["utc"]})
+                self.assertEqual(climb.wait_watching_the_turn(
+                    Exited(), "run", 1000.0, 900.0,
+                    locked_probe=lambda: False, paused_probe=lambda: False), "frozen")
+            finally:
+                climb.RUN_ROOT = original
+
+    def test_an_existing_marker_is_left_alone(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run = Path(temporary)
+            first = '{"tag":"run","turn":88,"reason":"NO GAME PROGRESS","utc":"x"}\n'
+            (run / watch.STALL_HANDOFF_MARKER).write_text(first)
+            watch.write_stall_handoff(run, "run", 90, "later")
+            self.assertEqual((run / watch.STALL_HANDOFF_MARKER).read_text(), first)
+            self.assertEqual([p.name for p in run.iterdir()],
+                             [watch.STALL_HANDOFF_MARKER])
+
+    def test_an_unreadable_turn_is_recorded_as_none(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            marker = watch.write_stall_handoff(Path(temporary), "run", True, "r")
+            self.assertIsNone(json.loads(marker.read_text())["turn"])
+
+
 class ProjectionTest(unittest.TestCase):
     """`turns_left_seconds` is the whole decision, so test it on its own."""
 

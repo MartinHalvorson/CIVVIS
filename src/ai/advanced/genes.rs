@@ -5486,6 +5486,11 @@ pub const GENES: &[Gene] = &[
     // assessed siege gets a capture forecast on the battle solver's board and
     // one journal line; no decision changes. See `advanced/assault_forecast.rs`.
     Gene { tag: "assault-forecast-is-read", field: "assault_forecast_is_read", kind: Kind::OptIn, enable: AdvancedAi::enable_assault_forecast_is_read, disable: AdvancedAi::disable_assault_forecast_is_read },
+    // A Rock Band plays a stage it can reach this turn instead of its tour's
+    // stage when the trip is longer than its levels are worth (two turns for
+    // none, four for one, no trip for two). Opt-in; see
+    // `advanced/band_plays_the_stage_at_hand.rs`.
+    Gene { tag: "band-plays-the-stage-at-hand", field: "band_plays_the_stage_at_hand", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_the_stage_at_hand, disable: AdvancedAi::disable_band_plays_the_stage_at_hand },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
@@ -5736,6 +5741,39 @@ pub const GENES: &[Gene] = &[
     // forecast capture by the soldiers in reach. See
     // `advanced/declaration_needs_a_capture.rs`.
     Gene { tag: "declaration-needs-a-capture", field: "declaration_needs_a_capture", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_needs_a_capture, disable: AdvancedAi::disable_declaration_needs_a_capture },
+    // Live Deity Pericles Culture game 2026-11-15 (`civvis-20261115T071444Z`):
+    // 27 specialty slots against 20 districts at turn 100 and 47 against 39
+    // at 175, 500 city-turns with a free slot and a Campus or Commercial Hub
+    // on offer while the city built a Builder, a Neighborhood or an
+    // Amphitheater; Science 186 against the best rival's 488. See
+    // `advanced/culture_fills_its_slots.rs`.
+    Gene { tag: "culture-seat-fills-its-district-slots", field: "culture_seat_fills_its_district_slots", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_fills_its_district_slots, disable: AdvancedAi::disable_culture_seat_fills_its_district_slots },
+    // Live Deity 2026-11-15 (33 games): four surprise wars before turn 30 at
+    // 3.4-5.6x our power; two took the capital with its walls at 34 and 35
+    // of 40 and Archery two to four turns after Masonry. See
+    // `advanced/capital_archers_before_the_surprise.rs`.
+    Gene { tag: "capital-archers-before-the-surprise", field: "capital_archers_before_the_surprise", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_archers_before_the_surprise, disable: AdvancedAi::disable_capital_archers_before_the_surprise },
+    // Live Immortal civvis-20261115T192831Z (Sweden, version one armed):
+    // Spain at 2.3-3.7x, a Warrior two tiles from Stockholm at t11, declared
+    // at t26 and took it at t30 with its Walls at 35 of 40; the 3.5x legs
+    // read on one turn. Version two arms them at 2.5x in the opening while a
+    // soldier stood within six tiles. See
+    // `advanced/capital_archers_before_the_surprise.rs`.
+    Gene { tag: "capital-archers-before-the-surprise-2", field: "capital_archers_before_the_surprise_2", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_archers_before_the_surprise_2, disable: AdvancedAi::disable_capital_archers_before_the_surprise_2 },
+    // Live Immortal civvis-20261115T212021Z (Brazil, Culture): India, Persia
+    // and Scythia ran within a project of each other from 176 and all
+    // launched by 198; `racer-keeps-the-spies` read Persia the leader on its
+    // Science edge, 9 of 13 Disrupt Rocketry went there and India won at
+    // 212. Under the gene every racer within one project of the lead gets a
+    // Spy before any gets a second. See
+    // `advanced/denial_spies_cover_every_racer.rs`.
+    Gene { tag: "denial-spies-cover-every-racer", field: "denial_spies_cover_every_racer", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_cover_every_racer, disable: AdvancedAi::disable_denial_spies_cover_every_racer },
+    // Operator 2026-11-15: the live focus is a Score win, and a rival's
+    // Science Victory ends most Score games early. Version two of
+    // `denial-spies-fill-every-slot` fills the Spy slots on a Score aim as
+    // well as a Culture or Domination one; otherwise identical. See
+    // `advanced/denial_spies_fill_every_slot.rs`.
+    Gene { tag: "denial-spies-fill-every-slot-2", field: "denial_spies_fill_every_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_fill_every_slot_2, disable: AdvancedAi::disable_denial_spies_fill_every_slot_2 },
     // Live Deity Rome 11-13: the first World Games the seat was a member of
     // was won with 60 points (a Training Athletes project is 50) and it was
     // the only member of an Aid Request for which the planner named Send Aid
@@ -5902,6 +5940,16 @@ pub const GENES: &[Gene] = &[
     // own strikes only a faith at match point, whatever its target but
     // Religion. See `advanced/faithless_seat_holds_its_faith_strikes.rs`.
     Gene { tag: "faithless-seat-holds-its-faith-strikes", field: "faithless_seat_holds_its_faith_strikes", kind: Kind::OptIn, enable: AdvancedAi::enable_faithless_seat_holds_its_faith_strikes, disable: AdvancedAi::disable_faithless_seat_holds_its_faith_strikes },
+    // Live Deity: 84 Rome Score games sat at 0.40 of the best rival's score
+    // from t25, 230 Domination games took no rival capital, and the Legion
+    // (three technologies and Iron) arrived at t44-100, after the soft
+    // city's window. A unique unit trainable on turn one with no technology
+    // and no resource, 8 or more over the Warrior (the War-Cart, the Eagle
+    // Warrior), is trained in the capital first, scouts, and takes the
+    // nearest unwalled rival city on the capture forecast. Score and
+    // Domination seats only. Opt-in; see
+    // `advanced/edge_unit_takes_the_soft_city.rs`.
+    Gene { tag: "edge-unit-rushes-from-the-capital", field: "edge_unit_rushes_from_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_edge_unit_rushes_from_the_capital, disable: AdvancedAi::disable_edge_unit_rushes_from_the_capital },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
@@ -5937,6 +5985,16 @@ pub const GENES: &[Gene] = &[
     // the unit bill jumped. `buy_gold_unit` tests each city's own quote
     // against the reserve. Opt-in; see `BasicAi::buy_gold_unit`.
     Gene { tag: "gold-unit-buys-read-the-host-quote", field: "gold_unit_buys_read_the_host_quote", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_unit_buys_read_the_host_quote, disable: AdvancedAi::disable_gold_unit_buys_read_the_host_quote },
+    // Live Emperor Domination 11-16: 274 turns with a siege gun's tech and
+    // no Niter or Oil; a land-deposit tile buy (direct or the first of two)
+    // was affordable on 28 of them (27 of the 71 Niter turns) and none was
+    // made. Opt-in; see `advanced/gun_resource_tile.rs`.
+    Gene { tag: "gun-resource-buys-the-tile", field: "gun_resource_buys_the_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_gun_resource_buys_the_tile, disable: AdvancedAi::disable_gun_resource_buys_the_tile },
+    // Live Emperor Gilgamesh civvis-20261116T021437Z: two Infantry spent the
+    // 14 Oil the first Artillery came out to at t158; it never fired, and sat
+    // at 36 hp unable to heal t164-179 for want of its fuel. Opt-in; see
+    // `advanced/guns_keep_the_oil.rs`.
+    Gene { tag: "guns-keep-the-oil", field: "guns_keep_the_oil", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_keep_the_oil, disable: AdvancedAi::disable_guns_keep_the_oil },
     // ---- append: l-o ------------------------------------------------
     // Native Deity Macedon 100029Z: model-priced horse/iron barter was
     // declined at51/55 and refused as barter_short at61. Ask the host for
@@ -5999,6 +6057,29 @@ pub const GENES: &[Gene] = &[
     // keeps 120 Gold at peace. The first unit into a tier upgrades ahead of
     // that floor. See `advanced/one_upgrade_lifts_every_city.rs`.
     Gene { tag: "one-upgrade-lifts-every-city", field: "one_upgrade_lifts_every_city", kind: Kind::OptIn, enable: AdvancedAi::enable_one_upgrade_lifts_every_city, disable: AdvancedAi::disable_one_upgrade_lifts_every_city },
+    // Live Deity Pericles civvis-20261115T075925Z: near-rival-deterrence fired
+    // 43 times to t79 and never after; Russia's power 478 -> 1094 t90-105
+    // against our 461 -> 553, its declaration at t108 at 0.39, five of six
+    // cities lost t112-123. The deterrent, upgrades and the next Walls tier
+    // past the window at 0.8 of a near neighbour's power, not on Domination.
+    // Opt-in; see `advanced/near_rival_deterrence_holds_late.rs`.
+    Gene { tag: "near-rival-deterrence-holds-late", field: "near_rival_deterrence_holds_late", kind: Kind::OptIn, enable: AdvancedAi::enable_near_rival_deterrence_holds_late, disable: AdvancedAi::disable_near_rival_deterrence_holds_late },
+    // Live Immortal 2026-11-15, Domination: civvis-20261115T172539Z held its war
+    // on Arabia t106-111 at 2.0-2.3x Arabia's power with Cairo unwalled 15
+    // tiles out, and 181018Z its war on Germany t100-102 at 2.0-2.1x with
+    // Aachen unwalled, both for the board's Siege row and Defend row. An
+    // unwalled original capital at twice the target's steady power declares
+    // as prey. Opt-in; see `advanced/open_capital_declares_at_twice.rs`.
+    Gene { tag: "open-capital-declares-at-twice", field: "open_capital_declares_at_twice", kind: Kind::OptIn, enable: AdvancedAi::enable_open_capital_declares_at_twice, disable: AdvancedAi::disable_open_capital_declares_at_twice },
+    // Live Immortal 2026-11-15: the last four original capitals (215049Z,
+    // 222126Z, 222931Z, 223324Z) fell to opening wars declared t24-59 at
+    // 0.39-0.77 of the attacker's power, with no deterrent trained before the
+    // declaration: one war came before turn 30, and in two games the
+    // attacker's soldiers stood at the capital while none of its cities was
+    // known within ten tiles. The opening deterrent from live turn 10, and a
+    // soldier at the capital's door makes a neighbour. Opt-in; see
+    // `advanced/near_rival_deterrence_opens_early.rs`.
+    Gene { tag: "near-rival-deterrence-opens-early", field: "near_rival_deterrence_opens_early", kind: Kind::OptIn, enable: AdvancedAi::enable_near_rival_deterrence_opens_early, disable: AdvancedAi::disable_near_rival_deterrence_opens_early },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
@@ -6087,6 +6168,13 @@ pub const GENES: &[Gene] = &[
     // mission buys (Defend/Relieve/siege post 0.6, Destroy/Escort 0.3, march
     // 0.1, scout 0.05). Opt-in; see `advanced/priced_risk.rs`.
     Gene { tag: "risk-is-priced", field: "risk_is_priced", kind: Kind::OptIn, enable: AdvancedAi::enable_risk_is_priced, disable: AdvancedAi::disable_risk_is_priced },
+    // Live Deity 2026-11-15: once #5323 let the passage purchase close, rivals
+    // granted us Open Borders by turn 60 in 31 of 35 games (1 of 12 before)
+    // and declared on us by turn 60 in 12 of 35 (3 of 12), 9 of them a
+    // rival that had just granted passage. No purchase before Online turn 80,
+    // none after it from a rival over 1.5x our military. Opt-in; see
+    // `advanced/passage_waits_past_the_opening.rs`.
+    Gene { tag: "passage-waits-past-the-opening", field: "passage_waits_past_the_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_passage_waits_past_the_opening, disable: AdvancedAi::disable_passage_waits_past_the_opening },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
@@ -6152,6 +6240,11 @@ pub const GENES: &[Gene] = &[
     // expansion before t80 and beside a 1.5x neighbour. See
     // `advanced/score_wonders.rs`.
     Gene { tag: "score-seat-raises-wonders-2", field: "score_seat_raises_wonders_2", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_raises_wonders_2, disable: AdvancedAi::disable_score_seat_raises_wonders_2 },
+    // Version 3: in 3 of 5 live Rome Score games of 11-15 v2's "safety first"
+    // held every lane from t80 to the tally and built nothing, with 200-
+    // Production wonders on offer for 40 turns; one lane stays open in a city
+    // ten tiles or more from every threat. See `advanced/score_wonders.rs`.
+    Gene { tag: "score-seat-raises-wonders-3", field: "score_seat_raises_wonders_3", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_raises_wonders_3, disable: AdvancedAi::disable_score_seat_raises_wonders_3 },
     // Live Deity Rome Score lane 2026-11-12, 11 games: Settlers were born at
     // the same pace in the fast and the slow games, but took a mean 8.7
     // turns from birth to founding in the three fastest against 23.8 in the
@@ -6181,6 +6274,11 @@ pub const GENES: &[Gene] = &[
     // took the Warlord's Throne, never the Ancestral Hall. See
     // `advanced/score_expands_hard.rs`.
     Gene { tag: "score-seat-expands-hard", field: "score_seat_expands_hard", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_expands_hard, disable: AdvancedAi::disable_score_seat_expands_hard },
+    // Ten live Deity Rome Score games, 11-13: 22.9 district slots against
+    // 12.7 specialty districts at turn 100 and nine or ten free to the tally,
+    // with a district on offer on 424 city-turns a game while the city built
+    // a University or a Research Lab. See `advanced/score_fills_its_slots.rs`.
+    Gene { tag: "score-seat-fills-its-district-slots", field: "score_seat_fills_its_district_slots", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_fills_its_district_slots, disable: AdvancedAi::disable_score_seat_fills_its_district_slots },
     // Live Deity Rome, Score target: no rival declared on us while a declared
     // friendship stood (94 declarations), yet the control mod refused 52
     // friendships the AI offered in one night, and the seat asked one rival
@@ -6194,6 +6292,39 @@ pub const GENES: &[Gene] = &[
     // point and no rival won a Religious Victory. A Score seat strikes only a
     // faith at match point. See `advanced/score_seat_holds_its_faith_strikes.rs`.
     Gene { tag: "score-seat-holds-its-faith-strikes", field: "score_seat_holds_its_faith_strikes", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_holds_its_faith_strikes, disable: AdvancedAi::disable_score_seat_holds_its_faith_strikes },
+    // Live Deity 11-15, 27 runs, 229 Settlers: 46% of the walking went to
+    // sites later dropped. 31% of named sites were plots the seat had never
+    // seen (79 of 141 revealed proved Coast or Ocean), and 32 drops were our
+    // own city founded within three tiles of a sibling's site. See
+    // `advanced/settler_keeps_its_named_site.rs`.
+    Gene { tag: "settler-keeps-its-named-site", field: "settler_keeps_its_named_site", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_keeps_its_named_site, disable: AdvancedAi::disable_settler_keeps_its_named_site },
+    // Live 6p Continents 11-15/16: 27 games lost the original capital. In 21
+    // the Anvil's one-blow rewrite at the capital sent posted soldiers back to
+    // tiles four or more out (261 rewrites), and at the first blow a median
+    // 25% of our land soldiers stood within three. Rome fell to two
+    // Cuirassiers with ten soldiers four to six out. See
+    // `advanced/spared_soldiers_come_to_the_capital.rs`.
+    Gene { tag: "spared-soldiers-come-to-the-capital", field: "spared_soldiers_come_to_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_spared_soldiers_come_to_the_capital, disable: AdvancedAi::disable_spared_soldiers_come_to_the_capital },
+    // Live Emperor Rome Score civvis-20261116T005841Z, turn limit 180: led at
+    // t170 (1,043 against 1,037) and lost the tally 1,086 to 1,136. Turns
+    // 161-180 put 2,346 of 8,169 Production on projects, 621 on a Spaceport
+    // and 1,004 on soldiers and Spies, with 357-849 Gold banked every turn.
+    // See `advanced/score_sprints_to_the_tally.rs`.
+    Gene { tag: "score-seat-sprints-to-the-tally", field: "score_seat_sprints_to_the_tally", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_sprints_to_the_tally, disable: AdvancedAi::disable_score_seat_sprints_to_the_tally },
+    // Live Immortal civvis-20261115T230117Z, turns 104-123: our escorts held
+    // the near side of Puel Mapu's range-2 band, so two Bombards were posted
+    // across the city behind Roraima and kept there six turns while a route
+    // existed; 72 "stops short of its post" lines, the city never fell. See
+    // `advanced/siege_train/reachable_post.rs`.
+    Gene { tag: "siege-guns-take-a-reachable-post", field: "siege_guns_take_a_reachable_post", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_guns_take_a_reachable_post, disable: AdvancedAi::disable_siege_guns_take_a_reachable_post },
+    // Version 2 of `score-seat-sprints-to-the-tally`. Live Immortal Rome
+    // civvis-20261116T102757Z (v1 armed, limit 180) lost the tally 1,196 to
+    // 1,242, 53 of it Era Score; its Gold saved for a Merchant priced at five
+    // points. A Great Person is priced with its Historic Moment (3 when the
+    // coins pay over half, else 1), each class goes to the idle currency that
+    // reaches it, and patronage opens at turn 150. See
+    // `advanced/score_sprints_to_the_tally.rs`.
+    Gene { tag: "score-seat-sprints-to-the-tally-2", field: "score_seat_sprints_to_the_tally_2", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_sprints_to_the_tally_2, disable: AdvancedAi::disable_score_seat_sprints_to_the_tally_2 },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

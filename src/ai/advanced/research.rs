@@ -283,9 +283,13 @@ impl AdvancedAi {
         };
         let revealed_launch_switch = self.revealed_launch_research_switch(g, pid);
         let walls_switch = self.capital_walls_research_switch(g, pid);
+        // `capital-archers-before-the-surprise`: Archery interrupts the way
+        // the walls' Masonry does. `None` with the gene off.
+        let archers_switch = self.capital_archers_research_switch(g, pid);
         if g.players[pid].research.is_none()
             || revealed_launch_switch.is_some()
             || walls_switch.is_some()
+            || archers_switch.is_some()
         {
             // Every candidate's value reads the empire's science rate, and a
             // comparator asks for two values per comparison: under one memo
@@ -375,6 +379,11 @@ impl AdvancedAi {
                 None
             };
             let opening_archery_goal = self.opening_archery_goal(g, pid);
+            // `capital-archers-before-the-surprise`: Archery ahead of the
+            // walls' Masonry while a Slinger waits at the watched capital.
+            // `None` with the gene off. See
+            // `advanced/capital_archers_before_the_surprise.rs`.
+            let capital_archers_goal = self.capital_archers_research_goal(g, pid);
             // `city-state-before-the-first-capital`: Masonry, then the unique
             // melee line, while a stepping stone can still be named or stands.
             // `None` with the gene off.
@@ -487,6 +496,11 @@ impl AdvancedAi {
                 // goal (a tech in progress still finishes). `None` with the
                 // gene off and once Masonry is known.
                 _ if stone_breaker_goal.is_some() => stone_breaker_goal.as_deref(),
+                // `capital-archers-before-the-surprise`: 25 Science and an
+                // upgrade land in 7-8 turns, Masonry and the walls in 17-18;
+                // Athens (093423Z) and Uruk (093657Z) fell with their walls
+                // at 34 and 35 of 40 and Archery still to come.
+                _ if capital_archers_goal.is_some() => capital_archers_goal.as_deref(),
                 // `capital-walls-before-the-surprise`: Masonry for the capital
                 // goes ahead of the opening Archery too. 040735Z's slot opened
                 // at turn 11 to eight turns of Archery, which left the walls
@@ -993,6 +1007,8 @@ impl AdvancedAi {
                     || (revealed_launch_switch == Some(tech.as_str())
                         && forced_goal == Some(tech.as_str()))
                     || (walls_switch == Some(tech.as_str()) && forced_goal == Some(tech.as_str()))
+                    || (archers_switch.as_deref() == Some(tech.as_str())
+                        && forced_goal == Some(tech.as_str()))
             });
             if let Some(tech) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
@@ -1007,6 +1023,11 @@ impl AdvancedAi {
                         (Some(goal), Some(_)) => {
                             if foundation_goal == Some(goal) {
                                 format!("science-foundation-before-backlog: the {step} step toward {}, opening usable labs and the first Spaceport before advanced backlog", plain(goal))
+                            } else if let Some(reason) = self
+                                .capital_archers_research_reason(g, pid)
+                                .filter(|_| capital_archers_goal.as_deref() == Some(goal))
+                            {
+                                reason
                             } else if opening_archery_goal.as_deref() == Some(goal) {
                                 format!("the first range-two defender is needed against nearby barbarians; unlock {} before the economic beeline", plain(goal))
                             } else if stone_breaker_goal.as_deref() == Some(goal)

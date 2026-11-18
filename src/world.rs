@@ -137,7 +137,12 @@ pub struct TileMemory {
     /// it is kept out of the shared map. Restamping it in place would copy
     /// every remembered tile — a few hundred hexes, each with its own
     /// strings — which is most of what refreshing a seat's map used to cost.
-    stamps: BTreeMap<Pos, u32>,
+    ///
+    /// Hashed, not ordered: it is only ever asked about one position at a
+    /// time (`mark_seen` runs for every freshly seen tile of every refresh),
+    /// and saves are written from `tiles` in order, reading each stamp back
+    /// by position.
+    stamps: crate::fast_map::FastMap<Pos, u32>,
 }
 
 impl TileMemory {
@@ -293,9 +298,25 @@ pub struct TileGrid {
     /// map-sized copy from every clone; `rebuild` is the only writer and
     /// replaces the whole index when a grid is constructed from a save.
     slot: std::sync::Arc<Vec<u32>>,
+    /// A running hash of every write route taken since the grid was built,
+    /// mixed from the epoch and the tile each one opened. Unlike the epoch it
+    /// tells two histories apart: a game cloned to look ahead numbers its
+    /// writes from the same epoch as the board it was cloned from, so equal
+    /// epochs on the two can name different maps, and equal chains cannot
+    /// unless the two wrote the same tiles in the same order.
+    write_chain: u64,
+    /// The most recent writes, each with the chain value just after it, and
+    /// `None` for a route that opened the whole map. See
+    /// [`TileGrid::writes_since`]. Shared until written, like `tiles`.
+    writes: std::sync::Arc<Vec<(u64, Option<Pos>)>>,
 }
 
 const EMPTY_SLOT: u32 = u32::MAX;
+
+/// How many writes [`TileGrid::writes_since`] can look back over. A reader
+/// that has fallen further behind is told nothing is known, which is what
+/// every reader of the bare epoch is told about any write at all.
+const WRITE_LOG: usize = 256;
 
 /// Tile-vector indices for one tile's in-map neighbors. The position form is
 /// retained separately for public callers; movement floods already need these
@@ -327,6 +348,8 @@ impl TileGrid {
             epoch: 0,
             tiles: std::sync::Arc::new(Vec::new()),
             slot: std::sync::Arc::new(Vec::new()),
+            write_chain: 0,
+            writes: std::sync::Arc::new(Vec::new()),
         };
         let mut tiles = Vec::with_capacity((width.max(0) * height.max(0)) as usize);
         for row in 0..height {
@@ -345,13 +368,15 @@ impl TileGrid {
             epoch: 0,
             tiles: std::sync::Arc::new(Vec::new()),
             slot: std::sync::Arc::new(Vec::new()),
+            write_chain: 0,
+            writes: std::sync::Arc::new(Vec::new()),
         };
         grid.rebuild(tiles);
         grid
     }
 
     fn rebuild(&mut self, mut tiles: Vec<Tile>) {
-        self.epoch += 1;
+        self.note_write(None);
         tiles.sort_unstable_by_key(|tile| tile.pos);
         tiles.dedup_by_key(|tile| tile.pos);
         let cells = (self.width.max(0) as usize) * (self.height.max(0) as usize);
@@ -394,7 +419,7 @@ impl TileGrid {
 
     #[inline]
     pub fn get_mut(&mut self, pos: &Pos) -> Option<&mut Tile> {
-        self.epoch += 1;
+        self.note_write(Some(*pos));
         let index = self.index_of(*pos)?;
         Some(&mut std::sync::Arc::make_mut(&mut self.tiles)[index])
     }
@@ -404,6 +429,51 @@ impl TileGrid {
     #[inline]
     pub fn epoch(&self) -> u64 {
         self.epoch
+    }
+
+    /// Every route that can write to a tile comes through here: it moves the
+    /// epoch, extends the chain and logs the tile (`None`: the whole map).
+    #[inline]
+    fn note_write(&mut self, at: Option<Pos>) {
+        const SEED: u64 = 0x9E37_79B9_7F4A_7C15;
+        self.epoch += 1;
+        let tile = at.map_or(u64::MAX, |(q, r)| {
+            (u64::from(q as u32) << 32) | u64::from(r as u32)
+        });
+        let mut chain = (self.write_chain ^ self.epoch).wrapping_mul(SEED);
+        chain = (chain ^ tile).wrapping_mul(SEED);
+        self.write_chain = chain ^ (chain >> 29);
+        let log = std::sync::Arc::make_mut(&mut self.writes);
+        if log.len() >= WRITE_LOG {
+            log.drain(..WRITE_LOG / 2);
+        }
+        log.push((self.write_chain, at));
+    }
+
+    /// Where the grid's history stands. Pass it to [`Self::writes_since`]
+    /// later to learn what was opened for writing in between.
+    #[inline]
+    pub fn write_chain(&self) -> u64 {
+        self.write_chain
+    }
+
+    /// The tiles opened for writing since this grid stood at `chain`, in
+    /// order and possibly repeated, or `None` when that cannot be told: the
+    /// chain is not in this grid's recent history (another branch of a cloned
+    /// game, a rebuilt grid, or more than the log holds), or a route in
+    /// between opened the whole map. An empty list means nothing was written.
+    ///
+    /// Opened, not changed: a route that took a tile for writing and left it
+    /// as it was is listed too, exactly as it moves the epoch.
+    pub fn writes_since(&self, chain: u64) -> Option<Vec<Pos>> {
+        if chain == self.write_chain {
+            return Some(Vec::new());
+        }
+        let at = self.writes.iter().rposition(|(seen, _)| *seen == chain)?;
+        self.writes[at + 1..]
+            .iter()
+            .map(|(_, tile)| *tile)
+            .collect()
     }
 
     #[inline]
@@ -428,7 +498,7 @@ impl TileGrid {
     }
 
     pub fn values_mut(&mut self) -> std::slice::IterMut<'_, Tile> {
-        self.epoch += 1;
+        self.note_write(None);
         std::sync::Arc::make_mut(&mut self.tiles).iter_mut()
     }
 
@@ -444,19 +514,31 @@ impl TileGrid {
     }
 }
 
+/// Cells in a hex disk of `radius`, `1 + 3r(r + 1)`, the count `hex::disk`
+/// reserves; in `u64` so a map-wide radius cannot overflow it.
+fn hex_disk_cells(radius: i32) -> u64 {
+    let radius = radius.max(0) as u64;
+    1 + 3 * radius * (radius + 1)
+}
+
+#[cfg(test)]
+mod write_log_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// `disk` skips its sort when no cell wrapped; on a wrapping and a walled
-    /// map it still returns exactly the folded, on-map, sorted, de-duplicated
-    /// cells the unconditional sort returned.
+    /// `disk` skips its sort when no cell wrapped, and reads a disk with more
+    /// cells than the map has tiles off the tiles instead; on a wrapping and
+    /// a walled map it still returns exactly the folded, on-map, sorted,
+    /// de-duplicated cells the unconditional sort returned. The radii run
+    /// past twice the width, where a cell wraps more than once.
     #[test]
     fn a_disk_is_the_sorted_folded_cells_with_or_without_a_wrap() {
         for world in [WorldMap::new(9, 7), WorldMap::arena(9, 7)] {
             for x in -2..11 {
                 for y in -2..9 {
-                    for radius in 0..8 {
+                    for radius in 0..24 {
                         let mut reference: Vec<Pos> = hex::disk((x, y), radius)
                             .into_iter()
                             .map(|pos| world.fold(pos))
@@ -556,7 +638,7 @@ impl<'a> IntoIterator for &'a mut TileGrid {
         std::iter::Map<std::slice::IterMut<'a, Tile>, fn(&'a mut Tile) -> (Pos, &'a mut Tile)>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.epoch += 1;
+        self.note_write(None);
         std::sync::Arc::make_mut(&mut self.tiles)
             .iter_mut()
             .map(|tile| (tile.pos, tile))
@@ -892,6 +974,23 @@ impl WorldMap {
         if let Some(sphere) = self.sphere() {
             return sphere.disk(center, radius);
         }
+        // A disk with more cells than the map has tiles is cheaper to read off
+        // the tiles. The settle-site scans ask for radius `width + height`,
+        // whose disk has at least twelve cells for every tile of the map
+        // (3(w + h)² ≥ 12wh), each folded and looked up, and on a cylinder
+        // those that land back on the map sorted with their wrap duplicates.
+        //
+        // The two agree when the centre is one of the map's own longitudes
+        // (`fold` leaves it alone, always true on a walled map): a tile is a
+        // folded cell of the disk exactly when some east-west copy of it lies
+        // within `radius`, and between two on-map columns the nearest copy is
+        // at most one map width away, which is all `distance` measures.
+        if radius >= 0
+            && hex_disk_cells(radius) > self.tiles.len() as u64
+            && self.fold(center) == center
+        {
+            return self.tiles_within(center, radius);
+        }
         // `hex::disk` yields its cells in ascending order without repeats, and
         // dropping off-map cells keeps that order. Only a wrap fold can move
         // a cell out of order or onto another, so only then is the sort and
@@ -913,9 +1012,43 @@ impl WorldMap {
         out
     }
 
+    /// [`Self::disk`] read off the tile vector: every tile within `radius`
+    /// of `center`, sorted. Only a tile its own position addresses counts,
+    /// which is the tile a folded cell would have found.
+    fn tiles_within(&self, center: Pos, radius: i32) -> Vec<Pos> {
+        let mut out: Vec<Pos> = self
+            .tiles
+            .values()
+            .enumerate()
+            .filter(|(index, tile)| {
+                self.tiles.index_of(tile.pos) == Some(*index)
+                    && self.distance(center, tile.pos) <= radius
+            })
+            .map(|(_, tile)| tile.pos)
+            .collect();
+        out.sort_unstable();
+        out
+    }
+
     /// Visit every in-map tile within `radius` steps without allocating the
     /// result. This is for consumers that immediately filter or fold the
     /// answer; [`Self::disk`] remains the owned, sorted form.
+    /// [`WorldMap::for_each_disk`], with each tile's distance from the centre
+    /// where the globe's ring table already holds it. `None` on a flat map
+    /// and beyond the ring table, where the caller measures as it always did.
+    pub(crate) fn for_each_disk_with_distance(
+        &self,
+        center: Pos,
+        radius: i32,
+        mut visit: impl FnMut(Pos, Option<i32>),
+    ) {
+        if let Some(sphere) = self.sphere() {
+            sphere.for_each_disk_with_distance(center, radius, visit);
+            return;
+        }
+        self.for_each_disk(center, radius, |pos| visit(pos, None));
+    }
+
     pub(crate) fn for_each_disk(&self, center: Pos, radius: i32, mut visit: impl FnMut(Pos)) {
         if let Some(sphere) = self.sphere() {
             sphere.for_each_disk(center, radius, visit);

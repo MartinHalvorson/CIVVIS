@@ -1,7 +1,8 @@
 //! `near-rival-deterrence`: from live turn 30 to 80, while a met major at
 //! peace has a city within [`DETERRENCE_NEAR_TILES`] of ours and our military
 //! power is below its own, one idle or routine queue a turn trains a land
-//! unit (at most [`DETERRENCE_MAX_QUEUED`] in training), until we stand level.
+//! unit, never a siege unit (at most [`DETERRENCE_MAX_QUEUED`] in training),
+//! until we stand level.
 //! The early city floor's Settler, Builders, Walls, wonders and investments in
 //! progress keep their queues.
 //!
@@ -30,7 +31,15 @@
 //! the next band (1.5) is half again the army. The claim runs after the
 //! early city floor's Settler and before the Prophet race and the routine
 //! claims; the end-of-turn defence redirects keep the last word.
+//!
+//! `near-rival-deterrence-holds-late` carries the same claim, its holds and
+//! its exemptions past the window at a lower target; see
+//! `advanced/near_rival_deterrence_holds_late.rs`.
+//! `near-rival-deterrence-opens-early` opens the window at live turn 10 and
+//! counts a soldier at the capital's door as a neighbour; see
+//! `advanced/near_rival_deterrence_opens_early.rs`.
 
+use super::near_rival_deterrence_holds_late::DeterrencePhase;
 use super::*;
 
 /// A rival whose nearest known city stands within this many tiles of one of
@@ -56,12 +65,10 @@ impl AdvancedAi {
     /// [`DETERRENCE_NEAR_TILES`] of ours, and its power. `None` with the
     /// gene off, outside the window, and with no such neighbour.
     pub(super) fn deterrence_threat(&self, g: &Game, pid: usize) -> Option<(usize, f64)> {
-        if !self.near_rival_deterrence
-            || g.turn < g.standard_duration(DETERRENCE_START_STANDARD)
-            || g.turn >= g.standard_duration(DETERRENCE_END_STANDARD)
-        {
-            return None;
-        }
+        // `near-rival-deterrence-holds-late`: past the window the late gene
+        // answers the same neighbour. See
+        // `advanced/near_rival_deterrence_holds_late.rs`.
+        let phase = self.deterrence_phase(g)?;
         let ours: Vec<Pos> = g
             .player_city_ids(pid)
             .into_iter()
@@ -85,12 +92,12 @@ impl AdvancedAi {
                     && !self.deterrence_spares_a_friend(g, pid, other.id)
             })
             .filter(|other| {
-                g.cities.values().any(|city| {
-                    city.owner == other.id
-                        && ours
-                            .iter()
-                            .any(|home| g.wdist(*home, city.pos) <= DETERRENCE_NEAR_TILES)
-                })
+                Self::deterrence_city_near(g, &ours, other.id)
+                    // `near-rival-deterrence-opens-early`: in the opening, a
+                    // soldier at the capital's door makes a neighbour too. See
+                    // `advanced/near_rival_deterrence_opens_early.rs`.
+                    || (phase == DeterrencePhase::Opening
+                        && self.deterrence_door_neighbour(g, other.id))
             })
             .map(|other| (other.id, g.military_power(other.id)))
             .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)))
@@ -106,7 +113,7 @@ impl AdvancedAi {
             return false;
         }
         self.deterrence_threat(g, pid).is_some_and(|(_, theirs)| {
-            g.military_power(pid) < DETERRENCE_RATIO * theirs
+            g.military_power(pid) < self.deterrence_ratio(g) * theirs
                 // `deterrence-stops-at-a-garrison`: out of reach, only a
                 // garrisonless city's ranged garrison is held.
                 && (!self.deterrence_out_of_reach(g, pid, theirs)
@@ -114,9 +121,12 @@ impl AdvancedAi {
         })
     }
 
-    fn deterrence_land_unit(g: &Game, unit: &Name) -> bool {
+    /// A land unit that can fight and is not a siege gun: a siege unit is a
+    /// poor deterrent and no city defender.
+    pub(super) fn deterrence_land_unit(g: &Game, unit: &Name) -> bool {
         g.rules.units.get(unit).is_some_and(|spec| {
             spec.class == "military"
+                && !spec.siege
                 && spec.domain.as_deref().is_none_or(|domain| domain == "land")
                 && (spec.is_melee_capable() || spec.has_ranged_attack())
         })
@@ -152,6 +162,59 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether `cid`'s queue is spared the deterrent: the city is under
+    /// attack, the early city floor's Settler, Walls, a wonder or an
+    /// investment in progress holds its head (`deterrence_may_displace`), or
+    /// another claim's hold keeps the head. Shared by `near-rival-deterrence`
+    /// and `near-rival-deterrence-holds-late`.
+    pub(super) fn deterrence_spares_the_city(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> bool {
+        plan.threatened_city == Some(cid)
+            || self.early_settler_floor_holds(g, pid, cid, plan)
+            || !self.deterrence_may_displace(g, pid, cid)
+            // `culture-seat-builds-past-the-deterrent`: see
+            // `advanced/culture_past_the_deterrent.rs`.
+            || self.deterrent_spares_the_culture_build(g, pid, cid, plan)
+            || self.first_seowon_holds_parity(g, pid, cid, plan)
+            || g.cities[&cid]
+                .queue
+                .first()
+                .is_some_and(|head| self.bound_granary_holds(g, pid, cid, plan, head))
+            || g.cities[&cid].queue.first().is_some_and(|head| {
+                self.capped_aqueduct_holds(g, pid, cid, plan, head)
+                    || self.capped_neighborhood_holds(g, pid, cid, plan, head)
+            })
+            || g.cities[&cid]
+                .queue
+                .first()
+                .is_some_and(|head| self.producer_zone_claim_holds(g, pid, cid, plan, head))
+            || g.cities[&cid]
+                .queue
+                .first()
+                .is_some_and(|head| self.factory_claim_holds(g, pid, cid, plan, head))
+            || g.cities[&cid]
+                .queue
+                .first()
+                .is_some_and(|head| self.campus_building_claim_holds(g, pid, cid, plan, head))
+            // `campus-and-library-before-the-claims`: its first Campus goes
+            // first too.
+            || g.cities[&cid]
+                .queue
+                .first()
+                .is_some_and(|head| self.campus_and_library_holds(g, pid, cid, plan, head))
+            // `domination-seat-raises-its-culture`: its Monument goes first
+            // at peace.
+            || g.cities[&cid]
+                .queue
+                .first()
+                .is_some_and(|head| self.domination_monument_holds(g, pid, cid, plan, head))
+    }
+
     /// A Holy Site, Shrine or Temple: the queue items the religious defence
     /// (counterweight, sanctuary, founder) relies on.
     pub(super) fn faith_defence_item(item: &Item) -> bool {
@@ -163,13 +226,24 @@ impl AdvancedAi {
     }
 
     /// See the module: one land unit in the city that trains it soonest while
-    /// a neighbour out-guns us. Exact no-op with the gene off.
+    /// a neighbour out-guns us, then (`near-rival-deterrence-holds-late`
+    /// only) the next tier of Walls. Exact no-op with both genes off.
     pub(super) fn claim_deterrence_unit(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        self.train_deterrence_unit(g, pid, plan);
+        self.claim_late_deterrence_walls(g, pid, plan);
+    }
+
+    /// The unit leg of [`Self::claim_deterrence_unit`].
+    fn train_deterrence_unit(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        let Some(phase) = self.deterrence_phase(g) else {
+            return;
+        };
         let Some((rival, theirs)) = self.deterrence_threat(g, pid) else {
             return;
         };
         let ours = g.military_power(pid);
-        if ours >= DETERRENCE_RATIO * theirs {
+        let ratio = self.deterrence_ratio(g);
+        if ours >= ratio * theirs {
             return;
         }
         let city_ids = g.player_city_ids(pid);
@@ -200,45 +274,10 @@ impl AdvancedAi {
         let mut garrisoned = 0usize;
         let mut best: Option<(f64, i32, u32, String)> = None;
         for &cid in &city_ids {
-            if plan.threatened_city == Some(cid)
-                || self.early_settler_floor_holds(g, pid, cid, plan)
-                || !self.deterrence_may_displace(g, pid, cid)
-                // `culture-seat-builds-past-the-deterrent`: see
-                // `advanced/culture_past_the_deterrent.rs`.
-                || self.deterrent_spares_the_culture_build(g, pid, cid, plan)
-                || self.first_seowon_holds_parity(g, pid, cid, plan)
-                || g.cities[&cid]
-                    .queue
-                    .first()
-                    .is_some_and(|head| self.bound_granary_holds(g, pid, cid, plan, head))
-                || g.cities[&cid].queue.first().is_some_and(|head| {
-                    self.capped_aqueduct_holds(g, pid, cid, plan, head)
-                        || self.capped_neighborhood_holds(g, pid, cid, plan, head)
-                })
-                || g.cities[&cid]
-                    .queue
-                    .first()
-                    .is_some_and(|head| self.producer_zone_claim_holds(g, pid, cid, plan, head))
-                || g.cities[&cid]
-                    .queue
-                    .first()
-                    .is_some_and(|head| self.factory_claim_holds(g, pid, cid, plan, head))
-                || g.cities[&cid]
-                    .queue
-                    .first()
-                    .is_some_and(|head| self.campus_building_claim_holds(g, pid, cid, plan, head))
-                // `campus-and-library-before-the-claims`: its first Campus goes
-                // first too.
-                || g.cities[&cid]
-                    .queue
-                    .first()
-                    .is_some_and(|head| self.campus_and_library_holds(g, pid, cid, plan, head))
-                // `domination-seat-raises-its-culture`: its Monument goes first
-                // at peace.
-                || g.cities[&cid]
-                    .queue
-                    .first()
-                    .is_some_and(|head| self.domination_monument_holds(g, pid, cid, plan, head))
+            if self.deterrence_spares_the_city(g, pid, cid, plan)
+                // `near-rival-deterrence-holds-late`: a Culture seat's Theater
+                // Square work keeps its queue past the window.
+                || (phase == DeterrencePhase::Late && self.late_deterrent_spares_the_theater(g, cid))
             {
                 continue;
             }
@@ -249,8 +288,25 @@ impl AdvancedAi {
             let pick = if out_of_reach {
                 Self::garrison_shooter_for(g, pid, cid).map(|unit| unit.to_string())
             } else {
+                // `best_military`'s ranged pick is the highest ranged
+                // strength, so a Catapult beat an Archer: when the army is due
+                // a ranged unit the deterrent is the strongest non-siege
+                // shooter, or the melee pick when none can be trained.
                 self.base
                     .combined_arms_unit(g, pid, cid, counts.melee, counts.ranged)
+                    .and_then(|unit| {
+                        if !g
+                            .rules
+                            .units
+                            .get(&Name::new(&unit))
+                            .is_some_and(|spec| spec.has_ranged_attack())
+                        {
+                            return Some(unit);
+                        }
+                        Self::garrison_shooter_for(g, pid, cid)
+                            .map(|unit| unit.to_string())
+                            .or_else(|| self.base.best_military(g, pid, cid, Some(false)))
+                    })
             };
             let Some(unit) = pick.filter(|unit| Self::deterrence_land_unit(g, &Name::new(unit)))
             else {
@@ -292,10 +348,42 @@ impl AdvancedAi {
             return;
         };
         let displaced = g.cities[&cid].queue.first().cloned();
+        // `near-rival-deterrence-opens-early`: why this gene, not the opening
+        // gene alone, armed the claim. `None` with the gene off.
+        let early = (phase == DeterrencePhase::Opening)
+            .then(|| self.deterrence_opens_early_reason(g, pid, rival))
+            .flatten();
         let item = Item::Unit {
             unit: Name::new(&unit),
         };
         if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
+            if let Some(reason) = early {
+                think!(self.journal(), Military, Decision,
+                "{} trains a deterrent against {}", g.cities[&cid].name, g.players[rival].civ;
+                "near-rival-deterrence-opens-early: {} for {ours:.0} power against their \
+                 {theirs:.0}, {reason}; {turns:.1} turns{}{}",
+                unit.replace('_', " "),
+                displaced.map_or(String::new(), |item| format!(
+                    "; {} keeps its progress", Self::plain_item(&item))),
+                if out_of_reach {
+                    "; deterrence-stops-at-a-garrison: out of reach, a ranged garrison only"
+                } else {
+                    ""
+                });
+                return;
+            }
+            if phase == DeterrencePhase::Late {
+                think!(self.journal(), Military, Decision,
+                "{} trains a deterrent against {}", g.cities[&cid].name, g.players[rival].civ;
+                "near-rival-deterrence-holds-late: {} for {ours:.0} power against their \
+                 {theirs:.0}, target {:.0} ({ratio:.1} of theirs), a city within \
+                 {DETERRENCE_NEAR_TILES} tiles; {turns:.1} turns{}",
+                unit.replace('_', " "),
+                ratio * theirs,
+                displaced.map_or(String::new(), |item| format!(
+                    "; {} keeps its progress", Self::plain_item(&item))));
+                return;
+            }
             think!(self.journal(), Military, Decision,
             "{} trains a deterrent against {}", g.cities[&cid].name, g.players[rival].civ;
             "near-rival-deterrence: {} for {ours:.0} power against their {theirs:.0}, a city \

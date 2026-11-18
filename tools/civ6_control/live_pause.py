@@ -51,7 +51,7 @@ from typing import Any
 REQUEST_ENV = "CIVVIS_LIVE_PAUSE_FILE"
 STATE_ENV = "CIVVIS_LIVE_PAUSE_STATE_FILE"
 PACE_ENV = "CIVVIS_LIVE_PACE_FILE"
-#: The page's slowest pace is 4 s; past a minute a "pace" is a pause.
+#: The page's slowest pace is 10 s (0.1 turns/s); past a minute a "pace" is a pause.
 MAX_PACE_MS = 60_000
 
 
@@ -68,12 +68,13 @@ def state_path() -> Path:
 
 
 def pace_path() -> Path:
-    """``~/.civvis-live-pace.json``: the page's Watch pace for the live game.
+    """``~/.civvis-live-pace.json``: the page's Max Speed for the live game.
 
-    ``{"ms": N}``, a whole-turn budget (Blitz 500, Fast 1000, Standard 2000,
-    Slow 4000; Lightning 0 is no wait).  The mirror server writes it when the
-    page's pace changes; ``civ6_play.py`` relays it to the control mod as a
-    ``pace`` row.  Host-wide like the pause, so the next game keeps the pace.
+    ``{"ms": N}``, a whole-turn budget: 200/500/1000/2000/4000/10000 are the
+    page's 5/2/1/0.5/0.25/0.1 turns/s caps, and 0 (Max) is no wait.  The
+    mirror server writes it when the page's pace changes; ``civ6_play.py``
+    relays it to the control mod as a ``pace`` row.  Host-wide like the
+    pause, so the next game keeps the pace.
     """
     configured = os.environ.get(PACE_ENV)
     return (Path(configured).expanduser() if configured

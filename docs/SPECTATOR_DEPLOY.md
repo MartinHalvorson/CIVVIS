@@ -115,10 +115,12 @@ systemd unit or a `while` wrapper works the same way.
 
 **Martin-requested simulation requirement:** every turn the exhibition plays
 must be shown in at least one complete frame before the simulation advances.
-At **Blitz, Fast, Standard, and Slow** watch paces, “turn” here means each
+At Max Speed caps of **2 turns/s and slower** (2, 1, 0.5, 0.25 and 0.1 turns/s;
+these were Blitz, Fast, Standard and Slow), “turn” here means each
 living player's completed turn: major players in seat order, then city-states,
 then Free Cities/barbarians. That makes each civilization's unit movement
-visible before the next civilization acts. **Lightning** retains one frame at
+visible before the next civilization acts. **Max** (once Lightning) and
+**5 turns/s** retain one frame at
 the completed round boundary so its unlimited-throughput contract remains
 intact. On a simultaneous world (a research regime — the product rolls only
 sequential worlds, and no request can select the regime), Lightning also

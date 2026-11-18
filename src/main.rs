@@ -70,14 +70,14 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 /// catching everything, which is how it stopped being read. The targeted
 /// `*_cannot_reach_the_frozen_anchor` tests below remain the second line.
 #[cfg(test)]
-const ANCHOR_BEHAVIOUR_FNV: u64 = 0x89ea_660b_d416_d1c8;
+const ANCHOR_BEHAVIOUR_FNV: u64 = 0xf971_70e9_be13_b1e2;
 
 /// How many actions the anchor applies across `ANCHOR_PROFILES`. Pinned beside
 /// the hash because a fingerprint that moved tells you nothing about how far,
 /// and "9,256 decisions rather than 8,959" is a much better first sentence of a
 /// diagnosis than a changed 64-bit number.
 #[cfg(test)]
-const ANCHOR_DECISIONS: usize = 19_739;
+const ANCHOR_DECISIONS: usize = 19_866;
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -1911,7 +1911,7 @@ fn play_command(args: Vec<String>) {
     if args.iter().any(|a| a == "--live-pause") {
         civvis::civ6::enable_live_pause_control();
     }
-    civvis::server::serve_with_game(
+    civvis::server::serve_opening(
         arg(&args, "--port", 8765) as u16,
         !args.iter().any(|a| a == "--no-open"),
         civvis::server::Params {
@@ -1945,7 +1945,11 @@ fn play_command(args: Vec<String>) {
             civs: play_options.civs,
             supervised: args.iter().any(|a| a == "--supervised"),
         },
-        mirrored.or(resumed),
+        match (mirrored, resumed) {
+            (Some(game), _) => civvis::server::Opening::Mirror(game),
+            (None, Some(game)) => civvis::server::Opening::Resumed(game),
+            (None, None) => civvis::server::Opening::Generated,
+        },
         args.iter().any(|a| a == "--paused"),
     );
 }

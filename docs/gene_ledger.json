@@ -4572,6 +4572,15 @@
           "campus-claims-the-free-slot-2": null
         }
       },
+      "capital-archers-before-the-surprise": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "capital-archers-before-the-surprise": null,
+          "capital-archers-before-the-surprise-2": null
+        }
+      },
       "capital-keeps-its-defender": {
         "rule_on": [],
         "head": null,
@@ -4777,6 +4786,15 @@
         "versions": {
           "defend-force-holds-the-city": null,
           "defend-force-holds-the-city-2": null
+        }
+      },
+      "denial-spies-fill-every-slot": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "denial-spies-fill-every-slot": null,
+          "denial-spies-fill-every-slot-2": null
         }
       },
       "diplomatic-contender-kept": {
@@ -5294,7 +5312,17 @@
         "ships": null,
         "versions": {
           "score-seat-raises-wonders": null,
-          "score-seat-raises-wonders-2": null
+          "score-seat-raises-wonders-2": null,
+          "score-seat-raises-wonders-3": null
+        }
+      },
+      "score-seat-sprints-to-the-tally": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "score-seat-sprints-to-the-tally": null,
+          "score-seat-sprints-to-the-tally-2": null
         }
       },
       "score-seat-takes-what-pays": {

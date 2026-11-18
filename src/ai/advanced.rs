@@ -1846,10 +1846,13 @@ type SettlerWalkCosts = BTreeMap<i32, BTreeMap<Pos, f64>>;
 /// stale.
 #[derive(Default)]
 struct SettlementScanShared {
-    /// (`city_exclusion`, `city_state_exclusion`), built on first use.
-    exclusions: Option<(BTreeSet<Pos>, BTreeSet<Pos>)>,
-    /// Prefilter score per plot, for a scan that prefilters.
-    prefilter: BTreeMap<Pos, f64>,
+    /// (`city_exclusion`, `city_state_exclusion`), built on first use. One
+    /// bit per tile: the scan asks each plot of a disk that can cover the
+    /// whole map whether it is excluded, and nothing walks them.
+    exclusions: Option<(TileBits, TileBits)>,
+    /// Prefilter score per plot, for a scan that prefilters. Only ever asked
+    /// by plot.
+    prefilter: crate::fast_map::FastMap<Pos, f64>,
 }
 
 /// `detour-keeps-the-site-worth`: the least of the deferred site's value a
@@ -2073,6 +2076,9 @@ pub struct AdvancedAi {
     /// every later decision view for the rest of the game. Written only by
     /// the fog-honest executor; see `player::block_refused_city_sites`.
     pub(crate) refused_city_sites: BTreeSet<Pos>,
+    /// Whether this seat's planning views keep city yields between passes,
+    /// and how many they have answered that way; see `player::ViewYields`.
+    pub(crate) view_yields: crate::ai::player::ViewYieldKeeping,
     base: BasicAi,
     plan: Option<StrategicPlan>,
     /// Preserve victory objectives across temporary expansion and war postures.
@@ -6995,6 +7001,35 @@ pub struct AdvancedAi {
     /// `declaration-needs-a-capture`: the turn's verdicts by target, so a
     /// turn reads and journals once. Untouched while the gene is off.
     declaration_capture_memo: RefCell<declaration_needs_a_capture::CaptureMemo>,
+    /// `culture-seat-fills-its-district-slots`: a Culture seat's Theater city
+    /// with a free district slot claims a Campus, a Commercial Hub or a
+    /// Harbor. See `advanced/culture_fills_its_slots.rs`. Opt-in.
+    culture_seat_fills_its_district_slots: bool,
+    /// `capital-archers-before-the-surprise`: under the capital watch at 2.5x
+    /// our power, Archery goes ahead of Masonry, the capital's Slingers upgrade
+    /// at once from held Gold, a second shooter is trained or bought ahead of
+    /// the next Settler, and the best shooter keeps the City Center. See
+    /// `advanced/capital_archers_before_the_surprise.rs`. Opt-in.
+    capital_archers_before_the_surprise: bool,
+    /// `capital-archers-before-the-surprise-2`: version one, and in the
+    /// opening a watched major's soldier within six tiles of the unwalled
+    /// original capital arms its spending legs at 2.5x. See
+    /// `advanced/capital_archers_before_the_surprise.rs`. Opt-in.
+    capital_archers_before_the_surprise_2: bool,
+    /// The turn a watched major's soldier was last seen within six tiles of
+    /// the original capital, by owner, under
+    /// `capital-archers-before-the-surprise-2`.
+    capital_archers_door_sightings: BTreeMap<usize, u32>,
+    /// `denial-spies-cover-every-racer`: the space racers are ranked by their
+    /// progress (projects, then the expedition's trip), Science only breaking
+    /// a tie, and every racer within one project of the lead gets a Spy of
+    /// ours before any gets a second. See
+    /// `advanced/denial_spies_cover_every_racer.rs`. Opt-in.
+    denial_spies_cover_every_racer: bool,
+    /// `denial-spies-fill-every-slot-2`: version one, and on a Score aim as
+    /// well as a Culture or Domination one. See
+    /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
+    denial_spies_fill_every_slot_2: bool,
     /// `diplo-seat-claims-the-competition`: a Diplomatic seat keeps one
     /// scored competition's project (Send Aid, Training Athletes, Training
     /// Astronauts) in production while the competition runs. See
@@ -7852,6 +7887,16 @@ pub struct AdvancedAi {
     /// strike unless the rival's faith stands at match point. See
     /// `advanced/faithless_seat_holds_its_faith_strikes.rs`. Off by default.
     faithless_seat_holds_its_faith_strikes: bool,
+    /// `edge-unit-rushes-from-the-capital`: on a Score or Domination seat
+    /// whose civilization trains a unique land melee unit on turn one with
+    /// no technology and no strategic resource, at least 8 stronger than the
+    /// Warrior (Sumeria's War-Cart, the Aztec Eagle Warrior), the capital
+    /// trains three before anything else, they scout, the nearest unwalled
+    /// rival city is named from one city, the force declares on the capture
+    /// forecast, keeps what it takes and goes on while the forecast holds.
+    /// Runs the edge unit's window by itself. See
+    /// `advanced/edge_unit_takes_the_soft_city.rs`. Off by default.
+    edge_unit_rushes_from_the_capital: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -8217,6 +8262,15 @@ pub struct AdvancedAi {
     /// or offensive bodies for a target whose walls nothing it can field
     /// will breach. See `advanced/hopeless_army_yields_the_queue.rs`. Opt-in.
     hopeless_army_yields_the_queue: bool,
+    /// `gun-resource-buys-the-tile`: while a land siege gun the Domination
+    /// seat can build waits on a Niter or Oil it draws none of, the purchase
+    /// pass buys the deposit a city can buy, or the tile beside one in a
+    /// city's third ring. See `advanced/gun_resource_tile.rs`. Off by default.
+    gun_resource_buys_the_tile: bool,
+    /// `guns-keep-the-oil`: a Domination seat's Infantry, Tanks and
+    /// oil-burning ships spend only the Oil its siege guns do not need. See
+    /// `advanced/guns_keep_the_oil.rs`. Opt-in.
+    guns_keep_the_oil: bool,
     // ---- append: l-o ------------------------------------------------
     /// Ask the host for a cash price for a native land upgrade material bill.
     /// Opt-in; see `advanced/army_upgrade_materials.rs`.
@@ -8889,6 +8943,38 @@ pub struct AdvancedAi {
     /// while the income holds. See `advanced/one_upgrade_lifts_every_city.rs`.
     /// Off by default.
     one_upgrade_lifts_every_city: bool,
+    /// `near-rival-deterrence-holds-late`: `near-rival-deterrence` past its
+    /// window, at [`near_rival_deterrence_holds_late::LATE_DETERRENCE_RATIO`]
+    /// (0.8) of a near neighbour's power, on any seat but Domination: Gold
+    /// upgrades down to the wartime reserve, then the opening gene's land
+    /// unit claim, then the next tier of Walls nearest the neighbour. Live
+    /// Deity civvis-20261115T075925Z: the opening claim fired 43 times to t79
+    /// and never after; Russia went 478 -> 1094 power t90-105 against our
+    /// 461 -> 553, declared at t108 at 0.39, and five of six cities fell by
+    /// t123. See `advanced/near_rival_deterrence_holds_late.rs`. Off by
+    /// default.
+    near_rival_deterrence_holds_late: bool,
+    /// `open-capital-declares-at-twice`: a Domination seat holding twice the
+    /// campaign target's steady military, with the target's original capital
+    /// standing without walls inside the declaration range and reachable by
+    /// land, declares as on prey: no home Defend row, no staged ring and no
+    /// Production parity is asked. The capture forecast, the march hold and
+    /// the denouncement's turns still apply. Live Immortal 2026-11-15:
+    /// civvis-20261115T172539Z (Arabia, Cairo unwalled, 2.0-2.3x from t106)
+    /// and 181018Z (Germany, Aachen unwalled, 2.0-2.1x t100-102) held for the
+    /// Siege row and the Defend row to retirement. See
+    /// `advanced/open_capital_declares_at_twice.rs`. Off by default.
+    open_capital_declares_at_twice: bool,
+    /// `near-rival-deterrence-opens-early`: `near-rival-deterrence` opens at
+    /// live turn 10 instead of 30, and a met major whose soldier stood within
+    /// eight tiles of our original capital in the capital watch's ten turns
+    /// is a neighbour in the opening window even with none of its cities
+    /// known within ten tiles. Live Immortal 2026-11-15: the last four
+    /// original capitals fell to opening wars (t24-59, 0.39-0.77 of the
+    /// attacker's power) without one deterrent trained before the
+    /// declaration. See `advanced/near_rival_deterrence_opens_early.rs`. Off
+    /// by default.
+    near_rival_deterrence_opens_early: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -9509,6 +9595,11 @@ pub struct AdvancedAi {
     /// `guns-stay-out-of-reach` for the units it reads. See
     /// `advanced/priced_risk.rs`. Opt-in.
     risk_is_priced: bool,
+    /// `passage-waits-past-the-opening`: no Open Borders purchase before
+    /// Online turn 80 (speed-scaled), and after it none from a rival whose
+    /// military is over 1.5x ours; one journal line per withheld purchase.
+    /// See `advanced/passage_waits_past_the_opening.rs`. Opt-in.
+    passage_waits_past_the_opening: bool,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -9525,6 +9616,13 @@ pub struct AdvancedAi {
     score_seat_raises_wonders_2: bool,
     /// `score-seat-raises-wonders-2`: the hold last journalled.
     score_wonder_hold: Option<String>,
+    /// `score-seat-raises-wonders-3`: version 3, carrying version 2. Through a
+    /// "safety first" hold one lane stays open in a rear city, ten tiles or
+    /// more from every major at war with us or out-gunning us; war at the
+    /// gates closes it. See `advanced/score_wonders.rs`. Off by default.
+    score_seat_raises_wonders_3: bool,
+    /// `score-seat-raises-wonders-3`: the rear lane's state last journalled.
+    score_wonder_rear_note: Option<String>,
     /// `siege-goes-on-the-forecast`: the siege train goes, holds and stands
     /// down on the capture forecast, and the Objective Board ranks Siege rows
     /// by value x P / expected turns. Implies the reading. See
@@ -10340,6 +10438,10 @@ pub struct AdvancedAi {
     /// unique Aqueduct (Rome's Bath) claims it in every city that can hold
     /// one. See `advanced/score_builds_the_bath.rs`. Opt-in.
     score_seat_builds_the_bath: bool,
+    /// `score-seat-fills-its-district-slots`: a Score seat's city with a
+    /// free district slot claims the cheapest specialty district it can
+    /// place. See `advanced/score_fills_its_slots.rs`. Opt-in.
+    score_seat_fills_its_district_slots: bool,
     /// `score-seat-expands-hard`: with `no-city-limit` on, a Score seat's
     /// Settler claim stays open past the opening and takes more queues in
     /// every city, the pipeline widens to one more than the cities, and the
@@ -10389,6 +10491,43 @@ pub struct AdvancedAi {
     /// point. See `advanced/score_seat_holds_its_faith_strikes.rs`. Off by
     /// default.
     score_seat_holds_its_faith_strikes: bool,
+    /// `settler-keeps-its-named-site`: the ranked pick passes over an unseen
+    /// plot and a site within the founding spacing of another Settler's, and
+    /// every change of destination is journalled. See
+    /// `advanced/settler_keeps_its_named_site.rs`. Off by default.
+    settler_keeps_its_named_site: bool,
+    /// `settler-keeps-its-named-site`: the last site each Settler named,
+    /// keyed by its stable Civ VI id so the live mirror's per-frame board ids
+    /// cannot lose it. Empty with the gene off.
+    settler_named_sites: BTreeMap<i64, Pos>,
+    /// `score-seat-sprints-to-the-tally`: from twenty Online turns before the
+    /// turn limit, a Score seat's queues take the item with the most tally
+    /// points per Production that finishes in time (no project, no
+    /// Spaceport) and its Gold and Faith above a small reserve buy the fewest
+    /// coins a point. See `advanced/score_sprints_to_the_tally.rs`. Opt-in.
+    score_seat_sprints_to_the_tally: bool,
+    /// `siege-guns-take-a-reachable-post`: a siege gun that has held one
+    /// firing post for two turns without standing on it takes a post it can
+    /// reach this turn or next, a soldier of ours on that post steps off it,
+    /// and a Stage escort stops holding at the muster line once one gun
+    /// stands in range. See `advanced/siege_train/reachable_post.rs`. Off by
+    /// default.
+    siege_guns_take_a_reachable_post: bool,
+    /// `siege-guns-take-a-reachable-post`: each siege gun's post, the turn
+    /// it was drawn there and whether the gene drew it, carried through the
+    /// live rebuild by `remap_siege_memory`. Empty with the gene off.
+    siege_gun_posts_held: BTreeMap<u32, siege_train::HeldPost>,
+    /// `spared-soldiers-come-to-the-capital`: at our original capital the
+    /// Anvil's one-blow rewrite leaves no posted soldier standing more than
+    /// two tiles out. Acts only through `anvil-spares-the-one-blow`. See
+    /// `advanced/spared_soldiers_come_to_the_capital.rs`. Off by default.
+    spared_soldiers_come_to_the_capital: bool,
+    /// `score-seat-sprints-to-the-tally-2`: version 2 of
+    /// `score-seat-sprints-to-the-tally`. A Great Person is priced with its
+    /// Historic Moment, each class goes to the currency that is idle and
+    /// reaches it, and patronage opens thirty Online turns before the limit.
+    /// See `advanced/score_sprints_to_the_tally.rs`. Opt-in.
+    score_seat_sprints_to_the_tally_2: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11304,6 +11443,9 @@ mod faithless_seat_holds_its_faith_strikes;
 /// `own-flip-faith-war-asks-no-power`: see `advanced/own_flip_faith_war.rs`.
 mod own_flip_faith_war;
 
+/// `open-capital-declares-at-twice`: see
+/// `advanced/open_capital_declares_at_twice.rs`.
+mod open_capital_declares_at_twice;
 /// `open-city-draws-the-front`: see `advanced/open_city_front.rs`.
 mod open_city_front;
 /// `open-city-is-the-objective`: see `advanced/open_city_objective.rs`.
@@ -11327,6 +11469,8 @@ mod denial_nearest_finish;
 mod denial_needs_a_road;
 /// `denial-spies-count-their-losses`: see `advanced/denial_spies_count_their_losses.rs`.
 mod denial_spies_count_their_losses;
+/// `denial-spies-cover-every-racer`: see `advanced/denial_spies_cover_every_racer.rs`.
+mod denial_spies_cover_every_racer;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;
@@ -11378,6 +11522,9 @@ mod culture_commerce_floor;
 /// `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`.
 mod culture_drama_first;
 mod culture_faith_sources;
+/// `culture-seat-fills-its-district-slots`: a Culture seat's free district
+/// slots. See `advanced/culture_fills_its_slots.rs`.
+mod culture_fills_its_slots;
 /// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
 mod culture_theater_first;
 /// `culture-road-takes-the-unique-first`: see `advanced/culture_unique_first.rs`.
@@ -11489,6 +11636,9 @@ mod score_builds_the_bath;
 /// `score-seat-expands-hard`: a Score seat's Settlers take the queue in every
 /// city. See `advanced/score_expands_hard.rs`.
 mod score_expands_hard;
+/// `score-seat-fills-its-district-slots`: a Score seat's free district
+/// slots. See `advanced/score_fills_its_slots.rs`.
+mod score_fills_its_slots;
 /// `score-seat-keeps-friends`: see `advanced/score_keeps_friends.rs`.
 mod score_keeps_friends;
 /// `score-seat-plays-for-points`: a Score-target seat's production buys
@@ -11499,6 +11649,9 @@ mod score_seat_founds_early;
 /// `score-seat-holds-its-faith-strikes`: see
 /// `advanced/score_seat_holds_its_faith_strikes.rs`.
 mod score_seat_holds_its_faith_strikes;
+/// `score-seat-sprints-to-the-tally`: see
+/// `advanced/score_sprints_to_the_tally.rs`.
+mod score_sprints_to_the_tally;
 /// `score-seat-raises-wonders`: a Score seat's wonder program, a queue claim
 /// that acts natively and live. See `advanced/score_wonders.rs`.
 mod score_wonders;
@@ -11612,6 +11765,8 @@ mod battle_planner;
 pub(super) mod battle_solver;
 /// `defenders-hold-the-walls`: see `advanced/defenders_hold_the_walls.rs`.
 mod defenders_hold_the_walls;
+/// `guns-keep-the-oil`: see `advanced/guns_keep_the_oil.rs`.
+mod guns_keep_the_oil;
 mod guns_stay_out_of_reach;
 mod guru_walks_to_the_wounded;
 /// `risk-is-priced`: see `advanced/priced_risk.rs`.
@@ -11668,6 +11823,9 @@ mod siege_road;
 /// waits on, bought from a rival's trade screen. See
 /// `advanced/gun_resource.rs`.
 mod gun_resource;
+/// `gun-resource-buys-the-tile`: the deposit of the guns' Niter or Oil,
+/// bought as a tile. See `advanced/gun_resource_tile.rs`.
+mod gun_resource_tile;
 pub use gun_resource::{BarterSpare, GunResourceWant};
 mod army_upgrade_materials;
 pub use army_upgrade_materials::ArmyUpgradeMaterialWant;
@@ -11778,6 +11936,14 @@ mod near_done_work_finishes;
 /// out-guns us in the opening. One opt-in gene; see
 /// `advanced/near_rival_deterrence.rs`.
 mod near_rival_deterrence;
+/// `near-rival-deterrence-holds-late`: the deterrent, Gold upgrades and the
+/// next tier of Walls past the opening window. One opt-in gene; see
+/// `advanced/near_rival_deterrence_holds_late.rs`.
+mod near_rival_deterrence_holds_late;
+/// `near-rival-deterrence-opens-early`: the opening deterrent from live turn
+/// 10, and a soldier at the capital's door makes a neighbour. One opt-in
+/// gene; see `advanced/near_rival_deterrence_opens_early.rs`.
+mod near_rival_deterrence_opens_early;
 /// `rival-pace`: a calibrated rival chair's city horizon follows the live
 /// Immortal field's city count by turn. Not a gene — set only by
 /// `gene_screen --rival-pace` on its rival chairs; see
@@ -11875,6 +12041,10 @@ mod band_hunt;
 /// `advanced/band_plays_at_level_three.rs`.
 mod band_plays_at_level_three;
 mod band_plays_its_stage;
+/// `band-plays-the-stage-at-hand`: a Rock Band plays a stage it can reach this
+/// turn instead of a long trip to a stage at most one level better. See
+/// `advanced/band_plays_the_stage_at_hand.rs`.
+mod band_plays_the_stage_at_hand;
 /// `band-plays-what-it-can-reach`: a Rock Band plays, or steps toward a
 /// stage it can really reach; a refused trip turns it to another host. See
 /// `advanced/band_plays_what_it_can_reach.rs`.
@@ -12035,6 +12205,9 @@ mod spaceport_above_sea;
 /// The Science lane's launch sites: how many Spaceports it wants, which cities
 /// carry them, and what those cities build. See `advanced/spaceports.rs`.
 mod spaceports;
+/// `spared-soldiers-come-to-the-capital`: see
+/// `advanced/spared_soldiers_come_to_the_capital.rs`.
+mod spared_soldiers_come_to_the_capital;
 mod spears_answer_the_horse;
 mod spies_price_the_science_head;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
@@ -12045,6 +12218,9 @@ mod spy_civics_come_first;
 /// A Spy the host reports idle spends its order's patience. See
 /// `advanced/spy_patience_reads_the_host.rs`.
 mod spy_patience_reads_the_host;
+/// One spy per target city: the reading the spy-posting genes share. See
+/// `advanced/spy_targets.rs`.
+mod spy_targets;
 /// `sweden-builds-open-air-museums`: see
 /// `advanced/sweden_builds_open_air_museums.rs`.
 mod sweden_builds_open_air_museums;
@@ -12164,6 +12340,10 @@ mod rear_cities_grow_through_the_war_hold;
 /// asks wider questions instead of holding, and a watchdog bounds every
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
 mod settler_never_idles;
+/// A Settler is sent only to a site it can keep, and every change of its
+/// destination is journalled. One opt-in gene; see
+/// `advanced/settler_keeps_its_named_site.rs`.
+mod settler_keeps_its_named_site;
 /// `settler-founds-under-raiders`: see `advanced/settler_raiders.rs`.
 mod settler_raiders;
 /// Route around a host-refused step before discarding its city destination.
@@ -12265,6 +12445,12 @@ mod worked_backlog_claim;
 /// `advanced/world_religion_condemns.rs`.
 mod world_religion_condemns;
 
+/// Archery before Masonry, the capital's Slingers upgraded from held Gold,
+/// a second shooter trained or bought ahead of the next Settler, and the best
+/// shooter kept in the City Center, under the same watch. Opt-in gene
+/// `capital-archers-before-the-surprise`. See
+/// `advanced/capital_archers_before_the_surprise.rs`.
+mod capital_archers_before_the_surprise;
 /// Masonry, the capital's Walls and a bought defender before a stronger
 /// neighbour at peace can surprise the original capital. Opt-in gene
 /// `capital-walls-before-the-surprise`. See
@@ -12281,6 +12467,10 @@ mod envoys_open_the_siege_road;
 mod forward_airfield_project;
 mod frontier_walls_before_the_surprise;
 mod modernization_prices_the_path;
+/// `passage-waits-past-the-opening`: no Open Borders bought in the opening,
+/// none after it from a rival over 1.5x our military. See
+/// `advanced/passage_waits_past_the_opening.rs`.
+mod passage_waits_past_the_opening;
 /// `policy-swap-keeps-the-army-paid`: see
 /// `advanced/policy_swap_keeps_the_army_paid.rs`.
 mod policy_swap_keeps_the_army_paid;
@@ -12605,6 +12795,7 @@ impl AdvancedAi {
         self.settler_targets.clear();
         self.settler_stalls.clear();
         self.settler_stall_turn.clear();
+        self.settler_named_sites.clear();
         self.escort_march.clear();
         self.settler_guards.clear();
         self.settler_sea_guards.clear();
@@ -18251,7 +18442,13 @@ impl AdvancedAi {
         // instead. `reserve` with the gene off.
         let aluminum_reserve = self.aluminum_tile_reserve(g, pid, plan, reserve);
         let bought_aluminum = self.aluminum_tile_purchase(g, pid, aluminum_reserve);
-        let mut purchased = bought_out_an_outpost || bought_a_first_asset || bought_aluminum;
+        // `gun-resource-buys-the-tile`: the deposit the siege guns' Niter or
+        // Oil waits on, or the tile beside it, out of the upkeep floor.
+        // False, and nothing touched, with the gene off. See
+        // `advanced/gun_resource_tile.rs`.
+        let bought_gun_tile = self.gun_resource_tile_purchase(g, pid, plan, reserve);
+        let mut purchased =
+            bought_out_an_outpost || bought_a_first_asset || bought_aluminum || bought_gun_tile;
         let mut purchased_units = 0;
         for _ in 0..purchase_limit {
             let bank = g.players[pid].gold;
@@ -20719,6 +20916,8 @@ impl AdvancedAi {
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
         // `upkeep-waits-for-the-income`: see `advanced/upkeep_waits_for_the_income.rs`.
         self.note_upkeep_wait_state(g, pid);
+        // `guns-keep-the-oil`: see `advanced/guns_keep_the_oil.rs`.
+        self.note_guns_keep_the_oil(g, pid);
         let sanctuary = self.adopted_faith_sanctuary_choice(g, pid, plan.threatened_city);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
         let science_specialized = self.phase_specialization_active(g) && science_targeted;
@@ -20965,14 +21164,18 @@ impl AdvancedAi {
                 && self.early_settler_floor_holds(g, pid, cid, plan);
             // `near-rival-deterrence`: the deterrent finishes while a
             // neighbour still out-guns us.
-            let deterrence_commitment = committed
-                .as_ref()
-                .is_some_and(|(_, item)| self.deterrence_unit_holds(g, pid, item));
+            // `near-rival-deterrence-holds-late`: its Walls likewise.
+            let deterrence_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                self.deterrence_unit_holds(g, pid, item)
+                    || self.late_deterrence_walls_hold(g, pid, cid, item)
+            });
             // `capital-walls-before-the-surprise`: the capital's claimed
             // Walls finish while they are armed.
-            let capital_walls_commitment = committed
-                .as_ref()
-                .is_some_and(|(_, item)| self.capital_walls_hold(g, pid, cid, item));
+            // `capital-archers-before-the-surprise`: its shooter likewise.
+            let capital_walls_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                self.capital_walls_hold(g, pid, cid, item)
+                    || self.capital_archers_hold(g, pid, cid, item)
+            });
             // `granary-claims-the-bound-queue`: the claimed Granary finishes
             // while the city is still housing-bound.
             let bound_granary_commitment = committed
@@ -21980,6 +22183,10 @@ impl AdvancedAi {
         if !self.hint_city_in_reach_of_war(g, pid, city) {
             preview.claim_religion_seat_faith_hint(&mut board, pid, &plan, city);
         }
+        // `edge-unit-rushes-from-the-capital`: the hint for a rush queue is
+        // the next edge unit, in the opening book too. Exact no-op off the
+        // rush.
+        preview.claim_edge_rush_queue(&mut board, pid);
         preview.advanced_production(&mut board, pid, &plan, false);
         // `hint-runs-the-claims`: the defensive writers that follow the
         // governors on the main path, in the same order, so the hint is never
@@ -22952,6 +23159,10 @@ impl AdvancedAi {
         let city = &g.cities[&cid];
         let city_count = g.player_city_ids(pid).len();
         if !self.air_resource_item_preserves_wing(g, pid, cid, item) {
+            return -10_000.0;
+        }
+        // `guns-keep-the-oil`: see `advanced/guns_keep_the_oil.rs`.
+        if !self.guns_keep_the_oil_item(g, pid, cid, item) {
             return -10_000.0;
         }
         // The undermanned-war exception permits defenders, not another Spy
@@ -26295,6 +26506,12 @@ impl AdvancedAi {
             match action {
                 Action::KeepCity { .. } => {
                     value += development;
+                    // `edge-unit-rushes-from-the-capital`: the rush keeps the
+                    // cities its war takes. `false` off the rush. See
+                    // `advanced/edge_unit_takes_the_soft_city.rs`.
+                    if self.edge_rush_keeps(before, pid, city_id) {
+                        value += 1_000.0;
+                    }
                     if nearest_core > 9 && city.loyalty <= 50.0 {
                         value -= (nearest_core - 9) as f64 * 5.0;
                     }
@@ -26819,6 +27036,11 @@ impl AdvancedAi {
         }
         self.census.count(plan.strategy);
         self.advanced_research(g, pid, &plan);
+        // `capital-archers-before-the-surprise`: the Slingers at the watched
+        // capital take their Archer upgrade before any purchase below can
+        // spend its price. Exact no-op while the gene is off. See
+        // `advanced/capital_archers_before_the_surprise.rs`.
+        self.capital_archers_upgrade(g, pid);
         // A city that can fall next turn cannot wait for an upgrade, Great
         // Person patronage, or a generic reserve-aware purchase scorer. The
         // emergency spends at most one action and suppresses that later
@@ -26839,8 +27061,12 @@ impl AdvancedAi {
         // original capital while a stronger neighbour at peace stands at its
         // door owns the turn the same way. See
         // `advanced/capital_walls_before_the_surprise.rs`.
+        // `capital-archers-before-the-surprise`: likewise the capital's
+        // missing shooter, bought at once. `false` with the gene off.
         let surprise_defense_purchase = !emergency_city_defense
-            && (self.surprise_defense_purchase(g, pid) || self.capital_garrison_purchase(g, pid));
+            && (self.surprise_defense_purchase(g, pid)
+                || self.capital_garrison_purchase(g, pid)
+                || self.capital_archers_purchase(g, pid));
         // `breaker-bought-for-the-siege`: after the city-saving purchases,
         // the wall-breaker a held siege is waiting for. See
         // `advanced/siege_train/breaker_purchase.rs`.
@@ -26863,7 +27089,13 @@ impl AdvancedAi {
         // A watched prewar capital can arm one healthy Slinger before the
         // peaceful portfolio spends. Then `gold-buys-the-idle-trader` fills
         // an empty route slot. Both preserve the city-saving purchase lane.
-        if !emergency_city_defense && !surprise_defense_purchase {
+        // `capital-archers-before-the-surprise`: the Trader, Builder and tile
+        // purchases wait while a 2.5x major is watched at the unwalled
+        // capital. `false` with the gene off.
+        if !emergency_city_defense
+            && !surprise_defense_purchase
+            && !self.capital_archers_hold_the_chest(g, pid)
+        {
             self.capital_watch_slinger_upgrade(g, pid);
             // `gold-buys-the-opening-builder`: a builderless opening's Builder
             // before the route slot's Trader. See
@@ -26909,6 +27141,13 @@ impl AdvancedAi {
         // appointed package has its own bill and runs its own pass, so this
         // stands down for it; the late generic pass below is then a no-op
         // because the upgrades have already been consumed.
+        // `near-rival-deterrence-holds-late`: a near neighbour at peace out-guns
+        // us past the opening; the upgrade budget goes down to the wartime
+        // reserve before the purchase portfolio. Exact no-op while the gene is
+        // off. See `advanced/near_rival_deterrence_holds_late.rs`.
+        if self.war_plan.is_none() {
+            self.late_deterrence_upgrades(g, pid);
+        }
         if self.upgrade_the_garrison && self.war_plan.is_none() {
             let at_major_war = g.players.iter().any(|other| {
                 other.id != pid
@@ -26970,6 +27209,14 @@ impl AdvancedAi {
         if self.war_faith_buys_the_army_now(g, pid, &plan) {
             let reserve = self.war_faith_reserve(g, pid);
             self.military_faith_spending_above(g, pid, &plan, reserve);
+        }
+        // `score-seat-sprints-to-the-tally`: inside the tally window the Gold
+        // and Faith above a small reserve buy the fewest coins a point,
+        // after the defence purchases above and before patronage and the
+        // stock purchase pass. Exact no-op while the gene is off. See
+        // `advanced/score_sprints_to_the_tally.rs`.
+        if !emergency_city_defense && !surprise_defense_purchase {
+            self.score_sprint_purchases(g, pid, &plan);
         }
         self.advanced_great_people(g, pid, self.great_person_lane(g, pid, &plan));
         // `religion-seat-fields-apostles`: a positive saving decision below
@@ -27111,6 +27358,11 @@ impl AdvancedAi {
         self.claim_religion_seat_faith_economy(g, pid, &plan);
         // See `last_civ_standing`: in a final war every idle queue arms.
         self.arm_for_the_final_war(g, pid, &plan);
+        // `edge-unit-rushes-from-the-capital`: the rush's first bodies take
+        // the capital's idle queue ahead of the opening book and of the
+        // governor. Exact no-op off the rush. See
+        // `advanced/edge_unit_takes_the_soft_city.rs`.
+        self.claim_edge_rush_queue(g, pid);
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
         if self.base.book_pos < 4 {
@@ -27405,6 +27657,10 @@ impl AdvancedAi {
         // handoffs below. Exact no-op while the gene is off. See
         // `advanced/capital_walls_before_the_surprise.rs`.
         self.claim_capital_walls_before_the_surprise(g, pid);
+        // `capital-archers-before-the-surprise`: behind the walls' claim, the
+        // capital's second shooter ahead of the next Settler. Exact no-op
+        // while the gene is off.
+        self.claim_capital_archers_before_the_surprise(g, pid);
         // `unique-unit-closes-the-dark-age`: the first unique unit before
         // the era closes, when it turns a Dark Age Normal. Exact no-op while
         // the gene is off. See `advanced/unique_unit_closes_the_age.rs`.
@@ -27433,6 +27689,12 @@ impl AdvancedAi {
         // Satellite until it lands, bridging the pad hold and
         // `launch-commits-the-endgame`.
         self.claim_satellite_holds_the_pad(g, pid, &plan);
+        // `score-seat-sprints-to-the-tally`: inside the tally window every
+        // queue takes what scores most a Production and finishes in time,
+        // after every ordinary writer and the pad holds, before the defence
+        // handoffs below, which keep the last word. Exact no-op while the
+        // gene is off. See `advanced/score_sprints_to_the_tally.rs`.
+        self.claim_score_sprint_queues(g, pid, &plan);
         self.claim_frontier_walls_before_the_surprise(g, pid);
         // Make the declaration response the final authority over queues this
         // turn. Earlier governors can continue to express their peaceful

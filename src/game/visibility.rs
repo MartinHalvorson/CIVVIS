@@ -531,6 +531,7 @@ impl Game {
         heights: &mut HeightField,
         from: Pos,
         to: Pos,
+        known_distance: Option<i32>,
         viewer_height: i32,
         see_through_woods: bool,
     ) -> bool {
@@ -539,6 +540,7 @@ impl Game {
             heights,
             from,
             to,
+            known_distance,
             viewer_height,
             target_height,
             see_through_woods,
@@ -571,17 +573,23 @@ impl Game {
             &mut heights,
             from,
             to,
+            None,
             viewer_height,
             target_height,
             see_through_woods,
         )
     }
 
+    /// `known_distance` is `from`'s distance to `to` when the caller already
+    /// walked it (the sight sweep's ring table); it saves asking the globe
+    /// again and is ignored on a flat map.
+    #[allow(clippy::too_many_arguments)]
     fn tile_has_line_to(
         &self,
         heights: &mut HeightField,
         from: Pos,
         to: Pos,
+        known_distance: Option<i32>,
         viewer_height: i32,
         target_height: i32,
         see_through_woods: bool,
@@ -593,7 +601,7 @@ impl Game {
         // A globe does not have a cube ray and an arena must keep its
         // non-wrapping distance, so both retain the original check.
         if sphere {
-            let distance = self.wdist(from, to);
+            let distance = known_distance.unwrap_or_else(|| self.wdist(from, to));
             if distance <= 1 {
                 return true;
             }
@@ -677,19 +685,21 @@ impl Game {
         // Sight range is a hard cap in Civ VI. Elevation decides what a unit can
         // see *past*, never how far it can see: a Mountain outside a Settler's
         // three tiles stays dark until something walks close enough to it.
-        self.map.for_each_disk(from, radius, |target| {
-            if flying
-                || self.tile_has_visibility_line(
-                    heights,
-                    from,
-                    target,
-                    viewer_height,
-                    see_through_woods,
-                )
-            {
-                self.mark_visible(&mut visible, target);
-            }
-        });
+        self.map
+            .for_each_disk_with_distance(from, radius, |target, distance| {
+                if flying
+                    || self.tile_has_visibility_line(
+                        heights,
+                        from,
+                        target,
+                        distance,
+                        viewer_height,
+                        see_through_woods,
+                    )
+                {
+                    self.mark_visible(&mut visible, target);
+                }
+            });
         visible
     }
 
@@ -1732,7 +1742,7 @@ impl Game {
     fn with_suzerain_memo<R>(&mut self, pass: impl FnOnce(&mut Game) -> R) -> R {
         let installed = self.query_memo.suzerain.borrow().is_none();
         if installed {
-            *self.query_memo.suzerain.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.suzerain.borrow_mut() = Some(Default::default());
         }
         let result = pass(self);
         if installed {

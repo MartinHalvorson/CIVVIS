@@ -33,6 +33,7 @@ fn kept_own(game: &Game) -> Vec<u32> {
     game.query_memo
         .own_yields
         .borrow()
+        .yields
         .keys()
         .copied()
         .collect()
@@ -42,6 +43,7 @@ fn kept(game: &Game) -> Vec<u32> {
     game.query_memo
         .rival_yields
         .borrow()
+        .yields
         .keys()
         .copied()
         .collect()
@@ -256,4 +258,105 @@ fn nothing_is_kept_unless_a_driver_asks_and_a_clone_never_keeps() {
 
     game.keep_rival_yields(false);
     assert!(kept(&game).is_empty(), "turning it off drops what it held");
+}
+
+/// What a yield is made of is kept beside it: the citizen plan, which the
+/// Builder census and the state document ask for by itself, and the split of
+/// the empire's luxuries, which every city's amenities ask for.
+#[test]
+fn a_citys_plan_and_its_empires_luxury_split_are_kept_beside_its_yields() {
+    let (mut game, _, theirs) = two_capitals();
+    let reference = game.clone();
+    game.keep_rival_yields(true);
+
+    // Deriving the yield works the plan out and splits the luxuries once.
+    game.city_yields(theirs);
+    assert_eq!(game.kept_plans_reused(), (0, 0));
+    {
+        let held = game.query_memo.rival_yields.borrow();
+        assert!(held.plans.contains_key(&theirs));
+        assert!(held.luxuries.contains_key(&1));
+    }
+
+    // Asked for by themselves, with no memo open, they answer from there —
+    // and are what a board that keeps nothing works out.
+    assert_eq!(
+        game.city_citizen_plan(theirs),
+        reference.city_citizen_plan(theirs)
+    );
+    assert_eq!(game.kept_plans_reused().0, 1);
+    assert_eq!(
+        game.city_amenities(&game.cities[&theirs]),
+        reference.city_amenities(&reference.cities[&theirs])
+    );
+    assert_eq!(game.kept_plans_reused().1, 1);
+
+    // A what-if under other weights is neither kept nor answered from this.
+    let weighted = game.city_citizen_plan_weighted(theirs, Some(Yields::default()));
+    assert_eq!(
+        weighted,
+        reference.city_citizen_plan_weighted(theirs, Some(Yields::default()))
+    );
+    assert_eq!(game.kept_plans_reused().0, 1);
+
+    // The plan asked for first is kept for the yield that follows it.
+    game.board_written();
+    game.city_citizen_plan(theirs);
+    assert!(kept(&game).is_empty(), "no yield was derived");
+    assert_eq!(game.city_yields(theirs), reference.city_yields(theirs));
+    assert_eq!(
+        game.kept_plans_reused().0,
+        2,
+        "the yield summed the kept plan"
+    );
+}
+
+/// Whatever drops a kept yield drops the plan and the split kept with it.
+#[test]
+fn the_kept_plan_and_split_go_wherever_the_kept_yield_goes() {
+    let (mut game, _, theirs) = two_capitals();
+    game.keep_rival_yields(true);
+    let nothing_kept = |game: &Game| {
+        let held = game.query_memo.rival_yields.borrow();
+        held.yields.is_empty() && held.plans.is_empty() && held.luxuries.is_empty()
+    };
+
+    game.city_yields(theirs);
+    assert!(!nothing_kept(&game));
+    assert!(game.apply(1, &Action::EndTurn).is_err());
+    assert!(nothing_kept(&game), "an action, even a refused one");
+
+    game.city_yields(theirs);
+    game.board_written();
+    assert!(nothing_kept(&game), "a reported write");
+
+    game.city_yields(theirs);
+    let tile = game.cities[&theirs].pos;
+    game.map
+        .tiles
+        .get_mut(&tile)
+        .expect("their centre")
+        .pillaged = false;
+    game.city_citizen_plan(theirs);
+    assert_eq!(
+        game.kept_plans_reused().0,
+        0,
+        "a tile write moves the grid's epoch, and the plan is worked out again"
+    );
+
+    game.city_yields(theirs);
+    game.keep_rival_yields(false);
+    assert!(nothing_kept(&game), "turning it off");
+}
+
+/// The audit checks a reused plan the way it checks a reused yield.
+#[test]
+#[should_panic(expected = "a kept citizen plan went stale")]
+fn the_audit_panics_on_a_stale_plan() {
+    let (mut game, _, theirs) = two_capitals();
+    game.keep_rival_yields(true);
+    game.audit_rival_yields(true);
+    game.city_citizen_plan(theirs);
+    game.cities.get_mut(&theirs).expect("their capital").pop += 3;
+    game.city_citizen_plan(theirs);
 }

@@ -19,6 +19,7 @@
 //! code is otherwise unchanged.
 
 use super::*;
+use crate::game::adjacency::PlotAdjacencies;
 
 impl AdvancedAi {
     pub(super) fn settlement_base_housing(g: &Game, pid: usize, pos: Pos) -> f64 {
@@ -272,11 +273,12 @@ impl AdvancedAi {
         pid: usize,
         pos: Pos,
         positions: &[Pos],
+        plots: &mut PlotAdjacencies,
     ) -> f64 {
         if !self.adjacency_site_planning {
             return 0.0;
         }
-        let potential = g.settlement_adjacency_summary_from_positions(pid, pos, positions);
+        let potential = g.settlement_adjacency_summary_from_positions(pid, pos, positions, plots);
         (Self::settlement_yield_value(potential) * 0.5).min(24.0)
     }
 
@@ -348,6 +350,20 @@ impl AdvancedAi {
     /// of the settler's origin and of current unit positions. The caller adds
     /// live safety/support terms after retrieving this value from the atlas.
     pub(super) fn settlement_static_value_uncached(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
+        self.settlement_static_value_sharing(g, pid, pos, &mut PlotAdjacencies::default())
+    }
+
+    /// [`Self::settlement_static_value_uncached`] for one site of a batch
+    /// evaluated against the same board: `plots` keeps the district
+    /// adjacency the batch's earlier sites already priced (see
+    /// `Game::settlement_adjacency_summary_from_positions`).
+    fn settlement_static_value_sharing(
+        &self,
+        g: &Game,
+        pid: usize,
+        pos: Pos,
+        plots: &mut PlotAdjacencies,
+    ) -> f64 {
         let positions = g.wdisk(pos, 2);
         let forecast = self.settlement_growth_forecast_from_positions(g, pid, pos, &positions);
         let housing = Self::settlement_base_housing(g, pid, pos);
@@ -367,7 +383,7 @@ impl AdvancedAi {
             .count() as f64;
         let mut value =
             forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
-        value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
+        value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions, plots);
         value += self.coastal_city_site_bonus(g, pos, &positions);
         // `fresh-water-prices-the-site`: zero with the gene off. See
         // `advanced/fresh_water_site.rs`.
@@ -420,10 +436,13 @@ impl AdvancedAi {
                 SETTLEMENT_SCORE_MAX_WORKERS,
                 states,
                 move |(game, ai), indices| {
+                    let mut plots = PlotAdjacencies::default();
                     indices
                         .map(|index| {
                             let pos = worker_positions[index];
-                            (index, ai.settlement_static_value_uncached(&game, pid, pos))
+                            let value =
+                                ai.settlement_static_value_sharing(&game, pid, pos, &mut plots);
+                            (index, value)
                         })
                         .collect()
                 },
@@ -431,10 +450,16 @@ impl AdvancedAi {
             return positions.iter().copied().zip(values).collect();
         }
 
+        let mut plots = PlotAdjacencies::default();
         positions
             .iter()
             .copied()
-            .map(|pos| (pos, self.settlement_static_value_uncached(g, pid, pos)))
+            .map(|pos| {
+                (
+                    pos,
+                    self.settlement_static_value_sharing(g, pid, pos, &mut plots),
+                )
+            })
             .collect()
     }
 

@@ -546,22 +546,29 @@ pub fn load_uploaded(session: &mut Session, parsed: &Value) -> Result<(), String
         ));
     }
     let params = session.params.clone();
-    let mut next = if parsed.get("mirror_player").is_some() {
-        Session::from_game(params, game)
-    } else {
-        Session::from_saved_game(params, game)
-    };
     // A mirror publishes a frame, not a playable save. Seat and pause it
     // before replacing the session so concurrent polls cannot see the full
     // world between /load and the follower's later /view request.
-    if let Some(player) = parsed.get("mirror_player") {
-        let player = player
+    let next = if let Some(player) = parsed.get("mirror_player") {
+        let seat = player
             .as_u64()
             .and_then(|pid| usize::try_from(pid).ok())
             .ok_or_else(|| "mirror_player must be a non-negative integer".to_string())?;
-        next.set_view_player(Some(player))?;
+        // `mirror_strategy` is the lane the live decider is playing, by the
+        // id it was launched with. A follower that does not know it, or
+        // names one the decider would refuse, leaves the seat named for our
+        // agent without a lane rather than failing the frame.
+        let lane = parsed["mirror_strategy"]
+            .as_str()
+            .and_then(crate::strategies::LiveLane::from_id);
+        let table = server::MirrorTable { seat, lane };
+        let mut next = Session::from_mirror(params, game, table);
+        next.set_view_player(Some(seat))?;
         next.set_spectator_paused(true);
-    }
+        next
+    } else {
+        Session::from_saved_game(params, game)
+    };
     *session = next;
     Ok(())
 }

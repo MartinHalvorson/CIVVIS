@@ -2717,6 +2717,7 @@ const CITY_KEYS: &[&str] = &[
     "worked",
     "specialists",
     "great_works",
+    "great_work_turns",
     "yields",
     "producing",
     "producing_hash",
@@ -4370,6 +4371,20 @@ fn host_previews_on(
 /// order for a transient one. The builder path met this same shape and got a
 /// transient guard for it (`moves == 0`); the trade path never did, and cannot
 /// use that one anyway because the mod sends no `moves` on this event.
+///
+/// ## The mod now sends `moves`, and a refusal at zero is not a reading at all
+///
+/// Corroboration was meant to span turns and a replan frame defeated it: the
+/// same order goes out again in a later frame of the same turn, so one bad
+/// instant was read twice. Live game `civvis-20261115T071444Z` bought six
+/// Traders and sent each on a route in the frames after the purchase, where a
+/// bought unit has no movement, and did the same on each turn a Trader
+/// changed its origin city. In its first sitting (to turn 159) 15 such
+/// requests were refused, 11 of them for a pair the host listed in its own
+/// `route_options`, and six pairs were retired for the game, four of them
+/// pairs the host listed. A refusal recorded with `moves: 0` says the Trader
+/// could not act, and nothing about the route, so it is not counted. An event
+/// without the field (an older mod) is counted as before.
 const TRADE_ROUTE_REFUSALS_BEFORE_BLOCK: usize = 2;
 
 fn refused_trade_routes_through(
@@ -4395,6 +4410,11 @@ fn refused_trade_routes_through(
         {
             continue;
         }
+        // See `TRADE_ROUTE_REFUSALS_BEFORE_BLOCK`: a Trader with no movement
+        // left is refused whatever it asks for.
+        if event.get("moves").and_then(|value| value.as_f64()) == Some(0.0) {
+            continue;
+        }
         let values = ["from_x", "from_y", "x", "y"].map(|key| {
             event
                 .get(key)
@@ -4418,24 +4438,26 @@ fn refused_trade_routes_through(
         .collect()
 }
 
-/// Translate host refusals onto CIVVIS's own city and district names.
+/// Translate host refusals onto CIVVIS's own city ids and the names `table`
+/// answers to; `prefix` is the host's (`DISTRICT_`, `BUILDING_`).
 ///
 /// Split out because the rebuild and every `sync` both need it, and neither may guess:
-/// an entry under a name no district answers to filters nothing while making the set
-/// look populated.
-fn blocked_districts_from(
-    refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
-    city_ids: &std::collections::BTreeMap<u32, i64>,
-    rules: &crate::rules::Rules,
-) -> BTreeMap<u32, std::collections::BTreeSet<Name>> {
-    let mut out: BTreeMap<u32, std::collections::BTreeSet<Name>> = Default::default();
+/// an entry under a name `table` does not answer to filters nothing while making the
+/// set look populated, so it is dropped, and so is a city left with no entry.
+fn blocked_names_from<T>(
+    refused: &BTreeMap<i64, BTreeSet<String>>,
+    city_ids: &BTreeMap<u32, i64>,
+    table: &crate::specmap::SpecMap<T>,
+    prefix: &str,
+) -> BTreeMap<u32, BTreeSet<Name>> {
+    let mut out = BTreeMap::new();
     for (cid, civ6_id) in city_ids {
         let Some(names) = refused.get(civ6_id) else {
             continue;
         };
-        let translated: std::collections::BTreeSet<Name> = names
+        let translated: BTreeSet<Name> = names
             .iter()
-            .filter_map(|civ6| civvis_node_name(&rules.districts, civ6, "DISTRICT_"))
+            .filter_map(|civ6| civvis_node_name(table, civ6, prefix))
             .map(|name| Name::new(&name))
             .collect();
         if !translated.is_empty() {
@@ -4443,6 +4465,44 @@ fn blocked_districts_from(
         }
     }
     out
+}
+
+/// Translate fresh, host-approved plots onto the reconstructed city ids and the
+/// names `table` answers to; `prefix` is the host's (`DISTRICT_`, `BUILDING_`).
+/// A name `table` does not answer to, an empty plot set and a city left with
+/// nothing are all dropped.
+fn host_sites_from<T>(
+    offered: &BTreeMap<i64, BTreeMap<String, BTreeSet<crate::Pos>>>,
+    city_ids: &BTreeMap<u32, i64>,
+    table: &crate::specmap::SpecMap<T>,
+    prefix: &str,
+) -> BTreeMap<u32, BTreeMap<Name, BTreeSet<crate::Pos>>> {
+    let mut out = BTreeMap::new();
+    for (cid, civ6_id) in city_ids {
+        let Some(by_name) = offered.get(civ6_id) else {
+            continue;
+        };
+        let translated: BTreeMap<Name, BTreeSet<crate::Pos>> = by_name
+            .iter()
+            .filter_map(|(civ6, sites)| {
+                civvis_node_name(table, civ6, prefix).map(|name| (Name::new(&name), sites.clone()))
+            })
+            .filter(|(_, sites)| !sites.is_empty())
+            .collect();
+        if !translated.is_empty() {
+            out.insert(*cid, translated);
+        }
+    }
+    out
+}
+
+/// Translate host refusals onto CIVVIS's own city and district names.
+fn blocked_districts_from(
+    refused: &BTreeMap<i64, BTreeSet<String>>,
+    city_ids: &BTreeMap<u32, i64>,
+    rules: &crate::rules::Rules,
+) -> BTreeMap<u32, BTreeSet<Name>> {
+    blocked_names_from(refused, city_ids, &rules.districts, "DISTRICT_")
 }
 
 /// Translate current native limits; missing or invalid values leave no override.
@@ -4474,24 +4534,7 @@ fn host_district_sites_from(
     city_ids: &BTreeMap<u32, i64>,
     rules: &crate::rules::Rules,
 ) -> BTreeMap<u32, BTreeMap<Name, BTreeSet<crate::Pos>>> {
-    let mut out = BTreeMap::new();
-    for (cid, civ6_id) in city_ids {
-        let Some(by_district) = offered.get(civ6_id) else {
-            continue;
-        };
-        let translated: BTreeMap<Name, BTreeSet<crate::Pos>> = by_district
-            .iter()
-            .filter_map(|(civ6, sites)| {
-                civvis_node_name(&rules.districts, civ6, "DISTRICT_")
-                    .map(|district| (Name::new(&district), sites.clone()))
-            })
-            .filter(|(_, sites)| !sites.is_empty())
-            .collect();
-        if !translated.is_empty() {
-            out.insert(*cid, translated);
-        }
-    }
-    out
+    host_sites_from(offered, city_ids, &rules.districts, "DISTRICT_")
 }
 
 /// Translate fresh, host-approved wonder plots onto the reconstructed city ids.
@@ -4504,49 +4547,18 @@ fn host_wonder_sites_from(
     city_ids: &BTreeMap<u32, i64>,
     rules: &crate::rules::Rules,
 ) -> BTreeMap<u32, BTreeMap<Name, BTreeSet<crate::Pos>>> {
-    let mut out = BTreeMap::new();
-    for (cid, civ6_id) in city_ids {
-        let Some(by_wonder) = offered.get(civ6_id) else {
-            continue;
-        };
-        let translated: BTreeMap<Name, BTreeSet<crate::Pos>> = by_wonder
-            .iter()
-            .filter_map(|(civ6, sites)| {
-                civvis_node_name(&rules.wonders, civ6, "BUILDING_")
-                    .map(|wonder| (Name::new(&wonder), sites.clone()))
-            })
-            .filter(|(_, sites)| !sites.is_empty())
-            .collect();
-        if !translated.is_empty() {
-            out.insert(*cid, translated);
-        }
-    }
-    out
+    host_sites_from(offered, city_ids, &rules.wonders, "BUILDING_")
 }
 
 /// The wonder counterpart of `blocked_districts_from`, translated against the
 /// wonder ruleset: a refused `BUILDING_` name that answers to no wonder here would
 /// filter nothing while making the set look populated.
 fn blocked_wonders_from(
-    refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
-    city_ids: &std::collections::BTreeMap<u32, i64>,
+    refused: &BTreeMap<i64, BTreeSet<String>>,
+    city_ids: &BTreeMap<u32, i64>,
     rules: &crate::rules::Rules,
-) -> BTreeMap<u32, std::collections::BTreeSet<Name>> {
-    let mut out: BTreeMap<u32, std::collections::BTreeSet<Name>> = Default::default();
-    for (cid, civ6_id) in city_ids {
-        let Some(names) = refused.get(civ6_id) else {
-            continue;
-        };
-        let translated: std::collections::BTreeSet<Name> = names
-            .iter()
-            .filter_map(|civ6| civvis_node_name(&rules.wonders, civ6, "BUILDING_"))
-            .map(|name| Name::new(&name))
-            .collect();
-        if !translated.is_empty() {
-            out.insert(*cid, translated);
-        }
-    }
-    out
+) -> BTreeMap<u32, BTreeSet<Name>> {
+    blocked_names_from(refused, city_ids, &rules.wonders, "BUILDING_")
 }
 
 /// Translate permanent host facts about world-unique wonders. Unlike

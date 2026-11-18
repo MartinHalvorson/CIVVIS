@@ -483,6 +483,13 @@ if NAME == "DiplomacyActionView" and type(DefaultHandlers) == "table" then
             -- otherwise refused both while trying to keep a peaceful Culture
             -- lane. Other requests keep the conservative decline policy.
             dialogueObserved = true;
+            -- `DealCounterRefuse` (opt-in): the agent tells a refusal shown as
+            -- conversation from one left on the deal screen.
+            if cfg.DealCounterRefuse == true then
+                pcall(function()
+                    LuaEvents.CivvisDealDialogue(statement.FromPlayer, statementType, subType);
+                end);
+            end
             local rank = { CHOICE_NEGATIVE = 3, CHOICE_IGNORE = 2, CHOICE_EXIT = 1 };
             local visitorText = statementType == "DIPLOMATIC_DELEGATION"
                 and "LOC_DIPLO_DELEGATION_CHOICE_POSITIVE"
@@ -1065,7 +1072,115 @@ local function endScreen(attempt)
 	return false;
 end
 
-if not haveScreen() then
+-- ★★ HOTSEAT. Two jobs, both only in a game installed for hotseat play
+-- (`cfg.Hotseat`; the installer adds the PlayerChange context only then).
+--
+-- 1. The operator's turn is theirs. While the local player is one of
+--    `HotseatHumanSeats`, no screen here is closed, answered or escaped: the
+--    announcement, the leader and the deal are the person's to read.
+-- 2. PlayerChange is the hand-over screen. PlayerChange.lua shows it on every
+--    human seat's turn (BuildTurnControls :121, which also pauses the game)
+--    and only its Start Turn button (`OnOk` :54) unpauses and dequeues it. On
+--    a CIVVIS seat this presses it; on the operator's seat it waits for them.
+--    It also says, for the harness, whose turn begins and ends: the seat
+--    agents are silent outside their own turns, and so is the operator.
+-- Every save the harness asks for is made here, at the start of the first
+-- CIVVIS seat's turn, through InGameTopOptionsMenu.lua:183's own call.
+CivvisHotseatScreen = { waited = 0, pressedFor = nil, savedTurn = -1 };
+function CivvisHotseatScreen.listed(list, pid)
+	if type(list) ~= "table" or pid == nil then return false; end
+	for _, seat in ipairs(list) do
+		if tonumber(seat) == pid then return true; end
+	end
+	return false;
+end
+function CivvisHotseatScreen.localPlayer()
+	local pid = -1;
+	pcall(function() pid = Game.GetLocalPlayer(); end);
+	return tonumber(pid) or -1;
+end
+function CivvisHotseatScreen.turn()
+	local turn = -1;
+	pcall(function() turn = Game.GetCurrentGameTurn(); end);
+	return tonumber(turn) or -1;
+end
+function CivvisHotseatScreen.humanTurn()
+	if cfg.Hotseat ~= true then return false; end
+	return CivvisHotseatScreen.listed(cfg.HotseatHumanSeats,
+		CivvisHotseatScreen.localPlayer());
+end
+function CivvisHotseatScreen.announce(phase)
+	local pid = CivvisHotseatScreen.localPlayer();
+	report("hotseat_turn", string.format(
+		',"phase":"%s","player":%d,"turn":%d,"human":%s,"civvis":%s',
+		phase, pid, CivvisHotseatScreen.turn(),
+		tostring(CivvisHotseatScreen.listed(cfg.HotseatHumanSeats, pid)),
+		tostring(CivvisHotseatScreen.listed(cfg.HotseatSeats, pid))));
+end
+function CivvisHotseatScreen.save(pid, turn)
+	local every = tonumber(cfg.HotseatSaveEvery) or 0;
+	local first = nil;
+	for _, seat in ipairs(cfg.HotseatSeats or {}) do
+		seat = tonumber(seat);
+		if seat ~= nil and (first == nil or seat < first) then first = seat; end
+	end
+	if every <= 0 or pid ~= first or turn < 1 or turn % every ~= 0
+			or CivvisHotseatScreen.savedTurn == turn then
+		return;
+	end
+	CivvisHotseatScreen.savedTurn = turn;
+	local name = string.format("%s-T%03d", tostring(cfg.HotseatSaveName or RUN), turn);
+	local saved = pcall(function()
+		local gameFile = {};
+		gameFile.Name = name;
+		gameFile.Location = SaveLocations.LOCAL_STORAGE;
+		gameFile.Type = Network.GetGameConfigurationSaveType();
+		gameFile.IsAutosave = false;
+		gameFile.IsQuicksave = false;
+		Network.SaveGame(gameFile);
+	end);
+	report("hotseat_saved", string.format(',"name":"%s","turn":%d,"requested":%s',
+		name, turn, tostring(saved)));
+end
+-- One press per seat and turn, after the screen has been up a moment (its
+-- own slide-in) and retried every two seconds while it stays up.
+function CivvisHotseatScreen.frame(fDTime)
+	local dialog = false;
+	pcall(function() dialog = not Controls.PopupAlphaIn:IsHidden(); end);
+	local pid = CivvisHotseatScreen.localPlayer();
+	if not dialog or pid < 0 or CivvisHotseatScreen.humanTurn()
+			or not (CivvisHotseatScreen.listed(cfg.HotseatSeats, pid)
+				or CivvisHotseatScreen.listed(cfg.HotseatStubSeats, pid)) then
+		CivvisHotseatScreen.waited = 0;
+		return;
+	end
+	CivvisHotseatScreen.waited = CivvisHotseatScreen.waited + (tonumber(fDTime) or 0);
+	local turn = CivvisHotseatScreen.turn();
+	local key = pid .. ":" .. turn;
+	local pause = CivvisHotseatScreen.pressedFor == key and 2.0
+		or (tonumber(cfg.HotseatPressSeconds) or 0.3);
+	if CivvisHotseatScreen.waited < pause then return; end
+	CivvisHotseatScreen.waited = 0;
+	pcall(CivvisHotseatScreen.save, pid, turn);
+	local pressed = type(OnOk) == "function" and pcall(OnOk);
+	report("hotseat_start_turn", string.format(',"player":%d,"turn":%d,"pressed":%s,"again":%s',
+		pid, turn, tostring(pressed), tostring(CivvisHotseatScreen.pressedFor == key)));
+	CivvisHotseatScreen.pressedFor = key;
+end
+function CivvisHotseatScreen.arm()
+	pcall(function()
+		Events.LocalPlayerTurnBegin.Add(function() CivvisHotseatScreen.announce("begin"); end);
+	end);
+	pcall(function()
+		Events.LocalPlayerTurnEnd.Add(function() CivvisHotseatScreen.announce("end"); end);
+	end);
+	ContextPtr:SetUpdate(function(fDTime) pcall(CivvisHotseatScreen.frame, fDTime); end);
+	report("hotseat_armed", string.format(',"start_turn":%s', tostring(type(OnOk) == "function")));
+end
+
+if NAME == "PlayerChange" then
+	CivvisHotseatScreen.arm();
+elseif not haveScreen() then
 	-- The failure that has to be loud. A replacement whose include did not
 	-- land leaves the context with no shipped code at all, which does not look
 	-- like a broken mod: the announcement simply never appears, and a run
@@ -1158,6 +1273,7 @@ else
 	-- session is refused and closed the way every other screen is. Contexts
 	-- do not share globals; LuaEvents are the one channel there is.
 	local dealHold = 0;
+	local dealSubject = nil;
 	local holdReported = false;
 	-- A Civvis-owned deal is allowed to use the opening hold while the
 	-- shipped diplomacy fade settles.  If that fade never reports stopped,
@@ -1170,6 +1286,7 @@ else
 		LuaEvents.CivvisDealSession.Add(function(subject, open, seconds)
 				if open then
 					dealHold = tonumber(seconds) or 4;
+					dealSubject = subject;
 					holdReported = false;
 					dealForceClose = false;
 				else
@@ -1318,6 +1435,100 @@ else
 		return raw / scale;
 	end
 
+	-- ★★★ A POPUP QUEUED BEHIND A DEAL SESSION HOLDS THE GAME, AND THE RIVAL'S
+	-- VERDICT WITH IT. A popup takes an event lock when its event fires
+	-- (`ms_eventID = UI.ReferenceCurrentEvent()`, DLC/Expansion2/UI/Additions/
+	-- RockBandMoviePopup.lua:138) and gives it back in its own `Close()`
+	-- (`UI.ReleaseEventID( ms_eventID )`, :34). Until then the game core
+	-- dispatches nothing more. This shim closes such a popup 0.05 s after it
+	-- comes up, but a popup queued while a leader screen is showing does not
+	-- come up, and a hidden context does not tick (see the heartbeat note), so
+	-- nothing closes it until the leader screen goes. During a deal session
+	-- the agent keeps that screen up for `DealAnswerHoldSeconds` (30) waiting
+	-- for the rival's verdict, which the core cannot compute behind the lock.
+	--
+	-- Live 2026-11-15, Pericles culture seat, civvis-20261115T071444Z and its
+	-- reload: 70 asks, 66 closed inside 0.8 s. The other four (t134, t142,
+	-- t159, t175) each had a Rock Band concert land 0.02 to 0.25 s after the
+	-- ask; `RockBandMoviePopup` held its lock for the whole 30 s and gave it
+	-- back within 0.25 s of the leader screen closing on the timeout. In
+	-- three of the four the rival then spoke 0.1 to 1.0 s after that release.
+	-- Two of them hung the rival's turn (t159, t175: the verdict came as the
+	-- rival's own session, which the game left `Adding to pending`), the
+	-- first costing 6.8 minutes and a reload. No ask of those two runs waited
+	-- more than 3 s without such a lock.
+	--
+	-- So the diplomacy view that is up for a deal session watches the shared
+	-- ledger, and a lock another context has held for `BEHIND_DEAL_SECONDS`
+	-- is handed back by its owner: `LuaEvents.CivvisCloseBehindDeal(ctx, id)`
+	-- reaches every context's shim, and the one named runs its ordinary close
+	-- (`endScreen`, the popup's own `Close()`), the same call it would make
+	-- 0.05 s after coming up. The grace lets the popup finish the handler
+	-- that took the lock. Nothing is released from outside its owner, a lock
+	-- is asked for once, and the operator's Pause, the end screens and the
+	-- wonder movie are left alone as everywhere else in this file.
+	local BEHIND_DEAL_SECONDS = 0.25;
+	local behindDeal = { seen = {}, asked = {} };
+	local function closeLocksBehindDeal(dt)
+		local ledger = nil;
+		pcall(function() ledger = ExposedMembers.CivvisEventLocks; end);
+		if type(ledger) ~= "table" or type(ledger.held) ~= "table" then return; end
+		-- Collected first and asked after the walk: the owner's close takes
+		-- its entry out of `held`, and whatever the freed game dispatches
+		-- next may put another in.
+		local due = {};
+		for id, entry in pairs(ledger.held) do
+			local ctx = type(entry) == "table" and entry.ctx or nil;
+			-- The wonder movie keeps its own clock (`wonderAnimationReady`):
+			-- closing it unseen would cut it from the recording.
+			if type(ctx) == "string" and ctx ~= "DiplomacyActionView"
+					and ctx ~= "DiplomacyDealView" and ctx ~= "WonderBuiltPopup"
+					and not behindDeal.asked[id] then
+				local seen = (behindDeal.seen[id] or 0) + dt;
+				behindDeal.seen[id] = seen;
+				if seen >= BEHIND_DEAL_SECONDS then
+					due[#due + 1] = { id = id, ctx = ctx, seen = seen };
+				end
+			end
+		end
+		-- Forget locks that are gone, so the two tables stay as small as the
+		-- ledger itself (at most EVENT_LOCK_CAP entries).
+		for id in pairs(behindDeal.seen) do
+			if ledger.held[id] == nil then behindDeal.seen[id] = nil; end
+		end
+		for id in pairs(behindDeal.asked) do
+			if ledger.held[id] == nil then behindDeal.asked[id] = nil; end
+		end
+		for _, lock in ipairs(due) do
+			behindDeal.asked[lock.id] = true;
+			behindDeal.seen[lock.id] = nil;
+			report("autoclose_behind_deal", string.format(
+				',"holder":"%s","id":%d,"held_for":%.2f',
+				lock.ctx, tonumber(lock.id) or -1, lock.seen));
+			pcall(function() LuaEvents.CivvisCloseBehindDeal(lock.ctx, lock.id); end);
+		end
+	end
+	pcall(function()
+		LuaEvents.CivvisCloseBehindDeal.Add(function(holder, id)
+			if holder ~= NAME or END_SCREENS[NAME] or operatorHolds()
+					or CivvisHotseatScreen.humanTurn() then return; end
+			if NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView"
+					or NAME == "WonderBuiltPopup" then return; end
+			-- Only while this context still holds that lock: a popup that
+			-- closed in the meantime has nothing to give back.
+			local entry = nil;
+			pcall(function() entry = ExposedMembers.CivvisEventLocks.held[id]; end);
+			if type(entry) ~= "table" or entry.ctx ~= NAME then return; end
+			local ended = false;
+			pcall(function() ended = endScreen(1); end);
+			local released = true;
+			pcall(function() released = ExposedMembers.CivvisEventLocks.held[id] == nil; end);
+			report("autoclose", string.format(
+				',"after":0.00,"ended":%s,"gone":%s,"behind_deal":true,"released":%s',
+				tostring(ended), tostring(not isUp()), tostring(released)));
+		end);
+	end);
+
 	local function tick(fDTime)
 		local realDT = realSeconds(fDTime);
 		-- ★★★★ PROOF THAT THE UI THREAD IS STILL ALIVE WHILE THE GAME IS NOT.
@@ -1380,7 +1591,10 @@ else
 		end
 		-- After the pulse above, which is how a held agent hears the resume
 		-- while a leader screen hides TopPanel. The clock restarts on resume.
-		if operatorHolds() then showing = false; return; end
+		if operatorHolds() or CivvisHotseatScreen.humanTurn() then
+			showing = false;
+			return;
+		end
 		if not showing then
 			showing = true;
 			remaining = SECONDS;
@@ -1394,7 +1608,25 @@ else
 				holdReported = true;
 				report("autoclose_hold", string.format(',"seconds":%.2f', dealHold));
 			end
+			-- The verdict this hold waits for cannot come while another
+			-- context holds the game (see `closeLocksBehindDeal`).
+			pcall(closeLocksBehindDeal, dt);
 			if dealHold > 0 then return; end
+			-- `DealCounterRefuse` (opt-in): before closing, hand an expired
+			-- hold back to the agent, which may decline a refusal left on the
+			-- deal screen (`CivvisTrade.onHoldExpired`) and re-arm the hold.
+			-- The deal view is up by being here; the action view's deal mode
+			-- hides its conversation panel (DiplomacyActionView.lua:2552).
+			if cfg.DealCounterRefuse == true then
+				local dealUp = nil;
+				if NAME == "DiplomacyDealView" then
+					dealUp = true;
+				else
+					pcall(function() dealUp = Controls.ConversationContainer:IsHidden() == true; end);
+				end
+				pcall(function() LuaEvents.CivvisDealHoldExpired(NAME, dealSubject, dealUp); end);
+				if dealHold > 0 then return; end
+			end
 			-- A deal session with no rival statement can leave BlackFadeAnim
 			-- running forever.  The hold is our explicit ownership proof, so the
 			-- close ladder may act even when the ordinary dialogue readiness gate

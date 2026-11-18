@@ -141,6 +141,9 @@ impl AdvancedAi {
         /// Trader and Settler Gold buys test each city's own quote against
         /// the reserve. See `BasicAi::buy_gold_unit`.
         base.gold_unit_buys_read_the_host_quote => enable_gold_unit_buys_read_the_host_quote, disable_gold_unit_buys_read_the_host_quote;
+        /// Opt-in gene `band-plays-the-stage-at-hand`; see
+        /// `advanced/band_plays_the_stage_at_hand.rs`.
+        base.band_plays_the_stage_at_hand => enable_band_plays_the_stage_at_hand, disable_band_plays_the_stage_at_hand;
         // ---- append: c-d --------------------------------------------
         /// `domination-seat-appoints-pingala-first`: Pingala and Researcher
         /// take a Domination seat's first Governor titles. See
@@ -281,6 +284,19 @@ impl AdvancedAi {
         /// Opt-in gene `declaration-needs-a-capture`; see
         /// `advanced/declaration_needs_a_capture.rs`.
         declaration_needs_a_capture => enable_declaration_needs_a_capture, disable_declaration_needs_a_capture;
+        /// Opt-in gene `culture-seat-fills-its-district-slots`; see
+        /// `advanced/culture_fills_its_slots.rs`.
+        culture_seat_fills_its_district_slots => enable_culture_seat_fills_its_district_slots, disable_culture_seat_fills_its_district_slots;
+        /// Opt-in gene `capital-archers-before-the-surprise`; see
+        /// `advanced/capital_archers_before_the_surprise.rs`.
+        capital_archers_before_the_surprise => enable_capital_archers_before_the_surprise, disable_capital_archers_before_the_surprise;
+        /// Opt-in gene `capital-archers-before-the-surprise-2`, version two
+        /// of `capital-archers-before-the-surprise`; see
+        /// `advanced/capital_archers_before_the_surprise.rs`.
+        capital_archers_before_the_surprise_2 => enable_capital_archers_before_the_surprise_2, disable_capital_archers_before_the_surprise_2;
+        /// Opt-in gene `denial-spies-cover-every-racer`; see
+        /// `advanced/denial_spies_cover_every_racer.rs`.
+        denial_spies_cover_every_racer => enable_denial_spies_cover_every_racer, disable_denial_spies_cover_every_racer;
         /// Opt-in gene `diplo-seat-claims-the-competition`; see
         /// `advanced/diplo_competition_claim.rs`.
         diplo_seat_claims_the_competition => enable_diplo_seat_claims_the_competition, disable_diplo_seat_claims_the_competition;
@@ -348,6 +364,9 @@ impl AdvancedAi {
         /// Opt-in gene `faithless-seat-holds-its-faith-strikes`; see
         /// `advanced/faithless_seat_holds_its_faith_strikes.rs`.
         faithless_seat_holds_its_faith_strikes => enable_faithless_seat_holds_its_faith_strikes, disable_faithless_seat_holds_its_faith_strikes;
+        /// Opt-in gene `edge-unit-rushes-from-the-capital`; see
+        /// `advanced/edge_unit_takes_the_soft_city.rs`.
+        edge_unit_rushes_from_the_capital => enable_edge_unit_rushes_from_the_capital, disable_edge_unit_rushes_from_the_capital;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
@@ -366,6 +385,12 @@ impl AdvancedAi {
         /// Opt-in gene `hopeless-army-yields-the-queue`; see
         /// `advanced/hopeless_army_yields_the_queue.rs`.
         hopeless_army_yields_the_queue => enable_hopeless_army_yields_the_queue, disable_hopeless_army_yields_the_queue;
+        /// Opt-in gene `gun-resource-buys-the-tile`; see
+        /// `advanced/gun_resource_tile.rs`.
+        gun_resource_buys_the_tile => enable_gun_resource_buys_the_tile, disable_gun_resource_buys_the_tile;
+        /// Opt-in gene `guns-keep-the-oil`; see
+        /// `advanced/guns_keep_the_oil.rs`.
+        guns_keep_the_oil => enable_guns_keep_the_oil, disable_guns_keep_the_oil;
         // ---- append: l-o --------------------------------------------
         /// Native land upgrade materials use a bounded host cash quote.
         land_army_asks_the_host_price => enable_land_army_asks_the_host_price, disable_land_army_asks_the_host_price;
@@ -391,6 +416,15 @@ impl AdvancedAi {
         /// Opt-in gene `one-upgrade-lifts-every-city`; see
         /// `advanced/one_upgrade_lifts_every_city.rs`.
         one_upgrade_lifts_every_city => enable_one_upgrade_lifts_every_city, disable_one_upgrade_lifts_every_city;
+        /// Opt-in gene `near-rival-deterrence-holds-late`; see
+        /// `advanced/near_rival_deterrence_holds_late.rs`.
+        near_rival_deterrence_holds_late => enable_near_rival_deterrence_holds_late, disable_near_rival_deterrence_holds_late;
+        /// Opt-in gene `open-capital-declares-at-twice`; see
+        /// `advanced/open_capital_declares_at_twice.rs`.
+        open_capital_declares_at_twice => enable_open_capital_declares_at_twice, disable_open_capital_declares_at_twice;
+        /// Opt-in gene `near-rival-deterrence-opens-early`; see
+        /// `advanced/near_rival_deterrence_opens_early.rs`.
+        near_rival_deterrence_opens_early => enable_near_rival_deterrence_opens_early, disable_near_rival_deterrence_opens_early;
         // ---- append: p-r --------------------------------------------
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;
@@ -460,6 +494,10 @@ impl AdvancedAi {
         /// Opt-in gene `risk-is-priced`: one death chance per pathed move,
         /// refused over the mission's allowance; see `advanced/priced_risk.rs`.
         risk_is_priced => enable_risk_is_priced, disable_risk_is_priced;
+        /// Opt-in gene `passage-waits-past-the-opening`: no Open Borders bought
+        /// in the opening, none after it from a rival over 1.5x our military;
+        /// see `advanced/passage_waits_past_the_opening.rs`.
+        passage_waits_past_the_opening => enable_passage_waits_past_the_opening, disable_passage_waits_past_the_opening;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
@@ -513,12 +551,27 @@ impl AdvancedAi {
         /// Opt-in gene `score-seat-expands-hard`; see
         /// `advanced/score_expands_hard.rs`.
         score_seat_expands_hard => enable_score_seat_expands_hard, disable_score_seat_expands_hard;
+        /// Opt-in gene `score-seat-fills-its-district-slots`; see
+        /// `advanced/score_fills_its_slots.rs`.
+        score_seat_fills_its_district_slots => enable_score_seat_fills_its_district_slots, disable_score_seat_fills_its_district_slots;
         /// Opt-in gene `score-seat-keeps-friends`; see
         /// `advanced/score_keeps_friends.rs`.
         score_seat_keeps_friends => enable_score_seat_keeps_friends, disable_score_seat_keeps_friends;
         /// Opt-in gene `score-seat-holds-its-faith-strikes`; see
         /// `advanced/score_seat_holds_its_faith_strikes.rs`.
         score_seat_holds_its_faith_strikes => enable_score_seat_holds_its_faith_strikes, disable_score_seat_holds_its_faith_strikes;
+        /// Opt-in gene `settler-keeps-its-named-site`; see
+        /// `advanced/settler_keeps_its_named_site.rs`.
+        settler_keeps_its_named_site => enable_settler_keeps_its_named_site, disable_settler_keeps_its_named_site;
+        /// Opt-in gene `spared-soldiers-come-to-the-capital`; see
+        /// `advanced/spared_soldiers_come_to_the_capital.rs`.
+        spared_soldiers_come_to_the_capital => enable_spared_soldiers_come_to_the_capital, disable_spared_soldiers_come_to_the_capital;
+        /// Opt-in gene `score-seat-sprints-to-the-tally`; see
+        /// `advanced/score_sprints_to_the_tally.rs`.
+        score_seat_sprints_to_the_tally => enable_score_seat_sprints_to_the_tally, disable_score_seat_sprints_to_the_tally;
+        /// Opt-in gene `siege-guns-take-a-reachable-post`; see
+        /// `advanced/siege_train/reachable_post.rs`.
+        siege_guns_take_a_reachable_post => enable_siege_guns_take_a_reachable_post, disable_siege_guns_take_a_reachable_post;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
@@ -5858,6 +5911,48 @@ impl AdvancedAi {
     /// The twin of `enable_score_seat_raises_wonders_2`.
     pub fn disable_score_seat_raises_wonders_2(&mut self) {
         self.score_seat_raises_wonders_2 = false;
+    }
+
+    /// Opt-in gene `denial-spies-fill-every-slot-2`, version two of
+    /// `denial-spies-fill-every-slot`: a Score aim fills its slots too; see
+    /// `advanced/denial_spies_fill_every_slot.rs`. A seat plays one version,
+    /// so this turns version one off.
+    pub fn enable_denial_spies_fill_every_slot_2(&mut self) {
+        self.denial_spies_fill_every_slot_2 = true;
+        self.denial_spies_fill_every_slot = false;
+    }
+
+    /// The twin of `enable_denial_spies_fill_every_slot_2`.
+    pub fn disable_denial_spies_fill_every_slot_2(&mut self) {
+        self.denial_spies_fill_every_slot_2 = false;
+    }
+
+    /// Opt-in gene `score-seat-raises-wonders-3`; version three of the family,
+    /// so versions one and two are turned off. See `advanced/score_wonders.rs`.
+    pub fn enable_score_seat_raises_wonders_3(&mut self) {
+        self.score_seat_raises_wonders = false;
+        self.score_seat_raises_wonders_2 = false;
+        self.score_seat_raises_wonders_3 = true;
+    }
+
+    /// The twin of `enable_score_seat_raises_wonders_3`.
+    pub fn disable_score_seat_raises_wonders_3(&mut self) {
+        self.score_seat_raises_wonders_3 = false;
+    }
+
+    /// Opt-in gene `score-seat-sprints-to-the-tally-2`, version two of
+    /// `score-seat-sprints-to-the-tally`: Great People priced with their
+    /// Historic Moment, patronized with the idle currency from thirty Online
+    /// turns before the limit. A seat plays one version, so this turns
+    /// version one off. See `advanced/score_sprints_to_the_tally.rs`.
+    pub fn enable_score_seat_sprints_to_the_tally_2(&mut self) {
+        self.score_seat_sprints_to_the_tally = false;
+        self.score_seat_sprints_to_the_tally_2 = true;
+    }
+
+    /// The twin of `enable_score_seat_sprints_to_the_tally_2`.
+    pub fn disable_score_seat_sprints_to_the_tally_2(&mut self) {
+        self.score_seat_sprints_to_the_tally_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------

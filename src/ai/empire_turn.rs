@@ -55,12 +55,12 @@ impl BasicAi {
         };
         let mut founders: Vec<String> = listed
             .into_iter()
-            .filter(|belief| g.rules.beliefs.founder.contains_key(*belief))
+            .filter(|belief| g.rules.beliefs.founder.contains_key(belief))
             .map(str::to_string)
             .collect();
         for belief in g.rules.beliefs.founder.keys() {
-            if !founders.contains(belief) {
-                founders.push(belief.clone());
+            if !founders.iter().any(|known| *known == *belief) {
+                founders.push(belief.to_string());
             }
         }
         founders
@@ -374,12 +374,12 @@ impl BasicAi {
             let mut pantheons: Vec<String> = prefix
                 .iter()
                 .copied()
-                .filter(|belief| g.rules.beliefs.pantheon.contains_key(*belief))
+                .filter(|belief| g.rules.beliefs.pantheon.contains_key(belief))
                 .map(str::to_string)
                 .collect();
             for belief in g.rules.beliefs.pantheon.keys() {
-                if !pantheons.contains(belief) {
-                    pantheons.push(belief.clone());
+                if !pantheons.iter().any(|known| *known == *belief) {
+                    pantheons.push(belief.to_string());
                 }
             }
             // The shipped order is a prior, not an answer: it still decides
@@ -438,12 +438,12 @@ impl BasicAi {
                 "zen_meditation",
             ]
             .into_iter()
-            .filter(|belief| g.rules.beliefs.follower.contains_key(*belief))
+            .filter(|belief| g.rules.beliefs.follower.contains_key(belief))
             .map(str::to_string)
             .collect();
             for belief in g.rules.beliefs.follower.keys() {
-                if !followers.contains(belief) {
-                    followers.push(belief.clone());
+                if !followers.iter().any(|known| *known == *belief) {
+                    followers.push(belief.to_string());
                 }
             }
             let founders = self.founder_belief_order(g);

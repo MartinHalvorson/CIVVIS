@@ -55,16 +55,9 @@ impl Game {
     }
 
     pub fn domestic_tourists(&self, pid: usize) -> i64 {
-        if let Some(memo) = self.query_memo.domestic_tourists.borrow().as_ref() {
-            if let Some(tourists) = memo.get(&pid) {
-                return *tourists;
-            }
-        }
-        let tourists = self.domestic_tourists_uncached(pid);
-        if let Some(memo) = self.query_memo.domestic_tourists.borrow_mut().as_mut() {
-            memo.insert(pid, tourists);
-        }
-        tourists
+        crate::game::remembered(&self.query_memo.domestic_tourists, pid, || {
+            self.domestic_tourists_uncached(pid)
+        })
     }
 
     fn domestic_tourists_uncached(&self, pid: usize) -> i64 {
@@ -230,16 +223,9 @@ impl Game {
     }
 
     pub(super) fn great_work_slots(&self, pid: usize) -> Vec<(u32, String)> {
-        if let Some(memo) = self.query_memo.gw_slots.borrow().as_ref() {
-            if let Some(slots) = memo.get(&pid) {
-                return slots.clone();
-            }
-        }
-        let slots = self.great_work_slots_uncached(pid);
-        if let Some(memo) = self.query_memo.gw_slots.borrow_mut().as_mut() {
-            memo.insert(pid, slots.clone());
-        }
-        slots
+        crate::game::remembered(&self.query_memo.gw_slots, pid, || {
+            self.great_work_slots_uncached(pid)
+        })
     }
 
     fn great_work_slots_uncached(&self, pid: usize) -> Vec<(u32, String)> {
@@ -451,22 +437,16 @@ impl Game {
     /// Share the ordered allocation within a query instead of copying it for
     /// each city. An escaped snapshot stays immutable after the query ends.
     pub(crate) fn housed_great_works(&self, pid: usize) -> Arc<GreatWorksByCity> {
-        if let Some(memo) = self.query_memo.housed_works.borrow().as_ref() {
-            if let Some(value) = memo.get(&pid) {
-                return Arc::clone(value);
+        crate::game::remembered(&self.query_memo.housed_works, pid, || {
+            let allocation = self.housed_great_works_uncached(pid);
+            if allocation.is_empty() {
+                static EMPTY: std::sync::OnceLock<Arc<GreatWorksByCity>> =
+                    std::sync::OnceLock::new();
+                Arc::clone(EMPTY.get_or_init(|| Arc::new(BTreeMap::new())))
+            } else {
+                Arc::new(allocation)
             }
-        }
-        let allocation = self.housed_great_works_uncached(pid);
-        let value = if allocation.is_empty() {
-            static EMPTY: std::sync::OnceLock<Arc<GreatWorksByCity>> = std::sync::OnceLock::new();
-            Arc::clone(EMPTY.get_or_init(|| Arc::new(BTreeMap::new())))
-        } else {
-            Arc::new(allocation)
-        };
-        if let Some(memo) = self.query_memo.housed_works.borrow_mut().as_mut() {
-            memo.insert(pid, Arc::clone(&value));
-        }
-        value
+        })
     }
 
     pub(super) fn housed_great_works_uncached(
@@ -479,7 +459,7 @@ impl Game {
             if let Some(observed) = &self.observed_great_work_housing {
                 return observed
                     .iter()
-                    .filter(|(city, _)| self.cities.get(*city).is_some_and(|c| c.owner == pid))
+                    .filter(|(city, _)| self.cities.get(city).is_some_and(|c| c.owner == pid))
                     .map(|(city, kinds)| (*city, kinds.clone()))
                     .collect();
             }
@@ -778,17 +758,26 @@ impl Game {
                     continue;
                 }
                 let effects = &self.rules.improvements[improvement].effects;
-                let appeal = self.tile_appeal(*pos);
-                // National Park Tourism follows its tiles' live Appeal even
-                // after later surroundings drag that value below zero. Other
-                // appeal-based improvements are only legal at positive Appeal.
-                let tourism_appeal = if improvement == "national_park" {
-                    appeal
+                let per_appeal = effects.get("appeal_tourism").copied().unwrap_or(0.0);
+                // Appeal is a walk over the tile's neighbours; most improvements
+                // pay nothing for it, and a zero rate adds nothing whatever the
+                // Appeal is, so it is only read where it is paid for.
+                let appeal_tourism = if per_appeal != 0.0 {
+                    let appeal = self.tile_appeal(*pos);
+                    // National Park Tourism follows its tiles' live Appeal even
+                    // after later surroundings drag that value below zero. Other
+                    // appeal-based improvements are only legal at positive Appeal.
+                    let tourism_appeal = if improvement == "national_park" {
+                        appeal
+                    } else {
+                        appeal.max(0)
+                    };
+                    per_appeal * tourism_appeal as f64
                 } else {
-                    appeal.max(0)
+                    0.0
                 };
-                let mut improvement_tourism = effects.get("tourism").copied().unwrap_or(0.0)
-                    + effects.get("appeal_tourism").copied().unwrap_or(0.0) * tourism_appeal as f64;
+                let mut improvement_tourism =
+                    effects.get("tourism").copied().unwrap_or(0.0) + appeal_tourism;
                 if self.players[pid].techs.contains(&crate::name!("flight")) {
                     improvement_tourism +=
                         effects.get("tourism_after_flight").copied().unwrap_or(0.0);
@@ -942,16 +931,9 @@ impl Game {
     }
 
     pub(super) fn tourism_components_per_turn(&self, pid: usize) -> (f64, f64) {
-        if let Some(memo) = self.query_memo.tourism.borrow().as_ref() {
-            if let Some(components) = memo.get(&pid) {
-                return *components;
-            }
-        }
-        let components = self.tourism_components_per_turn_with_sources(pid, None);
-        if let Some(memo) = self.query_memo.tourism.borrow_mut().as_mut() {
-            memo.insert(pid, components);
-        }
-        components
+        crate::game::remembered(&self.query_memo.tourism, pid, || {
+            self.tourism_components_per_turn_with_sources(pid, None)
+        })
     }
 
     /// Exact current Tourism source value at every map tile. Values sum to
@@ -1046,23 +1028,16 @@ impl Game {
     /// many works of each kind a city holds, and the player's pieces fill
     /// those holdings in creation order.
     pub(super) fn housed_great_work_pieces(&self, pid: usize) -> Arc<GreatWorkPiecesByCity> {
-        if let Some(memo) = self.query_memo.housed_pieces.borrow().as_ref() {
-            if let Some(value) = memo.get(&pid) {
-                return Arc::clone(value);
+        crate::game::remembered(&self.query_memo.housed_pieces, pid, || {
+            let allocation = self.housed_great_work_pieces_uncached(pid);
+            if allocation.is_empty() {
+                static EMPTY: std::sync::OnceLock<Arc<GreatWorkPiecesByCity>> =
+                    std::sync::OnceLock::new();
+                Arc::clone(EMPTY.get_or_init(|| Arc::new(BTreeMap::new())))
+            } else {
+                Arc::new(allocation)
             }
-        }
-        let allocation = self.housed_great_work_pieces_uncached(pid);
-        let value = if allocation.is_empty() {
-            static EMPTY: std::sync::OnceLock<Arc<GreatWorkPiecesByCity>> =
-                std::sync::OnceLock::new();
-            Arc::clone(EMPTY.get_or_init(|| Arc::new(BTreeMap::new())))
-        } else {
-            Arc::new(allocation)
-        };
-        if let Some(memo) = self.query_memo.housed_pieces.borrow_mut().as_mut() {
-            memo.insert(pid, Arc::clone(&value));
-        }
-        value
+        })
     }
 
     pub(super) fn housed_great_work_pieces_uncached(&self, pid: usize) -> GreatWorkPiecesByCity {

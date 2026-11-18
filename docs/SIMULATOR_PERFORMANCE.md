@@ -5,6 +5,201 @@
 This note records the July 2026 simulator profile, the changes kept from that
 work, the production-catalog follow-up, and the next optimization targets.
 
+## 2026-11-15: a screen's game is a production player planning on a view
+
+The 2026-11-11 work below priced the world civvis.ai plays and kept city
+yields there. It did nothing for the games the fleet's compute goes to, and
+the first line of this profile is why. `civvis simulate`, which the CI gate
+and `tools/profile_civvis.py` measure, seats the stock agent, and the stock
+agent plans on the board. A gene screen, a leader sweep and every other
+native game of *production* players (`enable_engine_repairs`, the deployment
+genome) do not: each major builds a fog-honest copy of the board
+(`Game::player_decision_view`), plans its whole turn on the copy, and replays
+the plan on the real board (`ai::player::take_turn`), up to three times a
+turn. Neither instrument had ever sampled that.
+
+`/usr/bin/sample` on `gene_screen`, one job, the lane's Deity recipe
+(`--players 6 --width 74 --height 46 --city-states 9 --map continents
+--difficulty deity --rivals firaxis-faithful --handicap rivals --rival-chairs
+5 --rival-rung -2 --rival-pace --turns 170`), seed 9101, `main` at
+`afb11185a8`, 34 s from the fifth second of a 40 s game (26,113 samples).
+Inclusive, share of the game's thread:
+
+| | Share |
+| --- | ---: |
+| the six majors (`ai::player::take_turn`) | 90.6% |
+| ... planning on the view (`plan_observed_turn`) | 59.5% |
+| ... building the view (`player_decision_view`) | 18.0% |
+| ... replaying the plan on the board, and ending the turn | 9.9% |
+| ... the war-finishing volley (`begin_player_turn`) | 2.5% |
+| city-states and barbarians, planning on the board | 8.5% |
+| `Game::city_yields`, wherever it is asked | 28.4% |
+| ... by the plan on the view | 17.1% |
+| ... by building the view | 9.6% |
+| the unit phase of the plan (`advanced_units`) | 26.9% |
+| the policy deck review (`revise_policy_deck`) | 5.2% |
+| `leader_roster::uses_civ6_mechanics` | 2.6% |
+
+That game is 931 major seat-turns and 2,081 views, 2.24 a turn: the view is
+built again whenever the replay explores a tile, fights, creates a unit or a
+city, or has an economic order refused.
+
+⚠ **Keeping yields on the board a screen plays on does nothing.** It is the
+obvious first move, because the session does exactly that for the site, and
+it was measured before anything else: `Game::keep_rival_yields` and
+`keep_own_yields` around every seat's turn in `run_game_observed`, seed 9101.
+The board derived 59,165 yields and reused **none** of them, 500.3 against
+500.5 billion instructions. The plans are not made there.
+
+### What was done: four changes, the same games
+
+Instructions retired by one `gene_screen` game of that recipe, one job:
+`main` at `8986f9f46f` against that commit with the one change. All of them
+are builds of the release profile less LTO and with 16 codegen units, which
+takes five minutes here where the release profile takes fourteen; the host
+was above load 12 throughout, which is why these are instructions and not
+seconds. Two runs of one binary on one seed differ by up to 0.3%. Every pair
+wrote the same rows (the md5 of the rows file less its build stamp and its
+wall seconds).
+
+| | Seed 9101 | Seed 9102 | Seed 9103 |
+| --- | ---: | ---: | ---: |
+| `main` | 500.50 B | 449.85 B | 420.02 B |
+| the view keeps city yields (#5313) | −5.51% | −5.19% | −5.50% |
+| a roster entry is looked up (#5315) | −2.61% | −4.13% | −2.30% |
+| the view is built with less copying (#5311) | −2.16% | −1.80% | −2.44% |
+| a city-state's type is read last (#5317) | −1.97% | −1.90% | −2.35% |
+| all four on one build | −11.95% | −12.76% | −11.99% |
+| all four, the release profile itself | −12.59% | −13.81% | −12.75% |
+
+The last row is the build a sweep runs, thin LTO and one codegen unit, both
+arms: 396.27 to 346.36, 362.53 to 312.48 and 334.43 to 291.81 billion
+instructions. The two combined builds are of `main` four merges later
+(`16e709b76e`), whose only Rust changes are to the live bridge. Nothing here
+is a time: on this host on this day one binary at `nice 19` on one seed read
+45 and then 67 user seconds.
+
+**The view keeps city yields.** `ai::player::take_turn` turns
+`Game::keep_rival_yields` and `keep_own_yields` on for a view once it is built
+and blocked, and the view is dropped at the end of its frame. Nothing is
+added to the contract below: a kept answer is dropped by every action the
+plan applies to the view, by every tile write and by `Game::board_written`,
+the seat's own cities also by any change to its deck, food bias or
+directives, and nothing is reused while a policy trace records. A view
+answers 47% of its city-yield reads from what it kept (seed 9101: 81,785
+reused, 91,222 derived). All of the saving is the seat's own cities: keeping
+only the rivals' saves under 0.2%, because on a view a rival's city is a
+stub of what the seat has seen. Its row in the table is one binary with and
+without `gene_screen --no-kept-yields`. The live Civilization VI seat calls
+`plan_frame` on its own mirror board and keeps nothing, as before.
+
+That it is the same game, and that no write to a view goes unreported, rests
+on three things. One binary with the switch thrown wrote identical rows on
+nine seeds: the three above and six of the bare screen, where every seat
+draws its own genome (26081900 and 26081901 at −4.15% and −5.51%, and
+26081902 to 26081905 as one batch at −5.42%). The same nine games ran under
+`--audit-kept-yields`, the bare-screen ones ending between them on four
+different victories: 1,491,945 reused answers were derived again and none
+differed. And `ai::player::kept_yields_tests`
+plays a 60-turn game of four production players both ways in CI and compares
+the two boards byte for byte, which is the comparison that sees a caller
+depending on a derivation having *run* (see the 2026-11-11 warning below).
+
+**A roster entry is looked up.** `leader_roster::entry` walked the 105
+leaders comparing names until one matched, and `Game::has_ability`,
+`civ_effect` and `owns_civ_unique` all start there. It is now a table built
+when the roster is read.
+⚠ The first fix was a binary search over the names in order, and CI's paired
+cost read it **2.0% slower** on the screen workload and 1.3% slower on the
+site, with the same games. `civvis simulate` and the site seat the first
+names on the roster, which the walk found in a comparison or two and a
+binary search needs seven for; a gene screen shuffles its civilizations
+(seed 9101 seats Macedon, the 105th name) and pays for the whole list. The
+table costs the same wherever the name stands, and the same check reads it
+inside the noise on the screen workload and 1.7% faster on the site.
+**What a lookup costs can depend on which keys a workload asks for**, and the
+gate's workload and the screen's ask for different ones.
+
+**The view is built with less copying.** Two things in
+`player_decision_view`. Every seat but the observer's is replaced by a
+redacted one, and `view.players[other] = player` copied the seat it was
+about to overwrite, because indexing a shared roster mutably copies first;
+`Players::replace` does not. And the view's last step floods the unknown
+tiles near what the seat knows (`grow_player_frontier`), holding what it had
+reached in an ordered set of positions that it filled with every known tile
+and searched once per neighbour: now one flag a tile, in the map's own
+order. The flood opens exactly the tile writes it opened before, because the
+grid's epoch counts them and caches compare epochs.
+
+**A city-state's type is read last.** `Game::cs_type` reads the ruleset's
+182 city-states by name. The Suzerain count read it for every city-state on
+the board before asking who the Suzerain was, four times a city yield, and
+the Envoy yields read it for city-states the seat has no Envoy at. Both now
+ask the cheap question first.
+
+### What is left
+
+The same game on a build of all four (seed 9101, 30 s from the fifth second,
+23,064 samples):
+
+| | Share |
+| --- | ---: |
+| the six majors | 87.6% |
+| ... planning on the view | 56.4% |
+| ...... the unit phase | 28.2% |
+| ...... the policy deck review | 3.8% |
+| ... building the view | 16.2% |
+| ...... city yields, for the view's corrections | 8.9% |
+| ...... the frontier flood (was 2.5%) | 0.4% |
+| ... replaying the plan on the board, and ending the turn | 11.3% |
+| ...... team visibility after each replayed move | 4.3% |
+| ... the war-finishing volley | 3.1% |
+| `Game::city_yields`, wherever it is asked | 23.6% |
+| `leader_roster::uses_civ6_mechanics` (was 2.6%) | 0.5% |
+| `Game::cs_type` (was 1.1%) | 0.1% |
+
+The unit phase is flat, as it is on the site: the military step 8.4%, the
+settlers 6.6%, the Builders 5.9%. Three things stand out above it, and none
+is attempted here.
+
+**The view's corrections (8.9%).** A view models yields from what the seat
+can see and then corrects the model against the board: each of the seat's
+own cities is derived twice, once on each, and every city of every rival it
+has met is derived on the board to read two numbers a rival, its science and
+its culture. A seat builds 2.24 views a turn. Between two views of one turn
+the rival half changes only when one of the seat's own actions reaches
+another seat's city, so most of it could be kept from the first view to the
+third. That is the write-set argument the 2026-11-11 section left open for
+the site (an action-by-action account of what can reach a rival's yields,
+checked by `Game::audit_rival_yields` over many seeds), and it is the
+largest single thing left here.
+
+**Visibility on the replay (4.3%).** The plan defers visibility on the view
+and the replay does not: every replayed move refreshes the team's sight. The
+replay also reads what each action explored to decide whether the plan is
+stale, so deferring it is not a rearrangement, and it was left alone.
+
+**Profile-guided optimization: 9.8% fewer instructions, and no seconds this
+host could find.** The section of 2026-09-10 left it untried. Tried here on
+`main` at `8986f9f46f` with the real release profile both ways:
+`RUSTFLAGS=-Cprofile-generate=DIR` on a `gene_screen` build, two games of
+the recipe on seeds nothing else here uses (7701, 7702), `xcrun llvm-profdata
+merge` (Apple's LLVM 21 tool reads this toolchain's LLVM 22 profiles, so
+nothing had to be installed), and a second build with
+`-Cprofile-use=FILE`. Seeds 9101, 9102, 9103: 396.27 to 357.85, 362.53 to
+326.73 and 334.43 to 301.97 billion instructions, **−9.7%, −9.9%, −9.7%**,
+repeatable to a tenth of a percent, the same rows.
+⚠ And five alternating pairs of user CPU seconds averaged 35.4 s plain and
+36.0 s guided, the pairs between −3% and +9%, on a host at load 17 to 34
+with both arms at `nice 19`. That is not a measurement of time in either
+direction. It is recorded because the two numbers disagree about what to
+expect: the four changes above remove work (derivations, comparisons,
+copies), and an instruction not executed is time not spent; what a profile
+takes out is mostly calls and jumps, and whether that is time depends on
+what the processor was waiting for. It needs a quiet host and a clock (the
+three builds took 14, 9 and 15 minutes here) before anyone builds a sweep's
+binary this way.
+
 ## 2026-11-11: the speed tools could not see the world civvis.ai plays
 
 Every reading in this file was taken with `civvis simulate` at the gene
@@ -449,6 +644,51 @@ or memoized (20% of the thread before the backlog fix, which accounts for 5.5
 of it), `pick_item` still takes the backlog census once per city with a
 `Produce` between cities (1.2%), and the full purchase menu is still listed
 up to twice a seat-turn (3.5%).
+
+### What a kept yield is made of is kept with it (−2.1% when written, −0.5% when merged)
+
+After the three cuts above the citizen plan was still the largest single
+cost in a site game. `Game::keep_rival_yields` kept each city's *yields* between a seat's passes
+and threw away the two things a yield is made of that other callers ask for
+by themselves: the citizen plan (the Builder census, the worked-tile test and
+the state document ask for the plan and never the yield) and the luxury split
+(every city's amenities ask for the whole empire's, so a caller holding no
+query scope across the cities re-split the empire once per city).
+
+`KeptDerivations` holds all three in the same two maps, filled and read under
+the same conditions and dropped by the same events, so nothing new decides
+when a kept answer is stale. `--audit-kept-yields` re-derives every reused
+plan and split as it does every reused yield. Instructions for 150 turns,
+every checkpoint identical: −2.06%, −2.12%, −1.97% (seeds 7, 8, 9).
+
+⚠ **Those three readings are 2026-11-11's, and the site's world has shrunk
+since.** The change waited four days for a merge. Measured again on
+2026-11-15 with `main` at `afb11185a8` merged in, the release build, one run
+a seed, base and candidate alternating: 169.92 to 169.10, 154.29 to 153.46
+and 152.52 to 151.69 billion instructions, **−0.48%, −0.54%, −0.54%** (seeds
+7, 8, 9), every save and document checkpoint identical, and three audited
+games (seeds 7, 8, 11) reported nothing. It is a quarter of the first
+reading, and the game it is measured on is a smaller one: the majors end
+seed 7 on 9 to 14 cities where the profile above found 11 to 18, and that
+game's planning asks for 84,871 city yields with keeping on (37,802 reused,
+47,069 derived) where the table further up counted 200,782 (134,122 and
+66,660). Fewer cities asked about less often leaves less to keep. The
+profile shares in the next paragraph are the earlier world's as well.
+
+**What is left, and why it is not in this change.** A profile of the result
+(seed 7, turns 40 to 170) still has 26% of the thread deriving city yields
+(the plan is 17 of those points and the luxury split 5), and 8 points of the
+26 is one caller: the culture forecast, which reads every
+*rival* city's culture. Counted over one 150-turn game, the four majors
+issued 35,303 actions, the lane table was rebuilt 1,127 times and the
+forecast ran 1,801 times, three a seat-turn, and each run found the rivals'
+kept yields already dropped: every action but `Produce` drops them, and so
+does any tile write anywhere (27,000 of those actions were a unit moving).
+Almost none of those can change what a rival's city yields, but "almost" is
+not a rule. Keeping rival yields across the acting seat's own unit moves and
+its Builders' improvements needs a write-set argument per action type and a
+finer tile rule, checked by the audit over many seeds; that is the next 5
+points and it is a change to review on its own.
 
 ⚠ **One cargo target directory cannot be shared between worktrees.** Cargo
 decides a crate is fresh by comparing its sources' modification times with

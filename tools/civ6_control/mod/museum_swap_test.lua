@@ -9,7 +9,7 @@ local function museum(id, names, factor)
  local b={HasBuilding=function() return true end,GetNumGreatWorkSlots=function() return 3 end,
  GetGreatWorkInSlot=function(_,_,s) return slots[s+1] or -1 end,
  GetGreatWorkTypeFromIndex=function(_,i) return i end,GetTurnFromIndex=function(_,i) return created[i] end,
- GetBuildingTourismFromGreatWorks=function(_,religious) if religious then return 0 end;return (factor or 1)*CivvisMuseumSwaps.score((function() local w={};for i,v in pairs(slots) do w[i]={creator=data[v].CreatorName,object=art[v].GreatWorkObjectType} end;return w end)()) end}
+ GetBuildingTourismFromGreatWorks=function(_,religious) if religious then return 0 end;return (factor or 1)*CivvisMuseumSwaps.score((function() local w={};for i,v in pairs(slots) do w[i]={creator=data[v].CreatorName,object=art[v].GreatWorkObjectType,tourism=art[v].Tourism} end;return w end)()) end}
  return {GetID=function() return id end,GetBuildings=function() return b end},slots,created
 end
 GameInfo=setmetatable({Buildings={BUILDING_MUSEUM_ART={Index=7}},GreatWorks=art,UnitOperations={},UnitCommands={}}, {__index=function() return stub() end})
@@ -40,5 +40,34 @@ row={kind='museum_swap',subject=30,verb='B_2',x=40,y=0}
 ok,why=CivvisApplyOrder(player,0,row,20);assert(not ok and why=='museum_no_native_gain' and requests==2,tostring(why))
 -- Unknown native readback and religious-art channels do not invent a multiplier.
 data[cs[1]]=nil
-ok,why=CivvisApplyOrder(player,0,row,20);assert(not ok and why=='museum_unknown_inventory' and requests==2)
+ok,why=CivvisApplyOrder(player,0,row,20);assert(not ok and why=='museum_unknown_inventory:source_creator' and requests==2,tostring(why))
+-- The refusal names the museum and the read that stopped it: it was one word
+-- for nine gates, and every swap of two live Culture games was refused by it.
+data[cs[1]]={CreatorName='A'}
+local e,es=museum(50,{},1);cities={c,e};row={kind='museum_swap',subject=30,verb='B_2',x=50,y=0}
+ok,why=CivvisApplyOrder(player,0,row,20);assert(not ok and why=='museum_unknown_inventory:dest_empty' and requests==2,tostring(why))
+local f,fs=museum(60,{'F'},1);art[fs[1]].GreatWorkObjectType='GREATWORKOBJECT_RELIGIOUS';cities={c,f};row.x=60
+ok,why=CivvisApplyOrder(player,0,row,20);assert(not ok and why=='museum_unknown_inventory:dest_not_art' and requests==2,tostring(why))
+art[fs[1]].GreatWorkObjectType='GREATWORKOBJECT_LANDSCAPE';art[cs[2]].Tourism=0
+ok,why=CivvisApplyOrder(player,0,row,20);assert(not ok and why=='museum_unknown_inventory:source_work_tourism' and requests==2,tostring(why))
+art[cs[2]].Tourism=2
+-- A work of the Babylon pack's artists carries Tourism 4, not 2
+-- (DLC/Babylon/Data/Babylon_GreatWorks.xml). A museum holding one was unknown
+-- inventory: every swap of civvis-20261115T102552Z (three Kandinskys in the
+-- destination) and 110627Z (three Tohakus in the source) was refused. It is
+-- read, weighs twice a base work, and the swap is judged on its gain.
+local g,gs=museum(70,{'G','G','G'},1);for _,i in ipairs(gs) do art[i].Tourism=4 end
+local h,hs=museum(80,{'H','H','H'},1);cities={g,h}
+assert(CivvisMuseumSwaps.read(g,7)~=nil and CivvisMuseumSwaps.read(g,7).tourism==7,'three 4s by one artist score 6 + 1')
+row={kind='museum_swap',subject=70,verb='G_1',x=80,y=0}
+ok,why=CivvisApplyOrder(player,0,row,20);assert(ok and requests==3 and got.src==70 and got.dst==80 and got.work==gs[1],tostring(why))
+CivvisMuseumSwaps.lastTurn=-1
+-- ...and the other way round, a base work into the museum of 4s.
+row={kind='museum_swap',subject=80,verb='H_1',x=70,y=2}
+ok,why=CivvisApplyOrder(player,0,row,20);assert(ok and requests==4 and got.src==80 and got.dst==70 and got.slot==2,tostring(why))
+CivvisMuseumSwaps.lastTurn=-1
+-- Base works alone score as they always did: three by three artists of one
+-- kind are (3 + 3) * 2, three by one artist 3 + 1.
+assert(CivvisMuseumSwaps.score({{creator='A',object='L'},{creator='B',object='L'},{creator='C',object='L'}})==12)
+assert(CivvisMuseumSwaps.score({{creator='A',object='L'},{creator='A',object='L'},{creator='A',object='L'}})==4)
 print('museum_swap_test: passed')

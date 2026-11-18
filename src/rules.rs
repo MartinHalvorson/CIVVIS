@@ -610,7 +610,7 @@ pub struct UnitSpec {
     /// `adjacent_siege_range`, `adjacent_siege_bombard`, `adjacent_heal`, and
     /// `adjacent_movement`; unknown entries remain forward-compatible.
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
     /// `Units.WMDCapable`: this unit can carry a nuclear or thermonuclear
     /// device to its target. The shipped rows are the Bomber, the Jet Bomber
     /// and the Nuclear Submarine (`Base/Assets/Gameplay/Data/Units.xml`).
@@ -771,7 +771,7 @@ pub struct BuildingSpec {
     /// Free-form numeric rule primitives used by named effects that are not
     /// plain yields (production modifiers, combat strength, tourism, etc.).
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
     /// Worship buildings are selected by this religion belief and purchased
     /// with Faith rather than constructed with Production.
     #[serde(default)]
@@ -837,7 +837,7 @@ pub struct WonderSpec {
     #[serde(default)]
     pub placement: String,
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
 }
 
 /// A named entry in the global Great Person market. Effects deliberately use
@@ -861,7 +861,7 @@ pub struct GovernorPromotionSpec {
     #[serde(default)]
     pub requires: Vec<Name>,
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -870,7 +870,7 @@ pub struct GovernorSpec {
     pub title: String,
     pub establish_turns: u32,
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
     #[serde(default)]
     pub promotions: BTreeMap<String, GovernorPromotionSpec>,
 }
@@ -1174,7 +1174,7 @@ pub struct CivSpec {
     /// engine cannot express this way — Rome's free monument, Scythia's
     /// healing — stays keyed by name in `has_ability` instead.
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
     #[serde(default)]
     pub unique_unit: Option<String>,
     #[serde(default)]
@@ -1189,18 +1189,18 @@ pub struct BeliefSpec {
     #[serde(default)]
     pub note: String,
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct BeliefsData {
-    pub pantheon: BTreeMap<String, BeliefSpec>,
-    pub founder: BTreeMap<String, BeliefSpec>,
-    pub follower: BTreeMap<String, BeliefSpec>,
+    pub pantheon: SpecMap<BeliefSpec>,
+    pub founder: SpecMap<BeliefSpec>,
+    pub follower: SpecMap<BeliefSpec>,
     #[serde(default)]
-    pub enhancer: BTreeMap<String, BeliefSpec>,
+    pub enhancer: SpecMap<BeliefSpec>,
     #[serde(default)]
-    pub worship: BTreeMap<String, BeliefSpec>,
+    pub worship: SpecMap<BeliefSpec>,
 }
 
 /// Read `"replaces": "x"` and `"replaces": ["x", "y"]` alike.
@@ -1244,7 +1244,7 @@ pub struct PolicySpec {
     pub note: String,
     /// Numeric, data-driven policy primitives consumed by the game engine.
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
     /// Unit-Production cards apply only to units of these eras. Agoge boosts
     /// Ancient and Classical infantry and nothing later; an empty list means
     /// the card is not era-gated. `ADJUST_UNIT_TAG_ERA_PRODUCTION` ships one
@@ -1293,7 +1293,7 @@ pub struct PromotionSpec {
     #[serde(default)]
     pub requires: Vec<Name>,
     #[serde(default)]
-    pub effects: BTreeMap<String, f64>,
+    pub effects: crate::effect_map::EffectMap,
     #[serde(default)]
     pub note: String,
 }
@@ -1771,19 +1771,56 @@ pub struct Rules {
     pub civic_ancestors: SpecMap<BTreeSet<String>>,
     /// Which effect keys each family of specs declares at all.
     pub effect_index: EffectIndex,
-    /// For each district, the family each of its adjacency keys names — in
-    /// `DistrictSpec::adjacency`'s own key order, `None` for a key that is not
-    /// a district at all.
+    /// For each district, what each of its adjacency keys counts — in
+    /// `DistrictSpec::adjacency`'s own key order. See [`AdjacencyCount`].
     ///
-    /// The district adjacency count table resolves a key like
-    /// `government_plaza` by interning it and walking `replaces`. It runs
-    /// once per (plot, district, key), and a settlement scan asks it for
-    /// nineteen plots at each of ~154 candidate sites: about twenty million
-    /// `Name::new` calls in a six-player game, each one an `RwLock` read and a
-    /// hash. `Name::new`'s own documentation says it belongs at the edges and
-    /// that hot code should carry a `Name` it was given. This is that edge —
-    /// the keys are fixed when the ruleset loads and never change afterwards.
-    pub district_adjacency_families: SpecMap<Vec<Option<Name>>>,
+    /// The district adjacency count runs once per (plot, district, key), and
+    /// a settlement scan asks it for nineteen plots at each of ~154 candidate
+    /// sites: about twenty million times in a six-player game. Read from the
+    /// key's text each time, that was a match against two dozen string
+    /// literals, then a hashed district lookup, then for a district key an
+    /// `RwLock` read and a hash to intern it. The keys are fixed when the
+    /// ruleset loads and never change afterwards, so they are read once here.
+    pub district_adjacency_counts: SpecMap<Vec<AdjacencyCount>>,
+}
+
+/// What a district adjacency key (`DistrictSpec::adjacency`) counts among
+/// the plot's neighbours. Read from the key's text by
+/// [`Rules::adjacency_count_of`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AdjacencyCount {
+    /// `self`: the plot itself, always one.
+    Itself,
+    /// `river`: one when the plot itself has a river.
+    River,
+    Mountain,
+    /// `forest` or `woods`.
+    Forest,
+    /// `rainforest` or `jungle`.
+    Jungle,
+    NaturalWonder,
+    /// `reef`, which the Great Barrier Reef also is.
+    Reef,
+    GreatBarrierReef,
+    GeothermalFissure,
+    Pamukkale,
+    /// `district`: every standing district or City Center.
+    District,
+    CityCenter,
+    Wonder,
+    /// `coast_resource` or `sea_resource`.
+    SeaResource,
+    StrategicResource,
+    LuxuryResource,
+    Resource,
+    /// `mine`, `quarry`, `lumber_mill`, `plantation` or `farm`: that
+    /// improvement.
+    Improvement(Name),
+    /// A district's name: every standing district of that family, which is
+    /// the one named here.
+    Family(Name),
+    /// A key the engine does not count; it scores zero.
+    Nothing,
 }
 
 /// The effect keys each family of specs actually grants something towards.
@@ -2309,6 +2346,13 @@ pub struct GoodyRewardSpec {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct DisasterSpec {
     pub per_game: f64,
+    /// Expected occurrences per game at each `--disasters` setting, indexed by
+    /// that setting (0 none, 1 Light, 2 Moderate, 3 Heavy, 4 Hyperreal), when
+    /// the class has the shipped `RandomEvent_Frequencies` rows. A class with
+    /// this list uses it in place of `per_game` times the generic intensity
+    /// ladder; an absent list keeps that ladder.
+    #[serde(default)]
+    pub per_intensity: Vec<f64>,
     #[serde(default = "one_u8")]
     pub severities: u8,
     /// HP removed from every unit caught in the affected area.
@@ -2930,7 +2974,7 @@ impl Rules {
             tech_ancestors: SpecMap::default(),
             civic_ancestors: SpecMap::default(),
             effect_index: EffectIndex::default(),
-            district_adjacency_families: SpecMap::default(),
+            district_adjacency_counts: SpecMap::default(),
         };
         let effects: TreeEffectsData = take(&mut files, "tree_effects")?;
         for (node, values) in effects.techs {
@@ -2986,32 +3030,59 @@ impl Rules {
         rules.tech_ancestors = ancestry(&rules.techs);
         rules.civic_ancestors = ancestry(&rules.civics);
         rules.effect_index = rules.build_effect_index();
-        rules.district_adjacency_families = rules.build_district_adjacency_families();
+        rules.district_adjacency_counts = rules.build_district_adjacency_counts();
         Ok(rules)
     }
 
-    /// Resolve every district-naming adjacency key to the family it counts,
-    /// once. See [`Rules::district_adjacency_families`].
+    /// What one district adjacency key counts. The named kinds come first, so
+    /// a key that is both a kind and a district (`city_center`) counts as the
+    /// kind; any other key naming a district counts that district's family.
     ///
-    /// The membership test is `SpecMap::contains_key(&str)`, which probes by
-    /// string hash and does not intern, so this is exactly the guard the count
-    /// table applies — and because every key that passes it was already
-    /// interned as a district id at load, the `Name::new` below cannot hand
-    /// out a new id.
-    fn build_district_adjacency_families(&self) -> SpecMap<Vec<Option<Name>>> {
+    /// The district test is `SpecMap::contains_key(&str)`, which probes by
+    /// string hash and does not intern, and every key that passes it was
+    /// already interned as a district id at load, so the `Name::new` below
+    /// cannot hand out a new id for a district.
+    pub fn adjacency_count_of(&self, key: &str) -> AdjacencyCount {
+        match key {
+            "self" => AdjacencyCount::Itself,
+            "river" => AdjacencyCount::River,
+            "mountain" => AdjacencyCount::Mountain,
+            "forest" | "woods" => AdjacencyCount::Forest,
+            "rainforest" | "jungle" => AdjacencyCount::Jungle,
+            "natural_wonder" => AdjacencyCount::NaturalWonder,
+            "reef" => AdjacencyCount::Reef,
+            "great_barrier_reef" => AdjacencyCount::GreatBarrierReef,
+            "geothermal_fissure" => AdjacencyCount::GeothermalFissure,
+            "pamukkale" => AdjacencyCount::Pamukkale,
+            "district" => AdjacencyCount::District,
+            "city_center" => AdjacencyCount::CityCenter,
+            "wonder" => AdjacencyCount::Wonder,
+            "coast_resource" | "sea_resource" => AdjacencyCount::SeaResource,
+            "strategic_resource" => AdjacencyCount::StrategicResource,
+            "luxury_resource" => AdjacencyCount::LuxuryResource,
+            "resource" => AdjacencyCount::Resource,
+            "mine" | "quarry" | "lumber_mill" | "plantation" | "farm" => {
+                AdjacencyCount::Improvement(Name::new(key))
+            }
+            district if self.districts.contains_key(district) => {
+                AdjacencyCount::Family(self.district_family_of(Name::new(district)))
+            }
+            _ => AdjacencyCount::Nothing,
+        }
+    }
+
+    /// Read every district adjacency key once. See
+    /// [`Rules::district_adjacency_counts`].
+    fn build_district_adjacency_counts(&self) -> SpecMap<Vec<AdjacencyCount>> {
         self.districts
             .iter()
             .map(|(district, spec)| {
-                let families = spec
+                let counts = spec
                     .adjacency
                     .keys()
-                    .map(|key| {
-                        self.districts
-                            .contains_key(key.as_str())
-                            .then(|| self.district_family_of(Name::new(key.as_str())))
-                    })
+                    .map(|key| self.adjacency_count_of(key))
                     .collect::<Vec<_>>();
-                (district.to_string(), families)
+                (district.to_string(), counts)
             })
             .collect()
     }

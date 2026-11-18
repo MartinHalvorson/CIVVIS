@@ -70,6 +70,19 @@ impl BasicAi {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(cache) = slot.as_ref() {
             if cache.key == key {
+                // ⚠ DIAGNOSTIC ONLY, beside the per-enemy audit: a table handed
+                // back whole on a key hit must read as each enemy's reach does
+                // now. The per-enemy audit never sees these.
+                if Self::envelope_audit_enabled() {
+                    for (uid, reach) in cache.envelopes.iter() {
+                        let fresh = EnvelopeReach::from_tiles(g.attack_reach(*uid));
+                        if fresh != **reach {
+                            if let Some(unit) = g.units.get(uid) {
+                                Self::report_stale_envelope(g, unit, reach, &fresh);
+                            }
+                        }
+                    }
+                }
                 return std::sync::Arc::clone(&cache.envelopes);
             }
         }
@@ -137,7 +150,41 @@ impl BasicAi {
             hash ^= hash >> 29;
         };
         mix(g.map.tiles.epoch());
-        mix(g.wars.len() as u64);
+        // ⚠ The epoch alone does not name a map: a copy made to plan on (a
+        // fog-honest decision view, a speculative branch) numbers its writes
+        // from the epoch it was copied at, so a copy and the board it came
+        // from can show the same epoch over different tiles. The write chain
+        // tells two histories apart (`TileGrid::write_chain`).
+        mix(g.map.tiles.write_chain());
+        // ⚠ Who is at war with whom, not how many wars: an envelope's flood
+        // reads `is_at_war` between the mover and every unit beside its path,
+        // and a city-state's belligerence follows its suzerain. The same
+        // reading the per-enemy board stamps itself with.
+        mix(Self::envelope_belligerence_fingerprint(g));
+        // The seat to act: an enemy's reach reads its owner's own state, which
+        // only its owner's turn changes (see `EnvelopeBoard::stamp`).
+        mix(g.current as u64);
+        // The units are most of the key and the part least often changed
+        // between two asks: kept while no unit is written.
+        mix(g.units_fold_kept(skip_owner, || Self::envelope_units_fold(g, skip_owner)));
+        mix(g.cities.len() as u64);
+        for city in g.cities.values() {
+            mix(u64::from(city.id));
+            mix(city.owner as u64);
+            mix(city.pos.0 as u64);
+            mix(city.pos.1 as u64);
+        }
+        hash
+    }
+
+    /// The units' part of [`Self::attack_envelope_fingerprint`]: every unit
+    /// but `skip_owner`'s, by what an enemy's reach reads of it.
+    fn envelope_units_fold(g: &Game, skip_owner: Option<usize>) -> u64 {
+        let mut hash = FINGERPRINT_SEED;
+        let mut mix = |value: u64| {
+            hash = (hash ^ value).wrapping_mul(FINGERPRINT_SEED);
+            hash ^= hash >> 29;
+        };
         for unit in g
             .units
             .values()
@@ -150,13 +197,25 @@ impl BasicAi {
             mix(u64::from(unit.kind.id()));
             mix(unit.formation as u64);
             mix(u64::from(unit.zoc_stopped));
-        }
-        mix(g.cities.len() as u64);
-        for city in g.cities.values() {
-            mix(u64::from(city.id));
-            mix(city.owner as u64);
-            mix(city.pos.0 as u64);
-            mix(city.pos.1 as u64);
+            // ★★ THE LOCK, THE LINK AND THE PATROL. `formation_movement_locked_by_zoc`
+            // reads these three flags and the linked peer, and a fighter's
+            // patrol refuses entry to the tile it flies over; none of them moves
+            // the unit. The table handed back whole on a key hit must answer for
+            // them as the per-enemy delta (`EnvelopeUnit`) does: a unit locked
+            // in place since the key was taken has an empty flood, and the old
+            // table gave it its whole reach. Found by the outer-table audit on a
+            // production-player gene screen.
+            mix(u64::from(unit.started_turn_in_zoc)
+                | (u64::from(unit.acted) << 1)
+                | (u64::from(unit.moved) << 2));
+            mix(unit.linked_to.map_or(u64::MAX, u64::from));
+            mix(unit
+                .air_patrol
+                .then_some(unit.air_patrol_pos)
+                .flatten()
+                .map_or(u64::MAX, |(q, r)| {
+                    (u64::from(q as u32) << 32) | u64::from(r as u32)
+                }));
         }
         hash
     }
@@ -167,8 +226,14 @@ impl BasicAi {
         g: &Game,
         unit: &crate::game::Unit,
         flood: &[Pos],
-    ) -> std::collections::HashSet<Pos> {
-        let mut tiles = std::collections::HashSet::with_capacity(flood.len() * 7 + 7);
+    ) -> crate::fast_map::FastSet<Pos> {
+        // Only ever asked whether it holds a tile, so hashed without the
+        // standard library's SipHash, which is built to resist an adversary
+        // and was most of what this set cost.
+        let mut tiles = crate::fast_map::FastSet::with_capacity_and_hasher(
+            flood.len() * 7 + 7,
+            Default::default(),
+        );
         // ★★★★★ AN EMPTY FLOOD IS NOT AN EMPTY SENSITIVITY. `flow_past` returns
         // nothing at all when `formation_movement_locked_by_zoc` holds, and a
         // set built only from the flood is then empty — so no board change ever
@@ -183,7 +248,7 @@ impl BasicAi {
         // tile — so its own tile and their neighbours are always sensitive,
         // flood or no flood. The same goes for a linked peer, whose lock locks
         // the leader.
-        let seed = |pos: Pos, tiles: &mut std::collections::HashSet<Pos>| {
+        let seed = |pos: Pos, tiles: &mut crate::fast_map::FastSet<Pos>| {
             tiles.insert(pos);
             for neighbour in g.nbrs(pos) {
                 tiles.insert(neighbour);
@@ -297,7 +362,7 @@ impl BasicAi {
     /// store's cleanup rides along with it.
     #[cfg(test)]
     pub(super) fn envelope_board_delta(&self, g: &Game) -> Option<Vec<Pos>> {
-        self.envelope_board_change(g).touched
+        self.envelope_board_change(g, None).touched
     }
 
     /// ★★★ THE DIFF IS A MERGE, NOT A REBUILD. Both rosters are ordered by
@@ -310,19 +375,80 @@ impl BasicAi {
     /// the same one, over the same fields, and the tiles reported are the
     /// same set. Only the order within the returned `Vec` differs, and its
     /// single reader asks whether a sensitive set contains any of them.
-    pub(super) fn envelope_board_change(&self, g: &Game) -> EnvelopeChange {
+    /// The tiles the board changes since the last ask touched, for the
+    /// per-enemy envelopes to test against their sensitive sets.
+    ///
+    /// ★★ `asker`'s OWN INERT UNITS ARE LEFT OUT. An envelope here is the reach
+    /// of a military unit at war with the seat asking, and the two floods it is
+    /// built from read other units in exactly two ways: zone of control
+    /// (`in_enemy_zoc_for`, military units that `exerts_zoc`) and a hostile
+    /// fighter's patrol (`can_enter_past`). The attack reach floods through
+    /// units (`through_units`), and the strike reach's arrivals
+    /// (`approach_arrivals_with`) read a tile holding one of the asker's
+    /// civilians, religious or support units exactly as they read an empty
+    /// one: `entry_at_neighbor` answers `Stop` for both when the mover is at
+    /// war with the occupant, which every envelope's subject is. So a Builder,
+    /// a Settler or a Missionary of the asker's walking about cannot change
+    /// any envelope this seat is told, and each such step used to re-flood
+    /// every enemy whose movement field it crossed. Only a change of place,
+    /// formation or lock is left out this way: a unit that changed owner or
+    /// kind, started a patrol, or left the board is reported as before.
+    ///
+    /// ⚠ That argument holds for the asker only. A third seat's Builder can
+    /// turn a `Stop` into a `Pass` for a mover at peace with it, so the board
+    /// remembers whose changes it left out (`skipped_for`) and treats an ask
+    /// on behalf of any other seat as "everything changed". One AI plays one
+    /// seat, so in play that never fires.
+    ///
+    /// ★★★ A MAP WRITE IS REPORTED BY TILE, NOT AS "EVERYTHING CHANGED". This
+    /// board used to carry the map epoch in its stamp, so any tile opened for
+    /// writing anywhere — a Builder's improvement, a chop, one tile of border
+    /// growth — re-flooded every enemy on the next ask: 3,063 times in one
+    /// 210-turn site game, three quarters of every flood the envelopes ran,
+    /// almost always for one to five tiles. The map now keeps a short log of
+    /// what it opened (`TileGrid::writes_since`), and the tiles are tested
+    /// against each envelope's `sight`: the disk around the unit out to its
+    /// farthest flood tile plus its attack range. That is everything both
+    /// floods read off the map. The attack reach reads tile costs, borders,
+    /// cliffs, rivers and districts along its flood and one step beyond it,
+    /// and line of sight from every flood tile out to its range; the strike
+    /// reach's arrivals (`approach_arrivals_with`) relax the same costs with a
+    /// stricter entry test, so they stay inside the attack flood, and they
+    /// shoot from inside it. A unit whose flood was empty (locked in place
+    /// this turn) has no `sight` and is refreshed by any write, since on a
+    /// fresh turn its strike reach can walk where its attack reach cannot.
+    /// A history that cannot be followed back (a whole-map write, another
+    /// branch of a cloned game, a log overrun) is "everything changed".
+    pub(super) fn envelope_board_change(&self, g: &Game, asker: Option<usize>) -> EnvelopeChange {
         let mut previous = self
             .envelope_board
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let stamp = (
-            g.map.tiles.epoch(),
             Self::envelope_belligerence_fingerprint(g),
             Self::envelope_city_fingerprint(g),
+            g.turn,
+            g.current,
         );
+        let map_chain = g.map.tiles.write_chain();
+        let inert = |unit: &crate::game::Unit| {
+            asker == Some(unit.owner)
+                && g.rules.units[unit.kind].class != "military"
+                && !g.exerts_zoc(unit)
+        };
+        let mut skipped_for = None;
         let mut units: Vec<(u32, EnvelopeUnit)> = Vec::with_capacity(g.units.len());
-        let change = match previous.as_ref() {
-            Some(prior) if prior.stamp == stamp => {
+        let written = previous
+            .as_ref()
+            .filter(|prior| {
+                prior.stamp == stamp && prior.skipped_for.is_none_or(|seat| Some(seat) == asker)
+            })
+            .and_then(|prior| g.map.tiles.writes_since(prior.map_chain));
+        let change = match (previous.as_ref(), written) {
+            (Some(prior), Some(mut written)) => {
+                written.sort_unstable();
+                written.dedup();
+                skipped_for = prior.skipped_for;
                 let mut touched = Vec::new();
                 let mut removed = false;
                 let mut before = prior.units.iter().peekable();
@@ -339,16 +465,29 @@ impl BasicAi {
                     match before.peek() {
                         Some((same, was)) if same == id => {
                             if *was != now {
-                                touched.push(was.pos);
-                                touched.push(now.pos);
-                                touched.extend(was.patrol);
-                                touched.extend(now.patrol);
+                                if was.owner == now.owner
+                                    && was.kind == now.kind
+                                    && was.patrol.is_none()
+                                    && now.patrol.is_none()
+                                    && inert(unit)
+                                {
+                                    skipped_for = asker;
+                                } else {
+                                    touched.push(was.pos);
+                                    touched.push(now.pos);
+                                    touched.extend(was.patrol);
+                                    touched.extend(now.patrol);
+                                }
                             }
                             before.next();
                         }
                         _ => {
-                            touched.push(now.pos);
-                            touched.extend(now.patrol);
+                            if now.patrol.is_none() && inert(unit) {
+                                skipped_for = asker;
+                            } else {
+                                touched.push(now.pos);
+                                touched.extend(now.patrol);
+                            }
                         }
                     }
                     units.push((*id, now));
@@ -360,6 +499,7 @@ impl BasicAi {
                 }
                 EnvelopeChange {
                     touched: Some(touched),
+                    written,
                     removed,
                 }
             }
@@ -373,11 +513,17 @@ impl BasicAi {
                 // cleanup must run.
                 EnvelopeChange {
                     touched: None,
+                    written: Vec::new(),
                     removed: true,
                 }
             }
         };
-        *previous = Some(EnvelopeBoard { stamp, units });
+        *previous = Some(EnvelopeBoard {
+            stamp,
+            map_chain,
+            units,
+            skipped_for,
+        });
         change
     }
 
@@ -396,7 +542,7 @@ impl BasicAi {
     /// moving invalidated anyway. `advanced_v1_plays_the_same_game_it_always_did`
     /// passed throughout — the anchor's five profiles do not move an envoy in
     /// a way that matters.
-    fn envelope_belligerence_fingerprint(g: &Game) -> u64 {
+    pub(crate) fn envelope_belligerence_fingerprint(g: &Game) -> u64 {
         let mut hash = FINGERPRINT_SEED;
         let mut mix = |value: u64| {
             hash = (hash ^ value).wrapping_mul(FINGERPRINT_SEED);
@@ -419,7 +565,7 @@ impl BasicAi {
     }
 
     /// The cities as `attack_reach` sees them: identity, owner and place.
-    fn envelope_city_fingerprint(g: &Game) -> u64 {
+    pub(crate) fn envelope_city_fingerprint(g: &Game) -> u64 {
         let mut hash = FINGERPRINT_SEED;
         for city in g.cities.values() {
             for value in [
@@ -447,8 +593,10 @@ impl BasicAi {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let EnvelopeChange {
             touched: delta,
+            written,
             removed,
-        } = self.envelope_board_change(g);
+        } = self.envelope_board_change(g, Some(pid));
+        let mut asked: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
         let out: AttackEnvelopes = g
             .units
             .values()
@@ -461,17 +609,40 @@ impl BasicAi {
                     && (spec.is_melee_capable() || spec.has_ranged_attack())
             })
             .filter_map(|unit| {
-                // ⚠ Air units are never reused: `attack_reach` centres their
-                // disk on `air_operation_origin`, not the unit's tile, so a
-                // radius around the tile watches the wrong ground. They are a
-                // disk, not a flow field, and cost little to redo.
-                let reusable = g.rules.units[unit.kind].domain.as_deref() != Some("air");
-                if reusable {
+                asked.insert(unit.id);
+                // ★★ AN AIR UNIT IS KEPT BY ITS BASE, NOT BY ITS GROUND.
+                // `attack_reach` gives an air unit the disk of its attack range
+                // around `air_operation_origin` (its patrol tile, else its own),
+                // which a radius around the unit's tile cannot watch, so air
+                // units used to be recomputed on every ask, each a disk of its
+                // whole range, and then the strike reach's same disk again
+                // through `MovementReachCache`. The disk reads nothing but
+                // that tile, that range and the unit's kind, so an air envelope
+                // is kept exactly while those three stand (`EnemyEnvelope::air`).
+                let air = (g.rules.units[unit.kind].domain.as_deref() == Some("air")).then(|| {
+                    (
+                        unit.kind.id(),
+                        g.air_operation_origin(unit.id),
+                        g.unit_attack_range(unit.id),
+                    )
+                });
+                {
                     if let (Some(delta), Some(entry)) = (delta.as_ref(), store.get(&unit.id)) {
-                        if delta
-                            .iter()
-                            .all(|touched| !entry.sensitive.contains(touched))
-                        {
+                        let kept = match air {
+                            Some(key) => entry.air == Some(key),
+                            None => {
+                                entry.air.is_none()
+                                    && delta
+                                        .iter()
+                                        .all(|touched| !entry.sensitive.contains(touched))
+                                    && written.iter().all(|tile| {
+                                        entry.sight.is_some_and(|(centre, radius)| {
+                                            g.wdist(*tile, centre) > radius
+                                        })
+                                    })
+                            }
+                        };
+                        if kept {
                             // ⚠ DIAGNOSTIC ONLY. With CIVVIS_ENVELOPE_AUDIT set,
                             // every reuse is checked against a fresh computation
                             // and the first disagreement is described. This is
@@ -493,10 +664,23 @@ impl BasicAi {
                 let cached = g.cached_attack_reach_from_flood(reach_key, unit.id);
                 let reach: std::sync::Arc<EnvelopeReach> =
                     std::sync::Arc::new(EnvelopeReach::from_shared_tiles(cached.shared_targets()));
-                if reusable {
+                {
+                    // How far out a written tile can still reach this
+                    // envelope; see `envelope_board_change`.
+                    let flood = cached.flood();
+                    let sight = (!flood.is_empty()).then(|| {
+                        let farthest = flood
+                            .iter()
+                            .map(|tile| g.wdist(unit.pos, *tile))
+                            .max()
+                            .unwrap_or(0);
+                        (unit.pos, farthest + g.unit_attack_range(unit.id).max(1))
+                    });
                     store.insert(
                         unit.id,
                         EnemyEnvelope {
+                            sight,
+                            air,
                             reach: std::sync::Arc::clone(&reach),
                             sensitive: std::sync::Arc::new(Self::envelope_sensitive_tiles(
                                 g,
@@ -534,6 +718,38 @@ impl BasicAi {
         if removed {
             store.retain(|id, _| g.units.contains_key(id));
         }
+        // ★★★ AN ENTRY THIS ASK DID NOT LOOK AT MUST STILL HAVE SEEN ITS CHANGES.
+        // The delta is consumed by the ask: the next ask is told only what
+        // changed after this one. An enemy out of sight, or not at war, is not
+        // looked at above, so its entry was neither checked against this
+        // ask's changes nor refreshed, and when it comes back into view the
+        // next delta no longer mentions them. A full invalidation was lost the
+        // same way. So an entry left unread survives only if nothing this ask
+        // reports could have reached it, by the very test a reuse applies. An
+        // air entry is read by its key against the unit as it stands, which
+        // needs no delta. Found by the reuse audit on a production-player
+        // gene screen: a barbarian seat's envelope of a city-state musketman
+        // that had become locked in place while out of its sight.
+        store.retain(|id, entry| {
+            asked.contains(id)
+                || entry.air.is_some()
+                || (delta.as_ref().is_some_and(|delta| {
+                    delta
+                        .iter()
+                        .all(|touched| !entry.sensitive.contains(touched))
+                }) && written.iter().all(|tile| {
+                    entry
+                        .sight
+                        .is_some_and(|(centre, radius)| g.wdist(*tile, centre) > radius)
+                }))
+        });
         out
     }
 }
+
+#[cfg(test)]
+mod air_reach_tests;
+#[cfg(test)]
+mod exactness_tests;
+#[cfg(test)]
+mod own_inert_units_tests;

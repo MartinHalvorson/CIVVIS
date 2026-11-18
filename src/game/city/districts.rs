@@ -16,6 +16,7 @@
 //! `pub(in crate::game)`, the same reach; the code is otherwise unchanged.
 
 use super::*;
+use crate::rules::AdjacencyCount;
 
 impl Game {
     pub(in crate::game) fn city_defense_district_count(&self, city: &City) -> usize {
@@ -312,16 +313,9 @@ impl Game {
 
     pub fn district_yields(&self, dname: impl AsName, dpos: Pos) -> Yields {
         let dname = dname.as_name();
-        if let Some(memo) = self.query_memo.district_yields.borrow().as_ref() {
-            if let Some(yields) = memo.get(&(dname, dpos)) {
-                return *yields;
-            }
-        }
-        let yields = self.district_yields_uncached(dname, dpos);
-        if let Some(memo) = self.query_memo.district_yields.borrow_mut().as_mut() {
-            memo.insert((dname, dpos), yields);
-        }
-        yields
+        crate::game::remembered(&self.query_memo.district_yields, (dname, dpos), || {
+            self.district_yields_uncached(dname, dpos)
+        })
     }
 
     fn district_yields_uncached(&self, dname: Name, dpos: Pos) -> Yields {
@@ -412,49 +406,18 @@ impl Game {
         for (index, pos) in self.nbrs(dpos).into_iter().enumerate() {
             neighbors[index] = self.map.get(pos);
         }
-        self.district_adjacency_assuming_with_family_and_neighbors(
-            dname, dpos, assume, detail, family, &neighbors,
+        self.district_adjacency_with_neighbors(
+            dname, dpos, assume, detail, family, &neighbors, None,
         )
     }
 
-    pub(crate) fn district_adjacency_assuming_with_family_and_neighbors(
-        &self,
-        dname: Name,
-        dpos: Pos,
-        assume: Option<&crate::game::adjacency::PlanAssumption>,
-        detail: Option<&mut Vec<AdjacencySource>>,
-        family: Name,
-        neighbors: &[Option<&crate::world::Tile>; 6],
-    ) -> Yields {
-        self.district_adjacency_assuming_with_family_and_neighbors_cached(
-            dname, dpos, assume, detail, family, neighbors, None,
-        )
-    }
-
+    /// The adjacency count itself, for a caller that already holds the
+    /// plot's six neighbouring tiles (in `nbrs` order, `None` off the map)
+    /// and the district's `family`. A caller that has already counted the
+    /// neighbours the `district` key counts passes that as `district_count`;
+    /// `None` counts them here.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn district_adjacency_assuming_with_family_and_neighbors_and_district_count(
-        &self,
-        dname: Name,
-        dpos: Pos,
-        assume: Option<&crate::game::adjacency::PlanAssumption>,
-        detail: Option<&mut Vec<AdjacencySource>>,
-        family: Name,
-        neighbors: &[Option<&crate::world::Tile>; 6],
-        district_count: usize,
-    ) -> Yields {
-        self.district_adjacency_assuming_with_family_and_neighbors_cached(
-            dname,
-            dpos,
-            assume,
-            detail,
-            family,
-            neighbors,
-            Some(district_count),
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(in crate::game) fn district_adjacency_assuming_with_family_and_neighbors_cached(
+    pub(crate) fn district_adjacency_with_neighbors(
         &self,
         dname: Name,
         dpos: Pos,
@@ -462,7 +425,7 @@ impl Game {
         mut detail: Option<&mut Vec<AdjacencySource>>,
         family: Name,
         neighbors: &[Option<&crate::world::Tile>; 6],
-        cached_district_count: Option<usize>,
+        district_count: Option<usize>,
     ) -> Yields {
         let spec = &self.rules.districts[dname];
         let mut adj = Yields::default();
@@ -475,26 +438,26 @@ impl Game {
                 .and_then(|city_id| self.cities.get(&city_id));
             let owner = owner_city.map(|city| city.owner);
             let gaul = owner.is_some_and(|pid| self.players[pid].civ == "Gaul");
-            let count_uncached = |key: &str, key_family: Option<Name>| -> usize {
-                match key {
-                    "self" => 1,
-                    "river" => usize::from(tile.has_river()),
-                    "mountain" => neighbors
+            let count = |kind: AdjacencyCount| -> usize {
+                match kind {
+                    AdjacencyCount::Itself => 1,
+                    AdjacencyCount::River => usize::from(tile.has_river()),
+                    AdjacencyCount::Mountain => neighbors
                         .iter()
                         .flatten()
                         .filter(|t| t.terrain == crate::name!("mountain"))
                         .count(),
-                    "forest" | "woods" => neighbors
+                    AdjacencyCount::Forest => neighbors
                         .iter()
                         .flatten()
                         .filter(|t| t.feature == Some(crate::name!("forest")))
                         .count(),
-                    "rainforest" | "jungle" => neighbors
+                    AdjacencyCount::Jungle => neighbors
                         .iter()
                         .flatten()
                         .filter(|t| t.feature == Some(crate::name!("jungle")))
                         .count(),
-                    "natural_wonder" => neighbors
+                    AdjacencyCount::NaturalWonder => neighbors
                         .iter()
                         .flatten()
                         .filter(|t| {
@@ -506,24 +469,24 @@ impl Game {
                             })
                         })
                         .count(),
-                    "reef" => neighbors
+                    AdjacencyCount::Reef => neighbors
                         .iter()
                         .flatten()
                         .filter(|t| {
                             matches!(t.feature.as_deref(), Some("reef" | "great_barrier_reef"))
                         })
                         .count(),
-                    "great_barrier_reef" => neighbors
+                    AdjacencyCount::GreatBarrierReef => neighbors
                         .iter()
                         .flatten()
                         .filter(|t| t.feature.as_deref() == Some("great_barrier_reef"))
                         .count(),
-                    "geothermal_fissure" => neighbors
+                    AdjacencyCount::GeothermalFissure => neighbors
                         .iter()
                         .flatten()
                         .filter(|t| t.feature.as_deref() == Some("geothermal_fissure"))
                         .count(),
-                    "pamukkale" => neighbors
+                    AdjacencyCount::Pamukkale => neighbors
                         .iter()
                         .flatten()
                         .filter(|t| t.feature.as_deref() == Some("pamukkale"))
@@ -536,7 +499,7 @@ impl Game {
                     // "+6" from the turn after the Holy Site was pillaged
                     // (t82) until it was repaired (t96), Natural Philosophy
                     // doubling a base that had lost its district pair.
-                    "district" => cached_district_count.unwrap_or_else(|| {
+                    AdjacencyCount::District => district_count.unwrap_or_else(|| {
                         neighbors
                             .iter()
                             .flatten()
@@ -552,7 +515,7 @@ impl Game {
                             })
                             .count()
                     }),
-                    "city_center" => neighbors
+                    AdjacencyCount::CityCenter => neighbors
                         .iter()
                         .flatten()
                         .filter(|t| {
@@ -562,17 +525,17 @@ impl Game {
                                 || assume.is_some_and(|plan| plan.treats_as_city_center(t.pos))
                         })
                         .count(),
-                    "wonder" => neighbors
+                    AdjacencyCount::Wonder => neighbors
                         .iter()
                         .flatten()
                         .filter(|t| t.wonder.is_some())
                         .count(),
-                    "coast_resource" | "sea_resource" => neighbors
+                    AdjacencyCount::SeaResource => neighbors
                         .iter()
                         .flatten()
                         .filter(|t| self.rules.is_water(t) && t.resource.is_some())
                         .count(),
-                    "strategic_resource" => neighbors
+                    AdjacencyCount::StrategicResource => neighbors
                         .iter()
                         .flatten()
                         .filter(|t| {
@@ -584,7 +547,7 @@ impl Game {
                             })
                         })
                         .count(),
-                    "luxury_resource" => neighbors
+                    AdjacencyCount::LuxuryResource => neighbors
                         .iter()
                         .flatten()
                         .filter(|t| {
@@ -596,59 +559,50 @@ impl Game {
                             })
                         })
                         .count(),
-                    "resource" => neighbors
+                    AdjacencyCount::Resource => neighbors
                         .iter()
                         .flatten()
                         .filter(|t| t.resource.is_some())
                         .count(),
-                    "mine" | "quarry" | "lumber_mill" | "plantation" | "farm" => neighbors
+                    AdjacencyCount::Improvement(improvement) => neighbors
                         .iter()
                         .flatten()
-                        .filter(|t| t.improvement.as_deref() == Some(key))
+                        .filter(|t| t.improvement == Some(improvement))
                         .count(),
-                    district_family if self.rules.districts.contains_key(district_family) => {
-                        // The family this key counts, resolved when the ruleset
-                        // loaded. Interning it here instead cost an `RwLock`
-                        // read and a hash once per plot per district per key —
-                        // about twenty million times in a six-player game, and
-                        // the largest single leaf in the settlement scorer at
-                        // 2.7% of busy CPU. The fallback keeps the old route
-                        // for any caller reaching this arm without a table.
-                        let wanted = key_family
-                            .unwrap_or_else(|| self.district_family(Name::new(district_family)));
-                        neighbors
-                            .iter()
-                            .flatten()
-                            .filter(|t| {
-                                (!t.pillaged
-                                    && t.district.is_some_and(|district| {
-                                        self.district_family(district) == wanted
-                                    }))
-                                    || assume.is_some_and(|plan| {
-                                        plan.foundations
-                                            && t.district_foundation.as_ref().is_some_and(
-                                                |foundation| {
-                                                    self.district_family(foundation.district)
-                                                        == wanted
-                                                },
-                                            )
-                                    })
-                            })
-                            .count()
-                    }
-                    _ => 0,
+                    AdjacencyCount::Family(wanted) => neighbors
+                        .iter()
+                        .flatten()
+                        .filter(|t| {
+                            (!t.pillaged
+                                && t.district.is_some_and(|district| {
+                                    self.district_family(district) == wanted
+                                }))
+                                || assume.is_some_and(|plan| {
+                                    plan.foundations
+                                        && t.district_foundation.as_ref().is_some_and(
+                                            |foundation| {
+                                                self.district_family(foundation.district) == wanted
+                                            },
+                                        )
+                                })
+                        })
+                        .count(),
+                    AdjacencyCount::Nothing => 0,
                 }
             };
-            let count = count_uncached;
-            let key_families = self.rules.district_adjacency_families.get_interned(dname);
+            // What each key counts, read when the ruleset loaded (see
+            // `Rules::district_adjacency_counts`); a ruleset edited after that
+            // reads the key here instead.
+            let kinds = self.rules.district_adjacency_counts.get_interned(dname);
             debug_assert!(
-                key_families.is_none_or(|families| families.len() == spec.adjacency.len()),
-                "the adjacency family table is built in `spec.adjacency`'s own key order"
+                kinds.is_none_or(|kinds| kinds.len() == spec.adjacency.len()),
+                "the adjacency count table is built in `spec.adjacency`'s own key order"
             );
             for (index, (key, bonus)) in spec.adjacency.iter().enumerate() {
                 let tiles = count(
-                    key,
-                    key_families.and_then(|families| families.get(index).copied().flatten()),
+                    kinds
+                        .and_then(|kinds| kinds.get(index).copied())
+                        .unwrap_or_else(|| self.rules.adjacency_count_of(key)),
                 );
                 let n = tiles as f64;
                 // Every source has its own TilesRequired bucket in Civ VI.
@@ -688,7 +642,7 @@ impl Game {
                 }
             }
             if gaul && spec.specialty {
-                let mines = count("mine", None);
+                let mines = count(AdjacencyCount::Improvement(crate::name!("mine")));
                 let minor = (mines as f64 * 0.5).trunc();
                 let mut paid = Yields::default();
                 match family.as_str() {
@@ -716,7 +670,7 @@ impl Game {
                 self.empire_wonder_effect(pid, "mountain_commercial_industrial_theater_adjacency")
                     > 0.0
             }) {
-                let mountains = count("mountain", None);
+                let mountains = count(AdjacencyCount::Mountain);
                 let mut paid = Yields::default();
                 match family.as_str() {
                     "commercial_hub" => paid.gold = mountains as f64,
@@ -788,7 +742,7 @@ impl Game {
                     .and_then(|tile| tile.owner_city)
                     .and_then(|city_id| self.cities.get(&city_id))
                 {
-                    let woods = count("forest", None);
+                    let woods = count(AdjacencyCount::Forest);
                     let paid = Yields {
                         faith: woods as f64
                             * self.city_building_effect(city, "holy_site_woods_adjacency"),

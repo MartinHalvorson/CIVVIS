@@ -233,6 +233,14 @@ impl AdvancedAi {
         // sales that pay a rival's space race. Empty when the gene is off.
         // See `advanced/science_threat_denial.rs`.
         let science_threats = self.science_threat_seats(g, pid);
+        // `passage-waits-past-the-opening`: the rivals whose Open Borders this
+        // seat does not buy this turn, every one in the opening and after it
+        // any rival over 1.5x our military. Empty with the gene off. See
+        // `advanced/passage_waits_past_the_opening.rs`.
+        let passage_holds = self.passage_holds(g, pid);
+        if !passage_holds.is_empty() && g.turn % 6 == pid as u32 % 6 {
+            self.journal_withheld_passages(g, pid, excluded_partner, &passage_holds);
+        }
         // `culture-keeps-every-border-open`: every rival's passage, every
         // turn, once our tourism is worth multiplying. Exact no-op while the
         // gene is off. See `advanced/culture_open_borders.rs`.
@@ -255,6 +263,7 @@ impl AdvancedAi {
                 .filter(|deal| {
                     self.culture_deal_allowed(deal, &culture_threats)
                         && self.science_denial_deal_allowed(deal, &science_threats)
+                        && Self::passage_deal_allowed(deal, &passage_holds)
                 })
                 .filter(|deal| {
                     deal.item == "open_borders"
@@ -286,6 +295,7 @@ impl AdvancedAi {
                 .filter(|deal| {
                     self.culture_deal_allowed(deal, &culture_threats)
                         && self.science_denial_deal_allowed(deal, &science_threats)
+                        && Self::passage_deal_allowed(deal, &passage_holds)
                 })
                 .filter(|deal| {
                     deal.category == "great_work"
@@ -320,6 +330,7 @@ impl AdvancedAi {
                 .filter(|deal| {
                     self.culture_deal_allowed(deal, &culture_threats)
                         && self.science_denial_deal_allowed(deal, &science_threats)
+                        && Self::passage_deal_allowed(deal, &passage_holds)
                 })
                 .filter(|deal| {
                     !(deal.category == "great_work" && deal.direction == "sell")
@@ -337,7 +348,7 @@ impl AdvancedAi {
             }
             return;
         }
-        if culture_threats.is_empty() && science_threats.is_empty() {
+        if culture_threats.is_empty() && science_threats.is_empty() && passage_holds.is_empty() {
             self.base
                 .bilateral_trade_excluding(g, pid, excluded_partner);
         } else if !self.base.minor && !self.base.barb && g.turn % 6 == pid as u32 % 6 {
@@ -348,6 +359,7 @@ impl AdvancedAi {
                 .filter(|deal| {
                     self.culture_deal_allowed(deal, &culture_threats)
                         && self.science_denial_deal_allowed(deal, &science_threats)
+                        && Self::passage_deal_allowed(deal, &passage_holds)
                 })
                 .max_by(|left, right| {
                     self.base
@@ -1648,8 +1660,15 @@ impl AdvancedAi {
                             // `advanced/open_city_objective.rs`.
                             || (deal.peace
                                 && self.open_city_keeps_the_war(g, pid, deal.from)));
+                    // `edge-unit-rushes-from-the-capital`: the rush takes no
+                    // friendship from the owner of its target (any major
+                    // before a city is named) and no peace from the rival
+                    // its war is pressing. `false` off the rush. See
+                    // `advanced/edge_unit_takes_the_soft_city.rs`.
+                    let rush_refuses =
+                        self.edge_rush_refuses_deal(g, deal.from, deal.friendship, deal.peace);
                     (
-                        worth >= 0.0 && !pins_objective,
+                        worth >= 0.0 && !pins_objective && !rush_refuses,
                         deal.peace,
                         worth,
                         deal.from,
@@ -2757,8 +2776,12 @@ impl AdvancedAi {
         // urgent, culture and faith counters -- also needs our Production at
         // 0.8 times the target's (`parity-reads-the-front`: its Production
         // around our cities and the objective). Says so itself.
+        // `open-capital-declares-at-twice`: an open capital at twice the
+        // target's power is not held for Production. `None` with the gene off.
+        let open_capital = self.open_capital_at_twice(g, pid, target);
         if opens
             && !launcher_ready
+            && open_capital.is_none()
             && !self.declaration_has_production_parity(
                 g,
                 pid,
@@ -2767,6 +2790,9 @@ impl AdvancedAi {
             )
         {
             return;
+        }
+        if let Some(capital) = open_capital.filter(|_| opens) {
+            self.journal_open_capital_at_twice(g, pid, target, capital);
         }
         if opens {
             // `coalition_before_war`: invite the target's neighbours to a
@@ -3348,6 +3374,11 @@ impl AdvancedAi {
         // `advanced/racer_keeps_the_spies.rs`.
         let racer_spy_racers = self.racer_spy_racers(g, pid);
         let racer_spy_leader = Self::racer_spy_leader(g, &racer_spy_racers);
+        // `denial-spies-cover-every-racer`: the racers within a project of
+        // the lead, best first. Empty with the gene off, and then every Spy
+        // answers `racer_spy_leader`. See
+        // `advanced/denial_spies_cover_every_racer.rs`.
+        let racer_cover = self.racer_cover_co_leaders(g, &racer_spy_racers);
         let racer_spy_stays: BTreeSet<usize> = if racer_spy_racers.is_empty() {
             BTreeSet::new()
         } else {
@@ -3394,6 +3425,17 @@ impl AdvancedAi {
         // False with the gene off. See `advanced/space_denial_rocket_scientist.rs`.
         let rocket_scientist_first = self.denial_wants_the_rocket_scientist(g, pid);
         for spy_id in ids {
+            // `denial-spies-cover-every-racer`: the co-leader this Spy covers
+            // plays the leader's part for it below. `racer_spy_leader` itself
+            // with the gene off.
+            let racer_spy_leader = Self::racer_cover_target(
+                g,
+                spy_id,
+                racer_spy_leader,
+                &racer_cover,
+                &[],
+                &every_pad_threats,
+            );
             // A Spy whose last order is still running is left alone; the
             // rebuilt mirror cannot see the running operation, so without
             // this the same order goes out every turn. See
@@ -3419,6 +3461,16 @@ impl AdvancedAi {
             if legal.is_empty() {
                 continue;
             }
+            // `denial-spies-cover-every-racer`: …read again against the
+            // offers where it stands. Unchanged with the gene off.
+            let racer_spy_leader = Self::racer_cover_target(
+                g,
+                spy_id,
+                racer_spy_leader,
+                &racer_cover,
+                &legal,
+                &every_pad_threats,
+            );
             // `racer-spies-search-for-the-pad`: a pad found or a city
             // searched where this Spy stands. Never with the gene off.
             self.racer_spy_note_the_search(g, spy_id, racer_spy_leader, &racer_spy_racers, &legal);
@@ -3551,10 +3603,12 @@ impl AdvancedAi {
             // nearest one. Never taken with the gene off (`every_pads` empty).
             // `racer-keeps-the-spies`: …but not out of the leading racer's
             // city, where that gene posted it. Never held with it off.
+            // `denial-spies-cover-every-racer`: …nor out of any co-leader's
+            // city; the post below moves it to the co-leader it covers.
             let in_racer_leaders_city = racer_spy_leader.is_some_and(|leader| {
                 current_city
                     .and_then(|city| g.cities.get(&city))
-                    .is_some_and(|city| city.owner == leader)
+                    .is_some_and(|city| city.owner == leader || racer_cover.contains(&city.owner))
             });
             if let Some(pad_city) =
                 Self::every_pad_repost(g, pid, spy_id, current_city, &every_pads)
@@ -3688,9 +3742,15 @@ impl AdvancedAi {
                                 .map_or_else(String::new, |city| city.name.clone());
                             let landed = racer_spy_leader
                                 .map_or(0, |leader| Self::science_denial_stages(g, leader));
-                            let unseen = self
-                                .racer_spy_unseen_cities(g, pid)
-                                .map_or(0, |(_, unseen)| unseen);
+                            // `denial-spies-cover-every-racer`: the unseen
+                            // cities of the co-leader this Spy covers.
+                            let unseen = if racer_cover.is_empty() {
+                                self.racer_spy_unseen_cities(g, pid)
+                                    .map_or(0, |(_, unseen)| unseen)
+                            } else {
+                                racer_spy_leader
+                                    .map_or(0, |leader| Self::racer_unseen_cities(g, leader))
+                            };
                             think!(self.journal(), Military, Decision,
                                    "A Spy searches {racer}'s {city_name} for the Spaceport";
                                    "racer-spies-search-for-the-pad: {racer} has landed \
@@ -3708,6 +3768,21 @@ impl AdvancedAi {
                                     {left}; the host offers Disrupt Rocketry in {left_city}, but \
                                     every Spaceport of {left} our board holds near it reads \
                                     pillaged, so the Spy cannot run it there");
+                        } else if !racer_cover.is_empty() {
+                            *g.players[pid]
+                                .counters
+                                .entry("racer_cover_posts".to_string())
+                                .or_insert(0) += 1;
+                            let owner = g.cities[&post].owner;
+                            let reason = Self::racer_cover_reason(
+                                g,
+                                spy_id,
+                                owner,
+                                &racer_spy_racers,
+                                &racer_cover,
+                            );
+                            think!(self.journal(), Military, Decision,
+                                   "A Spy goes to {racer}'s {city_name}"; "{reason}");
                         } else {
                             think!(self.journal(), Military, Decision,
                                    "A Spy goes to {racer}'s {city_name}";

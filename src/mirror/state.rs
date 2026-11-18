@@ -540,6 +540,11 @@ pub struct StateCity {
     /// immediate CIVVIS effects, so this permanent result must cross separately.
     #[serde(default)]
     pub great_works: Option<Vec<StateGreatWork>>,
+    /// The turn each of those works was created (`GetTurnFromIndex`), by
+    /// work type: it starts the host's ten-turn art lock. `None` from a mod
+    /// that does not export it, or a city with no works.
+    #[serde(default)]
+    pub great_work_turns: Option<std::collections::BTreeMap<String, i64>>,
     /// Firaxis's final city yield vector after every local and empire modifier.
     /// Stored as an additive correction to preserve modeled counterfactual deltas.
     #[serde(default)]

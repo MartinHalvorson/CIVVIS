@@ -24,34 +24,43 @@ impl Game {
     /// Static terrain/domain portion of unit movement. Occupancy and
     /// diplomacy are checked separately by `can_enter`.
     pub fn unit_can_traverse(&self, uid: u32, pos: Pos) -> bool {
-        let Some(unit) = self.units.get(&uid) else {
-            return false;
-        };
-        let Some(tile) = self.map.get(pos) else {
-            return false;
-        };
-        let spec = &self.rules.units[unit.kind];
-        if spec.domain.as_deref() == Some("air") {
-            return false; // aircraft use rebase/strike missions, never tile steps
+        self.unit_traversal(uid)
+            .is_some_and(|class| self.class_can_enter(class, pos))
+    }
+
+    /// The unit half of [`Game::unit_can_traverse`]: the class `uid` steps
+    /// across tiles as, or `None` for a unit that never steps tile to tile
+    /// (absent, or an aircraft, which uses rebase and strike missions).
+    ///
+    /// Outside a memo scope `traversal_class` is derived afresh on every
+    /// call, from the owner's techs and the unit's abilities, so a flood
+    /// asking `unit_can_traverse` of every neighbour it expands derived the
+    /// same class hundreds of times. Such a flood reads this once and asks
+    /// [`Game::class_can_enter`] per tile.
+    pub(crate) fn unit_traversal(&self, uid: u32) -> Option<TraversalClass> {
+        let unit = self.units.get(&uid)?;
+        if self.rules.units[unit.kind].domain.as_deref() == Some("air") {
+            return None;
         }
-        // Delegating to the class predicate keeps this answer and the cached
-        // connectivity regions incapable of disagreeing.
-        self.class_can_traverse(self.traversal_class(uid), tile)
+        Some(self.traversal_class(uid))
+    }
+
+    /// The tile half of [`Game::unit_can_traverse`]: whether a unit moving
+    /// as `class` could stand on `pos`. Delegating to the class predicate
+    /// keeps this answer and the cached connectivity regions incapable of
+    /// disagreeing.
+    pub(crate) fn class_can_enter(&self, class: TraversalClass, pos: Pos) -> bool {
+        self.map
+            .get(pos)
+            .is_some_and(|tile| self.class_can_traverse(class, tile))
     }
 
     /// The [`TraversalClass`] a unit moves as, folding its kind and its
     /// owner's unlocks into the flags the tile predicate reads.
     pub(crate) fn traversal_class(&self, uid: u32) -> TraversalClass {
-        if let Some(memo) = self.query_memo.traversal.borrow().as_ref() {
-            if let Some(class) = memo.get(&uid) {
-                return *class;
-            }
-        }
-        let class = self.traversal_class_uncached(uid);
-        if let Some(memo) = self.query_memo.traversal.borrow_mut().as_mut() {
-            memo.insert(uid, class);
-        }
-        class
+        crate::game::remembered(&self.query_memo.traversal, uid, || {
+            self.traversal_class_uncached(uid)
+        })
     }
 
     /// Every unit flying a patrol right now, as `(owner, tile)`.
@@ -183,7 +192,8 @@ impl Game {
             promotion_movement: self.promotion_effect(unit, "movement"),
             civilization_movement: self.civ_effect(unit.owner, "unit_movement"),
             guru_adjacent: spec.class == "religious"
-                && self.wdisk(unit.pos, 1).into_iter().any(|position| {
+                // The tile and its neighbours, without building the disk's Vec.
+                && std::iter::once(unit.pos).chain(self.nbrs(unit.pos)).any(|position| {
                     self.unit_ids_at(position).iter().any(|other| {
                         self.units[other].owner == unit.owner
                             && self.units[other].kind == "guru"

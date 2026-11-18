@@ -425,14 +425,172 @@ impl Game {
         // so the acting seat's own cities are dropped as for any action.
         // Everything else drops everything: nothing here reasons about what a
         // purchase, a move, an envoy or a deal can touch.
+        //
+        // ★★ AN ORDINARY MOVE KEEPS EVERYTHING, UNLESS IT DID ONE OF THE FEW
+        // THINGS A MOVE CAN DO TO A CITY. A seat moves units far more often
+        // than it does anything else (a 150-turn site game: 35,303 major
+        // actions, 27,000 of them `Move` or `MoveTo`), and every one of them
+        // threw away every yield kept for every city, so a Builder's next step
+        // re-derived its whole empire's yields to price its next job. What a
+        // move can reach in a city's yields, read off `do_move_step`:
+        //
+        // * tiles: a tribal village, a barbarian camp, a pillage on entry. Each
+        //   writes the tile, and the tile grid's epoch drops what is kept on
+        //   the next read (`Game::kept_derivations_for`), as for any action;
+        // * a garrison: city yields and amenities read the units on the city's
+        //   own centre, and nothing else of any unit. So a move that starts or
+        //   ends on a city centre drops everything;
+        // * first contact (`record_contacts_in_sight`): a meeting can hand out
+        //   an envoy and with it a suzerain's bonuses, so a move after which
+        //   any seat has met anyone new drops everything;
+        // * a capture (`resolve_entered_units`) or a unit leaving the board,
+        //   and, belt and braces, a city changing hands: either drops
+        //   everything.
+        //
+        // `OrdinaryMoveWatch` reads those three before and after; anything
+        // else a move writes (the unit itself, sight, trails, zone-of-control
+        // flags) no city yield reads. `Fortify` writes only the unit.
+        let ordinary = match action {
+            Action::Move { unit, .. } | Action::MoveTo { unit, .. } | Action::Fortify { unit } => {
+                Some(*unit)
+            }
+            _ => None,
+        };
+        //
+        // ★★ A REFUSED POLICY CARD WROTE NOTHING. The seat's deck review asks
+        // to slot and unslot cards the rules turn down (site seed 7: a fifth
+        // of the city yields derived after an action followed a refused
+        // `SlotPolicy`), and every one dropped all that was kept. Both
+        // handlers check everything before they write the deck, and so does
+        // everything `apply_unbracketed` runs ahead of them, but the host
+        // gate, which may write: so with no host gate a refused card leaves
+        // the board as it found it and what was kept stands. A card that is
+        // slotted or unslotted drops everything at the end instead of at the
+        // start, which is the same: nothing kept is read or filled while an
+        // action is in flight.
+        let deck_card = self.host_gate.is_none()
+            && matches!(
+                action,
+                Action::SlotPolicy { .. } | Action::UnslotPolicy { .. }
+            );
+        //
+        // ★★ A PRODUCE WRITES ONE CITY. Naming what a city builds next
+        // dropped every kept yield of the acting seat's own cities (site seed
+        // 7: 5,308 of them derived again after a `Produce`), though a city's
+        // yields read only its own queue: its citizen plan works the city's
+        // own `owned_tiles` with weights from its own head of queue, a running
+        // project converts and powers only its own city, and the envoy
+        // bonuses ask the city's own head of queue; the empire-wide count of
+        // unworked improvements that reads every plan feeds the builders,
+        // not a yield. A project is the exception: Industrial Zone
+        // Logistics fully powers its city while it runs, and a powered city's
+        // Factory and Power Plant reach its neighbours' production (the
+        // kept-yield audit caught it on site seed 7, turn 143), so a
+        // `Produce` that starts a project or replaces one keeps the old,
+        // empire-wide reach. `do_produce` writes the city's queue, its
+        // production and its progress map, and two more things that are
+        // watched instead: a District places its foundation (so a District
+        // keeps the old reach too), and a unit that needs a strategic resource
+        // takes it from the seat's stockpile, which is read back before and
+        // after with the seat's counters (the first-monopoly moment
+        // `apply_unbracketed` may record afterwards). If either moved, the
+        // old reach applies; if neither did, only that city's kept answers
+        // and its seat's luxury split are dropped.
+        let produce_watch = match action {
+            Action::Produce { city, item }
+                if !matches!(item, Item::District { .. } | Item::Project { .. })
+                    && !matches!(
+                        self.cities.get(city).and_then(|held| held.queue.first()),
+                        Some(Item::Project { .. })
+                    ) =>
+            {
+                Some((*city, self.produce_watch(pid)))
+            }
+            _ => None,
+        };
         let reach = match action {
+            Action::Produce { city, .. } if produce_watch.is_some() => ActionReach::OwnCity(*city),
             Action::Produce { .. } => ActionReach::OwnCities,
+            _ if ordinary.is_some() || deck_card => ActionReach::UnitOnly,
             _ => ActionReach::Board,
         };
+        let watch = ordinary.map(|uid| self.ordinary_move_watch(uid));
         self.query_memo.action_begins(reach);
         let result = self.apply_unbracketed(pid, action);
-        self.query_memo.action_ends(reach);
+        let reached = match (ordinary, watch) {
+            (Some(uid), Some(before)) => {
+                let after = self.ordinary_move_watch(uid);
+                if before.on_a_city_centre || after.on_a_city_centre || before != after {
+                    ActionReach::Board
+                } else {
+                    ActionReach::UnitOnly
+                }
+            }
+            _ if deck_card && result.is_err() => ActionReach::UnitOnly,
+            _ if deck_card => ActionReach::Board,
+            _ => match produce_watch {
+                Some((cid, before)) if self.produce_watch(pid) == before => {
+                    ActionReach::OwnCity(cid)
+                }
+                Some(_) => ActionReach::OwnCities,
+                None => reach,
+            },
+        };
+        self.query_memo.action_ends(reached);
         result
+    }
+
+    /// What a `Produce` must leave alone for its seat's other cities' kept
+    /// yields to stand: the seat's strategic stockpile and its counters,
+    /// folded. See the `Produce` note in [`Game::apply`].
+    fn produce_watch(&self, pid: usize) -> u64 {
+        const SEED: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mix = |hash: u64, value: u64| {
+            let state = (hash ^ value).wrapping_mul(SEED);
+            state ^ (state >> 29)
+        };
+        let Some(seat) = self.players.get(pid) else {
+            return 0;
+        };
+        let stockpile = seat.strategic_resources.iter().fold(
+            seat.strategic_resources.len() as u64,
+            |hash, (resource, amount)| mix(mix(hash, u64::from(resource.id())), amount.to_bits()),
+        );
+        mix(
+            mix(stockpile, seat.counters.len() as u64),
+            seat.era_score as u64,
+        )
+    }
+
+    /// What an ordinary move must leave alone for the yields kept for every
+    /// city to stand. See the note in [`Game::apply`].
+    pub(super) fn ordinary_move_watch(&self, uid: u32) -> OrdinaryMoveWatch {
+        const SEED: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mix = |hash: u64, value: u64| {
+            let state = (hash ^ value).wrapping_mul(SEED);
+            state ^ (state >> 29)
+        };
+        let units = self
+            .units
+            .values()
+            .fold(self.units.len() as u64, |hash, unit| {
+                mix(hash, (u64::from(unit.id) << 8) | unit.owner as u64)
+            });
+        let cities = self
+            .cities
+            .values()
+            .fold(self.cities.len() as u64, |hash, city| {
+                mix(hash, (u64::from(city.id) << 8) | city.owner as u64)
+            });
+        OrdinaryMoveWatch {
+            on_a_city_centre: self
+                .units
+                .get(&uid)
+                .is_some_and(|unit| self.city_at(unit.pos).is_some()),
+            contacts: self.players.iter().map(|player| player.met.len()).sum(),
+            units,
+            cities,
+        }
     }
 
     fn apply_unbracketed(&mut self, pid: usize, action: &Action) -> Result<(), String> {
@@ -1336,7 +1494,7 @@ impl Game {
             city.building_eras
                 .insert(crate::name!("monument"), self.world_era);
         }
-        self.city_by_pos.insert(pos, cid);
+        self.city_by_pos.insert(&self.map.tiles, pos, cid);
         let founded = city.name.clone();
         self.cities.insert(cid, city);
         if is_capital {
@@ -1896,7 +2054,15 @@ impl Game {
     /// players route Builders there without enumerating the global action set.
     pub(crate) fn project_contribution_target(&self, pid: usize, cid: u32) -> Option<Pos> {
         let city = self.cities.get(&cid)?;
-        if city.owner != pid
+        if city.owner != pid {
+            return None;
+        }
+        // The city's own queue first: it is almost never a project, and the
+        // Royal Society test below walks every building in the empire.
+        let Some(Item::Project { project }) = city.queue.first() else {
+            return None;
+        };
+        if project.starts_with("repair_")
             || self.empire_building_sum(pid, |building| {
                 building
                     .effects
@@ -1909,12 +2075,6 @@ impl Game {
                 .get(&format!("royal_society_city:{cid}"))
                 .is_some_and(|last_turn| *last_turn == self.turn as i64)
         {
-            return None;
-        }
-        let Some(Item::Project { project }) = city.queue.first() else {
-            return None;
-        };
-        if project.starts_with("repair_") {
             return None;
         }
         let spec = &self.rules.projects[project];

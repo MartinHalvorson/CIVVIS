@@ -837,6 +837,97 @@ def early_city_reading(state: dict, event: dict, count: int) -> dict | None:
     }
 
 
+# ★ A GAME THAT HAS LOST HALF ITS CITIES IS PLAYED OUT SLOWLY AND LOST. Lane
+# rule of 2026-11-15, under the operator's goal of that day (more games is
+# more tests): live civvis-20261115T075925Z lost five of six cities to a
+# joint war on turns 112-123 and was still being played, one city left, at
+# turn 129 of 250.
+#
+# The rule: once our city count has fallen by at least N from the most we
+# have held this run AND stands at or below half of that peak, on records of
+# `CITY_COLLAPSE_TURNS` game turns running, the game is retired. N is
+# CIVVIS_RESTART_ON_CITY_COLLAPSE in ~/.civvis-verification-policy (3 = three
+# cities lost; 0, absent, or not a whole number = off, the default). It reads
+# the `cities` list of every agent `state` record, as the early-city rule
+# does; every city we hold counts, captured ones included, and a record with
+# an empty or unreadable list says nothing either way.
+#
+# Checked before it was built (per-turn city counts from the ledger branch):
+# - 45 of the ladder's 62 wins have a city series (the other 17 predate the
+#   branch). At N=3 the rule ends none of them: no winner ever stood below
+#   75% of its peak, 13 ever lost a city, one lost two, none lost three.
+#   Dropping N to 2, the share to two thirds or the run to two turns still
+#   ends none.
+# - 464 run segments of 2026-11-10..13 and 11-15 (one win among them): 80
+#   lost three or more cities from their peak, the rule fires on 52 (11%),
+#   at turn 129 in the median, and saves 1,022 turns (median 16, up to 96 a
+#   game) and 85 minutes, 2.1% of those games' time in turns. After it fired
+#   no game came back to within one city of its peak; four of the 52 ended
+#   with more cities than they had when it fired.
+CITY_COLLAPSE_POLICY_KEY = "CIVVIS_RESTART_ON_CITY_COLLAPSE"
+CITY_COLLAPSE_SHARE = 0.5
+CITY_COLLAPSE_TURNS = 3
+
+
+def parse_city_collapse(value: str | None) -> int:
+    """How many cities below its peak a game must be, from `3`; 0 = off."""
+    if value is None or value == "":
+        return 0
+    try:
+        lost = int(value)
+    except ValueError:
+        lost = -1
+    if lost < 0:
+        print(f"[policy] ignoring {CITY_COLLAPSE_POLICY_KEY}={value!r}: "
+              "not a count of cities such as 3", flush=True)
+        return 0
+    return lost
+
+
+def city_collapse_policy(path: Path | None = None) -> int:
+    """The policy's city-collapse size; 0 (off) when unset or invalid."""
+    return parse_city_collapse(read_policy_value(CITY_COLLAPSE_POLICY_KEY, path))
+
+
+def city_collapse_reading(state: dict, event: dict, lost: int) -> dict | None:
+    """Fold one record into the city-collapse watch; a verdict once it holds.
+
+    `state` carries the most cities held (`city_peak`) and the turn the
+    collapse was first read (`city_collapse_since`) between records. Returns
+    None for anything that is not a readable agent `state` record or calls
+    nothing, else `{"rule": "city_collapse", "fires": True, ...}`.
+    """
+    if (not isinstance(lost, int) or isinstance(lost, bool) or lost <= 0
+            or event.get("kind") != "state" or event.get("ctx") != "agent"):
+        return None
+    turn = event.get("turn")
+    cities = event.get("cities")
+    if (not isinstance(turn, int) or isinstance(turn, bool)
+            or not isinstance(cities, list)):
+        return None
+    held = len({ident for city in cities if (ident := _city_id(city)) is not None})
+    if held == 0:
+        return None
+    peak = max(state.get("city_peak") or 0, held)
+    state["city_peak"] = peak
+    if peak - held < lost or held > CITY_COLLAPSE_SHARE * peak:
+        state.pop("city_collapse_since", None)
+        return None
+    since = state.setdefault("city_collapse_since", turn)
+    if turn - since + 1 < CITY_COLLAPSE_TURNS:
+        return None
+    return {
+        "rule": "city_collapse",
+        "turn": turn,
+        "since": since,
+        "peak": peak,
+        "held": held,
+        "lost": peak - held,
+        "line": lost,
+        "fires": True,
+    }
+
+
 # ★ OPERATOR 2026-11-09: "if we are targeting a religious victory, we should
 # also restart if we lose our own religion as a religious victory will not
 # happen then."
@@ -1067,8 +1158,12 @@ def domination_no_capital_level_policy(path: Path | None = None) -> float:
         read_policy_value(DOMINATION_NO_CAPITAL_LEVEL_KEY, path))
 
 
-def domination_tech_share(event: dict) -> float | None:
-    """Our tech count over the best rival's in one `state` record; None if unreadable."""
+def tech_standing(event: dict) -> tuple[int, int] | None:
+    """Our tech count and the best met rival's in one `state` record; None if unreadable.
+
+    `rivals` lists the majors we have met, so with none met, or none whose
+    `techs` count reads above 0, there is no standing to speak of.
+    """
     ours = event.get("techs")
     rivals = event.get("rivals")
     if not isinstance(ours, list) or not isinstance(rivals, list):
@@ -1078,7 +1173,13 @@ def domination_tech_share(event: dict) -> float | None:
               if isinstance(count, int) and not isinstance(count, bool) and count > 0]
     if not counts:
         return None
-    return len(ours) / max(counts)
+    return len(ours), max(counts)
+
+
+def domination_tech_share(event: dict) -> float | None:
+    """Our tech count over the best rival's in one `state` record; None if unreadable."""
+    standing = tech_standing(event)
+    return None if standing is None else standing[0] / standing[1]
 
 
 def domination_no_capital_policy(path: Path | None = None) -> int:
@@ -1171,6 +1272,174 @@ def domination_no_capital_reading(state: dict, event: dict,
         "from_turn": from_turn,
         "turns": run["turns"],
         "cities": len(cities),
+        "fires": True,
+    }
+
+
+# ★ A SCIENCE-LANE GAME THIS FAR BEHIND ON TECHS IS OUT OF REACH. Lane rule of
+# 2026-11-17, under the operator's rule of 2026-11-10 ("restart when we know
+# we are not going to win; play games out until then"), for the seat whose
+# target is the science victory.
+#
+# The reading is `tech_standing`, the one the Domination rule's level-game
+# exemption already takes from every agent `state` record: the length of our
+# `techs` list over the highest `techs` count among `rivals`, the majors we
+# have met. From the policy's turn -- an Online turn, default
+# :data:`SCIENCE_BEHIND_FROM_TURN`, scaled to the game's speed by
+# `online_turns` -- :data:`SCIENCE_BEHIND_TURNS` readable game turns running
+# with that share under the policy's line retire the game. A record at or
+# above the line clears the count. One with no met rival, no rival count above
+# 0 or no `techs` list is not evidence either way, so a seat that has met
+# nobody is never retired by this rule.
+#
+# The line is CIVVIS_RESTART_SCIENCE_BEHIND_TECHS in
+# ~/.civvis-verification-policy (a share strictly between 0 and 1 such as
+# 0.70; 0, absent or anything else = off, the default), and the first turn is
+# CIVVIS_RESTART_SCIENCE_BEHIND_FROM_TURN (unset or invalid =
+# :data:`SCIENCE_BEHIND_FROM_TURN`). Both are read from the file at game
+# start, like every retire key here; no launcher forwards them.
+SCIENCE_BEHIND_POLICY_KEY = "CIVVIS_RESTART_SCIENCE_BEHIND_TECHS"
+SCIENCE_BEHIND_FROM_POLICY_KEY = "CIVVIS_RESTART_SCIENCE_BEHIND_FROM_TURN"
+SCIENCE_BEHIND_FROM_TURN = 150
+SCIENCE_BEHIND_TURNS = 3
+#: The start-of-game line's few words of evidence; the counts and where they
+#: were read are in `science_out_of_reach_reading`.
+SCIENCE_BEHIND_EVIDENCE = ("on 2026-11-17 all 16 wins by Science victory in the ledger "
+                           "had held 82% or more from turn 150")
+
+
+def parse_science_behind_share(value: str | None) -> float:
+    """The tech share under which a Science-lane game is retired, from `0.70`; 0 = off."""
+    if value is None or value == "":
+        return 0.0
+    try:
+        share = float(value)
+    except ValueError:
+        share = -1.0
+    if share == 0.0:
+        return 0.0
+    if not 0.0 < share < 1.0:  # also what `nan` reads as
+        print(f"[policy] ignoring {SCIENCE_BEHIND_POLICY_KEY}={value!r}: "
+              "not a share strictly between 0 and 1 such as 0.70", flush=True)
+        return 0.0
+    return share
+
+
+def science_behind_policy(path: Path | None = None) -> float:
+    """The policy's Science-lane tech share; 0 (off) when unset or invalid."""
+    return parse_science_behind_share(read_policy_value(SCIENCE_BEHIND_POLICY_KEY, path))
+
+
+def parse_science_behind_from_turn(value: str | None) -> int:
+    """The Online turn the Science-lane rule reads from; default 150."""
+    if value is None or value == "":
+        return SCIENCE_BEHIND_FROM_TURN
+    try:
+        turn = int(value)
+    except ValueError:
+        turn = 0
+    if turn < 1:
+        print(f"[policy] ignoring {SCIENCE_BEHIND_FROM_POLICY_KEY}={value!r}: "
+              f"not a turn number; the rule reads from turn {SCIENCE_BEHIND_FROM_TURN}",
+              flush=True)
+        return SCIENCE_BEHIND_FROM_TURN
+    return turn
+
+
+def science_behind_from_turn_policy(path: Path | None = None) -> int:
+    """The policy's first Online turn for the Science-lane rule; 150 when unset."""
+    return parse_science_behind_from_turn(
+        read_policy_value(SCIENCE_BEHIND_FROM_POLICY_KEY, path))
+
+
+def science_out_of_reach_line(args: argparse.Namespace) -> tuple[float, int]:
+    """The rule's share and its first turn at this game's speed; `(0.0, 0)` = off.
+
+    Off unless the seat targets the science victory and the policy names a
+    share. The resolved first turn is an Online turn, scaled here when `_play`
+    starts, not where `play` stores it, so a second `_play` on the same args
+    cannot scale it twice.
+    """
+    share = getattr(args, "restart_science_behind_techs", None) or 0.0
+    from_turn = getattr(args, "restart_science_behind_from_turn", None)
+    if from_turn is None:
+        from_turn = SCIENCE_BEHIND_FROM_TURN
+    if (not isinstance(share, float) or not 0.0 < share < 1.0
+            or not isinstance(from_turn, int) or isinstance(from_turn, bool) or from_turn <= 0
+            or getattr(args, "civvis_victory", None) != "science"):
+        return 0.0, 0
+    return share, online_turns(from_turn, getattr(args, "speed", None))
+
+
+def science_out_of_reach_notice(share: float, from_turn: int, speed: str | None) -> str:
+    """The start-of-game `[policy]` line for a Science seat; `from_turn` is the Online turn."""
+    return (f"[policy] a science game holding under {share * 100:g}% of the best met "
+            f"rival's techs for {SCIENCE_BEHIND_TURNS} turns running from turn "
+            f"{online_turns(from_turn, speed)} is retired (lane rule 2026-11-17: "
+            f"{SCIENCE_BEHIND_EVIDENCE}; from turn {from_turn} at Online, scaled to {speed})")
+
+
+def science_out_of_reach_reading(state: dict, event: dict,
+                                 share: float, from_turn: int) -> dict | None:
+    """Fold one record into the Science-lane tech watch; a verdict once the run holds.
+
+    `share` is the policy's line (0 is off) and `from_turn` is already at the
+    game's speed (see `science_out_of_reach_line`). `state` carries the run of
+    game turns under the line (`science_out_of_reach`). Returns None for
+    anything that is not a readable agent `state` record or calls nothing, else
+    `{"rule": "science_out_of_reach", "fires": True, ...}` with the turn, our
+    tech count, the best met rival's and the share.
+
+    Where a line of 0.70 comes from. Read on 2026-11-17 from the 4,958 rows of
+    ~/civvis-civ6-runs/civvis_ladder.jsonl (`tech_marks`: the first `state`
+    frame at or after turn 150), then replayed through this function over each
+    game's events on the ledger branch. Every game counted is Online speed.
+    - All 16 wins by Science victory (9 King, 2 Emperor, 2 Immortal, 3 Deity;
+      15 on six-player maps, one on a four-player map) held 0.82 or more at
+      turn 150, and none opened a later turn under 0.82 before it won. The
+      three Deity wins read 0.84, 0.84 and 0.95 at turn 150. The eight wins of
+      any kind on the Science lane that have a reading held 0.83 or more.
+      Replayed, the rule ends none of these games at any line up to 0.82.
+    - Of 257 Deity and Immortal Science-lane losses, 175 reached turn 150
+      with a reading: median 0.69, 91 (52%) under 0.70, 39 (22%) under 0.60.
+      Replayed at 0.70 over the 174 with events, the rule ends 97 (56%), 84
+      of them at turn 152, and saves 2,860 turns: 30 a retired game in the
+      median, up to 64, 9% of all the turns those 174 games played.
+    Sixteen wins are few, so 0.70 sits 0.12 under the lowest of them rather
+    than at it.
+    """
+    if (not isinstance(share, float) or not 0.0 < share < 1.0
+            or not isinstance(from_turn, int) or isinstance(from_turn, bool) or from_turn <= 0
+            or event.get("kind") != "state" or event.get("ctx") != "agent"):
+        return None
+    turn = event.get("turn")
+    if not isinstance(turn, int) or isinstance(turn, bool) or turn < from_turn:
+        return None
+    standing = tech_standing(event)
+    if standing is None:
+        return None
+    ours, best = standing
+    if ours / best >= share:
+        state.pop("science_out_of_reach", None)
+        return None
+    run = state.get("science_out_of_reach")
+    if run is None:
+        run = state["science_out_of_reach"] = {"since": turn, "last": turn, "turns": 1}
+    elif turn > run["last"]:
+        run["last"] = turn
+        run["turns"] += 1
+    if run["turns"] < SCIENCE_BEHIND_TURNS:
+        return None
+    return {
+        "rule": "science_out_of_reach",
+        "turn": turn,
+        "since": run["since"],
+        "from_turn": from_turn,
+        "turns": run["turns"],
+        "techs": ours,
+        "rival_techs": best,
+        "share": round(ours / best, 4),
+        "line": share,
         "fires": True,
     }
 
@@ -1956,6 +2225,17 @@ def build_config(args: argparse.Namespace) -> dict:
         # `deal_session_quarantine` and `CivvisTrade.quarantinedUntil`.
         "DealSessionQuarantine": ",".join(
             getattr(args, "deal_session_quarantine", None) or []),
+        # A peace or alliance question put on the next tick instead of inside
+        # the statement that opened its session (`CivvisTrade.askDeferred`):
+        # the lost counters behind every hung rival turn after a refused
+        # proposal were queued during that statement. Off unless set.
+        "DealAskOnTick": bool(getattr(args, "deal_ask_on_tick", False)),
+        # When a refused peace or alliance ask's counter hold runs out with the
+        # refusal left on the deal screen (no refusal dialogue), decline it with
+        # REJECTED and let the game close the session (`CivvisTrade.onHoldExpired`)
+        # instead of a bare close: every hung rival turn after such a refusal
+        # followed the bare close. Off unless set.
+        "DealCounterRefuse": bool(getattr(args, "deal_counter_refuse", False)),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -2020,15 +2300,39 @@ SCREEN_POLL_S = 1.5
 # shorter budget: by then a menu that is still unreadable is more likely a
 # covering dialog, which the branch after the poll recovers from.
 FIRST_MENU_POLL_BUDGET_S = 40.0
+# ★ And once the boot is nearly done, that first poll looks about every
+# second. A look is a capture and a recognizer pass (0.8-1.4 s) and the poll
+# then slept `SCREEN_POLL_S`, so the menu was read every 2.4 s and found 1.2 s
+# late on average. Over 86 games of 2026-11-13 and 11-15 the label was read
+# at +25.5 s in the median (p10 23.3, p90 26.4) and the poll began at +11 to
+# +13 s; from `FIRST_MENU_QUICK_AFTER_S` into the poll (about +20 s after
+# launch) the sleep between looks is `FIRST_MENU_QUICK_POLL_S`. The reading
+# itself is unchanged (`_settled_main_menu_point`: a fading row is not a
+# click), and so is every other poll.
+FIRST_MENU_QUICK_AFTER_S = 8.0
+FIRST_MENU_QUICK_POLL_S = 0.3
 
 
 def _poll_screen(read, budget_s: float = SCREEN_POLL_BUDGET_S,
-                 poll_s: float = SCREEN_POLL_S):
-    """Call ``read`` until it returns something other than None or the budget is spent."""
-    deadline = time.monotonic() + budget_s
+                 poll_s: float = SCREEN_POLL_S,
+                 quick_after_s: float | None = None,
+                 quick_poll_s: float | None = None):
+    """Call ``read`` until it returns something other than None or the budget is spent.
+
+    With ``quick_after_s`` and ``quick_poll_s`` the wait between looks drops to
+    ``quick_poll_s`` once the poll has run ``quick_after_s`` (never above
+    ``poll_s``); without both it is ``poll_s`` throughout, as before.
+    """
+    started = time.monotonic()
+    deadline = started + budget_s
+    quick = (quick_after_s is not None and quick_poll_s is not None
+             and 0 <= quick_poll_s < poll_s)
     result = read()
     while result is None and time.monotonic() < deadline:
-        time.sleep(poll_s)
+        if quick and time.monotonic() - started >= quick_after_s:
+            time.sleep(quick_poll_s)
+        else:
+            time.sleep(poll_s)
         result = read()
     return result
 # How many extra startup budgets the whole bootstrap may spend on a screen that
@@ -2111,6 +2415,29 @@ LEADER_HINT_WINDOW = 3
 # Four bounded looks give a recording host time to recover without turning a
 # transient capture miss into a whole failed game launch.
 LEADER_PICKER_OPEN_ATTEMPTS = 4
+# ★ A LEADER THAT CANNOT BE VERIFIED ENDS THE LAUNCH AFTER TWO SETUP ROUNDS.
+# civvis-20261118T055028Z asked for LEADER_ELEANOR_FRANCE. The field showed her
+# from the first frame and the read-back could not name her (see
+# `_leader_field_labels`), so every setup round failed the same way: thirteen
+# rounds in 5.5 minutes, no game, until the lane was restarted by hand. The
+# rounds were identical; the first failed at +38 s of that launch and the
+# second at +58 s. A seat that draws its leader per game draws again after a
+# launch that reached no board, so the second failed round ends this one:
+# `bootstrap_game` records the fault on `args.setup_fault`, the summary's
+# `reason` is `LEADER_UNVERIFIED_REASON`, and the process exits
+# `EXIT_LEADER_UNVERIFIED` (5 stays "could not start a game from the main
+# menu" for every other cause). Only the leader is bounded here: any other
+# setup row that will not verify goes round the same back-out loop and still
+# has all of `BOOTSTRAP_ATTEMPTS`.
+LEADER_UNVERIFIED_ROUNDS = 2
+LEADER_UNVERIFIED_REASON = "leader_unverified"
+EXIT_LEADER_UNVERIFIED = 7
+# Vision can return one rendered line in pieces. A label is rebuilt from at
+# most this many neighbours, no further apart than this many line heights:
+# the Create Game description panel starts 57 pt right of the leader field's
+# text (8.5 line heights on the 864x542 frame), so it can never join a label.
+LEADER_LABEL_MAX_PIECES = 3
+LEADER_LABEL_MAX_GAP_LINES = 3.0
 
 # Each dropdown's closed box, as a fraction of window height.
 DROPDOWN = {
@@ -2330,10 +2657,13 @@ def focus_game(side: str = "left", fraction: float = 0.5) -> None:
 
 #: Logged on transitions only, so a person working beside the game does not
 #: fill the play log with one line per poll.
-_SHARED_DESKTOP_STATE: dict = {"deferring": False}
+_SHARED_DESKTOP_STATE: dict = {"deferring": False, "front_other_at": None}
+#: How long focus upkeep takes "another app is in front" as still true
+#: before it asks again (see `maintain_game_focus`).
+FOCUS_FRONT_SECONDS = 5.0
 
 
-def shared_desktop_in_use() -> bool:
+def shared_desktop_in_use(front_max_age: float = 0.0) -> bool:
     """Optional GUI recovery must leave other apps in front while a person is here.
 
     Two ways the desktop counts as shared, and the harness keeps its hands off
@@ -2350,6 +2680,13 @@ def shared_desktop_in_use() -> bool:
 
     In shared mode a Civ VI that is already frontmost is still fair game: the
     person put it there. Anything else in front is theirs.
+
+    ``front_max_age`` lets a caller that asks on a timer reuse the last
+    "another app is in front" answer for that many seconds. Only that answer
+    is ever reused, never "Civ VI is in front": a stale reading can then only
+    keep the harness's hands off a little longer, not raise the game over
+    someone. The marker and the idle clock are read every time, so removing
+    the marker, or the person leaving, still takes effect at once.
     """
     active = operator_presence.operator_active()
     marker = (Path.home() / ".civvis-shared-desktop").exists()
@@ -2359,12 +2696,19 @@ def shared_desktop_in_use() -> bool:
               if active else
               "[desktop] the Mac has been idle; resuming game upkeep", flush=True)
     if not (active or marker):
+        _SHARED_DESKTOP_STATE["front_other_at"] = None
         return False
+    now = time.monotonic()
+    seen = _SHARED_DESKTOP_STATE.get("front_other_at")
+    if front_max_age > 0 and seen is not None and 0 <= now - seen < front_max_age:
+        return True
     try:
-        return not popup_clear.frontmost().startswith("Civ6")
+        other = not popup_clear.frontmost().startswith("Civ6")
     except (OSError, subprocess.SubprocessError):
         # An unreadable foreground is not permission to take the keyboard.
-        return True
+        other = True
+    _SHARED_DESKTOP_STATE["front_other_at"] = now if other else None
+    return other
 
 
 def maintain_game_focus(interval: float, last_focus: float, *,
@@ -2376,11 +2720,22 @@ def maintain_game_focus(interval: float, last_focus: float, *,
     ~/.civvis-shared-desktop is the standing manual override on top of that.
     Background progress also depends on Civ VI's own ThrottleWhileInactive
     setting; this switch cannot change engine behavior.
+
+    ★ A DEFERRED UPKEEP ASKS AGAIN ON THE NEXT PASS, AND THE ASK IS A PROCESS.
+    Deferring returns the old stamp, so while another app stays in front the
+    question "which app is in front?" was put on every 0.25 s pass of the
+    watch, each time as a 0.25 s `osascript`. Measured 2026-11-15 on a live
+    game with the mirror page in front (`civvis-20261115T124823Z`): 2.20
+    launches a second from this line, half of the 4.4 on the host, and for
+    each one the harness relayed no board to the decider (the receipt stamps
+    of `events.jsonl` carry the 0.45 s rhythm). So the answer "another app
+    is in front" stands for `FOCUS_FRONT_SECONDS`; upkeep that could resume
+    resumes at most that much later.
     """
     now = time.monotonic()
     if interval <= 0 or now - last_focus < interval:
         return last_focus
-    if shared_desktop_in_use() or screen_locked():
+    if shared_desktop_in_use(front_max_age=FOCUS_FRONT_SECONDS) or screen_locked():
         return last_focus
     focus_game()
     if place:
@@ -2976,21 +3331,96 @@ def _menu_label_matches(observed: str, wanted: str) -> bool:
     return previous[-1] <= 2
 
 
-# Leaders whose picker label cannot be derived from the Firaxis type or from
-# data/civs.json. Values are the shipped en_US LOC_LEADER_*_NAME text. A wrong
-# label never finds its row, so the launch ends without playing a turn.
+# The label the Create Game picker shows for every leader Civilization VI ships,
+# by Firaxis type. It cannot be derived from the type: the picker lists the
+# frontend `Players` rows by `LeaderName` (`SetupParameters.xml`, query
+# "Players"), and a persona pack REPLACES the base leader's row, so with the
+# packs installed LEADER_T_ROOSEVELT reads "Teddy Roosevelt (Bull Moose)",
+# LEADER_QIN "Qin (Mandate of Heaven)" and LEADER_HARDRADA "Harald Hardrada
+# (Konge)"; the plain names this table used to carry for them are on no row.
+# `tools/civ6_leader_labels.py` reads the rows and their en_US text from the
+# install into `data/civ6_leader_picker_labels.json`, which says where each
+# label came from, and `test_civ6_play_leader_picker.py` pins this table to
+# that snapshot. A wrong label never finds its row or reads back, so the launch
+# ends without playing a turn (`LEADER_UNVERIFIED_ROUNDS`).
 LEADER_PICKER_LABELS = {
+    "LEADER_ABRAHAM_LINCOLN": "Abraham Lincoln",
+    "LEADER_ALEXANDER": "Alexander",
+    "LEADER_AMANITORE": "Amanitore",
+    "LEADER_AMBIORIX": "Ambiorix",
     "LEADER_BARBAROSSA": "Frederick Barbarossa",
+    "LEADER_BASIL": "Basil II",
+    "LEADER_CATHERINE_DE_MEDICI": "Catherine de Medici (Black Queen)",
+    "LEADER_CATHERINE_DE_MEDICI_ALT": "Catherine de Medici (Magnificence)",
+    "LEADER_CHANDRAGUPTA": "Chandragupta",
+    "LEADER_CLEOPATRA": "Cleopatra (Egyptian)",
+    "LEADER_CLEOPATRA_ALT": "Cleopatra (Ptolemaic)",
+    "LEADER_CYRUS": "Cyrus",
+    "LEADER_DIDO": "Dido",
+    "LEADER_ELEANOR_ENGLAND": "Eleanor of Aquitaine (England)",
     "LEADER_ELEANOR_FRANCE": "Eleanor of Aquitaine (France)",
-    "LEADER_HARDRADA": "Harald Hardrada",
+    "LEADER_ELIZABETH": "Elizabeth I",
+    "LEADER_GANDHI": "Gandhi",
+    "LEADER_GENGHIS_KHAN": "Genghis Khan",
+    "LEADER_GILGAMESH": "Gilgamesh",
+    "LEADER_GITARJA": "Gitarja",
+    "LEADER_GORGO": "Gorgo",
+    "LEADER_HAMMURABI": "Hammurabi",
+    "LEADER_HARALD_ALT": "Harald Hardrada (Varangian)",
+    "LEADER_HARDRADA": "Harald Hardrada (Konge)",
     "LEADER_HOJO": "Hojo Tokimune",
+    "LEADER_JADWIGA": "Jadwiga",
     "LEADER_JAYAVARMAN": "Jayavarman VII",
+    "LEADER_JOAO_III": "João III",
+    "LEADER_JOHN_CURTIN": "John Curtin",
+    "LEADER_JULIUS_CAESAR": "Julius Caesar",
+    "LEADER_KRISTINA": "Kristina",
+    "LEADER_KUBLAI_KHAN_CHINA": "Kublai Khan (China)",
+    "LEADER_KUBLAI_KHAN_MONGOLIA": "Kublai Khan (Mongolia)",
+    "LEADER_KUPE": "Kupe",
+    "LEADER_LADY_SIX_SKY": "Lady Six Sky",
+    "LEADER_LADY_TRIEU": "Bà Triệu",
     "LEADER_LAURIER": "Wilfrid Laurier",
+    "LEADER_LAUTARO": "Lautaro",
+    "LEADER_LUDWIG": "Ludwig II",
+    "LEADER_MANSA_MUSA": "Mansa Musa",
+    "LEADER_MATTHIAS_CORVINUS": "Matthias Corvinus",
+    "LEADER_MENELIK": "Menelik II",
+    "LEADER_MONTEZUMA": "Montezuma",
     "LEADER_MVEMBA": "Mvemba a Nzinga",
+    "LEADER_NADER_SHAH": "Nader Shah",
+    "LEADER_NZINGA_MBANDE": "Nzinga Mbande",
+    "LEADER_PACHACUTI": "Pachacuti",
     "LEADER_PEDRO": "Pedro II",
+    "LEADER_PERICLES": "Pericles",
     "LEADER_PETER_GREAT": "Peter",
-    "LEADER_QIN": "Qin Shi Huang",
-    "LEADER_T_ROOSEVELT": "Teddy Roosevelt",
+    "LEADER_PHILIP_II": "Philip II",
+    "LEADER_POUNDMAKER": "Poundmaker",
+    "LEADER_QIN": "Qin (Mandate of Heaven)",
+    "LEADER_QIN_ALT": "Qin (Unifier)",
+    "LEADER_RAMSES": "Ramses II",
+    "LEADER_ROBERT_THE_BRUCE": "Robert the Bruce",
+    "LEADER_SALADIN": "Saladin (Vizier)",
+    "LEADER_SALADIN_ALT": "Saladin (Sultan)",
+    "LEADER_SEJONG": "Sejong",
+    "LEADER_SEONDEOK": "Seondeok",
+    "LEADER_SHAKA": "Shaka",
+    "LEADER_SIMON_BOLIVAR": "Simón Bolívar",
+    "LEADER_SULEIMAN": "Suleiman (Kanuni)",
+    "LEADER_SULEIMAN_ALT": "Suleiman (Muhteşem)",
+    "LEADER_SUNDIATA_KEITA": "Sundiata Keita",
+    "LEADER_TAMAR": "Tamar",
+    "LEADER_THEODORA": "Theodora",
+    "LEADER_TOKUGAWA": "Tokugawa",
+    "LEADER_TOMYRIS": "Tomyris",
+    "LEADER_TRAJAN": "Trajan",
+    "LEADER_T_ROOSEVELT": "Teddy Roosevelt (Bull Moose)",
+    "LEADER_T_ROOSEVELT_ROUGHRIDER": "Teddy Roosevelt (Rough Rider)",
+    "LEADER_VICTORIA": "Victoria (Age of Empire)",
+    "LEADER_VICTORIA_ALT": "Victoria (Age of Steam)",
+    "LEADER_WILHELMINA": "Wilhelmina",
+    "LEADER_WU_ZETIAN": "Wu Zetian",
+    "LEADER_YONGLE": "Yongle",
 }
 
 
@@ -3012,12 +3442,28 @@ def leader_display_name(leader: str) -> str:
     return leader.removeprefix("LEADER_").replace("_", " ").title()
 
 
-def _setup_current_leader(path: Path, bounds: tuple[int, int, int, int]
-                          ) -> tuple[str, tuple[int, int]] | None:
-    """Read the current civilization-picker value and its screen position."""
-    screen = desktop_size()
-    if screen is None:
-        return None
+def _leader_field_labels(*expected: str) -> dict[str, str]:
+    """Every label the Choose Civilization field can show, by normalized text.
+
+    ★ THE FIELD COULD ONLY BE READ WHEN IT HELD A NAME FROM CIVVIS'S OWN ROSTER.
+    This was "Random Leader" plus the `leader` strings of `data/civs.json`, the
+    simulator's 105 civilizations, where France is led by "Catherine de
+    Medici". The control mod's one-row whitelist puts the requested leader in
+    the field before anything is clicked, so launch civvis-20261118T055028Z
+    opened Create Game on "Eleanor of Aquitaine (France)". Vision read that as
+    ONE observation, confidence 1.0, centred at rx 0.515 / ry 0.310 of the
+    864x542 window (span 0.466-0.563) in the window pass and in the 4x crop
+    alike: whole, and inside every band. It matched no known label, so the
+    reader answered "not readable" for a field it had read perfectly, thirteen
+    rounds running. Kristina, Gilgamesh, Ambiorix, Wilfrid Laurier and Mvemba
+    a Nzinga verified the same day only because the two rosters happen to
+    spell those five alike; civvis-20261118T062541Z then looped on the eight
+    letters of "Theodora", whose Byzantium the simulator gives to Basil II.
+
+    So the field knows every label the game ships (`LEADER_PICKER_LABELS`) and
+    the one this launch asked for. The simulator's names stay: an install
+    without the persona packs still shows "Cleopatra" and "Victoria".
+    """
     labels = {"randomleader": "Random Leader"}
     try:
         roster = json.loads((REPO_ROOT / "data" / "civs.json").read_text())
@@ -3027,11 +3473,85 @@ def _setup_current_leader(path: Path, bounds: tuple[int, int, int, int]
         label = civilization.get("leader") if isinstance(civilization, dict) else None
         if isinstance(label, str):
             labels[_normalized_label(label)] = label
+    for label in (*LEADER_PICKER_LABELS.values(), *expected):
+        if label and _normalized_label(label):
+            labels[_normalized_label(label)] = label
+    return labels
+
+
+def _joined_label_observations(observations: list[dict], wanted,
+                               screen: tuple[int, int]) -> list[dict]:
+    """Whole labels that Vision returned as neighbouring pieces of one line.
+
+    The saved Eleanor frame returned her label whole, but the same frame
+    returned the title line "SID MEIER'S" as "SID" and "MEIER'", and nothing
+    promises better for the 34 characters of "Catherine de Medici
+    (Magnificence)". Each run of same-line neighbours whose texts spell a
+    ``wanted`` (normalized) label becomes one observation over their union
+    box, so a caller's band check then judges the whole label's centre.
+
+    Nothing is loosened by it. The joined text must EQUAL a wanted label; every
+    piece must lie on the first piece's line, start where the previous one
+    ended (`LEADER_LABEL_MAX_GAP_LINES`) and extend a prefix of that label; and
+    at most `LEADER_LABEL_MAX_PIECES` are joined. Picker rows are separate
+    lines, so two leaders' rows can never be read as one.
+    """
+    wanted = set(wanted)
+    screen_w, screen_h = screen
+    pieces = []
+    for observation in observations:
+        text = _normalized_label(str(observation.get("text", "")))
+        try:
+            left = float(observation["x"]) * screen_w
+            top = float(observation["y"]) * screen_h
+            right = left + float(observation["width"]) * screen_w
+            bottom = top + float(observation["height"]) * screen_h
+        except (KeyError, TypeError, ValueError):
+            continue
+        if text and bottom > top and any(text != label and text in label for label in wanted):
+            pieces.append((left, top, right, bottom, text, str(observation.get("text", ""))))
+    pieces.sort()
+    joined = []
+    for index, (left, top, right, bottom, text, raw) in enumerate(pieces):
+        used = 1
+        for n_left, n_top, n_right, n_bottom, n_text, n_raw in pieces[index + 1:]:
+            if used == LEADER_LABEL_MAX_PIECES:
+                break
+            line = min(bottom - top, n_bottom - n_top)
+            same_line = min(bottom, n_bottom) - max(top, n_top) >= 0.5 * line
+            adjacent = -0.5 * line <= n_left - right <= LEADER_LABEL_MAX_GAP_LINES * line
+            if not (same_line and adjacent
+                    and any(label.startswith(text + n_text) for label in wanted)):
+                continue
+            text, raw, used = text + n_text, f"{raw} {n_raw}", used + 1
+            top, right, bottom = min(top, n_top), max(right, n_right), max(bottom, n_bottom)
+            if text in wanted:
+                joined.append({
+                    "text": raw, "pieces": used,
+                    "x": left / screen_w, "y": top / screen_h,
+                    "width": (right - left) / screen_w, "height": (bottom - top) / screen_h,
+                })
+                break
+    return joined
+
+
+def _setup_current_leader(path: Path, bounds: tuple[int, int, int, int],
+                          expected: str | None = None
+                          ) -> tuple[str, tuple[int, int]] | None:
+    """Read the current civilization-picker value and its screen position.
+
+    ``expected`` is the label this launch asked for; see `_leader_field_labels`.
+    """
+    screen = desktop_size()
+    if screen is None:
+        return None
+    labels = _leader_field_labels(expected or "")
 
     screen_w, screen_h = screen
     x, y, w, h = bounds
     observations = recognize_once(path, bounds)
     observations.extend(_menu_crop_ocr(path, bounds))
+    observations.extend(_joined_label_observations(observations, labels, screen))
     headings: dict[str, int] = {}
     for observation in observations:
         point = _observation_point(observation)
@@ -3126,7 +3646,8 @@ def _menu_crop_ocr(path: Path, bounds: tuple[int, int, int, int],
         crop_path = path.with_name(f"{path.stem}-{tag}-crop.png")
         crop.save(crop_path)
         observations = _menu_ocr_observations(crop_path)
-    except (OSError, ValueError):
+    except (ImportError, OSError, ValueError):
+        # No Pillow (CI) reads nothing, as `_recognize_window` falls back.
         return []
 
     left, crop_top, right, crop_bottom = rect
@@ -3155,7 +3676,9 @@ def _leader_observation(observations: list[dict], label: str,
     screen_w, screen_h = screen
     x, y, w, h = bounds
     wanted = _normalized_label(label)
-    for observation in observations:
+    # A label Vision returned in pieces is judged whole, by its joined box.
+    joined = _joined_label_observations(observations, {wanted}, screen)
+    for observation in (*observations, *joined):
         if _normalized_label(str(observation.get("text", ""))) != wanted:
             continue
         point = _observation_point(observation)
@@ -3167,6 +3690,10 @@ def _leader_observation(observations: list[dict], label: str,
         # recording layout (Trajan measured at ry=0.312 on 2026-08-31).  Keep
         # the band narrow enough to identify the field, but include that
         # verified layout instead of rejecting a correctly selected Rome.
+        # A long label needs no wider band: the text is left-aligned after the
+        # two icons, so "Eleanor of Aquitaine (France)", 29 characters, spans
+        # rx 0.466-0.563 and centres at 0.515 (civvis-20261118T055028Z), and
+        # the 34 characters of the longest shipped label centre near 0.52.
         if 0.40 <= rx <= 0.62 and (
             0.23 <= ry <= 0.34 if selected else 0.30 <= ry <= 0.76
         ):
@@ -3956,7 +4483,7 @@ def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | Non
             print(f"[setup] leader list opened after an unreadable frame "
                   f"(attempt {attempt})", flush=True)
             break
-        current = _setup_current_leader(closed, bounds)
+        current = _setup_current_leader(closed, bounds, label)
         if current is None:
             print(f"[setup] leader value was not readable (attempt {attempt})",
                   flush=True)
@@ -4103,15 +4630,74 @@ def confirm_exit_dialog(run_dir: Path | None = None) -> bool:
     return True
 
 
-def _main_menu_visible(path: Path) -> bool:
-    """Return whether a screenshot visibly contains Firaxis's Single Player row."""
-    return any(
-        _menu_label_matches(str(observation.get("text", "")), "Single Player")
-        for observation in _menu_ocr_observations(path)
-    )
+#: Distinct main-menu rows (`MAIN_MENU_LABELS`), Single Player among them, a
+#: capture must show inside the game window to read as the main menu. A real
+#: menu shows about eight; one row on its own is a coincidence. Single Player
+#: is required because two of the others are headings elsewhere too: the Load
+#: Game page reads "Game Options" and "Additional Content" above a save's
+#: settings and its DLC list (civvis-20261115T110627Z-cont1, startup-wait2-1).
+MAIN_MENU_MIN_ROWS = 2
 
 
-def stall_screen_is_main_menu(shot: Path) -> bool:
+def _main_menu_rows(path: Path, bounds: tuple[int, int, int, int]) -> set[str]:
+    """The main menu's own rows read inside the game window of a capture.
+
+    Both window passes are read, the window itself and the enlarged menu crop,
+    and an observation counts only where its centre lies inside ``bounds``:
+    the window pass falls back to the whole desktop when it cannot crop, so
+    the position, not the pass, is what keeps the rest of the desktop out.
+    """
+    screen = desktop_size()
+    if screen is None:
+        return set()
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    rows: set[str] = set()
+    for observation in (_menu_ocr_observations(path, bounds)
+                        + _menu_crop_ocr(path, bounds)):
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = point[0] * screen_w, point[1] * screen_h
+        if not (x <= px <= x + w and y <= py <= y + h):
+            continue
+        text = str(observation.get("text", ""))
+        rows.update(label for label in MAIN_MENU_LABELS
+                    if _menu_label_matches(text, label))
+    return rows
+
+
+def _main_menu_visible(path: Path, bounds: tuple[int, int, int, int] | None) -> bool:
+    """Whether a desktop capture shows Firaxis's main menu in the game window.
+
+    ⚠⚠ "SINGLE PLAYER" IS NOT ONLY ON THE MAIN MENU. This read used to be one
+    "Single Player" anywhere in the whole desktop capture, and the desktop also
+    holds the CIVVIS mirror, whose turn box reads "POV: Single Player" all game,
+    and the terminals, which print whatever their agents are reading. Live
+    Immortal civvis-20261115T225114Z stalled at turn 60 of 160 with seven
+    cities; its stalled-1.png shows the game on its map, and the one
+    "Single Player" Vision read in it sits at x=0.557 of the desktop -- the
+    mirror's turn box, right of the 864-point game window. The stall read it
+    as the main menu and ended a healthy game the rescue was there to keep.
+    The other callers saw the same thing: re-read over 173 captures of 40
+    runs of 2026-11-15, the old read called 23 of 35 Create Game pages, 27 of
+    39 setup pages and two Firaxis logo screens the main menu.
+
+    So the menu is read only inside ``bounds``, the game window, and only when
+    Single Player and `MAIN_MENU_MIN_ROWS` of its rows in all are there. On
+    the same captures that calls none of those the menu, and still reads 35 of
+    39 first menu captures (the other four: two logos, two menus still fading
+    in with only Single Player drawn) and all 37 Single Player submenus. No
+    window, no menu: without the bounds nothing tells the menu from the mirror.
+    """
+    if bounds is None:
+        return False
+    rows = _main_menu_rows(path, bounds)
+    return "single player" in rows and len(rows) >= MAIN_MENU_MIN_ROWS
+
+
+def stall_screen_is_main_menu(shot: Path,
+                              bounds: tuple[int, int, int, int] | None) -> bool:
     """Whether a stall's photograph shows Firaxis's main menu.
 
     A stalled run whose screen is the main menu has lost its game session, so
@@ -4121,8 +4707,13 @@ def stall_screen_is_main_menu(shot: Path) -> bool:
     clock would have killed it at fifteen. Ending the attempt on the first
     photograph hands it straight to the climb, which restarts a game frozen
     before turn 20 and reloads the newest autosave of a later one.
+
+    ``bounds`` is the game window at the stall; see `_main_menu_visible` for
+    why the menu is read only there. Without it the stall is rescued as any
+    other: a wrong "menu" ends a live game, a wrong "not menu" costs only the
+    bounded rescue.
     """
-    return _main_menu_visible(shot)
+    return _main_menu_visible(shot, bounds)
 
 
 #: The main menu's own rows. The enlarged menu crop reads them on every real
@@ -4319,20 +4910,20 @@ def return_to_main_menu(bounds: tuple[int, int, int, int], run_dir: Path,
 
     A setup failure may leave the leader list, map picker, or Create Game page
     open. Retrying the main-menu coordinates from any of those screens changes
-    an unrelated setting. Only a screenshot containing Single Player licenses
-    another bootstrap attempt.
+    an unrelated setting. Only a screenshot showing the main menu inside the
+    game window licenses another bootstrap attempt.
     """
     x, y, w, h = bounds
     for depth in range(4):
         shot = run_dir / f"recover-attempt{attempt}-{depth}.png"
         screenshot(shot)
-        if _main_menu_visible(shot):
+        if _main_menu_visible(shot, bounds):
             return True
         click_at(int(x + w * BACK[0]), int(y + h * BACK[1]))
         time.sleep(1.5)
     shot = run_dir / f"recover-attempt{attempt}-final.png"
     screenshot(shot)
-    return _main_menu_visible(shot)
+    return _main_menu_visible(shot, bounds)
 
 
 def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float,
@@ -4370,7 +4961,8 @@ def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float,
 
     So the page is proved the same way the launch click was licensed: by reading
     `Start Game` where it lives. `bounds` is optional only so an old call site
-    keeps working; without it this degrades to the main-menu read alone.
+    keeps working; without it neither read runs (the menu is read only inside
+    the game window), and the wait is bounded by ``patience`` alone.
 
     ``patience`` is spent from ONE pool shared by every attempt, because the
     per-wait hard bound alone does not bound the bootstrap: 16 attempts each
@@ -4385,7 +4977,7 @@ def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float,
         looks["n"] += 1
         shot = run_dir / f"startup-wait{attempt}-{looks['n']}.png"
         screenshot(shot)
-        if _main_menu_visible(shot):
+        if _main_menu_visible(shot, bounds):
             print(f"attempt {attempt}: the main menu is back after "
                   f"{looks['n']} silent wait(s) -- the launch did not take",
                   file=sys.stderr)
@@ -4414,8 +5006,12 @@ def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float,
 
 
 def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namespace,
-                        run_dir: Path) -> bool:
+                        run_dir: Path, fault: dict | None = None) -> bool:
     """Set this run's game up on the Create Game screen and start it.
+
+    ``fault``, when given, is told that the leader was the row that would not
+    verify (``fault["step"] = "leader"``): `bootstrap_game` bounds that one
+    failure apart from the rest (`LEADER_UNVERIFIED_ROUNDS`).
 
     The agent's first report from inside the game remains the check on the VALUES
     -- it names the difficulty, map size and speed the game actually has, so a
@@ -4484,6 +5080,8 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
     if not select_requested_leader(bounds, args.leader, run_dir, panel=panel["shot"],
                                    panel_out=panel, hint_dir=run_dir.parent):
         print("[setup] requested leader was NOT selected; refusing to start", flush=True)
+        if fault is not None:
+            fault["step"] = "leader"
         return False
     if not clear_game_modes(bounds, run_dir, list(getattr(args, "game_mode", []) or [])):
         print("[setup] a game mode is still on; refusing to start", flush=True)
@@ -4523,6 +5121,44 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
     focus_game(GAME_SIDE, GAME_FRACTION)
     click_at(*start_point)
     return True
+
+
+def note_leader_unverified(leader: str | None, rounds: int, attempt: int) -> dict:
+    """Say that the requested leader ended the launch, and return the fault.
+
+    The fault is what `_play` exits `EXIT_LEADER_UNVERIFIED` on and writes into
+    the summary; see `LEADER_UNVERIFIED_ROUNDS` for why a further round is not
+    played.
+    """
+    label = leader_display_name(leader) if leader else None
+    print(f"attempt {attempt}: requested leader {label} ({leader}) could not be verified "
+          f"on the Create Game screen in {rounds} setup rounds; ending this launch "
+          f"({LEADER_UNVERIFIED_REASON}) instead of repeating the same read",
+          file=sys.stderr, flush=True)
+    return {"reason": LEADER_UNVERIFIED_REASON, "leader": leader, "label": label,
+            "rounds": rounds}
+
+
+def leader_unverified_fault(args: argparse.Namespace) -> dict | None:
+    """The fault `bootstrap_game` recorded when the leader ended the launch."""
+    fault = getattr(args, "setup_fault", None)
+    if isinstance(fault, dict) and fault.get("reason") == LEADER_UNVERIFIED_REASON:
+        return fault
+    return None
+
+
+def leader_unverified_summary(tag: str, config: dict, state: dict, fault: dict) -> dict:
+    """The record of a launch that ended on an unverifiable leader.
+
+    A `partial_summary` in every field the ledger reads (no turn was played,
+    and `partial` keeps it out of the finished-game tallies exactly as a
+    stopped launch is), but with its own `reason` instead of `killed`, and the
+    leader and label that could not be read.
+    """
+    summary = partial_summary(tag, config, state)
+    summary.update(reason=LEADER_UNVERIFIED_REASON, leader_asked=fault.get("leader"),
+                   leader_label=fault.get("label"), setup_rounds=fault.get("rounds"))
+    return summary
 
 
 def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
@@ -4581,6 +5217,8 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     # genuinely unready menu, so a false strike costs nothing.
     blind_strikes = 0
     unseen_strikes = 0
+    # Setup rounds that failed on the leader alone; see `LEADER_UNVERIFIED_ROUNDS`.
+    leader_strikes = 0
     for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
         focus_game(GAME_SIDE, GAME_FRACTION)
         time.sleep(2.0)
@@ -4627,7 +5265,9 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             return (point, rows) if point is not None or len(rows) >= 4 else None
 
         top = _poll_screen(read_top_menu, budget_s=FIRST_MENU_POLL_BUDGET_S
-                           if attempt == 1 else SCREEN_POLL_BUDGET_S)
+                           if attempt == 1 else SCREEN_POLL_BUDGET_S,
+                           quick_after_s=FIRST_MENU_QUICK_AFTER_S if attempt == 1 else None,
+                           quick_poll_s=FIRST_MENU_QUICK_POLL_S if attempt == 1 else None)
         menu_point, toprows = top if top is not None else (None, [])
         sp_y = MENU["single_player"][1]
         pitch = 0.029
@@ -4757,7 +5397,14 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         click_at(*target)
         time.sleep(2.5)
         screenshot(run_dir / f"create-attempt{attempt}.png")
-        if not configure_and_start(bounds, args, run_dir):
+        fault: dict = {}
+        if not configure_and_start(bounds, args, run_dir, fault):
+            if fault.get("step") == "leader":
+                leader_strikes += 1
+                if leader_strikes >= LEADER_UNVERIFIED_ROUNDS:
+                    args.setup_fault = note_leader_unverified(
+                        getattr(args, "leader", None), leader_strikes, attempt)
+                    return False
             print(f"attempt {attempt}: setup could not be verified; backing out",
                   file=sys.stderr)
             if not return_to_main_menu(bounds, run_dir, attempt):
@@ -4983,6 +5630,267 @@ def restart_in_place(tail: watch.LogTail, on_event, run_dir: Path,
 # Firaxis's rolling autosaves on this build: `AutoSave_NNNN.Civ6Save`, one per
 # turn, the newest ten kept, older ones rotated into `prev/`. The Load Game
 # screen lists them only while its "Autosaves" filter is ticked.
+#: Where macOS files a crash of the game, and what its reports are called.
+CRASH_REPORT_DIR = Path.home() / "Library" / "Logs" / "DiagnosticReports"
+CRASH_REPORT_GLOB = "Civ6_Exe_Child-*.ips"
+#: How long the report of a process that just died is waited for.
+CRASH_REPORT_WAIT_S = 6.0
+#: How often a game notes the host's load averages in its own event stream,
+#: and how recently the game itself must have written there for the note to
+#: be added (see `host_load_row`).
+HOST_LOAD_EVERY_S = 30.0
+HOST_LOAD_BESIDE_S = 1.0
+#: Frames every abort passes through: they say that it died, not where.
+CRASH_NOISE_FRAMES = frozenset({
+    "__pthread_kill", "pthread_kill", "abort", "__abort_message",
+    "demangling_terminate_handler()", "_objc_terminate()",
+    "std::__terminate(void (*)())",
+})
+#: Rows that say the mod touched a screen, a popup or a diplomacy session:
+#: the candidates for "the last thing we did to the UI" before a crash.
+CRASH_UI_ROW_KINDS = frozenset({
+    "event_lock", "autoclose", "autoclose_behind_deal", "autoclose_hold",
+    "autoclose_desktop", "deal_session", "rock_band_concert", "timescale",
+    "diplomacy_choice", "first_meet_choice",
+})
+#: What a trail row keeps besides its kind, context and age.
+CRASH_TRAIL_FIELDS = ("turn", "frame", "screen", "holder", "op", "phase", "why",
+                      "reason", "verb", "blocker", "forced")
+
+
+def host_load() -> list[float] | None:
+    """The host's 1, 5 and 15 minute load averages, or None where unknown."""
+    try:
+        return [round(value, 2) for value in os.getloadavg()]
+    except (AttributeError, OSError):
+        return None
+
+
+def host_load_row(events_path: Path, since_last_s: float, wall: float | None = None,
+                  every_s: float = HOST_LOAD_EVERY_S,
+                  beside_s: float = HOST_LOAD_BESIDE_S) -> dict | None:
+    """The `host_load` row due now, or None.
+
+    ★ ONLY BESIDE A ROW OF THE GAME'S. `civvis-agent-wedge-watchdog.sh` reads
+    the mtime of `events.jsonl` as the game's own voice ("a parked game is
+    silent, a slow one is not"). A row written here on a timer would keep a
+    parked game looking alive for ever, so the load is noted only when the
+    game wrote a row within the last ``beside_s``: a silent game gets none,
+    and its file's age is extended by at most that second.
+    """
+    if since_last_s < every_s:
+        return None
+    try:
+        quiet = (time.time() if wall is None else wall) - events_path.stat().st_mtime
+    except OSError:
+        return None
+    if quiet > beside_s:
+        return None
+    load = host_load()
+    if load is None:
+        return None
+    return {"kind": "host_load", "ctx": "harness", "load": load}
+
+
+def newest_crash_report(since: float, folder: Path | None = None) -> Path | None:
+    """The game's newest crash report written at or after ``since`` (epoch s)."""
+    newest, stamp = None, since
+    try:
+        paths = list((folder or CRASH_REPORT_DIR).glob(CRASH_REPORT_GLOB))
+    except OSError:
+        return None
+    for path in paths:
+        try:
+            written = path.stat().st_mtime
+        except OSError:
+            continue
+        if written >= stamp:
+            newest, stamp = path, written
+    return newest
+
+
+def _crash_clock(text) -> datetime | None:
+    """A report's `2026-11-15 06:28:24.6174 -0600` as an aware time."""
+    for layout in ("%Y-%m-%d %H:%M:%S.%f %z", "%Y-%m-%d %H:%M:%S %z"):
+        try:
+            return datetime.strptime(str(text), layout)
+        except ValueError:
+            continue
+    return None
+
+
+def read_crash_report(path: Path) -> dict:
+    """What a macOS crash report says died: signal, thread and first frames.
+
+    A `.ips` file is two JSON documents, a one-line header and the report.
+    `signature` is coarse on purpose (signal, thread, first frame that is not
+    the abort itself, unsymbolized frames by image only) so the same fault
+    counts as one across games: the two aborts of 2026-11-15 (11:18Z, 12:28Z)
+    both read `SIGABRT TBB __cxa_pure_virtual`, the six of 11-08..11-13
+    `SIGSEGV WinMain GameCore_XP2.dll`. `frames` keeps the offsets.
+    """
+    _head, _, body = path.read_text(errors="replace").partition("\n")
+    report = json.loads(body)
+    images = report.get("usedImages") or []
+    crashed = next((thread for thread in report.get("threads") or []
+                    if isinstance(thread, dict) and thread.get("triggered")), {})
+    frames, first = [], None
+    for frame in crashed.get("frames") or []:
+        symbol = frame.get("symbol")
+        if symbol in CRASH_NOISE_FRAMES:
+            continue
+        index = frame.get("imageIndex")
+        image = (str(images[index].get("name") or "?")
+                 if isinstance(index, int) and 0 <= index < len(images) else "?")
+        if image.startswith("libsystem_"):
+            continue
+        if first is None:
+            first = symbol or image
+        offset = frame.get("imageOffset")
+        frames.append(symbol or (f"{image}+0x{offset:x}" if isinstance(offset, int)
+                                 else image))
+        if len(frames) >= 4:
+            break
+    exception = report.get("exception") or {}
+    thread = str(crashed.get("name") or crashed.get("queue") or "?")
+    thread = thread.split(" (WinID", 1)[0]
+    signal_name = str(exception.get("signal") or exception.get("type") or "?")
+    captured, launched = (_crash_clock(report.get("captureTime")),
+                          _crash_clock(report.get("procLaunch")))
+    return {
+        "report": path.name,
+        "signal": signal_name,
+        "exception": exception.get("type"),
+        "thread": thread,
+        "frames": frames,
+        "signature": " ".join(part for part in (signal_name, thread, first) if part),
+        "captured": (captured.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                     if captured else None),
+        "alive_s": (round((captured - launched).total_seconds(), 1)
+                    if captured and launched else None),
+    }
+
+
+def _event_clock(text) -> datetime | None:
+    try:
+        return datetime.strptime(str(text), "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def crash_trail(events_path: Path, died: datetime | None, keep: int = 12,
+                tail_bytes: int = 4 * 1024 * 1024) -> dict:
+    """What the event stream held when the game died: the turn, whose phase it
+    was, the last rows with their age, and the last row that touched the UI.
+
+    Read from the file, not kept in memory: the rows are already there with
+    their receipt stamps, and a crash is rare. Ages are milliseconds before
+    ``died`` (the report's capture time), or before the last row without one.
+    The phase is "rival" when the last `end_turn_wait` had no blocker left and
+    no `orders` row followed it, else "ours". `trail_s` is how far back the
+    reading reaches, so a missing `last_ui_row` means "none in that long".
+    """
+    try:
+        with events_path.open("rb") as journal:
+            journal.seek(0, os.SEEK_END)
+            size = journal.tell()
+            journal.seek(max(0, size - tail_bytes))
+            lines = journal.read().decode("utf-8", errors="replace").split("\n")
+    except OSError:
+        return {}
+    rows = []
+    for line in lines[1:] if size > tail_bytes else lines:
+        if not line.startswith("{"):
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        stamp = _event_clock(row.get("utc")) if isinstance(row, dict) else None
+        if stamp is not None:
+            rows.append((stamp, row))
+    if not rows:
+        return {}
+    end = died or rows[-1][0]
+
+    def age(stamp: datetime) -> int:
+        return int(round((end - stamp).total_seconds() * 1000))
+
+    def brief(stamp: datetime, row: dict) -> dict:
+        out = {"age_ms": age(stamp), "kind": row.get("kind")}
+        if row.get("ctx") not in (None, "agent"):
+            out["ctx"] = row.get("ctx")
+        for field in CRASH_TRAIL_FIELDS:
+            value = row.get(field)
+            if isinstance(value, (str, int, float, bool)):
+                out[field] = value
+        return out
+
+    turn, phase, last_ui, trail = None, "ours", None, []
+    for stamp, row in rows:
+        kind = row.get("kind")
+        if kind == "host_load":
+            continue
+        if isinstance(row.get("turn"), int):
+            turn = row["turn"]
+        if kind == "end_turn_wait":
+            phase = "ours" if row.get("blockers") else "rival"
+        elif kind in ("orders", "turn"):
+            phase = "ours"
+        if kind in CRASH_UI_ROW_KINDS or row.get("ctx") == "autoclose":
+            last_ui = brief(stamp, row)
+        if trail and trail[-1]["kind"] == kind and trail[-1].get("ctx") == (
+                row.get("ctx") if row.get("ctx") not in (None, "agent") else None):
+            # A run of the same row is one entry: its newest, and how many.
+            count = trail[-1].get("n", 1) + 1
+            trail[-1] = brief(stamp, row)
+            trail[-1]["n"] = count
+        else:
+            trail.append(brief(stamp, row))
+    return {
+        "turn": turn,
+        "phase": phase,
+        "trail_s": round(age(rows[0][0]) / 1000.0, 1),
+        "last_row_age_ms": age(rows[-1][0]),
+        "last_ui_row": last_ui,
+        "last_rows": trail[-keep:],
+    }
+
+
+def native_crash_row(events_path: Path, since: float, wait_s: float = CRASH_REPORT_WAIT_S,
+                     folder: Path | None = None, sleep=time.sleep,
+                     clock=time.monotonic) -> dict | None:
+    """The `native_crash` row for a game that exited under the harness, or
+    None when macOS wrote no report for it since ``since``.
+
+    ★ A CRASH SHOULD DESCRIBE ITSELF. 2026-11-15: the game aborted twice in
+    30 games with a signature never seen in the 648 before (a TBB worker
+    running a frame job that was already destroyed), and both times the run
+    said only "game exited". Telling the two apart from the older fault, and
+    seeing that the second had no popup closed for 11 s and no deal session
+    open, took reading the reports and the event tails by hand. This row
+    carries that reading: which fault, on which turn and in whose phase, what
+    the mod last did and how long before, and how loaded the host was.
+    """
+    deadline = clock() + max(0.0, wait_s)
+    while True:
+        path = newest_crash_report(since, folder)
+        if path is not None or clock() >= deadline:
+            break
+        sleep(0.5)
+    if path is None:
+        return None
+    try:
+        row = read_crash_report(path)
+    except (OSError, ValueError, TypeError, AttributeError) as error:
+        row = {"report": path.name, "signature": None,
+               "unreadable": f"{type(error).__name__}: {error}"[:160]}
+    died = _event_clock(row.get("captured")) if row.get("captured") else None
+    row.update(crash_trail(events_path, died))
+    row.update({"kind": "native_crash", "ctx": "harness", "load": host_load()})
+    return row
+
+
 AUTOSAVE_DIR = (Path.home() / "Library" / "Application Support"
                 / "Sid Meier's Civilization VI" / "Sid Meier's Civilization VI"
                 / "Saves" / "Single" / "auto")
@@ -5076,6 +5984,65 @@ def stage_resume_save(load_save: Path,
         print(f"verified staged save sha256={expected}", flush=True)
     print(f"staged {load_save.name} as {staged.name} in the manual save list")
     return staged
+
+
+#: How many times a resume presses the Load Game button, and how long each
+#: press gets to take the panel away, before the attempt is given up.
+LOAD_PRESS_TRIES = 3
+LOAD_PRESS_SETTLE_S = 4.0
+
+
+def _load_panel_reading(path: Path, bounds: tuple[int, int, int, int],
+                        save_label: str) -> str | None:
+    """What still shows of the Load Game panel in a screenshot, or None when
+    none of it does (a loading screen, or the game itself).
+
+    Three readings, because the button alone is not enough: under the pointer
+    its label fades (civvis-20261115T110627Z-cont1, `load-confirmation-
+    attempt2.png`), while the red Delete button beside it and the selected
+    save's row stay plain.
+    """
+    x, y, w, h = bounds
+    low = y + int(h * 0.75)
+    if any(point[1] >= low for point in _observed_label_points(
+            path, "Load Game", bounds, strip=LOAD_GAME_ACTION_STRIP)):
+        return "its Load Game button reads"
+    if any(point[1] >= low for point in _observed_label_points(
+            path, "Delete", bounds, strip=LOAD_GAME_ACTION_STRIP)):
+        return "its Delete button reads, the Load Game button does not (disabled or under the pointer)"
+    if _observed_label_point(path, save_label, bounds) is not None:
+        return "the save's row reads, neither action button does"
+    return None
+
+
+def press_load_game(press, look, started, tries: int = LOAD_PRESS_TRIES,
+                    settle_s: float = LOAD_PRESS_SETTLE_S) -> str:
+    """Press the Load Game button until the load is seen to have started.
+
+    ★ THE PRESS IS NOT THE LOAD. Live civvis-20261115T110627Z-cont1 (the
+    reload after a native crash): the row was selected, the button was
+    pressed at +52.3 s, and nothing happened. The window dropped the click;
+    ten seconds later the panel was exactly as before, with the pointer
+    resting on the button. The harness then read "the main menu is gone" as
+    "the game is still coming up" and spent four 90 s waits on a screen that
+    was never going to change, until the lane was restarted by hand nine
+    minutes in. The resume thirty minutes earlier (`104756Z-cont1`) made the
+    same presses and loaded.
+
+    ``press(n)`` clicks the button for the n-th time. ``started(seconds)``
+    waits that long for the agent's first record. ``look(n)`` then reads the
+    screen and returns "panel" while the Load Game panel is still up, and
+    anything else once it is gone or a confirmation has been answered.
+    Returns "started", "loading" (the panel went: the ordinary waits take
+    over), or "stuck" (the panel survived every press).
+    """
+    for attempt in range(1, max(1, tries) + 1):
+        press(attempt)
+        if started(settle_s):
+            return "started"
+        if look(attempt) != "panel":
+            return "loading"
+    return "stuck"
 
 
 def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
@@ -5185,7 +6152,40 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
                   file=sys.stderr)
             return False
         print(f"loading saved game {save_label} from observed row {save_target}")
-        click_at(*action)
+        panel_reads = {"what": None}
+
+        def press(count: int) -> None:
+            if count > 1:
+                print(f"[load] the Load Game panel is still up {LOAD_PRESS_SETTLE_S:.0f}s "
+                      f"after press {count - 1} ({panel_reads['what']}); pressing "
+                      "its button again", flush=True)
+            click_at(*action)
+
+        def look(count: int) -> str:
+            shot = run_dir / f"load-pressed-attempt{attempt}-{count}.png"
+            screenshot(shot)
+            # A save from an older revision of the mod asks first; answer a
+            # visibly read YES and let the ordinary waits take over.
+            yes = _observed_label_point(shot, "Yes", bounds)
+            if yes is not None:
+                click_at(*yes)
+                return "confirmed"
+            panel_reads["what"] = _load_panel_reading(shot, bounds, save_label)
+            return "panel" if panel_reads["what"] else "gone"
+
+        pressed = press_load_game(press, look, started)
+        if pressed == "started":
+            return True
+        if pressed == "stuck":
+            # Fail in seconds, not after the loading patience: the next
+            # attempt, or the climb, can do something about a save that will
+            # not start; a wait cannot.
+            print(f"attempt {attempt}: the Load Game panel is still up after "
+                  f"{LOAD_PRESS_TRIES} presses of its button ({panel_reads['what']}); "
+                  f"{save_label} did not start loading, so this resume ends here "
+                  f"(last look: load-pressed-attempt{attempt}-{LOAD_PRESS_TRIES}.png)",
+                  file=sys.stderr, flush=True)
+            return False
 
         # A save made with an older revision of the same mod can produce a
         # compatibility confirmation. Give a normal load a head start, then
@@ -5423,6 +6423,17 @@ def play(args: argparse.Namespace) -> int:
         print(f"[policy] a game that loses its capital or one of the first "
               f"{early_city_count} cities it founded is retired "
               "(operator 2026-11-04)", flush=True)
+    # Lane rule 2026-11-15: see `city_collapse_reading`. Off unless the flag
+    # or the host policy file names a count.
+    city_collapse = getattr(args, "restart_on_city_collapse", None)
+    city_collapse = (city_collapse_policy() if city_collapse is None
+                     else parse_city_collapse(str(city_collapse)))
+    args.restart_on_city_collapse = city_collapse
+    if city_collapse > 0:
+        print(f"[policy] a game that has lost {city_collapse} or more cities from "
+              f"its peak and holds {CITY_COLLAPSE_SHARE:.0%} of that peak or fewer, "
+              f"for {CITY_COLLAPSE_TURNS} turns running, is retired "
+              "(lane rule 2026-11-15)", flush=True)
     # Operator 2026-11-09: see `city_deficit_reading`.
     city_deficit = getattr(args, "restart_on_city_deficit", None)
     city_deficit = (city_deficit_policy() if city_deficit is None
@@ -5455,6 +6466,15 @@ def play(args: argparse.Namespace) -> int:
         if no_capital_level > 0:
             print(f"[policy] ... unless it holds {no_capital_level:.0%} of the best "
                   "rival's techs or more: a level game plays on", flush=True)
+    # Lane rule 2026-11-17: see `science_out_of_reach_reading`. Off unless the
+    # host policy file names a share; `_play` reads both from `args`.
+    science_behind = science_behind_policy()
+    science_behind_from = science_behind_from_turn_policy()
+    args.restart_science_behind_techs = science_behind
+    args.restart_science_behind_from_turn = science_behind_from
+    if science_behind > 0 and getattr(args, "civvis_victory", None) == "science":
+        print(science_out_of_reach_notice(science_behind, science_behind_from,
+                                          getattr(args, "speed", None)), flush=True)
     if production_share > 0:
         speed = getattr(args, "speed", None)
         print(f"[policy] a game whose Production stays under {production_share:.0%} "
@@ -6184,10 +7204,12 @@ def _play(args: argparse.Namespace) -> int:
     production_share_from = online_turns(production_share_from, getattr(args, "speed", None))
     production_share_turns = online_turns(PRODUCTION_SHARE_TURNS, getattr(args, "speed", None))
     early_city_count = getattr(args, "restart_on_early_city_lost", None) or 0
+    city_collapse = getattr(args, "restart_on_city_collapse", None) or 0
     city_deficit = getattr(args, "restart_on_city_deficit", None) or 0
     religion_lost_rule = (bool(getattr(args, "restart_on_religion_lost", None))
                           and getattr(args, "civvis_victory", None) == "religious")
     no_capital_from = domination_no_capital_turn(args)
+    science_behind, science_behind_from = science_out_of_reach_line(args)
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
     # Bound the corpus before adding to it. See `prune_old_run_screenshots`.
@@ -6593,6 +7615,8 @@ def _play(args: argparse.Namespace) -> int:
         print(f"[{kind}] {how} {result} for {screen}",
               file=sys.stderr if not ok and not safe_skip else sys.stdout)
 
+    hung_rivals = watch.HungRivalSessions()
+
     def record(event: dict) -> None:
         # ★ RECEIPT TIME — the run's only wall-clock. `Automation.log` carries no
         # clock, so events.jsonl could say an opening board waited 20 polls but
@@ -6605,6 +7629,9 @@ def _play(args: argparse.Namespace) -> int:
         events.write(json.dumps(event, sort_keys=True) + "\n")
         events.flush()
         kind = event.get("kind")
+        # Deal sessions closed with the rival's reply still owed: the rival
+        # turn that hangs behind one is not waited out (`ai_stall_window`).
+        hung_rivals.note(event)
         # The mod's own word that the game stopped (or carries on), relayed to
         # the page beside it; see `civ6_control.live_pause`.
         if kind in ("operator_paused", "operator_pause_held"):
@@ -6924,6 +7951,16 @@ def _play(args: argparse.Namespace) -> int:
                       f"{reading['lost_turn']}) — retiring so the next game starts "
                       "(operator 2026-11-04)", flush=True)
                 return abandon_with_retire(reading)
+        # Lane rule 2026-11-15: half the cities gone and staying gone. See
+        # `city_collapse_reading`.
+        if city_collapse > 0:
+            reading = city_collapse_reading(state, event, city_collapse)
+            if reading is not None and reading.get("fires"):
+                print(f"[abandon] turn {reading['turn']}: {reading['held']} cities "
+                      f"held of a peak of {reading['peak']} ({reading['lost']} lost, "
+                      f"at or below half since turn {reading['since']}) — retiring "
+                      "so the next game starts (lane rule 2026-11-15)", flush=True)
+                return abandon_with_retire(reading)
         # ★ OPERATOR 2026-11-09: a religious win cannot happen without our
         # religion. See `religion_lost_reading`.
         if religion_lost_rule:
@@ -6963,6 +8000,18 @@ def _play(args: argparse.Namespace) -> int:
                       f"since turn {reading['since']} ({reading['turns']} turns running "
                       f"from turn {reading['from_turn']}) — retiring so the next game "
                       "starts (operator 2026-11-10)", flush=True)
+                return abandon_with_retire(reading)
+        # Lane rule 2026-11-17: a Science-lane game far behind the best met
+        # rival's techs. See `science_out_of_reach_reading`.
+        if science_behind > 0:
+            reading = science_out_of_reach_reading(
+                state, event, science_behind, science_behind_from)
+            if reading is not None and reading.get("fires"):
+                print(f"[abandon] turn {reading['turn']}: {reading['techs']} techs "
+                      f"against the best met rival's {reading['rival_techs']} "
+                      f"({reading['share']:.0%}, under {reading['line'] * 100:g}% since "
+                      f"turn {reading['since']}) — retiring so the next game starts "
+                      "(lane rule 2026-11-17)", flush=True)
                 return abandon_with_retire(reading)
         verdict = below_leader_score_reading(
             state, event, args.restart_below_leader_ratio
@@ -7068,7 +8117,9 @@ def _play(args: argparse.Namespace) -> int:
                                             verify_s=args.load_wait)
     elif handoff is not None:
         bootstrapped = restart_in_place(tail, record, run_dir, args, handoff)
-        if not bootstrapped:
+        # A relaunch shows the same Create Game field: a leader the restarted
+        # game could not verify is not asked of a fresh one (`LEADER_UNVERIFIED_ROUNDS`).
+        if not bootstrapped and leader_unverified_fault(args) is None:
             # Whatever the restart left behind is stopped; the reinstall drops
             # the mod index the launch's scan needs (see `modinstall.install`).
             print("[restart] falling back to stopping Civilization VI and "
@@ -7099,6 +8150,23 @@ def _play(args: argparse.Namespace) -> int:
         # launch-time failure policy applies: graceful first, then kill.
         if owned_launch["process"] is not None:
             launcher.stop_owned_failed_startup(owned_launch["process"])
+        leader_fault = leader_unverified_fault(args)
+        if leader_fault is not None:
+            # Written here so the exit hook's `killed` does not take the
+            # column: this launch was ended on purpose, for a stated cause.
+            path = run_dir / "summary.json"
+            summary = with_diagnostic(
+                leader_unverified_summary(args.tag, config, state, leader_fault), path)
+            try:
+                path.write_text(json.dumps(summary, indent=2, sort_keys=True))
+            except OSError as error:
+                print(f"could not write the {LEADER_UNVERIFIED_REASON} summary: {error}",
+                      file=sys.stderr)
+            print(f"{LEADER_UNVERIFIED_REASON}: {leader_fault.get('label')} "
+                  f"({leader_fault.get('leader')}) was not verified on the Create Game "
+                  f"screen in {leader_fault.get('rounds')} rounds; no game was started "
+                  f"(exit {EXIT_LEADER_UNVERIFIED})", file=sys.stderr)
+            return EXIT_LEADER_UNVERIFIED
         return 5
     setup_mark("configured", stop=True)
     if host_health.clear():
@@ -7181,8 +8249,22 @@ def _play(args: argparse.Namespace) -> int:
                   file=sys.stderr, flush=True)
         print(f"[retire] {'requested' if sent else 'waiting'}: {detail}", flush=True)
 
+    # The host's load, about every `HOST_LOAD_EVERY_S` while the game is
+    # talking, in the game's own stream: a game that crashes or hangs can
+    # then be set against the games that did not (see `native_crash_row`).
+    load_noted = [0.0]
+    watch_began_wall = time.time()
+
+    def note_host_load() -> None:
+        now = time.monotonic()
+        row = host_load_row(events_path, now - load_noted[0])
+        if row is not None:
+            load_noted[0] = now
+            record(row)
+
     def keep_foreground() -> None:
         process_operator_retirement()
+        note_host_load()
         last_focus[0] = maintain_game_focus(
             args.focus_every, last_focus[0], place=True,
         )
@@ -7287,7 +8369,8 @@ def _play(args: argparse.Namespace) -> int:
         frozen_s=args.frozen_seconds,
         pause_when=held_or_locked,
         finish_turn=args.max_turns, ceiling_s=ceiling_s,
-        ai_stall_s=args.ai_stall_seconds or None)
+        ai_stall_s=args.ai_stall_seconds or None,
+        ai_stall_window=hung_rivals.window)
     # ★★★ PHOTOGRAPH A STALL BEFORE KILLING IT. Stalls are now the dominant way runs
     # end — t87, t95, t106, t184 — and the event stream goes silent by definition, so
     # it cannot say what is on screen. One screen (`DiplomacyDealView`) was already
@@ -7327,7 +8410,7 @@ def _play(args: argparse.Namespace) -> int:
         print(f"stalled — photographed to {shot}; rescue attempt {consecutive} "
               f"of {args.stall_rescues} on this screen ({rescues} this run)",
               flush=True)
-        if stall_screen_is_main_menu(shot):
+        if stall_screen_is_main_menu(shot, game_window()):
             print("stalled at Civilization VI's main menu: the game session is "
                   "gone and no dialogue rescue can recover it; ending the "
                   "attempt so the climb restarts or reloads it", flush=True)
@@ -7340,6 +8423,13 @@ def _play(args: argparse.Namespace) -> int:
             print("a rival's turn is hung in the game core: there is no "
                   "screen to dismiss, so the attempt ends here and the climb "
                   "reloads an autosave", flush=True)
+            # The climb reads an exit this soon after the last turn as a
+            # finished game unless the run says otherwise in writing.
+            try:
+                watch.write_stall_handoff(run_dir, args.tag, state.get("turn"), reason)
+            except OSError as error:
+                print(f"could not write the reload handoff ({error}); the climb "
+                      "has only its stale-turn clock", file=sys.stderr, flush=True)
             break
         # A queued desktop rescue may be driving the same screen right now.
         desktop_rescues.drain(30.0)
@@ -7351,11 +8441,25 @@ def _play(args: argparse.Namespace) -> int:
                               frozen_s=args.frozen_seconds,
                               pause_when=held_or_locked,
                               finish_turn=args.max_turns, ceiling_s=ceiling_s,
-                              ai_stall_s=args.ai_stall_seconds or None)
+                              ai_stall_s=args.ai_stall_seconds or None,
+                              ai_stall_window=hung_rivals.window)
         if not reason.startswith("stalled"):
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
             consecutive = 0
     mirror_beat.set()
+    if reason == "game exited":
+        crash = native_crash_row(events_path, watch_began_wall)
+        if crash is None:
+            print(f"[crash] the game exited and macOS filed no crash report for it "
+                  f"within {CRASH_REPORT_WAIT_S:.0f}s", flush=True)
+        else:
+            record(crash)
+            ui = crash.get("last_ui_row") or {}
+            print(f"[crash] {crash.get('signature') or 'unreadable report'} "
+                  f"({crash.get('report')}) at turn {crash.get('turn')} in "
+                  f"{crash.get('phase')} phase; last row {crash.get('last_row_age_ms')} ms "
+                  f"before, last UI row {ui.get('kind')} {ui.get('screen') or ''} "
+                  f"{ui.get('age_ms')} ms before; load {crash.get('load')}", flush=True)
     # Whatever ended the run, it no longer holds a game.
     live_pause.release_state(args.tag)
 
@@ -7835,6 +8939,31 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    ap = build_parser()
+    args = ap.parse_args(raw_argv)
+    apply_tree_mod_arms(args)
+    try:
+        order_queue_timing_config(args)
+    except ValueError as exc:
+        ap.error(str(exc))
+    global GAME_SIDE, GAME_FRACTION, GAME_VFRACTION
+    GAME_SIDE, GAME_FRACTION = args.window_side, args.window_frac
+    GAME_VFRACTION = args.window_vfrac
+
+    if args.status:
+        return status()
+    args.leader = resolve_live_leader(args.leader)
+    if args.leader.lower() == RANDOM_LEADER:
+        args.leader = None  # Civ VI's Random Leader row stays selected; see RANDOM_LEADER
+    if args.tag is None:
+        args.tag = (args.difficulty.replace("DIFFICULTY_", "").lower()
+                    + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+    return play(args)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Every `civ6_play` option, so another launcher can start from the same
+    defaults (`tools/civ6_hotseat.py` builds its mod settings from them)."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--tag", default=None, help="run tag; names the run directory")
     ap.add_argument("--difficulty", default="DIFFICULTY_SETTLER", choices=LADDER)
@@ -7895,6 +9024,12 @@ def main(argv: list[str] | None = None) -> int:
                          "first N cities it founded (0 = off); unset reads "
                          f"{EARLY_CITY_POLICY_KEY} from the host's verification "
                          "policy file (operator 2026-11-04)")
+    ap.add_argument("--restart-on-city-collapse", type=int, default=None,
+                    help="retire a game that has lost N or more cities from its "
+                         "peak and holds half that peak or fewer, three turns "
+                         "running (0 = off); unset reads "
+                         f"{CITY_COLLAPSE_POLICY_KEY} from the host's verification "
+                         "policy file, where absent is off (lane rule 2026-11-15)")
     ap.add_argument("--restart-on-city-deficit", type=int, default=None,
                     help="retire a game N or more cities behind any rival it has "
                          "met (0 = off); unset reads "
@@ -8043,16 +9178,21 @@ def main(argv: list[str] | None = None) -> int:
     # while late in a large game (rival AI turns, a long animation), and this one
     # kills a run that is still emitting, so it must be the more patient of the two.
     # A rival's turn the mod itself reported hung (`ai_phase_stall`, 30 s into
-    # a "PLEASE WAIT" with the core idle) is given this many more silent
-    # seconds, not the 420 of `--stall-seconds` plus a dialogue rescue: there
-    # is no screen to dismiss. 240 and not less: the climb reads a player that
-    # exits with its turn stale for `EXIT_WHILE_STALE_S` (240 s) as frozen and
-    # reloads the autosave; an earlier exit would be filed as a finished game.
-    # 0 turns the fast path off.
-    ap.add_argument("--ai-stall-seconds", type=float, default=240.0,
+    # a "PLEASE WAIT" with the turn number unchanged) gets this many more
+    # seconds to reach the next turn, not the 420 of `--stall-seconds` plus a
+    # dialogue rescue: there is no screen to dismiss. It was 240, the climb's
+    # `EXIT_WHILE_STALE_S`, because an earlier exit was filed as a finished
+    # game; the exit now leaves `watch.write_stall_handoff`'s marker, which
+    # the climb reads as frozen whatever the clock says. 60: of the 40 reports
+    # in 483 live runs (2026-11-10 to 11-13) the four that were not hangs
+    # reached their next turn 0.7 to 29.9 s after the report and the 36 hangs
+    # never did; the longest of 63,600 healthy rival phases was 59.9 s end to
+    # end. A report that names the rival of a dead deal session waits
+    # `watch.AI_STALL_DEAD_SESSION_S` instead. 0 turns the fast path off.
+    ap.add_argument("--ai-stall-seconds", type=float, default=60.0,
                     help="after the game reports a hung rival turn, give up on "
-                         "the attempt once it has stayed silent this long "
-                         "(0 = wait for --stall-seconds as before)")
+                         "the attempt once the turn has stood still this much "
+                         "longer (0 = wait for --stall-seconds as before)")
     ap.add_argument("--frozen-seconds", type=float, default=480.0,
                     help="give up on a run whose TURN has not advanced for this "
                          "long, even though it is still emitting events")
@@ -8226,6 +9366,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="open no deal session with this rival through this game "
                          "turn (repeatable); the climb passes it when it reloads "
                          "a game whose rival turn hung")
+    ap.add_argument("--deal-ask-on-tick", dest="deal_ask_on_tick", action="store_true",
+                    help="put a peace or alliance question on the next tick, not "
+                         "inside the statement that opened its session (opt-in)")
+    ap.add_argument("--deal-counter-refuse", dest="deal_counter_refuse", action="store_true",
+                    help="decline a refused peace or alliance ask left on the deal "
+                         "screen with REJECTED when its counter hold runs out (opt-in)")
     # Wins always finish the native movie. This setting retains a minimum
     # presentation time; it cannot shorten a winning cinematic.
     ap.add_argument("--end-game-seconds", type=float, default=10.0,
@@ -8269,25 +9415,7 @@ def main(argv: list[str] | None = None) -> int:
                          "~/.civvis-shared-desktop also disables periodic raising "
                          "and placement live; setup/recovery may still use the GUI")
     ap.add_argument("--status", action="store_true")
-    args = ap.parse_args(raw_argv)
-    apply_tree_mod_arms(args)
-    try:
-        order_queue_timing_config(args)
-    except ValueError as exc:
-        ap.error(str(exc))
-    global GAME_SIDE, GAME_FRACTION, GAME_VFRACTION
-    GAME_SIDE, GAME_FRACTION = args.window_side, args.window_frac
-    GAME_VFRACTION = args.window_vfrac
-
-    if args.status:
-        return status()
-    args.leader = resolve_live_leader(args.leader)
-    if args.leader.lower() == RANDOM_LEADER:
-        args.leader = None  # Civ VI's Random Leader row stays selected; see RANDOM_LEADER
-    if args.tag is None:
-        args.tag = (args.difficulty.replace("DIFFICULTY_", "").lower()
-                    + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
-    return play(args)
+    return ap
 
 
 # The setup clock's instrumented steps (see SETUP_CLOCK): rebound in place,

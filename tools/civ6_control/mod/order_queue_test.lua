@@ -296,9 +296,18 @@ check("orders_queue reports the landed strike", field(lastEvent("orders_queue"),
 -- turn-204 capital attack was discarded while its tank was still on the
 -- origin, even though the tank reached the attack tile later that tick.
 reset()
+-- The host has a path for these walks, as it did for the tank. (Without one a
+-- settled walk on its origin is `no_path` and is dropped at once.)
+Map.GetPlotIndex = function(x, y) return y * 100 + x end
+UnitManager.GetMoveToPathEx = function(_, destination)
+	return { plots = { 1, destination }, turns = { 0, 1 } }
+end
 host.units[144] = { id = 144, kind = "UNIT_TANK", x = 5, y = 5, moves = 5 }
 applyOrders(player, PID, 7, { row(144, "MOVE_TO", 6, 5), row(144, "ATTACK", 7, 5) })
-queue.noteUnitEvent(PID, player, 144)
+-- (pid, the event's player id, unit): this call passed the player OBJECT as
+-- the id until now, which the queue ignores, so no host event was ever
+-- delivered and the two cases below held their follow-up for want of one.
+check("the host event is delivered", queue.noteUnitEvent(PID, PID, 144), true)
 queue.drain(player, PID, 7)
 check("early host event keeps the attack queued", queue.pendingCount(), 1)
 check("early host event does not fire the attack", ops(144), "UNITOPERATION_MOVE_TO")
@@ -309,16 +318,78 @@ check("late move callback releases the attack", ops(144),
 check("late arrival drains the queue", queue.pendingCount(), 0)
 check("late arrival lands the queued strike", field(lastEvent("orders_queue"), "strikes_landed"), 1)
 
+-- A walk the host has NAMED a no-op holds its follow-up three more ticks, not
+-- the whole grace. The hold is what saved the tank above (its move arrived a
+-- tick after the operation-ended event); its length was the cost:
+-- civvis-20261115T085920Z turn 143, a Skirmisher's walk named
+-- `hostile_adjacent` at tick 1 and its follow-up then held the frame 8.5 s. Of
+-- 21 legs named something other than `no_path` that moved afterwards in the
+-- twelve logs of that day, 20 did so within 0.21 s of the name being written.
 reset()
 host.units[145] = { id = 145, kind = "UNIT_TANK", x = 5, y = 5, moves = 5 }
 applyOrders(player, PID, 7, { row(145, "MOVE_TO", 6, 5), row(145, "ATTACK", 7, 5) })
-queue.noteUnitEvent(PID, player, 145)
-for _ = 1, 29 do queue.drain(player, PID, 7) end
-check("a truly stalled walk is held only through grace", queue.pendingCount(), 1)
+queue.noteUnitEvent(PID, PID, 145)
 queue.drain(player, PID, 7)
-check("stalled attack is refused after grace", queue.pendingCount(), 0)
+local named = lastEvent("move_noop") or ""
+check("a settled walk that did not move is named at tick 1",
+	named:find('"unit":145', 1, true) ~= nil and named:find('"ticks":1', 1, true) ~= nil, true)
+check("its follow-up is still held", queue.pendingCount(), 1)
+queue.drain(player, PID, 7)
+queue.drain(player, PID, 7)
+check("…and for the two ticks after", queue.pendingCount(), 1)
+check("nothing ran in the meantime", ops(145), "UNITOPERATION_MOVE_TO")
+queue.drain(player, PID, 7)
+check("three ticks on, still on its origin, the stalled attack is refused", queue.pendingCount(), 0)
 check("stalled refusal remains named", (lastEvent("orders_queue") or ""):
 	find("queue_prior_not_arrived", 1, true) ~= nil, true)
+local refusedRow = lastEvent("queue_follow_up_unlanded") or ""
+check("the refusal names its unit", refusedRow:find('"unit":145', 1, true) ~= nil, true)
+check("the event's name is not the dispatcher's older refusal reason",
+	(lastEvent("queue_prior_refused") or ""), "")
+check("…the tick it was released on", refusedRow:find('"tick":4', 1, true) ~= nil, true)
+check("…that this was not the grace", refusedRow:find('"at_grace":false', 1, true) ~= nil, true)
+check("…and the order that was waiting", refusedRow:find('"next_verb":"ATTACK"', 1, true) ~= nil, true)
+check("the attack never ran from the wrong plot", ops(145), "UNITOPERATION_MOVE_TO")
+-- The same for a SWAP, which has no attempt on record: the movement the unit
+-- had when it was named is what "still has it" is read against.
+-- civvis-20261115T102552Z t79: an Archer's SWAP named at tick 3, its FORTIFY
+-- refused at tick 30, 5.2 s.
+reset()
+host.units[148] = { id = 148, kind = "UNIT_ARCHER", x = 5, y = 5, moves = 2 }
+applyOrders(player, PID, 7, { row(148, "SWAP", 6, 5), row(148, "ATTACK", 7, 5) })
+queue.noteUnitEvent(PID, PID, 148)
+queue.drain(player, PID, 7)
+check("a swap that did not happen is named", (lastEvent("move_noop") or ""):find('"unit":148', 1, true) ~= nil, true)
+check("its follow-up is held at first", queue.pendingCount(), 1)
+for _ = 1, 3 do queue.drain(player, PID, 7) end
+check("…and refused three ticks on, not at the cap", queue.pendingCount(), 0)
+check("…by the grace's name", (lastEvent("orders_queue") or ""):find("queue_prior_not_arrived", 1, true) ~= nil, true)
+
+-- A unit that has spent movement since the request is under way, whatever
+-- its plot reads: it keeps the full grace, and the refusal at the grace says so.
+reset()
+host.units[146] = { id = 146, kind = "UNIT_TANK", x = 5, y = 5, moves = 5 }
+applyOrders(player, PID, 7, { row(146, "MOVE_TO", 6, 5), row(146, "ATTACK", 7, 5) })
+queue.noteUnitEvent(PID, PID, 146)
+queue.drain(player, PID, 7)
+host.units[146].moves = 4
+for _ = 1, 28 do queue.drain(player, PID, 7) end
+check("a unit that spent movement keeps its hold through the grace", queue.pendingCount(), 1)
+queue.drain(player, PID, 7)
+check("…and is refused at it", queue.pendingCount(), 0)
+check("the grace refusal says it was the grace",
+	(lastEvent("queue_follow_up_unlanded") or ""):find('"at_grace":true', 1, true) ~= nil, true)
+
+-- A walk with no host event at all is not named and keeps the grace, as before.
+reset()
+host.units[147] = { id = 147, kind = "UNIT_TANK", x = 5, y = 5, moves = 5 }
+applyOrders(player, PID, 7, { row(147, "MOVE_TO", 6, 5), row(147, "ATTACK", 7, 5) })
+for _ = 1, 29 do queue.drain(player, PID, 7) end
+check("a walk the host never reported is held only through grace", queue.pendingCount(), 1)
+queue.drain(player, PID, 7)
+check("…and refused after it", queue.pendingCount(), 0)
+UnitManager.GetMoveToPathEx = nil
+Map.GetPlotIndex = nil
 
 -- 2b. Reaching the requested plot while the host's operation is still active
 -- is not settled. Civilization VI can expose the unit at its destination and
@@ -434,8 +505,73 @@ check("no path read before the probe tick", queue.pendingCount(), 2)
 queue.drain(player, PID, 7)
 check("a path landing next turn releases its follow-up at the probe tick", queue.pendingCount(), 1)
 check("…named for its unit", (lastEvent("queue_cannot_land") or ""):find('"unit":161', 1, true) ~= nil, true)
-for _ = 1, 10 do queue.drain(player, PID, 7) end
+for _ = 1, 2 do queue.drain(player, PID, 7) end
 check("a path landing this turn keeps its hold", queue.pendingCount(), 1)
+-- 2c-stall. ...until its unit has stood still ten ticks after stepping. 162
+-- stepped once (seen on tick 1) and has not changed plot since; the host's
+-- path still says it lands this turn. civvis-20261115T101703Z t94: a
+-- Crossbowman in an operation, two plots walked, 0.25 movement left, no
+-- `queue_cannot_land`, held 4.9 s to the cap. Of 4,717 gaps between a unit's
+-- successive steps in one frame, 4,715 were 1.0 s or less.
+queue.drain(player, PID, 7)
+check("a walk that stepped and then stood ten ticks releases its follow-up", queue.pendingCount(), 0)
+check("…named as a stalled walk",
+	(lastEvent("queue_follow_up_unlanded") or ""):find('"stalled":true', 1, true) ~= nil, true)
+check("…by the grace's own name again",
+	(lastEvent("orders_queue") or ""):find("queue_prior_not_arrived", 1, true) ~= nil, true)
+check("…and its follow-up never ran", ops(162), "UNITOPERATION_MOVE_TO")
+
+-- A walk that keeps stepping is not stalled, however long it takes, and an
+-- awake unit stopped short is released the same way as one in an operation
+-- (civvis-20261115T104039Z t28: a War-Cart one plot short, awake, 2 moves
+-- left, 6.5 s).
+reset()
+host.units[163] = { id = 163, kind = "UNIT_KNIGHT", x = 1, y = 1, moves = 4 }
+applyOrders(player, PID, 7, { row(163, "MOVE_TO", 9, 1), row(163, "ATTACK", 10, 1) })
+for step = 2, 4 do
+	host.units[163].x = step
+	for _ = 1, 9 do queue.drain(player, PID, 7) end
+end
+check("a walk still stepping after 27 ticks holds its follow-up", queue.pendingCount(), 1)
+host.arrive(163)
+queue.drain(player, PID, 7)
+-- (A melee ATTACK is the host's MOVE_TO with the attack modifier.)
+check("…and the follow-up runs when it lands", ops(163), "UNITOPERATION_MOVE_TO,UNITOPERATION_MOVE_TO")
+reset()
+host.units[164] = { id = 164, kind = "UNIT_KNIGHT", x = 1, y = 1, moves = 4 }
+applyOrders(player, PID, 7, { row(164, "MOVE_TO", 9, 1), row(164, "ATTACK", 10, 1) })
+host.units[164].x, host.units[164].moves = 8, 2
+for _ = 1, 10 do queue.drain(player, PID, 7) end
+check("an awake unit one plot short holds for ten ticks", queue.pendingCount(), 1)
+queue.drain(player, PID, 7)
+check("…and is released on the eleventh, not at the cap", queue.pendingCount(), 0)
+check("…its strike never fired from the wrong plot", ops(164), "UNITOPERATION_MOVE_TO")
+-- A unit that never stepped is not judged by this rule: a whole frame can
+-- start late. (2c above holds unit 144, on its origin, to the grace.)
+reset()
+host.units[165] = { id = 165, kind = "UNIT_KNIGHT", x = 1, y = 1, moves = 4 }
+applyOrders(player, PID, 7, { row(165, "MOVE_TO", 9, 1), row(165, "ATTACK", 10, 1) })
+for _ = 1, 20 do queue.drain(player, PID, 7) end
+check("a unit that has not stepped is not called stalled", queue.pendingCount(), 1)
+
+-- 2c-kept. The cannot-land verdict is kept across the MOVE_TO -> FORTIFY
+-- settle pass. civvis-20261115T101703Z t93: `queue_cannot_land` at tick 8,
+-- the FORTIFY refused at tick 30, 5.3 s: the settle pass took the tick the
+-- one path read happened on, and the verdict was gone on the next.
+reset()
+landTurn = { [166] = 1 }
+UnitManager.GetMoveToPathEx = function(unit, destination)
+	return { plots = { 101, destination }, turns = { 1, landTurn[unit.GetID()] } }
+end
+host.units[166] = { id = 166, kind = "UNIT_KNIGHT", x = 1, y = 1, moves = 2, active_operation = true }
+applyOrders(player, PID, 7, { row(166, "MOVE_TO", 9, 1), row(166, "FORTIFY") })
+landTurn[166] = 2
+for _ = 1, 8 do queue.drain(player, PID, 7) end
+check("the verdict is taken at the probe tick", lastEvent("queue_cannot_land") ~= nil, true)
+check("…and the settle pass takes that tick", queue.pendingCount(), 1)
+queue.drain(player, PID, 7)
+check("…but the follow-up is refused on the next, not at the cap", queue.pendingCount(), 0)
+check("…and the fortify never ran", ops(166), "UNITOPERATION_MOVE_TO")
 UnitManager.GetMoveToPathEx = nil
 Map.GetPlotIndex = nil
 
@@ -601,6 +737,133 @@ applyOrders(player, PID, 7, { row(11, "MOVE_TO", 6, 5), row(11, "ATTACK", 7, 5) 
 check("refused walk issues nothing", ops(11), "")
 check("no follow-up queued after a refused first order", queue.pendingCount(), 0)
 check("the dropped follow-up is named", (lastEvent("orders") or ""):find("queue_prior_refused", 1, true) ~= nil, true)
+
+-- 3b. A refused first order says which unit, where it stood and what it had.
+-- The `orders` row only counts refusals by reason.
+reset()
+LOG = {}
+host.units[31] = { id = 31, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 1 }
+host.refuse[31] = { UNITOPERATION_MOVE_TO = true }
+applyOrders(player, PID, 7, { row(31, "MOVE_TO", 2, 1) })
+local refusedRow = lastEvent("order_refused") or ""
+check("a refused order is on the log with its unit", field(refusedRow, "unit"), 31)
+check("…its verb", field(refusedRow, "verb"), "MOVE_TO")
+check("…the plot it was sent to", refusedRow:find('"x":2', 1, true) ~= nil and refusedRow:find('"y":1', 1, true) ~= nil, true)
+check("…the movement it had", field(refusedRow, "moves"), 1)
+check("…and a reason", (field(refusedRow, "why") or "") ~= "", true)
+host.refuse[31] = nil
+LOG = {}
+applyOrders(player, PID, 7, { row(31, "MOVE_TO", 2, 1) })
+check("an accepted order writes no such row", lastEvent("order_refused"), nil)
+-- Bounded per turn (the count is the turn's, so start it afresh here).
+reset()
+LOG = {}
+queue.refusedTurn = nil
+local flood = {}
+for id = 400, 500 do
+	host.units[id] = { id = id, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 1 }
+	host.refuse[id] = { UNITOPERATION_MOVE_TO = true }
+	flood[#flood + 1] = row(id, "MOVE_TO", 2, 1)
+end
+applyOrders(player, PID, 7, flood)
+local refusedRows = 0
+for _, line in ipairs(LOG) do
+	if line:find('"kind":"order_refused"', 1, true) then refusedRows = refusedRows + 1 end
+end
+check("a flood of refusals writes a bounded number of rows", refusedRows, 80)
+for id = 400, 500 do host.refuse[id] = nil end
+
+-- 3c. A move the board has already overtaken. A replan board can show a unit
+-- on the plot it was leaving; the decider sends the move again, and by the
+-- time it is applied the unit is on the plot or has spent its movement.
+-- civvis-20261115T120431Z: 26 and 10 of the game's 63 refused unit orders.
+reset()
+LOG = {}
+local frames = rawget(_G, "CivvisFrames")
+queue.refusedTurn = nil
+host.units[33] = { id = 33, kind = "UNIT_WARRIOR", x = 2, y = 1, moves = 0 }
+applyOrders(player, PID, 7, { row(33, "MOVE_TO", 2, 1), row(33, "ATTACK", 3, 1) })
+check("a move for a unit already on the plot asks nothing of the host", ops(33), "")
+check("…and is not a refusal", lastEvent("order_refused"), nil)
+check("…nor counted as one", (lastEvent("orders") or ""):find("move_no_path", 1, true), nil)
+check("what was queued behind it is kept", queue.pendingCount(), 1)
+host.units[33].moves = 1
+queue.drain(player, PID, 7)
+check("…and runs", ops(33), "UNITOPERATION_MOVE_TO")
+-- A unit with no movement left, in a replan frame: refused by its own name,
+-- and the host is not asked for a path.
+reset()
+LOG = {}
+local pathReads = 0
+Map.GetPlotIndex = function(x, y) return y * 100 + x end
+UnitManager.GetMoveToPathEx = function(unit, destination)
+	pathReads = pathReads + 1
+	return { plots = { 101, destination }, turns = { 1, 2 } }
+end
+host.units[34] = { id = 34, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 0 }
+frames.current = 1
+queue.refusedTurn = nil -- the row bound is the turn's, and 3b spent it
+applyOrders(player, PID, 7, { row(34, "MOVE_TO", 2, 1) })
+check("a spent unit's move in a replan frame is refused by its own name",
+	field(lastEvent("order_refused"), "why"), "move_unit_spent")
+check("…with no path read", pathReads, 0)
+check("…and nothing asked of the host", ops(34), "")
+-- In the first frame the movement read is not trusted for this: the host's
+-- own path answers, as before.
+frames.current = 0
+LOG = {}
+applyOrders(player, PID, 7, { row(34, "MOVE_TO", 2, 1) })
+check("in the first frame the host's path still answers",
+	field(lastEvent("order_refused"), "why"), "move_no_moves_this_turn")
+check("…having been asked", pathReads > 0, true)
+UnitManager.GetMoveToPathEx = nil
+Map.GetPlotIndex = nil
+
+-- 3d. The replan board waits for a walk the host has ended. The host's event
+-- reaches the queue a tick or three before the unit's plot read changes; the
+-- watch was dropped at the event and the board exported with the unit still
+-- on the plot it had left (28, 75 and 79 first-order walks a game on
+-- civvis-20261115T120431Z, 113645Z, 101703Z). (Events are read only while
+-- the queue holds a row, so each case has another unit with one.)
+local function landing(id)
+	reset()
+	LOG = {}
+	host.units[id] = { id = id, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+	host.units[39] = { id = 39, kind = "UNIT_WARRIOR", x = 5, y = 5, moves = 2 }
+	applyOrders(player, PID, 7, { row(id, "MOVE_TO", 2, 1), row(39, "MOVE_TO", 6, 5), row(39, "ATTACK", 7, 5) })
+	check("landing: the host's event is read", queue.noteUnitEvent(PID, PID, id), true)
+end
+Map.GetPlotIndex = function(x, y) return y * 100 + x end
+UnitManager.GetMoveToPathEx = function(_, destination)
+	return { plots = { 1, destination }, turns = { 0, 1 } }
+end
+landing(35)
+queue.drain(player, PID, 7)
+check("landing: the watch is held after the host's event", queue.pending[35] ~= nil, true)
+queue.drain(player, PID, 7)
+check("landing: and on the next tick", queue.pending[35] ~= nil, true)
+host.arrive(35)
+queue.drain(player, PID, 7)
+check("landing: it is dropped the tick the plot read changes", queue.pending[35], nil)
+check("landing: the hold says it landed", (lastEvent("queue_landing_hold") or ""):find('"landed":true', 1, true) ~= nil, true)
+check("landing: and it was never called a no-op", (lastEvent("move_noop") or ""):find('"unit":35', 1, true), nil)
+-- A walk that never shows is given three ticks, no more.
+landing(36)
+for _ = 1, 3 do queue.drain(player, PID, 7) end
+check("landing: three ticks on it is still held", queue.pending[36] ~= nil, true)
+queue.drain(player, PID, 7)
+check("landing: and released on the fourth", queue.pending[36], nil)
+check("landing: the hold says it did not land", (lastEvent("queue_landing_hold") or ""):find('"landed":false', 1, true) ~= nil, true)
+-- A walk the host has no path for by the time its event comes is answered
+-- at once, as before.
+landing(37)
+UnitManager.GetMoveToPathEx = function() return { plots = { 1 }, turns = { 0 } } end
+queue.drain(player, PID, 7)
+queue.drain(player, PID, 7)
+check("landing: a walk the path does not land this turn is not held", queue.pending[37], nil)
+check("landing: and no hold is on the log", lastEvent("queue_landing_hold"), nil)
+UnitManager.GetMoveToPathEx = nil
+Map.GetPlotIndex = nil
 
 -- 4. A queued unit that dies is a named refusal, never a dereference.
 reset()
@@ -1037,6 +1300,236 @@ do
 	GameInfo.Units, UnitManager.CanStartOperation, Game.GetLocalPlayer = oldUnits, oldCan, oldLocal
 end
 
+-- 10d. A unit ordered onto a plot its own column is leaving waits for the plot.
+-- The host cannot path a unit onto a plot one of its own formation class
+-- holds, so the follower of a column was refused `move_no_path` and stood
+-- still while the unit ahead left: 9, 15, 1 and 26 unit-turns in four games of
+-- 2026-11-15. The fake host answers the path the way the live one does: one
+-- plot when a unit of ours of the same class stands on the destination.
+do
+	local oldUnits, oldLocal = GameInfo.Units, Game.GetLocalPlayer
+	queue.pending = {}
+	GameInfo.Units = {
+		UNIT_ARCHER = {UnitType = "UNIT_ARCHER", Domain = "DOMAIN_LAND", FormationClass = "FORMATION_CLASS_LAND_COMBAT", Combat = 15, RangedCombat = 25},
+		UNIT_WARRIOR = {UnitType = "UNIT_WARRIOR", Domain = "DOMAIN_LAND", FormationClass = "FORMATION_CLASS_LAND_COMBAT", Combat = 20, RangedCombat = 0},
+		UNIT_SETTLER = {UnitType = "UNIT_SETTLER", Domain = "DOMAIN_LAND", FormationClass = "FORMATION_CLASS_CIVILIAN", Combat = 0, RangedCombat = 0},
+	}
+	Game.GetLocalPlayer = function() return PID end
+	Map.GetPlotIndex = function(x, y) return y * 100 + x end
+	UnitManager.GetMoveToPathEx = function(unit, destination)
+		local mine = GameInfo.Units[unit.GetUnitType()]
+		for _, other in pairs(host.units) do
+			if not other.gone and other.id ~= unit.GetID() and other.y * 100 + other.x == destination
+					and GameInfo.Units[other.kind].FormationClass == mine.FormationClass then
+				return { plots = { 1 }, turns = { 0 } }
+			end
+		end
+		return { plots = { 1, destination }, turns = { 0, 1 } }
+	end
+	local AHEAD, BEHIND = 1310733, 1441804
+	local function column(followerKind)
+		reset(); LOG = {}
+		host.units[AHEAD] = {id = AHEAD, kind = "UNIT_WARRIOR", x = 5, y = 5, moves = 2}
+		host.units[BEHIND] = {id = BEHIND, kind = followerKind or "UNIT_ARCHER", x = 4, y = 5, moves = 2}
+	end
+	local follow = function() return row(BEHIND, "MOVE_TO", 5, 5) end
+	local lead = function() return row(AHEAD, "MOVE_TO", 6, 5) end
+	local waited = function() return lastEvent("queue_move_departure_wait") ~= nil end
+
+	-- The follower's row comes first, as the decider usually sends it.
+	column()
+	applyOrders(player, PID, 7, {follow(), lead()})
+	check("column: the follower is queued, not refused", waited(), true)
+	check("column: nothing is asked of the host for it yet", ops(BEHIND), "")
+	check("column: no refusal is counted", (lastEvent("orders") or ""):find("move_no_path", 1, true), nil)
+	check("column: the unit ahead is ordered as planned", ops(AHEAD), "UNITOPERATION_MOVE_TO")
+	queue.drain(player, PID, 7)
+	check("column: the follower waits while the plot is held", ops(BEHIND), "")
+	host.arrive(AHEAD)
+	queue.drain(player, PID, 7)
+	check("column: the follower moves once the plot is clear", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+	check("column: the release is on the log", lastEvent("queue_move_departure_released") ~= nil, true)
+	-- The move just issued is watched until it lands, like a first order's
+	-- walk: with nothing left in the queue the replan frame was exported
+	-- with the follower still on the plot it was leaving (36, 40 and 61
+	-- units a game on civvis-20261115T120431Z, 113645Z and 101703Z).
+	check("column: the follower's walk holds the frame until it lands", queue.pendingCount(), 1)
+	check("column: as a watch, with nothing more to issue", #queue.pending[BEHIND].rows, 0)
+	queue.drain(player, PID, 7)
+	check("column: still held while it has not landed", queue.pendingCount(), 1)
+	host.arrive(BEHIND)
+	queue.drain(player, PID, 7)
+	check("column: the queue drains", queue.pendingCount(), 0)
+	check("column: and nothing more was asked of the host", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+
+	-- The same with the unit ahead named first in the batch.
+	column()
+	applyOrders(player, PID, 7, {lead(), follow()})
+	check("column, leader first: the follower still waits", waited(), true)
+	host.arrive(AHEAD)
+	queue.drain(player, PID, 7)
+	check("column, leader first: and moves once clear", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+
+	-- A follow-up behind the follower's walk keeps its place.
+	column()
+	applyOrders(player, PID, 7, {follow(), row(BEHIND, "FORTIFY"), lead()})
+	host.arrive(AHEAD)
+	queue.drain(player, PID, 7)
+	check("column: the follower's own follow-up waits for its walk", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+	check("column: …and is still queued", queue.pendingCount(), 1)
+	host.arrive(BEHIND)
+	queue.drain(player, PID, 7)
+	queue.drain(player, PID, 7)
+	check("column: …and runs once the walk lands", ops(BEHIND), "UNITOPERATION_MOVE_TO,UNITOPERATION_FORTIFY")
+
+	-- A unit that is not leaving is not waited for: refused at once, as before.
+	column()
+	applyOrders(player, PID, 7, {follow()})
+	check("held plot: no wait for a unit with no order", waited(), false)
+	check("held plot: refused by the host's own answer", (lastEvent("orders") or ""):find("move_no_path", 1, true) ~= nil, true)
+	column()
+	applyOrders(player, PID, 7, {follow(), row(AHEAD, "FORTIFY")})
+	check("held plot: no wait for a unit told to stay", waited(), false)
+
+	-- Two units trading plots is the decider's SWAP; waiting on each other only spends the wait.
+	column()
+	applyOrders(player, PID, 7, {follow(), row(AHEAD, "MOVE_TO", 4, 5)})
+	check("trade: units ordered onto each other's plots do not wait", waited(), false)
+
+	-- A civilian shares a plot with a soldier: the host has a path and nothing waits.
+	column("UNIT_SETTLER")
+	applyOrders(player, PID, 7, {follow(), lead()})
+	check("stack: a civilian onto a soldier's plot is not queued", waited(), false)
+	check("stack: it is simply moved", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+
+	-- The unit ahead never leaves: the wait ends by name after its few ticks.
+	column()
+	applyOrders(player, PID, 7, {follow(), lead()})
+	for _ = 1, 5 do queue.drain(player, PID, 7) end
+	check("stuck ahead: the follower is still waiting at five ticks", queue.pending[BEHIND] ~= nil, true)
+	queue.drain(player, PID, 7)
+	check("stuck ahead: at six it is released", queue.pending[BEHIND], nil)
+	check("stuck ahead: nothing was asked of the host for it", ops(BEHIND), "")
+	-- The queue's summary is written when the last watch (the unit ahead) settles.
+	host.arrive(AHEAD)
+	queue.drain(player, PID, 7)
+	check("stuck ahead: by name", (lastEvent("orders_queue") or ""):find("queue_move_departure_not_clear", 1, true) ~= nil, true)
+
+	-- A column of three: the last unit's occupant is itself waiting, and those
+	-- ticks are not counted against it. civvis-20261115T100810Z and 101703Z:
+	-- 50 and 48 unit-turns timed out at six ticks, about half of them a third
+	-- or later unit of a column.
+	local THIRD = 1572875
+	local function three()
+		column()
+		host.units[THIRD] = {id = THIRD, kind = "UNIT_WARRIOR", x = 3, y = 5, moves = 2}
+	end
+	three()
+	applyOrders(player, PID, 7, {row(THIRD, "MOVE_TO", 4, 5), follow(), lead()})
+	for _ = 1, 5 do queue.drain(player, PID, 7) end
+	check("three: both followers still wait while the head has not left", queue.pending[BEHIND] ~= nil and queue.pending[THIRD] ~= nil, true)
+	host.arrive(AHEAD)
+	queue.drain(player, PID, 7)
+	check("three: the second unit moves once the head has left", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+	check("three: the third is not refused because the second has left the queue", queue.pending[THIRD] ~= nil, true)
+	for _ = 1, 4 do queue.drain(player, PID, 7) end
+	check("three: the third still waits past six ticks in all: the first five were not its own", queue.pending[THIRD] ~= nil, true)
+	host.arrive(BEHIND)
+	queue.drain(player, PID, 7)
+	check("three: and moves once the second has left", ops(THIRD), "UNITOPERATION_MOVE_TO")
+	check("three: nothing was abandoned", lastEvent("queue_move_departure_abandoned"), nil)
+
+	-- The host's operation event reaches the queue before the unit's plot read
+	-- changes, so the watch on the unit ahead is dropped while it still stands
+	-- on the plot. That is a unit leaving, not a unit stuck: #5328 read "no
+	-- queue entry" as stuck and gave up at tick 2 on 34 and 132 followers in
+	-- civvis-20261115T105844Z and 110627Z; 33 and 128 of the units ahead then
+	-- left, nearly all within 0.3 s.
+	column()
+	applyOrders(player, PID, 7, {follow(), lead()})
+	queue.drain(player, PID, 7)
+	queue.noteUnitEvent(PID, PID, AHEAD)
+	queue.drain(player, PID, 7)
+	-- The host's path says this walk lands this turn, so its watch is held up
+	-- to three ticks for the plot read to change (`waitsToLand`), then dropped.
+	check("event first: the watch on the unit ahead is held for the landing", queue.pending[AHEAD] ~= nil, true)
+	for _ = 1, 3 do queue.drain(player, PID, 7) end
+	check("event first: the watch on the unit ahead is gone", queue.pending[AHEAD], nil)
+	check("event first: and it still stands on the plot", host.units[AHEAD].x, 5)
+	check("event first: the follower still waits", queue.pending[BEHIND] ~= nil, true)
+	check("event first: nothing was abandoned", lastEvent("queue_move_departure_abandoned"), nil)
+	host.arrive(AHEAD)
+	queue.drain(player, PID, 7)
+	check("event first: the follower moves when the plot read changes", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+	-- ...and one that never leaves is still given up on at six counted ticks.
+	column()
+	applyOrders(player, PID, 7, {follow(), lead()})
+	queue.drain(player, PID, 7)
+	queue.noteUnitEvent(PID, PID, AHEAD)
+	for _ = 1, 4 do queue.drain(player, PID, 7) end
+	check("event first, never leaves: still waiting at five ticks", queue.pending[BEHIND] ~= nil, true)
+	queue.drain(player, PID, 7)
+	check("event first, never leaves: given up on at six", queue.pending[BEHIND], nil)
+	check("event first, never leaves: named as leaving, not stuck",
+		(lastEvent("queue_move_departure_abandoned") or ""):find('"ahead":"leaving"', 1, true) ~= nil, true)
+
+	-- The unit ahead was ordered to move and its move was refused: it has no
+	-- order in flight, so the follower is released at once, not at six ticks.
+	column()
+	host.refuse[AHEAD] = { UNITOPERATION_MOVE_TO = true }
+	applyOrders(player, PID, 7, {follow(), lead()})
+	check("refused ahead: the follower was queued", waited(), true)
+	queue.drain(player, PID, 7)
+	check("refused ahead: and is released on the first tick", queue.pending[BEHIND], nil)
+	check("refused ahead: by name", (lastEvent("queue_move_departure_abandoned") or ""):find('"ahead":"stuck"', 1, true) ~= nil, true)
+	check("refused ahead: nothing was asked of the host for it", ops(BEHIND), "")
+	host.refuse[AHEAD] = nil
+
+	-- The whole wait is bounded: a column whose head never leaves gives up.
+	three()
+	applyOrders(player, PID, 7, {row(THIRD, "MOVE_TO", 4, 5), follow(), lead()})
+	for _ = 1, 18 do queue.drain(player, PID, 7) end
+	check("bounded: the third unit gives up at three units' worth of ticks", queue.pending[THIRD], nil)
+
+	-- Two units sent to one plot: only one waits for it. The other is refused
+	-- at once, as it was before the wait existed, and its follow-up with it.
+	-- civvis-20261115T100810Z t29 and 104039Z t111: both waited, one took the
+	-- plot, and the other's accepted move never started, so its FORTIFY held
+	-- the frame to the cap (5.8 s and 5.9 s).
+	three()
+	host.units[THIRD].x, host.units[THIRD].y = 4, 6
+	applyOrders(player, PID, 7, {follow(), row(THIRD, "MOVE_TO", 5, 5), row(THIRD, "FORTIFY"), lead()})
+	check("one plot: the first unit sent to it waits", queue.pending[BEHIND] ~= nil, true)
+	check("one plot: the second does not", queue.pending[THIRD], nil)
+	check("one plot: it is refused as the host would refuse it",
+		(lastEvent("orders") or ""):find("move_no_path", 1, true) ~= nil, true)
+	check("one plot: nothing was asked of the host for it", ops(THIRD), "")
+	host.arrive(AHEAD)
+	queue.drain(player, PID, 7)
+	check("one plot: the unit that waited takes it", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+	host.arrive(BEHIND)
+	queue.drain(player, PID, 7)
+	check("one plot: and nothing is left holding the frame", queue.pendingCount(), 0)
+	-- A unit of another class is no rival for the plot: it never waited.
+	three()
+	host.units[THIRD].kind, host.units[THIRD].x, host.units[THIRD].y = "UNIT_SETTLER", 4, 6
+	applyOrders(player, PID, 7, {row(THIRD, "MOVE_TO", 5, 5), follow(), lead()})
+	check("one plot: a civilian headed there does not take the soldier's wait", queue.pending[BEHIND] ~= nil, true)
+	check("one plot: and moves at once itself", ops(THIRD), "UNITOPERATION_MOVE_TO")
+
+	-- The unit ahead is gone (killed, consumed): nothing pins the follower.
+	column()
+	applyOrders(player, PID, 7, {follow(), lead()})
+	host.units[AHEAD].gone = true
+	queue.drain(player, PID, 7)
+	check("gone ahead: the follower moves", ops(BEHIND), "UNITOPERATION_MOVE_TO")
+
+	GameInfo.Units, Game.GetLocalPlayer = oldUnits, oldLocal
+	UnitManager.GetMoveToPathEx = nil
+	Map.GetPlotIndex = nil
+	reset()
+end
+
 -- 11. `StalledOperationRelease` (off everywhere above). With the switch on,
 -- a leg the probe marks as a stalled operation takes the early no-op answer at
 -- the probe tick instead of waiting out the grace. A walk not in an operation
@@ -1075,6 +1568,28 @@ check("release: the mark says it was released",
 	(lastEvent("stall_probe") or ""):find('"released":true', 1, true) ~= nil, true)
 for _ = 1, 20 do queueOn.drain(player, PID, 7) end
 check("release: a walk not in an operation still waits for the grace", queueOn.pendingCount(), 1)
+-- The same walk with a follow-up behind it: released at the probe tick too,
+-- its follow-up refused by the name the cap gives.
+-- civvis-20261115T101703Z t64: a Scout's MOVE_TO then PILLAGE held 7.0 s.
+host.units, host.ops = {}, {}
+queueOn.reset(7)
+LOG = {}
+host.paths = { [162] = 2, [163] = 2 }
+host.units[162] = { id = 162, kind = "UNIT_SCOUT", x = 1, y = 1, moves = 3, active_operation = true }
+host.units[163] = { id = 163, kind = "UNIT_SCOUT", x = 4, y = 4, moves = 3, active_operation = true }
+applyOn(player, PID, 7, { row(162, "MOVE_TO", 2, 1), row(162, "PILLAGE"), row(163, "MOVE_TO", 5, 4), row(163, "PILLAGE") })
+-- 163 has spent movement since its order: it is walking, not stalled.
+host.units[163].moves = 2
+for _ = 1, 7 do queueOn.drain(player, PID, 7) end
+check("release with a follow-up: nothing before the probe tick", queueOn.pendingCount(), 2)
+queueOn.drain(player, PID, 7)
+check("release with a follow-up: the stalled one is refused at the probe tick", queueOn.pending[162], nil)
+check("release with a follow-up: by the cap's name",
+	(lastEvent("queue_follow_up_unlanded") or ""):find('"unit":162', 1, true) ~= nil, true)
+check("release with a follow-up: its probe says so",
+	(lastEvent("stall_probe") or ""):find('"follow_up":true', 1, true) ~= nil, true)
+check("release with a follow-up: the pillage never ran", ops(162), "UNITOPERATION_MOVE_TO")
+check("release with a follow-up: a unit that has spent movement is still waited for", queueOn.pending[163] ~= nil, true)
 UnitManager.GetMoveToPathEx = nil
 Map.GetPlotIndex = nil
 host.paths = nil

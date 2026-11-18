@@ -4,7 +4,6 @@
 //! POST /action, POST /step, POST /autoplay, POST /view,
 //! POST /spectator-status, POST /next-game-settings, POST /new,
 //! POST /supervisor-new.
-use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -514,6 +513,7 @@ static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(||
     page.push_str(EMBEDDED_INDEX_HTML);
     page.push_str(EMBEDDED_APP_PALETTE_JS);
     page.push_str(EMBEDDED_APP_ARENA_JS);
+    page.push_str(EMBEDDED_APP_LAUNCHES_JS);
     page.push_str(EMBEDDED_APP_JS);
     page.push_str(EMBEDDED_APP_SETUP_JS);
     page.push_str(EMBEDDED_APP_MOMENTS_JS);
@@ -521,6 +521,7 @@ static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(||
     page
 });
 const EMBEDDED_APP_ARENA_JS: &str = include_str!("../web/assets/app_arena.js");
+const EMBEDDED_APP_LAUNCHES_JS: &str = include_str!("../web/assets/app_launches.js");
 const EMBEDDED_APP_SETUP_JS: &str = include_str!("../web/assets/app_setup.js");
 const EMBEDDED_APP_FRONTDOOR_JS: &str = include_str!("../web/assets/app_frontdoor.js");
 const EMBEDDED_APP_MOMENTS_JS: &str = include_str!("../web/assets/app_moments.js");
@@ -589,6 +590,28 @@ pub struct Params {
     pub supervised: bool,
 }
 
+/// A game of Civilization VI this session repaints (`civvis play --mirror`,
+/// and every frame `tools/follow.py` publishes through `/load`). Nothing here
+/// plays it: the host's one human slot is our live decider, a separate
+/// process, and every other major is Civilization VI's own AI.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MirrorTable {
+    /// The seat our decider plays, by player index.
+    pub seat: usize,
+    /// The lane it is playing, once the follower has said which.
+    pub lane: Option<crate::strategies::LiveLane>,
+}
+
+/// The world a server opens on.
+pub enum Opening {
+    /// One generated from the launch parameters.
+    Generated,
+    /// A checkpoint, resumed in the mode the launch asked for (`--resume`).
+    Resumed(Game),
+    /// A game of Civilization VI rebuilt for repainting (`--mirror`).
+    Mirror(Game),
+}
+
 pub struct Session {
     pub params: Params,
     pub game: Game,
@@ -628,6 +651,10 @@ pub struct Session {
     /// Who is playing each human seat: a player registered when this game
     /// began, never one of the agents already in the roster.
     human_players: BTreeMap<usize, SeatPlayer>,
+    /// Set when this session repaints a game of Civilization VI. The seats
+    /// then name who is really playing them (`name_ai_players`), not an
+    /// agent of this process.
+    mirror: Option<MirrorTable>,
     /// What every agent at this table decided, and why.
     ///
     /// One journal for the whole session, handed to each seat, so a turn is
@@ -1634,9 +1661,14 @@ const STATE_LONG_POLL: Duration = Duration::from_millis(1_000);
 /// The unlimited pace still hands the accept loop a slot this often, so the
 /// page keeps loading state while the stepper runs flat out.
 const UNLIMITED_BREATH_MS: u64 = 100;
-/// Blitz is the first watch pace where every player's completed turn becomes
-/// its own frame. Faster custom paces retain Lightning's one-frame-per-round
-/// throughput; every offered pace at or above this threshold is seat-by-seat.
+/// The pace a new server opens at: Max, no wait between turns (operator
+/// 2026-11-15, after Max became the page's default). It was half a second a
+/// turn. The page's Max Speed control slows a world down, and the live
+/// mirror opens on its own game's pace.
+const DEFAULT_PACE_MS: u64 = 0;
+/// 2 turns/s (once Blitz) is the fastest Max Speed cap where every player's
+/// completed turn becomes its own frame. Max and 5 turns/s keep one frame per
+/// round; every offered cap at or above this threshold is seat-by-seat.
 const PLAYER_TURN_FRAME_MIN_PACE_MS: u64 = 500;
 /// Minor civilizations and barbarians take a quarter of a major's slice.
 const MINOR_SHARE: f64 = 0.25;
@@ -2307,6 +2339,7 @@ impl Session {
             keeps_rival_yields: true,
             keeps_own_yields: true,
             human_players,
+            mirror: None,
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
             simultaneous_jobs: 1,
@@ -2324,7 +2357,20 @@ impl Session {
 
     /// Restore an interrupted match and rebuild only the AIs' transient plans.
     /// The serialized game retains the authoritative RNG and world state.
-    pub fn from_game(mut params: Params, game: Game) -> Session {
+    pub fn from_game(params: Params, game: Game) -> Session {
+        Self::restore(params, game, None)
+    }
+
+    /// Repaint a game of Civilization VI. The board is restored as
+    /// `from_game` restores one, and the table is not dealt: a watched world
+    /// of our own seats our top-rated agents, and this one was labelling
+    /// Civilization VI's Deity rivals SwingVote, JackOfAllTrades and
+    /// TouristTrap at their site ratings (live, 2026-11-13).
+    pub fn from_mirror(params: Params, game: Game, table: MirrorTable) -> Session {
+        Self::restore(params, game, Some(table))
+    }
+
+    fn restore(mut params: Params, game: Game, mirror: Option<MirrorTable>) -> Session {
         // Launch flags may already carry setup selected for the next world.
         // Preserve that intent while the checkpoint below restores the active
         // world's authoritative parameters.
@@ -2374,7 +2420,11 @@ impl Session {
         let mut ais = Self::ai_fleet(&game);
         // The deal is a function of the seed and the seats, so a watched
         // table resumes with every agent back in the seat it was playing.
-        let seat_strategies = Self::deal_watched_table(params.spectate, &game, &mut ais);
+        // A mirrored table is somebody else's game: no agent of ours sits.
+        let seat_strategies = match mirror {
+            Some(_) => vec![None; game.players.len()],
+            None => Self::deal_watched_table(params.spectate, &game, &mut ais),
+        };
         // A save carries the world, not what anyone was thinking while they
         // played it. The restored table starts a fresh record from the turn it
         // resumes.
@@ -2409,6 +2459,7 @@ impl Session {
             keeps_rival_yields: true,
             keeps_own_yields: true,
             human_players,
+            mirror,
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
             simultaneous_jobs: 1,
@@ -2743,6 +2794,21 @@ impl Session {
                     .get(id)
                     .is_some_and(|seat| !seat.is_minor && !seat.is_barbarian)
             {
+                continue;
+            }
+            // A mirrored game says who is really at each seat: the lane our
+            // decider is playing at ours, Civilization VI's own AI at its
+            // level everywhere else. No name is generated for either, since
+            // nothing in this process is playing them.
+            if let Some(table) = self.mirror {
+                let seat = if id == table.seat {
+                    crate::strategies::live_seat_json(table.lane)
+                } else {
+                    crate::strategies::civ6_ai_seat_json(&self.game.difficulty)
+                };
+                if let (Some(player), Value::Object(seat)) = (player.as_object_mut(), seat) {
+                    player.extend(seat);
+                }
                 continue;
             }
             let strategy = self.ais.get(id).and_then(|ai| ai.strategy_label());
@@ -3330,6 +3396,7 @@ impl Session {
 
 const APP_PALETTE_JS_TAG: &str = r#"<script src="/assets/app_palette.js"></script>"#;
 const APP_ARENA_JS_TAG: &str = r#"<script src="/assets/app_arena.js"></script>"#;
+const APP_LAUNCHES_JS_TAG: &str = r#"<script src="/assets/app_launches.js"></script>"#;
 const APP_JS_TAG: &str = r#"<script src="/assets/app.js"></script>"#;
 const APP_SETUP_JS_TAG: &str = r#"<script src="/assets/app_setup.js"></script>"#;
 const APP_FRONTDOOR_JS_TAG: &str = r#"<script src="/assets/app_frontdoor.js"></script>"#;
@@ -3345,6 +3412,8 @@ fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
     let palette_tag =
         format!(r#"<script src="/assets/app_palette.js?instance={instance}"></script>"#);
     let arena_tag = format!(r#"<script src="/assets/app_arena.js?instance={instance}"></script>"#);
+    let launches_tag =
+        format!(r#"<script src="/assets/app_launches.js?instance={instance}"></script>"#);
     let app_tag = format!(r#"<script src="/assets/app.js?instance={instance}"></script>"#);
     let setup_tag = format!(r#"<script src="/assets/app_setup.js?instance={instance}"></script>"#);
     let frontdoor_tag =
@@ -3353,6 +3422,7 @@ fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
         format!(r#"<script src="/assets/app_moments.js?instance={instance}"></script>"#);
     page.replacen(APP_PALETTE_JS_TAG, &palette_tag, 1)
         .replacen(APP_ARENA_JS_TAG, &arena_tag, 1)
+        .replacen(APP_LAUNCHES_JS_TAG, &launches_tag, 1)
         .replacen(APP_JS_TAG, &app_tag, 1)
         .replacen(APP_SETUP_JS_TAG, &setup_tag, 1)
         .replacen(APP_FRONTDOOR_JS_TAG, &frontdoor_tag, 1)
@@ -3390,6 +3460,11 @@ fn app_palette_js() -> Vec<u8> {
 fn app_arena_js() -> Vec<u8> {
     std::fs::read("web/assets/app_arena.js")
         .unwrap_or_else(|_| EMBEDDED_APP_ARENA_JS.as_bytes().to_vec())
+}
+
+fn app_launches_js() -> Vec<u8> {
+    std::fs::read("web/assets/app_launches.js")
+        .unwrap_or_else(|_| EMBEDDED_APP_LAUNCHES_JS.as_bytes().to_vec())
 }
 
 fn app_moments_js() -> Vec<u8> {
@@ -3691,7 +3766,7 @@ fn query_value<'a>(target: &'a str, key: &str) -> Option<&'a str> {
 /// and either way the same builder produces the same shape every turn. Kinds
 /// are tagged so that `null`, `false` and `0` cannot agree by coincidence, and
 /// numbers are tagged by how they read back so `1` and `1.0` do not either.
-fn hash_json(value: &Value, into: &mut DefaultHasher) {
+fn hash_json<H: Hasher>(value: &Value, into: &mut H) {
     match value {
         Value::Null => 0u8.hash(into),
         Value::Bool(flag) => {
@@ -3729,11 +3804,84 @@ fn hash_json(value: &Value, into: &mut DefaultHasher) {
     }
 }
 
+/// The hasher behind [`tile_mark`]: a multiply-xorshift over whole words.
+///
+/// A mark only ever meets the mark the same tile had a frame earlier, so all it
+/// needs is to change when the tile does; nothing adversarial chooses a tile's
+/// JSON. The standard `DefaultHasher` is SipHash-1-3, a keyed hash built to
+/// resist flooding, which costs several rounds per eight bytes; every tile of
+/// the map is marked on every frame the page asks for, so on the site's world
+/// that was half of the marking and the marking was most of a frame's patch.
+/// Integers and tags are mixed as one word each, text eight bytes at a time
+/// with its length first, and `finish` applies a full avalanche so marks that
+/// differ in one bit anywhere differ everywhere.
+#[derive(Default)]
+struct MarkHasher(u64);
+
+impl MarkHasher {
+    const MULTIPLIER: u64 = 0x9E37_79B9_7F4A_7C15;
+
+    #[inline]
+    fn mix(&mut self, word: u64) {
+        let state = (self.0 ^ word).wrapping_mul(Self::MULTIPLIER);
+        self.0 = state ^ (state >> 29);
+    }
+}
+
+impl Hasher for MarkHasher {
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        self.mix(bytes.len() as u64);
+        let (words, rest) = bytes.as_chunks::<8>();
+        for word in words {
+            self.mix(u64::from_le_bytes(*word));
+        }
+        if !rest.is_empty() {
+            let mut word = [0u8; 8];
+            word[..rest.len()].copy_from_slice(rest);
+            self.mix(u64::from_le_bytes(word));
+        }
+    }
+
+    #[inline]
+    fn write_u8(&mut self, value: u8) {
+        self.mix(u64::from(value));
+    }
+
+    #[inline]
+    fn write_u64(&mut self, value: u64) {
+        self.mix(value);
+    }
+
+    #[inline]
+    fn write_i64(&mut self, value: i64) {
+        self.mix(value as u64);
+    }
+
+    #[inline]
+    fn write_usize(&mut self, value: usize) {
+        self.mix(value as u64);
+    }
+
+    fn finish(&self) -> u64 {
+        // MurmurHash3's 64-bit finalizer.
+        let mut state = self.0;
+        state ^= state >> 33;
+        state = state.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
+        state ^= state >> 33;
+        state = state.wrapping_mul(0xC4CE_B9FE_1A85_EC53);
+        state ^ (state >> 33)
+    }
+}
+
 fn tile_mark(tile: &Value) -> u64 {
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = MarkHasher::default();
     hash_json(tile, &mut hasher);
     hasher.finish()
 }
+
+#[cfg(test)]
+mod mark_tests;
 
 /// The frame a page says its own copy of the tiles is built from, written
 /// `world:turn:finished:sequence`. All four parts matter: a victory may be
@@ -4690,6 +4838,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 &app_arena_js(),
             );
         }
+        ("GET", "/assets/app_launches.js") => {
+            respond(
+                stream,
+                "200 OK",
+                "text/javascript; charset=utf-8",
+                &app_launches_js(),
+            );
+        }
         ("GET", "/assets/app.js") => {
             respond(
                 stream,
@@ -5494,13 +5650,49 @@ pub fn serve_with_game(
     game: Option<Game>,
     initially_paused: bool,
 ) {
+    let opening = game.map_or(Opening::Generated, Opening::Resumed);
+    serve_opening(port, open_browser, params, opening, initially_paused);
+}
+
+/// Serve the world `opening` names. `serve_with_game` is this for a world
+/// that is generated or resumed; a mirror has no other way in.
+pub fn serve_opening(
+    port: u16,
+    open_browser: bool,
+    params: Params,
+    opening: Opening,
+    initially_paused: bool,
+) {
+    serve_opening_at_pace(
+        port,
+        open_browser,
+        params,
+        opening,
+        initially_paused,
+        DEFAULT_PACE_MS,
+    );
+}
+
+/// `serve_opening` with the first pace named, for callers that measure a
+/// world at a known pace rather than at whatever the default is.
+fn serve_opening_at_pace(
+    port: u16,
+    open_browser: bool,
+    params: Params,
+    opening: Opening,
+    initially_paused: bool,
+    pace_ms: u64,
+) {
     let listener = TcpListener::bind(("127.0.0.1", port))
         .unwrap_or_else(|e| panic!("cannot bind port {port}: {e}"));
     let actual = listener.local_addr().unwrap().port();
     let url = format!("http://127.0.0.1:{actual}/");
-    let mut session = match game {
-        Some(game) => Session::from_game(params, game),
-        None => Session::new(params),
+    let mut session = match opening {
+        Opening::Generated => Session::new(params),
+        Opening::Resumed(game) => Session::from_game(params, game),
+        // The seat is the host's human slot, which the rebuild always puts
+        // first; the follower names the lane with its first frame.
+        Opening::Mirror(game) => Session::from_mirror(params, game, MirrorTable::default()),
     };
     session.spectator_paused = initially_paused;
     println!("Martin Halvorson's Civilization VIS — playing at {url}");
@@ -5520,12 +5712,12 @@ pub fn serve_with_game(
         next_game_params: Mutex::new(session.take_resumed_next_game_params()),
         match_series: Mutex::new(None),
         session: Mutex::new(session),
-        // Half a second per turn by default; the live mirror starts on the
-        // pace its Civilization VI game is actually held to.
+        // Max by default; the live mirror starts on the pace its
+        // Civilization VI game is actually held to.
         pace_ms: AtomicU64::new(if civ6::live_pause_control() {
             civ6::live_pace_ms()
         } else {
-            500
+            pace_ms
         }),
         between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
         finale_rearm: AtomicBool::new(false),

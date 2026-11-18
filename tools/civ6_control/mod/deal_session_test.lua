@@ -356,13 +356,76 @@ end
     answer(DealProposalAction.ACCEPTED);
     check("an accepted response cannot substitute the purchased work", #substituted.sends, 2);
 
-    local passage = workSession({ incoming = {
+    -- An Open Borders quote takes the same two steps. The two full Pericles
+    -- games of 2026-11-15 asked 34 and 31 times; 24 and 25 answers were the
+    -- passage alone, priced inside the ceiling and sent REJECTED, and were
+    -- walked away from; 1 and 3 closed.
+    local function passageSession(opts)
+        opts = opts or {};
+        opts.incoming = opts.incoming or {
+            { kind = DealItemTypes.AGREEMENTS, from = 3, subType = DealAgreementTypes.OPEN_BORDERS },
+            { kind = DealItemTypes.GOLD, from = 7, amount = opts.price or 14 },
+        };
+        local state = workSession(opts);
+        trade.pending[3].want = "OPEN_BORDERS";
+        trade.pending[3].ceiling = opts.ceiling or 28;
+        return state;
+    end
+    local passage = passageSession();
+    answer(DealProposalAction.REJECTED);
+    check("a rejected affordable Open Borders quote is PROPOSED", passage.sends[2] and passage.sends[2][1], "proposed");
+    check("the passage is not accepted without the rival's verdict", #passage.sends, 2);
+    check("the proposal ledger names the passage", eventField(lastEvent("deal_reproposed"), "want"), "OPEN_BORDERS");
+    check("the passage proposal keeps its pending purchase", trade.pending[3] ~= nil, true);
+    check("the passage proposal keeps the MAKE_DEAL session open", #sessions.closed, 0);
+    check("the passage proposal renews the answer hold", holds[#holds] and holds[#holds].seconds, 30);
+    passage.pending = true;
+    answer(DealProposalAction.REJECTED);
+    check("the engine's pending passage proposal is not sent twice", #passage.sends, 2);
+    passage.pending = false;
+    answer(DealProposalAction.ADJUSTED);
+    check("the rival's ADJUSTED answer to the passage is accepted", passage.sends[3] and passage.sends[3][1], "accepted");
+    check("the accepted passage settles the pending request", trade.pending[3], nil);
+    check("the accepted passage closes the session once", #sessions.closed, 1);
+    check("the closed passage is on the ledger", eventField(lastEvent("deal_closed"), "want"), "OPEN_BORDERS");
+
+    local dear = passageSession({ price = 103 });
+    answer(DealProposalAction.REJECTED);
+    check("a passage priced above the ceiling is not proposed", #dear.sends, 1);
+    check("…and settles as declined", trade.pending[3], nil);
+    local free = passageSession({ incoming = {
         { kind = DealItemTypes.AGREEMENTS, from = 3, subType = DealAgreementTypes.OPEN_BORDERS },
+    } });
+    answer(DealProposalAction.REJECTED);
+    check("a refusal that names no price is not proposed", #free.sends, 1);
+    local padded = passageSession({ incoming = {
+        { kind = DealItemTypes.AGREEMENTS, from = 3, subType = DealAgreementTypes.OPEN_BORDERS },
+        { kind = DealItemTypes.GOLD, from = 7, amount = 14 },
+        { kind = DealItemTypes.RESOURCES, from = 7, valueType = 43, amount = 1 },
+    } });
+    answer(DealProposalAction.REJECTED);
+    check("a passage quote that also takes a resource of ours is not proposed", #padded.sends, 1);
+    local twoWay = passageSession({ incoming = {
+        { kind = DealItemTypes.AGREEMENTS, from = 3, subType = DealAgreementTypes.OPEN_BORDERS },
+        { kind = DealItemTypes.RESOURCES, from = 3, valueType = 43, amount = 1 },
+        { kind = DealItemTypes.GOLD, from = 7, amount = 14 },
+    } });
+    answer(DealProposalAction.REJECTED);
+    check("a passage quote with another item on their side is not proposed", #twoWay.sends, 1);
+    local busy = passageSession();
+    DealManager.HasPendingDeal = function() return nil; end;
+    answer(DealProposalAction.REJECTED);
+    check("unreadable pending state cannot propose a passage", #busy.sends, 1);
+
+    -- A resource ask keeps its own protocol (see the next block): the answer
+    -- handler never sends a second request for one.
+    local resource = workSession({ incoming = {
+        { kind = DealItemTypes.RESOURCES, from = 3, valueType = 43, amount = 1 },
         { kind = DealItemTypes.GOLD, from = 7, amount = 50 },
     } });
-    trade.pending[3].want = "OPEN_BORDERS";
+    trade.pending[3].want = "RESOURCES:43";
     answer(DealProposalAction.REJECTED);
-    check("other purchase protocols retain their existing behavior", #passage.sends, 1);
+    check("other purchase protocols retain their existing behavior", #resource.sends, 1);
 
     local unequal = workSession({ dealsEqual = false });
     answer(DealProposalAction.REJECTED);
@@ -837,7 +900,7 @@ check("the refusal is in the ledger", eventField(lastEvent("peace_response"), "a
 check("a refused peace keeps its session for the counter", trade.sessions[6] ~= nil, true)
 check("a peace refusal does not close under its counter", #sessions.closed, closedBeforePeaceRefusal)
 check("the peace counter wait is recorded", eventField(lastEvent("deal_session"), "phase"), "counter_wait")
-check("the peace counter hold is the answer's bound", holds[#holds] and holds[#holds].seconds, 30)
+check("the peace counter hold is three seconds", holds[#holds] and holds[#holds].seconds, 3)
 onStatement(6, 7, { StatementType = "MAKE_DEAL", SessionID = 9999, StatementSubType = "POSITIVE" })
 onStatement(6, 7, { StatementType = "GREETING", SessionID = 904, StatementSubType = "POSITIVE" })
 onStatement(7, 6, { StatementType = "MAKE_DEAL", SessionID = 904, StatementSubType = "POSITIVE" })
@@ -888,19 +951,52 @@ CivvisControlConfig.DealSessions = true
 CivvisControlConfig.DealSessionQuarantine = "41:95,42:88"
 TURN = 87
 local requestedBeforeQuarantine = #sessions.requested
+-- ★★ ...AND IS SENT NOTHING. The quarantine used to take the direct send;
+-- live 2026-11-16 that send hung the rival whenever a friendship or
+-- delegation session of ours opened to it in the same frame (014237Z-cont1
+-- to -cont3 t81, 041918Z-cont2 t81, -cont3 t76), and no direct send was ever
+-- answered. So nothing goes out, the working deal is cleared, and the arm
+-- reports the ask as not submitted.
 local held, heldSeller = fixture()
-applyOrder(heldSeller, 7, { kind = "sell", subject = "41", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
-check("a quarantined rival's ask takes the direct send", held.sends[1] and held.sends[1][1], "equalize")
+local okHeld, whyHeld = applyOrder(heldSeller, 7,
+	{ kind = "sell", subject = "41", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
+check("a quarantined rival is sent nothing", #held.sends, 0)
 check("a quarantined rival opens no session", #sessions.requested, requestedBeforeQuarantine)
 check("a quarantined ask owns no session", trade.sessions[41], nil)
 check("the quarantine is in the ledger", eventField(lastEvent("deal_session"), "phase"), "quarantined")
 check("…with its last turn", eventField(lastEvent("deal_session"), "until_turn"), "95")
+check("…and says nothing went out", eventField(lastEvent("deal_session"), "sent"), "false")
+check("a quarantined sale clears its working deal", held.cleared, DealDirection.OUTGOING)
+check("a quarantined sale is not submitted", okHeld, false)
+check("…and says why", whyHeld, "quarantined")
+check("the sale ledger says it was not submitted", eventField(lastEvent("deal_offer"), "submitted"), "false")
+check("…because of the quarantine", eventField(lastEvent("deal_offer"), "reason"), "quarantined")
+check("a quarantined sale leaves no pending ask", trade.pending[41], nil)
+check("a quarantined sale keeps its retry wait", trade.asked[41], TURN)
 check("the quarantine is read per rival", trade.quarantinedUntil(42), 88)
 check("a rival not named is not quarantined", trade.quarantinedUntil(6), nil)
+local heldBuy, heldBuyer = fixture()
+local okBuy, whyBuy = applyOrder(heldBuyer, 7, { kind = "buy", subject = "42", verb = "OPEN_BORDERS", x = 90 }, TURN)
+check("a quarantined purchase is sent nothing", #heldBuy.sends, 0)
+check("a quarantined purchase is not submitted", okBuy, false)
+check("…and says why", whyBuy, "quarantined")
+check("a quarantined purchase leaves no pending ask", trade.pending[42], nil)
+check("a quarantined purchase keeps its retry wait", trade.asked[42], TURN)
 local heldPeace, heldPeacePlayer = fixture({ atWar = true })
-applyOrder(heldPeacePlayer, 7, { kind = "peace", subject = "42" }, TURN)
+local okPeace, whyPeace = applyOrder(heldPeacePlayer, 7, { kind = "peace", subject = "42" }, TURN)
 check("a quarantined peace opens no session", #sessions.requested, requestedBeforeQuarantine)
 check("a quarantined peace registers no counter wait", trade.sessions[42], nil)
+check("a quarantined peace is sent nothing", #heldPeace.sends, 0)
+check("a quarantined peace is not submitted", okPeace, false)
+check("…and says why", whyPeace, "quarantined")
+check("the peace ledger says it was not submitted", eventField(lastEvent("peace_request"), "submitted"), "false")
+-- The retry window holds, so the next turn's order is not asked again.
+TURN = 88
+local againPeace, againPeacePlayer = fixture({ atWar = true })
+local _, whyAgain = applyOrder(againPeacePlayer, 7, { kind = "peace", subject = "42" }, TURN)
+check("a quarantined peace waits out its retry window", whyAgain, "peace_cooldown")
+check("…sending nothing then either", #againPeace.sends, 0)
+TURN = 87
 -- Another rival keeps its session.
 local free, freePlayer = fixture({ atWar = true })
 applyOrder(freePlayer, 7, { kind = "peace", subject = "43" }, TURN)
@@ -1096,8 +1192,9 @@ do
 	trade.close(7, 3, "test_expired")
 	-- An opening queued behind another session waits for the end turn itself.
 	TURN = 606
+	check("the opening hold is three seconds", trade.OPENING_HOLD_SECONDS, 3)
 	trade.ask(7, 3, "EQUALIZE", "trade", TURN)
-	activeClock = activeClock + 7.9
+	activeClock = activeClock + trade.OPENING_HOLD_SECONDS - 0.1
 	check("an opening is held just inside its own bound", trade.holdsEndTurn(TURN), true)
 	activeClock = activeClock + 0.2
 	check("an opening nobody asked through stops holding", trade.holdsEndTurn(TURN), false)
@@ -1105,7 +1202,7 @@ do
 	trade.close(7, 3, "test_opening")
 	TURN = 607
 	trade.ask(7, 3, "EQUALIZE", "trade", TURN)
-	activeClock = activeClock + 7.5
+	activeClock = activeClock + trade.OPENING_HOLD_SECONDS - 0.5
 	onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 1402 })
 	activeClock = activeClock + 29.5
 	check("a question asked at the bound still gets its full reply window",
@@ -1200,9 +1297,10 @@ do
 		lateTrade.sends[1] and lateTrade.sends[1][1], "equalize")
 	trade.close(7, 34, "test_late_trade")
 
-	-- ── The counter after a refusal is waited for as long as the answer ──
-	-- 406 counters came inside 0.62 s; all 29 closes at the old 4-second
-	-- bound were followed by a hung rival turn.
+	-- ── The counter after a refusal is waited for three seconds ──
+	-- 406 counters came inside 0.62 s and 25 more inside 0.7 s; the one that
+	-- had not come was waited for 30 seconds and its rival's turn hung all
+	-- the same (civvis-20261115T104756Z t112).
 	TURN = 614
 	local slow = fixture()
 	trade.ask(7, 35, "PROPOSED", "alliance", TURN)
@@ -1211,13 +1309,14 @@ do
 	onStatement(35, 7, { StatementType = "MAKE_DEAL", SessionID = 1408,
 		DealAction = DealProposalAction.REJECTED })
 	check("a refused alliance waits for its counter", trade.sessions[35].counter_wait ~= nil, true)
-	check("the counter wait is the answer's bound", holds[#holds].seconds, 30)
-	activeClock = activeClock + 25
+	check("the counter wait is three seconds", holds[#holds].seconds, 3)
+	check("…and is the one constant", trade.COUNTER_HOLD_SECONDS, 3)
+	activeClock = activeClock + 2
 	check("the refusal restarts the reply window", trade.holdsEndTurn(TURN), true)
 	onStatement(35, 7, { StatementType = "MAKE_DEAL", SessionID = 1408, StatementSubType = "POSITIVE" })
-	check("a counter arriving late in the wait is still refused",
+	check("a counter arriving inside the wait is refused",
 		slow.sends[2] and slow.sends[2][1], "rejected")
-	check("…and says how long it took", eventField(lastEvent("counter_answered"), "waited"), "25")
+	check("…and says how long it took", eventField(lastEvent("counter_answered"), "waited"), "2")
 	check("…and the session closes", sessions.closed[#sessions.closed], 1408)
 	TURN = 602
 	trade.ask(7, 3, "EQUALIZE", "trade", TURN)

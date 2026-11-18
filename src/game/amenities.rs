@@ -42,29 +42,15 @@ impl Game {
 
     /// Non-stacking regional building yields and Amenities reaching a city.
     pub(super) fn regional_building_effects(&self, city: &City) -> (Yields, f64) {
-        if let Some(memo) = self.query_memo.regional.borrow().as_ref() {
-            if let Some(value) = memo.get(&city.id) {
-                return *value;
-            }
-        }
-        let value = self.regional_building_effects_uncached(city);
-        if let Some(memo) = self.query_memo.regional.borrow_mut().as_mut() {
-            memo.insert(city.id, value);
-        }
-        value
+        crate::game::remembered(&self.query_memo.regional, city.id, || {
+            self.regional_building_effects_uncached(city)
+        })
     }
 
     pub(super) fn regional_slots(&self, pid: usize) -> Arc<Vec<RegionalSlot>> {
-        if let Some(memo) = self.query_memo.regional_slots.borrow().as_ref() {
-            if let Some(slots) = memo.get(&pid) {
-                return Arc::clone(slots);
-            }
-        }
-        let slots = Arc::new(self.regional_slots_uncached(pid));
-        if let Some(memo) = self.query_memo.regional_slots.borrow_mut().as_mut() {
-            memo.insert(pid, Arc::clone(&slots));
-        }
-        slots
+        crate::game::remembered(&self.query_memo.regional_slots, pid, || {
+            Arc::new(self.regional_slots_uncached(pid))
+        })
     }
 
     /// Every active regional building `pid` owns, in city then building
@@ -227,16 +213,9 @@ impl Game {
     /// Asked once per luxury allocation, which is itself asked once per city,
     /// so a six-city empire re-derived its own luxuries dozens of times a turn.
     pub(super) fn empire_luxury_names(&self, pid: usize) -> BTreeSet<Name> {
-        if let Some(memo) = self.query_memo.lux_names.borrow().as_ref() {
-            if let Some(value) = memo.get(&pid) {
-                return value.clone();
-            }
-        }
-        let value = self.empire_luxury_names_uncached(pid);
-        if let Some(memo) = self.query_memo.lux_names.borrow_mut().as_mut() {
-            memo.insert(pid, value.clone());
-        }
-        value
+        crate::game::remembered(&self.query_memo.lux_names, pid, || {
+            self.empire_luxury_names_uncached(pid)
+        })
     }
 
     fn empire_luxury_names_uncached(&self, pid: usize) -> BTreeSet<Name> {
@@ -288,16 +267,9 @@ impl Game {
     /// each of N cities for its Amenities cost N * N of these. Under a memo
     /// scope each city is valued once.
     pub fn city_local_amenities(&self, city: &City) -> i64 {
-        if let Some(memo) = self.query_memo.amenities.borrow().as_ref() {
-            if let Some(value) = memo.get(&city.id) {
-                return *value;
-            }
-        }
-        let value = self.city_local_amenities_uncached(city);
-        if let Some(memo) = self.query_memo.amenities.borrow_mut().as_mut() {
-            memo.insert(city.id, value);
-        }
-        value
+        crate::game::remembered(&self.query_memo.amenities, city.id, || {
+            self.city_local_amenities_uncached(city)
+        })
     }
 
     pub(super) fn city_local_amenities_uncached(&self, city: &City) -> i64 {
@@ -571,7 +543,19 @@ impl Game {
                 return value.get(&city.id).copied().unwrap_or(0);
             }
         }
-        let value = self.luxury_amenity_allocations_uncached(pid);
+        // The split is the empire's, not the city's: every city of `pid`
+        // asks for the same one. It is kept beside the yields from one
+        // read-only pass to the next (`KeptDerivations`), so a caller with no
+        // query scope open across the cities no longer splits the empire's
+        // luxuries once per city.
+        let value = match self.kept_luxury_split(pid) {
+            Some(kept) => kept,
+            None => {
+                let value = self.luxury_amenity_allocations_uncached(pid);
+                self.keep_luxury_split(pid, &value);
+                value
+            }
+        };
         let amenities = value.get(&city.id).copied().unwrap_or(0);
         if let Some(memo) = self.query_memo.lux_alloc.borrow_mut().as_mut() {
             memo.insert(pid, value);
@@ -579,7 +563,10 @@ impl Game {
         amenities
     }
 
-    pub(super) fn luxury_amenity_allocations_uncached(&self, pid: usize) -> BTreeMap<u32, i64> {
+    pub(in crate::game) fn luxury_amenity_allocations_uncached(
+        &self,
+        pid: usize,
+    ) -> BTreeMap<u32, i64> {
         let cities: Vec<&City> = self
             .cities
             .values()

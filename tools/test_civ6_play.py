@@ -233,7 +233,8 @@ class SharedDesktopRescueTests(unittest.TestCase):
              patch.object(civ6_play, "dismiss_world_congress_between_turns") as congress, \
              patch.object(civ6_play, "press_escape") as escape:
             namespace = dict(vars(civ6_play), events=ledger, state={"turn": 24},
-                             run_dir=Path("/unused"), desktop_rescues=InlineRescues())
+                             run_dir=Path("/unused"), desktop_rescues=InlineRescues(),
+                             hung_rivals=civ6_play.watch.HungRivalSessions())
             exec(code, namespace)
             for kind in ("autoclose_desktop", "autoclose_stuck"):
                 for screen in ("DiplomacyActionView", "WorldCongressBetweenTurns",
@@ -304,6 +305,104 @@ class SharedDesktopFocusTests(unittest.TestCase):
             self.assertEqual(civ6_play.maintain_game_focus(15, 0), 100)
             focus.assert_called_once_with()
             place.assert_not_called()
+
+    def _shared(self, tmp, clock, front, active=False):
+        """Patches for a host with the shared-desktop marker in ``tmp``."""
+        return (patch.object(civ6_play.Path, "home", return_value=Path(tmp)),
+                patch.object(civ6_play.time, "monotonic", side_effect=lambda: clock[0]),
+                patch.object(civ6_play.operator_presence, "operator_active",
+                             return_value=active),
+                patch.object(civ6_play.popup_clear, "frontmost", side_effect=front),
+                patch.dict(civ6_play._SHARED_DESKTOP_STATE,
+                           {"deferring": active, "front_other_at": None}))
+
+    def test_another_app_in_front_is_asked_about_every_five_seconds(self):
+        # Measured civvis-20261115T124823Z: 2.20 `osascript` launches a second
+        # from the deferring upkeep, one per 0.25 s pass of the watch.
+        clock, asked, answer = [100.0], [], ["Google Chrome"]
+
+        def front():
+            asked.append(clock[0])
+            return answer[0]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / ".civvis-shared-desktop").touch()
+            home, mono, active, frontmost, state = self._shared(tmp, clock, front)
+            with home, mono, active, frontmost, state, \
+                 patch.object(civ6_play, "screen_locked", return_value=False), \
+                 patch.object(civ6_play, "focus_game") as focus, \
+                 patch.object(civ6_play, "place_game"):
+                last = 0.0
+                for _ in range(120):            # thirty seconds of passes
+                    last = civ6_play.maintain_game_focus(15, last, place=True)
+                    clock[0] += 0.25
+                self.assertEqual(asked, [100.0, 105.0, 110.0, 115.0, 120.0, 125.0])
+                self.assertEqual(last, 0.0)
+                focus.assert_not_called()
+                # The person brings Civ VI forward: upkeep resumes at the next
+                # ask, at most five seconds later, and then keeps its interval.
+                answer[0] = "Civ6_Exe_Child"
+                for _ in range(24):
+                    last = civ6_play.maintain_game_focus(15, last, place=True)
+                    clock[0] += 0.25
+                focus.assert_called_once_with()
+                self.assertEqual(last, 130.0)
+                self.assertEqual(asked[6:], [130.0])
+
+    def test_only_another_app_in_front_is_ever_remembered(self):
+        clock, answers, asked = [100.0], ["Terminal"], []
+
+        def front():
+            asked.append(clock[0])
+            if isinstance(answers[0], Exception):
+                raise answers[0]
+            return answers[0]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / ".civvis-shared-desktop"
+            marker.touch()
+            home, mono, active, frontmost, state = self._shared(tmp, clock, front)
+            with home, mono, active, frontmost, state:
+                self.assertTrue(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                clock[0] = 104.9
+                self.assertTrue(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                self.assertEqual(asked, [100.0])
+                # A caller about to act asks every time (the desktop rescue).
+                self.assertTrue(civ6_play.shared_desktop_in_use())
+                self.assertEqual(asked, [100.0, 104.9])
+                # Civ VI in front is never reused: the next call asks again.
+                clock[0], answers[0] = 110.0, "Civ6_Exe_Child"
+                self.assertFalse(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                clock[0] = 110.1
+                self.assertFalse(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                self.assertEqual(asked[2:], [110.0, 110.1])
+                # An unreadable foreground is "theirs", and stands as long.
+                clock[0], answers[0] = 120.0, OSError("no answer")
+                self.assertTrue(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                clock[0] = 123.0
+                self.assertTrue(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                self.assertEqual(asked[4:], [120.0])
+                # The marker is read every time: gone, the desktop is free at
+                # once, nothing is asked, and nothing stale is left behind.
+                marker.unlink()
+                self.assertFalse(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                self.assertEqual(len(asked), 5)
+                self.assertIsNone(civ6_play._SHARED_DESKTOP_STATE["front_other_at"])
+                marker.touch()
+                answers[0] = "Terminal"
+                self.assertTrue(civ6_play.shared_desktop_in_use(front_max_age=5.0))
+                self.assertEqual(len(asked), 6)
+
+    def test_only_the_timed_upkeep_reuses_the_answer(self):
+        source = Path(civ6_play.__file__).read_text()
+        upkeep = source[source.index("def maintain_game_focus("):]
+        upkeep = upkeep[:upkeep.index("\ndef ")]
+        self.assertIn("shared_desktop_in_use(front_max_age=FOCUS_FRONT_SECONDS)", upkeep)
+        self.assertEqual(source.count("front_max_age=FOCUS_FRONT_SECONDS"), 1)
+        rescue = source[source.index("    def desktop_rescue("):]
+        self.assertIn("if shared_desktop_in_use():", rescue[:rescue.index("\n    def ", 10)])
+        self.assertEqual(civ6_play.FOCUS_FRONT_SECONDS, 5.0)
+        self.assertLess(civ6_play.FOCUS_FRONT_SECONDS, 15.0)   # the upkeep interval
 
     def test_both_game_loops_use_shared_upkeep_and_retirement_stays_active(self):
         source = Path(civ6_play.__file__).read_text()
@@ -999,7 +1098,7 @@ class Civ6PlayTest(unittest.TestCase):
         run_dir = Path(tempfile.mkdtemp())
         patience = {"left": 3.0, "spent": 0.0}
         with mock.patch.object(civ6_play, "screenshot", lambda _p: None), \
-             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p: False):
+             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p, _b: False):
             first = civ6_play._loading_probe(run_dir, 1, patience, 1.0)
             self.assertEqual([first(), first(), first()], [True, True, True])
             self.assertFalse(first(), "the pool is spent, so stop vouching")
@@ -1027,7 +1126,7 @@ class Civ6PlayTest(unittest.TestCase):
         patience = {"left": 600.0, "spent": 0.0}
         bounds = (0, 0, 2880, 1864)
         with mock.patch.object(civ6_play, "screenshot", lambda _p: None), \
-             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p: False), \
+             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p, _b: False), \
              mock.patch.object(civ6_play, "_observed_label_point",
                                lambda *a, **k: (100, 200)):
             probe = civ6_play._loading_probe(run_dir, 1, patience, 120.0,
@@ -1041,7 +1140,7 @@ class Civ6PlayTest(unittest.TestCase):
         run_dir = Path(tempfile.mkdtemp())
         patience = {"left": 600.0, "spent": 0.0}
         with mock.patch.object(civ6_play, "screenshot", lambda _p: None), \
-             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p: False), \
+             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p, _b: False), \
              mock.patch.object(civ6_play, "_observed_label_point",
                                lambda *a, **k: (100, 200)):
             probe = civ6_play._loading_probe(run_dir, 1, patience, 120.0)
@@ -1053,7 +1152,7 @@ class Civ6PlayTest(unittest.TestCase):
         patience = {"left": 600.0, "spent": 0.0}
         bounds = (0, 0, 2880, 1864)
         with mock.patch.object(civ6_play, "screenshot", lambda _p: None), \
-             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p: False), \
+             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p, _b: False), \
              mock.patch.object(civ6_play, "_observed_label_point",
                                lambda *a, **k: None):
             probe = civ6_play._loading_probe(run_dir, 1, patience, 120.0,
@@ -1066,7 +1165,7 @@ class Civ6PlayTest(unittest.TestCase):
         run_dir = Path(tempfile.mkdtemp())
         patience = {"left": 600.0, "spent": 0.0}
         with mock.patch.object(civ6_play, "screenshot", lambda _p: None), \
-             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p: True):
+             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p, _b: True):
             probe = civ6_play._loading_probe(run_dir, 1, patience, 120.0)
             self.assertFalse(probe())
         self.assertEqual(patience["left"], 600.0,
@@ -1561,9 +1660,13 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertEqual(civ6_play.leader_display_name("LEADER_JAYAVARMAN"),
                          "Jayavarman VII")
         self.assertEqual(civ6_play.leader_display_name("LEADER_PETER_GREAT"), "Peter")
+        # With the persona packs installed the base leader's own row is
+        # replaced, so the plain names are on no picker row; the whole table
+        # is pinned in `test_civ6_play_leader_picker.py`.
         self.assertEqual(civ6_play.leader_display_name("LEADER_T_ROOSEVELT"),
-                         "Teddy Roosevelt")
-        self.assertEqual(civ6_play.leader_display_name("LEADER_QIN"), "Qin Shi Huang")
+                         "Teddy Roosevelt (Bull Moose)")
+        self.assertEqual(civ6_play.leader_display_name("LEADER_QIN"),
+                         "Qin (Mandate of Heaven)")
 
     @needs_pillow
     def test_leader_picker_scans_past_the_old_harald_cutoff(self) -> None:
@@ -1730,9 +1833,12 @@ class Civ6PlayTest(unittest.TestCase):
 
     def test_setup_recovery_backs_out_until_main_menu_is_verified(self) -> None:
         bounds = (756, 33, 756, 480)
-        observations = [[], [], [{"text": "Single Player"}]]
+        menu = [{"text": "Single Player", "x": 0.70, "y": 0.25, "width": 0.05, "height": 0.01},
+                {"text": "Multiplayer", "x": 0.70, "y": 0.28, "width": 0.05, "height": 0.01}]
+        observations = [[], [], menu]
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "screenshot"), \
+             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
              patch.object(civ6_play.macos_ocr, "recognize", side_effect=observations), \
              patch.object(civ6_play, "click_at") as click, \
              patch.object(civ6_play.time, "sleep"):
@@ -1939,6 +2045,83 @@ class Civ6PlayTest(unittest.TestCase):
              call(1058, 181), call(1073, 491)],
         )
 
+    def _press(self, looks, starts_on=None, **kw):
+        """Run `press_load_game` against a screen that answers `looks` in
+        turn; the agent starts during the wait after press `starts_on`."""
+        presses, waits, seen = [], [], iter(looks)
+
+        def started(seconds):
+            waits.append(seconds)
+            return starts_on is not None and len(presses) >= starts_on
+
+        outcome = civ6_play.press_load_game(
+            presses.append, lambda _n: next(seen), started, **kw)
+        return outcome, presses, waits
+
+    def test_a_load_that_starts_is_pressed_once(self) -> None:
+        # The board arrives inside the first settle wait: nothing is read.
+        self.assertEqual(self._press([], starts_on=1), ("started", [1], [4.0]))
+        # The panel is gone at the first look (the loading screen is up).
+        self.assertEqual(self._press(["gone"]), ("loading", [1], [4.0]))
+        # A compatibility confirmation was answered at the first look.
+        self.assertEqual(self._press(["confirmed"]), ("loading", [1], [4.0]))
+
+    def test_a_dropped_press_is_pressed_again(self) -> None:
+        # Live civvis-20261115T110627Z-cont1: pressed once at +52.3 s, the
+        # panel unchanged ten seconds later, then 6 min of "still coming up".
+        self.assertEqual(self._press(["panel", "gone"]), ("loading", [1, 2], [4.0, 4.0]))
+        self.assertEqual(self._press(["panel", "panel"], starts_on=3),
+                         ("started", [1, 2, 3], [4.0, 4.0, 4.0]))
+
+    def test_a_panel_that_survives_every_press_ends_the_attempt_in_seconds(self) -> None:
+        outcome, presses, waits = self._press(["panel"] * 5)
+        self.assertEqual(outcome, "stuck")
+        self.assertEqual(presses, [1, 2, 3])
+        # Twelve seconds of waiting in all, not the 600 s loading patience.
+        self.assertEqual(sum(waits), civ6_play.LOAD_PRESS_TRIES * civ6_play.LOAD_PRESS_SETTLE_S)
+        self.assertLess(sum(waits), 15.0)
+        self.assertEqual(self._press(["panel"] * 5, tries=1)[1], [1])
+        self.assertEqual(self._press(["panel"] * 5, tries=0)[1], [1])
+
+    def test_the_load_panel_is_read_from_three_marks(self) -> None:
+        bounds = (0, 33, 864, 542)
+        low, high = (432, 520), (432, 100)       # y at 90% and 12% of the window
+
+        def reading(load=(), delete=(), row=None):
+            def points(_path, label, _bounds, strip=None):
+                self.assertEqual(strip, civ6_play.LOAD_GAME_ACTION_STRIP)
+                return list(load if label == "Load Game" else delete)
+
+            with patch.object(civ6_play, "_observed_label_points", side_effect=points), \
+                 patch.object(civ6_play, "_observed_label_point", return_value=row):
+                return civ6_play._load_panel_reading(Path("shot.png"), bounds, "civvis-resume")
+
+        self.assertEqual(reading(load=[low]), "its Load Game button reads")
+        # The LOAD GAME heading at the top is not the button.
+        self.assertIsNone(reading(load=[high]))
+        # Under the pointer the button's label fades; Delete beside it does not.
+        self.assertIn("Delete button reads", reading(load=[high], delete=[low]))
+        self.assertIn("disabled or under the pointer", reading(delete=[low]))
+        self.assertIn("save's row reads", reading(row=(351, 205)))
+        # A loading screen shows none of them.
+        self.assertIsNone(reading())
+
+    def test_the_saved_game_bootstrap_verifies_its_press(self) -> None:
+        import inspect
+        source = inspect.getsource(civ6_play.bootstrap_saved_game)
+        after = source.split('print(f"loading saved game {save_label} from observed row', 1)[1]
+        self.assertIn("pressed = press_load_game(press, look, started)", after)
+        # The press goes through the helper only: no bare click of the button
+        # is left before the first wait.
+        self.assertNotIn("click_at(*action)\n\n        # A save made with", after)
+        stuck = after.split('if pressed == "stuck":', 1)[1].split("return False", 1)[0]
+        self.assertIn("did not start loading", stuck)
+        self.assertIn("_load_panel_reading(shot, bounds, save_label)", after)
+        self.assertIn('_observed_label_point(shot, "Yes", bounds)', after)
+        # The old waits follow only once the panel has gone.
+        self.assertLess(after.index('if pressed == "stuck":'),
+                        after.index("still_loading=_loading_probe"))
+
     def test_latest_autosave_is_by_mtime_and_bounded_by_the_attempt_start(self) -> None:
         # The numbering wraps, so the newest file can carry a lower number; and a
         # resume must never reload a save from some earlier game.
@@ -2119,14 +2302,261 @@ class Civ6PlayTest(unittest.TestCase):
         instead of sweeping clicks over a live map."""
         source = Path(civ6_play.__file__).read_text()
         self.assertEqual(source.count("ai_stall_s=args.ai_stall_seconds or None"), 2)
-        self.assertIn('ap.add_argument("--ai-stall-seconds", type=float, default=240.0', source)
+        self.assertIn('ap.add_argument("--ai-stall-seconds", type=float, default=60.0', source)
         self.assertIn("if reason.startswith(watch.AI_PHASE_STALL_REASON):", source)
         self.assertTrue(civ6_play.watch.AI_PHASE_STALL_REASON.startswith("stalled"))
+        # Both watch loops shorten the wait for the rival of a dead deal
+        # session, every relayed event feeds that tracker, and the exit says
+        # in the run directory that the attempt was frozen: the climb's own
+        # clock (240 s stale) would file a 35 s exit as a finished game.
+        self.assertEqual(source.count("ai_stall_window=hung_rivals.window"), 2)
+        self.assertIn("hung_rivals.note(event)", source)
+        branch = source.split("if reason.startswith(watch.AI_PHASE_STALL_REASON):", 1)[1]
+        self.assertIn("watch.write_stall_handoff(run_dir, args.tag, state.get(\"turn\"), reason)",
+                      branch.split("break", 1)[0])
+        import civ6_civvis_climb as climb
+        self.assertLess(civ6_play.watch.AI_STALL_DEAD_SESSION_S + 30.0,
+                        climb.EXIT_WHILE_STALE_S)
 
     def test_the_live_lane_seat_passes(self) -> None:
         """The seat every 2026-10-04 game reported (G61-G65)."""
         live = {"players": 4, "size": "MAPSIZE_TINY", "map": "Pangaea.lua", "city_states": 6}
         self.assertEqual(civ6_play.setup_drift(live, args(map_size="MAPSIZE_TINY")), [])
+
+
+class NativeCrashRowTest(unittest.TestCase):
+    """A game that dies under the harness describes its own crash."""
+
+    IMAGES = [{"name": "libsystem_kernel.dylib"}, {"name": "libsystem_c.dylib"},
+              {"name": "libc++abi.dylib"}, {"name": "Civ6_Exe_Child"},
+              {"name": "libtbb.dylib"}, {"name": "GameCore_XP2.dll"}]
+
+    def _report(self, folder, name, threads, signal="SIGABRT", kind="EXC_CRASH",
+                captured="2026-11-15 06:28:24.6174 -0600",
+                launched="2026-11-15 06:23:36.7380 -0600", mtime=None):
+        path = Path(folder) / name
+        body = {"captureTime": captured, "procLaunch": launched, "pid": 82962,
+                "exception": {"type": kind, "signal": signal},
+                "usedImages": self.IMAGES, "threads": threads}
+        path.write_text(json.dumps({"app_name": "Civ6_Exe_Child"}) + "\n"
+                        + json.dumps(body, indent=1))
+        if mtime is not None:
+            os.utime(path, (mtime, mtime))
+        return path
+
+    def _pure_virtual_threads(self):
+        # The crashed thread of Civ6_Exe_Child-2026-11-15-062825.ips.
+        return [
+            {"name": "WinMain (WinID 2)", "frames": [
+                {"imageIndex": 0, "imageOffset": 1, "symbol": "swtch_pri"}]},
+            {"name": "TBB (WinID 6)", "triggered": True, "frames": [
+                {"imageIndex": 0, "imageOffset": 8, "symbol": "__pthread_kill"},
+                {"imageIndex": 1, "imageOffset": 296, "symbol": "pthread_kill"},
+                {"imageIndex": 1, "imageOffset": 148, "symbol": "abort"},
+                {"imageIndex": 2, "imageOffset": 132, "symbol": "__abort_message"},
+                {"imageIndex": 2, "imageOffset": 24, "symbol": "__cxa_pure_virtual"},
+                {"imageIndex": 3, "imageOffset": 0x8cbbec},
+                {"imageIndex": 4, "imageOffset": 0x18eb0},
+                {"imageIndex": 4, "imageOffset": 0x126ac},
+                {"imageIndex": 4, "imageOffset": 0x11f14},
+            ]},
+        ]
+
+    def test_the_report_reads_as_signal_thread_and_first_real_frame(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = self._report(temporary, "Civ6_Exe_Child-2026-11-15-062825.ips",
+                                self._pure_virtual_threads())
+            row = civ6_play.read_crash_report(path)
+            self.assertEqual(row["signature"], "SIGABRT TBB __cxa_pure_virtual")
+            self.assertEqual(row["thread"], "TBB")
+            self.assertEqual(row["frames"], ["__cxa_pure_virtual", "Civ6_Exe_Child+0x8cbbec",
+                                             "libtbb.dylib+0x18eb0", "libtbb.dylib+0x126ac"])
+            # The report's local time, as the event stream's UTC.
+            self.assertEqual(row["captured"], "2026-11-15T12:28:24.617Z")
+            self.assertEqual(row["alive_s"], 287.9)
+            self.assertEqual(row["report"], path.name)
+            # The older fault: no symbol, so the image names it, without the
+            # offset that differs from one occurrence to the next.
+            older = self._report(temporary, "Civ6_Exe_Child-2026-11-13-115602.ips", [
+                {"name": "WinMain (WinID 2)", "triggered": True, "frames": [
+                    {"imageIndex": 5, "imageOffset": 0x484d84},
+                    {"imageIndex": 5, "imageOffset": 0xdd2e4},
+                    {"imageIndex": 3, "imageOffset": 0x977fc8}]}],
+                signal="SIGSEGV", kind="EXC_BAD_ACCESS")
+            row = civ6_play.read_crash_report(older)
+            self.assertEqual(row["signature"], "SIGSEGV WinMain GameCore_XP2.dll")
+            self.assertEqual(row["frames"][0], "GameCore_XP2.dll+0x484d84")
+            # A report with no crashed thread still reads.
+            bare = self._report(temporary, "Civ6_Exe_Child-bare.ips", [])
+            self.assertEqual(civ6_play.read_crash_report(bare)["signature"], "SIGABRT ?")
+
+    def test_only_a_report_written_since_the_attempt_began_is_this_games(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            old = self._report(folder, "Civ6_Exe_Child-2026-11-15-051836.ips", [], mtime=1_000)
+            new = self._report(folder, "Civ6_Exe_Child-2026-11-15-062825.ips", [], mtime=2_000)
+            self._report(folder, "Chrome-2026-11-15-070000.ips", [], mtime=3_000)
+            self.assertEqual(civ6_play.newest_crash_report(0.0, folder), new)
+            self.assertEqual(civ6_play.newest_crash_report(1_500, folder), new)
+            self.assertEqual(civ6_play.newest_crash_report(1_000, folder), new)
+            self.assertIsNone(civ6_play.newest_crash_report(2_500, folder))
+            self.assertIsNone(civ6_play.newest_crash_report(0.0, folder / "missing"))
+            self.assertEqual(civ6_play.newest_crash_report(500, folder), new)
+            os.utime(new, (900, 900))
+            self.assertEqual(civ6_play.newest_crash_report(950, folder), old)
+
+    def _events(self, folder, rows):
+        path = Path(folder) / "events.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        return path
+
+    def test_the_trail_says_whose_phase_and_what_the_mod_last_did(self) -> None:
+        died = civ6_play.datetime(2026, 11, 15, 12, 28, 24, 617000,
+                                  tzinfo=civ6_play.timezone.utc)
+
+        def at(clock):
+            return f"2026-11-15T12:28:{clock}Z"
+
+        with tempfile.TemporaryDirectory() as temporary:
+            # Measured civvis-20261115T122335Z: a leader screen released 11 s
+            # before, our end turn 3.2 s before, rival combat to 80 ms before.
+            rival = self._events(temporary, [
+                {"ctx": "autoclose", "kind": "event_lock", "op": "release",
+                 "screen": "DiplomacyActionView", "utc": at("13.467")},
+                {"ctx": "harness", "kind": "host_load", "load": [16.0, 17.0, 18.0],
+                 "utc": at("15.000")},
+                {"ctx": "agent", "kind": "orders", "turn": 79, "frame": 2, "utc": at("20.370")},
+                {"ctx": "agent", "kind": "end_turn_wait", "turn": 79, "blockers": [],
+                 "forced": 1, "utc": at("21.444")},
+                {"ctx": "agent", "kind": "combat", "turn": 79, "utc": at("23.134")},
+                {"ctx": "agent", "kind": "combat", "turn": 79, "utc": at("23.350")},
+                {"ctx": "agent", "kind": "combat", "turn": 79, "utc": at("24.537")},
+            ])
+            trail = civ6_play.crash_trail(rival, died)
+            self.assertEqual((trail["turn"], trail["phase"]), (79, "rival"))
+            self.assertEqual(trail["last_row_age_ms"], 80)
+            self.assertEqual(trail["trail_s"], 11.2)
+            self.assertEqual(trail["last_ui_row"], {
+                "age_ms": 11150, "kind": "event_lock", "ctx": "autoclose",
+                "op": "release", "screen": "DiplomacyActionView"})
+            # The three combats are one entry; the load sample is not a row
+            # of the game's.
+            self.assertEqual([row["kind"] for row in trail["last_rows"]],
+                             ["event_lock", "orders", "end_turn_wait", "combat"])
+            self.assertEqual(trail["last_rows"][-1], {"age_ms": 80, "kind": "combat",
+                                                      "turn": 79, "n": 3})
+            self.assertEqual(len(civ6_play.crash_trail(rival, died, keep=2)["last_rows"]), 2)
+            # An end turn the host still refuses is our phase, and so is a
+            # frame of orders after an accepted one (the next turn).
+            for rows in ([{"kind": "end_turn_wait", "turn": 165, "blockers": {"1385632321": 1},
+                           "utc": at("24.000")}],
+                         [{"kind": "end_turn_wait", "turn": 165, "blockers": [], "utc": at("20.000")},
+                          {"kind": "orders", "turn": 166, "utc": at("24.000")}]):
+                ours = civ6_play.crash_trail(self._events(temporary, rows), died)
+                self.assertEqual(ours["phase"], "ours")
+                self.assertIsNone(ours["last_ui_row"])
+            # Without a capture time the last row is the reference.
+            self.assertEqual(civ6_play.crash_trail(rival, None)["last_row_age_ms"], 0)
+            # Nothing readable is no trail, not an error.
+            self.assertEqual(civ6_play.crash_trail(self._events(temporary, []), died), {})
+            self.assertEqual(civ6_play.crash_trail(Path(temporary) / "absent.jsonl", died), {})
+            broken = Path(temporary) / "events.jsonl"
+            broken.write_text("not json\n{\"kind\": \"turn\"}\n{broken\n")
+            self.assertEqual(civ6_play.crash_trail(broken, died), {})
+
+    def test_the_crash_row_joins_the_report_the_trail_and_the_load(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary) / "reports"
+            folder.mkdir()
+            events = self._events(temporary, [
+                {"kind": "end_turn_wait", "turn": 79, "blockers": [],
+                 "utc": "2026-11-15T12:28:21.444Z"},
+                {"kind": "combat", "turn": 79, "utc": "2026-11-15T12:28:24.537Z"}])
+            naps = []
+            ticks = iter([0.0, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5])
+
+            def nap(seconds):
+                naps.append(seconds)
+                if len(naps) == 2:        # the report lands a second after the exit
+                    self._report(folder, "Civ6_Exe_Child-2026-11-15-062825.ips",
+                                 self._pure_virtual_threads(), mtime=5_000)
+
+            with patch.object(civ6_play, "host_load", return_value=[16.05, 16.14, 17.1]):
+                row = civ6_play.native_crash_row(events, 4_000, wait_s=6.0, folder=folder,
+                                                 sleep=nap, clock=lambda: next(ticks))
+            self.assertEqual(naps, [0.5, 0.5])
+            self.assertEqual((row["kind"], row["ctx"]), ("native_crash", "harness"))
+            self.assertEqual(row["signature"], "SIGABRT TBB __cxa_pure_virtual")
+            self.assertEqual((row["turn"], row["phase"], row["last_row_age_ms"]),
+                             (79, "rival", 80))
+            self.assertEqual(row["load"], [16.05, 16.14, 17.1])
+            json.dumps(row)                # it is a row: it must serialize
+
+            # No report within the wait: not a crash we can name.
+            clock = iter([0.0, 0.0, 3.0, 7.0])
+            self.assertIsNone(civ6_play.native_crash_row(
+                events, 9_000, wait_s=6.0, folder=folder, sleep=lambda _s: None,
+                clock=lambda: next(clock)))
+            # A report that cannot be parsed is still reported, by name.
+            (folder / "Civ6_Exe_Child-torn.ips").write_text("{}\n{not json")
+            os.utime(folder / "Civ6_Exe_Child-torn.ips", (9_500, 9_500))
+            torn = civ6_play.native_crash_row(events, 9_000, wait_s=0.0, folder=folder)
+            self.assertEqual(torn["report"], "Civ6_Exe_Child-torn.ips")
+            self.assertIsNone(torn["signature"])
+            self.assertIn("unreadable", torn)
+            self.assertEqual(torn["kind"], "native_crash")
+
+    def test_the_load_is_three_rounded_averages_or_nothing(self) -> None:
+        with patch.object(civ6_play.os, "getloadavg", return_value=(16.0546, 16.1409, 17.1)):
+            self.assertEqual(civ6_play.host_load(), [16.05, 16.14, 17.1])
+        with patch.object(civ6_play.os, "getloadavg", side_effect=OSError("unavailable")):
+            self.assertIsNone(civ6_play.host_load())
+
+    def test_the_load_is_noted_only_beside_a_row_of_the_games(self) -> None:
+        # The wedge watchdog reads the event file's mtime as the game's own
+        # voice; a load row on a timer would keep a parked game looking alive.
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "host_load", return_value=[15.0, 16.0, 17.0]):
+            events = self._events(temporary, [{"kind": "turn", "turn": 5}])
+            os.utime(events, (10_000.0, 10_000.0))
+            row = {"kind": "host_load", "ctx": "harness", "load": [15.0, 16.0, 17.0]}
+            # Due, and the game wrote a row 0.4 s ago.
+            self.assertEqual(civ6_play.host_load_row(events, 30.0, wall=10_000.4), row)
+            self.assertEqual(civ6_play.host_load_row(events, 500.0, wall=10_001.0), row)
+            # Not due yet.
+            self.assertIsNone(civ6_play.host_load_row(events, 29.9, wall=10_000.4))
+            # Due, but the game has said nothing for 1.5 s, or for a minute:
+            # the file is left alone, however long the row is overdue.
+            self.assertIsNone(civ6_play.host_load_row(events, 30.0, wall=10_001.5))
+            self.assertIsNone(civ6_play.host_load_row(events, 3_600.0, wall=10_060.0))
+            # No file, or no load to read: no row.
+            self.assertIsNone(civ6_play.host_load_row(Path(temporary) / "absent.jsonl",
+                                                      30.0, wall=10_000.4))
+            with patch.object(civ6_play, "host_load", return_value=None):
+                self.assertIsNone(civ6_play.host_load_row(events, 30.0, wall=10_000.4))
+        self.assertLessEqual(civ6_play.HOST_LOAD_BESIDE_S, 1.0)
+
+    def test_the_play_loop_records_both_rows(self) -> None:
+        import inspect
+        source = inspect.getsource(civ6_play._play)
+        # The load row rides the poll hook, gated by the interval.
+        hook = source.split("def keep_foreground() -> None:", 1)[1].split("def ", 1)[0]
+        self.assertIn("note_host_load()", hook)
+        noted = source.split("def note_host_load() -> None:", 1)[1].split("def ", 1)[0]
+        self.assertIn("row = host_load_row(events_path, now - load_noted[0])", noted)
+        self.assertIn("record(row)", noted)
+        # The crash row is written only when the game exited under the watch,
+        # after the stall rescues, and before the run lets go of the game.
+        self.assertIn('if reason == "game exited":\n        crash = native_crash_row('
+                      'events_path, watch_began_wall)', source)
+        self.assertLess(source.index("while reason.startswith(\"stalled\")"),
+                        source.index('if reason == "game exited":'))
+        block = source.split('if reason == "game exited":', 1)[1].split(
+            "# Whatever ended the run, it no longer holds a game.", 1)
+        self.assertEqual(len(block), 2)
+        self.assertIn("record(crash)", block[0])
+        self.assertIn("macOS filed no crash report", block[0])
+        self.assertEqual(civ6_play.HOST_LOAD_EVERY_S, 30.0)
 
 
 class MirrorSyncStartsBeforeSetupTest(unittest.TestCase):
@@ -2922,6 +3352,19 @@ class DealSessionConfigTests(unittest.TestCase):
         self.assertIn('ap.add_argument("--deal-session-quarantine", '
                       'dest="deal_session_quarantine",', source)
 
+    def test_the_deferred_deal_question_is_opt_in(self):
+        self.assertIs(self._config()["DealAskOnTick"], False)
+        self.assertIs(self._config(deal_ask_on_tick=True)["DealAskOnTick"], True)
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('ap.add_argument("--deal-ask-on-tick", dest="deal_ask_on_tick",', source)
+
+    def test_declining_a_refusal_left_on_the_deal_screen_is_opt_in(self):
+        self.assertIs(self._config()["DealCounterRefuse"], False)
+        self.assertIs(self._config(deal_counter_refuse=True)["DealCounterRefuse"], True)
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('ap.add_argument("--deal-counter-refuse", dest="deal_counter_refuse",',
+                      source)
+
     def test_civvis_decider_keeps_non_modal_deals_by_default(self):
         self.assertIs(self._config(civvis_decides=True)["DealSessions"], False)
 
@@ -3204,11 +3647,14 @@ class SafeScreenCaptureWaitTests(unittest.TestCase):
 
     def test_main_menu_visibility_survives_an_unavailable_ocr(self) -> None:
         civ6_play._OCR_CACHE.clear()
-        with patch.object(
+        with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+             patch.object(
                 civ6_play.macos_ocr, "recognize",
-                side_effect=civ6_play.macos_ocr.OCRUnavailable("0 x 0")):
-            visible = civ6_play._main_menu_visible(Path("zero-sized-menu.png"))
+                side_effect=civ6_play.macos_ocr.OCRUnavailable("0 x 0")) as recognize:
+            visible = civ6_play._main_menu_visible(Path("zero-sized-menu.png"),
+                                                   (0, 33, 864, 542))
         self.assertFalse(visible)
+        self.assertTrue(recognize.called, "the read was attempted, not skipped")
 
 
 class LiveControlArmTests(unittest.TestCase):
@@ -4379,6 +4825,63 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         # budget has run out at 21 s -- eight, where one flat sleep gave one.
         self.assertEqual(len(looks), 8)
 
+    def _looks(self, look_s: float, readable_at: float, **kw) -> tuple[list[float], float]:
+        """When each look starts, and when the poll returns, for a screen that
+        answers from ``readable_at``; a look takes ``look_s``."""
+        clock = {"now": 0.0}
+        looks: list[float] = []
+
+        def sleep(seconds: float) -> None:
+            clock["now"] += seconds
+
+        def read():
+            looks.append(round(clock["now"], 3))
+            clock["now"] += look_s
+            return "menu" if looks[-1] >= readable_at else None
+
+        with patch.object(civ6_play.time, "monotonic", lambda: clock["now"]), \
+             patch.object(civ6_play.time, "sleep", sleep):
+            result = civ6_play._poll_screen(read, **kw)
+        return looks, clock["now"] if result else float("inf")
+
+    def test_the_first_menu_poll_looks_about_every_second_late_in_the_boot(self) -> None:
+        # A look of 0.9 s: every 2.4 s for the first eight seconds of the
+        # poll, every 1.2 s after them (the look begun at 7.2 s ends at 8.1).
+        looks, _ = self._looks(0.9, 99.0, budget_s=14.0, poll_s=1.5,
+                               quick_after_s=8.0, quick_poll_s=0.3)
+        self.assertEqual(looks, [0.0, 2.4, 4.8, 7.2, 8.4, 9.6, 10.8, 12.0, 13.2])
+        # A menu that draws 12.5 s into the poll (about +25 s after launch) is
+        # read by the look at 13.2 s, not the one at 14.4 s.
+        quick, quick_done = self._looks(0.9, 12.5, budget_s=40.0, poll_s=1.5,
+                                        quick_after_s=8.0, quick_poll_s=0.3)
+        slow, slow_done = self._looks(0.9, 12.5, budget_s=40.0, poll_s=1.5)
+        self.assertEqual((quick[-1], slow[-1]), (13.2, 14.4))
+        self.assertAlmostEqual(slow_done - quick_done, 1.2, places=6)
+
+    def test_without_both_quick_settings_the_poll_is_what_it_was(self) -> None:
+        plain, _ = self._looks(0.9, 99.0, budget_s=14.0, poll_s=1.5)
+        self.assertEqual(plain, [0.0, 2.4, 4.8, 7.2, 9.6, 12.0, 14.4])
+        for kw in ({"quick_after_s": 8.0}, {"quick_poll_s": 0.3},
+                   {"quick_after_s": 8.0, "quick_poll_s": 1.5},     # not quicker
+                   {"quick_after_s": 8.0, "quick_poll_s": 9.0},     # never slower
+                   {"quick_after_s": 8.0, "quick_poll_s": -1.0}):
+            with self.subTest(kw=kw):
+                looks, _ = self._looks(0.9, 99.0, budget_s=14.0, poll_s=1.5, **kw)
+                self.assertEqual(looks, plain)
+
+    def test_only_the_first_top_menu_attempt_is_quickened(self) -> None:
+        import inspect
+        source = inspect.getsource(civ6_play.bootstrap_game)
+        call = source.split("top = _poll_screen(read_top_menu")[1].split("\n        menu_point")[0]
+        self.assertIn("quick_after_s=FIRST_MENU_QUICK_AFTER_S if attempt == 1 else None", call)
+        self.assertIn("quick_poll_s=FIRST_MENU_QUICK_POLL_S if attempt == 1 else None", call)
+        self.assertIn("sub = _poll_screen(read_submenu)", source)
+        self.assertLess(civ6_play.FIRST_MENU_QUICK_POLL_S, civ6_play.SCREEN_POLL_S)
+        # The quick phase starts before the earliest menu seen (+23.3 s after
+        # launch, the poll beginning at +11 to +13 s) and inside the budget.
+        self.assertLessEqual(civ6_play.FIRST_MENU_QUICK_AFTER_S, 10.0)
+        self.assertLess(civ6_play.FIRST_MENU_QUICK_AFTER_S, civ6_play.FIRST_MENU_POLL_BUDGET_S)
+
     def test_the_first_menu_attempt_outlasts_the_boot_logos(self) -> None:
         # 18 of 24 games on 2026-11-03 ran attempt 1's 20 s budget out seconds
         # before the menu drew (+30-34 s vs +31-41 s) and re-paid the attempt
@@ -4499,10 +5002,13 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         for fn, call in ((civ6_play._setup_current_value, "recognize_once(path, bounds)"),
                          (civ6_play._setup_current_leader, "recognize_once(path, bounds)"),
                          (civ6_play._map_picker_labels, "_menu_ocr_observations(path, bounds)"),
-                         (civ6_play._observed_label_points, "_menu_ocr_observations(path, bounds)")):
+                         (civ6_play._observed_label_points, "_menu_ocr_observations(path, bounds)"),
+                         (civ6_play._main_menu_rows, "_menu_ocr_observations(path, bounds)")):
             self.assertIn(call, inspect.getsource(fn), fn.__name__)
-        # Recovery's menu check keeps the whole desktop (no window bounds there).
-        self.assertIn("_menu_ocr_observations(path)", inspect.getsource(civ6_play._main_menu_visible))
+        # The main-menu check reads the window too: the desktop beside it holds
+        # the CIVVIS mirror, whose turn box reads "POV: Single Player".
+        self.assertNotIn("_menu_ocr_observations(path)",
+                         inspect.getsource(civ6_play._main_menu_rows))
 
     def test_a_missing_capture_is_not_cached_and_still_raises(self) -> None:
         with patch.object(civ6_play.macos_ocr, "recognize",
@@ -5117,19 +5623,86 @@ class PollCadenceKeepsItsWallClock(unittest.TestCase):
 
 
 class StallMainMenuTests(unittest.TestCase):
-    """A stall photographed on the main menu ends the attempt at once."""
+    """A stall photographed on the main menu ends the attempt at once, and a
+    stall photographed anywhere else does not.
 
-    def test_the_main_menu_is_read_from_the_stall_photograph(self) -> None:
-        shot = Path("/tmp/stalled-1.png")
-        with mock.patch.object(civ6_play, "_menu_ocr_observations",
-                               return_value=[{"text": "Single Player"},
-                                             {"text": "Multiplayer"}]):
-            self.assertTrue(civ6_play.stall_screen_is_main_menu(shot))
-        with mock.patch.object(civ6_play, "_menu_ocr_observations",
-                               return_value=[{"text": "Next Turn"}]):
-            self.assertFalse(civ6_play.stall_screen_is_main_menu(shot))
-        with mock.patch.object(civ6_play, "_menu_ocr_observations", return_value=[]):
-            self.assertFalse(civ6_play.stall_screen_is_main_menu(shot))
+    The observations are Vision's reads of live captures
+    (`fixtures/stall_main_menu_ocr.json`). Live civvis-20261115T225114Z was
+    ended at turn 60 of 160 as "stalled: main menu" on a photograph of the game
+    on its map: the read took the CIVVIS mirror's "POV: Single Player", beside
+    the game window, for the menu's Single Player row.
+    """
+
+    FIXTURE = json.loads((Path(__file__).resolve().parent / "fixtures"
+                          / "stall_main_menu_ocr.json").read_text())
+    WINDOW = tuple(FIXTURE["window"])
+
+    def _is_menu(self, window: list[dict], crop: list[dict],
+                 bounds: tuple[int, int, int, int] | None = WINDOW) -> bool:
+        with mock.patch.object(civ6_play, "desktop_size",
+                               return_value=tuple(self.FIXTURE["desktop"])), \
+             mock.patch.object(civ6_play, "_menu_ocr_observations",
+                               return_value=window), \
+             mock.patch.object(civ6_play, "_menu_crop_ocr", return_value=crop):
+            return civ6_play.stall_screen_is_main_menu(Path("stalled-1.png"), bounds)
+
+    def _capture(self, name: str) -> dict:
+        return self.FIXTURE["captures"][name]
+
+    def test_the_stall_photograph_of_a_live_game_is_not_the_main_menu(self) -> None:
+        stall = self._capture("stalled_in_game")
+        mirror = [observation for observation in stall["full_desktop"]
+                  if civ6_play._menu_label_matches(observation["text"], "Single Player")]
+        # The trap is in the photograph: the old whole-desktop read matched it.
+        self.assertEqual(len(mirror), 1)
+        self.assertGreater(mirror[0]["x"] * self.FIXTURE["desktop"][0],
+                           self.WINDOW[0] + self.WINDOW[2],
+                           "the Single Player that was read lies right of the game window")
+        self.assertFalse(self._is_menu(stall["window"], stall["crop"]))
+
+    def test_a_whole_desktop_read_still_counts_only_the_window(self) -> None:
+        """The window pass reads the whole capture when it cannot crop (no
+        Pillow on CI); an observation's position is what keeps the mirror out."""
+        stall = self._capture("stalled_in_game")
+        self.assertFalse(self._is_menu(stall["full_desktop"], []))
+
+    def test_a_real_main_menu_still_reads_as_the_main_menu(self) -> None:
+        menu = self._capture("main_menu")
+        self.assertTrue(self._is_menu(menu["window"], menu["crop"]))
+        # Either pass alone carries it.
+        self.assertTrue(self._is_menu(menu["window"], []))
+        self.assertTrue(self._is_menu([], menu["crop"]))
+
+    def test_the_load_game_page_is_not_the_main_menu(self) -> None:
+        """Its "Game Options" and "Additional Content" headings are two menu
+        labels, so two rows alone would read it as the menu."""
+        load = self._capture("load_game")
+        rows = set()
+        with mock.patch.object(civ6_play, "desktop_size",
+                               return_value=tuple(self.FIXTURE["desktop"])), \
+             mock.patch.object(civ6_play, "_menu_ocr_observations",
+                               return_value=load["window"]), \
+             mock.patch.object(civ6_play, "_menu_crop_ocr", return_value=load["crop"]):
+            rows = civ6_play._main_menu_rows(Path("startup-wait2-1.png"), self.WINDOW)
+        self.assertGreaterEqual(len(rows), civ6_play.MAIN_MENU_MIN_ROWS)
+        self.assertNotIn("single player", rows)
+        self.assertFalse(self._is_menu(load["window"], load["crop"]))
+
+    def test_one_stray_single_player_in_the_window_is_not_the_menu(self) -> None:
+        menu = self._capture("main_menu")
+        single = [observation for observation in menu["window"]
+                  if civ6_play._menu_label_matches(observation["text"], "Single Player")]
+        self.assertEqual(len(single), 1)
+        self.assertFalse(self._is_menu(single, []))
+
+    def test_without_the_game_window_nothing_reads_as_the_menu(self) -> None:
+        menu = self._capture("main_menu")
+        self.assertFalse(self._is_menu(menu["window"], menu["crop"], bounds=None))
+
+    def test_the_stall_reads_the_menu_in_the_window_it_finds(self) -> None:
+        import inspect
+        self.assertIn("stall_screen_is_main_menu(shot, game_window())",
+                      inspect.getsource(civ6_play))
 
 
 class VSyncABSwitchTest(unittest.TestCase):

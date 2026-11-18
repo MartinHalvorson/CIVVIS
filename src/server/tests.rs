@@ -1555,7 +1555,7 @@ fn a_viewer_slower_than_the_pace_still_sees_every_turn() {
     params.width = 24;
     params.height = 16;
     params.seed = 20_260_725;
-    std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+    std::thread::spawn(move || serve_at_two_turns_a_second(port, params));
 
     let deadline = Instant::now() + Duration::from_secs(60);
     while http_get(port, "/status").is_none() {
@@ -1631,7 +1631,7 @@ fn an_arriving_page_is_not_held_up_by_another_viewers_paint() {
     params.width = 24;
     params.height = 16;
     params.seed = 20_260_727;
-    std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+    std::thread::spawn(move || serve_at_two_turns_a_second(port, params));
 
     let deadline = Instant::now() + Duration::from_secs(60);
     while http_get(port, "/status").is_none() {
@@ -1913,6 +1913,46 @@ fn blitz_server_posts_each_players_completed_turn() {
     assert_eq!(status["frames_missed"], json!(0));
 }
 
+/// A spectator server held to half a second a turn from its first step.
+/// The tests that measure frames, viewers and result holds were written
+/// against that pace when it was the default; a server now opens at Max
+/// (`DEFAULT_PACE_MS`), and these name the pace they measure instead of
+/// inheriting it.
+fn serve_at_two_turns_a_second(port: u16, params: Params) {
+    super::serve_opening_at_pace(port, false, params, super::Opening::Generated, false, 500);
+}
+
+/// A new server opens at Max (operator 2026-11-15): no wait between turns
+/// until a viewer picks a slower Max Speed. The browser build's module
+/// opens on the same constant.
+#[test]
+fn a_new_server_opens_at_max_speed() {
+    let port = TcpListener::bind(("127.0.0.1", 0))
+        .expect("a free port")
+        .local_addr()
+        .unwrap()
+        .port();
+    let mut params = current();
+    params.spectate = true;
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_115;
+    // Paused, so the world under test is not played flat out meanwhile.
+    std::thread::spawn(move || super::serve_with_game(port, false, params, None, true));
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while http_get(port, "/status").is_none() {
+        assert!(Instant::now() < deadline, "spectator server never came up");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let state: Value =
+        serde_json::from_str(&http_get(port, "/state").expect("state")).expect("state is JSON");
+    assert_eq!(state["pace"], json!(0), "a new server opens at Max");
+    let router = include_str!("../wasm.rs");
+    assert!(router.contains("static PACE: Cell<u64> = const { Cell::new(DEFAULT_PACE_MS) };"));
+}
+
 /// Start a spectator on its own port and wait for it to answer.
 fn exhibition(seed: u64) -> u16 {
     let port = TcpListener::bind(("127.0.0.1", 0))
@@ -1927,7 +1967,7 @@ fn exhibition(seed: u64) -> u16 {
     params.width = 24;
     params.height = 16;
     params.seed = seed;
-    std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+    std::thread::spawn(move || serve_at_two_turns_a_second(port, params));
     let deadline = Instant::now() + Duration::from_secs(60);
     while http_get(port, "/status").is_none() {
         assert!(Instant::now() < deadline, "spectator server never came up");
@@ -2421,7 +2461,7 @@ fn the_pace_endpoint_flips_the_arena_fog_for_the_running_battle() {
     );
     params.spectate = true;
     params.seed = 20_260_815;
-    std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+    std::thread::spawn(move || serve_at_two_turns_a_second(port, params));
     let deadline = Instant::now() + Duration::from_secs(60);
     while http_get(port, "/status").is_none() {
         assert!(Instant::now() < deadline, "arena server never came up");
@@ -2488,7 +2528,7 @@ fn a_result_arrives_with_its_countdown_and_can_be_played_past() {
     params.seed = 20_260_727;
     // Short enough that the turn limit lands within the test's patience.
     params.max_turns = 3;
-    std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+    std::thread::spawn(move || serve_at_two_turns_a_second(port, params));
     let deadline = Instant::now() + Duration::from_secs(60);
     while http_get(port, "/status").is_none() {
         assert!(Instant::now() < deadline, "spectator server never came up");
@@ -2645,7 +2685,7 @@ fn no_between_game_countdown_starts_the_successor_without_a_result_hold() {
     params.height = 16;
     params.seed = 20_260_804;
     params.max_turns = 1;
-    std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+    std::thread::spawn(move || serve_at_two_turns_a_second(port, params));
 
     let runtime = |port| -> Value {
         serde_json::from_str(&http_get(port, "/runtime").expect("runtime"))
@@ -7625,6 +7665,17 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "const PLAYER_HUD_RATED_TABLE_HOLDS = [\"win_delta\", \"win_start\", \"elo\", \"player\"];"
     ));
     assert!(EMBEDDED_INDEX.contains("for (const key of playerHudShedOrder()) {"));
+    // The mirror of a Civilization VI game names its seats without rating
+    // them ("8 Deity Firaxis AI"), and those names are what the operator reads
+    // the column for, so a named table holds Player as a rated one does. The
+    // first cut shed the column at a 1728 px window the moment the mirror
+    // stopped borrowing the site agents' ratings (real page, 2026-11-13).
+    assert!(EMBEDDED_INDEX.contains(
+        "function namedTableInPlay() {\n  return Boolean(state?.players?.some(player => player.ai_username));\n}"
+    ));
+    assert!(EMBEDDED_INDEX.contains("if (!namedTableInPlay()) return PLAYER_HUD_SHED_ORDER;"));
+    assert!(EMBEDDED_INDEX
+        .contains("function syncRatedPlayerFloors(hud) {\n  if (!namedTableInPlay()) {"));
     // Arena Stats keeps a record per player strategy: a Civ AI Agent by its
     // handle or a person, never the house fleet's per-game generated name.
     assert!(EMBEDDED_INDEX.contains("strategies: {label: \"Strategies\", table: \"agents\","));
@@ -8047,8 +8098,12 @@ fn browser_orders_controls_interface_setup_and_logs() {
         EMBEDDED_INDEX.contains("{selector:\"#playerhud .watch-as-link\", min:9, max:12, slack:6}")
     );
     assert!(EMBEDDED_INDEX.contains("class=\"spectator-view-link\" data-hud-action=\"spectator\""));
-    assert!(EMBEDDED_INDEX.contains("Spectator mode: see everyone with full map visibility"));
-    assert!(EMBEDDED_INDEX.contains(">All</button>"));
+    // The way back out of a Watch-as view carries the turn box's own word for
+    // that view, "POV: Global" (operator 2026-11-15: "change all (above watch
+    // as) to Global").
+    assert!(EMBEDDED_INDEX.contains("Global view: see everyone with full map visibility"));
+    assert!(EMBEDDED_INDEX.contains(">Global</button>"));
+    assert!(!EMBEDDED_INDEX.contains(">All</button>"));
     assert!(EMBEDDED_INDEX.contains("data-hud-action=\"watch\" data-hud-civ=\"${p.id}\""));
     assert!(EMBEDDED_INDEX.contains("data-hud-action=\"dossier\" data-hud-civ=\"${p.id}\""));
     assert!(EMBEDDED_INDEX.contains("spectatePlayer(null);"));
@@ -8442,13 +8497,13 @@ fn the_stock_opening_world_is_the_tiny_tennis_ball_exhibition() {
     assert_eq!(params.seed, 7);
 }
 
-/// civvis.ai opens at Lightning without a desktop build moving: the choice
+/// civvis.ai opens at Max Speed without a desktop build moving: the choice
 /// is the viewer's, gated to the hosts that serve the published site, and it
 /// never reaches `localStorage`, so a pace somebody picked by hand still wins.
-/// The markup's own Blitz is what a desktop page shows before its server
-/// reports in.
+/// The markup's own Max is what a desktop page shows before its server
+/// reports in, and since 2026-11-15 a server opens at Max too.
 #[test]
-fn the_published_site_opens_at_lightning_as_a_soft_choice() {
+fn the_published_site_opens_at_max_speed_as_a_soft_choice() {
     assert!(EMBEDDED_INDEX.contains(
         "window.CIVVIS_PUBLISHED_SITE = /(^|\\.)civvis\\.ai$|\\.pages\\.dev$/.test(location.hostname);"
     ));
@@ -8456,7 +8511,7 @@ fn the_published_site_opens_at_lightning_as_a_soft_choice() {
     assert!(
         EMBEDDED_INDEX.contains(": window.CIVVIS_PUBLISHED_SITE ? PUBLISHED_SITE_PACE_MS : null;")
     );
-    assert!(EMBEDDED_INDEX.contains("<option value=\"500\" selected>Blitz</option>"));
+    assert!(EMBEDDED_INDEX.contains("<option value=\"0\" selected>Max</option>"));
     assert_eq!(
         EMBEDDED_INDEX
             .matches("localStorage.setItem(PACE_KEY")
@@ -8464,6 +8519,32 @@ fn the_published_site_opens_at_lightning_as_a_soft_choice() {
         1,
         "only a hand-picked pace is remembered"
     );
+}
+
+/// The control is Max Speed (operator 2026-11-15): a cap in turns per second,
+/// Max first and unpaced, then 5, 2, 1, 0.5, 0.25 and 0.1 turns a second.
+/// Each value is the whole-turn budget in milliseconds the server already
+/// takes, so a pace remembered under the old names keeps its meaning.
+#[test]
+fn max_speed_offers_turns_per_second_caps() {
+    assert!(EMBEDDED_INDEX.contains("<div class=\"speed-row\"><span>Max Speed</span>"));
+    let ladder = concat!(
+        "<option value=\"0\" selected>Max</option>\n",
+        "              <option value=\"200\">5 turns/s</option>\n",
+        "              <option value=\"500\">2 turns/s</option>\n",
+        "              <option value=\"1000\">1 turn/s</option>\n",
+        "              <option value=\"2000\">0.5 turns/s</option>\n",
+        "              <option value=\"4000\">0.25 turns/s</option>\n",
+        "              <option value=\"10000\">0.1 turns/s</option>\n",
+        "            </select>",
+    );
+    assert!(
+        EMBEDDED_INDEX.contains(ladder),
+        "the Max Speed ladder moved"
+    );
+    assert!(EMBEDDED_INDEX.contains("<span>Max Speed:</span>${watchPaceValue}"));
+    assert!(!EMBEDDED_INDEX.contains(">Lightning</option>"));
+    assert!(!EMBEDDED_INDEX.contains(">Blitz</option>"));
 }
 
 /// The product is hard-committed to sequential turns: the stock world
@@ -8653,7 +8734,7 @@ fn browser_lets_the_turn_plate_widen_into_two_columns() {
     }
 }
 
-/// The turn plate's first line is the map, a live Civilization VI game's
+/// The turn plate's setup line is the map, a live Civilization VI game's
 /// level and the speed, with no labels: "4P Pangaea · Lv 6 · Online"
 /// (operator 2026-10-14: "combine the top 2 rows … all one line"). The level
 /// is counted on the ruleset's own ladder so "Lv 6" is the verification
@@ -8691,6 +8772,79 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
     assert_eq!(rules.difficulties.len(), 8);
     assert_eq!(rules.difficulties["emperor"].order + 1, 6);
     assert_eq!(rules.difficulties["immortal"].order + 1, 7);
+}
+
+/// The turn box says how the game is being played and whose eyes the map is
+/// drawn through (operator 2026-11-15: add a "Mode:" and a "POV:"). Mode is
+/// CIVVIS Self-play when every seat is an agent's, CIVVIS Single Player when
+/// a person holds one, Firaxis Civ VI Testing beside a mirrored live game
+/// (operator, same day: "Change Civ VI to CIVVIS Self-play, Firaxis Civ VI
+/// Testing, and CIVVIS Single Player"). POV is Global for the omniscient
+/// spectator and Single Player for a played seat or a Watch-as view, whose
+/// tooltip names the civilization.
+///
+/// The two rows open the settings list, above the setup line. Live time and
+/// Max Speed stand above the age and the turn counter: they spent an
+/// afternoon under the counter and the operator moved them "back above age
+/// and turn counter like before", so Max Speed is again a line of its own.
+///
+/// A short roster's table ends above the box's last row, so the masthead's
+/// automatic height takes the box's measured content as a floor; a dragged
+/// height is still the viewer's own.
+#[test]
+fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
+    for piece in [
+        "const plateMode = livePause.available",
+        "? [\"Firaxis Civ VI Testing\", \"A live Firaxis Civilization VI game under test, mirrored here turn by turn.\"]",
+        ": SPEC ? [\"CIVVIS Self-play\", \"Every civilization is played by a CIVVIS AI agent. Nobody holds a seat.\"]",
+        ": [\"CIVVIS Single Player\", \"You play one civilization. CIVVIS AI agents play the rest.\"];",
+        "const platePov = !SPEC || playerView",
+        "? [\"Single Player\", `The world as ${identity.civ || \"one civilization\"} sees it, behind its own fog.`]",
+        ": [\"Global\", \"The whole world at once, with no civilization's fog.\"];",
+        "frameRow(\"Mode:\", plateMode) + frameRow(\"POV:\", platePov) +\n    `<div class=\"turn-setting turn-setup-line\"",
+        "`mode ${plateMode[0]}; point of view ${platePov[0]}`;",
+        // The long Mode name is whole on the narrowest plate at 8px.
+        "{selector:\"#playerhud .turn-settings\", min:8, max:12, slack:4},",
+        // Max Speed is a line of its own, fitted and ruled as before.
+        "{selector:\"#playerhud .turn-pace-line\", min:8.5, max:12, slack:4},",
+        ".has-live-time .turn-pace-line { padding-bottom: 4px; border-bottom: 1px solid #d7b66a24; }",
+        "function measureTurnPlateNeed(hud) {",
+        "const last = plate?.querySelector(\".turn-settings\")?.lastElementChild;",
+        "const plateNeed = measureTurnPlateNeed(hud);",
+        "if (!HUD_LAYOUT.players) pickPlayerHudHeight();",
+    ] {
+        assert!(
+            EMBEDDED_INDEX.contains(piece),
+            "the turn box's Mode and POV rows are missing {piece}"
+        );
+    }
+    // Live time, Max Speed, age, turn counter, then the list from Mode down.
+    let (_, plate) = EMBEDDED_INDEX
+        .split_once("function hudTurnPlate() {")
+        .expect("the turn plate");
+    let (_, markup) = plate
+        .split_once("hudFoldButton(\"turnplate\", \"turn box\", \"turn-plate-fold\") +")
+        .expect("the plate's markup");
+    let order = [
+        "<div class=\"turn-live\"",
+        "<span>Max Speed:</span>",
+        "<span class=\"turn-era\">",
+        "<span class=\"turn-label\">Turn</span>",
+        "frameRow(\"Mode:\", plateMode)",
+        "frameRow(\"POV:\", platePov)",
+        "turn-setup-line",
+        "rosterRow(\"Civs:\"",
+        "rosterRow(\"City states:\"",
+    ]
+    .map(|part| {
+        markup
+            .find(part)
+            .unwrap_or_else(|| panic!("the plate lost {part}"))
+    });
+    assert!(
+        order.windows(2).all(|pair| pair[0] < pair[1]),
+        "the turn box is out of the operator's order: {order:?}"
+    );
 }
 
 /// Player-row color is reserved for a current war. Friendships and
@@ -9393,6 +9547,12 @@ fn a_game_has_a_start_a_pause_and_its_payoffs() {
         .find(r#"<script src="/assets/app.js?instance=7"></script>"#)
         .expect("the renderer is served under the instance");
     assert!(arena < renderer, "app_arena.js loads before app.js");
+    // So are the rockets and the laser stations the renderer launches.
+    assert!(super::EMBEDDED_APP_LAUNCHES_JS.starts_with("\"use strict\";"));
+    let launches = served
+        .find(r#"<script src="/assets/app_launches.js?instance=7"></script>"#)
+        .expect("the launches script is served under the instance");
+    assert!(launches < renderer, "app_launches.js loads before app.js");
     for id in [
         "moments",
         "fd-pause",
@@ -10786,7 +10946,11 @@ fn a_hundred_civ_world_keeps_the_map_and_paints_only_the_tiles_that_carry_ink() 
     assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_DEFAULT_MAP_SHARE = .42;"));
     assert!(EMBEDDED_INDEX.contains("function playerHudSeatHeight(seats, mapHeight) {"));
     assert!(EMBEDDED_INDEX.contains(
-        "`${Math.min(requestedHeight, seatHeight + cityRowsShown * playerHudRowPitch())}px`"
+        "Math.min(requestedHeight, seatHeight + cityRowsShown * playerHudRowPitch()))}px`"
+    ));
+    // The turn box's floor under a short table answers to the same share.
+    assert!(EMBEDDED_INDEX.contains(
+        "Math.min(turnPlateNeed, Math.floor(mapArea.clientHeight * PLAYER_HUD_DEFAULT_MAP_SHARE))"
     ));
     // A table past every stock world builds only the seats near what shows.
     assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_WINDOW_MIN_SEATS = 30;"));
@@ -12996,8 +13160,7 @@ fn browser_has_a_city_screen_that_can_spend() {
     // A district with more than one candidate tile names the tiles.
     assert!(EMBEDDED_INDEX.contains("entry.sites.length > 1"));
     // Actions are posted back exactly as the engine handed them over.
-    assert!(EMBEDDED_INDEX
-        .contains("onclick='sendFromCity(${JSON.stringify(action)})'>${label}</button>"));
+    assert!(EMBEDDED_INDEX.contains("onclick: `sendFromCity(${JSON.stringify(action)})`,"));
     // An idle city is a turn blocker; it must open the screen that
     // answers it rather than merely scrolling a sidebar.
     assert!(EMBEDDED_INDEX.contains("openCityScreen(city.id);"));
@@ -16822,6 +16985,7 @@ fn no_two_page_scripts_declare_the_same_function() {
     let scripts = [
         ("app_palette.js", super::EMBEDDED_APP_PALETTE_JS),
         ("app_arena.js", super::EMBEDDED_APP_ARENA_JS),
+        ("app_launches.js", super::EMBEDDED_APP_LAUNCHES_JS),
         ("app.js", EMBEDDED_APP_JS),
         ("app_setup.js", EMBEDDED_APP_SETUP_JS),
         ("app_moments.js", EMBEDDED_APP_MOMENTS_JS),

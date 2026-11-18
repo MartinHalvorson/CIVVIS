@@ -91,17 +91,23 @@ impl Game {
         self.players[pid]
             .religion_beliefs
             .iter()
-            .filter(|belief| !self.rules.beliefs.pantheon.contains_key(*belief))
+            .filter(|belief| !self.rules.beliefs.pantheon.contains_key(belief))
             .count()
     }
 
     pub(super) fn pantheon_effect(&self, pid: usize, effect: &str) -> f64 {
+        // The effect index holds every key a belief of any kind declares, so
+        // an effect it lacks is zero for every pantheon, and one it holds
+        // comes back interned: the pantheon's effects are then searched by
+        // integer, not by text.
+        let Some((&effect, _)) = self.rules.effect_index.beliefs.get_key_value(effect) else {
+            return 0.0;
+        };
         self.players[pid]
             .pantheon
             .as_ref()
             .and_then(|belief| self.rules.beliefs.pantheon.get(belief))
-            .and_then(|belief| belief.effects.get(effect))
-            .copied()
+            .and_then(|belief| belief.effects.get_name(effect))
             .unwrap_or(0.0)
     }
 
@@ -230,9 +236,11 @@ impl Game {
     }
 
     pub(super) fn religion_belief_effect(&self, religion: &str, effect: &str) -> f64 {
-        if !self.rules.effect_index.beliefs(effect) {
+        // See `pantheon_effect`: absent from the index is zero, and present
+        // comes back interned.
+        let Some((&effect, _)) = self.rules.effect_index.beliefs.get_key_value(effect) else {
             return 0.0;
-        }
+        };
         let Some(founder) = self.religion_founder(religion) else {
             return 0.0;
         };
@@ -248,7 +256,7 @@ impl Game {
                     .or_else(|| self.rules.beliefs.enhancer.get(belief))
                     .or_else(|| self.rules.beliefs.worship.get(belief))
             })
-            .filter_map(|belief| belief.effects.get(effect))
+            .filter_map(|belief| belief.effects.get_name(effect))
             .sum()
     }
 

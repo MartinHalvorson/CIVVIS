@@ -57,11 +57,18 @@ impl Game {
         let t = &self.map.tiles[&u.pos];
         // Founding clears the centre tile's feature, so a Settler standing on
         // a natural wonder would erase it. Oasis likewise ships
-        // `Settlement=false`; Civ VI blocks both sites outright.
+        // `Settlement=false`; Civ VI blocks both sites outright. So do the four
+        // fire features (`GranColombia_Maya_Expansion2.xml`, `Features`): no
+        // city on burning or burnt ground until it has regrown.
         if self.rules.is_water(t)
             || !self.rules.is_passable(t)
             || self.tile_is_natural_wonder(t)
-            || t.feature.as_deref() == Some("oasis")
+            || matches!(
+                t.feature.as_deref(),
+                Some(
+                    "oasis" | "burning_forest" | "burnt_forest" | "burning_jungle" | "burnt_jungle"
+                )
+            )
         {
             return false;
         }
@@ -244,10 +251,12 @@ impl Game {
     }
 
     pub(super) fn city_has_active_building_family(&self, city: &City, family: impl AsName) -> bool {
+        // The family test first: it fails for nearly every building, and the
+        // district-activity walk it spares reads every district in the city.
         city.buildings.iter().any(|building| {
-            !city.pillaged_buildings.contains(building)
+            self.building_is_family(building, family)
+                && !city.pillaged_buildings.contains(building)
                 && self.building_district_is_active(city, building)
-                && self.building_is_family(building, family)
         })
     }
 
@@ -1597,16 +1606,9 @@ impl Game {
     /// [`Self::workable_tile_yields`] pays on a native game, and the number the
     /// mirror measures the host's per-plot export against.
     pub fn modeled_tile_yields(&self, pos: Pos) -> Yields {
-        if let Some(memo) = self.query_memo.tile_yields.borrow().as_ref() {
-            if let Some(yields) = memo.get(&pos) {
-                return *yields;
-            }
-        }
-        let yields = self.modeled_tile_yields_uncached(pos);
-        if let Some(memo) = self.query_memo.tile_yields.borrow_mut().as_mut() {
-            memo.insert(pos, yields);
-        }
-        yields
+        crate::game::remembered(&self.query_memo.tile_yields, pos, || {
+            self.modeled_tile_yields_uncached(pos)
+        })
     }
 
     fn modeled_tile_yields_uncached(&self, pos: Pos) -> Yields {
@@ -1637,34 +1639,34 @@ impl Game {
     pub fn query_memo(&self) -> QueryMemo<'_> {
         let outermost = self.query_memo.yields.borrow().is_none();
         if outermost {
-            *self.query_memo.yields.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.appeal.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.tile_yields.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.district_yields.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.traversal.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.yields.borrow_mut() = Some(Default::default());
+            *self.query_memo.appeal.borrow_mut() = Some(Default::default());
+            *self.query_memo.tile_yields.borrow_mut() = Some(Default::default());
+            *self.query_memo.district_yields.borrow_mut() = Some(Default::default());
+            *self.query_memo.traversal.borrow_mut() = Some(Default::default());
             *self.query_memo.air_patrols.borrow_mut() = None;
             *self.query_memo.passage_improvements.borrow_mut() = None;
-            *self.query_memo.movement.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.movement.borrow_mut() = Some(Default::default());
+            *self.query_memo.amenities.borrow_mut() = Some(Default::default());
             *self.query_memo.purchase_price.borrow_mut() = Some(PurchasePriceMemo::new());
-            *self.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.worked_backlog.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.unit_territory_access.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.city_ids.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.lux_alloc.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.lux_names.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.housed_works.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.housed_pieces.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.suzerain.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.gw_slots.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.gw_housing.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.regional.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.powered.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.national_parks.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.regional_slots.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.wonder_effects.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.tourism.borrow_mut() = Some(BTreeMap::new());
-            *self.query_memo.domestic_tourists.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.unit_ids.borrow_mut() = Some(Default::default());
+            *self.query_memo.worked_backlog.borrow_mut() = Some(Default::default());
+            *self.query_memo.unit_territory_access.borrow_mut() = Some(Default::default());
+            *self.query_memo.city_ids.borrow_mut() = Some(Default::default());
+            *self.query_memo.lux_alloc.borrow_mut() = Some(Default::default());
+            *self.query_memo.lux_names.borrow_mut() = Some(Default::default());
+            *self.query_memo.housed_works.borrow_mut() = Some(Default::default());
+            *self.query_memo.housed_pieces.borrow_mut() = Some(Default::default());
+            *self.query_memo.suzerain.borrow_mut() = Some(Default::default());
+            *self.query_memo.gw_slots.borrow_mut() = Some(Default::default());
+            *self.query_memo.gw_housing.borrow_mut() = Some(Default::default());
+            *self.query_memo.regional.borrow_mut() = Some(Default::default());
+            *self.query_memo.powered.borrow_mut() = Some(Default::default());
+            *self.query_memo.national_parks.borrow_mut() = Some(Default::default());
+            *self.query_memo.regional_slots.borrow_mut() = Some(Default::default());
+            *self.query_memo.wonder_effects.borrow_mut() = Some(Default::default());
+            *self.query_memo.tourism.borrow_mut() = Some(Default::default());
+            *self.query_memo.domestic_tourists.borrow_mut() = Some(Default::default());
         }
         QueryMemo {
             game: self,
@@ -1694,7 +1696,7 @@ impl Game {
             memo.insert(cid, yields);
         }
         if let Some(kept) = kept {
-            kept.borrow_mut().insert(cid, yields);
+            kept.borrow_mut().yields.insert(cid, yields);
         }
         yields
     }
@@ -1789,8 +1791,28 @@ impl Game {
         )
     }
 
+    /// How many citizen plans and how many luxury splits were answered from
+    /// what was kept beside the yields. See [`KeptDerivations`].
+    pub fn kept_plans_reused(&self) -> (u64, u64) {
+        (
+            self.query_memo.kept_plans_reused.get(),
+            self.query_memo.kept_luxuries_reused.get(),
+        )
+    }
+
     /// Which kept map answers for this city right now, if either does.
-    fn kept_yields_for(&self, cid: u32) -> Option<&std::cell::RefCell<BTreeMap<u32, Yields>>> {
+    fn kept_yields_for(&self, cid: u32) -> Option<&std::cell::RefCell<KeptDerivations>> {
+        self.kept_derivations_for(self.cities.get(&cid)?.owner)
+    }
+
+    /// Which kept map answers for `owner`'s cities right now, if either does.
+    /// Every condition on reading or filling anything kept is here, and the
+    /// two locks that are read back rather than reported (the tile grid's
+    /// epoch and the acting seat's settings) are checked here on every ask.
+    pub(in crate::game) fn kept_derivations_for(
+        &self,
+        owner: usize,
+    ) -> Option<&std::cell::RefCell<KeptDerivations>> {
         let memo = &self.query_memo;
         if !memo.keeps_rival_yields.get()
             || memo.acting.get() != 0
@@ -1805,7 +1827,13 @@ impl Game {
         {
             return None;
         }
-        if self.cities.get(&cid)?.owner != self.current {
+        let epoch = self.map.tiles.epoch();
+        if memo.rival_yields_epoch.get() != epoch {
+            memo.rival_yields.borrow_mut().clear();
+            memo.own_yields.borrow_mut().clear();
+            memo.rival_yields_epoch.set(epoch);
+        }
+        if owner != self.current {
             Some(&memo.rival_yields)
         } else if memo.keeps_own_yields.get() {
             // The two settings an agent writes on its own seat most, read
@@ -1847,17 +1875,11 @@ impl Game {
 
     fn kept_city_yields(
         &self,
-        held: &std::cell::RefCell<BTreeMap<u32, Yields>>,
+        held: &std::cell::RefCell<KeptDerivations>,
         cid: u32,
     ) -> Option<Yields> {
         let memo = &self.query_memo;
-        let epoch = self.map.tiles.epoch();
-        if memo.rival_yields_epoch.get() != epoch {
-            memo.rival_yields.borrow_mut().clear();
-            memo.own_yields.borrow_mut().clear();
-            memo.rival_yields_epoch.set(epoch);
-        }
-        let kept = held.borrow().get(&cid).copied();
+        let kept = held.borrow().yields.get(&cid).copied();
         let Some(kept) = kept else {
             memo.rival_yields_derived
                 .set(memo.rival_yields_derived.get() + 1);
@@ -1885,6 +1907,75 @@ impl Game {
             );
         }
         Some(kept)
+    }
+
+    /// The citizen plan kept for this city, if one is and may answer.
+    ///
+    /// With [`Game::audit_rival_yields`] on, the plan is worked out again
+    /// with nothing kept allowed to answer, and the two must be equal.
+    pub(in crate::game) fn kept_citizen_plan(&self, cid: u32) -> Option<CitizenPlan> {
+        let held = self.kept_yields_for(cid)?;
+        let kept = held.borrow().plans.get(&cid).cloned()?;
+        let memo = &self.query_memo;
+        memo.kept_plans_reused.set(memo.kept_plans_reused.get() + 1);
+        if memo.audits_rival_yields.get() {
+            memo.auditing_rival_yields.set(true);
+            let fresh = {
+                let _memo = self.query_memo();
+                self.city_citizen_plan_weighted(cid, None)
+            };
+            memo.auditing_rival_yields.set(false);
+            assert!(
+                fresh == kept,
+                "a kept citizen plan went stale: city {cid} of seat {} on turn {} while seat {} \
+                 acts. Kept {kept:?}, the board now gives {fresh:?}.",
+                self.cities[&cid].owner,
+                self.turn,
+                self.current,
+            );
+        }
+        Some(kept)
+    }
+
+    /// Keep this city's citizen plan beside its yields, if anything is being
+    /// kept for it right now.
+    pub(in crate::game) fn keep_citizen_plan(&self, cid: u32, plan: &CitizenPlan) {
+        if let Some(held) = self.kept_yields_for(cid) {
+            held.borrow_mut().plans.insert(cid, plan.clone());
+        }
+    }
+
+    /// The luxury split kept for `pid`'s empire, if one is and may answer.
+    /// Audited the way [`Self::kept_citizen_plan`] is.
+    pub(in crate::game) fn kept_luxury_split(&self, pid: usize) -> Option<BTreeMap<u32, i64>> {
+        let held = self.kept_derivations_for(pid)?;
+        let kept = held.borrow().luxuries.get(&pid).cloned()?;
+        let memo = &self.query_memo;
+        memo.kept_luxuries_reused
+            .set(memo.kept_luxuries_reused.get() + 1);
+        if memo.audits_rival_yields.get() {
+            memo.auditing_rival_yields.set(true);
+            let fresh = {
+                let _memo = self.query_memo();
+                self.luxury_amenity_allocations_uncached(pid)
+            };
+            memo.auditing_rival_yields.set(false);
+            assert!(
+                fresh == kept,
+                "a kept luxury split went stale: seat {pid} on turn {} while seat {} acts. \
+                 Kept {kept:?}, the board now gives {fresh:?}.",
+                self.turn,
+                self.current,
+            );
+        }
+        Some(kept)
+    }
+
+    /// Keep `pid`'s luxury split, if anything is being kept for it right now.
+    pub(in crate::game) fn keep_luxury_split(&self, pid: usize, split: &BTreeMap<u32, i64>) {
+        if let Some(held) = self.kept_derivations_for(pid) {
+            held.borrow_mut().luxuries.insert(pid, split.clone());
+        }
     }
 
     /// Yields this city would produce if its citizens were assigned under
@@ -3016,12 +3107,6 @@ impl Game {
             {
                 continue;
             }
-            if matches!(name.as_str(), "archaeological_dig" | "shipwreck_excavation")
-                && !*artifact_home
-                    .get_or_insert_with(|| self.can_house_additional_great_work(pid, "artifact"))
-            {
-                continue;
-            }
             // Every disqualifier below is a pure read of this tile, this
             // improvement and the empire, so the order they are asked in
             // cannot change the answer, only the work. The tile-local siting
@@ -3209,6 +3294,18 @@ impl Game {
                         .as_deref()
                         .is_some_and(|owner| self.owns_civ_unique(pid, owner))
             }) {
+                continue;
+            }
+            // Whether the empire has a slot for another Artifact is asked
+            // last, of a tile a dig could stand on. It assigns every Great
+            // Work the player owns across every slot it has, twice, and asked
+            // before the siting tests it ran for every bare tile a Builder
+            // considered (0.7% of a late site game). It is a pure read like
+            // the rest, so where it stands changes only the work.
+            if matches!(name.as_str(), "archaeological_dig" | "shipwreck_excavation")
+                && !*artifact_home
+                    .get_or_insert_with(|| self.can_house_additional_great_work(pid, "artifact"))
+            {
                 continue;
             }
             out.push(*name);

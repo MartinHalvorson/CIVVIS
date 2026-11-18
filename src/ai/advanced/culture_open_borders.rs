@@ -90,6 +90,8 @@ impl AdvancedAi {
                         && self.science_denial_deal_allowed(deal, science_threats)
                 })
                 .filter(|deal| Self::open_borders_affordable(g, pid, deal))
+                // `passage-waits-past-the-opening`; `None` with it off.
+                .filter(|deal| self.passage_hold(g, pid, deal.partner).is_none())
                 .max_by(|left, right| {
                     g.domestic_tourists(left.partner)
                         .cmp(&g.domestic_tourists(right.partner))

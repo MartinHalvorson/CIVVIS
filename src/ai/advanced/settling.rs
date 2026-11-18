@@ -17,6 +17,7 @@
 //! `settlement_value.rs`.
 
 use super::*;
+use crate::game::adjacency::PlotAdjacencies;
 
 impl AdvancedAi {
     /// Does this turn resolve the delay `settler_blocked_turns` measures?
@@ -46,7 +47,13 @@ impl AdvancedAi {
             return 0.0;
         }
         let positions = g.wdisk(pos, 2);
-        self.settlement_adjacency_value_from_positions(g, pid, pos, &positions)
+        self.settlement_adjacency_value_from_positions(
+            g,
+            pid,
+            pos,
+            &positions,
+            &mut PlotAdjacencies::default(),
+        )
     }
 
     /// The historical score retained for the frozen Advanced control and for
@@ -422,13 +429,19 @@ impl AdvancedAi {
         };
         let (city_exclusion, city_state_exclusion) = exclusions.get_or_insert_with(|| {
             (
-                g.cities
-                    .values()
-                    .flat_map(|city| g.wdisk(city.pos, 3))
-                    .collect::<BTreeSet<_>>(),
-                self.city_state_settlement_exclusion(g, pid),
+                tile_bits(g, g.cities.values().flat_map(|city| g.wdisk(city.pos, 3))),
+                tile_bits(g, self.city_state_settlement_exclusion(g, pid)),
             )
         });
+        // `index_of` gives every on-map plot its own index and no position
+        // off the map one, so a bit answers exactly what a set of positions
+        // did for every plot the filter below reaches (it has a tile).
+        let excluded = |bits: &TileBits, pos: Pos| {
+            g.map
+                .tiles
+                .index_of(pos)
+                .is_some_and(|index| bits.contains(index))
+        };
         let mut candidates = g
             .wdisk(from, radius)
             .into_iter()
@@ -440,8 +453,8 @@ impl AdvancedAi {
                     || g.rules.is_water(tile)
                     || !g.rules.is_passable(tile)
                     || g.tile_is_natural_wonder(tile)
-                    || city_exclusion.contains(&pos)
-                    || city_state_exclusion.contains(&pos)
+                    || excluded(city_exclusion, pos)
+                    || excluded(city_state_exclusion, pos)
                     || tile.owner_city.is_some_and(|cid| {
                         // A tile can name a city absent from the current table.
                         // Keep that unresolved claim out of settlement candidates.
@@ -696,6 +709,9 @@ impl AdvancedAi {
                     && (!self.settler_threat_detour_on()
                         || !self.settler_threat_deferrals.contains_key(position))
                     && !self.settler_target_reserved_by_other(g, pid, uid, *position)
+                    // `settler-keeps-its-named-site`: an unseen plot, or one
+                    // a sibling's site already spaces out, is not named.
+                    && !self.named_site_is_unkeepable(g, pid, uid, *position)
                     // `settler-target-floor`: not worth the walk is not a target.
                     && self.settler_target_clears_floor(g, from, *position, *value)
             })
@@ -950,7 +966,13 @@ impl AdvancedAi {
             return BTreeMap::new();
         };
         let start = unit.pos;
-        let mut best: BTreeMap<Pos, f64> = BTreeMap::new();
+        // `unit_can_traverse`, with the unit's half read once for the flood
+        // rather than once per neighbour (see `Game::unit_traversal`).
+        let class = g.unit_traversal(uid);
+        // Hashed while the flood runs: it asks and updates one tile at a time,
+        // and the heap, not the map, decides the order tiles are settled in.
+        // The ordered map callers read is built once at the end.
+        let mut best: crate::fast_map::FastMap<Pos, f64> = Default::default();
         best.insert(start, 0.0);
         // (cost, pos) min-heap keyed on the cost in thousandths so it orders;
         // `Pos` breaks ties deterministically.
@@ -963,7 +985,9 @@ impl AdvancedAi {
                 continue;
             }
             for next in g.nbrs(cur) {
-                if g.wdist(start, next) > radius || !g.unit_can_traverse(uid, next) {
+                if g.wdist(start, next) > radius
+                    || !class.is_some_and(|class| g.class_can_enter(class, next))
+                {
                     continue;
                 }
                 let total = cost + g.step_cost(cur, next);
@@ -973,7 +997,7 @@ impl AdvancedAi {
                 }
             }
         }
-        best
+        best.into_iter().collect()
     }
 
     /// `settle_sooner_walk_costs` for one Settler decision, built at most
@@ -1872,11 +1896,20 @@ impl AdvancedAi {
         })
     }
 
-    /// The Settler's turn: the decision routine below and — under
-    /// `settler-never-idles` — a watchdog that marches a Settler the routine
-    /// has held for `SETTLER_IDLE_PATIENCE` turns. See
-    /// `advanced/settler_never_idles.rs`.
+    /// The Settler's turn. Under `settler-keeps-its-named-site` the site it
+    /// names afterwards is compared with the one it named before and a change
+    /// is journalled; see `advanced/settler_keeps_its_named_site.rs`.
     pub(super) fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        let named = self.named_site_key(g, uid);
+        let acted = self.advanced_settler_step_watched(g, pid, uid);
+        self.note_named_site(g, pid, uid, named);
+        acted
+    }
+
+    /// The decision routine below and — under `settler-never-idles` — a
+    /// watchdog that marches a Settler the routine has held for
+    /// `SETTLER_IDLE_PATIENCE` turns. See `advanced/settler_never_idles.rs`.
+    fn advanced_settler_step_watched(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let acted = self.advanced_settler_step_inner(g, pid, uid);
         // `founding-voyage`: a cityless seat's embarked Settler with nowhere to
         // go sails toward land. See `advanced/maori_founds_from_the_sea.rs`.
@@ -3371,4 +3404,17 @@ impl AdvancedAi {
         }
         None
     }
+}
+
+/// `positions` as one bit per tile, for a scan that asks membership plot by
+/// plot. A position with no tile has no index and is left out; nothing asks
+/// about one.
+fn tile_bits(g: &Game, positions: impl IntoIterator<Item = Pos>) -> TileBits {
+    let mut bits = TileBits::with_capacity(g.map.tiles.len());
+    for pos in positions {
+        if let Some(index) = g.map.tiles.index_of(pos) {
+            bits.insert(index);
+        }
+    }
+    bits
 }

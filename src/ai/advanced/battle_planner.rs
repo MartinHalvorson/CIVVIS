@@ -326,7 +326,7 @@ pub(super) fn wounded_penalty(hp: i32) -> f64 {
 /// Whether `pid` is the live seat on a mirrored board: the one place the host
 /// has shown the seat what it can see. Empty everywhere else, including every
 /// arena and screen board, so a rule keyed on it is inert there.
-fn mirrored_board(g: &Game, pid: usize) -> bool {
+pub(super) fn mirrored_board(g: &Game, pid: usize) -> bool {
     pid == crate::game::MIRRORED_SEAT && !g.host_observed.is_empty()
 }
 
@@ -351,6 +351,20 @@ fn mirrored_board(g: &Game, pid: usize) -> bool {
 /// two are the same flood is written down). `strike_reach_tests` keeps the
 /// old route as its reference.
 pub(crate) fn strike_reach_of(g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
+    strike_reach_reading(g, pid, uid, None)
+}
+
+/// [`strike_reach_of`], pushing onto `relaxed` the unit's own tile and every
+/// tile its movement flood relaxed: with the attack range, everything the
+/// answer read off the board. An air unit pushes nothing; its disk is read
+/// around its operation origin, not along a flood, so a caller that keeps a
+/// strike reach by what it read must not keep an air unit's this way.
+pub(super) fn strike_reach_reading(
+    g: &Game,
+    pid: usize,
+    uid: u32,
+    relaxed: Option<&mut Vec<Pos>>,
+) -> Vec<Pos> {
     let Some(unit) = g.units.get(&uid) else {
         return Vec::new();
     };
@@ -363,11 +377,111 @@ pub(crate) fn strike_reach_of(g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
     }
     let max_moves = g.unit_max_moves(uid);
     if max_moves <= 0.0 {
+        if let Some(relaxed) = relaxed {
+            relaxed.push(unit.pos);
+        }
         return Vec::new();
     }
     let mut stands: Vec<(Pos, f64)> = vec![(unit.pos, max_moves)];
-    stands.extend(g.approach_arrivals_on_a_fresh_turn(uid));
+    match relaxed {
+        Some(relaxed) => {
+            let (arrivals, flood) = g.approach_arrivals_on_a_fresh_turn_with_flood(uid);
+            relaxed.extend(flood);
+            relaxed.push(unit.pos);
+            stands.extend(arrivals);
+        }
+        None => stands.extend(g.approach_arrivals_on_a_fresh_turn(uid)),
+    }
     strikes_from_stands(g, pid, uid, stands)
+}
+
+/// A unit [`DangerField::with_reach`] prices: a visible military unit of a
+/// seat at war with `pid` that can strike at all.
+pub(super) fn hostile_in_field(g: &Game, pid: usize, unit: &crate::game::Unit) -> bool {
+    let spec = &g.rules.units[unit.kind];
+    unit.owner != pid
+        && g.is_at_war(pid, unit.owner)
+        && spec.class == "military"
+        && (spec.is_melee_capable() || spec.has_ranged_attack())
+        && g.unit_visible_to(unit.id, pid)
+}
+
+/// One hostile's `reach` (its strike reach) widened by everything it could
+/// strike after a turn to reposition: it is stood on `probe` at the start of
+/// a fresh turn, on every tile it can reach, and its strike reach from each
+/// is added. `probe` is put back as it was. A caller that keeps the pieces
+/// reads them through [`fresh_turn_stands`] and [`strike_reach_from`].
+pub(super) fn widen_to_the_second_turn(
+    probe: &mut Game,
+    pid: usize,
+    uid: u32,
+    reach: &mut Vec<Pos>,
+) {
+    let saved = stand_on_a_fresh_turn(probe, uid);
+    for stand in probe.reachable(uid) {
+        probe.relocate(uid, stand);
+        reach.extend(strike_reach_of(probe, pid, uid));
+    }
+    probe.relocate(uid, saved.pos);
+    *probe.units.get_mut(&uid).expect("forecast retains enemy") = saved;
+    reach.sort_unstable();
+    reach.dedup();
+}
+
+/// Stand `uid` on `probe` at the start of a fresh turn (full movement, no
+/// zone-of-control or action memory), as [`widen_to_the_second_turn`] does.
+/// Returns the record to put back.
+fn stand_on_a_fresh_turn(probe: &mut Game, uid: u32) -> crate::game::Unit {
+    let saved = probe.units[&uid].clone();
+    let moves = probe.unit_max_moves(uid);
+    if let Some(unit) = probe.units.get_mut(&uid) {
+        unit.moves_left = moves;
+        unit.moved = false;
+        unit.acted = false;
+        unit.zoc_stopped = false;
+        unit.started_turn_in_zoc = false;
+    }
+    saved
+}
+
+/// The first half of [`widen_to_the_second_turn`] for a caller that keeps
+/// the pieces: every tile `uid` can reach on a fresh turn. `probe` is put
+/// back. With `relaxed`, every tile the flood relaxed is pushed there.
+pub(super) fn fresh_turn_stands(
+    probe: &mut Game,
+    uid: u32,
+    relaxed: Option<&mut Vec<Pos>>,
+) -> Vec<Pos> {
+    let saved = stand_on_a_fresh_turn(probe, uid);
+    let stands = match relaxed {
+        Some(relaxed) => {
+            let (stands, flood) = probe.reachable_with_flood(uid);
+            relaxed.extend(flood);
+            stands
+        }
+        None => probe.reachable(uid),
+    };
+    *probe.units.get_mut(&uid).expect("forecast retains enemy") = saved;
+    stands
+}
+
+/// The second half of [`widen_to_the_second_turn`] for one stand: `uid`'s
+/// strike reach once it stands on `stand` at the start of a fresh turn.
+/// `probe` is put back. With `relaxed`, the tiles the answer read are pushed
+/// there (see [`strike_reach_reading`]).
+pub(super) fn strike_reach_from(
+    probe: &mut Game,
+    pid: usize,
+    uid: u32,
+    stand: Pos,
+    relaxed: Option<&mut Vec<Pos>>,
+) -> Vec<Pos> {
+    let saved = stand_on_a_fresh_turn(probe, uid);
+    probe.relocate(uid, stand);
+    let reach = strike_reach_reading(probe, pid, uid, relaxed);
+    probe.relocate(uid, saved.pos);
+    *probe.units.get_mut(&uid).expect("forecast retains enemy") = saved;
+    reach
 }
 
 /// The reference for [`strike_reach_of`]: the route it took before it read
@@ -525,24 +639,38 @@ impl DangerField {
         let mut field = Self::with_reach(g, pid, true);
         let mut probe = g.speculative_clone();
         for (uid, reach) in &mut field.reaches {
-            let saved = probe.units[uid].clone();
-            let moves = probe.unit_max_moves(*uid);
-            if let Some(unit) = probe.units.get_mut(uid) {
-                unit.moves_left = moves;
-                unit.moved = false;
-                unit.acted = false;
-                unit.zoc_stopped = false;
-                unit.started_turn_in_zoc = false;
-            }
-            let stands = probe.reachable(*uid);
-            for stand in stands {
-                probe.relocate(*uid, stand);
-                reach.extend(strike_reach_of(&probe, pid, *uid));
-            }
-            probe.relocate(*uid, saved.pos);
-            *probe.units.get_mut(uid).expect("forecast retains enemy") = saved;
-            reach.sort_unstable();
-            reach.dedup();
+            widen_to_the_second_turn(&mut probe, pid, *uid, reach);
+        }
+        field
+    }
+
+    /// Whether two fields price the same hostiles over the same reaches.
+    #[cfg(test)]
+    pub(super) fn same_reaches(&self, other: &DangerField) -> bool {
+        self.same_reaches_as(other)
+    }
+
+    /// [`Self::second_turn`] on `g`, from the first-turn field `first` that
+    /// `with_reach(g, pid, true)` builds, with `widen` doing for each hostile
+    /// what [`widen_to_the_second_turn`] does. The new field shares nothing
+    /// mutable with `first`: its probe is a fresh copy and its blows unpriced.
+    pub(super) fn second_turn_from(
+        first: &DangerField,
+        g: &Game,
+        mut widen: impl FnMut(u32, &mut Vec<Pos>),
+    ) -> Self {
+        let mut field = DangerField {
+            pid: first.pid,
+            probe: g.speculative_clone(),
+            reaches: first.reaches.clone(),
+            cache: BTreeMap::new(),
+            widened: first.widened,
+            shares: BTreeMap::new(),
+            floods: first.floods.clone(),
+            reads_the_tile_it_leaves: false,
+        };
+        for (uid, reach) in &mut field.reaches {
+            widen(*uid, reach);
         }
         field
     }
@@ -555,33 +683,44 @@ impl DangerField {
     /// The field on the flood's reach, or with `strike_reach` on the reach
     /// the engine resolves a blow over (`strike_reach_of`).
     pub(super) fn with_reach(g: &Game, pid: usize, strike_reach: bool) -> Self {
+        let hostiles = g
+            .units
+            .values()
+            .filter(|unit| hostile_in_field(g, pid, unit))
+            .map(|unit| {
+                let flood = g.attack_reach(unit.id);
+                let strike = strike_reach.then(|| strike_reach_of(g, pid, unit.id));
+                (unit.id, flood, strike)
+            })
+            .collect();
+        Self::from_hostiles(g, pid, hostiles)
+    }
+
+    /// The field over hostiles whose reaches the caller already holds, each
+    /// `(id, flood, strike)` exactly as [`Self::with_reach`] reads them on
+    /// `g` (`strike` is `None` without `strike-reach`), in `g.units` order.
+    pub(super) fn from_hostiles(
+        g: &Game,
+        pid: usize,
+        hostiles: Vec<(u32, Vec<Pos>, Option<Vec<Pos>>)>,
+    ) -> Self {
         let probe = g.speculative_clone();
         let mut reaches = Vec::new();
         let mut floods = BTreeMap::new();
         let mut widened = 0u32;
-        for unit in g.units.values() {
-            let spec = &g.rules.units[unit.kind];
-            if unit.owner == pid
-                || !g.is_at_war(pid, unit.owner)
-                || spec.class != "military"
-                || !(spec.is_melee_capable() || spec.has_ranged_attack())
-                || !g.unit_visible_to(unit.id, pid)
-            {
-                continue;
-            }
-            let flood = g.attack_reach(unit.id);
-            let reach = if strike_reach {
-                let strike = strike_reach_of(g, pid, unit.id);
-                if strike.iter().any(|tile| flood.binary_search(tile).is_err()) {
-                    widened += 1;
+        for (id, flood, strike) in hostiles {
+            let reach = match strike {
+                Some(strike) => {
+                    if strike.iter().any(|tile| flood.binary_search(tile).is_err()) {
+                        widened += 1;
+                    }
+                    floods.insert(id, flood);
+                    strike
                 }
-                floods.insert(unit.id, flood);
-                strike
-            } else {
-                flood
+                None => flood,
             };
             if !reach.is_empty() {
-                reaches.push((unit.id, reach));
+                reaches.push((id, reach));
             }
         }
         reaches.sort_by_key(|(id, _)| *id);
@@ -595,6 +734,15 @@ impl DangerField {
             floods,
             reads_the_tile_it_leaves: false,
         }
+    }
+
+    /// Whether `self` prices the same hostiles over the same reaches as
+    /// `other` (the audit of [`AdvancedAi::danger_field`]).
+    fn same_reaches_as(&self, other: &DangerField) -> bool {
+        self.pid == other.pid
+            && self.reaches == other.reaches
+            && self.floods == other.floods
+            && self.widened == other.widened
     }
 
     /// `field-reads-the-tile-it-leaves`: whether `enemy`, which cannot strike
@@ -1440,6 +1588,143 @@ pub(super) fn melee_health_floor(g: &Game, pid: usize, action: &Action) -> Optio
         .map(|damage| (*unit, attacker.hp - damage))
 }
 
+thread_local! {
+    /// Each hostile's strike reach beside the envelope it was read with:
+    /// (seat, hostile) → (that envelope, strike reach). See
+    /// [`AdvancedAi::danger_field`]. Holding the envelope keeps its address
+    /// from being reused, so a pointer match cannot be a different envelope.
+    static KEPT_STRIKE_REACH: std::cell::RefCell<KeptStrikeReach> =
+        const { std::cell::RefCell::new(BTreeMap::new()) };
+}
+
+type KeptStrikeReach = BTreeMap<(usize, u32), (Arc<crate::ai::EnvelopeReach>, Arc<[Pos]>)>;
+
+#[cfg(test)]
+thread_local! {
+    /// How many strike reaches [`AdvancedAi::danger_field`] read fresh.
+    pub(super) static STRIKE_REACH_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn danger_field_audit_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("CIVVIS_DANGER_FIELD_AUDIT").is_some())
+}
+
+impl AdvancedAi {
+    /// [`DangerField::with_reach`] on the board this seat is acting on, with
+    /// each hostile's reach read from the seat's envelope table instead of
+    /// flooded again.
+    ///
+    /// The planner, the siege stage and the muster each built a fresh field
+    /// several times a turn, and every field flooded every visible hostile
+    /// twice: `attack_reach`, then `strike_reach_of`. The envelope table
+    /// (`BasicAi::enemy_attack_envelopes`) already holds the first, as the
+    /// same `attack_reach`, and keeps a hostile's entry — the same `Arc` —
+    /// exactly while nothing it read has changed (#5361: no unit that differs
+    /// on its sensitive tiles, no map write within its sight; #5366 for air).
+    /// The strike reach reads no more than that (its arrivals stay inside the
+    /// attack flood and shoot from inside it), so it is kept beside the
+    /// envelope and re-read only when the envelope is: the argument
+    /// `movement_risk`'s `MovementReachCache` already rests on. A hostile the
+    /// table does not hold (an empty attack reach) is read fresh.
+    ///
+    /// ⚠ Only for the board the seat acts on. Asking the envelope table about
+    /// a speculative copy feeds it another branch, and its next ask on the
+    /// real board would then recompute every envelope; those callers keep
+    /// `with_reach`. With `envelope_cache_across_own_moves` (an evaluator arm,
+    /// off in play) the table can lag our own units, so this falls back to
+    /// `with_reach` too. `CIVVIS_DANGER_FIELD_AUDIT=1` builds both and reports
+    /// any difference.
+    pub(super) fn danger_field(&self, g: &Game, pid: usize, strike_reach: bool) -> DangerField {
+        if self.base.envelope_cache_across_own_moves {
+            return DangerField::with_reach(g, pid, strike_reach);
+        }
+        let envelopes = self.base.enemy_attack_envelopes(g, pid);
+        let field = KEPT_STRIKE_REACH.with(|slot| {
+            let mut kept = slot.borrow_mut();
+            // Bound what a reused worker thread carries between games.
+            if kept.len() > 4096 {
+                kept.clear();
+            }
+            let hostiles = g
+                .units
+                .values()
+                .filter(|unit| hostile_in_field(g, pid, unit))
+                .map(|unit| {
+                    let id = unit.id;
+                    let Ok(at) = envelopes.binary_search_by_key(&id, |(hostile, _)| *hostile)
+                    else {
+                        return (
+                            id,
+                            g.attack_reach(id),
+                            strike_reach.then(|| strike_reach_of(g, pid, id)),
+                        );
+                    };
+                    let envelope = &envelopes[at].1;
+                    let strike = strike_reach.then(|| match kept.get(&(pid, id)) {
+                        Some((seen, strike)) if Arc::ptr_eq(seen, envelope) => strike.to_vec(),
+                        _ => {
+                            #[cfg(test)]
+                            STRIKE_REACH_READS.with(|reads| reads.set(reads.get() + 1));
+                            let strike = strike_reach_of(g, pid, id);
+                            kept.insert((pid, id), (Arc::clone(envelope), Arc::from(&strike[..])));
+                            strike
+                        }
+                    });
+                    (id, envelope.iter().copied().collect(), strike)
+                })
+                .collect();
+            DangerField::from_hostiles(g, pid, hostiles)
+        });
+        if danger_field_audit_enabled() {
+            let fresh = DangerField::with_reach(g, pid, strike_reach);
+            if !field.same_reaches_as(&fresh) {
+                eprintln!(
+                    "danger-field: STALE field, seat {pid} turn {}: kept {} hostiles, fresh {}",
+                    g.turn,
+                    field.reaches.len(),
+                    fresh.reaches.len()
+                );
+                for unit in g
+                    .units
+                    .values()
+                    .filter(|unit| hostile_in_field(g, pid, unit))
+                {
+                    let id = unit.id;
+                    let envelope = envelopes
+                        .binary_search_by_key(&id, |(hostile, _)| *hostile)
+                        .ok()
+                        .map(|at| envelopes[at].1.iter().copied().collect::<Vec<_>>());
+                    let flood = g.attack_reach(id);
+                    let kept_flood = field.floods.get(&id);
+                    let kept_reach = field.reaches.iter().find(|(hostile, _)| *hostile == id);
+                    let fresh_reach = fresh.reaches.iter().find(|(hostile, _)| *hostile == id);
+                    if envelope.as_ref().is_some_and(|tiles| *tiles != flood)
+                        || kept_flood != fresh.floods.get(&id)
+                        || kept_reach != fresh_reach
+                    {
+                        eprintln!(
+                            "  hostile {id} {} owner {} at {:?} air {}: envelope {} flood {} \
+                             (envelope==flood {}), strike kept {} fresh {}",
+                            unit.kind.as_str(),
+                            unit.owner,
+                            unit.pos,
+                            g.rules.units[unit.kind].domain.as_deref() == Some("air"),
+                            envelope.as_ref().map_or(-1, |tiles| tiles.len() as i64),
+                            flood.len(),
+                            envelope.as_ref().is_none_or(|tiles| *tiles == flood),
+                            kept_reach.map_or(0, |(_, reach)| reach.len()),
+                            fresh_reach.map_or(0, |(_, reach)| reach.len()),
+                        );
+                    }
+                }
+            }
+            return fresh;
+        }
+        field
+    }
+}
+
 impl AdvancedAi {
     /// `falling-city-outranks-the-heal`: whether a melee land unit fit to
     /// fight ([`ROTATE_HP`] or more) but still recovering toward
@@ -1590,7 +1875,7 @@ impl AdvancedAi {
                         }
             })
         });
-        let mut field = DangerField::with_reach(g, pid, self.strike_reach);
+        let mut field = self.danger_field(g, pid, self.strike_reach);
         field.reads_the_tile_it_leaves = self.field_reads_the_tile_it_leaves;
         if self.shared_danger {
             field.share(g);
@@ -1621,7 +1906,7 @@ impl AdvancedAi {
             self.credit_orders(g, OrderStep::BattlePlanner);
         }
         if struck {
-            field = DangerField::with_reach(g, pid, self.strike_reach);
+            field = self.danger_field(g, pid, self.strike_reach);
             field.reads_the_tile_it_leaves = self.field_reads_the_tile_it_leaves;
             if self.shared_danger {
                 field.share(g);

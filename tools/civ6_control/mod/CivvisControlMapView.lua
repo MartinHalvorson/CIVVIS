@@ -42,7 +42,11 @@ local adjusting = false;
 local lastVerified = nil;
 local plotDistance = nil;
 
-local function automated() return cfg.Play ~= false and cfg.CivvisDecides; end
+-- A hotseat game shares the camera with the operator, whose turns come between
+-- ours: nothing here may aim, zoom or switch combat panning off there.
+local function automated()
+    return cfg.Play ~= false and cfg.CivvisDecides and cfg.Hotseat ~= true;
+end
 
 -- The operator's Pause (CivvisBoard.operatorHold in the agent) hands the
 -- camera to the person at the keyboard: while the game is held nothing here

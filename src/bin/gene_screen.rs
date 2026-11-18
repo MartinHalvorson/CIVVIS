@@ -106,6 +106,7 @@
 //! says `foldover` or `prior`) still analyse: their rows are seats with a
 //! genome and an outcome like any other, and the estimator here never needed
 //! the pairing. Only the sampling changed.
+use civvis::ai::player::ViewYields;
 use civvis::ai::{run_game_observed, AdvancedAi, Ai, VictoryTarget};
 use civvis::game::{Game, GameOptions, DIPLOMATIC_VICTORY_POINTS};
 use civvis::host_tactics::{HostTactics, HostTacticsSeat, TacticsCensus};
@@ -141,6 +142,23 @@ mod unit_ledger;
 #[cfg(test)]
 #[path = "gene_screen/war_gate_tests.rs"]
 mod war_gate_tests;
+
+/// ⭐ `--no-kept-yields` / `--audit-kept-yields`: how every seat's planning
+/// views answer for a city yield they have already derived
+/// ([`ViewYields`]). Kept is the default and what a screen should run. The
+/// other two are instruments and play the same games to the same rows:
+/// `--no-kept-yields` derives every yield afresh, which prices the keeping,
+/// and `--audit-kept-yields` derives every reused answer again and panics on
+/// a difference, which is how a new gene's write to the board is shown to
+/// drop what it must. A process-wide switch rather than a leg of the
+/// profile, because it is not one: no row can tell which mode wrote it.
+static VIEW_YIELDS: std::sync::OnceLock<ViewYields> = std::sync::OnceLock::new();
+/// City yields the batch's planning views answered from what they kept, and
+/// derived while keeping, summed over every seat of every game.
+static VIEW_YIELD_READS: [std::sync::atomic::AtomicU64; 2] = [
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+];
 
 // Test scaffolding (`war_gate_tests`): a per-thread observer `play_game`
 // hands every turn's board and the last one. Outside tests it is a no-op.
@@ -1398,6 +1416,12 @@ struct Row {
     /// The other half of the city ledger. See `cities_taken`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cities_lost: Option<usize>,
+    /// Whether this seat holds its own original capital when the game ends
+    /// (the city it founded as its capital, `is_capital`, still its own).
+    /// The live corpus's `capital_kpi` column; `None` in every file written
+    /// before the field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    capital_held: Option<bool>,
     /// ⭐ THE UNIT LEDGER, the city ledger's twin for the army (2026-11-12):
     /// enemy military units this seat's units, cities and districts killed;
     /// its own military units lost, and of those the ones a major and the
@@ -2893,6 +2917,12 @@ fn play_game(
             }
         })
         .collect();
+    // ⭐ `--no-kept-yields` / `--audit-kept-yields`: see `VIEW_YIELDS`.
+    if let Some(&mode) = VIEW_YIELDS.get() {
+        for ai in &mut ais {
+            ai.set_view_yields(mode);
+        }
+    }
     // ⭐ `--journal`: one shared log for this game's measured seats, drained
     // every turn so the ring (`reasoning::RING_CAPACITY`) never drops a turn.
     let journal = profile
@@ -3103,6 +3133,11 @@ fn play_game(
     } else {
         run_game_observed(&mut world, &mut ais, &mut observe);
     }
+    for ai in &ais {
+        let seat = ai.view_yields();
+        VIEW_YIELD_READS[0].fetch_add(seat.reused, std::sync::atomic::Ordering::Relaxed);
+        VIEW_YIELD_READS[1].fetch_add(seat.derived, std::sync::atomic::Ordering::Relaxed);
+    }
     test_observe(&world);
     if let Some(journal) = &journal {
         drain_journal(journal, journal_cursor, &mut journal_lines);
@@ -3210,6 +3245,10 @@ fn play_game(
                     .filter(|city| city.original_owner == seat && city.owner != seat)
                     .count(),
             );
+            row.capital_held =
+                Some(world.cities.values().any(|city| {
+                    city.is_capital && city.original_owner == seat && city.owner == seat
+                }));
             match this_rival {
                 Some(offset) => {
                     row.player_target = String::new();
@@ -3387,6 +3426,7 @@ fn row_for_seat(
         buildings: None,
         cities_taken: None,
         cities_lost: None,
+        capital_held: None,
         units_killed: Some(game.combat_ledger(seat).units_killed),
         units_lost: Some(game.combat_ledger(seat).units_lost),
         units_lost_to_majors: Some(game.combat_ledger(seat).units_lost_to_majors),
@@ -7049,6 +7089,9 @@ fn usage() -> ! {
          tourists, techs, civics, wonders, districts) at turns 10..100 by tens, 125, 150, 175, 200, 225 onto its \
          row as `trace`; rows are unchanged without it; [--journal SEED[,SEED]] writes those seeds' \
          measured-seat reasoning (strategy, war, diplomacy and research decisions) to <out>.journal.<seed>.txt\n       \
+         the same games the slow way: [--no-kept-yields] derives every city yield a planning view is asked \
+         for instead of keeping it between the plan's passes; [--audit-kept-yields] keeps them, derives every \
+         reused one again and panics on a difference; neither changes a row\n       \
          the handicapped rivals: [--handicap all|rivals] (default all; rivals exempts every measured seat from \
          the rung's bonuses so only the rival chairs play with them, as the live seat meets Emperor) \
          [--rival-chairs N] (default 1, at most players-1); both need --rivals\n       \
@@ -7247,6 +7290,13 @@ fn main() {
     let city_states = number(&args, "--city-states", SCREEN_CITY_STATES as i64).max(0) as usize;
     let jobs = number(&args, "--jobs", civvis::parallel::default_jobs() as i64).max(1) as usize;
     let quiet = present(&args, "--quiet");
+    // See `VIEW_YIELDS`. The audit wins when both are given: it is the one
+    // that can fail.
+    if present(&args, "--audit-kept-yields") {
+        let _ = VIEW_YIELDS.set(ViewYields::Audited);
+    } else if present(&args, "--no-kept-yields") {
+        let _ = VIEW_YIELDS.set(ViewYields::Derived);
+    }
     // ⚠ Stock seating is a FIXED civ per seat (Rome, Egypt, Greece, China…),
     // and on the first 250-pair run seats 0 and 2 won twice as often as seat 3
     // whoever sat there. Shuffling per map is a leg of the screen;
@@ -7947,6 +7997,16 @@ fn main() {
         started.elapsed().as_secs_f64(),
         games_to_play as f64 / started.elapsed().as_secs_f64().max(1e-9),
     );
+    println!(
+        "city yields on the planning views ({}): {} answered from what a view kept, {} derived",
+        match VIEW_YIELDS.get().copied().unwrap_or_default() {
+            ViewYields::Kept => "kept",
+            ViewYields::Derived => "--no-kept-yields",
+            ViewYields::Audited => "--audit-kept-yields, every reuse derived again and compared",
+        },
+        VIEW_YIELD_READS[0].load(std::sync::atomic::Ordering::Relaxed),
+        VIEW_YIELD_READS[1].load(std::sync::atomic::Ordering::Relaxed),
+    );
     print_table(&header, &rows);
 }
 
@@ -8154,6 +8214,7 @@ mod tests {
             buildings: None,
             cities_taken: None,
             cities_lost: None,
+            capital_held: None,
             units_killed: None,
             units_lost: None,
             units_lost_to_majors: None,

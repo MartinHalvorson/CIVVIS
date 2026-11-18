@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "siege-guns-take-a-reachable-post",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Two live Lv 6-7 Sumeria Domination runs whose siege guns stalled short of their posts: Immortal civvis-20261115T230117Z (Gilgamesh, Puel Mapu at axial (19, 12)) frame-0 states t88-125, and Emperor civvis-20261116T035719Z (Chinguetti at axial (2, 35)) frame-0 states t98-113. Each run's events.jsonl, cut after turn LAST+1 and kept to each turn's frame-0 decision state, is served one turn per line to ONE persistent decider (--serve --fresh-board, as the live brain runs it; the gene's two-turn clock needs memory across turns, so a one-frame --resumed query cannot exercise it) on one release civvis_orders built from this branch (be0027ede9; the head differs only in the stall guard, which reads the train's own next step instead of the router's preview walk). Both arms carry the run's summary.json forced genome (each as --with), victory lane and civilization; the on arm adds the gene. Each served turn is one read. Orders change on 230117Z t108, t109, t110 and t124 and on 035719Z t112 and t113; the gene journals on t108-112 and t123 (230117Z) and t109-113 (035719Z). Every frame is the live gene-off frame, so these reads do not show where the on arm's guns would have stood a turn later.",
+  "archive": {
+    "path": "docs/eval/2026-11-16-siege-guns-take-a-reachable-post.native-queries.tar.xz",
+    "sha256": "d1cb75c3eda516161af611d2ee05163b40ee1f08db68bd27a295830c8eaed9f5"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-02/0000/result.json"
+  ]
+}

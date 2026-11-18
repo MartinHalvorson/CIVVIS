@@ -90,7 +90,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use super::assault_forecast;
 use super::{AdvancedAi, AppliedAttack, ForceDomain, ForceGroup, StrategicPlan};
-use crate::game::{effective_strength, expected_damage, Action, Game};
+use crate::game::{effective_strength, expected_damage, Action, Game, RouteReach};
 use crate::think;
 use crate::Pos;
 
@@ -1796,14 +1796,79 @@ fn siege_posts(
     siege_posts_keeping(g, pid, city, force, taker, &BTreeMap::new())
 }
 
+/// [`siege_route_step`]'s "is there a route" for every unit and goal one
+/// [`siege_posts_keeping`] asks about, from one search per unit.
+///
+/// Every candidate post around a city used to cost its own route search, and
+/// a post the unit cannot reach floods the unit's whole region before saying
+/// so: two thirds of a siege assessment in a late game. The avoided tiles are
+/// the same for every question but the goal itself (the city's ring less the
+/// goal, every occupied tile, less the asker's own tile), which is exactly
+/// what [`RouteReach`] needs to answer them all from one search.
+struct SiegeRoutes {
+    ring: BTreeSet<Pos>,
+    occupied: BTreeSet<Pos>,
+    units: BTreeMap<u32, Option<(RouteReach, Pos, bool)>>,
+}
+
+impl SiegeRoutes {
+    fn new(g: &Game, pid: usize, city: Pos) -> Self {
+        // `siege_route_step`'s avoided units, the asker included: its own
+        // tile is taken back out below, as `siege_route_step` takes it out.
+        let occupied = g
+            .units
+            .values()
+            .filter(|other| {
+                g.rules.units[other.kind].domain.as_deref() != Some("air")
+                    && (other.owner != pid || g.rules.units[other.kind].class == "military")
+            })
+            .map(|other| other.pos)
+            .collect();
+        SiegeRoutes {
+            ring: g.wdisk(city, 1).into_iter().collect(),
+            occupied,
+            units: BTreeMap::new(),
+        }
+    }
+
+    /// `siege_route_step(g, pid, uid, goal, city).is_some()`, for the `pid`
+    /// and `city` this was built with, on the same unchanged board.
+    fn reaches(&mut self, g: &Game, uid: u32, goal: Pos) -> bool {
+        let SiegeRoutes {
+            ring,
+            occupied,
+            units,
+        } = self;
+        let Some((reach, start, land)) = units
+            .entry(uid)
+            .or_insert_with(|| {
+                g.route_reach(uid).and_then(|reach| {
+                    let start = g.units.get(&uid)?.pos;
+                    Some((reach, start, keeps_to_land(g, uid)))
+                })
+            })
+            .as_mut()
+        else {
+            return false;
+        };
+        let (start, land) = (*start, *land);
+        // The goal leaves the ring's avoided tiles but not the occupied ones.
+        let target_blocked = goal != start && occupied.contains(&goal);
+        reach.reaches(g, goal, target_blocked, |pos| {
+            (pos != start && (ring.contains(&pos) || occupied.contains(&pos)))
+                || (land && g.map.get(pos).is_some_and(|tile| g.rules.is_water(tile)))
+        })
+    }
+}
+
 fn firing_post_reachable(
     game: &Game,
-    player_id: usize,
+    routes: &mut SiegeRoutes,
     unit_id: u32,
     post: Pos,
     city: Pos,
 ) -> bool {
-    siege_route_step(game, player_id, unit_id, post, city).is_some()
+    routes.reaches(game, unit_id, post)
         || game.path_to(unit_id, post).is_some_and(|steps| {
             steps.iter().all(|position| {
                 dry_stand(game, unit_id, *position)
@@ -1822,8 +1887,26 @@ fn siege_posts_keeping(
     taker: Option<u32>,
     previous: &BTreeMap<u32, Pos>,
 ) -> BTreeMap<u32, Pos> {
+    siege_posts_reaching(g, pid, city, force, taker, previous, &BTreeSet::new()).0
+}
+
+/// [`siege_posts_keeping`], drawing each gun of `stalled` a post it can reach
+/// this turn or next when there is one (`siege-guns-take-a-reachable-post`,
+/// see `reachable_post::repick`), and the guns whose post that search drew.
+/// An empty `stalled` is the old search.
+fn siege_posts_reaching(
+    g: &Game,
+    pid: usize,
+    city: &CityView,
+    force: &[u32],
+    taker: Option<u32>,
+    previous: &BTreeMap<u32, Pos>,
+    stalled: &BTreeSet<u32>,
+) -> (BTreeMap<u32, Pos>, BTreeSet<u32>) {
+    let mut drawn: BTreeSet<u32> = BTreeSet::new();
     let mut posts: BTreeMap<u32, Pos> = BTreeMap::new();
     let mut ring_taken: BTreeSet<Pos> = BTreeSet::new();
+    let mut routes = SiegeRoutes::new(g, pid, city.pos);
     let open_land = |pos: Pos| {
         g.map
             .get(pos)
@@ -1871,7 +1954,7 @@ fn siege_posts_keeping(
             ring_free.contains(pos)
                 && !ring_taken.contains(pos)
                 && g.unit_can_traverse(uid, *pos)
-                && siege_route_step(g, pid, uid, *pos, city.pos).is_some()
+                && routes.reaches(g, uid, *pos)
         }) {
             posts.insert(uid, kept);
             ring_taken.insert(kept);
@@ -1892,7 +1975,7 @@ fn siege_posts_keeping(
         });
         let best = candidates
             .into_iter()
-            .find(|pos| siege_route_step(g, pid, uid, *pos, city.pos).is_some());
+            .find(|pos| routes.reaches(g, uid, *pos));
         if let Some(pos) = best {
             posts.insert(uid, pos);
             ring_taken.insert(pos);
@@ -1939,6 +2022,28 @@ fn siege_posts_keeping(
             fire_taken.insert(here);
             continue;
         }
+        // `siege-guns-take-a-reachable-post`: a gun that held its post for
+        // `GUN_POST_PATIENCE_TURNS` without closing drops it for one it can
+        // stand on this turn or next; with none, the old search below.
+        if stalled.contains(&uid) {
+            if let Some(pos) = reachable_post::repick(
+                g,
+                pid,
+                uid,
+                city,
+                taker,
+                range,
+                corridor,
+                (&fire_taken, &ring_taken),
+                &hostiles,
+                &third,
+            ) {
+                posts.insert(uid, pos);
+                fire_taken.insert(pos);
+                drawn.insert(uid);
+                continue;
+            }
+        }
         // The farthest band with a shot. Live King civvis-20261001T022028Z:
         // Cairo stood on Hills behind Wonder, Holy Site and Jungle tiles, no
         // range-2 tile had a line to it, and the guns stood three and four
@@ -1955,7 +2060,7 @@ fn siege_posts_keeping(
                 && g.unit_can_traverse(uid, *pos)
                 && g.unit_has_line_of_sight_from(uid, *pos, city.pos)
                 && g.unit_ids_at(*pos).is_empty()
-                && firing_post_reachable(g, pid, uid, *pos, city.pos)
+                && firing_post_reachable(g, &mut routes, uid, *pos, city.pos)
         });
         if let Some(pos) = kept {
             posts.insert(uid, pos);
@@ -1997,14 +2102,14 @@ fn siege_posts_keeping(
             });
             candidates
                 .into_iter()
-                .find(|pos| firing_post_reachable(g, pid, uid, *pos, city.pos))
+                .find(|pos| firing_post_reachable(g, &mut routes, uid, *pos, city.pos))
         });
         if let Some(pos) = best {
             posts.insert(uid, pos);
             fire_taken.insert(pos);
         }
     }
-    posts
+    (posts, drawn)
 }
 
 /// `siege-counts-posted-shooters`: does this shooter put its shot on the
@@ -2077,6 +2182,12 @@ impl AdvancedAi {
                     .collect();
                 Some((city, siege))
             })
+            .collect();
+        // `siege-guns-take-a-reachable-post`: each gun's post clock follows
+        // the gun through the rebuild, as its post does.
+        self.siege_gun_posts_held = std::mem::take(&mut self.siege_gun_posts_held)
+            .into_iter()
+            .filter_map(|(unit, held)| remap_unit(unit).map(|unit| (unit, held)))
             .collect();
         // `stage-musters-out-of-reach`: the muster's readiness and the turn it
         // closed follow their city through the rebuild as the siege does. Kept
@@ -3353,14 +3464,47 @@ impl AdvancedAi {
         if let Some(uid) = taker {
             self.reserved_units.insert(uid);
         }
-        record.posts = if matches!(
+        // `siege-guns-take-a-reachable-post`: the guns that held last turn's
+        // post too long without closing. Empty with the gene off.
+        let stalled = if self.siege_guns_take_a_reachable_post {
+            reachable_post::stalled_guns(
+                g,
+                pid,
+                city.pos,
+                &record.posts,
+                &self.siege_gun_posts_held,
+                turn,
+            )
+        } else {
+            BTreeSet::new()
+        };
+        let before = std::mem::take(&mut record.posts);
+        let drawn;
+        (record.posts, drawn) = if matches!(
             stage,
             SiegeStage::Invest | SiegeStage::Reduce | SiegeStage::Take
         ) {
-            siege_posts_keeping(g, pid, &city, &force, taker, &record.posts)
+            siege_posts_reaching(g, pid, &city, &force, taker, &before, &stalled)
         } else {
-            BTreeMap::new()
+            (BTreeMap::new(), BTreeSet::new())
         };
+        let mut repicked: Vec<(u32, Pos, Pos)> = Vec::new();
+        if self.siege_guns_take_a_reachable_post {
+            for uid in &drawn {
+                if let (Some(old), Some(new)) = (before.get(uid), record.posts.get(uid)) {
+                    repicked.push((*uid, *old, *new));
+                }
+            }
+            reachable_post::note_posts(
+                g,
+                &force,
+                &record.posts,
+                &drawn,
+                &mut self.siege_gun_posts_held,
+                turn,
+            );
+        }
+        self.note_repicked_posts(g, &city, &repicked);
         if grind && matches!(stage, SiegeStage::Invest | SiegeStage::Reduce) {
             self.grinding_sieges.insert(cid);
         } else {
@@ -3521,6 +3665,10 @@ impl AdvancedAi {
         if siege.stage == SiegeStage::Stage {
             return Some(self.siege_stage_step(g, pid, uid, &city, plan));
         }
+        // `siege-guns-take-a-reachable-post`: off a gun's post first.
+        if let Some(acted) = self.clear_gun_post(g, pid, uid, &city) {
+            return Some(acted);
+        }
         if self.siege_spotter(g, pid, group, &city) == Some(uid) {
             if let Some(acted) = self.spotter_step(g, pid, uid, &city) {
                 return Some(acted);
@@ -3653,6 +3801,8 @@ impl AdvancedAi {
         let here = g.units[&uid].pos;
         let distance = g.wdist(here, city.pos);
         // `stage-musters-out-of-reach`: see `muster_step`.
+        // `siege-guns-take-a-reachable-post`: not once a gun of ours stands
+        // within its range of the city; its escort does not wait at the line.
         if self.stage_musters_out_of_reach
             && arm_of(g, uid) != Arm::Siege
             && distance > CITY_STRIKE_RANGE
@@ -3661,6 +3811,8 @@ impl AdvancedAi {
                 .get(&city.id)
                 .copied()
                 .unwrap_or(true)
+            && !(self.siege_guns_take_a_reachable_post
+                && reachable_post::gun_stands_in_range(g, pid, city.pos))
         {
             if let Some(acted) = self.muster_step(g, pid, uid, city) {
                 return acted;
@@ -3674,7 +3826,7 @@ impl AdvancedAi {
         // ten tiles out from turn 135 to 153 ("damage ready false"), and
         // civvis-20261004T040138Z (game 47) held Quebec City's at ten.
         let mut gun_danger = (arm_of(g, uid) == Arm::Siege).then(|| {
-            let mut field = super::battle_planner::DangerField::with_reach(g, pid, true);
+            let mut field = self.danger_field(g, pid, true);
             if self.shared_danger {
                 field.share(g);
             }
@@ -4143,7 +4295,7 @@ impl AdvancedAi {
     fn muster_step(&mut self, g: &mut Game, pid: usize, uid: u32, city: &CityView) -> Option<bool> {
         let here = g.units.get(&uid)?.pos;
         let limit = f64::from(g.units[&uid].hp) * MUSTER_DANGER_SHARE;
-        let mut field = super::battle_planner::DangerField::with_reach(g, pid, true);
+        let mut field = self.danger_field(g, pid, true);
         if self.shared_danger {
             field.share(g);
         }
@@ -5198,6 +5350,8 @@ impl AdvancedAi {
         if g.units[&uid].pos == post {
             return None;
         }
+        // `siege-guns-take-a-reachable-post`: the soldier on the post first.
+        self.clear_post_for_gun(g, pid, post, city);
         self.approach(g, pid, uid, post, city.pos)
     }
 
@@ -6273,6 +6427,14 @@ mod breach_tests;
 /// `breaker-bought-for-the-siege`: the wall-breaker a held siege waits for,
 /// bought. See `siege_train/breaker_purchase.rs`.
 mod breaker_purchase;
+
+/// `siege-guns-take-a-reachable-post`: a gun that cannot close on its post
+/// takes one it can reach. See `siege_train/reachable_post.rs`.
+mod reachable_post;
+pub(super) use reachable_post::HeldPost;
+
+#[cfg(test)]
+mod reachable_post_tests;
 
 #[cfg(test)]
 mod breaker_purchase_tests;

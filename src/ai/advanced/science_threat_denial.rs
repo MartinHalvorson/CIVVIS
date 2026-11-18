@@ -438,18 +438,7 @@ impl AdvancedAi {
         pads: &BTreeSet<u32>,
         cid: u32,
     ) -> i32 {
-        if !pads.contains(&cid) {
-            return 0;
-        }
-        let posted = g
-            .spies
-            .values()
-            .any(|other| other.owner == pid && other.id != spy && other.city == Some(cid));
-        if posted {
-            0
-        } else {
-            DENIAL_SPY_ASSIGN_PRIORITY
-        }
+        Self::unheld_spy_target_bonus(g, pid, spy, pads, cid, DENIAL_SPY_ASSIGN_PRIORITY)
     }
 
     /// Rung 2: what a `disrupt_rocketry` run against a threat is worth beyond
@@ -486,15 +475,6 @@ impl AdvancedAi {
             .map(|(cid, _)| cid)
     }
 
-    /// Whether a spy of ours other than `spy` is in, or on its way to, `cid`.
-    /// The engine sets `Spy::city` to the destination the turn the order is
-    /// given, so one read covers the posted and the travelling agent.
-    fn science_denial_pad_is_held(g: &Game, pid: usize, spy: u32, cid: u32) -> bool {
-        g.spies
-            .values()
-            .any(|other| other.owner == pid && other.id != spy && other.city == Some(cid))
-    }
-
     /// `science-denial-spy-reads-the-leader`: what posting `spy` to `cid` is
     /// worth beyond [`AdvancedAi::science_denial_spy_assignment_bonus`] —
     /// [`DENIAL_LEADER_SPY_ASSIGN_PRIORITY`] for the leading threat's launch
@@ -508,7 +488,7 @@ impl AdvancedAi {
         leader: Option<u32>,
         cid: u32,
     ) -> i32 {
-        if leader != Some(cid) || Self::science_denial_pad_is_held(g, pid, spy, cid) {
+        if leader != Some(cid) || Self::other_spy_of_ours_in(g, pid, spy, cid) {
             0
         } else {
             DENIAL_LEADER_SPY_ASSIGN_PRIORITY
@@ -538,7 +518,7 @@ impl AdvancedAi {
         here.id != leader
             && here.owner != pid
             && !threats.contains(&here.owner)
-            && !Self::science_denial_pad_is_held(g, pid, spy, leader)
+            && !Self::other_spy_of_ours_in(g, pid, spy, leader)
     }
 
     // ---- Rung 3: the raid -------------------------------------------------
@@ -556,6 +536,35 @@ impl AdvancedAi {
                 let standing = g.map.get(pad).is_some_and(|tile| !tile.pillaged);
                 standing.then_some((threat.rival, pad))
             })
+    }
+
+    /// Whether `uid` passes [`Self::science_denial_raid_party`]'s own tests
+    /// for at least one pad the raid could be sent to: a land soldier, not
+    /// embarked, within [`DENIAL_RAID_REACH`] of some explored Spaceport of a
+    /// city whose owner we are at war with. A superset of the party for the
+    /// pad [`Self::science_denial_raid_pad`] chooses, and far cheaper to ask.
+    fn could_join_a_denial_raid(g: &Game, pid: usize, uid: u32) -> bool {
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        let spec = &g.rules.units[unit.kind];
+        if spec.class != "military"
+            || spec.domain.as_deref() == Some("air")
+            || spec.domain.as_deref() == Some("sea")
+            || g.is_embarked(unit)
+        {
+            return false;
+        }
+        let explored = &g.players[pid].explored;
+        g.cities.values().any(|city| {
+            city.owner != pid
+                && city.districts.iter().any(|(district, position)| {
+                    g.wdist(unit.pos, *position) <= DENIAL_RAID_REACH
+                        && g.district_family(*district) == "spaceport"
+                        && explored.contains(position)
+                })
+                && g.is_at_war(pid, city.owner)
+        })
     }
 
     /// Our mobile soldiers within [`DENIAL_RAID_REACH`] of `pad`, nearest
@@ -652,6 +661,18 @@ impl AdvancedAi {
                 .get(&cid)
                 .is_some_and(|city| g.wdist(unit.pos, city.pos) <= 3)
         }) {
+            return None;
+        }
+        // ★★ ASK THE SOLDIER BEFORE THE CENSUS. The party is our mobile land
+        // soldiers within `DENIAL_RAID_REACH` of the chosen pad, and the
+        // chosen pad is always the explored Spaceport of a rival we are at
+        // war with. Choosing it runs `science_threats`, which weighs every
+        // rival Spaceport city by its yields, and this step is asked for
+        // every soldier on every move: in a late site game with a space race
+        // that census was 2.4% of the whole thread, almost all of it for
+        // soldiers nowhere near any pad. One that could not stand in the
+        // party for any such pad is not in it for the chosen one.
+        if !Self::could_join_a_denial_raid(g, pid, uid) {
             return None;
         }
         let (target, pad) = self.science_denial_raid_pad(g, pid)?;

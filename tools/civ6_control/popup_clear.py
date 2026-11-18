@@ -135,6 +135,72 @@ SYSTEMSTATUSD_RECOVERY_PAUSE_SECONDS = 3.0
 SETUP_YIELD_SECONDS = 1.0
 
 
+# ★ SYSTEM EVENTS IS ASKED ONLY WHEN THE ANSWER IS USED. Every pass used to
+# launch two `osascript`s, one for the game window's geometry and one for the
+# frontmost application: measured 2026-11-15 over 40 s of a live game, 0.77
+# and 0.75 launches a second from this loop alone, of 4.4 a second on the
+# host, each a new WindowServer connection and a failed LaunchServices
+# registration. The LaunchServices wedge that needs a Mac restart (10-16,
+# 10-27, 11-04, 11-13) is the cost of that traffic being wrong once.
+#
+# The frontmost answer is read by three branches and all of them have
+# something other than the map on screen, so it is asked for only then. The
+# window's geometry changes when the window is moved, which the harness does
+# during setup (when this loop yields) or to put it back where it was; so it
+# is remembered for `WINDOW_BOX_SECONDS` while the map is all there is to
+# see. Nothing is ever pressed through a remembered window: a pass that sees
+# anything but the map through one forgets it and looks again (`LookAgain`),
+# and every pass with a popup up reads the window afresh, as before.
+#
+# ★ THE LIVE SCREEN IS A "CARD", NOT A "MAP". Probed on the first game with
+# the lines above (civvis-20261115T131026Z, turns 30-40, ten captures a
+# second apart): `classify` answered card nine times and leader once, never
+# map, and the loop still launched 0.67 and 0.60 `osascript`s a second. A
+# card is left to the mod unless `--cards` is passed (the lane does not pass
+# it): that pass presses nothing and reads neither answer, exactly like a
+# bare map. So "quiet" is the map, or a card this run will not click
+# (`quiet_pass`), and a quiet pass keeps the remembered window, does not ask
+# for the front app, and keeps the map's pace.
+WINDOW_BOX_SECONDS = 5.0
+#: What a pass over the bare map took while it asked both questions every
+#: time (1.30 s measured, 0.77 passes a second). The answers it no longer
+#: waits for must not become more captures: each one is 0.2 s of this
+#: process's CPU and a ScreenCaptureKit frame. A pass with anything on
+#: screen keeps `covered_poll_delay`.
+MAP_PASS_SECONDS = 1.25
+
+
+class LookAgain(Exception):
+    """This pass saw a popup through remembered geometry; the next reads it fresh."""
+
+
+def quiet_pass(kind, cards):
+    """Whether a pass that classified ``kind`` can press nothing at all: the
+    bare map, or a card while cards are left to the mod (no ``--cards``)."""
+    return kind == "map" or (kind == "card" and not cards)
+
+
+def window_box_reading(memo, now=None, ttl=WINDOW_BOX_SECONDS):
+    """``(box, fresh)``: the game window, asked for again only when the last
+    answer in ``memo`` is older than ``ttl``. No window is never remembered:
+    the wait for a game keeps asking, as before."""
+    now = time.monotonic() if now is None else now
+    box, at = memo.get("box"), memo.get("at")
+    if box and at is not None and 0 <= now - at < ttl:
+        return box, False
+    box = window_box()
+    memo["box"], memo["at"] = (box or None), now
+    return box, True
+
+
+def map_pass_delay(interval, began, now=None):
+    """The sleep after a pass that saw only the map: the pass and its sleep
+    together last ``MAP_PASS_SECONDS``, never less than the ordinary wait."""
+    now = time.monotonic() if now is None else now
+    ordinary = max(MIN_POLL_SECONDS, float(interval))
+    return max(ordinary, MAP_PASS_SECONDS - max(0.0, now - began))
+
+
 def osa(script):
     done = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=20)
     return (done.stdout or "").strip(), (done.stderr or "").strip()
@@ -1255,7 +1321,9 @@ def main():
     warned_cards = False
     last_pause_reason = None
     warned_hold = False
+    geometry = {"box": None, "at": None}
     while True:
+        pass_began = time.monotonic()
         # ★ THE OPERATOR'S PAUSE. While the live game is held the operator is
         # looking around it, and a click or an Escape from here would close
         # the screen they opened under them (Escape on the map opens the pause
@@ -1307,8 +1375,9 @@ def main():
 
         idle = False
         covered = False
+        quiet = False
         try:
-            box = window_box()
+            box, fresh_box = window_box_reading(geometry)
             if not box:
                 # Say it once. This runs for the length of a ladder, and a line
                 # every six seconds between games buries the lines that matter.
@@ -1323,7 +1392,13 @@ def main():
                     warned_setup = False
                 window, scale = capture(box)
                 kind, targets, dark = classify(window)
-                front = frontmost()
+                quiet = quiet_pass(kind, args.cards)
+                if not quiet:
+                    # With anything to press the window is read every pass.
+                    geometry["box"] = None
+                    if not fresh_box:
+                        raise LookAgain()
+                front = "" if quiet else frontmost()
                 # These positively identified panels can stop the game clock.
                 # Give them a longer grace period to recover a paused run;
                 # all broader dark/card recognition remains tied to a fresh turn so
@@ -1470,7 +1545,11 @@ def main():
                     else:
                         log(f"clicked {kind} at {where} but it is still there "
                             f"(miss {misses})")
+        except LookAgain:
+            covered = True
         except Exception as error:
+            # Whatever went wrong, the next pass asks where the window is.
+            geometry["box"] = None
             log(f"error: {error}")
         if args.once:
             return
@@ -1494,10 +1573,10 @@ def main():
         # pass; this changes when we look, never what we are willing to click.
         if idle:
             delay = max(MIN_POLL_SECONDS, args.interval * 5)  # between games
-        elif covered:
+        elif covered and not quiet:
             delay = covered_poll_delay(args.interval)
         else:
-            delay = max(MIN_POLL_SECONDS, args.interval)
+            delay = map_pass_delay(args.interval, pass_began)
         time.sleep(delay)
 
 
