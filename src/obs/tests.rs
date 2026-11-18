@@ -2549,10 +2549,10 @@ fn a_marked_frame_builds_exactly_the_tiles_it_sends() {
         let (_, marked) = with_tile_marks(Some(held), || observe(&game, 0));
         let mut marked = marked.expect("marked");
         assert_eq!(marked.marks, marks);
-        for at in 0..tiles.len() {
+        for (at, tile) in tiles.iter().enumerate() {
             let built = marked.take(at);
             if at == 3 || at == 9 {
-                assert_eq!(&built, &tiles[at]);
+                assert_eq!(&built, tile);
             } else {
                 assert_eq!(built, Value::Null, "tile {at} was built though it is held");
             }

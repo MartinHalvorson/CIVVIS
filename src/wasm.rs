@@ -317,8 +317,7 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
                     .filter(|(holding, _)| holding.seed == frame.seed && Some(*holding) == held)
                     .map(|(_, marks)| marks.clone())
             });
-            let (mut o, tile_marks) =
-                crate::obs::with_tile_marks(held_marks, || session.state());
+            let (mut o, tile_marks) = crate::obs::with_tile_marks(held_marks, || session.state());
             if query_value(target, "planet") == Some("1") {
                 if let Some(geometry) = crate::obs::planet_geometry(&session.game) {
                     o["map"]["planet"] = geometry;

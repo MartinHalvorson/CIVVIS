@@ -41,7 +41,7 @@ impl Marker {
     }
 }
 
-impl<'a> ser::Serializer for &'a mut Marker {
+impl ser::Serializer for &mut Marker {
     type Ok = ();
     type Error = Never;
     type SerializeSeq = Self;
@@ -221,7 +221,7 @@ element!(SerializeTuple, serialize_element);
 element!(SerializeTupleStruct, serialize_field);
 element!(SerializeTupleVariant, serialize_field);
 
-impl<'a> ser::SerializeMap for &'a mut Marker {
+impl ser::SerializeMap for &mut Marker {
     type Ok = ();
     type Error = Never;
     fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<(), Never> {
