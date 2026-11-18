@@ -445,6 +445,39 @@ impl BasicAi {
         tiles >= NAVAL_RECON_MIN_WATERWAY_TILES && reaches_open_water && charts_something
     }
 
+    /// `city_has_naval_recon_launch`, answered through one question's
+    /// `WaterwayCharts`.
+    pub(super) fn city_has_naval_recon_launch_charted(
+        g: &Game,
+        cid: u32,
+        charts: &mut WaterwayCharts,
+    ) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        charts.can_chart_from(g, g.nbrs(city.pos))
+    }
+
+    /// `naval_recon_ship_can_chart`, answered through one question's
+    /// `WaterwayCharts`.
+    pub(super) fn naval_recon_ship_can_chart_charted(
+        g: &Game,
+        uid: u32,
+        charts: &mut WaterwayCharts,
+    ) -> bool {
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        let spec = &g.rules.units[unit.kind];
+        if unit.owner != charts.pid
+            || spec.class != "military"
+            || spec.domain.as_deref() != Some("sea")
+        {
+            return false;
+        }
+        charts.can_chart_from(g, std::iter::once(unit.pos).chain(g.nbrs(unit.pos)))
+    }
+
     /// A waterway pays for a dedicated scout only when it is genuinely roomy,
     /// reaches open water, and has either unseen water or a live-mirror
     /// frontier at its edge.
@@ -686,5 +719,165 @@ impl BasicAi {
             }
         }
         counts
+    }
+}
+
+/// One question's memory of the seat's waterways: `naval_recon_can_chart_from`
+/// for many start sets against one unchanging `&Game`.
+///
+/// ★★★ A CHARTED SEA WAS WALKED TO ITS LAST TILE ONCE PER CITY AND PER SHIP.
+/// `naval_recon_is_the_missing_arm` asks every own hull, then every city twice
+/// (the queued-eye count and the launch test), and late in a game the answer
+/// is "no" — the slow case, which has to exhaust the whole body of water. A
+/// coastal empire on one sea paid that flood a dozen-plus times per question.
+///
+/// ⚠ Exact, and this is the argument. The answer is a monotone predicate
+/// (`size >= 4`, any open water, anything to chart) over the union of the
+/// water components the starts touch. A component walked to its end is
+/// remembered with its three totals, so another start inside it reads them
+/// back instead of walking; distinct components add. A walk still stops the
+/// moment the running union satisfies the predicate (a prefix of the union is
+/// a subset of it), and such a partial walk is not remembered. The tables are
+/// only valid for the `&Game` they were built against, so a `WaterwayCharts`
+/// lives for one question and is dropped with it.
+/// `naval_recon_early_exit_agrees_with_the_full_walk` asserts the agreement.
+pub(super) struct WaterwayCharts {
+    pid: usize,
+    can_cross_ocean: bool,
+    /// Per map tile: 1 + the remembered component it belongs to, or 0.
+    component_of: Vec<u32>,
+    /// Per map tile: the walk that last queued it.
+    queued_by: Vec<u32>,
+    walks: u32,
+    components: Vec<WaterwayTotals>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct WaterwayTotals {
+    tiles: usize,
+    reaches_open_water: bool,
+    charts_something: bool,
+}
+
+impl WaterwayTotals {
+    fn with(self, other: WaterwayTotals) -> WaterwayTotals {
+        WaterwayTotals {
+            tiles: self.tiles + other.tiles,
+            reaches_open_water: self.reaches_open_water || other.reaches_open_water,
+            charts_something: self.charts_something || other.charts_something,
+        }
+    }
+
+    fn can_chart(self) -> bool {
+        self.tiles >= NAVAL_RECON_MIN_WATERWAY_TILES
+            && self.reaches_open_water
+            && self.charts_something
+    }
+}
+
+impl WaterwayCharts {
+    pub(super) fn new(g: &Game, pid: usize) -> Self {
+        WaterwayCharts {
+            pid,
+            can_cross_ocean: BasicAi::naval_recon_can_cross_ocean(g, pid),
+            component_of: Vec::new(),
+            queued_by: Vec::new(),
+            walks: 0,
+            components: Vec::new(),
+        }
+    }
+
+    fn navigable_water(&self, g: &Game, pos: Pos) -> bool {
+        g.map.get(pos).is_some_and(|tile| {
+            g.rules.is_passable(tile)
+                && g.rules.is_water(tile)
+                && (tile.terrain != "ocean" || self.can_cross_ocean)
+        })
+    }
+
+    /// `BasicAi::naval_recon_can_chart_from(g, self.pid, starts)`.
+    pub(super) fn can_chart_from<I>(&mut self, g: &Game, starts: I) -> bool
+    where
+        I: IntoIterator<Item = Pos>,
+    {
+        if self.component_of.len() != g.map.tiles.len() {
+            self.component_of = vec![0; g.map.tiles.len()];
+            self.queued_by = vec![0; g.map.tiles.len()];
+        }
+        let mut union = WaterwayTotals::default();
+        let mut counted: Vec<u32> = Vec::new();
+        for start in starts {
+            if !self.navigable_water(g, start) {
+                continue;
+            }
+            let Some(index) = g.map.tiles.index_of(start) else {
+                continue;
+            };
+            let id = match self.component_of[index] {
+                0 => match self.walk(g, start, index, union) {
+                    Some(id) => id,
+                    None => return true,
+                },
+                known => known - 1,
+            };
+            if !counted.contains(&id) {
+                counted.push(id);
+                union = union.with(self.components[id as usize]);
+            }
+        }
+        union.can_chart()
+    }
+
+    /// Walk the component holding `start`, which no remembered component
+    /// holds. `None` when `before` plus a prefix of the walk already charts
+    /// (the component is then not remembered); otherwise the new component's
+    /// id.
+    fn walk(&mut self, g: &Game, start: Pos, index: usize, before: WaterwayTotals) -> Option<u32> {
+        self.walks += 1;
+        let walk = self.walks;
+        let explored = &g.players[self.pid].explored;
+        let mut totals = WaterwayTotals::default();
+        let mut members = Vec::new();
+        let mut frontier = VecDeque::new();
+        self.queued_by[index] = walk;
+        frontier.push_back((start, index));
+        while let Some((pos, index)) = frontier.pop_front() {
+            members.push(index);
+            totals.tiles += 1;
+            if !totals.reaches_open_water {
+                totals.reaches_open_water = g
+                    .map
+                    .get(pos)
+                    .is_some_and(|tile| matches!(tile.terrain.as_str(), "coast" | "ocean"));
+            }
+            if !totals.charts_something {
+                totals.charts_something = !explored.contains(&pos)
+                    || g.nbrs(pos).into_iter().any(|neighbor| {
+                        g.map
+                            .get(neighbor)
+                            .is_some_and(|tile| BasicAi::is_sea_frontier(g, tile))
+                    });
+            }
+            if before.with(totals).can_chart() {
+                return None;
+            }
+            for neighbor in g.nbrs(pos) {
+                if !self.navigable_water(g, neighbor) {
+                    continue;
+                }
+                if let Some(next) = g.map.tiles.index_of(neighbor) {
+                    if self.queued_by[next] != walk {
+                        self.queued_by[next] = walk;
+                        frontier.push_back((neighbor, next));
+                    }
+                }
+            }
+        }
+        let id = self.components.len() as u32;
+        self.components.push(totals);
+        for member in members {
+            self.component_of[member] = id + 1;
+        }
+        Some(id)
     }
 }
