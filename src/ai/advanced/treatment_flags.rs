@@ -148,6 +148,11 @@ impl AdvancedAi {
         /// `advanced/four_faces_bars_the_surprise.rs`.
         base.four_faces_bars_the_surprise => enable_four_faces_bars_the_surprise, disable_four_faces_bars_the_surprise;
         // ---- append: c-d --------------------------------------------
+        /// Opt-in gene `culture-and-religion-race-the-congress`: the same
+        /// live-only ballot change for a Culture or Religious seat; see
+        /// `CivvisCongressRacer` in `CivvisControlAgent.lua`.
+        culture_and_religion_race_the_congress => enable_culture_and_religion_race_the_congress,
+            disable_culture_and_religion_race_the_congress;
         /// `domination-seat-appoints-pingala-first`: Pingala and Researcher
         /// take a Domination seat's first Governor titles. See
         /// `advanced/domination_governors.rs`.
@@ -2608,11 +2613,6 @@ impl AdvancedAi {
         /// change; see `CivvisCongressRacer` in `CivvisControlAgent.lua`.
         science_seat_races_the_congress => enable_science_seat_races_the_congress,
             disable_science_seat_races_the_congress;
-        /// Opt-in gene `culture-and-religion-race-the-congress`: the same
-        /// live-only ballot change for a Culture or Religious seat; see
-        /// `CivvisCongressRacer` in `CivvisControlAgent.lua`.
-        culture_and_religion_race_the_congress => enable_culture_and_religion_race_the_congress,
-            disable_culture_and_religion_race_the_congress;
         /// Opt-in gene `capital-walls-at-any-ratio`; see
         /// [`Self::capital_walls_at_any_ratio`].
         capital_walls_at_any_ratio => enable_capital_walls_at_any_ratio, disable_capital_walls_at_any_ratio;

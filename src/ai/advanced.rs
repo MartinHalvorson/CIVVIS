@@ -5673,6 +5673,11 @@ pub struct AdvancedAi {
     /// stood, for the journal of its loss. `None` while the gene is off.
     breaker_shield_memory: Option<breaker_walks_under_a_shield::BreakerShieldMemory>,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-and-religion-race-the-congress`: a Culture or Religious
+    /// seat's Diplomatic Victory ballot runs the racer too. Live only, like
+    /// `science_seat_races_the_congress`: the simulator never reads it.
+    #[allow(dead_code)]
+    culture_and_religion_race_the_congress: bool,
     /// `domination-seat-appoints-pingala-first`: a Domination target spends
     /// its first Governor titles on Pingala in its largest city and her
     /// Researcher promotion instead of the opening's Magnus, and keeps her
@@ -9669,11 +9674,6 @@ pub struct AdvancedAi {
     /// simulator never reads this field.
     #[allow(dead_code)]
     science_seat_races_the_congress: bool,
-    /// `culture-and-religion-race-the-congress`: a Culture or Religious
-    /// seat's Diplomatic Victory ballot runs the racer too. Live only, like
-    /// `science_seat_races_the_congress`: the simulator never reads it.
-    #[allow(dead_code)]
-    culture_and_religion_race_the_congress: bool,
     /// `science-seat-allies-2`: version one, and a Military Alliance asked
     /// before Diplomatic Service. See `advanced/culture_seat_allies.rs`.
     science_seat_allies_2: bool,
@@ -13110,6 +13110,7 @@ impl AdvancedAi {
             // ---- append: a-b ----------------------------------------
             barbarian_research_prices_the_field: false,
             // ---- append: c-d ----------------------------------------
+            culture_and_religion_race_the_congress: false,
             // ---- append: e-f ----------------------------------------
             early_cities_keep_their_distance: false,
             field_reads_the_tile_it_leaves: false,
@@ -13128,7 +13129,6 @@ impl AdvancedAi {
             // ---- append: s-s ----------------------------------------
             science_seat_builds_the_statue: false,
             science_seat_races_the_congress: false,
-            culture_and_religion_race_the_congress: false,
             science_seat_allies_2: false,
             science_foundation_before_backlog: false,
             science_chain_crosses_window: false,

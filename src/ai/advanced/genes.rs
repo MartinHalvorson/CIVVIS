@@ -5404,14 +5404,6 @@ pub const GENES: &[Gene] = &[
     // votes that never decided a session. Live only; the simulator has no
     // such Congress, so it cannot screen this.
     Gene { tag: "science-seat-races-the-congress", field: "science_seat_races_the_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_races_the_congress, disable: AdvancedAi::disable_science_seat_races_the_congress },
-    // `culture-and-religion-race-the-congress`: a seat aiming at Culture or
-    // Religion runs the same racer's ballot and joins every competition and
-    // Aid Request. Live Deity 2026-11-18 (`congress_kpi.py`, 38 games): final
-    // Diplomatic Victory points, median ours / best rival, culture 3 / 12 and
-    // religious 4 / 14 with no seat at 16+, against 8 / 11 and three of 13 at
-    // 16+ on the Science seats that race; Religious seats cast no join vote
-    // and left a median 8 first-place points uncontested. Live only.
-    Gene { tag: "culture-and-religion-race-the-congress", field: "culture_and_religion_race_the_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_and_religion_race_the_congress, disable: AdvancedAi::disable_culture_and_religion_race_the_congress },
     // Gitarja's +2 Faith beside Coast or Lake and Great Nusantara's district
     // adjacency are absent from the site score, so Indonesia ranked sites as
     // if landlocked: 43 of 97 live foundings were inland and 27 of those had
@@ -5500,6 +5492,14 @@ pub const GENES: &[Gene] = &[
     // `advanced/band_plays_the_stage_at_hand.rs`.
     Gene { tag: "band-plays-the-stage-at-hand", field: "band_plays_the_stage_at_hand", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_the_stage_at_hand, disable: AdvancedAi::disable_band_plays_the_stage_at_hand },
     // ---- append: c-d ------------------------------------------------
+    // `culture-and-religion-race-the-congress`: a seat aiming at Culture or
+    // Religion runs the same racer's ballot and joins every competition and
+    // Aid Request. Live Deity 2026-11-18 (`congress_kpi.py`, 38 games): final
+    // Diplomatic Victory points, median ours / best rival, culture 3 / 12 and
+    // religious 4 / 14 with no seat at 16+, against 8 / 11 and three of 13 at
+    // 16+ on the Science seats that race; Religious seats cast no join vote
+    // and left a median 8 first-place points uncontested. Live only.
+    Gene { tag: "culture-and-religion-race-the-congress", field: "culture_and_religion_race_the_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_and_religion_race_the_congress, disable: AdvancedAi::disable_culture_and_religion_race_the_congress },
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
     Gene { tag: "corps-comes-home-alive", field: "corps_comes_home_alive", kind: Kind::OptIn, enable: AdvancedAi::enable_corps_comes_home_alive, disable: AdvancedAi::disable_corps_comes_home_alive },
