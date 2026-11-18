@@ -148,6 +148,10 @@ impl AdvancedAi {
         /// `advanced/four_faces_bars_the_surprise.rs`.
         base.four_faces_bars_the_surprise => enable_four_faces_bars_the_surprise, disable_four_faces_bars_the_surprise;
         // ---- append: c-d --------------------------------------------
+        /// Opt-in gene `culture-and-religion-build-the-statue`; see
+        /// `advanced/diplo_wonder_claim.rs`.
+        culture_and_religion_build_the_statue => enable_culture_and_religion_build_the_statue,
+            disable_culture_and_religion_build_the_statue;
         /// Opt-in gene `culture-and-religion-race-the-congress`: the same
         /// live-only ballot change for a Culture or Religious seat; see
         /// `CivvisCongressRacer` in `CivvisControlAgent.lua`.

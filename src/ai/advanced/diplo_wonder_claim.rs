@@ -191,16 +191,21 @@ impl AdvancedAi {
                 Some(VictoryTarget::Diplomacy) => !self.lane_lost,
                 // A lost Science race is when this seat most needs the points.
                 Some(VictoryTarget::Science) => self.science_seat_builds_the_statue,
+                // `culture-and-religion-build-the-statue`: the same claim for
+                // a Culture or Religious seat racing the Congress.
+                Some(VictoryTarget::Culture | VictoryTarget::Religion) => {
+                    self.culture_and_religion_build_the_statue
+                }
                 _ => false,
             }
     }
 
-    /// Whether this seat's claim takes a wonder worth `points`. A Science seat
-    /// takes only the Statue of Liberty: a lesser wonder's points do not pay
-    /// for the Production it takes from the science race.
+    /// Whether this seat's claim takes a wonder worth `points`. A Science,
+    /// Culture or Religious seat takes only the Statue of Liberty: a lesser
+    /// wonder's points do not pay for the Production it takes from the lane.
     fn diplo_wonder_worth_it(&self, g: &Game, points: f64) -> bool {
         points > 0.0
-            && (self.active_victory_target(g) != Some(VictoryTarget::Science)
+            && (self.active_victory_target(g) == Some(VictoryTarget::Diplomacy)
                 || points >= SCIENCE_SEAT_WONDER_POINTS)
     }
 
@@ -314,6 +319,11 @@ impl AdvancedAi {
             && match self.active_victory_target(g) {
                 Some(VictoryTarget::Diplomacy) => true,
                 Some(VictoryTarget::Science) => self.science_seat_races_the_congress,
+                // Armed with `culture-and-religion-race-the-congress`, whose
+                // racer is what makes the four points the last ones.
+                Some(VictoryTarget::Culture | VictoryTarget::Religion) => {
+                    self.culture_and_religion_build_the_statue
+                }
                 _ => false,
             }
     }

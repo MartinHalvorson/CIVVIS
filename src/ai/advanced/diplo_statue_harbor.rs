@@ -81,6 +81,9 @@ impl AdvancedAi {
             Some(VictoryTarget::Science) => {
                 self.science_seat_builds_the_statue && g.turn >= SCIENCE_STATUE_HARBOR_TURN
             }
+            Some(VictoryTarget::Culture | VictoryTarget::Religion) => {
+                self.culture_and_religion_build_the_statue && g.turn >= SCIENCE_STATUE_HARBOR_TURN
+            }
             _ => false,
         }
     }
