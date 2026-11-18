@@ -489,7 +489,7 @@ fn a_turn(on: bool) -> (Vec<i32>, i32, Vec<String>) {
     }
     ai.base.journal = crate::reasoning::Journal::recording();
     ai.take_turn(&mut g, 0);
-    let notes = ai
+    let mut notes: Vec<String> = ai
         .base
         .journal
         .since(u64::MAX)
@@ -498,6 +498,23 @@ fn a_turn(on: bool) -> (Vec<i32>, i32, Vec<String>) {
         .filter(|thought| thought.detail.contains("shooters-man-the-capital"))
         .map(|thought| format!("{} | {}", thought.headline, thought.detail))
         .collect();
+    // Who stands where at the end of the turn, for a failure's message.
+    let mut board: Vec<String> = g
+        .units
+        .values()
+        .map(|unit| {
+            format!(
+                "board: {} of {} at {:?}, {} from the centre, {} moves left",
+                unit.kind.as_str(),
+                unit.owner,
+                unit.pos,
+                g.wdist(unit.pos, home),
+                unit.moves_left
+            )
+        })
+        .collect();
+    board.sort();
+    notes.extend(board);
     (
         archers
             .iter()
@@ -522,7 +539,10 @@ fn a_whole_turn_leaves_the_called_shooters_at_the_capital() {
         "on, every called shooter ends the turn in or beside the centre: {on:?} {notes:#?}"
     );
     let (_, _, quiet) = a_turn(false);
-    assert!(quiet.is_empty(), "off, the gene journals nothing");
+    assert!(
+        !quiet.iter().any(|note| note.contains("shooters-man")),
+        "off, the gene journals nothing"
+    );
     // The same turn twice is the same turn.
     assert_eq!(a_turn(true), a_turn(true));
     assert_eq!(a_turn(false), a_turn(false));

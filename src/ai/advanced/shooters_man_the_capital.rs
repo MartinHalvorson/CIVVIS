@@ -78,9 +78,10 @@
 //!
 //! 1. A siege gun at war with us that it can shoot from where it stands is
 //!    shot: the weakest first.
-//! 2. Otherwise, when a tile in or beside the City Center that it can reach
-//!    this turn has such a gun in reach, it goes there and fires if it still
-//!    can. The shooter on the centre keeps the centre.
+//! 2. Otherwise, when a dry tile within [`MAN_STAND_TILES`] of the City
+//!    Center that it can reach this turn has such a gun in reach, it goes
+//!    there and fires if it still can. The shooter on the centre keeps the
+//!    centre.
 //! 3. Otherwise it goes home: onto the City Center when no soldier of ours
 //!    holds it, else beside it, as far as this turn's movement takes it over
 //!    dry land. There it stays. At war it takes the best shot it has.
@@ -121,6 +122,12 @@ pub(crate) const MAN_SHOOTER_REACH: i32 = 2;
 
 /// The fewest shooters a watched party calls.
 pub(crate) const MAN_GUARD_MIN: usize = 2;
+
+/// How far from the City Center a shooter takes a stand to reach a siege
+/// gun. The ring beside the centre is six tiles, some of them water and some
+/// held by our own soldiers: on Beijing's turn-70 board seven shooters were
+/// called and two found a tile beside the centre.
+pub(crate) const MAN_STAND_TILES: i32 = 2;
 
 /// What the watch reads at the original capital this turn.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -331,10 +338,11 @@ impl AdvancedAi {
             })
     }
 
-    /// A tile in or beside the City Center that `uid` can reach this turn and
-    /// that has a watched siege gun in reach: the nearest the shooter (it is
-    /// the likeliest to leave it a shot), then the one with the fewest
-    /// hostile soldiers beside it, then the centre itself.
+    /// A dry tile within [`MAN_STAND_TILES`] of the City Center that `uid`
+    /// can reach this turn and that has a watched siege gun in reach: the
+    /// nearest the shooter (it is the likeliest to leave it a shot), then the
+    /// one with the fewest hostile soldiers beside it, then the nearest the
+    /// centre.
     fn man_firing_stand(
         &self,
         g: &Game,
@@ -364,7 +372,9 @@ impl AdvancedAi {
         };
         g.reachable(uid)
             .into_iter()
-            .filter(|stand| g.wdist(*stand, reading.home) <= 1 && Self::man_dry(g, *stand))
+            .filter(|stand| {
+                g.wdist(*stand, reading.home) <= MAN_STAND_TILES && Self::man_dry(g, *stand)
+            })
             .filter(|stand| {
                 reading.guns.iter().any(|gun| {
                     g.units.get(gun).is_some_and(|target| {
@@ -377,7 +387,7 @@ impl AdvancedAi {
                 (
                     g.wdist(from, *stand),
                     beside_hostiles(*stand),
-                    *stand != reading.home,
+                    g.wdist(*stand, reading.home),
                     *stand,
                 )
             })
@@ -467,8 +477,8 @@ impl AdvancedAi {
         {
             return;
         }
-        // 2. A stand in or beside the centre with a gun in reach. The shooter
-        // on the centre keeps it: the one tile nothing can strike it on.
+        // 2. A stand near the centre with a gun in reach. The shooter on the
+        // centre keeps it: the one tile nothing can strike it on.
         if reading.war && from != home {
             if let Some(stand) = self
                 .man_firing_stand(g, pid, uid, reading)
@@ -486,8 +496,9 @@ impl AdvancedAi {
                     self.force_groups_dirty = true;
                     think!(self.journal(), Military, Decision,
                         "The {} takes its stand at the capital", plain(kind.as_str());
-                        "shooters-man-the-capital: a siege gun is in reach from {stand:?}, in or \
-                         beside the City Center; {from:?} -> {stand:?}");
+                        "shooters-man-the-capital: a siege gun is in reach from {stand:?}, {} \
+                         tile(s) from the City Center; {from:?} -> {stand:?}",
+                        g.wdist(stand, home));
                     self.man_fire(g, pid, uid, reading);
                     self.man_hold(g, pid, uid);
                     return;
@@ -502,7 +513,8 @@ impl AdvancedAi {
                 .is_some_and(|other| other.owner == pid && Self::man_soldier(g, other))
         });
         if g.wdist(from, home) > 1 || (from != home && centre_open) {
-            let stepped = match self.man_step_home(g, pid, uid, home) {
+            let goal = self.man_step_home(g, pid, uid, home);
+            let stepped = match goal {
                 Some(tile) => g
                     .apply(
                         pid,
@@ -524,8 +536,9 @@ impl AdvancedAi {
                 let to = g.units.get(&uid).map_or(from, |unit| unit.pos);
                 think!(self.journal(), Military, Decision,
                     "The {} comes home to the capital", plain(kind.as_str());
-                    "shooters-man-the-capital: {} tile(s) out; {from:?} -> {to:?}",
-                    g.wdist(from, home));
+                    "shooters-man-the-capital: {} tile(s) out; {from:?} -> {to:?}, bound for {}",
+                    g.wdist(from, home),
+                    goal.map_or_else(|| "the pathfinder's step".to_string(), |tile| format!("{tile:?}")));
             }
         }
         self.man_fire(g, pid, uid, reading);
