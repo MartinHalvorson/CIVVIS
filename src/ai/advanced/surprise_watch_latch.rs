@@ -115,6 +115,9 @@ impl AdvancedAi {
                             // A friend or an ally cannot declare by surprise.
                             && !g.are_friends(pid, *owner)
                             && g.alliance_with(pid, *owner).is_none()
+                            // `four-faces-bars-the-surprise`: nor can
+                            // Canada, or anyone on Canada.
+                            && !self.four_faces_spares(g, pid, *owner)
                     })
             })
             .map(|((_, owner), _)| (*owner, g.military_power(*owner) / ours))

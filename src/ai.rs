@@ -2951,6 +2951,12 @@ pub struct BasicAi {
     /// Runtime state for `garrison_before_the_surprise`: the turn and the
     /// called cities read from that turn's frame.
     pub(crate) garrison_call_cache: Option<(u32, Vec<Pos>)>,
+    /// `four-faces-bars-the-surprise`: the peacetime surprise readers pass
+    /// over a rival that cannot declare a Surprise War on us (Canada, on
+    /// either side) until a denouncement stands between us. See
+    /// `advanced/four_faces_bars_the_surprise.rs`. Set by the Advanced gene;
+    /// off by default.
+    pub(crate) four_faces_bars_the_surprise: bool,
     /// `denial-spies-count-their-losses`: set by `AdvancedAi` each turn while
     /// recent Spy losses pause training; the production fallback then offers
     /// no Spy. False otherwise and on a bare `BasicAi`.
@@ -4430,6 +4436,7 @@ impl BasicAi {
             retainers_garrison_claims: BTreeMap::new(),
             garrison_before_the_surprise: false,
             garrison_call_cache: None,
+            four_faces_bars_the_surprise: false,
             spy_training_paused: false,
             obsolete_military_buys_barred: false,
             obsolete_buys_read_our_techs: false,

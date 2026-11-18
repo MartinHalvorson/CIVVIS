@@ -49,6 +49,10 @@ pub(crate) const GARRISON_CALL_RATIO: f64 = 1.5;
 /// The farthest a soldier is drafted from.
 pub(crate) const GARRISON_CALL_RANGE: i32 = 12;
 
+/// The civilization whose ability is Four Faces of Peace
+/// (`four-faces-bars-the-surprise`).
+pub(crate) const FOUR_FACES_CIVILIZATION: &str = "Canada";
+
 impl BasicAi {
     /// A land soldier that can fight and is not recon.
     fn garrison_call_soldier(g: &Game, unit: &Unit) -> bool {
@@ -109,6 +113,48 @@ impl BasicAi {
             .collect()
     }
 
+    /// `four-faces-bars-the-surprise`: whether `rival` cannot open a war on
+    /// `pid` by surprise. The gene is on, both are majors at peace, one of
+    /// the two plays Canada (Four Faces of Peace: it declares no Surprise
+    /// War and none is declared on it), and neither has an active
+    /// denouncement of the other, the state every casus belli needs. See
+    /// `advanced/four_faces_bars_the_surprise.rs`.
+    pub(crate) fn four_faces_bars_surprise_from(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        let four_faces = |seat: usize| {
+            g.uses_civ6_content(seat) && g.players[seat].civ == FOUR_FACES_CIVILIZATION
+        };
+        let major = |seat: usize| {
+            g.players.get(seat).is_some_and(|player| {
+                player.alive && !player.is_minor && !player.is_barbarian && !player.is_free_city
+            })
+        };
+        let denounces = |from: usize, to: usize| {
+            g.players[from]
+                .denounced_until
+                .get(&to)
+                .is_some_and(|until| *until > g.turn)
+        };
+        self.four_faces_bars_the_surprise
+            && pid != rival
+            && major(pid)
+            && major(rival)
+            && (four_faces(pid) || four_faces(rival))
+            && !g.is_at_war(pid, rival)
+            && !denounces(rival, pid)
+            && !denounces(pid, rival)
+    }
+
+    /// [`Self::stronger_major_soldiers`] less the soldiers of a major that
+    /// cannot open a war on us by surprise
+    /// (`four-faces-bars-the-surprise`). The same list with that gene off.
+    pub(crate) fn surprise_soldiers(&self, g: &Game, pid: usize) -> Vec<u32> {
+        let mut soldiers = Self::stronger_major_soldiers(g, pid);
+        if self.four_faces_bars_the_surprise {
+            soldiers.retain(|uid| !self.four_faces_bars_surprise_from(g, pid, g.units[uid].owner));
+        }
+        soldiers
+    }
+
     /// Our cities a stronger major's visible soldier stands near this turn.
     /// Cached per turn: the reading is the turn-start frame.
     pub(crate) fn garrison_called_cities(&mut self, g: &Game, pid: usize) -> Vec<Pos> {
@@ -117,7 +163,8 @@ impl BasicAi {
                 return cities.clone();
             }
         }
-        let soldiers: Vec<Pos> = Self::stronger_major_soldiers(g, pid)
+        let soldiers: Vec<Pos> = self
+            .surprise_soldiers(g, pid)
             .into_iter()
             .map(|uid| g.units[&uid].pos)
             .collect();
