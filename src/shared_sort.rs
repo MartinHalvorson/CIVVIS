@@ -356,8 +356,11 @@ mod tests {
     }
 
     /// Exercises the erased path itself — the one `wasm32` runs — on
-    /// whatever target the tests run on.
+    /// whatever target the tests run on. The std side calls exactly the
+    /// method each shared one stands in for, so clippy's preferred rewrite
+    /// would compare against a different method.
     #[test]
+    #[allow(clippy::unnecessary_sort_by)]
     fn the_erased_sorts_order_exactly_as_std_does() {
         use super::{key_order, stable, unstable};
         let values = tied_values();
