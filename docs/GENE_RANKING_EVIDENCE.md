@@ -297,7 +297,6 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `diplo-match-point-beelines-the-points` | off (unmeasured) | `diplo-match-point-beelines-the-points`. | 1 \| 1 |
 | `diplo-seat-allies-every-friend` | off (unmeasured) | Opt-in gene `diplo-seat-allies-every-friend`; see `advanced/diplo_allies_every_friend.rs`. | 1 \| 1 |
 | `diplo-seat-claims-the-competition` | off (unmeasured) | Opt-in gene `diplo-seat-claims-the-competition`; see `advanced/diplo_competition_claim.rs`. | 1 \| 1 |
-| `diplo-seat-statue-civic-first` | off (unmeasured) | Opt-in gene `diplo-seat-statue-civic-first`; see `advanced/diplo_statue_harbor.rs`. | 1 \| 1 |
 | `diplo-seat-statue-harbor` | off (unmeasured) | Opt-in gene `diplo-seat-statue-harbor`; see `Self::diplo_seat_statue_harbor`. | 1 \| 1 |
 | `diplo-seat-wonder-claim` | off (unmeasured) | `diplo-seat-wonder-claim`. | 1 \| 1 |
 | `diplomat-saves-for-the-apostle` | off (unmeasured) | `diplomat-saves-for-the-apostle`. | 1 \| 1 |

@@ -300,9 +300,6 @@ impl AdvancedAi {
         /// Opt-in gene `diplo-seat-claims-the-competition`; see
         /// `advanced/diplo_competition_claim.rs`.
         diplo_seat_claims_the_competition => enable_diplo_seat_claims_the_competition, disable_diplo_seat_claims_the_competition;
-        /// Opt-in gene `diplo-seat-statue-civic-first`; see
-        /// `advanced/diplo_statue_harbor.rs`.
-        diplo_seat_statue_civic_first => enable_diplo_seat_statue_civic_first, disable_diplo_seat_statue_civic_first;
         /// Opt-in gene `diplo-seat-allies-every-friend`; see
         /// `advanced/diplo_allies_every_friend.rs`.
         diplo_seat_allies_every_friend => enable_diplo_seat_allies_every_friend, disable_diplo_seat_allies_every_friend;

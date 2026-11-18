@@ -7035,11 +7035,6 @@ pub struct AdvancedAi {
     /// Astronauts) in production while the competition runs. See
     /// `advanced/diplo_competition_claim.rs`. Off by default.
     diplo_seat_claims_the_competition: bool,
-    /// `diplo-seat-statue-civic-first`: a Diplomatic seat's civic goal is
-    /// Civil Engineering (the Statue of Liberty's civic) once a tier-two
-    /// government civic is in hand and the Statue's Harbor stands or is
-    /// queued. See `advanced/diplo_statue_harbor.rs`. Off by default.
-    diplo_seat_statue_civic_first: bool,
     /// `diplo-seat-allies-every-friend`: a Diplomatic seat asks every
     /// declared friend for an alliance, a different kind each (each is one
     /// Favor a turn). See `advanced/diplo_allies_every_friend.rs`. Off by
