@@ -5774,6 +5774,15 @@ pub const GENES: &[Gene] = &[
     // well as a Culture or Domination one; otherwise identical. See
     // `advanced/denial_spies_fill_every_slot.rs`.
     Gene { tag: "denial-spies-fill-every-slot-2", field: "denial_spies_fill_every_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_fill_every_slot_2, disable: AdvancedAi::disable_denial_spies_fill_every_slot_2 },
+    // Live Deity Kongo civvis-20261118T045850Z (Science lane): against Canada
+    // at 6.6x our power at t39 and 1.0-1.9x from t59, a city within ten
+    // tiles, the deterrent trained a unit 26 times from t39 to t78. The unit
+    // bill went 3 to 16 Gold on a gross income of 5-15, income read -1 at
+    // t68 and -10 at t84 on 45-90 Gold, and the drain disbanded three Archers
+    // and a Galley at t84-85. Under the gene a deterrent whose upkeep would
+    // put income under Recovery's line waits. See
+    // `advanced/deterrence_waits_for_the_income.rs`.
+    Gene { tag: "deterrence-waits-for-the-income", field: "deterrence_waits_for_the_income", kind: Kind::OptIn, enable: AdvancedAi::enable_deterrence_waits_for_the_income, disable: AdvancedAi::disable_deterrence_waits_for_the_income },
     // Live Deity Rome 11-13, five Diplomatic games ending on 11-19 of twenty
     // points: Civil Engineering came 36 and 41 turns after Mercantilism, last
     // of the seven steps toward Class Struggle, and the Statue of Liberty (four
