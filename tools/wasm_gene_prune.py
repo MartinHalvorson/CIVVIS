@@ -347,7 +347,9 @@ def rewrite(root: pathlib.Path, pruned: dict) -> tuple[dict[pathlib.Path, str], 
     source = Source(root)
     read = re.compile(
         r"(?<![\w.])[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*\.([a-z_][a-z0-9_]*)\b"
-        r"(?!\s*(?:[|&^+\-*/]?=(?![=>])|\(|::|!))")
+        # Not a write, a call, a path, a macro, or a `toggles!` entry
+        # (`base.flag => enable_flag, disable_flag;`).
+        r"(?!\s*(?:[|&^+\-*/]?=(?!=)|\(|::|!))")
     changed, reads = {}, 0
     for path, text in source.files.items():
         code = source.code[path]

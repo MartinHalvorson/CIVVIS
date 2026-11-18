@@ -77,6 +77,14 @@ ADVANCED = """\
     pub struct Report {
         pub shared_name: bool,
     }
+    macro_rules! toggles {
+        ($($($flag:ident).+ => $enable:ident, $disable:ident;)*) => {};
+    }
+    impl AdvancedAi {
+        toggles! {
+            base.plain_gene => enable_plain_gene_too, disable_plain_gene_too;
+        }
+    }
     impl AdvancedAi {
         pub fn new() -> Self {
             AdvancedAi { plain_gene: false, literal_gene: true, ..Default::default() }
@@ -164,6 +172,8 @@ class PruneRules(unittest.TestCase):
         self.assertIn("// self.plain_gene stays in a comment", text)
         self.assertIn("        ai.plain_gene\n", text)
         self.assertIn("plain_gene: false,", text)
+        # A `toggles!` entry names the flag; it is not a read.
+        self.assertIn("base.plain_gene => enable_plain_gene_too", text)
 
     def test_an_unreadable_registry_changes_nothing(self):
         root = crate({"src/ai/advanced/genes.rs": "pub const GENES: &[Gene] = &[];\n",
