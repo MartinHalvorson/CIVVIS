@@ -98,7 +98,7 @@
 //!
 //! The simulator cannot price the Gold a live route pays. Its seat runs
 //! domestic routes (about 80% of them, where the live games ran about 78%
-//! international) and its international routes pay 3.6-4.0 Gold against the
+//! international) and its international routes pay 3.3-3.9 Gold against the
 //! live 6-10 from turn 100. The Diplomatic lane was not simulated.
 //!
 //! On 76 live boards of the four games
