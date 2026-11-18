@@ -114,6 +114,14 @@ impl AdvancedAi {
         self.seat_allies_on()
     }
 
+    /// `science-seat-races-the-congress`: armed on a seat aiming at Science.
+    /// The live orders binary reads it to keep this seat's Favor for its
+    /// ballot, as it does on the Diplomatic lane (`favor_desk_plan` in
+    /// `civvis_orders`).
+    pub fn science_congress_racer_armed(&self) -> bool {
+        self.science_seat_races_the_congress && self.victory_target == Some(VictoryTarget::Science)
+    }
+
     /// Whether `other` is never a partner under either seat gene: the
     /// strongest science rival or a rival that has landed a space project,
     /// and on a Culture seat the rival with the most domestic tourists. On a
