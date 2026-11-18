@@ -297,6 +297,12 @@ impl AdvancedAi {
         /// Opt-in gene `denial-spies-cover-every-racer`; see
         /// `advanced/denial_spies_cover_every_racer.rs`.
         denial_spies_cover_every_racer => enable_denial_spies_cover_every_racer, disable_denial_spies_cover_every_racer;
+        /// Opt-in gene `diplo-seat-statue-civic-first`; see
+        /// `advanced/diplo_statue_harbor.rs`.
+        diplo_seat_statue_civic_first => enable_diplo_seat_statue_civic_first, disable_diplo_seat_statue_civic_first;
+        /// Opt-in gene `diplo-seat-statue-is-the-finisher`; see
+        /// `advanced/diplo_wonder_claim.rs`.
+        diplo_seat_statue_is_the_finisher => enable_diplo_seat_statue_is_the_finisher, disable_diplo_seat_statue_is_the_finisher;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

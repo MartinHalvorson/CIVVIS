@@ -7030,6 +7030,16 @@ pub struct AdvancedAi {
     /// well as a Culture or Domination one. See
     /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
     denial_spies_fill_every_slot_2: bool,
+    /// `diplo-seat-statue-civic-first`: a Diplomatic seat's civic goal is
+    /// Civil Engineering (the Statue of Liberty's civic) once a tier-two
+    /// government civic is in hand and the Statue's Harbor stands or is
+    /// queued. See `advanced/diplo_statue_harbor.rs`. Off by default.
+    diplo_seat_statue_civic_first: bool,
+    /// `diplo-seat-statue-is-the-finisher`: a racing seat starts the Statue
+    /// of Liberty at once, builds it to its last turn and holds it there
+    /// until its four points reach twenty. See
+    /// `advanced/diplo_wonder_claim.rs`. Off by default.
+    diplo_seat_statue_is_the_finisher: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -27769,6 +27779,11 @@ impl AdvancedAi {
         // The last reading of the turn: what became of every decision, with
         // `Unit::acted` still saying what each unit did. Observes only.
         self.reconcile_commitments(g, pid);
+        // `diplo-seat-statue-is-the-finisher`: the last production writer. A
+        // finishing wonder at its last turn waits for the points that win, or
+        // takes its queue the turn they are there. Exact no-op while the gene
+        // is off. See `advanced/diplo_wonder_claim.rs`.
+        self.hold_the_diplo_finisher(g, pid);
         // `districts-price-the-improvement`: a fresh District on a Farm,
         // Mine or bonus resource moves to a clean site before the turn ends.
         self.resite_bulldozing_districts(g, pid);
