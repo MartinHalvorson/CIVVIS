@@ -4070,6 +4070,30 @@
     font-size: var(--type-label); text-align: right; white-space: nowrap;
   }
   #playerhud .diplomacy-civ { flex: 1 1 auto; }
+  /* Each civilization's name is boxed in its own jersey, as Civ VI dresses a
+     civ on its banners: the primary colour fills the plate, the partner trims
+     it, and the ink is whichever of the partner or map cream/dark actually
+     reads on that fill — unitTokenInk(), the same rescue the map's unit tokens
+     use, because several real jerseys pair two dark halves. Every plate fills
+     its column at one fixed height, so the column reads as a stack of equal
+     nameplates however far the type fitter shrank each name. Its 4px of side
+     padding is the `slack` on this cell's type-fitter rule. City rows reuse
+     .diplomacy-civ for a city's name and stay unboxed. */
+  #playerhud .diplomacy-civ-link .diplomacy-civ {
+    padding: 1px 4px; border: 1px solid var(--civ-border); border-radius: 3px;
+    background: var(--civ); color: var(--civ-ink, #f1f4ed);
+    line-height: 16px; text-align: center; text-shadow: none; box-shadow: 0 1px 2px #0009;
+  }
+  #playerhud .diplomacy-civ-link:hover .diplomacy-civ,
+  #playerhud .diplomacy-civ-link:focus-visible .diplomacy-civ {
+    color: var(--civ-ink, #fff); filter: brightness(1.18);
+  }
+  /* The watched seat keeps its jersey and says so with a gold ring, not gold
+     type, which would fight the fill. */
+  #playerhud .diplomacy-card.focus-player .diplomacy-civ-link .diplomacy-civ {
+    color: var(--civ-ink, #f1f4ed);
+    box-shadow: 0 0 0 1px var(--gold-bright), 0 1px 2px #0009;
+  }
   #playerhud .diplomacy-leader-name { color: var(--muted); font-weight: 650; }
   #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 750; }
   #playerhud .diplomacy-civ, #playerhud .diplomacy-leader-name,

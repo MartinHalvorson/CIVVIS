@@ -3443,7 +3443,12 @@ const RESPONSIVE_TEXT_RULES = [
   // letter off. Half a point of type is invisible; a clipped head is not.
   {selector:"#playerhud .hud-head-stat", min:8.5, max:11},
   {selector:"#playerhud .diplomacy-rank", min:9, max:11},
-  {selector:"#playerhud .diplomacy-civ", min:9, max:13, exact:true},
+  // A civilization's name sits in a plate of its own jersey colour, and the
+  // plate's 4px of padding a side is inside the box the fitter measures — so
+  // ask for those 8px back, or "Portugal" fills the plate edge to edge and its
+  // last letter goes under the padding at full size.
+  {selector:"#playerhud .diplomacy-civ-link .diplomacy-civ", min:9, max:13, exact:true, slack:8},
+  {selector:"#playerhud .hud-city-name .diplomacy-civ", min:9, max:13, exact:true},
   {selector:"#playerhud .diplomacy-leader-name", min:9, max:13, exact:true},
   {selector:"#playerhud .diplomacy-player", min:9, max:13, exact:true},
   {selector:"#playerhud .diplomacy-elo-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
@@ -28671,7 +28676,7 @@ function drawPlayerHud() {
             : kind === "units" && value === null ? "—" : ribbonStat(value)}</b>${markerHtml}</button>`;
       };
       const citiesOpen = openCityPlayer?.id === p.id;
-      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${liveSeat ? " live-seat" : ""}${citiesOpen ? " cities-open" : ""}${p.id === focusSeat ? " focus-player" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
+      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${liveSeat ? " live-seat" : ""}${citiesOpen ? " cities-open" : ""}${p.id === focusSeat ? " focus-player" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)};--civ-ink:${unitTokenInk(p.id)}" role="listitem">` +
         visibleColumns.map(rowCell).join("") + `</div>` +
         (citiesOpen ? playerHudCityRows(p, openCities, hiddenCities, visibleColumns) : "");
     }).join("") + `</div>` + hudResizeHandles("player standings", ["n", "s"]);
