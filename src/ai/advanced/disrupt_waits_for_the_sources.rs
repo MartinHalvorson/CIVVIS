@@ -183,8 +183,8 @@ mod tests {
 
     /// Two majors at peace and in contact; seat 1, the space racer, holds
     /// Rocketry, has launched its Earth Satellite and stands a Spaceport seat
-    /// 0 has seen. A Spy of seat 0 at `level` stands in its capital with its
-    /// sources not yet gained.
+    /// 0 has seen. A Spy of seat 0 at board `level` (the host's level less
+    /// one) stands in its capital with its sources not yet gained.
     fn racer_with_a_pad(level: i64) -> (Game, u32, u32) {
         let mut g = Game::new_full(2, 30, 20, 41_830, 250, 0, false);
         for pid in 0..2 {
@@ -239,7 +239,13 @@ mod tests {
                 id: spy,
                 owner: 0,
                 level,
-                promotions: BTreeSet::new(),
+                // One promotion chosen per level, none that touches an
+                // operation's odds, so no promotion is owed.
+                promotions: ["linguist", "disguise"]
+                    .into_iter()
+                    .take(level.max(0) as usize)
+                    .map(String::from)
+                    .collect(),
                 city: Some(capital),
                 ready_turn: g.turn,
                 mission: None,
