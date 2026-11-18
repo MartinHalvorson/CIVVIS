@@ -538,6 +538,11 @@ fn strikes_from_stands(g: &Game, pid: usize, uid: u32, stands: Vec<(Pos, f64)>) 
     let after_move = g.promotion_effect(unit, "attack_after_move") > 0.0;
     let host_sight = mirrored_board(g, pid);
     let mut targets: Vec<Pos> = Vec::new();
+    // Tiles a ranged stand has already reached. The answer is the sorted,
+    // deduplicated union over every stand, and most stands around a unit
+    // offer the same tiles, so once one stand sees a tile no later stand can
+    // change it: its line of sight is not asked again.
+    let mut shot: crate::fast_map::FastSet<Pos> = crate::fast_map::FastSet::default();
     for (from, kept) in stands {
         if kept <= 0.0 {
             continue;
@@ -556,14 +561,16 @@ fn strikes_from_stands(g: &Game, pid: usize, uid: u32, stands: Vec<(Pos, f64)>) 
             }
         }
         if ranged && (!siege || from == unit.pos || after_move) {
-            for target in g.wdisk(from, range) {
+            g.map.for_each_disk(from, range, |target| {
                 if target != from
+                    && !shot.contains(&target)
                     && g.map.tiles.contains_key(&target)
                     && (host_sight || g.unit_has_line_of_sight_from(uid, from, target))
                 {
+                    shot.insert(target);
                     targets.push(target);
                 }
-            }
+            });
         }
     }
     targets.sort_unstable();
