@@ -6200,6 +6200,22 @@ pub const GENES: &[Gene] = &[
     // none after it from a rival over 1.5x our military. Opt-in; see
     // `advanced/passage_waits_past_the_opening.rs`.
     Gene { tag: "passage-waits-past-the-opening", field: "passage_waits_past_the_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_passage_waits_past_the_opening, disable: AdvancedAi::disable_passage_waits_past_the_opening },
+    // Live Deity 2026-11-18: Mali (082214Z) met Portugal at t119 and saw its
+    // first city at t159 with our corps on its continent from t128; Khmer
+    // (102229Z) knew one of Ethiopia's fifteen cities from t134 to t160. The
+    // charting scouts are the units on their last charge, which
+    // `last-charge-joins-the-army` has already taken. Each met rival whose
+    // cities we cannot see enough of has a spreader of its own looking for
+    // them. Opt-in; needs `religion-seat-charts-the-rivals`; see
+    // `advanced/religion_seat_seeks_the_unseen_rival.rs`.
+    Gene { tag: "religion-seat-seeks-the-unseen-rival", field: "religion_seat_seeks_the_unseen_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_seeks_the_unseen_rival, disable: AdvancedAi::disable_religion_seat_seeks_the_unseen_rival },
+    // Live Deity Byzantium 2026-11-18 (094102Z): 910 to 1,671 Faith banked
+    // from t150 to the end under the two-Apostle cap lift, an Apostle near
+    // 950 and a Missionary 230. While a rival still owes our faith a majority
+    // the bank above the caps buys a spreader in every city that sells one,
+    // the most spread for its price. Opt-in; see
+    // `advanced/religion_seat_spends_the_whole_bank.rs`.
+    Gene { tag: "religion-seat-spends-the-whole-bank", field: "religion_seat_spends_the_whole_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_spends_the_whole_bank, disable: AdvancedAi::disable_religion_seat_spends_the_whole_bank },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and

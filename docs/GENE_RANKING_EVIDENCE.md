@@ -196,6 +196,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `gun-resource-buys-the-tile` | off (unmeasured) | Opt-in gene `gun-resource-buys-the-tile`; see `advanced/gun_resource_tile.rs`. | 1 \| 1 |
 | `guns-keep-the-oil` | off (unmeasured) | Opt-in gene `guns-keep-the-oil`; see `advanced/guns_keep_the_oil.rs`. | 1 \| 1 |
 | `near-rival-deterrence-opens-early` | off (unmeasured) | Opt-in gene `near-rival-deterrence-opens-early`; see `advanced/near_rival_deterrence_opens_early.rs`. | 1 \| 1 |
+| `religion-seat-seeks-the-unseen-rival` | off (unmeasured) | Opt-in gene `religion-seat-seeks-the-unseen-rival`: each met rival whose cities we cannot see enough of has a spreader looking for them; see `advanced/religion_seat_seeks_the_unseen_rival.rs`. | 1 \| 1 |
+| `religion-seat-spends-the-whole-bank` | off (unmeasured) | Opt-in gene `religion-seat-spends-the-whole-bank`: the Faith the corps caps leave banked buys spreaders in every city that sells one; see `advanced/religion_seat_spends_the_whole_bank.rs`. | 1 \| 1 |
 | `score-seat-raises-wonders-3` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders-3`; version three of the family, so versions one and two are turned off. | 2 \| 3 |
 | `score-seat-sprints-to-the-tally` | off (unmeasured) | Opt-in gene `score-seat-sprints-to-the-tally`; see `advanced/score_sprints_to_the_tally.rs`. | — \| 2 |
 | `score-seat-sprints-to-the-tally-2` | off (unmeasured) | Opt-in gene `score-seat-sprints-to-the-tally-2`, version two of `score-seat-sprints-to-the-tally`: Great People priced with their Historic Moment, patronized with the idle currency from thirty Online turns before the limit. | — \| 2 |
