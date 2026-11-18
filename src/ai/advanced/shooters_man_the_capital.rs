@@ -12,14 +12,14 @@
 //! - **A siege gun took the walls and we let it stand.** In six of the seven
 //!   a Trebuchet, Bombard or Catapult stood two or three tiles from the City
 //!   Center for one to four turns before the walls were gone. We owned four
-//!   to nine land shooters in each of those wars and they fired on a gun six
-//!   times in all, and not once in four of the six.
+//!   to eight land shooters in each of those wars and they fired on a gun
+//!   six times in all, and not once in three of the six.
 //! - **The shooters stood elsewhere.** On the turn the gun first stood within
-//!   three tiles, one of six, none of six, one of six, two of nine, two of
+//!   three tiles, one of six, none of six, one of six, one of eight, two of
 //!   four and two of four of our shooters stood in or beside the capital.
 //!   - `civvis-20261118T093554Z` (China): Hungary declared at 0.81 times our
 //!     power. One Trebuchet and two Men-at-Arms at 44 and 48 health took
-//!     Beijing on turn 73. Seven to nine Archers of ours stood within six
+//!     Beijing on turn 73. Seven or eight Archers of ours stood within six
 //!     tiles all eight turns; the Trebuchet stood two or three tiles from the
 //!     centre for four of them and took no shot (the logged Archer shots on a
 //!     Trebuchet did 14-26, so five or six kill it). The Defend force stood
@@ -34,9 +34,9 @@
 //! - **The party was in sight before it declared.** Over the day's 29
 //!   finished games, "two land soldiers of one major that is neither friend
 //!   nor ally within six tiles of the capital, or its engine within eight"
-//!   read at peace on 266 of 4,042 capital-turns (7%). It read in the three
-//!   turns before 14 of the 34 declarations made on us while we held the
-//!   capital, and before all seven that took it.
+//!   read at peace on 266 of the 4,042 turns we held the capital (7%). It
+//!   read in the three turns before 14 of the 34 declarations made on us
+//!   while we held the capital, and before all seven that took it.
 //!
 //! The armed readers did not answer this: `garrison-before-the-surprise`
 //! walks one soldier into a city that holds none, at 1.5 times our power;
@@ -77,8 +77,8 @@
 //!    this turn has such a gun in reach, it goes there and fires if it still
 //!    can.
 //! 3. Otherwise it goes home: onto the City Center when no soldier of ours
-//!    holds it, else beside it, as far as this turn's movement takes it. In
-//!    or beside the centre it stays. At war it takes the best shot it has.
+//!    holds it, else beside it, as far as this turn's movement takes it over
+//!    dry land. There it stays. At war it takes the best shot it has.
 //!
 //! A called shooter is held for the turn: the battle plan, the Anvil and the
 //! per-unit ladder do not order it again.
@@ -359,7 +359,7 @@ impl AdvancedAi {
         };
         g.reachable(uid)
             .into_iter()
-            .filter(|stand| g.wdist(*stand, reading.home) <= 1)
+            .filter(|stand| g.wdist(*stand, reading.home) <= 1 && Self::man_dry(g, *stand))
             .filter(|stand| {
                 reading.guns.iter().any(|gun| {
                     g.units.get(gun).is_some_and(|target| {
@@ -378,6 +378,13 @@ impl AdvancedAi {
             })
     }
 
+    /// Dry land: a shooter that embarks can neither fire nor fortify.
+    fn man_dry(g: &Game, tile: Pos) -> bool {
+        g.map
+            .get(tile)
+            .is_some_and(|ground| !g.rules.is_water(ground))
+    }
+
     /// The tile this turn's movement takes `uid` nearest the City Center: the
     /// centre itself only while no soldier of ours holds it.
     fn man_step_home(&self, g: &Game, pid: usize, uid: u32, home: Pos) -> Option<Pos> {
@@ -389,11 +396,13 @@ impl AdvancedAi {
         g.reachable(uid)
             .into_iter()
             .filter(|tile| {
-                // Another city of ours is that city's to garrison.
-                *tile == home
-                    || !g
-                        .city_at(*tile)
-                        .is_some_and(|cid| g.cities[&cid].owner == pid)
+                // Dry land, and another city of ours is that city's to
+                // garrison.
+                Self::man_dry(g, *tile)
+                    && (*tile == home
+                        || !g
+                            .city_at(*tile)
+                            .is_some_and(|cid| g.cities[&cid].owner == pid))
             })
             .map(|tile| (g.wdist(tile, home), g.wdist(unit.pos, tile), tile))
             .filter(|(distance, _, _)| *distance < here)
@@ -479,8 +488,14 @@ impl AdvancedAi {
                 }
             }
         }
-        // 3. Home: in or beside the centre it stays, otherwise it walks.
-        if g.wdist(from, home) > 1 {
+        // 3. Home: on the centre it stays; beside it, it stays unless the
+        // centre holds no soldier of ours; otherwise it walks.
+        let centre_open = !g.unit_ids_at(home).iter().any(|id| {
+            g.units
+                .get(id)
+                .is_some_and(|other| other.owner == pid && Self::man_soldier(g, other))
+        });
+        if g.wdist(from, home) > 1 || (from != home && centre_open) {
             let stepped = match self.man_step_home(g, pid, uid, home) {
                 Some(tile) => g
                     .apply(

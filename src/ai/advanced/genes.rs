@@ -6352,7 +6352,7 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "score-seat-sprints-to-the-tally-2", field: "score_seat_sprints_to_the_tally_2", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_sprints_to_the_tally_2, disable: AdvancedAi::disable_score_seat_sprints_to_the_tally_2 },
     // Live Deity 6p Continents 11-18: seven of 26 games lost the original
     // capital. In six a siege gun stood two or three tiles from the centre
-    // for one to four turns; we owned four to nine shooters and fired on a
+    // for one to four turns; we owned four to eight shooters and fired on a
     // gun six times in all, with none to two of them in or beside the
     // capital. A party or an engine was in sight before all seven
     // declarations. See `advanced/shooters_man_the_capital.rs`.
