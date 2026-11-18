@@ -9588,6 +9588,16 @@ pub struct AdvancedAi {
     /// military is over 1.5x ours; one journal line per withheld purchase.
     /// See `advanced/passage_waits_past_the_opening.rs`. Opt-in.
     passage_waits_past_the_opening: bool,
+    /// `religion-seat-seeks-the-unseen-rival`: a rival the seat has met and
+    /// holds no city of on its map gets a spreader of its own to look for
+    /// it while the corps works. Needs `religion-seat-charts-the-rivals`. See
+    /// `advanced/religion_seat_seeks_the_unseen_rival.rs`. Off by default.
+    religion_seat_seeks_the_unseen_rival: bool,
+    /// The spreaders seeking a rival with no city on our map, each with the
+    /// unexplored tile it is walking to and whether that tile is a border
+    /// lead. Live across frames, so a seeker stays one. See
+    /// `advanced/religion_seat_seeks_the_unseen_rival.rs`.
+    rival_seekers: RefCell<BTreeMap<u32, (Pos, bool)>>,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -12810,6 +12820,7 @@ impl AdvancedAi {
         self.builder_avoid.clear();
         self.forget_missionary_explore();
         self.charting_goals.get_mut().clear();
+        self.rival_seekers.get_mut().clear();
         self.force_groups.clear();
         self.force_groups_dirty = true;
         self.amphibious_train = None;
@@ -12882,6 +12893,11 @@ impl AdvancedAi {
         self.remap_missionary_explore(map);
         let charting = self.charting_goals.get_mut();
         *charting = charting
+            .iter()
+            .filter_map(|(uid, goal)| map.get(uid).map(|new| (*new, *goal)))
+            .collect();
+        let seeking = self.rival_seekers.get_mut();
+        *seeking = seeking
             .iter()
             .filter_map(|(uid, goal)| map.get(uid).map(|new| (*new, *goal)))
             .collect();
@@ -27975,6 +27991,9 @@ mod religion_seat_keeps_the_guard;
 mod religion_seat_reformed_church;
 /// An Embassy locates an otherwise unlocated rival for the religious corps.
 mod religion_seat_reveals_the_capitals;
+/// `religion-seat-seeks-the-unseen-rival`: see
+/// `advanced/religion_seat_seeks_the_unseen_rival.rs`.
+mod religion_seat_seeks_the_unseen_rival;
 /// An active founder corps can use its first available policy window.
 mod religion_seat_slots_the_orders;
 mod religion_seat_spares_the_launcher;

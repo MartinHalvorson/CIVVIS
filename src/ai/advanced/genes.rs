@@ -6164,6 +6164,13 @@ pub const GENES: &[Gene] = &[
     // none after it from a rival over 1.5x our military. Opt-in; see
     // `advanced/passage_waits_past_the_opening.rs`.
     Gene { tag: "passage-waits-past-the-opening", field: "passage_waits_past_the_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_passage_waits_past_the_opening, disable: AdvancedAi::disable_passage_waits_past_the_opening },
+    // Live Deity Mali 2026-11-18 (082214Z): Portugal was met at t119 and its
+    // first city seen at t159, with our corps on its continent from t128; the
+    // charting scouts take a located rival's ground first. One spreader for
+    // each met rival with no city on our map looks for it now. Opt-in; needs
+    // `religion-seat-charts-the-rivals`; see
+    // `advanced/religion_seat_seeks_the_unseen_rival.rs`.
+    Gene { tag: "religion-seat-seeks-the-unseen-rival", field: "religion_seat_seeks_the_unseen_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_seeks_the_unseen_rival, disable: AdvancedAi::disable_religion_seat_seeks_the_unseen_rival },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and

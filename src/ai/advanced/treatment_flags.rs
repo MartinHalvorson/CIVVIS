@@ -492,6 +492,10 @@ impl AdvancedAi {
         /// in the opening, none after it from a rival over 1.5x our military;
         /// see `advanced/passage_waits_past_the_opening.rs`.
         passage_waits_past_the_opening => enable_passage_waits_past_the_opening, disable_passage_waits_past_the_opening;
+        /// Opt-in gene `religion-seat-seeks-the-unseen-rival`: one spreader for
+        /// each met rival with no city on our map looks for it; see
+        /// `advanced/religion_seat_seeks_the_unseen_rival.rs`.
+        religion_seat_seeks_the_unseen_rival => enable_religion_seat_seeks_the_unseen_rival, disable_religion_seat_seeks_the_unseen_rival;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
