@@ -241,7 +241,7 @@ fn a_seeker_stays_one_until_its_rival_is_found() {
         .filter(|(pos, tile)| {
             game.rules.is_passable(tile)
                 && !game.rules.is_water(tile)
-                && game.players[0].explored.contains(*pos)
+                && game.players[0].explored.contains(pos)
                 && game.city_at(**pos).is_none()
         })
         .map(|(pos, _)| *pos)
@@ -349,7 +349,10 @@ fn a_border_whose_city_is_unseen_is_the_lead() {
         !near_patch.contains(&goal),
         "not the nearer fog an explorer would take"
     );
-    assert!(board.wdist(board.units[&far].pos, unseen) < game.wdist(start, unseen));
+    assert!(
+        board.wdist(board.units[&far].pos, goal) < game.wdist(start, goal),
+        "and it sets out for it"
+    );
 }
 
 /// A unit on the last charge it keeps, and one due home to heal, are not
@@ -380,11 +383,23 @@ fn a_kept_last_charge_and_a_wounded_unit_do_not_seek() {
     assert_eq!(seekers.len(), 1);
     assert!(home.contains(&seekers[0]));
 
+    // A corps of one spreads: its last spreader is never sent to look.
+    let mut lone = game.clone();
+    for uid in &home {
+        lone.remove_unit(*uid);
+    }
+    assert!(seat(VictoryTarget::Religion, true, true)
+        .unseen_rival_seekers(&lone, 0, "Buddhism", true)
+        .is_empty());
+
     // Two rivals unseen: two seekers.
     let mut two = game.clone();
     for pos in two.wdisk(two.units[&far].pos, 1) {
         two.players[0].explored.remove(&pos);
     }
+    two.players[0]
+        .remembered_cities
+        .retain(|_, city| city.owner != 1);
     assert_eq!(AdvancedAi::unseen_met_rivals(&two, 0), 2);
     assert_eq!(
         seat(VictoryTarget::Religion, true, true)

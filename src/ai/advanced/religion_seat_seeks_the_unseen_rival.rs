@@ -33,7 +33,8 @@
 //!   heal; the one farthest from our capital is taken first (it stands
 //!   deepest in foreign ground), and a seeker stays one until its rival is
 //!   found. It keeps its charges: the turn the rival's first city is seen it
-//!   is a spreader again, beside that city.
+//!   is a spreader again, beside that city. The corps' last spreader is
+//!   never taken: a corps of one spreads.
 //! - **The lead.** Ground a met major owns whose city we have not seen
 //!   (`Game::unseen_major_borders`, a live board's reading) is a border with
 //!   its city in the fog behind it. The seeker makes for the unexplored tile
@@ -103,10 +104,11 @@ impl AdvancedAi {
         }) && !self.keeps_its_last_charge(g, pid, uid)
     }
 
-    /// This turn's seekers, one for each met rival with no city on our map:
-    /// the units already seeking first, then the spreaders farthest from our
-    /// capital (then the lower id). Empty when the gene does not act, off the
-    /// offensive, for another faith, or when every met rival is located.
+    /// This turn's seekers, one for each met rival with no city on our map
+    /// and never the corps' last spreader: the units already seeking first,
+    /// then the spreaders farthest from our capital (then the lower id).
+    /// Empty when the gene does not act, off the offensive, for another
+    /// faith, or when every met rival is located.
     pub(super) fn unseen_rival_seekers(
         &self,
         g: &Game,
@@ -146,9 +148,11 @@ impl AdvancedAi {
             })
             .collect();
         corps.sort();
+        // Never the last spreader: a corps of one spreads.
+        let seekers = wanted.min(corps.len().saturating_sub(1));
         corps
             .into_iter()
-            .take(wanted)
+            .take(seekers)
             .map(|(_, _, id)| id)
             .collect()
     }
