@@ -2502,3 +2502,85 @@ fn world_politics_is_silent_on_a_battlefield() {
     );
     assert_eq!(politics["attitudes"]["rows"], json!([]));
 }
+
+/// A frame that marks its tiles builds, for every tile it sends, the very tile
+/// the document carries; it builds every tile for a page that holds none, and
+/// only the tiles whose mark moved for a page that holds a frame. The rest of
+/// the document is unchanged (the barbarian camps included, which are read off
+/// the tiles), and only the first observation a frame makes marks its tiles.
+#[test]
+fn a_marked_frame_builds_exactly_the_tiles_it_sends() {
+    let mut game = Game::new(3, 32, 20, 77_001, 60, 0);
+    let mut positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    positions.sort();
+    {
+        let tile = game.map.tiles.get_mut(&positions[5]).unwrap();
+        tile.improvement = Some(crate::name!("barbarian_camp"));
+    }
+    {
+        let tile = game.map.tiles.get_mut(&positions[9]).unwrap();
+        tile.storm = Some("blizzard".to_string());
+        tile.disaster_food = 1.5;
+        tile.fallout_until = 7;
+    }
+    let observers: [fn(&Game, usize) -> Value; 2] =
+        [observation_spectator, observation_player_view];
+    for observe in observers {
+        let plain = observe(&game, 0);
+        let tiles = plain["map"]["tiles"].as_array().expect("tiles").clone();
+
+        // Holding nothing: every tile is built, as the document carries it.
+        let (document, marked) = with_tile_marks(None, || observe(&game, 0));
+        let mut marked = marked.expect("the observation marked its tiles");
+        assert_eq!(marked.marks.len(), tiles.len());
+        let marks = marked.marks.clone();
+        for (at, tile) in tiles.iter().enumerate() {
+            assert_eq!(&marked.take(at), tile, "tile {at}");
+        }
+        let mut expected = plain.clone();
+        expected["map"]["tiles"] = json!([]);
+        assert_eq!(document, expected, "the rest of the document is unchanged");
+
+        // Holding the same marks but two: only those two are built, and
+        // nothing about an unchanged tile moves its mark.
+        let mut held = marks.clone();
+        held[3] ^= 1;
+        held[9] ^= 1;
+        let (_, marked) = with_tile_marks(Some(held), || observe(&game, 0));
+        let mut marked = marked.expect("marked");
+        assert_eq!(marked.marks, marks);
+        for (at, tile) in tiles.iter().enumerate() {
+            let built = marked.take(at);
+            if at == 3 || at == 9 {
+                assert_eq!(&built, tile);
+            } else {
+                assert_eq!(built, Value::Null, "tile {at} was built though it is held");
+            }
+        }
+
+        // Holding a different number of tiles: every tile is built.
+        let (_, marked) = with_tile_marks(Some(vec![0; 3]), || observe(&game, 0));
+        let mut marked = marked.expect("marked");
+        assert_eq!(&marked.take(0), &tiles[0]);
+    }
+
+    // A tile that changes marks apart.
+    let (_, before) = with_tile_marks(None, || observation_spectator(&game, 0));
+    game.map.tiles.get_mut(&positions[12]).unwrap().road = 2;
+    let (_, after) = with_tile_marks(None, || observation_spectator(&game, 0));
+    let (before, after) = (before.unwrap().marks, after.unwrap().marks);
+    let moved: Vec<usize> = (0..before.len())
+        .filter(|at| before[*at] != after[*at])
+        .collect();
+    assert!(!moved.is_empty(), "a road moves its tile's mark");
+
+    let ((first, second), marked) = with_tile_marks(None, || {
+        (
+            observation_spectator(&game, 0),
+            observation_spectator(&game, 0),
+        )
+    });
+    assert!(marked.is_some());
+    assert_eq!(first["map"]["tiles"], json!([]));
+    assert_eq!(second, observation_spectator(&game, 0));
+}
