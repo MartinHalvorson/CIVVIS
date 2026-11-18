@@ -6350,6 +6350,15 @@ pub const GENES: &[Gene] = &[
     // reaches it, and patronage opens at turn 150. See
     // `advanced/score_sprints_to_the_tally.rs`.
     Gene { tag: "score-seat-sprints-to-the-tally-2", field: "score_seat_sprints_to_the_tally_2", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_sprints_to_the_tally_2, disable: AdvancedAi::disable_score_seat_sprints_to_the_tally_2 },
+    // Live Deity 6p Continents Online, the five Science games of 2026-11-18:
+    // Writing by t37, yet the empire's first three Campuses were placed at
+    // a median t55 / t68 / t79 and no seat passed 0.71 of the best rival's
+    // techs at t150. The Campus claim yields to the Settler, Builder and
+    // Granary claims, and the two genes that let it pass them act on
+    // Domination and Score seats alone. This plays their first-Campus and
+    // Library rules on a Science seat, never past a soldier. See
+    // `advanced/science_seat_campus_before_the_claims.rs`.
+    Gene { tag: "science-seat-campus-before-the-claims", field: "science_seat_campus_before_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_campus_before_the_claims, disable: AdvancedAi::disable_science_seat_campus_before_the_claims },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

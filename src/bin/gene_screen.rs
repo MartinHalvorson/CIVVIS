@@ -1212,6 +1212,48 @@ struct TraceSample {
     treasury: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     net_gold: Option<f64>,
+    /// ⭐ The seat's science infrastructure at the mark: cities with a
+    /// standing Campus (a civilization's own replacement counted), and the
+    /// cities holding a Library and a University (replacements counted too).
+    /// The live state rows read the same from `cities[].districts` and
+    /// `cities[].buildings`. Absent in older batches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    campuses: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    libraries: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    universities: Option<usize>,
+}
+
+/// Cities of `pid` with a standing Campus, and those holding a Library and a
+/// University, each civilization's replacement counted as what it replaces.
+fn science_infrastructure(g: &Game, pid: usize) -> (usize, usize, usize) {
+    let (mut campuses, mut libraries, mut universities) = (0, 0, 0);
+    for cid in g.player_city_ids(pid) {
+        let Some(city) = g.cities.get(&cid) else {
+            continue;
+        };
+        if g.city_has_district_family(city, civvis::name!("campus")) {
+            campuses += 1;
+        }
+        let holds = |family: &str| {
+            city.buildings.iter().any(|building| {
+                g.rules
+                    .buildings
+                    .get(building)
+                    .and_then(|spec| spec.replaces)
+                    .unwrap_or(*building)
+                    == family
+            })
+        };
+        if holds("library") {
+            libraries += 1;
+        }
+        if holds("university") {
+            universities += 1;
+        }
+    }
+    (campuses, libraries, universities)
 }
 
 impl TraceSample {
@@ -1241,6 +1283,7 @@ impl TraceSample {
                 holy_site |= g.city_has_district_family(city, civvis::name!("holy_site"));
             }
         }
+        let (campuses, libraries, universities) = science_infrastructure(g, pid);
         let routes: Vec<_> = g.routes.iter().filter(|route| route.owner == pid).collect();
         let mut route_yields = civvis::rules::Yields::default();
         for route in &routes {
@@ -1305,6 +1348,9 @@ impl TraceSample {
             route_other_yields: Some(route_yields.total() - route_yields.gold),
             treasury: Some(g.players[pid].gold),
             net_gold: Some(g.players[pid].gold_per_turn),
+            campuses: Some(campuses),
+            libraries: Some(libraries),
+            universities: Some(universities),
         }
     }
 }
@@ -1331,6 +1377,13 @@ struct Row {
     /// included. Empty — and so absent — without the flag, or with none landed.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     project_turns: BTreeMap<String, u32>,
+    /// ⭐ `--trace`: the turn this seat's first, second, third … Campus first
+    /// stood (the count of its cities with a standing Campus first reached
+    /// one, two, three …), rival chairs included. A Campus lost and rebuilt
+    /// is not counted twice. Empty — and so absent — without the flag, or
+    /// with no Campus built.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    campus_turns: Vec<u32>,
     /// ⭐ `--rival-war-pace`: the turns a rival chair declared war on this
     /// seat through the knob ([`rival_war_pace`]). Empty — and absent —
     /// without the flag.
@@ -3004,6 +3057,7 @@ fn play_game(
     let mut edge_due = edge_ledger::due_marks(world.game_speed);
     let mut edge_marks: Vec<Vec<edge_ledger::EdgeMark>> = vec![Vec::new(); world.players.len()];
     let mut project_turns: Vec<BTreeMap<String, u32>> = vec![BTreeMap::new(); world.players.len()];
+    let mut campus_turns: Vec<Vec<u32>> = vec![Vec::new(); world.players.len()];
     // ⭐ `--trace` / `--rival-war-pace`: the live ladder's war census for each
     // measured seat — the turns it entered a war with another major, and its
     // cities lost and taken at raw turn 100.
@@ -3072,6 +3126,10 @@ fn play_game(
                     project_turns[pid]
                         .entry(project.to_string())
                         .or_insert(g.turn);
+                }
+                let campuses = science_infrastructure(g, pid).0;
+                while campus_turns[pid].len() < campuses {
+                    campus_turns[pid].push(g.turn);
                 }
             }
         }
@@ -3216,6 +3274,7 @@ fn play_game(
             row.trace = std::mem::take(&mut traces[seat]);
             row.edge_marks = std::mem::take(&mut edge_marks[seat]);
             row.project_turns = std::mem::take(&mut project_turns[seat]);
+            row.campus_turns = std::mem::take(&mut campus_turns[seat]);
             row.rival_war_turns = std::mem::take(&mut rival_war_turns[seat]);
             if war_census && this_rival.is_none() {
                 row.war_starts = std::mem::take(&mut war_starts[seat]);
@@ -3371,6 +3430,7 @@ fn row_for_seat(
         trajectory: Vec::new(),
         trace: Vec::new(),
         project_turns: BTreeMap::new(),
+        campus_turns: Vec::new(),
         rival_war_turns: Vec::new(),
         war_starts: Vec::new(),
         cities_lost_100: None,
@@ -8266,6 +8326,7 @@ mod tests {
             trajectory: Vec::new(),
             trace: Vec::new(),
             project_turns: BTreeMap::new(),
+            campus_turns: Vec::new(),
             rival_war_turns: Vec::new(),
             war_starts: Vec::new(),
             cities_lost_100: None,
@@ -9917,14 +9978,26 @@ mod tests {
             route_other_yields: Some(4.0),
             treasury: Some(120.5),
             net_gold: Some(-3.5),
+            campuses: Some(4),
+            libraries: Some(3),
+            universities: Some(1),
         }];
+        traced.campus_turns = vec![41, 58, 58, 73];
         let text = serde_json::to_string(&traced).expect("serializes");
         let back: Row = serde_json::from_str(&text).expect("parses");
         assert_eq!(back.trace, traced.trace);
+        assert_eq!(back.campus_turns, traced.campus_turns);
+        assert!(
+            !serde_json::to_string(&plain)
+                .expect("serializes")
+                .contains("campus_turns"),
+            "a Campus column appears only in a traced row"
+        );
         let without: Row =
             serde_json::from_str(&serde_json::to_string(&plain).expect("serializes"))
                 .expect("parses");
         assert!(without.trace.is_empty());
+        assert!(without.campus_turns.is_empty());
         assert!(TRACE_TURNS.windows(2).all(|pair| pair[0] < pair[1]));
         for mark in [20, 40, 60, 80, 100, 125, 150, 175] {
             assert!(

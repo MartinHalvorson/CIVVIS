@@ -42,6 +42,10 @@
 //! pass the claims' heads (from four cities the Library passes the floor's
 //! Settler too), and claims in every such city each turn. See
 //! `advanced/campus_and_library_before_the_claims.rs`.
+//!
+//! `science-seat-campus-before-the-claims` opens it the same way for a
+//! Science seat's Library (not its University). See
+//! `advanced/science_seat_campus_before_the_claims.rs`.
 
 use super::campus_and_library_before_the_claims::ScienceFirstItem;
 use super::*;
@@ -81,7 +85,7 @@ impl AdvancedAi {
         if self.culture_releases_science_claims(g, pid) {
             return None;
         }
-        if !self.campus_building_claims_the_queue && !self.campus_and_library_before_the_claims {
+        if !self.campus_building_claims_the_queue && !self.campus_and_library_armed() {
             return None;
         }
         let city = g.cities.get(&cid)?;
@@ -114,7 +118,7 @@ impl AdvancedAi {
         });
         // The gene's Library or quick University goes ahead of the Granary
         // too; anything else keeps this claim's own rules.
-        let science_first = reach.is_some() && Self::campus_and_library_building(g, rank, turns);
+        let science_first = reach.is_some() && self.campus_and_library_puts_first(g, rank, turns);
         if !science_first && (granary_first || !self.campus_building_claims_the_queue) {
             return None;
         }
@@ -163,7 +167,7 @@ impl AdvancedAi {
         exclude: Option<u32>,
         science_first_only: bool,
     ) -> Option<(u8, f64, u32, Item, Option<String>)> {
-        if !self.campus_building_claims_the_queue && !self.campus_and_library_before_the_claims {
+        if !self.campus_building_claims_the_queue && !self.campus_and_library_armed() {
             return None;
         }
         let at_major_war = g.players.iter().any(|other| {
@@ -195,7 +199,7 @@ impl AdvancedAi {
             // `None` with the gene off.
             let reach = self
                 .campus_and_library_reach(g, pid, cid, plan)
-                .filter(|_| Self::campus_and_library_building(g, rank, turns));
+                .filter(|_| self.campus_and_library_puts_first(g, rank, turns));
             if science_first_only && reach.is_none() {
                 continue;
             }
@@ -271,7 +275,7 @@ impl AdvancedAi {
     /// `campus-and-library-before-the-claims` every city's Library or quick
     /// University besides. Exact no-op with both genes off.
     pub(super) fn claim_campus_building(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        let rounds = if self.campus_and_library_before_the_claims {
+        let rounds = if self.campus_and_library_armed() {
             g.player_city_ids(pid).len().max(1)
         } else {
             1
