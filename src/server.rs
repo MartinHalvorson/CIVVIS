@@ -3883,10 +3883,7 @@ pub(crate) enum FrameTiles {
 
 impl FrameTiles {
     /// Lift `map.tiles` out of `o`.
-    pub(crate) fn take(
-        o: &mut Value,
-        marked: Option<crate::obs::FrameTileMarks>,
-    ) -> Option<Self> {
+    pub(crate) fn take(o: &mut Value, marked: Option<crate::obs::FrameTileMarks>) -> Option<Self> {
         let Some(Value::Object(map)) = o.get_mut("map") else {
             return None;
         };
