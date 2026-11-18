@@ -6388,6 +6388,13 @@ pub const GENES: &[Gene] = &[
     // capital. A party or an engine was in sight before seven of the eight
     // declarations. See `advanced/shooters_man_the_capital.rs`.
     Gene { tag: "shooters-man-the-capital", field: "shooters_man_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_shooters_man_the_capital, disable: AdvancedAi::disable_shooters_man_the_capital },
+    // Live Deity 6p Continents 11-18, 22 Science seats past t100: a Campus
+    // city with its Library and Education built its University on 33% of
+    // the 3,627 city-turns before it stood; Industrial Zones, Workshops,
+    // trade districts and their buildings took 29%. Universities stood a
+    // median 9-35 turns after Education, 20 Science short at t100. See
+    // `advanced/science_universities_pass_the_claims.rs`.
+    Gene { tag: "science-universities-pass-the-claims", field: "science_universities_pass_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_science_universities_pass_the_claims, disable: AdvancedAi::disable_science_universities_pass_the_claims },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

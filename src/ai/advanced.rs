@@ -10573,6 +10573,12 @@ pub struct AdvancedAi {
     /// and beside its City Center, and shoot a siege gun in their reach
     /// first. See `advanced/shooters_man_the_capital.rs`. Off by default.
     shooters_man_the_capital: bool,
+    /// `science-universities-pass-the-claims`: on a Science seat every Campus
+    /// city's quick University takes its queue each turn, ahead of an
+    /// Industrial Zone, Workshop, Commercial Hub, Market, Harbor or
+    /// Lighthouse a routine claim holds there, and keeps it. See
+    /// `advanced/science_universities_pass_the_claims.rs`. Off by default.
+    science_universities_pass_the_claims: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11720,6 +11726,9 @@ mod site_lookahead;
 mod district_planning;
 /// `science-heads-keep-their-queue`: see `advanced/science_heads_keep_their_queue.rs`.
 mod science_heads_keep_their_queue;
+/// `science-universities-pass-the-claims`: see
+/// `advanced/science_universities_pass_the_claims.rs`.
+mod science_universities_pass_the_claims;
 mod seowon_protection;
 use district_planning::DistrictPlanCache;
 /// Coalition before war: alliances with the target's neighbours, envoys to
