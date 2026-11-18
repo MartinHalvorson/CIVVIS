@@ -69,16 +69,44 @@ built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # and the module took a new content address on every deployment, so a
 # returning visitor downloaded and compiled an engine they already had. The
 # hour goes in build.json below, and shim.js hands it to the page from there.
+#
+# The engine is compiled from a copy in which every opt-in gene no browser
+# seat can turn on reads as `false`, so the compiler drops its code. Of the
+# registry's 1,061 genes civvis.ai seats about 250; the rest were a quarter of
+# the module (measured 2026-11-18: 18.37 -> 13.95 MB, 3.97 -> 3.03 MB brotli,
+# identical games, unchanged engine time). `tools/wasm_gene_prune.py` keeps any
+# gene it cannot prove off, and on a source it cannot read it changes
+# nothing. The copy is a scratch tree — `src/` here is never edited — and
+# CIVVIS_PRUNE_GENES=0 builds the engine whole.
+engine_tree="$source_tree"
+if [ "${CIVVIS_PRUNE_GENES:-1}" != 0 ] && ! command -v rsync >/dev/null; then
+  echo "   rsync is not installed; building the engine with every gene"
+elif [ "${CIVVIS_PRUNE_GENES:-1}" != 0 ]; then
+  if [ -z "$scratch" ]; then
+    scratch="$(mktemp -d)"
+    trap 'rm -rf "$scratch"' EXIT
+  fi
+  if [ "$source_tree" = "$repo_root" ]; then
+    # A pinned revision is already a throwaway worktree; the working tree is
+    # copied, uncommitted edits included, with the build cache kept shared.
+    engine_tree="$scratch/engine"
+    mkdir -p "$engine_tree"
+    rsync -a --exclude /target --exclude /.git --exclude /docs --exclude /beta/dist \
+      "$source_tree/" "$engine_tree/"
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$repo_root/target}"
+  fi
+  python3 "$repo_root/tools/wasm_gene_prune.py" "$engine_tree"
+fi
+
 echo "==> building the engine for wasm32 from $short"
 (
-  cd "$source_tree"
+  cd "$engine_tree"
   CIVVIS_COMMIT="$commit" CIVVIS_COMMIT_TIME="$commit_time" CIVVIS_BUILT_AT="" \
     cargo rustc --lib \
     --target wasm32-unknown-unknown --release --crate-type cdylib
 )
 
-raw_wasm="$source_tree/target/wasm32-unknown-unknown/release/civvis.wasm"
-[ -f "$raw_wasm" ] || raw_wasm="${CARGO_TARGET_DIR:-}/wasm32-unknown-unknown/release/civvis.wasm"
+raw_wasm="${CARGO_TARGET_DIR:-$engine_tree/target}/wasm32-unknown-unknown/release/civvis.wasm"
 [ -f "$raw_wasm" ] || { echo "the wasm build produced nothing at $raw_wasm" >&2; exit 1; }
 
 rm -rf "$out"
