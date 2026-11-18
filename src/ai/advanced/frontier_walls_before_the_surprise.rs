@@ -84,6 +84,9 @@ impl AdvancedAi {
                     && **seen <= g.turn
                     && g.turn - **seen <= window
                     && Self::frontier_watch_suspect(g, pid, *rival)
+                    // `four-faces-bars-the-surprise`: see
+                    // `advanced/four_faces_bars_the_surprise.rs`.
+                    && !self.four_faces_spares(g, pid, *rival)
             })
             .map(|((_, rival), _)| (*rival, g.military_power(*rival) / ours))
             .filter(|(_, ratio)| *ratio >= FRONTIER_WALLS_RATIO)

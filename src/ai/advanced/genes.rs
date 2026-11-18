@@ -5783,6 +5783,34 @@ pub const GENES: &[Gene] = &[
     // put income under Recovery's line waits. See
     // `advanced/deterrence_waits_for_the_income.rs`.
     Gene { tag: "deterrence-waits-for-the-income", field: "deterrence_waits_for_the_income", kind: Kind::OptIn, enable: AdvancedAi::enable_deterrence_waits_for_the_income, disable: AdvancedAi::disable_deterrence_waits_for_the_income },
+    // Live Deity Rome 11-13, five Diplomatic games ending on 11-19 of twenty
+    // points: Civil Engineering came 36 and 41 turns after Mercantilism, last
+    // of the seven steps toward Class Struggle, and the Statue of Liberty (four
+    // points) at t152 and t166. A Diplomatic seat with the Statue's Harbor
+    // takes Civil Engineering first. See `advanced/diplo_statue_harbor.rs`.
+    Gene { tag: "diplo-seat-statue-civic-first", field: "diplo_seat_statue_civic_first", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_statue_civic_first, disable: AdvancedAi::disable_diplo_seat_statue_civic_first },
+    // Live Deity 11-18, three Diplomatic games: the Statue of Liberty landed
+    // at t149 on 8 points and the seat was voted from 17 to 15 at t175 and
+    // lost on 18 (Khmer); it was on offer for 23 and 12 turns before the
+    // 30-turn claim took it (Gaul, never finished; Hungary, won the turn it
+    // landed). A racing seat starts it at once, builds it to its last turn
+    // and holds it there until its four points make twenty. See
+    // `advanced/diplo_wonder_claim.rs`.
+    Gene { tag: "diplo-seat-statue-is-the-finisher", field: "diplo_seat_statue_is_the_finisher", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_statue_is_the_finisher, disable: AdvancedAi::disable_diplo_seat_statue_is_the_finisher },
+    // Live Deity Rome 11-13: the first World Games the seat was a member of
+    // was won with 60 points (a Training Athletes project is 50) and it was
+    // the only member of an Aid Request for which the planner named Send Aid
+    // thirty times and no city built it; the delegated governor fills the
+    // queue. A Diplomatic seat lends one city to the competition's project.
+    // See `advanced/diplo_competition_claim.rs`.
+    Gene { tag: "diplo-seat-claims-the-competition", field: "diplo_seat_claims_the_competition", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_claims_the_competition, disable: AdvancedAi::disable_diplo_seat_claims_the_competition },
+    // Live Deity Rome 11-13, six Diplomatic games ending on 11-19 of twenty
+    // points: Favor income 3-8 a turn sized every claim that lost, the seat
+    // held 1.5 declared friends a turn and 0.04 allies, and each alliance is
+    // one Favor a turn. A Diplomatic seat asks every declared friend for an
+    // alliance, a different kind each. See
+    // `advanced/diplo_allies_every_friend.rs`.
+    Gene { tag: "diplo-seat-allies-every-friend", field: "diplo_seat_allies_every_friend", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_allies_every_friend, disable: AdvancedAi::disable_diplo_seat_allies_every_friend },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5939,6 +5967,14 @@ pub const GENES: &[Gene] = &[
     // Domination seats only. Opt-in; see
     // `advanced/edge_unit_takes_the_soft_city.rs`.
     Gene { tag: "edge-unit-rushes-from-the-capital", field: "edge_unit_rushes_from_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_edge_unit_rushes_from_the_capital, disable: AdvancedAi::disable_edge_unit_rushes_from_the_capital },
+    // Live Deity civvis-20261118T045850Z (Kongo beside Canada) and
+    // civvis-20261118T051842Z (we are Canada): Canada cannot declare a
+    // Surprise War and none can be declared on it, and no war came in 189
+    // and 166 turns, yet the surprise readers named Canada on 78 journal
+    // lines in the first and fired on 26 in the second, 20 naming the Maya.
+    // Under the gene they pass over such a rival until a denouncement
+    // stands. See `advanced/four_faces_bars_the_surprise.rs`.
+    Gene { tag: "four-faces-bars-the-surprise", field: "four_faces_bars_the_surprise", kind: Kind::OptIn, enable: AdvancedAi::enable_four_faces_bars_the_surprise, disable: AdvancedAi::disable_four_faces_bars_the_surprise },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

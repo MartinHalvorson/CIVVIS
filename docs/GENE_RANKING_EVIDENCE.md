@@ -188,6 +188,11 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `denial-spies-cover-every-racer` | off (unmeasured) | Opt-in gene `denial-spies-cover-every-racer`; see `advanced/denial_spies_cover_every_racer.rs`. | 1 \| 1 |
 | `denial-spies-fill-every-slot-2` | off (unmeasured) | Opt-in gene `denial-spies-fill-every-slot-2`, version two of `denial-spies-fill-every-slot`: a Score aim fills its slots too; see `advanced/denial_spies_fill_every_slot.rs`. | 1 \| 2 |
 | `deterrence-waits-for-the-income` | off (unmeasured) | Opt-in gene `deterrence-waits-for-the-income`; see `advanced/deterrence_waits_for_the_income.rs`. | 1 \| 1 |
+| `diplo-seat-allies-every-friend` | off (unmeasured) | Opt-in gene `diplo-seat-allies-every-friend`; see `advanced/diplo_allies_every_friend.rs`. | 1 \| 1 |
+| `diplo-seat-claims-the-competition` | off (unmeasured) | Opt-in gene `diplo-seat-claims-the-competition`; see `advanced/diplo_competition_claim.rs`. | 1 \| 1 |
+| `diplo-seat-statue-civic-first` | off (unmeasured) | Opt-in gene `diplo-seat-statue-civic-first`; see `advanced/diplo_statue_harbor.rs`. | 1 \| 1 |
+| `diplo-seat-statue-is-the-finisher` | off (unmeasured) | Opt-in gene `diplo-seat-statue-is-the-finisher`; see `advanced/diplo_wonder_claim.rs`. | 1 \| 1 |
+| `four-faces-bars-the-surprise` | off (unmeasured) | Opt-in gene `four-faces-bars-the-surprise`; see `advanced/four_faces_bars_the_surprise.rs`. | 1 \| 1 |
 | `gun-resource-buys-the-tile` | off (unmeasured) | Opt-in gene `gun-resource-buys-the-tile`; see `advanced/gun_resource_tile.rs`. | 1 \| 1 |
 | `guns-keep-the-oil` | off (unmeasured) | Opt-in gene `guns-keep-the-oil`; see `advanced/guns_keep_the_oil.rs`. | 1 \| 1 |
 | `near-rival-deterrence-opens-early` | off (unmeasured) | Opt-in gene `near-rival-deterrence-opens-early`; see `advanced/near_rival_deterrence_opens_early.rs`. | 1 \| 1 |
