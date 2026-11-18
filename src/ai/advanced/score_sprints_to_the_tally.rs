@@ -107,6 +107,7 @@
 //! one.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// The window, in standard turns before the turn limit: 30 standard is 20
 /// at Online (`GameSpeed::scale_turns`), turn 160 of a 180-turn game.
@@ -787,7 +788,7 @@ impl AdvancedAi {
             for _ in 0..TALLY_SPRINT_MAX_BUYS {
                 let bank = Self::score_sprint_bank(g, pid, currency);
                 let mut buys = self.score_sprint_menu(g, pid, currency, full, &patrons);
-                buys.sort_by(|a, b| a.per_point().total_cmp(&b.per_point()));
+                buys.sort_by_shared(|a, b| a.per_point().total_cmp(&b.per_point()));
                 // The best offer the bank can still reach before the tally.
                 let saving = buys
                     .iter()

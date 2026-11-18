@@ -46,6 +46,7 @@
 //! `advanced_gold_spending` plays byte-identically.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// Founded cities plus walking Settlers the fund fills to. Six cities at t60
 /// passed the gate 50% of the time against 22% at five; the seventh is the
@@ -148,7 +149,7 @@ impl AdvancedAi {
             })
             .map(|cid| (g.cities[&cid].pop, cid))
             .collect();
-        cities.sort_by(|left, right| right.0.cmp(&left.0).then(left.1.cmp(&right.1)));
+        cities.sort_by_shared(|left, right| right.0.cmp(&left.0).then(left.1.cmp(&right.1)));
         cities.into_iter().map(|(_, cid)| cid).collect()
     }
 

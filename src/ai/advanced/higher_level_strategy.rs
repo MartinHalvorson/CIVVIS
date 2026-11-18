@@ -5,6 +5,7 @@
 use super::{AdvancedAi, GrandStrategy, StrategicPlan};
 use crate::game::{Action, Game, Item};
 use crate::reasoning::Level;
+use crate::shared_sort::SharedSort;
 use crate::think;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -471,7 +472,7 @@ impl AdvancedAi {
         if (self.culture_building_catchup_2 || self.culture_building_catchup_3)
             && !rival_cultures.is_empty()
         {
-            rival_cultures.sort_by(f64::total_cmp);
+            rival_cultures.sort_by_shared(f64::total_cmp);
             let n = rival_cultures.len();
             best_culture = (rival_cultures[(n - 1) / 2] + rival_cultures[n / 2]) / 2.0;
         }

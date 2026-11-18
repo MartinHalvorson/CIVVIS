@@ -14,6 +14,7 @@
 //! against a challenger playing on the human's terms. `docs/ELO.md` says what
 //! that does and does not prove.
 use crate::ai::{AdvancedAi, Ai, BasicAi, VictoryTarget};
+use crate::shared_sort::SharedSort;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -230,7 +231,7 @@ pub fn ranked() -> Vec<&'static PlayerStrategy> {
             .map_or(f64::NEG_INFINITY, |rating| rating.elo)
     };
     let mut rows: Vec<&'static PlayerStrategy> = ROSTER.iter().collect();
-    rows.sort_by(|a, b| elo(b).total_cmp(&elo(a)));
+    rows.sort_by_shared(|a, b| elo(b).total_cmp(&elo(a)));
     rows
 }
 

@@ -23,6 +23,7 @@
 //! methods stay public; the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl Game {
     pub fn can_move(&self, uid: u32, pos: Pos) -> bool {
@@ -1497,7 +1498,7 @@ impl Game {
                 (steps != i32::MAX).then_some((pos, steps, left))
             })
             .collect();
-        reach.sort_by(|a, b| {
+        reach.sort_by_shared(|a, b| {
             a.1.cmp(&b.1)
                 .then_with(|| b.2.total_cmp(&a.2))
                 .then_with(|| a.0.cmp(&b.0))
@@ -1610,7 +1611,7 @@ impl Game {
         // allocated for every tile reached. The flood reaches each tile once.
         let mut best = Vec::new();
         self.flow_past_into(uid, start, moves, through_units, &mut best);
-        best.sort_unstable_by_key(|(pos, _)| *pos);
+        best.sort_unstable_by_key_shared(|(pos, _)| *pos);
         best
     }
 }

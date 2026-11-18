@@ -123,6 +123,7 @@
 //! `score-seat-raises-wonders-3:`. Counters `score_wonder_rear_turns` (turns
 //! the rear lane stood open) and `score_wonder_rear_starts`.
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// The first lane opens on this turn, in Standard turns (40 at Online).
 pub(super) const SCORE_WONDER_FIRST_LANE_STANDARD: u32 = 60;
@@ -638,7 +639,7 @@ impl AdvancedAi {
                 !(self.score_wonder_v2_rules() && Self::score_wonder_trains_a_settler(g, *cid))
             })
             .collect();
-        cities.sort_by(|a, b| {
+        cities.sort_by_shared(|a, b| {
             let (ca, cb) = (&g.cities[a], &g.cities[b]);
             (cb.is_capital && cb.original_owner == pid)
                 .cmp(&(ca.is_capital && ca.original_owner == pid))

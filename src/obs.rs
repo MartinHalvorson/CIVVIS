@@ -1,5 +1,6 @@
 //! JSON observation builder (fog-of-war view for a player) — feeds the GUI
 //! and any external agent speaking the JSON protocol.
+use crate::shared_sort::SharedSort;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1207,7 +1208,7 @@ fn world_politics_json(g: &Game, pid: usize, omniscient: bool) -> Value {
             }
         }
     }
-    wars.sort_by_key(|&(since, first, second)| (since.unwrap_or(u32::MAX), first, second));
+    wars.sort_by_key_shared(|&(since, first, second)| (since.unwrap_or(u32::MAX), first, second));
     alliances.append(&mut friendships);
     json!({
         "bonds": alliances,
@@ -1290,7 +1291,7 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
         grouped.entry(war.conflict).or_default().push(war);
     }
     let mut conflicts: Vec<Vec<&crate::game::WarRecord>> = grouped.into_values().collect();
-    conflicts.sort_by_key(|records| {
+    conflicts.sort_by_key_shared(|records| {
         let ongoing = records.iter().any(|war| war.ended.is_none());
         let started = records.iter().map(|war| war.started).min().unwrap_or(0);
         let ended = records
@@ -1451,7 +1452,7 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
                 .iter()
                 .flat_map(|war| war.highlights.iter())
                 .collect::<Vec<_>>();
-            highlights.sort_by_key(|moment| {
+            highlights.sort_by_key_shared(|moment| {
                 (
                     moment.turn,
                     moment.kind.as_str(),
@@ -1519,7 +1520,7 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
                 .into_iter()
                 .map(|(pos, turn)| crate::game::WarTheaterSite { turn, pos })
                 .collect::<Vec<_>>();
-            theater.sort_by_key(|site| (site.turn, site.pos));
+            theater.sort_by_key_shared(|site| (site.turn, site.pos));
             if let Some(latest) = theater.last().map(|site| site.turn) {
                 let cutoff = latest.saturating_sub(8);
                 theater.retain(|site| site.turn >= cutoff);

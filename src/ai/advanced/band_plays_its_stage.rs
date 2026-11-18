@@ -33,6 +33,7 @@
 //! `band-plays-at-level-three`.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// `band-stage-needs-three-venues`: the counted stages a two-level promotion
 /// needs before it counts as reaching level 3.
@@ -286,7 +287,7 @@ impl AdvancedAi {
                 Some((score, name))
             })
             .collect();
-        ranked.sort_by(|left, right| {
+        ranked.sort_by_shared(|left, right| {
             right
                 .0
                 .total_cmp(&left.0)

@@ -126,6 +126,7 @@ use super::{AdvancedAi, StrategicPlan, CITY_MAX_HP};
 use crate::ai::BasicAi;
 use crate::game::{Action, Game, Item};
 use crate::name::Name;
+use crate::shared_sort::SharedSort;
 use crate::think;
 
 /// Share of a card's Production bonus the governor turns into item value: a
@@ -484,7 +485,9 @@ impl AdvancedAi {
                 .into_iter()
                 .map(|cid| (cid, g.city_yields(cid).production))
                 .collect();
-            production.sort_by(|left, right| left.1.total_cmp(&right.1).then(left.0.cmp(&right.0)));
+            production.sort_by_shared(|left, right| {
+                left.1.total_cmp(&right.1).then(left.0.cmp(&right.0))
+            });
             production.into_iter().map(|(cid, _)| cid).collect()
         };
         let bank = g.players[pid].gold;

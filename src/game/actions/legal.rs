@@ -15,6 +15,7 @@
 //! unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl Game {
     /// Captured-city decisions are mandatory and exclusive, so callers that
@@ -353,7 +354,7 @@ impl Game {
                     .map(|cost| (position, cost))
             })
             .collect::<Vec<_>>();
-        plots.sort_unstable_by_key(|(position, _)| *position);
+        plots.sort_unstable_by_key_shared(|(position, _)| *position);
         for (pos, cost) in plots {
             if gold + f64::EPSILON >= cost {
                 purchases.push(Action::BuyPlot {
@@ -970,7 +971,7 @@ impl Game {
                         .map(|cost| (position, cost))
                 })
                 .collect();
-            plots.sort_unstable_by_key(|(position, _)| *position);
+            plots.sort_unstable_by_key_shared(|(position, _)| *position);
             for (pos, cost) in plots {
                 if p.gold + f64::EPSILON >= cost {
                     acts.push(Action::BuyPlot {
@@ -2082,7 +2083,7 @@ impl Game {
                 }
             }
         }
-        deals.sort_by(|left, right| {
+        deals.sort_by_shared(|left, right| {
             right
                 .my_value
                 .partial_cmp(&left.my_value)

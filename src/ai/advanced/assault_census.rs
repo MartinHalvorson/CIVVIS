@@ -16,6 +16,7 @@
 
 use super::assault_forecast::Recruit;
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// One city's row of the census.
 #[derive(Clone, Debug)]
@@ -88,7 +89,7 @@ impl AdvancedAi {
                 (distance <= reach).then_some((city.id, distance))
             })
             .collect();
-        targets.sort_by_key(|(cid, distance)| (*distance, *cid));
+        targets.sort_by_key_shared(|(cid, distance)| (*distance, *cid));
         let marks = |forecast: &assault_forecast::AssaultForecast| {
             [forecast.within(4), forecast.within(8), forecast.within(12)]
         };
@@ -120,7 +121,7 @@ impl AdvancedAi {
                 })
             })
             .collect();
-        rows.sort_by(|a, b| {
+        rows.sort_by_shared(|a, b| {
             b.recruited[1]
                 .total_cmp(&a.recruited[1])
                 .then(a.distance.cmp(&b.distance))

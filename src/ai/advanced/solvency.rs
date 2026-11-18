@@ -41,6 +41,7 @@
 //! amenities) for a conquest card.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// Surplus sales a drained turn adds to the ordinary pass.
 pub(crate) const DRAIN_SALES_PER_TURN: usize = 2;
@@ -271,7 +272,7 @@ impl AdvancedAi {
             })
             .filter(|(_, gold)| *gold >= DRAIN_CARD_MIN_GOLD)
             .collect();
-        cards.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(b.0)));
+        cards.sort_by_shared(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(b.0)));
         cards
     }
 
@@ -381,7 +382,7 @@ impl AdvancedAi {
                 })
             })
             .collect();
-        candidates.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        candidates.sort_by_shared(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
         for (_, uid, upkeep) in candidates.into_iter().take(DRAIN_DISBANDS_PER_TURN) {
             if income >= 0.0 {
                 break;

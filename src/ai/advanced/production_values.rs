@@ -16,6 +16,7 @@
 //! an open PR edits them.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 mod garrison_firepower;
 
@@ -845,7 +846,7 @@ impl AdvancedAi {
         if candidates.is_empty() {
             return false;
         }
-        candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.0));
+        candidates.sort_by_key_shared(|candidate| std::cmp::Reverse(candidate.0));
         let purchases = self.legal_purchase_actions(g, pid);
         let Some((rank, action, city_name, defence)) = candidates.into_iter().find_map(
             |(rank, city_id, city_name, defence)| {

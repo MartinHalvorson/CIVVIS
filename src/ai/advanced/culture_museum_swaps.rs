@@ -2,6 +2,7 @@
 //! the native bridge checks city-specific Tourism before issuing a swap.
 use super::*;
 use crate::mirror::{StateGreatWork, StateSnapshot};
+use crate::shared_sort::SharedSort;
 
 fn regular_art(work: &StateGreatWork) -> bool {
     matches!(
@@ -59,7 +60,7 @@ impl AdvancedAi {
             .iter()
             .filter(|c| usable(c) && c.damage.is_finite() && c.damage > 0.0)
             .collect();
-        sources.sort_by(|a, b| b.damage.total_cmp(&a.damage).then(a.id.cmp(&b.id)));
+        sources.sort_by_shared(|a, b| b.damage.total_cmp(&a.damage).then(a.id.cmp(&b.id)));
         let mut destinations: Vec<_> = state
             .cities
             .iter()
@@ -72,7 +73,7 @@ impl AdvancedAi {
                     })
             })
             .collect();
-        destinations.sort_by_key(|c| (!c.capital, c.id));
+        destinations.sort_by_key_shared(|c| (!c.capital, c.id));
         let mut proposals = Vec::new();
         for source in sources {
             for work in source
@@ -147,7 +148,7 @@ impl AdvancedAi {
                 museums.push((city.id, slots));
             }
         }
-        museums.sort_by_key(|m| m.0);
+        museums.sort_by_key_shared(|m| m.0);
         let mut proposals = Vec::new();
         for a in 0..museums.len() {
             for b in a + 1..museums.len() {
@@ -175,7 +176,7 @@ impl AdvancedAi {
                 }
             }
         }
-        proposals.sort_by(|a, b| {
+        proposals.sort_by_shared(|a, b| {
             b.0.cmp(&a.0)
                 .then_with(|| (&a.1, &a.2, &a.3, &a.4).cmp(&(&b.1, &b.2, &b.3, &b.4)))
         });

@@ -45,6 +45,7 @@
 //! no-harm check afterwards. See `docs/DOCTRINE_ARENA.md`, "The gate for a
 //! tactical gene".
 
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeMap;
 
 use super::AdvancedAi;
@@ -192,7 +193,7 @@ impl AdvancedAi {
                     .filter(|shot| shot.defender == defender && !spent.contains(&shot.unit))
                     .collect();
                 // One shot per shooter: the heaviest it has on this target.
-                available.sort_by(|a, b| {
+                available.sort_by_shared(|a, b| {
                     a.unit
                         .cmp(&b.unit)
                         .then_with(|| b.damage.total_cmp(&a.damage))
@@ -201,7 +202,7 @@ impl AdvancedAi {
                 // Ranged first — a shot returns nothing — then the heaviest
                 // blow, then the lowest id, so the plan is a function of the
                 // board alone.
-                available.sort_by(|a, b| {
+                available.sort_by_shared(|a, b| {
                     b.ranged
                         .cmp(&a.ranged)
                         .then_with(|| b.damage.total_cmp(&a.damage))

@@ -11,6 +11,7 @@
 //! `civvis validate`, and see `docs/UNCIV_LESSONS.md` for the lineage.
 
 use crate::name::Name;
+use crate::shared_sort::SharedSort;
 use crate::specmap::SpecMap;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -199,7 +200,7 @@ pub fn validate(rules: &Rules) -> Vec<Finding> {
         .into_iter()
         .filter(|finding| !waivers.contains_key(&finding.subject))
         .collect();
-    findings.sort_by(|a, b| a.severity.cmp(&b.severity).then(a.subject.cmp(&b.subject)));
+    findings.sort_by_shared(|a, b| a.severity.cmp(&b.severity).then(a.subject.cmp(&b.subject)));
     findings
 }
 

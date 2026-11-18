@@ -33,6 +33,7 @@
 
 use crate::ai::BasicAi;
 use crate::game::Game;
+use crate::shared_sort::SharedSort;
 use crate::Pos;
 
 /// How far from a closed rival's stage a band looks for its waiting tile.
@@ -107,7 +108,7 @@ impl BasicAi {
             let domestic = g.domestic_tourists(host).max(0);
             stages.push((domestic, value, g.wdist(here, *pos), *pos));
         }
-        stages.sort_by(|left, right| {
+        stages.sort_by_shared(|left, right| {
             right
                 .0
                 .cmp(&left.0)

@@ -52,6 +52,7 @@
 use super::battle_planner::{DangerField, STRUCTURE_SOURCE};
 use super::{AdvancedAi, ForceRole};
 use crate::game::Game;
+use crate::shared_sort::SharedSort;
 use crate::Pos;
 use std::collections::HashMap;
 
@@ -195,7 +196,7 @@ impl AdvancedAi {
             })
             .filter(|(uid, _, _)| !self.battle_planner_ordered.contains(uid))
             .collect();
-        exposed.sort_by_key(|(uid, _, _)| *uid);
+        exposed.sort_by_key_shared(|(uid, _, _)| *uid);
         for (uid, pos, blow) in exposed {
             let lethal = &self.base.gun_lethal_tiles[&uid];
             let Some(to) = g

@@ -5,6 +5,7 @@
 //! Artifacts in evolved/: best.json (validated champion), archive.json
 //! (opponent hall of fame), population.json (resume state), history.csv
 //! (training, uncertainty, and fixed-seed holdout fitness per generation).
+use crate::shared_sort::SharedSort;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -675,7 +676,7 @@ fn next_generation(
         return Vec::new();
     }
     let mut ranked: Vec<usize> = (0..pop.len()).collect();
-    ranked.sort_by(|a, b| fits[*b].partial_cmp(&fits[*a]).unwrap());
+    ranked.sort_by_shared(|a, b| fits[*b].partial_cmp(&fits[*a]).unwrap());
     // Elitism guarantees a measured improvement cannot disappear in its own
     // generation; the remainder recombines and mutates the fitter half.
     let elite = (target_size / 4).max(1).min(pop.len()).min(target_size);
@@ -813,7 +814,7 @@ pub fn evolve(cfg: &EvoCfg) {
             .map(|candidate| selection_stats(candidate, cfg.players).0)
             .collect();
         let mut idx: Vec<usize> = (0..pop.len()).collect();
-        idx.sort_by(|a, b| fits[*b].partial_cmp(&fits[*a]).unwrap());
+        idx.sort_by_shared(|a, b| fits[*b].partial_cmp(&fits[*a]).unwrap());
         let (best, runner) = (idx[0], idx.get(1).copied().unwrap_or(idx[0]));
         let mean = fits.iter().sum::<f64>() / fits.len() as f64;
         let (_, best_se) = selection_stats(&observations[best], cfg.players);

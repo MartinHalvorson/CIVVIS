@@ -67,6 +67,7 @@
 //! Off, every entry point returns before reading anything and every path is
 //! byte-identical.
 
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeSet;
 
 use super::AdvancedAi;
@@ -541,7 +542,7 @@ impl AdvancedAi {
                 }
             }
         }
-        found.sort_by(Self::boost_by_payout);
+        found.sort_by_shared(Self::boost_by_payout);
         found
     }
 
@@ -653,7 +654,7 @@ impl AdvancedAi {
         }
         let mut objectives = kept;
         objectives.extend(created);
-        objectives.sort_by(Self::boost_by_payout);
+        objectives.sort_by_shared(Self::boost_by_payout);
         let defence_stand_down = self.threatened_city(g, pid).is_some();
         *self.boost_planner_frame.borrow_mut() = BoostPlannerFrame {
             stamp: Some((g.turn, pid)),

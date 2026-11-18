@@ -5,6 +5,7 @@
 //! or a simulated kill to have made the next host turn safe.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct BuilderSupport {
@@ -111,7 +112,7 @@ impl AdvancedAi {
                     ));
                 }
             }
-            candidates.sort_by(|a, b| {
+            candidates.sort_by_shared(|a, b| {
                 a.0.total_cmp(&b.0)
                     .then_with(|| a.1.cmp(&b.1))
                     .then_with(|| a.2.cmp(&b.2))

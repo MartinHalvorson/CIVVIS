@@ -18,6 +18,7 @@
 
 use super::*;
 use crate::game::adjacency::PlotAdjacencies;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     /// Does this turn resolve the delay `settler_blocked_turns` measures?
@@ -334,7 +335,7 @@ impl AdvancedAi {
                 (score, risk, position, progress)
             })
             .collect::<Vec<_>>();
-        alternatives.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then(a.2.cmp(&b.2)));
+        alternatives.sort_by_shared(|a, b| b.0.partial_cmp(&a.0).unwrap().then(a.2.cmp(&b.2)));
         for &(_, risk, position, progress) in &alternatives {
             if risk + 5.0 >= planned_risk || (progress < 0 && risk > planned_risk * 0.5) {
                 continue;
@@ -370,7 +371,8 @@ impl AdvancedAi {
                 .iter()
                 .filter(|(_, risk, _, _)| *risk < staying)
                 .collect();
-            safer.sort_by(|a, b| a.1.total_cmp(&b.1).then(b.3.cmp(&a.3)).then(a.2.cmp(&b.2)));
+            safer
+                .sort_by_shared(|a, b| a.1.total_cmp(&b.1).then(b.3.cmp(&a.3)).then(a.2.cmp(&b.2)));
             for &&(_, _, position, _) in &safer {
                 if self.base.path_move(g, pid, moving_uid, position) {
                     return true;
@@ -487,7 +489,9 @@ impl AdvancedAi {
             .collect::<Vec<_>>();
         let mut overflow = Vec::new();
         if let Some(limit) = prefilter_limit {
-            candidates.sort_by(|left, right| right.1.total_cmp(&left.1).then(left.0.cmp(&right.0)));
+            candidates.sort_by_shared(|left, right| {
+                right.1.total_cmp(&left.1).then(left.0.cmp(&right.0))
+            });
             if candidates.len() > limit {
                 overflow = candidates.split_off(limit);
             }
@@ -591,7 +595,7 @@ impl AdvancedAi {
         if self.campus_adjacency_threshold_2 && !stop_at_first && sites.len() > 1 {
             self.campus_threshold_settle_rerank(g, &mut sites);
         }
-        sites.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        sites.sort_by_shared(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         sites
     }
 
@@ -602,7 +606,7 @@ impl AdvancedAi {
     /// the plot the district pricing later finds or does not find. Never
     /// lowers a site.
     pub(super) fn campus_threshold_settle_rerank(&self, g: &Game, sites: &mut [(Pos, f64)]) {
-        sites.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        sites.sort_by_shared(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         let top = sites.len().min(CAMPUS_THRESHOLD_SETTLE_CANDIDATES);
         for site in sites.iter_mut().take(top) {
             if site.1 > 0.0 && Self::campus_threshold_plot_near(g, site.0) {
@@ -769,7 +773,7 @@ impl AdvancedAi {
                     .unwrap_or_else(|| g.wdist(from, *position) as f64 * moves.max(1.0) / 2.0);
                 *value -= Self::settle_sooner_walk_cost(turn_price, movement_cost);
             }
-            candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+            candidates.sort_by_shared(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         }
         if !self.settlement_safety {
             return BasicAi::first_reachable_settle_site(g, uid, &candidates);
@@ -795,7 +799,7 @@ impl AdvancedAi {
         if routed.is_empty() {
             return BasicAi::first_reachable_settle_site(g, uid, &candidates);
         }
-        routed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        routed.sort_by_shared(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         let near = routed.into_iter().next();
         // `settler-walks-to-the-better-site`: the one-turn pick yields to a
         // far better ranked site beyond this turn's walk. `None` with the
@@ -3284,7 +3288,7 @@ impl AdvancedAi {
                             > 0)
             })
             .collect();
-        settlers.sort_by_key(|settler| (g.wdist(g.units[settler].pos, unit.pos), *settler));
+        settlers.sort_by_key_shared(|settler| (g.wdist(g.units[settler].pos, unit.pos), *settler));
 
         for settler in settlers {
             let settler_pos = g.units[&settler].pos;

@@ -20,6 +20,7 @@
 //! code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     /// A Prophet-race contender's rank, for an empire holding at least
@@ -126,7 +127,7 @@ impl AdvancedAi {
                     .map(|rank| (candidate.id, rank))
             })
             .collect();
-        contenders.sort_by(|(left_id, left), (right_id, right)| {
+        contenders.sort_by_shared(|(left_id, left), (right_id, right)| {
             right
                 .0
                 .cmp(&left.0)

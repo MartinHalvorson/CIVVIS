@@ -122,6 +122,7 @@ use super::{AdvancedAi, EmpireCounts, GrandStrategy, StrategicPlan};
 use crate::game::{Action, Game, Item};
 use crate::name::Name;
 use crate::rules::UnitSpec;
+use crate::shared_sort::SharedSort;
 use crate::think;
 use crate::world::TileBits;
 use crate::Pos;
@@ -1245,7 +1246,7 @@ impl AdvancedAi {
             .filter(|uid| g.rules.units[g.units[uid].kind].promotion_class != "recon")
             .filter(|uid| !guards.contains(uid) && !home.contains(uid))
             .collect();
-        army.sort_by_key(|uid| (g.wdist(g.units[uid].pos, rally), *uid));
+        army.sort_by_key_shared(|uid| (g.wdist(g.units[uid].pos, rally), *uid));
         army.truncate(self.conquest_force_size());
         army.into_iter().collect()
     }

@@ -85,6 +85,7 @@
 //! `the_storming` and `the_relief`); the whole-game screen is the no-harm
 //! check (`docs/DOCTRINE_ARENA.md`, "The gate for a tactical gene").
 
+use crate::shared_sort::SharedSort;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -680,7 +681,7 @@ impl AdvancedAi {
                 ));
             }
         }
-        melee.sort_by(|a, b| b.total_cmp(a));
+        melee.sort_by_shared(|a, b| b.total_cmp(a));
         Some(ranged + melee.into_iter().take(slots).sum::<f64>())
     }
 
@@ -1446,7 +1447,7 @@ fn anvil_orders_for(
         .into_iter()
         .filter(|pos| *pos != city.pos && open(*pos))
         .collect();
-    ring.sort_by_key(|pos| (hostile_distance(*pos), defence(*pos), *pos));
+    ring.sort_by_key_shared(|pos| (hostile_distance(*pos), defence(*pos), *pos));
     let mut melee: Vec<u32> = land
         .iter()
         .copied()
@@ -1479,7 +1480,7 @@ fn anvil_orders_for(
         .into_iter()
         .filter(|pos| *pos != city.pos && open(*pos))
         .collect();
-    near.sort_by_key(|pos| {
+    near.sort_by_key_shared(|pos| {
         (
             Reverse(hostile_distance(*pos)),
             defence(*pos),
@@ -1917,7 +1918,7 @@ fn siege_posts_reaching(
         .copied()
         .filter(|uid| arm_of(g, *uid) == Arm::Melee || Some(*uid) == taker)
         .collect();
-    melee.sort_by_key(|uid| (g.wdist(g.units[uid].pos, city.pos), *uid));
+    melee.sort_by_key_shared(|uid| (g.wdist(g.units[uid].pos, city.pos), *uid));
     for uid in &melee {
         let here = g.units[uid].pos;
         if g.wdist(here, city.pos) <= 1 {
@@ -1965,7 +1966,7 @@ fn siege_posts_reaching(
             .copied()
             .filter(|pos| !ring_taken.contains(pos) && g.unit_can_traverse(uid, *pos))
             .collect();
-        candidates.sort_by_key(|pos| {
+        candidates.sort_by_key_shared(|pos| {
             let spread = ring_taken
                 .iter()
                 .map(|held| g.wdist(*pos, *held))
@@ -1994,7 +1995,7 @@ fn siege_posts_reaching(
         .filter(|uid| Some(*uid) != taker)
         .filter(|uid| matches!(arm_of(g, *uid), Arm::Siege | Arm::Shooter))
         .collect();
-    guns.sort_by_key(|uid| {
+    guns.sort_by_key_shared(|uid| {
         (
             arm_of(g, *uid) != Arm::Siege,
             g.wdist(g.units[uid].pos, city.pos),
@@ -2082,7 +2083,7 @@ fn siege_posts_reaching(
                         && g.unit_ids_at(*pos).is_empty()
                 })
                 .collect();
-            candidates.sort_by_key(|pos| {
+            candidates.sort_by_key_shared(|pos| {
                 // The gun's own side of the city first: a post across the
                 // city is a walk around its strike ring (Natal, game 30:
                 // guns on the west were posted east).
@@ -3752,7 +3753,7 @@ impl AdvancedAi {
                     && g.line_of_sight_from(*pos, city.pos)
             })
             .collect();
-        candidates.sort_by_key(|pos| {
+        candidates.sort_by_key_shared(|pos| {
             (
                 g.wdist(unit.pos, *pos),
                 Reverse(g.wdist(*pos, city.pos)),
@@ -4381,7 +4382,7 @@ impl AdvancedAi {
                 *distance = i32::try_from(steps[pos]).unwrap_or(i32::MAX);
             }
         }
-        stands.sort_by(|a, b| {
+        stands.sort_by_shared(|a, b| {
             a.0.cmp(&b.0)
                 .then_with(|| a.1.total_cmp(&b.1))
                 .then_with(|| a.2.cmp(&b.2))
@@ -5300,7 +5301,7 @@ impl AdvancedAi {
                         .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
             })
             .collect();
-        ring.sort_by_key(|pos| (Some(*pos) != post, g.wdist(unit.pos, *pos), *pos));
+        ring.sort_by_key_shared(|pos| (Some(*pos) != post, g.wdist(unit.pos, *pos), *pos));
         let strike = Action::Attack {
             unit: uid,
             target: city.pos,

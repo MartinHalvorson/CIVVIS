@@ -27,6 +27,7 @@
 //! count): unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 impl AdvancedAi {
     /// Retire the board's dead major seats to the host's living count. See the
@@ -56,7 +57,7 @@ impl AdvancedAi {
                     && g.player_unit_ids(*seat).is_empty()
             })
             .collect();
-        empty.sort_unstable_by(|a, b| b.cmp(a));
+        empty.sort_unstable_by_shared(|a, b| b.cmp(a));
         for seat in empty {
             if excess == 0 {
                 break;

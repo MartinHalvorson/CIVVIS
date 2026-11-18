@@ -1,4 +1,5 @@
 //! Core turn engine (mirrors civvis/game.py — same mechanics and action protocol).
+use crate::shared_sort::SharedSort;
 use serde::ser::SerializeMap;
 mod host_policy_windows;
 #[cfg(test)]
@@ -9709,7 +9710,7 @@ impl Game {
         // or two steps away; the radius is a bound on the search rather than a
         // distance the water is expected to be at.
         let mut candidates = self.wdisk(anchor, 4);
-        candidates.sort_by_key(|pos| (self.wdist(anchor, *pos), *pos));
+        candidates.sort_by_key_shared(|pos| (self.wdist(anchor, *pos), *pos));
         candidates.into_iter().find(|pos| {
             self.map
                 .get(*pos)
@@ -9744,7 +9745,7 @@ impl Game {
                 self.rules.is_passable(tile) && self.rules.is_water(tile) == afloat
             })
             .collect();
-        ground.sort_by_key(|pos| (self.wdist(anchor, *pos), *pos));
+        ground.sort_by_key_shared(|pos| (self.wdist(anchor, *pos), *pos));
         let mut cursor = 0;
         for kind in Self::battlefield_army(self.map.tiles.len(), script) {
             while ground
@@ -9847,7 +9848,7 @@ impl Game {
         };
         let (ashore, afloat) = (line(false), line(true));
         let mut ground: Vec<Pos> = self.map.tiles.keys().copied().collect();
-        ground.sort_by_key(|position| (self.wdist(anchor, *position), *position));
+        ground.sort_by_key_shared(|position| (self.wdist(anchor, *position), *position));
         for kind in units {
             let Some(spec) = self.rules.units.get(kind) else {
                 continue;

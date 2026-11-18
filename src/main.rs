@@ -1,4 +1,5 @@
 //! CLI: simulate / soak / benchmark (mirrors the Python CLI outputs).
+use crate::shared_sort::SharedSort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
@@ -608,13 +609,13 @@ fn game_options(
 
 fn ladder(rules: &Rules) -> Vec<&str> {
     let mut names: Vec<&str> = rules.difficulties.keys().map(|k| k.as_str()).collect();
-    names.sort_by_key(|name| rules.difficulties[*name].order);
+    names.sort_by_key_shared(|name| rules.difficulties[*name].order);
     names
 }
 
 fn speeds(rules: &Rules) -> Vec<&str> {
     let mut names: Vec<&str> = rules.speeds.keys().map(|k| k.as_str()).collect();
-    names.sort_by_key(|name| rules.speeds[*name].order);
+    names.sort_by_key_shared(|name| rules.speeds[*name].order);
     names
 }
 
@@ -650,7 +651,7 @@ fn standings(g: &Game) {
         .filter(|p| !p.is_minor)
         .map(|p| p.id)
         .collect();
-    majors.sort_by_key(|pid| -g.score(*pid));
+    majors.sort_by_key_shared(|pid| -g.score(*pid));
     for pid in majors {
         let p = &g.players[pid];
         let cities = g.player_city_ids(pid);
@@ -664,7 +665,7 @@ fn standings(g: &Game) {
             }
         }
         let mut army: Vec<(&str, usize)> = roster.into_iter().collect();
-        army.sort_by_key(|(kind, count)| (std::cmp::Reverse(*count), *kind));
+        army.sort_by_key_shared(|(kind, count)| (std::cmp::Reverse(*count), *kind));
         let army: Vec<String> = army
             .iter()
             .map(|(kind, count)| {

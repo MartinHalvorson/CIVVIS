@@ -1,4 +1,5 @@
 //! Map generation (mirrors civvis/mapgen.py).
+use crate::shared_sort::SharedSort;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
 use std::sync::Arc;
 
@@ -2787,7 +2788,7 @@ fn balance_mountain_share(
         .collect();
     if current.len() > wanted {
         let excess = current.len() - wanted;
-        current.sort_unstable_by_key(|pos| {
+        current.sort_unstable_by_key_shared(|pos| {
             let (col, row) = noise_cell(wm, *pos);
             mountains.at(col, row)
         });
@@ -2816,7 +2817,7 @@ fn balance_mountain_share(
             hills.at(col, row) < pass_threshold
         })
         .collect();
-    candidates.sort_unstable_by_key(|pos| {
+    candidates.sort_unstable_by_key_shared(|pos| {
         let (col, row) = noise_cell(wm, *pos);
         std::cmp::Reverse(mountains.at(col, row))
     });
@@ -3712,7 +3713,7 @@ fn connected_components(wm: &WorldMap, cells: &BTreeSet<Pos>) -> Vec<BTreeSet<Po
         seen.extend(comp.iter().cloned());
         components.push(comp);
     }
-    components.sort_by_key(|component| std::cmp::Reverse(component.len()));
+    components.sort_by_key_shared(|component| std::cmp::Reverse(component.len()));
     components
 }
 

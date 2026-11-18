@@ -107,6 +107,7 @@ use super::open_city_objective::open_city_take_turns;
 use super::soft_city_window::SOFT_CITY_GARRISON_BONUS;
 use super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
 use crate::game::{effective_strength, Action, Game, Item};
+use crate::shared_sort::SharedSort;
 use crate::think;
 use crate::Pos;
 use std::collections::BTreeMap;
@@ -413,7 +414,7 @@ impl AdvancedAi {
                 (unit.id, g.unit_strength(unit, false), unit.hp, first)
             })
             .collect();
-        takers.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        takers.sort_by_shared(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
         takers
     }
 
@@ -521,7 +522,7 @@ impl AdvancedAi {
             })
             .filter_map(|city| self.score_take_price(g, pid, city.id))
             .collect();
-        board.sort_by(|a, b| {
+        board.sort_by_shared(|a, b| {
             (a.march > SCORE_TAKE_MUSTER_TURNS)
                 .cmp(&(b.march > SCORE_TAKE_MUSTER_TURNS))
                 .then(b.per_hundred.total_cmp(&a.per_hundred))

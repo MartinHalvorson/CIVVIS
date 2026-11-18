@@ -1,5 +1,6 @@
 //! Shared tactical finishing pass used by native and externally executed players.
 use crate::game::Action;
+use crate::shared_sort::SharedSort;
 
 /// The same opening tactical policy for every engine adapter. Unit IDs in
 /// `mapped` are executable actors, not additional intelligence about enemies.
@@ -185,7 +186,7 @@ pub fn live_finishing_candidates(
     // A certain kill first; otherwise make the shortest volley. Ranged fire
     // breaks a tie without risking a melee body, then damage and retaliation
     // distinguish otherwise equivalent blows.
-    candidates.sort_by(|left, right| {
+    candidates.sort_by_shared(|left, right| {
         right
             .kills
             .cmp(&left.kills)

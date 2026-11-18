@@ -46,6 +46,7 @@
 //! one-frame replay cannot show this: judge carriers on claims per game.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// Who the space race wants, the class that earns them and the project that
 /// earns that class. The two doublings come first; see the module.
@@ -223,7 +224,7 @@ impl AdvancedAi {
             })
             .map(|cid| (g.city_yields(cid).production, cid))
             .collect();
-        open.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        open.sort_by_shared(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
         for (_, city) in open.into_iter().take(wanted - running) {
             let displaced = g.cities[&city]
                 .queue

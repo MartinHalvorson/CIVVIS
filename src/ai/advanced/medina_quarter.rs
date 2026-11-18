@@ -49,6 +49,7 @@
 use super::AdvancedAi;
 use crate::game::Game;
 use crate::name::Name;
+use crate::shared_sort::SharedSort;
 use crate::think;
 
 /// Housing-limited cities with three specialty districts that bring the card
@@ -179,7 +180,7 @@ impl AdvancedAi {
                 .and_then(|civic| g.rules.civics.get(civic))
                 .map_or(0, |civic| civic.era)
         };
-        cards.sort_by(|first, second| {
+        cards.sort_by_shared(|first, second| {
             rank(second.as_str())
                 .cmp(&rank(first.as_str()))
                 .then(era(first.as_str()).cmp(&era(second.as_str())))

@@ -94,6 +94,7 @@
 
 use super::hopeless_army_yields_the_queue::HopelessWalls;
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// Percent of the game's length (the turn limit, or the speed's own if
 /// shorter) past which a Domination seat holding no rival's original capital
@@ -453,7 +454,7 @@ impl AdvancedAi {
             return;
         }
         let mut room = self.endgame_upkeep_room(g, pid, &clock);
-        city_ids.sort_by(|a, b| {
+        city_ids.sort_by_shared(|a, b| {
             g.city_yields(*b)
                 .production
                 .total_cmp(&g.city_yields(*a).production)

@@ -8,6 +8,7 @@
 
 use super::dice::{effective_strength, mean_damage};
 use super::host_enemy::{self, HostClass, Owner, Situation, StrikeFeatures, TargetFeatures};
+use crate::shared_sort::SharedSort;
 
 pub const NO_TILE: u16 = u16::MAX;
 pub const NO_UNIT: u16 = u16::MAX;
@@ -1501,7 +1502,7 @@ impl<'b> Sim<'b> {
         }
         let units = &self.s.units;
         self.order
-            .sort_by_key(|i| (!units[*i as usize].shoots(), *i));
+            .sort_by_key_shared(|i| (!units[*i as usize].shoots(), *i));
         for k in 0..self.order.len() {
             let i = self.order[k] as usize;
             self.act(i, posture);
@@ -1514,7 +1515,7 @@ impl<'b> Sim<'b> {
         // The heaviest melee blows go last: each blow that lands first adds a
         // flanker for the ones behind it.
         let mut ordered: Vec<(usize, Line)> = plan.to_vec();
-        ordered.sort_by(|a, b| {
+        ordered.sort_by_shared(|a, b| {
             let n = self.b.n;
             let strength = |i: usize| {
                 (0..n)

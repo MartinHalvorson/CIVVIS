@@ -11,6 +11,7 @@
 //! methods stay public; the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// `TRIBE_CAVALRY`'s `ResourceRange` in `Barbarians.xml`.
 const BARBARIAN_CAVALRY_RESOURCE_RANGE: i32 = 3;
@@ -430,8 +431,9 @@ impl Game {
             .max()
             .unwrap_or(0);
         let mut ranked: Vec<(&Name, &crate::rules::TechSpec)> = self.rules.techs.iter().collect();
-        ranked
-            .sort_by(|a, b| (a.1.era, a.1.cost as i64, a.0).cmp(&(b.1.era, b.1.cost as i64, b.0)));
+        ranked.sort_by_shared(|a, b| {
+            (a.1.era, a.1.cost as i64, a.0).cmp(&(b.1.era, b.1.cost as i64, b.0))
+        });
         let known: BTreeSet<&str> = ranked
             .iter()
             .take(leader_techs * 50 / 100)

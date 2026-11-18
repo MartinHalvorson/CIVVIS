@@ -31,6 +31,7 @@
 //! leaves a producer's slot to the zone.
 use super::BasicAi;
 use crate::game::{Game, Item};
+use crate::shared_sort::SharedSort;
 
 /// The fewest cities from which the step opens a zone.
 pub(crate) const PRODUCER_ZONE_MIN_CITIES: usize = 3;
@@ -145,7 +146,7 @@ impl BasicAi {
             })
             .map(|city| (g.city_yields(city).production, city))
             .collect();
-        ranked.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        ranked.sort_by_shared(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
         if !ranked
             .iter()
             .take(Self::producer_zones_wanted(n_cities))
@@ -220,7 +221,7 @@ impl BasicAi {
             .filter(|city| Self::first_campus_item(g, pid, *city).is_none())
             .map(|city| (g.city_yields(city).production, city))
             .collect();
-        ranked.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        ranked.sort_by_shared(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
         if !ranked.iter().take(open).any(|(_, city)| *city == cid) {
             return None;
         }

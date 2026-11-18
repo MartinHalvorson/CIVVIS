@@ -82,6 +82,7 @@ use super::holdable_land_keeps_settling::{
 };
 use super::settler_admission_journal::SETTLER_ADMISSION_JOURNAL_STRIDE;
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// The most cities the lift may ask for.
 pub(crate) const GOOD_LAND_CITY_CEILING: usize = 12;
@@ -206,7 +207,7 @@ impl AdvancedAi {
                     && !self.holdable_land_loyalty_refuses(g, pid, *site)
             })
             .collect();
-        seats.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        seats.sort_by_shared(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
         seats
     }
 

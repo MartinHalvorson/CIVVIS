@@ -17,6 +17,7 @@
 
 use super::*;
 use crate::game::combat_ledger::EdgeBlow;
+use crate::shared_sort::SharedSort;
 
 impl Game {
     /// The two strengths `do_attack` resolves a melee blow with, `(attacker,
@@ -1314,8 +1315,8 @@ impl Game {
                 ground.push((self.unit_anti_air_strength(unit) + support, unit.id));
             }
         }
-        ground.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
-        fighters.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        ground.sort_by_shared(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        fighters.sort_by_shared(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
 
         let mut fighter_engaged = false;
         for (strength, interceptor_id, air_interceptor) in ground
@@ -1701,7 +1702,7 @@ impl Game {
                 });
             }
         }
-        platforms.sort_by_key(|platform| {
+        platforms.sort_by_key_shared(|platform| {
             (
                 platform.unit.is_some(),
                 platform.distance,

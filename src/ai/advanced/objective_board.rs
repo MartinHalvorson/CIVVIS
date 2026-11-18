@@ -77,6 +77,7 @@
 //! tactical gene"); the whole-game screen is the no-harm check. See
 //! `docs/LIVE_TACTICS.md` §24.
 
+use crate::shared_sort::SharedSort;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::city_campaign::NeighbourAppraisal;
@@ -1311,7 +1312,7 @@ impl AdvancedAi {
                     .get(cid)
                     .map_or(0.0, |rate| city_value(g, *cid, lane).max(POP_VALUE) * rate)
             };
-            siege_cities.sort_by(|a, b| weight(b).total_cmp(&weight(a)));
+            siege_cities.sort_by_shared(|a, b| weight(b).total_cmp(&weight(a)));
             if !siege_rates.is_empty() {
                 let read: Vec<String> = siege_cities
                     .iter()
@@ -1911,7 +1912,7 @@ impl AdvancedAi {
             *rows = rest;
             return;
         }
-        lead.sort_by(|(a, row_a), (b, row_b)| {
+        lead.sort_by_shared(|(a, row_a), (b, row_b)| {
             b.total_cmp(a).then_with(|| row_a.key.cmp(&row_b.key))
         });
         let order: Vec<String> = lead
@@ -2049,7 +2050,7 @@ impl AdvancedAi {
     }
 
     fn order_board_rows(rows: &mut Vec<Objective>) {
-        rows.sort_by(|a, b| {
+        rows.sort_by_shared(|a, b| {
             b.score()
                 .total_cmp(&a.score())
                 .then_with(|| a.key.cmp(&b.key))
@@ -2416,7 +2417,7 @@ impl AdvancedAi {
             let mut order: Vec<usize> = (0..forces.len())
                 .filter(|index| !forces[*index].units.is_empty())
                 .collect();
-            order.sort_by_key(|index| {
+            order.sort_by_key_shared(|index| {
                 (
                     row_rank
                         .get(&forces[*index].objective_key)
@@ -2484,7 +2485,7 @@ impl AdvancedAi {
                 // the guns. The two nearest the Reserve tile are usually the
                 // newest units, and live King civvis-20261003T135713Z's
                 // newest were the Bombards a walled siege was waiting for.
-                surplus.sort_by_key(|uid| {
+                surplus.sort_by_key_shared(|uid| {
                     (
                         self.siege_needs_a_breaker && facts[uid].siege,
                         g.wdist(facts[uid].pos, reserve_at),
@@ -2571,7 +2572,7 @@ impl AdvancedAi {
         for force in &mut forces {
             force.units.sort_unstable();
         }
-        forces.sort_by_key(|force| force.id);
+        forces.sort_by_key_shared(|force| force.id);
 
         // Reassignments: a unit whose force changed row.
         let reassignments = forces
@@ -3415,7 +3416,7 @@ impl AdvancedAi {
         }
         forces.retain(|force| !force.units.is_empty());
         self.objective_board_state.forces = forces;
-        self.force_groups.sort_by_key(|group| group.id);
+        self.force_groups.sort_by_key_shared(|group| group.id);
         if self.journal().wants(crate::reasoning::Level::Decision) {
             for group in &self.force_groups {
                 let row = self

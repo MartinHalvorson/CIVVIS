@@ -47,6 +47,7 @@
 //! under `randomize_civs`, which is what washes the priority out across a
 //! corpus).
 
+use crate::shared_sort::SharedSort;
 use std::any::Any;
 use std::collections::BTreeMap;
 use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
@@ -107,7 +108,7 @@ impl SimultaneousCensus {
             100.0 * self.applied as f64 / self.planned as f64
         };
         let mut kinds: Vec<(&&str, &u64)> = self.dropped_by_kind.iter().collect();
-        kinds.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+        kinds.sort_by_shared(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
         let top: Vec<String> = kinds
             .into_iter()
             .take(3)

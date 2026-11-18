@@ -113,6 +113,7 @@
 //! Off: unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// The war opens at this share of the founder's steady power or better. The
 /// last-holdout interception's floor
@@ -666,7 +667,7 @@ impl AdvancedAi {
             .collect();
         // Most spreaders at our cities first, then most cities of ours on the
         // faith; the lower seat breaks a tie.
-        candidates.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        candidates.sort_by_shared(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
         for (rival, trigger) in candidates {
             if let Some(ago) = self.faith_war_cooldown(g, pid, rival) {
                 let reason = format!("cooldown: peace {ago} turns ago");

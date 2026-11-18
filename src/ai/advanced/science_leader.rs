@@ -49,6 +49,7 @@
 use super::one_war::DECLARATION_EDGE_RATIO;
 use super::{AdvancedAi, GrandStrategy, VictoryTarget};
 use crate::game::Game;
+use crate::shared_sort::SharedSort;
 
 /// Standard turn from which the Science leader is read: turn 109 at the
 /// live seat's Online speed. The census turns above are Online turns; the
@@ -100,7 +101,7 @@ impl AdvancedAi {
             })
             .map(|other| (Self::seat_science_per_turn(g, other.id), other.id))
             .collect();
-        readings.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        readings.sort_by_shared(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
         let (best, leader) = *readings.first()?;
         let runner_up = readings.get(1).map_or(0.0, |(science, _)| *science);
         (leader != pid && best > 0.0 && best >= margin * runner_up.max(0.0))

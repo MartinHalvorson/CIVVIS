@@ -58,6 +58,7 @@
 //! All three genes ship off and are priced by the standard screen like every
 //! other opt-in; `docs/gene_screens/fires/` carries their fires probes.
 
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeMap;
 
 use super::{AdvancedAi, BarbarianCaptureThreat};
@@ -374,7 +375,7 @@ impl AdvancedAi {
             })
             .filter(|position| !Self::religious_tile_in_reach(g, pid, *position, threats))
             .collect();
-        candidates.sort_by_key(|position| {
+        candidates.sort_by_key_shared(|position| {
             std::cmp::Reverse((
                 BasicAi::frontier_reveal_value(g, pid, uid, *position),
                 g.wdist(origin, *position),

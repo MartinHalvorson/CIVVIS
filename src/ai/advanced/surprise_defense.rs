@@ -31,6 +31,7 @@
 
 use super::AdvancedAi;
 use crate::game::{Action, Game, Item};
+use crate::shared_sort::SharedSort;
 
 /// The declaration shock in Standard-speed turns. Six is long enough for the
 /// first policy-boosted defender to finish in an ordinary early city, while
@@ -191,7 +192,7 @@ impl AdvancedAi {
         let counts = self.counts(g, pid);
         let want_ranged = counts.melee > counts.ranged;
         let mut cities = g.player_city_ids(pid);
-        cities.sort_by_key(|city| {
+        cities.sort_by_key_shared(|city| {
             (
                 Self::surprise_front_distance(g, window.attacker, *city),
                 *city,
@@ -290,7 +291,7 @@ impl AdvancedAi {
                 item,
             ));
         }
-        candidates.sort_by(|left, right| {
+        candidates.sort_by_shared(|left, right| {
             left.0
                 .cmp(&right.0)
                 .then_with(|| left.1.total_cmp(&right.1))

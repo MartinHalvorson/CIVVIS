@@ -4,6 +4,7 @@
 use super::{AdvancedAi, GrandStrategy, VictoryTarget};
 use crate::game::{Game, Item, QuickDeal};
 use crate::name::Name;
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeSet;
 
 /// An explicit Culture target must keep valuing Theater Squares and their
@@ -184,7 +185,7 @@ impl AdvancedAi {
         }
         let pressures = self.rival_culture_pressures(g);
         let mut ranked: Vec<usize> = self.culture_trade_threats(g, pid).into_iter().collect();
-        ranked.sort_by_key(|rival| (-pressures.get(rival).copied().unwrap_or(0), *rival));
+        ranked.sort_by_key_shared(|rival| (-pressures.get(rival).copied().unwrap_or(0), *rival));
         Self::denounce_most_pressing(g, pid, &ranked)
     }
 

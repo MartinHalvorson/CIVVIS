@@ -9,6 +9,7 @@
 //! uses are `pub(super)`; the code is otherwise unchanged.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 pub(super) fn apply_research_quotes(
     game: &mut crate::game::Game,
@@ -260,7 +261,7 @@ pub(super) fn apply_congress_dvp(game: &mut crate::game::Game, state: &StateSnap
             None => unmet.push(entry),
         }
     }
-    unmet.sort_by_key(|entry| entry.player);
+    unmet.sort_by_key_shared(|entry| entry.player);
     let occupied: BTreeSet<usize> = seat_of.values().copied().collect();
     let free_seats = (1..modeled_major_player_count(game)).filter(|seat| !occupied.contains(seat));
     for (seat, entry) in free_seats.zip(unmet) {
@@ -312,7 +313,7 @@ pub(super) fn apply_host_competitions(game: &mut crate::game::Game, state: &Stat
             })
         })
         .collect();
-    competitions.sort_by(|left, right| left.kind.cmp(&right.kind));
+    competitions.sort_by_shared(|left, right| left.kind.cmp(&right.kind));
     game.replace_host_competitions(competitions);
 }
 

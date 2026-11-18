@@ -86,6 +86,7 @@
 use super::early_conquest::{ConquestOpening, CONQUEST_MELEE, CONQUEST_RANGED};
 use super::{AdvancedAi, EmpireCounts, VictoryTarget};
 use crate::game::{Game, Item};
+use crate::shared_sort::SharedSort;
 use crate::think;
 use crate::Pos;
 use std::collections::{BTreeSet, VecDeque};
@@ -595,7 +596,7 @@ impl AdvancedAi {
             .filter(|uid| !force.contains(uid) && !guards.contains(uid) && !escorts.contains(uid))
             .filter(|uid| g.wdist(g.units[uid].pos, taken) <= FIRST_CAPITAL_REINFORCE_RADIUS)
             .collect();
-        army.sort_by_key(|uid| (g.wdist(g.units[uid].pos, taken), *uid));
+        army.sort_by_key_shared(|uid| (g.wdist(g.units[uid].pos, taken), *uid));
         for uid in army {
             if force.len() >= ranged + melee {
                 break;

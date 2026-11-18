@@ -32,6 +32,7 @@
 //! it acts, and returns the JSON answer. It never touches a socket, a lock, a
 //! file, or a thread-local.
 
+use crate::shared_sort::SharedSort;
 use serde_json::{json, Value};
 
 use crate::game::CIV6_LEADER_POOL;
@@ -315,7 +316,7 @@ fn tenths_summing_to(values: &[f64], target: i64) -> Vec<i64> {
     let mut order: Vec<usize> = (0..values.len()).collect();
     let remainder = |i: usize| values[i] * 10.0 - tenths[i] as f64;
     let remainders: Vec<f64> = (0..values.len()).map(remainder).collect();
-    order.sort_by(|&a, &b| remainders[b].total_cmp(&remainders[a]).then(a.cmp(&b)));
+    order.sort_by_shared(|&a, &b| remainders[b].total_cmp(&remainders[a]).then(a.cmp(&b)));
     let mut owed = target - tenths.iter().sum::<i64>();
     let mut turn = 0;
     while owed != 0 && !order.is_empty() {

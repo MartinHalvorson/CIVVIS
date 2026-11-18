@@ -4,6 +4,7 @@
 //! city-state defaults, religion limits, and observation metadata all consume
 //! the same profile instead of maintaining subtly different tables.
 
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeMap;
 
 use serde::ser::{SerializeStruct, Serializer};
@@ -1712,7 +1713,7 @@ impl MatchSeries {
     pub fn scoreline(&self) -> String {
         let mut sides: Vec<(&String, &u32)> = self.wins.iter().collect();
         // Leader first, then roster order, so the line reads as a result.
-        sides.sort_by(|(first_civ, first), (second_civ, second)| {
+        sides.sort_by_shared(|(first_civ, first), (second_civ, second)| {
             second.cmp(first).then_with(|| first_civ.cmp(second_civ))
         });
         let score = sides

@@ -28,6 +28,7 @@
 //!   (one hit within [`FALLING_CITY_TURNS`] turns and at half health or
 //!   less), the exit a besieged empire still needs.
 
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeSet;
 
 use super::{AdvancedAi, StrategicPlan};
@@ -329,7 +330,7 @@ impl AdvancedAi {
                         .is_ok()
                 })
                 .collect();
-            usable.sort_by_key(|base| (std::cmp::Reverse(g.wdist(*base, pad)), *base));
+            usable.sort_by_key_shared(|base| (std::cmp::Reverse(g.wdist(*base, pad)), *base));
             usable.first().map(|base| (uid, *base))
         })
     }
@@ -411,7 +412,7 @@ impl AdvancedAi {
     fn pad_raid_step(g: &Game, pid: usize, uid: u32, pad: Pos) -> Option<Action> {
         let start = g.units.get(&uid)?.pos;
         let mut beside: Vec<Pos> = g.nbrs(pad).into_iter().collect();
-        beside.sort_by_key(|tile| (g.wdist(start, *tile), *tile));
+        beside.sort_by_key_shared(|tile| (g.wdist(start, *tile), *tile));
         std::iter::once(pad).chain(beside).find_map(|goal| {
             let mut board = g.speculative_clone();
             let step = Action::MoveTo {

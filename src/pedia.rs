@@ -10,6 +10,7 @@
 //! summary, a list of facts, and links to the entries it depends on.
 //! `civvis pedia` prints it, `GET /pedia` serves it, and the GUI browses it.
 
+use crate::shared_sort::SharedSort;
 use serde::Serialize;
 
 use crate::name::Name;
@@ -640,8 +641,9 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
         );
     }
 
-    b.entries
-        .sort_by(|left, right| (&left.category, &left.name).cmp(&(&right.category, &right.name)));
+    b.entries.sort_by_shared(|left, right| {
+        (&left.category, &left.name).cmp(&(&right.category, &right.name))
+    });
     b.entries
 }
 

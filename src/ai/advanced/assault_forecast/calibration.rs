@@ -43,6 +43,7 @@ use crate::ai::Ai;
 use crate::game::Action;
 use crate::reasoning::Journal;
 use crate::rng::Rng;
+use crate::shared_sort::SharedSort;
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -2201,7 +2202,7 @@ fn assault_forecast_calibration() {
         }
     });
     let mut rows = rows.into_inner().unwrap();
-    rows.sort_by_key(|(index, _)| *index);
+    rows.sort_by_key_shared(|(index, _)| *index);
     let mut calibrated = Vec::new();
     let mut pairs = Vec::new();
     for (_, row) in rows {
@@ -2210,8 +2211,8 @@ fn assault_forecast_calibration() {
             Row::Paired(row) => pairs.push(row),
         }
     }
-    calibrated.sort_by_key(|row| row.seed);
-    pairs.sort_by_key(|row| row.seed);
+    calibrated.sort_by_key_shared(|row| row.seed);
+    pairs.sort_by_key_shared(|row| row.seed);
     let text = report(&calibrated, &pairs, clock.elapsed().as_secs_f64());
     println!("{text}");
 }

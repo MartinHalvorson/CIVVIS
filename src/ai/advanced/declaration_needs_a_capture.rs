@@ -50,6 +50,7 @@
 use super::assault_forecast::{AssaultCorps, ShortOf, CALIBRATED_FROM, HIGH_BIN_TAKEN};
 use super::AdvancedAi;
 use crate::game::Game;
+use crate::shared_sort::SharedSort;
 use crate::think;
 use crate::Pos;
 use std::collections::BTreeMap;
@@ -224,7 +225,7 @@ impl AdvancedAi {
                 Some((pool.len(), near, cid, pool))
             })
             .collect();
-        cities.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+        cities.sort_by_shared(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
         cities.truncate(MAX_CITIES);
         let mut best: Option<CaptureReading> = None;
         for (_, _, cid, pool) in cities {
