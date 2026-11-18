@@ -4672,16 +4672,25 @@ impl BasicAi {
         position: Pos,
         envelopes: &[(u32, std::sync::Arc<EnvelopeReach>)],
     ) -> bool {
-        Self::movement_hazard_damage(g, pid, position) > 0.0
+        if Self::movement_hazard_damage(g, pid, position) > 0.0
             || envelopes.iter().any(|(enemy_id, reach)| {
                 reach.contains(&position) && g.units.contains_key(enemy_id)
             })
-            || g.cities
-                .values()
-                .any(|city| Self::city_centre_strikes(g, pid, city, position))
-            || g.cities
-                .values()
-                .any(|city| Self::city_encampment_strikes(g, pid, city, position))
+        {
+            return true;
+        }
+        // Both strike tests open with `is_at_war(pid, city.owner)`, so every
+        // city asked it twice for every tile; the owners are a handful.
+        let mut war = WarMemo::new(g, pid);
+        g.cities.values().any(|city| {
+            city.owner != pid
+                && war.at_war_with(city.owner)
+                && Self::city_centre_strikes(g, pid, city, position)
+        }) || g.cities.values().any(|city| {
+            city.owner != pid
+                && war.at_war_with(city.owner)
+                && Self::city_encampment_strikes(g, pid, city, position)
+        })
     }
 
     /// Conservative expected damage from the hostile units whose precise
@@ -8494,3 +8503,44 @@ mod settlement_site_tests;
 
 #[cfg(test)]
 mod rock_band_tour_tests;
+
+/// `Game::is_at_war(pid, owner)` asked once per owner while one `&Game` stands.
+///
+/// ★★ The sweeps that ask it walk every unit or every city, and their owners
+/// are a handful: a risk frame asked it once per unit on the board and a
+/// strike test twice per city per tile, and the answer for a city-state at
+/// war needs its suzerain worked out each time. `is_at_war` reads only the
+/// board, which a `&Game` cannot change, so the first answer per owner is the
+/// answer. Owners past 63 are asked directly.
+pub(crate) struct WarMemo<'a> {
+    g: &'a Game,
+    pid: usize,
+    known: u64,
+    war: u64,
+}
+
+impl<'a> WarMemo<'a> {
+    pub(crate) fn new(g: &'a Game, pid: usize) -> Self {
+        WarMemo {
+            g,
+            pid,
+            known: 0,
+            war: 0,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn at_war_with(&mut self, owner: usize) -> bool {
+        if owner >= 64 {
+            return self.g.is_at_war(self.pid, owner);
+        }
+        let bit = 1u64 << owner;
+        if self.known & bit == 0 {
+            self.known |= bit;
+            if self.g.is_at_war(self.pid, owner) {
+                self.war |= bit;
+            }
+        }
+        self.war & bit != 0
+    }
+}

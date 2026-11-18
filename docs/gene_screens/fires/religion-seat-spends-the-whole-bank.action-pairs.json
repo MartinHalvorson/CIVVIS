@@ -1,0 +1,20 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "religion-seat-spends-the-whole-bank",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 9 boards of one live Deity Religious-target game, Byzantium civvis-20261118T094102Z at t120, t150, t160, t170, t180, t190, t195, t200 and t206, each the run's events.jsonl cut right after the turn's first state frame, with 454 to 2,155 Faith banked. Both arms run one civvis_orders --resumed built from the branch (00d642d5e7) with the run's own requested genome, religion-seat-fields-apostles and religion-seat-spends-the-bank included; the on arm adds --with religion-seat-spends-the-whole-bank. Orders differ on the 8 boards from t150: the on arm orders 33 Faith purchases the off arm does not, 2 to 6 a board, one a city, every one a Missionary. The t120 board, with 454 banked, is identical. Whether the units bought convert anything is not shown: that game held 86 to 139 unspent spread charges from t160 to its end.",
+ "archive": {
+  "path": "docs/eval/2026-11-18-religion-seat-seeks-the-unseen-rival.native-queries.tar.xz",
+  "sha256": "3896677346dd42681e336270724e2da0022d25b55b9efdcd5dbef1fef98d5f08"
+ },
+ "members": [
+  "native-queries-03/0000/result.json",
+  "native-queries-03/0001/result.json",
+  "native-queries-03/0002/result.json",
+  "native-queries-03/0003/result.json",
+  "native-queries-03/0004/result.json",
+  "native-queries-03/0005/result.json",
+  "native-queries-03/0006/result.json",
+  "native-queries-03/0007/result.json",
+  "native-queries-03/0008/result.json"
+ ]
+}

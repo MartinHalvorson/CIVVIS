@@ -9611,6 +9611,23 @@ pub struct AdvancedAi {
     /// military is over 1.5x ours; one journal line per withheld purchase.
     /// See `advanced/passage_waits_past_the_opening.rs`. Opt-in.
     passage_waits_past_the_opening: bool,
+    /// `religion-seat-seeks-the-unseen-rival`: every met rival whose cities
+    /// the seat cannot see enough of to hold its majority gets a spreader of
+    /// its own to look for them while the corps works. Needs
+    /// `religion-seat-charts-the-rivals`. See
+    /// `advanced/religion_seat_seeks_the_unseen_rival.rs`. Off by default.
+    religion_seat_seeks_the_unseen_rival: bool,
+    /// The spreaders seeking a rival's unseen cities, each with the
+    /// unexplored tile it is walking to and whether that tile is a border
+    /// lead. Live across frames, so a seeker stays one. See
+    /// `advanced/religion_seat_seeks_the_unseen_rival.rs`.
+    rival_seekers: RefCell<BTreeMap<u32, (Pos, bool)>>,
+    /// `religion-seat-spends-the-whole-bank`: while a rival still owes our
+    /// faith a majority, the Faith the corps caps leave banked buys spreaders
+    /// the same turn in every city that sells one, the most spread for its
+    /// price first. See `advanced/religion_seat_spends_the_whole_bank.rs`. Off
+    /// by default.
+    religion_seat_spends_the_whole_bank: bool,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -10954,6 +10971,12 @@ pub struct AdvancedAi {
     /// unlocked successor the treasury cannot pay for. See
     /// `advanced/upgrade_card_for_the_backlog.rs`. Off by default.
     upgrade_card_for_the_backlog: bool,
+    /// `trade-district-follows-the-campus`: on a Science or Diplomatic seat at
+    /// peace, a calm city with a Campus and its Library claims a Commercial
+    /// Hub or Harbor for its next district, and a standing Hub or Harbor
+    /// claims its Market or Lighthouse. See
+    /// `advanced/trade_district_follows_the_campus.rs`. Off by default.
+    trade_district_follows_the_campus: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -12244,6 +12267,9 @@ mod spy_targets;
 /// `sweden-builds-open-air-museums`: see
 /// `advanced/sweden_builds_open_air_museums.rs`.
 mod sweden_builds_open_air_museums;
+/// `trade-district-follows-the-campus`: see
+/// `advanced/trade_district_follows_the_campus.rs`.
+mod trade_district_follows_the_campus;
 mod trader_fills_the_idle_route;
 /// `tribute-buys-the-friendship`: see
 /// `advanced/tribute_buys_the_friendship.rs`.
@@ -12848,6 +12874,7 @@ impl AdvancedAi {
         self.builder_avoid.clear();
         self.forget_missionary_explore();
         self.charting_goals.get_mut().clear();
+        self.rival_seekers.get_mut().clear();
         self.force_groups.clear();
         self.force_groups_dirty = true;
         self.amphibious_train = None;
@@ -12920,6 +12947,11 @@ impl AdvancedAi {
         self.remap_missionary_explore(map);
         let charting = self.charting_goals.get_mut();
         *charting = charting
+            .iter()
+            .filter_map(|(uid, goal)| map.get(uid).map(|new| (*new, *goal)))
+            .collect();
+        let seeking = self.rival_seekers.get_mut();
+        *seeking = seeking
             .iter()
             .filter_map(|(uid, goal)| map.get(uid).map(|new| (*new, *goal)))
             .collect();
@@ -14689,8 +14721,62 @@ impl AdvancedAi {
     /// published curves whether Culture is still a winnable use of Faith
     /// without making that forecast choose the whole grand strategy.
     fn culture_lane_forecast_score_with(&self, g: &Game, pid: usize, enabled: bool) -> i32 {
-        if !enabled || !g.victory_conditions.culture {
+        let Some(race) = self.culture_forecast_race(g, pid, enabled) else {
             return 0;
+        };
+        // Rival city yields and our tourism share empire-wide derivations.
+        // Keep their read-only answers for this forecast's entire sweep.
+        let _memo = g.query_memo();
+        // The bar every rival sets, carried to the clock at its own culture.
+        let bar = race
+            .majors
+            .iter()
+            .filter(|other| **other != pid)
+            .map(|other| Self::culture_forecast_bar(g, *other, race.left))
+            .fold(0.0_f64, f64::max);
+        if bar <= 0.0 {
+            return 0;
+        }
+        Self::culture_forecast_score(self.culture_forecast_ours(g, pid, &race), bar)
+    }
+
+    /// Whether `culture_lane_forecast_score_with(g, pid, true)` reaches
+    /// `floor`, without pricing the rivals the answer no longer depends on.
+    ///
+    /// ★★ A THRESHOLD NEEDS ONLY THE FIRST BAR IT CANNOT CLEAR. The score is
+    /// `100 * ours / bar` clamped to 0..=100, and `bar` is the largest of the
+    /// rivals' bars, each one a sweep of that rival's city yields. The score
+    /// never rises as the bar does (for `ours < 0` it is 0 throughout), so
+    /// once the running largest bar puts it under `floor`, every rival still
+    /// unpriced can only keep it there: the answer is `false` and the
+    /// remaining sweeps are skipped. Otherwise every rival is priced and the
+    /// comparison is the full score's.
+    fn culture_lane_forecast_reaches(&self, g: &Game, pid: usize, floor: i32) -> bool {
+        let Some(race) = self.culture_forecast_race(g, pid, true) else {
+            return 0 >= floor;
+        };
+        let _memo = g.query_memo();
+        let ours = self.culture_forecast_ours(g, pid, &race);
+        let mut bar = 0.0_f64;
+        for other in race.majors.iter().filter(|other| **other != pid) {
+            bar = bar.max(Self::culture_forecast_bar(g, *other, race.left));
+            if bar > 0.0 && Self::culture_forecast_score(ours, bar) < floor {
+                return false;
+            }
+        }
+        let score = if bar <= 0.0 {
+            0
+        } else {
+            Self::culture_forecast_score(ours, bar)
+        };
+        score >= floor
+    }
+
+    /// The race a Culture forecast prices, or `None` where the forecast reads
+    /// 0 whatever the yields: off, no Culture victory, no rival, no clock.
+    fn culture_forecast_race(&self, g: &Game, pid: usize, enabled: bool) -> Option<CultureRace> {
+        if !enabled || !g.victory_conditions.culture {
+            return None;
         }
         let mut majors: Vec<usize> = g
             .players
@@ -14703,37 +14789,34 @@ impl AdvancedAi {
         }
         let rivals = majors.iter().filter(|other| **other != pid).count();
         if rivals == 0 {
-            return 0;
+            return None;
         }
         // No clock is no forecast: both curves run forever and the question
         // has no answer. See `diplomatic_lane_forecast_score` for the same
         // guard and the same reason.
         if g.max_turns == 0 {
-            return 0;
+            return None;
         }
         let left = f64::from(g.max_turns.saturating_sub(g.turn));
+        Some(CultureRace {
+            majors,
+            rivals,
+            left,
+        })
+    }
 
-        // Rival city yields and our tourism share empire-wide derivations.
-        // Keep their read-only answers for this forecast's entire sweep.
-        let _memo = g.query_memo();
-        let culture_per_turn = |seat: usize| {
-            g.player_city_ids(seat)
-                .into_iter()
-                .map(|city| g.city_yields(city).culture)
-                .sum::<f64>()
-        };
-        // The bar every rival sets, carried to the clock at its own culture.
-        let bar = majors
-            .iter()
-            .filter(|other| **other != pid)
-            .map(|other| {
-                g.domestic_tourists(*other) as f64 + culture_per_turn(*other) * left / 100.0
-            })
-            .fold(0.0_f64, f64::max);
-        if bar <= 0.0 {
-            return 0;
-        }
+    /// One rival's domestic-tourist bar, carried to the clock at its culture.
+    fn culture_forecast_bar(g: &Game, other: usize, left: f64) -> f64 {
+        let culture_per_turn = g
+            .player_city_ids(other)
+            .into_iter()
+            .map(|city| g.city_yields(city).culture)
+            .sum::<f64>();
+        g.domestic_tourists(other) as f64 + culture_per_turn * left / 100.0
+    }
 
+    /// Our foreign tourists at the clock.
+    fn culture_forecast_ours(&self, g: &Game, pid: usize, race: &CultureRace) -> f64 {
         // `starting_major_count` is private to the engine, so count the same
         // set here: `foreign_tourists` divides by the STARTING majors, not the
         // living ones, and an eliminated civilization must not shrink the
@@ -14744,12 +14827,12 @@ impl AdvancedAi {
             .filter(|player| !player.is_minor && !player.is_barbarian)
             .count();
         let per_visitor = starting as f64 * crate::game::TOURISM_PER_VISITOR;
-        let ours = if per_visitor > 0.0 {
+        if per_visitor > 0.0 {
             let tourism = g.tourism_per_turn(pid);
             let pressure = if self.culture_lane_forecast_2 && tourism > 0.0 {
                 let religious = g.religious_tourism_per_turn(pid).clamp(0.0, tourism);
                 let secular = tourism - religious;
-                majors
+                race.majors
                     .iter()
                     .filter(|other| **other != pid)
                     .map(|other| {
@@ -14758,12 +14841,16 @@ impl AdvancedAi {
                     })
                     .sum::<f64>()
             } else {
-                rivals as f64 * tourism
+                race.rivals as f64 * tourism
             };
-            g.foreign_tourists(pid) as f64 + pressure * left / per_visitor
+            g.foreign_tourists(pid) as f64 + pressure * race.left / per_visitor
         } else {
             g.foreign_tourists(pid) as f64
-        };
+        }
+    }
+
+    /// `100 * ours / bar`, rounded and clamped, for a positive bar.
+    fn culture_forecast_score(ours: f64, bar: f64) -> i32 {
         ((100.0 * ours / bar).round() as i64).clamp(0, 100) as i32
     }
 
@@ -21297,10 +21384,16 @@ impl AdvancedAi {
             // `commercial-hub-in-the-strategic-queue`: a queued Commercial Hub
             // or its Market finishes before routine rescoring can claim the
             // city.
-            let commercial_hub_commitment = self.commercial_hub_in_the_strategic_queue
+            let commercial_hub_commitment = (self.commercial_hub_in_the_strategic_queue
                 && committed.as_ref().is_some_and(|(_, item)| {
                     self.base
                         .commercial_hub_build_holds(g, cid, item, plan.threatened_city)
+                        && Self::production_commitment_is_legal(g, pid, cid, item)
+                }))
+                // `trade-district-follows-the-campus`: the claimed Hub or
+                // Harbor, or its Market or Lighthouse, finishes.
+                || committed.as_ref().is_some_and(|(_, item)| {
+                    self.trade_district_claim_holds(g, pid, cid, plan, item)
                         && Self::production_commitment_is_legal(g, pid, cid, item)
                 });
             if committed.as_ref().is_some_and(|(value, _)| {
@@ -28025,12 +28118,18 @@ mod religion_seat_keeps_the_guard;
 mod religion_seat_reformed_church;
 /// An Embassy locates an otherwise unlocated rival for the religious corps.
 mod religion_seat_reveals_the_capitals;
+/// `religion-seat-seeks-the-unseen-rival`: see
+/// `advanced/religion_seat_seeks_the_unseen_rival.rs`.
+mod religion_seat_seeks_the_unseen_rival;
 /// An active founder corps can use its first available policy window.
 mod religion_seat_slots_the_orders;
 mod religion_seat_spares_the_launcher;
 /// `religion-seat-spends-the-bank`: see
 /// `advanced/religion_seat_spends_the_bank.rs`.
 mod religion_seat_spends_the_bank;
+/// `religion-seat-spends-the-whole-bank`: see
+/// `advanced/religion_seat_spends_the_whole_bank.rs`.
+mod religion_seat_spends_the_whole_bank;
 mod religion_seat_takes_the_debater;
 mod religious_interception;
 
@@ -28157,3 +28256,10 @@ mod builder_job_safety_tests;
 
 #[cfg(test)]
 mod gold_pass_tests;
+
+/// The race `AdvancedAi::culture_forecast_race` hands the Culture forecast.
+struct CultureRace {
+    majors: Vec<usize>,
+    rivals: usize,
+    left: f64,
+}

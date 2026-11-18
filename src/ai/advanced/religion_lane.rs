@@ -788,9 +788,35 @@ impl AdvancedAi {
                     },
                 );
                 if bought.is_ok() {
+                    // `religion-seat-spends-the-whole-bank`: what the caps
+                    // leave buys in the other cities too. Nothing off.
+                    if !inquisitor_corps_short {
+                        self.religion_seat_whole_bank_buys(
+                            g,
+                            pid,
+                            offensive,
+                            &religion,
+                            reserve,
+                            Some(cid),
+                        );
+                    }
                     return;
                 }
             }
+        }
+        // `religion-seat-spends-the-whole-bank`: the caps refused the turn's
+        // purchase and a majority is still owed. Nothing off. See
+        // `advanced/religion_seat_spends_the_whole_bank.rs`.
+        if !inquisitor_corps_short {
+            let reserve = if match_point_defense
+                || home_under_pressure
+                || Self::religious_veto_spends(veto.as_ref())
+            {
+                0.0
+            } else {
+                ordinary_reserve
+            };
+            self.religion_seat_whole_bank_buys(g, pid, offensive, &religion, reserve, None);
         }
     }
 

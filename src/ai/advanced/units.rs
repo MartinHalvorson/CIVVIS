@@ -182,6 +182,12 @@ impl AdvancedAi {
         if let Some(acted) = self.holy_city_guard_step(g, pid, uid, &religion) {
             return acted;
         }
+        // `religion-seat-seeks-the-unseen-rival`: one spreader for each met
+        // rival with no city on our map looks for it. False off. See
+        // `advanced/religion_seat_seeks_the_unseen_rival.rs`.
+        if self.religion_seat_seeker_step(g, pid, uid, &religion, offensive) {
+            return true;
+        }
         // `religion-seat-charts-the-rivals`: the corps' scout charts an
         // under-charted rival while the rest work. False off.
         if self.religion_seat_scout_charts(g, pid, uid, &religion, offensive) {
