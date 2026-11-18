@@ -1936,7 +1936,8 @@ impl AdvancedAi {
     pub(super) fn surprise_strength_near(&self, g: &Game, pid: usize, at: Pos) -> (f64, f64) {
         let mut close = 0.0;
         let mut relief = 0.0;
-        for uid in crate::ai::BasicAi::stronger_major_soldiers(g, pid) {
+        // `four-faces-bars-the-surprise`: the same list with the gene off.
+        for uid in self.base.surprise_soldiers(g, pid) {
             let unit = &g.units[&uid];
             if g.is_at_war(pid, unit.owner) {
                 continue;

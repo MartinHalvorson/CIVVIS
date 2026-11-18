@@ -154,6 +154,9 @@ impl AdvancedAi {
                 Self::capital_watch_suspect(g, pid, **other)
                     && **seen <= g.turn
                     && g.turn - **seen <= window
+                    // `four-faces-bars-the-surprise`: see
+                    // `advanced/four_faces_bars_the_surprise.rs`.
+                    && !self.four_faces_spares(g, pid, **other)
             })
             .map(|(other, _)| (*other, g.military_power(*other) / ours))
             // `capital-walls-at-any-ratio`: 1.0 at Immortal and Deity. See

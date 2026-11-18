@@ -90,6 +90,9 @@ impl AdvancedAi {
                     // `deterrence-trusts-a-friend`: see
                     // `advanced/deterrence_trusts_a_friend.rs`.
                     && !self.deterrence_spares_a_friend(g, pid, other.id)
+                    // `four-faces-bars-the-surprise`: see
+                    // `advanced/four_faces_bars_the_surprise.rs`.
+                    && !self.four_faces_spares(g, pid, other.id)
             })
             .filter(|other| {
                 Self::deterrence_city_near(g, &ours, other.id)

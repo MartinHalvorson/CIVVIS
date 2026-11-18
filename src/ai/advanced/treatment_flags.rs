@@ -144,6 +144,9 @@ impl AdvancedAi {
         /// Opt-in gene `band-plays-the-stage-at-hand`; see
         /// `advanced/band_plays_the_stage_at_hand.rs`.
         base.band_plays_the_stage_at_hand => enable_band_plays_the_stage_at_hand, disable_band_plays_the_stage_at_hand;
+        /// Opt-in gene `four-faces-bars-the-surprise`; see
+        /// `advanced/four_faces_bars_the_surprise.rs`.
+        base.four_faces_bars_the_surprise => enable_four_faces_bars_the_surprise, disable_four_faces_bars_the_surprise;
         // ---- append: c-d --------------------------------------------
         /// `domination-seat-appoints-pingala-first`: Pingala and Researcher
         /// take a Domination seat's first Governor titles. See

@@ -5930,6 +5930,14 @@ pub const GENES: &[Gene] = &[
     // Domination seats only. Opt-in; see
     // `advanced/edge_unit_takes_the_soft_city.rs`.
     Gene { tag: "edge-unit-rushes-from-the-capital", field: "edge_unit_rushes_from_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_edge_unit_rushes_from_the_capital, disable: AdvancedAi::disable_edge_unit_rushes_from_the_capital },
+    // Live Deity civvis-20261118T045850Z (Kongo beside Canada) and
+    // civvis-20261118T051842Z (we are Canada): Canada cannot declare a
+    // Surprise War and none can be declared on it, and no war came in 189
+    // and 166 turns, yet the surprise readers named Canada on 78 journal
+    // lines in the first and fired on 26 in the second, 20 naming the Maya.
+    // Under the gene they pass over such a rival until a denouncement
+    // stands. See `advanced/four_faces_bars_the_surprise.rs`.
+    Gene { tag: "four-faces-bars-the-surprise", field: "four_faces_bars_the_surprise", kind: Kind::OptIn, enable: AdvancedAi::enable_four_faces_bars_the_surprise, disable: AdvancedAi::disable_four_faces_bars_the_surprise },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
