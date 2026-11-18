@@ -563,6 +563,11 @@ impl Game {
         };
         let mut targets: Vec<Pos> =
             Vec::with_capacity(positions.len().saturating_mul(per_position));
+        // Targets a ranged stride has already reached. A ranged unit offers
+        // the same tile from most of the strides around it, and the answer is
+        // the union, so once one stride sees a tile the line of sight from
+        // every later stride cannot change it: those checks are skipped.
+        let mut shot: crate::fast_map::FastSet<Pos> = crate::fast_map::FastSet::default();
         for (from, remaining) in positions {
             if remaining <= 0.0 {
                 continue;
@@ -573,7 +578,11 @@ impl Game {
                 && (!spec.siege || from == start || self.siege_may_attack_after_moving(unit))
             {
                 self.map.for_each_disk(from, attack_range, |target| {
-                    if target != from && self.unit_has_line_of_sight_from(uid, from, target) {
+                    if target != from
+                        && !shot.contains(&target)
+                        && self.unit_has_line_of_sight_from(uid, from, target)
+                    {
+                        shot.insert(target);
                         targets.push(target);
                     }
                 });
