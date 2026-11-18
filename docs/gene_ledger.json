@@ -33,10 +33,7 @@
       "age-closer",
       "air-fire-counts-on-the-city",
       "air-surge-2",
-      "air-volley-needs-a-road",
-      "aluminum-ask-tops-up-gold",
-      "amenity-district-path",
-      "amenity-project-preemption-2",
+      "amenity-project-preemption",
       "anvil",
       "apostle-promotion-by-role",
       "artifact-before-more-museums",
@@ -85,10 +82,8 @@
       "conquest-opening-stays-near",
       "counter-out-of-reach-takes-the-weak",
       "counterfaith-leaves-two-holdouts",
-      "counterweight-flips-the-small-towns",
       "counterweight-from-the-first-convert",
       "counterweight-spends-the-bank",
-      "culture-counter-declares",
       "culture-floor",
       "culture-lane-forecast",
       "culture-reads-the-engine-clock",
@@ -102,29 +97,23 @@
       "diplomatic-lane-forecast",
       "district-buildings-first",
       "district-coverage-2",
-      "domination-city-count",
       "domination-ignores-city-states",
       "domination-lane-hands-over",
       "doomed-blow-veto",
       "early-archers",
       "early-cities-keep-their-distance",
-      "early-conquest-opening",
-      "early-conquest-stands-down",
       "early-project-restraint-2",
       "enter-the-prophet-race-2",
       "envoy-building-dividends",
       "envoys-open-the-siege-road",
       "escort-cap-holds",
-      "expansion-schedule",
       "faith-counter-waits-for-match-point",
       "faith-war-before-the-flip-2",
-      "falling-city-calls-the-takers",
       "falling-city-outranks-the-heal",
       "first-builder-reserve-2",
+      "first-capital-before-the-camp",
       "first-luxury-first",
-      "founder-converts-its-own-cities",
       "founder-defends-its-cities",
-      "founder-holds-the-holy-city",
       "founder-keeps-two-sources",
       "friendship-ends-at-the-race",
       "friendship-spares-the-prey",
@@ -143,6 +132,7 @@
       "housing-cap-builds-the-aqueduct",
       "improvement-upgrades-count",
       "industrial-chain-debt",
+      "industrial-zone-claims-the-factory",
       "industrial-zone-claims-the-producer-queue",
       "industrial-zone-in-the-producers",
       "industry-before-the-army-2",
@@ -197,6 +187,7 @@
       "science-suppression-hits-the-pads",
       "science-threat-denial",
       "science-victory-drive",
+      "score-seat-founds-early",
       "second-front-kept-when-winning",
       "settle-sooner",
       "settler-before-the-navy",
@@ -219,11 +210,9 @@
       "siege-train",
       "siege-train-scales-with-walls",
       "skip-the-prophet-race-2",
-      "solvency-first-trade-slot",
       "space-denial-spies-from-rocketry",
       "spreader-steps-out-of-the-apostle",
       "stage-reads-the-muster-breakers",
-      "staging-column-passes-through",
       "staging-gun-reads-the-shared-danger",
       "staging-gun-trusts-its-escort-2",
       "stalled-conquest-takes-science",
@@ -242,7 +231,6 @@
       "unit-cost-efficiency",
       "unit-objective-memory",
       "unwalled-city-spares-the-train",
-      "unwalled-city-takes-the-swarm",
       "upkeep-reserve",
       "urban-planning-fills-the-slot",
       "war-economy",
@@ -254,5126 +242,5188 @@
     ],
     "hysteresis_held": [
       "age-closer",
-      "air-fire-counts-on-the-city",
-      "air-volley-needs-a-road",
-      "aluminum-ask-tops-up-gold",
-      "amenity-district-path",
-      "anvil",
-      "backlog-builder-takes-the-queue",
+      "barbarian-bargain",
       "beeline-orders-by-value",
-      "bombers-open-the-siege-walls",
+      "border-parity",
       "breaker-keeps-its-queue",
       "breaker-to-the-fastest",
       "buy-what-cards-cannot-boost",
       "campus-through-expansion",
+      "capital-campaign-router",
       "city-campaign",
+      "coastal-city-sites",
       "commercial-hub-and-traders",
-      "counterweight-flips-the-small-towns",
+      "counter-out-of-reach-takes-the-weak",
       "culture-floor",
       "culture-lane-forecast",
+      "denial-nearest-finish",
       "detour-keeps-the-site-worth",
+      "diplomatic-contender-eliminated",
       "diplomatic-lane-forecast",
-      "domination-city-count",
-      "domination-ignores-city-states",
-      "doomed-blow-veto",
-      "early-conquest-opening",
-      "early-conquest-stands-down",
+      "domination-lane-hands-over",
+      "early-project-restraint-2",
       "envoys-open-the-siege-road",
-      "expansion-schedule",
       "faith-war-before-the-flip-2",
-      "falling-city-calls-the-takers",
-      "first-builder-reserve-2",
-      "founder-converts-its-own-cities",
+      "falling-city-outranks-the-heal",
+      "founder-keeps-two-sources",
+      "friendship-ends-at-the-race",
+      "front-needs-a-declarable-rival",
       "government-capacity-fallback",
       "granary-claims-the-bound-queue",
-      "growth-to-settle",
+      "housing-bound-city-builds-its-granary",
       "industrial-chain-debt",
       "lane-great-people",
       "liang-follows-builders",
+      "modernize-before-spending",
       "objective-board",
-      "open-city-draws-the-front",
       "order-retry",
+      "own-column-is-not-a-refusal",
+      "pass-picket",
       "peace-asks-a-city",
+      "power-the-laboratory-2",
+      "purchases-keep-the-upkeep-reserve",
+      "quest-production",
       "quest-trade-route",
+      "research-alliance-first",
       "reyna-follows-revenue",
+      "science-denial-trains-spies",
       "science-expansion-phase",
       "science-leader-is-the-target",
       "science-opening-band",
+      "science-suppression-hits-the-pads",
+      "science-threat-denial",
+      "science-victory-drive",
       "settler-before-the-navy",
-      "siege-counts-posted-shooters",
+      "siege-keeps-a-shooter",
       "siege-target-needs-a-road",
-      "siege-train",
       "siege-train-scales-with-walls",
-      "skip-the-prophet-race-2",
-      "solvency-first-trade-slot",
-      "staging-column-passes-through",
-      "stranded-settler-leaves-the-corridor",
+      "staging-gun-reads-the-shared-danger",
+      "stranded-settler-discount",
       "strike-opening",
+      "threatened-city-reserve",
       "tier-gap-reads-the-fielded-line",
       "trade-building-before-bankruptcy-2",
-      "trader-fills-the-idle-route",
-      "unit-objective-memory",
-      "war-economy"
+      "trader-fills-the-idle-route"
     ],
-    "retained_selection_note": "ca2b (3,862 games) priced ~330 genes for the first time; the mechanical +3 latest-three reselection would have turned on 197 genes, 185 of them below the screen's own z>=2 bar on a single batch (column se ~28/10k against the +/-3 band). Per the operator's 2026-11-13 direction (include beneficial genes, exclude harmful ones, omit questionable ones, no drastic changes) this publication turns on only flips with window win z>=2 (12), turns off the 11 the rule drops with no sibling, and keeps the incumbent version in the 5 family swaps whose newcomer is below z 2. Session -35, operator /goal 2026-11-18.",
+    "retained_selection_note": "Evidence-floor reselection (operator /goal 2026-11-18, session -35; operator 2026-11-13: include beneficial genes, exclude harmful ones, omit questionable ones): the recorded +3 latest-three reselection proposed +218/-25; this publication turns on only flips with window win z >= 2 (4 on), and drops the rule's offs except family swaps to a sibling below z 2 (16 off).",
     "batch_columns": {
       "acropolis-before-the-deterrent": [
+        -19,
         -6,
-        null,
         null
       ],
       "age-closer": [
+        -6,
         -7,
-        4,
-        13
+        4
       ],
       "age-closer-2": [
+        14,
         13,
-        3,
-        -14
+        3
       ],
       "age-closer-spends-the-reserve": [
+        -13,
         9,
-        7,
-        -5
+        7
       ],
       "air-fire-counts-on-the-city": [
+        3,
         -3,
-        8,
-        1
+        8
       ],
       "air-surge": [
+        -32,
         -21,
-        2,
-        -11
+        2
       ],
       "air-surge-2": [
+        -1,
         18,
-        23,
-        20
+        23
       ],
       "air-surge-strikes-through-urgency": [
+        19,
         20,
-        -12,
-        6
+        -12
       ],
       "air-volley-needs-a-road": [
+        -1,
         -6,
-        -2,
-        14
+        -2
       ],
       "air-wing-grows-with-the-aluminum": [
+        -10,
         -9,
-        -5,
-        null
+        -5
       ],
       "alliance-remembers-the-refusal": [
+        -15,
         2,
-        null,
         null
       ],
       "aluminum-ask-tops-up-gold": [
+        -20,
         -26,
-        4,
-        24
+        4
       ],
       "aluminum-buys-the-tile": [
+        -18,
         8,
-        -7,
-        -4
+        -7
       ],
       "aluminum-tile-spends-the-war-chest": [
+        32,
         -10,
-        null,
         null
       ],
       "amani-follows-suzerainty": [
+        -47,
         -10,
-        22,
-        -15
-      ],
-      "amenity-district-path": [
-        -4,
-        -5,
-        18
-      ],
-      "amenity-project-preemption": [
-        17,
-        18,
-        -5
-      ],
-      "amenity-project-preemption-2": [
-        -3,
-        6,
         22
       ],
-      "amphibious-siege-train": [
-        10,
-        0,
-        -4
-      ],
-      "amphibious-siege-train-2": [
-        -17,
-        -2,
-        11
-      ],
-      "anvil": [
-        -18,
-        17,
-        1
-      ],
-      "anvil-follows-the-defense": [
-        -7,
-        null,
-        null
-      ],
-      "anvil-garrisons-its-melee": [
-        8,
-        null,
-        null
-      ],
-      "anvil-spares-the-one-blow": [
-        -2,
-        null,
-        null
-      ],
-      "apostle-evangelizes-unspent": [
+      "amenity-district-path": [
+        -52,
         -4,
-        null,
-        null
+        -5
       ],
-      "apostle-promotion-by-role": [
-        11,
-        20,
-        8
+      "amenity-project-preemption": [
+        14,
+        17,
+        18
       ],
-      "apostle-transit-keeps-the-cover": [
-        0,
-        null,
-        null
-      ],
-      "aqueduct-claims-the-capped-queue": [
-        16,
-        -2,
-        -4
-      ],
-      "army-target-weighs-enemy": [
-        7,
-        -13,
-        13
-      ],
-      "army-upgrade-materials": [
-        8,
+      "amenity-project-preemption-2": [
+        4,
         -3,
         6
       ],
+      "amphibious-siege-train": [
+        -1,
+        10,
+        0
+      ],
+      "amphibious-siege-train-2": [
+        5,
+        -17,
+        -2
+      ],
+      "anvil": [
+        45,
+        -18,
+        17
+      ],
+      "anvil-follows-the-defense": [
+        -53,
+        -7,
+        null
+      ],
+      "anvil-garrisons-its-melee": [
+        5,
+        8,
+        null
+      ],
+      "anvil-spares-the-one-blow": [
+        34,
+        -2,
+        null
+      ],
+      "apostle-evangelizes-unspent": [
+        25,
+        -4,
+        null
+      ],
+      "apostle-promotion-by-role": [
+        -35,
+        11,
+        20
+      ],
+      "apostle-transit-keeps-the-cover": [
+        21,
+        0,
+        null
+      ],
+      "aqueduct-claims-the-capped-queue": [
+        8,
+        16,
+        -2
+      ],
+      "army-target-weighs-enemy": [
+        -46,
+        7,
+        -13
+      ],
+      "army-upgrade-materials": [
+        7,
+        8,
+        -3
+      ],
       "artifact-before-more-museums": [
+        -10,
         22,
-        null,
         null
       ],
       "assault-forecast-is-read": [
+        41,
         6,
-        null,
         null
       ],
       "astrology-before-the-second-city": [
+        9,
         -21,
-        7,
-        null
+        7
       ],
       "backlog-builder-takes-the-queue": [
+        22,
         -9,
-        16,
-        -13
+        16
       ],
       "band-bank-bars-people-under-fire": [
+        -55,
         6,
-        null,
         null
       ],
       "band-buys-near-the-stage": [
+        21,
         -6,
-        null,
         null
       ],
       "band-plays-at-level-three": [
+        24,
         27,
-        null,
         null
       ],
       "band-plays-its-stage": [
+        -37,
         2,
-        null,
         null
       ],
       "band-plays-the-stage-at-hand": [
+        6,
         4,
-        null,
         null
       ],
       "band-plays-what-it-can-reach": [
+        -39,
         27,
-        null,
         null
       ],
       "band-stage-needs-three-venues": [
+        5,
         -8,
-        null,
         null
       ],
       "band-stall-bars-no-host": [
+        -30,
         -1,
-        null,
         null
       ],
       "bands-draw-from-the-bar": [
         -4,
-        null,
+        -4,
         null
       ],
       "bands-wait-at-the-door": [
+        -4,
         5,
-        null,
         null
       ],
       "bankruptcy-exits-the-drain": [
+        37,
         -7,
-        -2,
-        null
+        -2
       ],
       "bankruptcy-exits-the-drain-2": [
+        -12,
         -3,
-        null,
         null
       ],
       "barbarian-bargain": [
+        -13,
         -5,
-        5,
-        16
-      ],
-      "barbarian-ranged-answer": [
-        -22,
-        -1,
         5
       ],
+      "barbarian-ranged-answer": [
+        0,
+        -22,
+        -1
+      ],
       "barbarian-research-prices-the-field": [
+        -20,
         -7,
-        null,
         null
       ],
       "barbarian-scouts-are-scouts": [
+        29,
         -1,
-        -8,
-        7
+        -8
       ],
       "barbarian-settler-capture": [
+        2,
         17,
-        -7,
-        -18
+        -7
       ],
       "battle-planner": [
+        28,
         9,
-        2,
-        13
+        2
       ],
       "battle-planner-2": [
+        6,
         2,
-        12,
-        -5
+        12
       ],
       "battle-planner-3": [
+        24,
         9,
-        3,
-        -2
+        3
       ],
       "battle-solver": [
+        -7,
         -1,
-        null,
         null
       ],
       "beeline-orders-by-value": [
+        15,
         -4,
-        3,
-        0
+        3
       ],
       "befriend-the-strongest": [
+        34,
         31,
-        12,
-        47
+        12
       ],
       "bleeding-capital-loyalty": [
         -35,
-        -4,
-        -15
-      ],
-      "blind-objective-strength": [
-        -10,
-        -11,
-        16
-      ],
-      "blind-objective-units": [
-        5,
-        13,
+        -35,
         -4
       ],
+      "blind-objective-strength": [
+        16,
+        -10,
+        -11
+      ],
+      "blind-objective-units": [
+        -19,
+        5,
+        13
+      ],
       "blocker-becomes-the-target": [
+        -7,
         9,
-        -16,
-        -13
+        -16
       ],
       "board-ignores-the-faith-war": [
+        31,
         22,
-        null,
         null
       ],
       "bombers-fly-on-a-small-stock": [
+        -3,
         2,
-        19,
-        2
+        19
       ],
       "bombers-open-the-siege-walls": [
+        16,
         -3,
-        19,
-        -16
+        19
       ],
       "boost-first-research": [
+        90,
         -2,
-        13,
-        1
+        13
       ],
       "boost-first-research-2": [
+        -30,
         15,
-        -4,
-        -6
+        -4
       ],
       "boost-planner": [
+        -12,
         9,
-        5,
-        -18
+        5
       ],
       "boost-planner-builds": [
+        13,
         9,
-        -4,
-        -21
+        -4
       ],
       "boost-unlock-research": [
+        30,
         2,
-        9,
-        -9
+        9
       ],
       "boost-wait-research-2": [
+        -8,
         -7,
-        -1,
         -1
       ],
       "boosted-bargain-first": [
+        -7,
         4,
-        -9,
-        -17
+        -9
       ],
       "boosted-bargain-first-2": [
+        10,
         -4,
-        -3,
-        5
+        -3
       ],
       "boosted-bargain-first-3": [
+        -23,
         6,
-        -12,
-        -1
+        -12
       ],
       "border-parity": [
+        -46,
         -4,
-        0,
-        18
+        0
       ],
       "border-parity-2": [
+        31,
         4,
-        2,
-        8
+        2
       ],
       "border-parity-3": [
+        14,
         -4,
-        -1,
-        -5
+        -1
       ],
       "bounded-recovery": [
+        24,
         10,
-        3,
-        1
+        3
       ],
       "breach-assault": [
         3,
-        -13,
-        -8
+        3,
+        -13
       ],
       "breach-assault-closes-in": [
+        20,
         -4,
-        8,
         8
       ],
       "breach-counts-nearby-guns": [
+        -19,
         -14,
-        -4,
-        -2
+        -4
       ],
       "breach-reads-the-air": [
+        -52,
         -5,
-        -12,
-        -9
+        -12
       ],
       "breach-support-reads-the-wall-tier": [
+        10,
         5,
-        14,
-        -18
+        14
       ],
       "breaker-before-the-war": [
+        1,
         22,
-        -6,
-        -5
+        -6
       ],
       "breaker-bought-for-the-siege": [
+        -17,
         -5,
-        -4,
-        null
+        -4
       ],
       "breaker-keeps-its-queue": [
-        -9,
-        4,
-        16
-      ],
-      "breaker-reads-the-march": [
-        -25,
+        -19,
         -9,
         4
       ],
+      "breaker-reads-the-march": [
+        16,
+        -25,
+        -9
+      ],
       "breaker-research-first": [
+        18,
         19,
-        -7,
-        9
+        -7
       ],
       "breaker-spares-the-backlog-builder": [
+        4,
         -4,
-        null,
         null
       ],
       "breaker-supply-scales": [
+        29,
         -9,
-        13,
-        19
+        13
       ],
       "breaker-supply-scales-2": [
+        -23,
         3,
-        -11,
-        -13
+        -11
       ],
       "breaker-to-the-fastest": [
+        56,
         -19,
-        6,
-        11
+        6
       ],
       "breaker-walks-under-a-shield": [
+        22,
         -11,
-        null,
         null
       ],
       "breakers-match-the-walls": [
+        -47,
         0,
-        4,
-        -1
+        4
       ],
       "breakers-stay-with-the-siege": [
+        12,
         3,
-        -17,
-        8
+        -17
       ],
       "build-what-cards-boost": [
+        10,
         -6,
-        4,
-        -13
+        4
       ],
       "builder-barbarian-safety": [
+        -37,
         -8,
-        10,
-        -16
+        10
       ],
       "builder-before-the-army": [
+        26,
         -7,
-        -11,
-        -1
+        -11
       ],
       "builder-before-the-army-2": [
+        -6,
         -5,
-        -9,
-        9
+        -9
       ],
       "builder-before-the-army-3": [
+        15,
         12,
-        1,
-        2
+        1
       ],
       "builder-charge-window": [
+        7,
         25,
-        -3,
-        -6
+        -3
       ],
       "builder-prices-travel-in-turns": [
+        10,
         -3,
-        null,
         null
       ],
       "builder-supply-floor": [
+        27,
         -9,
-        23,
-        -4
+        23
       ],
       "builder-tries-the-next-tile": [
+        -40,
         -7,
-        -5,
-        -13
+        -5
       ],
       "builder-workforce-recovery": [
+        -42,
         6,
-        8,
-        6
+        8
       ],
       "builder-workforce-recovery-2": [
+        -22,
         -1,
-        -19,
-        4
+        -19
       ],
       "builder-workforce-recovery-3": [
+        15,
         7,
-        3,
-        -4
+        3
       ],
       "builders-before-the-lent-floor": [
+        30,
         7,
-        -9,
-        -1
+        -9
       ],
       "builders-cover-the-worked-backlog": [
+        6,
         8,
-        -7,
-        18
+        -7
       ],
       "builders-improve-the-worked-for-production": [
+        -7,
         -4,
+        0
+      ],
+      "builders-route-around-mountains": [
+        -49,
+        -13,
+        -7
+      ],
+      "builders-work-through-raiders": [
+        38,
+        52,
+        51
+      ],
+      "buildings-before-projects": [
+        -36,
+        4,
+        -8
+      ],
+      "buy-what-cards-cannot-boost": [
+        29,
+        5,
+        -12
+      ],
+      "camp-party": [
+        -3,
+        -13,
+        -9
+      ],
+      "camp-tile-buyout": [
+        -15,
+        16,
+        -17
+      ],
+      "campaign-pillage": [
+        28,
         0,
         6
       ],
-      "builders-route-around-mountains": [
-        -13,
-        -7,
-        -3
-      ],
-      "builders-work-through-raiders": [
-        52,
-        51,
-        62
-      ],
-      "buildings-before-projects": [
-        4,
-        -8,
-        -1
-      ],
-      "buy-what-cards-cannot-boost": [
-        5,
-        -12,
-        5
-      ],
-      "camp-party": [
-        -13,
-        -9,
-        3
-      ],
-      "camp-tile-buyout": [
-        16,
-        -17,
-        -8
-      ],
-      "campaign-pillage": [
-        0,
-        6,
-        19
-      ],
       "campaign-weighs-the-tourism-leader": [
+        0,
         -3,
-        -5,
-        -10
+        -5
       ],
       "camps-close-the-age": [
         0,
-        null,
+        0,
         null
       ],
       "camps-close-the-age-2": [
+        24,
         -4,
-        null,
         null
       ],
       "camps-close-the-age-3": [
+        -33,
         2,
-        null,
         null
       ],
       "campus-above-the-sea": [
+        -36,
         7,
-        null,
         null
       ],
       "campus-adjacency-threshold": [
+        -7,
         -3,
-        11,
-        -14
+        11
       ],
       "campus-adjacency-threshold-2": [
+        -2,
         -9,
-        -17,
-        24
+        -17
       ],
       "campus-and-library-before-the-claims": [
+        18,
         7,
-        null,
         null
       ],
       "campus-before-halfway": [
+        -68,
         -1,
-        -3,
-        1
+        -3
       ],
       "campus-before-harbor": [
         -5,
-        17,
-        -4
+        -5,
+        17
       ],
       "campus-before-harbor-2": [
+        -41,
         1,
-        -17,
-        6
+        -17
       ],
       "campus-before-the-army": [
+        -19,
         -2,
-        -16,
-        -14
+        -16
       ],
       "campus-before-the-army-2": [
+        -16,
         -12,
-        -2,
-        -3
-      ],
-      "campus-before-the-army-3": [
-        -1,
-        -2,
-        -15
-      ],
-      "campus-building-claims-the-queue": [
-        -11,
-        -27,
-        11
-      ],
-      "campus-buildings-first": [
-        -15,
-        -10,
         -2
       ],
+      "campus-before-the-army-3": [
+        -6,
+        -1,
+        -2
+      ],
+      "campus-building-claims-the-queue": [
+        16,
+        -11,
+        -27
+      ],
+      "campus-buildings-first": [
+        -2,
+        -15,
+        -10
+      ],
       "campus-claims-the-free-slot": [
+        -31,
         -7,
-        -13,
-        null
+        -13
       ],
       "campus-claims-the-free-slot-2": [
+        -20,
         -6,
-        -27,
-        null
+        -27
       ],
       "campus-through-expansion": [
+        -13,
         -11,
-        13,
-        -4
+        13
       ],
       "campus-unlock-before-the-luxury": [
+        -12,
         3,
-        -4,
-        null
+        -4
       ],
       "campus-unlock-every-lane": [
+        -13,
         3,
-        null,
         null
       ],
       "canal-city": [
+        40,
         17,
-        3,
-        2
+        3
       ],
       "capital-archers-before-the-surprise": [
+        -3,
         7,
+        null
+      ],
+      "capital-archers-before-the-surprise-2": [
+        2,
         null,
         null
       ],
       "capital-campaign-router": [
+        3,
         -3,
-        6,
-        12
+        6
       ],
       "capital-campus-before-the-plaza": [
+        -5,
         10,
-        23,
-        18
+        23
       ],
       "capital-defense-holds": [
+        17,
         -1,
-        6,
-        15
+        6
       ],
       "capital-keeps-its-defender": [
+        -5,
         9,
-        null,
         null
       ],
       "capital-keeps-its-defender-2": [
+        -10,
         11,
-        null,
         null
       ],
       "capital-keeps-its-defender-3": [
+        -17,
         -10,
-        null,
         null
       ],
       "capital-keeps-its-governor": [
+        -47,
         -2,
-        null,
         null
       ],
       "capital-leaves-the-frost": [
+        26,
         0,
-        null,
         null
       ],
       "capital-monument-after-the-second-city": [
+        5,
         2,
-        null,
         null
       ],
       "capital-prey-opens-a-front": [
+        23,
         -9,
-        -20,
-        6
+        -20
       ],
       "capital-prey-opens-a-front-2": [
+        15,
         3,
-        14,
-        -1
+        14
       ],
       "capital-prey-scales-the-walls": [
+        -25,
         -26,
-        -3,
-        -9
+        -3
       ],
       "capital-settler-after-completion": [
+        8,
         21,
-        -3,
-        5
+        -3
       ],
       "capital-taken-moves-on": [
+        29,
         2,
-        12,
-        -1
+        12
       ],
       "capital-walls-at-any-ratio": [
         13,
-        null,
+        13,
         null
       ],
       "capital-walls-before-the-surprise": [
+        22,
         -3,
-        -5,
-        4
+        -5
       ],
       "capital-watch-arms-the-slinger": [
+        27,
         -10,
-        null,
         null
       ],
       "captives-come-home": [
+        -11,
         -2,
-        null,
         null
       ],
       "captives-come-home-2": [
+        -24,
         2,
-        null,
         null
       ],
       "capture-go-or-stand-down": [
         1,
-        -5,
-        7
+        1,
+        -5
       ],
       "capture-go-or-stand-down-2": [
+        -1,
         3,
-        0,
-        -1
+        0
       ],
       "capture-hold-chain": [
+        12,
         -7,
-        4,
-        -13
+        4
       ],
       "capture-holds-the-ring": [
+        7,
         17,
-        1,
-        -10
+        1
       ],
       "capture-scar-reads-the-new-city": [
+        6,
         -6,
-        null,
         null
       ],
       "capture-waits-on-the-march": [
-        -9,
         -4,
-        4
+        -9,
+        -4
       ],
       "centre-keeps-its-garrison": [
+        13,
         -9,
-        null,
         null
       ],
       "chain-payback-window": [
+        -12,
         6,
-        19,
-        1
+        19
       ],
       "chain-payback-window-2": [
+        -17,
         -15,
-        -27,
-        9
+        -27
       ],
       "chase-every-boost": [
+        -28,
         1,
-        -4,
-        -17
+        -4
       ],
       "chase-every-boost-2": [
+        15,
         5,
-        14,
-        -6
+        14
       ],
       "cheapest-wonder-first": [
+        -45,
         -9,
-        -8,
-        -16
+        -8
       ],
       "chokepoint-claim": [
+        -36,
         17,
-        8,
-        11
+        8
       ],
       "chokepoint-garrison": [
+        12,
         -12,
-        3,
-        -8
+        3
       ],
       "chokepoint-siting": [
+        -10,
         -5,
-        2,
-        -8
+        2
       ],
       "chop-feeds-the-long-build": [
+        8,
         -6,
-        null,
         null
       ],
       "chop-feeds-the-space-race": [
+        17,
         10,
-        null,
         null
       ],
       "chop-for-expansion": [
+        25,
         1,
-        -26,
-        -12
+        -26
       ],
       "chop-spares-the-worked-tile": [
+        -4,
         29,
-        null,
         null
       ],
       "city-campaign": [
+        -31,
         -14,
-        -4,
-        26
+        -4
       ],
       "city-campaign-2": [
+        39,
         -10,
-        9,
-        -25
+        9
       ],
       "city-state-before-the-first-capital": [
+        -30,
         -32,
-        null,
         null
       ],
       "city-state-harvest": [
+        -53,
         -4,
-        null,
         null
       ],
       "city-state-war-is-no-front": [
+        6,
         7,
-        -9,
-        null
+        -9
       ],
       "city-strike-takes-the-gun": [
+        23,
         -1,
-        null,
         null
       ],
       "city-target-meets-the-map": [
+        27,
         -5,
-        -1,
-        -10
+        -1
       ],
       "city-under-fire-ranks-first": [
         7,
-        21,
-        null
+        7,
+        21
       ],
       "civic-awaits-its-inspiration": [
+        5,
         7,
-        -15,
-        -11
+        -15
       ],
       "civilian-out-of-reach": [
+        -39,
         -46,
-        -67,
-        -72
+        -67
       ],
       "close-as-a-body": [
+        -4,
         16,
-        4,
         4
       ],
       "closed-border-blocker-declares": [
+        4,
         -22,
-        2,
-        7
+        2
       ],
       "coalition-before-war": [
+        -15,
         0,
-        9,
-        3
+        9
       ],
       "coalition-before-war-2": [
+        17,
         2,
-        -2,
-        11
+        -2
       ],
       "coalition-before-war-3": [
+        -21,
         -8,
-        -23,
-        -9
+        -23
       ],
       "coastal-city-sites": [
+        -20,
         -11,
-        9,
-        13
+        9
       ],
       "coastal-city-sites-2": [
+        10,
         -1,
-        -5,
-        -24
+        -5
       ],
       "cold-war-before-conservation": [
+        20,
         -8,
-        null,
         null
       ],
       "cold-war-then-heritage": [
+        -3,
         0,
-        null,
         null
       ],
       "colonization-earns-its-slot": [
+        -7,
         -12,
-        -4,
-        2
+        -4
       ],
       "colonization-earns-its-slot-2": [
+        -5,
         25,
-        4,
-        7
+        4
       ],
       "come-ashore": [
+        -29,
         -19,
-        0,
-        -13
+        0
       ],
       "commercial-hub-and-traders": [
+        3,
         0,
-        -1,
-        12
+        -1
       ],
       "commercial-hub-claims-a-peace-queue": [
+        2,
         6,
-        null,
         null
       ],
       "commercial-hub-in-the-strategic-queue": [
+        81,
         8,
-        7,
-        2
+        7
       ],
       "commitment-owner-acts": [
+        18,
         -2,
-        2,
-        -1
+        2
       ],
       "commitment-patience": [
+        -64,
         -15,
-        7,
-        -9
+        7
       ],
       "competition-victory-points": [
+        4,
         3,
-        -2,
-        -12
+        -2
       ],
       "congress-counter-leader": [
+        23,
         -10,
-        -15,
-        -13
+        -15
       ],
       "congress-guards-the-leader": [
+        -10,
         -1,
-        -9,
-        -4
+        -9
       ],
       "connect-the-luxury": [
+        14,
         3,
-        12,
-        10
+        12
       ],
       "connect-the-luxury-2": [
         10,
-        19,
-        25
+        10,
+        19
       ],
       "conquest-opening-needs-the-production": [
+        3,
         6,
-        18,
-        -5
+        18
       ],
       "conquest-opening-stays-near": [
+        13,
         28,
-        6,
-        1
+        6
       ],
       "conquest-takes-the-soft-city": [
+        7,
         -7,
-        3,
-        -11
+        3
       ],
       "contact-fleet": [
+        12,
         1,
-        null,
         null
       ],
       "contender-at-peace-is-the-target": [
+        -10,
         -9,
-        7,
-        -9
+        7
       ],
       "contested-land-first": [
+        -25,
         1,
-        3,
-        -24
+        3
       ],
       "conversion-majority-alarm": [
+        9,
         -8,
-        1,
         1
       ],
       "conversion-majority-alarm-2": [
+        -22,
         -6,
-        -4,
         -4
       ],
       "coordinated-finish": [
+        20,
         11,
-        -3,
-        1
+        -3
       ],
       "corps-comes-home-alive": [
         0,
-        null,
+        0,
         null
       ],
       "counter-culture-by-conquest": [
+        5,
         12,
-        -2,
-        -3
+        -2
       ],
       "counter-out-of-reach-takes-the-weak": [
+        9,
         4,
-        -3,
-        14
+        -3
       ],
       "counter-war-needs-parity": [
+        7,
         11,
-        9,
-        -9
+        9
       ],
       "counter-war-needs-the-emperor-edge": [
+        2,
         -5,
-        -4,
-        4
+        -4
       ],
       "counterfaith-leaves-two-holdouts": [
+        -32,
         3,
-        10,
-        -6
+        10
       ],
       "counterweight-builds-its-source": [
+        20,
         6,
-        null,
         null
       ],
       "counterweight-defends-the-diplomat": [
+        -7,
         -5,
-        null,
         null
       ],
       "counterweight-faith-is-no-threat": [
+        -22,
         -15,
-        8,
-        -23
+        8
       ],
       "counterweight-finishes-one-shrine": [
+        -2,
         -16,
-        -4,
-        -16
+        -4
       ],
       "counterweight-flips-the-small-towns": [
+        -34,
         -7,
-        4,
-        5
+        4
       ],
       "counterweight-from-the-first-convert": [
+        31,
         8,
-        11,
-        -9
+        11
       ],
       "counterweight-spends-the-bank": [
+        -37,
         14,
-        9,
-        -3
+        9
       ],
       "crushing-steady-passes-the-edge": [
+        28,
         -1,
-        -16,
-        6
+        -16
       ],
       "culture-bank-holds-the-counterweight": [
+        -41,
         -3,
-        null,
         null
       ],
       "culture-bank-opens-at-nationalism": [
+        -42,
         6,
-        null,
         null
       ],
       "culture-banks-for-the-bands": [
+        8,
         -5,
-        null,
         null
       ],
       "culture-building-catchup": [
+        17,
         2,
-        -2,
-        -14
+        -2
       ],
       "culture-building-catchup-2": [
+        -7,
         -4,
-        5,
-        -15
+        5
       ],
       "culture-building-catchup-3": [
+        -8,
         -11,
-        -6,
-        4
+        -6
       ],
       "culture-building-debt": [
+        37,
         6,
-        -7,
-        10
+        -7
       ],
       "culture-cold-war-window": [
+        -13,
         -4,
-        -11,
-        -4
+        -11
       ],
       "culture-counter-declares": [
+        -30,
         -4,
-        1,
-        18
-      ],
-      "culture-defense-theater": [
-        3,
-        -6,
-        9
-      ],
-      "culture-defense-theater-2": [
-        -8,
-        0,
-        -4
-      ],
-      "culture-denial-heist": [
-        -27,
-        -12,
         1
       ],
+      "culture-defense-theater": [
+        -41,
+        3,
+        -6
+      ],
+      "culture-defense-theater-2": [
+        -2,
+        -8,
+        0
+      ],
+      "culture-denial-heist": [
+        18,
+        -27,
+        -12
+      ],
       "culture-digs-every-site": [
+        27,
         -10,
-        null,
         null
       ],
       "culture-digs-one-museum": [
+        24,
         10,
-        null,
         null
       ],
       "culture-faith-braves-the-barbarians": [
+        0,
         -20,
-        null,
         null
       ],
       "culture-faith-opens-at-the-theaters": [
+        25,
         -6,
-        null,
         null
       ],
       "culture-faith-reservation": [
+        5,
         -8,
-        -20,
-        -5
+        -20
       ],
       "culture-faith-site-per-theater": [
+        11,
         -6,
-        null,
         null
       ],
       "culture-faith-site-per-theater-2": [
+        32,
         -8,
-        null,
         null
       ],
       "culture-faith-site-per-theater-3": [
+        -10,
         -7,
-        null,
         null
       ],
       "culture-finish-at-the-observed-bar": [
+        -28,
         -3,
-        -15,
-        5
+        -15
       ],
       "culture-floor": [
+        0,
         -16,
-        14,
-        -10
+        14
       ],
       "culture-gold-buys-the-shrines": [
+        9,
         -3,
-        null,
         null
       ],
       "culture-keeps-every-border-open": [
+        -15,
         -1,
-        null,
         null
       ],
       "culture-keeps-every-border-open-2": [
+        5,
         2,
-        null,
         null
       ],
       "culture-keeps-its-aesthetics": [
+        -26,
         11,
-        null,
         null
       ],
       "culture-keeps-pingala-home": [
+        -34,
         3,
-        null,
         null
       ],
       "culture-lane-forecast": [
+        -10,
         -3,
-        -6,
-        11
+        -6
       ],
       "culture-lane-forecast-2": [
+        -2,
         -8,
-        -5,
-        -2
+        -5
       ],
       "culture-pass-keeps-half-the-army": [
+        -31,
         -4,
-        null,
         null
       ],
       "culture-reads-the-engine-clock": [
+        10,
         3,
-        6,
-        0
+        6
       ],
       "culture-recovery-spends-the-bank": [
+        5,
         -16,
-        null,
         null
       ],
       "culture-road-builds-its-triggers": [
+        -19,
         3,
-        null,
         null
       ],
       "culture-road-earns-its-inspirations": [
+        -21,
         12,
-        null,
         null
       ],
       "culture-road-takes-the-unique-first": [
+        -11,
         -8,
-        null,
         null
       ],
       "culture-routes-reach-every-rival": [
+        -42,
         9,
-        null,
         null
       ],
       "culture-seat-allies": [
+        -8,
         15,
-        null,
         null
       ],
       "culture-seat-appoints-pingala-first": [
+        3,
         -22,
-        null,
         null
       ],
       "culture-seat-builds-past-the-deterrent": [
+        34,
         10,
-        null,
         null
       ],
       "culture-seat-drama-before-government": [
+        33,
         -6,
-        null,
         null
       ],
       "culture-seat-drama-first": [
+        29,
         3,
-        null,
         null
       ],
       "culture-seat-fills-its-district-slots": [
+        -12,
         4,
-        null,
         null
       ],
       "culture-seat-monuments": [
+        -22,
         14,
-        null,
         null
       ],
       "culture-seat-monuments-2": [
+        -2,
         -4,
-        null,
         null
       ],
       "culture-seat-theater-first": [
+        26,
         21,
-        null,
         null
       ],
       "culture-seat-theater-first-2": [
+        -3,
         2,
-        null,
         null
       ],
       "culture-threat-early": [
+        26,
         -7,
-        0,
-        7
+        0
       ],
       "culture-tourism-payback": [
+        -31,
         15,
-        5,
         5
       ],
       "curator-sits-with-the-works": [
+        -20,
         -2,
-        null,
         null
       ],
       "deals-at-the-ceiling": [
+        23,
         -6,
-        7,
-        -2
+        7
       ],
       "deals-for-our-gain": [
+        76,
         3,
-        -7,
-        4
+        -7
       ],
       "decisive-window": [
+        12,
         -2,
-        2,
-        -5
+        2
       ],
       "deck-follows-the-queue": [
+        62,
         1,
-        null,
         null
       ],
       "deck-prices-growth": [
+        -20,
         -4,
-        null,
         null
       ],
       "declaration-needs-a-capture": [
+        -27,
         -26,
-        null,
         null
       ],
       "declaration-needs-production-parity": [
+        -39,
         6,
-        2,
-        -3
-      ],
-      "declaration-needs-the-edge": [
-        5,
-        -1,
-        3
-      ],
-      "declaration-needs-the-edge-2": [
-        14,
-        -3,
-        3
-      ],
-      "declaration-waits-for-the-breach": [
-        9,
-        0,
-        -2
-      ],
-      "declaration-waits-for-the-breaker": [
-        -31,
-        -22,
-        13
-      ],
-      "defeated-majors-leave-the-board": [
-        -21,
-        4,
         2
       ],
+      "declaration-needs-the-edge": [
+        7,
+        5,
+        -1
+      ],
+      "declaration-needs-the-edge-2": [
+        -6,
+        14,
+        -3
+      ],
+      "declaration-waits-for-the-breach": [
+        12,
+        9,
+        0
+      ],
+      "declaration-waits-for-the-breaker": [
+        -56,
+        -31,
+        -22
+      ],
+      "defeated-majors-leave-the-board": [
+        19,
+        -21,
+        4
+      ],
       "defence-holds-under-fire": [
+        13,
         -14,
-        null,
         null
       ],
       "defend-force-holds-the-city": [
+        17,
         -3,
-        null,
         null
       ],
       "defend-force-holds-the-city-2": [
+        -4,
         11,
-        null,
         null
       ],
       "defend-where-you-stand": [
+        -11,
         -5,
-        0,
-        -22
+        0
       ],
       "defenders-hold-the-walls": [
+        -20,
         -3,
-        null,
         null
       ],
       "defenders-keep-the-city-in-reach": [
+        -83,
         0,
-        null,
         null
       ],
       "defensible-sites": [
+        46,
         -7,
-        20,
-        17
+        20
       ],
       "delegations-reach-every-rival": [
+        -14,
         5,
-        -4,
-        null
+        -4
       ],
       "denial-charts-the-racer": [
+        -31,
         -5,
-        null,
         null
       ],
       "denial-keeps-its-rival": [
+        -15,
         14,
-        12,
-        -16
+        12
       ],
       "denial-nearest-finish": [
+        -28,
         4,
-        2,
-        6
+        2
       ],
       "denial-needs-a-road": [
+        -30,
         17,
-        -15,
-        -5
+        -15
       ],
       "denial-outranks-expansion": [
+        -6,
         -15,
-        4,
-        -20
+        4
       ],
       "denial-spies-count-their-losses": [
+        41,
         -9,
+        null
+      ],
+      "denial-spies-cover-every-racer": [
+        -17,
         null,
         null
       ],
       "denial-spies-fill-every-slot": [
+        -5,
         2,
+        null
+      ],
+      "denial-spies-fill-every-slot-2": [
+        -5,
         null,
         null
       ],
       "denial-spies-skip-the-upkeep-wait": [
+        2,
         12,
-        null,
         null
       ],
       "denial-target-leads-the-fronts": [
+        8,
         -3,
-        9,
-        null
+        9
       ],
       "denial-war-needs-the-lane-edge": [
+        17,
         11,
-        null,
         null
       ],
       "denounce-only-to-declare": [
+        -22,
         -7,
-        null,
         null
       ],
       "deterrence-spares-the-faith-defence": [
+        -50,
         -10,
-        -1,
-        -5
+        -1
       ],
       "deterrence-stops-at-a-garrison": [
+        -46,
         7,
-        null,
         null
       ],
       "deterrence-trusts-a-friend": [
+        -5,
         4,
+        null
+      ],
+      "deterrence-waits-for-the-income": [
+        25,
         null,
         null
       ],
       "detour-keeps-the-site-worth": [
+        -23,
         -12,
-        13,
-        1
+        13
       ],
       "dialogue-never-declares-war": [
+        -27,
         -2,
-        6,
-        -16
+        6
       ],
       "diplo-match-point-beelines-the-points": [
+        -2,
         7,
-        null,
         null
       ],
       "diplo-seat-statue-harbor": [
+        3,
         -12,
-        null,
         null
       ],
       "diplo-seat-wonder-claim": [
+        35,
         10,
-        null,
         null
       ],
       "diplomat-saves-for-the-apostle": [
+        -12,
         -6,
-        null,
         null
       ],
       "diplomatic-contender-eliminated": [
+        -15,
         5,
-        3,
-        14
+        3
       ],
       "diplomatic-contender-kept": [
+        -30,
         1,
-        -4,
-        -16
+        -4
       ],
       "diplomatic-contender-kept-2": [
+        75,
         -15,
-        -1,
-        -12
+        -1
       ],
       "diplomatic-lane-forecast": [
+        -1,
         -14,
-        3,
-        7
+        3
       ],
       "diplomatic-lane-forecast-2": [
+        -22,
         21,
-        -10,
-        2
+        -10
       ],
       "disrupt-before-the-sources": [
+        29,
         -13,
-        null,
         null
       ],
       "disrupt-waits-for-the-match-point": [
+        -14,
         -7,
-        null,
         null
       ],
       "district-buildings-first": [
+        -12,
         8,
-        12,
-        -1
+        12
       ],
       "district-buildings-first-2": [
+        -7,
         0,
-        6,
-        -14
+        6
       ],
       "district-coverage": [
+        7,
         1,
-        -9,
-        -5
+        -9
       ],
       "district-coverage-2": [
+        -25,
         9,
-        8,
-        14
+        8
       ],
       "district-planning": [
+        -12,
         8,
-        11,
-        -4
+        11
       ],
       "district-planning-3": [
+        -21,
         10,
-        -17,
-        -1
+        -17
       ],
       "districts-price-the-improvement": [
+        34,
         0,
-        null,
         null
       ],
       "districts-protect-seowon-science": [
+        -62,
         10,
-        null,
         null
       ],
       "domination-capital-focus": [
+        7,
         5,
-        1,
-        -16
+        1
       ],
       "domination-charts-every-capital": [
+        -24,
         16,
-        null,
         null
       ],
       "domination-city-count": [
+        -28,
         -7,
-        3,
-        -5
+        3
       ],
       "domination-clock-every-rung": [
+        -11,
         13,
-        null,
         null
       ],
       "domination-finish-holds-the-front": [
+        11,
         -4,
-        4,
-        -1
+        4
       ],
       "domination-ignores-city-states": [
+        3,
         -2,
-        11,
-        -11
+        11
       ],
       "domination-joins-the-race": [
+        24,
         -2,
-        null,
         null
       ],
       "domination-lane-hands-over": [
+        5,
         6,
-        -2,
-        18
+        -2
       ],
       "domination-seat-appoints-pingala-first": [
+        -23,
         -14,
-        null,
         null
       ],
       "domination-seat-raises-its-culture": [
+        3,
         -13,
-        null,
         null
       ],
       "domination-siege-research": [
+        14,
         -14,
-        -5,
-        3
+        -5
       ],
       "domination-siege-research-2": [
+        25,
         15,
-        -2,
-        -14
+        -2
       ],
       "domination-specializes-earlier": [
+        -10,
         -4,
-        -3,
-        -12
+        -3
       ],
       "domination-spends-the-stock": [
+        -10,
         0,
-        null,
         null
       ],
       "domination-strikes-when-staged": [
+        -20,
         -10,
-        -8,
-        -4
+        -8
       ],
       "domination-target-gets-its-breaker": [
+        -11,
         2,
-        null,
         null
       ],
       "domination-targets-land-first": [
+        -16,
         8,
-        null,
         null
       ],
       "doomed-blow-veto": [
+        47,
         4,
-        -1,
-        5
+        -1
       ],
       "doomed-blow-veto-2": [
+        -13,
         -9,
-        -6,
-        11
+        -6
       ],
       "dry-road-outlasts-a-blocked-step": [
+        8,
         -27,
-        14,
-        -25
+        14
       ],
       "dvp-leader-is-the-front": [
+        9,
         -28,
-        12,
-        -19
+        12
       ],
       "each-civ-draws-its-width": [
+        14,
         -9,
-        null,
         null
       ],
       "early-archers": [
+        28,
         4,
-        14,
         14
       ],
       "early-cities-keep-their-distance": [
+        -17,
         33,
-        null,
         null
       ],
       "early-conquest-opening": [
+        -42,
         -5,
-        -6,
-        12
+        -6
       ],
       "early-conquest-stands-down": [
+        -34,
         -9,
-        0,
-        17
+        0
       ],
       "early-contact-window": [
+        -26,
         -15,
-        -3,
-        9
+        -3
       ],
       "early-contact-window-2": [
+        39,
         2,
-        6,
-        -27
+        6
       ],
       "early-project-restraint": [
+        54,
         -5,
-        -3,
-        -11
+        -3
       ],
       "early-project-restraint-2": [
+        -48,
         -15,
-        19,
-        25
+        19
       ],
       "early-route-feeds-production": [
+        12,
         16,
-        null,
         null
       ],
       "early-settler-floor": [
+        33,
         31,
-        -2,
-        8
+        -2
       ],
       "edge-unit-opens-from-the-start": [
+        -4,
         0,
-        null,
         null
       ],
       "edge-unit-rushes-from-the-capital": [
+        45,
         2,
-        null,
         null
       ],
       "edge-unit-takes-the-soft-city": [
+        45,
         10,
-        null,
         null
       ],
       "education-follows-the-library": [
+        -29,
         7,
-        null,
         null
       ],
       "elective-war-in-reach": [
+        -28,
         22,
-        8,
-        1
+        8
       ],
       "elective-war-yields-to-a-lane": [
+        -8,
         3,
-        -17,
-        13
+        -17
       ],
       "elimination-waits-on-the-clock": [
+        10,
         -2,
-        -3,
-        3
+        -3
       ],
       "elimination-yields-to-a-launch": [
+        13,
         -2,
-        -5,
-        2
+        -5
       ],
       "elimination-yields-to-a-launch-2": [
+        19,
         -2,
-        null,
         null
       ],
       "embassy-finds-the-capital": [
+        -2,
         -10,
-        6,
-        -8
+        6
       ],
       "embassy-finds-the-capital-2": [
+        2,
         -5,
-        null,
         null
       ],
       "encampment-seals-the-pass": [
+        -21,
         0,
-        -6,
-        7
+        -6
       ],
       "endgame-army-takes-the-queue": [
+        -49,
         -2,
-        null,
         null
       ],
       "enemy-of-my-enemy": [
+        -14,
         -2,
-        -6,
-        -16
+        -6
       ],
       "engine-faith-price": [
+        -20,
         6,
-        -10,
-        7
+        -10
       ],
       "engineering-for-capped-fresh-water": [
+        32,
         -10,
-        -4,
-        -32
+        -4
       ],
       "enhancer-for-the-corps": [
+        -30,
         -6,
-        -3,
-        -11
+        -3
       ],
       "enter-the-prophet-race-2": [
+        22,
         2,
-        2,
-        40
+        2
       ],
       "envoy-building-dividends": [
+        7,
         22,
-        15,
-        0
+        15
       ],
       "envoys-open-the-siege-road": [
+        -23,
         -3,
-        6,
-        null
+        6
       ],
       "escort-cap-holds": [
+        15,
         2,
-        3,
-        12
+        3
       ],
       "escort-unstick": [
+        -2,
         8,
-        -6,
-        16
+        -6
       ],
       "eureka-chasing-builder": [
+        -1,
         2,
-        6,
-        -1
+        6
       ],
       "eureka-chasing-builder-2": [
+        27,
         4,
-        -9,
-        5
-      ],
-      "eureka-chasing-production": [
-        -7,
-        5,
         -9
       ],
+      "eureka-chasing-production": [
+        51,
+        -7,
+        5
+      ],
       "every-shooter-at-the-walls": [
+        37,
         5,
-        null,
         null
       ],
       "exalted-goddess-buys-the-coastal-guard": [
+        21,
         1,
-        null,
         null
       ],
       "exchange-is-the-engines": [
+        3,
         2,
-        0,
-        15
+        0
       ],
       "exhaustion-loyalty-guard": [
+        13,
         0,
-        5,
-        -29
+        5
       ],
       "expansion-best-idle-city": [
+        -12,
         1,
-        -8,
-        1
+        -8
       ],
       "expansion-best-idle-city-2": [
+        -33,
         -10,
-        10,
-        2
+        10
       ],
       "expansion-hall-district": [
+        -29,
         -3,
-        5,
         5
       ],
       "expansion-pays-back": [
+        -39,
         11,
-        0,
-        16
+        0
       ],
       "expansion-scales-with-difficulty": [
+        -9,
         0,
-        8,
-        2
+        8
       ],
       "expansion-schedule": [
+        -34,
         2,
-        -4,
-        12
+        -4
       ],
       "faith-counter-needs-the-edge": [
-        11,
-        11,
-        -11
-      ],
-      "faith-counter-waits-for-match-point": [
-        4,
-        14,
-        1
-      ],
-      "faith-strike-at-a-quiet-parity": [
-        12,
-        null,
-        null
-      ],
-      "faith-strike-fears-the-tech-lead": [
-        4,
-        null,
-        null
-      ],
-      "faith-strike-spares-the-stages": [
-        -6,
-        null,
-        null
-      ],
-      "faith-strike-wipes-the-spreaders": [
-        14,
-        null,
-        null
-      ],
-      "faith-war-at-match-point": [
-        7,
-        null,
-        null
-      ],
-      "faith-war-before-the-flip": [
-        -3,
-        1,
-        null
-      ],
-      "faith-war-before-the-flip-2": [
-        -11,
-        8,
-        null
-      ],
-      "faith-war-defends-the-diplomat": [
-        4,
-        null,
-        null
-      ],
-      "faith-war-is-no-front": [
-        11,
-        -7,
-        null
-      ],
-      "faith-war-is-no-front-2": [
-        -1,
-        1,
-        null
-      ],
-      "faith-war-needs-the-edge": [
-        -6,
-        null,
-        null
-      ],
-      "faith-war-on-a-small-world": [
-        16,
-        null,
-        null
-      ],
-      "faithless-seat-holds-its-faith-strikes": [
-        -4,
-        null,
-        null
-      ],
-      "falling-city-calls-the-takers": [
-        -3,
-        -3,
-        17
-      ],
-      "falling-city-outranks-the-heal": [
-        -7,
+        -63,
         11,
         11
       ],
+      "faith-counter-waits-for-match-point": [
+        12,
+        4,
+        14
+      ],
+      "faith-strike-at-a-quiet-parity": [
+        -24,
+        12,
+        null
+      ],
+      "faith-strike-fears-the-tech-lead": [
+        31,
+        4,
+        null
+      ],
+      "faith-strike-spares-the-stages": [
+        0,
+        -6,
+        null
+      ],
+      "faith-strike-wipes-the-spreaders": [
+        -5,
+        14,
+        null
+      ],
+      "faith-war-at-match-point": [
+        29,
+        7,
+        null
+      ],
+      "faith-war-before-the-flip": [
+        26,
+        -3,
+        1
+      ],
+      "faith-war-before-the-flip-2": [
+        -14,
+        -11,
+        8
+      ],
+      "faith-war-defends-the-diplomat": [
+        6,
+        4,
+        null
+      ],
+      "faith-war-is-no-front": [
+        -10,
+        11,
+        -7
+      ],
+      "faith-war-is-no-front-2": [
+        -7,
+        -1,
+        1
+      ],
+      "faith-war-needs-the-edge": [
+        6,
+        -6,
+        null
+      ],
+      "faith-war-on-a-small-world": [
+        -12,
+        16,
+        null
+      ],
+      "faithless-seat-holds-its-faith-strikes": [
+        20,
+        -4,
+        null
+      ],
+      "falling-city-calls-the-takers": [
+        -56,
+        -3,
+        -3
+      ],
+      "falling-city-outranks-the-heal": [
+        -7,
+        -7,
+        11
+      ],
       "favor-bought-before-congress": [
+        0,
         -2,
-        1,
-        -2
+        1
       ],
       "favor-spares-the-surprise-war": [
+        17,
         5,
-        1,
         1
       ],
       "field-reads-the-tile-it-leaves": [
+        13,
         9,
-        null,
         null
       ],
       "find-the-capital": [
+        -16,
         2,
-        1,
-        -5
+        1
       ],
       "fire-plan": [
+        24,
         18,
-        -7,
-        -16
+        -7
       ],
       "first-builder-reserve": [
+        -20,
         8,
-        -11,
-        -3
+        -11
       ],
       "first-builder-reserve-2": [
+        48,
         1,
-        7,
-        -2
+        7
       ],
       "first-campus-before-the-settler": [
+        -17,
         20,
-        null,
         null
       ],
       "first-capital-before-the-camp": [
+        61,
         17,
-        null,
         null
       ],
       "first-capital-before-the-walls": [
+        31,
         -1,
-        null,
         null
       ],
       "first-capital-strikes-the-open-window": [
+        -14,
         1,
-        null,
         null
       ],
       "first-capital-walks-the-one-landmass": [
+        -2,
         -8,
-        null,
         null
       ],
       "first-district-first": [
         -5,
-        -9,
-        15
+        -5,
+        -9
       ],
       "first-granary-reserve": [
+        3,
         2,
-        -11,
-        0
-      ],
-      "first-granary-reserve-2": [
-        -8,
-        -4,
-        7
-      ],
-      "first-granary-reserve-3": [
-        9,
-        4,
         -11
       ],
+      "first-granary-reserve-2": [
+        13,
+        -8,
+        -4
+      ],
+      "first-granary-reserve-3": [
+        5,
+        9,
+        4
+      ],
       "first-launch-keeps-research": [
+        -29,
         2,
-        null,
         null
       ],
       "first-luxury-first": [
-        2,
         18,
-        9
+        2,
+        18
       ],
       "first-luxury-first-2": [
+        5,
         11,
-        -5,
-        22
+        -5
       ],
       "first-pad-in-the-forge": [
+        -14,
         10,
-        null,
         null
       ],
       "first-research-building-reserve": [
+        56,
         3,
-        -8,
-        -5
+        -8
       ],
       "flipped-capital-finishes": [
+        41,
         5,
-        0,
-        -9
+        0
       ],
       "flower-power-in-the-dark": [
+        -13,
         -7,
-        null,
         null
       ],
       "fog-yields-to-a-stranded-settler": [
+        -2,
         0,
-        null,
         null
       ],
       "food-focus-grows-the-small-city": [
+        -14,
         6,
-        null,
         null
       ],
       "foothold-faces-the-capital": [
+        -13,
         -8,
-        -2,
-        null
+        -2
       ],
       "formations-heed-refusals": [
+        -12,
         -19,
-        -10,
-        10
+        -10
       ],
       "forward-airfield-project": [
+        -7,
         1,
-        null,
         null
       ],
       "found-against-a-rival-faith": [
+        10,
         3,
-        -10,
-        0
+        -10
       ],
       "founder-converts-its-own-cities": [
+        -33,
         -16,
-        11,
-        7
+        11
       ],
       "founder-defends-its-cities": [
+        5,
         -3,
-        8,
-        5
+        8
       ],
       "founder-funds-the-inquisition": [
+        33,
         -5,
-        2,
-        -3
+        2
       ],
       "founder-holds-the-holy-city": [
+        -19,
         -12,
-        6,
-        19
+        6
       ],
       "founder-keeps-two-sources": [
+        -18,
         -2,
-        6,
         6
       ],
       "founder-spreads-only-its-faith": [
+        10,
         -13,
-        -5,
-        -17
+        -5
       ],
       "founder-temple": [
+        22,
         -14,
-        -9,
-        8
+        -9
       ],
       "founding-voyage": [
+        -19,
         -6,
-        null,
         null
       ],
       "free-slot-campus-clock": [
+        16,
         10,
-        null,
         null
       ],
       "fresh-water-prices-the-site": [
+        7,
         12,
-        null,
         null
       ],
       "friendship-ends-at-the-race": [
+        -55,
         -7,
-        13,
-        null
+        13
       ],
       "friendship-keeps-the-peace": [
+        -7,
         13,
-        null,
         null
       ],
       "friendship-only-with-the-stronger": [
+        -17,
         -23,
-        -23,
-        null
+        -23
       ],
       "friendship-outlasts-the-gated-race": [
+        -40,
         14,
-        null,
         null
       ],
       "friendship-refuses-the-racer": [
+        54,
         6,
-        null,
         null
       ],
       "friendship-spares-the-converter": [
+        -12,
         -16,
-        null,
         null
       ],
       "friendship-spares-the-prey": [
+        36,
         -7,
-        12,
-        null
+        12
       ],
       "friendship-spares-the-target": [
+        -69,
         2,
-        0,
-        null
-      ],
-      "front-finishes-its-capital": [
-        -2,
-        0,
-        -24
-      ],
-      "front-finishes-its-siege": [
-        27,
-        3,
         0
       ],
+      "front-finishes-its-capital": [
+        -6,
+        -2,
+        0
+      ],
+      "front-finishes-its-siege": [
+        -24,
+        27,
+        3
+      ],
       "front-needs-a-declarable-rival": [
+        -4,
         -3,
-        4,
-        13
+        4
       ],
       "front-weighted-floor": [
         15,
-        0,
-        -4
-      ],
-      "front-weighted-floor-2": [
-        -12,
-        1,
-        -15
-      ],
-      "frontier-massing-alarm": [
-        -2,
-        -3,
+        15,
         0
       ],
+      "front-weighted-floor-2": [
+        -39,
+        -12,
+        1
+      ],
+      "frontier-massing-alarm": [
+        34,
+        -2,
+        -3
+      ],
       "frontier-walls-before-the-surprise": [
+        17,
         -3,
-        -4,
-        null
+        -4
       ],
       "garrison-before-the-surprise": [
+        35,
         -13,
-        null,
         null
       ],
       "garrison-under-fire": [
+        13,
         11,
-        -8,
-        -25
+        -8
       ],
       "generals-lead-the-army": [
+        -27,
         11,
-        null,
         null
       ],
       "gold-buys-the-backlog-builder": [
+        -19,
         6,
-        null,
         null
       ],
       "gold-buys-the-idle-trader": [
-        3,
         17,
-        null
+        3,
+        17
       ],
       "gold-buys-the-opening-builder": [
+        1,
         12,
-        null,
         null
       ],
       "gold-buys-the-production-tile": [
+        -10,
         15,
-        null,
         null
       ],
       "gold-buys-the-settler": [
+        -19,
         24,
-        4,
-        -17
+        4
       ],
       "gold-income-floor": [
+        21,
         -11,
-        -14,
-        -11
+        -14
       ],
       "gold-unit-buys-read-the-host-quote": [
+        6,
         15,
-        null,
         null
       ],
       "golden-dedication-serves-the-conquest": [
+        14,
         30,
-        23,
-        15
+        23
       ],
       "good-land-lifts-the-city-target": [
+        1,
         11,
-        null,
         null
       ],
       "government-capacity-fallback": [
+        43,
         -3,
-        -3,
-        10
+        -3
       ],
       "government-ladder": [
+        7,
         0,
-        -3,
-        -16
+        -3
       ],
       "government-ladder-2": [
+        18,
         12,
-        28,
-        27
+        28
       ],
       "government-ladder-3": [
+        -9,
         10,
-        10,
-        -6
+        10
       ],
       "government-reach-pays-the-switch": [
+        -9,
         -13,
-        null,
         null
       ],
       "granary-before-the-army": [
+        21,
         -8,
-        -1,
-        -9
+        -1
       ],
       "granary-before-the-army-2": [
+        4,
         5,
-        -15,
-        2
+        -15
       ],
       "granary-claims-the-bound-queue": [
+        -8,
         -4,
-        4,
         4
       ],
       "great-person-housing": [
+        -14,
         32,
-        22,
-        1
+        22
       ],
       "great-work-completion-value": [
+        -24,
         16,
-        1,
-        -4
+        1
       ],
       "great-works-never-wait": [
+        -3,
         14,
-        null,
         null
       ],
       "group-steps-read-the-field": [
+        30,
+        0,
+        null
+      ],
+      "growth-prices-the-farm": [
+        -13,
+        -12,
+        3
+      ],
+      "growth-prices-the-farm-2": [
+        -23,
+        -8,
+        -9
+      ],
+      "growth-to-settle": [
+        7,
+        -5,
+        13
+      ],
+      "gun-queue-follows-the-road": [
+        -24,
+        -11,
+        -16
+      ],
+      "gun-queues-behind-the-column": [
+        26,
+        9,
+        4
+      ],
+      "gun-resource-buys-the-tile": [
         0,
         null,
         null
       ],
-      "growth-prices-the-farm": [
-        -12,
-        3,
-        -15
-      ],
-      "growth-prices-the-farm-2": [
-        -8,
-        -9,
-        -11
-      ],
-      "growth-to-settle": [
-        -5,
-        13,
-        -9
-      ],
-      "gun-queue-follows-the-road": [
-        -11,
-        -16,
-        10
-      ],
-      "gun-queues-behind-the-column": [
-        9,
-        4,
-        4
-      ],
       "guns-enter-together": [
+        -25,
         15,
-        -5,
-        11
+        -5
       ],
       "guns-grind-the-walls": [
+        42,
         4,
-        -7,
-        0
+        -7
+      ],
+      "guns-keep-the-oil": [
+        2,
+        null,
+        null
       ],
       "guns-post-for-a-near-breach": [
+        -8,
         -13,
-        26,
-        5
+        26
       ],
       "guns-stay-out-of-reach": [
+        -26,
         -1,
-        1,
-        -1
+        1
       ],
       "guns-stay-out-of-reach-2": [
+        -19,
         -10,
-        null,
         null
       ],
       "guns-stay-out-of-reach-3": [
         4,
-        null,
+        4,
         null
       ],
       "guru-heals-the-corps-2": [
+        24,
         5,
-        -1,
-        -6
+        -1
       ],
       "guru-walks-to-the-wounded": [
+        -10,
         4,
-        null,
         null
       ],
       "gutted-rival-passes-the-edge": [
+        -13,
         3,
-        null,
         null
       ],
       "hidden-border-yields-to-our-pressure": [
         -30,
-        null,
+        -30,
         null
       ],
       "hint-runs-the-claims": [
+        -1,
         4,
-        null,
         null
       ],
       "holdable-land-keeps-settling": [
+        9,
         -1,
-        null,
         null
       ],
       "holdout-keeps-the-faith-war": [
+        -22,
         -5,
-        -14,
-        10
+        -14
       ],
       "holdout-keeps-the-faith-war-2": [
+        -21,
         4,
-        1,
-        null
+        1
       ],
       "holy-lane-parity": [
+        -29,
         -2,
-        -3,
-        -27
+        -3
       ],
       "holy-site-where-the-threat-is": [
+        1,
         -4,
-        -12,
-        -11
+        -12
       ],
       "holy-site-where-the-threat-is-2": [
+        -21,
         -1,
-        -19,
-        -11
+        -19
       ],
       "hopeless-army-yields-the-queue": [
+        -41,
         8,
-        null,
         null
       ],
       "hostile-memory": [
+        -15,
         -10,
-        -1,
-        -13
+        -1
       ],
       "hostile-memory-2": [
+        16,
         10,
-        -4,
         -4
       ],
       "hostile-memory-3": [
+        26,
         11,
-        9,
-        13
+        9
       ],
       "housing-bound-city-builds-its-granary": [
+        -64,
         1,
-        3,
-        18
+        3
       ],
       "housing-cap-builds-the-aqueduct": [
+        1,
         6,
-        12,
-        7
+        12
       ],
       "housing-research": [
+        16,
         -9,
-        7,
-        -14
+        7
       ],
       "housing-research-2": [
+        31,
         -6,
-        6,
-        -11
+        6
       ],
       "idle-faith-patronage": [
+        -7,
         6,
-        -2,
-        -3
+        -2
       ],
       "immortal-skips-the-prophet-race": [
+        36,
         -6,
-        null,
         null
       ],
       "improvement-upgrades-count": [
+        11,
         10,
-        5,
-        18
+        5
       ],
       "industrial-chain-debt": [
+        15,
         -14,
-        4,
-        21
+        4
       ],
       "industrial-hub": [
+        38,
         -10,
-        -4,
-        -7
+        -4
       ],
       "industrial-zone-claims-the-factory": [
+        27,
         33,
-        0,
-        -3
-      ],
-      "industrial-zone-claims-the-producer-queue": [
-        11,
-        18,
-        9
-      ],
-      "industrial-zone-in-the-producers": [
-        11,
-        11,
-        17
-      ],
-      "industry-before-the-army": [
-        1,
-        8,
         0
       ],
+      "industrial-zone-claims-the-producer-queue": [
+        32,
+        11,
+        18
+      ],
+      "industrial-zone-in-the-producers": [
+        -2,
+        11,
+        11
+      ],
+      "industry-before-the-army": [
+        30,
+        1,
+        8
+      ],
       "industry-before-the-army-2": [
+        42,
         12,
-        14,
-        7
+        14
       ],
       "industry-before-the-army-3": [
+        -19,
         -8,
-        -2,
-        -3
+        -2
       ],
       "industry-in-the-district-list": [
+        -29,
         19,
-        -2,
-        21
+        -2
       ],
       "inquisition-answers-a-rival-majority": [
+        -48,
         13,
-        null,
         null
       ],
       "inquisition-defends-the-diplomat": [
+        -40,
         0,
-        null,
         null
       ],
       "invest-keeps-its-cavalry": [
+        -2,
         3,
-        -8,
-        -18
+        -8
       ],
       "island-exploration": [
+        -20,
         4,
-        -9,
         -9
       ],
       "korea-mines-beside-the-seowon": [
+        42,
         -18,
-        null,
         null
       ],
       "kristina-builds-the-bibliotheque": [
+        -13,
         -2,
-        null,
         null
       ],
       "kristina-fills-to-theme": [
+        17,
         14,
-        null,
         null
       ],
       "land-army-asks-the-host-price": [
+        15,
         4,
-        null,
         null
       ],
       "land-grab-outlasts-the-opening": [
+        -39,
         -27,
-        null,
         null
       ],
       "land-recon-before-the-first-capital": [
+        13,
         -1,
-        null,
         null
       ],
       "lane-culture-spending": [
+        -26,
         10,
-        -6,
-        7
+        -6
       ],
       "lane-delegates-production": [
+        -86,
         -68,
-        -63,
-        -62
+        -63
       ],
       "lane-delegates-production-2": [
+        161,
         174,
-        184,
-        189
+        184
       ],
       "lane-great-people": [
+        -12,
         2,
-        3,
         3
       ],
       "lane-policy-deck": [
+        -11,
         -19,
-        -20,
-        -12
+        -20
       ],
       "lane-release-when-hopeless": [
+        -8,
         9,
-        13,
-        3
+        13
       ],
       "lane-space-race": [
+        -11,
         14,
-        -9,
-        22
+        -9
       ],
       "lane-votes-its-favor": [
+        38,
         22,
-        18,
-        1
+        18
       ],
       "last-capital-war-kept": [
+        31,
         -12,
-        3,
-        -3
+        3
       ],
       "last-charge-joins-the-army": [
+        -21,
         18,
-        null,
         null
       ],
       "launch-commits-the-endgame": [
+        -23,
         18,
-        null,
         null
       ],
       "launch-pad-holds-its-queue": [
+        3,
         -12,
-        null,
         null
       ],
       "launch-pad-keeps-its-rung": [
+        36,
         7,
-        null,
         null
       ],
       "launched-racer-yields-the-capital": [
+        -22,
         4,
-        13,
-        -14
+        13
       ],
       "launcher-war-fights-the-faster-racer": [
+        4,
         2,
-        null,
         null
       ],
       "launcher-war-ignores-the-edge": [
+        6,
         22,
-        4,
-        5
+        4
       ],
       "launcher-war-serves-every-lane": [
+        4,
         17,
-        null,
         null
       ],
       "launcher-war-skips-the-reserve": [
+        18,
         -4,
-        null,
         null
       ],
       "liang-follows-builders": [
+        -10,
         -8,
-        9,
-        -1
+        9
       ],
       "liberation-funds-the-congress": [
+        42,
         -12,
-        -6,
-        -12
+        -6
       ],
       "long-road-names-the-blocker": [
+        11,
         -5,
-        -9,
-        -2
+        -9
       ],
       "loyalty-rate-alarm": [
+        -50,
         0,
-        0,
-        -11
+        0
       ],
       "luxury-asks-pay-in-strategics": [
+        -5,
         -12,
-        null,
         null
       ],
       "luxury-asks-pay-in-strategics-2": [
+        10,
         1,
-        null,
         null
       ],
       "luxury-buy-asks": [
+        -71,
         -17,
-        -5,
-        -1
-      ],
-      "luxury-swap-asks": [
-        6,
-        4,
-        1
-      ],
-      "luxury-swap-asks-2": [
-        -1,
-        -2,
         -5
       ],
+      "luxury-swap-asks": [
+        -12,
+        6,
+        4
+      ],
+      "luxury-swap-asks-2": [
+        -7,
+        -1,
+        -2
+      ],
       "magnus-follows-settlers": [
+        -12,
         13,
-        9,
-        -7
+        9
       ],
       "maintenance-aware-deck": [
         13,
-        12,
+        13,
         12
       ],
       "march-uses-its-moves": [
+        -28,
         -2,
-        -3,
-        -4
+        -3
       ],
       "match-point-interception-ignores-power": [
+        18,
         15,
-        -9,
-        -17
+        -9
       ],
       "medina-quarter-houses-the-districts": [
+        11,
         -7,
-        -2,
-        null
+        -2
       ],
       "medina-yields-to-the-amenities": [
+        -25,
         -9,
-        null,
         null
       ],
       "melee-storms-an-open-city": [
+        0,
         3,
-        18,
-        4
+        18
       ],
       "merchant-confederation-earns-its-slot": [
+        42,
         11,
-        9,
-        null
+        9
       ],
       "merchant-confederation-earns-its-slot-2": [
+        -57,
         -5,
-        2,
-        null
+        2
       ],
       "military-alliance-shield": [
+        12,
         2,
-        null,
         null
       ],
       "military-alliance-shield-2": [
+        -28,
         -7,
-        null,
         null
       ],
       "missionary-evades-raiders": [
+        -27,
         -8,
-        -9,
-        6
+        -9
       ],
       "missionary-last-charge-explores": [
+        -3,
         6,
-        -14,
-        12
+        -14
       ],
       "missionary-last-charge-explores-2": [
+        -22,
         -14,
-        4,
-        -1
+        4
       ],
       "modernization-prices-the-path": [
+        40,
         1,
-        null,
         null
       ],
       "modernize-before-spending": [
+        -3,
         -9,
-        6,
-        14
+        6
       ],
       "moksha-defends-the-faithless": [
+        24,
         -21,
-        0,
-        -11
+        0
       ],
       "monument-first": [
+        -24,
         -2,
-        8,
-        -16
+        8
       ],
       "muster-walks-the-road": [
+        -22,
         3,
-        0,
-        -3
+        0
       ],
       "native-emergency-purchase": [
-        3,
         10,
-        -14
+        3,
+        10
       ],
       "native-emergency-purchase-2": [
+        -17,
         -21,
-        -5,
-        5
+        -5
       ],
       "naval-crossing-keeps-going": [
+        -53,
         -3,
-        null,
         null
       ],
       "naval-recon": [
+        28,
         -2,
-        4,
-        -1
+        4
       ],
       "naval-recon-2": [
+        -31,
         14,
-        5,
-        4
+        5
       ],
       "naval-recon-3": [
+        -9,
         -3,
-        6,
-        -15
+        6
       ],
       "naval-threat-triage": [
+        -18,
         4,
-        16,
-        4
+        16
       ],
       "near-done-work-finishes": [
+        -34,
         26,
-        null,
         null
       ],
       "near-rival-deterrence": [
+        -3,
         9,
-        7,
-        -10
+        7
       ],
       "near-rival-deterrence-holds-late": [
+        -12,
         -10,
+        null
+      ],
+      "near-rival-deterrence-opens-early": [
+        24,
         null,
         null
       ],
       "neighborhood-houses-the-capped-city": [
+        -32,
         -13,
-        -16,
-        null
+        -16
       ],
       "never-an-empty-queue": [
-        6,
         13,
-        3
+        6,
+        13
       ],
       "never-an-empty-queue-2": [
+        5,
         14,
-        -12,
-        7
+        -12
       ],
       "never-an-empty-queue-3": [
+        12,
         -3,
-        9,
-        -13
+        9
       ],
       "no-city-limit": [
+        29,
         -22,
-        null,
         null
       ],
       "no-free-passage": [
-        10,
-        -12,
-        5
-      ],
-      "no-peace-with-a-launcher": [
-        9,
-        -4,
-        1
-      ],
-      "nuclear-goal-needs-a-launcher": [
-        8,
-        null,
-        null
-      ],
-      "nusantara-reads-the-coast": [
-        -9,
-        null,
-        null
-      ],
-      "nusantara-settles-the-shore": [
-        26,
-        null,
-        null
-      ],
-      "objective-board": [
-        -9,
-        -3,
-        16
-      ],
-      "old-techs-before-the-beeline": [
-        -4,
-        null,
-        null
-      ],
-      "one-launch-pad": [
-        -5,
-        -2,
-        -19
-      ],
-      "one-owner-per-unit": [
-        -6,
-        null,
-        null
-      ],
-      "one-sanctuary": [
-        2,
-        15,
-        -29
-      ],
-      "one-shot-recovery": [
-        -4,
-        -9,
-        -6
-      ],
-      "one-upgrade-lifts-every-city": [
-        -10,
-        null,
-        null
-      ],
-      "one-war-at-a-time": [
-        -7,
-        12,
-        -13
-      ],
-      "one-war-swaps-a-stalled-front": [
-        -5,
-        -11,
-        -7
-      ],
-      "open-capital-declares-at-twice": [
-        2,
-        null,
-        null
-      ],
-      "open-city-draws-the-front": [
-        -8,
-        10,
-        null
-      ],
-      "open-city-is-the-objective": [
-        -13,
-        null,
-        null
-      ],
-      "opening-builder-after-the-first-settler": [
-        -2,
-        null,
-        null
-      ],
-      "opening-defense-preempts-once": [
-        17,
-        -2,
-        -6
-      ],
-      "opening-force-keeps-its-members": [
-        -3,
-        -3,
-        -6
-      ],
-      "opening-ranged-support": [
-        12,
-        null,
-        null
-      ],
-      "opening-scout-comes-back": [
-        -1,
-        null,
-        null
-      ],
-      "opening-warrior-recon-2": [
-        8,
-        -6,
-        -14
-      ],
-      "opening-yields-to-walls": [
-        19,
-        -12,
-        12
-      ],
-      "opportunistic-war": [
-        -6,
-        3,
-        -17
-      ],
-      "opportunistic-war-2": [
-        -1,
-        7,
-        -20
-      ],
-      "order-retry": [
-        -4,
-        5,
-        -13
-      ],
-      "outclassed-siege-stands-down": [
-        -2,
-        null,
-        null
-      ],
-      "outmatched-war-prices-the-army": [
-        -5,
-        null,
-        null
-      ],
-      "overseas-settlement": [
-        -31,
-        -9,
-        -10
-      ],
-      "overwhelming-power-declares": [
-        5,
-        0,
-        -14
-      ],
-      "own-column-is-not-a-refusal": [
-        3,
-        5,
-        2
-      ],
-      "own-flip-faith-war-asks-no-power": [
-        5,
-        null,
-        null
-      ],
-      "pantheon-board": [
-        14,
-        -7,
-        -19
-      ],
-      "parallel-library-backlog": [
-        4,
-        null,
-        null
-      ],
-      "parity-reads-the-front": [
-        6,
-        -9,
-        6
-      ],
-      "parity-upgrades-before-it-buys": [
-        4,
-        null,
-        null
-      ],
-      "parity-upgrades-before-it-buys-2": [
-        5,
-        null,
-        null
-      ],
-      "parity-upgrades-before-it-buys-3": [
-        -4,
-        null,
-        null
-      ],
-      "pass-picket": [
-        -2,
-        3,
-        23
-      ],
-      "pass-picket-2": [
-        2,
+        20,
         10,
         -12
       ],
-      "passage-waits-past-the-opening": [
-        3,
-        null,
+      "no-peace-with-a-launcher": [
+        2,
+        9,
+        -4
+      ],
+      "nuclear-goal-needs-a-launcher": [
+        -7,
+        8,
         null
       ],
-      "paused-district-finishes": [
-        1,
+      "nusantara-reads-the-coast": [
+        26,
         -9,
-        9
-      ],
-      "paused-district-spares-the-launch": [
-        2,
-        null,
         null
       ],
-      "peace-asks-a-city": [
-        -4,
-        1,
-        13
+      "nusantara-settles-the-shore": [
+        -2,
+        26,
+        null
       ],
-      "peace-waits-for-the-foothold": [
-        2,
-        -1,
+      "objective-board": [
+        -27,
+        -9,
+        -3
+      ],
+      "old-techs-before-the-beeline": [
+        23,
+        -4,
+        null
+      ],
+      "one-launch-pad": [
+        28,
+        -5,
         -2
       ],
-      "peace-waits-for-the-host-minimum": [
-        10,
-        null,
+      "one-owner-per-unit": [
+        -8,
+        -6,
         null
       ],
-      "peace-waits-for-unseen-prey": [
-        0,
-        12,
-        2
-      ],
-      "peace-when-the-war-does-not-pay": [
-        2,
-        -17,
-        2
-      ],
-      "peacetime-classical-republic": [
-        5,
-        5,
-        -5
-      ],
-      "peacetime-deterrence": [
-        -6,
-        -4,
-        14
-      ],
-      "phantom-capture-keeps-the-siege": [
-        -23,
+      "one-sanctuary": [
         -7,
-        10
-      ],
-      "pillaged-districts-repair-first": [
-        0,
-        null,
-        null
-      ],
-      "pingala-earns-the-launch": [
-        -9,
-        null,
-        null
-      ],
-      "pingala-follows-research": [
-        0,
-        -9,
-        5
-      ],
-      "pingala-follows-research-2": [
-        5,
-        null,
-        null
-      ],
-      "plant-reads-the-grid": [
-        23,
-        null,
-        null
-      ],
-      "plaza-in-the-district-list": [
-        -35,
-        -14,
-        -20
-      ],
-      "plaza-serves-the-scientist": [
-        -13,
-        null,
-        null
-      ],
-      "plaza-serves-the-scientist-2": [
         2,
-        null,
-        null
+        15
       ],
-      "plaza-serves-the-scientist-3": [
-        10,
-        null,
-        null
-      ],
-      "policy-deck-hysteresis": [
-        2,
-        -6,
-        13
-      ],
-      "policy-deck-hysteresis-2": [
-        3,
-        2,
-        -1
-      ],
-      "policy-swap-keeps-the-army-paid": [
-        1,
-        null,
-        null
-      ],
-      "power-the-laboratory": [
-        16,
-        -9,
-        0
-      ],
-      "power-the-laboratory-2": [
-        -19,
-        10,
-        23
-      ],
-      "prey-is-declared-on": [
-        -9,
-        1,
-        null
-      ],
-      "prey-reads-a-steady-power": [
-        8,
-        -1,
-        -6
-      ],
-      "prey-waits-for-the-march": [
-        11,
-        null,
-        null
-      ],
-      "prey-waits-for-the-march-2": [
-        6,
-        null,
-        null
-      ],
-      "prey-war-is-kept": [
-        -10,
-        -3,
-        null
-      ],
-      "price-the-suzerainty": [
-        -13,
+      "one-shot-recovery": [
+        25,
         -4,
         -9
       ],
-      "prod-tiles-call-the-builders": [
-        1,
-        null,
+      "one-upgrade-lifts-every-city": [
+        53,
+        -10,
         null
       ],
-      "promote-when-wounded": [
-        -22,
-        -29,
-        4
+      "one-war-at-a-time": [
+        -4,
+        -7,
+        12
       ],
-      "prophet-builds-its-site": [
+      "one-war-swaps-a-stalled-front": [
+        11,
+        -5,
+        -11
+      ],
+      "open-capital-declares-at-twice": [
+        -42,
         2,
+        null
+      ],
+      "open-city-draws-the-front": [
+        15,
+        -8,
+        10
+      ],
+      "open-city-is-the-objective": [
+        28,
         -13,
+        null
+      ],
+      "opening-builder-after-the-first-settler": [
+        -13,
+        -2,
+        null
+      ],
+      "opening-defense-preempts-once": [
+        0,
+        17,
         -2
       ],
-      "prophet-race-earns-its-points": [
-        -16,
-        -10,
-        -5
-      ],
-      "prophet-race-takes-a-district-slot": [
-        -2,
+      "opening-force-keeps-its-members": [
+        19,
         -3,
-        -14
+        -3
       ],
-      "prophet-race-takes-a-district-slot-2": [
-        4,
-        -3,
-        1
-      ],
-      "prophet-race-takes-divine-spark": [
-        -4,
-        -11,
+      "opening-ranged-support": [
+        19,
+        12,
         null
       ],
-      "purchases-keep-the-upkeep-reserve": [
+      "opening-scout-comes-back": [
+        11,
         -1,
-        4,
-        23
+        null
       ],
-      "quest-boost": [
-        -5,
-        -4,
-        -8
+      "opening-warrior-recon-2": [
+        -1,
+        8,
+        -6
       ],
-      "quest-camp-errand": [
-        16,
-        -8,
+      "opening-yields-to-walls": [
+        -19,
+        19,
+        -12
+      ],
+      "opportunistic-war": [
+        35,
+        -6,
         3
       ],
-      "quest-production": [
-        12,
-        -6,
-        19
-      ],
-      "quest-trade-route": [
-        0,
-        -3,
-        5
-      ],
-      "racer-blocker-declares": [
-        2,
+      "opportunistic-war-2": [
+        -25,
         -1,
-        null
-      ],
-      "racer-keeps-the-spies": [
-        -1,
-        -10,
         7
       ],
-      "racer-spies-search-for-the-pad": [
-        2,
-        null,
+      "order-retry": [
+        -17,
+        -4,
+        5
+      ],
+      "outclassed-siege-stands-down": [
+        -12,
+        -2,
         null
       ],
-      "raid-pillage-prizes": [
-        1,
-        11,
-        29
+      "outmatched-war-prices-the-army": [
+        37,
+        -5,
+        null
       ],
-      "raids-cut-tourism": [
-        8,
+      "overseas-settlement": [
+        -19,
+        -31,
+        -9
+      ],
+      "overwhelming-power-declares": [
+        41,
         5,
         0
       ],
-      "ranged-before-melee": [
-        17,
-        -2,
-        9
+      "own-column-is-not-a-refusal": [
+        -27,
+        3,
+        5
       ],
-      "ranged-finish-on-the-mean": [
-        -2,
-        null,
+      "own-flip-faith-war-asks-no-power": [
+        22,
+        5,
         null
       ],
-      "ranged-hp-reserve": [
-        9,
-        15,
-        11
+      "pantheon-board": [
+        25,
+        14,
+        -7
       ],
-      "ranged-kills-are-free": [
+      "parallel-library-backlog": [
+        -46,
+        4,
+        null
+      ],
+      "parity-reads-the-front": [
+        -10,
         6,
-        null,
+        -9
+      ],
+      "parity-upgrades-before-it-buys": [
+        7,
+        4,
         null
       ],
-      "rapid-city-expansion-2": [
-        23,
-        55,
-        60
+      "parity-upgrades-before-it-buys-2": [
+        -12,
+        5,
+        null
       ],
-      "raze-a-doomed-capture": [
-        -5,
+      "parity-upgrades-before-it-buys-3": [
         8,
+        -4,
+        null
+      ],
+      "pass-picket": [
+        -10,
+        -2,
+        3
+      ],
+      "pass-picket-2": [
+        37,
+        2,
+        10
+      ],
+      "passage-waits-past-the-opening": [
+        7,
+        3,
+        null
+      ],
+      "paused-district-finishes": [
+        5,
+        1,
+        -9
+      ],
+      "paused-district-spares-the-launch": [
+        -5,
+        2,
+        null
+      ],
+      "peace-asks-a-city": [
+        25,
+        -4,
+        1
+      ],
+      "peace-waits-for-the-foothold": [
+        15,
+        2,
+        -1
+      ],
+      "peace-waits-for-the-host-minimum": [
+        -5,
+        10,
+        null
+      ],
+      "peace-waits-for-unseen-prey": [
+        -23,
+        0,
+        12
+      ],
+      "peace-when-the-war-does-not-pay": [
+        21,
+        2,
         -17
       ],
-      "rear-cities-grow-through-the-war-hold": [
-        -12,
-        null,
-        null
+      "peacetime-classical-republic": [
+        -27,
+        5,
+        5
       ],
-      "recon-replacement": [
+      "peacetime-deterrence": [
+        12,
         -6,
-        9,
-        -15
-      ],
-      "recorded-tactical-step": [
-        11,
-        3,
-        9
-      ],
-      "recovery-keeps-a-winning-war": [
-        26,
-        -11,
-        -13
-      ],
-      "recovery-needs-the-deficit": [
-        20,
-        11,
-        -18
-      ],
-      "recovery-peace-waits": [
-        11,
-        -7,
         -4
       ],
-      "recovery-reads-the-war": [
-        -8,
-        -5,
-        9
+      "phantom-capture-keeps-the-siege": [
+        -3,
+        -23,
+        -7
       ],
-      "recovery-reads-the-war-2": [
-        6,
+      "pillaged-districts-repair-first": [
+        -10,
+        0,
+        null
+      ],
+      "pingala-earns-the-launch": [
+        3,
+        -9,
+        null
+      ],
+      "pingala-follows-research": [
+        -25,
+        0,
+        -9
+      ],
+      "pingala-follows-research-2": [
+        9,
+        5,
+        null
+      ],
+      "plant-reads-the-grid": [
+        3,
+        23,
+        null
+      ],
+      "plaza-in-the-district-list": [
+        -15,
+        -35,
+        -14
+      ],
+      "plaza-serves-the-scientist": [
+        15,
+        -13,
+        null
+      ],
+      "plaza-serves-the-scientist-2": [
+        -34,
+        2,
+        null
+      ],
+      "plaza-serves-the-scientist-3": [
+        -6,
+        10,
+        null
+      ],
+      "policy-deck-hysteresis": [
+        -8,
+        2,
+        -6
+      ],
+      "policy-deck-hysteresis-2": [
+        5,
         3,
         2
       ],
-      "reinforce-before-stall": [
-        4,
-        5,
+      "policy-swap-keeps-the-army-paid": [
+        9,
+        1,
+        null
+      ],
+      "power-the-laboratory": [
+        -9,
+        16,
+        -9
+      ],
+      "power-the-laboratory-2": [
+        58,
+        -19,
         10
       ],
-      "relief-column-marches": [
+      "prey-is-declared-on": [
+        9,
+        -9,
+        1
+      ],
+      "prey-reads-a-steady-power": [
+        17,
+        8,
+        -1
+      ],
+      "prey-waits-for-the-march": [
+        -17,
+        11,
+        null
+      ],
+      "prey-waits-for-the-march-2": [
+        39,
+        6,
+        null
+      ],
+      "prey-war-is-kept": [
+        -25,
+        -10,
+        -3
+      ],
+      "price-the-suzerainty": [
+        43,
+        -13,
+        -4
+      ],
+      "prod-tiles-call-the-builders": [
+        -9,
+        1,
+        null
+      ],
+      "promote-when-wounded": [
+        3,
+        -22,
+        -29
+      ],
+      "prophet-builds-its-site": [
+        21,
+        2,
+        -13
+      ],
+      "prophet-race-earns-its-points": [
+        -39,
+        -16,
+        -10
+      ],
+      "prophet-race-takes-a-district-slot": [
+        -7,
+        -2,
+        -3
+      ],
+      "prophet-race-takes-a-district-slot-2": [
+        3,
+        4,
+        -3
+      ],
+      "prophet-race-takes-divine-spark": [
+        -39,
+        -4,
+        -11
+      ],
+      "purchases-keep-the-upkeep-reserve": [
+        -16,
+        -1,
+        4
+      ],
+      "quest-boost": [
+        -28,
+        -5,
+        -4
+      ],
+      "quest-camp-errand": [
+        -1,
+        16,
+        -8
+      ],
+      "quest-production": [
+        -9,
+        12,
+        -6
+      ],
+      "quest-trade-route": [
+        47,
         0,
+        -3
+      ],
+      "racer-blocker-declares": [
+        8,
+        2,
+        -1
+      ],
+      "racer-keeps-the-spies": [
+        -34,
+        -1,
+        -10
+      ],
+      "racer-spies-search-for-the-pad": [
+        -22,
+        2,
+        null
+      ],
+      "raid-pillage-prizes": [
+        -26,
+        1,
+        11
+      ],
+      "raids-cut-tourism": [
+        -2,
+        8,
+        5
+      ],
+      "ranged-before-melee": [
+        2,
+        17,
+        -2
+      ],
+      "ranged-finish-on-the-mean": [
+        -52,
+        -2,
+        null
+      ],
+      "ranged-hp-reserve": [
+        -35,
+        9,
+        15
+      ],
+      "ranged-kills-are-free": [
+        -7,
+        6,
+        null
+      ],
+      "rapid-city-expansion-2": [
+        67,
+        23,
+        55
+      ],
+      "raze-a-doomed-capture": [
+        12,
+        -5,
+        8
+      ],
+      "rear-cities-grow-through-the-war-hold": [
+        16,
+        -12,
+        null
+      ],
+      "recon-replacement": [
+        -64,
+        -6,
+        9
+      ],
+      "recorded-tactical-step": [
+        41,
+        11,
+        3
+      ],
+      "recovery-keeps-a-winning-war": [
+        22,
+        26,
+        -11
+      ],
+      "recovery-needs-the-deficit": [
+        -10,
+        20,
+        11
+      ],
+      "recovery-peace-waits": [
+        48,
+        11,
+        -7
+      ],
+      "recovery-reads-the-war": [
+        -8,
+        -8,
+        -5
+      ],
+      "recovery-reads-the-war-2": [
+        3,
+        6,
+        3
+      ],
+      "reinforce-before-stall": [
+        -10,
+        4,
+        5
+      ],
+      "relief-column-marches": [
         7,
+        0,
         7
       ],
       "relief-targets-the-siege": [
+        -38,
         0,
-        -7,
-        6
+        -7
       ],
       "religion-denial-needs-the-edge": [
+        36,
         -10,
-        null,
         null
       ],
       "religion-finishes-majorities": [
+        42,
         5,
-        null,
         null
       ],
       "religion-lane-hands-over": [
+        27,
         0,
-        null,
         null
       ],
       "religion-lane-spreads-from-founding": [
+        34,
         5,
-        null,
         null
       ],
       "religion-race-is-closed": [
+        -10,
         24,
-        10,
-        5
+        10
       ],
       "religion-race-keeps-expanding": [
+        -16,
         5,
-        null,
         null
       ],
       "religion-seat-builds-holy-sites": [
+        -32,
         1,
-        null,
         null
       ],
       "religion-seat-charts-the-rivals": [
+        -3,
         1,
-        null,
         null
       ],
       "religion-seat-counts-the-pressure": [
+        5,
         7,
-        null,
         null
       ],
       "religion-seat-cuts-the-upkeep": [
+        -9,
         13,
-        null,
         null
       ],
       "religion-seat-defends-its-faith": [
+        14,
         5,
-        null,
         null
       ],
       "religion-seat-earns-its-prophet": [
+        12,
         1,
-        null,
         null
       ],
       "religion-seat-fields-apostles": [
+        -48,
         16,
-        null,
         null
       ],
       "religion-seat-first-shrine": [
+        0,
         8,
-        null,
         null
       ],
       "religion-seat-flips-the-cheapest": [
         -2,
-        null,
+        -2,
         null
       ],
       "religion-seat-founds-first": [
+        -10,
         0,
-        null,
         null
       ],
       "religion-seat-guards-the-race": [
+        9,
         -8,
-        null,
         null
       ],
       "religion-seat-keeps-the-guard": [
+        3,
         5,
-        null,
         null
       ],
       "religion-seat-presses-the-campaign": [
+        -36,
         14,
-        null,
         null
       ],
       "religion-seat-races-the-prophet": [
+        36,
         16,
-        null,
         null
       ],
       "religion-seat-reaches-reformed-church": [
+        -4,
         -7,
-        null,
         null
       ],
       "religion-seat-reveals-the-capitals": [
+        -16,
         8,
-        null,
         null
       ],
       "religion-seat-slots-the-orders": [
+        1,
         -12,
-        null,
         null
       ],
       "religion-seat-spares-the-launcher": [
+        10,
         6,
-        null,
         null
       ],
       "religion-seat-spends-the-bank": [
+        39,
         11,
-        null,
         null
       ],
       "religion-seat-takes-the-debater": [
+        31,
         -2,
-        null,
         null
       ],
       "religion-seat-takes-the-faith-beliefs": [
+        -23,
         -2,
-        null,
         null
       ],
       "religion-sues-peace": [
+        5,
         -14,
-        -2,
-        18
+        -2
       ],
       "religious-defence-scales": [
-        17,
-        -22,
-        -13
-      ],
-      "religious-match-point-defence": [
-        -5,
-        -4,
-        -30
-      ],
-      "religious-threat-spares-the-front": [
-        5,
-        24,
-        -3
-      ],
-      "religious-units-heal-first": [
-        -18,
-        -13,
-        14
-      ],
-      "religious-veto-defence": [
-        -3,
         11,
-        12
-      ],
-      "research-alliance-first": [
-        7,
-        -7,
-        14
-      ],
-      "research-building-catchup": [
-        6,
-        -4,
+        17,
         -22
       ],
-      "research-building-catchup-2": [
+      "religious-match-point-defence": [
+        31,
+        -5,
+        -4
+      ],
+      "religious-threat-spares-the-front": [
+        13,
         5,
-        -8,
-        -5
+        24
+      ],
+      "religious-units-heal-first": [
+        17,
+        -18,
+        -13
+      ],
+      "religious-veto-defence": [
+        49,
+        -3,
+        11
+      ],
+      "research-alliance-first": [
+        8,
+        7,
+        -7
+      ],
+      "research-building-catchup": [
+        3,
+        6,
+        -4
+      ],
+      "research-building-catchup-2": [
+        1,
+        5,
+        -8
       ],
       "research-building-catchup-3": [
+        -2,
         -9,
-        -8,
-        3
+        -8
       ],
       "research-follows-the-first-capital": [
+        17,
         -4,
-        null,
         null
       ],
       "research-tier-premium": [
+        -22,
         -16,
-        -6,
-        -11
+        -6
       ],
       "retainers-garrison-the-short-cities": [
+        -7,
         1,
-        null,
         null
       ],
       "revealed-launch-tech-takes-the-slot": [
+        14,
         -19,
-        null,
         null
       ],
       "reyna-follows-revenue": [
+        22,
         -15,
-        5,
-        18
+        5
       ],
       "ring-fires-on-the-city": [
+        8,
         -2,
-        0,
-        -10
+        0
       ],
       "risk-is-priced": [
+        -31,
         2,
-        null,
         null
       ],
       "rival-suzerainty-alarm": [
+        -52,
         13,
-        -8,
-        -3
+        -8
       ],
       "rout-spares-a-stronger-army": [
+        10,
         -11,
-        9,
-        -11
+        9
       ],
       "rout-spares-the-counter": [
+        -3,
         4,
-        14,
-        -13
-      ],
-      "route-block-is-a-wait": [
-        -9,
-        9,
         14
       ],
+      "route-block-is-a-wait": [
+        53,
+        -9,
+        9
+      ],
       "runaway-expander-counter": [
+        -15,
         -7,
-        -5,
-        11
+        -5
       ],
       "russia-settles-the-tundra": [
+        12,
         -4,
-        null,
         null
       ],
       "safest-stand": [
+        25,
         12,
-        8,
-        -20
+        8
       ],
       "sanctuary-yields-a-held-queue": [
+        29,
         -9,
-        -14,
-        12
+        -14
       ],
       "satellite-holds-the-pad": [
+        23,
         8,
-        null,
         null
       ],
       "saved-work-is-seen": [
+        9,
         -10,
-        null,
         null
       ],
       "science-building-first": [
+        44,
         8,
-        10,
-        -11
+        10
       ],
       "science-campus-before-repeat-settler": [
+        43,
         10,
-        null,
         null
       ],
       "science-chain-alarm": [
+        -10,
         0,
-        18,
-        24
+        18
       ],
       "science-chain-crosses-window": [
+        7,
         -4,
-        null,
         null
       ],
       "science-denial-every-pad": [
+        -48,
         -17,
-        0,
-        4
+        0
       ],
       "science-denial-spy-reads-the-leader": [
+        0,
         -4,
-        13,
-        9
+        13
       ],
       "science-denial-trains-spies": [
+        41,
         4,
-        -4,
-        20
+        -4
       ],
       "science-denial-war": [
+        0,
         4,
-        9,
-        24
+        9
       ],
       "science-denounce-names-the-leader": [
+        34,
         9,
-        null,
         null
       ],
       "science-denounce-waits-for-the-race": [
         8,
-        -14,
-        23
+        8,
+        -14
       ],
       "science-drive-answers-from-the-pad": [
+        -12,
         1,
-        null,
         null
       ],
       "science-drive-answers-from-the-pad-2": [
+        14,
         1,
-        null,
         null
       ],
       "science-drive-answers-the-launch": [
+        15,
         6,
-        null,
         null
       ],
       "science-drive-leads-beside-the-lane": [
+        1,
         -19,
-        null,
         null
       ],
       "science-expansion-phase": [
+        -21,
         -12,
-        15,
-        -8
+        15
       ],
       "science-foundation-before-backlog": [
+        7,
         18,
-        null,
         null
       ],
       "science-heads-keep-their-queue": [
+        48,
         -1,
-        null,
         null
       ],
       "science-ladder-reads-the-clock": [
+        1,
         2,
-        -5,
-        0
+        -5
       ],
       "science-leader-is-the-target": [
+        45,
         -15,
-        4,
-        15
+        4
       ],
       "science-multiplier-payoff": [
+        -9,
         5,
-        9,
-        7
+        9
       ],
       "science-opening-band": [
+        -7,
         -2,
-        3,
-        8
+        3
       ],
       "science-power-buys-fuel": [
+        -8,
         -1,
-        null,
         null
       ],
       "science-seat-allies": [
+        4,
         -1,
-        null,
         null
       ],
       "science-seat-allies-2": [
+        -22,
         3,
-        null,
         null
       ],
       "science-seat-builds-the-statue": [
+        21,
         -7,
-        null,
         null
       ],
       "science-seat-races-the-congress": [
+        -23,
         -1,
-        null,
         null
       ],
       "science-specializes-earlier": [
+        -7,
         -1,
-        null,
         null
       ],
       "science-suppression-hits-the-pads": [
+        30,
         -9,
-        1,
-        24
+        1
       ],
       "science-threat-denial": [
+        -27,
         3,
-        -2,
-        19
+        -2
       ],
       "science-victory-drive": [
+        -29,
         18,
-        -5,
-        -1
+        -5
       ],
       "science-victory-drive-2": [
+        33,
         -9,
-        3,
-        -1
+        3
       ],
       "science-writing-before-the-luxury": [
+        -18,
         12,
-        null,
         null
       ],
       "score-seat-builds-the-bath": [
+        -5,
         6,
-        null,
         null
       ],
       "score-seat-expands-hard": [
+        -15,
         -1,
-        null,
         null
       ],
       "score-seat-fills-its-district-slots": [
+        3,
         -1,
-        null,
         null
       ],
       "score-seat-founds-early": [
+        70,
         16,
-        null,
         null
       ],
       "score-seat-grabs-what-pays": [
+        -19,
         -5,
-        null,
         null
       ],
       "score-seat-holds-its-faith-strikes": [
+        6,
         -23,
-        null,
         null
       ],
       "score-seat-keeps-friends": [
+        -15,
         19,
-        null,
         null
       ],
       "score-seat-plays-for-points": [
+        37,
         16,
-        null,
         null
       ],
       "score-seat-raises-wonders": [
+        -22,
         -13,
-        null,
         null
       ],
       "score-seat-raises-wonders-2": [
+        37,
         8,
+        null
+      ],
+      "score-seat-raises-wonders-3": [
+        13,
+        null,
+        null
+      ],
+      "score-seat-sprints-to-the-tally": [
+        -16,
+        null,
+        null
+      ],
+      "score-seat-sprints-to-the-tally-2": [
+        14,
         null,
         null
       ],
       "score-seat-takes-what-pays": [
+        16,
         2,
-        null,
         null
       ],
       "score-seat-takes-what-pays-2": [
+        -6,
         -7,
-        null,
         null
       ],
       "score-seat-takes-what-pays-3": [
+        -2,
         -6,
-        null,
         null
       ],
       "score-seat-trims-the-idle-army": [
+        7,
         -1,
-        null,
         null
       ],
       "scout-first-opening": [
+        -2,
         -1,
-        -12,
-        -10
+        -12
       ],
       "screen-the-shooters": [
+        -14,
         1,
-        -11,
-        -6
+        -11
       ],
       "sea-locked-front-moves-on": [
+        -30,
         -28,
-        0,
-        -9
+        0
       ],
       "sea-scout-claims-the-queue": [
+        4,
         -1,
-        null,
         null
       ],
       "sea-scout-claims-the-queue-2": [
+        -34,
         9,
-        null,
         null
       ],
       "second-front-keeps-its-war": [
+        16,
         -5,
-        2,
-        3
+        2
       ],
       "second-front-kept-when-winning": [
+        27,
         5,
-        3,
-        21
+        3
       ],
       "second-front-kept-when-winning-2": [
+        24,
         6,
-        2,
-        -7
+        2
       ],
       "second-front-waits-for-its-war": [
+        4,
         3,
-        -9,
-        1
+        -9
       ],
       "settle-sooner": [
+        11,
         8,
-        9,
-        7
+        9
       ],
       "settlement-gap-target": [
+        12,
         -13,
-        -7,
-        -10
+        -7
       ],
       "settler-backlog-brake": [
+        -4,
         0,
-        -6,
-        7
+        -6
       ],
       "settler-backlog-brake-2": [
+        13,
         -16,
-        9,
-        -19
+        9
       ],
       "settler-before-the-navy": [
+        5,
         -5,
-        6,
-        5
+        6
       ],
       "settler-detour-stays-near": [
+        9,
         35,
-        23,
-        16
+        23
       ],
       "settler-factory-coordination": [
+        -20,
         -19,
-        5,
-        -8
+        5
       ],
       "settler-founds-under-raiders": [
+        -7,
         3,
-        null,
         null
       ],
       "settler-guard-holds": [
+        31,
         19,
-        -29,
-        15
+        -29
       ],
       "settler-guard-holds-2": [
+        -12,
         4,
-        16,
-        -13
+        16
       ],
       "settler-keeps-its-named-site": [
+        -2,
         -25,
-        null,
         null
       ],
       "settler-marches-alone-when-clear": [
+        23,
         11,
-        -15,
-        -3
+        -15
       ],
       "settler-never-idles": [
+        40,
         34,
-        14,
-        25
+        14
       ],
       "settler-shelters-from-the-war": [
+        31,
         -7,
-        null,
         null
       ],
       "settler-shelters-from-the-war-2": [
+        -16,
         2,
-        null,
         null
       ],
       "settler-site-gate": [
+        8,
         7,
-        -6,
-        -17
+        -6
       ],
       "settler-stall-counts-turns": [
+        -28,
         -8,
-        null,
         null
       ],
       "settler-target-floor": [
+        -3,
         12,
-        12,
-        -1
+        12
       ],
       "settler-target-hysteresis": [
+        -37,
         -1,
-        24,
-        -6
+        24
       ],
       "settler-target-hysteresis-2": [
+        14,
         19,
-        -17,
-        -6
+        -17
       ],
       "settler-threat-detour": [
+        38,
         3,
-        -3,
-        -2
+        -3
       ],
       "settler-walk-deadline": [
+        21,
         13,
-        4,
-        6
+        4
       ],
       "settler-walks-to-the-better-site": [
+        -18,
         7,
-        -15,
-        5
+        -15
       ],
       "shared-danger": [
+        8,
         9,
-        11,
-        6
+        11
       ],
       "siege-at-the-walls-dies-first": [
+        15,
         -3,
-        null,
         null
       ],
       "siege-budget-counts-the-ram": [
+        6,
         2,
-        20,
-        null
+        20
       ],
       "siege-budget-counts-what-fires": [
+        -24,
         -11,
-        9,
-        -24
+        9
       ],
       "siege-budget-projects-the-seal": [
+        40,
         15,
-        -1,
-        8
+        -1
       ],
       "siege-buys-the-gun-resource": [
         5,
-        -8,
-        -5
-      ],
-      "siege-buys-the-passage": [
-        3,
-        8,
-        -10
-      ],
-      "siege-commitment": [
-        -3,
-        1,
-        -12
-      ],
-      "siege-counts-posted-shooters": [
-        -2,
-        11,
+        5,
         -8
       ],
+      "siege-buys-the-passage": [
+        -32,
+        3,
+        8
+      ],
+      "siege-commitment": [
+        8,
+        -3,
+        1
+      ],
+      "siege-counts-posted-shooters": [
+        -5,
+        -2,
+        11
+      ],
       "siege-force-keeps-its-members": [
+        5,
         -7,
-        -9,
-        4
+        -9
       ],
       "siege-goes-on-the-forecast": [
+        -1,
         0,
+        null
+      ],
+      "siege-guns-take-a-reachable-post": [
+        43,
         null,
         null
       ],
       "siege-holds-a-breach": [
+        -17,
         16,
-        21,
-        12
+        21
       ],
       "siege-is-progress-2": [
+        -30,
         7,
-        8,
-        11
+        8
       ],
       "siege-is-progress-3": [
+        0,
         16,
-        -7,
-        12
+        -7
       ],
       "siege-keeps-a-shooter": [
+        5,
         -9,
-        4,
-        18
+        4
       ],
       "siege-members-use-their-moves": [
+        15,
         11,
-        8,
-        9
+        8
       ],
       "siege-moves-under-the-wing": [
+        20,
         10,
-        null,
         null
       ],
       "siege-needs-a-breaker": [
+        11,
         0,
-        19,
-        -2
+        19
       ],
       "siege-positive-damage-budget": [
+        25,
         -8,
-        -11,
-        9
+        -11
       ],
       "siege-preempts-the-queue": [
+        20,
         5,
-        -8,
-        -6
+        -8
       ],
       "siege-promotions-open-the-walls": [
         24,
-        -13,
-        null
+        24,
+        -13
       ],
       "siege-rally-holds": [
+        4,
         16,
-        6,
-        7
+        6
       ],
       "siege-ranged-floor": [
+        29,
         -8,
-        -16,
-        -8
+        -16
       ],
       "siege-shortfall-claims-the-projects": [
+        -18,
         7,
-        null,
         null
       ],
       "siege-target-needs-a-road": [
+        -15,
         -7,
-        9,
-        4
+        9
       ],
       "siege-tier-before-the-beeline": [
+        8,
         -5,
-        13,
-        -3
+        13
       ],
       "siege-tier-yields-to-the-bombers": [
+        16,
         -10,
-        0,
-        -17
+        0
       ],
       "siege-tier-yields-to-the-bombers-2": [
+        -37,
         19,
-        null,
         null
       ],
       "siege-train": [
+        3,
         4,
-        4,
-        -3
+        4
       ],
       "siege-train-scales-with-walls": [
+        44,
         -17,
-        7,
-        13
+        7
       ],
       "siege-train-upgrades-first": [
+        -39,
         -7,
-        -3,
-        -7
+        -3
       ],
       "skip-the-prophet-race-2": [
+        36,
         14,
-        -3,
-        -9
+        -3
       ],
       "slot-kind-tiebreak": [
+        8,
         -16,
-        0,
-        -21
+        0
       ],
       "slots-survive-the-roll": [
+        10,
         4,
-        null,
         null
       ],
       "solvency-first-trade-slot": [
+        -12,
         -16,
-        4,
         4
       ],
       "solvent-or-hold": [
+        -5,
         11,
-        -8,
-        null
+        -8
       ],
       "solver-plays-the-host": [
+        8,
         -1,
-        null,
         null
       ],
       "space-denial-promotes-the-rocket-scientist": [
+        -21,
         -10,
-        null,
         null
       ],
       "space-denial-slots-the-spy-cards": [
+        -7,
         6,
-        null,
         null
       ],
       "space-denial-spies-from-rocketry": [
+        -19,
         8,
-        4,
         4
       ],
       "space-people-call-the-projects": [
+        29,
         -3,
-        null,
         null
       ],
       "spaceport-above-the-sea": [
+        2,
         -4,
-        null,
         null
       ],
       "spaceport-surplus-veto": [
+        -5,
         10,
-        -25,
-        13
+        -25
+      ],
+      "spared-soldiers-come-to-the-capital": [
+        -36,
+        null,
+        null
       ],
       "spears-answer-the-horse": [
+        4,
         16,
-        null,
         null
       ],
       "spies-price-the-science-head": [
+        7,
         1,
-        null,
         null
       ],
       "spies-steal-the-lead": [
+        -34,
         5,
-        null,
         null
       ],
       "spreader-steps-out-of-the-apostle": [
+        -3,
         13,
-        14,
-        -4
+        14
       ],
       "spy-civics-come-first": [
+        -19,
         -5,
-        null,
         null
       ],
       "stage-march-keeps-to-land": [
+        -15,
         11,
-        -10,
-        5
+        -10
       ],
       "stage-musters-out-of-reach": [
+        46,
         -9,
-        4,
-        -5
+        4
       ],
       "stage-reads-the-muster-breakers": [
+        5,
         11,
-        15,
-        null
-      ],
-      "staging-column-passes-through": [
-        -8,
-        6,
-        3
-      ],
-      "staging-gun-reads-the-shared-danger": [
-        3,
-        0,
         15
       ],
-      "staging-gun-remembers-hostiles": [
-        -6,
-        -12,
-        -9
+      "staging-column-passes-through": [
+        -44,
+        -8,
+        6
       ],
-      "staging-gun-trusts-its-escort": [
-        -11,
-        -7,
-        18
-      ],
-      "staging-gun-trusts-its-escort-2": [
-        6,
-        20,
-        null
-      ],
-      "staging-reaches-the-border": [
-        7,
-        -4,
-        11
-      ],
-      "stale-swap-reads-the-march": [
+      "staging-gun-reads-the-shared-danger": [
+        -15,
         3,
-        4,
         0
       ],
-      "stall-rebases-on-new-walls": [
+      "staging-gun-remembers-hostiles": [
+        30,
+        -6,
+        -12
+      ],
+      "staging-gun-trusts-its-escort": [
         22,
-        0,
+        -11,
         -7
       ],
+      "staging-gun-trusts-its-escort-2": [
+        -3,
+        6,
+        20
+      ],
+      "staging-reaches-the-border": [
+        34,
+        7,
+        -4
+      ],
+      "stale-swap-reads-the-march": [
+        42,
+        3,
+        4
+      ],
+      "stall-rebases-on-new-walls": [
+        -3,
+        22,
+        0
+      ],
       "stall-waits-for-the-breach": [
+        -6,
         2,
-        -7,
-        12
+        -7
       ],
       "stalled-conquest-takes-science": [
+        36,
         34,
-        null,
         null
       ],
       "stalled-peace-spares-the-counter": [
+        44,
         -12,
-        -13,
-        5
+        -13
       ],
       "stalled-settler-takes-a-safe-site": [
+        8,
         9,
-        6,
-        -4
+        6
       ],
       "stalled-spreader-braves-the-march": [
+        0,
         -2,
-        null,
         null
       ],
       "standing-still-is-a-risk": [
+        -24,
         -19,
-        -11,
-        0
+        -11
       ],
       "stranded-settler-discount": [
+        -13,
         -2,
-        4,
-        19
-      ],
-      "stranded-settler-leaves-the-corridor": [
-        -6,
-        18,
-        -13
-      ],
-      "strategic-deposit-prey": [
-        18,
-        3,
-        9
-      ],
-      "strategic-wonders": [
-        13,
-        -12,
-        25
-      ],
-      "strike-opening": [
-        -1,
-        -7,
-        12
-      ],
-      "strike-reach": [
-        -10,
-        -9,
-        17
-      ],
-      "surge-fields-the-bombers": [
-        -3,
-        5,
-        -9
-      ],
-      "surprise-war-mobilization": [
-        -8,
-        -11,
         4
       ],
+      "stranded-settler-leaves-the-corridor": [
+        -1,
+        -6,
+        18
+      ],
+      "strategic-deposit-prey": [
+        -39,
+        18,
+        3
+      ],
+      "strategic-wonders": [
+        4,
+        13,
+        -12
+      ],
+      "strike-opening": [
+        17,
+        -1,
+        -7
+      ],
+      "strike-reach": [
+        -5,
+        -10,
+        -9
+      ],
+      "surge-fields-the-bombers": [
+        -5,
+        -3,
+        5
+      ],
+      "surprise-war-mobilization": [
+        -57,
+        -8,
+        -11
+      ],
       "surprise-watch-holds-its-ratio": [
+        27,
         0,
-        null,
         null
       ],
       "swap-rotation": [
+        9,
         2,
-        -3,
-        -15
+        -3
       ],
       "swap-rotation-2": [
+        13,
         0,
-        -2,
-        16
+        -2
       ],
       "sweden-builds-open-air-museums": [
+        -1,
         0,
-        null,
         null
       ],
       "the-giant-gets-the-peace-offer": [
+        0,
         17,
-        null,
         null
       ],
       "the-last-two-capitals-come-first": [
+        -44,
         5,
-        null,
         null
       ],
       "the-worked-backlog-gets-its-builder-first": [
         -7,
-        null,
+        -7,
         null
       ],
       "theater-keeps-its-amphitheater": [
+        -19,
         -3,
-        -1,
-        2
+        -1
       ],
       "theology-fights-count-the-host-edge": [
+        -20,
         6,
-        null,
         null
       ],
       "theology-fights-only-to-win": [
+        42,
         7,
-        -6,
-        -7
+        -6
       ],
       "threatened-city-buys-its-defender": [
+        -14,
         9,
-        8,
-        null
+        8
       ],
       "threatened-city-buys-its-defender-2": [
+        35,
         3,
-        -9,
-        null
+        -9
       ],
       "threatened-city-reserve": [
+        -83,
         16,
-        4,
-        2
+        4
       ],
       "threatened-city-reserve-2": [
+        56,
         -6,
-        7,
-        -19
+        7
       ],
       "threatened-lane-lends-the-army": [
+        -2,
         -11,
-        null,
         null
       ],
       "threatened-war-holds-the-claims": [
+        -11,
         15,
-        null,
         null
       ],
       "tier-gap-priced-once": [
+        17,
         7,
-        -11,
-        -7
+        -11
       ],
       "tier-gap-reads-the-fielded-line": [
+        -8,
         -4,
-        6,
-        5
+        6
       ],
       "tourism-land-reservation": [
+        49,
         7,
-        1,
-        -10
+        1
       ],
       "tower-assault": [
+        -2,
         12,
-        5,
-        14
-      ],
-      "trade-building-before-bankruptcy": [
-        11,
-        9,
-        10
-      ],
-      "trade-building-before-bankruptcy-2": [
-        -14,
-        5,
-        13
-      ],
-      "trade-growth-to-district": [
-        -7,
-        0,
-        7
-      ],
-      "trade-production-to-launch": [
-        0,
-        16,
         5
       ],
+      "trade-building-before-bankruptcy": [
+        15,
+        11,
+        9
+      ],
+      "trade-building-before-bankruptcy-2": [
+        -18,
+        -14,
+        5
+      ],
+      "trade-growth-to-district": [
+        9,
+        -7,
+        0
+      ],
+      "trade-production-to-launch": [
+        7,
+        0,
+        16
+      ],
       "trade-quotes-pay-the-lump": [
+        0,
         1,
-        null,
         null
       ],
       "trade-route-network": [
+        -15,
         -12,
-        1,
-        -2
+        1
       ],
       "trader-fills-the-idle-route": [
-        -11,
-        6,
-        14
-      ],
-      "treasury-at-work-2": [
-        25,
-        0,
-        7
-      ],
-      "treasury-at-work-2-2": [
-        -7,
-        32,
-        12
-      ],
-      "tribute-buys-the-friendship": [
-        10,
-        null,
-        null
-      ],
-      "tribute-warms-the-neighbour": [
-        -6,
-        null,
-        null
-      ],
-      "unchosen-war-keeps-the-lane": [
-        1,
-        -7,
-        2
-      ],
-      "unchosen-war-takes-the-first-peace": [
-        -6,
-        null,
-        null
-      ],
-      "unique-unit-closes-the-dark-age": [
-        -8,
-        null,
-        null
-      ],
-      "unique-unit-preference": [
-        8,
-        -4,
-        0
-      ],
-      "unit-cost-efficiency": [
-        12,
-        14,
-        -16
-      ],
-      "unit-objective-memory": [
-        -1,
-        7,
-        -1
-      ],
-      "unit-preservation": [
-        -4,
-        -6,
-        -16
-      ],
-      "universities-before-the-forge": [
-        10,
-        null,
-        null
-      ],
-      "unseen-capital-is-unseen": [
-        7,
-        1,
-        1
-      ],
-      "unwalled-city-spares-the-train": [
-        8,
-        6,
-        13
-      ],
-      "unwalled-city-takes-the-swarm": [
-        -13,
-        0,
-        30
-      ],
-      "unwalled-ring-steps-in": [
-        0,
-        0,
-        null
-      ],
-      "unwalled-target-declares-into-the-strike": [
-        17,
-        -6,
-        8
-      ],
-      "upgrade-card-for-the-backlog": [
-        -4,
-        null,
-        null
-      ],
-      "upgrade-the-garrison": [
-        -4,
-        6,
-        1
-      ],
-      "upgrade-window-campaign": [
-        -7,
-        -2,
-        -3
-      ],
-      "upkeep-reserve": [
-        13,
-        3,
-        25
-      ],
-      "upkeep-waits-for-the-income": [
-        -4,
-        null,
-        null
-      ],
-      "urban-planning-fills-the-slot": [
-        14,
-        15,
-        3
-      ],
-      "urgent-denial-needs-the-edge": [
-        -6,
-        -4,
-        -30
-      ],
-      "veterans-withdraw-early": [
-        16,
-        -6,
-        0
-      ],
-      "victory-deadline-budget": [
-        9,
-        -10,
-        5
-      ],
-      "victory-portfolio": [
-        -8,
-        5,
-        -25
-      ],
-      "wall-sortie-skips-the-encampment": [
-        -4,
-        -2,
-        1
-      ],
-      "walls-after-districts": [
-        20,
-        2,
-        -12
-      ],
-      "walls-release-the-one-blow": [
-        -8,
-        null,
-        null
-      ],
-      "war-bill-prices-the-tier-gap": [
-        -7,
+        -15,
         -11,
         6
       ],
+      "treasury-at-work-2": [
+        37,
+        25,
+        0
+      ],
+      "treasury-at-work-2-2": [
+        -20,
+        -7,
+        32
+      ],
+      "tribute-buys-the-friendship": [
+        5,
+        10,
+        null
+      ],
+      "tribute-warms-the-neighbour": [
+        1,
+        -6,
+        null
+      ],
+      "unchosen-war-keeps-the-lane": [
+        5,
+        1,
+        -7
+      ],
+      "unchosen-war-takes-the-first-peace": [
+        -26,
+        -6,
+        null
+      ],
+      "unique-unit-closes-the-dark-age": [
+        0,
+        -8,
+        null
+      ],
+      "unique-unit-preference": [
+        3,
+        8,
+        -4
+      ],
+      "unit-cost-efficiency": [
+        8,
+        12,
+        14
+      ],
+      "unit-objective-memory": [
+        1,
+        -1,
+        7
+      ],
+      "unit-preservation": [
+        -77,
+        -4,
+        -6
+      ],
+      "universities-before-the-forge": [
+        -14,
+        10,
+        null
+      ],
+      "unseen-capital-is-unseen": [
+        32,
+        7,
+        1
+      ],
+      "unwalled-city-spares-the-train": [
+        10,
+        8,
+        6
+      ],
+      "unwalled-city-takes-the-swarm": [
+        -8,
+        -13,
+        0
+      ],
+      "unwalled-ring-steps-in": [
+        17,
+        0,
+        0
+      ],
+      "unwalled-target-declares-into-the-strike": [
+        -3,
+        17,
+        -6
+      ],
+      "upgrade-card-for-the-backlog": [
+        46,
+        -4,
+        null
+      ],
+      "upgrade-the-garrison": [
+        8,
+        -4,
+        6
+      ],
+      "upgrade-window-campaign": [
+        -2,
+        -7,
+        -2
+      ],
+      "upkeep-reserve": [
+        21,
+        13,
+        3
+      ],
+      "upkeep-waits-for-the-income": [
+        -6,
+        -4,
+        null
+      ],
+      "urban-planning-fills-the-slot": [
+        9,
+        14,
+        15
+      ],
+      "urgent-denial-needs-the-edge": [
+        -5,
+        -6,
+        -4
+      ],
+      "veterans-withdraw-early": [
+        -6,
+        16,
+        -6
+      ],
+      "victory-deadline-budget": [
+        -43,
+        9,
+        -10
+      ],
+      "victory-portfolio": [
+        -23,
+        -8,
+        5
+      ],
+      "wall-sortie-skips-the-encampment": [
+        22,
+        -4,
+        -2
+      ],
+      "walls-after-districts": [
+        -15,
+        20,
+        2
+      ],
+      "walls-release-the-one-blow": [
+        21,
+        -8,
+        null
+      ],
+      "war-bill-prices-the-tier-gap": [
+        -48,
+        -7,
+        -11
+      ],
       "war-defense-spends-the-runway": [
+        4,
         -17,
-        null,
         null
       ],
       "war-economy": [
+        42,
         -14,
-        15,
-        1
+        15
       ],
       "war-faith-buys-the-army": [
+        19,
         0,
-        null,
         null
       ],
       "war-kills-the-bands": [
+        -13,
         0,
-        22,
-        -7
+        22
       ],
       "war-kills-the-bands-2": [
+        -15,
         -9,
-        -19,
-        4
-      ],
-      "war-needs-a-treasury": [
-        13,
-        -9,
-        3
-      ],
-      "war-policy-via-board": [
-        8,
-        -4,
-        28
-      ],
-      "war-raids-the-pads": [
-        2,
-        6,
-        5
-      ],
-      "war-reinforcement": [
-        -9,
-        4,
         -19
       ],
+      "war-needs-a-treasury": [
+        -56,
+        13,
+        -9
+      ],
+      "war-policy-via-board": [
+        18,
+        8,
+        -4
+      ],
+      "war-raids-the-pads": [
+        63,
+        2,
+        6
+      ],
+      "war-reinforcement": [
+        -5,
+        -9,
+        4
+      ],
       "war-target-prices-the-walls": [
+        11,
         4,
-        3,
-        17
+        3
       ],
       "weak-target-skips-the-muster": [
+        -13,
         1,
-        14,
-        -17
+        14
       ],
       "whole-turn-backtrack-guard": [
+        7,
         2,
-        -13,
-        11
+        -13
       ],
       "wide-map-capacity": [
+        -27,
         21,
-        33,
-        21
+        33
       ],
       "wing-capital-spotting": [
+        11,
         -14,
-        null,
         null
       ],
       "wonder-adjacent-sites-2": [
+        -3,
         -9,
-        -1,
-        -3
-      ],
-      "wonder-ring-recon": [
-        3,
-        -11,
         -1
       ],
+      "wonder-ring-recon": [
+        2,
+        3,
+        -11
+      ],
       "wonder-ring-recon-2": [
+        -2,
         -5,
-        11,
-        4
+        11
       ],
       "wonder-score-tally": [
+        20,
         -12,
-        1,
-        3
+        1
       ],
       "world-religion-condemns-the-faith": [
+        -10,
         11,
-        null,
         null
       ],
       "wounded-out-of-reach": [
+        -12,
         -14,
-        -11,
-        -8
+        -11
       ],
       "wounded-out-of-reach-2": [
+        -39,
         -7,
-        -13,
-        -9
+        -13
       ],
       "wounded-ship-sails-on": [
+        -18,
         -14,
-        null,
         null
       ],
       "wounded-taker-finishes-the-breach": [
+        -52,
         3,
-        -22,
-        15
+        -22
       ]
     },
     "batch_decisions": {
       "acropolis-before-the-deterrent": "off",
       "age-closer": "off",
-      "age-closer-2": "off",
+      "age-closer-2": "on",
       "age-closer-spends-the-reserve": "off",
       "air-fire-counts-on-the-city": "off",
       "air-surge": "off",
       "air-surge-2": "on",
-      "air-surge-strikes-through-urgency": "off",
+      "air-surge-strikes-through-urgency": "on",
       "air-volley-needs-a-road": "off",
       "air-wing-grows-with-the-aluminum": "off",
       "alliance-remembers-the-refusal": "off",
       "aluminum-ask-tops-up-gold": "off",
       "aluminum-buys-the-tile": "off",
-      "aluminum-tile-spends-the-war-chest": "off",
+      "aluminum-tile-spends-the-war-chest": "on",
       "amani-follows-suzerainty": "off",
       "amenity-district-path": "off",
       "amenity-project-preemption": "on",
-      "amenity-project-preemption-2": "on",
+      "amenity-project-preemption-2": "off",
       "amphibious-siege-train": "off",
       "amphibious-siege-train-2": "off",
-      "anvil": "off",
+      "anvil": "on",
       "anvil-follows-the-defense": "off",
       "anvil-garrisons-its-melee": "on",
-      "anvil-spares-the-one-blow": "off",
-      "apostle-evangelizes-unspent": "off",
-      "apostle-promotion-by-role": "on",
-      "apostle-transit-keeps-the-cover": "off",
-      "aqueduct-claims-the-capped-queue": "off",
+      "anvil-spares-the-one-blow": "on",
+      "apostle-evangelizes-unspent": "on",
+      "apostle-promotion-by-role": "off",
+      "apostle-transit-keeps-the-cover": "on",
+      "aqueduct-claims-the-capped-queue": "on",
       "army-target-weighs-enemy": "off",
       "army-upgrade-materials": "off",
-      "artifact-before-more-museums": "on",
-      "assault-forecast-is-read": "off",
+      "artifact-before-more-museums": "off",
+      "assault-forecast-is-read": "on",
       "astrology-before-the-second-city": "off",
-      "backlog-builder-takes-the-queue": "off",
+      "backlog-builder-takes-the-queue": "on",
       "band-bank-bars-people-under-fire": "off",
-      "band-buys-near-the-stage": "off",
+      "band-buys-near-the-stage": "on",
       "band-plays-at-level-three": "on",
       "band-plays-its-stage": "off",
-      "band-plays-the-stage-at-hand": "off",
-      "band-plays-what-it-can-reach": "on",
+      "band-plays-the-stage-at-hand": "on",
+      "band-plays-what-it-can-reach": "off",
       "band-stage-needs-three-venues": "off",
       "band-stall-bars-no-host": "off",
       "bands-draw-from-the-bar": "off",
@@ -5386,8 +5436,8 @@
       "barbarian-scouts-are-scouts": "off",
       "barbarian-settler-capture": "off",
       "battle-planner": "on",
-      "battle-planner-2": "off",
-      "battle-planner-3": "off",
+      "battle-planner-2": "on",
+      "battle-planner-3": "on",
       "battle-solver": "off",
       "beeline-orders-by-value": "off",
       "befriend-the-strongest": "on",
@@ -5396,13 +5446,13 @@
       "blind-objective-units": "off",
       "blocker-becomes-the-target": "off",
       "board-ignores-the-faith-war": "on",
-      "bombers-fly-on-a-small-stock": "on",
-      "bombers-open-the-siege-walls": "off",
-      "boost-first-research": "off",
+      "bombers-fly-on-a-small-stock": "off",
+      "bombers-open-the-siege-walls": "on",
+      "boost-first-research": "on",
       "boost-first-research-2": "off",
       "boost-planner": "off",
       "boost-planner-builds": "off",
-      "boost-unlock-research": "off",
+      "boost-unlock-research": "on",
       "boost-wait-research-2": "off",
       "boosted-bargain-first": "off",
       "boosted-bargain-first-2": "off",
@@ -5412,19 +5462,19 @@
       "border-parity-3": "off",
       "bounded-recovery": "on",
       "breach-assault": "off",
-      "breach-assault-closes-in": "off",
+      "breach-assault-closes-in": "on",
       "breach-counts-nearby-guns": "off",
       "breach-reads-the-air": "off",
-      "breach-support-reads-the-wall-tier": "off",
+      "breach-support-reads-the-wall-tier": "on",
       "breaker-before-the-war": "off",
       "breaker-bought-for-the-siege": "off",
       "breaker-keeps-its-queue": "off",
       "breaker-reads-the-march": "off",
-      "breaker-research-first": "off",
+      "breaker-research-first": "on",
       "breaker-spares-the-backlog-builder": "off",
       "breaker-supply-scales": "on",
       "breaker-supply-scales-2": "off",
-      "breaker-to-the-fastest": "off",
+      "breaker-to-the-fastest": "on",
       "breaker-walks-under-a-shield": "off",
       "breakers-match-the-walls": "off",
       "breakers-stay-with-the-siege": "off",
@@ -5433,31 +5483,31 @@
       "builder-before-the-army": "off",
       "builder-before-the-army-2": "off",
       "builder-before-the-army-3": "on",
-      "builder-charge-window": "off",
+      "builder-charge-window": "on",
       "builder-prices-travel-in-turns": "off",
-      "builder-supply-floor": "off",
+      "builder-supply-floor": "on",
       "builder-tries-the-next-tile": "off",
-      "builder-workforce-recovery": "on",
+      "builder-workforce-recovery": "off",
       "builder-workforce-recovery-2": "off",
-      "builder-workforce-recovery-3": "off",
-      "builders-before-the-lent-floor": "off",
+      "builder-workforce-recovery-3": "on",
+      "builders-before-the-lent-floor": "on",
       "builders-cover-the-worked-backlog": "off",
       "builders-improve-the-worked-for-production": "off",
       "builders-route-around-mountains": "off",
       "builders-work-through-raiders": "on",
       "buildings-before-projects": "off",
-      "buy-what-cards-cannot-boost": "off",
+      "buy-what-cards-cannot-boost": "on",
       "camp-party": "off",
       "camp-tile-buyout": "off",
       "campaign-pillage": "on",
       "campaign-weighs-the-tourism-leader": "off",
       "camps-close-the-age": "off",
-      "camps-close-the-age-2": "off",
+      "camps-close-the-age-2": "on",
       "camps-close-the-age-3": "off",
       "campus-above-the-sea": "off",
       "campus-adjacency-threshold": "off",
       "campus-adjacency-threshold-2": "off",
-      "campus-and-library-before-the-claims": "off",
+      "campus-and-library-before-the-claims": "on",
       "campus-before-halfway": "off",
       "campus-before-harbor": "off",
       "campus-before-harbor-2": "off",
@@ -5473,38 +5523,39 @@
       "campus-unlock-every-lane": "off",
       "canal-city": "on",
       "capital-archers-before-the-surprise": "off",
+      "capital-archers-before-the-surprise-2": "off",
       "capital-campaign-router": "off",
       "capital-campus-before-the-plaza": "on",
-      "capital-defense-holds": "off",
-      "capital-keeps-its-defender": "on",
-      "capital-keeps-its-defender-2": "on",
+      "capital-defense-holds": "on",
+      "capital-keeps-its-defender": "off",
+      "capital-keeps-its-defender-2": "off",
       "capital-keeps-its-defender-3": "off",
       "capital-keeps-its-governor": "off",
-      "capital-leaves-the-frost": "off",
-      "capital-monument-after-the-second-city": "off",
+      "capital-leaves-the-frost": "on",
+      "capital-monument-after-the-second-city": "on",
       "capital-prey-opens-a-front": "off",
-      "capital-prey-opens-a-front-2": "off",
+      "capital-prey-opens-a-front-2": "on",
       "capital-prey-scales-the-walls": "off",
       "capital-settler-after-completion": "on",
-      "capital-taken-moves-on": "off",
+      "capital-taken-moves-on": "on",
       "capital-walls-at-any-ratio": "on",
       "capital-walls-before-the-surprise": "off",
-      "capital-watch-arms-the-slinger": "off",
+      "capital-watch-arms-the-slinger": "on",
       "captives-come-home": "off",
       "captives-come-home-2": "off",
       "capture-go-or-stand-down": "off",
       "capture-go-or-stand-down-2": "off",
       "capture-hold-chain": "off",
-      "capture-holds-the-ring": "off",
+      "capture-holds-the-ring": "on",
       "capture-scar-reads-the-new-city": "off",
       "capture-waits-on-the-march": "off",
       "centre-keeps-its-garrison": "off",
-      "chain-payback-window": "on",
-      "chain-payback-window-2": "off",
+      "chain-payback-window": "off",
+      "chain-payback-window-2": "remove",
       "chase-every-boost": "off",
-      "chase-every-boost-2": "off",
+      "chase-every-boost-2": "on",
       "cheapest-wonder-first": "off",
-      "chokepoint-claim": "on",
+      "chokepoint-claim": "off",
       "chokepoint-garrison": "off",
       "chokepoint-siting": "off",
       "chop-feeds-the-long-build": "off",
@@ -5512,16 +5563,16 @@
       "chop-for-expansion": "off",
       "chop-spares-the-worked-tile": "on",
       "city-campaign": "off",
-      "city-campaign-2": "off",
+      "city-campaign-2": "on",
       "city-state-before-the-first-capital": "off",
       "city-state-harvest": "off",
       "city-state-war-is-no-front": "off",
-      "city-strike-takes-the-gun": "off",
+      "city-strike-takes-the-gun": "on",
       "city-target-meets-the-map": "off",
       "city-under-fire-ranks-first": "on",
       "civic-awaits-its-inspiration": "off",
       "civilian-out-of-reach": "remove",
-      "close-as-a-body": "on",
+      "close-as-a-body": "off",
       "closed-border-blocker-declares": "off",
       "coalition-before-war": "off",
       "coalition-before-war-2": "off",
@@ -5534,7 +5585,7 @@
       "colonization-earns-its-slot-2": "on",
       "come-ashore": "off",
       "commercial-hub-and-traders": "off",
-      "commercial-hub-claims-a-peace-queue": "off",
+      "commercial-hub-claims-a-peace-queue": "on",
       "commercial-hub-in-the-strategic-queue": "on",
       "commitment-owner-acts": "off",
       "commitment-patience": "off",
@@ -5543,27 +5594,27 @@
       "congress-guards-the-leader": "off",
       "connect-the-luxury": "on",
       "connect-the-luxury-2": "on",
-      "conquest-opening-needs-the-production": "off",
+      "conquest-opening-needs-the-production": "on",
       "conquest-opening-stays-near": "on",
       "conquest-takes-the-soft-city": "off",
-      "contact-fleet": "off",
+      "contact-fleet": "on",
       "contender-at-peace-is-the-target": "off",
       "contested-land-first": "off",
       "conversion-majority-alarm": "off",
       "conversion-majority-alarm-2": "off",
-      "coordinated-finish": "off",
+      "coordinated-finish": "on",
       "corps-comes-home-alive": "off",
       "counter-culture-by-conquest": "off",
       "counter-out-of-reach-takes-the-weak": "off",
-      "counter-war-needs-parity": "off",
+      "counter-war-needs-parity": "on",
       "counter-war-needs-the-emperor-edge": "off",
       "counterfaith-leaves-two-holdouts": "off",
-      "counterweight-builds-its-source": "off",
+      "counterweight-builds-its-source": "on",
       "counterweight-defends-the-diplomat": "off",
       "counterweight-faith-is-no-threat": "off",
       "counterweight-finishes-one-shrine": "off",
       "counterweight-flips-the-small-towns": "off",
-      "counterweight-from-the-first-convert": "off",
+      "counterweight-from-the-first-convert": "on",
       "counterweight-spends-the-bank": "off",
       "crushing-steady-passes-the-edge": "off",
       "culture-bank-holds-the-counterweight": "off",
@@ -5572,64 +5623,64 @@
       "culture-building-catchup": "off",
       "culture-building-catchup-2": "off",
       "culture-building-catchup-3": "off",
-      "culture-building-debt": "off",
+      "culture-building-debt": "on",
       "culture-cold-war-window": "off",
       "culture-counter-declares": "off",
       "culture-defense-theater": "off",
       "culture-defense-theater-2": "off",
       "culture-denial-heist": "off",
-      "culture-digs-every-site": "off",
+      "culture-digs-every-site": "on",
       "culture-digs-one-museum": "on",
       "culture-faith-braves-the-barbarians": "off",
-      "culture-faith-opens-at-the-theaters": "off",
+      "culture-faith-opens-at-the-theaters": "on",
       "culture-faith-reservation": "off",
       "culture-faith-site-per-theater": "off",
-      "culture-faith-site-per-theater-2": "off",
+      "culture-faith-site-per-theater-2": "on",
       "culture-faith-site-per-theater-3": "off",
       "culture-finish-at-the-observed-bar": "off",
       "culture-floor": "off",
       "culture-gold-buys-the-shrines": "off",
       "culture-keeps-every-border-open": "off",
-      "culture-keeps-every-border-open-2": "off",
-      "culture-keeps-its-aesthetics": "on",
+      "culture-keeps-every-border-open-2": "on",
+      "culture-keeps-its-aesthetics": "off",
       "culture-keeps-pingala-home": "off",
       "culture-lane-forecast": "off",
       "culture-lane-forecast-2": "off",
       "culture-pass-keeps-half-the-army": "off",
-      "culture-reads-the-engine-clock": "off",
+      "culture-reads-the-engine-clock": "on",
       "culture-recovery-spends-the-bank": "off",
       "culture-road-builds-its-triggers": "off",
-      "culture-road-earns-its-inspirations": "on",
+      "culture-road-earns-its-inspirations": "off",
       "culture-road-takes-the-unique-first": "off",
-      "culture-routes-reach-every-rival": "on",
-      "culture-seat-allies": "on",
+      "culture-routes-reach-every-rival": "off",
+      "culture-seat-allies": "off",
       "culture-seat-appoints-pingala-first": "off",
       "culture-seat-builds-past-the-deterrent": "on",
-      "culture-seat-drama-before-government": "off",
-      "culture-seat-drama-first": "off",
+      "culture-seat-drama-before-government": "on",
+      "culture-seat-drama-first": "on",
       "culture-seat-fills-its-district-slots": "off",
-      "culture-seat-monuments": "on",
+      "culture-seat-monuments": "off",
       "culture-seat-monuments-2": "off",
       "culture-seat-theater-first": "on",
       "culture-seat-theater-first-2": "off",
       "culture-threat-early": "off",
-      "culture-tourism-payback": "on",
+      "culture-tourism-payback": "off",
       "curator-sits-with-the-works": "off",
-      "deals-at-the-ceiling": "off",
-      "deals-for-our-gain": "off",
+      "deals-at-the-ceiling": "on",
+      "deals-for-our-gain": "on",
       "decisive-window": "off",
-      "deck-follows-the-queue": "off",
+      "deck-follows-the-queue": "on",
       "deck-prices-growth": "off",
       "declaration-needs-a-capture": "off",
       "declaration-needs-production-parity": "off",
       "declaration-needs-the-edge": "off",
       "declaration-needs-the-edge-2": "off",
       "declaration-waits-for-the-breach": "off",
-      "declaration-waits-for-the-breaker": "off",
+      "declaration-waits-for-the-breaker": "remove",
       "defeated-majors-leave-the-board": "off",
       "defence-holds-under-fire": "off",
       "defend-force-holds-the-city": "off",
-      "defend-force-holds-the-city-2": "on",
+      "defend-force-holds-the-city-2": "off",
       "defend-where-you-stand": "off",
       "defenders-hold-the-walls": "off",
       "defenders-keep-the-city-in-reach": "off",
@@ -5637,11 +5688,13 @@
       "delegations-reach-every-rival": "off",
       "denial-charts-the-racer": "off",
       "denial-keeps-its-rival": "off",
-      "denial-nearest-finish": "on",
+      "denial-nearest-finish": "off",
       "denial-needs-a-road": "off",
       "denial-outranks-expansion": "off",
-      "denial-spies-count-their-losses": "off",
+      "denial-spies-count-their-losses": "on",
+      "denial-spies-cover-every-racer": "off",
       "denial-spies-fill-every-slot": "off",
+      "denial-spies-fill-every-slot-2": "off",
       "denial-spies-skip-the-upkeep-wait": "on",
       "denial-target-leads-the-fronts": "off",
       "denial-war-needs-the-lane-edge": "on",
@@ -5649,45 +5702,46 @@
       "deterrence-spares-the-faith-defence": "off",
       "deterrence-stops-at-a-garrison": "off",
       "deterrence-trusts-a-friend": "off",
+      "deterrence-waits-for-the-income": "on",
       "detour-keeps-the-site-worth": "off",
       "dialogue-never-declares-war": "off",
       "diplo-match-point-beelines-the-points": "off",
       "diplo-seat-statue-harbor": "off",
       "diplo-seat-wonder-claim": "on",
       "diplomat-saves-for-the-apostle": "off",
-      "diplomatic-contender-eliminated": "on",
+      "diplomatic-contender-eliminated": "off",
       "diplomatic-contender-kept": "off",
       "diplomatic-contender-kept-2": "off",
       "diplomatic-lane-forecast": "off",
       "diplomatic-lane-forecast-2": "off",
-      "disrupt-before-the-sources": "off",
+      "disrupt-before-the-sources": "on",
       "disrupt-waits-for-the-match-point": "off",
       "district-buildings-first": "off",
       "district-buildings-first-2": "off",
       "district-coverage": "off",
-      "district-coverage-2": "on",
+      "district-coverage-2": "off",
       "district-planning": "off",
       "district-planning-3": "off",
-      "districts-price-the-improvement": "off",
-      "districts-protect-seowon-science": "on",
-      "domination-capital-focus": "off",
-      "domination-charts-every-capital": "on",
+      "districts-price-the-improvement": "on",
+      "districts-protect-seowon-science": "off",
+      "domination-capital-focus": "on",
+      "domination-charts-every-capital": "off",
       "domination-city-count": "off",
-      "domination-clock-every-rung": "on",
+      "domination-clock-every-rung": "off",
       "domination-finish-holds-the-front": "off",
       "domination-ignores-city-states": "off",
-      "domination-joins-the-race": "off",
-      "domination-lane-hands-over": "on",
+      "domination-joins-the-race": "on",
+      "domination-lane-hands-over": "off",
       "domination-seat-appoints-pingala-first": "off",
       "domination-seat-raises-its-culture": "off",
       "domination-siege-research": "off",
-      "domination-siege-research-2": "off",
+      "domination-siege-research-2": "on",
       "domination-specializes-earlier": "off",
       "domination-spends-the-stock": "off",
       "domination-strikes-when-staged": "off",
       "domination-target-gets-its-breaker": "off",
-      "domination-targets-land-first": "on",
-      "doomed-blow-veto": "off",
+      "domination-targets-land-first": "off",
+      "doomed-blow-veto": "on",
       "doomed-blow-veto-2": "off",
       "dry-road-outlasts-a-blocked-step": "off",
       "dvp-leader-is-the-front": "off",
@@ -5697,20 +5751,20 @@
       "early-conquest-opening": "off",
       "early-conquest-stands-down": "off",
       "early-contact-window": "off",
-      "early-contact-window-2": "off",
+      "early-contact-window-2": "on",
       "early-project-restraint": "off",
-      "early-project-restraint-2": "on",
+      "early-project-restraint-2": "off",
       "early-route-feeds-production": "on",
       "early-settler-floor": "on",
       "edge-unit-opens-from-the-start": "off",
-      "edge-unit-rushes-from-the-capital": "off",
+      "edge-unit-rushes-from-the-capital": "on",
       "edge-unit-takes-the-soft-city": "on",
       "education-follows-the-library": "off",
-      "elective-war-in-reach": "on",
+      "elective-war-in-reach": "off",
       "elective-war-yields-to-a-lane": "off",
       "elimination-waits-on-the-clock": "off",
       "elimination-yields-to-a-launch": "off",
-      "elimination-yields-to-a-launch-2": "off",
+      "elimination-yields-to-a-launch-2": "on",
       "embassy-finds-the-capital": "off",
       "embassy-finds-the-capital-2": "off",
       "encampment-seals-the-pass": "off",
@@ -5725,57 +5779,57 @@
       "escort-cap-holds": "on",
       "escort-unstick": "off",
       "eureka-chasing-builder": "off",
-      "eureka-chasing-builder-2": "off",
-      "eureka-chasing-production": "off",
-      "every-shooter-at-the-walls": "off",
-      "exalted-goddess-buys-the-coastal-guard": "off",
+      "eureka-chasing-builder-2": "on",
+      "eureka-chasing-production": "on",
+      "every-shooter-at-the-walls": "on",
+      "exalted-goddess-buys-the-coastal-guard": "on",
       "exchange-is-the-engines": "off",
       "exhaustion-loyalty-guard": "off",
       "expansion-best-idle-city": "off",
       "expansion-best-idle-city-2": "off",
       "expansion-hall-district": "off",
-      "expansion-pays-back": "on",
+      "expansion-pays-back": "off",
       "expansion-scales-with-difficulty": "off",
       "expansion-schedule": "off",
       "faith-counter-needs-the-edge": "off",
       "faith-counter-waits-for-match-point": "on",
-      "faith-strike-at-a-quiet-parity": "on",
-      "faith-strike-fears-the-tech-lead": "off",
+      "faith-strike-at-a-quiet-parity": "off",
+      "faith-strike-fears-the-tech-lead": "on",
       "faith-strike-spares-the-stages": "off",
-      "faith-strike-wipes-the-spreaders": "on",
-      "faith-war-at-match-point": "off",
-      "faith-war-before-the-flip": "off",
+      "faith-strike-wipes-the-spreaders": "off",
+      "faith-war-at-match-point": "on",
+      "faith-war-before-the-flip": "on",
       "faith-war-before-the-flip-2": "off",
-      "faith-war-defends-the-diplomat": "off",
+      "faith-war-defends-the-diplomat": "on",
       "faith-war-is-no-front": "off",
       "faith-war-is-no-front-2": "off",
       "faith-war-needs-the-edge": "off",
-      "faith-war-on-a-small-world": "on",
-      "faithless-seat-holds-its-faith-strikes": "off",
+      "faith-war-on-a-small-world": "off",
+      "faithless-seat-holds-its-faith-strikes": "on",
       "falling-city-calls-the-takers": "off",
       "falling-city-outranks-the-heal": "off",
       "favor-bought-before-congress": "off",
       "favor-spares-the-surprise-war": "on",
       "field-reads-the-tile-it-leaves": "on",
       "find-the-capital": "off",
-      "fire-plan": "off",
+      "fire-plan": "on",
       "first-builder-reserve": "off",
-      "first-builder-reserve-2": "off",
-      "first-campus-before-the-settler": "on",
+      "first-builder-reserve-2": "on",
+      "first-campus-before-the-settler": "off",
       "first-capital-before-the-camp": "on",
-      "first-capital-before-the-walls": "off",
+      "first-capital-before-the-walls": "on",
       "first-capital-strikes-the-open-window": "off",
       "first-capital-walks-the-one-landmass": "off",
       "first-district-first": "off",
       "first-granary-reserve": "off",
       "first-granary-reserve-2": "off",
-      "first-granary-reserve-3": "off",
+      "first-granary-reserve-3": "on",
       "first-launch-keeps-research": "off",
       "first-luxury-first": "on",
-      "first-luxury-first-2": "on",
-      "first-pad-in-the-forge": "on",
-      "first-research-building-reserve": "off",
-      "flipped-capital-finishes": "off",
+      "first-luxury-first-2": "off",
+      "first-pad-in-the-forge": "off",
+      "first-research-building-reserve": "on",
+      "flipped-capital-finishes": "on",
       "flower-power-in-the-dark": "off",
       "fog-yields-to-a-stranded-settler": "off",
       "food-focus-grows-the-small-city": "off",
@@ -5785,7 +5839,7 @@
       "found-against-a-rival-faith": "off",
       "founder-converts-its-own-cities": "off",
       "founder-defends-its-cities": "off",
-      "founder-funds-the-inquisition": "off",
+      "founder-funds-the-inquisition": "on",
       "founder-holds-the-holy-city": "off",
       "founder-keeps-two-sources": "off",
       "founder-spreads-only-its-faith": "off",
@@ -5794,29 +5848,29 @@
       "free-slot-campus-clock": "on",
       "fresh-water-prices-the-site": "on",
       "friendship-ends-at-the-race": "off",
-      "friendship-keeps-the-peace": "on",
-      "friendship-only-with-the-stronger": "off",
-      "friendship-outlasts-the-gated-race": "on",
-      "friendship-refuses-the-racer": "off",
+      "friendship-keeps-the-peace": "off",
+      "friendship-only-with-the-stronger": "remove",
+      "friendship-outlasts-the-gated-race": "off",
+      "friendship-refuses-the-racer": "on",
       "friendship-spares-the-converter": "off",
-      "friendship-spares-the-prey": "off",
+      "friendship-spares-the-prey": "on",
       "friendship-spares-the-target": "off",
       "front-finishes-its-capital": "off",
-      "front-finishes-its-siege": "on",
+      "front-finishes-its-siege": "off",
       "front-needs-a-declarable-rival": "off",
-      "front-weighted-floor": "off",
+      "front-weighted-floor": "on",
       "front-weighted-floor-2": "off",
       "frontier-massing-alarm": "off",
       "frontier-walls-before-the-surprise": "off",
-      "garrison-before-the-surprise": "off",
+      "garrison-before-the-surprise": "on",
       "garrison-under-fire": "off",
-      "generals-lead-the-army": "on",
+      "generals-lead-the-army": "off",
       "gold-buys-the-backlog-builder": "off",
       "gold-buys-the-idle-trader": "on",
       "gold-buys-the-opening-builder": "on",
-      "gold-buys-the-production-tile": "on",
+      "gold-buys-the-production-tile": "off",
       "gold-buys-the-settler": "off",
-      "gold-income-floor": "remove",
+      "gold-income-floor": "off",
       "gold-unit-buys-read-the-host-quote": "on",
       "golden-dedication-serves-the-conquest": "on",
       "good-land-lifts-the-city-target": "on",
@@ -5830,75 +5884,77 @@
       "granary-claims-the-bound-queue": "off",
       "great-person-housing": "on",
       "great-work-completion-value": "off",
-      "great-works-never-wait": "on",
-      "group-steps-read-the-field": "off",
+      "great-works-never-wait": "off",
+      "group-steps-read-the-field": "on",
       "growth-prices-the-farm": "off",
       "growth-prices-the-farm-2": "off",
       "growth-to-settle": "off",
-      "gun-queue-follows-the-road": "off",
+      "gun-queue-follows-the-road": "remove",
       "gun-queues-behind-the-column": "on",
+      "gun-resource-buys-the-tile": "off",
       "guns-enter-together": "off",
-      "guns-grind-the-walls": "off",
+      "guns-grind-the-walls": "on",
+      "guns-keep-the-oil": "off",
       "guns-post-for-a-near-breach": "off",
       "guns-stay-out-of-reach": "off",
       "guns-stay-out-of-reach-2": "off",
-      "guns-stay-out-of-reach-3": "off",
-      "guru-heals-the-corps-2": "off",
+      "guns-stay-out-of-reach-3": "on",
+      "guru-heals-the-corps-2": "on",
       "guru-walks-to-the-wounded": "off",
       "gutted-rival-passes-the-edge": "off",
       "hidden-border-yields-to-our-pressure": "off",
       "hint-runs-the-claims": "off",
       "holdable-land-keeps-settling": "off",
       "holdout-keeps-the-faith-war": "off",
-      "holdout-keeps-the-faith-war-2": "on",
+      "holdout-keeps-the-faith-war-2": "off",
       "holy-lane-parity": "off",
       "holy-site-where-the-threat-is": "off",
       "holy-site-where-the-threat-is-2": "off",
-      "hopeless-army-yields-the-queue": "on",
+      "hopeless-army-yields-the-queue": "off",
       "hostile-memory": "off",
-      "hostile-memory-2": "off",
+      "hostile-memory-2": "on",
       "hostile-memory-3": "on",
-      "housing-bound-city-builds-its-granary": "on",
+      "housing-bound-city-builds-its-granary": "off",
       "housing-cap-builds-the-aqueduct": "on",
       "housing-research": "off",
-      "housing-research-2": "off",
+      "housing-research-2": "on",
       "idle-faith-patronage": "off",
-      "immortal-skips-the-prophet-race": "off",
+      "immortal-skips-the-prophet-race": "on",
       "improvement-upgrades-count": "on",
       "industrial-chain-debt": "off",
       "industrial-hub": "off",
-      "industrial-zone-claims-the-factory": "off",
+      "industrial-zone-claims-the-factory": "on",
       "industrial-zone-claims-the-producer-queue": "on",
-      "industrial-zone-in-the-producers": "on",
-      "industry-before-the-army": "off",
+      "industrial-zone-in-the-producers": "off",
+      "industry-before-the-army": "on",
       "industry-before-the-army-2": "on",
       "industry-before-the-army-3": "off",
-      "industry-in-the-district-list": "on",
-      "inquisition-answers-a-rival-majority": "on",
+      "industry-in-the-district-list": "off",
+      "inquisition-answers-a-rival-majority": "off",
       "inquisition-defends-the-diplomat": "off",
       "invest-keeps-its-cavalry": "off",
       "island-exploration": "off",
-      "korea-mines-beside-the-seowon": "off",
+      "korea-mines-beside-the-seowon": "on",
       "kristina-builds-the-bibliotheque": "off",
       "kristina-fills-to-theme": "on",
-      "land-army-asks-the-host-price": "off",
+      "land-army-asks-the-host-price": "on",
       "land-grab-outlasts-the-opening": "off",
       "land-recon-before-the-first-capital": "off",
       "lane-culture-spending": "off",
       "lane-delegates-production": "remove",
       "lane-delegates-production-2": "on",
-      "lane-great-people": "on",
+      "lane-great-people": "off",
       "lane-policy-deck": "remove",
-      "lane-release-when-hopeless": "on",
-      "lane-space-race": "on",
+      "lane-release-when-hopeless": "off",
+      "lane-space-race": "off",
       "lane-votes-its-favor": "on",
-      "last-capital-war-kept": "off",
-      "last-charge-joins-the-army": "on",
-      "launch-commits-the-endgame": "on",
+      "last-capital-war-kept": "on",
+      "last-charge-joins-the-army": "off",
+      "launch-commits-the-endgame": "off",
       "launch-pad-holds-its-queue": "off",
-      "launch-pad-keeps-its-rung": "off",
+      "launch-pad-keeps-its-rung": "on",
       "launched-racer-yields-the-capital": "off",
-      "launcher-war-fights-the-faster-racer": "off",
+      "launcher-war-fights-the-faster-racer": "on",
       "launcher-war-ignores-the-edge": "on",
       "launcher-war-serves-every-lane": "on",
       "launcher-war-skips-the-reserve": "off",
@@ -5907,61 +5963,62 @@
       "long-road-names-the-blocker": "off",
       "loyalty-rate-alarm": "off",
       "luxury-asks-pay-in-strategics": "off",
-      "luxury-asks-pay-in-strategics-2": "off",
+      "luxury-asks-pay-in-strategics-2": "on",
       "luxury-buy-asks": "off",
-      "luxury-swap-asks": "on",
+      "luxury-swap-asks": "off",
       "luxury-swap-asks-2": "off",
       "magnus-follows-settlers": "off",
       "maintenance-aware-deck": "on",
       "march-uses-its-moves": "off",
-      "match-point-interception-ignores-power": "off",
+      "match-point-interception-ignores-power": "on",
       "medina-quarter-houses-the-districts": "off",
       "medina-yields-to-the-amenities": "off",
-      "melee-storms-an-open-city": "on",
+      "melee-storms-an-open-city": "off",
       "merchant-confederation-earns-its-slot": "on",
       "merchant-confederation-earns-its-slot-2": "off",
-      "military-alliance-shield": "off",
+      "military-alliance-shield": "on",
       "military-alliance-shield-2": "off",
       "missionary-evades-raiders": "off",
       "missionary-last-charge-explores": "off",
       "missionary-last-charge-explores-2": "off",
-      "modernization-prices-the-path": "off",
+      "modernization-prices-the-path": "on",
       "modernize-before-spending": "off",
       "moksha-defends-the-faithless": "off",
       "monument-first": "off",
       "muster-walks-the-road": "off",
-      "native-emergency-purchase": "off",
+      "native-emergency-purchase": "on",
       "native-emergency-purchase-2": "off",
       "naval-crossing-keeps-going": "off",
-      "naval-recon": "off",
-      "naval-recon-2": "on",
+      "naval-recon": "on",
+      "naval-recon-2": "off",
       "naval-recon-3": "off",
-      "naval-threat-triage": "on",
-      "near-done-work-finishes": "on",
+      "naval-threat-triage": "off",
+      "near-done-work-finishes": "off",
       "near-rival-deterrence": "off",
       "near-rival-deterrence-holds-late": "off",
-      "neighborhood-houses-the-capped-city": "off",
+      "near-rival-deterrence-opens-early": "on",
+      "neighborhood-houses-the-capped-city": "remove",
       "never-an-empty-queue": "on",
       "never-an-empty-queue-2": "off",
       "never-an-empty-queue-3": "off",
       "no-city-limit": "off",
       "no-free-passage": "off",
       "no-peace-with-a-launcher": "off",
-      "nuclear-goal-needs-a-launcher": "on",
-      "nusantara-reads-the-coast": "off",
+      "nuclear-goal-needs-a-launcher": "off",
+      "nusantara-reads-the-coast": "on",
       "nusantara-settles-the-shore": "on",
       "objective-board": "off",
-      "old-techs-before-the-beeline": "off",
+      "old-techs-before-the-beeline": "on",
       "one-launch-pad": "off",
       "one-owner-per-unit": "off",
       "one-sanctuary": "off",
       "one-shot-recovery": "off",
-      "one-upgrade-lifts-every-city": "off",
+      "one-upgrade-lifts-every-city": "on",
       "one-war-at-a-time": "off",
       "one-war-swaps-a-stalled-front": "off",
       "open-capital-declares-at-twice": "off",
       "open-city-draws-the-front": "off",
-      "open-city-is-the-objective": "off",
+      "open-city-is-the-objective": "on",
       "opening-builder-after-the-first-settler": "off",
       "opening-defense-preempts-once": "off",
       "opening-force-keeps-its-members": "off",
@@ -5969,29 +6026,29 @@
       "opening-scout-comes-back": "off",
       "opening-warrior-recon-2": "off",
       "opening-yields-to-walls": "off",
-      "opportunistic-war": "off",
+      "opportunistic-war": "on",
       "opportunistic-war-2": "off",
       "order-retry": "off",
       "outclassed-siege-stands-down": "off",
-      "outmatched-war-prices-the-army": "off",
+      "outmatched-war-prices-the-army": "on",
       "overseas-settlement": "off",
-      "overwhelming-power-declares": "off",
-      "own-column-is-not-a-refusal": "on",
-      "own-flip-faith-war-asks-no-power": "off",
-      "pantheon-board": "off",
+      "overwhelming-power-declares": "on",
+      "own-column-is-not-a-refusal": "off",
+      "own-flip-faith-war-asks-no-power": "on",
+      "pantheon-board": "on",
       "parallel-library-backlog": "off",
       "parity-reads-the-front": "off",
-      "parity-upgrades-before-it-buys": "off",
+      "parity-upgrades-before-it-buys": "on",
       "parity-upgrades-before-it-buys-2": "off",
       "parity-upgrades-before-it-buys-3": "off",
-      "pass-picket": "on",
-      "pass-picket-2": "off",
-      "passage-waits-past-the-opening": "off",
+      "pass-picket": "off",
+      "pass-picket-2": "on",
+      "passage-waits-past-the-opening": "on",
       "paused-district-finishes": "off",
       "paused-district-spares-the-launch": "off",
-      "peace-asks-a-city": "off",
+      "peace-asks-a-city": "on",
       "peace-waits-for-the-foothold": "off",
-      "peace-waits-for-the-host-minimum": "on",
+      "peace-waits-for-the-host-minimum": "off",
       "peace-waits-for-unseen-prey": "off",
       "peace-when-the-war-does-not-pay": "off",
       "peacetime-classical-republic": "off",
@@ -6000,21 +6057,21 @@
       "pillaged-districts-repair-first": "off",
       "pingala-earns-the-launch": "off",
       "pingala-follows-research": "off",
-      "pingala-follows-research-2": "off",
+      "pingala-follows-research-2": "on",
       "plant-reads-the-grid": "on",
       "plaza-in-the-district-list": "remove",
       "plaza-serves-the-scientist": "off",
       "plaza-serves-the-scientist-2": "off",
-      "plaza-serves-the-scientist-3": "on",
+      "plaza-serves-the-scientist-3": "off",
       "policy-deck-hysteresis": "off",
-      "policy-deck-hysteresis-2": "off",
-      "policy-swap-keeps-the-army-paid": "off",
+      "policy-deck-hysteresis-2": "on",
+      "policy-swap-keeps-the-army-paid": "on",
       "power-the-laboratory": "off",
-      "power-the-laboratory-2": "off",
+      "power-the-laboratory-2": "on",
       "prey-is-declared-on": "off",
-      "prey-reads-a-steady-power": "off",
-      "prey-waits-for-the-march": "on",
-      "prey-waits-for-the-march-2": "off",
+      "prey-reads-a-steady-power": "on",
+      "prey-waits-for-the-march": "off",
+      "prey-waits-for-the-march-2": "on",
       "prey-war-is-kept": "off",
       "price-the-suzerainty": "off",
       "prod-tiles-call-the-builders": "off",
@@ -6024,66 +6081,66 @@
       "prophet-race-takes-a-district-slot": "off",
       "prophet-race-takes-a-district-slot-2": "off",
       "prophet-race-takes-divine-spark": "off",
-      "purchases-keep-the-upkeep-reserve": "on",
+      "purchases-keep-the-upkeep-reserve": "off",
       "quest-boost": "off",
       "quest-camp-errand": "off",
-      "quest-production": "on",
+      "quest-production": "off",
       "quest-trade-route": "off",
       "racer-blocker-declares": "off",
       "racer-keeps-the-spies": "off",
       "racer-spies-search-for-the-pad": "off",
-      "raid-pillage-prizes": "on",
+      "raid-pillage-prizes": "off",
       "raids-cut-tourism": "off",
-      "ranged-before-melee": "on",
+      "ranged-before-melee": "off",
       "ranged-finish-on-the-mean": "off",
-      "ranged-hp-reserve": "on",
+      "ranged-hp-reserve": "off",
       "ranged-kills-are-free": "off",
       "rapid-city-expansion-2": "on",
       "raze-a-doomed-capture": "off",
       "rear-cities-grow-through-the-war-hold": "off",
       "recon-replacement": "off",
       "recorded-tactical-step": "on",
-      "recovery-keeps-a-winning-war": "off",
+      "recovery-keeps-a-winning-war": "on",
       "recovery-needs-the-deficit": "off",
-      "recovery-peace-waits": "off",
+      "recovery-peace-waits": "on",
       "recovery-reads-the-war": "off",
       "recovery-reads-the-war-2": "on",
-      "reinforce-before-stall": "on",
+      "reinforce-before-stall": "off",
       "relief-column-marches": "off",
       "relief-targets-the-siege": "off",
-      "religion-denial-needs-the-edge": "off",
-      "religion-finishes-majorities": "off",
-      "religion-lane-hands-over": "off",
-      "religion-lane-spreads-from-founding": "off",
+      "religion-denial-needs-the-edge": "on",
+      "religion-finishes-majorities": "on",
+      "religion-lane-hands-over": "on",
+      "religion-lane-spreads-from-founding": "on",
       "religion-race-is-closed": "on",
       "religion-race-keeps-expanding": "off",
       "religion-seat-builds-holy-sites": "off",
       "religion-seat-charts-the-rivals": "off",
-      "religion-seat-counts-the-pressure": "off",
-      "religion-seat-cuts-the-upkeep": "on",
-      "religion-seat-defends-its-faith": "off",
-      "religion-seat-earns-its-prophet": "off",
-      "religion-seat-fields-apostles": "on",
-      "religion-seat-first-shrine": "on",
+      "religion-seat-counts-the-pressure": "on",
+      "religion-seat-cuts-the-upkeep": "off",
+      "religion-seat-defends-its-faith": "on",
+      "religion-seat-earns-its-prophet": "on",
+      "religion-seat-fields-apostles": "off",
+      "religion-seat-first-shrine": "off",
       "religion-seat-flips-the-cheapest": "off",
       "religion-seat-founds-first": "off",
       "religion-seat-guards-the-race": "off",
-      "religion-seat-keeps-the-guard": "off",
-      "religion-seat-presses-the-campaign": "on",
+      "religion-seat-keeps-the-guard": "on",
+      "religion-seat-presses-the-campaign": "off",
       "religion-seat-races-the-prophet": "on",
       "religion-seat-reaches-reformed-church": "off",
-      "religion-seat-reveals-the-capitals": "on",
+      "religion-seat-reveals-the-capitals": "off",
       "religion-seat-slots-the-orders": "off",
-      "religion-seat-spares-the-launcher": "off",
+      "religion-seat-spares-the-launcher": "on",
       "religion-seat-spends-the-bank": "on",
-      "religion-seat-takes-the-debater": "off",
+      "religion-seat-takes-the-debater": "on",
       "religion-seat-takes-the-faith-beliefs": "off",
       "religion-sues-peace": "off",
       "religious-defence-scales": "off",
       "religious-match-point-defence": "off",
       "religious-threat-spares-the-front": "on",
       "religious-units-heal-first": "off",
-      "religious-veto-defence": "off",
+      "religious-veto-defence": "on",
       "research-alliance-first": "off",
       "research-building-catchup": "off",
       "research-building-catchup-2": "off",
@@ -6098,33 +6155,33 @@
       "rival-suzerainty-alarm": "off",
       "rout-spares-a-stronger-army": "off",
       "rout-spares-the-counter": "off",
-      "route-block-is-a-wait": "off",
+      "route-block-is-a-wait": "on",
       "runaway-expander-counter": "off",
       "russia-settles-the-tundra": "off",
-      "safest-stand": "off",
+      "safest-stand": "on",
       "sanctuary-yields-a-held-queue": "off",
       "satellite-holds-the-pad": "on",
       "saved-work-is-seen": "off",
-      "science-building-first": "off",
+      "science-building-first": "on",
       "science-campus-before-repeat-settler": "on",
-      "science-chain-alarm": "on",
+      "science-chain-alarm": "off",
       "science-chain-crosses-window": "off",
       "science-denial-every-pad": "off",
       "science-denial-spy-reads-the-leader": "off",
-      "science-denial-trains-spies": "off",
-      "science-denial-war": "on",
+      "science-denial-trains-spies": "on",
+      "science-denial-war": "off",
       "science-denounce-names-the-leader": "on",
       "science-denounce-waits-for-the-race": "off",
       "science-drive-answers-from-the-pad": "off",
-      "science-drive-answers-from-the-pad-2": "off",
-      "science-drive-answers-the-launch": "off",
+      "science-drive-answers-from-the-pad-2": "on",
+      "science-drive-answers-the-launch": "on",
       "science-drive-leads-beside-the-lane": "off",
       "science-expansion-phase": "off",
       "science-foundation-before-backlog": "on",
-      "science-heads-keep-their-queue": "off",
+      "science-heads-keep-their-queue": "on",
       "science-ladder-reads-the-clock": "off",
-      "science-leader-is-the-target": "off",
-      "science-multiplier-payoff": "on",
+      "science-leader-is-the-target": "on",
+      "science-multiplier-payoff": "off",
       "science-opening-band": "off",
       "science-power-buys-fuel": "off",
       "science-seat-allies": "off",
@@ -6132,22 +6189,25 @@
       "science-seat-builds-the-statue": "off",
       "science-seat-races-the-congress": "off",
       "science-specializes-earlier": "off",
-      "science-suppression-hits-the-pads": "off",
+      "science-suppression-hits-the-pads": "on",
       "science-threat-denial": "off",
       "science-victory-drive": "off",
-      "science-victory-drive-2": "off",
-      "science-writing-before-the-luxury": "on",
+      "science-victory-drive-2": "on",
+      "science-writing-before-the-luxury": "off",
       "score-seat-builds-the-bath": "off",
       "score-seat-expands-hard": "off",
       "score-seat-fills-its-district-slots": "off",
       "score-seat-founds-early": "on",
       "score-seat-grabs-what-pays": "off",
       "score-seat-holds-its-faith-strikes": "off",
-      "score-seat-keeps-friends": "on",
+      "score-seat-keeps-friends": "off",
       "score-seat-plays-for-points": "on",
       "score-seat-raises-wonders": "off",
       "score-seat-raises-wonders-2": "on",
-      "score-seat-takes-what-pays": "off",
+      "score-seat-raises-wonders-3": "on",
+      "score-seat-sprints-to-the-tally": "off",
+      "score-seat-sprints-to-the-tally-2": "on",
+      "score-seat-takes-what-pays": "on",
       "score-seat-takes-what-pays-2": "off",
       "score-seat-takes-what-pays-3": "off",
       "score-seat-trims-the-idle-army": "off",
@@ -6155,10 +6215,10 @@
       "screen-the-shooters": "off",
       "sea-locked-front-moves-on": "off",
       "sea-scout-claims-the-queue": "off",
-      "sea-scout-claims-the-queue-2": "on",
+      "sea-scout-claims-the-queue-2": "off",
       "second-front-keeps-its-war": "off",
       "second-front-kept-when-winning": "on",
-      "second-front-kept-when-winning-2": "off",
+      "second-front-kept-when-winning-2": "on",
       "second-front-waits-for-its-war": "off",
       "settle-sooner": "on",
       "settlement-gap-target": "off",
@@ -6173,14 +6233,14 @@
       "settler-keeps-its-named-site": "off",
       "settler-marches-alone-when-clear": "off",
       "settler-never-idles": "on",
-      "settler-shelters-from-the-war": "off",
+      "settler-shelters-from-the-war": "on",
       "settler-shelters-from-the-war-2": "off",
       "settler-site-gate": "off",
       "settler-stall-counts-turns": "off",
-      "settler-target-floor": "on",
+      "settler-target-floor": "off",
       "settler-target-hysteresis": "off",
       "settler-target-hysteresis-2": "off",
-      "settler-threat-detour": "off",
+      "settler-threat-detour": "on",
       "settler-walk-deadline": "on",
       "settler-walks-to-the-better-site": "off",
       "shared-danger": "on",
@@ -6194,69 +6254,71 @@
       "siege-counts-posted-shooters": "off",
       "siege-force-keeps-its-members": "off",
       "siege-goes-on-the-forecast": "off",
-      "siege-holds-a-breach": "on",
-      "siege-is-progress-2": "on",
+      "siege-guns-take-a-reachable-post": "on",
+      "siege-holds-a-breach": "off",
+      "siege-is-progress-2": "off",
       "siege-is-progress-3": "off",
       "siege-keeps-a-shooter": "off",
       "siege-members-use-their-moves": "on",
       "siege-moves-under-the-wing": "on",
-      "siege-needs-a-breaker": "off",
+      "siege-needs-a-breaker": "on",
       "siege-positive-damage-budget": "off",
       "siege-preempts-the-queue": "off",
-      "siege-promotions-open-the-walls": "off",
+      "siege-promotions-open-the-walls": "on",
       "siege-rally-holds": "on",
       "siege-ranged-floor": "off",
       "siege-shortfall-claims-the-projects": "off",
       "siege-target-needs-a-road": "off",
       "siege-tier-before-the-beeline": "off",
       "siege-tier-yields-to-the-bombers": "off",
-      "siege-tier-yields-to-the-bombers-2": "on",
-      "siege-train": "off",
-      "siege-train-scales-with-walls": "off",
+      "siege-tier-yields-to-the-bombers-2": "off",
+      "siege-train": "on",
+      "siege-train-scales-with-walls": "on",
       "siege-train-upgrades-first": "off",
-      "skip-the-prophet-race-2": "off",
+      "skip-the-prophet-race-2": "on",
       "slot-kind-tiebreak": "off",
-      "slots-survive-the-roll": "off",
+      "slots-survive-the-roll": "on",
       "solvency-first-trade-slot": "off",
       "solvent-or-hold": "off",
       "solver-plays-the-host": "off",
       "space-denial-promotes-the-rocket-scientist": "off",
       "space-denial-slots-the-spy-cards": "off",
-      "space-denial-spies-from-rocketry": "on",
-      "space-people-call-the-projects": "off",
+      "space-denial-spies-from-rocketry": "off",
+      "space-people-call-the-projects": "on",
       "spaceport-above-the-sea": "off",
       "spaceport-surplus-veto": "off",
+      "spared-soldiers-come-to-the-capital": "off",
       "spears-answer-the-horse": "on",
-      "spies-price-the-science-head": "off",
+      "spies-price-the-science-head": "on",
       "spies-steal-the-lead": "off",
       "spreader-steps-out-of-the-apostle": "on",
       "spy-civics-come-first": "off",
       "stage-march-keeps-to-land": "off",
-      "stage-musters-out-of-reach": "off",
+      "stage-musters-out-of-reach": "on",
       "stage-reads-the-muster-breakers": "on",
       "staging-column-passes-through": "off",
       "staging-gun-reads-the-shared-danger": "off",
       "staging-gun-remembers-hostiles": "off",
       "staging-gun-trusts-its-escort": "off",
       "staging-gun-trusts-its-escort-2": "on",
-      "staging-reaches-the-border": "off",
-      "stale-swap-reads-the-march": "off",
+      "staging-reaches-the-border": "on",
+      "stale-swap-reads-the-march": "on",
       "stall-rebases-on-new-walls": "off",
       "stall-waits-for-the-breach": "off",
       "stalled-conquest-takes-science": "on",
       "stalled-peace-spares-the-counter": "off",
-      "stalled-settler-takes-a-safe-site": "off",
+      "stalled-settler-takes-a-safe-site": "on",
       "stalled-spreader-braves-the-march": "off",
-      "standing-still-is-a-risk": "off",
+      "standing-still-is-a-risk": "remove",
       "stranded-settler-discount": "off",
       "stranded-settler-leaves-the-corridor": "off",
-      "strategic-deposit-prey": "on",
-      "strategic-wonders": "on",
+      "strategic-deposit-prey": "off",
+      "strategic-wonders": "off",
       "strike-opening": "off",
       "strike-reach": "off",
       "surge-fields-the-bombers": "off",
       "surprise-war-mobilization": "off",
-      "surprise-watch-holds-its-ratio": "off",
+      "surprise-watch-holds-its-ratio": "on",
       "swap-rotation": "off",
       "swap-rotation-2": "off",
       "sweden-builds-open-air-museums": "off",
@@ -6265,42 +6327,42 @@
       "the-worked-backlog-gets-its-builder-first": "off",
       "theater-keeps-its-amphitheater": "off",
       "theology-fights-count-the-host-edge": "off",
-      "theology-fights-only-to-win": "off",
-      "threatened-city-buys-its-defender": "on",
-      "threatened-city-buys-its-defender-2": "off",
-      "threatened-city-reserve": "on",
-      "threatened-city-reserve-2": "off",
+      "theology-fights-only-to-win": "on",
+      "threatened-city-buys-its-defender": "off",
+      "threatened-city-buys-its-defender-2": "on",
+      "threatened-city-reserve": "off",
+      "threatened-city-reserve-2": "on",
       "threatened-lane-lends-the-army": "off",
-      "threatened-war-holds-the-claims": "on",
+      "threatened-war-holds-the-claims": "off",
       "tier-gap-priced-once": "off",
       "tier-gap-reads-the-fielded-line": "off",
-      "tourism-land-reservation": "off",
-      "tower-assault": "on",
+      "tourism-land-reservation": "on",
+      "tower-assault": "off",
       "trade-building-before-bankruptcy": "on",
       "trade-building-before-bankruptcy-2": "off",
       "trade-growth-to-district": "off",
-      "trade-production-to-launch": "off",
+      "trade-production-to-launch": "on",
       "trade-quotes-pay-the-lump": "off",
       "trade-route-network": "off",
       "trader-fills-the-idle-route": "off",
       "treasury-at-work-2": "on",
-      "treasury-at-work-2-2": "on",
+      "treasury-at-work-2-2": "off",
       "tribute-buys-the-friendship": "on",
       "tribute-warms-the-neighbour": "off",
       "unchosen-war-keeps-the-lane": "off",
       "unchosen-war-takes-the-first-peace": "off",
       "unique-unit-closes-the-dark-age": "off",
       "unique-unit-preference": "off",
-      "unit-cost-efficiency": "off",
+      "unit-cost-efficiency": "on",
       "unit-objective-memory": "off",
       "unit-preservation": "off",
-      "universities-before-the-forge": "on",
+      "universities-before-the-forge": "off",
       "unseen-capital-is-unseen": "on",
       "unwalled-city-spares-the-train": "on",
       "unwalled-city-takes-the-swarm": "off",
       "unwalled-ring-steps-in": "off",
       "unwalled-target-declares-into-the-strike": "off",
-      "upgrade-card-for-the-backlog": "off",
+      "upgrade-card-for-the-backlog": "on",
       "upgrade-the-garrison": "off",
       "upgrade-window-campaign": "off",
       "upkeep-reserve": "on",
@@ -6315,8 +6377,8 @@
       "walls-release-the-one-blow": "off",
       "war-bill-prices-the-tier-gap": "off",
       "war-defense-spends-the-runway": "off",
-      "war-economy": "off",
-      "war-faith-buys-the-army": "off",
+      "war-economy": "on",
+      "war-faith-buys-the-army": "on",
       "war-kills-the-bands": "off",
       "war-kills-the-bands-2": "off",
       "war-needs-a-treasury": "off",
@@ -6332,8 +6394,8 @@
       "wonder-ring-recon": "off",
       "wonder-ring-recon-2": "off",
       "wonder-score-tally": "off",
-      "world-religion-condemns-the-faith": "on",
-      "wounded-out-of-reach": "off",
+      "world-religion-condemns-the-faith": "off",
+      "wounded-out-of-reach": "remove",
       "wounded-out-of-reach-2": "off",
       "wounded-ship-sails-on": "off",
       "wounded-taker-finishes-the-breach": "off"
@@ -6348,10 +6410,7 @@
       "age-closer",
       "air-fire-counts-on-the-city",
       "air-surge-2",
-      "air-volley-needs-a-road",
-      "aluminum-ask-tops-up-gold",
-      "amenity-district-path",
-      "amenity-project-preemption-2",
+      "amenity-project-preemption",
       "anvil",
       "apostle-promotion-by-role",
       "artifact-before-more-museums",
@@ -6400,10 +6459,8 @@
       "conquest-opening-stays-near",
       "counter-out-of-reach-takes-the-weak",
       "counterfaith-leaves-two-holdouts",
-      "counterweight-flips-the-small-towns",
       "counterweight-from-the-first-convert",
       "counterweight-spends-the-bank",
-      "culture-counter-declares",
       "culture-floor",
       "culture-lane-forecast",
       "culture-reads-the-engine-clock",
@@ -6417,29 +6474,23 @@
       "diplomatic-lane-forecast",
       "district-buildings-first",
       "district-coverage-2",
-      "domination-city-count",
       "domination-ignores-city-states",
       "domination-lane-hands-over",
       "doomed-blow-veto",
       "early-archers",
       "early-cities-keep-their-distance",
-      "early-conquest-opening",
-      "early-conquest-stands-down",
       "early-project-restraint-2",
       "enter-the-prophet-race-2",
       "envoy-building-dividends",
       "envoys-open-the-siege-road",
       "escort-cap-holds",
-      "expansion-schedule",
       "faith-counter-waits-for-match-point",
       "faith-war-before-the-flip-2",
-      "falling-city-calls-the-takers",
       "falling-city-outranks-the-heal",
       "first-builder-reserve-2",
+      "first-capital-before-the-camp",
       "first-luxury-first",
-      "founder-converts-its-own-cities",
       "founder-defends-its-cities",
-      "founder-holds-the-holy-city",
       "founder-keeps-two-sources",
       "friendship-ends-at-the-race",
       "friendship-spares-the-prey",
@@ -6458,6 +6509,7 @@
       "housing-cap-builds-the-aqueduct",
       "improvement-upgrades-count",
       "industrial-chain-debt",
+      "industrial-zone-claims-the-factory",
       "industrial-zone-claims-the-producer-queue",
       "industrial-zone-in-the-producers",
       "industry-before-the-army-2",
@@ -6512,6 +6564,7 @@
       "science-suppression-hits-the-pads",
       "science-threat-denial",
       "science-victory-drive",
+      "score-seat-founds-early",
       "second-front-kept-when-winning",
       "settle-sooner",
       "settler-before-the-navy",
@@ -6534,11 +6587,9 @@
       "siege-train",
       "siege-train-scales-with-walls",
       "skip-the-prophet-race-2",
-      "solvency-first-trade-slot",
       "space-denial-spies-from-rocketry",
       "spreader-steps-out-of-the-apostle",
       "stage-reads-the-muster-breakers",
-      "staging-column-passes-through",
       "staging-gun-reads-the-shared-danger",
       "staging-gun-trusts-its-escort-2",
       "stalled-conquest-takes-science",
@@ -6557,7 +6608,6 @@
       "unit-cost-efficiency",
       "unit-objective-memory",
       "unwalled-city-spares-the-train",
-      "unwalled-city-takes-the-swarm",
       "upkeep-reserve",
       "urban-planning-fills-the-slot",
       "war-economy",
@@ -6593,10 +6643,10 @@
       },
       "amenity-project-preemption": {
         "rule_on": [
-          "amenity-project-preemption-2"
+          "amenity-project-preemption"
         ],
         "head": "amenity-project-preemption",
-        "ships": "amenity-project-preemption-2",
+        "ships": "amenity-project-preemption",
         "versions": {
           "amenity-project-preemption": -0.037946,
           "amenity-project-preemption-2": null
@@ -7916,6 +7966,52 @@
   ],
   "reporting_batches": [
     {
+      "path": "docs/gene_screens/2026-11-18-standard-continuous-4314-total-seats-20261118T084332Z-3bf3.json",
+      "shape": "standard",
+      "seats": 4314,
+      "complete_pairs": 2157,
+      "family_wise_z": 4.059,
+      "profile": {
+        "players": 6,
+        "map": "continents",
+        "width": 74,
+        "height": 46,
+        "city_states": 9,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "baseline": "best",
+        "design": "independent",
+        "start_seed": 20261009540467,
+        "native_competitions": true,
+        "difficulty": "prince",
+        "player_contract": "observed-player-v1",
+        "target_mix": "civvis,science,culture,religion,diplomatic,domination,score"
+      },
+      "games": 719,
+      "continuous_batch_timing": {
+        "schema": "continuous_batch_timing/v1",
+        "started_at": "2026-11-18T08:43:32Z",
+        "completed_at": "2026-11-18T14:58:32Z",
+        "elapsed_seconds": 22500,
+        "completed_games": 719
+      },
+      "build": {
+        "commit": "5d5618939a932246d6b9bc5302e6f70ea3ea8792",
+        "commit_source": "build-tree",
+        "dirty": false,
+        "genes_sha256": "a7633085b077b4e03f957bc545d6cd35824782e2894a8876d4969bba2881bad6",
+        "binary_sha256": "c37a837d9ce75289cad7e5d1a9c7eddca22aa1d7a5bb1761c41214b7bc368627"
+      },
+      "batch": {
+        "target_seats": 30000,
+        "complete_seats": 4314,
+        "partial": true
+      }
+    },
+    {
       "path": "docs/gene_screens/2026-11-18-standard-continuous-23172-total-seats-20261115T214454Z-ca2b.json",
       "shape": "standard",
       "seats": 23172,
@@ -8006,59 +8102,13 @@
         "complete_seats": 30000,
         "partial": true
       }
-    },
-    {
-      "path": "docs/gene_screens/2026-10-25-standard-continuous-18984-total-seats-20261015T072224Z-0cea.json",
-      "shape": "standard",
-      "seats": 18984,
-      "complete_pairs": 9492,
-      "family_wise_z": 3.939,
-      "profile": {
-        "players": 6,
-        "map": "continents",
-        "width": 74,
-        "height": 46,
-        "city_states": 9,
-        "speed": "online",
-        "turns": 250,
-        "victories": "science,culture,religious,diplomatic,domination,score",
-        "all_seats": true,
-        "randomize_civs": true,
-        "baseline": "best",
-        "design": "independent",
-        "start_seed": 20261009509620,
-        "native_competitions": true,
-        "difficulty": "prince",
-        "player_contract": "observed-player-v1",
-        "target_mix": "civvis,science,culture,religion,diplomatic,domination,score"
-      },
-      "games": 3164,
-      "continuous_batch_timing": {
-        "schema": "continuous_batch_timing/v1",
-        "started_at": "2026-10-15T07:22:24Z",
-        "completed_at": "2026-10-25T07:54:58Z",
-        "elapsed_seconds": 865954,
-        "completed_games": 3164
-      },
-      "build": {
-        "commit": "e17fae79824d35eeaac93c425d0483784768a302",
-        "commit_source": "build-tree",
-        "dirty": false,
-        "genes_sha256": "0f7ff16481cbcff4ccd95011e1cdf563489059c1e5ab1eb2efb66504a03d63b8",
-        "binary_sha256": "2a9a5590f4b6944c9e480136e17ce3fe90aa78f77c319500b74c00686d6b125a"
-      },
-      "batch": {
-        "target_seats": 82866,
-        "complete_seats": 18984,
-        "partial": true
-      }
     }
   ],
   "counts": {
     "helps": 16,
     "hurts": 0,
     "unresolved": 56,
-    "default_on": 221
+    "default_on": 209
   },
   "genes": [
     {
@@ -8109,7 +8159,7 @@
     {
       "tag": "amenity-district-path",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 9,
       "wins_prior_10k": 17,
       "wins_third_10k": 12,
@@ -8154,7 +8204,7 @@
     {
       "tag": "amenity-project-preemption",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 26,
       "wins_prior_10k": -34,
       "wins_third_10k": -14,
