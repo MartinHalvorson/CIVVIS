@@ -5492,6 +5492,14 @@ pub const GENES: &[Gene] = &[
     // `advanced/band_plays_the_stage_at_hand.rs`.
     Gene { tag: "band-plays-the-stage-at-hand", field: "band_plays_the_stage_at_hand", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_the_stage_at_hand, disable: AdvancedAi::disable_band_plays_the_stage_at_hand },
     // ---- append: c-d ------------------------------------------------
+    // `culture-and-religion-race-the-congress`: a seat aiming at Culture or
+    // Religion runs the same racer's ballot and joins every competition and
+    // Aid Request. Live Deity 2026-11-18 (`congress_kpi.py`, 38 games): final
+    // Diplomatic Victory points, median ours / best rival, culture 3 / 12 and
+    // religious 4 / 14 with no seat at 16+, against 8 / 11 and three of 13 at
+    // 16+ on the Science seats that race; Religious seats cast no join vote
+    // and left a median 8 first-place points uncontested. Live only.
+    Gene { tag: "culture-and-religion-race-the-congress", field: "culture_and_religion_race_the_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_and_religion_race_the_congress, disable: AdvancedAi::disable_culture_and_religion_race_the_congress },
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
     Gene { tag: "corps-comes-home-alive", field: "corps_comes_home_alive", kind: Kind::OptIn, enable: AdvancedAi::enable_corps_comes_home_alive, disable: AdvancedAi::disable_corps_comes_home_alive },
@@ -6366,6 +6374,13 @@ pub const GENES: &[Gene] = &[
     // reaches it, and patronage opens at turn 150. See
     // `advanced/score_sprints_to_the_tally.rs`.
     Gene { tag: "score-seat-sprints-to-the-tally-2", field: "score_seat_sprints_to_the_tally_2", kind: Kind::OptIn, enable: AdvancedAi::enable_score_seat_sprints_to_the_tally_2, disable: AdvancedAi::disable_score_seat_sprints_to_the_tally_2 },
+    // Live Deity 6p Continents 11-18: eight of 29 games lost the original
+    // capital. In six a siege gun stood two or three tiles from the centre
+    // for one to four turns; we owned four to eight shooters and fired on a
+    // gun six times in all, with none to two of them in or beside the
+    // capital. A party or an engine was in sight before seven of the eight
+    // declarations. See `advanced/shooters_man_the_capital.rs`.
+    Gene { tag: "shooters-man-the-capital", field: "shooters_man_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_shooters_man_the_capital, disable: AdvancedAi::disable_shooters_man_the_capital },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

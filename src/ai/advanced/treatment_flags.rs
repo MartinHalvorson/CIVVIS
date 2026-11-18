@@ -148,6 +148,11 @@ impl AdvancedAi {
         /// `advanced/four_faces_bars_the_surprise.rs`.
         base.four_faces_bars_the_surprise => enable_four_faces_bars_the_surprise, disable_four_faces_bars_the_surprise;
         // ---- append: c-d --------------------------------------------
+        /// Opt-in gene `culture-and-religion-race-the-congress`: the same
+        /// live-only ballot change for a Culture or Religious seat; see
+        /// `CivvisCongressRacer` in `CivvisControlAgent.lua`.
+        culture_and_religion_race_the_congress => enable_culture_and_religion_race_the_congress,
+            disable_culture_and_religion_race_the_congress;
         /// `domination-seat-appoints-pingala-first`: Pingala and Researcher
         /// take a Domination seat's first Governor titles. See
         /// `advanced/domination_governors.rs`.
@@ -589,6 +594,9 @@ impl AdvancedAi {
         /// Opt-in gene `siege-guns-take-a-reachable-post`; see
         /// `advanced/siege_train/reachable_post.rs`.
         siege_guns_take_a_reachable_post => enable_siege_guns_take_a_reachable_post, disable_siege_guns_take_a_reachable_post;
+        /// Opt-in gene `shooters-man-the-capital`; see
+        /// `advanced/shooters_man_the_capital.rs`.
+        shooters_man_the_capital => enable_shooters_man_the_capital, disable_shooters_man_the_capital;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

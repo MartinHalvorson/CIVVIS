@@ -80,7 +80,12 @@ impl Game {
         }
         let access = self.unit_territory_access(unit);
         let _memo = self.query_memo();
-        let mut seen = BTreeSet::from([start]);
+        // Only ever asked and added to, never walked, so a hashed set visits
+        // the same tiles in the same order. As a `BTreeSet` its descents were
+        // most of this search's own time (a siege train's dry march asks it
+        // for every gun every step).
+        let mut seen = crate::fast_map::FastSet::default();
+        seen.insert(start);
         let mut queue = VecDeque::from([(start, start, 0usize)]);
         while let Some((current, first, steps)) = queue.pop_front() {
             if steps >= max_len {

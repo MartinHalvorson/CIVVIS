@@ -2685,7 +2685,7 @@ impl AdvancedAi {
         // Hide waiting planes from the early coordinated assignments. Restore
         // their real readiness immediately afterwards: holding is no action,
         // not an invented engine operation or a permanent readiness change.
-        let held_readiness: Vec<_> = held_aircraft
+        let mut held_readiness: Vec<_> = held_aircraft
             .iter()
             .filter_map(|uid| {
                 let unit = g.units.get_mut(uid)?;
@@ -2721,6 +2721,22 @@ impl AdvancedAi {
                 BTreeSet::new()
             }
         });
+        // `shooters-man-the-capital`: with a war party or a siege engine in
+        // sight of the original capital, the called shooters take their
+        // orders before the battle is planned and are held for the turn (the
+        // plan, the later pre-passes and the ladder leave them where they
+        // stand). Nothing with the gene off. See
+        // `advanced/shooters_man_the_capital.rs`.
+        let manning = self.owned_pass(g, pid, OrderStep::CentreGarrison, |ai, g| {
+            ai.plan_shooters_man_the_capital(g, pid)
+        });
+        for uid in &manning {
+            if let Some(unit) = g.units.get_mut(uid) {
+                held_readiness.push((*uid, unit.moves_left, unit.attacks_left));
+                unit.moves_left = 0.0;
+                unit.attacks_left = 0;
+            }
+        }
         // `defend-force-holds-the-city-2`: the soldiers this turn's posts may
         // take, before the planner's positions plan. Nothing with the version
         // off. See `advanced/defend_force_holds_the_city.rs`.
@@ -2768,6 +2784,7 @@ impl AdvancedAi {
         let mut air_assault_units = self.owned_pass(g, pid, OrderStep::Air, |ai, g| {
             ai.plan_air_city_assault(g, pid, plan)
         });
+        air_assault_units.extend(manning.iter().copied());
         for (uid, moves, attacks) in held_readiness {
             if let Some(unit) = g.units.get_mut(&uid) {
                 unit.moves_left = moves;
