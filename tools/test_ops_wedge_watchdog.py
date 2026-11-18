@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -214,10 +215,6 @@ class DeepWedgeIsHandedToTheClimb(unittest.TestCase):
         self.assertRegex(written["utc"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TheLiveRunIsPickedByItsEvents(unittest.TestCase):
     """⚠⚠ A READ-ONLY QUERY MUST NOT REDIRECT THE WATCHDOG.
 
@@ -237,10 +234,28 @@ class TheLiveRunIsPickedByItsEvents(unittest.TestCase):
     def _source(self) -> str:
         return WATCHDOG.read_text(encoding="utf-8")
 
+    def _pick(self, runs: Path) -> subprocess.CompletedProcess:
+        """Run the watchdog's OWN three lines, as one pass of its poll loop.
+
+        They end in `continue` when there is no run, so they sit in a loop of
+        one pass here and `picked=` is printed only when a run was chosen.
+        """
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed")
+        source = self._source()
+        start = source.index("  newest_events=(")
+        end = source.index("\n", source.index("  tag=${newest_events[1]:h:t}")) + 1
+        script = ("set -u\nRUNS=$1\nreset_progress() { : }\n"
+                  "for _ in 1; do\n" + source[start:end]
+                  + '  print -r -- "picked=$tag"\ndone\n')
+        return subprocess.run(["zsh", "-c", script, "zsh", str(runs)],
+                              capture_output=True, text=True, timeout=30)
+
     def test_the_tag_comes_from_the_newest_events_file(self):
         source = self._source()
-        self.assertIn('tag=$(ls -t "$RUNS"/civvis-*/events.jsonl', source)
-        self.assertIn("tag=${tag:h:t}", source)
+        self.assertIn('newest_events=("$RUNS"/civvis-*/events.jsonl(Nom[1]))',
+                      source)
+        self.assertIn("tag=${newest_events[1]:h:t}", source)
 
     def test_the_directory_listing_is_gone(self):
         """The old form promoted whichever run directory was touched last."""
@@ -249,8 +264,6 @@ class TheLiveRunIsPickedByItsEvents(unittest.TestCase):
 
     def test_it_picks_the_appended_run_over_a_touched_one(self):
         """The behaviour itself, through the same zsh the watchdog runs."""
-        if shutil.which("zsh") is None:
-            self.skipTest("zsh is not installed")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             live, stale = root / "civvis-live", root / "civvis-stale"
@@ -262,11 +275,33 @@ class TheLiveRunIsPickedByItsEvents(unittest.TestCase):
             os.utime(live / "events.jsonl", (2_000_000_000, 2_000_000_000))
             (stale / "orders.sqlite-wal").write_text("")
             os.utime(stale / "events.jsonl", (1_000_000_000, 1_000_000_000))
-            picked = subprocess.run(
-                ["zsh", "-c",
-                 f'tag=$(ls -t {root}/civvis-*/events.jsonl 2>/dev/null | head -1); print "${{tag:h:t}}"'],
-                capture_output=True, text=True, check=True).stdout.strip()
-        self.assertEqual(picked, "civvis-live")
+            done = self._pick(root)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), "picked=civvis-live")
+
+    def test_no_run_directory_is_no_run_and_no_complaint(self):
+        """⚠ The `ls -t "$RUNS"/civvis-*/events.jsonl` form failed twice here.
+
+        zsh refuses an unmatched pattern before `ls` ever runs, so the
+        `2>/dev/null` on `ls` never saw the message: 784 lines of
+        `civvis-agent-wedge-watchdog.sh:401: no matches found` reached the
+        launch log, one per poll. And `${tag:h:t}` of the empty result is `.`,
+        not empty, so the `-z` guard never fired and the loop went on to judge
+        a run called `.`.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "empty").mkdir()
+            # A run directory whose game has not written an event yet.
+            (root / "unwritten" / "civvis-starting").mkdir(parents=True)
+            for runs in (root / "empty", root / "unwritten", root / "absent"):
+                with self.subTest(runs=runs.name):
+                    done = self._pick(runs)
+                    self.assertEqual(done.returncode, 0, done.stderr)
+                    self.assertEqual(done.stderr, "",
+                                     "an unmatched glob must not reach the launch log")
+                    self.assertEqual(done.stdout, "",
+                                     "with no events file there is no run to judge")
 
 
 class SilenceIsAFasterWedgeSignal(unittest.TestCase):
@@ -517,6 +552,425 @@ class AnUnownedRunIsStillReported(unittest.TestCase):
         recent = int(time.time())
         self.assertEqual(self._run_branch(age_s=900, reported_at=recent).strip(),
                          "")
+
+
+HOST = OPS / "civvis-interactive-host.sh"
+
+
+def _sandbox(tmp: str, *, blind: bool = False) -> tuple[Path, dict]:
+    """A home of its own and an environment that names nothing on this machine.
+
+    The watchdog and the host find their lock, log, run directory, pause file
+    and intent file under `$HOME` unless a `CIVVIS_*` knob says otherwise. So
+    the knobs this process inherited are dropped and `$HOME` is a temporary
+    directory: a test here cannot read the live lane's intent or take its lock.
+
+    `blind` also replaces `pgrep` with one that finds nothing, for a test that
+    lets the watchdog's own loop run: no pass of it can then discover a real
+    climb or player. The host must keep the real `pgrep`, which is how it finds
+    the descendants it stops on exit.
+    """
+    home = Path(tmp) / "home"
+    (home / "civvis-civ6-runs").mkdir(parents=True)
+    (home / "civvis-civ6-mirror").mkdir()
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith("CIVVIS_")}
+    env["HOME"] = str(home)
+    if blind:
+        fake_bin = Path(tmp) / "fake-bin"
+        fake_bin.mkdir()
+        pgrep = fake_bin / "pgrep"
+        pgrep.write_text("#!/bin/sh\nexit 1\n")
+        pgrep.chmod(0o755)
+        env["PATH"] = str(fake_bin) + os.pathsep + env.get("PATH", "")
+    return home, env
+
+
+def _wait_for(condition, timeout_s: float = 10.0) -> bool:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        time.sleep(0.02)
+    return bool(condition())
+
+
+def _text(path: Path) -> str:
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def _stop(process: subprocess.Popen) -> None:
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=10)
+
+
+def _accepted_intents(script: Path) -> list[str]:
+    """Every pattern a script's `verification_intent_running` compares against."""
+    source = script.read_text(encoding="utf-8")
+    start = source.index("verification_intent_running() {")
+    body = source[start:source.index("\n}\n", start)]
+    return re.findall(r'"\$\(<"\$INTENTFILE"\)" == (\S+) \]\]', body)
+
+
+#: How the interactive host tells the watchdog it starts that it is the
+#: Terminal window's own child. See `verification_intent_running` in the script.
+TERMINAL_WINDOW_FLAG = "CIVVIS_WEDGE_TERMINAL_WINDOW"
+
+
+class TerminalControlKeepsItsWedgeWatchdog(unittest.TestCase):
+    """⚠⚠ UNDER TERMINAL CONTROL THE LANE HAD NO WEDGE WATCHDOG FOR SIX DAYS.
+
+    #5167 (2026-11-12) added the intent `terminal`: the loop a Terminal window
+    hosts may play, and no background keeper may start or recover it. The
+    interactive host accepted it. The wedge watchdog the host starts as its own
+    child still asked for the exact value `running`, so on a
+    `CIVVIS_CONTROL=terminal` host it logged "verification intent is not
+    running; exiting without touching a game" and exited at once, and the host
+    restarted it on every five-second poll: about 52,000 times by 2026-11-18.
+    No wedged game was rescued on that host in that time.
+
+    The host's watchdog belongs to the window's own loop and starts no game: it
+    signals the one climb-owned pair, and what follows comes from the climb and
+    the supervisor in the same window. So the host marks the watchdog it starts
+    (`CIVVIS_WEDGE_TERMINAL_WINDOW=1`) and that copy accepts `terminal`. A copy
+    started by anything else still needs the exact value `running`, which is
+    what #5167 promised of everything outside the window.
+    """
+
+    def test_the_hosts_own_watchdog_accepts_exactly_what_the_host_accepts(self):
+        """One definition on both sides, or the host starts what then refuses."""
+        self.assertEqual(_accepted_intents(HOST), ["(running|terminal)"])
+        self.assertEqual(_accepted_intents(WATCHDOG), ["(running|terminal)", "running"],
+                         "the host's pattern under the flag, exact `running` without it")
+        source = WATCHDOG.read_text(encoding="utf-8")
+        start = source.index("verification_intent_running() {")
+        body = source[start:source.index("\n}\n", start)]
+        self.assertLess(body.index('if [[ "$TERMINAL_WINDOW" == 1 ]]; then'),
+                        body.index("(running|terminal)"))
+        self.assertLess(body.index("  else\n"), body.index("== running ]]"))
+        self.assertIn("TERMINAL_WINDOW=${" + TERMINAL_WINDOW_FLAG + ":-0}", source)
+
+    def test_every_intent_check_goes_through_that_one_function(self):
+        source = WATCHDOG.read_text(encoding="utf-8")
+        self.assertEqual(source.count('"$(<"$INTENTFILE")" =='),
+                         len(_accepted_intents(WATCHDOG)),
+                         "a comparison outside the function can disagree with it")
+        self.assertGreaterEqual(source.count("if ! verification_intent_running; then"), 3,
+                                "startup, every poll and every recovery ask")
+
+    def test_only_the_interactive_host_starts_it(self):
+        """Discovered, not listed. No keeper, installer or launchd job in
+        `tools/ops` names the watchdog; one that starts to has to answer for a
+        background watchdog on a host under terminal control."""
+        naming = sorted(
+            path.name for path in OPS.iterdir()
+            if path.is_file() and path != WATCHDOG
+            and WATCHDOG.name in path.read_text(encoding="utf-8", errors="replace"))
+        self.assertEqual(naming, ["civvis-interactive-host.sh"])
+
+    def test_only_the_interactive_host_claims_the_terminal_window(self):
+        """Discovered, not listed. The flag is a claim to be the window's own
+        child, so a second script that sets it is a background process letting
+        itself in under `terminal`."""
+        repo = OPS.parent.parent
+        claiming = sorted(
+            str(path.relative_to(repo))
+            for root in (repo / "tools", repo / "deploy")
+            for path in root.rglob("*")
+            if path.is_file() and "__pycache__" not in path.parts
+            and not path.name.startswith("test_")
+            and TERMINAL_WINDOW_FLAG in path.read_text(encoding="utf-8",
+                                                       errors="replace"))
+        self.assertEqual(claiming, ["tools/ops/civvis-agent-wedge-watchdog.sh",
+                                    "tools/ops/civvis-interactive-host.sh"])
+        host = HOST.read_text(encoding="utf-8")
+        self.assertEqual(host.count(TERMINAL_WINDOW_FLAG), 1)
+        # On the watchdog's own command, never exported to the host's other
+        # children: the supervisor and everything under it would inherit it.
+        self.assertIn(TERMINAL_WINDOW_FLAG + '=1 /bin/zsh "$WEDGE_WATCHDOG"', host)
+
+    def test_it_names_no_program_that_starts_a_game(self):
+        """Discovered, not listed. What makes `terminal` safe to accept is that
+        the watchdog launches nothing: it runs its own state reader and the
+        end-turn keystroke, and names the two harnesses only to find and prove
+        the processes it may signal. A program added to it has to be added
+        here, with the answer to "does this start a game outside the window?"."""
+        code = [line.replace("[c]iv6", "civ6").replace("\\.", ".")
+                for line in WATCHDOG.read_text(encoding="utf-8").splitlines()
+                if not line.lstrip().startswith("#")]
+        named: dict[str, list[str]] = {}
+        for line in code:
+            for name in re.findall(r"[\w-]+\.(?:py|sh)\b", line):
+                named.setdefault(name, []).append(line)
+        self.assertEqual(sorted(named), [
+            "civ6_civvis_climb.py",     # recognised, never run
+            "civ6_nudge_end_turn.py",   # SHIFT+RETURN to the running game
+            "civ6_play.py",             # recognised, never run
+            "civvis_watchdog_state.py",  # reads events.jsonl
+        ])
+        for harness in ("civ6_civvis_climb.py", "civ6_play.py"):
+            for line in named[harness]:
+                self.assertTrue("pgrep -f" in line or "is_python_harness" in line,
+                                f"{harness} may only be looked for: {line.strip()}")
+        text = "\n".join(code)
+        for launcher in ("open -", "osascript", "launchctl", "nohup", "caffeinate"):
+            self.assertNotIn(launcher, text)
+        self.assertEqual([line.strip() for line in code if re.search(r"\bexec\b", line)],
+                         ['exec /bin/zsh "$SELF_PATH"'],
+                         "the only thing it may replace itself with is itself")
+
+    def test_running_and_terminal_keep_the_hosts_watchdog_up_and_withdrawing_either_ends_it(self):
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed")
+        # (the intent, whether the host started it). `running` needs no host.
+        for value, hosted in (("running", False), ("running", True), ("terminal", True)):
+            with self.subTest(intent=value, hosted=hosted), \
+                    tempfile.TemporaryDirectory() as tmp:
+                home, env = _sandbox(tmp, blind=True)
+                if hosted:
+                    env[TERMINAL_WINDOW_FLAG] = "1"
+                intent = home / ".civvis-operator-intent"
+                # Exactly what `civvis-games on` writes, newline included.
+                intent.write_text(value + "\n")
+                log = home / "civvis-civ6-runs" / "agent_wedge_watchdog.log"
+                lock = home / ".civvis-agent-wedge-watchdog.lock"
+                complaints = Path(tmp) / "watchdog.stderr"
+                with complaints.open("w") as sink:
+                    watchdog = subprocess.Popen(
+                        ["zsh", str(WATCHDOG)],
+                        env={**env, "CIVVIS_WEDGE_POLL_S": "0.1"},
+                        stdout=subprocess.DEVNULL, stderr=sink)
+                    try:
+                        self.assertTrue(
+                            _wait_for(lambda: "watchdog up" in _text(log)),
+                            f"intent={value} must start the watchdog: {_text(log)}")
+                        self.assertEqual((lock / "pid").read_text().strip(),
+                                         str(watchdog.pid))
+                        # Several passes of the real loop, with no run directory.
+                        time.sleep(0.6)
+                        self.assertIsNone(
+                            watchdog.poll(),
+                            f"intent={value} must keep it up: {_text(log)}")
+                        intent.write_text("stopped\n")
+                        self.assertEqual(watchdog.wait(timeout=10), 0)
+                    finally:
+                        _stop(watchdog)
+                self.assertIn("verification intent is not running (intent=stopped); "
+                              "exiting without touching a game", _text(log))
+                self.assertFalse(lock.exists(), "its lock must go with it")
+                self.assertEqual(_text(complaints), "",
+                                 "a poll with no run directory must say nothing")
+
+    def test_any_other_intent_exits_before_the_lock(self):
+        """Fail closed, as before: only the exact values authorize it, and
+        `terminal` only the copy the Terminal window's host started."""
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed")
+        cases = [(value, hosted)
+                 for value in (None, "", "stopped", "Terminal", "terminal window",
+                               "running\nterminal", "unattended")
+                 for hosted in (False, True)]
+        # What a keeper, a launchd job or a stray shell would be under
+        # terminal control: not the window's child, so not authorized.
+        cases.append(("terminal", False))
+        for value, hosted in cases:
+            with self.subTest(intent=value, hosted=hosted), \
+                    tempfile.TemporaryDirectory() as tmp:
+                home, env = _sandbox(tmp, blind=True)
+                if hosted:
+                    env[TERMINAL_WINDOW_FLAG] = "1"
+                if value is not None:
+                    (home / ".civvis-operator-intent").write_text(value + "\n")
+                done = subprocess.run(
+                    ["zsh", str(WATCHDOG)], env={**env, "CIVVIS_WEDGE_POLL_S": "0.1"},
+                    capture_output=True, text=True, timeout=30)
+                log = _text(home / "civvis-civ6-runs" / "agent_wedge_watchdog.log")
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertIn("verification intent is not running", log)
+                self.assertIn("exiting without touching a game", log)
+                self.assertNotIn("watchdog up", log)
+                self.assertFalse((home / ".civvis-agent-wedge-watchdog.lock").exists())
+                if value == "terminal":
+                    self.assertIn("intent=terminal, which authorizes only the watchdog "
+                                  "the interactive host starts with "
+                                  + TERMINAL_WINDOW_FLAG + "=1", log)
+
+
+class TheHostDoesNotHotLoopItsWedgeWatchdog(unittest.TestCase):
+    """⚠⚠ 52,000 RESTARTS AND NOT ONE WATCHDOG.
+
+    The host's poll said "agent wedge watchdog exited; restarting" every five
+    seconds for six days and never asked why the last one had lived for none.
+    A watchdog that exits at once is now restarted on the next poll once, then
+    after a wait that doubles to a ceiling; one that lived is still restarted
+    on the next poll, which is what the climb's batch-start retire relies on.
+    """
+
+    def test_the_knobs_are_named_and_the_line_clears_the_watchdogs_first_poll(self):
+        """A watchdog that dies in its first pass must still count as a quick
+        exit, or one that crashes there is restarted every minute for ever."""
+        host = HOST.read_text(encoding="utf-8")
+        self.assertIn("WEDGE_BACKOFF_S=${CIVVIS_WEDGE_BACKOFF_S:-10}", host)
+        self.assertIn("WEDGE_BACKOFF_MAX_S=${CIVVIS_WEDGE_BACKOFF_MAX_S:-600}", host)
+        quick = int(re.search(
+            r"WEDGE_QUICK_EXIT_S=\$\{CIVVIS_WEDGE_QUICK_EXIT_S:-(\d+)\}", host).group(1))
+        poll = int(re.search(r"POLL_S=\$\{CIVVIS_WEDGE_POLL_S:-(\d+)\}",
+                             WATCHDOG.read_text(encoding="utf-8")).group(1))
+        self.assertGreater(quick, poll)
+
+    def _host(self, tmp: str, watchdog: Path, **knobs: str):
+        if not (Path("/bin/zsh").exists() and Path("/usr/bin/caffeinate").exists()):
+            self.skipTest("the interactive host is a macOS zsh script")
+        home, env = _sandbox(tmp)
+        (home / ".civvis-operator-intent").write_text("terminal\n")
+        sleeper = "#!/bin/zsh\nwhile true; do sleep 1; done\n"
+        # The host recognises a live supervisor by this file name.
+        supervisor = Path(tmp) / "civvis-game-supervisor.sh"
+        mirror_keeper = Path(tmp) / "fake-mirror-keeper.sh"
+        for script in (supervisor, mirror_keeper):
+            script.write_text(sleeper)
+        gamelock = Path(tmp) / "gamelock.py"
+        gamelock.write_text("raise SystemExit(1)\n")  # no operator halt stands
+        env.update(
+            CIVVIS_SUPERVISOR=str(supervisor),
+            CIVVIS_MIRROR_KEEPER=str(mirror_keeper),
+            CIVVIS_WEDGE_WATCHDOG=str(watchdog),
+            CIVVIS_GAMELOCK=str(gamelock),
+            CIVVIS_GAMELOCK_PYTHON=sys.executable,
+            # No visual popup keeper: it is not what these tests are about.
+            CIVVIS_CAPTURE_FREE="1",
+            CIVVIS_INTERACTIVE_HOST_POLL_S="0.05",
+            WEDGE_STARTS=str(Path(tmp) / "wedge.starts"),
+            **knobs)
+        complaints = (Path(tmp) / "host.stderr").open("w")
+        self.addCleanup(complaints.close)
+        host = subprocess.Popen(["/bin/zsh", str(HOST)], env=env,
+                                stdout=subprocess.DEVNULL, stderr=complaints)
+        return host, home, home / "civvis-civ6-runs" / "interactive_host.log"
+
+    def _stop_quietly(self, tmp: str, host: subprocess.Popen) -> None:
+        """Stop the host; a zsh error in it does not stop it, so read stderr."""
+        _stop(host)
+        self.assertEqual(_text(Path(tmp) / "host.stderr"), "",
+                         "the host wrote to stderr")
+
+    @staticmethod
+    def _starts(tmp: str) -> list[int]:
+        return [int(line) for line in _text(Path(tmp) / "wedge.starts").split()]
+
+    def test_under_terminal_control_the_hosts_own_watchdog_stays_up(self):
+        """The defect itself, with the real watchdog under the real host."""
+        with tempfile.TemporaryDirectory() as tmp:
+            # A long poll: the watchdog only has to start and stay.
+            host, home, log = self._host(tmp, WATCHDOG, CIVVIS_WEDGE_POLL_S="30")
+            wedge_log = home / "civvis-civ6-runs" / "agent_wedge_watchdog.log"
+            pid_file = home / ".civvis-agent-wedge-watchdog.lock" / "pid"
+            try:
+                self.assertTrue(_wait_for(lambda: "watchdog up" in _text(wedge_log)),
+                                f"host: {_text(log)}\nwatchdog: {_text(wedge_log)}")
+                watchdog_pid = int(pid_file.read_text())
+                time.sleep(1.0)  # several host polls
+                self.assertIsNone(host.poll(), _text(log))
+                os.kill(watchdog_pid, 0)  # raises if the watchdog is gone
+                text = _text(log)
+                self.assertEqual(text.count("started agent wedge watchdog pid"), 1, text)
+                self.assertNotIn("agent wedge watchdog exited", text)
+                self.assertNotIn("not running", _text(wedge_log))
+            finally:
+                self._stop_quietly(tmp, host)
+
+            def gone() -> bool:
+                try:
+                    os.kill(watchdog_pid, 0)
+                except ProcessLookupError:
+                    return True
+                return False
+
+            self.assertTrue(_wait_for(gone, 5.0),
+                            "closing the window's host must take its watchdog with it")
+
+    def test_a_watchdog_that_exits_at_once_is_not_restarted_every_poll(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            # What the watchdog did under `terminal` before the fix.
+            refuser = Path(tmp) / "fake-wedge-refuser.sh"
+            refuser.write_text('#!/bin/zsh\nprint -r -- $$ >> "$WEDGE_STARTS"\nexit 0\n')
+            host, _, log = self._host(tmp, refuser, CIVVIS_WEDGE_BACKOFF_S="1",
+                                      CIVVIS_WEDGE_BACKOFF_MAX_S="2")
+            try:
+                self.assertTrue(_wait_for(lambda: len(self._starts(tmp)) >= 1),
+                                _text(log))
+                time.sleep(2.5)  # dozens of host polls
+                self.assertIsNone(host.poll(), "the host itself must keep running")
+                starts, text = len(self._starts(tmp)), _text(log)
+            finally:
+                self._stop_quietly(tmp, host)
+        # The first start, the one free restart, then waits of 1 s and 2 s.
+        self.assertGreaterEqual(starts, 2, text)
+        self.assertLessEqual(starts, 5,
+                             f"{starts} starts in 2.5 s is the hot loop again")
+        self.assertEqual(text.count("agent wedge watchdog exited; restarting"), 1, text)
+        self.assertIn("times running (status 0, intent=terminal); next start in 1s",
+                      text)
+        self.assertLessEqual(text.count("agent wedge watchdog exited"), 5, text)
+
+    def test_a_missing_watchdog_backs_off_the_same_way(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            host, _, log = self._host(tmp, Path(tmp) / "absent-watchdog.sh",
+                                      CIVVIS_WEDGE_BACKOFF_S="1",
+                                      CIVVIS_WEDGE_BACKOFF_MAX_S="2")
+            try:
+                self.assertTrue(_wait_for(lambda: "cannot start agent wedge watchdog"
+                                          in _text(log)), _text(log))
+                time.sleep(2.0)
+                self.assertIsNone(host.poll(), "the host itself must keep running")
+                text = _text(log)
+            finally:
+                self._stop_quietly(tmp, host)
+        self.assertLessEqual(text.count("cannot start agent wedge watchdog"), 5, text)
+        self.assertIn("next start in 1s", text)
+
+    def test_a_retired_watchdog_is_back_on_the_next_poll(self):
+        """The climb stops the watchdog at every batch start so the host brings
+        it back on the current build (`retire_stale_wedge_watchdog`). A
+        watchdog that had lived is restarted at once, however often; only
+        exits that follow their own start closely are made to wait, and one
+        long life clears that count."""
+        with tempfile.TemporaryDirectory() as tmp:
+            stayer = Path(tmp) / "fake-wedge-stayer.sh"
+            stayer.write_text('#!/bin/zsh\nprint -r -- $$ >> "$WEDGE_STARTS"\n'
+                              'while true; do sleep 1; done\n')
+            host, _, log = self._host(tmp, stayer, CIVVIS_WEDGE_QUICK_EXIT_S="2",
+                                      CIVVIS_WEDGE_BACKOFF_S="1",
+                                      CIVVIS_WEDGE_BACKOFF_MAX_S="1")
+
+            def retire_and_await(count: int, within_s: float) -> None:
+                os.kill(self._starts(tmp)[-1], signal.SIGTERM)
+                self.assertTrue(_wait_for(lambda: len(self._starts(tmp)) >= count,
+                                          within_s),
+                                f"no start number {count} within {within_s}s: {_text(log)}")
+
+            try:
+                self.assertTrue(_wait_for(lambda: len(self._starts(tmp)) >= 1),
+                                _text(log))
+                time.sleep(2.2)              # it has lived past the quick-exit line
+                retire_and_await(2, 1.0)     # so it is back on the next poll
+                self.assertNotIn("next start in", _text(log))
+                retire_and_await(3, 1.0)     # first quick exit: still at once
+                self.assertNotIn("next start in", _text(log))
+                retire_and_await(4, 3.0)     # second in a row: after the wait
+                self.assertEqual(_text(log).count("next start in 1s"), 1, _text(log))
+                time.sleep(2.2)              # a long life clears the count
+                retire_and_await(5, 1.0)
+                retire_and_await(6, 1.0)     # so the next quick exit is free again
+                self.assertEqual(_text(log).count("next start in"), 1, _text(log))
+                self.assertIsNone(host.poll(), _text(log))
+            finally:
+                self._stop_quietly(tmp, host)
 
 
 if __name__ == "__main__":

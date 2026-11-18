@@ -171,8 +171,48 @@ live_pause_requested() {
   ! /usr/bin/grep -Eq '"paused"[[:space:]]*:[[:space:]]*false' "$PAUSEFILE" 2>/dev/null
 }
 
+# ⚠⚠ `terminal` AUTHORIZES THE HOST'S OWN WATCHDOG, AND ONLY THAT ONE.
+#
+# `running` authorizes the unattended lane. `terminal` (civvis-games.sh,
+# CIVVIS_CONTROL, #5167) authorizes only the loop a Terminal window hosts, and
+# keeps out everything that would start or recover a game from the background.
+# The watchdog civvis-interactive-host.sh starts is part of that loop: it is
+# the window's own child and it starts nothing. It signals the one climb-owned
+# pair, and the reload or the next game then comes from the climb and the
+# supervisor in the same window, each of which checks the intent itself. The
+# host says so with CIVVIS_WEDGE_TERMINAL_WINDOW=1, the way the play harness
+# passes `terminal_window=True` to gamelock.py. A copy started by anything else
+# still needs the exact value `running`.
+#
+# #5167 left this function asking for `running` alone while the host that
+# starts it accepted `terminal` as well. Under terminal control the watchdog
+# therefore exited at once, the host restarted it every five seconds (about
+# 52,000 times from 2026-11-12 to 11-18), and no wedged game was rescued on
+# that host in those six days. tools/test_ops_wedge_watchdog.py pins that the
+# host's own watchdog accepts what the host accepts.
+TERMINAL_WINDOW=${CIVVIS_WEDGE_TERMINAL_WINDOW:-0}
+
 verification_intent_running() {
-  [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == running ]]
+  [[ -r "$INTENTFILE" ]] || return 1
+  if [[ "$TERMINAL_WINDOW" == 1 ]]; then
+    [[ "$(<"$INTENTFILE")" == (running|terminal) ]]
+  else
+    [[ "$(<"$INTENTFILE")" == running ]]
+  fi
+}
+
+intent_reason() {
+  local intent=""
+  if [[ ! -r "$INTENTFILE" ]]; then
+    print -r -- "intent=missing"
+    return 0
+  fi
+  intent=$(<"$INTENTFILE")
+  if [[ "$intent" == terminal && "$TERMINAL_WINDOW" != 1 ]]; then
+    print -r -- "intent=terminal, which authorizes only the watchdog the interactive host starts with CIVVIS_WEDGE_TERMINAL_WINDOW=1"
+  else
+    print -r -- "intent=$intent"
+  fi
 }
 
 # The watchdog belongs to the unattended climb lane, not to every Python
@@ -295,7 +335,7 @@ nudge_end_turn() {
 restart_attempt() {
   local reason="$1" climb="$2" play="$3" tag="$4" turn="${5:-0}"
   if ! verification_intent_running; then
-    say "$tag recovery suppressed: verification intent is not running"
+    say "$tag recovery suppressed: verification intent is not running ($(intent_reason))"
     return 0
   fi
   if ! is_python_harness "$climb" "civ6_civvis_climb.py" \
@@ -367,7 +407,7 @@ reset_progress() {
 }
 
 if ! verification_intent_running; then
-  say "verification intent is not running; exiting without touching a game"
+  say "verification intent is not running ($(intent_reason)); exiting without touching a game"
   exit 0
 fi
 if ! mkdir "$LOCK" 2>/dev/null; then
@@ -395,7 +435,7 @@ paused_said=0
 while true; do
   sleep "$POLL_S"
   if ! verification_intent_running; then
-    say "verification intent is not running; exiting without touching a game"
+    say "verification intent is not running ($(intent_reason)); exiting without touching a game"
     exit 0
   fi
   # Cheap: two numbers from one stat, once a minute. Deliberately mtime+size
@@ -434,9 +474,18 @@ while true; do
   # a read-only query and the watchdog followed them instead of the live t57
   # game. `events.jsonl` is appended by the mod itself, so its mtime is the
   # game that is actually being played.
-  tag=$(ls -t "$RUNS"/civvis-*/events.jsonl 2>/dev/null | head -1)
-  tag=${tag:h:t}
-  [[ -z "$tag" ]] && { strikes=0; reset_progress; continue }
+  #
+  # ⚠ THE GLOB ITSELF PICKS THE NEWEST, AND MATCHES NOTHING QUIETLY. `(N)` lets
+  # it come back empty, `om` orders by mtime newest first, `[1]` keeps one. The
+  # earlier `tag=$(ls -t "$RUNS"/civvis-*/events.jsonl 2>/dev/null | head -1)`
+  # failed twice over when no run directory existed: zsh refused the unmatched
+  # pattern before `ls` ran, so `2>/dev/null` never saw the message and every
+  # poll wrote "no matches found" to the launch log (784 lines); and
+  # `${tag:h:t}` of the empty result is `.`, not empty, so the `-z` test below
+  # never fired and the loop went on to judge a run called `.`.
+  newest_events=("$RUNS"/civvis-*/events.jsonl(Nom[1]))
+  (( ${#newest_events} )) || { strikes=0; reset_progress; continue }
+  tag=${newest_events[1]:h:t}
   ownership=$(owned_climb_and_player || true)
   if [[ -z "$ownership" ]]; then
     # A direct player is expected during a protected autosave continuation.
