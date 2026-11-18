@@ -92,10 +92,11 @@ impl BasicAi {
             // neighbour of every tile it expands).
             let _memo = g.query_memo();
             let mut envelopes = Vec::new();
+            let mut war = crate::ai::WarMemo::new(g, pid);
             for unit in g.units.values() {
                 let spec = &g.rules.units[unit.kind];
                 if unit.owner == pid
-                    || !g.is_at_war(pid, unit.owner)
+                    || !war.at_war_with(unit.owner)
                     || spec.class != "military"
                     || !(spec.is_melee_capable() || spec.has_ranged_attack())
                     || !g.unit_visible_to(unit.id, pid)
