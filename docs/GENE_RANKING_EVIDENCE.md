@@ -199,6 +199,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `score-seat-raises-wonders-3` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders-3`; version three of the family, so versions one and two are turned off. | 2 \| 3 |
 | `score-seat-sprints-to-the-tally` | off (unmeasured) | Opt-in gene `score-seat-sprints-to-the-tally`; see `advanced/score_sprints_to_the_tally.rs`. | — \| 2 |
 | `score-seat-sprints-to-the-tally-2` | off (unmeasured) | Opt-in gene `score-seat-sprints-to-the-tally-2`, version two of `score-seat-sprints-to-the-tally`: Great People priced with their Historic Moment, patronized with the idle currency from thirty Online turns before the limit. | — \| 2 |
+| `shooters-man-the-capital` | off (unmeasured) | Opt-in gene `shooters-man-the-capital`; see `advanced/shooters_man_the_capital.rs`. | 1 \| 1 |
 | `siege-guns-take-a-reachable-post` | off (unmeasured) | Opt-in gene `siege-guns-take-a-reachable-post`; see `advanced/siege_train/reachable_post.rs`. | 1 \| 1 |
 | `spared-soldiers-come-to-the-capital` | off (unmeasured) | Opt-in gene `spared-soldiers-come-to-the-capital`; see `advanced/spared_soldiers_come_to_the_capital.rs`. | 1 \| 1 |
 
