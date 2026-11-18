@@ -468,6 +468,51 @@ fn a_shooter_far_out_walks_toward_the_capital_at_war() {
     assert!(distance < 6, "it walks toward the capital: {distance}");
 }
 
+#[test]
+fn a_settlers_guard_on_the_centre_fires_from_it_and_is_not_held() {
+    let (mut g, home) = watch_board();
+    war(&mut g, 0, 1);
+    let mut ai = gene_on();
+    // The Archer on the centre is linked to the Settler waiting there.
+    let archer = spawn(&mut g, "archer", 0, home);
+    let settler = spawn(&mut g, "settler", 0, home);
+    g.units.get_mut(&archer).unwrap().linked_to = Some(settler);
+    g.units.get_mut(&settler).unwrap().linked_to = Some(archer);
+    refresh(&mut g, archer);
+    assert!(ai.man_guard(&g, archer), "fixture: a civilian's guard");
+    let gun = spawn_east(&mut g, "catapult", 1, home, 2);
+    let reading = ai.shooters_man_reading(&g, 0).expect("a gun at war");
+    assert!(
+        ai.shooters_man_called(&g, 0, &reading).is_empty(),
+        "a guard is not called"
+    );
+    let held = ai.plan_shooters_man_the_capital(&mut g, 0);
+    assert!(held.is_empty(), "and not held");
+    assert!(
+        g.units[&gun].hp < 100,
+        "it fires on the gun from the centre: {}",
+        g.units[&gun].hp
+    );
+    assert_eq!(g.units[&archer].pos, home);
+    assert_eq!(g.units[&settler].pos, home);
+}
+
+#[test]
+fn a_siege_member_answers_the_call_only_at_war() {
+    let (mut g, home) = watch_board();
+    let ai = gene_on();
+    let archer = spawn_west(&mut g, "archer", 0, home, 3);
+    assert!(ai.man_free_shooter(&g, 0, archer, home, false));
+    assert!(ai.man_free_shooter(&g, 0, archer, home, true));
+    // A Slinger and a Catapult of ours are no shooters of the capital.
+    let slinger = spawn_west(&mut g, "slinger", 0, home, 2);
+    let gun = spawn_west(&mut g, "catapult", 0, home, 4);
+    for war in [false, true] {
+        assert!(!ai.man_free_shooter(&g, 0, slinger, home, war));
+        assert!(!ai.man_free_shooter(&g, 0, gun, home, war));
+    }
+}
+
 /// A whole turn of the seat with the battle planner on: where the three
 /// Archers (two, three and three tiles out) end it, the Catapult's health,
 /// and the gene's journal lines followed by the board.

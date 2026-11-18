@@ -71,8 +71,10 @@
 //! largest watched party's size plus one, and at least [`MAN_GUARD_MIN`].
 //! The nearest are called first. A free shooter is a land unit with a ranged
 //! attack that reaches [`MAN_SHOOTER_REACH`] tiles and is no siege gun, not
-//! embarked, not a Settler's or Builder's guard, not in a siege of ours, and
-//! not standing on another City Center of ours.
+//! embarked, not a civilian's guard and not standing on another City Center
+//! of ours. A member of a siege of ours is free only while a power at war
+//! with us is in sight of the capital: the siege of their city waits for
+//! ours.
 //!
 //! **The orders**, before the battle is planned, nearest shooter first:
 //!
@@ -88,6 +90,11 @@
 //!
 //! A called shooter is held for the turn: the battle plan, the Anvil and the
 //! per-unit ladder do not order it again.
+//!
+//! A civilian's guard that stands in or beside the City Center is not called
+//! and not held. At war it fires from its tile by the same rule, the gun
+//! first: on Beijing's boards the Archer on the centre was a waiting
+//! Settler's guard, the one shooter with the Trebuchet in reach.
 //!
 //! **What it costs, by design.** A shooter beside the centre can be struck;
 //! one on it cannot. The gene accepts that for the gun's death: the capital's
@@ -262,25 +269,62 @@ impl AdvancedAi {
         })
     }
 
-    /// A shooter free to man the capital: see the module.
-    fn man_free_shooter(&self, g: &Game, pid: usize, uid: u32, home: Pos) -> bool {
-        if !Self::centre_soldier(g, pid, uid) {
+    /// A land shooter of ours that reaches [`MAN_SHOOTER_REACH`] and is no
+    /// siege gun.
+    fn man_shooter(g: &Game, pid: usize, uid: u32) -> bool {
+        g.units.get(&uid).is_some_and(|unit| {
+            let spec = &g.rules.units[unit.kind];
+            unit.owner == pid
+                && unit.hp > 0
+                && spec.class == "military"
+                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                && spec.has_ranged_attack()
+                && !spec.siege
+                && !g.is_embarked(unit)
+                && g.unit_attack_range(uid) >= MAN_SHOOTER_REACH
+        })
+    }
+
+    /// Whether `uid` guards a civilian: linked to one, bound to a Settler or
+    /// reserved for a Builder.
+    fn man_guard(&self, g: &Game, uid: u32) -> bool {
+        g.units[&uid].linked_to.is_some()
+            || self.guard_is_bound_to_any_settler(uid)
+            || self.guard_is_reserved_for_civilian(uid)
+    }
+
+    /// A shooter free to man the capital: see the module. A member of a
+    /// siege of ours is free once a power at war with us is in sight of the
+    /// capital (`war`).
+    fn man_free_shooter(&self, g: &Game, pid: usize, uid: u32, home: Pos, war: bool) -> bool {
+        if !Self::man_shooter(g, pid, uid) || self.man_guard(g, uid) {
             return false;
         }
         let unit = &g.units[&uid];
-        let spec = &g.rules.units[unit.kind];
-        spec.has_ranged_attack()
-            && !spec.siege
-            && g.unit_attack_range(uid) >= MAN_SHOOTER_REACH
-            && g.wdist(unit.pos, home) <= MAN_CALL_RANGE
+        g.wdist(unit.pos, home) <= MAN_CALL_RANGE
             && (unit.pos == home
                 || !g
                     .city_at(unit.pos)
                     .is_some_and(|cid| g.cities[&cid].owner == pid))
-            && !self.guard_is_bound_to_any_settler(uid)
-            && !self.guard_is_reserved_for_civilian(uid)
-            && !self.active_siege_member(g, pid, uid)
-            && !self.staging_siege_member(g, pid, uid)
+            && (war
+                || (!self.active_siege_member(g, pid, uid)
+                    && !self.staging_siege_member(g, pid, uid)))
+    }
+
+    /// A civilian's guard standing in or beside the City Center: it keeps its
+    /// charge and its tile, and fires from it.
+    fn man_standing_guards(&self, g: &Game, pid: usize, home: Pos) -> Vec<u32> {
+        let mut guards: Vec<u32> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| {
+                Self::man_shooter(g, pid, *uid)
+                    && self.man_guard(g, *uid)
+                    && g.wdist(g.units[uid].pos, home) <= 1
+            })
+            .collect();
+        guards.sort_unstable();
+        guards
     }
 
     /// The shooters the reading calls, the nearest the capital first (then
@@ -294,7 +338,7 @@ impl AdvancedAi {
         let mut free: Vec<u32> = g
             .player_unit_ids(pid)
             .into_iter()
-            .filter(|uid| self.man_free_shooter(g, pid, *uid, reading.home))
+            .filter(|uid| self.man_free_shooter(g, pid, *uid, reading.home, reading.war))
             .collect();
         free.sort_by_key(|uid| {
             let unit = &g.units[uid];
@@ -563,6 +607,11 @@ impl AdvancedAi {
         let Some(reading) = self.shooters_man_reading(g, pid) else {
             return BTreeSet::new();
         };
+        // A civilian's guard in or beside the centre fires from its tile and
+        // is not held: it stays its charge's.
+        for guard in self.man_standing_guards(g, pid, reading.home) {
+            self.man_fire(g, pid, guard, &reading);
+        }
         let called = self.shooters_man_called(g, pid, &reading);
         if called.is_empty() {
             return BTreeSet::new();
