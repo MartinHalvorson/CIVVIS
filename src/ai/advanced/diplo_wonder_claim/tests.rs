@@ -455,9 +455,15 @@ fn a_culture_or_religious_seat_claims_and_holds_only_the_statue() {
         let plan = wonder_plan(GrandStrategy::Culture, game.turn);
         let mut seat = AdvancedAi::targeting(target);
         seat.enable_diplo_seat_wonder_claim();
-        assert!(!seat.diplo_wonder_claim_on(&game), "{target:?}: off without the tag");
+        assert!(
+            !seat.diplo_wonder_claim_on(&game),
+            "{target:?}: off without the tag"
+        );
         seat.enable_culture_and_religion_build_the_statue();
-        assert!(seat.diplo_wonder_claim_on(&game), "{target:?}: on with the tag");
+        assert!(
+            seat.diplo_wonder_claim_on(&game),
+            "{target:?}: on with the tag"
+        );
         assert!(
             seat.diplo_wonder_item(&game, 0, city, &plan).is_none(),
             "{target:?}: the Mahabodhi Temple's two points stay with the lane"
@@ -470,7 +476,11 @@ fn a_culture_or_religious_seat_claims_and_holds_only_the_statue() {
         let mut finisher = AdvancedAi::targeting(target);
         finisher.enable_diplo_seat_wonder_claim();
         finisher.enable_diplo_seat_statue_is_the_finisher();
-        assert_eq!(finisher.diplo_finisher_held(&near, 0, fcity), None, "{target:?}: no tag, no hold");
+        assert_eq!(
+            finisher.diplo_finisher_held(&near, 0, fcity),
+            None,
+            "{target:?}: no tag, no hold"
+        );
         finisher.enable_culture_and_religion_build_the_statue();
         assert_eq!(
             finisher.diplo_finisher_held(&near, 0, fcity),
