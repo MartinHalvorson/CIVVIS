@@ -69,5 +69,22 @@ class DominationCapitalExchangeWiringTest(unittest.TestCase):
                 self.assertEqual(config["VictoryLane"], lane)
 
 
+class CongressRacerWiringTest(unittest.TestCase):
+    """`culture-and-religion-race-the-congress` reaches the agent as
+    `LaneCongressRacer`, read by `CivvisCongressRacer`;
+    congress_join_vote_test.lua drives the Lua side."""
+
+    _config = staticmethod(DominationCapitalExchangeWiringTest._config)
+
+    def test_the_tag_sets_the_flag_only_when_civvis_decides(self):
+        tag = "culture-and-religion-race-the-congress"
+        on = self._config(civvis_decides=True, civvis_victory="religious", civvis_with=[tag])
+        self.assertTrue(on["LaneCongressRacer"])
+        self.assertFalse(on["ScienceCongressRacer"])
+        self.assertFalse(self._config(civvis_decides=True, civvis_victory="culture",
+                                      civvis_with=[])["LaneCongressRacer"])
+        self.assertFalse(self._config(civvis_victory="culture", civvis_with=[tag])["LaneCongressRacer"])
+
+
 if __name__ == "__main__":
     unittest.main()

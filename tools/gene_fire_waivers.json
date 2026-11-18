@@ -22,5 +22,7 @@
     "    --json docs/gene_screens/fires/<tag>.json",
     "-- then DELETE the entry here, or the stale-waiver check fails."
   ],
-  "waivers": {}
+  "waivers": {
+    "culture-and-religion-race-the-congress": "Opt-in, live only: it acts solely in the Civ VI host's World Congress ballot (`CivvisCongressRacer`, tools/civ6_control/mod/CivvisControlAgent.lua, via `LaneCongressRacer` from tools/civ6_play.py); the simulator has no such Congress and never reads the field, so no screen can show it fire. congress_join_vote_test.lua drives the Lua side; the live proof is `wc_join_vote` rows and final Diplomatic Victory points on Culture and Religious seats (congress_kpi.py)."
+  }
 }

@@ -136,6 +136,29 @@ do
 		(choose("domination", every(), { config = { ScienceCongressRacer = true } })), "")
 end
 
+-- 2c. A Culture or Religious seat racing the Congress
+-- (`culture-and-religion-race-the-congress`) joins all nine too; the flag
+-- does nothing for a Science or Domination seat.
+do
+	local all = "CLIMATE_ACCORDS@-1 MILITARY_AID_REQUEST@4 NOBEL_PRIZE_LITERATURE@-1 NOBEL_PRIZE_PEACE@-1 "
+		.. "NOBEL_PRIZE_PHYSICS@-1 REQUEST_AID@3 SPACE_STATION@-1 WORLD_FAIR@-1 WORLD_GAMES@-1"
+	for _, lane in ipairs({ "culture", "religious" }) do
+		local asks, skipped = choose(lane, every(), { config = { LaneCongressRacer = true } })
+		check("racing " .. lane .. " seat joins all nine", asks, all)
+		check("racing " .. lane .. " seat skips nothing of those kinds", skipped, "")
+	end
+	check("the lane racer switched off is a plain culture seat again",
+		(choose("culture", every(), { config = { LaneCongressRacer = true, DiploRacer = false } })),
+		"NOBEL_PRIZE_LITERATURE@-1 WORLD_FAIR@-1 WORLD_GAMES@-1")
+	check("the lane flag does nothing for a Science seat",
+		(choose("science", every(), { config = { LaneCongressRacer = true } })),
+		"NOBEL_PRIZE_PHYSICS@-1 SPACE_STATION@-1")
+	check("the lane flag does nothing for a Domination seat",
+		(choose("domination", every(), { config = { LaneCongressRacer = true } })), "")
+	check("the science flag does nothing for a Religious seat",
+		(choose("religious", every(), { config = { ScienceCongressRacer = true } })), "")
+end
+
 -- 3. A Culture seat joins the Fair, the Games and the Literature prize.
 check("culture seat joins three", (choose("culture", every())),
 	"NOBEL_PRIZE_LITERATURE@-1 WORLD_FAIR@-1 WORLD_GAMES@-1")

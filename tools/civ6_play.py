@@ -2184,6 +2184,11 @@ def build_config(args: argparse.Namespace) -> dict:
         "ScienceCongressRacer": bool(args.civvis_decides
                                      and "science-seat-races-the-congress"
                                      in (getattr(args, "civvis_with", []) or [])),
+        # `culture-and-religion-race-the-congress`: the same racer for a
+        # Culture or Religious seat (`CivvisCongressRacer`).
+        "LaneCongressRacer": bool(args.civvis_decides
+                                  and "culture-and-religion-race-the-congress"
+                                  in (getattr(args, "civvis_with", []) or [])),
         # `military-alliance-shield` (src/ai/advanced/military_alliance_shield.rs):
         # its Military Alliance ask reaches the host on every lane. The live
         # binary keeps only that desk's own ask while the tag is armed.

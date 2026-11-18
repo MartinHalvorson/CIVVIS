@@ -184,6 +184,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `culture-and-religion-race-the-congress` | off (unmeasured) | Opt-in gene `culture-and-religion-race-the-congress`: the same live-only ballot change for a Culture or Religious seat; see `CivvisCongressRacer` in `CivvisControlAgent.lua`. | 1 \| 1 |
 | `diplo-seat-allies-every-friend` | off (unmeasured) | Opt-in gene `diplo-seat-allies-every-friend`; see `advanced/diplo_allies_every_friend.rs`. | 1 \| 1 |
 | `diplo-seat-claims-the-competition` | off (unmeasured) | Opt-in gene `diplo-seat-claims-the-competition`; see `advanced/diplo_competition_claim.rs`. | 1 \| 1 |
 | `diplo-seat-statue-civic-first` | off (unmeasured) | Opt-in gene `diplo-seat-statue-civic-first`; see `advanced/diplo_statue_harbor.rs`. | 1 \| 1 |

@@ -19697,11 +19697,18 @@ end
 -- ended on 6 points against the top rival's 14 at t175. It claimed 37 of 187
 -- Diplomatic Victory ballots and won 24; its 117 B votes were never the votes
 -- that decided a session. Off unless the tag is armed.
+--
+-- `culture-and-religion-race-the-congress`: a seat assigned Culture or
+-- Religion races too (`LaneCongressRacer`). Live Deity 2026-11-18, 38 games:
+-- final points median 3 (Culture) and 4 (Religious) against 8 on the Science
+-- seats that race, none of them at 16+; the Religious seats cast no join vote
+-- and banked their Favor. Off unless the tag is armed.
 CivvisCongressRacer = function(config)
-	return CivvisDiploRacer(config) or (type(config) == "table"
-		and config.VictoryLane == "science"
-		and config.ScienceCongressRacer == true
-		and config.DiploRacer ~= false);
+	if CivvisDiploRacer(config) then return true; end
+	if type(config) ~= "table" or config.DiploRacer == false then return false; end
+	local lane = config.VictoryLane;
+	return (lane == "science" and config.ScienceCongressRacer == true)
+		or ((lane == "culture" or lane == "religious") and config.LaneCongressRacer == true);
 end
 
 -- ★ FOUR COUNTS RE-READ ON THE DEITY LANE (106 live games, 2026-11-12/13;

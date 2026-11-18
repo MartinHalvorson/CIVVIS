@@ -5673,6 +5673,11 @@ pub struct AdvancedAi {
     /// stood, for the journal of its loss. `None` while the gene is off.
     breaker_shield_memory: Option<breaker_walks_under_a_shield::BreakerShieldMemory>,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-and-religion-race-the-congress`: a Culture or Religious
+    /// seat's Diplomatic Victory ballot runs the racer too. Live only, like
+    /// `science_seat_races_the_congress`: the simulator never reads it.
+    #[allow(dead_code)]
+    culture_and_religion_race_the_congress: bool,
     /// `domination-seat-appoints-pingala-first`: a Domination target spends
     /// its first Governor titles on Pingala in its largest city and her
     /// Researcher promotion instead of the opening's Magnus, and keeps her
@@ -13112,6 +13117,7 @@ impl AdvancedAi {
             // ---- append: a-b ----------------------------------------
             barbarian_research_prices_the_field: false,
             // ---- append: c-d ----------------------------------------
+            culture_and_religion_race_the_congress: false,
             // ---- append: e-f ----------------------------------------
             early_cities_keep_their_distance: false,
             field_reads_the_tile_it_leaves: false,
