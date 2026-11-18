@@ -12487,6 +12487,8 @@ pub mod commitments;
 mod competitive_economy;
 mod envoys_open_the_siege_road;
 mod forward_airfield_project;
+/// `four-faces-bars-the-surprise`: see `advanced/four_faces_bars_the_surprise.rs`.
+mod four_faces_bars_the_surprise;
 mod frontier_walls_before_the_surprise;
 mod modernization_prices_the_path;
 /// `passage-waits-past-the-opening`: no Open Borders bought in the opening,

@@ -154,6 +154,9 @@ impl AdvancedAi {
                 Self::capital_watch_suspect(g, pid, **other)
                     && **seen <= g.turn
                     && g.turn - **seen <= window
+                    // `four-faces-bars-the-surprise`: see
+                    // `advanced/four_faces_bars_the_surprise.rs`.
+                    && !self.four_faces_spares(g, pid, **other)
             })
             .map(|(other, _)| (*other, g.military_power(*other) / ours))
             // `capital-walls-at-any-ratio`: 1.0 at Immortal and Deity. See
@@ -220,6 +223,9 @@ impl AdvancedAi {
         }
         let ours = g.military_power(pid).max(1.0);
         near.into_iter()
+            // `four-faces-bars-the-surprise`: see
+            // `advanced/four_faces_bars_the_surprise.rs`.
+            .filter(|(other, _)| !self.four_faces_spares(g, pid, *other))
             .filter(|(_, soldiers)| *soldiers >= CAPITAL_DOOR_UNITS)
             .map(|(other, soldiers)| (other, g.military_power(other) / ours, soldiers))
             .filter(|(_, ratio, _)| *ratio >= CAPITAL_DOOR_RATIO)
