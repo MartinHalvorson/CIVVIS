@@ -223,6 +223,15 @@ impl AdvancedAi {
         if growth_claims {
             self.claim_free_slot_campus(g, pid, plan);
         }
+        // `trade-district-follows-the-campus`: on a Science or Diplomatic
+        // seat at peace, a standing Commercial Hub's or Harbor's Market or
+        // Lighthouse, and one Hub or Harbor a turn in a city with a Campus
+        // and its Library, after the Campus claims (whose heads it leaves
+        // alone). Exact no-op while the gene is off. See
+        // `advanced/trade_district_follows_the_campus.rs`.
+        if !war_holds {
+            self.claim_trade_district(g, pid, plan);
+        }
         // `score-seat-fills-its-district-slots`: a Score seat's free slot
         // takes the cheapest district it can place, after the Campus claims
         // (whose heads it leaves alone). Exact no-op while the gene is off.

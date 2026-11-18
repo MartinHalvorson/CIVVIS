@@ -319,6 +319,7 @@ impl AdvancedAi {
                     || self.capped_aqueduct_holds(g, pid, cid, plan, head)
                     || self.capped_neighborhood_holds(g, pid, cid, plan, head)
                     || self.producer_zone_claim_holds(g, pid, cid, plan, head)
+                    || self.trade_district_claim_holds(g, pid, cid, plan, head)
                     || Self::queued_wall_breaker(g, head)
                     || !Self::capped_aqueduct_may_defer(g, pid, cid, head, at_major_war)
                 {

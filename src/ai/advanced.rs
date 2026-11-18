@@ -10966,6 +10966,12 @@ pub struct AdvancedAi {
     /// unlocked successor the treasury cannot pay for. See
     /// `advanced/upgrade_card_for_the_backlog.rs`. Off by default.
     upgrade_card_for_the_backlog: bool,
+    /// `trade-district-follows-the-campus`: on a Science or Diplomatic seat at
+    /// peace, a calm city with a Campus and its Library claims a Commercial
+    /// Hub or Harbor for its next district, and a standing Hub or Harbor
+    /// claims its Market or Lighthouse. See
+    /// `advanced/trade_district_follows_the_campus.rs`. Off by default.
+    trade_district_follows_the_campus: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -12254,6 +12260,9 @@ mod spy_targets;
 /// `sweden-builds-open-air-museums`: see
 /// `advanced/sweden_builds_open_air_museums.rs`.
 mod sweden_builds_open_air_museums;
+/// `trade-district-follows-the-campus`: see
+/// `advanced/trade_district_follows_the_campus.rs`.
+mod trade_district_follows_the_campus;
 mod trader_fills_the_idle_route;
 /// `tribute-buys-the-friendship`: see
 /// `advanced/tribute_buys_the_friendship.rs`.
@@ -21313,10 +21322,16 @@ impl AdvancedAi {
             // `commercial-hub-in-the-strategic-queue`: a queued Commercial Hub
             // or its Market finishes before routine rescoring can claim the
             // city.
-            let commercial_hub_commitment = self.commercial_hub_in_the_strategic_queue
+            let commercial_hub_commitment = (self.commercial_hub_in_the_strategic_queue
                 && committed.as_ref().is_some_and(|(_, item)| {
                     self.base
                         .commercial_hub_build_holds(g, cid, item, plan.threatened_city)
+                        && Self::production_commitment_is_legal(g, pid, cid, item)
+                }))
+                // `trade-district-follows-the-campus`: the claimed Hub or
+                // Harbor, or its Market or Lighthouse, finishes.
+                || committed.as_ref().is_some_and(|(_, item)| {
+                    self.trade_district_claim_holds(g, pid, cid, plan, item)
                         && Self::production_commitment_is_legal(g, pid, cid, item)
                 });
             if committed.as_ref().is_some_and(|(value, _)| {
