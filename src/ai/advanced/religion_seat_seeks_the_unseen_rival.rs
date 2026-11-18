@@ -1,56 +1,77 @@
-//! `religion-seat-seeks-the-unseen-rival`: a rival the seat has met and holds
-//! no city of on its map gets a spreader of its own to look for it, now,
-//! while the rest of the corps converts and charts.
+//! `religion-seat-seeks-the-unseen-rival`: every rival whose cities the seat
+//! cannot see enough of to hold its majority gets a spreader of its own to
+//! look for them, now, while the rest of the corps converts.
 //!
-//! **Why (live Deity Mali, 6 majors, Continents, Online,
-//! civvis-20261118T082214Z).** The seat lost to a rival's Science at t171
-//! with 29 spreaders holding 83 unspent charges: the host read our faith as
-//! the majority in three of five rivals, Sumeria stood at 6 of 12 cities and
-//! Portugal at 4 of 10. Its three overseas rivals were met at t109, t116 and
-//! t119 (Cartography at t113) and their first cities were seen at t131, t122
-//! and t159. Portugal took forty turns, with our corps on its continent from
-//! t128: at t150 the explored edge of the Netherlands ran through Tilburg,
-//! four tiles from Viseu, and Portuguese ground was first seen that turn two
-//! tiles from Beja. Once seen, Portugal went from none to four cities of
-//! ours in eleven turns.
+//! **Why (three live Deity Religious-target games, 6 majors, Continents,
+//! Online, 2026-11-18).** A spreader can only be sent to a city the seat has
+//! seen, and each of these games ended with the last rival's cities still
+//! coming into view:
+//! - Mali civvis-20261118T082214Z lost to a rival's Science at t171 with 29
+//!   spreaders holding 83 unspent charges, Sumeria at 6 of 12 cities and
+//!   Portugal at 4 of 10. Portugal was met at t119 and its first city seen
+//!   at t159, with our corps on its continent from t128: at t150 the
+//!   explored edge of the Netherlands ran through Tilburg, four tiles from
+//!   Viseu, and Portuguese ground was first seen that turn two tiles from
+//!   Beja. Once seen, Portugal went from none to four cities of ours in
+//!   eleven turns.
+//! - Khmer civvis-20261118T102229Z held four of five rivals at t180 and lost
+//!   to the fifth's Science about t190. Ethiopia was met at t134 and one of
+//!   its fifteen cities was on the map from that turn to t160 (three at
+//!   t170, nine at t180), with 12 to 28 spreaders in the field.
+//! - Byzantium civvis-20261118T094102Z (lost at t208) knew four to six of
+//!   Japan's ten or eleven cities from t160 to t195 and ten at t200; Japan
+//!   followed our faith four turns later.
 //!
-//! `religion-seat-charts-the-rivals` sends its scouts and its idle spreaders
-//! to the unexplored ground within nine tiles of a known city of a rival
-//! still short of a charted majority, and gives a rival with no known city
-//! the long expedition only when no such ground is left. So the unseen rival
-//! waits behind every located one: the Netherlands until it was charted
-//! (seven of ten cities, t148), then Sumeria (t158), and Portugal's first
-//! city came the next turn. A rival charted to its majority also takes its
-//! cities out of the search, and the fog on its far side with them.
+//! `religion-seat-charts-the-rivals` gives the search to its scouts: the
+//! spreaders with the fewest charges left, one for each rival still short of
+//! a charted majority, at most one in four of the corps. With
+//! `last-charge-joins-the-army` armed beside it those are the units on their
+//! last charge, which that gene has already given their own turn (a kept
+//! Missionary walks its own expedition, a kept Apostle hunts). Read from the
+//! state rows every eight turns, the three games had a rival short of a
+//! charted majority on 28 boards and the quota named no unit that reaches
+//! the scout's step on 25 of them. What charts then is a spreader with
+//! nothing left to convert or the corps' surplus over its known work, and
+//! all of it goes to the ground within nine tiles of a known city of a
+//! rival, so a rival with no known city waits behind every located one
+//! (Portugal behind the Netherlands to t148 and Sumeria to t158).
 //!
 //! **What the gene does**, where `religion-seat-charts-the-rivals` acts (a
-//! founded seat aiming at Religion, on the offensive), while a living major
-//! we have met has no city on our map:
-//! - **Its own seeker.** One spreader of our faith for each such rival looks
-//!   for it instead of spreading or charting a located rival's ground. A
-//!   seeker is a Missionary or an Apostle with a charge that
-//!   `last-charge-joins-the-army` has not kept and that is not due home to
-//!   heal; the one farthest from our capital is taken first (it stands
-//!   deepest in foreign ground), and a seeker stays one until its rival is
-//!   found. It keeps its charges: the turn the rival's first city is seen it
-//!   is a spreader again, beside that city. The corps' last spreader is
-//!   never taken: a corps of one spreads.
-//! - **The lead.** Ground a met major owns whose city we have not seen
-//!   (`Game::unseen_major_borders`, a live board's reading) is a border with
-//!   its city in the fog behind it. The seeker makes for the unexplored tile
-//!   nearest it within [`BORDER_LEAD_RADIUS`] of such ground.
-//! - **Otherwise it explores.** With no such lead it takes the fog an
-//!   explorer of ours would take from where it stands, water included
+//! founded seat aiming at Religion, on the offensive):
+//! - **Its own seeker.** Each living major we have met with no city on our
+//!   map has one spreader looking for it, and the rivals we know too few
+//!   cities of (`BasicAi::rival_is_under_charted`) have one each as well, up
+//!   to one in [`SCOUT_SHARE`] of the corps. A seeker is a Missionary or an
+//!   Apostle of our faith with a charge that `last-charge-joins-the-army`
+//!   has not kept and that is not due home to heal; the one farthest from
+//!   our capital is taken first (it stands deepest in foreign ground), and a
+//!   seeker stays one while there is a rival to look for. It keeps its
+//!   charges, so the turn a city comes into view it is a spreader beside
+//!   it. The corps' last spreader is never taken: a corps of one spreads.
+//! - **A rival with no city on the map.** Ground a met major owns whose
+//!   city we have not seen (`Game::unseen_major_borders`, a live board's
+//!   reading) is a border with its city in the fog behind it: its seeker
+//!   makes for the unexplored tile nearest it within [`BORDER_LEAD_RADIUS`]
+//!   of such ground. With no such lead it takes the fog an explorer of ours
+//!   would take from where it stands, water included
 //!   (`BasicAi::exploration_goal`): into the unexplored interior beside it,
-//!   not round the edge of the cities already known. Either goal is kept
-//!   until it is seen or cannot be reached, lies outside every visible
-//!   raider's reach, and is one this unit has a route to.
+//!   not round the edge of the cities already known.
+//! - **A rival known by too few cities.** Its seeker takes the charting goal
+//!   of `religion-seat-charts-the-rivals` (the unexplored ground beside the
+//!   nearest known city of such a rival), and the lead or the explorer's
+//!   fog when none of that is left.
 //!
-//! A seeker with nowhere to go has its ordinary turn. Off, or with
-//! `religion-seat-charts-the-rivals` off, or once every met rival has a city
-//! on the map, nothing changes.
+//! A goal is kept until it is seen or cannot be reached, lies outside every
+//! visible raider's reach, and is one this unit has a route to. A seeker
+//! with nowhere to go has its ordinary turn. Off, or with
+//! `religion-seat-charts-the-rivals` off, or once every met rival is charted
+//! to its majority, nothing changes.
 
 use super::*;
+// One spreader in this many may seek a rival that is on the map but short of
+// a charted majority: the share `religion-seat-charts-the-rivals` gives its
+// own scouts.
+use super::religion_seat_charts_the_rivals::SCOUT_SHARE;
 
 /// How far from unattributed major ground the fog is read for the city that
 /// owns it: a tile is owned by a city at most a few rings away
@@ -104,11 +125,13 @@ impl AdvancedAi {
         }) && !self.keeps_its_last_charge(g, pid, uid)
     }
 
-    /// This turn's seekers, one for each met rival with no city on our map
-    /// and never the corps' last spreader: the units already seeking first,
-    /// then the spreaders farthest from our capital (then the lower id).
+    /// This turn's seekers: one for each met rival with no city on our map,
+    /// one for each rival short of a charted majority up to one in
+    /// [`SCOUT_SHARE`] of the corps, and never the corps' last spreader. The
+    /// units already seeking come first, then the spreaders farthest from
+    /// our capital (then the lower id); the first are the unseen rivals'.
     /// Empty when the gene does not act, off the offensive, for another
-    /// faith, or when every met rival is located.
+    /// faith, or when every met rival is charted to its majority.
     pub(super) fn unseen_rival_seekers(
         &self,
         g: &Game,
@@ -122,8 +145,9 @@ impl AdvancedAi {
         {
             return Vec::new();
         }
-        let wanted = Self::unseen_met_rivals(g, pid);
-        if wanted == 0 {
+        let unseen = Self::unseen_met_rivals(g, pid);
+        let located = BasicAi::under_charted_majors(g, pid).saturating_sub(unseen);
+        if unseen + located == 0 {
             self.rival_seekers.borrow_mut().clear();
             return Vec::new();
         }
@@ -148,8 +172,11 @@ impl AdvancedAi {
             })
             .collect();
         corps.sort();
-        // Never the last spreader: a corps of one spreads.
-        let seekers = wanted.min(corps.len().saturating_sub(1));
+        // One for each rival with no city on the map, one in `SCOUT_SHARE`
+        // of the corps for the rivals short of a charted majority, and never
+        // the last spreader: a corps of one spreads.
+        let seekers =
+            (unseen + located.min(corps.len() / SCOUT_SHARE)).min(corps.len().saturating_sub(1));
         corps
             .into_iter()
             .take(seekers)
@@ -193,9 +220,18 @@ impl AdvancedAi {
     }
 
     /// Where the seeker `uid` goes: its kept goal while that is unexplored,
-    /// safe and reachable, else the border lead, else an explorer's fog. See
-    /// the module.
-    fn seeker_goal(&self, g: &Game, pid: usize, uid: u32) -> Option<(Pos, bool)> {
+    /// safe and reachable; else, for a rival known by too few cities
+    /// (`beside`), the charting goal of `religion-seat-charts-the-rivals`;
+    /// else the border lead; else an explorer's fog. The flag is whether the
+    /// goal is a border lead. See the module.
+    fn seeker_goal(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        religion: &str,
+        beside: bool,
+    ) -> Option<(Pos, bool)> {
         let origin = g.units[&uid].pos;
         let threats = self.religious_raider_threats(g, pid);
         let open = |position: Pos| {
@@ -207,6 +243,11 @@ impl AdvancedAi {
         let kept = self.rival_seekers.borrow().get(&uid).copied();
         if let Some((goal, lead)) = kept.filter(|(goal, _)| open(*goal)) {
             return Some((goal, lead));
+        }
+        if beside {
+            if let Some(goal) = self.religion_seat_charting_goal(g, pid, uid, religion, true) {
+                return Some((goal, false));
+            }
         }
         Self::seeker_border_lead(g, pid, uid, &threats)
             .map(|goal| (goal, true))
@@ -256,10 +297,13 @@ impl AdvancedAi {
         if seekers.is_empty() {
             return false;
         }
+        // The first seekers are the unseen rivals'; the rest chart beside a
+        // known city of a rival short of its majority.
+        let unseen = Self::unseen_met_rivals(g, pid);
         let goal = seekers
-            .contains(&uid)
-            .then(|| self.seeker_goal(g, pid, uid))
-            .flatten();
+            .iter()
+            .position(|seeker| *seeker == uid)
+            .and_then(|rank| self.seeker_goal(g, pid, uid, religion, rank >= unseen));
         {
             let mut seeking = self.rival_seekers.borrow_mut();
             seeking.retain(|other, _| *other != uid && seekers.contains(other));
@@ -271,10 +315,11 @@ impl AdvancedAi {
             return false;
         };
         think!(self.journal(), Faith, Decision,
-            "{} spreader {} seeks a rival we have never seen", religion, uid;
-            "religion-seat-seeks-the-unseen-rival: {} met rival(s) hold no city on our map, and a city we have not seen cannot be converted; this unit looks for them while the corps works, making for {} {} tiles away",
-            Self::unseen_met_rivals(g, pid),
-            if lead { "the fog behind a border whose city we have not seen" } else { "the fog an explorer would take from here" },
+            "{} spreader {} seeks a rival's unseen cities", religion, uid;
+            "religion-seat-seeks-the-unseen-rival: {} met rival(s) hold no city on our map and we know too few cities of {} more to hold their majorities; a city we have not seen cannot be converted, so this unit looks for them while the corps works, making for {} {} tiles away",
+            unseen,
+            BasicAi::under_charted_majors(g, pid).saturating_sub(unseen),
+            if lead { "the fog behind a border whose city we have not seen" } else { "unexplored ground" },
             g.wdist(g.units[&uid].pos, goal);
             goal);
         self.religious_step_toward_range(g, pid, uid, goal, 0)

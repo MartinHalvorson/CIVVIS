@@ -265,17 +265,30 @@ fn a_seeker_stays_one_until_its_rival_is_found() {
     for pos in &beside {
         game.players[0].explored.remove(pos);
     }
-    assert_eq!(on.seeker_goal(&game, 0, far), Some(kept));
+    assert_eq!(on.seeker_goal(&game, 0, far, "Buddhism", false), Some(kept));
     for pos in beside {
         game.players[0].explored.insert(pos);
     }
 
-    // The rival's city comes into view: nobody seeks, the memory is dropped,
-    // and the unit has its ordinary turn back.
+    // The rival's city comes into view with two more still unseen: it is on
+    // the map and short of a charted majority, and the seeker stays on it.
     for pos in game.wdisk(unseen, 1) {
         game.players[0].explored.insert(pos);
     }
     assert_eq!(AdvancedAi::unseen_met_rivals(&game, 0), 0);
+    assert!(BasicAi::rival_is_under_charted(&game, 0, 2));
+    assert_eq!(
+        on.unseen_rival_seekers(&game, 0, "Buddhism", true),
+        vec![far]
+    );
+
+    // Charted to its majority: nobody seeks, the memory is dropped, and the
+    // unit has its ordinary turn back.
+    std::sync::Arc::make_mut(&mut game.observed_public_empire_stats)
+        .entry(2)
+        .or_default()
+        .city_count = Some(1);
+    assert_eq!(BasicAi::under_charted_majors(&game, 0), 0);
     assert!(on
         .unseen_rival_seekers(&game, 0, "Buddhism", true)
         .is_empty());
@@ -348,6 +361,58 @@ fn a_border_whose_city_is_unseen_is_the_lead() {
     );
     assert_ne!(board.units[&far].pos, start, "and it sets out for it");
     assert_eq!(board.units[&far].charges, 3);
+}
+
+/// ★ The 102229Z shape: Ethiopia met at t134, one of its fifteen cities on
+/// the map for the next thirty turns. A rival on the map but short of a
+/// charted majority has a seeker too, one spreader in four at most, and it
+/// takes the charting goal beside the city we know.
+#[test]
+fn a_rival_known_by_too_few_cities_has_a_seeker_beside_them() {
+    let Board {
+        mut game,
+        far,
+        home,
+        unseen,
+        ..
+    } = board();
+    game.players[0].explored.insert(unseen);
+    std::sync::Arc::make_mut(&mut game.observed_public_empire_stats)
+        .entry(2)
+        .or_default()
+        .city_count = Some(5);
+    assert_eq!(AdvancedAi::unseen_met_rivals(&game, 0), 0);
+    assert!(BasicAi::rival_is_under_charted(&game, 0, 2));
+    let on = seat(VictoryTarget::Religion, true, true);
+    assert_eq!(
+        on.unseen_rival_seekers(&game, 0, "Buddhism", true),
+        vec![far],
+        "four spreaders: one may seek"
+    );
+
+    let start = game.units[&far].pos;
+    let mut played = game.clone();
+    assert!(on.religion_seat_seeker_step(&mut played, 0, far, "Buddhism", true));
+    assert_ne!(played.units[&far].pos, start);
+    assert_eq!(played.units[&far].charges, 3);
+    let (goal, lead) = on.rival_seekers.borrow()[&far];
+    assert!(!lead);
+    assert!(!game.players[0].explored.contains(&goal));
+    assert_eq!(
+        on.charting_goals.borrow().get(&far),
+        Some(&goal),
+        "the charting goal of `religion-seat-charts-the-rivals`"
+    );
+    assert!(
+        game.wdist(goal, unseen) <= super::super::religion_seat_charts_the_rivals::CHARTING_RADIUS
+    );
+
+    // A corps of three has no spreader to spare for a rival that is on the map.
+    let mut small = game.clone();
+    small.remove_unit(home[0]);
+    assert!(on
+        .unseen_rival_seekers(&small, 0, "Buddhism", true)
+        .is_empty());
 }
 
 /// A unit on the last charge it keeps, and one due home to heal, are not

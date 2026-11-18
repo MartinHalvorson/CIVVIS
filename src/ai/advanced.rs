@@ -9611,12 +9611,13 @@ pub struct AdvancedAi {
     /// military is over 1.5x ours; one journal line per withheld purchase.
     /// See `advanced/passage_waits_past_the_opening.rs`. Opt-in.
     passage_waits_past_the_opening: bool,
-    /// `religion-seat-seeks-the-unseen-rival`: a rival the seat has met and
-    /// holds no city of on its map gets a spreader of its own to look for
-    /// it while the corps works. Needs `religion-seat-charts-the-rivals`. See
+    /// `religion-seat-seeks-the-unseen-rival`: every met rival whose cities
+    /// the seat cannot see enough of to hold its majority gets a spreader of
+    /// its own to look for them while the corps works. Needs
+    /// `religion-seat-charts-the-rivals`. See
     /// `advanced/religion_seat_seeks_the_unseen_rival.rs`. Off by default.
     religion_seat_seeks_the_unseen_rival: bool,
-    /// The spreaders seeking a rival with no city on our map, each with the
+    /// The spreaders seeking a rival's unseen cities, each with the
     /// unexplored tile it is walking to and whether that tile is a border
     /// lead. Live across frames, so a seeker stays one. See
     /// `advanced/religion_seat_seeks_the_unseen_rival.rs`.
