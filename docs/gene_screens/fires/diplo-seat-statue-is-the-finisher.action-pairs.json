@@ -1,0 +1,33 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "diplo-seat-statue-is-the-finisher",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 22 opening frames (the run's events.jsonl cut after the first state row of the turn, replayed at that turn) of three Deity Diplomatic-lane games of 2026-11-18. Both arms run one frozen civvis_orders --resumed --explain built from the branch at 96ab360525 with the run's own requested genome (why.log line 1 forced, which carries diplo-seat-wonder-claim); the on arm adds --with diplo-seat-statue-is-the-finisher. Orders differ on 13 of 22. The early start: in civvis-20261118T055703Z (Gaul) the host offered the Statue of Liberty at 57 to 32 turns from t159 and the live claim took it at t182; the on arm puts it into production in Ratumacos on 6 of the 8 frames t160-181 (not at t160, where the city's Castle was two turns from done, and not at t181, where its Shipyard was finishing and the only other city needed 50 turns to its 32), the off arm on none. In civvis-20261118T061033Z (Hungary) the host offered it at 33 turns from t140 and the live claim took it at t152; the on arm puts it into production on all 6 frames t140-150, the off arm on none. The hold: in civvis-20261118T072032Z (Khmer) the Statue stood one turn from done at t148 on 8 points and landed at t149; the on arm orders a Market in Bhavapura there and journals 'holds the statue of liberty at its last turn', the off arm leaves the Statue to land. Controls that read identical: Khmer t136 (both arms claim at 13 turns) and t145-147 (four to two turns from done: built as before), and Hungary t180-182 on 17 points (17 and 4 make twenty, so nothing is held).",
+  "archive": {
+    "path": "docs/eval/2026-11-18-diplo-seat-statue-genes.native-queries.tar.xz",
+    "sha256": "6449919406bb79307c8ce48bf349b0a676a8521841eb47e82c2124fbdcdeb6c5"
+  },
+  "members": [
+    "native-queries-statue-is-the-finisher/0000/result.json",
+    "native-queries-statue-is-the-finisher/0001/result.json",
+    "native-queries-statue-is-the-finisher/0002/result.json",
+    "native-queries-statue-is-the-finisher/0003/result.json",
+    "native-queries-statue-is-the-finisher/0004/result.json",
+    "native-queries-statue-is-the-finisher/0005/result.json",
+    "native-queries-statue-is-the-finisher/0006/result.json",
+    "native-queries-statue-is-the-finisher/0007/result.json",
+    "native-queries-statue-is-the-finisher/0008/result.json",
+    "native-queries-statue-is-the-finisher/0009/result.json",
+    "native-queries-statue-is-the-finisher/0010/result.json",
+    "native-queries-statue-is-the-finisher/0011/result.json",
+    "native-queries-statue-is-the-finisher/0012/result.json",
+    "native-queries-statue-is-the-finisher/0013/result.json",
+    "native-queries-statue-is-the-finisher/0014/result.json",
+    "native-queries-statue-is-the-finisher/0015/result.json",
+    "native-queries-statue-is-the-finisher/0016/result.json",
+    "native-queries-statue-is-the-finisher/0017/result.json",
+    "native-queries-statue-is-the-finisher/0018/result.json",
+    "native-queries-statue-is-the-finisher/0019/result.json",
+    "native-queries-statue-is-the-finisher/0020/result.json",
+    "native-queries-statue-is-the-finisher/0021/result.json"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "diplo-seat-statue-civic-first",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. The 21 turns on which the live seat chose a civic between Mercantilism and Civil Engineering in three Deity Diplomatic-lane games of 2026-11-18 (civvis-20261118T055703Z Gaul t127-157, civvis-20261118T061033Z Hungary t108-138, civvis-20261118T072032Z Khmer t110-133), each the run's events.jsonl cut after the first state row of the turn (its opening frame, before the turn's orders) and replayed at that turn. Both arms run one frozen civvis_orders --resumed --explain built from the branch at 96ab360525 with the run's own requested genome (why.log line 1 forced); the on arm adds --with diplo-seat-statue-civic-first. The off arm names the civic the live seat took on every one of the 21 (Diplomatic Service, The Enlightenment, Nationalism, Colonialism, Natural History, Scorched Earth, then Civil Engineering; 20 by the turn's last state row, Khmer t131 by the run's decisions.jsonl). The on arm names CIVIC_CIVIL_ENGINEERING on 16 of them where the off arm names another civic: from the first choice after Mercantilism in the Hungary game (t108, against t138 live) and the Khmer game (t110, against t133), and from t137 in the Gaul game (against t157), whose first two choices read identical because no city yet held or queued a Harbor with room for the Statue (claimed t132). The last choice of each game is a control: both arms name Civil Engineering.",
+  "archive": {
+    "path": "docs/eval/2026-11-18-diplo-seat-statue-genes.native-queries.tar.xz",
+    "sha256": "6449919406bb79307c8ce48bf349b0a676a8521841eb47e82c2124fbdcdeb6c5"
+  },
+  "members": [
+    "native-queries-statue-civic-first/0000/result.json",
+    "native-queries-statue-civic-first/0001/result.json",
+    "native-queries-statue-civic-first/0002/result.json",
+    "native-queries-statue-civic-first/0003/result.json",
+    "native-queries-statue-civic-first/0004/result.json",
+    "native-queries-statue-civic-first/0005/result.json",
+    "native-queries-statue-civic-first/0006/result.json",
+    "native-queries-statue-civic-first/0007/result.json",
+    "native-queries-statue-civic-first/0008/result.json",
+    "native-queries-statue-civic-first/0009/result.json",
+    "native-queries-statue-civic-first/0010/result.json",
+    "native-queries-statue-civic-first/0011/result.json",
+    "native-queries-statue-civic-first/0012/result.json",
+    "native-queries-statue-civic-first/0013/result.json",
+    "native-queries-statue-civic-first/0014/result.json",
+    "native-queries-statue-civic-first/0015/result.json",
+    "native-queries-statue-civic-first/0016/result.json",
+    "native-queries-statue-civic-first/0017/result.json",
+    "native-queries-statue-civic-first/0018/result.json",
+    "native-queries-statue-civic-first/0019/result.json",
+    "native-queries-statue-civic-first/0020/result.json"
+  ]
+}

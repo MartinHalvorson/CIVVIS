@@ -303,6 +303,12 @@ impl AdvancedAi {
         /// Opt-in gene `deterrence-waits-for-the-income`; see
         /// `advanced/deterrence_waits_for_the_income.rs`.
         deterrence_waits_for_the_income => enable_deterrence_waits_for_the_income, disable_deterrence_waits_for_the_income;
+        /// Opt-in gene `diplo-seat-statue-civic-first`; see
+        /// `advanced/diplo_statue_harbor.rs`.
+        diplo_seat_statue_civic_first => enable_diplo_seat_statue_civic_first, disable_diplo_seat_statue_civic_first;
+        /// Opt-in gene `diplo-seat-statue-is-the-finisher`; see
+        /// `advanced/diplo_wonder_claim.rs`.
+        diplo_seat_statue_is_the_finisher => enable_diplo_seat_statue_is_the_finisher, disable_diplo_seat_statue_is_the_finisher;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
