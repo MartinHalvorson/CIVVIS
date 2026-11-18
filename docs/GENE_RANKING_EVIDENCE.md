@@ -191,6 +191,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `four-faces-bars-the-surprise` | off (unmeasured) | Opt-in gene `four-faces-bars-the-surprise`; see `advanced/four_faces_bars_the_surprise.rs`. | 1 \| 1 |
 | `religion-seat-seeks-the-unseen-rival` | off (unmeasured) | Opt-in gene `religion-seat-seeks-the-unseen-rival`: each met rival whose cities we cannot see enough of has a spreader looking for them; see `advanced/religion_seat_seeks_the_unseen_rival.rs`. | 1 \| 1 |
 | `religion-seat-spends-the-whole-bank` | off (unmeasured) | Opt-in gene `religion-seat-spends-the-whole-bank`: the Faith the corps caps leave banked buys spreaders in every city that sells one; see `advanced/religion_seat_spends_the_whole_bank.rs`. | 1 \| 1 |
+| `shooters-man-the-capital` | off (unmeasured) | Opt-in gene `shooters-man-the-capital`; see `advanced/shooters_man_the_capital.rs`. | 1 \| 1 |
 | `trade-district-follows-the-campus` | off (unmeasured) | Opt-in gene `trade-district-follows-the-campus`; see `advanced/trade_district_follows_the_campus.rs`. | 1 \| 1 |
 
 ## Removed from the code
