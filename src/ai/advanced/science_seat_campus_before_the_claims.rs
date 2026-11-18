@@ -124,16 +124,56 @@ pub(crate) const SCIENCE_SEAT_CAMPUS_TAG: &str = "science-seat-campus-before-the
 /// Library's count is `campus-and-library-before-the-claims`' four.
 pub(crate) const SCIENCE_SEAT_CAMPUS_SETTLER_MIN_CITIES: usize = 4;
 
-/// EXPERIMENT-ONLY (the paired-sim arms; replaced by the constant before the
-/// PR is ready): the count, read once from the environment.
-pub(super) fn science_seat_campus_settler_min_cities() -> usize {
-    static COUNT: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *COUNT.get_or_init(|| {
-        std::env::var("CIVVIS_EXPERIMENT_SCIENCE_CAMPUS_SETTLER_CITIES")
-            .ok()
-            .and_then(|text| text.parse().ok())
-            .unwrap_or(SCIENCE_SEAT_CAMPUS_SETTLER_MIN_CITIES)
+/// The longest first Campus, in Online turns, that goes ahead of the economy
+/// claims on a Science seat. A slower one waits for the Granary and Builder.
+pub(crate) const SCIENCE_SEAT_CAMPUS_ONLINE_TURNS: f64 = 7.0;
+
+/// EXPERIMENT-ONLY (the paired-sim arms; replaced by the constants before the
+/// PR is ready): the rule's parts, read once from the environment, e.g.
+/// `CIVVIS_EXPERIMENT_SCIENCE_CAMPUS="n=3,cap=8,library=1,plaza=0,first=0"`.
+pub(super) struct Knobs {
+    /// The city count from which a later first Campus passes a Settler.
+    pub(super) settler_cities: usize,
+    /// The Online-turn cap on a first Campus that passes the economy heads.
+    pub(super) cap_turns: f64,
+    /// Whether the Library passes the economy heads too.
+    pub(super) library: bool,
+    /// Whether the Plaza leaves a city its last slot.
+    pub(super) plaza: bool,
+    /// Whether the empire's first Campus passes the floor's Settler.
+    pub(super) first: bool,
+}
+
+/// EXPERIMENT-ONLY: see [`Knobs`].
+pub(super) fn knobs() -> &'static Knobs {
+    static KNOBS: std::sync::OnceLock<Knobs> = std::sync::OnceLock::new();
+    KNOBS.get_or_init(|| {
+        let mut knobs = Knobs {
+            settler_cities: SCIENCE_SEAT_CAMPUS_SETTLER_MIN_CITIES,
+            cap_turns: SCIENCE_SEAT_CAMPUS_ONLINE_TURNS,
+            library: false,
+            plaza: true,
+            first: true,
+        };
+        let text = std::env::var("CIVVIS_EXPERIMENT_SCIENCE_CAMPUS").unwrap_or_default();
+        for part in text.split(',').filter(|part| !part.is_empty()) {
+            let (key, value) = part.split_once('=').expect("key=value");
+            match key {
+                "n" => knobs.settler_cities = value.parse().expect("n"),
+                "cap" => knobs.cap_turns = value.parse().expect("cap"),
+                "library" => knobs.library = value == "1",
+                "plaza" => knobs.plaza = value == "1",
+                "first" => knobs.first = value == "1",
+                other => panic!("unknown knob {other}"),
+            }
+        }
+        knobs
     })
+}
+
+/// EXPERIMENT-ONLY: the count, from [`knobs`].
+pub(super) fn science_seat_campus_settler_min_cities() -> usize {
+    knobs().settler_cities
 }
 
 impl AdvancedAi {
@@ -142,6 +182,25 @@ impl AdvancedAi {
     pub(super) fn science_seat_campus_first(&self, g: &Game) -> bool {
         self.science_seat_campus_before_the_claims
             && self.active_victory_target(g) == Some(VictoryTarget::Science)
+    }
+
+    /// Whether `item`, a first Campus for `cid`, is quick enough for the gene:
+    /// done within [`SCIENCE_SEAT_CAMPUS_ONLINE_TURNS`] Online turns
+    /// (cost-scaled at other speeds), by the host's quote where it has one.
+    pub(super) fn science_seat_campus_is_quick(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+    ) -> bool {
+        let turns = g.host_production_turns(cid, item).unwrap_or_else(|| {
+            let remaining =
+                g.item_cost_for_city(pid, cid, item) - g.item_invested_production(cid, item);
+            remaining.max(0.0) / g.city_yields(cid).production.max(0.5)
+        });
+        let cap = knobs().cap_turns * g.game_speed.cost_percent() as f64
+            / crate::setup::GameSpeed::Online.cost_percent() as f64;
+        turns.is_finite() && turns <= cap
     }
 
     /// Whether either gene that puts the first Campus and the Library ahead
@@ -157,7 +216,7 @@ impl AdvancedAi {
     /// so the slot stays the Campus's. A city with two slots free may still
     /// hold the Plaza. Always false with the gene off or off a Science seat.
     pub(super) fn plaza_would_take_the_campus_slot(&self, g: &Game, pid: usize, cid: u32) -> bool {
-        if !self.science_seat_campus_first(g) {
+        if !self.science_seat_campus_first(g) || !knobs().plaza {
             return false;
         }
         let Some(city) = g.cities.get(&cid) else {
@@ -196,7 +255,7 @@ impl AdvancedAi {
             .filter(|name| {
                 g.rules
                     .districts
-                    .get(*name)
+                    .get(name)
                     .is_some_and(|spec| spec.specialty)
             })
             .count()

@@ -274,7 +274,8 @@ impl AdvancedAi {
     /// first and leaves its University to the claim's own rules.
     pub(super) fn campus_and_library_puts_first(&self, g: &Game, rank: u8, turns: f64) -> bool {
         Self::campus_and_library_building(g, rank, turns)
-            && (rank == 0 || !self.science_seat_campus_first(g))
+            && (!self.science_seat_campus_first(g)
+                || (rank == 0 && super::science_seat_campus_before_the_claims::knobs().library))
     }
 
     /// The head `item` of `cid` that the gene's `what` goes ahead of, as the
@@ -403,6 +404,14 @@ impl AdvancedAi {
         item: &Item,
     ) -> Option<String> {
         let reach = self.campus_and_library_reach(g, pid, cid, plan)?;
+        // `science-seat-campus-before-the-claims`: only a quick first Campus.
+        if self.science_seat_campus_first(g)
+            && !self
+                .free_slot_campus_item(g, pid, cid, plan)
+                .is_some_and(|(campus, _)| Self::science_seat_campus_is_quick(g, pid, cid, &campus))
+        {
+            return None;
+        }
         self.campus_and_library_passes(
             g,
             pid,
@@ -434,6 +443,11 @@ impl AdvancedAi {
                 g.district_family(*district) == "campus"
                     && self.campus_and_library_reach(g, pid, cid, plan).is_some()
                     && self.free_slot_campus_holds(g, pid, cid, plan, item)
+                    // `science-seat-campus-before-the-claims`: only a quick
+                    // first Campus, or one with Production in.
+                    && (!self.science_seat_campus_first(g)
+                        || g.item_invested_production(cid, item) > 0.0
+                        || Self::science_seat_campus_is_quick(g, pid, cid, item))
             }
             Item::Building { .. } => self
                 .campus_building_claim_item(g, pid, cid, plan)
