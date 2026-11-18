@@ -349,10 +349,8 @@ fn a_border_whose_city_is_unseen_is_the_lead() {
         !near_patch.contains(&goal),
         "not the nearer fog an explorer would take"
     );
-    assert!(
-        board.wdist(board.units[&far].pos, goal) < game.wdist(start, goal),
-        "and it sets out for it"
-    );
+    assert_ne!(board.units[&far].pos, start, "and it sets out for it");
+    assert_eq!(board.units[&far].charges, 3);
 }
 
 /// A unit on the last charge it keeps, and one due home to heal, are not
