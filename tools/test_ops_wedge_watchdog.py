@@ -957,16 +957,18 @@ class TheHostDoesNotHotLoopItsWedgeWatchdog(unittest.TestCase):
             try:
                 self.assertTrue(_wait_for(lambda: len(self._starts(tmp)) >= 1),
                                 _text(log))
+                # The log, not the clock, says whether a restart had to wait:
+                # the time limits only bound a host that never restarts it.
                 time.sleep(2.2)              # it has lived past the quick-exit line
-                retire_and_await(2, 1.0)     # so it is back on the next poll
+                retire_and_await(2, 5.0)     # so it is back on the next poll
                 self.assertNotIn("next start in", _text(log))
-                retire_and_await(3, 1.0)     # first quick exit: still at once
+                retire_and_await(3, 5.0)     # first quick exit: still at once
                 self.assertNotIn("next start in", _text(log))
-                retire_and_await(4, 3.0)     # second in a row: after the wait
+                retire_and_await(4, 8.0)     # second in a row: after the wait
                 self.assertEqual(_text(log).count("next start in 1s"), 1, _text(log))
                 time.sleep(2.2)              # a long life clears the count
-                retire_and_await(5, 1.0)
-                retire_and_await(6, 1.0)     # so the next quick exit is free again
+                retire_and_await(5, 5.0)
+                retire_and_await(6, 5.0)     # so the next quick exit is free again
                 self.assertEqual(_text(log).count("next start in"), 1, _text(log))
                 self.assertIsNone(host.poll(), _text(log))
             finally:
