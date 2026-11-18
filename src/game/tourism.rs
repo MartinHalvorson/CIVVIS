@@ -941,7 +941,15 @@ impl Game {
     /// culture race without reimplementing its rules in JavaScript.
     pub fn tourism_by_tile(&self, pid: usize) -> BTreeMap<Pos, f64> {
         let mut sources = BTreeMap::new();
-        self.tourism_components_per_turn_with_sources(pid, Some(&mut sources));
+        let components = self.tourism_components_per_turn_with_sources(pid, Some(&mut sources));
+        // The sweep that lists the sources is the sweep that totals them (the
+        // list is only written beside the totals), so an open memo keeps the
+        // totals: a frame document draws every major's Tourism lens and then
+        // asks each major's `tourism_per_turn`, which swept the same empire
+        // again.
+        if let Some(memo) = self.query_memo.tourism.borrow_mut().as_mut() {
+            crate::game::MemoMap::keep(memo, pid, components);
+        }
         sources
     }
 
