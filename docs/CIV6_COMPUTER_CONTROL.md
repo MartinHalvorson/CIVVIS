@@ -596,6 +596,34 @@ is false unless they match what the run asked for — so a misclick on the setup
 screen shows up as a run that says so rather than as a Small result recorded under a
 Duel heading.
 
+### The leader is found and read back by its picker label (2026-11-18)
+
+A requested leader (`--leader LEADER_X`, or `CIVVIS_SEAT_LEADER`) is verified on
+the Create Game screen by the text the Choose Civilization field shows. That
+text is not the leader's type. The picker lists the frontend `Players` rows by
+`LeaderName` (`Base/Assets/Configuration/Data/SetupParameters.xml`, query
+`Players`: `SELECT Domain, LeaderName AS Name, ..., LeaderType AS Value FROM
+Players`), and a persona pack deletes the base leader's row and inserts its
+own, so with the packs installed `LEADER_T_ROOSEVELT` reads "Teddy Roosevelt
+(Bull Moose)" and `LEADER_QIN` reads "Qin (Mandate of Heaven)".
+
+`tools/civ6_leader_labels.py` reads those rows and their en_US text from the
+install into `data/civ6_leader_picker_labels.json`: 77 leaders, each with its
+label, its LOC key and the files the row and the string came from.
+`civ6_play.LEADER_PICKER_LABELS` is that table, and
+`tools/test_civ6_play_leader_picker.py` fails when the two differ. Run the tool
+with `--write` after a game update or on an install with a new pack.
+
+A leader that still cannot be verified ends the launch instead of looping it.
+After `LEADER_UNVERIFIED_ROUNDS` (2) setup rounds that fail on the leader,
+`civ6_play.py` stops the game it launched, writes a summary whose `reason` is
+`leader_unverified` (with `leader_asked`, `leader_label` and `partial: true`)
+and exits with status 7. Status 5, "could not start a game from the main menu",
+keeps every other cause, and any other setup row that will not verify keeps the
+whole `BOOTSTRAP_ATTEMPTS` budget. The climb files the launch as it files any
+launch that reached no board, so a seat that draws its leader per game moves on
+within about a minute.
+
 ## The ladder
 
 `tools/civ6_ladder.py` holds the record. A rung is claimed only by a victory
