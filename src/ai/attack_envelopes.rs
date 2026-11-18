@@ -597,13 +597,14 @@ impl BasicAi {
             removed,
         } = self.envelope_board_change(g, Some(pid));
         let mut asked: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+        let mut war = crate::ai::WarMemo::new(g, pid);
         let out: AttackEnvelopes = g
             .units
             .values()
             .filter(|unit| {
                 let spec = &g.rules.units[unit.kind];
                 unit.owner != pid
-                    && g.is_at_war(pid, unit.owner)
+                    && war.at_war_with(unit.owner)
                     && g.unit_visible_to(unit.id, pid)
                     && spec.class == "military"
                     && (spec.is_melee_capable() || spec.has_ranged_attack())
