@@ -8638,10 +8638,19 @@ mod tests {
         fn per_column(a: &[Vec<f64>]) -> Option<Vec<Vec<f64>>> {
             let n = a.len();
             let columns: Option<Vec<Vec<f64>>> = (0..n)
-                .map(|j| solve(a.to_vec(), (0..n).map(|i| f64::from(u8::from(i == j))).collect()))
+                .map(|j| {
+                    solve(
+                        a.to_vec(),
+                        (0..n).map(|i| f64::from(u8::from(i == j))).collect(),
+                    )
+                })
                 .collect();
             let columns = columns?;
-            Some((0..n).map(|i| (0..n).map(|j| columns[j][i]).collect()).collect())
+            Some(
+                (0..n)
+                    .map(|i| (0..n).map(|j| columns[j][i]).collect())
+                    .collect(),
+            )
         }
         // Deterministic pseudo-random 0/1 design with an intercept column.
         let (rows, k) = (400usize, 24usize);
@@ -8653,7 +8662,7 @@ mod tests {
                 state ^= state << 13;
                 state ^= state >> 7;
                 state ^= state << 17;
-                row.push(if state % 3 == 0 { 1.0 } else { 0.0 });
+                row.push(if state.is_multiple_of(3) { 1.0 } else { 0.0 });
             }
             design.push(row);
         }
