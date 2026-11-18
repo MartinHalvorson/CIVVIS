@@ -117,6 +117,11 @@ pub mod trig {
 /// over a small shared table rather than a search of the map.
 const RING_RADIUS: i32 = 6;
 
+/// The radius of [`Sphere`]'s near rings: most disk readers ask for radius 2
+/// or 3, and these let them filter the 37 tiles they can want rather than
+/// the 127 of a full ring.
+const NEAR_RADIUS: i32 = 3;
+
 const SHORT_SIGHT_ARC_BYTES: usize = 16 * 1024 * 1024;
 
 /// Distinct samples of the original great-circle walk, including endpoints.
@@ -210,6 +215,10 @@ pub struct Sphere {
     /// hand these coordinates directly to their caller, so keeping them here
     /// avoids an extra lookup for every visible or attackable tile.
     rings: Vec<Box<[(Pos, u8)]>>,
+    /// The part of each ring within [`NEAR_RADIUS`], in the same order, so a
+    /// filter of it to any radius up to `NEAR_RADIUS` hands out exactly what
+    /// the same filter of the full ring would.
+    near: Vec<Box<[(Pos, u8)]>>,
     /// The same local rings as compact `(storage index, distance)` pairs.
     /// Storage indices already follow ascending [`Pos`] order, so distance
     /// queries can binary-search integers without making disk iteration pay
@@ -710,6 +719,16 @@ impl Sphere {
         self.cell(pos).map_or(&[], |cell| &cell.corners)
     }
 
+    /// The ring of `from` that holds every tile within `radius`, which must
+    /// be at most [`RING_RADIUS`]: the near ring when that is enough.
+    fn ring_within(&self, from: u32, radius: i32) -> &[(Pos, u8)] {
+        if radius <= NEAR_RADIUS {
+            &self.near[from as usize]
+        } else {
+            &self.rings[from as usize]
+        }
+    }
+
     /// Every tile within `radius` steps, including the centre.
     pub fn disk(&self, center: Pos, radius: i32) -> Vec<Pos> {
         let Some(from) = self.index_of(center) else {
@@ -721,7 +740,8 @@ impl Sphere {
         if radius <= RING_RADIUS {
             // The ring is already in map order, so the disk comes out sorted
             // without a pass over it.
-            return self.rings[from as usize]
+            return self
+                .ring_within(from, radius)
                 .iter()
                 .filter(|(_, distance)| *distance as i32 <= radius)
                 .map(|(pos, _)| *pos)
@@ -747,7 +767,7 @@ impl Sphere {
             return;
         }
         if radius <= RING_RADIUS {
-            for &(pos, distance) in &self.rings[from as usize] {
+            for &(pos, distance) in self.ring_within(from, radius) {
                 if distance as i32 <= radius {
                     visit(pos);
                 }
@@ -778,7 +798,7 @@ impl Sphere {
             return;
         }
         if radius <= RING_RADIUS {
-            for &(pos, distance) in &self.rings[from as usize] {
+            for &(pos, distance) in self.ring_within(from, radius) {
                 if distance as i32 <= radius {
                     visit(pos, Some(distance as i32));
                 }
@@ -804,7 +824,8 @@ impl Sphere {
             return vec![center];
         }
         if radius <= RING_RADIUS {
-            return self.rings[from as usize]
+            return self
+                .ring_within(from, radius)
                 .iter()
                 .filter(|(_, distance)| *distance as i32 == radius)
                 .map(|(pos, _)| *pos)
@@ -1015,7 +1036,9 @@ impl SphereRingSearch<'_> {
         }
         self.radius += 1;
         if self.radius <= RING_RADIUS {
-            return self.sphere.rings[self.from as usize]
+            return self
+                .sphere
+                .ring_within(self.from, self.radius)
                 .iter()
                 .filter(|(_, distance)| *distance as i32 == self.radius)
                 .map(|(pos, _)| *pos)
@@ -1352,6 +1375,7 @@ fn build(frequency: i32) -> Sphere {
         cells,
         slot,
         rings: Vec::new(),
+        near: Vec::new(),
         ring_indices: Vec::new(),
     };
     sphere.landmarks = sphere
@@ -1363,6 +1387,16 @@ fn build(frequency: i32) -> Sphere {
         .collect();
     sphere.rings = (0..sphere.len())
         .map(|index| sphere.ring_of(index as u32))
+        .collect();
+    sphere.near = sphere
+        .rings
+        .iter()
+        .map(|ring| {
+            ring.iter()
+                .copied()
+                .filter(|(_, distance)| *distance as i32 <= NEAR_RADIUS)
+                .collect()
+        })
         .collect();
     sphere.ring_indices = sphere
         .rings
@@ -1463,7 +1497,7 @@ mod tests {
     fn the_disk_walk_hands_out_the_distance_the_globe_answers() {
         let globe = sphere(7);
         for center in globe.positions().step_by(37) {
-            for radius in [0, 1, 3, RING_RADIUS, RING_RADIUS + 2] {
+            for radius in [0, 1, 2, 3, 4, RING_RADIUS, RING_RADIUS + 2] {
                 let mut walked = Vec::new();
                 globe.for_each_disk_with_distance(center, radius, |pos, distance| {
                     if let Some(distance) = distance {
@@ -1550,6 +1584,14 @@ mod tests {
     fn distance_matches_a_search_of_the_map() {
         let globe = sphere(6);
         assert_eq!(globe.rings.len(), globe.ring_indices.len());
+        for (ring, near) in globe.rings.iter().zip(&globe.near) {
+            let within: Vec<(Pos, u8)> = ring
+                .iter()
+                .copied()
+                .filter(|(_, distance)| *distance as i32 <= NEAR_RADIUS)
+                .collect();
+            assert_eq!(near.as_ref(), within.as_slice());
+        }
         for (positions, indices) in globe.rings.iter().zip(&globe.ring_indices) {
             assert_eq!(positions.len(), indices.len());
             assert!(
@@ -1584,7 +1626,7 @@ mod tests {
             let targets: Vec<Pos> = globe.positions().step_by(11).collect();
             let expected: Vec<i32> = targets.iter().map(|target| walked[target]).collect();
             assert_eq!(globe.distances_to(from, &targets), expected);
-            for radius in [0, 1, 3, RING_RADIUS, RING_RADIUS + 4] {
+            for radius in [0, 1, 2, 3, 4, RING_RADIUS, RING_RADIUS + 4] {
                 let disk = globe.disk(from, radius);
                 let expected = walked.values().filter(|steps| **steps <= radius).count();
                 assert_eq!(disk.len(), expected, "radius {radius}");
