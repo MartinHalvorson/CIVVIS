@@ -71,8 +71,7 @@ impl AdvancedAi {
         // `science-seat-campus-before-the-claims` plays the same rule on a
         // Science seat. See `advanced/science_seat_campus_before_the_claims.rs`.
         ((self.first_campus_before_the_settler && self.conquest_or_score_seat(g))
-            || (self.science_seat_campus_first(g)
-                && super::science_seat_campus_before_the_claims::knobs().first))
+            || self.science_seat_campus_first(g))
             && g.player_city_ids(pid).len() >= FIRST_CAMPUS_BEFORE_THE_SETTLER_MIN_CITIES
             && !plan.rush
             && plan.threatened_city.is_none()

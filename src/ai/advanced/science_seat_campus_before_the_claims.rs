@@ -1,7 +1,7 @@
-//! `science-seat-campus-before-the-claims`: on a Science seat a city's first
-//! Campus, then its Library, go ahead of the economy claims that keep the
-//! queue, the empire's first Campus goes ahead of the floor's Settler, and
-//! the Government Plaza never takes the last slot of a city with no Campus.
+//! `science-seat-campus-before-the-claims`: on a Science seat the empire's
+//! first Campus goes ahead of the floor's Settler, a quick first Campus in
+//! any city goes ahead of the economy claims that keep its queue, and the
+//! Government Plaza never takes the last slot of a city with no Campus.
 //!
 //! **Why (live Deity, 6-player Continents, Online, 250 turns, the nine games
 //! of 2026-11-18 04:58Z to 11:16Z: five on Science, four on Diplomacy).** No
@@ -69,28 +69,24 @@
 //! simulator, one genome on both lanes, reads the Science lane ahead (Science
 //! 79 against 68 at t100, `deity-18/defence-sim`, 40 seeds a lane).
 //!
-//! **The gene.** While the active victory target is Science, it plays the
-//! two Domination genes' rules for the first Campus and the Library, with or
-//! without those genes, in a city of ours that is not the plan's threatened
-//! city, was not attacked within four turns and, while a major is at war
-//! with us, stands away from the front:
+//! **The gene.** While the active victory target is Science, in a city of
+//! ours that is not the plan's threatened city, was not attacked within four
+//! turns and, while a major is at war with us, stands away from the front:
 //!
 //! 1. The empire's first Campus goes ahead of the early floor's Settler once
 //!    two cities stand, by `first-campus-before-the-settler`'s rule: no war
 //!    with a major, no rush, no threatened city, no raider in the ring, a
 //!    Campus of at most seven Online turns on the empire's best site. The
 //!    Settler keeps its progress and the committed Campus keeps its queue
-//!    against both Settler claims until a Campus stands.
+//!    against both Settler claims until a Campus stands. No later Campus
+//!    passes a Settler.
 //! 2. Any city's first Campus that `campus-claims-the-free-slot` (or `-2`)
-//!    would claim but for a hold, and a standing Campus's Library, go ahead
-//!    of a Builder (the backlog claims' included), a Granary, an Aqueduct,
-//!    an Industrial Zone and a Commercial Hub or its Market. A Settler with
-//!    at most half its cost paid waits for either from
-//!    [`SCIENCE_SEAT_CAMPUS_SETTLER_MIN_CITIES`] cities, counting founded
-//!    cities plus Settlers walking. Every such city claims its Library each
-//!    turn; a first Campus with Production in keeps its queue against both
-//!    Settler claims at any count.
-//!
+//!    would claim but for a hold, and that finishes within
+//!    [`SCIENCE_SEAT_CAMPUS_ONLINE_TURNS`] Online turns (the host's quote),
+//!    goes ahead of a Builder (the backlog claims' included), a Granary, an
+//!    Aqueduct, an Industrial Zone and a Commercial Hub or its Market. The
+//!    displaced item keeps its progress, and the Builder and Granary writers
+//!    then leave that Campus alone. A slower Campus waits for them.
 //! 3. Both Plaza claims pass by a city that has no Campus standing, founded
 //!    or queued, has a site for one, and has one specialty slot left
 //!    ([`AdvancedAi::plaza_would_take_the_campus_slot`]). The Plaza then
@@ -104,13 +100,34 @@
 //! a city for it. The faith defence's Holy Site and Shrine are not passed
 //! either, and its writers are not held off. Walls, the capital's archers
 //! and the garrison writers run after the claims and are not read here. So
-//! do a wonder, a project, a Trader, a district with progress other than
-//! those named, a Settler below the city count or more than half paid, saved
-//! work within two turns of done under `near-done-work-finishes`, and
-//! anything finishing this turn.
-//! The University keeps `campus-building-claims-the-queue`'s own rules: on
-//! these seats it waited a median four turns, behind the Plaza's buildings
-//! and repairs, not behind a claim. Off, nothing changes.
+//! do a wonder, a project, a Trader, any Settler but the one rule 1 names,
+//! saved work within two turns of done under `near-done-work-finishes`, and
+//! anything finishing this turn. The Library and the University keep
+//! `campus-building-claims-the-queue`'s own rules. Off, nothing changes.
+//!
+//! **Why only a quick Campus, no Library and no later Settler (paired sim,
+//! Science lane, Deity, 30 seeds from 67000, the live Science genome with
+//! and without the gene; paired differences with their standard errors).**
+//! The first build put every city's first Campus within the claim's
+//! fifteen-turn budget, and its Library, ahead of those heads and, from four
+//! cities, of a Settler. It stood the first three Campuses 4.9, 10.5 and 8.4
+//! turns earlier and read Science +2.3 (0.6) at t50, and it cost the empire:
+//! cities -0.37 (0.12) at t50, citizens -3.9 (1.2) and Production -9.9 (3.8)
+//! at t100, Science -7.0 (4.2) at t125, cities -0.83 (0.39) at the end. On
+//! the live boards the Campuses held behind a Granary were a median eleven
+//! turns away, those behind a Builder nine and those behind the Settler
+//! seven, and the Library was not late. With the seven-turn cap and no
+//! Library but the Settler pass from four cities kept, the arm still read
+//! cities -0.43 (0.30) and Production -4.9 (4.0) at t100. This rule reads
+//! cities +0.03 (0.22), citizens +0.6 (1.0), Production +1.1 (4.0), Science
+//! +4.0 (2.4) and techs +0.60 (0.26) at t100, with the first two Campuses 2.6
+//! (0.9) and 4.0 (1.1) turns earlier; at t150, which 11 seeds reach, techs
+//! -0.2 (0.6) and cities -0.5 (0.4). The simulated seat stands its first
+//! Campus at a mean t49 without the gene, where the live Science seats'
+//! median was t72, so the sim prices the rule's cost and little of its gain.
+//! On the live frames of the five Science games (240 boards, each replayed
+//! with and without the gene) it orders the first three Campuses a mean
+//! 10.2, 18.8 and 7.4 turns before the live seat placed them.
 //!
 //! Grep the journal for `science-seat-campus-before-the-claims:`.
 
@@ -119,62 +136,9 @@ use super::*;
 /// The journal tag of the gene's lines.
 pub(crate) const SCIENCE_SEAT_CAMPUS_TAG: &str = "science-seat-campus-before-the-claims";
 
-/// Founded cities plus Settlers walking from which a Science seat's first
-/// Campus goes ahead of a Settler with at most half its cost paid. The
-/// Library's count is `campus-and-library-before-the-claims`' four.
-pub(crate) const SCIENCE_SEAT_CAMPUS_SETTLER_MIN_CITIES: usize = 4;
-
 /// The longest first Campus, in Online turns, that goes ahead of the economy
 /// claims on a Science seat. A slower one waits for the Granary and Builder.
 pub(crate) const SCIENCE_SEAT_CAMPUS_ONLINE_TURNS: f64 = 7.0;
-
-/// EXPERIMENT-ONLY (the paired-sim arms; replaced by the constants before the
-/// PR is ready): the rule's parts, read once from the environment, e.g.
-/// `CIVVIS_EXPERIMENT_SCIENCE_CAMPUS="n=3,cap=8,library=1,plaza=0,first=0"`.
-pub(super) struct Knobs {
-    /// The city count from which a later first Campus passes a Settler.
-    pub(super) settler_cities: usize,
-    /// The Online-turn cap on a first Campus that passes the economy heads.
-    pub(super) cap_turns: f64,
-    /// Whether the Library passes the economy heads too.
-    pub(super) library: bool,
-    /// Whether the Plaza leaves a city its last slot.
-    pub(super) plaza: bool,
-    /// Whether the empire's first Campus passes the floor's Settler.
-    pub(super) first: bool,
-}
-
-/// EXPERIMENT-ONLY: see [`Knobs`].
-pub(super) fn knobs() -> &'static Knobs {
-    static KNOBS: std::sync::OnceLock<Knobs> = std::sync::OnceLock::new();
-    KNOBS.get_or_init(|| {
-        let mut knobs = Knobs {
-            settler_cities: SCIENCE_SEAT_CAMPUS_SETTLER_MIN_CITIES,
-            cap_turns: SCIENCE_SEAT_CAMPUS_ONLINE_TURNS,
-            library: false,
-            plaza: true,
-            first: true,
-        };
-        let text = std::env::var("CIVVIS_EXPERIMENT_SCIENCE_CAMPUS").unwrap_or_default();
-        for part in text.split(',').filter(|part| !part.is_empty()) {
-            let (key, value) = part.split_once('=').expect("key=value");
-            match key {
-                "n" => knobs.settler_cities = value.parse().expect("n"),
-                "cap" => knobs.cap_turns = value.parse().expect("cap"),
-                "library" => knobs.library = value == "1",
-                "plaza" => knobs.plaza = value == "1",
-                "first" => knobs.first = value == "1",
-                other => panic!("unknown knob {other}"),
-            }
-        }
-        knobs
-    })
-}
-
-/// EXPERIMENT-ONLY: the count, from [`knobs`].
-pub(super) fn science_seat_campus_settler_min_cities() -> usize {
-    knobs().settler_cities
-}
 
 impl AdvancedAi {
     /// Whether the gene plays for this seat: it is on and the active victory
@@ -198,7 +162,7 @@ impl AdvancedAi {
                 g.item_cost_for_city(pid, cid, item) - g.item_invested_production(cid, item);
             remaining.max(0.0) / g.city_yields(cid).production.max(0.5)
         });
-        let cap = knobs().cap_turns * g.game_speed.cost_percent() as f64
+        let cap = SCIENCE_SEAT_CAMPUS_ONLINE_TURNS * g.game_speed.cost_percent() as f64
             / crate::setup::GameSpeed::Online.cost_percent() as f64;
         turns.is_finite() && turns <= cap
     }
@@ -216,7 +180,7 @@ impl AdvancedAi {
     /// so the slot stays the Campus's. A city with two slots free may still
     /// hold the Plaza. Always false with the gene off or off a Science seat.
     pub(super) fn plaza_would_take_the_campus_slot(&self, g: &Game, pid: usize, cid: u32) -> bool {
-        if !self.science_seat_campus_first(g) || !knobs().plaza {
+        if !self.science_seat_campus_first(g) {
             return false;
         }
         let Some(city) = g.cities.get(&cid) else {

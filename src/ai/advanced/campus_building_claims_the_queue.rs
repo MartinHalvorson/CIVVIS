@@ -43,9 +43,8 @@
 //! Settler too), and claims in every such city each turn. See
 //! `advanced/campus_and_library_before_the_claims.rs`.
 //!
-//! `science-seat-campus-before-the-claims` opens it the same way for a
-//! Science seat's Library (not its University). See
-//! `advanced/science_seat_campus_before_the_claims.rs`.
+//! `science-seat-campus-before-the-claims` does not open it: a Science
+//! seat's Library and University keep this claim's own rules.
 
 use super::campus_and_library_before_the_claims::ScienceFirstItem;
 use super::*;
@@ -85,7 +84,7 @@ impl AdvancedAi {
         if self.culture_releases_science_claims(g, pid) {
             return None;
         }
-        if !self.campus_building_claims_the_queue && !self.campus_and_library_armed() {
+        if !self.campus_building_claims_the_queue && !self.campus_and_library_before_the_claims {
             return None;
         }
         let city = g.cities.get(&cid)?;
@@ -167,7 +166,7 @@ impl AdvancedAi {
         exclude: Option<u32>,
         science_first_only: bool,
     ) -> Option<(u8, f64, u32, Item, Option<String>)> {
-        if !self.campus_building_claims_the_queue && !self.campus_and_library_armed() {
+        if !self.campus_building_claims_the_queue && !self.campus_and_library_before_the_claims {
             return None;
         }
         let at_major_war = g.players.iter().any(|other| {
@@ -275,7 +274,7 @@ impl AdvancedAi {
     /// `campus-and-library-before-the-claims` every city's Library or quick
     /// University besides. Exact no-op with both genes off.
     pub(super) fn claim_campus_building(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        let rounds = if self.campus_and_library_armed() {
+        let rounds = if self.campus_and_library_before_the_claims {
             g.player_city_ids(pid).len().max(1)
         } else {
             1

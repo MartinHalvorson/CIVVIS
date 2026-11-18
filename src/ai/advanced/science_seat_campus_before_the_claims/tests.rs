@@ -1,7 +1,7 @@
 use super::*;
 use crate::ai::advanced::campus_and_library_before_the_claims::tests::{
     campus_board_with, granary, head, hub_head, journalled, library, library_board, quote, unit,
-    university_board,
+    university, university_board,
 };
 use crate::ai::advanced::campus_and_library_before_the_claims::{
     ScienceFirstItem, ScienceFirstReach,
@@ -282,95 +282,77 @@ fn the_empires_first_campus_goes_ahead_of_the_floor_settler_from_two_cities() {
 }
 
 #[test]
-fn a_later_first_campus_waits_for_the_settler_below_the_city_count() {
+fn a_later_first_campus_never_passes_a_settler() {
     // Another city already has its Campus queued, so this is not the
-    // empire's first: the count decides.
-    let floor = SCIENCE_SEAT_CAMPUS_SETTLER_MIN_CITIES;
+    // empire's first: the Settler keeps its queue at any city count, where
+    // the Domination gene passes it from six.
     let settler = AdvancedAi::early_settler_item();
-
-    let (mut below, ai, cid, plan, _) = settler_board(floor - 1, 0.0, true);
-    ai.claim_free_slot_campus(&mut below, 0, &plan);
-    assert_eq!(head(&below, cid), Some(settler.clone()), "below the count");
-
-    let (mut at, mut ai, cid, plan, campus) = settler_board(floor, 0.0, true);
-    let details = journalled(&mut ai, &mut at, |ai, g| {
-        ai.claim_free_slot_campus(g, 0, &plan)
-    });
-    assert_eq!(head(&at, cid), Some(campus), "at the count");
-    assert!(
-        details.iter().any(|detail| detail.starts_with(TAG)
-            && detail.contains("first Campus goes ahead of the Settler (0 of")),
-        "{details:?}"
-    );
-
-    // More than half paid: the Settler finishes.
-    let (mut paid, ai, cid, plan, _) = settler_board(floor, 60.0, true);
-    ai.claim_free_slot_campus(&mut paid, 0, &plan);
-    assert_eq!(head(&paid, cid), Some(settler), "more than half paid");
+    for cities in [4, 6] {
+        let (mut g, ai, cid, plan, _) = settler_board(cities, 0.0, true);
+        ai.claim_free_slot_campus(&mut g, 0, &plan);
+        assert_eq!(head(&g, cid), Some(settler.clone()), "{cities} cities");
+    }
 }
 
 #[test]
-fn every_library_goes_ahead_of_a_commercial_hub_on_a_science_seat() {
+fn a_slow_first_campus_waits_for_the_granary() {
+    // Seven Online turns pass the Granary; eight do not, and the Granary
+    // and Builder writers are not held off a slow Campus either.
+    for (turns, passes) in [(7.0, true), (8.0, false)] {
+        let (mut g, ai, cid, plan, campus) = science_board(3);
+        quote(&mut g, cid, &campus, turns, 56.0);
+        assert_eq!(
+            AdvancedAi::science_seat_campus_is_quick(&g, 0, cid, &campus),
+            passes
+        );
+        let mut claimed = g.clone();
+        let capital = claimed.cities.get_mut(&cid).unwrap();
+        capital.queue = vec![campus.clone()];
+        capital.production = 0.0;
+        assert_eq!(
+            ai.campus_and_library_holds(&claimed, 0, cid, &plan, &campus),
+            passes,
+            "{turns} turns, nothing paid"
+        );
+        ai.claim_free_slot_campus(&mut g, 0, &plan);
+        let expected = if passes { campus } else { granary() };
+        assert_eq!(head(&g, cid), Some(expected), "{turns} turns");
+    }
+}
+
+#[test]
+fn the_library_and_the_university_keep_the_building_claims_own_rules() {
+    // The Domination gene puts every Library ahead of a Commercial Hub with
+    // progress; on a Science seat this gene changes nothing there.
     let (g, ranked, _, plan) = library_board();
     let mut ai = science_seat();
     ai.enable_campus_building_claims_the_queue();
-
     let mut off = ai.clone();
     off.disable_science_seat_campus_before_the_claims();
     let mut control = g.clone();
     off.claim_campus_building(&mut control, 0, &plan);
-    assert!(
-        ranked.iter().all(|cid| hub_head(&control, *cid)),
-        "off: the Hub with progress keeps every queue"
-    );
-
     let mut on = g.clone();
-    let details = journalled(&mut ai, &mut on, |ai, g| {
-        ai.claim_campus_building(g, 0, &plan)
-    });
+    ai.claim_campus_building(&mut on, 0, &plan);
     for cid in &ranked {
-        assert_eq!(head(&on, *cid), Some(library()));
-        assert!(ai.campus_and_library_holds(&on, 0, *cid, &plan, &library()));
+        assert!(hub_head(&control, *cid), "off: the Hub keeps its queue");
+        assert!(hub_head(&on, *cid), "on: so it does");
+        assert!(!ai.campus_and_library_holds(&on, 0, *cid, &plan, &library()));
     }
-    let passed = details
-        .iter()
-        .filter(|detail| {
-            detail.starts_with(TAG) && detail.contains("Library goes ahead of the Commercial Hub")
-        })
-        .count();
-    assert_eq!(passed, ranked.len(), "{details:?}");
-
-    // The gene opens the Library claim with the building gene off too.
-    let mut alone = science_seat();
-    let mut board = g.clone();
-    alone.claim_campus_building(&mut board, 0, &plan);
-    assert!(ranked
-        .iter()
-        .all(|cid| head(&board, *cid) == Some(library())));
-    alone.disable_science_seat_campus_before_the_claims();
+    // With the building gene off, this gene opens no building claim.
+    let alone = science_seat();
     assert!(alone
         .campus_building_claim_item(&g, 0, ranked[0], &plan)
         .is_none());
-}
 
-#[test]
-fn the_university_keeps_the_building_claims_own_rules() {
     let (g, ranked, domination, plan) = university_board();
-    let cid = ranked[0];
-    let turns = g.item_cost_for_city(
-        0,
-        cid,
-        &crate::ai::advanced::campus_and_library_before_the_claims::tests::university(),
-    ) / 15.0;
+    let turns = g.item_cost_for_city(0, ranked[0], &university()) / 15.0;
+    assert!(domination.campus_and_library_puts_first(&g, 0, 3.0));
     assert!(domination.campus_and_library_puts_first(&g, 1, turns));
-    let ai = science_seat();
-    assert!(ai.campus_and_library_puts_first(&g, 0, 3.0), "the Library");
-    assert!(
-        !ai.campus_and_library_puts_first(&g, 1, turns),
-        "a quick University is not this gene's"
-    );
-    // With the building gene off, this gene alone claims no University.
-    assert!(ai.campus_building_claim_item(&g, 0, cid, &plan).is_none());
+    assert!(!ai.campus_and_library_puts_first(&g, 0, 3.0));
+    assert!(!ai.campus_and_library_puts_first(&g, 1, turns));
+    assert!(alone
+        .campus_building_claim_item(&g, 0, ranked[0], &plan)
+        .is_none());
 }
 
 fn plaza_head(g: &Game, cid: u32) -> bool {

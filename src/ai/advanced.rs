@@ -10539,12 +10539,12 @@ pub struct AdvancedAi {
     /// reaches it, and patronage opens thirty Online turns before the limit.
     /// See `advanced/score_sprints_to_the_tally.rs`. Opt-in.
     score_seat_sprints_to_the_tally_2: bool,
-    /// `science-seat-campus-before-the-claims`: on a Science seat a city's
-    /// first Campus and its Library go ahead of a Builder, a Granary, an
-    /// Aqueduct, an Industrial Zone, a Commercial Hub and, from four cities,
-    /// a Settler; the empire's first Campus goes ahead of the floor's Settler
-    /// once two cities stand; the Government Plaza never takes the last slot
-    /// of a city with no Campus. No soldier is passed. See
+    /// `science-seat-campus-before-the-claims`: on a Science seat the empire's
+    /// first Campus goes ahead of the floor's Settler once two cities stand,
+    /// a first Campus of at most seven Online turns goes ahead of a Builder,
+    /// a Granary, an Aqueduct, an Industrial Zone and a Commercial Hub, and
+    /// the Government Plaza never takes the last slot of a city with no
+    /// Campus. No soldier and no later Settler is passed. See
     /// `advanced/science_seat_campus_before_the_claims.rs`. Opt-in.
     science_seat_campus_before_the_claims: bool,
     // ---- append: t-z ------------------------------------------------

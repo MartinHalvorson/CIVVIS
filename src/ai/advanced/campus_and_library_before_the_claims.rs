@@ -191,10 +191,9 @@ impl AdvancedAi {
     ) -> Option<ScienceFirstReach> {
         // A Score seat too: see [`AdvancedAi::conquest_or_score_seat`].
         // `science-seat-campus-before-the-claims` opens the same ordering on
-        // a Science seat, for the first Campus and the Library and never past
-        // a soldier. See `advanced/science_seat_campus_before_the_claims.rs`.
-        let science_seat = self.science_seat_campus_first(g)
-            && super::science_seat_campus_before_the_claims::knobs().cap_turns > 0.0;
+        // a Science seat, for a quick first Campus alone and never past a
+        // soldier. See `advanced/science_seat_campus_before_the_claims.rs`.
+        let science_seat = self.science_seat_campus_first(g);
         if !(self.campus_and_library_before_the_claims && self.conquest_or_score_seat(g))
             && !science_seat
         {
@@ -247,12 +246,10 @@ impl AdvancedAi {
         what: ScienceFirstItem,
     ) -> bool {
         let floor = match what {
-            // `science-seat-campus-before-the-claims`: a Science seat's own
-            // count. See `advanced/science_seat_campus_before_the_claims.rs`.
-            ScienceFirstItem::FirstCampus if self.science_seat_campus_first(g) => {
-                super::science_seat_campus_before_the_claims::science_seat_campus_settler_min_cities(
-                )
-            }
+            // `science-seat-campus-before-the-claims`: on a Science seat only
+            // the empire's first Campus passes a Settler, by the two-city
+            // rule of `first-campus-before-the-settler`.
+            ScienceFirstItem::FirstCampus if self.science_seat_campus_first(g) => return false,
             ScienceFirstItem::FirstCampus => FIRST_CAMPUS_SETTLER_MIN_CITIES,
             ScienceFirstItem::Library => CAMPUS_AND_LIBRARY_SETTLER_MIN_CITIES,
             ScienceFirstItem::University => return false,
@@ -271,12 +268,11 @@ impl AdvancedAi {
     }
 
     /// [`Self::campus_and_library_building`] on this seat:
-    /// `science-seat-campus-before-the-claims` puts a Science seat's Library
-    /// first and leaves its University to the claim's own rules.
+    /// `science-seat-campus-before-the-claims` reaches the first Campus
+    /// alone, so a Science seat's Library and University keep the building
+    /// claim's own rules.
     pub(super) fn campus_and_library_puts_first(&self, g: &Game, rank: u8, turns: f64) -> bool {
-        Self::campus_and_library_building(g, rank, turns)
-            && (!self.science_seat_campus_first(g)
-                || (rank == 0 && super::science_seat_campus_before_the_claims::knobs().library))
+        Self::campus_and_library_building(g, rank, turns) && !self.science_seat_campus_first(g)
     }
 
     /// The head `item` of `cid` that the gene's `what` goes ahead of, as the
