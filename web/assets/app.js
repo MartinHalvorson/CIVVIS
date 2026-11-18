@@ -4737,7 +4737,27 @@ function worldFacing(seed) {
 function foundNorth(st = state) {
   // Read from the observation rather than the global SPEC, so this answers the
   // same during render — before the flag is refreshed — as it does after.
-  return !st || !!st.spectate || st.me?.found_north !== false;
+  return !st || !!st.spectate || st.me?.found_north !== false || northUnlocked(st);
+}
+// A player at the keyboard does not have to wait for the discovery: pressing
+// the compass unlocks north for the world they are playing, and from then on
+// it is found north for every camera path, the needle and the corner chart.
+// It is kept against that world, the way its bearing is, so the next game
+// still opens turned until its own compass is pressed.
+let NORTH_UNLOCKED_WORLD = (() => {
+  try { return localStorage.getItem("civvis-north-unlocked-world"); }
+  catch (_) { return null; }
+})();
+function northUnlocked(st = state) {
+  return !!st && !st.spectate && NORTH_UNLOCKED_WORLD !== null &&
+    NORTH_UNLOCKED_WORLD === String(st.seed ?? "");
+}
+function unlockNorth() {
+  if (!state || state.spectate) return;
+  NORTH_UNLOCKED_WORLD = String(state.seed ?? "");
+  try { localStorage.setItem("civvis-north-unlocked-world", NORTH_UNLOCKED_WORLD); }
+  catch (_) {}
+  syncFoundNorth(state);
 }
 // Whether the observed civilization has been the whole way round its world and
 // so knows that it comes back on itself, and how far round it is. The server
@@ -4770,11 +4790,13 @@ function northTechLabel() {
 function updateCompass() {
   if (!compassButton) return;
   const found = foundNorth(), around = wentAround();
-  // Having been round the world is worth a button even without north: it
-  // squares the chart to the axis the world repeats in, which is a real thing
-  // to put the map back to.
-  compassButton.disabled = !found && !around;
+  // A played seat can always press it: an unknown bearing is one press from
+  // north (`unlockNorth`). Anything else without north keeps the old ladder,
+  // where having been round the world squares the chart to its axis.
+  const unlocks = !found && !!state && !state.spectate;
+  compassButton.disabled = !found && !around && !unlocks;
   const title = found ? "Face north"
+    : unlocks ? `Face north · unlocks north-up for this game (${northTechLabel()} would find it)`
     : around ? `Square the chart to the world's axis · ${northTechLabel()} finds north`
     : `Bearing unknown · a way round the world squares the chart · ${northTechLabel()} finds north`;
   if (compassButton.title === title) return;
@@ -4819,7 +4841,11 @@ function syncFoundNorth(st) {
   }
   updateCompass();
 }
-if (compassButton) compassButton.onclick = () => resetMapFacing();
+if (compassButton) compassButton.onclick = () => {
+  // Unlocking turns the map itself (syncFoundNorth settles it onto north).
+  if (!foundNorth() && state && !state.spectate) unlockNorth();
+  else resetMapFacing();
+};
 
 // ------------------------------------------------------------ the world turns
 // The spin is the world's own motion and not a tour of it: it goes about the
@@ -5018,7 +5044,7 @@ function updateZoomOut() {
   const unknownChart = planetMap() && !knowsGlobe();
   const swappedChart = mapProjectionsSwapped();
   const title = unknownChart
-    ? `Zoom out · no chart holds more of the world — ${globeDiscoveryLabel()} proves it round`
+    ? `Zoom out · held to what is charted, widening as you explore — ${globeDiscoveryLabel()} proves the world round`
     : swappedChart ? "Zoom out · at the azimuthal chart limit" : "Zoom out";
   if (button.title === title) return;
   button.title = title;
@@ -15262,11 +15288,15 @@ function buildPlanetGpuMesh(gpu) {
   const tiles = new Map(state.map.tiles.map(tile => [key(tile.pos), tile]));
   const visible = new Set((state.turn_visible || state.visible).map(key));
   const spectator = !Number.isInteger(state.view_player);
+  // This surface has no sphere under its cells, so ground nobody has seen
+  // would be a hole onto black space. It is parchment here as on the other
+  // two painters, and the shader's lighting rounds it like the rest.
+  const unknown = rgbOf(PARCH).map(channel => channel / 255);
   const data = [];
   for (const cell of PLANET.cells.values()) {
     const tile = tiles.get(key(cell.pos));
-    if (!tile) continue;
-    const color = planetGpuColor(tile, visible, spectator);
+    if (!tile && spectator) continue;
+    const color = tile ? planetGpuColor(tile, visible, spectator) : unknown;
     const center = cell.center;
     for (let index = 0; index < cell.ids.length; index++) {
       const a = cell.ids[index], b = cell.ids[(index + 1) % cell.ids.length];
@@ -16433,8 +16463,7 @@ function drawPlanetGpuMap(camera, scale, radius, centerX, centerY, visible, spec
   gl.uniform2f(ocean.at.uCenter, centerPx[0], centerPx[1]);
   gl.uniform2f(ocean.at.uViewport, gpu.width, gpu.height);
   gl.uniform1f(ocean.at.uRadius, radius * DPR);
-  const stops = (spectator ? ["#46679f", "#14315e", "#091a3a", "#020714"]
-                           : ["#39434c", "#222a32", "#141a20", "#05090d"])
+  const stops = (spectator ? ["#46679f", "#14315e", "#091a3a", "#020714"] : PARCH_SPHERE)
     .flatMap(hex => rgbOf(hex).map(channel => channel / 255));
   gl.uniform3fv(ocean.at.uStops, stops);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -19198,6 +19227,24 @@ function planetChartFloor(centerX, centerY) {
   PLANET_CHART_FLOOR_CACHE = {left, right, top, bottom, radius};
   return radius;
 }
+// At the start of a game that chart is mostly blank paper around a handful of
+// tiles, and pulling all the way back to it shows nothing but the paper. So
+// until the world is proved round, the zoom out is held to the known ground
+// plus this many tiles of unexplored room on the shorter side of the stage. The
+// cap is the spherical cap the explored tiles would cover, the same reckoning
+// the corner chart's frame uses (`knownGlobeFrameShare`), so it widens as the
+// civilization explores and gives way to the chart's own limit once the known
+// ground has earned it.
+const PLANET_KNOWN_CHART_CONTEXT_TILES = 8;
+function planetKnownChartFloor(centerX, centerY) {
+  const tiles = state?.map?.tiles;
+  if (knowsGlobe() || !tiles?.length) return 0;
+  const share = Math.min(.5,
+    tiles.length / Math.max(1, state.map.width * state.map.height));
+  const knownTiles = Math.acos(1 - 2 * share) * state.map.width / (2 * Math.PI);
+  const half = Math.max(1, Math.min(centerX, MAPW - centerX, centerY, MAPH - centerY));
+  return half / ((knownTiles + PLANET_KNOWN_CHART_CONTEXT_TILES) * S * SQ3);
+}
 // Zooming out stops where that picture is complete. Before the world is known
 // to be round there is no system to complete and no body to hold; after Swap
 // maps the viewer has deliberately chosen that same chart. In either case the
@@ -19206,7 +19253,8 @@ function planetMinScale() {
   const unit = Math.max(1, WW() / (2 * Math.PI));
   if (planetMainUsesChart() || !visibleSkyBodies().length) {
     const [centerX, centerY] = planetStageCenter();
-    return planetChartFloor(centerX, centerY) / unit;
+    return Math.max(planetChartFloor(centerX, centerY) / unit,
+                    planetKnownChartFloor(centerX, centerY));
   }
   return Math.min(.08, skySystemFrame().radius / unit);
 }
@@ -24921,17 +24969,16 @@ function drawPlanetMap() {
     }
     const ocean = cx.createRadialGradient(centerX - sheet * .32, centerY - sheet * .36,
                                           sheet * .05, centerX, centerY, sheet);
-    if (camera.chart && !spectator) {
-      ocean.addColorStop(0, PARCH_LIGHT); ocean.addColorStop(.52, PARCH);
-      ocean.addColorStop(.88, "#aa9364"); ocean.addColorStop(1, "#77623f");
-    } else if (spectator) {
+    if (spectator) {
       ocean.addColorStop(0, "#46679f"); ocean.addColorStop(.52, "#14315e");
       ocean.addColorStop(.88, "#091a3a"); ocean.addColorStop(1, "#020714");
     } else {
       // Under fog the bare sphere is everything this empire has never seen, so
-      // it reads as unknown rather than as an ocean nobody needs to explore.
-      ocean.addColorStop(0, "#39434c"); ocean.addColorStop(.52, "#222a32");
-      ocean.addColorStop(.88, "#141a20"); ocean.addColorStop(1, "#05090d");
+      // it is the parchment of the chart it was first drawn on, now wrapped
+      // round the ball: unknown rather than an ocean nobody needs to explore,
+      // and the same paper before and after the world is proved round.
+      PARCH_SPHERE.forEach((stop, index) =>
+        ocean.addColorStop([0, .52, .88, 1][index], stop));
     }
     cx.fillStyle = ocean;
     if (camera.chart) cx.fillRect(0, 0, MAPW, MAPH);
@@ -26799,7 +26846,8 @@ function planetMiniCellAt(point, index) {
   return best;
 }
 function planetMiniCellColor(tile, visible, spectator) {
-  if (!tile) return rgbOf("#12305c");
+  // Unseen ground is the main map's parchment, not a navy that reads as sea.
+  if (!tile) return rgbOf(PARCH);
   let color = rgbOf(tileGroundColor(tile, "#44545a"));
   if (!spectator && !visible.has(key(tile.pos))) color = color.map(channel => channel * .35);
   if (tile.owner !== null && tile.owner !== undefined) {
@@ -26962,7 +27010,7 @@ function drawPlanetMini() {
   mx2.fillRect(0, 0, projection.width, projection.height);
   if (projection.kind === "globe") {
     planetMiniClipPath(projection);
-    mx2.fillStyle = "#12305c"; mx2.fill();
+    mx2.fillStyle = spectator ? "#12305c" : PARCH; mx2.fill();
   }
   const paintReach = Math.min(Math.PI - .01,
                               Math.SQRT2 * AZIMUTHAL_MINI_SQUARE_HALF + .15);
