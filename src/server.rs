@@ -1888,39 +1888,30 @@ impl Shared {
         // Lift the array out of the map rather than blanking it in place: a
         // patched response carries no `tiles` key at all, and a null one would
         // read to the page as a world with no ground in it.
-        let Some(Value::Object(map)) = o.get_mut("map") else {
+        let Some(tiles) = FrameTiles::take(o, None) else {
             return;
         };
-        let Some(Value::Array(tiles)) = map.remove("tiles") else {
-            return;
-        };
-        let marks: Vec<u64> = tiles.iter().map(tile_mark).collect();
+        let marks: Vec<u64> = tiles.marks();
         let now = Instant::now();
         let mut delivery = lock_or_recover(&self.frame_delivery);
         let seat = delivery.seat(viewer, now);
-        let changed: Option<Vec<Value>> = seat
+        let prior: Option<&Vec<u64>> = seat
             .tiles
             .as_ref()
             .filter(|(held, cached)| {
                 held.seed == frame.seed && Some(*held) == have && cached.len() == marks.len()
             })
-            .map(|(_, cached)| {
-                tiles
-                    .iter()
-                    .enumerate()
-                    .filter(|(at, _)| cached[*at] != marks[*at])
-                    .map(|(at, tile)| json!([at, tile]))
-                    .collect()
-            });
-        match changed {
-            Some(changed) => {
+            .map(|(_, cached)| cached);
+        match prior {
+            Some(prior) => {
+                let changed = tiles.changed(prior, &marks);
                 // The map key carries the patch and no `tiles` at all: a page
                 // that reported a baseline is holding one, and a full array
                 // arriving anyway would be a megabyte saying nothing.
                 o["map"]["tiles_from"] = json!(have.map(|held| held.turn));
                 o["map"]["tiles_changed"] = Value::Array(changed);
             }
-            None => o["map"]["tiles"] = Value::Array(tiles),
+            None => o["map"]["tiles"] = tiles.into_array(),
         }
         seat.tiles = Some((frame, marks));
     }
@@ -3878,6 +3869,60 @@ fn tile_mark(tile: &Value) -> u64 {
     let mut hasher = MarkHasher::default();
     hash_json(tile, &mut hasher);
     hasher.finish()
+}
+
+/// A frame's tiles, lifted out of its document: the values it carried, or
+/// the marks its observation took instead ([`crate::obs::with_tile_marks`]),
+/// with a value for every tile that is sent. A mark is compared only with
+/// marks made the same way, and two tiles mark alike exactly when they are
+/// the same tile, so either way the same tiles are sent, as the same values.
+pub(crate) enum FrameTiles {
+    Values(Vec<Value>),
+    Marked(crate::obs::FrameTileMarks),
+}
+
+impl FrameTiles {
+    /// Lift `map.tiles` out of `o`.
+    pub(crate) fn take(o: &mut Value, marked: Option<crate::obs::FrameTileMarks>) -> Option<Self> {
+        let Some(Value::Object(map)) = o.get_mut("map") else {
+            return None;
+        };
+        let Some(Value::Array(tiles)) = map.remove("tiles") else {
+            return None;
+        };
+        Some(match marked {
+            Some(marked) => FrameTiles::Marked(marked),
+            None => FrameTiles::Values(tiles),
+        })
+    }
+
+    pub(crate) fn marks(&self) -> Vec<u64> {
+        match self {
+            FrameTiles::Values(tiles) => tiles.iter().map(tile_mark).collect(),
+            FrameTiles::Marked(marked) => marked.marks.clone(),
+        }
+    }
+
+    /// `[index, tile]` for every tile whose mark moved from `prior` to `now`.
+    pub(crate) fn changed(self, prior: &[u64], now: &[u64]) -> Vec<Value> {
+        let changed = (0..now.len()).filter(|at| prior[*at] != now[*at]);
+        match self {
+            FrameTiles::Values(tiles) => changed.map(|at| json!([at, tiles[at]])).collect(),
+            FrameTiles::Marked(mut marked) => {
+                changed.map(|at| json!([at, marked.take(at)])).collect()
+            }
+        }
+    }
+
+    /// Every tile, as the document's `tiles` array.
+    pub(crate) fn into_array(self) -> Value {
+        match self {
+            FrameTiles::Values(tiles) => Value::Array(tiles),
+            FrameTiles::Marked(mut marked) => {
+                Value::Array((0..marked.marks.len()).map(|at| marked.take(at)).collect())
+            }
+        }
+    }
 }
 
 #[cfg(test)]
