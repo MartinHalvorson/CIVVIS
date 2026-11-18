@@ -344,6 +344,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `food-focus-grows-the-small-city` | off (unmeasured) | Opt-in gene `food-focus-grows-the-small-city`; see `Self::food_focus_grows_the_small_city`. | 1 \| 1 |
 | `forward-airfield-project` | off (unmeasured) | Measure the default-off forward airfield preparation project. | 1 \| 1 |
 | `founding-voyage` | off (unmeasured) | Opt-in gene `founding-voyage`; see `Self::founding_voyage`. | 1 \| 1 |
+| `four-faces-bars-the-surprise` | off (unmeasured) | Opt-in gene `four-faces-bars-the-surprise`; see `advanced/four_faces_bars_the_surprise.rs`. | 1 \| 1 |
 | `free-slot-campus-clock` | off (unmeasured) | Scale the free-slot Campus time budget relative to Online costs. | 1 \| 1 |
 | `fresh-water-prices-the-site` | off (unmeasured) | Opt-in gene `fresh-water-prices-the-site`; see `advanced/fresh_water_site.rs`. | 1 \| 1 |
 | `friendship-keeps-the-peace` | off (unmeasured) | Opt-in gene `friendship-keeps-the-peace`; see `Self::friendship_keeps_the_peace`. | 1 \| 1 |
