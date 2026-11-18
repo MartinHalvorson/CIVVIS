@@ -306,6 +306,12 @@ impl AdvancedAi {
         /// Opt-in gene `diplo-seat-statue-is-the-finisher`; see
         /// `advanced/diplo_wonder_claim.rs`.
         diplo_seat_statue_is_the_finisher => enable_diplo_seat_statue_is_the_finisher, disable_diplo_seat_statue_is_the_finisher;
+        /// Opt-in gene `diplo-seat-claims-the-competition`; see
+        /// `advanced/diplo_competition_claim.rs`.
+        diplo_seat_claims_the_competition => enable_diplo_seat_claims_the_competition, disable_diplo_seat_claims_the_competition;
+        /// Opt-in gene `diplo-seat-allies-every-friend`; see
+        /// `advanced/diplo_allies_every_friend.rs`.
+        diplo_seat_allies_every_friend => enable_diplo_seat_allies_every_friend, disable_diplo_seat_allies_every_friend;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

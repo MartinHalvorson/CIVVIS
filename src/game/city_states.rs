@@ -302,7 +302,21 @@ impl Game {
     /// direct Suzerain. Sharing is deliberately non-transitive: a partner's
     /// own Economic Alliance cannot relay the bonus through a third empire.
     pub(super) fn grants_city_state_unique_bonus(&self, pid: usize, city_state: &str) -> bool {
-        if self.cs_bonus(city_state).is_none() {
+        let mut minors = self
+            .players
+            .iter()
+            .filter(|minor| {
+                minor.alive && minor.is_minor && !minor.is_barbarian && minor.civ == city_state
+            })
+            .peekable();
+        // ★★ Ask the seats before the roster. Most city-states a caller names
+        // (every unique improvement on every tile a Builder weighs, each trade
+        // route's Chinguetti/Hunza/Kumasi/Venice) are not in this game, and
+        // `cs_bonus` answered that by comparing the name against the whole
+        // shipped roster first: about a third of this function's time was
+        // `memcmp`. Neither test has a side effect, so asking the seats first
+        // is the same answer.
+        if minors.peek().is_none() || self.cs_bonus(city_state).is_none() {
             return false;
         }
         // The Economic Alliance walk is only needed by the second arm, and the
@@ -311,9 +325,7 @@ impl Game {
         // same answer; computing it eagerly paid for it on every call that
         // never asked.
         let mut economic_partner: Option<Option<usize>> = None;
-        for minor in self.players.iter().filter(|minor| {
-            minor.alive && minor.is_minor && !minor.is_barbarian && minor.civ == city_state
-        }) {
+        for minor in minors {
             if self.congress_effect_active("sovereignty", "B", self.cs_type(&minor.civ)) {
                 continue;
             }
