@@ -193,7 +193,8 @@ impl AdvancedAi {
         // `science-seat-campus-before-the-claims` opens the same ordering on
         // a Science seat, for the first Campus and the Library and never past
         // a soldier. See `advanced/science_seat_campus_before_the_claims.rs`.
-        let science_seat = self.science_seat_campus_first(g);
+        let science_seat = self.science_seat_campus_first(g)
+            && super::science_seat_campus_before_the_claims::knobs().cap_turns > 0.0;
         if !(self.campus_and_library_before_the_claims && self.conquest_or_score_seat(g))
             && !science_seat
         {
