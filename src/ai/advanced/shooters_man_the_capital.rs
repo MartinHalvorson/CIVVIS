@@ -80,7 +80,7 @@
 //!    shot: the weakest first.
 //! 2. Otherwise, when a tile in or beside the City Center that it can reach
 //!    this turn has such a gun in reach, it goes there and fires if it still
-//!    can.
+//!    can. The shooter on the centre keeps the centre.
 //! 3. Otherwise it goes home: onto the City Center when no soldier of ours
 //!    holds it, else beside it, as far as this turn's movement takes it over
 //!    dry land. There it stays. At war it takes the best shot it has.
@@ -467,8 +467,9 @@ impl AdvancedAi {
         {
             return;
         }
-        // 2. A stand in or beside the centre with a gun in reach.
-        if reading.war {
+        // 2. A stand in or beside the centre with a gun in reach. The shooter
+        // on the centre keeps it: the one tile nothing can strike it on.
+        if reading.war && from != home {
             if let Some(stand) = self
                 .man_firing_stand(g, pid, uid, reading)
                 .filter(|stand| *stand != from)
