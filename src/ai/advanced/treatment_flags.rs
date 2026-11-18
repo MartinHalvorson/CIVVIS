@@ -617,6 +617,9 @@ impl AdvancedAi {
         /// Opt-in gene `trade-district-follows-the-campus`; see
         /// `advanced/trade_district_follows_the_campus.rs`.
         trade_district_follows_the_campus => enable_trade_district_follows_the_campus, disable_trade_district_follows_the_campus;
+        /// Opt-in gene `tribute-buys-the-friendship-2`; see
+        /// `advanced/tribute_buys_the_friendship.rs`.
+        tribute_buys_the_friendship_2 => enable_tribute_buys_the_friendship_2, disable_tribute_buys_the_friendship_2;
     }
 
     toggles! {

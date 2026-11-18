@@ -7691,6 +7691,15 @@
           "treasury-at-work-2-2": null
         }
       },
+      "tribute-buys-the-friendship": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "tribute-buys-the-friendship": null,
+          "tribute-buys-the-friendship-2": null
+        }
+      },
       "war-kills-the-bands": {
         "rule_on": [
           "war-kills-the-bands"
