@@ -104,8 +104,8 @@ fn one_trade_district_a_turn_goes_ahead_of_a_soldier_at_peace() {
         vec![0, 1],
         "a second turn claims the second: {after:?}"
     );
-    for rank in 2..ranked.len() {
-        assert_eq!(after[rank].as_ref(), Some(&soldier), "rank {rank}");
+    for (rank, head) in after.iter().enumerate().skip(2) {
+        assert_eq!(head.as_ref(), Some(&soldier), "rank {rank}");
     }
 }
 
