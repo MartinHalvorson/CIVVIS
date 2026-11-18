@@ -409,11 +409,17 @@ PY
 # asks for fresh content while unchanged files remain reusable across builds.
 python3 "$repo_root/beta/cache_bust.py" "$out"
 
-# Every compressible file of the game page, at brotli's slowest setting.
-# `_worker.js` serves the `.br` beside a file when the browser accepts it;
-# Cloudflare's own on-the-fly compression favours speed and comes out about
-# 30% larger on the engine. They are alternate encodings of files already
-# counted, so the on-disk budget below does not count them.
+# Every compressible file of the game page but the page itself, at brotli's
+# slowest setting. `_worker.js` serves the `.br` beside a file when the
+# browser accepts it; Cloudflare's own on-the-fly compression favours speed
+# and comes out about 30% larger on the engine. They are alternate encodings
+# of files already counted, so the on-disk budget below does not count them.
+#
+# HTML is the exception: Cloudflare re-encodes every text/html response at
+# its edge, whatever the Worker sends. Measured on /test (2026-11-18): an
+# `index.html.br` of 85,864 bytes was served as 109,582 bytes of brotli, the
+# page byte-identical, and brotli quality 4 of that page is 109,317. So no
+# copy is written for it, and the count below prices it at quality 4.
 viewer_files() {
   { find "$out/civvis.wasm" "$out/index.html" "$out/shim.js" "$out/worker.js" "$out/assets" \
       -type f ! -name '*.br' 2>/dev/null || true; } | sort
@@ -421,21 +427,26 @@ viewer_files() {
 if command -v brotli >/dev/null; then
   viewer_files | while read -r file; do
     case "$file" in
-      *.wasm|*.html|*.js|*.json|*.css) brotli -q 11 --lgwin=24 -f -o "$file.br" "$file" ;;
+      *.wasm|*.js|*.json|*.css) brotli -q 11 --lgwin=24 -f -o "$file.br" "$file" ;;
     esac
   done
 fi
 
 # The Build size civvis.ai shows: what a browser downloads for the game page —
-# each file's brotli copy where there is one, the file itself where there is
-# not (the images are already compressed). It counts the whole viewer, the
-# map art a played game fetches later included, and nothing the landing or
-# download pages carry.
+# each file's brotli copy where there is one, the page at the quality the edge
+# re-encodes it with, the file itself otherwise (the images are already
+# compressed). It counts the whole viewer, the map art a played game fetches
+# later included, and nothing the landing or download pages carry.
 download_bytes=0
 while read -r file; do
-  served="$file"
-  [ -f "$file.br" ] && served="$file.br"
-  download_bytes=$(( download_bytes + $(wc -c < "$served" | tr -d ' ') ))
+  if [ -f "$file.br" ]; then
+    bytes=$(wc -c < "$file.br")
+  elif [[ "$file" == *.html ]] && command -v brotli >/dev/null; then
+    bytes=$(brotli -q 4 -c "$file" | wc -c)
+  else
+    bytes=$(wc -c < "$file")
+  fi
+  download_bytes=$(( download_bytes + $(echo "$bytes" | tr -d ' ') ))
 done < <(viewer_files)
 
 wasm_bytes=$(wc -c < "$out/civvis.wasm" | tr -d ' ')

@@ -348,12 +348,13 @@ def main(argv: list[str] | None = None) -> int:
         check(problems, "and the shim",
               shim["body"] == "asset:/shim.js.br" and "javascript" in (shim["contentType"] or ""),
               f"got {shim['body']!r} {shim['contentType']!r}")
-        for door, copy in (("/", "/index.html.br"), ("/test/", "/test/index.html.br")):
+        # The edge re-encodes every HTML response whatever the Worker sends,
+        # so the page is left to it (publish.sh prices it at brotli 4).
+        for door in ("/", "/test/", "/test/index.html"):
             page = hit(path=door + "?mode=play", accepts="br", compressed=True)
-            check(problems, f"{door} serves the page's own copy",
-                  page["body"] == "asset:" + copy and page["contentEncoding"] == "br"
-                  and (page["contentType"] or "").startswith("text/html"),
-                  f"got {page['body']!r} {page['contentEncoding']!r} {page['contentType']!r}")
+            check(problems, f"{door} looks for no copy",
+                  page["body"] == "asset:" + door and page["contentEncoding"] is None,
+                  f"got {page['body']!r} {page['contentEncoding']!r}")
             check(problems, f"{door} is still revalidated on every visit",
                   "must-revalidate" in (page["cacheControl"] or ""), f"got {page['cacheControl']!r}")
         art = hit(path="/test/assets/civ6-unit-flags.webp?v=abc", accepts="br", compressed=True)
