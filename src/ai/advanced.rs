@@ -5673,6 +5673,12 @@ pub struct AdvancedAi {
     /// stood, for the journal of its loss. `None` while the gene is off.
     breaker_shield_memory: Option<breaker_walks_under_a_shield::BreakerShieldMemory>,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-and-religion-build-the-statue`: a Culture or Religious seat
+    /// claims the Statue of Liberty from turn 120 (its Harbor too) and, with
+    /// `diplo-seat-statue-is-the-finisher`, holds it as the finisher, as a
+    /// Science seat does under `science-seat-builds-the-statue`. See
+    /// `advanced/diplo_wonder_claim.rs`.
+    culture_and_religion_build_the_statue: bool,
     /// `culture-and-religion-race-the-congress`: a Culture or Religious
     /// seat's Diplomatic Victory ballot runs the racer too. Live only, like
     /// `science_seat_races_the_congress`: the simulator never reads it.
@@ -13117,6 +13123,7 @@ impl AdvancedAi {
             // ---- append: a-b ----------------------------------------
             barbarian_research_prices_the_field: false,
             // ---- append: c-d ----------------------------------------
+            culture_and_religion_build_the_statue: false,
             culture_and_religion_race_the_congress: false,
             // ---- append: e-f ----------------------------------------
             early_cities_keep_their_distance: false,

@@ -5492,6 +5492,13 @@ pub const GENES: &[Gene] = &[
     // `advanced/band_plays_the_stage_at_hand.rs`.
     Gene { tag: "band-plays-the-stage-at-hand", field: "band_plays_the_stage_at_hand", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_the_stage_at_hand, disable: AdvancedAi::disable_band_plays_the_stage_at_hand },
     // ---- append: c-d ------------------------------------------------
+    // `culture-and-religion-build-the-statue`: a Culture or Religious seat
+    // claims the Statue of Liberty (and its Harbor) from turn 120 and holds it
+    // as the finisher. Live Deity 2026-11-18 under
+    // `culture-and-religion-race-the-congress`: Georgia (Religious) ended on
+    // 15 points and Canada (Culture) on 17, both lost to a rival Science
+    // Victory, neither held the Statue's four. See `advanced/diplo_wonder_claim.rs`.
+    Gene { tag: "culture-and-religion-build-the-statue", field: "culture_and_religion_build_the_statue", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_and_religion_build_the_statue, disable: AdvancedAi::disable_culture_and_religion_build_the_statue },
     // `culture-and-religion-race-the-congress`: a seat aiming at Culture or
     // Religion runs the same racer's ballot and joins every competition and
     // Aid Request. Live Deity 2026-11-18 (`congress_kpi.py`, 38 games): final

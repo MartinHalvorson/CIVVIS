@@ -435,3 +435,61 @@ fn a_held_finisher_is_not_offered_anywhere() {
         );
     }
 }
+
+#[test]
+fn culture_and_religion_build_the_statue_is_opt_in() {
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "culture-and-religion-build-the-statue",
+        |ai| ai.culture_and_religion_build_the_statue,
+    );
+}
+
+/// `culture-and-religion-build-the-statue`: a Culture or Religious seat claims
+/// the Statue's four points and nothing less, and with the finisher holds it
+/// at its last turn while the points would not win. Without the tag neither
+/// target claims anything; a Domination seat stays out with it.
+#[test]
+fn a_culture_or_religious_seat_claims_and_holds_only_the_statue() {
+    let (game, city, _) = mahabodhi_board();
+    for target in [VictoryTarget::Culture, VictoryTarget::Religion] {
+        let plan = wonder_plan(GrandStrategy::Culture, game.turn);
+        let mut seat = AdvancedAi::targeting(target);
+        seat.enable_diplo_seat_wonder_claim();
+        assert!(
+            !seat.diplo_wonder_claim_on(&game),
+            "{target:?}: off without the tag"
+        );
+        seat.enable_culture_and_religion_build_the_statue();
+        assert!(
+            seat.diplo_wonder_claim_on(&game),
+            "{target:?}: on with the tag"
+        );
+        assert!(
+            seat.diplo_wonder_item(&game, 0, city, &plan).is_none(),
+            "{target:?}: the Mahabodhi Temple's two points stay with the lane"
+        );
+        assert!(seat.diplo_wonder_worth_it(&game, SCIENCE_SEAT_WONDER_POINTS));
+        assert!(!seat.diplo_wonder_worth_it(&game, SCIENCE_SEAT_WONDER_POINTS - 1.0));
+
+        let (mut near, fcity, statue) = finisher_board();
+        near.players[0].dvp = 12;
+        let mut finisher = AdvancedAi::targeting(target);
+        finisher.enable_diplo_seat_wonder_claim();
+        finisher.enable_diplo_seat_statue_is_the_finisher();
+        assert_eq!(
+            finisher.diplo_finisher_held(&near, 0, fcity),
+            None,
+            "{target:?}: no tag, no hold"
+        );
+        finisher.enable_culture_and_religion_build_the_statue();
+        assert_eq!(
+            finisher.diplo_finisher_held(&near, 0, fcity),
+            Some(statue),
+            "{target:?}: twelve points plus four do not win, so the Statue waits"
+        );
+    }
+    let mut warlord = AdvancedAi::targeting(VictoryTarget::Domination);
+    warlord.enable_diplo_seat_wonder_claim();
+    warlord.enable_culture_and_religion_build_the_statue();
+    assert!(!warlord.diplo_wonder_claim_on(&game));
+}
