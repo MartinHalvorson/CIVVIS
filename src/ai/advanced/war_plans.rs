@@ -773,6 +773,37 @@ impl AdvancedAi {
         target: Pos,
         thermonuclear: bool,
     ) -> Option<f64> {
+        self.nuclear_target_value_with(g, pid, target, thermonuclear, &mut Vec::new())
+    }
+
+    /// [`Self::rival_victory_pressure`] for `owner`, read once per scan.
+    ///
+    /// A scan reads one board, so a rival's pressure cannot change between
+    /// the blast tiles and target cities it scores; `pressures` keeps each
+    /// owner's reading for the rest of the scan.
+    pub(super) fn remembered_rival_pressure(
+        &self,
+        g: &Game,
+        owner: usize,
+        pressures: &mut Vec<(usize, VictoryFocus)>,
+    ) -> VictoryFocus {
+        if let Some((_, focus)) = pressures.iter().find(|(seen, _)| *seen == owner) {
+            return *focus;
+        }
+        let focus = self.rival_victory_pressure(g, owner);
+        pressures.push((owner, focus));
+        focus
+    }
+
+    /// [`Self::nuclear_target_value`] sharing one scan's rival pressures.
+    pub(super) fn nuclear_target_value_with(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: Pos,
+        thermonuclear: bool,
+        pressures: &mut Vec<(usize, VictoryFocus)>,
+    ) -> Option<f64> {
         let target_city = g.city_at(target)?;
         let target_ref = g.cities.get(&target_city)?;
         if target_ref.owner == pid {
@@ -817,7 +848,7 @@ impl AdvancedAi {
                 .get(hit_city.owner)
                 .is_some_and(|player| !player.is_minor && !player.is_barbarian)
             {
-                self.rival_victory_pressure(g, hit_city.owner)
+                self.remembered_rival_pressure(g, hit_city.owner, pressures)
             } else {
                 VictoryFocus {
                     strategy: GrandStrategy::Expansion,
@@ -930,6 +961,7 @@ impl AdvancedAi {
             return None;
         }
         let mut best: Option<(f64, NuclearWarGoal)> = None;
+        let mut pressures = Vec::new();
         for rival in g.players.iter().filter(|rival| {
             rival.id != pid
                 && rival.alive
@@ -941,7 +973,7 @@ impl AdvancedAi {
             if strategy == GrandStrategy::Recovery && !at_war {
                 continue;
             }
-            let pressure = self.rival_victory_pressure(g, rival.id);
+            let pressure = self.remembered_rival_pressure(g, rival.id, &mut pressures);
             let denial = Self::nuclear_victory_threat(pressure);
             let planned_target = self.plan.as_ref().is_some_and(|plan| {
                 plan.strategy == GrandStrategy::Conquest && plan.target_player == Some(rival.id)
@@ -967,11 +999,15 @@ impl AdvancedAi {
                 .filter_map(|city| {
                     let standard = g
                         .wmd_can_reach(pid, city.pos, false)
-                        .then(|| self.nuclear_target_value(g, pid, city.pos, false))
+                        .then(|| {
+                            self.nuclear_target_value_with(g, pid, city.pos, false, &mut pressures)
+                        })
                         .flatten();
                     let thermonuclear = g
                         .wmd_can_reach(pid, city.pos, true)
-                        .then(|| self.nuclear_target_value(g, pid, city.pos, true))
+                        .then(|| {
+                            self.nuclear_target_value_with(g, pid, city.pos, true, &mut pressures)
+                        })
                         .flatten();
                     let priority = standard
                         .into_iter()

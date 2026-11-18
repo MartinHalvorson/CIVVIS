@@ -14871,17 +14871,25 @@ impl AdvancedAi {
 
     fn rocketry_readiness(&self, g: &Game, pid: usize) -> i32 {
         let player = &g.players[pid];
-        let rocketry_path: Vec<_> = g
-            .rules
-            .techs
-            .keys()
-            .filter(|tech| self.tech_leads_to(g, tech, "rocketry"))
-            .collect();
-        let completed = rocketry_path
-            .iter()
-            .filter(|tech| player.techs.contains(&Name::new(tech.as_str())))
-            .count();
-        25 + (40 * completed / rocketry_path.len().max(1)) as i32
+        // The techs `tech_leads_to(_, "rocketry")` accepts: Rocketry and its
+        // ancestors, read off the ancestry table instead of testing every tech.
+        let rocketry_path = std::iter::once("rocketry")
+            .chain(
+                g.rules
+                    .tech_ancestors
+                    .get("rocketry")
+                    .into_iter()
+                    .flatten()
+                    .map(String::as_str)
+                    .filter(|tech| *tech != "rocketry"),
+            )
+            .filter(|tech| g.rules.techs.contains_key(*tech));
+        let (mut path, mut completed) = (0, 0);
+        for tech in rocketry_path {
+            path += 1;
+            completed += usize::from(player.techs.contains(&Name::new(tech)));
+        }
+        25 + (40 * completed / path.max(1)) as i32
     }
 
     fn diplomatic_science_backup(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
@@ -26045,6 +26053,7 @@ impl AdvancedAi {
             })
             .collect();
         let mut best: Option<(f64, Action)> = None;
+        let mut pressures = Vec::new();
         for (action, target, thermonuclear) in candidates {
             let radius = g.rules.wmds[if thermonuclear {
                 "thermonuclear_device"
@@ -26084,7 +26093,9 @@ impl AdvancedAi {
             if exposure {
                 continue;
             }
-            let Some(value) = self.nuclear_target_value(g, pid, target, thermonuclear) else {
+            let Some(value) =
+                self.nuclear_target_value_with(g, pid, target, thermonuclear, &mut pressures)
+            else {
                 continue;
             };
             if best.as_ref().is_none_or(|(current, _)| value > *current) {
