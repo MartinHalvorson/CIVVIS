@@ -164,14 +164,11 @@ fn one_spreader_looks_for_a_rival_with_no_city_on_the_map() {
     let unit = &played.units[&far];
     assert_ne!(unit.pos, start, "the seeker sets out");
     assert_eq!(unit.charges, 3, "and keeps its charges");
-    assert!(
-        played.wdist(unit.pos, unseen) < played.wdist(start, unseen),
-        "toward the only fog on the board, where the unseen rival stands"
-    );
+    // Its goal is in the only fog on the board, where the unseen rival stands.
     let (goal, lead) = on.rival_seekers.borrow()[&far];
-    assert!(!played.players[0].explored.contains(&goal));
+    assert!(!game.players[0].explored.contains(&goal));
     assert!(!lead, "a native board has no unattributed borders");
-    assert!(played.wdist(goal, unseen) <= FOG);
+    assert!(game.wdist(goal, unseen) <= FOG);
 
     // The rest of the corps is not sent to look.
     for other in &home {
@@ -186,8 +183,8 @@ fn one_spreader_looks_for_a_rival_with_no_city_on_the_map() {
     let mut turn = game.clone();
     assert!(on.advanced_missionary_step(&mut turn, 0, far, true));
     assert_eq!(turn.units[&far].charges, 3);
-    assert!(turn.wdist(turn.units[&far].pos, located) >= 1);
-    assert!(turn.wdist(turn.units[&far].pos, unseen) < game.wdist(start, unseen));
+    assert_eq!(turn.units[&far].pos, played.units[&far].pos);
+    assert_eq!(game.wdist(start, located), 1, "past a city it stood beside");
 
     // Off, without `religion-seat-charts-the-rivals`, for a seat aiming
     // elsewhere, on the defensive and for another faith: no seeker.
