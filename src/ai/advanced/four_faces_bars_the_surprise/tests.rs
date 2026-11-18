@@ -186,6 +186,42 @@ fn a_war_that_is_on_is_never_spared() {
     );
 }
 
+/// The capital's door leg (two soldiers in sight within six tiles) reads the
+/// soldiers themselves, not the watch's memory: against Canada it trains no
+/// defender, and it trains one again once Canada has denounced us.
+#[test]
+fn the_capital_door_trains_no_defender_against_canada() {
+    let (mut game, _frontier) = board();
+    game.spawn_test_unit("warrior", 1, (17, 10));
+    game.players[0].gold = 0.0;
+    canada(&mut game, 1);
+    let capital = game.player_city_ids(0)[0];
+    assert!(game.cities[&capital].is_capital);
+    assert!(
+        game.cities[&capital].queue.is_empty(),
+        "fixture: idle capital"
+    );
+    let defender_queued = |gene: bool, game: &Game| {
+        let mut game = game.clone();
+        armed(gene).claim_capital_walls_before_the_surprise(&mut game, 0);
+        matches!(
+            game.cities[&capital].queue.first(),
+            Some(Item::Unit { unit }) if game.rules.units[unit].class == "military"
+        )
+    };
+    assert!(
+        defender_queued(false, &game),
+        "off: the door trains a defender"
+    );
+    assert!(!defender_queued(true, &game), "on: none against Canada");
+
+    game.players[1].denounced_until.insert(0, game.turn + 20);
+    assert!(
+        defender_queued(true, &game),
+        "denounced: the door reads again"
+    );
+}
+
 /// The toggle sets and clears the one flag, which lives on the base agent
 /// because the garrison call reads it there.
 #[test]

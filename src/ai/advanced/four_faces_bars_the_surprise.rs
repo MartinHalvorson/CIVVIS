@@ -49,7 +49,9 @@
 //!   phase (`deterrence_threat`);
 //! - the capital watch that arms `capital-walls-before-the-surprise`,
 //!   `capital-archers-before-the-surprise` and
-//!   `capital-watch-arms-the-slinger` (`capital_watched_major_power`);
+//!   `capital-watch-arms-the-slinger` (`capital_watched_major_power`), and
+//!   the walls gene's door leg, which buys or trains a defender on the
+//!   soldiers in sight (`capital_door_threat`);
 //! - `frontier-walls-before-the-surprise` (`frontier_walls_threat`);
 //! - `surprise-watch-holds-its-ratio`'s latches;
 //! - `garrison-before-the-surprise` and `capital-keeps-its-defender-3`
