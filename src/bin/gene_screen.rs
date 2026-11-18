@@ -3509,21 +3509,62 @@ fn solve(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
     Some(x)
 }
 
-/// Invert a symmetric positive matrix column by column; `None` if singular.
+/// Invert a symmetric positive matrix; `None` if singular.
+///
+/// Bit-identical to calling [`solve`] once per unit column `e_j`, but it runs
+/// the elimination of `a` once instead of `n` times. The pivots and row
+/// factors depend on `a` alone, so every right-hand side sees the same swaps
+/// and the same `b[row] -= factor * b[col]` updates in the same order, and the
+/// back substitution subtracts over `k` in the same ascending order. Solving
+/// per column cost O(n⁴): with ~1,000 screened genes the 2026-11-18 publication
+/// analysis spent over an hour of one core here, four inversions of the
+/// design (whole batch plus three reproducibility windows).
 fn invert(a: &[Vec<f64>]) -> Option<Vec<Vec<f64>>> {
     let n = a.len();
-    let mut columns = Vec::with_capacity(n);
-    for j in 0..n {
-        let mut e = vec![0.0; n];
-        e[j] = 1.0;
-        columns.push(solve(a.to_vec(), e)?);
+    let mut a = a.to_vec();
+    // b[row][j] is row `row` of the right-hand side e_j.
+    let mut b: Vec<Vec<f64>> = (0..n)
+        .map(|row| (0..n).map(|j| if row == j { 1.0 } else { 0.0 }).collect())
+        .collect();
+    for col in 0..n {
+        let pivot = (col..n).max_by(|&i, &j| a[i][col].abs().total_cmp(&a[j][col].abs()))?;
+        if a[pivot][col].abs() < 1e-9 {
+            return None;
+        }
+        a.swap(col, pivot);
+        b.swap(col, pivot);
+        for row in col + 1..n {
+            let factor = a[row][col] / a[col][col];
+            if factor == 0.0 {
+                continue;
+            }
+            let (upper, lower) = a.split_at_mut(row);
+            for (entry, pivot_entry) in lower[0].iter_mut().zip(&upper[col]).skip(col) {
+                *entry -= factor * pivot_entry;
+            }
+            let (upper, lower) = b.split_at_mut(row);
+            for (entry, pivot_entry) in lower[0].iter_mut().zip(&upper[col]) {
+                *entry -= factor * pivot_entry;
+            }
+        }
     }
-    // columns[j][i] is entry (i, j) of the inverse.
-    Some(
-        (0..n)
-            .map(|i| (0..n).map(|j| columns[j][i]).collect())
-            .collect(),
-    )
+    // x[row][j] is entry (row, j) of the inverse: row `row` of solution j.
+    let mut x = vec![vec![0.0; n]; n];
+    for row in (0..n).rev() {
+        let mut sums = b[row].clone();
+        for k in row + 1..n {
+            let coefficient = a[row][k];
+            for (sum, solved) in sums.iter_mut().zip(&x[k]) {
+                *sum -= coefficient * solved;
+            }
+        }
+        let diagonal = a[row][row];
+        for sum in &mut sums {
+            *sum /= diagonal;
+        }
+        x[row] = sums;
+    }
+    Some(x)
 }
 
 /// OLS of `y` on `design` — rows that already carry their intercept column —
@@ -8586,6 +8627,62 @@ mod tests {
             se_naive < 0.8 * se_clustered,
             "naive {se_naive} vs clustered {se_clustered}"
         );
+    }
+
+    /// The one-elimination inverse is the per-column `solve` inverse bit for
+    /// bit: on an X'X-shaped design (zero entries skip rows, row swaps happen)
+    /// and on a non-symmetric matrix that must pivot; a singular matrix is
+    /// still `None`.
+    #[test]
+    fn invert_matches_solving_each_unit_column_bit_for_bit() {
+        fn per_column(a: &[Vec<f64>]) -> Option<Vec<Vec<f64>>> {
+            let n = a.len();
+            let columns: Option<Vec<Vec<f64>>> = (0..n)
+                .map(|j| solve(a.to_vec(), (0..n).map(|i| f64::from(u8::from(i == j))).collect()))
+                .collect();
+            let columns = columns?;
+            Some((0..n).map(|i| (0..n).map(|j| columns[j][i]).collect()).collect())
+        }
+        // Deterministic pseudo-random 0/1 design with an intercept column.
+        let (rows, k) = (400usize, 24usize);
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut design = Vec::with_capacity(rows);
+        for _ in 0..rows {
+            let mut row = vec![1.0];
+            for _ in 1..k {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                row.push(if state % 3 == 0 { 1.0 } else { 0.0 });
+            }
+            design.push(row);
+        }
+        let mut xtx = vec![vec![0.0; k]; k];
+        for row in &design {
+            for i in 0..k {
+                for j in 0..k {
+                    xtx[i][j] += row[i] * row[j];
+                }
+            }
+        }
+        let pivoting = vec![
+            vec![0.0, 2.0, 1.0, 0.0],
+            vec![3.0, 0.0, 0.0, 1.0],
+            vec![1.0, 1.0, 4.0, 0.0],
+            vec![0.0, 5.0, 0.0, 2.0],
+        ];
+        for matrix in [&xtx, &pivoting] {
+            let fast = invert(matrix).expect("invertible");
+            let slow = per_column(matrix).expect("invertible");
+            for (fast_row, slow_row) in fast.iter().zip(&slow) {
+                for (f, s) in fast_row.iter().zip(slow_row) {
+                    assert_eq!(f.to_bits(), s.to_bits(), "{f} != {s}");
+                }
+            }
+        }
+        let singular = vec![vec![1.0, 2.0], vec![2.0, 4.0]];
+        assert!(invert(&singular).is_none());
+        assert!(per_column(&singular).is_none());
     }
 
     /// Tranches are newest first (input order), never split a game, and
