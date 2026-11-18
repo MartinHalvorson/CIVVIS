@@ -1158,8 +1158,12 @@ def domination_no_capital_level_policy(path: Path | None = None) -> float:
         read_policy_value(DOMINATION_NO_CAPITAL_LEVEL_KEY, path))
 
 
-def domination_tech_share(event: dict) -> float | None:
-    """Our tech count over the best rival's in one `state` record; None if unreadable."""
+def tech_standing(event: dict) -> tuple[int, int] | None:
+    """Our tech count and the best met rival's in one `state` record; None if unreadable.
+
+    `rivals` lists the majors we have met, so with none met, or none whose
+    `techs` count reads above 0, there is no standing to speak of.
+    """
     ours = event.get("techs")
     rivals = event.get("rivals")
     if not isinstance(ours, list) or not isinstance(rivals, list):
@@ -1169,7 +1173,13 @@ def domination_tech_share(event: dict) -> float | None:
               if isinstance(count, int) and not isinstance(count, bool) and count > 0]
     if not counts:
         return None
-    return len(ours) / max(counts)
+    return len(ours), max(counts)
+
+
+def domination_tech_share(event: dict) -> float | None:
+    """Our tech count over the best rival's in one `state` record; None if unreadable."""
+    standing = tech_standing(event)
+    return None if standing is None else standing[0] / standing[1]
 
 
 def domination_no_capital_policy(path: Path | None = None) -> int:
@@ -1262,6 +1272,174 @@ def domination_no_capital_reading(state: dict, event: dict,
         "from_turn": from_turn,
         "turns": run["turns"],
         "cities": len(cities),
+        "fires": True,
+    }
+
+
+# ★ A SCIENCE-LANE GAME THIS FAR BEHIND ON TECHS IS OUT OF REACH. Lane rule of
+# 2026-11-17, under the operator's rule of 2026-11-10 ("restart when we know
+# we are not going to win; play games out until then"), for the seat whose
+# target is the science victory.
+#
+# The reading is `tech_standing`, the one the Domination rule's level-game
+# exemption already takes from every agent `state` record: the length of our
+# `techs` list over the highest `techs` count among `rivals`, the majors we
+# have met. From the policy's turn -- an Online turn, default
+# :data:`SCIENCE_BEHIND_FROM_TURN`, scaled to the game's speed by
+# `online_turns` -- :data:`SCIENCE_BEHIND_TURNS` readable game turns running
+# with that share under the policy's line retire the game. A record at or
+# above the line clears the count. One with no met rival, no rival count above
+# 0 or no `techs` list is not evidence either way, so a seat that has met
+# nobody is never retired by this rule.
+#
+# The line is CIVVIS_RESTART_SCIENCE_BEHIND_TECHS in
+# ~/.civvis-verification-policy (a share strictly between 0 and 1 such as
+# 0.70; 0, absent or anything else = off, the default), and the first turn is
+# CIVVIS_RESTART_SCIENCE_BEHIND_FROM_TURN (unset or invalid =
+# :data:`SCIENCE_BEHIND_FROM_TURN`). Both are read from the file at game
+# start, like every retire key here; no launcher forwards them.
+SCIENCE_BEHIND_POLICY_KEY = "CIVVIS_RESTART_SCIENCE_BEHIND_TECHS"
+SCIENCE_BEHIND_FROM_POLICY_KEY = "CIVVIS_RESTART_SCIENCE_BEHIND_FROM_TURN"
+SCIENCE_BEHIND_FROM_TURN = 150
+SCIENCE_BEHIND_TURNS = 3
+#: The start-of-game line's few words of evidence; the counts and where they
+#: were read are in `science_out_of_reach_reading`.
+SCIENCE_BEHIND_EVIDENCE = ("on 2026-11-17 all 16 wins by Science victory in the ledger "
+                           "had held 82% or more from turn 150")
+
+
+def parse_science_behind_share(value: str | None) -> float:
+    """The tech share under which a Science-lane game is retired, from `0.70`; 0 = off."""
+    if value is None or value == "":
+        return 0.0
+    try:
+        share = float(value)
+    except ValueError:
+        share = -1.0
+    if share == 0.0:
+        return 0.0
+    if not 0.0 < share < 1.0:  # also what `nan` reads as
+        print(f"[policy] ignoring {SCIENCE_BEHIND_POLICY_KEY}={value!r}: "
+              "not a share strictly between 0 and 1 such as 0.70", flush=True)
+        return 0.0
+    return share
+
+
+def science_behind_policy(path: Path | None = None) -> float:
+    """The policy's Science-lane tech share; 0 (off) when unset or invalid."""
+    return parse_science_behind_share(read_policy_value(SCIENCE_BEHIND_POLICY_KEY, path))
+
+
+def parse_science_behind_from_turn(value: str | None) -> int:
+    """The Online turn the Science-lane rule reads from; default 150."""
+    if value is None or value == "":
+        return SCIENCE_BEHIND_FROM_TURN
+    try:
+        turn = int(value)
+    except ValueError:
+        turn = 0
+    if turn < 1:
+        print(f"[policy] ignoring {SCIENCE_BEHIND_FROM_POLICY_KEY}={value!r}: "
+              f"not a turn number; the rule reads from turn {SCIENCE_BEHIND_FROM_TURN}",
+              flush=True)
+        return SCIENCE_BEHIND_FROM_TURN
+    return turn
+
+
+def science_behind_from_turn_policy(path: Path | None = None) -> int:
+    """The policy's first Online turn for the Science-lane rule; 150 when unset."""
+    return parse_science_behind_from_turn(
+        read_policy_value(SCIENCE_BEHIND_FROM_POLICY_KEY, path))
+
+
+def science_out_of_reach_line(args: argparse.Namespace) -> tuple[float, int]:
+    """The rule's share and its first turn at this game's speed; `(0.0, 0)` = off.
+
+    Off unless the seat targets the science victory and the policy names a
+    share. The resolved first turn is an Online turn, scaled here when `_play`
+    starts, not where `play` stores it, so a second `_play` on the same args
+    cannot scale it twice.
+    """
+    share = getattr(args, "restart_science_behind_techs", None) or 0.0
+    from_turn = getattr(args, "restart_science_behind_from_turn", None)
+    if from_turn is None:
+        from_turn = SCIENCE_BEHIND_FROM_TURN
+    if (not isinstance(share, float) or not 0.0 < share < 1.0
+            or not isinstance(from_turn, int) or isinstance(from_turn, bool) or from_turn <= 0
+            or getattr(args, "civvis_victory", None) != "science"):
+        return 0.0, 0
+    return share, online_turns(from_turn, getattr(args, "speed", None))
+
+
+def science_out_of_reach_notice(share: float, from_turn: int, speed: str | None) -> str:
+    """The start-of-game `[policy]` line for a Science seat; `from_turn` is the Online turn."""
+    return (f"[policy] a science game holding under {share * 100:g}% of the best met "
+            f"rival's techs for {SCIENCE_BEHIND_TURNS} turns running from turn "
+            f"{online_turns(from_turn, speed)} is retired (lane rule 2026-11-17: "
+            f"{SCIENCE_BEHIND_EVIDENCE}; from turn {from_turn} at Online, scaled to {speed})")
+
+
+def science_out_of_reach_reading(state: dict, event: dict,
+                                 share: float, from_turn: int) -> dict | None:
+    """Fold one record into the Science-lane tech watch; a verdict once the run holds.
+
+    `share` is the policy's line (0 is off) and `from_turn` is already at the
+    game's speed (see `science_out_of_reach_line`). `state` carries the run of
+    game turns under the line (`science_out_of_reach`). Returns None for
+    anything that is not a readable agent `state` record or calls nothing, else
+    `{"rule": "science_out_of_reach", "fires": True, ...}` with the turn, our
+    tech count, the best met rival's and the share.
+
+    Where a line of 0.70 comes from. Read on 2026-11-17 from the 4,958 rows of
+    ~/civvis-civ6-runs/civvis_ladder.jsonl (`tech_marks`: the first `state`
+    frame at or after turn 150), then replayed through this function over each
+    game's events on the ledger branch. Every game counted is Online speed.
+    - All 16 wins by Science victory (9 King, 2 Emperor, 2 Immortal, 3 Deity;
+      15 on six-player maps, one on a four-player map) held 0.82 or more at
+      turn 150, and none opened a later turn under 0.82 before it won. The
+      three Deity wins read 0.84, 0.84 and 0.95 at turn 150. The eight wins of
+      any kind on the Science lane that have a reading held 0.83 or more.
+      Replayed, the rule ends none of these games at any line up to 0.82.
+    - Of 257 Deity and Immortal Science-lane losses, 175 reached turn 150
+      with a reading: median 0.69, 91 (52%) under 0.70, 39 (22%) under 0.60.
+      Replayed at 0.70 over the 174 with events, the rule ends 97 (56%), 84
+      of them at turn 152, and saves 2,860 turns: 30 a retired game in the
+      median, up to 64, 9% of all the turns those 174 games played.
+    Sixteen wins are few, so 0.70 sits 0.12 under the lowest of them rather
+    than at it.
+    """
+    if (not isinstance(share, float) or not 0.0 < share < 1.0
+            or not isinstance(from_turn, int) or isinstance(from_turn, bool) or from_turn <= 0
+            or event.get("kind") != "state" or event.get("ctx") != "agent"):
+        return None
+    turn = event.get("turn")
+    if not isinstance(turn, int) or isinstance(turn, bool) or turn < from_turn:
+        return None
+    standing = tech_standing(event)
+    if standing is None:
+        return None
+    ours, best = standing
+    if ours / best >= share:
+        state.pop("science_out_of_reach", None)
+        return None
+    run = state.get("science_out_of_reach")
+    if run is None:
+        run = state["science_out_of_reach"] = {"since": turn, "last": turn, "turns": 1}
+    elif turn > run["last"]:
+        run["last"] = turn
+        run["turns"] += 1
+    if run["turns"] < SCIENCE_BEHIND_TURNS:
+        return None
+    return {
+        "rule": "science_out_of_reach",
+        "turn": turn,
+        "since": run["since"],
+        "from_turn": from_turn,
+        "turns": run["turns"],
+        "techs": ours,
+        "rival_techs": best,
+        "share": round(ours / best, 4),
+        "line": share,
         "fires": True,
     }
 
@@ -6041,6 +6219,15 @@ def play(args: argparse.Namespace) -> int:
         if no_capital_level > 0:
             print(f"[policy] ... unless it holds {no_capital_level:.0%} of the best "
                   "rival's techs or more: a level game plays on", flush=True)
+    # Lane rule 2026-11-17: see `science_out_of_reach_reading`. Off unless the
+    # host policy file names a share; `_play` reads both from `args`.
+    science_behind = science_behind_policy()
+    science_behind_from = science_behind_from_turn_policy()
+    args.restart_science_behind_techs = science_behind
+    args.restart_science_behind_from_turn = science_behind_from
+    if science_behind > 0 and getattr(args, "civvis_victory", None) == "science":
+        print(science_out_of_reach_notice(science_behind, science_behind_from,
+                                          getattr(args, "speed", None)), flush=True)
     if production_share > 0:
         speed = getattr(args, "speed", None)
         print(f"[policy] a game whose Production stays under {production_share:.0%} "
@@ -6775,6 +6962,7 @@ def _play(args: argparse.Namespace) -> int:
     religion_lost_rule = (bool(getattr(args, "restart_on_religion_lost", None))
                           and getattr(args, "civvis_victory", None) == "religious")
     no_capital_from = domination_no_capital_turn(args)
+    science_behind, science_behind_from = science_out_of_reach_line(args)
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
     # Bound the corpus before adding to it. See `prune_old_run_screenshots`.
@@ -7565,6 +7753,18 @@ def _play(args: argparse.Namespace) -> int:
                       f"since turn {reading['since']} ({reading['turns']} turns running "
                       f"from turn {reading['from_turn']}) — retiring so the next game "
                       "starts (operator 2026-11-10)", flush=True)
+                return abandon_with_retire(reading)
+        # Lane rule 2026-11-17: a Science-lane game far behind the best met
+        # rival's techs. See `science_out_of_reach_reading`.
+        if science_behind > 0:
+            reading = science_out_of_reach_reading(
+                state, event, science_behind, science_behind_from)
+            if reading is not None and reading.get("fires"):
+                print(f"[abandon] turn {reading['turn']}: {reading['techs']} techs "
+                      f"against the best met rival's {reading['rival_techs']} "
+                      f"({reading['share']:.0%}, under {reading['line'] * 100:g}% since "
+                      f"turn {reading['since']}) — retiring so the next game starts "
+                      "(lane rule 2026-11-17)", flush=True)
                 return abandon_with_retire(reading)
         verdict = below_leader_score_reading(
             state, event, args.restart_below_leader_ratio
