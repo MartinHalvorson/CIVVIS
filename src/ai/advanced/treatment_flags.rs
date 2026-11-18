@@ -594,6 +594,9 @@ impl AdvancedAi {
         /// Opt-in gene `upgrade-card-for-the-backlog`; see
         /// `advanced/upgrade_card_for_the_backlog.rs`.
         upgrade_card_for_the_backlog => enable_upgrade_card_for_the_backlog, disable_upgrade_card_for_the_backlog;
+        /// Opt-in gene `trade-district-follows-the-campus`; see
+        /// `advanced/trade_district_follows_the_campus.rs`.
+        trade_district_follows_the_campus => enable_trade_district_follows_the_campus, disable_trade_district_follows_the_campus;
     }
 
     toggles! {
