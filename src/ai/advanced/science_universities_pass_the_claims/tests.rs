@@ -193,7 +193,7 @@ fn the_university_passes_a_zone_and_a_hub_but_not_a_builder_granary_aqueduct_or_
         for passed in ["the Industrial Zone", "the Commercial Hub"] {
             assert_eq!(
                 details.iter().any(|detail| detail.starts_with(TAG)
-                    && detail.contains(&format!("University goes ahead of {passed}"))),
+                    && detail.contains(&format!("university goes ahead of {passed}"))),
                 gene,
                 "{details:?}"
             );
@@ -206,7 +206,7 @@ fn the_university_passes_a_zone_and_a_hub_but_not_a_builder_granary_aqueduct_or_
 #[test]
 fn every_city_claims_its_university_in_one_turn_only_with_the_gene() {
     for gene in [false, true] {
-        let (mut g, ranked, mut ai, plan) = board(15.0, gene);
+        let (mut g, ranked, ai, plan) = board(15.0, gene);
         for cid in &ranked {
             set_head(&mut g, *cid, &building("market"), 0.0);
         }
