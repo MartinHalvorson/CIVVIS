@@ -2608,6 +2608,11 @@ impl AdvancedAi {
         /// change; see `CivvisCongressRacer` in `CivvisControlAgent.lua`.
         science_seat_races_the_congress => enable_science_seat_races_the_congress,
             disable_science_seat_races_the_congress;
+        /// Opt-in gene `culture-and-religion-race-the-congress`: the same
+        /// live-only ballot change for a Culture or Religious seat; see
+        /// `CivvisCongressRacer` in `CivvisControlAgent.lua`.
+        culture_and_religion_race_the_congress => enable_culture_and_religion_race_the_congress,
+            disable_culture_and_religion_race_the_congress;
         /// Opt-in gene `capital-walls-at-any-ratio`; see
         /// [`Self::capital_walls_at_any_ratio`].
         capital_walls_at_any_ratio => enable_capital_walls_at_any_ratio, disable_capital_walls_at_any_ratio;

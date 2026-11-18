@@ -9669,6 +9669,11 @@ pub struct AdvancedAi {
     /// simulator never reads this field.
     #[allow(dead_code)]
     science_seat_races_the_congress: bool,
+    /// `culture-and-religion-race-the-congress`: a Culture or Religious
+    /// seat's Diplomatic Victory ballot runs the racer too. Live only, like
+    /// `science_seat_races_the_congress`: the simulator never reads it.
+    #[allow(dead_code)]
+    culture_and_religion_race_the_congress: bool,
     /// `science-seat-allies-2`: version one, and a Military Alliance asked
     /// before Diplomatic Service. See `advanced/culture_seat_allies.rs`.
     science_seat_allies_2: bool,
@@ -13123,6 +13128,7 @@ impl AdvancedAi {
             // ---- append: s-s ----------------------------------------
             science_seat_builds_the_statue: false,
             science_seat_races_the_congress: false,
+            culture_and_religion_race_the_congress: false,
             science_seat_allies_2: false,
             science_foundation_before_backlog: false,
             science_chain_crosses_window: false,

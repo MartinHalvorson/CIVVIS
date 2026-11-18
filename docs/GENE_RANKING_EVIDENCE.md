@@ -185,6 +185,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `capital-archers-before-the-surprise-2` | off (unmeasured) | Opt-in gene `capital-archers-before-the-surprise-2`, version two of `capital-archers-before-the-surprise`; see `advanced/capital_archers_before_the_surprise.rs`. | 1 \| 2 |
+| `culture-and-religion-race-the-congress` | off (unmeasured) | Opt-in gene `culture-and-religion-race-the-congress`: the same live-only ballot change for a Culture or Religious seat; see `CivvisCongressRacer` in `CivvisControlAgent.lua`. | 1 \| 1 |
 | `denial-spies-cover-every-racer` | off (unmeasured) | Opt-in gene `denial-spies-cover-every-racer`; see `advanced/denial_spies_cover_every_racer.rs`. | 1 \| 1 |
 | `denial-spies-fill-every-slot-2` | off (unmeasured) | Opt-in gene `denial-spies-fill-every-slot-2`, version two of `denial-spies-fill-every-slot`: a Score aim fills its slots too; see `advanced/denial_spies_fill_every_slot.rs`. | 1 \| 2 |
 | `deterrence-waits-for-the-income` | off (unmeasured) | Opt-in gene `deterrence-waits-for-the-income`; see `advanced/deterrence_waits_for_the_income.rs`. | 1 \| 1 |
