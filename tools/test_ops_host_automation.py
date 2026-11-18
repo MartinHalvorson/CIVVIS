@@ -739,6 +739,11 @@ class TheSwitchIsTheTrackedOne(unittest.TestCase):
             path.name for path in OPS.glob("*.sh")
             if "(running|terminal)" in path.read_text())
         self.assertEqual(accepting, [
+            # The interactive host's own child, started by nothing else and
+            # starting no game. Left out by #5167, it exited at once under
+            # `terminal` and the lane ran with no wedge watchdog for six days
+            # (tools/test_ops_wedge_watchdog.py).
+            "civvis-agent-wedge-watchdog.sh",
             "civvis-game-supervisor.sh",
             "civvis-interactive-host.sh",
             "civvis-verified-head-launcher.sh",
