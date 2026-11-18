@@ -9736,7 +9736,7 @@ fn naval_recon_early_exit_agrees_with_the_full_walk() {
             for (index, pos) in all.iter().enumerate() {
                 let ring = g.nbrs(*pos);
                 assert_eq!(
-                    charts.can_chart_from(&g, ring.clone()),
+                    charts.can_chart_from(&g, ring),
                     BasicAi::naval_recon_can_chart_from(&g, 0, ring),
                     "seed {seed} stage {stage} ring of {pos:?}: the remembered seas \
                          disagree with the walk"
