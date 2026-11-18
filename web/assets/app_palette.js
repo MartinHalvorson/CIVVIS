@@ -158,6 +158,10 @@ const HIDDEN_MAP_TALE_SCALE = 1.7,
       HIDDEN_MAP_TALE_SEPARATION_RANGE = 10;
 const PARCH = "#c7b58a", PARCH_LIGHT = "#dfcea2",
       PARCH_GRID = "#8a795533", PARCH_INK = "#6d5c3a";
+// The same parchment laid over a ball: the four stops of the planet's lit-from-
+// the-upper-left radial wash (at 0, .52, .88 and 1), so ground nobody has seen
+// is one sheet of paper whether a world is drawn as a chart or as a globe.
+const PARCH_SPHERE = [PARCH_LIGHT, PARCH, "#aa9364", "#77623f"];
 const FEATURE_LABEL = {
   forest:"Woods", jungle:"Rainforest", marsh:"Marsh", oasis:"Oasis",
   floodplains:"Desert Floodplains", grassland_floodplains:"Grassland Floodplains",
