@@ -239,7 +239,7 @@ impl Game {
             .resources
             .iter()
             .filter(|(_, spec)| spec.class == "luxury")
-            .filter(|(resource, _)| self.luxury_access_count(pid, resource, &held) > 0)
+            .filter(|(resource, spec)| self.luxury_access_count(pid, **resource, spec, &held) > 0)
             .map(|(resource, _)| *resource)
             .collect();
         if self.grants_city_state_unique_bonus(pid, "Zanzibar") {
@@ -248,7 +248,9 @@ impl Game {
         }
         if self.grants_city_state_unique_bonus(pid, "Buenos Aires") {
             for (resource, spec) in &self.rules.resources {
-                if spec.class == "bonus" && self.luxury_access_count(pid, resource, &held) > 0 {
+                if spec.class == "bonus"
+                    && self.luxury_access_count(pid, *resource, spec, &held) > 0
+                {
                     luxuries.insert(*resource);
                 }
             }
@@ -702,8 +704,14 @@ impl Game {
     /// city the player owns to count one resource. Anything that sweeps the
     /// whole luxury or strategic table was doing that walk twenty-odd times
     /// over for a set of answers one walk produces.
-    pub(super) fn connected_resource_census(&self, pid: usize) -> BTreeMap<&str, i32> {
-        let mut counts: BTreeMap<&str, i32> = BTreeMap::new();
+    ///
+    /// Keyed by interned name: its readers only ever ask it for one resource
+    /// at a time, never walk it, so a hashed id beats a string-ordered map.
+    pub(super) fn connected_resource_census(
+        &self,
+        pid: usize,
+    ) -> crate::fast_map::FastMap<Name, i32> {
+        let mut counts = crate::fast_map::FastMap::default();
         for city in self.cities.values().filter(|city| city.owner == pid) {
             for position in &city.owned_tiles {
                 let tile = &self.map.tiles[position];
@@ -711,7 +719,7 @@ impl Game {
                     continue;
                 };
                 if self.tile_connects_resource(tile, resource, *position == city.pos) {
-                    *counts.entry(resource.as_str()).or_insert(0) += 1;
+                    *counts.entry(resource).or_insert(0) += 1;
                 }
             }
         }
@@ -740,14 +748,23 @@ impl Game {
     /// strategic resources instead expose the integer amount in their stockpile.
     /// [`Self::resource_access_count`] for a luxury, with the two answers
     /// that do not depend on which luxury it is passed in.
-    fn luxury_access_count(&self, pid: usize, res: &str, held: &LuxuryHoldings) -> i32 {
-        let visible = self.resource_visible_to(pid, res);
-        let count = |census: &BTreeMap<&str, i32>| census.get(res).copied().unwrap_or(0);
+    /// `spec` is `res`'s own ruleset entry, so its visibility is read off it
+    /// rather than looked up by name again.
+    fn luxury_access_count(
+        &self,
+        pid: usize,
+        res: Name,
+        spec: &crate::rules::ResourceSpec,
+        held: &LuxuryHoldings,
+    ) -> i32 {
+        let visible = self.unlocked(pid, &spec.tech, &spec.civic);
+        let count =
+            |census: &crate::fast_map::FastMap<Name, i32>| census.get(&res).copied().unwrap_or(0);
         let ordinary = if visible {
             count(&held.own) + held.clients.iter().map(count).sum::<i32>()
         } else {
             0
-        } + self.resource_trade_balance(pid, res);
+        } + self.resource_trade_balance(pid, res.as_str());
         let shared = held
             .amani
             .as_ref()
