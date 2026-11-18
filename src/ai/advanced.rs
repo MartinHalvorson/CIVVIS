@@ -10539,6 +10539,11 @@ pub struct AdvancedAi {
     /// reaches it, and patronage opens thirty Online turns before the limit.
     /// See `advanced/score_sprints_to_the_tally.rs`. Opt-in.
     score_seat_sprints_to_the_tally_2: bool,
+    /// `shooters-man-the-capital`: with a war party or a siege engine in
+    /// sight of our original capital, the land shooters come home, stand in
+    /// and beside its City Center, and shoot a siege gun in their reach
+    /// first. See `advanced/shooters_man_the_capital.rs`. Off by default.
+    shooters_man_the_capital: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -12197,6 +12202,8 @@ mod science_victory_drive;
 mod settler_admission_journal;
 mod settler_departure;
 mod settler_path_clear;
+/// `shooters-man-the-capital`: see `advanced/shooters_man_the_capital.rs`.
+mod shooters_man_the_capital;
 /// `siege-shortfall-claims-the-projects`: see
 /// `advanced/siege_shortfall_projects.rs`.
 mod siege_shortfall_projects;

@@ -581,6 +581,9 @@ impl AdvancedAi {
         /// Opt-in gene `siege-guns-take-a-reachable-post`; see
         /// `advanced/siege_train/reachable_post.rs`.
         siege_guns_take_a_reachable_post => enable_siege_guns_take_a_reachable_post, disable_siege_guns_take_a_reachable_post;
+        /// Opt-in gene `shooters-man-the-capital`; see
+        /// `advanced/shooters_man_the_capital.rs`.
+        shooters_man_the_capital => enable_shooters_man_the_capital, disable_shooters_man_the_capital;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
