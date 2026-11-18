@@ -3457,7 +3457,8 @@ def _leader_field_labels(*expected: str) -> dict[str, str]:
     reader answered "not readable" for a field it had read perfectly, thirteen
     rounds running. Kristina, Gilgamesh, Ambiorix, Wilfrid Laurier and Mvemba
     a Nzinga verified the same day only because the two rosters happen to
-    spell those five alike.
+    spell those five alike; civvis-20261118T062541Z then looped on the eight
+    letters of "Theodora", whose Byzantium the simulator gives to Basil II.
 
     So the field knows every label the game ships (`LEADER_PICKER_LABELS`) and
     the one this launch asked for. The simulator's names stay: an install

@@ -6,10 +6,11 @@ field, the harness answered "leader value was not readable" for it, and the
 launch went round "setup could not be verified; backing out" thirteen times in
 5.5 minutes without starting a game.
 
-`fixtures/leader_field_eleanor_ocr.json` is what the harness's own Vision passes
-return for that launch's saved frame. It shows the cause was not the picture:
-the label is one observation, whole, in band. The reader only knew the names in
-the simulator's `data/civs.json`, where France has no Eleanor.
+`fixtures/leader_field_ocr.json` is what the harness's own Vision passes return
+for that launch's saved frame. It shows the cause was not the picture: the
+label is one observation, whole, in band. The reader only knew the names in the
+simulator's `data/civs.json`, where France has no Eleanor. The next launch but
+one, civvis-20261118T062541Z, did the same for "Theodora", eight letters long.
 
 Three things are held here: every shipped leader has its picker label (pinned
 to `data/civ6_leader_picker_labels.json`), the field reads back for any of
@@ -37,10 +38,11 @@ import civ6_leader_labels  # noqa: E402
 import civ6_play  # noqa: E402
 
 FIXTURE = json.loads((Path(__file__).resolve().parent / "fixtures"
-                      / "leader_field_eleanor_ocr.json").read_text(encoding="utf-8"))
+                      / "leader_field_ocr.json").read_text(encoding="utf-8"))
 DESKTOP = tuple(FIXTURE["desktop"])
 WINDOW = tuple(FIXTURE["window"])
-READS = FIXTURE["reads"]
+READS = FIXTURE["captures"]["eleanor_france"]
+THEODORA_READS = FIXTURE["captures"]["theodora"]
 ELEANOR = "Eleanor of Aquitaine (France)"
 
 # Every leader type a game on the verification host has seated, 2026-11-18:
@@ -146,6 +148,22 @@ class SavedEleanorFrameTests(unittest.TestCase):
         self.assertEqual(read_field(READS["window"], [])[0], ELEANOR)
         self.assertEqual(read_field([], READS["crop"])[0], ELEANOR)
 
+    def test_a_short_name_failed_the_same_way(self) -> None:
+        """Length was never the cause: launch civvis-20261118T062541Z asked for
+        LEADER_THEODORA and looped on the same answer. Byzantium's leader in
+        the simulator's roster is Basil II."""
+        self.assertEqual(THEODORA_READS["leader"], "LEADER_THEODORA")
+        for name in ("window", "crop"):
+            labels = [observation for observation in THEODORA_READS[name]
+                      if observation["text"] == "Theodora"]
+            self.assertEqual(len(labels), 1)
+            self.assertAlmostEqual(relative(labels[0])[2], 0.483, delta=0.002)
+        with mock.patch.dict(civ6_play.LEADER_PICKER_LABELS, clear=True):
+            self.assertIsNone(read_field(THEODORA_READS["window"], THEODORA_READS["crop"]))
+        self.assertEqual(read_field(THEODORA_READS["window"], THEODORA_READS["crop"],
+                                    civ6_play.leader_display_name("LEADER_THEODORA")),
+                         ("Theodora", (417, 201)))
+
     def test_a_requested_label_the_table_lacks_is_still_readable(self) -> None:
         """A leader from a pack this table has never seen resolves through the
         label the launch asked for."""
@@ -220,9 +238,9 @@ class SplitLabelTests(unittest.TestCase):
         self.assertAlmostEqual(joined[0]["x"] + joined[0]["width"],
                                meier["x"] + meier["width"], places=6)
         # Her label, whole in every read, is never rebuilt from pieces.
-        for read in READS.values():
+        for name in ("window", "crop", "leader_crop"):
             self.assertEqual(civ6_play._joined_label_observations(
-                read, {civ6_play._normalized_label(ELEANOR)}, DESKTOP), [])
+                READS[name], {civ6_play._normalized_label(ELEANOR)}, DESKTOP), [])
 
     def test_two_pieces_of_the_selected_row_read_back(self) -> None:
         whole = the_label(READS["leader_crop"])
