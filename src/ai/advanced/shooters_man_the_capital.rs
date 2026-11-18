@@ -279,28 +279,25 @@ impl AdvancedAi {
         pid: usize,
         reading: &ManReading,
     ) -> Vec<u32> {
-        let mut free: Vec<(i32, std::cmp::Reverse<(i32, i64)>, u32)> = g
+        let mut free: Vec<u32> = g
             .player_unit_ids(pid)
             .into_iter()
             .filter(|uid| self.man_free_shooter(g, pid, *uid, reading.home))
-            .map(|uid| {
-                let unit = &g.units[&uid];
-                let spec = &g.rules.units[unit.kind];
-                (
-                    g.wdist(unit.pos, reading.home),
-                    std::cmp::Reverse((
-                        g.unit_attack_range(uid),
-                        (spec.ranged_attack_strength() * 100.0) as i64,
-                    )),
-                    uid,
-                )
-            })
             .collect();
-        free.sort();
-        free.into_iter()
-            .take(reading.wanted)
-            .map(|(_, _, uid)| uid)
-            .collect()
+        free.sort_by_key(|uid| {
+            let unit = &g.units[uid];
+            let spec = &g.rules.units[unit.kind];
+            (
+                g.wdist(unit.pos, reading.home),
+                std::cmp::Reverse((
+                    g.unit_attack_range(*uid),
+                    (spec.ranged_attack_strength() * 100.0) as i64,
+                )),
+                *uid,
+            )
+        });
+        free.truncate(reading.wanted);
+        free
     }
 
     /// The watched siege gun `uid` can shoot from where it stands: the

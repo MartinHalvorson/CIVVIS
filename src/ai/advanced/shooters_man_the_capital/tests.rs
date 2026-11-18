@@ -126,6 +126,31 @@ fn west(home: Pos, g: &Game, steps: i32) -> Pos {
     row[0]
 }
 
+fn spawn_east(g: &mut Game, kind: &str, pid: usize, home: Pos, steps: i32) -> u32 {
+    let pos = east(home, g, steps);
+    spawn(g, kind, pid, pos)
+}
+
+fn spawn_west(g: &mut Game, kind: &str, pid: usize, home: Pos, steps: i32) -> u32 {
+    let pos = west(home, g, steps);
+    spawn(g, kind, pid, pos)
+}
+
+/// A unit on the lowest free tile `distance` from `home` and `from_other` or
+/// more from `other`.
+fn spawn_ring(
+    g: &mut Game,
+    kind: &str,
+    pid: usize,
+    home: Pos,
+    distance: i32,
+    other: Pos,
+    from_other: i32,
+) -> u32 {
+    let pos = tile_at(g, home, distance, other, from_other);
+    spawn(g, kind, pid, pos)
+}
+
 /// Every unit's (id, position, health, owner) and every city's: what a pass
 /// that did nothing leaves unchanged.
 fn board_print(g: &Game) -> Vec<(u32, Pos, i32, usize)> {
@@ -152,9 +177,9 @@ fn shooters_man_the_capital_ships_off_and_is_registered() {
 fn off_reads_nothing_and_leaves_the_board() {
     let (mut g, home) = watch_board();
     war(&mut g, 0, 1);
-    spawn(&mut g, "catapult", 1, east(home, &g, 2));
-    spawn(&mut g, "swordsman", 1, east(home, &g, 3));
-    spawn(&mut g, "archer", 0, west(home, &g, 4));
+    spawn_east(&mut g, "catapult", 1, home, 2);
+    spawn_east(&mut g, "swordsman", 1, home, 3);
+    spawn_west(&mut g, "archer", 0, home, 4);
     let mut ai = AdvancedAi::new();
     let before = board_print(&g);
     assert_eq!(ai.shooters_man_reading(&g, 0), None);
@@ -167,21 +192,21 @@ fn a_party_at_peace_is_watched_from_two_soldiers() {
     let (mut g, home) = watch_board();
     let ai = gene_on();
     assert_eq!(ai.shooters_man_reading(&g, 0), None, "an empty board");
-    spawn(&mut g, "swordsman", 1, east(home, &g, 5));
+    spawn_east(&mut g, "swordsman", 1, home, 5);
     assert_eq!(
         ai.shooters_man_reading(&g, 0),
         None,
         "one soldier at peace is a passer-by"
     );
     // A second soldier of ANOTHER major does not make a party.
-    let other = spawn(&mut g, "swordsman", 2, west(home, &g, 5));
+    let other = spawn_west(&mut g, "swordsman", 2, home, 5);
     assert_eq!(ai.shooters_man_reading(&g, 0), None);
     g.remove_unit(other);
     // A Scout, and a soldier beyond six tiles, are not counted.
-    spawn(&mut g, "scout", 1, east(home, &g, 4));
-    spawn(&mut g, "swordsman", 1, east(home, &g, 7));
+    spawn_east(&mut g, "scout", 1, home, 4);
+    spawn_east(&mut g, "swordsman", 1, home, 7);
     assert_eq!(ai.shooters_man_reading(&g, 0), None);
-    spawn(&mut g, "swordsman", 1, east(home, &g, 6));
+    spawn_east(&mut g, "swordsman", 1, home, 6);
     let reading = ai.shooters_man_reading(&g, 0).expect("a party of two");
     assert_eq!(reading.home, home);
     assert!(!reading.war);
@@ -203,14 +228,14 @@ fn an_engine_at_peace_calls_every_shooter() {
     for engine in ["catapult", "battering_ram", "siege_tower"] {
         let (mut g, home) = watch_board();
         let ai = gene_on();
-        let far = spawn(&mut g, engine, 1, east(home, &g, 9));
+        let far = spawn_east(&mut g, engine, 1, home, 9);
         assert_eq!(
             ai.shooters_man_reading(&g, 0),
             None,
             "{engine} nine tiles out"
         );
         g.remove_unit(far);
-        spawn(&mut g, engine, 1, east(home, &g, 8));
+        spawn_east(&mut g, engine, 1, home, 8);
         let reading = ai
             .shooters_man_reading(&g, 0)
             .unwrap_or_else(|| panic!("{engine} eight tiles out is watched"));
@@ -225,7 +250,7 @@ fn an_engine_at_peace_calls_every_shooter() {
 fn the_capital_alone_is_watched_and_only_what_we_see() {
     let (mut g, home) = watch_board();
     let ai = gene_on();
-    spawn(&mut g, "catapult", 1, east(home, &g, 3));
+    spawn_east(&mut g, "catapult", 1, home, 3);
     assert!(ai.shooters_man_reading(&g, 0).is_some());
     // Out of sight, nothing is read.
     let mut dark = g.clone();
@@ -246,20 +271,20 @@ fn war_is_watched_from_the_first_soldier_and_a_gun_is_the_target() {
     let (mut g, home) = watch_board();
     war(&mut g, 0, 1);
     let ai = gene_on();
-    spawn(&mut g, "warrior", 1, east(home, &g, 6));
+    spawn_east(&mut g, "warrior", 1, home, 6);
     let reading = ai.shooters_man_reading(&g, 0).expect("a soldier at war");
     assert!(reading.war);
     assert_eq!((reading.engines, reading.soldiers), (0, 1));
     assert_eq!(reading.wanted, MAN_GUARD_MIN);
-    let gun = spawn(&mut g, "catapult", 1, east(home, &g, 3));
+    let gun = spawn_east(&mut g, "catapult", 1, home, 3);
     let reading = ai.shooters_man_reading(&g, 0).expect("a gun at war");
     assert_eq!(reading.guns, vec![gun]);
     assert_eq!(reading.wanted, usize::MAX);
     // A barbarian is no party.
     let (mut g, home) = watch_board();
     if let Some(barb) = g.barb_pid {
-        spawn(&mut g, "warrior", barb, east(home, &g, 3));
-        spawn(&mut g, "warrior", barb, east(home, &g, 4));
+        spawn_east(&mut g, "warrior", barb, home, 3);
+        spawn_east(&mut g, "warrior", barb, home, 4);
         assert_eq!(ai.shooters_man_reading(&g, 0), None);
     }
 }
@@ -269,18 +294,18 @@ fn the_nearest_free_shooters_are_called() {
     let (mut g, home) = watch_board();
     let ai = gene_on();
     // A party of two: three shooters wanted.
-    spawn(&mut g, "swordsman", 1, east(home, &g, 5));
-    spawn(&mut g, "swordsman", 1, east(home, &g, 6));
+    spawn_east(&mut g, "swordsman", 1, home, 5);
+    spawn_east(&mut g, "swordsman", 1, home, 6);
     let far_side = east(home, &g, 6);
-    let near = spawn(&mut g, "archer", 0, tile_at(&g, home, 1, far_side, 6));
-    let mid = spawn(&mut g, "crossbowman", 0, tile_at(&g, home, 3, far_side, 7));
-    let out = spawn(&mut g, "archer", 0, tile_at(&g, home, 5, far_side, 8));
-    let farther = spawn(&mut g, "archer", 0, tile_at(&g, home, 7, far_side, 9));
+    let near = spawn_ring(&mut g, "archer", 0, home, 1, far_side, 6);
+    let mid = spawn_ring(&mut g, "crossbowman", 0, home, 3, far_side, 7);
+    let out = spawn_ring(&mut g, "archer", 0, home, 5, far_side, 8);
+    let farther = spawn_ring(&mut g, "archer", 0, home, 7, far_side, 9);
     // Not shooters of the capital: a Slinger (reach one), a Warrior, a
     // Catapult of ours, and an Archer holding another city of ours.
-    spawn(&mut g, "slinger", 0, tile_at(&g, home, 2, far_side, 6));
-    spawn(&mut g, "warrior", 0, tile_at(&g, home, 2, far_side, 6));
-    spawn(&mut g, "catapult", 0, tile_at(&g, home, 2, far_side, 6));
+    spawn_ring(&mut g, "slinger", 0, home, 2, far_side, 6);
+    spawn_ring(&mut g, "warrior", 0, home, 2, far_side, 6);
+    spawn_ring(&mut g, "catapult", 0, home, 2, far_side, 6);
     let second = tile_at(&g, home, 4, far_side, 8);
     g.found_city_for(0, second, None);
     let garrison = spawn(&mut g, "archer", 0, second);
@@ -293,8 +318,8 @@ fn the_nearest_free_shooters_are_called() {
     );
     // An engine calls every free shooter within twelve tiles, and still
     // not the other city's garrison.
-    spawn(&mut g, "catapult", 1, east(home, &g, 8));
-    let beyond = spawn(&mut g, "archer", 0, west(home, &g, 13));
+    spawn_east(&mut g, "catapult", 1, home, 8);
+    let beyond = spawn_west(&mut g, "archer", 0, home, 13);
     let reading = ai.shooters_man_reading(&g, 0).expect("an engine");
     let called = ai.shooters_man_called(&g, 0, &reading);
     assert_eq!(called, vec![near, mid, out, farther]);
@@ -306,14 +331,14 @@ fn at_peace_the_called_shooters_walk_home_and_hold() {
     let (mut g, home) = watch_board();
     let mut ai = gene_on();
     let party = [
-        spawn(&mut g, "swordsman", 1, east(home, &g, 5)),
-        spawn(&mut g, "swordsman", 1, east(home, &g, 6)),
+        spawn_east(&mut g, "swordsman", 1, home, 5),
+        spawn_east(&mut g, "swordsman", 1, home, 6),
     ];
     let far_side = east(home, &g, 6);
     let archers = [
-        spawn(&mut g, "archer", 0, tile_at(&g, home, 4, far_side, 8)),
-        spawn(&mut g, "archer", 0, tile_at(&g, home, 5, far_side, 9)),
-        spawn(&mut g, "archer", 0, tile_at(&g, home, 6, far_side, 10)),
+        spawn_ring(&mut g, "archer", 0, home, 4, far_side, 8),
+        spawn_ring(&mut g, "archer", 0, home, 5, far_side, 9),
+        spawn_ring(&mut g, "archer", 0, home, 6, far_side, 10),
     ];
     let mut distances: Vec<i32> = Vec::new();
     for _ in 0..4 {
@@ -356,8 +381,8 @@ fn a_gun_in_reach_is_shot_before_a_soldier() {
     // Our Archer holds the City Center. A Catapult stands two tiles east, and
     // a Warrior at 10 health (a certain kill) stands beside the centre.
     let archer = spawn(&mut g, "archer", 0, home);
-    let gun = spawn(&mut g, "catapult", 1, east(home, &g, 2));
-    let warrior = spawn(&mut g, "warrior", 1, west(home, &g, 1));
+    let gun = spawn_east(&mut g, "catapult", 1, home, 2);
+    let warrior = spawn_west(&mut g, "warrior", 1, home, 1);
     g.units.get_mut(&warrior).unwrap().hp = 10;
     let held = ai.plan_shooters_man_the_capital(&mut g, 0);
     assert!(held.contains(&archer));
@@ -380,7 +405,7 @@ fn without_a_gun_in_reach_it_takes_its_best_shot() {
     war(&mut g, 0, 1);
     let mut ai = gene_on();
     let archer = spawn(&mut g, "archer", 0, home);
-    let warrior = spawn(&mut g, "warrior", 1, east(home, &g, 2));
+    let warrior = spawn_east(&mut g, "warrior", 1, home, 2);
     let held = ai.plan_shooters_man_the_capital(&mut g, 0);
     assert!(held.contains(&archer));
     assert!(
@@ -434,7 +459,7 @@ fn a_shooter_far_out_walks_toward_the_capital_at_war() {
     let (mut g, home) = watch_board();
     war(&mut g, 0, 1);
     let mut ai = gene_on();
-    spawn(&mut g, "catapult", 1, east(home, &g, 3));
+    spawn_east(&mut g, "catapult", 1, home, 3);
     let start = west(home, &g, 6);
     let archer = spawn(&mut g, "archer", 0, start);
     let held = ai.plan_shooters_man_the_capital(&mut g, 0);
@@ -448,13 +473,13 @@ fn a_shooter_far_out_walks_toward_the_capital_at_war() {
 fn a_turn(on: bool) -> (Vec<i32>, i32) {
     let (mut g, home) = watch_board();
     war(&mut g, 0, 1);
-    let gun = spawn(&mut g, "catapult", 1, east(home, &g, 2));
-    spawn(&mut g, "swordsman", 1, east(home, &g, 3));
+    let gun = spawn_east(&mut g, "catapult", 1, home, 2);
+    spawn_east(&mut g, "swordsman", 1, home, 3);
     let far_side = east(home, &g, 3);
     let archers = [
-        spawn(&mut g, "archer", 0, tile_at(&g, home, 2, far_side, 4)),
-        spawn(&mut g, "archer", 0, tile_at(&g, home, 3, far_side, 5)),
-        spawn(&mut g, "archer", 0, tile_at(&g, home, 3, far_side, 5)),
+        spawn_ring(&mut g, "archer", 0, home, 2, far_side, 4),
+        spawn_ring(&mut g, "archer", 0, home, 3, far_side, 5),
+        spawn_ring(&mut g, "archer", 0, home, 3, far_side, 5),
     ];
     let mut ai = AdvancedAi::new();
     ai.enable_battle_planner_2();
