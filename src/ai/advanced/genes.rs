@@ -6171,6 +6171,13 @@ pub const GENES: &[Gene] = &[
     // `religion-seat-charts-the-rivals`; see
     // `advanced/religion_seat_seeks_the_unseen_rival.rs`.
     Gene { tag: "religion-seat-seeks-the-unseen-rival", field: "religion_seat_seeks_the_unseen_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_seeks_the_unseen_rival, disable: AdvancedAi::disable_religion_seat_seeks_the_unseen_rival },
+    // Live Deity Byzantium 2026-11-18 (094102Z): 910 to 1,671 Faith banked
+    // from t150 to the end under the two-Apostle cap lift, an Apostle near
+    // 950 and a Missionary 230. While a rival still owes our faith a majority
+    // the bank above the caps buys a spreader in every city that sells one,
+    // the most spread for its price. Opt-in; see
+    // `advanced/religion_seat_spends_the_whole_bank.rs`.
+    Gene { tag: "religion-seat-spends-the-whole-bank", field: "religion_seat_spends_the_whole_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_spends_the_whole_bank, disable: AdvancedAi::disable_religion_seat_spends_the_whole_bank },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and

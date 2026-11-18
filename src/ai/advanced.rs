@@ -9598,6 +9598,12 @@ pub struct AdvancedAi {
     /// lead. Live across frames, so a seeker stays one. See
     /// `advanced/religion_seat_seeks_the_unseen_rival.rs`.
     rival_seekers: RefCell<BTreeMap<u32, (Pos, bool)>>,
+    /// `religion-seat-spends-the-whole-bank`: while a rival still owes our
+    /// faith a majority, the Faith the corps caps leave banked buys spreaders
+    /// the same turn in every city that sells one, the most spread for its
+    /// price first. See `advanced/religion_seat_spends_the_whole_bank.rs`. Off
+    /// by default.
+    religion_seat_spends_the_whole_bank: bool,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -28000,6 +28006,9 @@ mod religion_seat_spares_the_launcher;
 /// `religion-seat-spends-the-bank`: see
 /// `advanced/religion_seat_spends_the_bank.rs`.
 mod religion_seat_spends_the_bank;
+/// `religion-seat-spends-the-whole-bank`: see
+/// `advanced/religion_seat_spends_the_whole_bank.rs`.
+mod religion_seat_spends_the_whole_bank;
 mod religion_seat_takes_the_debater;
 mod religious_interception;
 

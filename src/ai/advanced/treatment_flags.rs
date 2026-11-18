@@ -496,6 +496,10 @@ impl AdvancedAi {
         /// each met rival with no city on our map looks for it; see
         /// `advanced/religion_seat_seeks_the_unseen_rival.rs`.
         religion_seat_seeks_the_unseen_rival => enable_religion_seat_seeks_the_unseen_rival, disable_religion_seat_seeks_the_unseen_rival;
+        /// Opt-in gene `religion-seat-spends-the-whole-bank`: the Faith the
+        /// corps caps leave banked buys spreaders in every city that sells
+        /// one; see `advanced/religion_seat_spends_the_whole_bank.rs`.
+        religion_seat_spends_the_whole_bank => enable_religion_seat_spends_the_whole_bank, disable_religion_seat_spends_the_whole_bank;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
