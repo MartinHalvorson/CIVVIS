@@ -186,12 +186,33 @@ check("19 points: as A on us", requests[2].option .. "/" .. requests[2].selectio
 check("19 points: Public Relations takes four", requests[3].votes, 4)
 check("19 points: 204 of the 209 Favor is spent", spent, 180 + 24)
 
--- One point lower the ordinary counts stand (six and three), whatever the
--- Diplomatic Victory resolution took.
-spent, mode = run(209, 14, 17, 9)
-check("17 points: the treaty keeps its six or the free vote",
+-- Below the last stretch (`CivvisRacerEndgame`: 15 points on either side)
+-- the ordinary counts stand (six and three), whatever the Diplomatic Victory
+-- resolution took.
+spent, mode = run(209, 12, 14, 9)
+check("14 points: the ballot claims", mode, "race")
+check("14 points: the treaty keeps its six or the free vote",
     requests[2].votes == 6 or requests[2].votes == 1, true)
-check("17 points: Public Relations is never above three", requests[3].votes <= 3, true)
+check("14 points: Public Relations is never above three", requests[3].votes <= 3, true)
+-- From 16 the ballot braces (`DiploRacerGangSelf`), and a brace has no claim
+-- to save for: the bank, as at match point.
+spent, mode = run(209, 14, 17, 9)
+check("17 points: the ballot braces", mode, "brace")
+check("17 points: the Migration Treaty takes ten votes", requests[2].votes, 10)
+check("17 points: Public Relations takes four", requests[3].votes, 4)
+config.RacerEndgame = false
+spent, mode = run(209, 14, 17, 9)
+check("17 points, endgame off: the treaty keeps its six", requests[2].votes, 6)
+check("17 points, endgame off: Public Relations its three", requests[3].votes, 3)
+config.RacerEndgame = nil
+-- A warned brace below the last stretch (`CivvisRacerBraces`: 14 points and
+-- a rival's B on us the session before) has no claim to save for either.
+tally.wc_b_on_us = 6
+spent, mode = run(209, 12, 14, 9)
+check("warned at 14: the ballot braces", mode, "brace")
+check("warned at 14: the Migration Treaty takes ten votes", requests[2].votes, 10)
+check("warned at 14: Public Relations takes four", requests[3].votes, 4)
+tally.wc_b_on_us = nil
 
 -- Switched off at 19 points: the ordinary counts.
 config.RacerMatchPointBank = false
