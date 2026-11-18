@@ -2654,10 +2654,10 @@ struct PlannedRoute {
 /// Everything a player's luxury access is counted from, taken once rather
 /// than once per luxury: their own connected resources, those of the
 /// city-states they are suzerain of, and those of an Amani host.
-struct LuxuryHoldings<'a> {
-    own: BTreeMap<&'a str, i32>,
-    clients: Vec<BTreeMap<&'a str, i32>>,
-    amani: Option<BTreeMap<&'a str, i32>>,
+struct LuxuryHoldings {
+    own: crate::fast_map::FastMap<Name, i32>,
+    clients: Vec<crate::fast_map::FastMap<Name, i32>>,
+    amani: Option<crate::fast_map::FastMap<Name, i32>>,
 }
 
 /// Everything one Loyalty tick needs to apply atomically. Free Cities keep
