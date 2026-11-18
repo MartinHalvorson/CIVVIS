@@ -268,8 +268,7 @@ impl AdvancedAi {
             // priorities. Delay the city-wide projection until the late pass
             // where a posture switch can otherwise strand the Culture sink.
             && g.turn >= g.standard_duration(100)
-            && self.culture_lane_forecast_score_with(g, pid, true)
-                >= ADAPTIVE_CULTURE_SPENDING_SCORE
+            && self.culture_lane_forecast_reaches(g, pid, ADAPTIVE_CULTURE_SPENDING_SCORE)
     }
 
     fn adaptive_culture_lane_spends(
@@ -601,6 +600,30 @@ mod tests {
 
         let mut weak = g.clone();
         Arc::make_mut(&mut weak.observed_tourism_per_turn).insert(0, 20.0);
+        // The floor check stops pricing rivals early; it must still say
+        // exactly what the full score says, on either side of every floor.
+        for game in [&g, &weak] {
+            for seat in 0..game.players.len() {
+                let score = adaptive.culture_lane_forecast_score_with(game, seat, true);
+                for floor in [
+                    -1,
+                    0,
+                    1,
+                    30,
+                    ADAPTIVE_CULTURE_SPENDING_SCORE,
+                    score,
+                    score + 1,
+                    100,
+                    101,
+                ] {
+                    assert_eq!(
+                        adaptive.culture_lane_forecast_reaches(game, seat, floor),
+                        score >= floor,
+                        "seat {seat} score {score} floor {floor}"
+                    );
+                }
+            }
+        }
         assert!(!adaptive.adaptive_culture_spending_signal(&weak, 0));
         assert!(!adaptive.culture_lane_spends(&weak, 0, &plan));
 
