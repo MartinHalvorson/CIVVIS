@@ -5832,7 +5832,7 @@ impl Game {
         let Some(family) = self.rules.buildings[building.as_name()].district else {
             return true;
         };
-        if family == "city_center" {
+        if family == crate::name!("city_center") {
             return true;
         }
         let wanted = self.district_family(family);

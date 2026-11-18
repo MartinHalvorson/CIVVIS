@@ -113,6 +113,7 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `lane-policy-deck` | +13 [-16, +42] | 80.9% | off | +12.9 | 103,406 |
 | `war-economy` | +13 [-89, +115] | 60.1% | on | +12.4 | 116,162 |
 | `whole-turn-backtrack-guard` | +12 [-8, +31] | 88.2% | off | +11.8 | 96,625 |
+| `amenity-district-path` | +12 [-5, +28] | 91.2% | off | +11.5 | 83,886 |
 | `one-launch-pad` | +11 [-5, +28] | 91.6% | off | +11.4 | 81,761 |
 | `barbarian-ranged-answer` | +11 [-10, +32] | 85.1% | off | +10.9 | 126,996 |
 | `blind-objective-strength` | +11 [-10, +31] | 84.9% | off | +10.8 | 131,056 |
@@ -135,9 +136,9 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `enhancer-for-the-corps` | +3 [-21, +26] | 58.6% | off | +3.6 | 2,978,891 |
 | `settler-guard-holds` | +3 [-13, +19] | 65.5% | off | +3.4 | 1,871,682 |
 | `lane-space-race` | +1 [-22, +25] | 54.3% | off | +2.7 | 12,292,990 |
+| `amenity-project-preemption` | -1 [-26, +25] | 48.2% | on | +2.5 | 62,802,848 |
 | `power-the-laboratory` | +1 [-23, +24] | 52.0% | off | +2.2 | 57,902,647 |
 | `housing-research` | +0 [-22, +23] | 51.6% | off | +1.9 | 97,478,820 |
-| `amenity-project-preemption` | -1 [-26, +25] | 48.2% | off | +1.9 | 62,802,848 |
 | `religious-defence-scales` | -0 [-24, +24] | 49.1% | off | +1.8 | 290,353,107 |
 | `district-coverage` | +0 [-20, +20] | 50.8% | off | +1.5 | 558,338,216 |
 | `one-shot-recovery` | -2 [-25, +22] | 43.7% | off | +1.1 | 5,846,162 |
@@ -151,7 +152,6 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `naval-recon` | -3 [-19, +13] | 35.6% | off | +0.1 | 2,174,265 |
 | `apostle-promotion-by-role` | +6 [-15, +27] | 71.4% | on | +0.1 | 520,461 |
 | `barbarian-bargain` | +16 [-5, +38] | 93.3% | on | +0.0 | 32,522 |
-| `amenity-district-path` | +12 [-5, +28] | 91.2% | on | +0.0 | 83,886 |
 | `stranded-settler-discount` | +11 [-5, +27] | 90.8% | on | +0.0 | 93,635 |
 | `strike-opening` | +12 [-4, +29] | 92.5% | on | +0.0 | 65,525 |
 
@@ -184,26 +184,14 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
-| `capital-archers-before-the-surprise-2` | off (unmeasured) | Opt-in gene `capital-archers-before-the-surprise-2`, version two of `capital-archers-before-the-surprise`; see `advanced/capital_archers_before_the_surprise.rs`. | 1 \| 2 |
-| `denial-spies-cover-every-racer` | off (unmeasured) | Opt-in gene `denial-spies-cover-every-racer`; see `advanced/denial_spies_cover_every_racer.rs`. | 1 \| 1 |
-| `denial-spies-fill-every-slot-2` | off (unmeasured) | Opt-in gene `denial-spies-fill-every-slot-2`, version two of `denial-spies-fill-every-slot`: a Score aim fills its slots too; see `advanced/denial_spies_fill_every_slot.rs`. | 1 \| 2 |
-| `deterrence-waits-for-the-income` | off (unmeasured) | Opt-in gene `deterrence-waits-for-the-income`; see `advanced/deterrence_waits_for_the_income.rs`. | 1 \| 1 |
 | `diplo-seat-allies-every-friend` | off (unmeasured) | Opt-in gene `diplo-seat-allies-every-friend`; see `advanced/diplo_allies_every_friend.rs`. | 1 \| 1 |
 | `diplo-seat-claims-the-competition` | off (unmeasured) | Opt-in gene `diplo-seat-claims-the-competition`; see `advanced/diplo_competition_claim.rs`. | 1 \| 1 |
 | `diplo-seat-statue-civic-first` | off (unmeasured) | Opt-in gene `diplo-seat-statue-civic-first`; see `advanced/diplo_statue_harbor.rs`. | 1 \| 1 |
 | `diplo-seat-statue-is-the-finisher` | off (unmeasured) | Opt-in gene `diplo-seat-statue-is-the-finisher`; see `advanced/diplo_wonder_claim.rs`. | 1 \| 1 |
 | `four-faces-bars-the-surprise` | off (unmeasured) | Opt-in gene `four-faces-bars-the-surprise`; see `advanced/four_faces_bars_the_surprise.rs`. | 1 \| 1 |
-| `gun-resource-buys-the-tile` | off (unmeasured) | Opt-in gene `gun-resource-buys-the-tile`; see `advanced/gun_resource_tile.rs`. | 1 \| 1 |
-| `guns-keep-the-oil` | off (unmeasured) | Opt-in gene `guns-keep-the-oil`; see `advanced/guns_keep_the_oil.rs`. | 1 \| 1 |
-| `near-rival-deterrence-opens-early` | off (unmeasured) | Opt-in gene `near-rival-deterrence-opens-early`; see `advanced/near_rival_deterrence_opens_early.rs`. | 1 \| 1 |
 | `religion-seat-seeks-the-unseen-rival` | off (unmeasured) | Opt-in gene `religion-seat-seeks-the-unseen-rival`: each met rival whose cities we cannot see enough of has a spreader looking for them; see `advanced/religion_seat_seeks_the_unseen_rival.rs`. | 1 \| 1 |
 | `religion-seat-spends-the-whole-bank` | off (unmeasured) | Opt-in gene `religion-seat-spends-the-whole-bank`: the Faith the corps caps leave banked buys spreaders in every city that sells one; see `advanced/religion_seat_spends_the_whole_bank.rs`. | 1 \| 1 |
-| `score-seat-raises-wonders-3` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders-3`; version three of the family, so versions one and two are turned off. | 2 \| 3 |
-| `score-seat-sprints-to-the-tally` | off (unmeasured) | Opt-in gene `score-seat-sprints-to-the-tally`; see `advanced/score_sprints_to_the_tally.rs`. | — \| 2 |
-| `score-seat-sprints-to-the-tally-2` | off (unmeasured) | Opt-in gene `score-seat-sprints-to-the-tally-2`, version two of `score-seat-sprints-to-the-tally`: Great People priced with their Historic Moment, patronized with the idle currency from thirty Online turns before the limit. | — \| 2 |
 | `shooters-man-the-capital` | off (unmeasured) | Opt-in gene `shooters-man-the-capital`; see `advanced/shooters_man_the_capital.rs`. | 1 \| 1 |
-| `siege-guns-take-a-reachable-post` | off (unmeasured) | Opt-in gene `siege-guns-take-a-reachable-post`; see `advanced/siege_train/reachable_post.rs`. | 1 \| 1 |
-| `spared-soldiers-come-to-the-capital` | off (unmeasured) | Opt-in gene `spared-soldiers-come-to-the-capital`; see `advanced/spared_soldiers_come_to_the_capital.rs`. | 1 \| 1 |
 | `trade-district-follows-the-campus` | off (unmeasured) | Opt-in gene `trade-district-follows-the-campus`; see `advanced/trade_district_follows_the_campus.rs`. | 1 \| 1 |
 
 ## Removed from the code
@@ -379,4 +367,4 @@ So the rule, for whoever culls next. A cull is not the symmetric opposite of a d
 
 PR #3258 removes only `requisitions`: current rank 286, default off, P(>0) 1.8%, pooled win difference -1.95 percentage points, and recent batch columns -50/-53/-5. Its production and purchase consumer is deleted; the Objective Board shortfall API and `war-policy-via-board` remain. The original proposal also removed three genes whose evidence changed while the PR waited. `peace-when-the-war-does-not-pay` now ships on; it, `coalition-before-war-2`, and `naval-recon-2` remain intact. Historical reporting batches keep their measured rows with an explicit removed-code provenance note.
 
-_Generated by `tools/genes.py` from the ledger's sources: `2026-08-20-p4-native-6p-allseats-13446-pairs.json` (legacy, 26,892 seats), `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` (legacy, 2,000 seats), `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-p7-native-6p-allseats-15000-pairs.json` (legacy, 30,000 seats), `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` (legacy, 35,148 seats), `2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json` (legacy, 14,400 seats), `2026-08-22-standard-10k-6p-allseats-23622-pairs.json` (standard, 47,244 seats), `2026-08-23-g1-governor-victory-lanes-direct-6p-allseats-3600-pairs.json` (standard, 7,200 seats), `2026-08-24-standard-continuous-38160-total-seats.json` (standard, 38,160 seats). The fixed display batches are: `2026-11-18-standard-continuous-23172-total-seats-20261115T214454Z-ca2b.json` (23,172 seats), `2026-11-04-standard-continuous-30000-total-seats-20261025T100436Z-cea0.json` (30,000 seats), `2026-10-25-standard-continuous-18984-total-seats-20261015T072224Z-0cea.json` (18,984 seats). The deployment defaults live in `docs/gene_ledger.json`; the table's batch cells are published evidence; this reporting-only rotation retains the selected deployment defaults._
+_Generated by `tools/genes.py` from the ledger's sources: `2026-08-20-p4-native-6p-allseats-13446-pairs.json` (legacy, 26,892 seats), `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` (legacy, 2,000 seats), `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-p7-native-6p-allseats-15000-pairs.json` (legacy, 30,000 seats), `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` (legacy, 35,148 seats), `2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json` (legacy, 14,400 seats), `2026-08-22-standard-10k-6p-allseats-23622-pairs.json` (standard, 47,244 seats), `2026-08-23-g1-governor-victory-lanes-direct-6p-allseats-3600-pairs.json` (standard, 7,200 seats), `2026-08-24-standard-continuous-38160-total-seats.json` (standard, 38,160 seats). The fixed display batches are: `2026-11-18-standard-continuous-4314-total-seats-20261118T084332Z-3bf3.json` (4,314 seats), `2026-11-18-standard-continuous-23172-total-seats-20261115T214454Z-ca2b.json` (23,172 seats), `2026-11-04-standard-continuous-30000-total-seats-20261025T100436Z-cea0.json` (30,000 seats). The deployment defaults live in `docs/gene_ledger.json`; the table's batch cells are published evidence; this reporting-only rotation retains the selected deployment defaults._
