@@ -10,33 +10,41 @@
 //! holds a Market or a Lighthouse (`Game::trade_capacity`). The live ladder's
 //! last 329 Emperor, Immortal and Deity games held a capacity of 1 at turn 50
 //! in all 329, a median 1 at turn 100 (204 of 289 games) and a median 2 at
-//! turn 150. Three Deity games of 2026-11-18 (Kongo `civvis-20261118T045850Z`
-//! on the Science lane, Canada `T051842Z` and Sumeria `T053007Z` on the
-//! Diplomatic lane), read from the state rows and `why.log`:
+//! turn 150. Four Deity games of 2026-11-18 (Kongo `civvis-20261118T045850Z`
+//! on the Science lane; Canada `T051842Z`, Sumeria `T053007Z` and Hungary
+//! `T061033Z`, the day's one win, on the Diplomatic lane), read from the
+//! state rows and `why.log`:
 //!
 //! - **The trade district comes last or never.** Currency landed at turns
-//!   44-47 and the first Commercial Hub or Harbor was placed at turns 68, 94
-//!   and 110. Of 30 cities that could place one, 13 never did, and the 17 that
-//!   did waited a median 47 turns. Over those 1,931 city-turns the cities
-//!   trained soldiers and ships (21%), raised the Campus (12%) and its
-//!   buildings (12%), Builders (11%), Settlers (8%), a Granary, Walls, and an
-//!   Industrial Zone, Aqueduct or Theater Square (9%). The Hub's own step
-//!   (`commercial-hub-and-traders`) asks only an idle queue and stops at
-//!   three Hubs, and `commercial-hub-claims-a-peace-queue` serves the
-//!   Domination and Score seats alone.
-//! - **A standing district waits for its building.** Of the 15 cities that
-//!   finished a Commercial Hub or Harbor, 8 never built the Market or
-//!   Lighthouse (six of the eight Harbors: Mbanza Kongo's stood 94 turns from
-//!   turn 95, Ur's 72 from turn 122) and the other 7 took a median 9 turns
-//!   (Kingston 41, behind a 15-turn University and three soldiers). Those 462
-//!   city-turns went to soldiers (29%), Campus buildings (20%), other
-//!   buildings (13%) and a new Campus (12%). No claim names the Lighthouse.
-//! - **What a route paid.** An international route paid 3 Gold at turn 30-50,
-//!   3-6 at turn 75-100, and 6.3-9.2 Gold with about one each of Food,
-//!   Production, Science and Culture over the 412 route-turns after turn 100.
-//!   A domestic route paid 2-3 Food and 1-2 Production. Capacity went 1 to 3
-//!   at turns 147-149 in two of the games and net Gold went from 4-10 a turn
-//!   to 26-29 by turn 150.
+//!   44-57 and the first Commercial Hub or Harbor was placed at turns 65, 68,
+//!   94 and 110. Of 42 cities the host offered one, 22 never placed it (12 of
+//!   those were founded at turn 130 or later) and the 20 that did waited a
+//!   median 54 turns. Over those 2,716 city-turns the cities trained soldiers
+//!   and ships (20%), built Campus buildings (11%), Builders (11%), the
+//!   Campus (10%), Settlers (7%), a Granary or other housing (7%), Walls (6%)
+//!   and an Aqueduct, Industrial Zone or Theater Square (9%). A slot was not
+//!   the limit: 17 of 28 cities held a free specialty slot at turn 100. The
+//!   Hub's own step (`commercial-hub-and-traders`) asks only an idle queue
+//!   and stops at three Hubs, and `commercial-hub-claims-a-peace-queue`
+//!   serves the Domination and Score seats alone.
+//! - **A standing district waits for its building.** Of the 21 cities that
+//!   finished a Commercial Hub or Harbor, 10 never built the Market or
+//!   Lighthouse (Mbanza Kongo's Harbor stood 94 turns from turn 95, Ur's 72
+//!   from turn 122) and the other 11 took a median 9 turns and up to 67
+//!   (Kingston 41, behind a 15-turn University and three soldiers; the
+//!   winner's first Hub 43). Those 596 city-turns went to soldiers (24%),
+//!   Campus buildings (22%), a new Campus (12%) and other buildings (12%).
+//!   No claim names the Lighthouse.
+//! - **What a route paid.** An international route paid 3 Gold at turns
+//!   30-50 and 3-6 at turns 75-100; over the 586 international route-turns
+//!   the four games ran (most after turn 100) it paid 6.3-10.2 Gold a turn
+//!   with about one each of Production, Science and Culture. A domestic route
+//!   paid 2-4 Food and 1-3 Production. Capacity went 1 to 3 at turns 145-149
+//!   in two of the losses and net Gold from 4-10 a turn to 26-29 by turn 150.
+//! - **The winner was not trade-rich either.** Hungary held capacity 1 until
+//!   turn 119 and 4 from turn 137, on 17 Gold a turn at turn 100 and 63 at
+//!   turn 150. Early trade did not separate the win from the losses; the
+//!   gene is an income repair, to be judged on what the paired games measure.
 //!
 //! ## What the gene does
 //!

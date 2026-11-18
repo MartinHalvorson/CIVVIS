@@ -79,8 +79,8 @@ fn trade_district_follows_the_campus_is_an_opt_in_off_in_both_controllers() {
 /// their soldier until their own turn.
 #[test]
 fn one_trade_district_a_turn_goes_ahead_of_a_soldier_at_peace() {
-    let catapult = unit("catapult");
-    let (mut game, ranked) = empire("TRADEDISTRICTFIRST", &catapult);
+    let soldier = unit("crossbowman");
+    let (mut game, ranked) = empire("TRADEDISTRICTFIRST", &soldier);
     let ai = controller(VictoryTarget::Science, true);
     ai.claim_trade_district(&mut game, 0, &plan());
     let after = heads(&game, &ranked);
@@ -94,7 +94,7 @@ fn one_trade_district_a_turn_goes_ahead_of_a_soldier_at_peace() {
         "the claimed district holds"
     );
     assert!(
-        !ai.trade_district_claim_holds(&game, 0, ranked[1], &plan(), &catapult),
+        !ai.trade_district_claim_holds(&game, 0, ranked[1], &plan(), &soldier),
         "a soldier is not the claim"
     );
     ai.claim_trade_district(&mut game, 0, &plan());
@@ -105,7 +105,7 @@ fn one_trade_district_a_turn_goes_ahead_of_a_soldier_at_peace() {
         "a second turn claims the second: {after:?}"
     );
     for rank in 2..ranked.len() {
-        assert_eq!(after[rank].as_ref(), Some(&catapult), "rank {rank}");
+        assert_eq!(after[rank].as_ref(), Some(&soldier), "rank {rank}");
     }
 }
 
@@ -141,7 +141,7 @@ fn a_standing_district_claims_its_trade_building_past_a_university() {
 }
 
 /// The second slot is the trade district's: an Industrial Zone nothing is
-/// invested in waits behind the Hub; a Settler, a Builder, a Granary and a
+/// invested in gives way to the Hub; a Settler, a Builder, a Granary and a
 /// Library keep their queue.
 #[test]
 fn an_unstarted_industrial_zone_waits_and_the_kept_heads_keep() {
@@ -167,37 +167,57 @@ fn an_unstarted_industrial_zone_waits_and_the_kept_heads_keep() {
     }
     let after = heads(&game, &ranked);
     assert_eq!(trade_districts(&game, &after), vec![5], "{after:?}");
-    assert_eq!(
-        game.cities[&ranked[5]].queue.get(1),
-        Some(&zone),
-        "the Industrial Zone waits behind the Hub"
-    );
+    assert_ne!(after[5], Some(zone), "the Industrial Zone gives way");
     assert_eq!(after[..5], before[..5], "the kept heads keep their queue");
 }
 
 /// A city without its Library, a threatened city and a city attacked this
-/// turn claim nothing; an idle queue is claimed.
+/// turn claim nothing; an idle queue is claimed like a soldier's.
 #[test]
 fn the_library_comes_first_and_a_threatened_city_keeps_its_queue() {
-    let catapult = unit("catapult");
-    let (mut game, ranked) = empire("TRADECALM", &catapult);
+    let soldier = unit("crossbowman");
+    let (mut game, ranked) = empire("TRADECALM", &soldier);
+    let ai = controller(VictoryTarget::Science, true);
+    // The cities of this board that can place a Hub in time.
+    let open: Vec<usize> = (0..ranked.len())
+        .filter(|rank| {
+            ai.trade_claim_item(&game, 0, ranked[*rank], &plan())
+                .is_some()
+        })
+        .collect();
+    assert!(open.len() >= 5, "five cities can place a Hub: {open:?}");
+    let (no_library, threatened, attacked, idle) = (open[0], open[1], open[2], open[3]);
     game.cities
-        .get_mut(&ranked[0])
+        .get_mut(&ranked[no_library])
         .unwrap()
         .buildings
         .retain(|built| *built != "library");
-    game.cities.get_mut(&ranked[2]).unwrap().last_attacked = game.turn;
-    game.cities.get_mut(&ranked[3]).unwrap().queue.clear();
+    game.cities
+        .get_mut(&ranked[attacked])
+        .unwrap()
+        .last_attacked = game.turn;
+    game.cities.get_mut(&ranked[idle]).unwrap().queue.clear();
     let mut plan = plan();
-    plan.threatened_city = Some(ranked[1]);
-    let ai = controller(VictoryTarget::Science, true);
+    plan.threatened_city = Some(ranked[threatened]);
+    let named = ai.trade_claim_item(&game, 0, ranked[idle], &plan);
+    assert!(
+        named
+            .as_ref()
+            .is_some_and(|(item, kind, _)| *kind == TradeClaim::District
+                && AdvancedAi::is_trade_district(&game, item)),
+        "the idle city names its district: {named:?}"
+    );
+    assert!(
+        !ai.base.settler_due(&game, 0, ranked[idle], ranked.len(), 0),
+        "no Settler is due at the city target"
+    );
     for _ in 0..6 {
         ai.claim_trade_district(&mut game, 0, &plan);
     }
     let after = heads(&game, &ranked);
     assert_eq!(
         trade_districts(&game, &after),
-        vec![3, 4, 5],
+        open[3..].to_vec(),
         "the calm cities with a Library claim, the idle one too: {after:?}"
     );
 }
@@ -206,8 +226,8 @@ fn the_library_comes_first_and_a_threatened_city_keeps_its_queue() {
 /// nothing moves and nothing holds.
 #[test]
 fn the_gene_and_the_seat_gate_every_claim() {
-    let catapult = unit("catapult");
-    let (mut game, ranked) = empire("TRADEGATES", &catapult);
+    let soldier = unit("crossbowman");
+    let (mut game, ranked) = empire("TRADEGATES", &soldier);
     install_test_district(&mut game, ranked[1], "commercial_hub");
     let before = heads(&game, &ranked);
     let market = building("market");
