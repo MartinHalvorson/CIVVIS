@@ -7030,6 +7030,35 @@ pub struct AdvancedAi {
     /// well as a Culture or Domination one. See
     /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
     denial_spies_fill_every_slot_2: bool,
+    /// `deterrence-waits-for-the-income`: at peace, with no city threatened,
+    /// `near-rival-deterrence` trains no unit whose upkeep would put income
+    /// below -0.5 Gold a turn while the treasury is under Recovery's reserve
+    /// (100 + 25 a city). See `advanced/deterrence_waits_for_the_income.rs`.
+    /// Opt-in.
+    deterrence_waits_for_the_income: bool,
+    /// `diplo-seat-statue-civic-first`: a Diplomatic seat's civic goal is
+    /// Civil Engineering (the Statue of Liberty's civic) once a tier-two
+    /// government civic is in hand and the Statue's Harbor stands or is
+    /// queued. See `advanced/diplo_statue_harbor.rs`. Off by default.
+    diplo_seat_statue_civic_first: bool,
+    /// `diplo-seat-statue-is-the-finisher`: a racing seat starts the Statue
+    /// of Liberty at once, builds it to its last turn and holds it there
+    /// until its four points reach twenty. See
+    /// `advanced/diplo_wonder_claim.rs`. Off by default.
+    diplo_seat_statue_is_the_finisher: bool,
+    /// `diplo-seat-claims-the-competition`: a Diplomatic seat keeps one
+    /// scored competition's project (Send Aid, Training Athletes, Training
+    /// Astronauts) in production while the competition runs. See
+    /// `advanced/diplo_competition_claim.rs`. Off by default.
+    diplo_seat_claims_the_competition: bool,
+    /// `diplo-seat-allies-every-friend`: a Diplomatic seat asks every
+    /// declared friend for an alliance, a different kind each (each is one
+    /// Favor a turn). See `advanced/diplo_allies_every_friend.rs`. Off by
+    /// default.
+    diplo_seat_allies_every_friend: bool,
+    /// `diplo-seat-allies-every-friend`: its own asks by partner and kind, by
+    /// the turn asked; a partner's are dropped while its alliance stands.
+    diplo_ally_asks: BTreeMap<(usize, &'static str), u32>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11470,6 +11499,8 @@ mod denounce_only_to_declare;
 mod deterrence_stops_at_a_garrison;
 /// `deterrence-trusts-a-friend`: see `advanced/deterrence_trusts_a_friend.rs`.
 mod deterrence_trusts_a_friend;
+/// `deterrence-waits-for-the-income`: see `advanced/deterrence_waits_for_the_income.rs`.
+mod deterrence_waits_for_the_income;
 mod runaway_expander;
 // `found-against-a-rival-faith`. See `advanced/faith_veto.rs`.
 mod faith_veto;
@@ -11540,6 +11571,12 @@ mod culture_work_purchase;
 /// `curator-sits-with-the-works`: see `advanced/curator_sits_with_the_works.rs`.
 mod curator_sits_with_the_works;
 
+/// `diplo-seat-allies-every-friend`: see
+/// `advanced/diplo_allies_every_friend.rs`.
+mod diplo_allies_every_friend;
+/// `diplo-seat-claims-the-competition`: see
+/// `advanced/diplo_competition_claim.rs`.
+mod diplo_competition_claim;
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.
 mod diplo_statue_harbor;
 
@@ -21181,6 +21218,11 @@ impl AdvancedAi {
             let diplo_wonder_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.diplo_wonder_holds(g, pid, cid, plan, item));
+            // `diplo-seat-claims-the-competition`: the claimed competition
+            // project finishes while its competition still runs.
+            let diplo_competition_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.diplo_competition_holds(g, pid, cid, plan, item));
             // `culture-seat-monuments`: the claimed Monument finishes.
             // `culture-digs-every-site` and `great-works-never-wait`: the
             // claimed Archaeologist and slot building finish too.
@@ -21284,6 +21326,7 @@ impl AdvancedAi {
                     || capital_monument_commitment
                     || culture_theater_commitment
                     || diplo_wonder_commitment
+                    || diplo_competition_commitment
                     || culture_monument_commitment
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
@@ -21314,6 +21357,7 @@ impl AdvancedAi {
                     || capital_monument_commitment
                     || culture_theater_commitment
                     || diplo_wonder_commitment
+                    || diplo_competition_commitment
                     || culture_monument_commitment
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
@@ -27784,6 +27828,11 @@ impl AdvancedAi {
         // The last reading of the turn: what became of every decision, with
         // `Unit::acted` still saying what each unit did. Observes only.
         self.reconcile_commitments(g, pid);
+        // `diplo-seat-statue-is-the-finisher`: the last production writer. A
+        // finishing wonder at its last turn waits for the points that win, or
+        // takes its queue the turn they are there. Exact no-op while the gene
+        // is off. See `advanced/diplo_wonder_claim.rs`.
+        self.hold_the_diplo_finisher(g, pid);
         // `districts-price-the-improvement`: a fresh District on a Farm,
         // Mine or bonus resource moves to a clean site before the turn ends.
         self.resite_bulldozing_districts(g, pid);

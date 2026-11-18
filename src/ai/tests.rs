@@ -9729,7 +9729,18 @@ fn naval_recon_early_exit_agrees_with_the_full_walk() {
                 }
                 _ => {}
             }
+            // One `WaterwayCharts` for the whole stage, as one production
+            // question shares it: later starts read components earlier
+            // starts remembered.
+            let mut charts = super::naval::WaterwayCharts::new(&g, 0);
             for (index, pos) in all.iter().enumerate() {
+                let ring = g.nbrs(*pos);
+                assert_eq!(
+                    charts.can_chart_from(&g, ring),
+                    BasicAi::naval_recon_can_chart_from(&g, 0, ring),
+                    "seed {seed} stage {stage} ring of {pos:?}: the remembered seas \
+                         disagree with the walk"
+                );
                 // Every ninth tile, so the test covers land starts (which
                 // seed nothing) and water starts alike without walking a
                 // 540-tile map three times per seed.
@@ -9738,6 +9749,12 @@ fn naval_recon_early_exit_agrees_with_the_full_walk() {
                 }
                 let starts = std::iter::once(*pos).chain(g.nbrs(*pos));
                 let fused = BasicAi::naval_recon_can_chart_from(&g, 0, starts.clone());
+                assert_eq!(
+                    charts.can_chart_from(&g, starts.clone()),
+                    fused,
+                    "seed {seed} stage {stage} start {pos:?}: the remembered seas \
+                         disagree with the walk"
+                );
                 let waterway = BasicAi::naval_recon_waterway(&g, 0, starts);
                 let full = BasicAi::naval_recon_waterway_can_chart(&g, 0, &waterway);
                 assert_eq!(

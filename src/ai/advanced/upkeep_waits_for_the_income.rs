@@ -203,7 +203,7 @@ impl AdvancedAi {
     /// The threat reading [`Self::upkeep_waits_for`] takes for a city's own
     /// queue head in the governor: the plan's threatened city, or a city
     /// attacked within four turns.
-    fn upkeep_city_threatened(g: &Game, cid: u32, plan: &StrategicPlan) -> bool {
+    pub(super) fn upkeep_city_threatened(g: &Game, cid: u32, plan: &StrategicPlan) -> bool {
         plan.threatened_city == Some(cid)
             || g.cities.get(&cid).is_some_and(|city| {
                 city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4

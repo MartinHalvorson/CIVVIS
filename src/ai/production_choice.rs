@@ -138,6 +138,8 @@ impl BasicAi {
         if !Self::unseen_water_remains(g, pid) {
             return false;
         }
+        // Every hull and every city below asks about the same seas.
+        let mut charts = super::naval::WaterwayCharts::new(g, pid);
         let naval_eyes = g
             .units
             .values()
@@ -146,7 +148,7 @@ impl BasicAi {
                     && g.rules.units[unit.kind].class == "military"
                     && g.rules.units[unit.kind].domain.as_deref() == Some("sea")
                     && unit.linked_to.is_none()
-                    && Self::naval_recon_ship_can_chart(g, pid, unit.id)
+                    && Self::naval_recon_ship_can_chart_charted(g, unit.id, &mut charts)
             })
             .count();
         // A ship already in a viable coastal queue is the arm being rebuilt.
@@ -155,7 +157,7 @@ impl BasicAi {
         let queued_naval_eyes = g
             .player_city_ids(pid)
             .into_iter()
-            .filter(|cid| Self::city_has_naval_recon_launch(g, pid, *cid))
+            .filter(|cid| Self::city_has_naval_recon_launch_charted(g, *cid, &mut charts))
             .flat_map(|cid| g.cities[&cid].queue.iter())
             .filter(|item| {
                 matches!(item,
@@ -184,7 +186,7 @@ impl BasicAi {
         }
         g.player_city_ids(pid)
             .into_iter()
-            .any(|cid| Self::city_has_naval_recon_launch(g, pid, cid))
+            .any(|cid| Self::city_has_naval_recon_launch_charted(g, cid, &mut charts))
     }
 
     /// The cheapest ship this city can lay down. Exploration wants a hull

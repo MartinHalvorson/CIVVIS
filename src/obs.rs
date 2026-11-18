@@ -1,5 +1,6 @@
 //! JSON observation builder (fog-of-war view for a player) — feeds the GUI
 //! and any external agent speaking the JSON protocol.
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -302,6 +303,9 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         }
     }
     let revealed = revealed_resources(g, pid, omniscient);
+    let marks_asked = tile_marks_asked();
+    let as_marks = marks_asked.is_some();
+    let mut tile_docs: Vec<TileDoc> = Vec::new();
     let tiles: Vec<Value> = explored
         .iter()
         .filter_map(|pos| {
@@ -327,6 +331,19 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                     .max_by_key(|(_, seen)| *seen)?;
                 (&memory.tile, memory.owner)
             };
+            let planned = planned.get(pos).copied().filter(|_| live);
+            if as_marks {
+                tile_docs.push(tile_doc(
+                    g,
+                    tile,
+                    owner,
+                    &revealed,
+                    live,
+                    &tourism_by_tile,
+                    planned,
+                ));
+                return None;
+            }
             Some(tile_json(
                 g,
                 tile,
@@ -334,10 +351,33 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 &revealed,
                 live,
                 &tourism_by_tile,
-                planned.get(pos).copied().filter(|_| live),
+                planned,
             ))
         })
         .collect();
+    let mut camps_from_docs: Vec<Value> = Vec::new();
+    if let Some(held) = marks_asked {
+        let marks: Vec<u64> = tile_docs.iter().map(tile_mark::mark_of).collect();
+        let held = held.filter(|held| held.len() == marks.len());
+        let values = tile_docs
+            .iter()
+            .enumerate()
+            .map(|(at, doc)| {
+                if doc
+                    .improvement
+                    .is_some_and(|improvement| improvement == "barbarian_camp")
+                {
+                    camps_from_docs.push(json!(doc.pos));
+                }
+                held.as_ref()
+                    .is_none_or(|held| held[at] != marks[at])
+                    .then(|| serde_json::to_value(doc).unwrap_or(Value::Null))
+            })
+            .collect();
+        TILE_MARKS.with(|slot| {
+            *slot.borrow_mut() = Some(MarkRequest::Answered(FrameTileMarks { marks, values }))
+        });
+    }
     let mut known_units: BTreeMap<u32, &Unit> = g
         .units
         .values()
@@ -469,11 +509,15 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             KnownCity::Live(city) => live_city_json(g, pid, city, omniscient, &vis),
         })
         .collect();
-    let camps: Vec<Value> = tiles
-        .iter()
-        .filter(|tile| tile["improvement"] == "barbarian_camp")
-        .map(|tile| tile["pos"].clone())
-        .collect();
+    let camps: Vec<Value> = if as_marks {
+        camps_from_docs
+    } else {
+        tiles
+            .iter()
+            .filter(|tile| tile["improvement"] == "barbarian_camp")
+            .map(|tile| tile["pos"].clone())
+            .collect()
+    };
     let leading_score = g
         .players
         .iter()
@@ -1711,6 +1755,135 @@ fn revealed_resources(g: &Game, pid: usize, omniscient: bool) -> BTreeSet<&str> 
         .collect()
 }
 
+/// One tile of a frame document, typed: the document's keys, in the sorted
+/// order `serde_json`'s map gives them, each holding the value `json!` used to
+/// be handed. So `to_value` of it is the tile's `Value`, and its serialized
+/// bytes parse back to that same `Value` (the same `Serialize` impls, and
+/// numbers round-trip).
+#[derive(Serialize)]
+struct TileDoc<'a> {
+    adjacency: Option<Vec<crate::game::AdjacencySource>>,
+    appeal: Option<i32>,
+    cliff_edges: [bool; 6],
+    coastal_lowland: u8,
+    continent: Option<usize>,
+    disaster_yields: DisasterDoc,
+    district: Option<Name>,
+    district_yields: Option<crate::rules::Yields>,
+    drought: bool,
+    fallout_until: u32,
+    feature: Option<Name>,
+    flooded: bool,
+    hills: bool,
+    improvement: Option<Name>,
+    owner: Option<usize>,
+    owner_city: Option<u32>,
+    owner_city_name: Option<&'a str>,
+    pillaged: bool,
+    planned_district: Option<PlannedDoc<'a>>,
+    pos: [i32; 2],
+    resource: Option<&'a str>,
+    river: bool,
+    river_edges: [bool; 6],
+    road: u8,
+    storm: &'a Option<String>,
+    submerged: bool,
+    terrain: Name,
+    tourism: Option<f64>,
+    wonder: Option<Name>,
+    yields: Option<crate::rules::Yields>,
+}
+
+#[derive(Serialize)]
+struct DisasterDoc {
+    faith: f64,
+    food: f64,
+    production: f64,
+}
+
+#[derive(Serialize)]
+struct PlannedDoc<'a> {
+    adjacency: Vec<crate::game::AdjacencySource>,
+    district: &'a str,
+    yields: crate::rules::Yields,
+}
+
+fn tile_doc<'a>(
+    g: &'a Game,
+    tile: &'a Tile,
+    owner: Option<usize>,
+    revealed: &BTreeSet<&str>,
+    live: bool,
+    tourism_by_tile: &BTreeMap<Pos, f64>,
+    planned: Option<&'a str>,
+) -> TileDoc<'a> {
+    let resource = tile
+        .resource
+        .as_deref()
+        .filter(|resource| revealed.contains(resource));
+    let (district_yields, adjacency) = tile
+        .district
+        .filter(|district| live && g.rules.districts.contains_key(district.as_str()))
+        .map(|district| {
+            (
+                Some(g.district_yields(Name::new(district.as_str()), tile.pos)),
+                Some(g.district_adjacency_sources(Name::new(district.as_str()), tile.pos)),
+            )
+        })
+        .unwrap_or((None, None));
+    let planned_district = planned
+        .filter(|district| tile.district.is_none() && g.rules.districts.contains_key(district))
+        .map(|district| PlannedDoc {
+            adjacency: g.district_adjacency_sources(Name::new(district), tile.pos),
+            district,
+            yields: g.district_yields(Name::new(district), tile.pos),
+        });
+    let owner_city_name = live
+        .then(|| {
+            tile.owner_city
+                .and_then(|city| g.cities.get(&city))
+                .map(|city| city.name.as_str())
+        })
+        .flatten();
+    TileDoc {
+        adjacency,
+        appeal: live.then(|| g.tile_appeal(tile.pos)),
+        cliff_edges: tile.cliff_edges,
+        coastal_lowland: tile.coastal_lowland,
+        continent: tile.continent,
+        disaster_yields: DisasterDoc {
+            faith: tile.disaster_faith,
+            food: tile.disaster_food,
+            production: tile.disaster_production,
+        },
+        district: tile.district,
+        district_yields,
+        drought: tile.drought,
+        fallout_until: tile.fallout_until,
+        feature: tile.feature,
+        flooded: tile.flooded,
+        hills: tile.hills,
+        improvement: tile.improvement,
+        owner,
+        owner_city: tile.owner_city,
+        owner_city_name,
+        pillaged: tile.pillaged,
+        planned_district,
+        pos: [tile.pos.0, tile.pos.1],
+        resource,
+        river: tile.has_river(),
+        river_edges: tile.river_edges,
+        road: tile.road,
+        storm: &tile.storm,
+        submerged: tile.submerged,
+        terrain: tile.terrain,
+        tourism: live.then(|| round1(tourism_by_tile.get(&tile.pos).copied().unwrap_or(0.0))),
+        wonder: tile.wonder,
+        yields: (live && g.map.tiles.contains_key(&tile.pos))
+            .then(|| g.workable_tile_yields(tile.pos)),
+    }
+}
+
 fn tile_json(
     g: &Game,
     tile: &Tile,
@@ -1720,131 +1893,87 @@ fn tile_json(
     tourism_by_tile: &BTreeMap<Pos, f64>,
     planned: Option<&str>,
 ) -> Value {
-    let resource = tile
-        .resource
-        .as_deref()
-        .filter(|resource| revealed.contains(resource));
-    // Adjacency is read off the *current* neighbors, so it may only be sent
-    // for a tile being looked at right now. A remembered district would
-    // otherwise report yields from tiles the player cannot see.
-    let district_yields = tile
-        .district
-        .filter(|district| live && g.rules.districts.contains_key(district.as_str()))
-        .map(|district| {
-            (
-                g.district_yields(Name::new(district.as_str()), tile.pos),
-                g.district_adjacency_sources(Name::new(district.as_str()), tile.pos),
-            )
-        });
-    let (district_yields, adjacency) = match district_yields {
-        Some((yields, sources)) => (json!(yields), json!(sources)),
-        None => (Value::Null, Value::Null),
-    };
-    // A district still in the production queue reports what its site would pay
-    // today — the figure a player is actually deciding on.
-    let planned = planned
-        .filter(|district| tile.district.is_none() && g.rules.districts.contains_key(district))
-        .map(|district| {
-            json!({
-                "district": district,
-                "yields": g.district_yields(Name::new(district), tile.pos),
-                "adjacency": g.district_adjacency_sources(Name::new(district), tile.pos),
-            })
-        })
-        .unwrap_or(Value::Null);
-    // Appeal is read off the *current* neighbours, exactly like adjacency
-    // above, so a remembered tile does not report a figure its owner has since
-    // changed — and the walk is paid for the tiles in sight, not for the whole
-    // explored map.
-    let appeal = if live {
-        json!(g.tile_appeal(tile.pos))
-    } else {
-        Value::Null
-    };
-    // A visible border identifies the city that owns it. Remembered tiles
-    // retain only the city id, so a client may join it to a city the viewer
-    // already knows without learning a current name through fog of war.
-    let owner_city_name = live
-        .then(|| {
-            tile.owner_city
-                .and_then(|city| g.cities.get(&city))
-                .map(|city| city.name.as_str())
-        })
-        .flatten();
-    // ★★★★★ THE ENGINE'S OWN NUMBER FOR THIS PLOT, SO THE BOARD CANNOT DISAGREE
-    // WITH THE GAME IT IS DRAWING.
-    //
-    // The client used to derive the pips and the tooltip itself — terrain plus
-    // Hills plus feature plus resource plus improvement, read out of the shipped
-    // ruleset. That sum is not what a citizen collects, and it is silently short
-    // by every term the ground carries and the catalogue does not:
-    //
-    //   - the fertility a flood or an eruption left behind (`disaster_yields`,
-    //     exported here since the disasters shipped and never once added up);
-    //   - the host's own per-plot reading on a mirrored board
-    //     (`observed_tile_yield_adjustments`), which is the only place a live
-    //     game's Volcanic Soil is written down at all;
-    //   - a neighbouring feature's `adjacent_yields` (Vesuvius, Yosemite);
-    //   - drought's -1 Food, and the nothing-at-all a flooded, irradiated or
-    //     just-placed-district plot pays;
-    //   - a pillaged improvement, which the client paid in full.
-    //
-    // The operator's report was a 3 Food 3 Production tile on the live map that
-    // the board drew as 2 Food 2 Production, after a volcano went off beside it.
-    // `Game::workable_tile_yields` is the function the citizen planner and the
-    // city's own yields go through, so publishing it is what makes the two agree
-    // by construction instead of by two catalogues staying in step.
-    //
-    // ⚠ GROUND ONLY — no district, no wonder. `Rules::worked_tile_yields`
-    // stops at the improvement and the client adds `district_yields`,
-    // `planned_district` and the wonder on top; sending a total that already
-    // held them would count them twice.
-    //
-    // Live tiles only, for the same reason as `appeal` and `adjacency` above: a
-    // remembered tile is a copy of what the seat once saw, and the engine's
-    // answer is about the plot as it stands now.
-    let yields = if live && g.map.tiles.contains_key(&tile.pos) {
-        json!(g.workable_tile_yields(tile.pos))
-    } else {
-        Value::Null
-    };
-    json!({
-        "pos": [tile.pos.0, tile.pos.1],
-        "terrain": tile.terrain,
-        "yields": yields,
-        "appeal": appeal,
-        "tourism": live.then(|| round1(tourism_by_tile.get(&tile.pos).copied().unwrap_or(0.0))),
-        "feature": tile.feature,
-        "hills": tile.hills,
-        "resource": resource,
-        "improvement": tile.improvement,
-        "pillaged": tile.pillaged,
-        "district": tile.district,
-        "district_yields": district_yields,
-        "adjacency": adjacency,
-        "planned_district": planned,
-        "wonder": tile.wonder,
-        "owner": owner,
-        "owner_city": tile.owner_city,
-        "owner_city_name": owner_city_name,
-        "river": tile.has_river(),
-        "river_edges": tile.river_edges,
-        "road": tile.road,
-        "cliff_edges": tile.cliff_edges,
-        "continent": tile.continent,
-        "coastal_lowland": tile.coastal_lowland,
-        "flooded": tile.flooded,
-        "submerged": tile.submerged,
-        "drought": tile.drought,
-        "storm": tile.storm,
-        "fallout_until": tile.fallout_until,
-        "disaster_yields": {
-            "food": tile.disaster_food,
-            "production": tile.disaster_production,
-            "faith": tile.disaster_faith,
-        },
+    serde_json::to_value(tile_doc(
+        g,
+        tile,
+        owner,
+        revealed,
+        live,
+        tourism_by_tile,
+        planned,
+    ))
+    .unwrap_or(Value::Null)
+}
+
+/// A frame's tiles for delivery: every tile's mark, and the tile itself as a
+/// `Value` for each tile the frame sends.
+///
+/// ★★★ A FRAME BUILT EVERY TILE'S JSON TO SEND THE FEW THAT CHANGED. A page is
+/// sent only the tiles whose mark moved since the frame it holds, but marking
+/// them meant building every tile as a `serde_json::Value` (thirty-one keys,
+/// each an allocated string in a tree) and walking it, every frame: on a whole
+/// site game the frame document was 10.8% of the engine thread. Now each tile
+/// is marked straight off its typed document (`tile_mark::mark_of`), and a
+/// `Value` is built only for a tile whose mark differs from the one the page
+/// holds, or for every tile when the page holds none.
+pub(crate) struct FrameTileMarks {
+    pub(crate) marks: Vec<u64>,
+    values: Vec<Option<Value>>,
+}
+
+impl FrameTileMarks {
+    /// The tile at `at` as the document carries it. Built for every tile the
+    /// frame sends, as decided by the marks the page was found to hold.
+    pub(crate) fn take(&mut self, at: usize) -> Value {
+        self.values[at].take().unwrap_or(Value::Null)
+    }
+}
+
+enum MarkRequest {
+    /// The marks of the tiles the page holds, if it holds a frame.
+    Asked(Option<Vec<u64>>),
+    Answered(FrameTileMarks),
+}
+
+thread_local! {
+    static TILE_MARKS: std::cell::RefCell<Option<MarkRequest>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Run `observe` with the first observation it makes marking its tiles into
+/// [`FrameTileMarks`] (and leaving the document's `map.tiles` empty), given the
+/// marks of the tiles the page holds (`held`, `None` when it holds none or
+/// cannot be sent a patch). A tile is built as a `Value` when the page holds
+/// no tiles, holds a different number of them, or holds a different mark for
+/// it: exactly the tiles a delivery comparing the same marks sends.
+pub(crate) fn with_tile_marks<T>(
+    held: Option<Vec<u64>>,
+    observe: impl FnOnce() -> T,
+) -> (T, Option<FrameTileMarks>) {
+    TILE_MARKS.with(|slot| *slot.borrow_mut() = Some(MarkRequest::Asked(held)));
+    let answer = observe();
+    let tiles = TILE_MARKS.with(|slot| match slot.borrow_mut().take() {
+        Some(MarkRequest::Answered(tiles)) => Some(tiles),
+        _ => None,
+    });
+    (answer, tiles)
+}
+
+/// The held marks, if this observation is the first asked to mark its tiles.
+fn tile_marks_asked() -> Option<Option<Vec<u64>>> {
+    TILE_MARKS.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        match slot.take() {
+            Some(MarkRequest::Asked(held)) => Some(held),
+            other => {
+                *slot = other;
+                None
+            }
+        }
     })
 }
+
+mod tile_mark;
 
 struct PublicCity<'a> {
     id: u32,

@@ -181,7 +181,8 @@ end
 -- A Diplomatic racer: `selection` is zero-based, so Melee is 1, the Scientist
 -- 4 and Fascism 6. Military Advisory's three votes cost 12 Favor and are
 -- bought; Patronage's ten and World Ideology's fifteen are over the 60 cap,
--- so those two carry the free vote. Urban Development is untouched.
+-- so those two carry the free vote. Urban Development keeps its first
+-- target, with the four votes it takes now.
 local racerBallot = ballot("diplomatic", nil)
 check("racer: military advisory is A on Melee with three votes",
     racerBallot.WC_RES_MILITARY_ADVISORY, "1/1x3")
@@ -190,7 +191,7 @@ check("racer: patronage is A on the Scientist with the free vote",
 check("racer: world ideology is A on Fascism with the free vote",
     racerBallot.WC_RES_WORLD_IDEOLOGY, "1/6x1")
 check("racer: urban development keeps the first target",
-    racerBallot.WC_RES_URBAN_DEVELOPMENT, "1/0x3")
+    racerBallot.WC_RES_URBAN_DEVELOPMENT, "1/0x4")
 
 -- Switched off, the racer votes as it did: the first target each time.
 local offBallot = ballot("diplomatic", false)

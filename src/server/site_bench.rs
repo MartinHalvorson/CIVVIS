@@ -24,7 +24,7 @@ use std::time::Instant;
 
 use serde_json::Value;
 
-use super::{spectator_step_completes_frame, stock_opening_params, tile_mark, Session};
+use super::{spectator_step_completes_frame, stock_opening_params, FrameTiles, Session};
 use crate::ai::SiteShortcuts;
 
 /// Where a game's cost is reported. The bands are narrow early because the
@@ -143,27 +143,22 @@ fn checkpoint(session: &Session) -> Checkpoint {
 /// The document one frame sends: the state, what the agents thought since the
 /// page last asked, and the tiles that changed since the frame it holds.
 fn frame_document(session: &Session, marks: &mut Option<Vec<u64>>, cursor: &mut u64) -> String {
-    let mut document = session.state();
+    let (mut document, tile_marks) = crate::obs::with_tile_marks(marks.clone(), || session.state());
     let thoughts = session.reasoning_json(*cursor);
     if let Some(next) = thoughts["cursor"].as_u64() {
         *cursor = next;
     }
     document["ai_reasoning"] = thoughts;
-    if let Some(Value::Object(map)) = document.get_mut("map") {
-        if let Some(Value::Array(tiles)) = map.remove("tiles") {
-            let now: Vec<u64> = tiles.iter().map(tile_mark).collect();
+    if let Some(tiles) = FrameTiles::take(&mut document, tile_marks) {
+        if let Some(Value::Object(map)) = document.get_mut("map") {
+            let now: Vec<u64> = tiles.marks();
             match marks.as_ref().filter(|prior| prior.len() == now.len()) {
                 Some(prior) => {
-                    let changed = tiles
-                        .iter()
-                        .enumerate()
-                        .filter(|(at, _)| prior[*at] != now[*at])
-                        .map(|(at, tile)| serde_json::json!([at, tile]))
-                        .collect::<Vec<_>>();
+                    let changed = tiles.changed(prior, &now);
                     map.insert("tiles_changed".to_string(), Value::Array(changed));
                 }
                 None => {
-                    map.insert("tiles".to_string(), Value::Array(tiles));
+                    map.insert("tiles".to_string(), tiles.into_array());
                 }
             }
             *marks = Some(now);

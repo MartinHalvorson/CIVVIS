@@ -239,16 +239,26 @@ check("small bank free vote", requests[1].votes, 1)
 check("small bank still buys border control", requests[2].votes, 2)
 check("small bank spend", spent, 4 + 12)
 
--- Immortal 173341Z t174: both on 15, the rival's last block 5 but 9 the
--- session before, about 351 Favor: 13 votes (from the 9), not 10.
+-- Immortal 173341Z t174: a contender level with us, its last block 5 but 9
+-- the session before, about 351 Favor: 13 votes (from the 9), not 10. (Both
+-- stood on 15 there; from 15 the claim is all in now, see below, so the
+-- sizing is pinned one point lower.)
 session = { "WC_RES_DIPLOVICTORY" }
 tally.wc_rival_block_prev = 9
-spent, mode = run(351, 15, 15, 5)
+spent, mode = run(351, 14, 14, 5)
 check("contender claim races", mode, "race")
 check("contender claim sized from the bigger block", requests[1].votes, 13)
 tally.wc_rival_block_prev = nil
-spent, mode = run(351, 15, 15, 5)
+spent, mode = run(351, 14, 14, 5)
 check("without the block before, sized from the last", requests[1].votes, 10)
+-- `CivvisRacerEndgame`: from 15 points on either side the claim takes every
+-- vote the bank buys, whatever the last block was.
+spent, mode = run(351, 15, 15, 5)
+check("at 15 the claim is all in", requests[1].votes, 13)
+config.RacerEndgame = false
+spent, mode = run(351, 15, 15, 5)
+check("with the endgame off it is sized from the last block", requests[1].votes, 10)
+config.RacerEndgame = nil
 session = { "WC_RES_DIPLOVICTORY", "WC_RES_BORDER_CONTROL", "WC_RES_PUBLIC_RELATIONS" }
 
 -- A rival on the gang threshold keeps the denial: B on the leader.
@@ -258,12 +268,24 @@ check("gang votes B", requests[1].option, 2)
 check("gang names the leader", requests[1].selection, 3)
 
 -- The gang falls on the leader of all the majors. A rival on the threshold
--- BEHIND us is no denial target: we claim (17 > 16)...
+-- BEHIND us is no denial target, and from 16 the gang is on us: the brace
+-- (`DiploRacerGangSelf`; it was a claim until 18)...
 spent, mode = run(300, 16, 17, 5)
-check("leading a ganged rival races", mode, "race")
-check("leading a ganged rival claims A", requests[1].option, 1)
+check("leading a ganged rival at 17 braces", mode, "brace")
+check("leading a ganged rival votes B", requests[1].option, 2)
 check("leading a ganged rival names us", requests[1].selection, 0)
-check("leading a ganged rival claims sized", requests[1].votes, 10)
+check("leading a ganged rival casts the free vote", requests[1].votes, 1)
+-- ...with the old level and the old pacing by their switches: a sized claim...
+config.DiploRacerGangSelf = 18
+config.RacerEndgame = false
+spent, mode = run(300, 16, 17, 5)
+check("the old level races", mode, "race")
+check("the old level claims A on us", requests[1].option .. "/" .. requests[1].selection, "1/0")
+check("the old pacing sizes the claim", requests[1].votes, 10)
+config.RacerEndgame = nil
+spent, mode = run(300, 16, 17, 5)
+check("the old level in the last stretch claims all in", requests[1].votes, 12)
+config.DiploRacerGangSelf = nil
 -- ...brace from our own match point...
 spent, mode = run(300, 16, 18, 5)
 check("leading a ganged rival at 18 braces", mode, "brace")
@@ -286,18 +308,23 @@ check("brace votes B", requests[1].option, 2)
 check("brace names us", requests[1].selection, 0)
 check("brace is the free vote", requests[1].votes, 1)
 -- From match point the bank is spent (`CivvisRacerMatchPointVotes`): twice
--- the ordinary count on each, 4 votes (24 Favor) and 6 (60).
+-- the ordinary count on Border Control, 4 votes (24 Favor); and on Public
+-- Relations, where each of the three rivals casts one vote, one vote more
+-- than the rivals, 4 (24), not twice its three.
 check("brace buys border control with twice its count", requests[2].votes, 4)
-check("brace buys public relations with twice its count", requests[3].votes, 6)
-check("brace spend", spent, 24 + 60)
+check("brace buys public relations one vote more than the rivals", requests[3].votes, 4)
+check("brace spend", spent, 24 + 24)
 config.RacerMatchPointBank = false
 spent, mode = run(300, 8, 18, 9)
 check("with the match-point bank off the ordinary counts stand",
     requests[2].votes .. "/" .. requests[3].votes, "2/3")
 check("and the ordinary spend", spent, 4 + 12)
 config.RacerMatchPointBank = nil
-check("brace below 18", CivvisRacerBraces(17, {}), false)
+check("no brace below 16", CivvisRacerBraces(15, {}), false)
+check("brace at 16", CivvisRacerBraces(16, {}), true)
+check("brace at 17", CivvisRacerBraces(17, {}), true)
 check("brace at 18", CivvisRacerBraces(18, {}), true)
+check("the old level by its key", CivvisRacerBraces(17, { DiploRacerGangSelf = 18 }), false)
 check("warned at 15 braces", CivvisRacerBraces(15, {}, 6), true)
 check("unwarned at 15 does not", CivvisRacerBraces(15, {}, 0), false)
 check("warned below 14 does not", CivvisRacerBraces(13, {}, 6), false)

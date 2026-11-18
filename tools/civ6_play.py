@@ -2415,6 +2415,29 @@ LEADER_HINT_WINDOW = 3
 # Four bounded looks give a recording host time to recover without turning a
 # transient capture miss into a whole failed game launch.
 LEADER_PICKER_OPEN_ATTEMPTS = 4
+# ★ A LEADER THAT CANNOT BE VERIFIED ENDS THE LAUNCH AFTER TWO SETUP ROUNDS.
+# civvis-20261118T055028Z asked for LEADER_ELEANOR_FRANCE. The field showed her
+# from the first frame and the read-back could not name her (see
+# `_leader_field_labels`), so every setup round failed the same way: thirteen
+# rounds in 5.5 minutes, no game, until the lane was restarted by hand. The
+# rounds were identical; the first failed at +38 s of that launch and the
+# second at +58 s. A seat that draws its leader per game draws again after a
+# launch that reached no board, so the second failed round ends this one:
+# `bootstrap_game` records the fault on `args.setup_fault`, the summary's
+# `reason` is `LEADER_UNVERIFIED_REASON`, and the process exits
+# `EXIT_LEADER_UNVERIFIED` (5 stays "could not start a game from the main
+# menu" for every other cause). Only the leader is bounded here: any other
+# setup row that will not verify goes round the same back-out loop and still
+# has all of `BOOTSTRAP_ATTEMPTS`.
+LEADER_UNVERIFIED_ROUNDS = 2
+LEADER_UNVERIFIED_REASON = "leader_unverified"
+EXIT_LEADER_UNVERIFIED = 7
+# Vision can return one rendered line in pieces. A label is rebuilt from at
+# most this many neighbours, no further apart than this many line heights:
+# the Create Game description panel starts 57 pt right of the leader field's
+# text (8.5 line heights on the 864x542 frame), so it can never join a label.
+LEADER_LABEL_MAX_PIECES = 3
+LEADER_LABEL_MAX_GAP_LINES = 3.0
 
 # Each dropdown's closed box, as a fraction of window height.
 DROPDOWN = {
@@ -3308,21 +3331,96 @@ def _menu_label_matches(observed: str, wanted: str) -> bool:
     return previous[-1] <= 2
 
 
-# Leaders whose picker label cannot be derived from the Firaxis type or from
-# data/civs.json. Values are the shipped en_US LOC_LEADER_*_NAME text. A wrong
-# label never finds its row, so the launch ends without playing a turn.
+# The label the Create Game picker shows for every leader Civilization VI ships,
+# by Firaxis type. It cannot be derived from the type: the picker lists the
+# frontend `Players` rows by `LeaderName` (`SetupParameters.xml`, query
+# "Players"), and a persona pack REPLACES the base leader's row, so with the
+# packs installed LEADER_T_ROOSEVELT reads "Teddy Roosevelt (Bull Moose)",
+# LEADER_QIN "Qin (Mandate of Heaven)" and LEADER_HARDRADA "Harald Hardrada
+# (Konge)"; the plain names this table used to carry for them are on no row.
+# `tools/civ6_leader_labels.py` reads the rows and their en_US text from the
+# install into `data/civ6_leader_picker_labels.json`, which says where each
+# label came from, and `test_civ6_play_leader_picker.py` pins this table to
+# that snapshot. A wrong label never finds its row or reads back, so the launch
+# ends without playing a turn (`LEADER_UNVERIFIED_ROUNDS`).
 LEADER_PICKER_LABELS = {
+    "LEADER_ABRAHAM_LINCOLN": "Abraham Lincoln",
+    "LEADER_ALEXANDER": "Alexander",
+    "LEADER_AMANITORE": "Amanitore",
+    "LEADER_AMBIORIX": "Ambiorix",
     "LEADER_BARBAROSSA": "Frederick Barbarossa",
+    "LEADER_BASIL": "Basil II",
+    "LEADER_CATHERINE_DE_MEDICI": "Catherine de Medici (Black Queen)",
+    "LEADER_CATHERINE_DE_MEDICI_ALT": "Catherine de Medici (Magnificence)",
+    "LEADER_CHANDRAGUPTA": "Chandragupta",
+    "LEADER_CLEOPATRA": "Cleopatra (Egyptian)",
+    "LEADER_CLEOPATRA_ALT": "Cleopatra (Ptolemaic)",
+    "LEADER_CYRUS": "Cyrus",
+    "LEADER_DIDO": "Dido",
+    "LEADER_ELEANOR_ENGLAND": "Eleanor of Aquitaine (England)",
     "LEADER_ELEANOR_FRANCE": "Eleanor of Aquitaine (France)",
-    "LEADER_HARDRADA": "Harald Hardrada",
+    "LEADER_ELIZABETH": "Elizabeth I",
+    "LEADER_GANDHI": "Gandhi",
+    "LEADER_GENGHIS_KHAN": "Genghis Khan",
+    "LEADER_GILGAMESH": "Gilgamesh",
+    "LEADER_GITARJA": "Gitarja",
+    "LEADER_GORGO": "Gorgo",
+    "LEADER_HAMMURABI": "Hammurabi",
+    "LEADER_HARALD_ALT": "Harald Hardrada (Varangian)",
+    "LEADER_HARDRADA": "Harald Hardrada (Konge)",
     "LEADER_HOJO": "Hojo Tokimune",
+    "LEADER_JADWIGA": "Jadwiga",
     "LEADER_JAYAVARMAN": "Jayavarman VII",
+    "LEADER_JOAO_III": "João III",
+    "LEADER_JOHN_CURTIN": "John Curtin",
+    "LEADER_JULIUS_CAESAR": "Julius Caesar",
+    "LEADER_KRISTINA": "Kristina",
+    "LEADER_KUBLAI_KHAN_CHINA": "Kublai Khan (China)",
+    "LEADER_KUBLAI_KHAN_MONGOLIA": "Kublai Khan (Mongolia)",
+    "LEADER_KUPE": "Kupe",
+    "LEADER_LADY_SIX_SKY": "Lady Six Sky",
+    "LEADER_LADY_TRIEU": "Bà Triệu",
     "LEADER_LAURIER": "Wilfrid Laurier",
+    "LEADER_LAUTARO": "Lautaro",
+    "LEADER_LUDWIG": "Ludwig II",
+    "LEADER_MANSA_MUSA": "Mansa Musa",
+    "LEADER_MATTHIAS_CORVINUS": "Matthias Corvinus",
+    "LEADER_MENELIK": "Menelik II",
+    "LEADER_MONTEZUMA": "Montezuma",
     "LEADER_MVEMBA": "Mvemba a Nzinga",
+    "LEADER_NADER_SHAH": "Nader Shah",
+    "LEADER_NZINGA_MBANDE": "Nzinga Mbande",
+    "LEADER_PACHACUTI": "Pachacuti",
     "LEADER_PEDRO": "Pedro II",
+    "LEADER_PERICLES": "Pericles",
     "LEADER_PETER_GREAT": "Peter",
-    "LEADER_QIN": "Qin Shi Huang",
-    "LEADER_T_ROOSEVELT": "Teddy Roosevelt",
+    "LEADER_PHILIP_II": "Philip II",
+    "LEADER_POUNDMAKER": "Poundmaker",
+    "LEADER_QIN": "Qin (Mandate of Heaven)",
+    "LEADER_QIN_ALT": "Qin (Unifier)",
+    "LEADER_RAMSES": "Ramses II",
+    "LEADER_ROBERT_THE_BRUCE": "Robert the Bruce",
+    "LEADER_SALADIN": "Saladin (Vizier)",
+    "LEADER_SALADIN_ALT": "Saladin (Sultan)",
+    "LEADER_SEJONG": "Sejong",
+    "LEADER_SEONDEOK": "Seondeok",
+    "LEADER_SHAKA": "Shaka",
+    "LEADER_SIMON_BOLIVAR": "Simón Bolívar",
+    "LEADER_SULEIMAN": "Suleiman (Kanuni)",
+    "LEADER_SULEIMAN_ALT": "Suleiman (Muhteşem)",
+    "LEADER_SUNDIATA_KEITA": "Sundiata Keita",
+    "LEADER_TAMAR": "Tamar",
+    "LEADER_THEODORA": "Theodora",
+    "LEADER_TOKUGAWA": "Tokugawa",
+    "LEADER_TOMYRIS": "Tomyris",
+    "LEADER_TRAJAN": "Trajan",
+    "LEADER_T_ROOSEVELT": "Teddy Roosevelt (Bull Moose)",
+    "LEADER_T_ROOSEVELT_ROUGHRIDER": "Teddy Roosevelt (Rough Rider)",
+    "LEADER_VICTORIA": "Victoria (Age of Empire)",
+    "LEADER_VICTORIA_ALT": "Victoria (Age of Steam)",
+    "LEADER_WILHELMINA": "Wilhelmina",
+    "LEADER_WU_ZETIAN": "Wu Zetian",
+    "LEADER_YONGLE": "Yongle",
 }
 
 
@@ -3344,12 +3442,28 @@ def leader_display_name(leader: str) -> str:
     return leader.removeprefix("LEADER_").replace("_", " ").title()
 
 
-def _setup_current_leader(path: Path, bounds: tuple[int, int, int, int]
-                          ) -> tuple[str, tuple[int, int]] | None:
-    """Read the current civilization-picker value and its screen position."""
-    screen = desktop_size()
-    if screen is None:
-        return None
+def _leader_field_labels(*expected: str) -> dict[str, str]:
+    """Every label the Choose Civilization field can show, by normalized text.
+
+    ★ THE FIELD COULD ONLY BE READ WHEN IT HELD A NAME FROM CIVVIS'S OWN ROSTER.
+    This was "Random Leader" plus the `leader` strings of `data/civs.json`, the
+    simulator's 105 civilizations, where France is led by "Catherine de
+    Medici". The control mod's one-row whitelist puts the requested leader in
+    the field before anything is clicked, so launch civvis-20261118T055028Z
+    opened Create Game on "Eleanor of Aquitaine (France)". Vision read that as
+    ONE observation, confidence 1.0, centred at rx 0.515 / ry 0.310 of the
+    864x542 window (span 0.466-0.563) in the window pass and in the 4x crop
+    alike: whole, and inside every band. It matched no known label, so the
+    reader answered "not readable" for a field it had read perfectly, thirteen
+    rounds running. Kristina, Gilgamesh, Ambiorix, Wilfrid Laurier and Mvemba
+    a Nzinga verified the same day only because the two rosters happen to
+    spell those five alike; civvis-20261118T062541Z then looped on the eight
+    letters of "Theodora", whose Byzantium the simulator gives to Basil II.
+
+    So the field knows every label the game ships (`LEADER_PICKER_LABELS`) and
+    the one this launch asked for. The simulator's names stay: an install
+    without the persona packs still shows "Cleopatra" and "Victoria".
+    """
     labels = {"randomleader": "Random Leader"}
     try:
         roster = json.loads((REPO_ROOT / "data" / "civs.json").read_text())
@@ -3359,11 +3473,85 @@ def _setup_current_leader(path: Path, bounds: tuple[int, int, int, int]
         label = civilization.get("leader") if isinstance(civilization, dict) else None
         if isinstance(label, str):
             labels[_normalized_label(label)] = label
+    for label in (*LEADER_PICKER_LABELS.values(), *expected):
+        if label and _normalized_label(label):
+            labels[_normalized_label(label)] = label
+    return labels
+
+
+def _joined_label_observations(observations: list[dict], wanted,
+                               screen: tuple[int, int]) -> list[dict]:
+    """Whole labels that Vision returned as neighbouring pieces of one line.
+
+    The saved Eleanor frame returned her label whole, but the same frame
+    returned the title line "SID MEIER'S" as "SID" and "MEIER'", and nothing
+    promises better for the 34 characters of "Catherine de Medici
+    (Magnificence)". Each run of same-line neighbours whose texts spell a
+    ``wanted`` (normalized) label becomes one observation over their union
+    box, so a caller's band check then judges the whole label's centre.
+
+    Nothing is loosened by it. The joined text must EQUAL a wanted label; every
+    piece must lie on the first piece's line, start where the previous one
+    ended (`LEADER_LABEL_MAX_GAP_LINES`) and extend a prefix of that label; and
+    at most `LEADER_LABEL_MAX_PIECES` are joined. Picker rows are separate
+    lines, so two leaders' rows can never be read as one.
+    """
+    wanted = set(wanted)
+    screen_w, screen_h = screen
+    pieces = []
+    for observation in observations:
+        text = _normalized_label(str(observation.get("text", "")))
+        try:
+            left = float(observation["x"]) * screen_w
+            top = float(observation["y"]) * screen_h
+            right = left + float(observation["width"]) * screen_w
+            bottom = top + float(observation["height"]) * screen_h
+        except (KeyError, TypeError, ValueError):
+            continue
+        if text and bottom > top and any(text != label and text in label for label in wanted):
+            pieces.append((left, top, right, bottom, text, str(observation.get("text", ""))))
+    pieces.sort()
+    joined = []
+    for index, (left, top, right, bottom, text, raw) in enumerate(pieces):
+        used = 1
+        for n_left, n_top, n_right, n_bottom, n_text, n_raw in pieces[index + 1:]:
+            if used == LEADER_LABEL_MAX_PIECES:
+                break
+            line = min(bottom - top, n_bottom - n_top)
+            same_line = min(bottom, n_bottom) - max(top, n_top) >= 0.5 * line
+            adjacent = -0.5 * line <= n_left - right <= LEADER_LABEL_MAX_GAP_LINES * line
+            if not (same_line and adjacent
+                    and any(label.startswith(text + n_text) for label in wanted)):
+                continue
+            text, raw, used = text + n_text, f"{raw} {n_raw}", used + 1
+            top, right, bottom = min(top, n_top), max(right, n_right), max(bottom, n_bottom)
+            if text in wanted:
+                joined.append({
+                    "text": raw, "pieces": used,
+                    "x": left / screen_w, "y": top / screen_h,
+                    "width": (right - left) / screen_w, "height": (bottom - top) / screen_h,
+                })
+                break
+    return joined
+
+
+def _setup_current_leader(path: Path, bounds: tuple[int, int, int, int],
+                          expected: str | None = None
+                          ) -> tuple[str, tuple[int, int]] | None:
+    """Read the current civilization-picker value and its screen position.
+
+    ``expected`` is the label this launch asked for; see `_leader_field_labels`.
+    """
+    screen = desktop_size()
+    if screen is None:
+        return None
+    labels = _leader_field_labels(expected or "")
 
     screen_w, screen_h = screen
     x, y, w, h = bounds
     observations = recognize_once(path, bounds)
     observations.extend(_menu_crop_ocr(path, bounds))
+    observations.extend(_joined_label_observations(observations, labels, screen))
     headings: dict[str, int] = {}
     for observation in observations:
         point = _observation_point(observation)
@@ -3488,7 +3676,9 @@ def _leader_observation(observations: list[dict], label: str,
     screen_w, screen_h = screen
     x, y, w, h = bounds
     wanted = _normalized_label(label)
-    for observation in observations:
+    # A label Vision returned in pieces is judged whole, by its joined box.
+    joined = _joined_label_observations(observations, {wanted}, screen)
+    for observation in (*observations, *joined):
         if _normalized_label(str(observation.get("text", ""))) != wanted:
             continue
         point = _observation_point(observation)
@@ -3500,6 +3690,10 @@ def _leader_observation(observations: list[dict], label: str,
         # recording layout (Trajan measured at ry=0.312 on 2026-08-31).  Keep
         # the band narrow enough to identify the field, but include that
         # verified layout instead of rejecting a correctly selected Rome.
+        # A long label needs no wider band: the text is left-aligned after the
+        # two icons, so "Eleanor of Aquitaine (France)", 29 characters, spans
+        # rx 0.466-0.563 and centres at 0.515 (civvis-20261118T055028Z), and
+        # the 34 characters of the longest shipped label centre near 0.52.
         if 0.40 <= rx <= 0.62 and (
             0.23 <= ry <= 0.34 if selected else 0.30 <= ry <= 0.76
         ):
@@ -4289,7 +4483,7 @@ def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | Non
             print(f"[setup] leader list opened after an unreadable frame "
                   f"(attempt {attempt})", flush=True)
             break
-        current = _setup_current_leader(closed, bounds)
+        current = _setup_current_leader(closed, bounds, label)
         if current is None:
             print(f"[setup] leader value was not readable (attempt {attempt})",
                   flush=True)
@@ -4812,8 +5006,12 @@ def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float,
 
 
 def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namespace,
-                        run_dir: Path) -> bool:
+                        run_dir: Path, fault: dict | None = None) -> bool:
     """Set this run's game up on the Create Game screen and start it.
+
+    ``fault``, when given, is told that the leader was the row that would not
+    verify (``fault["step"] = "leader"``): `bootstrap_game` bounds that one
+    failure apart from the rest (`LEADER_UNVERIFIED_ROUNDS`).
 
     The agent's first report from inside the game remains the check on the VALUES
     -- it names the difficulty, map size and speed the game actually has, so a
@@ -4882,6 +5080,8 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
     if not select_requested_leader(bounds, args.leader, run_dir, panel=panel["shot"],
                                    panel_out=panel, hint_dir=run_dir.parent):
         print("[setup] requested leader was NOT selected; refusing to start", flush=True)
+        if fault is not None:
+            fault["step"] = "leader"
         return False
     if not clear_game_modes(bounds, run_dir, list(getattr(args, "game_mode", []) or [])):
         print("[setup] a game mode is still on; refusing to start", flush=True)
@@ -4921,6 +5121,44 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
     focus_game(GAME_SIDE, GAME_FRACTION)
     click_at(*start_point)
     return True
+
+
+def note_leader_unverified(leader: str | None, rounds: int, attempt: int) -> dict:
+    """Say that the requested leader ended the launch, and return the fault.
+
+    The fault is what `_play` exits `EXIT_LEADER_UNVERIFIED` on and writes into
+    the summary; see `LEADER_UNVERIFIED_ROUNDS` for why a further round is not
+    played.
+    """
+    label = leader_display_name(leader) if leader else None
+    print(f"attempt {attempt}: requested leader {label} ({leader}) could not be verified "
+          f"on the Create Game screen in {rounds} setup rounds; ending this launch "
+          f"({LEADER_UNVERIFIED_REASON}) instead of repeating the same read",
+          file=sys.stderr, flush=True)
+    return {"reason": LEADER_UNVERIFIED_REASON, "leader": leader, "label": label,
+            "rounds": rounds}
+
+
+def leader_unverified_fault(args: argparse.Namespace) -> dict | None:
+    """The fault `bootstrap_game` recorded when the leader ended the launch."""
+    fault = getattr(args, "setup_fault", None)
+    if isinstance(fault, dict) and fault.get("reason") == LEADER_UNVERIFIED_REASON:
+        return fault
+    return None
+
+
+def leader_unverified_summary(tag: str, config: dict, state: dict, fault: dict) -> dict:
+    """The record of a launch that ended on an unverifiable leader.
+
+    A `partial_summary` in every field the ledger reads (no turn was played,
+    and `partial` keeps it out of the finished-game tallies exactly as a
+    stopped launch is), but with its own `reason` instead of `killed`, and the
+    leader and label that could not be read.
+    """
+    summary = partial_summary(tag, config, state)
+    summary.update(reason=LEADER_UNVERIFIED_REASON, leader_asked=fault.get("leader"),
+                   leader_label=fault.get("label"), setup_rounds=fault.get("rounds"))
+    return summary
 
 
 def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
@@ -4979,6 +5217,8 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     # genuinely unready menu, so a false strike costs nothing.
     blind_strikes = 0
     unseen_strikes = 0
+    # Setup rounds that failed on the leader alone; see `LEADER_UNVERIFIED_ROUNDS`.
+    leader_strikes = 0
     for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
         focus_game(GAME_SIDE, GAME_FRACTION)
         time.sleep(2.0)
@@ -5157,7 +5397,14 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         click_at(*target)
         time.sleep(2.5)
         screenshot(run_dir / f"create-attempt{attempt}.png")
-        if not configure_and_start(bounds, args, run_dir):
+        fault: dict = {}
+        if not configure_and_start(bounds, args, run_dir, fault):
+            if fault.get("step") == "leader":
+                leader_strikes += 1
+                if leader_strikes >= LEADER_UNVERIFIED_ROUNDS:
+                    args.setup_fault = note_leader_unverified(
+                        getattr(args, "leader", None), leader_strikes, attempt)
+                    return False
             print(f"attempt {attempt}: setup could not be verified; backing out",
                   file=sys.stderr)
             if not return_to_main_menu(bounds, run_dir, attempt):
@@ -7870,7 +8117,9 @@ def _play(args: argparse.Namespace) -> int:
                                             verify_s=args.load_wait)
     elif handoff is not None:
         bootstrapped = restart_in_place(tail, record, run_dir, args, handoff)
-        if not bootstrapped:
+        # A relaunch shows the same Create Game field: a leader the restarted
+        # game could not verify is not asked of a fresh one (`LEADER_UNVERIFIED_ROUNDS`).
+        if not bootstrapped and leader_unverified_fault(args) is None:
             # Whatever the restart left behind is stopped; the reinstall drops
             # the mod index the launch's scan needs (see `modinstall.install`).
             print("[restart] falling back to stopping Civilization VI and "
@@ -7901,6 +8150,23 @@ def _play(args: argparse.Namespace) -> int:
         # launch-time failure policy applies: graceful first, then kill.
         if owned_launch["process"] is not None:
             launcher.stop_owned_failed_startup(owned_launch["process"])
+        leader_fault = leader_unverified_fault(args)
+        if leader_fault is not None:
+            # Written here so the exit hook's `killed` does not take the
+            # column: this launch was ended on purpose, for a stated cause.
+            path = run_dir / "summary.json"
+            summary = with_diagnostic(
+                leader_unverified_summary(args.tag, config, state, leader_fault), path)
+            try:
+                path.write_text(json.dumps(summary, indent=2, sort_keys=True))
+            except OSError as error:
+                print(f"could not write the {LEADER_UNVERIFIED_REASON} summary: {error}",
+                      file=sys.stderr)
+            print(f"{LEADER_UNVERIFIED_REASON}: {leader_fault.get('label')} "
+                  f"({leader_fault.get('leader')}) was not verified on the Create Game "
+                  f"screen in {leader_fault.get('rounds')} rounds; no game was started "
+                  f"(exit {EXIT_LEADER_UNVERIFIED})", file=sys.stderr)
+            return EXIT_LEADER_UNVERIFIED
         return 5
     setup_mark("configured", stop=True)
     if host_health.clear():
