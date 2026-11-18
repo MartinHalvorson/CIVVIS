@@ -1,3 +1,0 @@
-# TEMPORARY (session tournament-35): list every failing test in one CI round. Removed before merge.
-[profile.default]
-fail-fast = false
