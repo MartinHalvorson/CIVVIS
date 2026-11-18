@@ -19719,13 +19719,26 @@ end
 --     with 125 Favor left and lost this one to four blocks of 3.
 -- Together +1.08 points a game for 111 Favor a game; the seat ended its
 -- Diplomatic games with 130 to 350 unspent. Border Control stays at 2 (97%).
+--
+-- ★ SOVEREIGNTY AND URBAN DEVELOPMENT TAKE FOUR (78 live games, 2026-11-13 to
+-- 11-18, the same replay). On eleven resolution kinds every rival casts
+-- exactly one vote (Arms Control, Border Control, Deforestation, Espionage
+-- Pact, Global Energy, Heritage, Military Advisory, Public Relations,
+-- Sovereignty, Urban Development, World Religion: the largest rival vote was
+-- 1 in all 433 sessions), so option A on any target is carried by one vote
+-- more than the rivals who agree on another target. Three votes carried
+-- Sovereignty 75% of 51 and Urban Development 79% of 53; four carry 98% and
+-- 96%, for 12 Favor more. And a bank short of such a count (four or fewer)
+-- buys the votes it has instead of none: the count is the 98%, not the
+-- threshold. civvis-20261118T055703Z t148 had 16 Favor after the claim and
+-- cast the free vote on a count of four; three votes were 12.
 CivvisRacerResolutionVotes = function(rtype, favor, costs, config, cap)
 	config = type(config) == "table" and config or {};
 	if type(costs) ~= "table" then return 1, 0; end
 	local need = ({
 		WC_RES_MERCENARY_COMPANIES = 2, WC_RES_WORLD_RELIGION = 2,
 		WC_RES_BORDER_CONTROL = 2, WC_RES_PUBLIC_RELATIONS = 3,
-		WC_RES_SOVEREIGNTY = 3, WC_RES_URBAN_DEVELOPMENT = 3,
+		WC_RES_SOVEREIGNTY = 4, WC_RES_URBAN_DEVELOPMENT = 4,
 		WC_RES_MILITARY_ADVISORY = 3, WC_RES_ESPIONAGE_PACT = 3,
 		WC_RES_ARMS_CONTROL = 4, WC_RES_HERITAGE_ORG = 4,
 		WC_RES_GLOBAL_ENERGY_TREATY = 4, WC_RES_DEFORESTATION_TREATY = 4,
@@ -19741,6 +19754,11 @@ CivvisRacerResolutionVotes = function(rtype, favor, costs, config, cap)
 	if need > maxVotes then need = maxVotes; end
 	local price = tonumber(costs[need - 1]);
 	cap = tonumber(cap) or tonumber(config.DiploRacerResolutionCap) or 60;
+	while need > 2 and need <= 4 and price ~= nil
+			and (price > cap or price > (tonumber(favor) or 0)) do
+		need = need - 1;
+		price = tonumber(costs[need - 1]);
+	end
 	if need < 2 or price == nil or price > cap or price > (tonumber(favor) or 0) then
 		return 1, 0;
 	end
@@ -19778,20 +19796,45 @@ end
 -- more. Off with
 -- `RacerMatchPointBank = false`. `entries` is the ballot's ordered list (rows
 -- with `rtype`, or bare names) and `current` this resolution's entry in it.
-CivvisRacerMatchPointVotes = function(rtype, entries, current, favor, costs, config, ourPoints, want, price)
+--
+-- ★★ AND AT A SESSION WITH NO CLAIM TO SAVE FOR (`spends`: the ballot braced,
+-- or `CivvisRacerEndgame`; off with `RacerEndgame = false`). The Favor a
+-- losing vote asked for comes back (see `CivvisRacerEndgame`), so the bank
+-- held at such a session buys nothing later that it could not buy now.
+-- civvis-20261118T055703Z t168: 16 points, 289 Favor, the gang on us; the
+-- claim took 220 of it into a 13-39 loss and the Trade Treaty and the Luxury
+-- resolution got the free vote each. Seven votes (84) carried that treaty.
+--
+-- ★ A LONG SHOT TAKES WHAT THE VOTES THAT CARRY LEAVE. A resolution whose
+-- count is over the ordinary cap (Luxury 16, World Ideology 15, Public Works
+-- 13, Patronage 10) is one the rivals spend on: twelve votes on our own
+-- target carried Luxury 23% of 62 sessions and Patronage 51% of 51, against
+-- 82% for a Trade Treaty and 97% for a Migration Treaty. Coming first in the
+-- ballot's order it took the bank less the later resolution's count, and a
+-- treaty after it was left six votes. So it keeps back twice the count of
+-- each resolution after it, and is not owed its own count first. `rivals` is
+-- how many other majors vote.
+CivvisRacerMatchPointVotes = function(rtype, entries, current, favor, costs, config, ourPoints, want, price,
+		spends, rivals)
 	config = type(config) == "table" and config or {};
 	if not CivvisCongressRacer(config) or config.RacerMatchPointBank == false
 			or type(costs) ~= "table"
-			or (tonumber(ourPoints) or 0) < (tonumber(config.DiploVictoryMatchPoint) or 18) then
+			or (spends ~= true
+				and (tonumber(ourPoints) or 0) < (tonumber(config.DiploVictoryMatchPoint) or 18)) then
 		return want, price;
 	end
 	local need, needPrice = CivvisRacerResolutionVotes(rtype, 1e9, costs, config, 1e9);
 	if need < 2 then return want, price; end
+	local longShot = CivvisRacerResolutionVotes(rtype, 1e9, costs, config) < 2;
 	local reserve, later = 0, false;
 	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
 		local other = type(entry) == "table" and entry.rtype or entry;
 		if later and other ~= "WC_RES_DIPLOVICTORY" then
-			local _, otherPrice = CivvisRacerResolutionVotes(other, 1e9, costs, config);
+			local otherVotes, otherPrice = CivvisRacerResolutionVotes(other, 1e9, costs, config);
+			if longShot and otherVotes > 1 then
+				otherPrice = tonumber(costs[math.min(2 * otherVotes,
+					tonumber(costs.MaxVotes) or otherVotes) - 1]) or otherPrice;
+			end
 			reserve = reserve + otherPrice;
 		end
 		if entry == current then later = true; end
@@ -19800,9 +19843,17 @@ CivvisRacerMatchPointVotes = function(rtype, entries, current, favor, costs, con
 	local budget = bank - reserve;
 	-- Short of both: this resolution's own count first, the later one gets
 	-- what is left; short of even that, whatever the bank affords.
-	if budget < needPrice then budget = math.min(bank, needPrice); end
+	if budget < needPrice and not longShot then budget = math.min(bank, needPrice); end
 	local votes = CivvisCongressVoteBudget(budget, costs, costs.MaxVotes);
 	if votes > 2 * need then votes = 2 * need; end
+	-- Where every rival casts one vote (`CivvisRacerResolutionVotes`), one
+	-- vote more than there are rivals carries whatever they do.
+	if tonumber(rivals) ~= nil and votes > math.max(need, rivals + 1) and not ({
+			WC_RES_LUXURY = true, WC_RES_MERCENARY_COMPANIES = true, WC_RES_MIGRATION_TREATY = true,
+			WC_RES_PATRONAGE = true, WC_RES_PUBLIC_WORKS = true, WC_RES_TRADE_TREATY = true,
+			WC_RES_WORLD_IDEOLOGY = true })[tostring(rtype)] then
+		votes = math.max(need, rivals + 1);
+	end
 	if votes < 2 or votes <= (tonumber(want) or 1) then return want, price; end
 	return votes, tonumber(costs[votes - 1]) or 0;
 end
@@ -19834,20 +19885,161 @@ end
 -- only when the target is offered; the vote count is still
 -- `CivvisRacerResolutionVotes`'s. Off with `RacerUsualWinner = false`.
 -- Returns `option, selection` (1-based), unchanged when it does not apply.
-CivvisRacerUsualWinner = function(rtype, targets, config, option, selection)
+--
+-- ★★ AND IT VOTES WITH A FIELD THAT VOTES AS ONE (78 live games, 2026-11-13
+-- to 11-18, Immortal and Deity; the same replay). Off with
+-- `RacerJoinsTheField = false`.
+--   * World Ideology: each rival votes A on the government it holds (70 of
+--     76 rival votes whose government the log names), and spends on it:
+--     civvis-20261118T055703Z t188, three rivals in Digital Democracy cast
+--     37 votes for it against the free vote this ballot gave Fascism. Where
+--     more rivals hold one government than any other (`landslide`, from
+--     `CivvisRivalsGovernment`) the free vote there matched 11 of 12
+--     sessions; elsewhere Fascism stands (2 of 6). Fascism everywhere: 8 of
+--     18.
+--   * Heritage Organization: the rivals cast one A vote each on Writing (131
+--     of 138 rival votes were A, and the rivals alone made A on Writing the
+--     winner in 27 of 28 sessions), so the free vote there matches. The
+--     ballot cast A on the first target listed, or a denial too small to
+--     carry (`CivvisRacerKeepsDenial`): 0 of 7 matched on the Diplomatic
+--     lane.
+--   * Global Energy Treaty and Deforestation Treaty: the rivals vote option
+--     A, the ban, with one vote each (163 of 174 rival votes on Global
+--     Energy). The ballot's free vote takes the option that is not a ban,
+--     and the four votes the racer bought for it lost to the rivals' five:
+--     0 of 9 Global Energy resolutions matched on the Diplomatic lane. The
+--     same four on option A carry 94% of 35 on Global Energy (the first
+--     target listed, the Nuclear Power Plant) and 10 of 10 on Deforestation
+--     (the Rainforest); the free vote alone 51% and 80%.
+CivvisRacerUsualWinner = function(rtype, targets, config, option, selection, landslide)
 	if not CivvisCongressRacer(config) or config.RacerUsualWinner == false then
 		return option, selection;
 	end
+	local joins = config.RacerJoinsTheField ~= false;
 	local want = ({
 		WC_RES_MILITARY_ADVISORY = "LOC_PROMOTION_CLASS_MELEE_NAME",
 		WC_RES_PATRONAGE = "LOC_GREAT_PERSON_CLASS_SCIENTIST_NAME",
 		WC_RES_WORLD_IDEOLOGY = "LOC_GOVERNMENT_FASCISM_NAME",
+		WC_RES_HERITAGE_ORG = joins and option == 1 and "LOC_GREAT_WORK_OBJECT_WRITING_NAME" or nil,
+		WC_RES_DEFORESTATION_TREATY = joins and "LOC_FEATURE_JUNGLE_NAME" or nil,
 	})[tostring(rtype)];
-	if want == nil then return option, selection; end
+	local found = nil;
 	for idx, target in pairs(type(targets) == "table" and targets or {}) do
-		if type(idx) == "number" and target == want then return 1, idx; end
+		if type(idx) == "number" and joins and landslide ~= nil and target == landslide then
+			return 1, idx;
+		end
+		if type(idx) == "number" and want ~= nil and target == want then found = idx; end
+	end
+	if found ~= nil then return 1, found; end
+	if joins and type(targets) == "table" and (rtype == "WC_RES_GLOBAL_ENERGY_TREATY"
+			or rtype == "WC_RES_DEFORESTATION_TREATY") then
+		return 1, selection;
 	end
 	return option, selection;
+end
+
+-- The government more rivals hold than any other, as the World Ideology
+-- ballot names it (`GameInfo.Governments[...].Name`), or nil: another
+-- resolution, no rival's government read, or two governments level. A
+-- rival's government is on the diplomacy ribbon (the state export reads it
+-- the same way); a rival we have not met is not read. Only for a seat racing
+-- the Congress, and off with `RacerJoinsTheField = false`. `governmentOf` is
+-- injectable for the offline test. Bare global: the chunk is at the register
+-- cap.
+CivvisRivalsGovernment = function(rtype, candidates, pid, config, governmentOf)
+	if rtype ~= "WC_RES_WORLD_IDEOLOGY" or not CivvisCongressRacer(config)
+			or config.RacerJoinsTheField == false then
+		return nil;
+	end
+	governmentOf = governmentOf or function(id)
+		if not Players[pid]:GetDiplomacy():HasMet(id) then return nil; end
+		local row = GameInfo.Governments[Players[id]:GetCulture():GetCurrentGovernment()];
+		return row and row.Name or nil;
+	end;
+	local count, top, second = {}, nil, 0;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		local id = type(c) == "table" and tonumber(c.id) or nil;
+		local name = (id ~= nil and id ~= tonumber(pid))
+			and try(function() return governmentOf(id); end, nil) or nil;
+		if type(name) == "string" then count[name] = (count[name] or 0) + 1; end
+	end
+	for name, n in pairs(count) do
+		if top == nil or n > count[top] then
+			top, second = name, top ~= nil and count[top] or 0;
+		elseif n > second then
+			second = n;
+		end
+	end
+	if top == nil or count[top] <= second then return nil; end
+	return top;
+end
+
+-- ★★★ THE LAST STRETCH OF THE RACE: NOTHING IS SAVED FOR A SESSION THAT MAY
+-- NOT COME.
+--
+-- The racer paces its Favor: the claim is sized from the rivals' last block
+-- and a resolution's votes stop at 60 Favor, because Favor kept is the next
+-- session's claim. Three things end that reasoning, each read at the ballot:
+--   * we stand at `DiploVictoryGangFloor` (15) or more: one session of +2,
+--     +1 and two carried resolutions is the game;
+--   * a rival stands there: the rivals vote B on the Diplomatic leader from
+--     15 (0 of 20 rival votes named a Deity leader on 13 or 14, 18 of 25 at
+--     15, 31 of 33 from 16; 87 of 94 recorded B votes named the points
+--     leader), so the +2 is decided by the bank, not by the last A block;
+--   * a rival's Exoplanet Expedition is in flight (its Science Victory
+--     points above 0): 21 of 21 games in which a ballot saw one ended within
+--     18 turns, before the next session twenty turns on.
+-- And Favor asked for is not Favor lost. "If a player spends Diplomatic
+-- Favor on a measure which did not pass the World Congress ... then the
+-- player gets their full amount refunded for the next session. If they spent
+-- it on a measure which ulitmately passes, but on a different target then
+-- half the amount ... is refunded"
+-- (LOC_PEDIA_CONCEPTS_PAGE_WORLD_CONGRESS_CHAPTER_FAVOR_PARA_5,
+-- Expansion2_Civilopedia_Text.xml:311). The Favor at the next `wc_outcome`
+-- fits that rule to within two Favor in 168 of 168 recorded sessions with a
+-- bought vote: a claim into a gang came back whole (civvis-20261118T055703Z
+-- t168: 289 Favor, 220 asked, 302 a turn later).
+--
+-- civvis-20261118T055703Z ended on 18 of 20 at t191 with 364 Favor in hand:
+-- at t188 (587 Favor, a rival on 15 with a 16-point Exoplanet flight) the
+-- claim was sized from a block of 6, cast 11 votes and carried 19 to 18
+-- against the rivals' B on that rival.
+--
+-- So in the last stretch the claim takes every vote the bank buys beyond the
+-- session's ordinary counts (`CivvisRacerClaimVotes`, `allIn`), and the
+-- other resolutions may take the bank (`CivvisRacerMatchPointVotes`,
+-- `spends`). `scienceOf` is injectable for the offline test. Off with
+-- `RacerEndgame = false`. Bare global: the chunk is at the register cap.
+CivvisRacerEndgame = function(ourPoints, leaderPoints, candidates, config, scienceOf)
+	config = type(config) == "table" and config or {};
+	if not CivvisCongressRacer(config) or config.RacerEndgame == false then return false; end
+	local floor = tonumber(config.DiploVictoryGangFloor) or 15;
+	if (tonumber(ourPoints) or 0) >= floor or (tonumber(leaderPoints) or 0) >= floor then
+		return true;
+	end
+	scienceOf = scienceOf or function(id)
+		return Players[id]:GetStats():GetScienceVictoryPoints();
+	end;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		local id = type(c) == "table" and tonumber(c.id) or nil;
+		if id ~= nil and (tonumber(try(function() return scienceOf(id); end, 0)) or 0) > 0 then
+			return true;
+		end
+	end
+	return false;
+end
+
+-- ★ A DENIAL THE RACER CANNOT CARRY IS NOT CAST. `CivvisHeritageDenial` buys
+-- one vote more than the last session's A total, four when none is recorded,
+-- and the rivals cast one A vote each: of 19 recorded B ballots that did
+-- not outnumber the rival voters 13 lost (the Favor came back and the
+-- participation point went with it), and the 3 that did outnumber them
+-- carried. A seat racing the Congress keeps the denial only when its votes
+-- outnumber the rivals; otherwise its vote goes with theirs
+-- (`CivvisRacerUsualWinner`). Another seat's denial is unchanged.
+CivvisRacerKeepsDenial = function(votes, candidates, config)
+	if not CivvisCongressRacer(config) or config.RacerJoinsTheField == false then return true; end
+	return (tonumber(votes) or 0) > #(type(candidates) == "table" and candidates or {});
 end
 
 -- ★★ HERITAGE ORGANIZATION: NO TOURISM FROM THE CULTURE LEADER'S GREAT WORKS.
@@ -20181,8 +20373,10 @@ end
 
 -- The Favor the cheap participation votes of this session will take, held
 -- back from the claim. `entries` lists the session's resolution types, as
--- names or as the ballot's `{ rtype = name }` entries.
-CivvisRacerReserve = function(entries, costs, config)
+-- names or as the ballot's `{ rtype = name }` entries. `beside` counts them
+-- although the claim is on the ballot: a claim that takes the whole bank
+-- (`CivvisRacerEndgame`) leaves them their counts.
+CivvisRacerReserve = function(entries, costs, config, beside)
 	config = type(config) == "table" and config or {};
 	-- ★★ A SESSION WITH THE CLAIM ON IT FUNDS THE CLAIM FIRST. The claim is
 	-- won or lost by one vote and swings five points (our +3 against the
@@ -20192,7 +20386,7 @@ CivvisRacerReserve = function(entries, costs, config)
 	-- the tie went to Portugal (10 -> 12); 10 votes were in the bank.
 	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
 		local rtype = type(entry) == "table" and entry.rtype or entry;
-		if rtype == "WC_RES_DIPLOVICTORY" then return 0; end
+		if rtype == "WC_RES_DIPLOVICTORY" and beside ~= true then return 0; end
 	end
 	local total = 0;
 	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
@@ -20235,13 +20429,14 @@ CivvisRacerClaimBlock = function(last, prev, ourPoints, leaderPoints, config)
 	return last;
 end
 
-CivvisRacerClaimVotes = function(favor, ourPoints, rivalBlock, costs, maxVotes, config)
+CivvisRacerClaimVotes = function(favor, ourPoints, rivalBlock, costs, maxVotes, config, allIn)
 	config = type(config) == "table" and config or {};
 	local block = tonumber(rivalBlock) or tonumber(config.DiploRacerFirstBlock) or 8;
 	if block < 1 then block = 1; end
 	local least = block + math.max(2, math.ceil(block / 4)) + 1;
 	local budget = CivvisCongressVoteBudget(favor, costs, maxVotes);
-	if (tonumber(ourPoints) or 0) >= (tonumber(config.DiploVictoryMatchPoint) or 18) then
+	-- See `CivvisRacerEndgame` (`allIn`): in the last stretch too.
+	if allIn == true or (tonumber(ourPoints) or 0) >= (tonumber(config.DiploVictoryMatchPoint) or 18) then
 		if budget > 1 then return budget; end
 		return nil;
 	end
@@ -20277,10 +20472,21 @@ end
 -- and the gang's own target, us -- for +1: -1 a session, and with the two
 -- participation votes bought beside it (~+1.3) the session gains instead of
 -- losing, so a point from anywhere between sessions wins. At 16-17 the gang
--- is a coin flip and a winning claim is +3 (expected about -0.2 for the
--- claim against -0.6 for the brace), so the brace waits for
--- `DiploRacerGangSelf` (18). The free vote only: the Favor goes to the
+-- was a coin flip in October (King and Emperor) and a winning claim is +3
+-- (expected about -0.2 for the claim against -0.6 for the brace), so the
+-- brace waited for 18. The free vote only: the Favor goes to the
 -- participation votes.
+--
+-- ★★ ON THE IMMORTAL AND DEITY LANES THE GANG STANDS FROM 16. 78 live games,
+-- 2026-11-13 to 11-18: with the Diplomatic leader on 16 to 19, 35 of 37 rival
+-- votes were B on it and B carried in 9 sessions of 9 (23 to 50 rival B
+-- votes against a leader's own A block of 18 at most). On 13 or 14, 3 of 36;
+-- on 15, 24 of 33, and B carried 3 sessions of 8. Our seat led on 17 in
+-- 182344Z t174 (10 A votes into 40 B) and on 16 in civvis-20261118T055703Z
+-- t168 (11 into 39): -2 and no participation point each time, and 055703Z
+-- fell 16 -> 14 there and ended on 18 of 20. So `DiploRacerGangSelf` is 16:
+-- at 15 a claim that out-votes a partial gang still takes the +3 (and
+-- `CivvisRacerEndgame` gives it the bank), unless the warning below stands.
 --
 -- ★★ AND A RIVAL'S B ON US AT THE LAST SESSION IS THE WARNING. The gang
 -- ramps: one rival turns on the leader, and at the next session they all
@@ -20294,7 +20500,7 @@ end
 CivvisRacerBraces = function(ourPoints, config, warned, passed)
 	config = type(config) == "table" and config or {};
 	local points = tonumber(ourPoints) or 0;
-	if points >= (tonumber(config.DiploRacerGangSelf) or 18) then return true; end
+	if points >= (tonumber(config.DiploRacerGangSelf) or 16) then return true; end
 	-- A B that CARRIED on us is no warning: the rivals relax after a gang
 	-- that landed and press after one that failed. Of today's warned
 	-- sessions, the two after a failed B met 26 and 19 B votes (King
@@ -26904,6 +27110,9 @@ local function tick()
 							return Players[otherID]:GetStats():GetDiplomaticVictoryPoints();
 						end, 0)) or 0,
 						score = tonumber(try(function() return Players[otherID]:GetScore(); end, -1)) or -1,
+						-- Recorded with the ballot (`wc_ballot_context.rivals`) and
+						-- read by nothing: what a rival's vote count follows.
+						favor = tonumber(try(function() return Players[otherID]:GetFavor(); end, nil)),
 					};
 				end
 			end
@@ -26978,6 +27187,9 @@ local function tick()
 			envoyTally.racer_points = CivvisCongressRacer(cfg) and (tonumber(try(function()
 				return Players[pid]:GetStats():GetDiplomaticVictoryPoints();
 			end, 0)) or 0) or nil;
+			-- See `CivvisRacerEndgame`: the last stretch, read once.
+			envoyTally.racer_endgame = CivvisRacerEndgame(envoyTally.racer_points, leaderPoints,
+				candidates, cfg);
 			local cast, spent = 0, 0;
 			-- How the Diplomatic Victory ballot was cast, for `wc_vote`:
 			-- "claim" (A for us with the bank), "deny" (B against the leader
@@ -27158,10 +27370,14 @@ local function tick()
 						end, 0)) or 0;
 						if CivvisCongressRacer(cfg) and ourIdx ~= nil
 								and (not ganged or mine > (tonumber(leaderPoints) or 0)) then
-							local k = CivvisRacerClaimVotes(favor - (envoyTally.racer_reserve or 0),
+							-- See `CivvisRacerEndgame`: in the last stretch the claim
+							-- takes the bank, less the session's ordinary counts.
+							local k = CivvisRacerClaimVotes(favor - (envoyTally.racer_endgame
+									and CivvisRacerReserve(list, costs, cfg, true)
+									or envoyTally.racer_reserve or 0),
 								mine, CivvisRacerClaimBlock(envoyTally.wc_rival_block,
 									envoyTally.wc_rival_block_prev, mine, leaderPoints, cfg),
-								costs, maxVotes, cfg);
+								costs, maxVotes, cfg, envoyTally.racer_endgame);
 							if CivvisRacerBraces(mine, cfg, envoyTally.wc_b_on_us, envoyTally.wc_b_passed_on_us) then
 								option, selection, n, mode = 2, ourIdx, 1, "brace";
 							elseif k ~= nil then
@@ -27219,6 +27435,22 @@ local function tick()
 						if counter and CivvisCongressTargetIndex(targets, threat) == nil then
 							counter = false;
 						end
+						-- ★ A RACER'S LONE VOTE ON B CARRIES NOTHING. The counter's
+						-- free vote names the threat on option B, and option B won
+						-- none of the 155 Trade Treaty, Migration Treaty and Border
+						-- Control resolutions of 78 live games (2026-11-13 to 11-18;
+						-- A 153, two tied): the penalty never landed and our 8 lone
+						-- B votes matched nothing (civvis-20261118T055703Z t168: B
+						-- on the Trade Treaty, 12-2 for A). A seat racing the
+						-- Congress keeps the counter only when the embargo buys its
+						-- votes (`CivvisCultureEmbargoVotes`); otherwise it votes
+						-- for its own participation point. Off with
+						-- `RacerJoinsTheField = false`.
+						if counter and CivvisCongressRacer(cfg) and cfg.RacerJoinsTheField ~= false
+								and CivvisCultureEmbargoVotes(rtype, threat, candidates, favor, costs,
+									leaderPoints, envoyTally.wc_last_a, cfg) < 2 then
+							counter = false;
+						end
 						if counter then
 							for idx, t in pairs(targets) do
 								if tonumber(t) == threat then selection = idx; end
@@ -27250,7 +27482,8 @@ local function tick()
 						-- See `CivvisHeritageDenial`.
 						local hIdx, hVotes, hPrice = CivvisHeritageDenial(rtype, targets,
 							candidates, pid, favor, costs, envoyTally.wc_last_a, cfg);
-						if hIdx ~= nil then
+						-- See `CivvisRacerKeepsDenial`: not a denial the rivals outvote.
+						if hIdx ~= nil and CivvisRacerKeepsDenial(hVotes, candidates, cfg) then
 							option, selection, votes = 2, hIdx, hVotes;
 							favor = favor - hPrice;
 							spent = spent + hPrice;
@@ -27274,9 +27507,11 @@ local function tick()
 						option = 2;
 					end
 					-- See `CivvisRacerUsualWinner`: Melee, the Great Scientist and
-					-- Fascism in place of the first target listed.
+					-- Fascism in place of the first target listed, and the
+					-- field's own vote where it votes as one.
 					if not racerSlowed then
-						option, selection = CivvisRacerUsualWinner(rtype, targets, cfg, option, selection);
+						option, selection = CivvisRacerUsualWinner(rtype, targets, cfg, option, selection,
+							CivvisRivalsGovernment(rtype, candidates, pid, cfg));
 					end
 					-- See `CivvisParticipationDenialOption`: against a leader on
 					-- the denial floor, the option its own vote is predicted
@@ -27317,12 +27552,16 @@ local function tick()
 							spent = spent + price;
 						end
 					elseif rtype ~= "WC_RES_DIPLOVICTORY" and CivvisCongressRacer(cfg)
-							and not racerSlowed then
-						-- See `CivvisRacerResolutionVotes`.
+							and not racerSlowed
+							and CivvisRivalsGovernment(rtype, candidates, pid, cfg) == nil then
+						-- See `CivvisRacerResolutionVotes`. A landslide
+						-- (`CivvisRivalsGovernment`) is joined with the free vote.
 						local want, price = CivvisRacerResolutionVotes(rtype, favor, costs, cfg);
-						-- See `CivvisRacerMatchPointVotes`: from 18 points, the bank.
+						-- See `CivvisRacerMatchPointVotes`: from 18 points, at a
+						-- brace and in the last stretch, the bank.
 						want, price = CivvisRacerMatchPointVotes(rtype, list, entry, favor, costs, cfg,
-							envoyTally.racer_points, want, price);
+							envoyTally.racer_points, want, price, envoyTally.racer_endgame == true
+								or (mode == "brace" and cfg.RacerEndgame ~= false), #candidates);
 						if want > 1 then
 							votes = want;
 							favor = favor - price;
@@ -27346,6 +27585,7 @@ local function tick()
 							leader = leader, leader_points = leaderPoints,
 							threat = threat, threat_progress = threatProgress,
 							racer_slowed = racerSlowed,
+							racer_endgame = envoyTally.racer_endgame,
 						}));
 					end);
 					if not contextOK then

@@ -187,10 +187,13 @@ if not transportOnly then
     check("failed diagnostics do not suppress any vote", #requests == 3)
     check("failed diagnostics do not suppress submission", submissions == 2)
     check("each failed context is observable", contextFailures == 3)
+    -- The Migration Treaty: a racer's lone counter vote (B on the threat)
+    -- carries nothing, so its vote is A on itself (CivvisControlAgent.lua,
+    -- "A RACER'S LONE VOTE ON B CARRIES NOTHING").
     check("failed diagnostics preserve all parameters", requests[1].option == 1
         and requests[1].selection == 0 and requests[1].votes == 11
         and requests[2].option == 1 and requests[2].selection == 0 and requests[2].votes == 1
-        and requests[3].option == 2 and requests[3].selection == 2 and requests[3].votes == 1)
+        and requests[3].option == 1 and requests[3].selection == 0 and requests[3].votes == 1)
     CivvisCongressChoiceContext = original
 end
 print(string.format("all %d Congress choice context checks passed", checks))

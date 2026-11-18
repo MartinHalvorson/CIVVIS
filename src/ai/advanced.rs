@@ -7030,6 +7030,12 @@ pub struct AdvancedAi {
     /// well as a Culture or Domination one. See
     /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
     denial_spies_fill_every_slot_2: bool,
+    /// `deterrence-waits-for-the-income`: at peace, with no city threatened,
+    /// `near-rival-deterrence` trains no unit whose upkeep would put income
+    /// below -0.5 Gold a turn while the treasury is under Recovery's reserve
+    /// (100 + 25 a city). See `advanced/deterrence_waits_for_the_income.rs`.
+    /// Opt-in.
+    deterrence_waits_for_the_income: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11464,6 +11470,8 @@ mod denounce_only_to_declare;
 mod deterrence_stops_at_a_garrison;
 /// `deterrence-trusts-a-friend`: see `advanced/deterrence_trusts_a_friend.rs`.
 mod deterrence_trusts_a_friend;
+/// `deterrence-waits-for-the-income`: see `advanced/deterrence_waits_for_the_income.rs`.
+mod deterrence_waits_for_the_income;
 mod runaway_expander;
 // `found-against-a-rival-faith`. See `advanced/faith_veto.rs`.
 mod faith_veto;
