@@ -402,7 +402,7 @@ function selectedSimulationSummary(settings = null) {
   const tactics = settings ? isBattlefieldMapScript(settings.map_script)
     : readSetting("gamemode") === "tactics";
   const mode = civ6 ? "Firaxis Civ 6"
-    : spectate === true ? "AI simulation" : "Single player";
+    : spectate === true ? "AI simulation" : "Sim debugger";
   const arena = !civ6 && tactics ? "Tactics" : "";
   // The world-size option already includes its dimensions and seat count; the
   // compact first clause is enough to identify the choice without turning the
@@ -533,7 +533,7 @@ function updateRestartSimulationButton() {
       ? `Cannot start: ${civ6Status.blocked}`
       : "Start a real Civilization VI game on this computer and play it"
     : human
-    ? "Start a single-player game with the selected settings"
+    ? "Start a sim debugger game with the selected settings"
     : changed
     ? "Start a new game with the selected settings"
     : "Start a new game with the same settings, on a fresh map");

@@ -4,7 +4,7 @@ On a quest to fix Civ 6 AI.
 
 All for fun. Everything is free, open source, and runs locally. Only ask is don't use AI against other players in multiplayer online.
 
-Design & watch Civ 6 AI simulations yourself, or try a single player game against CIVVIS AI at [civvis.ai](https://www.civvis.ai). Single player is still a WIP.
+Design & watch Civ 6 AI simulations yourself, or try the sim debugger — one civilization of your own against CIVVIS AI — at [civvis.ai](https://www.civvis.ai). The sim debugger is still a WIP.
 
 Posting progress videos on the YouTube channel [CIVVIS](https://www.youtube.com/@civvis). Video production is fairly automated. Most videos don't have audio and are simply screen recordings of games with Civ 6 and CIVVIS side-by-side.
 - [Lv 8 wins playlist](https://www.youtube.com/playlist?list=PLWcKlP8e8iy4)

@@ -120,7 +120,7 @@ the action from the UI without a debugger.
 | World Congress | `congress_vote` | yes — Government panel |
 | Ages | `choose_dedication`, `choose_secret_society` | yes — Government panel |
 | Conquest | `keep_city`, `raze_city`, `liberate_city` | yes — modal |
-| Setup | shared world setup, difficulty, leader choice, save and load | yes — Game setup ▸ Single player, with the same world settings as an AI simulation plus a leader, a difficulty and the server's saves |
+| Setup | shared world setup, difficulty, leader choice, save and load | yes — Game setup ▸ Sim debugger, with the same world settings as an AI simulation plus a leader, a difficulty and the server's saves |
 | Auto-play | `POST /autoplay` | yes — a built-in agent and a turn count under the End Turn button |
 
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
@@ -341,7 +341,10 @@ project values them:
 
 1. **AI-only simulation**, the default. It is what the engine exists for and
    what the exhibition deployment runs, so it is what the panel opens on.
-2. **Single player - WIP**, a person in seat 0 against the agents.
+2. **Sim debugger - WIP**, a person in seat 0 against the agents. The site
+   has called this mode Sim debugger since 2026-11-18 (operator: "Change
+   single player to 'sim debugger'"); this document and the code still say
+   single player.
 
 Multiplayer is not listed for now.
 
@@ -353,7 +356,7 @@ other game's settings, and every row it does not carry is hidden rather than
 shown and dropped. See [CIV6_GAME_MODE.md](CIV6_GAME_MODE.md).
 
 A world already on screen overrides that default: open the page on a running
-`civvis play` and the select reads Single player, because a person playing a
+`civvis play` and the select reads Sim debugger, because a person playing a
 game should not have to notice that the button beside their empire has quietly
 started offering to replace it with a simulation.
 

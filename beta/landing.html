@@ -158,7 +158,7 @@
   .intro a { color: var(--accent); }
 
   /* The menu: one row of cards, and who is at the keyboard across the
-     columns — Watch (AI simulations) on the left, Play (single player) on
+     columns — Watch (AI simulations) on the left, Play (sim debugger) on
      the right. The site offers the full game and nothing else, so the menu
      is the pair of cards and the two column heads above them: there is no
      row index down the left edge and no vertical row label beside the
@@ -277,7 +277,7 @@
   .card-btn.plain:focus-visible { border-color: var(--accent); color: #fff; }
   .card-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* The two cards of a row are the shared panel's mode selector: while the
-     panel is open, the selected option — AI simulation or Single player —
+     panel is open, the selected option — AI simulation or Sim debugger —
      stays highlighted and the row's other option is muted. A muted card
      un-mutes under the pointer, because clicking it is how the panel
      switches who is at the keyboard. */
@@ -465,7 +465,7 @@
     </p>
 
     <!-- The menu: one row of cards, and who is at the keyboard across the
-         columns — Watch (AI simulations) on the left, Play (single player)
+         columns — Watch (AI simulations) on the left, Play (sim debugger)
          on the right. Each card reads top to bottom as name, description,
          actions, tags: the title line carries the card's name on the left
          and who is at the keyboard on the right; the photograph, the name
@@ -486,7 +486,7 @@
          photograph is a real capture of its own preset. -->
     <section class="quadrants" aria-label="Game menu">
       <h2 class="col-head">Design &amp; Watch <span>AI simulations</span></h2>
-      <h2 class="col-head">Play <span>Single player</span></h2>
+      <h2 class="col-head">Play <span>Sim debugger</span></h2>
 
       <div class="mode-card" id="row-civ">
         <a class="card-thumb-link" href="../">
@@ -513,12 +513,12 @@
 
       <div class="mode-card">
         <a class="card-thumb-link" href="../?mode=play">
-          <img class="card-thumb" src="assets/play-civ.jpg" alt="Play CIVVIS: the opening of a single-player CIVVIS game, a settler with its orders bar open on a young world.">
+          <img class="card-thumb" src="assets/play-civ.jpg" alt="Play CIVVIS: the opening of a CIVVIS sim debugger game, a settler with its orders bar open on a young world.">
         </a>
         <div class="card-body">
           <div class="card-title-row">
             <h3 class="card-title" id="play-civ-title"><a href="../?mode=play">Play CIVVIS</a></h3>
-            <span class="card-mode">Single player</span>
+            <span class="card-mode">Sim debugger</span>
           </div>
           <p class="card-desc">A full game as one civilization vs AI rivals.</p>
           <div class="card-actions">
@@ -553,7 +553,7 @@
         </div>
         <div class="picker-modes" id="game-modes" role="group" aria-label="Who is at the keyboard">
           <button class="picker-lens" type="button" data-mode="watch-civ" aria-pressed="true">AI simulation</button>
-          <button class="picker-lens" type="button" data-mode="play-civ" aria-pressed="false">Single player</button>
+          <button class="picker-lens" type="button" data-mode="play-civ" aria-pressed="false">Sim debugger</button>
         </div>
         <div class="picker-lenses" id="game-lenses" role="tablist" aria-label="Game setup view">
           <button class="picker-lens" type="button" role="tab" data-lens="worlds" aria-selected="true">Worlds</button>
@@ -939,7 +939,7 @@
       (meta ? `<span class="picker-card-meta">${esc(meta)}</span>` : "") +
       `<span class="picker-card-detail">${esc(detail)}</span></a>`;
     const seatsMarkup = () => mode === "play-civ"
-      ? [gameCard(civInto(""), "Your seat", "Single player · first chair", "Take one civilization yourself; the AI plays every rival. Your leader and difficulty are chosen in Game setup."),
+      ? [gameCard(civInto(""), "Your seat", "Sim debugger · first chair", "Take one civilization yourself; the AI plays every rival. Your leader and difficulty are chosen in Game setup."),
          gameCard(civSetup(), "AI rivals", "The rated roster", "Your rivals are seated from the AI player pool — the league's proven strategies. How many of the best are eligible, per civ, is the AI player pool setting in Game setup."),
          gameCard(civSetup(), "Everything else", "Game setup", "Leader, difficulty, teams, mercy rule, seeds and the rest — the simulator's Game setup drawer opens on arrival.")]
       : [gameCard(civInto(""), "AI empires", "Every seat AI-played", "Every civilization is played by a rated strategy from the league roster, and the HUD shows each player's Elo and win odds."),
@@ -965,7 +965,7 @@
       gameGroups.innerHTML = gameGroupsMarkup();
     };
     const heading = {
-      "play-civ": ["Play CIVVIS · single player", "Set up your game",
+      "play-civ": ["Play CIVVIS · sim debugger", "Set up your game",
         "Take one civilization against AI rivals. Each card starts that game with you in the first chair; your leader, difficulty and every other setting are in the simulator’s Game setup."],
       "watch-civ": ["Watch CIVVIS · AI simulation", "Set up the world",
         "A fresh world every visit, played end to end by AI civilizations. Each card starts that simulation; every other setting is in the simulator’s Game setup."],
