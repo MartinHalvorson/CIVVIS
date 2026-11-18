@@ -468,9 +468,10 @@ fn a_shooter_far_out_walks_toward_the_capital_at_war() {
     assert!(distance < 6, "it walks toward the capital: {distance}");
 }
 
-/// A whole turn of the seat: the called shooters end it at the capital with
-/// the gene on, and the gun takes their fire.
-fn a_turn(on: bool) -> (Vec<i32>, i32) {
+/// A whole turn of the seat with the battle planner on: where the three
+/// Archers end it (tiles from the City Center), the Catapult's health, and
+/// the gene's journal lines.
+fn a_turn(on: bool) -> (Vec<i32>, i32, Vec<String>) {
     let (mut g, home) = watch_board();
     war(&mut g, 0, 1);
     let gun = spawn_east(&mut g, "catapult", 1, home, 2);
@@ -486,7 +487,17 @@ fn a_turn(on: bool) -> (Vec<i32>, i32) {
     if on {
         ai.enable_shooters_man_the_capital();
     }
+    ai.base.journal = crate::reasoning::Journal::recording();
     ai.take_turn(&mut g, 0);
+    let notes = ai
+        .base
+        .journal
+        .since(u64::MAX)
+        .thoughts
+        .into_iter()
+        .filter(|thought| thought.detail.contains("shooters-man-the-capital"))
+        .map(|thought| format!("{} | {}", thought.headline, thought.detail))
+        .collect();
     (
         archers
             .iter()
@@ -494,17 +505,24 @@ fn a_turn(on: bool) -> (Vec<i32>, i32) {
             .map(|unit| g.wdist(unit.pos, home))
             .collect(),
         g.units.get(&gun).map_or(0, |unit| unit.hp),
+        notes,
     )
 }
 
 #[test]
 fn a_whole_turn_leaves_the_called_shooters_at_the_capital() {
-    let (on, _) = a_turn(true);
+    let (on, _, notes) = a_turn(true);
     assert_eq!(on.len(), 3, "nobody is lost on our own turn");
     assert!(
-        on.iter().all(|distance| *distance <= 1),
-        "on, every called shooter ends the turn in or beside the centre: {on:?}"
+        notes.iter().any(|note| note.contains("3 called")),
+        "the watch read and called all three: {notes:#?}"
     );
+    assert!(
+        on.iter().all(|distance| *distance <= 1),
+        "on, every called shooter ends the turn in or beside the centre: {on:?} {notes:#?}"
+    );
+    let (_, _, quiet) = a_turn(false);
+    assert!(quiet.is_empty(), "off, the gene journals nothing");
     // The same turn twice is the same turn.
     assert_eq!(a_turn(true), a_turn(true));
     assert_eq!(a_turn(false), a_turn(false));
