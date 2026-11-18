@@ -435,6 +435,12 @@ fn a_live_settler_refuses_a_loyalty_doomed_target_before_walking_there() {
 
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
+    // `early-cities-keep-their-distance` (a default since the 2026-11-18
+    // publication) charges an early city 8 per tile inside ten of a charted
+    // rival, so it prices this fixture's doomed site (four tiles from the
+    // rival) out of the choice before the loyalty forecast ever reads it.
+    // Withhold it so this probe keeps exercising the forecast it exists for.
+    live.early_cities_keep_their_distance = false;
     // The loyalty forecast under test rides on `loyalty-rate-alarm`, which the
     // batch rule holds off as of the 2026-08-25 batches; the arm turns it on.
     live.enable_loyalty_rate_alarm();
