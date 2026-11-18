@@ -23,6 +23,7 @@
     "-- then DELETE the entry here, or the stale-waiver check fails."
   ],
   "waivers": {
-    "culture-and-religion-race-the-congress": "Opt-in, live only: it acts solely in the Civ VI host's World Congress ballot (`CivvisCongressRacer`, tools/civ6_control/mod/CivvisControlAgent.lua, via `LaneCongressRacer` from tools/civ6_play.py); the simulator has no such Congress and never reads the field, so no screen can show it fire. congress_join_vote_test.lua drives the Lua side; the live proof is `wc_join_vote` rows and final Diplomatic Victory points on Culture and Religious seats (congress_kpi.py)."
+    "culture-and-religion-race-the-congress": "Opt-in, live only: it acts solely in the Civ VI host's World Congress ballot (`CivvisCongressRacer`, tools/civ6_control/mod/CivvisControlAgent.lua, via `LaneCongressRacer` from tools/civ6_play.py); the simulator has no such Congress and never reads the field, so no screen can show it fire. congress_join_vote_test.lua drives the Lua side; the live proof is `wc_join_vote` rows and final Diplomatic Victory points on Culture and Religious seats (congress_kpi.py).",
+    "tribute-buys-the-friendship-2": "Opt-in, live only: it acts solely in the live bridge (`civvis_orders::append_tribute_order`, the `past_the_line` aim and treasury rule), which the simulator never runs, and the opinion row a Civilization VI tribute buys is not modelled by the engine (`Game::do_trade`), so no screen can show it fire. `tribute_two_aims_past_the_line_from_the_whole_treasury` drives the bridge rule; a captured action-pair proof from an armed Deity game replaces this waiver."
   }
 }
