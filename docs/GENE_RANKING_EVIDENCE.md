@@ -196,6 +196,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-universities-pass-the-claims` | off (unmeasured) | Opt-in gene `science-universities-pass-the-claims`; see `advanced/science_universities_pass_the_claims.rs`. | 1 \| 1 |
 | `shooters-man-the-capital` | off (unmeasured) | Opt-in gene `shooters-man-the-capital`; see `advanced/shooters_man_the_capital.rs`. | 1 \| 1 |
 | `trade-district-follows-the-campus` | off (unmeasured) | Opt-in gene `trade-district-follows-the-campus`; see `advanced/trade_district_follows_the_campus.rs`. | 1 \| 1 |
+| `tribute-buys-the-friendship-2` | off (unmeasured) | Opt-in gene `tribute-buys-the-friendship-2`; see `advanced/tribute_buys_the_friendship.rs`. | 1 \| 2 |
 
 ## Removed from the code
 
