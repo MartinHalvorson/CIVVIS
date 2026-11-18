@@ -1180,10 +1180,15 @@
     text-overflow: ellipsis; white-space: nowrap;
   }
   .victory-body { min-width: 0; align-self: stretch; }
-  .victory-none-note {
-    margin: 3px 0 0 8px; color: #8ea099; font-size: var(--type-small); font-weight: 650;
-    line-height: 1.45; text-wrap: pretty;
+  /* The victory types switched off in Game setup, named once under the
+     tracker's title instead of each keeping a path of its own. */
+  .victory-off-note {
+    flex: 0 0 auto; margin: -1px 3px 3px; padding-left: 10px; color: #8ea099;
+    font-size: var(--type-caption); font-weight: 700; letter-spacing: .02em; line-height: 1.35;
+    text-align: center; text-wrap: pretty;
   }
+  .victory-off-note span { color: color-mix(in srgb, var(--track) 55%, #a3b5ae); }
+  #victoryhud.victory-collapsed .victory-region > .victory-off-note { display: none; }
   .victory-subheading {
     flex: 0 0 auto; display: flex; gap: .4em; color: #a3b5ae;
     font-size: var(--vt-sub-type, var(--type-caption)); font-weight: 800;
