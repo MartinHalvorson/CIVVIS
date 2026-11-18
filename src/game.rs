@@ -1719,6 +1719,9 @@ impl<K: std::hash::Hash + Eq, V> MemoMap<K, V> for crate::fast_map::FastMap<K, V
     }
 }
 
+/// Kept trade-route walks by their two ends. See `Game::route_walk`.
+type RouteWalks = crate::fast_map::FastMap<(Pos, Pos), std::sync::Arc<[Pos]>>;
+
 #[derive(Default)]
 pub struct QueryCache {
     yields: std::cell::RefCell<Option<crate::fast_map::FastMap<u32, Yields>>>,
@@ -1899,6 +1902,9 @@ pub struct QueryCache {
     /// Gold, and the tile grid's epoch it was read at. See
     /// `Game::route_gold_wonder_stands`.
     route_gold_wonders: std::cell::Cell<Option<(u64, bool)>>,
+    /// Each trade route's straight walk (`Game::route_walk`), by its two
+    /// ends, and the tile grid's epoch every kept walk was taken at.
+    route_walks: std::cell::RefCell<(u64, RouteWalks)>,
     /// The attack-envelope key's fold over the units (every unit but one
     /// owner's, or every unit), and the units' version it was taken at. See
     /// `Game::units_fold_kept`.

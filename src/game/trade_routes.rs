@@ -362,9 +362,10 @@ impl Game {
         if !self.route_gold_wonder_stands() {
             return 1.0;
         }
-        let mut current = from;
+        // The walk's first forty tiles: its start and the first 39 steps.
+        let walk = self.route_walk(from, to);
         let mut multiplier: f64 = 1.0;
-        for _ in 0..40 {
+        for current in std::iter::once(from).chain(walk.iter().copied().take(39)) {
             if let Some(wonder) = self.map.tiles[&current].wonder.as_deref() {
                 multiplier = multiplier.max(
                     self.rules.wonders[wonder]
@@ -374,31 +375,47 @@ impl Game {
                         .unwrap_or(1.0),
                 );
             }
-            if current == to {
-                break;
-            }
-            let Some(next) = self
-                .nbrs(current)
-                .into_iter()
-                .filter(|position| self.rules.is_passable(&self.map.tiles[position]))
-                .min_by_key(|position| (self.wdist(*position, to), *position))
-            else {
-                break;
-            };
-            current = next;
         }
         multiplier
     }
 
-    /// The cities a route passes through on its way from `from` to `to`, in
-    /// walking order, ending with the destination and never including the
-    /// origin. The same greedy straight walk `route_district_gold_multiplier`
-    /// uses: CIVVIS has no trader pathfinder, so this is the route as the crow
-    /// flies over passable ground, which is what a Firaxis trader mostly does
-    /// on land within range.
-    fn route_path_cities(&self, from: Pos, to: Pos) -> Vec<u32> {
+    /// The greedy straight walk a route takes from `from` toward `to`: each
+    /// step to the passable neighbour nearest `to` (ties to the smaller
+    /// position), at most forty steps, stopping on `to` or where no neighbour
+    /// is passable. The tiles stepped onto, in order; `from` is not among them.
+    ///
+    /// ★★ IT WAS WALKED AGAIN FOR EVERY ROUTE ON EVERY DERIVATION OF A CITY'S
+    /// YIELDS: `trading_post_route_gold` always, `route_district_gold_multiplier`
+    /// once a Golden Gate Bridge or Panama Canal stands. Forty steps of six
+    /// passability reads and six wrapped distances each, about 1.8% of a
+    /// site game under `add_trade_route_yields`. The walk reads only the map
+    /// (passability) and the two ends, so it is kept by its ends for as long
+    /// as the tile grid's epoch stands; any write to any tile drops every
+    /// kept walk, and a cloned game starts with none (`QueryCache::clone`).
+    pub(super) fn route_walk(&self, from: Pos, to: Pos) -> std::sync::Arc<[Pos]> {
+        let epoch = self.map.tiles.epoch();
+        {
+            let kept = self.query_memo.route_walks.borrow();
+            if kept.0 == epoch {
+                if let Some(walk) = kept.1.get(&(from, to)) {
+                    return walk.clone();
+                }
+            }
+        }
+        let walk: std::sync::Arc<[Pos]> = self.route_walk_uncached(from, to).into();
+        let mut kept = self.query_memo.route_walks.borrow_mut();
+        if kept.0 != epoch {
+            kept.1.clear();
+            kept.0 = epoch;
+        }
+        kept.1.insert((from, to), walk.clone());
+        walk
+    }
+
+    /// `route_walk`, walked.
+    pub(super) fn route_walk_uncached(&self, from: Pos, to: Pos) -> Vec<Pos> {
         let mut current = from;
-        let mut cities = Vec::new();
+        let mut walk = Vec::new();
         for _ in 0..40 {
             if current == to {
                 break;
@@ -412,6 +429,20 @@ impl Game {
                 break;
             };
             current = next;
+            walk.push(current);
+        }
+        walk
+    }
+
+    /// The cities a route passes through on its way from `from` to `to`, in
+    /// walking order, ending with the destination and never including the
+    /// origin. The same greedy straight walk `route_district_gold_multiplier`
+    /// uses: CIVVIS has no trader pathfinder, so this is the route as the crow
+    /// flies over passable ground, which is what a Firaxis trader mostly does
+    /// on land within range.
+    fn route_path_cities(&self, from: Pos, to: Pos) -> Vec<u32> {
+        let mut cities = Vec::new();
+        for &current in self.route_walk(from, to).iter() {
             if let Some(cid) = self.city_at(current) {
                 if !cities.contains(&cid) {
                     cities.push(cid);
