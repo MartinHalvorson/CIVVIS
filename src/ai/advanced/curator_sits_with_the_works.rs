@@ -97,7 +97,7 @@ impl AdvancedAi {
     pub(super) fn curated_works_by_city(g: &Game, pid: usize) -> BTreeMap<u32, usize> {
         g.housed_great_works(pid)
             .iter()
-            .filter(|(city, _)| g.cities.get(*city).is_some_and(|c| c.owner == pid))
+            .filter(|(city, _)| g.cities.get(city).is_some_and(|c| c.owner == pid))
             .map(|(city, kinds)| {
                 let works = kinds
                     .iter()

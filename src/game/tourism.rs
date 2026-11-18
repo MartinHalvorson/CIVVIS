@@ -459,7 +459,7 @@ impl Game {
             if let Some(observed) = &self.observed_great_work_housing {
                 return observed
                     .iter()
-                    .filter(|(city, _)| self.cities.get(*city).is_some_and(|c| c.owner == pid))
+                    .filter(|(city, _)| self.cities.get(city).is_some_and(|c| c.owner == pid))
                     .map(|(city, kinds)| (*city, kinds.clone()))
                     .collect();
             }
@@ -758,17 +758,26 @@ impl Game {
                     continue;
                 }
                 let effects = &self.rules.improvements[improvement].effects;
-                let appeal = self.tile_appeal(*pos);
-                // National Park Tourism follows its tiles' live Appeal even
-                // after later surroundings drag that value below zero. Other
-                // appeal-based improvements are only legal at positive Appeal.
-                let tourism_appeal = if improvement == "national_park" {
-                    appeal
+                let per_appeal = effects.get("appeal_tourism").copied().unwrap_or(0.0);
+                // Appeal is a walk over the tile's neighbours; most improvements
+                // pay nothing for it, and a zero rate adds nothing whatever the
+                // Appeal is, so it is only read where it is paid for.
+                let appeal_tourism = if per_appeal != 0.0 {
+                    let appeal = self.tile_appeal(*pos);
+                    // National Park Tourism follows its tiles' live Appeal even
+                    // after later surroundings drag that value below zero. Other
+                    // appeal-based improvements are only legal at positive Appeal.
+                    let tourism_appeal = if improvement == "national_park" {
+                        appeal
+                    } else {
+                        appeal.max(0)
+                    };
+                    per_appeal * tourism_appeal as f64
                 } else {
-                    appeal.max(0)
+                    0.0
                 };
-                let mut improvement_tourism = effects.get("tourism").copied().unwrap_or(0.0)
-                    + effects.get("appeal_tourism").copied().unwrap_or(0.0) * tourism_appeal as f64;
+                let mut improvement_tourism =
+                    effects.get("tourism").copied().unwrap_or(0.0) + appeal_tourism;
                 if self.players[pid].techs.contains(&crate::name!("flight")) {
                     improvement_tourism +=
                         effects.get("tourism_after_flight").copied().unwrap_or(0.0);

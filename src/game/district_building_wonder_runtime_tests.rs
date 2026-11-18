@@ -328,8 +328,8 @@ fn stonehenge_is_a_holy_site_for_founding_and_alhambra_is_a_fort() {
         .insert(crate::name!("stonehenge"), position);
     game.map.tiles.get_mut(&position).unwrap().wonder = Some(crate::name!("stonehenge"));
     game.players[0].prophet_pending = true;
-    let follower = game.rules.beliefs.follower.keys().next().unwrap().clone();
-    let founder = game.rules.beliefs.founder.keys().next().unwrap().clone();
+    let follower = *game.rules.beliefs.follower.keys().next().unwrap();
+    let founder = *game.rules.beliefs.founder.keys().next().unwrap();
     game.do_found_religion(0, &follower, &founder).unwrap();
     assert_eq!(game.players[0].holy_city, Some(city));
 
@@ -1864,7 +1864,7 @@ fn aqueducts_dams_and_flood_barriers_execute_disaster_protection() {
         .get_mut(&city)
         .unwrap()
         .districts
-        .remove(&Name::new("aqueduct"));
+        .remove(Name::new("aqueduct"));
     game.map.tiles.get_mut(&position).unwrap().district = None;
     game.map.tiles.get_mut(&farm).unwrap().pillaged = false;
     game.resolve_drought(&[farm]);

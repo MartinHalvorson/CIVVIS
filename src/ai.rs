@@ -1154,10 +1154,12 @@ pub(crate) type AttackEnvelopes = Vec<(u32, std::sync::Arc<EnvelopeReach>)>;
 
 /// One envelope table and the union of every tile in it, kept together so a
 /// reader can tell whether the union still describes the table it holds. See
-/// [`BasicAi::covered_tiles`]. Unlike one raw envelope target list, the union
-/// is freshly assembled here, so its outer `Arc<Vec<_>>` keeps that buffer
-/// without converting it to a second shared slice allocation.
-type CoveredTiles = (std::sync::Arc<AttackEnvelopes>, std::sync::Arc<Vec<Pos>>);
+/// [`BasicAi::covered_tiles`]. The union is only ever asked whether it holds
+/// a tile, so it is a hashed set: no sort, no dedup, no binary search.
+type CoveredTiles = (
+    std::sync::Arc<AttackEnvelopes>,
+    std::sync::Arc<crate::fast_map::FastSet<Pos>>,
+);
 
 /// The three route priorities used by a recovering unit. They are immutable
 /// while a board and hostile-envelope table are unchanged, so frontier clones

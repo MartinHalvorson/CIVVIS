@@ -50,6 +50,30 @@ WEDGE_WATCHDOG_LOCK=${CIVVIS_WEDGE_LOCK:-$HOME/.civvis-agent-wedge-watchdog.lock
 WEDGE_WATCHDOG_PID_FILE=$WEDGE_WATCHDOG_LOCK/pid
 wedge_watchdog_pid=""
 wedge_watchdog_owned=0
+# ⚠⚠ A WATCHDOG THAT WILL NOT STAY UP IS RESTARTED WITH A BACKOFF, NOT EVERY POLL.
+#
+# From #5167 (2026-11-12) the wedge watchdog asked for the exact intent
+# `running` while this host also accepted `terminal`. Under terminal control it
+# exited the moment it started and the loop below restarted it every POLL_S:
+# about 52,000 "agent wedge watchdog exited; restarting" lines in six days, the
+# same again in the watchdog's own log, and no watchdog in all that time. The
+# mismatch itself is fixed in the watchdog. This is for whatever makes it exit
+# at once next time: an intent it refuses, a missing file, a script that no
+# longer parses.
+#
+# An exit within WEDGE_QUICK_EXIT_S of the start is a quick exit. The first is
+# restarted on the next poll, because the climb retires the watchdog at every
+# batch start (`retire_stale_wedge_watchdog`) and expects it back within
+# seconds. From the second quick exit in a row the wait starts at
+# WEDGE_BACKOFF_S and doubles up to WEDGE_BACKOFF_MAX_S. One watchdog that
+# outlives WEDGE_QUICK_EXIT_S clears the count.
+WEDGE_QUICK_EXIT_S=${CIVVIS_WEDGE_QUICK_EXIT_S:-120}
+WEDGE_BACKOFF_S=${CIVVIS_WEDGE_BACKOFF_S:-10}
+WEDGE_BACKOFF_MAX_S=${CIVVIS_WEDGE_BACKOFF_MAX_S:-600}
+wedge_watchdog_started_at=0
+wedge_watchdog_quick_exits=0
+wedge_watchdog_backoff_s=0
+wedge_watchdog_retry_at=0
 
 say() { print -r -- "[interactive-host] $(date -u +%FT%TZ) $*" >> "$LOG" }
 
@@ -294,6 +318,10 @@ live_wedge_watchdog_pid() {
 
 start_wedge_watchdog() {
   local existing=""
+  # A failed start is timed like a started one, so it backs off the same way.
+  # Any start, this function's or `start_managed_helpers`', ends a pending wait.
+  wedge_watchdog_started_at=$SECONDS
+  wedge_watchdog_retry_at=0
   existing=$(live_wedge_watchdog_pid || true)
   if [[ -n "$existing" ]]; then
     wedge_watchdog_pid=$existing
@@ -307,11 +335,58 @@ start_wedge_watchdog() {
     wedge_watchdog_owned=0
     return 1
   fi
-  /bin/zsh "$WEDGE_WATCHDOG" \
+  # The watchdog accepts the intent `terminal` only from this host: it is the
+  # Terminal window's own child, not a background keeper. The assignment is on
+  # this one command, so nothing else this host starts inherits it.
+  CIVVIS_WEDGE_TERMINAL_WINDOW=1 /bin/zsh "$WEDGE_WATCHDOG" \
       >>"$HOME/civvis-civ6-runs/agent_wedge_watchdog.launch.log" 2>&1 &
   wedge_watchdog_pid=$!
   wedge_watchdog_owned=1
   say "started agent wedge watchdog pid $wedge_watchdog_pid"
+}
+
+# Called from the poll loop whenever no wedge watchdog is alive.
+restart_wedge_watchdog() {
+  local now=$SECONDS lived=0 rc="unknown"
+  if (( wedge_watchdog_retry_at )); then
+    (( now < wedge_watchdog_retry_at )) && return 0
+    start_wedge_watchdog || true
+    return 0
+  fi
+  lived=$(( now - wedge_watchdog_started_at ))
+  if (( lived >= WEDGE_QUICK_EXIT_S )); then
+    wedge_watchdog_quick_exits=0
+    wedge_watchdog_backoff_s=0
+  else
+    wedge_watchdog_quick_exits=$(( wedge_watchdog_quick_exits + 1 ))
+  fi
+  if (( wedge_watchdog_quick_exits < 2 )); then
+    say "agent wedge watchdog exited; restarting"
+    start_wedge_watchdog || true
+    return 0
+  fi
+  # zsh keeps the exit status of a background job it started. A watchdog taken
+  # over from the lock file is not waited for, and a failed start left none.
+  if (( wedge_watchdog_owned )) && [[ -n "$wedge_watchdog_pid" ]]; then
+    wait "$wedge_watchdog_pid" 2>/dev/null
+    rc=$?
+  fi
+  # Forget the dead pid for the length of the wait: `stop_children` signals
+  # whatever this names, and by then the number may belong to someone else.
+  wedge_watchdog_pid=""
+  wedge_watchdog_owned=0
+  if (( wedge_watchdog_backoff_s )); then
+    wedge_watchdog_backoff_s=$(( wedge_watchdog_backoff_s * 2 ))
+  else
+    wedge_watchdog_backoff_s=$WEDGE_BACKOFF_S
+  fi
+  (( wedge_watchdog_backoff_s > WEDGE_BACKOFF_MAX_S )) \
+      && wedge_watchdog_backoff_s=$WEDGE_BACKOFF_MAX_S
+  # Never zero: a zero wait is the every-poll restart this replaces, and zero
+  # is also how `wedge_watchdog_retry_at` says that no wait is pending.
+  (( wedge_watchdog_backoff_s < 1 )) && wedge_watchdog_backoff_s=1
+  wedge_watchdog_retry_at=$(( now + wedge_watchdog_backoff_s ))
+  say "agent wedge watchdog exited ${lived}s after its start, ${wedge_watchdog_quick_exits} times running (status $rc, $(intent_reason)); next start in ${wedge_watchdog_backoff_s}s"
 }
 
 say "host up (pid $$)"
@@ -353,8 +428,7 @@ while true; do
       start_mirror_keeper || true
     fi
     if ! pid_is_live "$wedge_watchdog_pid"; then
-      say "agent wedge watchdog exited; restarting"
-      start_wedge_watchdog || true
+      restart_wedge_watchdog
     fi
   fi
   sleep "$POLL_S"

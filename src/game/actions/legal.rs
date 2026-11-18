@@ -924,10 +924,9 @@ impl Game {
                     .chain(self.rules.beliefs.worship.keys())
                     .filter(|belief| {
                         !taken(belief)
-                            && ((!has_enhancer
-                                && self.rules.beliefs.enhancer.contains_key(*belief))
+                            && ((!has_enhancer && self.rules.beliefs.enhancer.contains_key(belief))
                                 || (!has_worship
-                                    && self.rules.beliefs.worship.contains_key(*belief)))
+                                    && self.rules.beliefs.worship.contains_key(belief)))
                     })
                 {
                     acts.push(Action::EvangelizeBelief {

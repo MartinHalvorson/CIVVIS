@@ -1846,10 +1846,13 @@ type SettlerWalkCosts = BTreeMap<i32, BTreeMap<Pos, f64>>;
 /// stale.
 #[derive(Default)]
 struct SettlementScanShared {
-    /// (`city_exclusion`, `city_state_exclusion`), built on first use.
-    exclusions: Option<(BTreeSet<Pos>, BTreeSet<Pos>)>,
-    /// Prefilter score per plot, for a scan that prefilters.
-    prefilter: BTreeMap<Pos, f64>,
+    /// (`city_exclusion`, `city_state_exclusion`), built on first use. One
+    /// bit per tile: the scan asks each plot of a disk that can cover the
+    /// whole map whether it is excluded, and nothing walks them.
+    exclusions: Option<(TileBits, TileBits)>,
+    /// Prefilter score per plot, for a scan that prefilters. Only ever asked
+    /// by plot.
+    prefilter: crate::fast_map::FastMap<Pos, f64>,
 }
 
 /// `detour-keeps-the-site-worth`: the least of the deferred site's value a
