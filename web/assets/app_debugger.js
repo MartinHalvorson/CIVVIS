@@ -732,7 +732,9 @@ function debugSplitOpen(dir) {
   const divider = host.querySelector(".dbg-divider");
   divider.addEventListener("pointerdown", event => {
     if (event.target.closest("button") || !debugSplit) return;
-    divider.setPointerCapture(event.pointerId);
+    // Capture keeps the drag when the pointer runs over a frame; the frames
+    // are also made deaf to the pointer for as long as it lasts.
+    try { divider.setPointerCapture(event.pointerId); } catch (_) {}
     host.classList.add("dbg-dragging");
   });
   divider.addEventListener("pointermove", event => {
