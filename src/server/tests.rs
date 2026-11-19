@@ -3087,7 +3087,7 @@ fn exhibition_countdown_paints_between_full_state_responses() {
     assert!(sync.contains("Math.min(exhibitionCountdownDeadline, candidateDeadline)"));
     assert!(sync.contains("setInterval(paintExhibitionCountdown, 100)"));
     assert!(EMBEDDED_INDEX.contains("Math.ceil(milliseconds / 1000)"));
-    assert!(EMBEDDED_INDEX.contains("The next world is beginning"));
+    assert!(EMBEDDED_INDEX.contains("Starting the next game"));
     assert!(!EMBEDDED_INDEX.contains("countdownTime.textContent = `${st.restart_in}s`;"));
 }
 
@@ -14014,7 +14014,7 @@ fn browser_tells_the_player_when_they_have_been_eliminated() {
         .contains("const eliminated = state.players[0] && state.players[0].alive === false;"));
     assert!(EMBEDDED_INDEX
         .contains("button.disabled = over || eliminated || autoplaying || turnAdvancePending;"));
-    assert!(EMBEDDED_INDEX.contains("Your civilization has fallen<span class=\"endturn-hint\">"));
+    assert!(EMBEDDED_INDEX.contains("You have been defeated<span class=\"endturn-hint\">"));
     // The keys agree with the button.
     assert!(EMBEDDED_INDEX
         .contains("if (state.players[0] && state.players[0].alive === false) return;"));

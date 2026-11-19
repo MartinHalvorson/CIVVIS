@@ -6713,15 +6713,15 @@ function paintExhibitionCountdown() {
   }
   const milliseconds = exhibitionCountdownDeadline - Date.now();
   if (milliseconds <= 0) {
-    if (respawn.textContent !== "The next world is beginning")
-      respawn.textContent = "The next world is beginning";
+    if (respawn.textContent !== "Starting the next game")
+      respawn.textContent = "Starting the next game";
     return;
   }
   const seconds = Math.ceil(milliseconds / 1000);
   const text = `${seconds}s`;
   if (respawn.querySelector(".winner-countdown-time")?.textContent === text) return;
   respawn.replaceChildren();
-  respawn.append("The next world begins in");
+  respawn.append("Next game in");
   const countdownTime = document.createElement("strong");
   countdownTime.className = "winner-countdown-time";
   countdownTime.textContent = text;
@@ -8587,7 +8587,7 @@ function chronicle(prev, next) {
   for (const city of oldCities.values()) {
     if (viewer === null || city.owner === viewer) {
       const owner = (prev.players[city.owner] || {}).civ || "An unknown civilization";
-      addEvent("♜", `${owner} lost ${city.name} to history.`, next.turn, next, false, 3,
+      addEvent("♜", `${city.name} (${owner}) was razed.`, next.turn, next, false, 3,
         "", "Cities", [city.owner]);
     }
   }
@@ -8914,9 +8914,9 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       w.innerHTML = `<div class="winner-content">
         <span class="winner-kicker">Defeat</span>
         <span class="winner-mark" aria-hidden="true">✦</span>
-        <strong class="winner-title">${st.players[0].civ} is no more</strong>
-        <span class="winner-verdict">Your last city has fallen</span>
-        <span class="winner-meta">Turn ${st.turn} · the world plays on without you</span>
+        <strong class="winner-title">${st.players[0].civ} has been defeated</strong>
+        <span class="winner-verdict">You lost your last city</span>
+        <span class="winner-meta">Turn ${st.turn} · The game continues without you</span>
         ${reignSummary(st)}
         <button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
           title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>
@@ -8952,7 +8952,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     if (respawn) {
       if (st.paused) {
         clearExhibitionCountdown();
-        respawn.textContent = "Final frame · exhibition paused";
+        respawn.textContent = "Game paused";
       } else if (st.restart_in !== undefined) {
         syncExhibitionCountdown(st);
       } else {
@@ -8985,8 +8985,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     w.classList.add("visible");
     if (w.dataset.signature !== signature) {
       w.dataset.signature = signature;
-      const kicker = SPEC ? "A civilization ascendant"
-        : winnerIds.includes(0) ? "Victory" : "Defeat";
+      const kicker = SPEC || winnerIds.includes(0) ? "Victory" : "Defeat";
       // One more turn plays to the last civilization, so a result that
       // already left only one has no further turn to offer.
       const oneMoreTurn = st.last_civ_standing === null || st.last_civ_standing === undefined
@@ -9016,7 +9015,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         <span class="winner-verdict">${verdict}</span>
         ${winnerPlayers.length
           ? `<span class="winner-meta winner-player">Played by ${winnerPlayers.join(" + ")}</span>` : ``}
-        <span class="winner-meta">Turn ${reportedTurn(st)} · History remembers</span>
+        <span class="winner-meta">Turn ${reportedTurn(st)}</span>
         ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
         ${reignSummary(st)}
         <span class="winner-actions${SPEC ? " winner-actions-sim" : ""}">
@@ -9032,12 +9031,12 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     if (respawn) {
       if (st.paused) {
         clearExhibitionCountdown();
-        respawn.textContent = "Final frame · exhibition paused";
+        respawn.textContent = "Game paused";
       } else if (st.restart_in !== undefined) {
         syncExhibitionCountdown(st);
       } else {
         clearExhibitionCountdown();
-        respawn.textContent = "Preparing the next world";
+        respawn.textContent = "Starting the next game";
       }
     }
   } else if (!fallen && !drawn) {
@@ -38674,7 +38673,7 @@ function drawTurnButton() {
   if (over || eliminated) {
     button.classList.remove("blocked");
     button.innerHTML = eliminated && !over
-      ? `Your civilization has fallen<span class="endturn-hint">Start another below</span>`
+      ? `You have been defeated<span class="endturn-hint">Start another below</span>`
       : `The game is over<span class="endturn-hint">Start another below</span>`;
     button.title = eliminated && !over
       ? "Your last city is gone. Start a new game from Game setup."
@@ -38863,7 +38862,7 @@ function paintActionCorner() {
     eyebrow = "Auto-play"; title = "An agent is playing"; sub = "Stop it to take the seat back.";
   } else if (over || eliminated) {
     eyebrow = "This game";
-    title = eliminated && !over ? "Your civilization has fallen" : "The game is over";
+    title = eliminated && !over ? "You have been defeated" : "The game is over";
     sub = "Start another from the deck.";
   } else if (turnAdvancePending) {
     eyebrow = "Turn in progress"; title = "Please wait"; sub = "The other civilizations are taking their turns.";
