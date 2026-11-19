@@ -7080,6 +7080,10 @@ pub struct AdvancedAi {
     /// Chemistry before Rocketry's Radio half. See
     /// `advanced/chemistry_before_the_rocket.rs`. Off by default.
     chemistry_before_the_rocket: bool,
+    /// `culture-deck-seats-the-great-person-cards`: a Culture seat wants
+    /// Literary Tradition and Frescoes in its wildcard slots. See
+    /// `advanced/culture_great_person_cards.rs`. Off by default.
+    culture_deck_seats_the_great_person_cards: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11600,6 +11604,9 @@ mod culture_faith_sources;
 /// `culture-seat-fills-its-district-slots`: a Culture seat's free district
 /// slots. See `advanced/culture_fills_its_slots.rs`.
 mod culture_fills_its_slots;
+/// `culture-deck-seats-the-great-person-cards`: see
+/// `advanced/culture_great_person_cards.rs`.
+mod culture_great_person_cards;
 /// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
 mod culture_theater_first;
 /// `culture-road-takes-the-unique-first`: see `advanced/culture_unique_first.rs`.

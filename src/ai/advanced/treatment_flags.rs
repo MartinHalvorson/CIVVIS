@@ -330,6 +330,9 @@ impl AdvancedAi {
         /// Opt-in gene `chemistry-before-the-rocket`; see
         /// `advanced/chemistry_before_the_rocket.rs`.
         chemistry_before_the_rocket => enable_chemistry_before_the_rocket, disable_chemistry_before_the_rocket;
+        /// Opt-in gene `culture-deck-seats-the-great-person-cards`; see
+        /// `advanced/culture_great_person_cards.rs`.
+        culture_deck_seats_the_great_person_cards => enable_culture_deck_seats_the_great_person_cards, disable_culture_deck_seats_the_great_person_cards;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

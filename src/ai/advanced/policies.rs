@@ -680,6 +680,18 @@ impl AdvancedAi {
             desired.retain(|card| !matches!(*card, "aesthetics" | "natural_philosophy"));
             desired.insert(0, "aesthetics");
         }
+        // `culture-deck-seats-the-great-person-cards`: Literary Tradition and
+        // Frescoes right behind Aesthetics; the ordinary deck prices Great
+        // Person points at zero. See `advanced/culture_great_person_cards.rs`.
+        let great_person_cards = self.culture_great_person_cards(g, &city_ids);
+        if !great_person_cards.is_empty() {
+            desired.retain(|card| !great_person_cards.contains(card));
+            let at = desired
+                .iter()
+                .position(|card| *card == "aesthetics")
+                .map_or(0, |index| index + 1);
+            desired.splice(at..at, great_person_cards.iter().copied());
+        }
 
         let elite_active = g.players[pid]
             .policies
