@@ -5862,6 +5862,13 @@ pub const GENES: &[Gene] = &[
     // with tourism 31 / 41 / 80 a turn. See
     // `advanced/trade_district_follows_the_campus.rs`.
     Gene { tag: "culture-trade-district-follows-the-theater", field: "culture_trade_district_follows_the_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_trade_district_follows_the_theater, disable: AdvancedAi::disable_culture_trade_district_follows_the_theater },
+    // Live Deity 11-19: version two is forced in every game, yet 17 of the
+    // last 21 were Science-lane seats, where it is inert; their Spy slots
+    // stood emptier than the Culture seats' (t130: 1 Spy of capacity 2.5 vs
+    // 2 of 2). Version two on a Science, Religion or Diplomacy aim as well,
+    // never taking the seat's own Spaceport city or a Builder. See
+    // `advanced/denial_spies_fill_every_slot.rs`.
+    Gene { tag: "denial-spies-fill-every-slot-3", field: "denial_spies_fill_every_slot_3", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_fill_every_slot_3, disable: AdvancedAi::disable_denial_spies_fill_every_slot_3 },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

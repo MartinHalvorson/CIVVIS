@@ -67,6 +67,30 @@
 //! a 180-turn cap), and a rival's Science Victory ends most Score games
 //! before the cap. A seat plays one version: enabling version two turns
 //! version one off.
+//!
+//! **`denial-spies-fill-every-slot-3`.** Version two, and on a Science,
+//! Religion or Diplomacy aim as well, so on every aim. Live Deity
+//! 2026-11-19: version two was forced in every game, yet 17 of the last 21
+//! were Science-lane seats, where it was inert. Their slots stood emptier
+//! than the Culture seats': Spies on the map against capacity at t130 /
+//! t150 / t170, 1 of 2.5, 1 of 3, 2 of 4 against 2 of 2, 2 of 3, 2.5 of 4,
+//! and slots with neither a Spy nor one in training 0.69 / 0.88 / 1.38
+//! against 0.26 / 0.51 / 1.14. 12 of the last 14 tournament losses were
+//! rival Science Victories at t157-192. Nothing in versions one and two
+//! barred a Science seat for a reason: they were measured on Culture
+//! games and scoped to them.
+//!
+//! What a Science seat must keep is its own launch, so on the three new aims
+//! the claim takes no city that holds, has placed or queues a Spaceport, or
+//! queues a space project (the Spy trains in the next-best city, as under
+//! `launch-pad-holds-its-queue`), and displaces no Builder at the head of a
+//! queue; on the Religion aim no religious unit either, as the Culture aim
+//! keeps its culture heads. Everything else is version two's claim: the
+//! threatened and recently attacked cities, soldiers, Settlers, walls,
+//! Wonders, projects and repairs were already never displaced, and the
+//! ranking (`spies-price-the-science-head`, then the host's soonest quote)
+//! is unchanged. The Culture, Domination and Score aims read exactly version
+//! two. Enabling version three turns versions one and two off.
 
 use super::*;
 use crate::shared_sort::SharedSort;
@@ -75,16 +99,60 @@ impl AdvancedAi {
     /// Whether the gene reshapes the Spy claim on this board: the flag, the
     /// denial claim it reshapes, the Science Victory, and a Culture or
     /// Domination aim (or, under `denial-spies-fill-every-slot-2`, a Score
-    /// aim too).
+    /// aim too; under `denial-spies-fill-every-slot-3`, any aim).
     pub(super) fn denial_spies_fill_every_slot_on(&self, g: &Game) -> bool {
-        (self.denial_spies_fill_every_slot || self.denial_spies_fill_every_slot_2)
+        (self.denial_spies_fill_every_slot
+            || self.denial_spies_fill_every_slot_2
+            || self.denial_spies_fill_every_slot_3)
             && self.science_denial_trains_spies
             && g.victory_conditions.science
             && match self.active_victory_target(g) {
                 Some(VictoryTarget::Culture | VictoryTarget::Domination) => true,
-                Some(VictoryTarget::Score) => self.denial_spies_fill_every_slot_2,
-                _ => false,
+                Some(VictoryTarget::Score) => {
+                    self.denial_spies_fill_every_slot_2 || self.denial_spies_fill_every_slot_3
+                }
+                Some(
+                    VictoryTarget::Science | VictoryTarget::Religion | VictoryTarget::Diplomacy,
+                ) => self.denial_spies_fill_every_slot_3,
+                None => false,
             }
+    }
+
+    /// Under version three on a Science, Religion or Diplomacy aim (the aims
+    /// versions one and two leave alone), whether the claim leaves `cid` to
+    /// the seat's own work: a city that holds, has placed or queues a
+    /// Spaceport, or queues a space project; a queue opening with a Builder;
+    /// on the Religion aim, one opening with a religious unit. False off
+    /// version three and on the older versions' aims.
+    pub(super) fn denial_fill_keeps_the_launch(&self, g: &Game, cid: u32) -> bool {
+        let target = self.active_victory_target(g);
+        if !self.denial_spies_fill_every_slot_3
+            || !matches!(
+                target,
+                Some(VictoryTarget::Science | VictoryTarget::Religion | VictoryTarget::Diplomacy)
+            )
+            || !self.denial_spies_fill_every_slot_on(g)
+        {
+            return false;
+        }
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        let space_project = city.queue.iter().any(
+            |item| matches!(item, Item::Project { project } if Game::is_space_project(project)),
+        );
+        let kept_head = city.queue.first().is_some_and(|item| match item {
+            Item::Unit { unit } => {
+                *unit == "builder"
+                    || (target == Some(VictoryTarget::Religion)
+                        && g.rules
+                            .units
+                            .get(unit)
+                            .is_some_and(|spec| spec.class == "religious"))
+            }
+            _ => false,
+        });
+        space_project || kept_head || Self::city_has_spaceport_commitment(g, cid)
     }
 
     /// The rivals the Spy claim trains against: the denial board
