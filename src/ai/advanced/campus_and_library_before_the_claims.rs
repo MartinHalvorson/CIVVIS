@@ -399,6 +399,11 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
+        // `science-universities-pass-the-claims`: a Science seat's University
+        // it put first holds too. Always false with that gene off.
+        if self.science_university_holds(g, pid, cid, plan, item) {
+            return true;
+        }
         if !self.campus_and_library_before_the_claims {
             return false;
         }
