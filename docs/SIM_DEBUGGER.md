@@ -230,6 +230,11 @@ in the strip, or "Head to head" in the Split panel, widens the strip to hold:
   Score, Cities, Population, Military strength, and Science, Culture, Gold and
   Faith per turn. Each half reports its own (`pane-numbers`) whenever they
   change.
+- a chart of one of those numbers over the turns since the split, a line for
+  each half in the colour of its letter. It charts Score until a number's name
+  is clicked. A half that has walked back keeps its line, with a mark where it
+  now stands; turns it plays over again replace what the line showed, and a
+  copy takes the other half's line with it.
 - a turn to play both to. Linked, A is run and B follows it turn by turn, each
   with its own Civ AI. Separate, each half is run by itself. The run ends when
   that turn opens, or earlier if a breakpoint stops a half, and the same
