@@ -19,6 +19,9 @@
 //!   turn.
 //! * **reveal** lifts the fog from what the page is shown. The seat still
 //!   plays by its own rules; only the observation changes.
+//! * **step seat** takes the round apart instead: the seat's turn ends, and
+//!   then each civilization, city-state and the barbarians play one at a
+//!   time, with the world shown between them.
 //! * **layers** are the rungs between playing every decision by hand and
 //!   handing the seat over: research, cities, the empire's standing choices,
 //!   diplomacy, units. The agent plans the turn on a copy of the world, and
@@ -700,7 +703,10 @@ impl Timeline {
             "first": turns.first(),
             "last": turns.last(),
             "acted": acted,
-            "can_undo": acted > 0 && self.mark(game.turn).is_some(),
+            // Whose turn it is. Anything but the played seat is the middle of
+            // a round being stepped a seat at a time.
+            "playing": game.current,
+            "can_undo": acted > 0 && game.current == 0 && self.mark(game.turn).is_some(),
             "can_back": acted > 0 || turns.first().is_some_and(|first| *first < game.turn),
             "can_forward": turns.last().is_some_and(|last| *last > game.turn),
             "breakpoints": self.breakpoints.json(),
@@ -974,7 +980,14 @@ impl Session {
         let before_len = self.game.events.len();
         let before_last = self.game.events.last().cloned();
         let read_before = readings(&self.game, &self.debugger.breakpoints.conditions);
-        let played = self.autoplay(1);
+        // In the middle of a round the next whole thing to play is the rest
+        // of it: the rivals finish, and the turn that opens is the person's.
+        let played = if self.debug_mid_round() {
+            self.debug_rivals_play();
+            1
+        } else {
+            self.autoplay(1)
+        };
         let fresh = fresh_events(before_len, before_last.as_ref(), turn, &self.game.events);
         let over = played == 0 || self.game.is_finished() || !self.game.players[0].alive;
         self.debugger.stopped = if over {
@@ -1025,6 +1038,52 @@ impl Session {
         self.debugger_turn_opened(true);
     }
 
+    /// Whether a round is under way: the played seat has ended its turn and
+    /// the round has not come back to it. Only `debug_step_seat` leaves the
+    /// world here; everything else plays a round through.
+    fn debug_mid_round(&self) -> bool {
+        self.game.current != 0 && !self.game.is_finished() && self.game.players[0].alive
+    }
+
+    /// Step one seat: the round, a civilization at a time.
+    ///
+    /// On the played seat's own turn this ends that turn as it stands and
+    /// stops there, before any rival has moved. After that each step plays
+    /// whoever is up, a rival, a city-state or the barbarians, with that
+    /// seat's own agent, and stops again. When the round comes back to the
+    /// played seat its next turn opens exactly as it does after an ordinary
+    /// end of turn, so a round taken apart is the same round as one taken
+    /// whole.
+    pub fn debug_step_seat(&mut self) -> Result<(), String> {
+        if self.game.is_finished() || !self.game.players[0].alive {
+            return Err("this game has no turn left to play".to_string());
+        }
+        let turn = self.game.turn;
+        let seat = self.game.current;
+        let before = self.game.log.len();
+        if seat == 0 {
+            self.game.apply(0, &Action::EndTurn)?;
+            self.debugger.plan = None;
+        } else {
+            let g = &mut self.game;
+            self.ais[seat].take_turn(g, seat);
+            if g.current == seat && !g.is_finished() {
+                let _ = g.apply(seat, &Action::EndTurn);
+            }
+        }
+        let actions = self.game.log.len() - before;
+        if self.game.current == 0 && !self.game.is_finished() {
+            self.debugger_turn_opened(true);
+        }
+        self.debugger.stepped = Some(json!({
+            "turn": turn,
+            "seat": seat,
+            "actions": actions,
+            "next": self.game.current,
+        }));
+        Ok(())
+    }
+
     /// Step in: the seat's agent takes the next action of its turn, and only
     /// that. With nothing left to do, the step ends the turn.
     ///
@@ -1038,6 +1097,11 @@ impl Session {
     /// between: an action by hand, an undo, a layer. An action the real
     /// world refuses is passed over.
     pub fn debug_step_action(&mut self) -> Result<(), String> {
+        // In the middle of a round the next thing that happens is a rival's
+        // turn, and that is the smallest step there is to take.
+        if self.debug_mid_round() {
+            return self.debug_step_seat();
+        }
         if self.game.current != 0 || self.game.is_finished() || !self.game.players[0].alive {
             return Err("this game has no turn left to play".to_string());
         }
@@ -1178,6 +1242,11 @@ impl Session {
                     Some(turn) => self.debug_jump(turn).map(|_| ()),
                     None => Err("jump needs a turn".to_string()),
                 },
+                // A rival's turn is not the seat's action to take back.
+                "undo" | "save_point" if self.debug_mid_round() => Err(
+                    "the rivals are playing; go back to the top of the turn, or let the round finish"
+                        .to_string(),
+                ),
                 "undo" => self.debug_undo().map(|_| ()),
                 "save_point" => self
                     .debug_save_point(request["name"].as_str().unwrap_or(""))
@@ -1208,6 +1277,16 @@ impl Session {
                     }
                 }
                 "step_action" => self.debug_step_action(),
+                "step_seat" => self.debug_step_seat(),
+                // The rest of a round that is being stepped a seat at a time.
+                "finish_round" => {
+                    if self.debug_mid_round() {
+                        self.debug_rivals_play();
+                        Ok(())
+                    } else {
+                        Err("no round is under way".to_string())
+                    }
+                }
                 "assist" => {
                     self.debugger.assisted = self.debug_assist();
                     Ok(())

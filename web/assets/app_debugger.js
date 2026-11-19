@@ -137,7 +137,8 @@ async function debugOp(body, timeoutMs = 20000) {
       body: JSON.stringify(body),
     }, timeoutMs);
     if (next.error) { debugSay(next.error); return next; }
-    if (DEBUG_TRAVEL_OPS.has(body.op) || body.op === "step" || body.op === "step_action") {
+    if (DEBUG_TRAVEL_OPS.has(body.op) || body.op === "step" || body.op === "step_action" ||
+        body.op === "step_seat" || body.op === "finish_round") {
       sel = null; selCity = null;
       if ((next.turn !== before || body.op === "copy" || body.op === "goto_save") && DEBUG_TRAVEL_OPS.has(body.op))
         debugForgetStandingOrders(next.turn);
@@ -219,7 +220,8 @@ async function debugStepAction() {
   try {
     const next = await debugOp({op: "step_action", strategy: debugStrategy()}, AUTOPLAY_BATCH_TIMEOUT_MS);
     const stepped = next && !next.error ? (next.debug || {}).stepped : null;
-    if (stepped) {
+    if (stepped && stepped.seat !== undefined) debugSayRound(stepped);
+    else if (stepped) {
       const place = debugActionPlace(stepped.action);
       const left = stepped.left ? ` · ${stepped.left} more this turn` : "";
       debugSay(`Civ AI: ${debugActionWords(stepped.action)}${left}`, place);
@@ -231,6 +233,28 @@ async function debugStepAction() {
     drawDebugBar();
     drawTurnLoop();
   }
+}
+// Step one seat: the round, a civilization at a time. On your own turn it
+// ends the turn as it stands and stops before any rival has moved; after
+// that each step plays whoever is up. It is not the Civ AI playing your
+// seat, so a linked half follows it as an ended turn, not as a step.
+function debugSeatName(seat) {
+  const who = state.players.find(player => player.id === seat);
+  return who ? titleCase(String(who.civ || who.name || `seat ${seat}`)) : `seat ${seat}`;
+}
+function debugSayRound(stepped) {
+  const did = stepped.seat === 0 ? "Your turn ended"
+    : `${debugSeatName(stepped.seat)} played ${stepped.actions} action${stepped.actions === 1 ? "" : "s"}`;
+  debugSay(stepped.next === 0 ? `${did} · turn ${state.turn} is yours`
+    : `${did} · ${debugSeatName(stepped.next)} plays next`);
+}
+async function debugStepSeat() {
+  if (autoplaying) return null;
+  debugSay("");
+  const next = await debugOp({op: "step_seat"}, AUTOPLAY_BATCH_TIMEOUT_MS);
+  const stepped = next && !next.error ? (next.debug || {}).stepped : null;
+  if (stepped && stepped.seat !== undefined) debugSayRound(stepped);
+  return next;
 }
 // Played a turn a request, like auto-play, so every turn reaches the glass
 // and the Stop button is never more than one turn away.
@@ -417,7 +441,8 @@ function debugBuildBar() {
     <input type="text" id="dbg-turn" inputmode="numeric" maxlength="4" title="Go to a turn: one already played is put back as it stood, one still ahead is played to by the Civ AI. Up and down walk one played turn" aria-label="Go to turn">
     <button data-dbg="forward" title="Forward along the turns already played" aria-label="Forward one played turn">▶</button>
     <button data-dbg="step-action" title="Step in: the Civ AI takes its next action this turn, and ends the turn when it has none left" aria-label="Step one action">▸</button>
-    <button data-dbg="step" title="Step: the Civ AI plays one turn" aria-label="Step one turn">▶|</button>
+    <button data-dbg="step-seat" title="Step one seat: end your turn as it stands, then one civilization's turn at a time" aria-label="Step one seat">▸|</button>
+    <button data-dbg="step" title="Step: the Civ AI plays one turn. In the middle of a round, the rest of the round plays" aria-label="Step one turn">▶|</button>
     <button data-dbg="run" title="Run: the Civ AI plays until a breakpoint stops it" aria-label="Run to a breakpoint">▶▶</button>
     <span class="dbg-sep"></span>
     <button data-dbg-pop="layers" title="Layers: which decisions the Civ AI takes for you each turn">Layers<span class="dbg-count" id="dbg-layer-count"></span></button>
@@ -458,6 +483,7 @@ function debugBuildBar() {
     else if (action === "forward") debugOp({op: "forward"});
     else if (action === "step") debugStep();
     else if (action === "step-action") debugStepAction();
+    else if (action === "step-seat") debugStepSeat();
     else if (action === "reveal") debugOp({op: "reveal", on: !timeline.reveal});
     else if (action === "run") debugRun();
     else if (action === "save") debugSave();
@@ -553,6 +579,7 @@ function drawDebugBar(seat = true) {
   set("forward", idle && timeline.can_forward);
   set("step", idle);
   set("step-action", idle);
+  set("step-seat", idle);
   set("reveal", idle);
   bar.querySelector('[data-dbg="reveal"]').classList.toggle("on", timeline.reveal === true);
   set("save", idle);
@@ -670,7 +697,11 @@ function drawDebugBar(seat = true) {
   const note = document.getElementById("dbg-note");
   const layered = timeline.assisted
     ? `The Civ AI took ${timeline.assisted} decision${timeline.assisted === 1 ? "" : "s"} in its layers this turn` : "";
-  const text = debugNoteText || layered;
+  // A round being stepped a seat at a time is not the person's turn, and the
+  // bar says whose it is for as long as nothing newer is being said.
+  const round = timeline.playing
+    ? `${debugSeatName(timeline.playing)} plays next · ▸| steps it, ▶| lets the round finish` : "";
+  const text = debugNoteText || round || layered;
   const html = escapeAttr(text) +
     (debugNoteText && debugNotePos ? `<button data-dbg="show" title="Centre the map there">Show</button>` : "");
   if (note.innerHTML !== html) note.innerHTML = html;
@@ -763,7 +794,13 @@ const DEBUG_SPLIT_STYLE = `
   #debugsplit .dbg-versus select { flex: 1; max-width: 132px; }
   #debugsplit .dbg-versus input { width: 44px; text-align: center; }
   #debugsplit .dbg-vs-line { display: flex; align-items: center; gap: 4px; min-width: 0; }
-  #debugsplit .dbg-vs-line > span { color: #e7c873; font-weight: 700; }
+  #debugsplit .dbg-vs-line > span { font-weight: 700; }
+  #debugsplit .dbg-vs-a { color: #ff8f6b; }
+  #debugsplit .dbg-vs-b { color: #6fd3e0; }
+  #debugsplit .dbg-vs-stat { cursor: pointer; }
+  #debugsplit .dbg-vs-stat.charted i { color: inherit; text-decoration: underline; }
+  #debugsplit .dbg-vs-chart { width: 100%; height: 48px; border-radius: 6px; background: #060d0b; border: 1px solid #22332e; }
+  #debugsplit.dbg-col .dbg-vs-chart { display: none; }
   #debugsplit .dbg-vs-table { display: grid; gap: 3px; font-variant-numeric: tabular-nums; }
   #debugsplit.dbg-col .dbg-vs-table { display: flex; gap: 12px; white-space: nowrap; }
   #debugsplit .dbg-vs-stat { display: grid; grid-template-columns: 1fr 1fr; column-gap: 6px; }
@@ -782,6 +819,48 @@ const DEBUG_VERSUS_ROWS = [
   ["gold", "Gold", "Gold per turn"], ["faith", "Faith", "Faith per turn"],
   ["military", "Military", "Military strength"],
 ];
+// The two halves' lines in the chart, and the letters that name them.
+const DEBUG_VERSUS_COLOURS = {a: "#ff8f6b", b: "#6fd3e0"};
+// One of the numbers over the turns since the split, a line for each half.
+// A turn a half has not reported is passed over, so a half that is behind
+// simply has a shorter line.
+function debugVersusChart(canvas) {
+  const key = debugSplit.chart, cx = canvas.getContext("2d");
+  cx.clearRect(0, 0, canvas.width, canvas.height);
+  const turns = [...new Set([...debugSplit.history.a.keys(), ...debugSplit.history.b.keys()])].sort((x, y) => x - y);
+  const values = [];
+  for (const letter of ["a", "b"])
+    for (const numbers of debugSplit.history[letter].values())
+      if (typeof numbers[key] === "number") values.push(numbers[key]);
+  if (turns.length < 2 || !values.length) return;
+  const low = Math.min(...values), span = Math.max(...values) - low || 1;
+  const first = turns[0], last = turns[turns.length - 1];
+  const x = turn => 5 + (turn - first) / (last - first) * (canvas.width - 10);
+  const y = value => canvas.height - 6 - (value - low) / span * (canvas.height - 12);
+  cx.lineWidth = 3; cx.lineJoin = "round"; cx.lineCap = "round";
+  for (const letter of ["a", "b"]) {
+    cx.beginPath();
+    let drawing = false;
+    for (const turn of turns) {
+      const numbers = debugSplit.history[letter].get(turn);
+      if (!numbers || typeof numbers[key] !== "number") continue;
+      if (drawing) cx.lineTo(x(turn), y(numbers[key])); else cx.moveTo(x(turn), y(numbers[key]));
+      drawing = true;
+    }
+    cx.strokeStyle = DEBUG_VERSUS_COLOURS[letter];
+    cx.stroke();
+    // Where the half stands now, when it has walked back along its turns.
+    const now = debugSplit.panes[letter].turn;
+    if (now !== null && now > first && now < last) {
+      cx.globalAlpha = .55;
+      cx.fillStyle = DEBUG_VERSUS_COLOURS[letter];
+      cx.fillRect(Math.round(x(now)) - 1, 0, 2, canvas.height);
+      cx.globalAlpha = 1;
+    }
+  }
+  const charted = DEBUG_VERSUS_ROWS.find(row => row[0] === key);
+  canvas.title = `${charted ? charted[2] : key}, turn ${first} to ${last}. Click a number's name to chart it`;
+}
 function debugVersusNumber(value) {
   return typeof value === "number" && Number.isFinite(value) ? String(Math.round(value * 10) / 10) : "–";
 }
@@ -832,11 +911,12 @@ function drawDebugSplit() {
   const table = DEBUG_VERSUS_ROWS.map(([key, label, title]) => {
     const lead = side => typeof a[key] === "number" && typeof b[key] === "number" &&
       (side === "a" ? a[key] > b[key] : b[key] > a[key]) ? ' class="lead"' : "";
-    return `<span class="dbg-vs-stat" title="${title}: A, then B"><i>${label}</i>` +
+    return `<span class="dbg-vs-stat${key === debugSplit.chart ? " charted" : ""}" data-dbg-stat="${key}" title="${title}: A, then B. Click to chart it"><i>${label}</i>` +
       `<b${lead("a")}>${debugVersusNumber(a[key])}</b><b${lead("b")}>${debugVersusNumber(b[key])}</b></span>`;
   }).join("");
   const numbers = host.querySelector("[data-dbg-numbers]");
   if (numbers.dataset.drawn !== table) { numbers.dataset.drawn = table; numbers.innerHTML = table; }
+  debugVersusChart(host.querySelector("[data-dbg-chart]"));
   const reached = Math.max(debugSplit.panes.a.turn ?? 0, debugSplit.panes.b.turn ?? 0);
   host.querySelector("[data-dbg-until]").placeholder = String(reached + 25);
   const run = host.querySelector('[data-dbg-split="versus-run"]');
@@ -866,9 +946,10 @@ function debugSplitOpen(dir, versus = null) {
       <button data-dbg-split="flip" title="Switch between side by side and top and bottom"></button>
       <button data-dbg-split="versus" title="Head to head: seat a Civ AI of its own in each half, play both and set their numbers side by side">VS</button>
       <div class="dbg-versus" data-dbg-versus hidden>
-        <div class="dbg-vs-line"><span>A</span><select data-dbg-strategy="a" title="The Civ AI that plays A's seat when A is stepped or run" aria-label="Civ AI for A"></select></div>
-        <div class="dbg-vs-line"><span>B</span><select data-dbg-strategy="b" title="The Civ AI that plays B's seat when B is stepped or run" aria-label="Civ AI for B"></select></div>
+        <div class="dbg-vs-line"><span class="dbg-vs-a">A</span><select data-dbg-strategy="a" title="The Civ AI that plays A's seat when A is stepped or run" aria-label="Civ AI for A"></select></div>
+        <div class="dbg-vs-line"><span class="dbg-vs-b">B</span><select data-dbg-strategy="b" title="The Civ AI that plays B's seat when B is stepped or run" aria-label="Civ AI for B"></select></div>
         <div class="dbg-vs-table" data-dbg-numbers></div>
+        <canvas class="dbg-vs-chart" data-dbg-chart width="252" height="96"></canvas>
         <div class="dbg-vs-line" title="Play both halves, each with its own Civ AI, until this turn opens or a breakpoint stops one">
           <input type="text" data-dbg-until inputmode="numeric" maxlength="4" aria-label="Play both to turn">
           <button data-dbg-split="versus-run"></button>
@@ -883,12 +964,14 @@ function debugSplitOpen(dir, versus = null) {
   let remembered = false;
   try { remembered = localStorage.getItem("civvis-debug-versus") === "1"; } catch (_) {}
   debugSplit = {dir, linked: true, view: true, share: .5, busy: false, panes: {}, host,
-    versus: versus ?? remembered, running: 0};
+    versus: versus ?? remembered, running: 0, chart: "score", history: {a: new Map(), b: new Map()}};
   for (const letter of ["a", "b"]) {
     const frame = host.querySelector(`[data-dbg-frame="${letter}"]`);
     debugSplit.panes[letter] = {frame, id: `${letter}-${nonce}`, turn: null};
   }
   host.addEventListener("click", event => {
+    const stat = event.target.closest("[data-dbg-stat]");
+    if (stat && debugSplit) { debugSplit.chart = stat.dataset.dbgStat; drawDebugSplit(); return; }
     const button = event.target.closest("[data-dbg-split]");
     if (!button || button.disabled || !debugSplit) return;
     const action = button.dataset.dbgSplit;
@@ -900,8 +983,12 @@ function debugSplitOpen(dir, versus = null) {
         debugSplitTell("b", {civvis: "pane-follow", turn: a, how: "end"});
     } else if (action === "view") debugSplit.view = !debugSplit.view;
     else if (action === "flip") debugSplit.dir = debugSplit.dir === "col" ? "row" : "col";
-    else if (action === "copy-a") debugSplitTell("b", {civvis: "pane-copy", from: debugSplit.panes.a.id});
-    else if (action === "copy-b") debugSplitTell("a", {civvis: "pane-copy", from: debugSplit.panes.b.id});
+    else if (action === "copy-a" || action === "copy-b") {
+      // A copy is the other half's whole history, and so is its line in the chart.
+      const [from, to] = action === "copy-a" ? ["a", "b"] : ["b", "a"];
+      debugSplit.history[to] = new Map(debugSplit.history[from]);
+      debugSplitTell(to, {civvis: "pane-copy", from: debugSplit.panes[from].id});
+    }
     else if (action === "keep-a") debugSplitClose("a");
     else if (action === "keep-b") debugSplitClose("b");
     else if (action === "versus") {
@@ -925,7 +1012,7 @@ function debugSplitOpen(dir, versus = null) {
   // The strip between the halves is also the handle that sizes them.
   const divider = host.querySelector(".dbg-divider");
   divider.addEventListener("pointerdown", event => {
-    if (event.target.closest("button, select, input") || !debugSplit) return;
+    if (event.target.closest("button, select, input, [data-dbg-stat]") || !debugSplit) return;
     // Capture keeps the drag when the pointer runs over a frame; the frames
     // are also made deaf to the pointer for as long as it lasts.
     try { divider.setPointerCapture(event.pointerId); } catch (_) {}
@@ -942,7 +1029,7 @@ function debugSplitOpen(dir, versus = null) {
   for (const kind of ["pointerup", "pointercancel"])
     divider.addEventListener(kind, () => host.classList.remove("dbg-dragging"));
   divider.addEventListener("dblclick", event => {
-    if (event.target.closest("button, select, input") || !debugSplit) return;
+    if (event.target.closest("button, select, input, [data-dbg-stat]") || !debugSplit) return;
     debugSplit.share = .5;
     drawDebugSplit();
   });
@@ -1011,6 +1098,11 @@ window.addEventListener("message", event => {
   } else if (data.civvis === "pane-numbers") {
     const pane = debugSplit.panes[letter];
     pane.numbers = data.numbers;
+    // Turns past the last one the half still keeps belong to a history it
+    // has since played over.
+    const history = debugSplit.history[letter];
+    for (const turn of [...history.keys()]) if (turn > data.last) history.delete(turn);
+    history.set(data.turn, data.numbers);
     // A half that was told which Civ AI to seat is told again if it lost it:
     // a copy or a reload starts it on the page's own choice.
     if (pane.strategy === undefined) pane.strategy = data.strategy;
@@ -1043,10 +1135,11 @@ function debugPaneNumbers() {
   const numbers = {score: seat.score, cities: seat.cities, population: seat.population,
     science: yields.science, culture: yields.culture, gold: yields.gold, faith: yields.faith,
     military: seat.military};
-  const said = JSON.stringify([numbers, debugStrategy() || ""]);
+  const last = Math.max((state.debug || {}).last ?? state.turn, state.turn);
+  const said = JSON.stringify([state.turn, last, numbers, debugStrategy() || ""]);
   if (said === debugNumbersSaid) return;
   debugNumbersSaid = said;
-  window.parent.postMessage({civvis: "pane-numbers", pane: DEBUG_PANE, numbers,
+  window.parent.postMessage({civvis: "pane-numbers", pane: DEBUG_PANE, numbers, turn: state.turn, last,
     strategy: debugStrategy() || ""}, location.origin);
 }
 // Reach the turn the other pane is on, the way it got there: walked along
@@ -1143,6 +1236,18 @@ if (DEBUG_PANE !== null) {
     try { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); } catch (error) { console.error("debugger bar", error); }
     return drawn;
   };
+  // In the middle of a round stepped a seat at a time the turn is not the
+  // person's. Ending it means letting the rest of the round play, and
+  // nothing else is theirs to do until it comes back.
+  const sendAction = send;
+  send = function (action, ...rest) {
+    const timeline = debugTimeline();
+    if (!timeline || !timeline.playing) return sendAction(action, ...rest);
+    if (action && action.type === "end_turn")
+      return debugOp({op: "finish_round"}, AUTOPLAY_BATCH_TIMEOUT_MS);
+    debugSay(`${debugSeatName(timeline.playing)} plays next; your turn comes back when the round finishes`);
+    return Promise.resolve();
+  };
   const drawLoop = drawTurnLoop;
   drawTurnLoop = function (...rest) {
     const drawn = drawLoop(...rest);
@@ -1160,4 +1265,7 @@ window.addEventListener("keydown", event => {
   debugOp({op: "undo"});
 });
 window.addEventListener("resize", () => { if (debugTimeline()) drawDebugBar(); });
-if (state) drawDebugBar();
+// A page whose first state was drawn before this script arrived has had no
+// `render` of ours yet: draw the bar now, and a half of a split says where it
+// stands, or its host would wait for a report until something moved.
+if (state) { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); }
