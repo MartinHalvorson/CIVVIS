@@ -504,9 +504,8 @@ impl Session {
         let before_last = self.game.events.last().cloned();
         let played = self.autoplay(1);
         let fresh = fresh_events(before_len, before_last.as_ref(), turn, &self.game.events);
-        self.debugger.stopped = if played == 0 {
-            Some(json!({"kind": "end", "turn": self.game.turn}))
-        } else if self.game.is_finished() || !self.game.players[0].alive {
+        let over = played == 0 || self.game.is_finished() || !self.game.players[0].alive;
+        self.debugger.stopped = if over {
             Some(json!({"kind": "end", "turn": self.game.turn}))
         } else {
             self.debugger.breakpoints.hit(&self.game, fresh)
