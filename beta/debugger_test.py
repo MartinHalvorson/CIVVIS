@@ -552,6 +552,20 @@ def check_the_split(bar: Bar) -> None:
     play_both_to(start + 6)
     assert ops("a")[4:] == [["step", "jack"]] * 2 and ops("b")[4:] == [["step", "stock"]] * 2, (ops("a"), ops("b"))
 
+    # The same start again: both halves go back to the turn they split on,
+    # each by one jump, and the button has nothing left to do there.
+    back = "debugSplit.host.querySelector('[data-dbg-split=\"versus-back\"]')"
+    assert bar.ev(back + ".disabled") is False and str(start) in bar.ev(back + ".title"), bar.ev(back + ".title")
+    bar.click('[data-dbg-split="versus-back"]')
+    bar.until(f"debugSplit.panes.a.turn === {start} && debugSplit.panes.b.turn === {start} && {back}.disabled",
+              "both halves go back to the turn of the split")
+    assert ops("a")[6:] == [["jump", None]] and ops("b")[6:] == [["jump", None]], (ops("a"), ops("b"))
+    assert bar.ev("debugSplit.linked") is False
+    # They are played again from there, still each by itself.
+    play_both_to(start + 6)
+    assert ops("a")[7:] == [["step", "jack"]] * 6 and ops("b")[7:] == [["step", "stock"]] * 6, (ops("a"), ops("b"))
+    assert bar.ev("[debugSplit.history.a.size, debugSplit.history.b.size]") == [7, 7]
+
     # A -> B makes B a copy of A, its line in the chart included.
     bar.click('[data-dbg-split="copy-a"]')
     bar.until("debugSplit.panes.b.numbers.score === debugSplit.panes.a.numbers.score", "B becomes a copy of A")
@@ -645,7 +659,8 @@ def main() -> int:
         print("a round is stepped a civilization at a time, says who is next, and End Turn finishes it.")
         check_the_split(bar)
         print("the split seats a Civ AI in each half, plays both to a turn linked and separate, "
-              "sets their numbers side by side, copies, keeps, and hears a half whose script came late.")
+              "sets their numbers side by side, starts both again from the split, copies, keeps,"
+              " and hears a half whose script came late.")
         return 0
     finally:
         chrome.terminate()
