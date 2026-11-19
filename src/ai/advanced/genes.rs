@@ -5844,6 +5844,12 @@ pub const GENES: &[Gene] = &[
     // Writers by t150 to the rivals' 15-24. See
     // `advanced/culture_great_person_cards.rs`.
     Gene { tag: "culture-deck-seats-the-great-person-cards", field: "culture_deck_seats_the_great_person_cards", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_deck_seats_the_great_person_cards, disable: AdvancedAi::disable_culture_deck_seats_the_great_person_cards },
+    // Live Deity 6p Continents 11-18/19, 30 Culture seats to t175: a city
+    // ready for its Museum built it on 11.6% of 7,349 waiting city-turns
+    // (median wait 30-50 turns); a third of those turns went to Campus,
+    // trade, industry, harbour and housing heads the routine claims hold.
+    // See `advanced/culture_theater_buildings_pass_the_claims.rs`.
+    Gene { tag: "culture-theater-buildings-pass-the-claims", field: "culture_theater_buildings_pass_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_theater_buildings_pass_the_claims, disable: AdvancedAi::disable_culture_theater_buildings_pass_the_claims },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
