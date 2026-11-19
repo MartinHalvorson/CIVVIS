@@ -188,6 +188,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-and-religion-build-the-statue` | off (unmeasured) | Opt-in gene `culture-and-religion-build-the-statue`; see `advanced/diplo_wonder_claim.rs`. | 1 \| 1 |
 | `culture-and-religion-race-the-congress` | off (unmeasured) | Opt-in gene `culture-and-religion-race-the-congress`: the same live-only ballot change for a Culture or Religious seat; see `CivvisCongressRacer` in `CivvisControlAgent.lua`. | 1 \| 1 |
 | `culture-deck-seats-the-great-person-cards` | off (unmeasured) | Opt-in gene `culture-deck-seats-the-great-person-cards`; see `advanced/culture_great_person_cards.rs`. | 1 \| 1 |
+| `culture-theater-buildings-pass-the-claims` | off (unmeasured) | Opt-in gene `culture-theater-buildings-pass-the-claims`; see `advanced/culture_theater_buildings_pass_the_claims.rs`. | 1 \| 1 |
 | `disrupt-waits-for-the-sources` | off (unmeasured) | Opt-in gene `disrupt-waits-for-the-sources`; see `advanced/disrupt_waits_for_the_sources.rs`. | 1 \| 1 |
 | `mobilization-hears-the-declaration` | off (unmeasured) | Opt-in gene `mobilization-hears-the-declaration`; see `advanced/mobilization_hears_the_declaration.rs`. | 1 \| 1 |
 | `science-universities-pass-the-claims` | off (unmeasured) | Opt-in gene `science-universities-pass-the-claims`; see `advanced/science_universities_pass_the_claims.rs`. | 1 \| 1 |
