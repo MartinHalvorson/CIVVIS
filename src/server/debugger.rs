@@ -52,7 +52,8 @@ use serde_json::{json, Value};
 use super::Session;
 use crate::game::{Action, Event, Game};
 
-/// The newest marks are kept one a turn, whatever else has to go.
+/// The newest marks are kept one a turn when older ones have to go, for as
+/// long as there is room for twice as many.
 const DENSE_MARKS: usize = 60;
 /// Breakpoint phrases a page may hold at once.
 const MAX_PHRASES: usize = 16;
@@ -465,13 +466,16 @@ impl Breakpoints {
 /// six-seat game when this was measured, so this many is about the ceiling of
 /// what a long game should be allowed to keep.
 const ROOMY_MARKS: usize = 480;
-/// However little room there is, a turn divisible by this keeps its mark.
-const COARSEST_STRIDE: u32 = 8;
+/// The coarsest the older turns are thinned to before the oldest simply go.
+const COARSEST_STRIDE: u32 = 64;
+/// The fewest marks a timeline is squeezed to.
+const MIN_MARKS: usize = 12;
 /// Memory in use past which the marks start giving room back, unless the
 /// page names another line (`room`).
 const MEMORY_LINE: usize = 1 << 30;
-/// Past the line, each further growth by this much takes room away again.
-const MEMORY_STEP: usize = 32 << 20;
+/// Past the line, each further growth by the line over this many takes room
+/// away again: 32 MB at 1 GB.
+const MEMORY_STEPS: usize = 32;
 /// Save points a timeline holds at once.
 const MAX_SAVE_POINTS: usize = 32;
 /// The longest name a save point is given.
@@ -607,46 +611,62 @@ impl Timeline {
 
     /// How many marks may be kept.
     fn room(&self) -> usize {
-        self.room.unwrap_or(ROOMY_MARKS).max(DENSE_MARKS)
+        self.room.unwrap_or(ROOMY_MARKS).max(MIN_MARKS)
     }
 
     /// Hear how much memory is in use. Past the line, the room becomes a
-    /// tenth less than what is held, and again each time the memory has grown
+    /// fifth less than what is held, and again each time the memory has grown
     /// by another step: memory that only grows cannot say that it was given
     /// back, so the growing is what is listened to.
+    ///
+    /// It goes on down to `MIN_MARKS`, well below the newest `DENSE_MARKS`.
+    /// A floor that kept those whole did not hold the memory: late marks are
+    /// larger than the early ones they replace, so the same number of marks
+    /// kept growing (measured, `docs/SIM_DEBUGGER.md`). Few turns to go back
+    /// to are worth more than a tab that has run out of memory.
     fn squeeze(&mut self, in_use: usize) {
         let line = self.memory_line.unwrap_or(MEMORY_LINE);
-        if in_use <= line || in_use < self.squeezed_at.saturating_add(MEMORY_STEP) {
+        let step = line / MEMORY_STEPS;
+        if in_use <= line || in_use < self.squeezed_at.saturating_add(step) {
             return;
         }
         self.squeezed_at = in_use;
         let held = self.marks.len().min(self.room());
-        self.room = Some((held - held / 10).max(DENSE_MARKS));
+        self.room = Some((held - held / 5).max(MIN_MARKS));
     }
 
-    /// Make room when there are more marks than there is room for.
+    /// Make room when there are more marks than there is room for. The room
+    /// is never exceeded.
     ///
-    /// The first mark and the newest `DENSE_MARKS` always stay. Between them
-    /// the oldest turns go first and the odd ones before the even, so a long
-    /// game's early turns are kept one in two, then one in four, and never
-    /// fewer than one in `COARSEST_STRIDE`.
+    /// The first mark always stays, and so do the newest `DENSE_MARKS`, or
+    /// the newest half of the room when that is fewer. Between them the
+    /// oldest turns go first and the odd ones before the even, so a long
+    /// game's early turns are kept one in two, then one in four, and so on to
+    /// one in `COARSEST_STRIDE`. If that is still too many, the oldest go.
     fn thin(&mut self) {
         if let Some(in_use) = memory_in_use() {
             self.squeeze(in_use);
         }
-        let mut over = self.marks.len().saturating_sub(self.room());
+        let room = self.room();
+        let dense = DENSE_MARKS.min(room / 2);
+        let mut over = self.marks.len().saturating_sub(room);
         let mut stride = 2;
-        while over > 0 && stride <= COARSEST_STRIDE {
-            let old = self.marks.len().saturating_sub(DENSE_MARKS);
+        while over > 0 {
+            let old = self.marks.len().saturating_sub(dense);
+            let last_pass = stride > COARSEST_STRIDE;
             let mut index = 0;
             self.marks.retain(|mark| {
-                let goes = over > 0 && index > 0 && index < old && mark.turn % stride != 0;
+                let kept_by_stride = !last_pass && mark.turn % stride == 0;
+                let goes = over > 0 && index > 0 && index < old && !kept_by_stride;
                 index += 1;
                 if goes {
                     over -= 1;
                 }
                 !goes
             });
+            if last_pass {
+                break;
+            }
             stride *= 2;
         }
     }
