@@ -1270,13 +1270,6 @@
     text-align: left; transition: border-color .12s ease, background .12s ease;
   }
   .diplomacy-card:hover { transform: none; border-color: #718b81; background: linear-gradient(100deg, #0e1b17f7, #1a302af2); }
-  .diplomacy-card.at-war {
-    /* War is the only relationship state carried by the row frame. Alliances
-       and friendships remain in the words of the dossier instead of painting
-       green around a civilization. */
-    border-color: color-mix(in srgb, #a65450 70%, var(--danger));
-    box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1;
-  }
   .diplomacy-card.dead { opacity: .42; filter: grayscale(.75); }
   /* The civilization name itself is the empire/capital map link. Watching
      through that civilization's fog remains a separate action beside the
@@ -4139,6 +4132,21 @@
     border-color: var(--civ-ink, #fcfbf6); color: var(--civ);
     background: var(--civ-ink, #fcfbf6); box-shadow: none;
   }
+  /* War is the only relationship state a row shows, and it shows it on the
+     one control every row carries rather than as a thin frame round the row
+     (operator, 2026-11-19): Watch-as turns bright red. Red, not the jersey's
+     ink, so it says war on every ground; the pale rim parts it from a red
+     jersey. Alliances and friendships stay in the words of the dossier. */
+  #playerhud .diplomacy-card.at-war .watch-as-link {
+    border-color: #ffd9d4; color: #fff; background: #f0241a;
+    box-shadow: 0 0 0 1px #0000004d, 0 0 7px #ff3b2f8c;
+    text-shadow: 0 1px 1px #0000008c; font-weight: 850;
+  }
+  #playerhud .diplomacy-card.at-war .watch-as-link::before { content: none; }
+  #playerhud .diplomacy-card.at-war .watch-as-link:hover,
+  #playerhud .diplomacy-card.at-war .watch-as-link:focus-visible {
+    border-color: #fff; color: #fff; background: #ff4a3d;
+  }
   /* The opening estimate is dimmed against the current one, and a dimmed
      figure has less to give up on a coloured ground than on the old black
      one: at 62% it fell to 3.6:1 on the lightest washes. */
@@ -4151,7 +4159,6 @@
      painted under it — and none of them moves a cell: the row keeps its
      padding, so every figure stays under its head.
        · an open dossier brightens the rim;
-       · a war is a red frame with a red left edge;
        · the seat the page looks through is ringed in the tracker's gold. */
   #playerhud .diplomacy-card.jersey-row::after {
     content: ""; position: absolute; inset: 0;
@@ -4160,14 +4167,9 @@
   #playerhud .diplomacy-card.jersey-row.expanded {
     border-color: color-mix(in srgb, var(--civ-wash) 45%, #fff);
   }
-  #playerhud .diplomacy-card.jersey-row.at-war { border-color: var(--danger); }
-  #playerhud .diplomacy-card.jersey-row.at-war::after { box-shadow: inset 3px 0 var(--danger); }
   #playerhud .diplomacy-card.jersey-row.focus-player { border-color: var(--gold-bright); }
   #playerhud .diplomacy-card.jersey-row.focus-player::after {
     box-shadow: inset 0 0 0 1px var(--gold-bright);
-  }
-  #playerhud .diplomacy-card.jersey-row.focus-player.at-war::after {
-    box-shadow: inset 3px 0 var(--danger), inset 0 0 0 1px var(--gold-bright);
   }
   /* One family down the whole row. The figures were always in the interface
      face; the names and ratings beside them were in the display serif, bold,

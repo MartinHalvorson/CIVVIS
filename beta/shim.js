@@ -108,11 +108,22 @@
 
   // ------------------------------------------------------------------ worker
 
-  const worker = new Worker(WORKER_URL);
+  // One half of a split Sim debugger (`assets/app_debugger.js`). The page in
+  // each half is this whole build again in a frame, but it starts no engine:
+  // its requests go to the engine of the page that framed it, with the half's
+  // name on each, and are answered there from a session kept for that half
+  // (`src/server/panes.rs`). One engine holds every half, so a half can be
+  // forked, copied and kept with all the turns behind it.
+  const PANE = (() => {
+    const pane = new URL(window.location.href).searchParams.get("pane");
+    return pane && window.parent !== window ? pane : null;
+  })();
+
+  const worker = PANE === null ? new Worker(WORKER_URL) : null;
   const pending = new Map();
   let nextId = 1;
 
-  worker.onmessage = (event) => {
+  const answered = (event) => {
     const { id, ok, answer, error } = event.data;
     const waiting = pending.get(id);
     if (!waiting) return;
@@ -134,12 +145,15 @@
     }
     waiting.resolve(parsed);
   };
-  worker.onerror = (event) => {
-    for (const waiting of pending.values()) {
-      waiting.reject(new Error(event.message || "the engine stopped"));
-    }
-    pending.clear();
-  };
+  if (worker) {
+    worker.onmessage = answered;
+    worker.onerror = (event) => {
+      for (const waiting of pending.values()) {
+        waiting.reject(new Error(event.message || "the engine stopped"));
+      }
+      pending.clear();
+    };
+  }
 
   // The world this visit opens on. The engine is deterministic per seed and
   // imports nothing, so it has no way to vary on its own — without this every
@@ -242,6 +256,8 @@
   // exactly what should play, and the report says why.
   let openingPresetStarted = null;
   function ensureOpeningPreset() {
+    // A half of a split opens on the session its host forks for it.
+    if (PANE !== null) return Promise.resolve(null);
     if (OPENING_PRESET === null) return Promise.resolve(null);
     if (openingPresetStarted === null) {
       openingPresetStarted = ask("POST", "/new", JSON.stringify(OPENING_PRESET))
@@ -261,6 +277,12 @@
     return new Promise((resolve, reject) => {
       const id = nextId++;
       pending.set(id, { resolve, reject, path, raw });
+      if (PANE !== null) {
+        window.parent.postMessage(
+          { civvis: "pane-ask", id, pane: PANE, method, path, body: body || "" },
+          window.location.origin);
+        return;
+      }
       worker.postMessage({
         id,
         method,
@@ -271,6 +293,34 @@
       });
     });
   }
+
+  // The bridge between a half and its host. The host passes a half's
+  // request to its own engine untouched but for the half's name, and hands
+  // back the engine's bytes; the half reads them exactly as it would its own
+  // worker's reply. Only a frame this page itself holds is answered.
+  window.addEventListener("message", (event) => {
+    if (event.origin !== window.location.origin) return;
+    const data = event.data;
+    if (!data || typeof data.civvis !== "string") return;
+    if (PANE !== null) {
+      if (data.civvis === "pane-answer" && event.source === window.parent) answered({ data });
+      return;
+    }
+    // A top window is its own parent, so "a frame of mine" has to say both.
+    const framed = event.source && event.source !== window && event.source.parent === window;
+    if (data.civvis !== "pane-ask" || !framed) return;
+    if (!/^[ab]-[0-9A-Za-z]{1,22}$/.test(String(data.pane))) return;
+    const path = String(data.path);
+    const named = `${path}${path.includes("?") ? "&" : "?"}pane=${data.pane}`;
+    const reply = (ok, answer, error) => {
+      try {
+        event.source.postMessage(
+          { civvis: "pane-answer", id: data.id, ok, answer, error }, window.location.origin);
+      } catch (_) { /* the half was closed while its request was out */ }
+    };
+    ask(String(data.method), named, String(data.body || ""), true)
+      .then((bytes) => reply(true, bytes, null), (error) => reply(false, null, String(error.message || error)));
+  });
 
   const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 

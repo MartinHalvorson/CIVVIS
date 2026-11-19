@@ -104,6 +104,27 @@ impl ActionLog {
         entries.into_iter().map(|entry| &entry.applied)
     }
 
+    /// Whether this log is `earlier` with more applied after it.
+    ///
+    /// The question is about the chain and not about its contents: a world
+    /// whose log continues another's was played on from that very world, and
+    /// two worlds that happened to apply the same actions were not. A log
+    /// continues itself.
+    pub fn continues(&self, earlier: &ActionLog) -> bool {
+        if earlier.len > self.len {
+            return false;
+        }
+        let mut cursor = self.last.as_ref();
+        for _ in earlier.len..self.len {
+            cursor = cursor.and_then(|entry| entry.previous.as_ref());
+        }
+        match (cursor, earlier.last.as_ref()) {
+            (Some(mine), Some(theirs)) => Arc::ptr_eq(mine, theirs),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
     /// The chain walked out into oldest-first order.
     fn chain(&self) -> Vec<&Entry> {
         let mut entries = Vec::with_capacity(self.len);
@@ -236,6 +257,24 @@ mod tests {
             trunk.iter().map(|(seat, _)| *seat).collect::<Vec<_>>(),
             [0, 1, 2, 7]
         );
+    }
+
+    #[test]
+    fn a_log_continues_what_it_was_played_on_from_and_nothing_else() {
+        let trunk: ActionLog = (0..3).map(end).collect();
+        let mut branch = trunk.clone();
+        branch.push(9, Action::EndTurn);
+        branch.push(9, Action::EndTurn);
+        assert!(branch.continues(&trunk));
+        assert!(trunk.continues(&trunk));
+        assert!(!trunk.continues(&branch));
+        assert!(branch.continues(&ActionLog::new()));
+        // The same actions applied somewhere else are another history.
+        let twin: ActionLog = (0..3).map(end).collect();
+        assert!(!branch.continues(&twin));
+        let mut other = trunk.clone();
+        other.push(9, Action::EndTurn);
+        assert!(!branch.continues(&other));
     }
 
     #[test]

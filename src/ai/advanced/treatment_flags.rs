@@ -629,6 +629,9 @@ impl AdvancedAi {
         /// Opt-in gene `tribute-buys-the-friendship-2`; see
         /// `advanced/tribute_buys_the_friendship.rs`.
         tribute_buys_the_friendship_2 => enable_tribute_buys_the_friendship_2, disable_tribute_buys_the_friendship_2;
+        /// Opt-in gene `threatened-capital-trains-its-shooters`; see
+        /// `advanced/threatened_capital_trains_its_shooters.rs`.
+        threatened_capital_trains_its_shooters => enable_threatened_capital_trains_its_shooters, disable_threatened_capital_trains_its_shooters;
     }
 
     toggles! {

@@ -353,6 +353,56 @@ def wait_for_harness(dev, url_part: str) -> None:
     raise AssertionError(f"the page at {url_part} never reported ready")
 
 
+def check_a_split_pane_asks_its_hosts_engine(dev) -> None:
+    """One half of a split Sim debugger starts no engine of its own.
+
+    The half is this build again in a frame. Its shim hands every engine
+    request to the page that framed it, and that page's engine is sent the
+    request with the half's name on it, which is what lets one engine keep a
+    session for each half. The half reads the reply as if it were its own.
+    """
+    seen = dev.evaluate(
+        """(async () => {
+          const before = window.workerCalls.length;
+          const frame = document.createElement("iframe");
+          frame.src = "index.html?pane=a-t1";
+          document.body.appendChild(frame);
+          // The harness freezes performance.now; Date is the real clock.
+          const deadline = Date.now() + 10000;
+          const ready = () => frame.contentWindow.__civvisBeta && frame.contentWindow.__civvisBeta.ready;
+          while (Date.now() < deadline && !ready()) await new Promise((done) => setTimeout(done, 50));
+          const answer = await frame.contentWindow.fetch("/state?seat=1").then((r) => r.json());
+          const seen = {
+            ready: !!ready(),
+            own: frame.contentWindow.workerCalls.length,
+            host: window.workerCalls.slice(before),
+            turn: answer.turn,
+            civ: answer.players && answer.players[0].civ,
+          };
+          frame.remove();
+          return seen;
+        })()"""
+    )
+    assert seen["ready"], seen
+    assert seen["own"] == 0, seen
+    assert "/runtime?pane=a-t1" in seen["host"], seen
+    assert "/state?seat=1&pane=a-t1" in seen["host"], seen
+    assert seen["turn"] == 42 and seen["civ"] == "Rome", seen
+    # A page nobody framed is not a pane, whatever its address says, and a
+    # message that is not from a frame this page holds is not passed on.
+    stray = dev.evaluate(
+        """(async () => {
+          const before = window.workerCalls.length;
+          window.postMessage({ civvis: "pane-ask", id: 1, pane: "a-t1", method: "GET",
+            path: "/state?seat=1", body: "" }, location.origin);
+          await new Promise((done) => setTimeout(done, 200));
+          return window.workerCalls.length - before;
+        })()"""
+    )
+    assert stray == 0, stray
+    print("a split pane starts no engine and is answered by its host's, by name.")
+
+
 class Quiet(http.server.SimpleHTTPRequestHandler):
     extensions_map = {
         **http.server.SimpleHTTPRequestHandler.extensions_map,
@@ -667,6 +717,7 @@ def main() -> int:
         calls = dev.evaluate("window.workerCalls")
         assert calls[0] == "/new", calls
         assert not [path for path in calls if "have=11:" in path], calls
+        check_a_split_pane_asks_its_hosts_engine(dev)
         print(
             "the WASM clock reads one frame ahead and never two, sends the viewer's "
             "opening settings first, honors selected holds, and opens an installed "

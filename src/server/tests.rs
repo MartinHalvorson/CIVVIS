@@ -861,6 +861,7 @@ fn a_mid_turn_victory_wakes_the_waiting_state_request_immediately() {
     session.game.winner = None;
     let seed = session.game.seed;
     let shared = Arc::new(Shared {
+        panes: Default::default(),
         current_seed: AtomicU64::new(seed),
         supervisor_request: Mutex::new(None),
         live_params: Mutex::new(session.params.clone()),
@@ -8076,8 +8077,10 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains("function reframeCurrentMapFocus(world)"));
     assert!(EMBEDDED_INDEX.contains("const {x:desiredX, y:desiredY} = mapFocusPoint();"));
     // The domination column counts captured capitals, and says so. "HQs"
-    // was a word from no part of this game.
-    assert!(EMBEDDED_INDEX.contains("<span></span><span>Capitals</span>"));
+    // was a word from no part of this game. Its meter is the cities a
+    // civilization holds out of every city on the map, and says that too.
+    assert!(EMBEDDED_INDEX.contains("<span>Cities</span><span>Capitals</span>"));
+    assert!(EMBEDDED_INDEX.contains("100 * (+metric.cities || 0) / metric.city_total"));
     assert!(!EMBEDDED_INDEX.contains("HQs"));
     assert!(EMBEDDED_INDEX.contains("<span>Watch as</span>"));
     assert_eq!(
@@ -8890,13 +8893,10 @@ fn browser_player_rows_use_relationship_color_only_for_active_wars() {
     ));
     assert!(EMBEDDED_INDEX.contains(".diplomacy-card.expanded:not(.at-war)"));
     assert!(EMBEDDED_INDEX.contains(".diplomacy-card:hover:not(.at-war)"));
-    // A standings row is its civilization's colour from edge to edge, so the
-    // red frame and edge are drawn over both of its grounds, held row or not.
-    assert!(EMBEDDED_INDEX
-        .contains("#playerhud .diplomacy-card.jersey-row.at-war { border-color: var(--danger); }"));
-    assert!(EMBEDDED_INDEX.contains(
-        "#playerhud .diplomacy-card.jersey-row.at-war::after { box-shadow: inset 3px 0 var(--danger); }"
-    ));
+    // A war is not drawn round the row: the row's Watch-as button turns
+    // bright red instead, whatever colours the row itself wears.
+    assert!(EMBEDDED_INDEX.contains("#playerhud .diplomacy-card.at-war .watch-as-link {"));
+    assert!(!EMBEDDED_INDEX.contains("#playerhud .diplomacy-card.jersey-row.at-war"));
 }
 
 /// A defeated civilization all but disappears from the masthead — its row
@@ -11586,6 +11586,7 @@ fn settings_are_staged_while_the_simulation_lock_is_held() {
 fn shared_for(mut session: Session) -> Arc<Shared> {
     let seed = session.game.seed;
     Arc::new(Shared {
+        panes: Default::default(),
         current_seed: AtomicU64::new(seed),
         supervisor_request: Mutex::new(None),
         live_params: Mutex::new(session.params.clone()),

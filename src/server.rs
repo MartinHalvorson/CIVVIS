@@ -52,6 +52,10 @@ pub mod site_bench;
 /// and a child for the same reason as the two above.
 mod debugger;
 
+/// A session of its own for each half of the split Sim debugger, beside the
+/// one this process plays.
+mod panes;
+
 /// Which runtime is answering, so a long-lived page can notice it is talking
 /// to a different one than it booted against and reload.
 ///
@@ -1347,6 +1351,9 @@ pub struct Shared {
     /// whether the supervised process has changed.
     pub current_seed: AtomicU64,
     pub session: Mutex<Session>,
+    /// The split Sim debugger's two halves, each a session forked from the
+    /// one above (`panes.rs`). Empty until a screen is split.
+    pub panes: panes::socket::Held,
     /// A restart the viewer asked for, and the settings the live world was
     /// started from, both kept off the simulation lock for exactly the reason
     /// `current_seed` is.
@@ -2970,7 +2977,13 @@ impl Session {
             o["server_artifact_kind"] = json!(runtime_artifact_kind());
             return o;
         }
-        let mut o = observation(&self.game, 0);
+        // The debugger's reveal view lifts the fog from what the page is
+        // shown; the seat still acts by its own rules.
+        let mut o = if self.debugger_reveals() {
+            crate::obs::observation_revealed(&self.game, 0)
+        } else {
+            observation(&self.game, 0)
+        };
         // A rival you have met has a standing, the same way a chess opponent
         // does, and the HUD has always had a column for it. It used to be
         // empty in every interactive game because only the spectator wrote
@@ -4883,6 +4896,20 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         let _ = reader.read_exact(&mut body);
     }
     let parsed: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    // One half of a split screen has a session of its own; the requests that
+    // concern a world are answered from it and go no further.
+    if let Some(pane) = panes::named(&request_target, sender.referer.as_deref()) {
+        let asked = panes::Asked {
+            method: &method,
+            path: &path,
+            target: &request_target,
+            parsed: &parsed,
+        };
+        if let Some(answer) = panes::socket::route(sh, pane, &asked) {
+            respond_json(stream, &answer);
+            return;
+        }
+    }
     sender.peer = stream.peer_addr().ok().map(|addr| addr.to_string());
     if let Some(line) = control_request_line(
         &method,
@@ -5530,6 +5557,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // undo an action, step a turn to a breakpoint, lend layers of the
         // seat to its agent (`server/debugger.rs`).
         ("POST", "/debug") => {
+            // Closing a split is the main session's word, but it is the
+            // panes that answer it: the half that is kept takes its place.
+            if let Some(pane) = panes::adopts(&parsed) {
+                respond_json(stream, &panes::socket::adopt(sh, pane));
+                return;
+            }
             let mut session = lock_or_recover(&sh.session);
             let mut out = crate::routes::debug(&mut session, &parsed);
             drop(session);
@@ -5804,6 +5837,7 @@ fn serve_opening_at_pace(
     }
     let current_seed = session.game.seed;
     let shared = Arc::new(Shared {
+        panes: Default::default(),
         current_seed: AtomicU64::new(current_seed),
         supervisor_request: Mutex::new(None),
         live_params: Mutex::new(session.params.clone()),

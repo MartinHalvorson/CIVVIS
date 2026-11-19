@@ -13,35 +13,50 @@
 //! * **step** plays one whole turn with the seat's agent and then asks the
 //!   breakpoints whether to stop: a turn number, a kind of event, a phrase in
 //!   the event log.
+//! * **step in** takes the agent's turn one action at a time: the agent plans
+//!   the turn on a copy of the world, and each step applies the next action
+//!   of that plan to the real one. When the plan is spent, the step ends the
+//!   turn.
+//! * **reveal** lifts the fog from what the page is shown. The seat still
+//!   plays by its own rules; only the observation changes.
 //! * **layers** are the rungs between playing every decision by hand and
 //!   handing the seat over: research, cities, the empire's standing choices,
 //!   diplomacy, units. The agent plans the turn on a copy of the world, and
 //!   only the actions in a layer that is switched on are applied to the real
 //!   one. The rest of the turn is left to the person.
 //!
+//! * **save points** keep a world under a name, to come back to whatever is
+//!   played from here on. Going to one puts its world on the table with the
+//!   turns of its own history, and keeps the world that was left.
+//!
 //! A mark is a clone of the game. The game shares what a turn did not change
-//! with its clones, so a mark costs the turn's difference rather than the
-//! world. Old marks are still thinned (`DENSE_MARKS`, `SPARSE_EVERY`) because
-//! a browser tab's memory only grows.
+//! with its clones, so a mark costs what its turn changed rather than the
+//! world. That is still megabytes (`ROOMY_MARKS` has the measurement), so
+//! every turn keeps its mark only for as long as there is room
+//! (`ROOMY_MARKS`, and in a browser tab the memory line, because a tab's
+//! memory only grows). When room runs out the oldest turns are thinned first
+//! (`Timeline::thin`). Playing a thinned turn again would not bring it back:
+//! a turn played by hand cannot be played by an agent, and an agent decides
+//! things its logged actions do not carry.
 //!
 //! A save carries the world and not this record: a loaded game starts a
 //! timeline of its own from the turn it resumes.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 
 use serde_json::{json, Value};
 
 use super::Session;
 use crate::game::{Action, Event, Game};
 
-/// The newest marks are kept one a turn.
+/// The newest marks are kept one a turn, whatever else has to go.
 const DENSE_MARKS: usize = 60;
-/// Behind those, one turn in this many keeps its mark.
-const SPARSE_EVERY: u32 = 10;
 /// Breakpoint phrases a page may hold at once.
 const MAX_PHRASES: usize = 16;
 /// Breakpoint turns a page may hold at once.
 const MAX_BREAK_TURNS: usize = 64;
+/// Breakpoint conditions a page may hold at once.
+const MAX_CONDITIONS: usize = 16;
 
 /// One rung of handing the seat to its agent.
 ///
@@ -142,6 +157,116 @@ impl Layer {
     }
 }
 
+/// How a condition's number is held against its line.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Test {
+    Below,
+    AtMost,
+    Above,
+    AtLeast,
+    Equals,
+    Differs,
+    /// No line at all: the value is not what it was a turn ago.
+    Changes,
+}
+
+impl Test {
+    const ALL: [Test; 7] = [
+        Test::Below,
+        Test::AtMost,
+        Test::Above,
+        Test::AtLeast,
+        Test::Equals,
+        Test::Differs,
+        Test::Changes,
+    ];
+
+    fn sign(self) -> &'static str {
+        match self {
+            Test::Below => "<",
+            Test::AtMost => "<=",
+            Test::Above => ">",
+            Test::AtLeast => ">=",
+            Test::Equals => "==",
+            Test::Differs => "!=",
+            Test::Changes => "changes",
+        }
+    }
+
+    fn parse(sign: &str) -> Option<Test> {
+        Test::ALL.into_iter().find(|test| test.sign() == sign)
+    }
+
+    fn holds(self, now: f64, line: f64) -> bool {
+        match self {
+            Test::Below => now < line,
+            Test::AtMost => now <= line,
+            Test::Above => now > line,
+            Test::AtLeast => now >= line,
+            Test::Equals => now == line,
+            Test::Differs => now != line,
+            Test::Changes => false,
+        }
+    }
+}
+
+/// A breakpoint on the state of the game rather than on its log: one thing
+/// the observation says about one civilization, held against a line.
+///
+/// What it reads is that civilization's entry in the omniscient observation
+/// (`players[seat][key]`), so anything a spectator of the whole table is
+/// told can be a condition, for any seat, without a list kept here. A number
+/// is read as itself, a yes or no as 1 or 0, and a list as its length.
+#[derive(Clone, Debug, PartialEq)]
+struct Condition {
+    seat: usize,
+    key: String,
+    test: Test,
+    line: f64,
+}
+
+impl Condition {
+    fn json(&self) -> Value {
+        json!({
+            "seat": self.seat,
+            "key": self.key,
+            "test": self.test.sign(),
+            "value": self.line,
+        })
+    }
+}
+
+/// A reading as a number, when it is something that can be held to a line.
+fn as_number(reading: &Value) -> Option<f64> {
+    match reading {
+        Value::Number(number) => number.as_f64(),
+        Value::Bool(yes) => Some(f64::from(u8::from(*yes))),
+        Value::Array(list) => Some(list.len() as f64),
+        Value::Object(map) => Some(map.len() as f64),
+        _ => None,
+    }
+}
+
+/// What each condition reads right now. `None` is a seat or a key the
+/// observation does not have.
+fn readings(game: &Game, conditions: &[Condition]) -> Vec<Option<Value>> {
+    if conditions.is_empty() {
+        return Vec::new();
+    }
+    let observed = crate::obs::observation_spectator(game, 0);
+    let players = observed["players"].as_array();
+    conditions
+        .iter()
+        .map(|condition| {
+            players?
+                .iter()
+                .find(|player| player["id"] == json!(condition.seat))?
+                .get(&condition.key)
+                .cloned()
+        })
+        .collect()
+}
+
 /// When a run stops by itself.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Breakpoints {
@@ -157,10 +282,61 @@ pub struct Breakpoints {
     /// seat's own are what a person playing it is shown; a debugger may want
     /// the ones it would not be.
     every_seat: bool,
+    /// Stop when one of these becomes true of the game's state.
+    conditions: Vec<Condition>,
 }
 
 impl Breakpoints {
-    fn from_request(request: &Value) -> Result<Breakpoints, String> {
+    fn from_request(request: &Value, game: &Game) -> Result<Breakpoints, String> {
+        let mut conditions = Vec::new();
+        for asked in request["conditions"].as_array().into_iter().flatten() {
+            let seat = asked["seat"]
+                .as_u64()
+                .and_then(|seat| usize::try_from(seat).ok())
+                .filter(|seat| *seat < game.players.len())
+                .ok_or_else(|| "a condition names a civilization by its seat".to_string())?;
+            let key = asked["key"].as_str().unwrap_or("").to_string();
+            let sign = asked["test"].as_str().unwrap_or("");
+            let test = Test::parse(sign).ok_or_else(|| {
+                format!("a condition's test is one of < <= > >= == != changes, not {sign:?}")
+            })?;
+            let line = match (test, asked["value"].as_f64()) {
+                (Test::Changes, _) => 0.0,
+                (_, Some(line)) => line,
+                (_, None) => return Err(format!("{key} {sign} needs a number to hold it to")),
+            };
+            conditions.push(Condition {
+                seat,
+                key,
+                test,
+                line,
+            });
+        }
+        if conditions.len() > MAX_CONDITIONS {
+            return Err(format!("at most {MAX_CONDITIONS} breakpoint conditions"));
+        }
+        // A condition is read back from where it lands before it is kept: a
+        // key the observation does not have would never stop anything, and
+        // would say nothing about why.
+        for (condition, reading) in conditions.iter().zip(readings(game, &conditions)) {
+            let readable = match (condition.test, &reading) {
+                (_, None) => false,
+                (Test::Changes, Some(_)) => true,
+                (_, Some(value)) => as_number(value).is_some(),
+            };
+            if !readable {
+                return Err(format!(
+                    "seat {} has no {} called {:?}",
+                    condition.seat,
+                    if condition.test == Test::Changes {
+                        "reading"
+                    } else {
+                        "number"
+                    },
+                    condition.key
+                ));
+            }
+        }
         let mut turns = BTreeSet::new();
         for turn in request["turns"].as_array().into_iter().flatten() {
             let turn = turn
@@ -197,7 +373,45 @@ impl Breakpoints {
             phrases,
             important: request["important"].as_bool().unwrap_or(false),
             every_seat: request["every_seat"].as_bool().unwrap_or(false),
+            conditions,
         })
+    }
+
+    /// The first condition a freshly played turn made true: one that holds
+    /// now and did not a turn ago. A condition that stays true does not stop
+    /// every turn it stays true for.
+    fn crossed(
+        &self,
+        turn: u32,
+        before: &[Option<Value>],
+        after: &[Option<Value>],
+    ) -> Option<Value> {
+        self.conditions
+            .iter()
+            .zip(before.iter().zip(after))
+            .find_map(|(condition, (was, now))| {
+                let (was, now) = (was.as_ref()?, now.as_ref()?);
+                let crossed = match condition.test {
+                    Test::Changes => was != now,
+                    test => {
+                        let (was, now) = (as_number(was)?, as_number(now)?);
+                        test.holds(now, condition.line) && !test.holds(was, condition.line)
+                    }
+                };
+                crossed.then(|| {
+                    // A number where the reading is one, so a list is
+                    // reported as the length it was held to and not in full.
+                    let said = |reading: &Value| {
+                        as_number(reading).map_or_else(|| reading.clone(), |number| json!(number))
+                    };
+                    let mut hit = condition.json();
+                    hit["kind"] = json!("condition");
+                    hit["turn"] = json!(turn);
+                    hit["was"] = said(was);
+                    hit["now"] = said(now);
+                    hit
+                })
+            })
     }
 
     fn json(&self) -> Value {
@@ -207,8 +421,10 @@ impl Breakpoints {
             "phrases": self.phrases,
             "important": self.important,
             "every_seat": self.every_seat,
-            // The vocabulary a page offers, read from the engine's own list.
+            "conditions": self.conditions.iter().map(Condition::json).collect::<Vec<_>>(),
+            // The vocabulary a page offers, read from the engine's own lists.
             "known_categories": crate::game::EVENT_CATEGORIES,
+            "known_tests": Test::ALL.map(Test::sign),
         })
     }
 
@@ -241,7 +457,45 @@ impl Breakpoints {
     }
 }
 
+/// Marks a timeline holds before the oldest are thinned. A mark costs what
+/// its turn changed, which was 1.3 MB early and 2.8 MB by turn 130 in a
+/// six-seat game when this was measured, so this many is about the ceiling of
+/// what a long game should be allowed to keep.
+const ROOMY_MARKS: usize = 480;
+/// However little room there is, a turn divisible by this keeps its mark.
+const COARSEST_STRIDE: u32 = 8;
+/// Memory in use past which the marks start giving room back, unless the
+/// page names another line (`room`).
+const MEMORY_LINE: usize = 1 << 30;
+/// Past the line, each further growth by this much takes room away again.
+const MEMORY_STEP: usize = 32 << 20;
+/// Save points a timeline holds at once.
+const MAX_SAVE_POINTS: usize = 32;
+/// The longest name a save point is given.
+const MAX_SAVE_NAME: usize = 48;
+/// The save point that going to another one leaves behind.
+const WHERE_YOU_WERE: &str = "Where you were";
+
+/// The memory this process can see itself using, where it can: the browser
+/// build's linear memory, which only grows and has a ceiling.
+#[cfg(target_arch = "wasm32")]
+fn memory_in_use() -> Option<usize> {
+    Some(core::arch::wasm32::memory_size(0).saturating_mul(65_536))
+}
+
+/// A native process is not told what it holds, and is not near a ceiling.
+#[cfg(not(target_arch = "wasm32"))]
+fn memory_in_use() -> Option<usize> {
+    None
+}
+
+/// Whether one of two worlds was played on from the other.
+fn on_one_line(a: &Game, b: &Game) -> bool {
+    a.log.continues(&b.log) || b.log.continues(&a.log)
+}
+
 /// The world as it stood when the played seat's turn opened.
+#[derive(Clone)]
 struct Mark {
     turn: u32,
     /// How long the action log was. Everything past it in the live game is
@@ -250,8 +504,43 @@ struct Mark {
     game: Game,
 }
 
+/// The rest of a turn the seat's agent planned, good for as long as the world
+/// is where the plan left it.
+#[derive(Clone)]
+struct Plan {
+    turn: u32,
+    /// How long the action log was when the plan was made or last advanced.
+    /// Anything else that touched the world since makes the plan stale.
+    at: usize,
+    rest: VecDeque<Action>,
+    /// The world as the agent left it: the copy it played the turn on,
+    /// before the turn is ended. The last step puts this on the table, so a
+    /// turn taken apart ends on exactly the world the turn taken whole does.
+    done: Game,
+}
+
+/// A world kept under a name: somewhere to come back to however the game is
+/// played on from here. It is the world as it stood, part-way through a turn
+/// or not, and the top of that turn to undo back to.
+#[derive(Clone)]
+struct SavePoint {
+    id: u32,
+    name: String,
+    /// Kept by the debugger itself, when a world was left for a save point.
+    auto: bool,
+    turn: u32,
+    /// What the seat had done with the turn.
+    acted: usize,
+    game: Game,
+    /// The turn's own mark, which the timeline may since have replaced.
+    top: Option<Mark>,
+}
+
 /// A played game's marks, and what the debugger was told to do with it.
-#[derive(Default)]
+///
+/// Cloning one is cheap for the reason keeping one is: a mark shares with its
+/// clone everything the game shares with its own.
+#[derive(Clone, Default)]
 pub struct Timeline {
     /// Oldest first, one a turn at most.
     marks: Vec<Mark>,
@@ -261,14 +550,35 @@ pub struct Timeline {
     stopped: Option<Value>,
     /// What the layers did when the open turn began.
     assisted: usize,
+    /// The agent's turn, when it is being taken an action at a time.
+    plan: Option<Plan>,
+    /// What the last single step did, until the next thing moves the world.
+    stepped: Option<Value>,
+    /// Show the page the whole world rather than what the seat can see.
+    reveal: bool,
+    /// Worlds kept under a name.
+    saves: Vec<SavePoint>,
+    /// The id the last save point was given.
+    save_ids: u32,
+    /// How many marks there is room for, once memory has had a say.
+    room: Option<usize>,
+    /// Where the page put the memory line, if it did.
+    memory_line: Option<usize>,
+    /// The memory reading that last took room away.
+    squeezed_at: usize,
 }
 
 impl Timeline {
     /// Start over on this world: a new game, or a loaded one.
     fn begin(&mut self, game: &Game) {
         self.marks.clear();
+        self.saves.clear();
         self.stopped = None;
         self.assisted = 0;
+        // What an earlier game grew the memory to says nothing about this
+        // one; only growing past it does.
+        self.room = None;
+        self.squeezed_at = memory_in_use().unwrap_or(0);
         self.record(game);
     }
 
@@ -292,17 +602,78 @@ impl Timeline {
         game.current == 0 && game.is_human_seat(0)
     }
 
-    fn thin(&mut self) {
-        if self.marks.len() <= DENSE_MARKS {
+    /// How many marks may be kept.
+    fn room(&self) -> usize {
+        self.room.unwrap_or(ROOMY_MARKS).max(DENSE_MARKS)
+    }
+
+    /// Hear how much memory is in use. Past the line, the room becomes a
+    /// tenth less than what is held, and again each time the memory has grown
+    /// by another step: memory that only grows cannot say that it was given
+    /// back, so the growing is what is listened to.
+    fn squeeze(&mut self, in_use: usize) {
+        let line = self.memory_line.unwrap_or(MEMORY_LINE);
+        if in_use <= line || in_use < self.squeezed_at.saturating_add(MEMORY_STEP) {
             return;
         }
-        let dense_from = self.marks.len() - DENSE_MARKS;
-        let mut index = 0;
-        self.marks.retain(|mark| {
-            let keep = index >= dense_from || index == 0 || mark.turn % SPARSE_EVERY == 0;
-            index += 1;
-            keep
+        self.squeezed_at = in_use;
+        let held = self.marks.len().min(self.room());
+        self.room = Some((held - held / 10).max(DENSE_MARKS));
+    }
+
+    /// Make room when there are more marks than there is room for.
+    ///
+    /// The first mark and the newest `DENSE_MARKS` always stay. Between them
+    /// the oldest turns go first and the odd ones before the even, so a long
+    /// game's early turns are kept one in two, then one in four, and never
+    /// fewer than one in `COARSEST_STRIDE`.
+    fn thin(&mut self) {
+        if let Some(in_use) = memory_in_use() {
+            self.squeeze(in_use);
+        }
+        let mut over = self.marks.len().saturating_sub(self.room());
+        let mut stride = 2;
+        while over > 0 && stride <= COARSEST_STRIDE {
+            let old = self.marks.len().saturating_sub(DENSE_MARKS);
+            let mut index = 0;
+            self.marks.retain(|mark| {
+                let goes = over > 0 && index > 0 && index < old && mark.turn % stride != 0;
+                index += 1;
+                if goes {
+                    over -= 1;
+                }
+                !goes
+            });
+            stride *= 2;
+        }
+    }
+
+    /// Keep a world under a name. A name already taken is given to this
+    /// world instead, and the debugger's own save point is one of a kind.
+    fn keep(&mut self, name: &str, game: &Game, auto: bool) -> Result<u32, String> {
+        self.saves
+            .retain(|save| save.name != name && !(auto && save.auto));
+        if self.saves.len() >= MAX_SAVE_POINTS {
+            return Err(format!(
+                "{MAX_SAVE_POINTS} save points are kept at once; remove one first"
+            ));
+        }
+        let acted = self.acted(game);
+        let top = self
+            .mark(game.turn)
+            .filter(|mark| game.log.continues(&mark.game.log))
+            .cloned();
+        self.save_ids += 1;
+        self.saves.push(SavePoint {
+            id: self.save_ids,
+            name: name.to_string(),
+            auto,
+            turn: game.turn,
+            acted,
+            game: game.clone(),
+            top,
         });
+        Ok(self.save_ids)
     }
 
     fn mark(&self, turn: u32) -> Option<&Mark> {
@@ -340,6 +711,16 @@ impl Timeline {
             })).collect::<Vec<_>>(),
             "assisted": self.assisted,
             "stopped": self.stopped,
+            "stepped": self.stepped,
+            "reveal": self.reveal,
+            "memory_line": self.memory_line.map(|bytes| bytes >> 20),
+            "saves": self.saves.iter().map(|save| json!({
+                "id": save.id,
+                "name": save.name,
+                "auto": save.auto,
+                "turn": save.turn,
+                "acted": save.acted,
+            })).collect::<Vec<_>>(),
         })
     }
 }
@@ -389,11 +770,18 @@ impl Session {
             return;
         }
         self.debugger.stopped = None;
+        self.debugger.stepped = None;
+        self.debugger.plan = None;
         self.debugger.assisted = 0;
         self.debugger.record(&self.game);
         if assist && !self.debugger.layers.is_empty() {
             self.debugger.assisted = self.debug_assist();
         }
+    }
+
+    /// Whether the page is shown the world with the fog lifted.
+    pub(super) fn debugger_reveals(&self) -> bool {
+        self.debugger.reveal
     }
 
     /// The debugger's part of the state document.
@@ -430,7 +818,32 @@ impl Session {
         next.keeps_own_yields = own_yields;
         *self = next;
         self.debugger.stopped = None;
+        self.debugger.stepped = None;
+        self.debugger.plan = None;
         self.debugger.assisted = 0;
+    }
+
+    /// A second session on this one's world as it stands: the same seats and
+    /// agents, and the same turns behind it to walk back along. From here the
+    /// two play their own histories. This is what one half of a split screen
+    /// is given (`panes.rs`).
+    pub(super) fn fork(&self) -> Session {
+        let mut next = Session::from_saved_game(self.params.clone(), self.game.clone());
+        if let Some(name) = &self.rival_strategy {
+            let _ = next.seat_rivals(name);
+        }
+        if let Some(name) = &self.autoplay_strategy {
+            let _ = next.seat_strategy_at(0, name);
+        }
+        if !self.human_players.is_empty() {
+            next.human_players = self.human_players.clone();
+        }
+        next.view_player = self.view_player;
+        next.debugger = self.debugger.clone();
+        next.debugger.stopped = None;
+        next.keeps_rival_yields = self.keeps_rival_yields;
+        next.keeps_own_yields = self.keeps_own_yields;
+        next
     }
 
     /// Go to a marked turn. A turn with no mark of its own answers with the
@@ -475,6 +888,64 @@ impl Session {
         self.debug_jump(next)
     }
 
+    /// Keep the world as it stands under a name, to come back to.
+    pub fn debug_save_point(&mut self, name: &str) -> Result<u32, String> {
+        let name: String = name.trim().chars().take(MAX_SAVE_NAME).collect();
+        if name.is_empty() {
+            let turn = self.game.turn;
+            return self
+                .debugger
+                .keep(&format!("Turn {turn}"), &self.game, false);
+        }
+        self.debugger.keep(&name, &self.game, false)
+    }
+
+    /// Go to a save point: its world, with the turns of its own history.
+    ///
+    /// Marks of a line the save point is not on are let go, because a
+    /// timeline is one history. The world being left is kept as a save point
+    /// of the debugger's own, unless it is one already, so the way back is
+    /// one more of these.
+    pub fn debug_goto_save(&mut self, id: u32) -> Result<u32, String> {
+        let Some(save) = self.debugger.saves.iter().find(|save| save.id == id) else {
+            return Err("no save point has that id".to_string());
+        };
+        let (game, top) = (save.game.clone(), save.top.clone());
+        let left = &self.game;
+        let kept = self
+            .debugger
+            .saves
+            .iter()
+            .any(|save| save.game.log.len() == left.log.len() && on_one_line(&save.game, left));
+        if !kept {
+            // With no room for it the world left is simply not kept.
+            let _ = self.debugger.keep(WHERE_YOU_WERE, &self.game, true);
+        }
+        self.debugger
+            .marks
+            .retain(|mark| on_one_line(&mark.game, &game));
+        if let Some(top) = top.filter(|top| self.debugger.mark(top.turn).is_none()) {
+            let at = self
+                .debugger
+                .marks
+                .partition_point(|mark| mark.turn < top.turn);
+            self.debugger.marks.insert(at, top);
+        }
+        let turn = game.turn;
+        self.debug_put(game);
+        Ok(turn)
+    }
+
+    /// Let a save point go.
+    pub fn debug_drop_save(&mut self, id: u32) -> Result<(), String> {
+        let before = self.debugger.saves.len();
+        self.debugger.saves.retain(|save| save.id != id);
+        if self.debugger.saves.len() == before {
+            return Err("no save point has that id".to_string());
+        }
+        Ok(())
+    }
+
     /// Take back the seat's last action in the open turn.
     pub fn debug_undo(&mut self) -> Result<usize, String> {
         let turn = self.game.turn;
@@ -502,15 +973,134 @@ impl Session {
         let turn = self.game.turn;
         let before_len = self.game.events.len();
         let before_last = self.game.events.last().cloned();
+        let read_before = readings(&self.game, &self.debugger.breakpoints.conditions);
         let played = self.autoplay(1);
         let fresh = fresh_events(before_len, before_last.as_ref(), turn, &self.game.events);
         let over = played == 0 || self.game.is_finished() || !self.game.players[0].alive;
         self.debugger.stopped = if over {
             Some(json!({"kind": "end", "turn": self.game.turn}))
         } else {
-            self.debugger.breakpoints.hit(&self.game, fresh)
+            self.debugger
+                .breakpoints
+                .hit(&self.game, fresh)
+                .or_else(|| {
+                    let read_after = readings(&self.game, &self.debugger.breakpoints.conditions);
+                    self.debugger
+                        .breakpoints
+                        .crossed(self.game.turn, &read_before, &read_after)
+                })
         };
         played > 0
+    }
+
+    /// What an agent decides that is not an action: its standing preferences
+    /// for the governors of its cities. The agent's own plan-then-replay path
+    /// carries the same fields across ("These preferences are decisions",
+    /// `ai/advanced.rs`), and a turn replayed without them is not its turn.
+    fn debug_carry_preferences(&mut self, played: &Game) {
+        self.game.players[0].citizen_food_bias = played.players[0].citizen_food_bias;
+        self.game.players[0].city_directives = played.players[0].city_directives.clone();
+        self.game.heist_reads_the_host_menu = played.heist_reads_the_host_menu;
+        self.game.board_written();
+    }
+
+    /// The rivals take their turns until the round comes back to the seat.
+    /// `act` does this after the seat ends its turn; this is for a turn the
+    /// agent ended by itself.
+    fn debug_rivals_play(&mut self) {
+        let g = &mut self.game;
+        let mut guard = 0;
+        while !g.is_finished()
+            && g.current != 0
+            && g.players[0].alive
+            && guard < 2 * g.players.len()
+        {
+            let pid = g.current;
+            self.ais[pid].take_turn(g, pid);
+            if g.current == pid && !g.is_finished() {
+                let _ = g.apply(pid, &Action::EndTurn);
+            }
+            guard += 1;
+        }
+        self.debugger_turn_opened(true);
+    }
+
+    /// Step in: the seat's agent takes the next action of its turn, and only
+    /// that. With nothing left to do, the step ends the turn.
+    ///
+    /// The agent plays the whole turn once, on a copy, and the plan is kept
+    /// for the steps that follow. Each step applies the plan's next action
+    /// to the real world, so the turn is seen being put together. The last
+    /// step puts the agent's own copy on the table and ends the turn there,
+    /// which makes a turn taken apart the same turn as one taken whole.
+    ///
+    /// The plan is made again if anything else has touched the world in
+    /// between: an action by hand, an undo, a layer. An action the real
+    /// world refuses is passed over.
+    pub fn debug_step_action(&mut self) -> Result<(), String> {
+        if self.game.current != 0 || self.game.is_finished() || !self.game.players[0].alive {
+            return Err("this game has no turn left to play".to_string());
+        }
+        let current = self
+            .debugger
+            .plan
+            .as_ref()
+            .is_some_and(|plan| plan.turn == self.game.turn && plan.at == self.game.log.len());
+        if !current {
+            let mut trial = self.game.clone();
+            let before = trial.log.len();
+            self.ais[0].take_turn(&mut trial, 0);
+            let rest = trial
+                .log
+                .since(before)
+                .filter(|(seat, action)| *seat == 0 && !matches!(action, Action::EndTurn))
+                .map(|(_, action)| action.clone())
+                .collect();
+            self.debug_carry_preferences(&trial);
+            self.debugger.plan = Some(Plan {
+                turn: self.game.turn,
+                at: self.game.log.len(),
+                rest,
+                done: trial,
+            });
+        }
+        let turn = self.game.turn;
+        while let Some(action) = self
+            .debugger
+            .plan
+            .as_mut()
+            .and_then(|plan| plan.rest.pop_front())
+        {
+            if self.game.apply(0, &action).is_err() {
+                continue;
+            }
+            let at = self.game.log.len();
+            let plan = self.debugger.plan.as_mut().expect("the plan being walked");
+            plan.at = at;
+            self.debugger.stepped = Some(json!({
+                "turn": turn,
+                "action": action,
+                "left": plan.rest.len(),
+            }));
+            return Ok(());
+        }
+        // The plan is spent: what the agent does next is end the turn, on
+        // the world it played.
+        let plan = self.debugger.plan.take().expect("the plan just walked");
+        self.game = plan.done;
+        if self.game.current == 0 && !self.game.is_finished() {
+            if let Some(error) = self.act(&json!({"type": "end_turn"})) {
+                return Err(error);
+            }
+        } else {
+            self.debug_rivals_play();
+        }
+        self.debugger.stepped = Some(json!({
+            "turn": turn,
+            "action": {"type": "end_turn"},
+            "left": 0,
+        }));
+        Ok(())
     }
 
     /// Let the seat's agent take the decisions in the layers switched on, and
@@ -537,6 +1127,9 @@ impl Session {
             .filter(|(seat, _)| *seat == 0)
             .map(|(_, action)| action.clone())
             .collect();
+        if self.debugger.layers.contains(&Layer::Cities) {
+            self.debug_carry_preferences(&trial);
+        }
         drop(trial);
         let mut applied = 0;
         for action in &planned {
@@ -586,6 +1179,27 @@ impl Session {
                     None => Err("jump needs a turn".to_string()),
                 },
                 "undo" => self.debug_undo().map(|_| ()),
+                "save_point" => self
+                    .debug_save_point(request["name"].as_str().unwrap_or(""))
+                    .map(|_| ()),
+                "goto_save" | "drop_save" => {
+                    match request["id"].as_u64().and_then(|id| u32::try_from(id).ok()) {
+                        Some(id) if request["op"] == "goto_save" => {
+                            self.debug_goto_save(id).map(|_| ())
+                        }
+                        Some(id) => self.debug_drop_save(id),
+                        None => Err("a save point is named by its id".to_string()),
+                    }
+                }
+                // Where the memory line is, for a page that knows its device.
+                "room" => match request["megabytes"].as_u64() {
+                    Some(megabytes) => {
+                        let megabytes = megabytes.clamp(128, 3072) as usize;
+                        self.debugger.memory_line = Some(megabytes << 20);
+                        Ok(())
+                    }
+                    None => Err("room needs megabytes".to_string()),
+                },
                 "step" => {
                     if self.debug_step() {
                         Ok(())
@@ -593,14 +1207,29 @@ impl Session {
                         Err("this game has no turn left to play".to_string())
                     }
                 }
+                "step_action" => self.debug_step_action(),
                 "assist" => {
                     self.debugger.assisted = self.debug_assist();
                     Ok(())
                 }
+                "reveal" => match request["on"].as_bool() {
+                    Some(on) => {
+                        self.debugger.reveal = on;
+                        Ok(())
+                    }
+                    None => Err("reveal needs on: true or false".to_string()),
+                },
                 "layers" => self.debug_set_layers(request),
-                "breakpoints" => Breakpoints::from_request(request).map(|breakpoints| {
-                    self.debugger.breakpoints = breakpoints;
-                }),
+                "breakpoints" => {
+                    Breakpoints::from_request(request, &self.game).map(|breakpoints| {
+                        self.debugger.breakpoints = breakpoints;
+                    })
+                }
+                // These two belong to a split screen and are answered by its
+                // panes (`panes.rs`); reaching here means no half was named.
+                "adopt" | "copy" => {
+                    Err("that closes or copies a split, and this screen is not split".to_string())
+                }
                 other => Err(format!("no debugger operation named {other:?}")),
             }
         };
