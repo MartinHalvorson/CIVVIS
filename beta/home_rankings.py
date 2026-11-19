@@ -287,10 +287,10 @@ def tournament_series(rows: list[dict], tournaments: list[dict]) -> list[dict] |
 
     A tournament counts every game whose tag sorts at or after its `start` (and
     before its `end`, if it has one) and whose result line matches every `match`
-    field (difficulty, players, map).
+    field (difficulty, players, map). A series has an end once it holds
+    `series_size` games, or once its definition's `end` closes it short.
     A game counts once, by its best run (`OUTCOMES`); a game whose every run is
-    `unfinished` (a launch that never reached a board) is not a game. A series
-    has an end only once it holds `series_size` games. Each series is a
+    `unfinished` (a launch that never reached a board) is not a game. Each series is a
     tournament with its own number (`id`), counted from 1 in the order the
     series began across every definition; the live mirror's Mode reads
     "Tournament <id>: <wins>-<losses>" from the same count. Newest first.
@@ -312,15 +312,19 @@ def tournament_series(rows: list[dict], tournaments: list[dict]) -> list[dict] |
             ending = min(games[key], key=lambda row: OUTCOMES.index(row["outcome"]))
             if ending["outcome"] != "unfinished":
                 finished.append((key, ending))
-        for number, first in enumerate(range(0, len(finished), size), 1):
+        blocks = list(range(0, len(finished), size))
+        for number, first in enumerate(blocks, 1):
             block = finished[first:first + size]
             wins = sum(1 for _, ending in block if ending["outcome"] == "win")
             last = max(str(ending.get("utc") or "") for _, ending in block)
+            # A definition closed by its `end` closes its last series too,
+            # full or not: the operator restarted the tournament.
+            closed = len(block) == size or bool(end and first == blocks[-1])
             out.append({
                 "tournament": spec.get("name") or "",
                 "series": number,
                 "start": when(block[0][0]),
-                "end": (last[:16].replace("T", " ") + "Z") if len(block) == size and last else None,
+                "end": (last[:16].replace("T", " ") + "Z") if closed and last else None,
                 "games": len(block),
                 "size": size,
                 "wins": wins,

@@ -337,7 +337,9 @@ class HomeRankings(unittest.TestCase):
         series = home_rankings.tournament_series(rows, [tens, hundreds])
         self.assertEqual([(s["id"], s["tournament"], s["games"], s["size"], s["wins"], s["losses"], s["end"] is None)
                           for s in series],
-                         [(3, "hundreds", 3, 5, 1, 2, True), (2, "tens", 1, 2, 0, 1, True), (1, "tens", 2, 2, 1, 1, False)])
+                         [(3, "hundreds", 3, 5, 1, 2, True), (2, "tens", 1, 2, 0, 1, False), (1, "tens", 2, 2, 1, 1, False)])
+        # The short series the `end` closed has an end date: its last game's.
+        self.assertEqual(series[1]["end"], "2026-11-19 19:05Z")
 
     def test_the_tournament_definitions_are_committed_and_read(self):
         specs = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))["tournaments"]
