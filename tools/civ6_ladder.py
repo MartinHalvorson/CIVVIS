@@ -2537,12 +2537,7 @@ def publish_run(tag: str, runs_dir: Path | None = None, *,
     if not summary_path.is_file():
         raise FileNotFoundError(summary_path)
     events_path = run_dir / "events.jsonl"
-    env = dict(env or {})
-    # A seat with no git identity (a fresh runner) must still be able to
-    # publish; a configured identity is left alone.
-    if "GIT_COMMITTER_EMAIL" not in {**os.environ, **env} and not _git(
-            repo, "config", "user.email", env=env, check=False):
-        env = {**LEDGER_IDENTITY, **env}
+    env = _ledger_identity(repo, dict(env or {}))
     ledger_summary, ledger_events = ledger_run_paths(tag)
     last_error: Exception | None = None
     for _ in range(max(1, attempts)):
