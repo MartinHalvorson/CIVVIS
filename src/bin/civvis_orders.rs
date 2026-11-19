@@ -9771,9 +9771,9 @@ fn main() {
                 }
                 if ai.mobilization_hears_the_declaration_enabled() {
                     declarations.refresh(&events);
-                    let seats = live
-                        .as_ref()
-                        .map_or(0, |live| civvis::mirror::modeled_major_player_count(&live.game));
+                    let seats = live.as_ref().map_or(0, |live| {
+                        civvis::mirror::modeled_major_player_count(&live.game)
+                    });
                     ai.observe_surprise_declarations(declarations.heard(&state, seats));
                 }
                 let reply = if fresh_board {
