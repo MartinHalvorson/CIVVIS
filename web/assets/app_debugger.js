@@ -413,8 +413,8 @@ function debugBuildBar() {
     </div>
     <button data-dbg="back" title="Back: the top of this turn, then the turn before" aria-label="Back one turn">◀</button>
     <button data-dbg="undo" title="Undo your last action this turn (Ctrl+Z)" aria-label="Undo last action">↶</button>
-    <span class="dbg-track"><input type="range" id="dbg-slider" step="1" title="Drag to any turn that was played" aria-label="Turn"><span class="dbg-flags" id="dbg-flags"></span></span>
-    <input type="text" id="dbg-turn" inputmode="numeric" maxlength="4" title="Go to a turn: one already played is put back as it stood, one still ahead is played to by the Civ AI" aria-label="Go to turn">
+    <span class="dbg-track"><input type="range" id="dbg-slider" step="1" title="Drag to any turn that was played; the wheel walks one turn at a time" aria-label="Turn"><span class="dbg-flags" id="dbg-flags"></span></span>
+    <input type="text" id="dbg-turn" inputmode="numeric" maxlength="4" title="Go to a turn: one already played is put back as it stood, one still ahead is played to by the Civ AI. Up and down walk one played turn" aria-label="Go to turn">
     <button data-dbg="forward" title="Forward along the turns already played" aria-label="Forward one played turn">▶</button>
     <button data-dbg="step-action" title="Step in: the Civ AI takes its next action this turn, and ends the turn when it has none left" aria-label="Step one action">▸</button>
     <button data-dbg="step" title="Step: the Civ AI plays one turn" aria-label="Step one turn">▶|</button>
@@ -512,8 +512,28 @@ function debugBuildBar() {
   // and the page's keys must not fire while a breakpoint is being typed.
   for (const kind of ["pointerdown", "mousedown", "wheel", "dblclick", "contextmenu"])
     bar.addEventListener(kind, event => event.stopPropagation());
+  // The slider is short and a game is long: the wheel over the timeline, and
+  // the up and down arrows in the turn box, walk the played turns one at a time.
+  const walk = forward => {
+    const timeline = debugTimeline();
+    if (!timeline || debugBusy || autoplaying || turnAdvancePending) return;
+    if (!(forward ? timeline.can_forward : timeline.can_back)) return;
+    debugSay("");
+    debugOp({op: forward ? "forward" : "back"});
+  };
+  bar.addEventListener("wheel", event => {
+    if (!event.target.closest(".dbg-track, #dbg-turn")) return;
+    event.preventDefault();
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (delta) walk(delta > 0);
+  }, {passive: false});
   bar.addEventListener("keydown", event => {
-    if (event.target.matches("input[type=text]")) event.stopPropagation();
+    if (!event.target.matches("input[type=text]")) return;
+    event.stopPropagation();
+    if (event.target.id === "dbg-turn" && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+      event.preventDefault();
+      walk(event.key === "ArrowUp");
+    }
   });
   return bar;
 }
@@ -548,10 +568,12 @@ function drawDebugBar(seat = true) {
   slider.min = first; slider.max = last;
   slider.disabled = !idle || first === last;
   if (!debugScrubbing) slider.value = state.turn;
-  slider.title = `Turn ${state.turn} of ${first} to ${last}. Drag to any turn that was played`;
+  slider.title = `Turn ${state.turn} of ${first} to ${last}. Drag to any turn that was played; the wheel walks one turn at a time`;
   const turnBox = document.getElementById("dbg-turn");
   turnBox.disabled = !idle;
-  if (document.activeElement !== turnBox) turnBox.value = state.turn;
+  // A number being typed is left alone, unless the turn moved under it.
+  if (document.activeElement !== turnBox || turnBox.dataset.turn !== String(state.turn)) turnBox.value = state.turn;
+  turnBox.dataset.turn = String(state.turn);
   // Drawn only when they change: a list rebuilt under the pointer loses the click.
   const drawn = (id, html) => {
     const box = document.getElementById(id);

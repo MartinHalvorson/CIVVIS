@@ -21,8 +21,8 @@ keep a mark each and older ones keep one turn in ten.
 | ⏮ | `jump` to the first mark | Go to where the timeline begins |
 | ◀ | `back` | The top of this turn if you have acted in it, otherwise the turn before |
 | ↶ (`Ctrl`/`Cmd`+`Z`) | `undo` | Take back your last action this turn |
-| slider | `jump` | Go to any turn that was played; a turn that is no longer kept answers with the nearest one before it, and the bar says so |
-| turn box | `jump`, or `step` repeated | Go to a turn by its number. One already played is put back as it stood. One still ahead is played to by the seat's Civ AI, stopping early if a breakpoint does |
+| slider | `jump` | Go to any turn that was played; a turn that is no longer kept answers with the nearest one before it, and the bar says so. The mouse wheel over it walks one played turn at a time |
+| turn box | `jump`, or `step` repeated | Go to a turn by its number. One already played is put back as it stood. One still ahead is played to by the seat's Civ AI, stopping early if a breakpoint does. Up and down in the box walk one played turn |
 | ▶ | `forward` | Forward along turns already played, without playing anything |
 | ▸ | `step_action` | Step in: the seat's Civ AI takes its next action, and ends the turn when it has none left |
 | ▶\| | `step` | The seat's Civ AI plays one whole turn |
