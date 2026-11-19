@@ -903,11 +903,12 @@ impl BasicAi {
         // reach it and nothing of ours is standing on it. Worst first: the most
         // strength bearing down, then the most damage already taken.
         let mut wanting: Vec<(i64, Pos)> = Vec::new();
-        // Every pressure filter but the distance reads the enemy alone, so the
-        // enemies that can press a city, and the strength each brings, are
-        // taken once (on the first city that needs them), in roster order;
-        // each city then sums its share in that same order.
-        let mut pressing: Option<Vec<(Pos, f64)>> = None;
+        // The roster filters that read the enemy alone (owner, class, scout)
+        // are taken once, on the first city that needs them, in roster order.
+        // Each city then applies the distance and threat tests in the order
+        // it always did, and an enemy's strength is priced once, on the first
+        // city it bears down on. Same terms, same order: the same f64 sums.
+        let mut pressing: Option<Vec<(&crate::game::Unit, Option<f64>)>> = None;
         for city in g.cities.values().filter(|city| city.owner == pid) {
             let held = g.unit_ids_at(city.pos).iter().any(|uid| {
                 g.units[uid].owner == pid && g.rules.units[g.units[uid].kind].class == "military"
@@ -921,22 +922,21 @@ impl BasicAi {
                     .filter(|enemy| enemy_ids.contains(&enemy.owner))
                     .filter(|enemy| g.rules.units[enemy.kind].class == "military")
                     .filter(|enemy| !Self::is_barbarian_scout(g, enemy.id))
-                    .filter(|enemy| {
-                        Some(enemy.owner) != g.barb_pid
-                            || self.barbarian_raider_counts_as_threat(g, pid, enemy)
-                    })
-                    .map(|enemy| {
-                        (
-                            enemy.pos,
-                            effective_strength(g.unit_strength(enemy, true), enemy.hp),
-                        )
-                    })
+                    .map(|enemy| (enemy, None))
                     .collect()
             });
             let pressure: f64 = enemies
-                .iter()
-                .filter(|(position, _)| g.wdist(*position, city.pos) <= GARRISON_ALERT_RADIUS)
-                .map(|(_, strength)| *strength)
+                .iter_mut()
+                .filter(|(enemy, _)| g.wdist(enemy.pos, city.pos) <= GARRISON_ALERT_RADIUS)
+                .filter(|(enemy, _)| {
+                    Some(enemy.owner) != g.barb_pid
+                        || self.barbarian_raider_counts_as_threat(g, pid, enemy)
+                })
+                .map(|(enemy, strength)| {
+                    *strength.get_or_insert_with(|| {
+                        effective_strength(g.unit_strength(enemy, true), enemy.hp)
+                    })
+                })
                 .sum();
             if pressure <= 0.0 {
                 // `contested_land_first`: a frontier city holds a garrison in
