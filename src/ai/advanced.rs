@@ -7071,6 +7071,10 @@ pub struct AdvancedAi {
     /// `diplo-seat-allies-every-friend`: its own asks by partner and kind, by
     /// the turn asked; a partner's are dropped while its alliance stands.
     diplo_ally_asks: BTreeMap<(usize, &'static str), u32>,
+    /// `disrupt-waits-for-the-sources`: a Spy quoted long odds on Disrupt
+    /// Rocketry in a space racer's city runs Gain Sources there first. See
+    /// `advanced/disrupt_waits_for_the_sources.rs`. Off by default.
+    disrupt_waits_for_the_sources: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11514,6 +11518,8 @@ mod medina_quarter;
 mod disrupt_before_the_sources;
 /// `disrupt-waits-for-the-match-point`: see `advanced/disrupt_waits_for_the_match_point.rs`.
 mod disrupt_waits_for_the_match_point;
+/// `disrupt-waits-for-the-sources`: see `advanced/disrupt_waits_for_the_sources.rs`.
+mod disrupt_waits_for_the_sources;
 
 /// `unchosen-war-takes-the-first-peace`: see `advanced/unchosen_war_peace.rs`.
 mod unchosen_war_peace;

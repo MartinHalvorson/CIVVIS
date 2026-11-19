@@ -324,6 +324,9 @@ impl AdvancedAi {
         /// Opt-in gene `diplo-seat-allies-every-friend`; see
         /// `advanced/diplo_allies_every_friend.rs`.
         diplo_seat_allies_every_friend => enable_diplo_seat_allies_every_friend, disable_diplo_seat_allies_every_friend;
+        /// Opt-in gene `disrupt-waits-for-the-sources`; see
+        /// `advanced/disrupt_waits_for_the_sources.rs`.
+        disrupt_waits_for_the_sources => enable_disrupt_waits_for_the_sources, disable_disrupt_waits_for_the_sources;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
