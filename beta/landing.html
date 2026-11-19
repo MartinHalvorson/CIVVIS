@@ -183,17 +183,23 @@
   .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
 
-  /* The rankings: the Civ AI Agents by published Elo, and the head of the
-     heuristic gene ranking, side by side. Their figures are not written
-     here. `beta/publish.sh` fills the `rankings-data` slot below from the
-     lane's own revision (`beta/home_rankings.py`), and until a slot is
-     filled the section stays hidden and the page is its header and the
-     paragraph above. A list whose source the revision lacks stays hidden on
-     its own and the other takes the row; a window too narrow for two
-     stacks them. `display: grid` outranks the hidden attribute's own rule,
-     so the section has to say what hidden means for itself. */
+  /* The rankings, in two columns: the winningest civs of the verification
+     games down the left, and down the right the Civ AI Agents by published
+     Elo, then the head of the heuristic gene ranking. Their figures are not
+     written here. `beta/publish.sh` fills the `rankings-data` slot below
+     (`beta/home_rankings.py`), and until a slot is filled the section stays
+     hidden and the page is its header and the paragraph above. A list with
+     no source stays hidden on its own and the others take the row; a window
+     too narrow for two columns stacks them in the same order. `display:
+     grid` outranks the hidden attribute's own rule, so the section has to
+     say what hidden means for itself. */
   .rankings { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; min-width: 0; }
   .rankings[hidden] { display: none; }
+  /* The right-hand column. It is a box only while the civs hold the left
+     (`has-civs`); without them its two lists stand side by side, each a
+     column of its own, as they did before there was a third. */
+  .rank-stack { display: contents; }
+  .rankings.has-civs .rank-stack { display: grid; gap: 16px; min-width: 0; }
   .rank-card { min-width: 0; padding: 12px 14px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
   .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
   .rank-sub { margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
@@ -267,15 +273,31 @@
       you run into.
     </p>
 
-    <!-- The rankings. Two lists, both measured: the Civ AI Agents by
-         published Elo with Civilization VI's difficulty levels standing
-         between them as the scale's landmarks, and the heuristic genes by
-         the win rate a seat has with the gene on minus with it off. The
-         section is built by the script below from the `rankings-data` slot,
-         which `beta/publish.sh` fills at publish time; a page whose slot
-         still reads `null` (this file opened as it is committed, or a lane
-         whose revision has neither source) keeps it hidden. -->
+    <!-- The rankings. Three lists, all measured. First, on the left, the
+         winningest civs: our AI's wins and losses as each civ in the
+         verification games, which it plays inside Civilization VI against
+         the game's own AI. Every finished game adds its line to the run
+         ledger (`tools/civ6_ladder.py publish-run`), and the table is that
+         record as it stood when the site was built. Then, down the right,
+         the Civ AI Agents by published Elo with Civilization VI's
+         difficulty levels standing between them as the scale's landmarks,
+         and the heuristic genes by the win rate a seat has with the gene on
+         minus with it off. The section is built by the script below from
+         the `rankings-data` slot, which `beta/publish.sh` fills at publish
+         time; a page whose slot still reads `null` (this file opened as it
+         is committed, or a build with none of the sources) keeps it
+         hidden. -->
     <section class="rankings" id="rankings" hidden aria-label="Rankings">
+      <section class="rank-card" id="rank-civs" hidden aria-labelledby="rank-civs-title">
+        <h2 class="rank-title" id="rank-civs-title">Winningest civs</h2>
+        <p class="rank-sub">Our AI&#8217;s wins&#8211;losses as each civ, in verification games against Civilization VI&#8217;s own AI.</p>
+        <ol class="rank-list"></ol>
+        <p class="rank-note">
+          <span data-rank-note></span>
+          <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Every game</a>
+        </p>
+      </section>
+      <div class="rank-stack">
       <section class="rank-card" id="rank-strategies" hidden aria-labelledby="rank-strategies-title">
         <h2 class="rank-title" id="rank-strategies-title">Player strategies</h2>
         <p class="rank-sub">Civ AI Agents by Elo. Civilization VI&#8217;s Prince is 1000.</p>
@@ -295,6 +317,7 @@
           <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/GENE_HEURISTIC_RANKING.md" target="_blank" rel="noreferrer">Full ranking</a>
         </p>
       </section>
+      </div>
     </section>
   </main>
 
@@ -345,6 +368,28 @@
     };
     let shown = false;
 
+    // The winningest civs: a row is a civ's record, wins then losses, with
+    // the highest level it has won at beside its name and its win rate
+    // beside the record. Hovering lists what it won.
+    let civsShown = false;
+    const civs = data.civs;
+    if (civs && Array.isArray(civs.rows)) {
+      const count = (n) => Number(n).toLocaleString("en-US");
+      const plural = (n, one, many) => count(n) + " " + (n === 1 ? one : many);
+      const rows = civs.rows.map((c, i) => row("", String(i + 1), c.name, c.best ? "Lv " + c.best : "",
+        count(c.wins) + "\u2013" + count(c.losses), (100 * c.wins / (c.wins + c.losses)).toFixed(1) + "%",
+        c.name + ": " + plural(c.wins, "win", "wins") + ", " + plural(c.losses, "loss", "losses")
+          + (Array.isArray(c.won) && c.won.length ? ". Won: " + c.won.join(", ") : "")));
+      const note = plural(civs.games, "finished game", "finished games")
+        + (civs.through ? " through " + civs.through : "") + "; "
+        + civs.winners + " of " + plural(civs.played, "civ", "civs") + " played have won."
+        + " A loss is a rival\u2019s victory, our elimination, or a game conceded early;"
+        + " a game stopped any other way is not counted."
+        + (civs.unattributed_wins ? " " + plural(civs.unattributed_wins, "win is", "wins are")
+          + " not listed: the game did not record its civ." : "");
+      civsShown = show("rank-civs", rows, note);
+    }
+
     const strategies = data.strategies;
     if (strategies && Array.isArray(strategies.rows)) {
       let place = 0;
@@ -374,7 +419,10 @@
       shown = show("rank-genes", rows, note) || shown;
     }
 
-    if (shown) document.getElementById("rankings").hidden = false;
+    const rankings = document.getElementById("rankings");
+    // The civs take the left column and the other lists stack down the right.
+    if (civsShown && shown) rankings.classList.add("has-civs");
+    if (civsShown || shown) rankings.hidden = false;
   })();
   </script>
 
