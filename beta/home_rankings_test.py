@@ -248,6 +248,52 @@ class HomeRankings(unittest.TestCase):
         publish = (BETA / "publish.sh").read_text(encoding="utf-8")
         self.assertIn('home_rankings.py" "$source_tree" "$out/home/index.html"', publish)
 
+    def test_the_civs_hold_the_left_and_the_other_two_lists_stack_on_the_right(self):
+        # The rankings section is a two-column grid with two children: the
+        # civs' card, then one box holding the strategies above the genes.
+        # Document order is also the order a narrow window stacks them in.
+        opening = '<section class="rankings" id="rankings" hidden aria-label="Rankings">'
+        self.assertEqual(LANDING.count(opening), 1)
+        section = LANDING[LANDING.index(opening) + len(opening):LANDING.index("</main>")]
+        children = []
+        depth = 0
+        for tag in re.finditer(r"<(/?)(section|div)\b([^>]*)>", section):
+            if tag[1]:
+                depth -= 1
+                if depth < 0:
+                    break
+            else:
+                if depth == 0:
+                    children.append(tag[0])
+                depth += 1
+        self.assertEqual(len(children), 2, children)
+        self.assertIn('class="rank-card" id="rank-civs" hidden', children[0])
+        self.assertEqual(children[1], '<div class="rank-stack">')
+        stack = section[section.index(children[1]):]
+        self.assertLess(stack.index('id="rank-strategies"'), stack.index('id="rank-genes"'))
+        self.assertNotIn('id="rank-civs"', stack)
+        for rule in (
+            ".rankings { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));",
+            # Without the civs the box is no box, and the two lists stand
+            # side by side as they did before there was a third.
+            ".rank-stack { display: contents; }",
+            ".rankings.has-civs .rank-stack { display: grid; gap: 16px; min-width: 0; }",
+        ):
+            self.assertIn(rule, LANDING)
+        for line in (
+            "const civs = data.civs;",
+            'civsShown = show("rank-civs", rows, note);',
+            'if (civsShown && shown) rankings.classList.add("has-civs");',
+            "if (civsShown || shown) rankings.hidden = false;",
+        ):
+            self.assertIn(line, LANDING)
+        # Every game behind the table is one click away, on the branch the
+        # table is read from.
+        self.assertIn(
+            f'href="https://github.com/MartinHalvorson/CIVVIS/blob/{civ6_ladder.LEDGER_BRANCH}/{civ6_ladder.RESULTS_PATH}"',
+            LANDING,
+        )
+
     def test_a_sentence_cannot_close_the_slot(self):
         data = {"strategies": None, "genes": {"rows": [{"description": "</script><b>x"}]}}
         filled = home_rankings.fill(LANDING, data)
