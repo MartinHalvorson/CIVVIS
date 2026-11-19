@@ -8892,9 +8892,8 @@ fn browser_player_rows_use_relationship_color_only_for_active_wars() {
     assert!(EMBEDDED_INDEX.contains(".diplomacy-card:hover:not(.at-war)"));
     // A standings row is its civilization's colour from edge to edge, so the
     // red frame and edge are drawn over both of its grounds, held row or not.
-    assert!(EMBEDDED_INDEX.contains(
-        "#playerhud .diplomacy-card.jersey-row.at-war { border-color: var(--danger); }"
-    ));
+    assert!(EMBEDDED_INDEX
+        .contains("#playerhud .diplomacy-card.jersey-row.at-war { border-color: var(--danger); }"));
     assert!(EMBEDDED_INDEX.contains(
         "#playerhud .diplomacy-card.jersey-row.at-war::after { box-shadow: inset 3px 0 var(--danger); }"
     ));
