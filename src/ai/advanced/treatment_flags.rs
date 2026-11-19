@@ -6017,6 +6017,22 @@ impl AdvancedAi {
         self.score_seat_sprints_to_the_tally_2 = false;
     }
 
+    /// Opt-in gene `denial-spies-fill-every-slot-3`, version three of
+    /// `denial-spies-fill-every-slot`: version two, and on a Science,
+    /// Religion or Diplomacy aim too; see
+    /// `advanced/denial_spies_fill_every_slot.rs`. A seat plays one version,
+    /// so this turns versions one and two off.
+    pub fn enable_denial_spies_fill_every_slot_3(&mut self) {
+        self.denial_spies_fill_every_slot = false;
+        self.denial_spies_fill_every_slot_2 = false;
+        self.denial_spies_fill_every_slot_3 = true;
+    }
+
+    /// The twin of `enable_denial_spies_fill_every_slot_3`.
+    pub fn disable_denial_spies_fill_every_slot_3(&mut self) {
+        self.denial_spies_fill_every_slot_3 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -171,6 +171,10 @@ impl AdvancedAi {
                     // `denial-spies-fill-every-slot`: the Culture aim keeps
                     // its culture heads. False with that gene off.
                     && !self.denial_fill_keeps_the_culture_head(g, *cid)
+                    // `denial-spies-fill-every-slot-3`: the new aims keep
+                    // their own launch, Builders and religious units. False
+                    // with that gene off.
+                    && !self.denial_fill_keeps_the_launch(g, *cid)
                     && g.can_produce(pid, *cid, &spy)
             })
             .map(|cid| (g.city_yields(cid).production, cid))
