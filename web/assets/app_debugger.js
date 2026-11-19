@@ -757,7 +757,7 @@ const DEBUG_SPLIT_STYLE = `
   #debugsplit .dbg-versus[hidden] { display: none; }
   #debugsplit.dbg-col .dbg-versus { flex-direction: row; align-items: center; gap: 10px; overflow: hidden; }
   #debugsplit .dbg-versus select, #debugsplit .dbg-versus input {
-    min-width: 0; height: 24px; border-radius: 7px; font: inherit;
+    min-width: 0; height: 24px; padding: 0 4px; border-radius: 7px; font: inherit; line-height: normal;
     color: inherit; background: #060d0b; border: 1px solid #35504a;
   }
   #debugsplit .dbg-versus select { flex: 1; max-width: 132px; }
