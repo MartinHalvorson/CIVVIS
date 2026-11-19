@@ -2253,7 +2253,10 @@ fn the_home_page_links_civvis_and_the_debugger() {
         "Every civilization is played by a CIVVIS AI agent.",
         "You play one civilization. CIVVIS AI agents play the rest.",
     ] {
-        assert!(EMBEDDED_APP_JS.contains(sentence), "the turn plate lost {sentence:?}");
+        assert!(
+            EMBEDDED_APP_JS.contains(sentence),
+            "the turn plate lost {sentence:?}"
+        );
     }
     // What the game menu took with it: the cards, their verbs and tags,
     // the world picker with its lenses and catalogs, the page-wide column
