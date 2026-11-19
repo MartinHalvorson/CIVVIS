@@ -89,6 +89,11 @@ impl AdvancedAi {
                 declared: war.started,
                 ends: war.started.saturating_add(duration),
             })
+            // `mobilization-hears-the-declaration`: the live mirror writes no
+            // war record, so a declaration the host announced opens the same
+            // window. `None` with that gene off. See
+            // `advanced/mobilization_hears_the_declaration.rs`.
+            .or_else(|| self.heard_surprise_defense_window(g, pid))
     }
 
     fn surprise_land_force(&self, g: &Game, pid: usize) -> usize {

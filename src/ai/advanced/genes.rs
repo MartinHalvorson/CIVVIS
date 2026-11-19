@@ -6132,6 +6132,12 @@ pub const GENES: &[Gene] = &[
     // soldier at the capital's door makes a neighbour. Opt-in; see
     // `advanced/near_rival_deterrence_opens_early.rs`.
     Gene { tag: "near-rival-deterrence-opens-early", field: "near_rival_deterrence_opens_early", kind: Kind::OptIn, enable: AdvancedAi::enable_near_rival_deterrence_opens_early, disable: AdvancedAi::disable_near_rival_deterrence_opens_early },
+    // Live Deity 11-18/19: `surprise-war-mobilization` is armed and never
+    // fired, because the live mirror writes no `Game::wars` record; 131 of
+    // the 138 wars declared on us carry the mod's `DECLARE_*_WAR`
+    // `diplomacy_choice` line (122 surprise). Opt-in; see
+    // `advanced/mobilization_hears_the_declaration.rs`.
+    Gene { tag: "mobilization-hears-the-declaration", field: "mobilization_hears_the_declaration", kind: Kind::OptIn, enable: AdvancedAi::enable_mobilization_hears_the_declaration, disable: AdvancedAi::disable_mobilization_hears_the_declaration },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
