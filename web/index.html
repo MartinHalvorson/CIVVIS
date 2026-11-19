@@ -3989,7 +3989,7 @@
      Civilization VI game — is the one row a viewer always hunts for, so it
      wears the victory tracker's gold: a warm opaque ground (it can be held
      at an edge, where rows scroll beneath it), a gold frame and left edge,
-     and its name in bold gold. A war keeps its red edge on this row too. */
+     and its name in bold. A war keeps its red edge on this row too. */
   #playerhud .diplomacy-card.focus-player {
     border-color: color-mix(in srgb, var(--gold-bright) 72%, transparent);
     background: linear-gradient(105deg, color-mix(in srgb, var(--gold) 26%, #0b0d0f),
@@ -4009,8 +4009,7 @@
     box-shadow: inset 3px 0 var(--gold-bright), inset 0 1px #ffffff14, 0 0 0 1px #caa45655,
                 0 var(--hud-row-gap) 0 #090b0d, 0 5px 14px #0009;
   }
-  #playerhud .diplomacy-card.focus-player .diplomacy-civ { color: var(--gold-bright); font-weight: 800; }
-  #playerhud .diplomacy-card.focus-player .diplomacy-player { color: #f3e6c4; }
+  #playerhud .diplomacy-card.focus-player .diplomacy-civ { font-weight: 800; }
   /* ── The cities behind a count ──────────────────────────────────────────
      A CITY figure opens that empire's cities as rows of the same table,
      directly under the seat: one city per row on the shared tracks, so a
@@ -4075,28 +4074,43 @@
     font-size: var(--type-label); text-align: right; white-space: nowrap;
   }
   #playerhud .diplomacy-civ { flex: 1 1 auto; }
-  /* Each civilization's name is boxed in its own jersey, as Civ VI dresses a
-     civ on its banners: the primary colour fills the plate, the partner trims
-     it, and the ink is whichever of the partner or map cream/dark actually
-     reads on that fill — unitTokenInk(), the same rescue the map's unit tokens
-     use, because several real jerseys pair two dark halves. Every plate fills
-     its column at one fixed height, so the column reads as a stack of equal
-     nameplates however far the type fitter shrank each name. Its 4px of side
-     padding is the `slack` on this cell's type-fitter rule. City rows reuse
-     .diplomacy-civ for a city's name and stay unboxed. */
-  #playerhud .diplomacy-civ-link .diplomacy-civ {
-    padding: 1px 4px; border: 1px solid var(--civ-border); border-radius: 3px;
-    background: var(--civ); color: var(--civ-ink, #f1f4ed);
-    line-height: 16px; text-align: center; text-shadow: none; box-shadow: 0 1px 2px #0009;
+  /* Each row wears its civilization's jersey from the rank column through
+     the player column, as Civ VI dresses a civ on its banners: one plate
+     behind those cells, the primary colour filling it and the partner
+     trimming it. The plate is placed on the row's own grid lines — an
+     absolutely positioned child of a grid takes the lines it names as its
+     containing block and stays out of auto-placement, so the cells keep
+     their tracks — and drawPlayerHud() names the lines, because the viewer's
+     column order decides where rank and player stand. The ink of every cell
+     over the plate is whichever of the partner or map cream/dark actually
+     reads on that fill — unitTokenInk(), the same rescue the map's unit
+     tokens use, because several real jerseys pair two dark halves. City rows
+     carry no plate. */
+  #playerhud .diplomacy-card.jersey-plate { isolation: isolate; }
+  #playerhud .diplomacy-card.jersey-plate:not(.pinned) { position: relative; }
+  #playerhud .diplomacy-card.jersey-plate::before {
+    content: ""; position: absolute; z-index: -1; inset: 0;
+    grid-column: var(--hud-jersey-start) / var(--hud-jersey-end); grid-row: 1;
+    border: 1px solid var(--civ-border); border-radius: 3px;
+    background: var(--civ); box-shadow: 0 1px 2px #0009; pointer-events: none;
   }
-  #playerhud .diplomacy-civ-link:hover .diplomacy-civ,
-  #playerhud .diplomacy-civ-link:focus-visible .diplomacy-civ {
-    color: var(--civ-ink, #fff); filter: brightness(1.18);
+  #playerhud .diplomacy-card.jersey-plate:hover::before { filter: brightness(1.14); }
+  #playerhud [data-hud-jersey]:not(.watch-as-link),
+  #playerhud [data-hud-jersey]:not(.watch-as-link) * {
+    color: var(--civ-ink, #f1f4ed); text-shadow: none;
   }
-  /* The watched seat keeps its jersey and says so with a gold ring, not gold
-     type, which would fight the fill. */
-  #playerhud .diplomacy-card.focus-player .diplomacy-civ-link .diplomacy-civ {
-    color: var(--civ-ink, #f1f4ed);
+  #playerhud [data-hud-jersey] .diplomacy-identity-field {
+    border-left-color: color-mix(in srgb, var(--civ-ink, #f1f4ed) 20%, transparent);
+  }
+  #playerhud [data-hud-jersey].diplomacy-civ-link .diplomacy-identity-field {
+    border-left-color: transparent;
+  }
+  /* A civilization with no capital to fly to fades its name everywhere else;
+     on a bright jersey a 38% name stops being legible, so it fades less. */
+  #playerhud [data-hud-jersey].diplomacy-civ-link:disabled { opacity: .72; }
+  /* The watched seat keeps its jersey and says so with a gold ring around the
+     whole plate, not gold type, which would fight the fill. */
+  #playerhud .diplomacy-card.focus-player.jersey-plate::before {
     box-shadow: 0 0 0 1px var(--gold-bright), 0 1px 2px #0009;
   }
   #playerhud .diplomacy-leader-name { color: var(--muted); font-weight: 650; }
