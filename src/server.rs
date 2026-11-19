@@ -47,6 +47,11 @@ pub mod wasm;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod site_bench;
 
+/// The simulator debugger: the marks a played game keeps of its own turns,
+/// and the operations that walk them. Its own file because it is one idea,
+/// and a child for the same reason as the two above.
+mod debugger;
+
 /// Which runtime is answering, so a long-lived page can notice it is talking
 /// to a different one than it booted against and reload.
 ///
@@ -685,6 +690,9 @@ pub struct Session {
     pub keeps_rival_yields: bool,
     /// The acting seat's own cities as well (`Game::keep_own_yields`).
     pub keeps_own_yields: bool,
+    /// The turns a played game can be walked back to, the breakpoints a run
+    /// stops on and the decisions lent to the seat's agent (`debugger.rs`).
+    debugger: debugger::Timeline,
 }
 
 /// The identity of a person playing a seat.
@@ -2316,7 +2324,7 @@ impl Session {
         }
         let human_players = Self::register_human_players(&game);
         let chronicle = ChronicleState::from_game(&game);
-        Session {
+        let mut session = Session {
             params,
             game,
             ais,
@@ -2335,7 +2343,10 @@ impl Session {
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
             simultaneous_jobs: 1,
-        }
+            debugger: debugger::Timeline::default(),
+        };
+        session.debugger_begins();
+        session
     }
 
     /// Loading through the game menu restores who controls the saved world.
@@ -2436,7 +2447,7 @@ impl Session {
         } else {
             Self::register_human_players(&game)
         };
-        Session {
+        let mut session = Session {
             params,
             game,
             ais,
@@ -2455,7 +2466,10 @@ impl Session {
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
             simultaneous_jobs: 1,
-        }
+            debugger: debugger::Timeline::default(),
+        };
+        session.debugger_begins();
+        session
     }
 
     pub(crate) fn set_view_player(&mut self, player: Option<usize>) -> Result<(), String> {
@@ -2997,6 +3011,8 @@ impl Session {
             }
         }
         o["legal_actions"] = offered;
+        // Where this world sits on its own timeline, for the debugger's bar.
+        o["debug"] = self.debugger_json();
         o["server_instance"] = json!(process_identity());
         o["server_commit"] = json!(runtime_commit("unknown"));
         o["server_commit_time"] = json!(runtime_commit_time());
@@ -3324,6 +3340,9 @@ impl Session {
                 guard += 1;
             }
             played += 1;
+            // The agent played the whole turn, so the one it opens is marked
+            // and the layers are not asked: there is no person to leave it to.
+            self.debugger_turn_opened(false);
         }
         played
     }
@@ -3354,6 +3373,7 @@ impl Session {
                 }
                 guard += 1;
             }
+            self.debugger_turn_opened(false);
         }
         true
     }
@@ -3381,6 +3401,9 @@ impl Session {
                 }
                 guard += 1;
             }
+            // The person's next turn is open: mark it, and let the layers
+            // they switched on take their share of it.
+            self.debugger_turn_opened(true);
         }
         None
     }
@@ -5482,6 +5505,16 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     out["autosaved"] = json!(turn);
                 }
             }
+            respond_json(stream, &out);
+        }
+        // One debugger operation on a played game: walk its marked turns,
+        // undo an action, step a turn to a breakpoint, lend layers of the
+        // seat to its agent (`server/debugger.rs`).
+        ("POST", "/debug") => {
+            let mut session = lock_or_recover(&sh.session);
+            let mut out = crate::routes::debug(&mut session, &parsed);
+            drop(session);
+            decorate(&mut out, sh);
             respond_json(stream, &out);
         }
         ("POST", "/step") => {
