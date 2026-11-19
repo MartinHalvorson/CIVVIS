@@ -68,6 +68,7 @@ to be movable.
 | `beta/publish.sh` | Assembles one complete lane into `beta/dist/` from a named revision — viewer at the root, `/home` and `/download` beside it, every inter-page link lane-relative. |
 | `beta/verify.py` | Opens the assembled bundle in a real browser, watches it play, and walks through the password door. |
 | `beta/worker_test.py` | Calls `_worker.js` directly — the forward, the password, the headers — needing only Chrome. |
+| `beta/debugger_test.py` | Drives the Sim debugger's bar (`web/assets/app_debugger.js`, as it ships) against a toy engine: each control sends the operation it is for. Needs only Chrome; run on every pull request with the other `*_test.py` scripts here. |
 | `beta/serve.sh` | Serves `beta/dist/` locally the way a static host would. |
 
 Nothing under `web/` is edited to suit the web build, and none of `src/wasm.rs`
