@@ -155,7 +155,9 @@ cp "$landing_page" "$out/home/index.html"
 # as a copy that could drift. A landing page that predates the column has no
 # slot and is left as it is; a revision that predates a source shows the other.
 python3 "$repo_root/beta/home_rankings.py" "$source_tree" "$out/home/index.html"
-cp -R "$landing_assets" "$out/home/assets"
+# The home page carries no art of its own any more, so there is usually no
+# directory to ship; a pinned revision from when it had photographs still does.
+if [ -d "$landing_assets" ]; then cp -R "$landing_assets" "$out/home/assets"; fi
 # `/download/` rather than `/download.html`: the page outlives any one release
 # and gets linked around, so it should have the tidier address.
 mkdir -p "$out/download"

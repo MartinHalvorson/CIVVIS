@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -2266,7 +2266,8 @@ class PublishRunTests(unittest.TestCase):
         self.assertEqual(self.publish("civvis-1"), "published")
         first = _git(self.origin, "rev-parse", "refs/heads/ledger")
         self.assertEqual(self.ledger_files(),
-                         ["runs/civvis-1/events.jsonl.gz", "runs/civvis-1/summary.json"])
+                         ["results.jsonl",
+                          "runs/civvis-1/events.jsonl.gz", "runs/civvis-1/summary.json"])
         # Orphan: the ledger's root shares nothing with the code history.
         self.assertEqual(_git(self.origin, "rev-list", "--count", first), "1")
 
@@ -2277,7 +2278,7 @@ class PublishRunTests(unittest.TestCase):
         second = _git(self.origin, "rev-parse", "refs/heads/ledger")
         self.assertEqual(_git(self.origin, "rev-parse", f"{second}^"), first)
         self.assertEqual(_git(self.origin, "rev-list", "--count", second), "2")
-        self.assertEqual(len(self.ledger_files()), 4)
+        self.assertEqual(len(self.ledger_files()), 5)
         # The payload is what the run wrote, gzipped.
         import gzip
         raw = subprocess.run(
@@ -2326,12 +2327,165 @@ class PublishRunTests(unittest.TestCase):
             civ6_ladder.ledger_tip = real
         self.assertEqual(len(calls), 2)
         self.assertEqual(_git(self.origin, "rev-list", "--count", "refs/heads/ledger"), "3")
-        self.assertEqual(len(self.ledger_files()), 6)
+        self.assertEqual(len(self.ledger_files()), 7)
+        # The run rebuilt on the moved tip kept the other seat's result line.
+        self.assertEqual(sorted(row["tag"] for row in self.results()),
+                         ["civvis-1", "civvis-2", "civvis-3"])
 
     def test_a_run_without_events_publishes_its_summary(self):
         (self.runs / "civvis-1" / "events.jsonl").unlink()
         self.assertEqual(self.publish("civvis-1"), "published")
-        self.assertEqual(self.ledger_files(), ["runs/civvis-1/summary.json"])
+        self.assertEqual(self.ledger_files(),
+                         ["results.jsonl", "runs/civvis-1/summary.json"])
+
+    # The results file: one line per recorded run, kept by the publish itself.
+
+    def results(self) -> list[dict]:
+        text = _git(self.origin, "show", "refs/heads/ledger:results.jsonl")
+        return [json.loads(line) for line in text.splitlines()]
+
+    def add_run(self, tag: str, **fields) -> None:
+        write_run(self.runs, summary(tag, **fields))
+
+    def test_a_published_run_adds_its_line_to_the_results_file(self):
+        self.add_run("civvis-3", won=True, difficulty="DIFFICULTY_DEITY",
+                     finished="2026-08-22T10:00:00Z", victory_target="culture",
+                     rival_best=150, game_id="civvis-3",
+                     seat={"civ": "CIVILIZATION_GREECE", "leader": "LEADER_PERICLES",
+                           "players": 6, "map": "Continents.lua",
+                           "victory_types": [{"index": 3, "type": "VICTORY_CULTURE"}]})
+        self.publish("civvis-1")
+        self.assertEqual([row["tag"] for row in self.results()], ["civvis-1"])
+        self.publish("civvis-3")
+        self.publish("civvis-2")
+        # Oldest first whatever order they were published in, and each line
+        # arrived in the commit that published its run.
+        rows = self.results()
+        self.assertEqual([row["tag"] for row in rows], ["civvis-1", "civvis-2", "civvis-3"])
+        self.assertEqual(_git(self.origin, "rev-list", "--count", "refs/heads/ledger"), "3")
+        self.assertEqual(rows[2], {
+            "tag": "civvis-3", "game": "civvis-3", "utc": "2026-08-22T10:00:00Z",
+            "civ": "CIVILIZATION_GREECE", "leader": "LEADER_PERICLES",
+            "difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua",
+            "target": "culture", "outcome": "win", "reason": "stopped",
+            "victory": "VICTORY_CULTURE", "turns": 100, "score": 200, "rival_best": 150})
+        self.assertEqual((rows[0]["outcome"], rows[0]["civ"]), ("unfinished", None))
+
+    def test_a_run_published_without_a_line_gets_it_at_the_next_publish(self):
+        # A seat on an older checkout publishes the run and writes no line.
+        self.add_run("civvis-3", won=True, finished="2026-08-22T10:00:00Z",
+                     seat={"civ": "CIVILIZATION_ROME"})
+        self.publish("civvis-1")
+        tip = _git(self.origin, "rev-parse", "refs/heads/ledger")
+        with TemporaryDirectory() as scratch:
+            older = civ6_ladder._ledger_commit(
+                self.work, tip,
+                [("runs/civvis-3/summary.json", (self.runs / "civvis-3" / "summary.json").read_bytes())],
+                "ledger: civvis-3", Path(scratch), PROBE)
+        _git(self.work, "push", "-q", "origin", f"{older}:refs/heads/ledger")
+        self.assertEqual([row["tag"] for row in self.results()], ["civvis-1"])
+        self.assertEqual(self.publish("civvis-3"), "already")
+        # The next run to finish brings the file back in step with the branch.
+        self.publish("civvis-2")
+        rows = {row["tag"]: row for row in self.results()}
+        self.assertEqual(sorted(rows), ["civvis-1", "civvis-2", "civvis-3"])
+        self.assertEqual((rows["civvis-3"]["outcome"], rows["civvis-3"]["civ"]),
+                         ("win", "CIVILIZATION_ROME"))
+
+    def test_a_diagnostic_run_is_published_without_a_result_line(self):
+        # `apply` keeps a saved-board experiment off the ledger; its ending is
+        # not a game of the record here either.
+        (self.runs / "civvis-1" / "native-diagnostic.json").write_text(
+            json.dumps({"label": "save170"}))
+        self.assertEqual(self.publish("civvis-1"), "published")
+        self.assertEqual(self.ledger_files(),
+                         ["runs/civvis-1/events.jsonl.gz", "runs/civvis-1/summary.json"])
+        self.publish("civvis-2")
+        self.assertEqual([row["tag"] for row in self.results()], ["civvis-2"])
+
+    def test_an_unreadable_results_file_never_costs_a_run_its_publish(self):
+        self.publish("civvis-1")
+        tip = _git(self.origin, "rev-parse", "refs/heads/ledger")
+        with TemporaryDirectory() as scratch:
+            broken = civ6_ladder._ledger_commit(
+                self.work, tip, [("results.jsonl", b"not a row\n")], "break",
+                Path(scratch), PROBE)
+        _git(self.work, "push", "-q", "origin", f"{broken}:refs/heads/ledger")
+        errors = io.StringIO()
+        with redirect_stderr(errors):
+            self.assertEqual(self.publish("civvis-2"), "published")
+        self.assertIn("runs/civvis-2/summary.json", self.ledger_files())
+        # Said, and left exactly as it was found rather than rewritten from
+        # the half that parsed.
+        self.assertIn("results line for civvis-2 not written", errors.getvalue())
+        self.assertIn("publish-results", errors.getvalue())
+        self.assertEqual(_git(self.origin, "show", "refs/heads/ledger:results.jsonl"),
+                         "not a row")
+
+    def test_publish_results_is_the_union_of_every_record(self):
+        # Three records, none complete: a run only this machine's ledger
+        # holds, a run only the branch holds (another seat's), and one in
+        # both whose ledger entry predates the seat its summary carries.
+        self.add_run("civvis-3", won=True, finished="2026-08-22T10:00:00Z",
+                     seat={"civ": "CIVILIZATION_ROME", "leader": "LEADER_TRAJAN"})
+        self.publish("civvis-3")
+        self.publish("civvis-2")
+        ledger = self.runs / "ladder.json"
+        seatless = civ6_ladder.entry_from(summary(
+            "civvis-3", won=True, finished="2026-08-22T10:00:00Z"))
+        local_only = civ6_ladder.entry_from(summary(
+            "civvis-0", finished="2026-08-19T10:00:00Z", reason="abandoned",
+            seat={"civ": "CIVILIZATION_KOREA"}))
+        ledger.write_text(json.dumps({"attempts": [seatless, local_only], "wins": {}}))
+        # Start from a branch with no results file, as the first backfill does.
+        tip = _git(self.origin, "rev-parse", "refs/heads/ledger")
+        index_env = {**os.environ, **PROBE, "GIT_INDEX_FILE": str(self.runs / "idx")}
+        subprocess.run(["git", "-C", str(self.work), "read-tree", tip], check=True, env=index_env)
+        subprocess.run(["git", "-C", str(self.work), "rm", "-q", "--cached", "results.jsonl"],
+                       check=True, env=index_env)
+        tree = subprocess.run(["git", "-C", str(self.work), "write-tree"], check=True,
+                              env=index_env, capture_output=True, text=True).stdout.strip()
+        bare = _git(self.work, "commit-tree", tree, "-p", tip, "-m", "before the file")
+        _git(self.work, "push", "-q", "origin", f"{bare}:refs/heads/ledger")
+        self.assertNotIn("results.jsonl", self.ledger_files())
+
+        def rebuild() -> str:
+            return civ6_ladder.publish_results(ledger, repo=self.work, env=PROBE)
+        self.assertEqual(rebuild(), "published")
+        rows = {row["tag"]: row for row in self.results()}
+        self.assertEqual(sorted(rows), ["civvis-0", "civvis-2", "civvis-3"])
+        self.assertEqual((rows["civvis-0"]["outcome"], rows["civvis-0"]["civ"]),
+                         ("abandoned", "CIVILIZATION_KOREA"))
+        self.assertEqual((rows["civvis-3"]["outcome"], rows["civvis-3"]["civ"]),
+                         ("win", "CIVILIZATION_ROME"))
+        # A fast-forward like any other publish, and nothing else moved.
+        after = _git(self.origin, "rev-parse", "refs/heads/ledger")
+        self.assertEqual(_git(self.origin, "rev-parse", f"{after}^"), bare)
+        self.assertEqual(_git(self.origin, "diff", "--name-only", bare, after), "results.jsonl")
+        self.assertEqual(rebuild(), "already")
+        self.assertEqual(_git(self.origin, "rev-parse", "refs/heads/ledger"), after)
+        # A line the branch holds and no other record does is kept.
+        ledger.write_text(json.dumps({"attempts": [], "wins": {}}))
+        self.assertEqual(rebuild(), "already")
+        self.assertIn("civvis-0", _git(self.origin, "show", "refs/heads/ledger:results.jsonl"))
+
+    def test_publish_results_cli(self):
+        self.publish("civvis-1")
+        # The live ledger sits beside the runs; without one the command would
+        # seed itself from the repository's committed snapshot.
+        (self.runs / "ladder.json").write_text(json.dumps({"attempts": [], "wins": {}}))
+        real_repo, real_env = civ6_ladder.REPO, dict(os.environ)
+        civ6_ladder.REPO = self.work
+        os.environ.update(PROBE)
+        buffer = io.StringIO()
+        try:
+            with redirect_stdout(buffer):
+                code = civ6_ladder.main(["--runs", str(self.runs), "publish-results"])
+        finally:
+            civ6_ladder.REPO = real_repo
+            os.environ.clear()
+            os.environ.update(real_env)
+        self.assertEqual((code, buffer.getvalue().split()), (0, ["already"]))
 
     def test_cli(self):
         real_repo, real_env = civ6_ladder.REPO, dict(os.environ)
@@ -2350,6 +2504,73 @@ class PublishRunTests(unittest.TestCase):
             os.environ.update(real_env)
         self.assertEqual((code, code2), (0, 0))
         self.assertEqual(buffer.getvalue().split(), ["published", "already"])
+
+
+class ResultRowTests(unittest.TestCase):
+    """A result line says how the game ended in the ledger's own words."""
+
+    def outcome(self, **fields) -> str:
+        return civ6_ladder.result_row(civ6_ladder.entry_from(summary("civvis-1", **fields)))["outcome"]
+
+    def test_the_outcome_is_the_ending_the_ladder_prints(self):
+        self.assertEqual(self.outcome(won=True), "win")
+        self.assertEqual(self.outcome(outcome={"kind": "defeat", "ours": True}), "defeat")
+        # A city-state's elimination is somebody else's defeat.
+        self.assertEqual(self.outcome(outcome={"kind": "defeat", "ours": False}), "unfinished")
+        self.assertEqual(self.outcome(outcome={"kind": "victory", "won": False, "victory": 5}),
+                         "rival_victory")
+        self.assertEqual(self.outcome(reason="abandoned"), "abandoned")
+        for reason in ("killed", "operator_retired", "stalled: no event for 240s",
+                       "game exited", "timeout", "stopped"):
+            self.assertEqual(self.outcome(reason=reason), "unfinished")
+        self.assertEqual(set(civ6_ladder.OUTCOMES),
+                         {"win", "defeat", "rival_victory", "abandoned", "unfinished"})
+
+    def test_a_reloaded_game_is_one_game(self):
+        row = civ6_ladder.result_row(civ6_ladder.entry_from(summary("civvis-9-cont2")))
+        self.assertEqual((row["tag"], row["game"]), ("civvis-9-cont2", "civvis-9"))
+        named = civ6_ladder.result_row(civ6_ladder.entry_from(
+            summary("civvis-9-cont-timeout1", game_id="civvis-9")))
+        self.assertEqual(named["game"], "civvis-9")
+
+    def test_the_short_projection_reads_a_summary_as_the_ledger_does(self):
+        # `result_entry` exists so one odd measurement column cannot cost a
+        # run its line; it must not become a second opinion on who won.
+        cases = [
+            summary("a", won=True, difficulty="DIFFICULTY_DEITY", victory_target="science",
+                    rival_best=900, game_id="a",
+                    seat={"civ": "CIVILIZATION_KOREA", "leader": "LEADER_SEONDEOK",
+                          "players": 6, "map": "Continents.lua",
+                          "victory_types": [{"index": 3, "type": "VICTORY_CULTURE"}]}),
+            summary("b-cont1", outcome={"kind": "defeat", "ours": True}),
+            summary("c", outcome={"kind": "victory", "won": False, "victory": 5}),
+            summary("d", reason="abandoned", abandoned={"rule": "early_city_lost"}),
+            summary("e", reason="killed", partial=True),
+        ]
+        for case in cases:
+            self.assertEqual(civ6_ladder.result_row(civ6_ladder.result_entry(case)),
+                             civ6_ladder.result_row(civ6_ladder.entry_from(case)), case["tag"])
+
+    def test_the_file_round_trips_and_a_broken_line_is_refused(self):
+        rows = {}
+        for tag, stamp in (("b", "2026-08-20T00:00:00Z"), ("a", "2026-08-21T00:00:00Z")):
+            civ6_ladder.merge_result(rows, civ6_ladder.result_row(
+                civ6_ladder.entry_from(summary(tag, finished=stamp))))
+        text = civ6_ladder.results_text(rows)
+        self.assertEqual([json.loads(line)["tag"] for line in text.splitlines()], ["b", "a"])
+        self.assertEqual(civ6_ladder.parse_results(text), rows)
+        with self.assertRaises(ValueError):
+            civ6_ladder.parse_results(text + "half a li")
+
+    def test_a_second_reading_fills_and_never_erases(self):
+        rows = {}
+        civ6_ladder.merge_result(rows, {"tag": "a", "civ": None, "outcome": "unfinished", "score": 7})
+        civ6_ladder.merge_result(rows, {"tag": "a", "civ": "CIVILIZATION_ROME", "outcome": "win",
+                                        "score": None})
+        self.assertEqual(rows["a"], {"tag": "a", "civ": "CIVILIZATION_ROME", "outcome": "win",
+                                     "score": 7})
+        civ6_ladder.merge_result(rows, {"civ": "CIVILIZATION_KOREA"})
+        self.assertEqual(list(rows), ["a"])
 
 
 class TheRowSaysWhoDroveTheSeat(unittest.TestCase):

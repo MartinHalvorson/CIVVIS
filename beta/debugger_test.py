@@ -76,7 +76,8 @@ window.requestAnimationFrame = drawn => setTimeout(drawn, 0);
 
 // ---- a toy engine: one line of turns, each kept
 const engine = {turn: 1, marks: [1], saves: [], ids: 0, breaks: [], line: null, stopped: null, score: 0,
-  current: 0, stepped: null, sent: []};
+  current: 0, stepped: null, acted: 0, reveal: false, layers: [],
+  watch: {categories: [], phrases: [], important: false, every_seat: false, conditions: []}, sent: []};
 // The round: the played seat, one rival, and the Barbarians.
 const SEATS = 3;
 // Another frame's engine as it stands, for a half that is copied or kept:
@@ -93,11 +94,13 @@ function engineState(error = null) {
       yields: {science: 1, culture: 1, gold: 1, faith: 0}},
       {id: 1, civ: "greece"}, {id: 2, civ: "barbarians", is_barbarian: true}],
     debug: {turn: engine.turn, turns: [...marks], first: marks[0], last: marks[marks.length - 1],
-      acted: 0, can_undo: false, can_back: engine.turn > marks[0], can_forward: engine.turn < marks[marks.length - 1],
-      breakpoints: {turns: [...engine.breaks], categories: [], phrases: [], conditions: [], important: false,
-        every_seat: false, known_categories: ["War"], known_tests: [">", "changes"]},
-      layers: [{id: "research", label: "Research", on: false}], assisted: 0, stopped: engine.stopped,
-      stepped: engine.stepped, reveal: false, playing: engine.current, memory_line: engine.line,
+      acted: engine.acted, can_undo: engine.acted > 0 && engine.current === 0,
+      can_back: engine.acted > 0 || engine.turn > marks[0], can_forward: engine.turn < marks[marks.length - 1],
+      breakpoints: {turns: [...engine.breaks], ...JSON.parse(JSON.stringify(engine.watch)),
+        known_categories: ["War", "Wonder"], known_tests: [">", "changes"]},
+      layers: [["research", "Research"], ["cities", "Cities"]].map(([id, label]) =>
+        ({id, label, on: engine.layers.includes(id)})), assisted: 0, stopped: engine.stopped,
+      stepped: engine.stepped, reveal: engine.reveal, playing: engine.current, memory_line: engine.line,
       saves: engine.saves.map(save => ({...save}))}};
 }
 async function fetchJSON(path, init = {}) {
@@ -121,6 +124,9 @@ async function fetchJSON(path, init = {}) {
     const seat = engine.current, next = (seat + 1) % SEATS;
     if (next === 0) opens(); else engine.current = next;
     engine.stepped = {seat, actions: 2 * seat, next};
+  } else if (body.op === "step" && engine.turn >= 400) {
+    // A run nobody stopped must still end.
+    error = "this game has no turn left to play";
   } else if (body.op === "step") {
     engine.turn += 1;
     // Which Civ AI plays the seat is the one thing that tells two halves apart.
@@ -143,7 +149,16 @@ async function fetchJSON(path, init = {}) {
   } else if (body.op === "drop_save") {
     engine.saves = engine.saves.filter(held => held.id !== body.id);
   } else if (body.op === "breakpoints") {
+    // Whatever a request leaves out is cleared, as the engine does it.
     engine.breaks = body.turns || [];
+    engine.watch = {categories: body.categories || [], phrases: body.phrases || [], important: !!body.important,
+      every_seat: !!body.every_seat, conditions: body.conditions || []};
+  } else if (body.op === "layers") {
+    engine.layers = body.layers || [];
+  } else if (body.op === "reveal") {
+    engine.reveal = body.on === true;
+  } else if (body.op === "undo") {
+    if (engine.acted > 0) engine.acted -= 1; else error = "nothing has been done this turn";
   } else if (body.op === "room") {
     engine.line = body.megabytes;
   } else if (body.op === "copy") {
@@ -330,6 +345,131 @@ def check_the_bar(bar: Bar) -> None:
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
+def check_breakpoints_and_a_run(bar: Bar) -> None:
+    """Set breakpoints from the form, run to one, stop a run by hand."""
+    form = "document.querySelector('#dbg-pop-breaks [data-dbg-field={}]')".format
+    count = lambda: bar.ev("document.getElementById('dbg-break-count').textContent")
+
+    def typed(field: str, text: str) -> dict:
+        bar.forget()
+        bar.ev(f"(() => {{ const box = {form(field)}; box.value = {json.dumps(text)};"
+               " box.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+        bar.idle("true", f"the {field} field is sent")
+        return bar.sent()[-1]
+
+    bar.click('[data-dbg-pop="breaks"]')
+    # Turns are whole numbers, each once; anything else in the field is dropped.
+    request = typed("turns", "12, 15, twelve, 12")
+    assert request == {"op": "breakpoints", "turns": [12, 15], "categories": [], "phrases": [],
+                       "important": False, "every_seat": False, "conditions": []}, request
+    assert count() == "2", count()
+    request = typed("phrases", "declared war, captured")
+    assert request["phrases"] == ["declared war", "captured"] and request["turns"] == [12, 15], request
+    assert count() == "4", count()
+
+    # The categories on offer are the engine's; ticking one sends the lot.
+    assert bar.ev("[...document.querySelectorAll('#dbg-category-list [data-dbg-category]')].map(b => b.dataset.dbgCategory)") \
+        == ["War", "Wonder"]
+    bar.forget()
+    bar.click('#dbg-category-list [data-dbg-category="Wonder"]')
+    bar.idle("state.debug.breakpoints.categories.length === 1", "a category is ticked")
+    assert bar.sent()[-1]["categories"] == ["Wonder"] and bar.sent()[-1]["turns"] == [12, 15], bar.sent()
+    bar.click('#dbg-pop-breaks [data-dbg-field=important]')
+    bar.idle("state.debug.breakpoints.important === true", "any important event is ticked")
+    assert count() == "6", count()
+
+    # A condition is composed in the form and held by the engine; its fields
+    # being changed is not a request, adding and removing it are.
+    bar.forget()
+    bar.ev(f"(() => {{ {form('cond-seat')}.value = '1'; {form('cond-key')}.value = 'score'; {form('cond-test')}.value = '>';"
+           f" {form('cond-value')}.value = '5'; {form('cond-test')}.dispatchEvent(new Event('change', {{bubbles: true}})); return true; }})()")
+    assert bar.sent() == [], bar.sent()
+    bar.click('[data-dbg="cond-add"]')
+    bar.idle("state.debug.breakpoints.conditions.length === 1", "a condition is added")
+    assert bar.sent()[-1]["conditions"] == [{"seat": 1, "key": "score", "test": ">", "value": 5}], bar.sent()
+    assert "Greece · score > 5" in bar.ev("document.getElementById('dbg-condition-list').textContent")
+    bar.click('[data-dbg-cond-remove="0"]')
+    bar.idle("state.debug.breakpoints.conditions.length === 0", "a condition is removed")
+
+    # +10 adds the turn ten from now to the turns already there.
+    turn = bar.ev("state.turn")
+    bar.forget()
+    bar.click('[data-dbg="break-plus"]')
+    bar.idle(f"state.debug.breakpoints.turns.includes({turn + 10})", "+10 adds a turn")
+    assert bar.sent()[-1]["turns"] == [12, 15, turn + 10], bar.sent()
+
+    # Run plays turns until the engine says a breakpoint stopped it.
+    request = typed("turns", str(turn + 3))
+    assert request["turns"] == [turn + 3], request
+    bar.forget()
+    bar.click('[data-dbg="run"]')
+    bar.idle(f"state.turn === {turn + 3}", "a run stops on its breakpoint")
+    assert [call["op"] for call in bar.sent()] == ["step"] * 3, bar.sent()
+    assert bar.note() == f"Stopped at turn {turn + 3}", bar.note()
+    assert bar.ev("document.querySelector('[data-dbg=\"run\"]').textContent") == "▶▶"
+
+    # Clear all sends a request with nothing in it, and the count goes.
+    bar.forget()
+    bar.click('[data-dbg="break-clear"]')
+    bar.idle("state.debug.breakpoints.turns.length === 0 && !state.debug.breakpoints.important", "the breakpoints are cleared")
+    assert bar.sent() == [{"op": "breakpoints"}], bar.sent()
+    assert count() == "", count()
+    bar.click('[data-dbg-pop="breaks"]')
+
+    # With nothing to stop it a run goes on, the same button is its Stop, and
+    # the bar says how far it got.
+    bar.click('[data-dbg="run"]')
+    bar.until(f"debugRunning && state.turn > {turn + 5}", "a run with no breakpoint keeps playing")
+    assert bar.ev("document.querySelector('[data-dbg=\"run\"]').textContent") == "⏹"
+    bar.click('[data-dbg="run"]')
+    bar.idle("true", "the run stops when told to")
+    assert bar.note().startswith("Stopped by hand after "), bar.note()
+    assert bar.ev("state.turn") < 400, "the run was stopped, not exhausted"
+
+
+def check_layers_reveal_and_undo(bar: Bar) -> None:
+    """The rest of the bar: who decides, the fog, and taking an action back."""
+    sent = lambda: bar.sent()[-1]
+    bar.click('[data-dbg-pop="layers"]')
+    bar.click('#dbg-layer-list [data-dbg-layer="cities"]')
+    bar.idle("state.debug.layers.find(layer => layer.id === 'cities').on", "a layer is switched on")
+    assert sent() == {"op": "layers", "layers": ["cities"]}, sent()
+    assert bar.ev("document.getElementById('dbg-layer-count').textContent") == "1"
+    bar.click('[data-dbg="layers-all"]')
+    bar.idle("state.debug.layers.every(layer => layer.on)", "Everything switches every layer on")
+    assert sent() == {"op": "layers", "layers": ["research", "cities"]}, sent()
+    bar.click('[data-dbg="assist"]')
+    bar.idle("true", "the layers are applied to this turn")
+    assert sent() == {"op": "assist", "strategy": "jack"}, sent()
+    bar.click('[data-dbg="layers-none"]')
+    bar.idle("state.debug.layers.every(layer => !layer.on)", "By hand switches every layer off")
+    assert sent() == {"op": "layers", "layers": []}, sent()
+    bar.click('[data-dbg-pop="layers"]')
+
+    bar.click('[data-dbg="reveal"]')
+    bar.idle("state.debug.reveal === true", "the fog is lifted")
+    assert sent() == {"op": "reveal", "on": True}, sent()
+    assert bar.ev("document.querySelector('[data-dbg=\"reveal\"]').classList.contains('on')")
+    bar.click('[data-dbg="reveal"]')
+    bar.idle("state.debug.reveal === false", "the fog is put back")
+    assert sent() == {"op": "reveal", "on": False}, sent()
+
+    # Undo, by its button and by the key the hand expects, and not when
+    # there is nothing to take back.
+    assert bar.ev("document.querySelector('[data-dbg=\"undo\"]').disabled")
+    bar.ev("engine.acted = 2, render(engineState()), true")
+    bar.forget()
+    bar.click('[data-dbg="undo"]')
+    bar.idle("state.debug.acted === 1", "the button takes back an action")
+    bar.ev("window.dispatchEvent(new KeyboardEvent('keydown', {key: 'z', ctrlKey: true, bubbles: true})), true")
+    bar.idle("state.debug.acted === 0", "Ctrl+Z takes back an action")
+    assert bar.sent() == [{"op": "undo"}] * 2, bar.sent()
+    bar.ev("window.dispatchEvent(new KeyboardEvent('keydown', {key: 'z', ctrlKey: true, bubbles: true})), true")
+    time.sleep(0.2)
+    assert bar.sent() == [{"op": "undo"}] * 2, "Ctrl+Z with nothing to undo sends nothing"
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+
 def check_stepping_a_seat(bar: Bar) -> None:
     """The round a civilization at a time, and what a turn means in the middle of one."""
     turn = bar.ev("state.turn")
@@ -411,6 +551,20 @@ def check_the_split(bar: Bar) -> None:
     assert bar.ev("debugSplit.linked") is False
     play_both_to(start + 6)
     assert ops("a")[4:] == [["step", "jack"]] * 2 and ops("b")[4:] == [["step", "stock"]] * 2, (ops("a"), ops("b"))
+
+    # The same start again: both halves go back to the turn they split on,
+    # each by one jump, and the button has nothing left to do there.
+    back = "debugSplit.host.querySelector('[data-dbg-split=\"versus-back\"]')"
+    assert bar.ev(back + ".disabled") is False and str(start) in bar.ev(back + ".title"), bar.ev(back + ".title")
+    bar.click('[data-dbg-split="versus-back"]')
+    bar.until(f"debugSplit.panes.a.turn === {start} && debugSplit.panes.b.turn === {start} && {back}.disabled",
+              "both halves go back to the turn of the split")
+    assert ops("a")[6:] == [["jump", None]] and ops("b")[6:] == [["jump", None]], (ops("a"), ops("b"))
+    assert bar.ev("debugSplit.linked") is False
+    # They are played again from there, still each by itself.
+    play_both_to(start + 6)
+    assert ops("a")[7:] == [["step", "jack"]] * 6 and ops("b")[7:] == [["step", "stock"]] * 6, (ops("a"), ops("b"))
+    assert bar.ev("[debugSplit.history.a.size, debugSplit.history.b.size]") == [7, 7]
 
     # A -> B makes B a copy of A, its line in the chart included.
     bar.click('[data-dbg-split="copy-a"]')
@@ -497,11 +651,16 @@ def main() -> int:
         check_the_bar(bar)
         print("the debugger bar sends what each control is for: the turn box, both sliders, "
               "the wheel, save points and their flags, a breakpoint picked from the timeline.")
+        check_breakpoints_and_a_run(bar)
+        check_layers_reveal_and_undo(bar)
+        print("breakpoints are set from the form, a run stops on one or by hand, and layers, "
+              "reveal and undo send what they are for.")
         check_stepping_a_seat(bar)
         print("a round is stepped a civilization at a time, says who is next, and End Turn finishes it.")
         check_the_split(bar)
         print("the split seats a Civ AI in each half, plays both to a turn linked and separate, "
-              "sets their numbers side by side, copies, keeps, and hears a half whose script came late.")
+              "sets their numbers side by side, starts both again from the split, copies, keeps,"
+              " and hears a half whose script came late.")
         return 0
     finally:
         chrome.terminate()
