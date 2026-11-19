@@ -68,7 +68,7 @@ impl Game {
                 uid,
                 start,
                 moves,
-                |cur, next| self.can_pass_neighbor(uid, cur, next),
+                self.neighbor_passer(uid, false),
                 |next, cur| {
                     parent.insert(next, cur);
                 },
@@ -908,7 +908,7 @@ impl Game {
             uid,
             start,
             moves,
-            |cur, n| self.can_pass_neighbor(uid, cur, n),
+            self.neighbor_passer(uid, false),
             |n, cur| {
                 parent.insert(n, cur);
             },
@@ -966,7 +966,7 @@ impl Game {
             uid,
             start,
             moves,
-            |cur, n| self.can_pass_neighbor(uid, cur, n),
+            self.neighbor_passer(uid, false),
             |n, cur| {
                 parent.insert(n, cur);
             },
@@ -1082,7 +1082,7 @@ impl Game {
             uid,
             start,
             moves,
-            |cur, next| self.can_pass_neighbor(uid, cur, next),
+            self.neighbor_passer(uid, false),
             |_, _| {},
             &mut arrivals,
         );
@@ -1588,19 +1588,11 @@ impl Game {
             return;
         }
         let _memo = self.query_memo();
-        let unit = self.units.get(&uid);
-        let traversal = self.unit_traversal(uid);
         self.relax_movement_into(
             uid,
             start,
             moves,
-            |cur, n| {
-                let entry = match unit {
-                    Some(unit) => self.entry_at_neighbor_as(unit, traversal, cur, n, through_units),
-                    None => self.entry_at_neighbor(uid, cur, n, through_units),
-                };
-                entry != Entry::Blocked
-            },
+            self.neighbor_passer(uid, through_units),
             |_, _| {}, // nobody asks this flood for the walk
             output,
         );
