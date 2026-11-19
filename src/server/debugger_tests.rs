@@ -5,7 +5,10 @@ use std::collections::BTreeSet;
 use serde_json::{json, Value};
 
 use super::super::{stock_opening_params, Session};
-use super::{Layer, Mark, Timeline, DENSE_MARKS, MEMORY_LINE, MEMORY_STEP, ROOMY_MARKS};
+use super::{
+    Layer, Mark, Timeline, COARSEST_STRIDE, DENSE_MARKS, MAX_SAVE_POINTS, MEMORY_LINE, MEMORY_STEP,
+    ROOMY_MARKS,
+};
 use crate::game::Action;
 use crate::setup::{GameSpeed, MapScript, MapTopology};
 

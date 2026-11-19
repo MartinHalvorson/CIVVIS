@@ -79,6 +79,10 @@ history are let go, because a timeline is one history. The world that was
 left is kept as a save point called "Where you were", unless it is a save
 point already, so going back is the same operation.
 
+In the bar they are under ⚑: a name and "Save point" to set one, and a list
+to go to one or let it go. Each also stands over the slider as a flag at its
+turn, gold for one that was set and grey for "Where you were".
+
 Save points live with the timeline: both halves of a split start with the
 ones there were, a save file does not carry them, and a new or loaded game
 starts with none.
