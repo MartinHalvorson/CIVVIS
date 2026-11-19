@@ -27746,7 +27746,7 @@ function hudTurnPlate() {
   const plateMode = livePause.available
     ? ["Firaxis Civ VI Testing", "A live Firaxis Civilization VI game under test, mirrored here turn by turn."]
     : SPEC ? ["CIVVIS Self-play", "Every civilization is played by a CIVVIS AI agent. Nobody holds a seat."]
-    : ["CIVVIS Single Player", "You play one civilization. CIVVIS AI agents play the rest."];
+    : ["CIVVIS Sim Debugger", "You play one civilization. CIVVIS AI agents play the rest."];
   const platePov = !SPEC || playerView
     ? ["Single Player", `The world as ${identity.civ || "one civilization"} sees it, behind its own fog.`]
     : ["Global", "The whole world at once, with no civilization's fog."];

@@ -2111,7 +2111,7 @@ fn viewer_masthead_offers_home_then_a_new_single_player_game() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<div class=\"head-links\" id=\"headlinks\" hidden>\n",
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\">⌂ Home</a>\n",
-        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\">Play single player</a>\n",
+        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\">Open sim debugger</a>\n",
         "      </div>",
     )));
     // The link is only as good as the shim's reading of it, and it replaces
@@ -2317,7 +2317,7 @@ fn the_home_cards_link_their_art_and_open_their_panels_in_place() {
         "<h3 class=\"card-title\" id=\"watch-civ-title\"><a href=\"../\">Watch CIVVIS</a></h3>",
         "<h3 class=\"card-title\" id=\"play-civ-title\"><a href=\"../?mode=play\">Play CIVVIS</a></h3>",
         "<span class=\"card-mode\">AI simulation</span>",
-        "<span class=\"card-mode\">Single player</span>",
+        "<span class=\"card-mode\">Sim debugger</span>",
         ".card-mode { color: var(--muted); font-size: 17px; font-weight: 700;",
         ".card-title { margin: 0; color: #fff; font-size: 17px; font-weight: 700; }",
         // Customize opens the world picker in place and still names Game
@@ -2373,7 +2373,7 @@ fn the_home_cards_link_their_art_and_open_their_panels_in_place() {
         ".mode-card.muted { opacity: 0.55; }",
         "id=\"game-modes\"",
         "data-mode=\"watch-civ\" aria-pressed=\"true\">AI simulation</button>",
-        "data-mode=\"play-civ\" aria-pressed=\"false\">Single player</button>",
+        "data-mode=\"play-civ\" aria-pressed=\"false\">Sim debugger</button>",
         ".picker-lens[aria-pressed=\"true\"] { border-color: var(--accent); background: #2a3f52; color: #fff; }",
     ] {
         assert!(landing.contains(piece), "the home page lost {piece}");
@@ -6062,14 +6062,14 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(
         EMBEDDED_INDEX.contains("<option value=\"ai_sim\" selected>AI-only simulation</option>")
     );
-    assert!(EMBEDDED_INDEX.contains("<option value=\"single\">Single player - WIP</option>"));
+    assert!(EMBEDDED_INDEX.contains("<option value=\"single\">Sim debugger - WIP</option>"));
     assert!(!EMBEDDED_INDEX.contains("Single player · later"));
     assert!(!EMBEDDED_INDEX.contains("Multiplayer · later"));
     let ai_sim_mode = EMBEDDED_INDEX
         .find("AI-only simulation")
         .expect("ai sim mode");
     let single_mode = EMBEDDED_INDEX
-        .find("<option value=\"single\">Single player - WIP</option>")
+        .find("<option value=\"single\">Sim debugger - WIP</option>")
         .expect("single player mode");
     assert!(ai_sim_mode < single_mode);
     // A world already on screen sets the mode select, so the panel beside a
@@ -8781,10 +8781,11 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
 
 /// The turn box says how the game is being played and whose eyes the map is
 /// drawn through (operator 2026-11-15: add a "Mode:" and a "POV:"). Mode is
-/// CIVVIS Self-play when every seat is an agent's, CIVVIS Single Player when
+/// CIVVIS Self-play when every seat is an agent's, CIVVIS Sim Debugger when
 /// a person holds one, Firaxis Civ VI Testing beside a mirrored live game
 /// (operator, same day: "Change Civ VI to CIVVIS Self-play, Firaxis Civ VI
-/// Testing, and CIVVIS Single Player"). POV is Global for the omniscient
+/// Testing, and CIVVIS Single Player"; then 2026-11-18: "Change single
+/// player to 'sim debugger'"). POV is Global for the omniscient
 /// spectator and Single Player for a played seat or a Watch-as view, whose
 /// tooltip names the civilization.
 ///
@@ -8802,7 +8803,7 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
         "const plateMode = livePause.available",
         "? [\"Firaxis Civ VI Testing\", \"A live Firaxis Civilization VI game under test, mirrored here turn by turn.\"]",
         ": SPEC ? [\"CIVVIS Self-play\", \"Every civilization is played by a CIVVIS AI agent. Nobody holds a seat.\"]",
-        ": [\"CIVVIS Single Player\", \"You play one civilization. CIVVIS AI agents play the rest.\"];",
+        ": [\"CIVVIS Sim Debugger\", \"You play one civilization. CIVVIS AI agents play the rest.\"];",
         "const platePov = !SPEC || playerView",
         "? [\"Single Player\", `The world as ${identity.civ || \"one civilization\"} sees it, behind its own fog.`]",
         ": [\"Global\", \"The whole world at once, with no civilization's fog.\"];",
