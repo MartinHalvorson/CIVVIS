@@ -2382,16 +2382,28 @@ function wantedPlayerHudColumns() {
 function visiblePlayerHudColumns() {
   return wantedPlayerHudColumns().filter(column => !playerHudShedColumns.has(column.key));
 }
-// A row wears its civilization's jersey as one plate from the rank column
-// through the player column — wherever the viewer's own order has stood those
-// two — and the plate always takes in the civilization's name. Returns the
-// first and last visible-column index the plate covers, or null when none of
-// the three is on the table.
+// A row wears its civilization's colour from edge to edge: the deep wash under
+// every figure, and the jersey itself at full strength as one plate under the
+// cells that say who the row is. The plate is the unbroken run of those cells
+// around the civilization's name — or around the rank, or the player, when the
+// name is hidden — wherever the viewer's own order has stood them. A figure
+// never stands on it: a column of numbers dragged in among the names ends the
+// plate there, because a number keeps the colour of what it counts and that
+// colour only reads on the wash. Returns the first and last visible-column
+// index the plate covers, or null with none of the three on the table. A run
+// that reaches the row's first cell is `flush`: the plate starts at the row's
+// own edge, so the row opens on its jersey rather than on a sliver of wash.
+const PLAYER_HUD_JERSEY_COLUMNS = new Set(["lock", "rank", "civ", "leader", "watch", "player"]);
 function playerHudJerseySpan(visibleColumns) {
-  const at = ["rank", "civ", "player"]
+  const anchor = ["civ", "rank", "player"]
     .map(key => visibleColumns.findIndex(column => column.key === key))
-    .filter(index => index >= 0);
-  return at.length ? {first:Math.min(...at), last:Math.max(...at)} : null;
+    .find(index => index >= 0);
+  if (anchor === undefined) return null;
+  const named = index => PLAYER_HUD_JERSEY_COLUMNS.has(visibleColumns[index]?.key);
+  let first = anchor, last = anchor;
+  while (named(first - 1)) first--;
+  while (named(last + 1)) last++;
+  return {first, last, flush:first === 0};
 }
 
 // ── Which columns the panel can seat ───────────────────────────────────────
@@ -2913,7 +2925,13 @@ function syncPlayerHudEloFloor() {
 // this runs on every repaint of the standings. A column the panel has shed
 // has no cell to measure and keeps the floor it had, or seating it at the
 // stylesheet's narrower one would shed it again on the next pass.
-const HUD_PLAYER_MIN_TYPE_SIZE = 9;
+//
+// The handles are fitted as one column now, so this floor is the size every
+// handle is read at whenever the longest one fills its track — which is most
+// tables. In the interface face a handle at 10px is the width it was in the
+// display serif at 9px (85px to 92 for "JackOfAllTrades"), so the larger type
+// costs the table no column it kept before.
+const HUD_PLAYER_MIN_TYPE_SIZE = 10;
 let ratedPlayerFloorKey = "";
 function syncRatedPlayerFloors(hud) {
   if (!namedTableInPlay()) {
@@ -3454,9 +3472,16 @@ const RESPONSIVE_TEXT_RULES = [
   // letter off. Half a point of type is invisible; a clipped head is not.
   {selector:"#playerhud .hud-head-stat", min:8.5, max:11},
   {selector:"#playerhud .diplomacy-rank", min:9, max:11},
-  {selector:"#playerhud .diplomacy-civ", min:9, max:13, exact:true},
-  {selector:"#playerhud .diplomacy-leader-name", min:9, max:13, exact:true},
-  {selector:"#playerhud .diplomacy-player", min:9, max:13, exact:true},
+  // The three name columns are each set `together`: every name in a column
+  // takes the size its longest one needs. Fitted one by one, "TouristTrap"
+  // stood at 13px over "JackOfAllTrades" at 9, and a column in five sizes
+  // reads as five rows shouting over each other rather than as a column. A
+  // city's name reuses .diplomacy-civ under its seat and is fitted on its
+  // own, or one long city would shrink every civilization on the table.
+  {selector:"#playerhud .diplomacy-civ-link .diplomacy-civ", min:9, max:13, exact:true, together:true},
+  {selector:"#playerhud .hud-city-name .diplomacy-civ", min:9, max:13, exact:true},
+  {selector:"#playerhud .diplomacy-leader-name", min:9, max:13, exact:true, together:true},
+  {selector:"#playerhud .diplomacy-player", min:9, max:13, exact:true, together:true},
   {selector:"#playerhud .diplomacy-elo-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
   {selector:"#playerhud .diplomacy-elo-delta-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
   {selector:"#playerhud .diplomacy-expected span", min:9, max:13},
@@ -3609,6 +3634,21 @@ function responsiveFitHolds(element, rule) {
     fit.box === responsiveFitBox(element);
 }
 
+// A column fitted `together` has one size, so one cell of it going stale puts
+// the whole column back on the bench: the size the others hold may have been
+// the stale cell's doing.
+function responsiveFitWithColumns(stale, targets) {
+  const columns = new Set();
+  for (const element of stale) {
+    const rule = targets.get(element);
+    if (rule.together) columns.add(rule);
+  }
+  if (!columns.size) return stale;
+  const all = new Set(stale);
+  for (const [element, rule] of targets) if (columns.has(rule)) all.add(element);
+  return [...all];
+}
+
 // All maximum-size writes happen before the first read, and every fitted write
 // happens after the last read. That batching keeps a 12-player update to two
 // layouts instead of forcing one layout per cell.
@@ -3665,8 +3705,44 @@ function responsiveFit(elements, targets) {
     const size = Math.max(rule.min, Math.floor(ideal * 4) / 4);
     fitted.push({element, rule, size, clipped:size === rule.min && ideal < rule.min});
   }
-  for (const {element, rule, size, clipped} of fitted) {
-    element.style.fontSize = `${size}px`;
+  // A rule set `together` gives all of its cells the smallest size any one
+  // of them needs; which of them is clipped is still each cell's own answer.
+  const shared = new Map();
+  for (const {rule, size} of fitted)
+    if (rule.together) shared.set(rule, Math.min(shared.get(rule) ?? size, size));
+  for (const fit of fitted) if (fit.rule.together) fit.size = shared.get(fit.rule);
+  for (const {element, size} of fitted) element.style.fontSize = `${size}px`;
+  // The interface face is not one design scaled: its tracking loosens as the
+  // type gets smaller, so a run measured at the ceiling stands wider at the
+  // fitted size than the ratio promised — 86.4px of "JackOfAllTrades" in an
+  // 86px cell, and an ellipsis on a name that was told it fits. A cell that
+  // ends in an ellipsis is measured again where it landed, and steps down
+  // until its run is inside it. Nothing is read here unless such a cell was
+  // just fitted below its ceiling, which a turn of new figures does not do.
+  for (let pass = 0; pass < 3; pass++) {
+    let moved = false;
+    for (const fit of fitted) {
+      const {element, rule} = fit;
+      if (!rule.exact || fit.size >= rule.max || fit.size <= rule.min || !element.isConnected) continue;
+      responsiveTextRange.selectNodeContents(element);
+      const run = responsiveTextRange.getBoundingClientRect().width;
+      const room = element.getBoundingClientRect().width - (rule.slack || 0);
+      if (run <= room || room < 1) continue;
+      const tighter = Math.floor(fit.size * room / run * 4) / 4;
+      fit.size = Math.max(rule.min, Math.min(tighter, fit.size - .25));
+      fit.clipped = fit.size === rule.min && tighter < rule.min;
+      moved = true;
+    }
+    if (!moved) break;
+    shared.clear();
+    for (const {rule, size} of fitted)
+      if (rule.together) shared.set(rule, Math.min(shared.get(rule) ?? size, size));
+    for (const fit of fitted) {
+      if (fit.rule.together) fit.size = shared.get(fit.rule);
+      fit.element.style.fontSize = `${fit.size}px`;
+    }
+  }
+  for (const {element, rule, clipped} of fitted) {
     if (clipped) element.dataset.fitClipped = "true";
     else delete element.dataset.fitClipped;
     responsiveTypeFits.set(element, {rule, text:element.textContent, look:element.className,
@@ -3705,6 +3781,7 @@ function fitResponsiveType() {
   // changed under it is fitted in turn. Three rounds bound a layout that will
   // not settle; anything still moving then is fitted on the next pass.
   for (let round = 0; stale.length && round < 3; round++) {
+    stale = responsiveFitWithColumns(stale, targets);
     responsiveFit(stale, targets);
     const fresh = new Set(stale);
     stale = [];
@@ -4473,14 +4550,6 @@ function pcol2(id) {
     return CITY_STATE_TYPE_COLORS[p.cs_type] || CITY_STATE_TYPE_COLORS.trade;
   return playerJerseys()[id]?.[1] || PCOLORS2[id % PCOLORS2.length];
 }
-// sRGB-weighted lightness. Only ever used to sort a pair of jersey colours, so
-// the gamma-correct version would not change an answer.
-function lightness(hex) {
-  if (typeof hex !== "string" || hex[0] !== "#" || hex.length !== 7) return 0.5;
-  const n = parseInt(hex.slice(1), 16);
-  return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255)
-          + 0.0722 * (n & 255)) / 255;
-}
 // Command tokens are ownership colour plus type ink. Some real Civ VI primary
 // jerseys and city-states are near-black, so fixed black ink erases the very
 // pictogram the token exists to carry. Prefer the jersey's partner when it has
@@ -4509,6 +4578,18 @@ function unitTokenInk(owner) {
   const partner = pcol2(owner);
   if (Math.abs(primaryLight - lightness(partner)) >= .34) return partner;
   return primaryLight < .48 ? "#f0ead8" : "#10151d";
+}
+// The ink of a name standing on its jersey. unitTokenInk() above asks only
+// that a pictogram's lightness part from its field, which a 20px glyph gets
+// away with and 11px type does not: Korea's blue on red passes it at 2.2:1.
+// Here the partner colour is kept only where it reads as text, and otherwise
+// the name is set in whichever of cream or near-black is furthest from the fill.
+const HUD_JERSEY_INK_LIGHT = "#fcfbf6", HUD_JERSEY_INK_DARK = "#10151d";
+function hudJerseyInk(owner) {
+  const fill = pcol(owner), partner = pcol2(owner);
+  if (contrastRatio(fill, partner) >= 4.5) return partner;
+  return contrastRatio(fill, HUD_JERSEY_INK_LIGHT) >= contrastRatio(fill, HUD_JERSEY_INK_DARK)
+    ? HUD_JERSEY_INK_LIGHT : HUD_JERSEY_INK_DARK;
 }
 // A civilization's jersey pair, darker first. Jersey order is which colour is
 // "primary", which says nothing about which is light: Rome is purple on yellow
@@ -9470,58 +9551,6 @@ function drawHiddenMapFrontier(tiles) {
   cx.restore();
 }
 
-function shade(hex, f) {
-  const n = parseInt(hex.slice(1), 16);
-  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-  r = Math.min(255, Math.max(0, Math.round(r * f)));
-  g = Math.min(255, Math.max(0, Math.round(g * f)));
-  b = Math.min(255, Math.max(0, Math.round(b * f)));
-  return "rgb(" + r + "," + g + "," + b + ")";
-}
-
-// Compact color helpers for strategic map symbols.
-function rgbOf(col) {
-  if (col[0] === "#") {
-    const n = parseInt(col.slice(1), 16);
-    return col.length >= 7
-      ? [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-      : [((n >> 8) & 15) * 17, ((n >> 4) & 15) * 17, (n & 15) * 17];
-  }
-  const m = col.match(/[\d.]+/g) || ["0", "0", "0"];
-  return [+m[0], +m[1], +m[2]];
-}
-const clamp255 = v => v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
-// Value with hue: f > 1 walks the colour into sunlight, f < 1 into skylight.
-function tone(col, f, a) {
-  const [r, g, b] = rgbOf(col);
-  const warm = Math.max(0, f - 1), cool = Math.max(0, 1 - f);
-  const out = [clamp255(r * f + warm * 54 - cool * 12),
-               clamp255(g * f + warm * 40 + cool * 3),
-               clamp255(b * f + warm * 9 + cool * 34)];
-  return a === undefined
-    ? `rgb(${out[0]},${out[1]},${out[2]})`
-    : `rgba(${out[0]},${out[1]},${out[2]},${a})`;
-}
-function litBase(col) {
-  const [r, g, b] = rgbOf(col);
-  const lum = (r * .3 + g * .59 + b * .11) / 255;
-  if (lum >= .3) return col;
-  const t = Math.min(.62, (.3 - lum) * 2.4);
-  return `rgb(${clamp255(r + (96 - r) * t)},${clamp255(g + (104 - g) * t)},${clamp255(b + (116 - b) * t)})`;
-}
-function clothMat(col) { return col; }
-function metalMat(col) { return col; }
-function matteMat(col) { return col; }
-function ballMat(col) { return col; }
-// A rim is skylight grazing an edge, not a brighter version of the object. Its
-// first form was `tone(col, 1.75)`, which on a purple tunic is hot magenta —
-// every figure wore a neon outline, which is precisely the opposite of what a
-// rim is for. Mix the material toward the colour of the sky instead.
-function skyRim(col) {
-  const [r, g, b] = rgbOf(litBase(col));
-  const t = .56;
-  return `rgb(${clamp255(r + (208 - r) * t)},${clamp255(g + (226 - g) * t)},${clamp255(b + (248 - b) * t)})`;
-}
 function volume(p, fill, dir, rim, edge = "rgba(11,15,21,.68)", lw = 1.05) {
   cx.fillStyle = fill; cx.fill(p);
   if (edge) { cx.strokeStyle = edge; cx.lineWidth = lw; cx.stroke(p); }
@@ -11204,18 +11233,6 @@ const DISTRICT_TOKEN_HALF = S * 0.48;  // 34.6px side ≈ 38% of a hex's area
 function districtTokenPath(x, y, half) {
   cx.beginPath();
   cx.roundRect(x - half, y - half, half * 2, half * 2, half * .16);
-}
-
-// Positive amounts mix a district color toward white, negative toward black.
-// The dark end is the ink that the token's bars and glyphs share, so every
-// family's furniture is automatically a deep shade of its own color.
-function districtShade(color, amount) {
-  const hex = color.length === 4
-    ? "#" + [...color.slice(1)].map(ch => ch + ch).join("") : color;
-  const target = amount < 0 ? 0 : 255, weight = Math.abs(amount);
-  const mixed = [1, 3, 5].map(at => Math.round(
-    parseInt(hex.slice(at, at + 2), 16) * (1 - weight) + target * weight));
-  return `rgb(${mixed.join(",")})`;
 }
 
 function districtIconPositions(value) {
@@ -20096,18 +20113,6 @@ function drawSkyStars(depth, radius) {
   cx.restore();
 }
 
-// A colour at an alpha. `shade` returns an opaque `rgb()` and the tables above
-// hold hex, and both get faded out here, so this takes either. Handing a hex
-// parser an `rgb(...)` string silently yields NaN and a fill of nothing, which
-// is a blank ring rather than an error.
-function skyAlpha(colour, a) {
-  if (colour[0] === "#") {
-    const n = parseInt(colour.slice(1), 16);
-    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
-  }
-  const parts = colour.match(/-?\d+(\.\d+)?/g) || [0, 0, 0];
-  return `rgba(${parts[0]},${parts[1]},${parts[2]},${a})`;
-}
 // A ramp between two thresholds, which is most of what deciding whether
 // something is worth drawing at this scale comes down to.
 function skyFade(value, low, high) {
@@ -28695,9 +28700,11 @@ function drawPlayerHud() {
       const rowCell = (column, index) => jersey && index >= jersey.first && index <= jersey.last
         ? cellMarkup(column).replace("data-hud-col=", "data-hud-jersey data-hud-col=")
         : cellMarkup(column);
+      // A grid line named `auto` is the row's own padding edge, which is how
+      // a flush plate reaches the corner.
       const jerseyStyle = jersey
-        ? `;--hud-jersey-start:${jersey.first + 1};--hud-jersey-end:${jersey.last + 2}` : "";
-      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${liveSeat ? " live-seat" : ""}${citiesOpen ? " cities-open" : ""}${p.id === focusSeat ? " focus-player" : ""}${jersey ? " jersey-plate" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)};--civ-ink:${unitTokenInk(p.id)}${jerseyStyle}" role="listitem">` +
+        ? `;--hud-jersey-start:${jersey.flush ? "auto" : jersey.first + 1};--hud-jersey-end:${jersey.last + 2}` : "";
+      return `<div class="diplomacy-card jersey-row ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${liveSeat ? " live-seat" : ""}${citiesOpen ? " cities-open" : ""}${p.id === focusSeat ? " focus-player" : ""}${jersey ? " jersey-plate" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)};--civ-ink:${hudJerseyInk(p.id)};--civ-wash:${hudRowWash(color)}${jerseyStyle}" role="listitem">` +
         visibleColumns.map(rowCell).join("") + `</div>` +
         (citiesOpen ? playerHudCityRows(p, openCities, hiddenCities, visibleColumns) : "");
     }).join("") + `</div>` + hudResizeHandles("player standings", ["n", "s"]);
