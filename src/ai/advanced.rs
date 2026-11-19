@@ -7100,6 +7100,11 @@ pub struct AdvancedAi {
     /// and Amphitheater stand, never ahead of a Theater building. See
     /// `advanced/trade_district_follows_the_campus.rs`. Off by default.
     culture_trade_district_follows_the_theater: bool,
+    /// `denial-spies-fill-every-slot-3`: version two, and on a Science,
+    /// Religion or Diplomacy aim too, where the claim never takes a city
+    /// holding or queueing a Spaceport or space project, nor a Builder. See
+    /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
+    denial_spies_fill_every_slot_3: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -9038,6 +9043,10 @@ pub struct AdvancedAi {
     /// `mobilization-hears-the-declaration`.
     observed_surprise_declarations: Vec<(usize, u32)>,
     // ---- append: p-r ------------------------------------------------
+    /// `racer-seat-statue-civic-first`: Civil Engineering as the civic goal of
+    /// a Science, Culture or Religious seat that reaches for the Statue of
+    /// Liberty. See `advanced/diplo_statue_harbor.rs`.
+    racer_seat_statue_civic_first: bool,
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
     religion_seat_cuts_the_upkeep: bool,
@@ -13221,6 +13230,7 @@ impl AdvancedAi {
             outmatched_war_prices_the_army: false,
             opening_ranged_support: false,
             // ---- append: p-r ----------------------------------------
+            racer_seat_statue_civic_first: false,
             parity_upgrades_before_it_buys_2: false,
             parity_upgrades_before_it_buys_3: false,
             pillaged_districts_repair_first: false,

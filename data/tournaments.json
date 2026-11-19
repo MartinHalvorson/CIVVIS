@@ -4,9 +4,16 @@
     "Each runs from its first game (`start`, a run tag; every game with a later tag",
     "that matches `match` counts) in series of `series_size` finished games, read off",
     "the ledger's results.jsonl at publish time. A game's best run counts once; a",
+    "An optional `end` (a run tag) closes a definition: only games whose tag sorts before it count.",
     "launch that never reached a board (outcome unfinished) is not a game.",
     "Operator /goal 2026-11-19 ~18:35Z: repeated 10-game series against Lv 8 Deity AI,",
-    "6P Continents; conditions Lv 8 6P Continents Online."
+    "6P Continents; conditions Lv 8 6P Continents Online.",
+    "Operator 2026-11-19 ~21:20Z: \"Turn the ongoing tournament into a 100 game tournament\": Tournament 1 stays the",
+    "first 10-game series; from Tournament 2's first game (civvis-20261119T204058Z) the series are 100 games.",
+    "Operator ~21:30Z: \"actually lets just do 30 games for now, rather than 100\": series of 30.",
+    "Operator ~22:45Z: \"we should randomly choose a civ. but then we should pursue our top strategy for winning, given the civ\" and",
+    "\"lets restart the tournament with this in mind. best of 30 games\": Tournament 2 closes at civvis-20261119T223800Z (a series cut short by",
+    "its definition's `end` still gets an end date); Tournament 3 is a new 30-game series from there."
   ],
   "tournaments": [
     {
@@ -14,6 +21,22 @@
       "conditions": "Lv 8 6P Continents Online",
       "start": "civvis-20261119T184500Z",
       "series_size": 10,
+      "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"},
+      "end": "civvis-20261119T204058Z"
+    },
+    {
+      "name": "Lv 8 Deity 30-game series",
+      "conditions": "Lv 8 6P Continents Online",
+      "start": "civvis-20261119T204058Z",
+      "series_size": 30,
+      "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"},
+      "end": "civvis-20261119T223800Z"
+    },
+    {
+      "name": "Lv 8 Deity best of 30, best strategy per civ",
+      "conditions": "Lv 8 6P Continents Online",
+      "start": "civvis-20261119T223800Z",
+      "series_size": 30,
       "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"}
     }
   ]

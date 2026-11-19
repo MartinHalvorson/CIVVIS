@@ -41,11 +41,12 @@ def git(repo: pathlib.Path, *args: str, stdin: str | None = None) -> str:
 
 
 def run(tag: str, outcome: str, civ: str | None = None, **more) -> dict:
-    """One line of the results file, as `civ6_ladder.result_row` writes it."""
+    """One line of the results file, as `civ6_ladder.result_row` writes it:
+    a Lv 8 game, on a day the civ table counts unless the line says another."""
     return {
         "tag": tag,
         "game": re.sub(r"-cont\d+$", "", tag),
-        "utc": "2026-11-01T00:00:00Z",
+        "utc": "2026-11-17T00:00:00Z",
         "civ": f"CIVILIZATION_{civ}" if civ else None,
         "difficulty": "DIFFICULTY_DEITY",
         "outcome": outcome,
@@ -82,20 +83,31 @@ class HomeRankings(unittest.TestCase):
         rungs = [row for row in rows if row["kind"] == "rung"]
         self.assertIn("Prince", [row["name"] for row in rungs])
         # A rung's level number is its place on the engine's own ladder.
-        ladder = re.search(r"CIV6_RUNGS: \[.*?\] = \[(.*?)\];", (ROOT / "src" / "strategies.rs").read_text(encoding="utf-8"), re.S)
+        strategies_rs = (ROOT / "src" / "strategies.rs").read_text(encoding="utf-8")
+        ladder = re.search(r"CIV6_RUNGS: \[.*?\] = \[(.*?)\];", strategies_rs, re.S)
         self.assertEqual(re.findall(r'\("(\w+)",', ladder[1]), home_rankings.CIV6_RUNGS)
         levels = {name: lv for row in rungs for name, lv in zip(row["name"].split(" · "), row["levels"])}
         self.assertEqual((levels["Settler"], levels["Prince"], levels["King"], levels["Deity"]), (1, 4, 5, 8))
         self.assertEqual(sorted(levels.values()), list(range(1, 9)))
-        self.assertIn('"Civ VI " + level(r) + r.name', LANDING)
+        # Civilization VI's own AI at a level is named here as the viewer
+        # names it beside a live game: number, name, then whose AI it is
+        # ("8 Deity AI Firaxis"). The words after the level are read out of
+        # the engine's template, so the two cannot come to disagree.
+        template = re.search(r'format!\("\{\} \{\}( [^"]+)", at \+ 1, CIV6_RUNGS\[at\]\.1\)', strategies_rs)
+        self.assertEqual(template[1], " AI Firaxis")
+        self.assertIn(f'row("is-rung", "", level(r) + "{template[1]}", "", elo(r), "",', LANDING)
+        self.assertIn('return low + (high > low ? "\\u2013" + high : "") + " " + r.name;', LANDING)
+        self.assertNotIn('"Civ VI "', LANDING)
         named = [name for row in rungs for name in row["name"].split(" · ")]
         self.assertEqual(sorted(named), sorted(rung.title() for rung in published["ladder"]))
 
-    def test_the_civs_are_ranked_by_wins_over_the_recorded_games(self):
+    def test_the_civs_are_ranked_by_win_rate_over_the_recorded_games(self):
+        # How a game is counted, over every level and every day; which games
+        # the page's table counts is the next test.
         names = ["Greece", "Korea", "Gran Colombia", "Ottomans", "Babylon", "Rome"]
         rows = [
             # Greece: two wins at two levels, and a loss of each kind.
-            run("g1", "win", "GREECE", victory="VICTORY_CULTURE", utc="2026-11-03T05:00:00Z"),
+            run("g1", "win", "GREECE", victory="VICTORY_CULTURE", utc="2026-11-18T05:00:00Z"),
             run("g2", "win", "GREECE", victory="VICTORY_DIPLOMATIC", difficulty="DIFFICULTY_KING"),
             run("g3", "rival_victory", "GREECE", victory="VICTORY_TECHNOLOGY"),
             run("g4", "defeat", "GREECE"),
@@ -110,7 +122,8 @@ class HomeRankings(unittest.TestCase):
             run("k1-cont1", "unfinished", "KOREA"),
             run("k1-cont2", "win", "KOREA", victory="VICTORY_TECHNOLOGY"),
             run("k2", "win", "KOREA", victory="VICTORY_TECHNOLOGY"),
-            # Two wins each: the better win rate stands higher.
+            # Two wins each: the better win rate stands higher, and Korea's
+            # two wins without a loss stand above one win without a loss.
             run("c1", "win", "GRAN_COLOMBIA", victory="VICTORY_CONQUEST", difficulty="DIFFICULTY_EMPEROR"),
             run("c2", "win", "GRAN_COLOMBIA", victory="VICTORY_CONQUEST", difficulty="DIFFICULTY_EMPEROR"),
             run("c3", "abandoned", "GRAN_COLOMBIA"),
@@ -125,10 +138,10 @@ class HomeRankings(unittest.TestCase):
             # A line in words this reader does not know is not a result.
             run("z1", "forfeit", "ROME"),
         ]
-        ranking = home_rankings.civ_ranking(rows, names)
+        ranking = home_rankings.civ_ranking(rows, names, civ6_level=None, since=None)
         self.assertEqual(
             [(row["name"], row["wins"], row["losses"]) for row in ranking["rows"]],
-            [("Korea", 2, 0), ("Gran Colombia", 2, 1), ("Greece", 2, 3), ("Babylon", 1, 0), ("Ottomans", 1, 0)],
+            [("Korea", 2, 0), ("Babylon", 1, 0), ("Ottomans", 1, 0), ("Gran Colombia", 2, 1), ("Greece", 2, 3)],
         )
         by_name = {row["name"]: row for row in ranking["rows"]}
         self.assertEqual(by_name["Greece"]["won"], ["Lv 8 Culture", "Lv 5 Diplomatic"])
@@ -139,14 +152,77 @@ class HomeRankings(unittest.TestCase):
         self.assertEqual(
             {key: value for key, value in ranking.items() if key != "rows"},
             {
+                "level": None, "since": None,
                 "games": 14, "wins": 9, "unfinished": 2, "unattributed_wins": 1,
                 "played": 6, "winners": 5,
                 # The last finished game's day; a stopped game does not move it.
-                "through": "2026-11-03",
+                "through": "2026-11-18",
             },
         )
         # Nothing finished is nothing to show.
         self.assertIsNone(home_rankings.civ_ranking([run("g6", "unfinished", "GREECE")], names))
+
+    def test_the_civ_table_counts_the_lv_8_games_from_2026_11_16(self):
+        # Operator 2026-11-19: "our winningest civs ranking should be by win %.
+        # and just limited to lv 8 games, starting from 11/16".
+        self.assertEqual((home_rankings.CIVS_LEVEL, home_rankings.CIVS_SINCE), (8, "2026-11-16"))
+        names = ["Greece", "Korea", "Rome", "Mali"]
+        rows = [
+            # Greece, 1-1: a game launched in the day's first minutes counts.
+            run("civvis-20261116T000500Z", "win", "GREECE", victory="VICTORY_CULTURE", utc="2026-11-16T00:20:00Z"),
+            run("civvis-20261117T120000Z", "rival_victory", "GREECE", utc="2026-11-17T12:15:00Z"),
+            # One launched the evening before does not, though it ended on the day.
+            run("civvis-20261115T235500Z", "win", "GREECE", victory="VICTORY_CULTURE", utc="2026-11-16T00:10:00Z"),
+            # Nor does an older game reloaded since: a game begins once.
+            run("civvis-20261114T100000Z", "unfinished", "GREECE", utc="2026-11-14T10:30:00Z"),
+            run("civvis-20261114T100000Z-cont1", "win", "GREECE", victory="VICTORY_SCORE", utc="2026-11-18T09:00:00Z"),
+            # A stopped game counts as stopped only inside the window.
+            run("civvis-20261117T140000Z", "unfinished", "GREECE", utc="2026-11-17T14:05:00Z"),
+            run("civvis-20261115T140000Z", "unfinished", "GREECE", utc="2026-11-15T14:05:00Z"),
+            # Rome, 0-1: a win below Lv 8 is not counted, whenever it was.
+            run("civvis-20261118T100000Z", "win", "ROME", victory="VICTORY_SCORE", difficulty="DIFFICULTY_IMMORTAL",
+                utc="2026-11-18T10:20:00Z"),
+            run("civvis-20261118T110000Z", "defeat", "ROME", utc="2026-11-18T11:20:00Z"),
+            # Korea, 1-0: the best rate leads, on one win.
+            run("civvis-20261118T120000Z", "win", "KOREA", victory="VICTORY_TECHNOLOGY", utc="2026-11-18T12:20:00Z"),
+            # Mali, 2-2: Greece's rate on more wins, so above Greece. A tag
+            # with no stamp is placed by the day its first run was recorded.
+            run("probe-a", "win", "MALI", victory="VICTORY_SCORE", utc="2026-11-16T08:00:00Z"),
+            run("probe-b", "win", "MALI", victory="VICTORY_SCORE", utc="2026-11-15T23:00:00Z"),
+            run("civvis-20261119T090000Z", "win", "MALI", victory="VICTORY_TECHNOLOGY", utc="2026-11-19T09:20:00Z"),
+            run("civvis-20261119T100000Z", "abandoned", "MALI", utc="2026-11-19T10:05:00Z"),
+            run("civvis-20261119T110000Z", "defeat", "MALI", utc="2026-11-19T11:20:00Z"),
+        ]
+        ranking = home_rankings.civ_ranking(rows, names)
+        self.assertEqual(
+            [(row["name"], row["wins"], row["losses"]) for row in ranking["rows"]],
+            [("Korea", 1, 0), ("Mali", 2, 2), ("Greece", 1, 1)],
+        )
+        self.assertEqual(
+            {key: value for key, value in ranking.items() if key != "rows"},
+            {
+                "level": 8, "since": "2026-11-16",
+                "games": 8, "wins": 4, "unfinished": 1, "unattributed_wins": 0,
+                "played": 4, "winners": 3, "through": "2026-11-19",
+            },
+        )
+        # The level and the day are each their own bound.
+        immortal = home_rankings.civ_ranking(rows, names, civ6_level=7, since=None)
+        self.assertEqual([(row["name"], row["wins"], row["losses"]) for row in immortal["rows"]], [("Rome", 1, 0)])
+        every_day = home_rankings.civ_ranking(rows, names, since=None)
+        self.assertEqual(
+            [(row["name"], row["wins"], row["losses"]) for row in every_day["rows"]],
+            [("Korea", 1, 0), ("Greece", 3, 1), ("Mali", 3, 2)],
+        )
+        # The page leads a row with the rate it is ranked by, the record
+        # beside it, and says under the title which games were counted.
+        for line in (
+            '(100 * c.wins / (c.wins + c.losses)).toFixed(1) + "%", count(c.wins) + "\\u2013" + count(c.losses),',
+            'sub.textContent = "Our AI\\u2019s win rate as each civ, in " + (civs.level ? "Lv " + civs.level + " " : "")',
+            '+ "verification games against Civilization VI\\u2019s own AI" + (civs.since ? " since " : "");',
+            'if (civs.since) sub.append(el("span", "rank-day", civs.since));',
+        ):
+            self.assertIn(line, LANDING)
 
     def test_the_civ_table_shows_the_winners_and_stops_at_its_length(self):
         rows = [run(f"w{n}", "win", f"CIV_{n:02}", victory="VICTORY_SCORE") for n in range(home_rankings.TOP_CIVS + 3)]
@@ -262,9 +338,28 @@ class HomeRankings(unittest.TestCase):
                 '<section class="rank-card" id="rank-strategies" hidden aria-labelledby="rank-strategies-title">',
             ],
         )
-        self.assertIn(
-            ".rankings { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));", LANDING
+        # Two columns and never three. The Tournaments table spans every
+        # track, and a track a card spans is never collapsed: with a bare
+        # 300px minimum a wide window held three, and the two lists stood in
+        # two of them beside an empty third (#5541). So the rule is read back
+        # and counted the way the browser counts auto-fit tracks.
+        rule = re.search(
+            r"\.rankings \{ display: grid; grid-template-columns: repeat\(auto-fit, "
+            r"minmax\(min\(100%, max\((\d+)px, calc\(50% - (\d+)px\)\)\), 1fr\)\); gap: (\d+)px;",
+            LANDING,
         )
+        self.assertIsNotNone(rule)
+        floor, half_gap, gap = (int(figure) for figure in rule.groups())
+        self.assertEqual(half_gap * 2, gap)
+        self.assertIn(".rank-card.is-wide { grid-column: 1 / -1; }", LANDING)
+
+        def tracks(width: int) -> int:
+            least = min(width, max(floor, width / 2 - half_gap))
+            return max(1, int((width + gap) // (least + gap)))
+
+        stacks_below = 2 * floor + gap
+        self.assertEqual({tracks(width) for width in range(stacks_below, 2000)}, {2})
+        self.assertEqual({tracks(width) for width in range(120, stacks_below)}, {1})
         for line in (
             "const civs = data.civs;",
             'shown = show("rank-civs", rows, note) || shown;',
@@ -321,11 +416,34 @@ class HomeRankings(unittest.TestCase):
         self.assertEqual(series[0]["conditions"], "Lv 8 6P Continents Online")
         self.assertIsNone(home_rankings.tournament_series([], [spec]))
 
+    def test_an_end_closes_a_definition_and_the_next_one_counts_on(self):
+        # Operator 2026-11-19 ~21:20Z: "Turn the ongoing tournament into a 100
+        # game tournament": the 10-game definition ends where the 100-game one
+        # starts, and the ids run on across both.
+        match = {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"}
+        tens = {"name": "tens", "conditions": "c", "start": "civvis-20261119T180000Z",
+                "end": "civvis-20261119T200000Z", "series_size": 2, "match": match}
+        hundreds = {"name": "hundreds", "conditions": "c", "start": "civvis-20261119T200000Z",
+                    "series_size": 5, "match": match}
+        on = {"players": 6, "map": "Continents.lua"}
+        rows = [run(f"civvis-20261119T{h:02d}{m:02d}00Z", outcome, "ROME", utc=f"2026-11-19T{h:02d}:{m + 5:02d}:00Z", **on)
+                for h, m, outcome in ((18, 0, "win"), (18, 30, "defeat"), (19, 0, "defeat"),
+                                      (20, 0, "rival_victory"), (20, 30, "win"), (21, 0, "defeat"))]
+        series = home_rankings.tournament_series(rows, [tens, hundreds])
+        self.assertEqual([(s["id"], s["tournament"], s["games"], s["size"], s["wins"], s["losses"], s["end"] is None)
+                          for s in series],
+                         [(3, "hundreds", 3, 5, 1, 2, True), (2, "tens", 1, 2, 0, 1, False), (1, "tens", 2, 2, 1, 1, False)])
+        # The short series the `end` closed has an end date: its last game's.
+        self.assertEqual(series[1]["end"], "2026-11-19 19:05Z")
+
     def test_the_tournament_definitions_are_committed_and_read(self):
         specs = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))["tournaments"]
         self.assertTrue(specs)
         for spec in specs:
             self.assertRegex(spec["start"], r"^civvis-\d{8}T\d{6}Z$")
+            if "end" in spec:
+                self.assertRegex(spec["end"], r"^civvis-\d{8}T\d{6}Z$")
+                self.assertGreater(spec["end"], spec["start"])
             self.assertGreater(spec["series_size"], 0)
             self.assertTrue(spec["conditions"])
 
