@@ -470,6 +470,26 @@ fn the_page_loads_the_bar_and_sends_only_operations_the_engine_answers() {
     }
 }
 
+/// Letting go of a slider reads where it was dragged to before anything
+/// draws the bar again, because drawing puts a slider that is not being
+/// dragged back on the open turn. Read after, every drag went nowhere.
+#[test]
+fn a_dragged_slider_is_read_before_the_bar_is_drawn_again() {
+    let script = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    let heard = script
+        .find("bar.addEventListener(\"change\"")
+        .expect("the bar hears a change");
+    let handler = &script[heard..];
+    let read = handler
+        .find("const turn = target.value;")
+        .expect("the slider is read");
+    let drawn = handler.find("debugSay(\"\")").expect("the note is cleared");
+    assert!(read < drawn, "the slider is read after the bar was redrawn");
+    for slider in ["dbg-slider", "dbg-wide-slider"] {
+        assert!(handler[..read].contains(&format!("target.id === \"{slider}\"")));
+    }
+}
+
 #[test]
 fn a_fork_is_the_same_world_with_the_same_past_and_a_future_of_its_own() {
     let mut session = played();
