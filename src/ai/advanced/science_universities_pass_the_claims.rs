@@ -53,10 +53,14 @@
 //!    siege-reservation writers ([`AdvancedAi::campus_and_library_holds`]).
 //!
 //! **What keeps its queue.** A Builder, a Settler, a Trader, a Granary, an
-//! Aqueduct, a Neighborhood, Walls, every soldier, a Holy Site or Shrine, a
-//! wonder, a project, the Factory and power plants, saved work within two
-//! turns of done under `near-done-work-finishes`, and anything finishing this
-//! turn. `science-seat-campus-before-the-claims` measured what passing a
+//! Aqueduct, a Neighborhood, Walls, a Holy Site or Shrine, a wonder, a
+//! project, the Factory and power plants, saved work within two turns of done
+//! under `near-done-work-finishes`, and anything finishing this turn. The gene
+//! passes no soldier of its own; the claim's own deferral rule
+//! (`capped_aqueduct_may_defer`: a soldier at peace, a Scout, a district
+//! with nothing in) still applies, now in every such city each turn (a live
+//! replay of `civvis-20261118T201051Z` t85 put Okayama's University ahead of a
+//! Quadrireme that way). `science-seat-campus-before-the-claims` measured what passing a
 //! Builder or Granary costs the empire (Production -9.9 at t100); this gene
 //! passes neither. A slower University keeps the claim's old rules. The
 //! Library and the Research Lab keep the claim's own rules too. Off, nothing
