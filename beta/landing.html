@@ -191,8 +191,14 @@
      paragraph above. A list with no source stays hidden on its own and the
      other takes the row; a window too narrow for two columns stacks them in
      the same order. `display: grid` outranks the hidden attribute's own
-     rule, so the section has to say what hidden means for itself. */
-  .rankings { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; min-width: 0; }
+     rule, so the section has to say what hidden means for itself.
+
+     Two columns and never three. The Tournaments table above the lists
+     spans every track of the grid, and a track a card spans is never
+     collapsed, so a third track would stand empty beside the two lists. A
+     track is therefore at least half the row (less half the gap) and never
+     under 300px, the width below which the lists stack. */
+  .rankings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(300px, calc(50% - 8px))), 1fr)); gap: 16px; align-items: start; min-width: 0; }
   .rankings[hidden] { display: none; }
   .rank-card { min-width: 0; padding: 12px 14px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
   .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }

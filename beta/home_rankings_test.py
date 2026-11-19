@@ -262,9 +262,28 @@ class HomeRankings(unittest.TestCase):
                 '<section class="rank-card" id="rank-strategies" hidden aria-labelledby="rank-strategies-title">',
             ],
         )
-        self.assertIn(
-            ".rankings { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));", LANDING
+        # Two columns and never three. The Tournaments table spans every
+        # track, and a track a card spans is never collapsed: with a bare
+        # 300px minimum a wide window held three, and the two lists stood in
+        # two of them beside an empty third (#5541). So the rule is read back
+        # and counted the way the browser counts auto-fit tracks.
+        rule = re.search(
+            r"\.rankings \{ display: grid; grid-template-columns: repeat\(auto-fit, "
+            r"minmax\(min\(100%, max\((\d+)px, calc\(50% - (\d+)px\)\)\), 1fr\)\); gap: (\d+)px;",
+            LANDING,
         )
+        self.assertIsNotNone(rule)
+        floor, half_gap, gap = (int(figure) for figure in rule.groups())
+        self.assertEqual(half_gap * 2, gap)
+        self.assertIn(".rank-card.is-wide { grid-column: 1 / -1; }", LANDING)
+
+        def tracks(width: int) -> int:
+            least = min(width, max(floor, width / 2 - half_gap))
+            return max(1, int((width + gap) // (least + gap)))
+
+        stacks_below = 2 * floor + gap
+        self.assertEqual({tracks(width) for width in range(stacks_below, 2000)}, {2})
+        self.assertEqual({tracks(width) for width in range(120, stacks_below)}, {1})
         for line in (
             "const civs = data.civs;",
             'shown = show("rank-civs", rows, note) || shown;',
