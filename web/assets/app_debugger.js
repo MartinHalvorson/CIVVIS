@@ -501,7 +501,7 @@ function debugSplitWorld(letter) {
 }
 function drawDebugSplit() {
   if (!debugSplit) return;
-  const host = document.getElementById("debugsplit");
+  const host = debugSplit.host;
   host.classList.toggle("dbg-col", debugSplit.dir === "col");
   for (const letter of ["a", "b"]) {
     const turn = debugSplit.panes[letter].turn;
@@ -546,7 +546,7 @@ async function debugSplitOpen(dir) {
       <div class="dbg-pane-name" data-dbg-name="b"></div>
     </div>
     <iframe data-dbg-frame="b" title="Simulator B"></iframe>`;
-  debugSplit = {dir, linked: true, world, busy: false, waiting: new Map(), panes: {}};
+  debugSplit = {dir, linked: true, world, busy: false, waiting: new Map(), panes: {}, host};
   for (const letter of ["a", "b"]) {
     const frame = host.querySelector(`[data-dbg-frame="${letter}"]`);
     debugSplit.panes[letter] = {frame, id: `${letter}-${nonce}`, turn: null};
@@ -606,7 +606,7 @@ async function debugSplitClose(keep) {
   } catch (error) {
     note = `Simulator ${keep.toUpperCase()} could not be kept: ${error.message || error}`;
   }
-  document.getElementById("debugsplit").remove();
+  debugSplit.host.remove();
   debugSplit = null;
   debugSay(note);
 }
