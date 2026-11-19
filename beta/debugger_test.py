@@ -75,7 +75,10 @@ async function send() { return state; }
 window.requestAnimationFrame = drawn => setTimeout(drawn, 0);
 
 // ---- a toy engine: one line of turns, each kept
-const engine = {turn: 1, marks: [1], saves: [], ids: 0, breaks: [], line: null, stopped: null, score: 0, sent: []};
+const engine = {turn: 1, marks: [1], saves: [], ids: 0, breaks: [], line: null, stopped: null, score: 0,
+  current: 0, stepped: null, sent: []};
+// The round: the played seat, one rival, and the Barbarians.
+const SEATS = 3;
 // Another frame's engine as it stands, for a half that is copied or kept:
 // everything but the record of what this frame's own page sent.
 function engineOf(frames, pane) {
@@ -85,15 +88,16 @@ function engineOf(frames, pane) {
 }
 function engineState(error = null) {
   const marks = engine.marks;
-  return {error, turn: engine.turn, current: 0, units: [], cities: [],
+  return {error, turn: engine.turn, current: engine.current, units: [], cities: [],
     players: [{id: 0, civ: "rome", score: engine.score, cities: 1, population: 1, military: 1,
-      yields: {science: 1, culture: 1, gold: 1, faith: 0}}],
+      yields: {science: 1, culture: 1, gold: 1, faith: 0}},
+      {id: 1, civ: "greece"}, {id: 2, civ: "barbarians", is_barbarian: true}],
     debug: {turn: engine.turn, turns: [...marks], first: marks[0], last: marks[marks.length - 1],
       acted: 0, can_undo: false, can_back: engine.turn > marks[0], can_forward: engine.turn < marks[marks.length - 1],
       breakpoints: {turns: [...engine.breaks], categories: [], phrases: [], conditions: [], important: false,
         every_seat: false, known_categories: ["War"], known_tests: [">", "changes"]},
       layers: [{id: "research", label: "Research", on: false}], assisted: 0, stopped: engine.stopped,
-      stepped: null, reveal: false, playing: null, memory_line: engine.line,
+      stepped: engine.stepped, reveal: false, playing: engine.current, memory_line: engine.line,
       saves: engine.saves.map(save => ({...save}))}};
 }
 async function fetchJSON(path, init = {}) {
@@ -102,9 +106,22 @@ async function fetchJSON(path, init = {}) {
   if (path === "/saves") return {saves: []};
   if (path !== "/debug") return {error: null};
   engine.stopped = null;
+  engine.stepped = null;
+  // The round comes back to the played seat, and that is the next turn.
+  const opens = () => {
+    engine.current = 0;
+    engine.turn += 1;
+    engine.marks = engine.marks.filter(turn => turn < engine.turn).concat(engine.turn);
+  };
+  // Anything that plays, in the middle of a round, lets the round finish first.
+  if (engine.current !== 0 && (body.op === "step" || body.op === "finish_round")) opens();
   const marks = engine.marks, at = marks.indexOf(engine.turn);
   let error = null;
-  if (body.op === "step") {
+  if (body.op === "step_seat") {
+    const seat = engine.current, next = (seat + 1) % SEATS;
+    if (next === 0) opens(); else engine.current = next;
+    engine.stepped = {seat, actions: 2 * seat, next};
+  } else if (body.op === "step") {
     engine.turn += 1;
     // Which Civ AI plays the seat is the one thing that tells two halves apart.
     engine.score += body.strategy === "stock" ? 2 : 1;
@@ -313,6 +330,39 @@ def check_the_bar(bar: Bar) -> None:
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
+def check_stepping_a_seat(bar: Bar) -> None:
+    """The round a civilization at a time, and what a turn means in the middle of one."""
+    turn = bar.ev("state.turn")
+    bar.forget()
+    bar.click('[data-dbg="step-seat"]')
+    bar.idle("state.current === 1", "the first press ends the seat's own turn")
+    assert bar.note() == "Your turn ended · Greece plays next", bar.note()
+    bar.click('[data-dbg="step-seat"]')
+    bar.idle("state.current === 2", "the next press plays the rival")
+    # Every seat is one civilization but the Barbarians, and the note agrees.
+    assert bar.note() == "Greece played 2 actions · Barbarians play next", bar.note()
+    bar.click('[data-dbg="step-seat"]')
+    bar.idle(f"state.current === 0 && state.turn === {turn + 1}", "the last press brings the round back")
+    assert bar.note() == f"Barbarians played 4 actions · turn {turn + 1} is yours", bar.note()
+    assert bar.sent() == [{"op": "step_seat"}] * 3, bar.sent()
+
+    # In the middle of a round the bar says whose turn it is for as long as
+    # nothing newer is being said, an action by hand is not sent, and End
+    # Turn lets the rest of the round play.
+    bar.click('[data-dbg="step-seat"]')
+    bar.idle("state.current === 1", "a round is in the middle")
+    bar.ev("debugSay(''), true")
+    assert bar.note() == "Greece plays next · ▸| steps it, ▶| lets the round finish", bar.note()
+    bar.forget()
+    bar.ev("send({type: 'move'}), true")
+    assert bar.note() == "Greece plays next; your turn comes back when the round finishes", bar.note()
+    assert bar.sent() == [], bar.sent()
+    bar.ev("send({type: 'end_turn'}), true")
+    bar.idle(f"state.current === 0 && state.turn === {turn + 2}", "End Turn lets the round finish")
+    assert bar.sent() == [{"op": "finish_round"}], bar.sent()
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+
 def check_the_split(bar: Bar) -> None:
     """Head to head: two halves, a Civ AI each, played to a turn and compared."""
     half = "debugSplit.panes.{}.frame.contentWindow.eval({})".format
@@ -447,6 +497,8 @@ def main() -> int:
         check_the_bar(bar)
         print("the debugger bar sends what each control is for: the turn box, both sliders, "
               "the wheel, save points and their flags, a breakpoint picked from the timeline.")
+        check_stepping_a_seat(bar)
+        print("a round is stepped a civilization at a time, says who is next, and End Turn finishes it.")
         check_the_split(bar)
         print("the split seats a Civ AI in each half, plays both to a turn linked and separate, "
               "sets their numbers side by side, copies, keeps, and hears a half whose script came late.")
