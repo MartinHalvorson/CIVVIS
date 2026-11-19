@@ -81,7 +81,10 @@ impl AdvancedAi {
         if self.culture_releases_science_claims(g, pid) {
             return None;
         }
-        if !self.campus_building_claims_the_queue && !self.campus_and_library_before_the_claims {
+        if !self.campus_building_claims_the_queue
+            && !self.campus_and_library_before_the_claims
+            && !self.science_universities_pass_the_claims
+        {
             return None;
         }
         let city = g.cities.get(&cid)?;
@@ -114,7 +117,10 @@ impl AdvancedAi {
         });
         // The gene's Library or quick University goes ahead of the Granary
         // too; anything else keeps this claim's own rules.
-        let science_first = reach.is_some() && Self::campus_and_library_building(g, rank, turns);
+        let science_first = (reach.is_some() && Self::campus_and_library_building(g, rank, turns))
+            // `science-universities-pass-the-claims`: a Science seat's quick
+            // University. Always false with that gene off.
+            || self.science_university_opens(g, pid, cid, plan, rank, turns);
         if !science_first && (granary_first || !self.campus_building_claims_the_queue) {
             return None;
         }
@@ -163,7 +169,10 @@ impl AdvancedAi {
         exclude: Option<u32>,
         science_first_only: bool,
     ) -> Option<(u8, f64, u32, Item, Option<String>)> {
-        if !self.campus_building_claims_the_queue && !self.campus_and_library_before_the_claims {
+        if !self.campus_building_claims_the_queue
+            && !self.campus_and_library_before_the_claims
+            && !self.science_universities_pass_the_claims
+        {
             return None;
         }
         let at_major_war = g.players.iter().any(|other| {
@@ -196,7 +205,14 @@ impl AdvancedAi {
             let reach = self
                 .campus_and_library_reach(g, pid, cid, plan)
                 .filter(|_| Self::campus_and_library_building(g, rank, turns));
-            if science_first_only && reach.is_none() {
+            // `science-universities-pass-the-claims`: a Science seat's quick
+            // University, where the Domination gene does not reach. `None`
+            // with that gene off.
+            let science = match reach {
+                Some(_) => None,
+                None => self.science_university_reach(g, pid, cid, plan, rank, turns),
+            };
+            if science_first_only && reach.is_none() && science.is_none() {
                 continue;
             }
             // `campus-and-library-before-the-claims`: what the gene puts
@@ -237,9 +253,14 @@ impl AdvancedAi {
                         || Self::queued_wall_breaker(g, item)
                         || !Self::capped_aqueduct_may_defer(g, pid, cid, item, at_major_war)
                     {
-                        passed = reach.and_then(|reach| {
-                            self.campus_and_library_passes(g, pid, cid, plan, item, reach, what)
-                        });
+                        passed = reach
+                            .and_then(|reach| {
+                                self.campus_and_library_passes(g, pid, cid, plan, item, reach, what)
+                            })
+                            .or_else(|| {
+                                science
+                                    .and_then(|_| self.science_university_passes(g, pid, cid, item))
+                            });
                         if passed.is_none() {
                             continue;
                         }
@@ -271,7 +292,9 @@ impl AdvancedAi {
     /// `campus-and-library-before-the-claims` every city's Library or quick
     /// University besides. Exact no-op with both genes off.
     pub(super) fn claim_campus_building(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        let rounds = if self.campus_and_library_before_the_claims {
+        let rounds = if self.campus_and_library_before_the_claims
+            || self.science_universities_pass_the_claims
+        {
             g.player_city_ids(pid).len().max(1)
         } else {
             1
@@ -295,9 +318,13 @@ impl AdvancedAi {
         science_first_only: bool,
     ) -> bool {
         let best = self.campus_building_claim_pick(g, pid, plan, None, science_first_only);
-        let Some((_, turns, cid, building, passed)) = best else {
+        let Some((rank, turns, cid, building, passed)) = best else {
             return false;
         };
+        // `science-universities-pass-the-claims` opened this city, not the
+        // Domination gene: its own journal line.
+        let science = self.campus_and_library_reach(g, pid, cid, plan).is_none()
+            && self.science_university_opens(g, pid, cid, plan, rank, turns);
         let head = g.cities[&cid].queue.first().cloned();
         let name = g.cities[&cid].name.clone();
         if g.apply(
@@ -315,7 +342,10 @@ impl AdvancedAi {
             || "an idle queue".to_string(),
             |item| format!("{} (it keeps its progress)", Self::plain_item(&item)),
         );
-        if passed.is_none() && !science_first_only {
+        if science && (passed.is_some() || science_first_only) {
+            let passed = passed.unwrap_or(head_text);
+            self.explain_science_university_passes(g, cid, &building, turns, &passed);
+        } else if passed.is_none() && !science_first_only {
             think!(self.journal(), Cities, Decision,
                    "{name} claims its Campus's {}", Self::plain_item(&building);
                    "campus-building-claims-the-queue: {turns:.1} turns, ahead of {head_text}");

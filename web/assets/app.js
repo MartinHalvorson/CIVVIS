@@ -2382,6 +2382,17 @@ function wantedPlayerHudColumns() {
 function visiblePlayerHudColumns() {
   return wantedPlayerHudColumns().filter(column => !playerHudShedColumns.has(column.key));
 }
+// A row wears its civilization's jersey as one plate from the rank column
+// through the player column — wherever the viewer's own order has stood those
+// two — and the plate always takes in the civilization's name. Returns the
+// first and last visible-column index the plate covers, or null when none of
+// the three is on the table.
+function playerHudJerseySpan(visibleColumns) {
+  const at = ["rank", "civ", "player"]
+    .map(key => visibleColumns.findIndex(column => column.key === key))
+    .filter(index => index >= 0);
+  return at.length ? {first:Math.min(...at), last:Math.max(...at)} : null;
+}
 
 // ── Which columns the panel can seat ───────────────────────────────────────
 //
@@ -3443,12 +3454,7 @@ const RESPONSIVE_TEXT_RULES = [
   // letter off. Half a point of type is invisible; a clipped head is not.
   {selector:"#playerhud .hud-head-stat", min:8.5, max:11},
   {selector:"#playerhud .diplomacy-rank", min:9, max:11},
-  // A civilization's name sits in a plate of its own jersey colour, and the
-  // plate's 4px of padding a side is inside the box the fitter measures — so
-  // ask for those 8px back, or "Portugal" fills the plate edge to edge and its
-  // last letter goes under the padding at full size.
-  {selector:"#playerhud .diplomacy-civ-link .diplomacy-civ", min:9, max:13, exact:true, slack:8},
-  {selector:"#playerhud .hud-city-name .diplomacy-civ", min:9, max:13, exact:true},
+  {selector:"#playerhud .diplomacy-civ", min:9, max:13, exact:true},
   {selector:"#playerhud .diplomacy-leader-name", min:9, max:13, exact:true},
   {selector:"#playerhud .diplomacy-player", min:9, max:13, exact:true},
   {selector:"#playerhud .diplomacy-elo-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
@@ -28455,6 +28461,7 @@ function drawPlayerHud() {
   // the viewer's saved arrangement cannot disagree.
   syncPlayerHudShedColumns();
   const visibleColumns = visiblePlayerHudColumns();
+  const jersey = playerHudJerseySpan(visibleColumns);
   const hudWindow = playerHudWindow = planPlayerHudWindow(
     majors, seats, lockedKeys, openCityPlayer, cityRows);
   // The corner ✕ folds the standings in place and leaves the turn box; the
@@ -28578,7 +28585,7 @@ function drawPlayerHud() {
       const dossierAttrs = `data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}"`;
-      const rowCell = column => {
+      const cellMarkup = column => {
         switch (column.key) {
           case "lock":
             return `<button class="lock-toggle" data-hud-col="lock" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
@@ -28684,7 +28691,14 @@ function drawPlayerHud() {
             : kind === "units" && value === null ? "—" : ribbonStat(value)}</b>${markerHtml}</button>`;
       };
       const citiesOpen = openCityPlayer?.id === p.id;
-      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${liveSeat ? " live-seat" : ""}${citiesOpen ? " cities-open" : ""}${p.id === focusSeat ? " focus-player" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)};--civ-ink:${unitTokenInk(p.id)}" role="listitem">` +
+      // Every cell the jersey plate runs under says so, so its type can take
+      // the jersey's ink whichever column the viewer has stood there.
+      const rowCell = (column, index) => jersey && index >= jersey.first && index <= jersey.last
+        ? cellMarkup(column).replace("data-hud-col=", "data-hud-jersey data-hud-col=")
+        : cellMarkup(column);
+      const jerseyStyle = jersey
+        ? `;--hud-jersey-start:${jersey.first + 1};--hud-jersey-end:${jersey.last + 2}` : "";
+      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${liveSeat ? " live-seat" : ""}${citiesOpen ? " cities-open" : ""}${p.id === focusSeat ? " focus-player" : ""}${jersey ? " jersey-plate" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)};--civ-ink:${unitTokenInk(p.id)}${jerseyStyle}" role="listitem">` +
         visibleColumns.map(rowCell).join("") + `</div>` +
         (citiesOpen ? playerHudCityRows(p, openCities, hiddenCities, visibleColumns) : "");
     }).join("") + `</div>` + hudResizeHandles("player standings", ["n", "s"]);

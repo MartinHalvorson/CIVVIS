@@ -10577,6 +10577,12 @@ pub struct AdvancedAi {
     /// and beside its City Center, and shoot a siege gun in their reach
     /// first. See `advanced/shooters_man_the_capital.rs`. Off by default.
     shooters_man_the_capital: bool,
+    /// `science-universities-pass-the-claims`: on a Science seat every Campus
+    /// city's quick University takes its queue each turn, ahead of an
+    /// Industrial Zone, Workshop, Commercial Hub, Market, Harbor or
+    /// Lighthouse a routine claim holds there, and keeps it. See
+    /// `advanced/science_universities_pass_the_claims.rs`. Off by default.
+    science_universities_pass_the_claims: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11731,6 +11737,9 @@ mod site_lookahead;
 mod district_planning;
 /// `science-heads-keep-their-queue`: see `advanced/science_heads_keep_their_queue.rs`.
 mod science_heads_keep_their_queue;
+/// `science-universities-pass-the-claims`: see
+/// `advanced/science_universities_pass_the_claims.rs`.
+mod science_universities_pass_the_claims;
 mod seowon_protection;
 use district_planning::DistrictPlanCache;
 /// Coalition before war: alliances with the target's neighbours, envoys to
@@ -14882,17 +14891,25 @@ impl AdvancedAi {
 
     fn rocketry_readiness(&self, g: &Game, pid: usize) -> i32 {
         let player = &g.players[pid];
-        let rocketry_path: Vec<_> = g
-            .rules
-            .techs
-            .keys()
-            .filter(|tech| self.tech_leads_to(g, tech, "rocketry"))
-            .collect();
-        let completed = rocketry_path
-            .iter()
-            .filter(|tech| player.techs.contains(&Name::new(tech.as_str())))
-            .count();
-        25 + (40 * completed / rocketry_path.len().max(1)) as i32
+        // The techs `tech_leads_to(_, "rocketry")` accepts: Rocketry and its
+        // ancestors, read off the ancestry table instead of testing every tech.
+        let rocketry_path = std::iter::once("rocketry")
+            .chain(
+                g.rules
+                    .tech_ancestors
+                    .get("rocketry")
+                    .into_iter()
+                    .flatten()
+                    .map(String::as_str)
+                    .filter(|tech| *tech != "rocketry"),
+            )
+            .filter(|tech| g.rules.techs.contains_key(tech));
+        let (mut path, mut completed) = (0, 0);
+        for tech in rocketry_path {
+            path += 1;
+            completed += usize::from(player.techs.contains(&Name::new(tech)));
+        }
+        25 + (40 * completed / path.max(1)) as i32
     }
 
     fn diplomatic_science_backup(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
@@ -26056,6 +26073,7 @@ impl AdvancedAi {
             })
             .collect();
         let mut best: Option<(f64, Action)> = None;
+        let mut pressures = Vec::new();
         for (action, target, thermonuclear) in candidates {
             let radius = g.rules.wmds[if thermonuclear {
                 "thermonuclear_device"
@@ -26095,7 +26113,9 @@ impl AdvancedAi {
             if exposure {
                 continue;
             }
-            let Some(value) = self.nuclear_target_value(g, pid, target, thermonuclear) else {
+            let Some(value) =
+                self.nuclear_target_value(g, pid, target, thermonuclear, &mut pressures)
+            else {
                 continue;
             };
             if best.as_ref().is_none_or(|(current, _)| value > *current) {

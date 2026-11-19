@@ -318,6 +318,9 @@ impl AdvancedAi {
             || self.capped_aqueduct_holds(g, pid, cid, plan, head)
             || self.capped_neighborhood_holds(g, pid, cid, plan, head)
             || Self::queued_wall_breaker(g, head)
+            // `science-universities-pass-the-claims`' University. Always
+            // false with that gene off.
+            || self.science_university_holds(g, pid, cid, plan, head)
         {
             return false;
         }
