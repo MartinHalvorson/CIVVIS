@@ -28006,7 +28006,8 @@ function playerHudOverview() {
   // A victory type switched off in Game setup has no path below; the line
   // under the title names it instead (operator, 2026-11-18: "say that at the
   // top of the victory tracker right below the title ... then we dont need
-  // that specific box"). With every type off there is genuinely nothing to
+  // that specific box"), each as "Diplomacy Off", in red and a size up from
+  // the caption it began as (operator, 2026-11-19). With every type off there is genuinely nothing to
   // track: `set_winner` is gated on the condition being enabled, so the world
   // runs to its turn cap and ends with nobody having won, and the line says so.
   const offVictoryTracks = VICTORY_TRACKS
@@ -28017,8 +28018,7 @@ function playerHudOverview() {
         `plays to turn ${turnCapLabel()} and ends without a winner">All victory types turned off · ` +
         `no winner at turn ${turnCapLabel()}</p>`
       : `<p class="victory-off-note" title="Switched off in Game setup: no civilization can win this way in this game">` +
-        `Turned off: ${offVictoryTracks.map(track =>
-          `<span style="--track:${track.color}">${track.label}</span>`).join(", ")}</p>`;
+        offVictoryTracks.map(track => `<span>${track.label} Off</span>`).join(" · ") + `</p>`;
   const victoryBody = victoryTracks;
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
   // How tall a band must be is settled by `fitVictoryTracker` from the room it
