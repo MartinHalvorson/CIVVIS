@@ -8725,7 +8725,9 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
 #[test]
 fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
     for piece in [
-        "const plateMode = livePause.available",
+        "const plateMode = livePause.available && livePause.mode",
+        "? [livePause.mode, \"A live Firaxis Civilization VI game in a tournament series:",
+        "livePause.mode = typeof status.mode === \"string\" && status.mode ? status.mode : null;",
         "? [\"Firaxis Civ VI Testing\", \"A live Firaxis Civilization VI game under test, mirrored here turn by turn.\"]",
         ": SPEC ? [\"CIVVIS Self-play\", \"Every civilization is played by a CIVVIS AI agent. Nobody holds a seat.\"]",
         ": [\"CIVVIS Sim Debugger\", \"You play one civilization. CIVVIS AI agents play the rest.\"];",

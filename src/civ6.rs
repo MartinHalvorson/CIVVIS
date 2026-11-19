@@ -971,7 +971,29 @@ pub fn live_pause_status() -> Value {
     );
     // The New game beside the Pause reads the same live run.
     status["new_game"] = live_new_game_status_at(live_run_dir().as_deref());
+    // The turn box's Mode during a tournament series; see `live_mode_label_at`.
+    status["mode"] = live_mode_label_at(&live_mode_path()).map_or(Value::Null, Value::String);
     status
+}
+
+/// The lane's tournament label (`{"label": "Tournament 1: 2-3"}`), written
+/// beside the other live files by the lane's tournament tracker from the same
+/// ledger count as the home page's Tournaments table (operator 2026-11-19:
+/// the Mode reads "Tournament 1: <wins>-<loses>" and matches the table).
+fn live_mode_path() -> PathBuf {
+    std::env::var_os("CIVVIS_TOURNAMENT_FILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home_dir().join(".civvis-tournament.json"))
+}
+
+/// The label in `path`: a short single line, or `None` when the file is
+/// missing, unreadable, empty, or not a plausible label.
+fn live_mode_label_at(path: &Path) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
+    let value: Value = serde_json::from_str(&text).ok()?;
+    let label = value.get("label")?.as_str()?.trim();
+    (!label.is_empty() && label.chars().count() <= 60 && !label.contains(['\n', '<', '>']))
+        .then(|| label.to_string())
 }
 
 fn set_live_pause_at(
@@ -1186,6 +1208,41 @@ pub fn request_live_new_game() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The Mode label of a tournament series is read from the tracker's file;
+    /// anything missing, empty, multi-line or markup-like reads as no label.
+    #[test]
+    fn the_tournament_label_reads_a_short_line_or_nothing() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-tournament-label-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("tournament.json");
+        assert_eq!(live_mode_label_at(&path), None);
+        for (body, expected) in [
+            (
+                r#"{"label": "Tournament 1: 2-3"}"#,
+                Some("Tournament 1: 2-3"),
+            ),
+            (
+                r#"{"label": "  Tournament 12: 0-0 "}"#,
+                Some("Tournament 12: 0-0"),
+            ),
+            (r#"{"label": ""}"#, None),
+            (r#"{"label": "a<b>"}"#, None),
+            (r#"{"label": 3}"#, None),
+            ("not json", None),
+        ] {
+            fs::write(&path, body).unwrap();
+            assert_eq!(live_mode_label_at(&path).as_deref(), expected, "{body}");
+        }
+        fs::remove_dir_all(&dir).ok();
+    }
 
     /// The lobby's map control is Civilization VI's own list in this mode, so
     /// every row has to name a script the game will accept. The two rosters
