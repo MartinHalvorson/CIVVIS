@@ -1181,13 +1181,15 @@
   }
   .victory-body { min-width: 0; align-self: stretch; }
   /* The victory types switched off in Game setup, named once under the
-     tracker's title instead of each keeping a path of its own. */
+     tracker's title instead of each keeping a path of its own: "Diplomacy
+     Off", in red, because a road that is closed changes how the whole table
+     should be read. Each stays whole when the line wraps. */
   .victory-off-note {
-    flex: 0 0 auto; margin: -1px 3px 3px; padding-left: 10px; color: #8ea099;
-    font-size: var(--type-caption); font-weight: 700; letter-spacing: .02em; line-height: 1.35;
+    flex: 0 0 auto; margin: -1px 3px 3px; padding-left: 10px; color: #ff6259;
+    font-size: var(--type-small); font-weight: 800; letter-spacing: .02em; line-height: 1.3;
     text-align: center; text-wrap: balance;
   }
-  .victory-off-note span { color: color-mix(in srgb, var(--track) 55%, #a3b5ae); }
+  .victory-off-note span { white-space: nowrap; }
   #victoryhud.victory-collapsed .victory-region > .victory-off-note { display: none; }
   .victory-subheading {
     flex: 0 0 auto; display: flex; gap: .4em; color: #a3b5ae;
