@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -62,10 +63,39 @@ class VictoriesOff(unittest.TestCase):
         self.assertEqual(updates[0].find("Where").get("VictoryType"), "VICTORY_DIPLOMATIC")
         self.assertEqual(updates[0].find("Set").get("EnabledByDefault"), "0")
 
+    def test_the_checkbox_default_reads_the_row_and_the_query_runs(self):
+        # Live civvis-20261119T011552Z: EnabledByDefault alone left the box
+        # ticked, because the shipped query hard-codes `1 AS DefaultValue`.
+        root = ET.fromstring(installed_xml(config(victories_off=["VICTORY_DIPLOMATIC"])))
+        update = root.find("./Queries/Update")
+        self.assertEqual(update.find("Where").get("QueryId"), "Victories")
+        sql = update.find("Set").get("SQL")
+        self.assertIn("V.EnabledByDefault AS DefaultValue", sql)
+        self.assertNotIn("1 AS DefaultValue", sql)
+        self.assertEqual(sql, install.VICTORIES_QUERY_SQL.replace(
+            "1 AS DefaultValue", "V.EnabledByDefault AS DefaultValue"))
+        db = sqlite3.connect(":memory:")
+        db.executescript(
+            "CREATE TABLE Victories(Domain TEXT NOT NULL DEFAULT 'StandardVictories', "
+            "VictoryType TEXT NOT NULL, Name TEXT NOT NULL, Description TEXT NOT NULL, Icon TEXT, "
+            "Visible BOOLEAN NOT NULL DEFAULT 1, ReadOnly BOOLEAN NOT NULL DEFAULT 0, "
+            "EnabledByDefault BOOLEAN NOT NULL DEFAULT 1);"
+            "CREATE TABLE Rulesets(RulesetType TEXT, VictoryDomain TEXT);"
+            "INSERT INTO Rulesets VALUES ('RULESET_EXPANSION_2', 'Expansion2_Victories');"
+            "INSERT INTO Victories(Domain, VictoryType, Name, Description) VALUES "
+            "('Expansion2_Victories', 'VICTORY_TECHNOLOGY', 'n', 'd'), "
+            "('Expansion2_Victories', 'VICTORY_DIPLOMATIC', 'n', 'd');"
+            "UPDATE Victories SET EnabledByDefault = 0 WHERE VictoryType = 'VICTORY_DIPLOMATIC';")
+        defaults = dict(row[0:2] for row in db.execute(
+            "SELECT ParameterId, DefaultValue FROM (" + sql + ")", ("RULESET_EXPANSION_2",)))
+        self.assertEqual(defaults, {"VICTORY_TECHNOLOGY": 1, "VICTORY_DIPLOMATIC": 0})
+
     def test_no_policy_leaves_every_victory_as_shipped(self):
         cfg = config()
         self.assertEqual(cfg["VictoriesOff"], [])
-        self.assertIsNone(ET.fromstring(installed_xml(cfg)).find("./Victories"))
+        root = ET.fromstring(installed_xml(cfg))
+        self.assertIsNone(root.find("./Victories"))
+        self.assertIsNone(root.find("./Queries"))
 
     def test_a_malformed_name_is_refused_at_install(self):
         with self.assertRaises(ValueError):
