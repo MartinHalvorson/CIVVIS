@@ -8891,13 +8891,10 @@ fn browser_player_rows_use_relationship_color_only_for_active_wars() {
     ));
     assert!(EMBEDDED_INDEX.contains(".diplomacy-card.expanded:not(.at-war)"));
     assert!(EMBEDDED_INDEX.contains(".diplomacy-card:hover:not(.at-war)"));
-    // A standings row is its civilization's colour from edge to edge, so the
-    // red frame and edge are drawn over both of its grounds, held row or not.
-    assert!(EMBEDDED_INDEX
-        .contains("#playerhud .diplomacy-card.jersey-row.at-war { border-color: var(--danger); }"));
-    assert!(EMBEDDED_INDEX.contains(
-        "#playerhud .diplomacy-card.jersey-row.at-war::after { box-shadow: inset 3px 0 var(--danger); }"
-    ));
+    // A war is not drawn round the row: the row's Watch-as button turns
+    // bright red instead, whatever colours the row itself wears.
+    assert!(EMBEDDED_INDEX.contains("#playerhud .diplomacy-card.at-war .watch-as-link {"));
+    assert!(!EMBEDDED_INDEX.contains("#playerhud .diplomacy-card.jersey-row.at-war"));
 }
 
 /// A defeated civilization all but disappears from the masthead — its row
