@@ -392,6 +392,35 @@ fn a_culture_seats_market_never_passes_a_theater_head() {
     assert_eq!(after[4], before[4], "the Builder keeps");
 }
 
+/// An idle Culture city that can build its Museum leaves its queue to the
+/// routine pick; one whose next Theater building is out of reach claims
+/// its Market.
+#[test]
+fn an_idle_culture_city_leaves_its_museum_first() {
+    let soldier = unit("crossbowman");
+    let (mut game, ranked) = culture_empire("CULTURETRADEIDLE", &soldier, &[0, 1], &[0, 1]);
+    for cid in &ranked[..2] {
+        install_test_district(&mut game, *cid, "commercial_hub");
+        game.cities.get_mut(cid).unwrap().queue.clear();
+    }
+    game.cities
+        .get_mut(&ranked[1])
+        .unwrap()
+        .buildings
+        .push(Name::new("art_museum"));
+    let ai = culture_controller(true);
+    assert!(ai
+        .culture_theater_building_next(&game, 0, ranked[0])
+        .is_some());
+    assert!(ai
+        .culture_theater_building_next(&game, 0, ranked[1])
+        .is_none());
+    ai.claim_trade_district(&mut game, 0, &plan());
+    let after = heads(&game, &ranked);
+    assert_eq!(after[0], None, "the Museum city stays idle: {after:?}");
+    assert_eq!(after[1], Some(building("market")), "{after:?}");
+}
+
 /// The Culture gene opens the Culture seat alone: off, nothing moves; on a
 /// Science, Diplomatic or other seat it claims nothing, and with both genes
 /// on a Science seat plays exactly as with the Science gene alone.

@@ -113,7 +113,9 @@
 //! Square and its Amphitheater stand in for the Campus and its Library
 //! ([`CULTURE_TRADE_ANCHOR`]), and the Theater Square and every building
 //! of it (Amphitheater, either Museum, Broadcast Center) keep their queue
-//! besides the heads listed above. `culture-theater-buildings-pass-the-claims`
+//! besides the heads listed above, and an idle city that can build its next
+//! Theater building leaves its queue to the routine pick.
+//! `culture-theater-buildings-pass-the-claims`
 //! runs later in the turn and puts a Theater building back ahead of a
 //! claimed Market, Lighthouse, Hub or Harbor. Grep the journal for
 //! `culture-trade-district-follows-the-theater:`.
@@ -436,7 +438,8 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let n_cities = city_ids.len();
         let settlers = self.counts(g, pid).settlers;
-        let (tag, after) = if self.trade_claim_anchor(g) == Some(CULTURE_TRADE_ANCHOR) {
+        let culture = self.trade_claim_anchor(g) == Some(CULTURE_TRADE_ANCHOR);
+        let (tag, after) = if culture {
             (
                 "culture-trade-district-follows-the-theater",
                 "Theater Square",
@@ -471,6 +474,13 @@ impl AdvancedAi {
                 // Settler step: the city count is what the gate reads.
                 None => {
                     if self.base.settler_due(g, pid, cid, n_cities, settlers) {
+                        continue;
+                    }
+                    // A Culture seat's idle city that can build its next
+                    // Theater building leaves the queue to the routine
+                    // pick: the claim never goes ahead of an Amphitheater or
+                    // Museum.
+                    if culture && self.culture_theater_building_next(g, pid, cid).is_some() {
                         continue;
                     }
                 }
