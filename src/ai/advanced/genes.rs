@@ -5838,6 +5838,12 @@ pub const GENES: &[Gene] = &[
     // Rocketry beeline took first. A straight line was a median 12 turns
     // sooner. See `advanced/chemistry_before_the_rocket.rs`.
     Gene { tag: "chemistry-before-the-rocket", field: "chemistry_before_the_rocket", kind: Kind::OptIn, enable: AdvancedAi::enable_chemistry_before_the_rocket, disable: AdvancedAi::disable_chemistry_before_the_rocket },
+    // Live Deity 6p Continents 11-18/19, 30 Culture seats to t150: neither
+    // Literary Tradition nor Frescoes was slotted on any turn; the ordinary
+    // deck prices Great Person points at zero. Weak seats took 0-3 Great
+    // Writers by t150 to the rivals' 15-24. See
+    // `advanced/culture_great_person_cards.rs`.
+    Gene { tag: "culture-deck-seats-the-great-person-cards", field: "culture_deck_seats_the_great_person_cards", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_deck_seats_the_great_person_cards, disable: AdvancedAi::disable_culture_deck_seats_the_great_person_cards },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
