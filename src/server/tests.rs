@@ -8077,8 +8077,10 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains("function reframeCurrentMapFocus(world)"));
     assert!(EMBEDDED_INDEX.contains("const {x:desiredX, y:desiredY} = mapFocusPoint();"));
     // The domination column counts captured capitals, and says so. "HQs"
-    // was a word from no part of this game.
-    assert!(EMBEDDED_INDEX.contains("<span></span><span>Capitals</span>"));
+    // was a word from no part of this game. Its meter is the cities a
+    // civilization holds out of every city on the map, and says that too.
+    assert!(EMBEDDED_INDEX.contains("<span>Cities</span><span>Capitals</span>"));
+    assert!(EMBEDDED_INDEX.contains("100 * (+metric.cities || 0) / metric.city_total"));
     assert!(!EMBEDDED_INDEX.contains("HQs"));
     assert!(EMBEDDED_INDEX.contains("<span>Watch as</span>"));
     assert_eq!(

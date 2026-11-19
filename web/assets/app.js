@@ -27426,6 +27426,15 @@ function turnCapLabel() {
 // is a third full means a third of the discoveries in the game — the leader's
 // own meter moves too, instead of pinning itself full from turn one. The
 // right halves remain the actual victory races.
+//
+// Domination's one meter is the map: the cities a civilization holds out of
+// every city on it, with the capitals that decide the victory as the figure
+// beside it (operator, 2026-11-19). A frame from before the server counted
+// cities keeps the capitals meter it was recorded with.
+function victoryMeterFill(victory, metric) {
+  return victory === "domination" && +metric.city_total > 0
+    ? 100 * (+metric.cities || 0) / metric.city_total : +metric.progress || 0;
+}
 function victoryMeter(victory, metric, progress) {
   const bar = pct => `<b style="width:${Math.max(0, Math.min(100, pct))}%"></b>`;
   if (victory === "science") {
@@ -27482,7 +27491,7 @@ function victoryTrackerSubheading(victory) {
   if (victory === "culture") return `<span>Civics</span><span>Tourists</span>`;
   if (victory === "religious") return `<span></span><span>Civs</span>`;
   if (victory === "diplomatic") return `<span></span><span>Score</span>`;
-  if (victory === "domination") return `<span></span><span>Capitals</span>`;
+  if (victory === "domination") return `<span>Cities</span><span>Capitals</span>`;
   return `Turns: ${reportedTurn()}/${turnCapLabel()}`;
 }
 
@@ -27523,8 +27532,8 @@ function victoryDescription(victory, metric) {
   if (victory === "religious") return `${metric.converted || 0} of ${metric.target || 0} civilizations converted`;
   if (victory === "diplomatic") return `${metric.points || 0} of ${metric.target || 20} victory points`;
   if (victory === "domination") {
-    return `${metric.capitals || 0} of ${metric.target || 0} original capitals controlled, ` +
-      `their own counted`;
+    return (+metric.city_total > 0 ? `${metric.cities || 0} of ${metric.city_total} cities on the map · ` : "") +
+      `${metric.capitals || 0} of ${metric.target || 0} original capitals controlled, their own counted`;
   }
   return `${compactStat(metric.points || 0)} points · meter is how much of the turn limit ` +
     `has been played, scaled by their share of the score leader`;
@@ -27975,15 +27984,15 @@ function playerHudOverview() {
     rankVictoryTracksBySoonest(enabledVictoryTracks, contenders);
   }
   const victoryTracks = enabledVictoryTracks.map(track => {
-    const researchField = track.id === "science" ? "techs"
-      : track.id === "culture" ? "civics" : null;
+    const tieField = {science:"techs", culture:"civics", domination:"cities"}[track.id];
     const ranked = [...contenders]
       .sort((a, b) => {
         const am = victoryMetric(a, track.id), bm = victoryMetric(b, track.id);
         // Before launches or tourists move, researched-tree counts keep these
-        // columns ordered by the same comparison their left meters draw.
+        // columns ordered by the same comparison their left meters draw, and
+        // civilizations level on capitals stand in the order of their cities.
         return victoryLead(track.id, bm) - victoryLead(track.id, am)
-          || (researchField ? (+bm[researchField] || 0) - (+am[researchField] || 0) : 0)
+          || (tieField ? (+bm[tieField] || 0) - (+am[tieField] || 0) : 0)
           || b.score - a.score || a.id - b.id;
       });
     return `<section class="victory-track" data-key="${track.id}" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
@@ -27992,7 +28001,7 @@ function playerHudOverview() {
       `<div class="victory-body">` +
       `<div class="victory-list">` + ranked.map((player, index) => {
         const metric = victoryMetric(player, track.id);
-        const progress = Math.max(0, Math.min(100, +metric.progress || 0));
+        const progress = victoryMeterFill(track.id, metric);
         const isFocus = player.id === focusPlayer?.id;
         const focusLabel = isFocus ? (SPEC ? "Viewed civilization · " : "Your civilization · ") : "";
         const capital = empireCapitalFrom(capitals, player.id);
@@ -29381,7 +29390,7 @@ function civDossier(p, rank, relation) {
     .filter(track => state.victory_conditions?.[track.id] !== false)
     .map(track => {
       const metric = victoryMetric(p, track.id);
-      const progress = Math.max(0, Math.min(100, +metric.progress || 0));
+      const progress = Math.max(0, Math.min(100, victoryMeterFill(track.id, metric)));
       return `<div class="dossier-track" style="--track:${track.color}" title="${track.label}: ${victoryDescription(track.id, metric)}">` +
         `<div class="dossier-track-line"><span>${track.icon} ${track.label}</span><b>${victoryValue(track.id, metric)}</b></div>` +
         `<div class="victory-meter"><b style="width:${progress}%"></b></div></div>`;
