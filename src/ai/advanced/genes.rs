@@ -5856,6 +5856,12 @@ pub const GENES: &[Gene] = &[
     // an open slot now and held the band bank. See
     // `advanced/culture_faith_patronizes_the_creators.rs`.
     Gene { tag: "culture-faith-patronizes-the-creators", field: "culture_faith_patronizes_the_creators", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_patronizes_the_creators, disable: AdvancedAi::disable_culture_faith_patronizes_the_creators },
+    // Live Deity 6p Continents 11-19: 47 of 51 Culture seats held trade
+    // capacity 1 at t100 (Science seats 2, through
+    // `trade-district-follows-the-campus`); at t150 capacity 1 / 2 / 3+ went
+    // with tourism 31 / 41 / 80 a turn. See
+    // `advanced/trade_district_follows_the_campus.rs`.
+    Gene { tag: "culture-trade-district-follows-the-theater", field: "culture_trade_district_follows_the_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_trade_district_follows_the_theater, disable: AdvancedAi::disable_culture_trade_district_follows_the_theater },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

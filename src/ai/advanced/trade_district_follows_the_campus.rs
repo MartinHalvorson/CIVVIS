@@ -106,8 +106,35 @@
 //! the gene changes the orders on 31 and journals 40 claims. 28 end the
 //! frame as the city's order; `near-done-work-finishes` hands 9 back to a
 //! head within two turns of done, and a later Caravel or Spy claim takes 3.
+//!
+//! ## `culture-trade-district-follows-the-theater`
+//!
+//! The same claim on a Culture seat, under its own opt-in flag: the Theater
+//! Square and its Amphitheater stand in for the Campus and its Library
+//! ([`CULTURE_TRADE_ANCHOR`]), and the Theater Square and every building
+//! of it (Amphitheater, either Museum, Broadcast Center) keep their queue
+//! besides the heads listed above. `culture-theater-buildings-pass-the-claims`
+//! runs later in the turn and puts a Theater building back ahead of a
+//! claimed Market, Lighthouse, Hub or Harbor. Grep the journal for
+//! `culture-trade-district-follows-the-theater:`.
+//!
+//! Why (live Deity, 6p Continents, Online, 2026-11-19): 47 of 51 Culture
+//! seats held trade capacity 1 at turn 100; at turn 150 the median was 2 on
+//! 39 Gold a turn, where the Science seats this module's first gene serves
+//! held 2 at turn 100, 6 at turn 150 and 82 Gold a turn. Culture seats of
+//! 8.5-10 cities and 6-8 Theater Squares split at turn 150 by capacity
+//! 1 / 2 / 3+ into 5 / 9.5 / 18.5 great works, 31 / 41 / 80 tourism a turn
+//! and 1 / 1 / 3 rivals reached by a route (each +25% tourism). The day's
+//! one Culture win held capacity 4 on 124 Gold a turn at turn 150.
 
 use super::*;
+
+/// The district and building that must stand before a city claims its
+/// Commercial Hub or Harbor on a Science or Diplomatic seat.
+const SCIENCE_TRADE_ANCHOR: (&str, &str) = ("campus", "library");
+
+/// The same pair on a Culture seat (`culture-trade-district-follows-the-theater`).
+pub(super) const CULTURE_TRADE_ANCHOR: (&str, &str) = ("theater_square", "amphitheater");
 
 /// The slowest a city may build the claimed district or building.
 pub(crate) const TRADE_CLAIM_MAX_TURNS: f64 = 20.0;
@@ -140,14 +167,30 @@ pub(super) enum TradeClaim {
 }
 
 impl AdvancedAi {
-    /// Whether the claim runs this turn: the gene, a Science or Diplomatic
-    /// seat, and no major at war with us.
+    /// The district and building whose pair opens a city's district claim on
+    /// this seat: [`SCIENCE_TRADE_ANCHOR`] on a Science or Diplomatic seat
+    /// with `trade-district-follows-the-campus`, [`CULTURE_TRADE_ANCHOR`] on
+    /// a Culture seat with `culture-trade-district-follows-the-theater`.
+    /// `None` on every other seat and with the seat's gene off.
+    pub(super) fn trade_claim_anchor(&self, g: &Game) -> Option<(&'static str, &'static str)> {
+        match self.active_victory_target(g) {
+            Some(VictoryTarget::Science | VictoryTarget::Diplomacy)
+                if self.trade_district_follows_the_campus =>
+            {
+                Some(SCIENCE_TRADE_ANCHOR)
+            }
+            Some(VictoryTarget::Culture) if self.culture_trade_district_follows_the_theater => {
+                Some(CULTURE_TRADE_ANCHOR)
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether the claim runs this turn: a seat with an anchor
+    /// ([`AdvancedAi::trade_claim_anchor`]) and no major at war with us.
     pub(super) fn trade_district_claims_open(&self, g: &Game, pid: usize) -> bool {
-        self.trade_district_follows_the_campus
-            && matches!(
-                self.active_victory_target(g),
-                Some(VictoryTarget::Science | VictoryTarget::Diplomacy)
-            )
+        (self.trade_district_follows_the_campus || self.culture_trade_district_follows_the_theater)
+            && self.trade_claim_anchor(g).is_some()
             && !g.players.iter().any(|other| {
                 other.id != pid
                     && other.alive
@@ -163,6 +206,23 @@ impl AdvancedAi {
             let family = g.district_family(*district);
             family == "commercial_hub" || family == "harbor"
         })
+    }
+
+    /// Whether `item` is a Theater Square or a building of one (the
+    /// Amphitheater, either Museum, the Broadcast Center and their
+    /// replacements): the heads a Culture seat's claim never passes.
+    fn is_theater_item(g: &Game, item: &Item) -> bool {
+        let theater = |district: Name| g.district_family(district) == "theater_square";
+        match item {
+            Item::District { district, .. } => theater(*district),
+            Item::Building { building } => g
+                .rules
+                .buildings
+                .get(building)
+                .and_then(|spec| spec.district)
+                .is_some_and(theater),
+            _ => false,
+        }
     }
 
     /// Turns `cid` needs for `item`: the host's figure where it gave one.
@@ -194,10 +254,11 @@ impl AdvancedAi {
     }
 
     /// The Commercial Hub or Harbor `cid` would start: the one already in its
-    /// queue, else, for a city with a Campus and its Library and neither
-    /// district standing or founded, the Hub on its best site or the Harbor
-    /// where the Harbor's site pays more Gold.
-    fn trade_claim_district(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+    /// queue, else, for a city with the seat's `anchor` district and building
+    /// (a Campus and its Library, or a Theater Square and its Amphitheater)
+    /// and neither trade district standing or founded, the Hub on its best
+    /// site or the Harbor where the Harbor's site pays more Gold.
+    fn trade_claim_district(g: &Game, pid: usize, cid: u32, anchor: (&str, &str)) -> Option<Item> {
         let city = g.cities.get(&cid)?;
         if let Some(queued) = city
             .queue
@@ -218,8 +279,8 @@ impl AdvancedAi {
         };
         if held("commercial_hub")
             || held("harbor")
-            || !g.city_has_district_family(city, crate::name!("campus"))
-            || BasicAi::civ_building(g, pid, cid, "library").is_some()
+            || !g.city_has_district_family(city, Name::new(anchor.0))
+            || BasicAi::civ_building(g, pid, cid, anchor.1).is_some()
         {
             return None;
         }
@@ -259,6 +320,7 @@ impl AdvancedAi {
         if !self.trade_district_claims_open(g, pid) {
             return None;
         }
+        let anchor = self.trade_claim_anchor(g)?;
         let city = g.cities.get(&cid)?;
         if city.owner != pid
             || plan.threatened_city == Some(cid)
@@ -270,7 +332,7 @@ impl AdvancedAi {
         let (item, kind) = match Self::trade_claim_building(g, pid, cid) {
             Some(building) => (building, TradeClaim::Building),
             None => (
-                Self::trade_claim_district(g, pid, cid)?,
+                Self::trade_claim_district(g, pid, cid, anchor)?,
                 TradeClaim::District,
             ),
         };
@@ -293,7 +355,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
-        self.trade_district_follows_the_campus
+        (self.trade_district_follows_the_campus || self.culture_trade_district_follows_the_theater)
             && self
                 .trade_claim_item(g, pid, cid, plan)
                 .is_some_and(|(claimed, _, _)| claimed == *item)
@@ -321,6 +383,14 @@ impl AdvancedAi {
             // `science-universities-pass-the-claims`' University. Always
             // false with that gene off.
             || self.science_university_holds(g, pid, cid, plan, head)
+        {
+            return false;
+        }
+        // `culture-trade-district-follows-the-theater`: a Culture seat's
+        // Theater Square and its buildings keep their queue.
+        if self.culture_trade_district_follows_the_theater
+            && Self::is_theater_item(g, head)
+            && self.trade_claim_anchor(g) == Some(CULTURE_TRADE_ANCHOR)
         {
             return false;
         }
@@ -366,6 +436,14 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let n_cities = city_ids.len();
         let settlers = self.counts(g, pid).settlers;
+        let (tag, after) = if self.trade_claim_anchor(g) == Some(CULTURE_TRADE_ANCHOR) {
+            (
+                "culture-trade-district-follows-the-theater",
+                "Theater Square",
+            )
+        } else {
+            ("trade-district-follows-the-campus", "Campus")
+        };
         let mut buildings: Vec<(u32, Item, f64)> = Vec::new();
         let mut district: Option<(f64, u32, Item)> = None;
         for cid in city_ids {
@@ -426,13 +504,13 @@ impl AdvancedAi {
             );
             if is_district {
                 think!(self.journal(), Cities, Decision,
-                       "{name} claims its {label} after the Campus";
-                       "trade-district-follows-the-campus: {turns:.1} turns, ahead of {ahead}; \
+                       "{name} claims its {label} after the {after}";
+                       "{tag}: {turns:.1} turns, ahead of {ahead}; \
                         its Market or Lighthouse opens a trade route slot");
             } else {
                 think!(self.journal(), Cities, Decision,
                        "{name} claims its {label} for a trade route slot";
-                       "trade-district-follows-the-campus: {turns:.1} turns, ahead of {ahead}");
+                       "{tag}: {turns:.1} turns, ahead of {ahead}");
             }
         }
     }
