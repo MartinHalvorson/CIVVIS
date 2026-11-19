@@ -6,8 +6,8 @@ use serde_json::{json, Value};
 
 use super::super::{stock_opening_params, Session};
 use super::{
-    Layer, Mark, Timeline, COARSEST_STRIDE, DENSE_MARKS, MAX_SAVE_POINTS, MEMORY_LINE, MEMORY_STEP,
-    ROOMY_MARKS,
+    Layer, Mark, Timeline, COARSEST_STRIDE, DENSE_MARKS, MAX_SAVE_POINTS, MEMORY_LINE,
+    MEMORY_STEPS, MIN_MARKS, ROOMY_MARKS,
 };
 use crate::game::Action;
 use crate::setup::{GameSpeed, MapScript, MapTopology};
@@ -123,36 +123,73 @@ fn every_turn_keeps_its_mark_while_there_is_room_and_the_oldest_go_first() {
     left.extend(23..=100);
     assert_eq!(turns_of(&tight), left);
 
-    // With no room to speak of the newest sixty are still whole, and one old
-    // turn in eight is still there to go back to.
+    // Room for the newest sixty and as many again: those sixty are whole, and
+    // behind them the oldest are down to one in four where the rest are still
+    // one in two.
+    let mut short = timeline_of(1..=200, 2 * DENSE_MARKS);
+    short.thin();
+    let mut left = vec![1];
+    left.extend((4..=44).step_by(4));
+    left.extend((46..=140).step_by(2));
+    left.extend(141..=200);
+    assert_eq!(turns_of(&short), left);
+    assert_eq!(left.len(), 2 * DENSE_MARKS);
+
+    // With hardly any room, half of it is the newest turns and the other
+    // half is spread over everything before them. The room is never exceeded.
     let mut least = timeline_of(1..=100, 0);
     least.thin();
-    let mut left = vec![1, 8, 16, 24, 32, 40];
-    left.extend(41..=100);
-    assert_eq!(turns_of(&least), left);
-    assert_eq!(left.len(), DENSE_MARKS + 6);
+    assert_eq!(
+        turns_of(&least),
+        [1, 16, 32, 48, 64, 80, 95, 96, 97, 98, 99, 100]
+    );
+    // A game too long even for one turn in sixty-four loses its oldest.
+    let mut longest = timeline_of(1..=1000, 0);
+    longest.thin();
+    assert_eq!(
+        turns_of(&longest),
+        [1, 704, 768, 832, 896, 960, 995, 996, 997, 998, 999, 1000]
+    );
+    assert_eq!(longest.marks.len(), MIN_MARKS);
 }
 
 #[test]
-fn memory_past_the_line_takes_room_away_a_tenth_at_a_time() {
+fn memory_past_the_line_takes_room_away_a_fifth_at_a_time() {
+    let step = MEMORY_LINE / MEMORY_STEPS;
     let mut timeline = timeline_of(1..=200, 0);
     timeline.room = None;
     timeline.squeeze(MEMORY_LINE);
     assert_eq!(timeline.room(), ROOMY_MARKS);
     timeline.squeeze(MEMORY_LINE + 1);
-    assert_eq!(timeline.room(), 180);
+    assert_eq!(timeline.room(), 160);
     timeline.thin();
-    assert_eq!(timeline.marks.len(), 180);
+    assert_eq!(timeline.marks.len(), 160);
     // Memory that has not grown by a step since has nothing new to say.
-    timeline.squeeze(MEMORY_LINE + MEMORY_STEP);
-    assert_eq!(timeline.room(), 180);
-    timeline.squeeze(MEMORY_LINE + 1 + MEMORY_STEP);
-    assert_eq!(timeline.room(), 162);
-    for step in 2..40 {
+    timeline.squeeze(MEMORY_LINE + step);
+    assert_eq!(timeline.room(), 160);
+    timeline.squeeze(MEMORY_LINE + 1 + step);
+    assert_eq!(timeline.room(), 128);
+    // It goes on for as long as the memory grows, well below the newest
+    // sixty, and stops at the fewest marks a timeline is left with.
+    for grown in 2..40 {
         timeline.thin();
-        timeline.squeeze(MEMORY_LINE + 1 + step * MEMORY_STEP);
+        timeline.squeeze(MEMORY_LINE + 1 + grown * step);
     }
-    assert_eq!(timeline.room(), DENSE_MARKS);
+    timeline.thin();
+    assert_eq!(timeline.room(), MIN_MARKS);
+    let left = turns_of(&timeline);
+    assert_eq!(left.len(), MIN_MARKS);
+    assert_eq!(left[0], 1);
+    assert_eq!(left[MIN_MARKS - 6..], [195, 196, 197, 198, 199, 200]);
+
+    // A lower line is listened to in smaller steps.
+    let mut small = timeline_of(1..=200, 0);
+    small.room = None;
+    small.memory_line = Some(256 << 20);
+    small.squeeze((256 << 20) + 1);
+    assert_eq!(small.room(), 160);
+    small.squeeze((256 << 20) + 1 + (8 << 20));
+    assert_eq!(small.room(), 128);
 
     // A page that knows its device says where the line is.
     let mut session = played();
@@ -647,13 +684,14 @@ fn the_document_gives_the_numbers_the_timeline_uses() {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
-    assert_eq!(COARSEST_STRIDE, 8, "the document says one in eight");
     for said in [
         format!("Room is {ROOMY_MARKS} marks"),
         format!("({} GB unless the page names another", MEMORY_LINE >> 30),
         format!("the newest {DENSE_MARKS} stay whole"),
-        "never fewer than one in eight".to_string(),
-        format!("each further {} MB takes a tenth", MEMORY_STEP >> 20),
+        format!("and so on to one in {COARSEST_STRIDE}"),
+        format!("another 1/{MEMORY_STEPS} of the line"),
+        format!("({} MB at 1 GB)", (MEMORY_LINE / MEMORY_STEPS) >> 20),
+        format!("down to {MIN_MARKS} marks"),
         format!("A timeline holds {MAX_SAVE_POINTS} at once"),
     ] {
         assert!(doc.contains(&said), "the document no longer says: {said}");

@@ -22,10 +22,17 @@ Room is 480 marks, and in a browser tab also a line on the memory in use
 (1 GB unless the page names another with `room`), because a tab's memory only
 grows. A mark was measured at 1.3 MB in the first 60 turns of a six-seat game
 and 2.8 MB by turn 130. When room runs out the first mark and the newest 60
-stay whole, and between them the oldest turns go first, the odd ones before
-the even: a very long game keeps its early turns one in two, then one in four,
-and never fewer than one in eight. Past the memory line each further 32 MB
-takes a tenth of the room away.
+stay whole (the newest half of the room when that is fewer), and between them
+the oldest turns go first, the odd ones before the even: a very long game
+keeps its early turns one in two, then one in four, and so on to one in 64. If
+that is still too many the oldest go, so the room is never exceeded.
+
+Past the memory line, each time the memory has grown by another 1/32 of the
+line (32 MB at 1 GB), a fifth of the room is taken away, down to 12 marks.
+There is no gentler floor on purpose. With the line at 256 MB and the room
+never falling below the newest 60 turns, a six-seat game went from 248 MB at
+turn 110 to 425 MB at turn 200 and was still growing by 2 MB a turn, because
+late marks are larger than the early ones they replace.
 
 A thinned turn is not played again to bring it back. A turn played by hand
 cannot be played by an agent, and an agent decides things its logged actions
