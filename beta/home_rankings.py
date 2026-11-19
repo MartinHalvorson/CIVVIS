@@ -6,7 +6,7 @@
 
 The landing page (`beta/landing.html`) carries one empty slot,
 `<script type="application/json" id="rankings-data">null</script>`, and
-`beta/publish.sh` fills it with what this prints. Three rankings:
+`beta/publish.sh` fills it with what this prints. Two rankings:
 
 - **Winningest civs**: our AI's wins and losses as each civ in the
   verification games against Civilization VI's own AI, most wins first.
@@ -18,16 +18,17 @@ The landing page (`beta/landing.html`) carries one empty slot,
   `data/strategy_elo.json` (written by `strategy_elo`, see `docs/ELO.md`),
   with their handles and tilts from `strategies::ROSTER`, and Civilization
   VI's difficulty rungs in between as the scale's landmarks.
-- **Heuristic genes**: the head of `GENE_HEURISTIC_RANKING.md`, which
-  `tools/genes.py write` regenerates and CI holds current.
+
+The page once listed the head of the heuristic gene ranking as well. It does
+not any more; `GENE_HEURISTIC_RANKING.md` is the place to read that.
 
 Nothing here is committed as a copy. The page once kept a hand-synced battle
 catalog and it went the way such copies go; this is derived at publish time
 from the same files the engine embeds, so it cannot drift from them.
 
-A revision that predates either source (the stable lane is routinely pinned
-to one) simply gets that ranking as `null`, and the page shows what it has.
-So does a clone that has never fetched the `ledger` branch.
+A revision that predates the Elo file (the stable lane is routinely pinned
+to an older one) simply gets that ranking as `null`, and the page shows what
+it has. So does a clone that has never fetched the `ledger` branch.
 """
 
 from __future__ import annotations
@@ -37,9 +38,6 @@ import pathlib
 import re
 import subprocess
 import sys
-
-#: How many genes the column shows. The full table is one link away.
-TOP_GENES = 15
 
 #: How many civs the table shows: the ones that have won, most wins first.
 TOP_CIVS = 25
@@ -137,59 +135,6 @@ def strategies(source: pathlib.Path) -> dict | None:
         "players": published.get("players"),
         "turns": published.get("turns"),
         "rows": rows,
-    }
-
-
-def cells(line: str) -> list[str]:
-    """One Markdown table row. An escaped pipe (`1 \\| 2`) stays in its cell."""
-    parts = line.replace("\\|", "\0").strip().strip("|").split("|")
-    return [part.strip().replace("\0", "|") for part in parts]
-
-
-def number(cell: str) -> float | None:
-    match = re.search(r"[-+]?\d+(?:\.\d+)?", cell.replace(",", ""))
-    return float(match[0]) if match else None
-
-
-def genes(source: pathlib.Path) -> dict | None:
-    path = source / "GENE_HEURISTIC_RANKING.md"
-    if not path.is_file():
-        return None
-    lines = path.read_text(encoding="utf-8").splitlines()
-    head = next((cells(line) for line in lines if line.startswith("| Rank |")), None)
-    if head is None:
-        return None
-    # Columns by name, not position: the table has grown columns before.
-    try:
-        col = {name: head.index(name) for name in ("Rank", "Gene", "Description", "Default", "P(>0)", "Diff")}
-    except ValueError:
-        return None
-    rows = []
-    for line in lines:
-        row = cells(line) if line.startswith("|") else []
-        if len(row) != len(head) or not row[col["Rank"]].isdigit():
-            continue
-        rows.append(
-            {
-                "rank": int(row[col["Rank"]]),
-                "tag": row[col["Gene"]].strip("`"),
-                "description": row[col["Description"]],
-                "on": "on" in row[col["Default"]],
-                "p": number(row[col["P(>0)"]]),
-                "diff": number(row[col["Diff"]]),
-            }
-        )
-    if not rows:
-        return None
-    rows.sort(key=lambda row: row["rank"])
-    last = next((name for name in head if "Last Batch" in name), "")
-    batch = re.search(r"n=([\d,]+) total seats.*?end=(\d\d-\d\d)", last)
-    return {
-        "total": len(rows),
-        "on": sum(row["on"] for row in rows),
-        "last_batch_seats": batch[1] if batch else None,
-        "last_batch_end": batch[2] if batch else None,
-        "rows": rows[:TOP_GENES],
     }
 
 
@@ -307,7 +252,7 @@ def civ_ranking(rows: list[dict], names: list[str]) -> dict | None:
 def civs(source: pathlib.Path) -> dict | None:
     """The civ table, or `None` when there is no record to draw it from.
 
-    The other two rankings read files of the revision being published, which
+    The other ranking reads files of the revision being published, which
     CI has already held to their shape. This one reads a branch every
     finished game writes to and nothing tests, from inside the script that
     publishes the whole site. A line it cannot count therefore costs the
@@ -326,12 +271,12 @@ def civs(source: pathlib.Path) -> dict | None:
 
 
 def rankings(source: pathlib.Path) -> dict:
-    return {"civs": civs(source), "strategies": strategies(source), "genes": genes(source)}
+    return {"civs": civs(source), "strategies": strategies(source)}
 
 
 def fill(page: str, data: dict) -> str | None:
     """The page with its slot filled, or `None` when it has no slot."""
-    # `<` is escaped so no gene's sentence can close the script element.
+    # `<` is escaped so no name or sentence can close the script element.
     text = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
     filled, count = SLOT.subn(lambda m: m[1] + text + m[3], page, count=1)
     return filled if count else None
