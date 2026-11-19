@@ -190,6 +190,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `disrupt-waits-for-the-sources` | off (unmeasured) | Opt-in gene `disrupt-waits-for-the-sources`; see `advanced/disrupt_waits_for_the_sources.rs`. | 1 \| 1 |
 | `science-universities-pass-the-claims` | off (unmeasured) | Opt-in gene `science-universities-pass-the-claims`; see `advanced/science_universities_pass_the_claims.rs`. | 1 \| 1 |
 | `shooters-man-the-capital` | off (unmeasured) | Opt-in gene `shooters-man-the-capital`; see `advanced/shooters_man_the_capital.rs`. | 1 \| 1 |
+| `threatened-capital-trains-its-shooters` | off (unmeasured) | Opt-in gene `threatened-capital-trains-its-shooters`; see `advanced/threatened_capital_trains_its_shooters.rs`. | 1 \| 1 |
 | `tribute-buys-the-friendship-2` | off (unmeasured) | Opt-in gene `tribute-buys-the-friendship-2`; see `advanced/tribute_buys_the_friendship.rs`. | 1 \| 2 |
 
 ## Removed from the code
