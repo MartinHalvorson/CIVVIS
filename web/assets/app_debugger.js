@@ -137,7 +137,8 @@ async function debugOp(body, timeoutMs = 20000) {
       body: JSON.stringify(body),
     }, timeoutMs);
     if (next.error) { debugSay(next.error); return next; }
-    if (DEBUG_TRAVEL_OPS.has(body.op) || body.op === "step" || body.op === "step_action") {
+    if (DEBUG_TRAVEL_OPS.has(body.op) || body.op === "step" || body.op === "step_action" ||
+        body.op === "step_seat" || body.op === "finish_round") {
       sel = null; selCity = null;
       if ((next.turn !== before || body.op === "copy" || body.op === "goto_save") && DEBUG_TRAVEL_OPS.has(body.op))
         debugForgetStandingOrders(next.turn);
@@ -219,7 +220,8 @@ async function debugStepAction() {
   try {
     const next = await debugOp({op: "step_action", strategy: debugStrategy()}, AUTOPLAY_BATCH_TIMEOUT_MS);
     const stepped = next && !next.error ? (next.debug || {}).stepped : null;
-    if (stepped) {
+    if (stepped && stepped.seat !== undefined) debugSayRound(stepped);
+    else if (stepped) {
       const place = debugActionPlace(stepped.action);
       const left = stepped.left ? ` · ${stepped.left} more this turn` : "";
       debugSay(`Civ AI: ${debugActionWords(stepped.action)}${left}`, place);
@@ -231,6 +233,28 @@ async function debugStepAction() {
     drawDebugBar();
     drawTurnLoop();
   }
+}
+// Step one seat: the round, a civilization at a time. On your own turn it
+// ends the turn as it stands and stops before any rival has moved; after
+// that each step plays whoever is up. It is not the Civ AI playing your
+// seat, so a linked half follows it as an ended turn, not as a step.
+function debugSeatName(seat) {
+  const who = state.players.find(player => player.id === seat);
+  return who ? titleCase(String(who.civ || who.name || `seat ${seat}`)) : `seat ${seat}`;
+}
+function debugSayRound(stepped) {
+  const did = stepped.seat === 0 ? "Your turn ended"
+    : `${debugSeatName(stepped.seat)} played ${stepped.actions} action${stepped.actions === 1 ? "" : "s"}`;
+  debugSay(stepped.next === 0 ? `${did} · turn ${state.turn} is yours`
+    : `${did} · ${debugSeatName(stepped.next)} plays next`);
+}
+async function debugStepSeat() {
+  if (autoplaying) return null;
+  debugSay("");
+  const next = await debugOp({op: "step_seat"}, AUTOPLAY_BATCH_TIMEOUT_MS);
+  const stepped = next && !next.error ? (next.debug || {}).stepped : null;
+  if (stepped && stepped.seat !== undefined) debugSayRound(stepped);
+  return next;
 }
 // Played a turn a request, like auto-play, so every turn reaches the glass
 // and the Stop button is never more than one turn away.
@@ -417,7 +441,8 @@ function debugBuildBar() {
     <input type="text" id="dbg-turn" inputmode="numeric" maxlength="4" title="Go to a turn: one already played is put back as it stood, one still ahead is played to by the Civ AI. Up and down walk one played turn" aria-label="Go to turn">
     <button data-dbg="forward" title="Forward along the turns already played" aria-label="Forward one played turn">▶</button>
     <button data-dbg="step-action" title="Step in: the Civ AI takes its next action this turn, and ends the turn when it has none left" aria-label="Step one action">▸</button>
-    <button data-dbg="step" title="Step: the Civ AI plays one turn" aria-label="Step one turn">▶|</button>
+    <button data-dbg="step-seat" title="Step one seat: end your turn as it stands, then one civilization's turn at a time" aria-label="Step one seat">▸|</button>
+    <button data-dbg="step" title="Step: the Civ AI plays one turn. In the middle of a round, the rest of the round plays" aria-label="Step one turn">▶|</button>
     <button data-dbg="run" title="Run: the Civ AI plays until a breakpoint stops it" aria-label="Run to a breakpoint">▶▶</button>
     <span class="dbg-sep"></span>
     <button data-dbg-pop="layers" title="Layers: which decisions the Civ AI takes for you each turn">Layers<span class="dbg-count" id="dbg-layer-count"></span></button>
@@ -458,6 +483,7 @@ function debugBuildBar() {
     else if (action === "forward") debugOp({op: "forward"});
     else if (action === "step") debugStep();
     else if (action === "step-action") debugStepAction();
+    else if (action === "step-seat") debugStepSeat();
     else if (action === "reveal") debugOp({op: "reveal", on: !timeline.reveal});
     else if (action === "run") debugRun();
     else if (action === "save") debugSave();
@@ -553,6 +579,7 @@ function drawDebugBar(seat = true) {
   set("forward", idle && timeline.can_forward);
   set("step", idle);
   set("step-action", idle);
+  set("step-seat", idle);
   set("reveal", idle);
   bar.querySelector('[data-dbg="reveal"]').classList.toggle("on", timeline.reveal === true);
   set("save", idle);
@@ -670,7 +697,11 @@ function drawDebugBar(seat = true) {
   const note = document.getElementById("dbg-note");
   const layered = timeline.assisted
     ? `The Civ AI took ${timeline.assisted} decision${timeline.assisted === 1 ? "" : "s"} in its layers this turn` : "";
-  const text = debugNoteText || layered;
+  // A round being stepped a seat at a time is not the person's turn, and the
+  // bar says whose it is for as long as nothing newer is being said.
+  const round = timeline.playing
+    ? `${debugSeatName(timeline.playing)} plays next · ▸| steps it, ▶| lets the round finish` : "";
+  const text = debugNoteText || round || layered;
   const html = escapeAttr(text) +
     (debugNoteText && debugNotePos ? `<button data-dbg="show" title="Centre the map there">Show</button>` : "");
   if (note.innerHTML !== html) note.innerHTML = html;
@@ -1204,6 +1235,18 @@ if (DEBUG_PANE !== null) {
     const drawn = drawState(st, ...rest);
     try { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); } catch (error) { console.error("debugger bar", error); }
     return drawn;
+  };
+  // In the middle of a round stepped a seat at a time the turn is not the
+  // person's. Ending it means letting the rest of the round play, and
+  // nothing else is theirs to do until it comes back.
+  const sendAction = send;
+  send = function (action, ...rest) {
+    const timeline = debugTimeline();
+    if (!timeline || !timeline.playing) return sendAction(action, ...rest);
+    if (action && action.type === "end_turn")
+      return debugOp({op: "finish_round"}, AUTOPLAY_BATCH_TIMEOUT_MS);
+    debugSay(`${debugSeatName(timeline.playing)} plays next; your turn comes back when the round finishes`);
+    return Promise.resolve();
   };
   const drawLoop = drawTurnLoop;
   drawTurnLoop = function (...rest) {

@@ -418,6 +418,8 @@ fn the_page_loads_the_bar_and_sends_only_operations_the_engine_answers() {
         "undo",
         "step",
         "step_action",
+        "step_seat",
+        "finish_round",
         "reveal",
         "assist",
         "layers",
@@ -658,4 +660,71 @@ fn the_document_gives_the_numbers_the_timeline_uses() {
     ] {
         assert!(doc.contains(&said), "the document no longer says: {said}");
     }
+}
+
+#[test]
+fn a_round_stepped_seat_by_seat_is_the_round_ended_at_once() {
+    let mut apart = played();
+    let mut whole = played();
+    end_turn(&mut whole);
+    let mut seats = Vec::new();
+    for _ in 0..40 {
+        apart.debug_step_seat().expect("a live game steps");
+        let state = apart.state();
+        seats.push(state["debug"]["stepped"]["seat"].as_u64().unwrap());
+        assert_eq!(state["debug"]["playing"], json!(apart.game.current));
+        if apart.game.current == 0 {
+            break;
+        }
+        // The middle of a round: the turn has not moved, and a rival's turn
+        // is neither undone nor a place to keep.
+        assert_eq!(apart.game.turn, 1);
+        assert_eq!(state["debug"]["can_undo"], json!(false));
+        assert!(apart.debug(&json!({"op": "undo"}))["error"].is_string());
+        assert!(apart.debug(&json!({"op": "save_point", "name": "mid"}))["error"].is_string());
+    }
+    assert_eq!(seats[0], 0, "the seat's own turn ends first");
+    assert!(
+        seats.len() >= 3,
+        "a rival and a city-state took turns of their own: {seats:?}"
+    );
+    assert_eq!(apart.game.turn, 2);
+    assert_eq!(marked(&apart), [1, 2]);
+    // Taken apart or taken whole, it is the same round.
+    assert_eq!(world(&apart), world(&whole));
+}
+
+#[test]
+fn a_step_in_the_middle_of_a_round_lets_the_round_finish_first() {
+    let mut session = played();
+    session.debug_step_seat().expect("the seat's turn ends");
+    assert_ne!(session.game.current, 0);
+    // A whole step finishes the round, and the turn that opens is held to
+    // the breakpoints like any other.
+    session.debug(&json!({"op": "breakpoints", "turns": [2]}));
+    let out = session.debug(&json!({"op": "step"}));
+    assert_eq!(out["turn"], json!(2));
+    assert_eq!(session.game.current, 0);
+    assert_eq!(out["debug"]["stopped"], json!({"kind": "turn", "turn": 2}));
+
+    // The smallest step in the middle of a round is the next seat's turn.
+    session.debug_step_seat().expect("the seat's turn ends");
+    let up = session.game.current;
+    let out = session.debug(&json!({"op": "step_action"}));
+    assert_eq!(out["error"], Value::Null);
+    assert_eq!(out["debug"]["stepped"]["seat"], json!(up));
+
+    // Back from the middle of a round is the top of the seat's own turn.
+    if session.game.current != 0 {
+        assert_eq!(session.debug_back(), Ok(2));
+    }
+    assert_eq!(session.game.current, 0);
+
+    // The rest of a round on request, and only when there is one.
+    session.debug_step_seat().expect("the seat's turn ends");
+    let out = session.debug(&json!({"op": "finish_round"}));
+    assert_eq!(out["error"], Value::Null);
+    assert_eq!(out["turn"], json!(3));
+    assert_eq!(session.game.current, 0);
+    assert!(session.debug(&json!({"op": "finish_round"}))["error"].is_string());
 }

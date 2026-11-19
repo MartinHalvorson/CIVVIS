@@ -40,6 +40,7 @@ do not carry, so the replay would be another world.
 | turn box | `jump`, or `step` repeated | Go to a turn by its number. One already played is put back as it stood. One still ahead is played to by the seat's Civ AI, stopping early if a breakpoint does. Up and down in the box walk one played turn |
 | ▶ | `forward` | Forward along turns already played, without playing anything |
 | ▸ | `step_action` | Step in: the seat's Civ AI takes its next action, and ends the turn when it has none left |
+| ▸\| | `step_seat` | Step one seat: end your turn as it stands, then one civilization's turn at a time |
 | ▶\| | `step` | The seat's Civ AI plays one whole turn |
 | ▶▶ Run | `step`, repeated | Play turns until a breakpoint stops it, or Stop |
 | ◉ | `reveal` | Show the whole map and every civilization, not only what the seat can see |
@@ -110,6 +111,33 @@ its standing preferences for the governors of its cities. Those are carried
 onto the real world when the plan is made, the way the agent's own
 plan-then-replay path carries them, so a turn the person takes over halfway
 keeps them.
+
+## Stepping a seat
+
+Step in takes the played seat's turn apart; step one seat takes the round
+apart. On your own turn it ends the turn as it stands and stops there, before
+any rival has moved. After that each press plays whoever is up, a rival, a
+city-state or the barbarians, with that seat's own agent, and stops again.
+The bar says who played, how many actions they took and who is next. With
+Reveal on, each of those turns can be watched on the map.
+
+When the round comes back to the played seat, its next turn opens exactly as
+it does after an ordinary end of turn: the turn is marked and the layers that
+are on take their share. A round taken apart is the same round as one taken
+whole, and a test plays one both ways and compares the worlds.
+
+In the middle of a round the turn is not the person's (`state.debug.playing`
+is the seat that is up):
+
+- ▶| (`step`) lets the rest of the round play, and holds the turn that opens
+  to the breakpoints like any other. End Turn does the same (`finish_round`).
+- ▸ (`step_action`) steps the next seat, which is the smallest step there is.
+- ◀ goes to the top of the turn the round belongs to.
+- A rival's turn is not the seat's action to take back, and not a place to
+  keep: undo and save points are refused until the round finishes.
+
+In a linked split the other half follows when the turn changes, as it does
+for an ended turn.
 
 ## Reveal
 
@@ -259,6 +287,7 @@ operation leaves the world as it was.
 | `goto_save`, `drop_save` | `id` |
 | `room` | `megabytes`: where the memory line is, 128 to 3072 |
 | `step`, `step_action`, `assist` | optional `strategy`, the Civ AI to seat first |
+| `step_seat`, `finish_round` | none |
 | `reveal` | `on`: true or false |
 | `copy` | from a half of a split: `from`, the other half's name |
 | `adopt` | from the host of a split: `pane`, the half to keep |
