@@ -47,6 +47,11 @@ pub mod wasm;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod site_bench;
 
+/// The simulator debugger: the marks a played game keeps of its own turns,
+/// and the operations that walk them. Its own file because it is one idea,
+/// and a child for the same reason as the two above.
+mod debugger;
+
 /// Which runtime is answering, so a long-lived page can notice it is talking
 /// to a different one than it booted against and reload.
 ///
@@ -519,6 +524,7 @@ static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(||
     page.push_str(EMBEDDED_APP_SETUP_JS);
     page.push_str(EMBEDDED_APP_MOMENTS_JS);
     page.push_str(EMBEDDED_APP_FRONTDOOR_JS);
+    page.push_str(EMBEDDED_APP_DEBUGGER_JS);
     page
 });
 const EMBEDDED_APP_ARENA_JS: &str = include_str!("../web/assets/app_arena.js");
@@ -526,6 +532,7 @@ const EMBEDDED_APP_LAUNCHES_JS: &str = include_str!("../web/assets/app_launches.
 const EMBEDDED_APP_SETUP_JS: &str = include_str!("../web/assets/app_setup.js");
 const EMBEDDED_APP_FRONTDOOR_JS: &str = include_str!("../web/assets/app_frontdoor.js");
 const EMBEDDED_APP_MOMENTS_JS: &str = include_str!("../web/assets/app_moments.js");
+const EMBEDDED_APP_DEBUGGER_JS: &str = include_str!("../web/assets/app_debugger.js");
 const EMBEDDED_FEATURE_ATLAS: &[u8] = include_bytes!("../web/assets/feature-atlas.png");
 const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
     include_bytes!("../web/assets/environment-feature-atlas.png");
@@ -685,6 +692,9 @@ pub struct Session {
     pub keeps_rival_yields: bool,
     /// The acting seat's own cities as well (`Game::keep_own_yields`).
     pub keeps_own_yields: bool,
+    /// The turns a played game can be walked back to, the breakpoints a run
+    /// stops on and the decisions lent to the seat's agent (`debugger.rs`).
+    debugger: debugger::Timeline,
 }
 
 /// The identity of a person playing a seat.
@@ -2316,7 +2326,7 @@ impl Session {
         }
         let human_players = Self::register_human_players(&game);
         let chronicle = ChronicleState::from_game(&game);
-        Session {
+        let mut session = Session {
             params,
             game,
             ais,
@@ -2335,7 +2345,10 @@ impl Session {
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
             simultaneous_jobs: 1,
-        }
+            debugger: debugger::Timeline::default(),
+        };
+        session.debugger_begins();
+        session
     }
 
     /// Loading through the game menu restores who controls the saved world.
@@ -2436,7 +2449,7 @@ impl Session {
         } else {
             Self::register_human_players(&game)
         };
-        Session {
+        let mut session = Session {
             params,
             game,
             ais,
@@ -2455,7 +2468,10 @@ impl Session {
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
             simultaneous_jobs: 1,
-        }
+            debugger: debugger::Timeline::default(),
+        };
+        session.debugger_begins();
+        session
     }
 
     pub(crate) fn set_view_player(&mut self, player: Option<usize>) -> Result<(), String> {
@@ -2997,6 +3013,8 @@ impl Session {
             }
         }
         o["legal_actions"] = offered;
+        // Where this world sits on its own timeline, for the debugger's bar.
+        o["debug"] = self.debugger_json();
         o["server_instance"] = json!(process_identity());
         o["server_commit"] = json!(runtime_commit("unknown"));
         o["server_commit_time"] = json!(runtime_commit_time());
@@ -3324,6 +3342,9 @@ impl Session {
                 guard += 1;
             }
             played += 1;
+            // The agent played the whole turn, so the one it opens is marked
+            // and the layers are not asked: there is no person to leave it to.
+            self.debugger_turn_opened(false);
         }
         played
     }
@@ -3354,6 +3375,7 @@ impl Session {
                 }
                 guard += 1;
             }
+            self.debugger_turn_opened(false);
         }
         true
     }
@@ -3381,6 +3403,9 @@ impl Session {
                 }
                 guard += 1;
             }
+            // The person's next turn is open: mark it, and let the layers
+            // they switched on take their share of it.
+            self.debugger_turn_opened(true);
         }
         None
     }
@@ -3393,6 +3418,7 @@ const APP_JS_TAG: &str = r#"<script src="/assets/app.js"></script>"#;
 const APP_SETUP_JS_TAG: &str = r#"<script src="/assets/app_setup.js"></script>"#;
 const APP_FRONTDOOR_JS_TAG: &str = r#"<script src="/assets/app_frontdoor.js"></script>"#;
 const APP_MOMENTS_JS_TAG: &str = r#"<script src="/assets/app_moments.js"></script>"#;
+const APP_DEBUGGER_JS_TAG: &str = r#"<script src="/assets/app_debugger.js"></script>"#;
 
 /// Give each native server's application scripts a new URL.
 ///
@@ -3412,6 +3438,8 @@ fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
         format!(r#"<script src="/assets/app_frontdoor.js?instance={instance}"></script>"#);
     let moments_tag =
         format!(r#"<script src="/assets/app_moments.js?instance={instance}"></script>"#);
+    let debugger_tag =
+        format!(r#"<script src="/assets/app_debugger.js?instance={instance}"></script>"#);
     page.replacen(APP_PALETTE_JS_TAG, &palette_tag, 1)
         .replacen(APP_ARENA_JS_TAG, &arena_tag, 1)
         .replacen(APP_LAUNCHES_JS_TAG, &launches_tag, 1)
@@ -3419,6 +3447,7 @@ fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
         .replacen(APP_SETUP_JS_TAG, &setup_tag, 1)
         .replacen(APP_FRONTDOOR_JS_TAG, &frontdoor_tag, 1)
         .replacen(APP_MOMENTS_JS_TAG, &moments_tag, 1)
+        .replacen(APP_DEBUGGER_JS_TAG, &debugger_tag, 1)
         .into_bytes()
 }
 
@@ -3462,6 +3491,11 @@ fn app_launches_js() -> Vec<u8> {
 fn app_moments_js() -> Vec<u8> {
     std::fs::read("web/assets/app_moments.js")
         .unwrap_or_else(|_| EMBEDDED_APP_MOMENTS_JS.as_bytes().to_vec())
+}
+
+fn app_debugger_js() -> Vec<u8> {
+    std::fs::read("web/assets/app_debugger.js")
+        .unwrap_or_else(|_| EMBEDDED_APP_DEBUGGER_JS.as_bytes().to_vec())
 }
 
 fn app_frontdoor_js() -> Vec<u8> {
@@ -4908,6 +4942,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 &app_setup_js(),
             );
         }
+        ("GET", "/assets/app_debugger.js") => {
+            respond(
+                stream,
+                "200 OK",
+                "text/javascript; charset=utf-8",
+                &app_debugger_js(),
+            );
+        }
         ("GET", "/assets/app_moments.js") => {
             respond(
                 stream,
@@ -5482,6 +5524,16 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     out["autosaved"] = json!(turn);
                 }
             }
+            respond_json(stream, &out);
+        }
+        // One debugger operation on a played game: walk its marked turns,
+        // undo an action, step a turn to a breakpoint, lend layers of the
+        // seat to its agent (`server/debugger.rs`).
+        ("POST", "/debug") => {
+            let mut session = lock_or_recover(&sh.session);
+            let mut out = crate::routes::debug(&mut session, &parsed);
+            drop(session);
+            decorate(&mut out, sh);
             respond_json(stream, &out);
         }
         ("POST", "/step") => {
