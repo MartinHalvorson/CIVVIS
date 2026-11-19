@@ -155,6 +155,7 @@ fn memory_past_the_line_takes_room_away_a_tenth_at_a_time() {
     let mut session = played();
     let moved = session.debug(&json!({"op": "room", "megabytes": 2048}));
     assert_eq!(moved["error"], Value::Null);
+    assert_eq!(moved["debug"]["memory_line"], json!(2048));
     assert_eq!(session.debugger.memory_line, Some(2048 << 20));
     assert!(session.debug(&json!({"op": "room"}))["error"].is_string());
 }

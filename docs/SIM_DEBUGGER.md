@@ -217,7 +217,8 @@ turn (`acted`), `can_undo`, `can_back`, `can_forward`, the `breakpoints` and
 the categories they may name, the `layers`, how many decisions the layers
 took this turn (`assisted`), why the last step `stopped`, what the last step
 in did (`stepped`: the action and how many are `left`), whether the view
-is `reveal`ed, and the save points (`saves`: `id`, `name`, `turn`, `acted`,
+is `reveal`ed, the `memory_line` in megabytes if the page set one, and the
+save points (`saves`: `id`, `name`, `turn`, `acted`,
 and `auto` for the one the debugger keeps).
 
 A watched game keeps no timeline and its state carries no `debug`.

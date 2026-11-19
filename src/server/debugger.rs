@@ -510,6 +510,7 @@ impl Timeline {
             "stopped": self.stopped,
             "stepped": self.stepped,
             "reveal": self.reveal,
+            "memory_line": self.memory_line.map(|bytes| bytes >> 20),
             "saves": self.saves.iter().map(|save| json!({
                 "id": save.id,
                 "name": save.name,
