@@ -313,12 +313,24 @@ def main() -> int:
         # A headless page is not focused, and then `focus()` fires no focus events.
         dev.call("Emulation.setFocusEmulationEnabled", {"enabled": True})
         bar = Bar(dev)
-        # ⚠ Not ten seconds. The first run of this file on a CI runner failed
-        # right here with the page not yet loaded: a cold Chrome on a busy
-        # runner took longer than that to open its first page.
+        # ⚠ The first run of this file on a CI runner failed right here:
+        # after ten seconds neither script on the page was defined. The two
+        # runs after it passed, and the one that was timed had the page ready
+        # in 0.1s, so a slow start is not shown and the cause is not known.
+        # So the page is opened
+        # again when it has not arrived, and each time that happens the run
+        # says what the page looked like, which is how the cause gets found.
+        ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
         opened = time.time()
-        bar.until("typeof drawDebugBar === 'function' && typeof engineState === 'function'",
-                  "the bar's script loaded on the stand-in page", seconds=60)
+        for attempt in range(1, 5):
+            try:
+                bar.until(ready, "the bar's script loaded on the stand-in page", seconds=15)
+                break
+            except AssertionError as late:
+                if attempt == 4:
+                    raise
+                print(f"attempt {attempt}: {late}; opening the page again.")
+                dev.call("Page.navigate", {"url": f"http://127.0.0.1:{port}/"})
         print(f"the stand-in page was ready {time.time() - opened:.1f}s after Chrome answered.")
         check_the_bar(bar)
         print("the debugger bar sends what each control is for: the turn box, both sliders, "
