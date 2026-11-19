@@ -2400,6 +2400,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # instead of a bare close: every hung rival turn after such a refusal
         # followed the bare close. Off unless set.
         "DealCounterRefuse": bool(getattr(args, "deal_counter_refuse", False)),
+        # A luxury ask the rival answers REJECTED with its own price on our side
+        # is proposed back once, as a Great Work or Open Borders quote is
+        # (`CivvisTrade.luxuryQuote`): 140 such answers inside our ceiling were
+        # walked away from in 58 Lv 8 games on 2026-11-19. Off unless set.
+        "LuxuryQuoteProposals": bool(getattr(args, "luxury_quote_proposals", False)),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -7276,6 +7281,7 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
             "TileDelta": getattr(args, "tile_delta", None),
+            "LuxuryQuoteProposals": getattr(args, "luxury_quote_proposals", False),
             **{key: getattr(args, attr, None) for attr, key, _ in ORDER_QUEUE_TIMINGS},
         },
         "city_two_turn": (sorted(state.get("founds") or [])[1]
@@ -8851,6 +8857,7 @@ def _play(args: argparse.Namespace) -> int:
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
             "TileDelta": args.tile_delta,
+            "LuxuryQuoteProposals": getattr(args, "luxury_quote_proposals", False),
             **{key: getattr(args, attr, None) for attr, key, _ in ORDER_QUEUE_TIMINGS},
         },
         # See `state["founds"]`: the opening tempo, recorded per run so the
@@ -9569,6 +9576,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--deal-counter-refuse", dest="deal_counter_refuse", action="store_true",
                     help="decline a refused peace or alliance ask left on the deal "
                          "screen with REJECTED when its counter hold runs out (opt-in)")
+    ap.add_argument("--luxury-quote-proposals", dest="luxury_quote_proposals",
+                    action="store_true",
+                    help="propose back, once, a luxury ask the rival refuses with "
+                         "its own price inside our ceiling (opt-in)")
     # Wins always finish the native movie. This setting retains a minimum
     # presentation time; it cannot shorten a winning cinematic.
     ap.add_argument("--end-game-seconds", type=float, default=10.0,
