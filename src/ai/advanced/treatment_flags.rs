@@ -339,6 +339,9 @@ impl AdvancedAi {
         /// Opt-in gene `culture-faith-patronizes-the-creators`; see
         /// `advanced/culture_faith_patronizes_the_creators.rs`.
         culture_faith_patronizes_the_creators => enable_culture_faith_patronizes_the_creators, disable_culture_faith_patronizes_the_creators;
+        /// Opt-in gene `culture-trade-district-follows-the-theater`; see
+        /// `advanced/trade_district_follows_the_campus.rs`.
+        culture_trade_district_follows_the_theater => enable_culture_trade_district_follows_the_theater, disable_culture_trade_district_follows_the_theater;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
