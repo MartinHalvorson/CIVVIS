@@ -305,12 +305,24 @@ def civ_ranking(rows: list[dict], names: list[str]) -> dict | None:
 
 
 def civs(source: pathlib.Path) -> dict | None:
+    """The civ table, or `None` when there is no record to draw it from.
+
+    The other two rankings read files of the revision being published, which
+    CI has already held to their shape. This one reads a branch every
+    finished game writes to and nothing tests, from inside the script that
+    publishes the whole site. A line it cannot count therefore costs the
+    page its civ table, said on stderr, and never costs the site its publish.
+    """
     rows = results(source)
     if rows is None:
         return None
-    path = source / "data" / "civs.json"
-    names = list(json.loads(path.read_text(encoding="utf-8"))) if path.is_file() else []
-    return civ_ranking(rows, names)
+    try:
+        path = source / "data" / "civs.json"
+        names = list(json.loads(path.read_text(encoding="utf-8"))) if path.is_file() else []
+        return civ_ranking(rows, names)
+    except Exception as error:  # noqa: BLE001 - see above
+        print(f"home_rankings: the ledger's results could not be ranked ({error!r}); no civ table", file=sys.stderr)
+        return None
 
 
 def rankings(source: pathlib.Path) -> dict:

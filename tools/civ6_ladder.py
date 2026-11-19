@@ -2235,9 +2235,11 @@ def gzip_bytes(data: bytes) -> bytes:
 # root of the ledger branch. A run's summary is 60 KB and the branch held
 # 187 MB of them by 2026-11-19, which is the right record and the wrong thing
 # to read to answer "which civ wins". `publish_run` adds a run's line in the
-# commit that adds the run, so the file keeps itself current; `publish-results`
-# rebuilds it from everything on record. `beta/home_rankings.py` reads it for
-# the home page's table of the winningest civs.
+# commit that adds the run, and the line of any run on the branch that has
+# none, so the file keeps itself current; `publish-results` rebuilds it from
+# everything on record, which is how runs that never reached the branch get
+# theirs. `beta/home_rankings.py` reads it for the home page's table of the
+# winningest civs.
 RESULTS_PATH = "results.jsonl"
 
 #: How a recorded run ended, as a closed set. The first four are a game's
@@ -2347,18 +2349,21 @@ def ledger_results(repo: Path, tip: str | None, env: dict | None = None
     return parse_results(_git(repo, "show", f"{tip}:{RESULTS_PATH}", env=env))
 
 
-def ledger_summaries(repo: Path, tip: str, env: dict | None = None):
-    """Every run summary on the branch at `tip`, as `(tag, summary)`.
+def ledger_summaries(repo: Path, tip: str, env: dict | None = None,
+                     skip=frozenset()):
+    """The run summaries on the branch at `tip`, as `(tag, summary)`, less
+    the tags in `skip`.
 
     One `cat-file --batch` for all of them, read a blob at a time: 4,639
     summaries are 187 MB, and a `git show` each is 4,639 processes.
     """
     import subprocess
     wanted = []
-    for line in _git(repo, "ls-tree", "-r", f"{tip}:runs", env=env).splitlines():
+    # `check=False`: a branch with no `runs/` yet has no summaries, not an error.
+    for line in _git(repo, "ls-tree", "-r", f"{tip}:runs", env=env, check=False).splitlines():
         meta, _, path = line.partition("\t")
         parts = path.split("/")
-        if len(parts) == 2 and parts[1] == "summary.json":
+        if len(parts) == 2 and parts[1] == "summary.json" and parts[0] not in skip:
             wanted.append((parts[0], meta.split()[2]))
     if not wanted:
         return
@@ -2392,20 +2397,37 @@ def results_entry(repo: Path, tip: str | None, tag: str, summary: dict,
     rides in the commit publishing the run. Nothing for a diagnostic, which
     `apply` keeps off the record too.
 
+    The file is held to the branch, not to this one run: any run already on
+    the branch with no line (a seat on an older checkout published it, or
+    its publish could not write one) gets its line here too, from its
+    summary. In step that is one `ls-tree` and nothing read.
+
     Never the reason a run is not published: whatever goes wrong here is said
     on stderr (`ledger-publish.log`, beside the run) and the run goes out
-    without its line, which `publish-results` adds from the summary.
+    without its line, which the next publish or `publish-results` adds.
     """
     if "diagnostic" in summary:
         return []
     try:
         rows = ledger_results(repo, tip, env=env)
         merge_result(rows, result_row(result_entry(_tagged(tag, summary))))
+        if tip:
+            add_branch_results(rows, repo, tip, env=env, skip=frozenset(rows))
         return [(RESULTS_PATH, results_text(rows).encode())]
     except Exception as exc:  # noqa: BLE001 - the run itself must still publish
         print(f"results line for {tag} not written ({exc!r}); "
               f"`civ6_ladder.py publish-results` adds it", file=sys.stderr)
         return []
+
+
+def add_branch_results(rows: dict[str, dict], repo: Path, tip: str,
+                       env: dict | None = None, skip=frozenset()) -> None:
+    """Fold in the line of every run summary on the branch, less `skip`.
+    The same rule as `apply`: a saved-board experiment is not a game of the
+    record."""
+    for tag, summary in ledger_summaries(repo, tip, env=env, skip=skip):
+        if "diagnostic" not in summary:
+            merge_result(rows, result_row(result_entry(_tagged(tag, summary))))
 
 
 def _tagged(tag: str, summary: dict) -> dict:
@@ -2474,11 +2496,9 @@ def publish_results(ledger: Path, *, remote: str = "origin",
         for row in recorded:
             merge_result(rows, row)
         if tip:
-            for tag, summary in ledger_summaries(repo, tip, env=env):
-                # The same rule as `apply`: a saved-board experiment is not a
-                # game of the record.
-                if "diagnostic" not in summary:
-                    merge_result(rows, result_row(result_entry(_tagged(tag, summary))))
+            # Every summary, not only the ones without a line: a summary
+            # carries the seat that this ledger's oldest entries predate.
+            add_branch_results(rows, repo, tip, env=env)
         text = results_text(rows)
         if text == before:
             return "already"

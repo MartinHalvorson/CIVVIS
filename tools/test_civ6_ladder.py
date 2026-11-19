@@ -2371,6 +2371,27 @@ class PublishRunTests(unittest.TestCase):
             "victory": "VICTORY_CULTURE", "turns": 100, "score": 200, "rival_best": 150})
         self.assertEqual((rows[0]["outcome"], rows[0]["civ"]), ("unfinished", None))
 
+    def test_a_run_published_without_a_line_gets_it_at_the_next_publish(self):
+        # A seat on an older checkout publishes the run and writes no line.
+        self.add_run("civvis-3", won=True, finished="2026-08-22T10:00:00Z",
+                     seat={"civ": "CIVILIZATION_ROME"})
+        self.publish("civvis-1")
+        tip = _git(self.origin, "rev-parse", "refs/heads/ledger")
+        with TemporaryDirectory() as scratch:
+            older = civ6_ladder._ledger_commit(
+                self.work, tip,
+                [("runs/civvis-3/summary.json", (self.runs / "civvis-3" / "summary.json").read_bytes())],
+                "ledger: civvis-3", Path(scratch), PROBE)
+        _git(self.work, "push", "-q", "origin", f"{older}:refs/heads/ledger")
+        self.assertEqual([row["tag"] for row in self.results()], ["civvis-1"])
+        self.assertEqual(self.publish("civvis-3"), "already")
+        # The next run to finish brings the file back in step with the branch.
+        self.publish("civvis-2")
+        rows = {row["tag"]: row for row in self.results()}
+        self.assertEqual(sorted(rows), ["civvis-1", "civvis-2", "civvis-3"])
+        self.assertEqual((rows["civvis-3"]["outcome"], rows["civvis-3"]["civ"]),
+                         ("win", "CIVILIZATION_ROME"))
+
     def test_a_diagnostic_run_is_published_without_a_result_line(self):
         # `apply` keeps a saved-board experiment off the ledger; its ending is
         # not a game of the record here either.

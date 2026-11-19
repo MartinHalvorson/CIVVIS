@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import pathlib
@@ -191,6 +193,16 @@ class HomeRankings(unittest.TestCase):
             tree = git(bare, "mktree", stdin="")
             git(bare, "update-ref", "refs/remotes/origin/ledger", git(bare, "commit-tree", tree, "-m", "runs only"))
             self.assertIsNone(home_rankings.civs(bare))
+            # A line this reader cannot count costs the page its civ table
+            # and is said; it never stops the script that publishes the site.
+            odd = pathlib.Path(scratch) / "odd"
+            odd.mkdir()
+            with_ledger(odd, [run("g1", "win", "GREECE"), {**run("g2", "win", "GREECE"), "game": ["not", "a", "tag"]}])
+            said = io.StringIO()
+            with contextlib.redirect_stderr(said):
+                self.assertIsNone(home_rankings.civs(odd))
+                self.assertEqual(home_rankings.rankings(odd), {"civs": None, "strategies": None, "genes": None})
+            self.assertIn("could not be ranked", said.getvalue())
         # The publish workflow is what fetches it: every branch, on checkout.
         workflow = (ROOT / ".github" / "workflows" / "to-test-auto-30.yml").read_text(encoding="utf-8")
         self.assertIn("fetch-depth: 0", workflow)
