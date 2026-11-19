@@ -263,3 +263,51 @@ fn the_page_loads_the_bar_and_sends_only_operations_the_engine_answers() {
         assert!(sent.contains(op), "the bar never sends {op}");
     }
 }
+
+#[test]
+fn a_fork_is_the_same_world_with_the_same_past_and_a_future_of_its_own() {
+    let mut session = played();
+    end_turn(&mut session);
+    end_turn(&mut session);
+    let mut fork = session.fork();
+    assert_eq!(world(&fork), world(&session));
+    assert_eq!(marked(&fork), [1, 2, 3]);
+
+    end_turn(&mut fork);
+    assert_eq!(fork.game.turn, 4);
+    assert_eq!(fork.debug_jump(1), Ok(1));
+    // Nothing the fork does reaches the session it was taken from.
+    assert_eq!(session.game.turn, 3);
+    assert_eq!(marked(&session), [1, 2, 3]);
+    end_turn(&mut session);
+    assert_eq!(marked(&session), [1, 2, 3, 4]);
+    assert_eq!(marked(&fork), [1, 2, 3, 4], "the fork kept its own turn 4");
+    assert_eq!(fork.game.turn, 1);
+}
+
+#[test]
+fn the_split_speaks_one_set_of_messages_on_both_sides() {
+    let page = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    let shim = include_str!("../../beta/shim.js");
+    // The published build's half asks its host for a world before anything else.
+    for message in ["pane-boot", "pane-world"] {
+        let quoted = format!("\"{message}\"");
+        assert!(page.contains(&quoted), "the host never handles {message}");
+        assert!(shim.contains(&quoted), "the shim never speaks {message}");
+    }
+    // Everything else passes between the host and a pane inside the page
+    // script: each message has a sender and a listener there.
+    for message in [
+        "pane-turn",
+        "pane-follow",
+        "pane-save",
+        "pane-saved",
+        "pane-load",
+    ] {
+        let quoted = format!("\"{message}\"");
+        assert!(
+            page.matches(&quoted).count() >= 2,
+            "{message} is sent or heard, not both"
+        );
+    }
+}

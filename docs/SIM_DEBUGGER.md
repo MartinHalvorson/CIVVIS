@@ -25,7 +25,8 @@ keep a mark each and older ones keep one turn in ten.
 | ▶ | `forward` | Forward along turns already played, without playing anything |
 | ▶\| | `step` | The seat's Civ AI plays one whole turn |
 | ▶▶ Run | `step`, repeated | Play turns until a breakpoint stops it, or Stop |
-| Save | `POST /save` | Save this turn under its number |
+| ⤓ | `POST /save` | Save this turn under its number |
+| Split | | Two simulators from this turn; see below |
 
 Going back forgets nothing. The turns ahead stay marked, and ▶ walks them
 again exactly as they were played. They are replaced only when the world is
@@ -81,6 +82,42 @@ it is shown. "Every civilization's events" reads the others too.
 
 The stop is reported on `state.debug.stopped` and in the bar, with a Show
 button when the event has a place on the map.
+
+## Split screen
+
+Split puts two simulators in one window, side by side or one above the other.
+Both start from the world as it stood when the screen was split, and from
+there each plays its own history: play one by hand and step the other, or
+try two answers to the same turn.
+
+Each half is the whole page again in a frame, with a simulator of its own:
+
+- On the published build each page has its own engine. The half asks the
+  host page for its world by message before it asks its engine anything
+  (`beta/shim.js`, `pane-boot` / `pane-world`), so it never shows another
+  game on the way.
+- On a socket server both pages would reach the one session the process
+  plays, so a request from a half is answered from a session kept for it
+  (`src/server/panes.rs`). The half names itself in its address
+  (`?pane=a-<split>`) and its requests carry that in `Referer`. Its session
+  is a fork of the main one (`Session::fork`): the same world, the same
+  agents, and the timeline behind it to walk back along.
+
+The strip between the halves holds the split's own controls:
+
+| Control | What it does |
+|---------|--------------|
+| Linked / Separate | Linked, the halves stay on the same turn. Whatever moves one is repeated in the other the same way: an ended turn ends the other's turn as it stands, a step steps it, a walk along the timeline walks it. Separate, neither follows the other. |
+| ◧ / ⬒ | Switch between side by side and top and bottom |
+| A → B, B → A | Make one half a copy of the other as it stands now |
+| Keep A, Keep B | Close the split and play on from that half |
+
+A half that moved because it was following is not followed back. Linking two
+halves that have drifted apart brings B to A's turn.
+
+On the published build a half starts from a save, so its timeline begins at
+the split; on a socket server it keeps the turns before the split too. Either
+way, the game that is kept when the split closes starts a timeline of its own.
 
 ## `POST /debug`
 

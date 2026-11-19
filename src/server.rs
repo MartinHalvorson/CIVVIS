@@ -52,6 +52,10 @@ pub mod site_bench;
 /// and a child for the same reason as the two above.
 mod debugger;
 
+/// A session of its own for each half of the split Sim debugger, beside the
+/// one this process plays.
+mod panes;
+
 /// Which runtime is answering, so a long-lived page can notice it is talking
 /// to a different one than it booted against and reload.
 ///
@@ -1347,6 +1351,9 @@ pub struct Shared {
     /// whether the supervised process has changed.
     pub current_seed: AtomicU64,
     pub session: Mutex<Session>,
+    /// The split Sim debugger's two halves, each a session forked from the
+    /// one above (`panes.rs`). Empty until a screen is split.
+    pub panes: panes::Panes,
     /// A restart the viewer asked for, and the settings the live world was
     /// started from, both kept off the simulation lock for exactly the reason
     /// `current_seed` is.
@@ -4883,6 +4890,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         let _ = reader.read_exact(&mut body);
     }
     let parsed: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    // One half of a split screen has a session of its own; the requests that
+    // concern a world are answered from it and go no further.
+    if let Some(pane) = panes::named(&request_target, sender.referer.as_deref()) {
+        if let Some(answer) = panes::route(sh, pane, &method, &path, &request_target, &parsed) {
+            respond_json(stream, &answer);
+            return;
+        }
+    }
     sender.peer = stream.peer_addr().ok().map(|addr| addr.to_string());
     if let Some(line) = control_request_line(
         &method,
@@ -5804,6 +5819,7 @@ fn serve_opening_at_pace(
     }
     let current_seed = session.game.seed;
     let shared = Arc::new(Shared {
+        panes: panes::Panes::default(),
         current_seed: AtomicU64::new(current_seed),
         supervisor_request: Mutex::new(None),
         live_params: Mutex::new(session.params.clone()),
