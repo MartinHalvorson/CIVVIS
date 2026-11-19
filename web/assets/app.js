@@ -2354,7 +2354,7 @@ function ratedTableInPlay() {
   return Boolean(state?.players?.some(player => playerHudEloValue(player) !== null));
 }
 // A named table says who is really playing each seat: those rated agents, or
-// the mirror of a Civilization VI game ("8 Deity Firaxis AI", "CIVVIS Science").
+// the mirror of a Civilization VI game ("8 Deity AI Firaxis", "CIVVIS Science").
 function namedTableInPlay() {
   return Boolean(state?.players?.some(player => player.ai_username));
 }
@@ -32434,7 +32434,7 @@ function liveSeatPlanHtml() {
   const named = mine => (state.players || []).find(p => !p.is_minor && p.ai_username && (p.id === state.player) === mine);
   return `<div class="strategy-plan">` +
     strategyRow("Agent", reasonEscape(named(true)?.ai_username || "CIVVIS Advanced AI"), LIVE_SEAT_STORY) +
-    strategyRow("Rivals", reasonEscape(named(false)?.ai_username || "Firaxis AI"), "Every other civilization is played by Civilization VI's own AI") +
+    strategyRow("Rivals", reasonEscape(named(false)?.ai_username || "AI Firaxis"), "Every other civilization is played by Civilization VI's own AI") +
     `</div>` +
     `<div class="dossier-note">This page mirrors the live game. The agent's plan and ` +
     `reasoning stay with the game and are not shown here.</div>`;

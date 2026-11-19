@@ -82,12 +82,21 @@ class HomeRankings(unittest.TestCase):
         rungs = [row for row in rows if row["kind"] == "rung"]
         self.assertIn("Prince", [row["name"] for row in rungs])
         # A rung's level number is its place on the engine's own ladder.
-        ladder = re.search(r"CIV6_RUNGS: \[.*?\] = \[(.*?)\];", (ROOT / "src" / "strategies.rs").read_text(encoding="utf-8"), re.S)
+        strategies_rs = (ROOT / "src" / "strategies.rs").read_text(encoding="utf-8")
+        ladder = re.search(r"CIV6_RUNGS: \[.*?\] = \[(.*?)\];", strategies_rs, re.S)
         self.assertEqual(re.findall(r'\("(\w+)",', ladder[1]), home_rankings.CIV6_RUNGS)
         levels = {name: lv for row in rungs for name, lv in zip(row["name"].split(" · "), row["levels"])}
         self.assertEqual((levels["Settler"], levels["Prince"], levels["King"], levels["Deity"]), (1, 4, 5, 8))
         self.assertEqual(sorted(levels.values()), list(range(1, 9)))
-        self.assertIn('"Civ VI " + level(r) + r.name', LANDING)
+        # Civilization VI's own AI at a level is named here as the viewer
+        # names it beside a live game: number, name, then whose AI it is
+        # ("8 Deity AI Firaxis"). The words after the level are read out of
+        # the engine's template, so the two cannot come to disagree.
+        template = re.search(r'format!\("\{\} \{\}( [^"]+)", at \+ 1, CIV6_RUNGS\[at\]\.1\)', strategies_rs)
+        self.assertEqual(template[1], " AI Firaxis")
+        self.assertIn(f'row("is-rung", "", level(r) + "{template[1]}", "", elo(r), "",', LANDING)
+        self.assertIn('return low + (high > low ? "\\u2013" + high : "") + " " + r.name;', LANDING)
+        self.assertNotIn('"Civ VI "', LANDING)
         named = [name for row in rungs for name in row["name"].split(" · ")]
         self.assertEqual(sorted(named), sorted(rung.title() for rung in published["ladder"]))
 
