@@ -711,9 +711,12 @@ impl Game {
         let Some(unit) = self.units.get(&uid) else {
             return false;
         };
+        // Both tests are pure, so their order cannot change the answer. The
+        // step's cost is the cheaper one and nearly always passes; the whole
+        // allowance (the full-movement exception) is only needed when it fails.
         self.map.tiles.contains_key(&to)
-            && (unit.moves_left >= self.unit_max_moves(uid)
-                || unit.moves_left >= self.unit_step_cost(uid, from, to))
+            && (unit.moves_left >= self.unit_step_cost(uid, from, to)
+                || unit.moves_left >= self.unit_max_moves(uid))
     }
 
     pub(super) fn territory_owner_at(&self, pos: Pos) -> Option<usize> {
