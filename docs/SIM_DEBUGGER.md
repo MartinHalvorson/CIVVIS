@@ -22,10 +22,17 @@ Room is 480 marks, and in a browser tab also a line on the memory in use
 (1 GB unless the page names another with `room`), because a tab's memory only
 grows. A mark was measured at 1.3 MB in the first 60 turns of a six-seat game
 and 2.8 MB by turn 130. When room runs out the first mark and the newest 60
-stay whole, and between them the oldest turns go first, the odd ones before
-the even: a very long game keeps its early turns one in two, then one in four,
-and never fewer than one in eight. Past the memory line each further 32 MB
-takes a tenth of the room away.
+stay whole (the newest half of the room when that is fewer), and between them
+the oldest turns go first, the odd ones before the even: a very long game
+keeps its early turns one in two, then one in four, and so on to one in 64. If
+that is still too many the oldest go, so the room is never exceeded.
+
+Past the memory line, each time the memory has grown by another 1/32 of the
+line (32 MB at 1 GB), a fifth of the room is taken away, down to 12 marks.
+There is no gentler floor on purpose. With the line at 256 MB and the room
+never falling below the newest 60 turns, a six-seat game went from 248 MB at
+turn 110 to 425 MB at turn 200 and was still growing by 2 MB a turn, because
+late marks are larger than the early ones they replace.
 
 A thinned turn is not played again to bring it back. A turn played by hand
 cannot be played by an agent, and an agent decides things its logged actions
@@ -36,13 +43,16 @@ do not carry, so the replay would be another world.
 | ⏮ | `jump` to the first mark | Go to where the timeline begins |
 | ◀ | `back` | The top of this turn if you have acted in it, otherwise the turn before |
 | ↶ (`Ctrl`/`Cmd`+`Z`) | `undo` | Take back your last action this turn |
-| slider | `jump` | Go to any marked turn; a turn with no mark answers with the nearest one before it |
+| slider | `jump` | Go to any turn that was played; a turn that is no longer kept answers with the nearest one before it, and the bar says so. The mouse wheel over it walks one played turn at a time |
+| turn box | `jump`, or `step` repeated | Go to a turn by its number. One already played is put back as it stood. One still ahead is played to by the seat's Civ AI, stopping early if a breakpoint does. Up and down in the box walk one played turn. The box also opens the timeline panel: the slider again at a width a long game can be read on, with the save points and the breakpoint turns marked on it and listed to pick from, and how many of the played turns are still kept. `Esc` closes it |
 | ▶ | `forward` | Forward along turns already played, without playing anything |
 | ▸ | `step_action` | Step in: the seat's Civ AI takes its next action, and ends the turn when it has none left |
+| ▸\| | `step_seat` | Step one seat: end your turn as it stands, then one civilization's turn at a time |
 | ▶\| | `step` | The seat's Civ AI plays one whole turn |
 | ▶▶ Run | `step`, repeated | Play turns until a breakpoint stops it, or Stop |
 | ◉ | `reveal` | Show the whole map and every civilization, not only what the seat can see |
-| ⤓ | `POST /save`, `POST /load` | Saves: keep this turn under a name, or load one that was kept |
+| ⚑ | `save_point`, `goto_save`, `drop_save` | Save points: keep this world to come back to, go to one, or let one go. Each stands over the slider as a flag at its turn; clicking the flag goes there |
+| ⚑ | `POST /save`, `POST /load` | Saves, in the same panel: keep this turn on the device under a name, or load one that was kept |
 | Split | | Two simulators from this turn; see below |
 
 Going back forgets nothing. The turns ahead stay marked, and ▶ walks them
@@ -77,6 +87,10 @@ history are let go, because a timeline is one history. The world that was
 left is kept as a save point called "Where you were", unless it is a save
 point already, so going back is the same operation.
 
+In the bar they are under ⚑: a name and "Save point" to set one, and a list
+to go to one or let it go. Each also stands over the slider as a flag at its
+turn, gold for one that was set and grey for "Where you were".
+
 Save points live with the timeline: both halves of a split start with the
 ones there were, a save file does not carry them, and a new or loaded game
 starts with none.
@@ -104,6 +118,33 @@ its standing preferences for the governors of its cities. Those are carried
 onto the real world when the plan is made, the way the agent's own
 plan-then-replay path carries them, so a turn the person takes over halfway
 keeps them.
+
+## Stepping a seat
+
+Step in takes the played seat's turn apart; step one seat takes the round
+apart. On your own turn it ends the turn as it stands and stops there, before
+any rival has moved. After that each press plays whoever is up, a rival, a
+city-state or the barbarians, with that seat's own agent, and stops again.
+The bar says who played, how many actions they took and who is next. With
+Reveal on, each of those turns can be watched on the map.
+
+When the round comes back to the played seat, its next turn opens exactly as
+it does after an ordinary end of turn: the turn is marked and the layers that
+are on take their share. A round taken apart is the same round as one taken
+whole, and a test plays one both ways and compares the worlds.
+
+In the middle of a round the turn is not the person's (`state.debug.playing`
+is the seat that is up):
+
+- ▶| (`step`) lets the rest of the round play, and holds the turn that opens
+  to the breakpoints like any other. End Turn does the same (`finish_round`).
+- ▸ (`step_action`) steps the next seat, which is the smallest step there is.
+- ◀ goes to the top of the turn the round belongs to.
+- A rival's turn is not the seat's action to take back, and not a place to
+  keep: undo and save points are refused until the round finishes.
+
+In a linked split the other half follows when the turn changes, as it does
+for an ended turn.
 
 ## Reveal
 
@@ -207,9 +248,36 @@ The strip between the halves holds the split's own controls:
 | A → B, B → A | Make one half a copy of the other as it stands now, turns behind it included (`copy`) |
 | Keep A, Keep B | Close the split and play on from that half (`adopt`): its session becomes the main one, with every turn it could walk back to |
 | drag the strip | Resize the halves; double-click makes them equal |
+| VS | Head to head; see below |
 
 A half that moved because it was following is not followed back. Linking two
 halves that have drifted apart brings B to A's turn.
+
+### Head to head
+
+Head to head is the split used to play two strategies out from one turn. VS
+in the strip, or "Head to head" in the Split panel, widens the strip to hold:
+
+- a Civ AI for each half. It is the agent that plays that half's seat
+  whenever the half is stepped or run; each half is a session of its own, so
+  nothing in the engine is shared between the two choices.
+- the two seats' numbers side by side, A then B, with the larger in gold:
+  Score, Cities, Population, Military strength, and Science, Culture, Gold and
+  Faith per turn. Each half reports its own (`pane-numbers`) whenever they
+  change.
+- a chart of one of those numbers over the turns since the split, a line for
+  each half in the colour of its letter. It charts Score until a number's name
+  is clicked. A half that has walked back keeps its line, with a mark where it
+  now stands; turns it plays over again replace what the line showed, and a
+  copy takes the other half's line with it.
+- a turn to play both to. Linked, A is run and B follows it turn by turn, each
+  with its own Civ AI. Separate, each half is run by itself. The run ends when
+  that turn opens, or earlier if a breakpoint stops a half, and the same
+  button stops it by hand.
+
+The rivals in each half are played by fresh agents from the split onward, as
+they are after any walk along the timeline, so the two halves differ only in
+what the seat does and in what follows from it.
 
 ## `POST /debug`
 
@@ -226,6 +294,7 @@ operation leaves the world as it was.
 | `goto_save`, `drop_save` | `id` |
 | `room` | `megabytes`: where the memory line is, 128 to 3072 |
 | `step`, `step_action`, `assist` | optional `strategy`, the Civ AI to seat first |
+| `step_seat`, `finish_round` | none |
 | `reveal` | `on`: true or false |
 | `copy` | from a half of a split: `from`, the other half's name |
 | `adopt` | from the host of a split: `pane`, the half to keep |

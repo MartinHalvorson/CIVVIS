@@ -433,3 +433,110 @@ impl BarterShortLedger {
             .collect()
     }
 }
+
+/// `mobilization-hears-the-declaration`: the surprise declarations on us the
+/// control mod closed, as `diplomacy_choice` lines with `statement`
+/// `DECLARE_SURPRISE_WAR` (no `turn` field of their own). The mirror writes no
+/// `Game::wars` record, so the bridge reads the run's `events.jsonl` the way
+/// `SpyLossLedger` reads it: incrementally, whole lines only, and over from
+/// the start on a shorter (new) log. A declaration follows the last state row
+/// of the turn before the war shows on the board (131 of 131 matched wars in
+/// the 11-18/19 live games), so the war began on that row's turn plus one.
+#[derive(Default)]
+pub(super) struct DeclarationLedger {
+    pub(super) offset: u64,
+    /// The turn of the last state row read.
+    last_state_turn: u32,
+    /// `(declarer host id, target host id, turn the war began)`.
+    pub(super) declarations: Vec<(i64, i64, u32)>,
+}
+
+impl DeclarationLedger {
+    pub(super) fn refresh(&mut self, events: &Path) {
+        use std::io::{BufRead, Seek, SeekFrom};
+        let Ok(mut file) = std::fs::File::open(events) else {
+            return;
+        };
+        let length = file.metadata().map_or(0, |meta| meta.len());
+        if length < self.offset {
+            *self = Self::default();
+        }
+        if file.seek(SeekFrom::Start(self.offset)).is_err() {
+            return;
+        }
+        let mut reader = std::io::BufReader::new(file);
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            let Ok(read) = reader.read_until(b'\n', &mut line) else {
+                return;
+            };
+            if read == 0 || line.last() != Some(&b'\n') {
+                return;
+            }
+            self.offset += read as u64;
+            if let Some(turn) = Self::state_turn(&line) {
+                self.last_state_turn = turn;
+            } else if let Some((from, to)) = Self::surprise_declaration(&line) {
+                self.declarations
+                    .push((from, to, self.last_state_turn.saturating_add(1)));
+            }
+        }
+    }
+
+    fn find(line: &[u8], needle: &[u8]) -> Option<usize> {
+        line.windows(needle.len())
+            .position(|window| window == needle)
+    }
+
+    /// The turn of a state row: its top-level `"turn": N` sits right before
+    /// `"unit_maintenance_discount"` (the export's keys are sorted), which
+    /// no other row carries.
+    fn state_turn(line: &[u8]) -> Option<u32> {
+        let at = Self::find(line, b", \"unit_maintenance_discount\"")?;
+        let head = &line[..at];
+        let digits = head.iter().rev().take_while(|b| b.is_ascii_digit()).count();
+        let start = head.len() - digits;
+        if digits == 0 || !head[..start].ends_with(b"\"turn\": ") {
+            return None;
+        }
+        std::str::from_utf8(&head[start..]).ok()?.parse().ok()
+    }
+
+    /// `(declarer, target)` host ids of a `DECLARE_SURPRISE_WAR` line.
+    fn surprise_declaration(line: &[u8]) -> Option<(i64, i64)> {
+        Self::find(line, b"\"diplomacy_choice\"")?;
+        Self::find(line, b"\"DECLARE_SURPRISE_WAR\"")?;
+        let event: serde_json::Value = serde_json::from_slice(line).ok()?;
+        (event.get("kind")?.as_str()? == "diplomacy_choice"
+            && event.get("statement")?.as_str()? == "DECLARE_SURPRISE_WAR")
+            .then(|| {
+                Some((
+                    event.get("from_player")?.as_i64()?,
+                    event.get("to_player")?.as_i64()?,
+                ))
+            })
+            .flatten()
+    }
+
+    /// The declarations on the local seat that began on or before `turn`, as
+    /// `(declarer seat, turn the war began)`, through the mirror's own
+    /// host-to-seat map.
+    pub(super) fn heard(
+        &self,
+        state: &civvis::mirror::StateSnapshot,
+        model_major_seats: usize,
+    ) -> Vec<(usize, u32)> {
+        let seats = civvis::mirror::host_major_seat_map(state, model_major_seats);
+        let local = i64::from(state.seat.local_player);
+        self.declarations
+            .iter()
+            .filter(|(_, to, began)| *to == local && *began <= state.turn)
+            .filter_map(|(from, _, began)| {
+                let host = usize::try_from(*from).ok()?;
+                let seat = *seats.get(&host)?;
+                (seat != 0).then_some((seat, *began))
+            })
+            .collect()
+    }
+}

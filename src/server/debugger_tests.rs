@@ -5,7 +5,10 @@ use std::collections::BTreeSet;
 use serde_json::{json, Value};
 
 use super::super::{stock_opening_params, Session};
-use super::{Layer, Mark, Timeline, DENSE_MARKS, MEMORY_LINE, MEMORY_STEP, ROOMY_MARKS};
+use super::{
+    Layer, Mark, Timeline, COARSEST_STRIDE, DENSE_MARKS, MAX_SAVE_POINTS, MEMORY_LINE,
+    MEMORY_STEPS, MIN_MARKS, ROOMY_MARKS,
+};
 use crate::game::Action;
 use crate::setup::{GameSpeed, MapScript, MapTopology};
 
@@ -120,36 +123,73 @@ fn every_turn_keeps_its_mark_while_there_is_room_and_the_oldest_go_first() {
     left.extend(23..=100);
     assert_eq!(turns_of(&tight), left);
 
-    // With no room to speak of the newest sixty are still whole, and one old
-    // turn in eight is still there to go back to.
+    // Room for the newest sixty and as many again: those sixty are whole, and
+    // behind them the oldest are down to one in four where the rest are still
+    // one in two.
+    let mut short = timeline_of(1..=200, 2 * DENSE_MARKS);
+    short.thin();
+    let mut left = vec![1];
+    left.extend((4..=44).step_by(4));
+    left.extend((46..=140).step_by(2));
+    left.extend(141..=200);
+    assert_eq!(turns_of(&short), left);
+    assert_eq!(left.len(), 2 * DENSE_MARKS);
+
+    // With hardly any room, half of it is the newest turns and the other
+    // half is spread over everything before them. The room is never exceeded.
     let mut least = timeline_of(1..=100, 0);
     least.thin();
-    let mut left = vec![1, 8, 16, 24, 32, 40];
-    left.extend(41..=100);
-    assert_eq!(turns_of(&least), left);
-    assert_eq!(left.len(), DENSE_MARKS + 6);
+    assert_eq!(
+        turns_of(&least),
+        [1, 16, 32, 48, 64, 80, 95, 96, 97, 98, 99, 100]
+    );
+    // A game too long even for one turn in sixty-four loses its oldest.
+    let mut longest = timeline_of(1..=1000, 0);
+    longest.thin();
+    assert_eq!(
+        turns_of(&longest),
+        [1, 704, 768, 832, 896, 960, 995, 996, 997, 998, 999, 1000]
+    );
+    assert_eq!(longest.marks.len(), MIN_MARKS);
 }
 
 #[test]
-fn memory_past_the_line_takes_room_away_a_tenth_at_a_time() {
+fn memory_past_the_line_takes_room_away_a_fifth_at_a_time() {
+    let step = MEMORY_LINE / MEMORY_STEPS;
     let mut timeline = timeline_of(1..=200, 0);
     timeline.room = None;
     timeline.squeeze(MEMORY_LINE);
     assert_eq!(timeline.room(), ROOMY_MARKS);
     timeline.squeeze(MEMORY_LINE + 1);
-    assert_eq!(timeline.room(), 180);
+    assert_eq!(timeline.room(), 160);
     timeline.thin();
-    assert_eq!(timeline.marks.len(), 180);
+    assert_eq!(timeline.marks.len(), 160);
     // Memory that has not grown by a step since has nothing new to say.
-    timeline.squeeze(MEMORY_LINE + MEMORY_STEP);
-    assert_eq!(timeline.room(), 180);
-    timeline.squeeze(MEMORY_LINE + 1 + MEMORY_STEP);
-    assert_eq!(timeline.room(), 162);
-    for step in 2..40 {
+    timeline.squeeze(MEMORY_LINE + step);
+    assert_eq!(timeline.room(), 160);
+    timeline.squeeze(MEMORY_LINE + 1 + step);
+    assert_eq!(timeline.room(), 128);
+    // It goes on for as long as the memory grows, well below the newest
+    // sixty, and stops at the fewest marks a timeline is left with.
+    for grown in 2..40 {
         timeline.thin();
-        timeline.squeeze(MEMORY_LINE + 1 + step * MEMORY_STEP);
+        timeline.squeeze(MEMORY_LINE + 1 + grown * step);
     }
-    assert_eq!(timeline.room(), DENSE_MARKS);
+    timeline.thin();
+    assert_eq!(timeline.room(), MIN_MARKS);
+    let left = turns_of(&timeline);
+    assert_eq!(left.len(), MIN_MARKS);
+    assert_eq!(left[0], 1);
+    assert_eq!(left[MIN_MARKS - 6..], [195, 196, 197, 198, 199, 200]);
+
+    // A lower line is listened to in smaller steps.
+    let mut small = timeline_of(1..=200, 0);
+    small.room = None;
+    small.memory_line = Some(256 << 20);
+    small.squeeze((256 << 20) + 1);
+    assert_eq!(small.room(), 160);
+    small.squeeze((256 << 20) + 1 + (8 << 20));
+    assert_eq!(small.room(), 128);
 
     // A page that knows its device says where the line is.
     let mut session = played();
@@ -415,12 +455,38 @@ fn the_page_loads_the_bar_and_sends_only_operations_the_engine_answers() {
         "undo",
         "step",
         "step_action",
+        "step_seat",
+        "finish_round",
         "reveal",
         "assist",
         "layers",
         "breakpoints",
+        "save_point",
+        "goto_save",
+        "drop_save",
+        "room",
     ] {
         assert!(sent.contains(op), "the bar never sends {op}");
+    }
+}
+
+/// Letting go of a slider reads where it was dragged to before anything
+/// draws the bar again, because drawing puts a slider that is not being
+/// dragged back on the open turn. Read after, every drag went nowhere.
+#[test]
+fn a_dragged_slider_is_read_before_the_bar_is_drawn_again() {
+    let script = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    let heard = script
+        .find("bar.addEventListener(\"change\"")
+        .expect("the bar hears a change");
+    let handler = &script[heard..];
+    let read = handler
+        .find("const turn = target.value;")
+        .expect("the slider is read");
+    let drawn = handler.find("debugSay(\"\")").expect("the note is cleared");
+    assert!(read < drawn, "the slider is read after the bar was redrawn");
+    for slider in ["dbg-slider", "dbg-wide-slider"] {
+        assert!(handler[..read].contains(&format!("target.id === \"{slider}\"")));
     }
 }
 
@@ -467,6 +533,12 @@ fn the_split_speaks_one_set_of_messages_on_both_sides() {
         "pane-copy",
         "pane-camera",
         "pane-look",
+        // Head to head: each half's numbers and Civ AI, and playing both.
+        "pane-numbers",
+        "pane-strategy",
+        "pane-run",
+        "pane-stop",
+        "pane-ran",
     ] {
         let quoted = format!("\"{message}\"");
         assert!(
@@ -608,4 +680,109 @@ fn a_condition_stops_a_run_when_the_state_crosses_its_line() {
     // Clearing the breakpoints clears the conditions with them.
     let cleared = session.debug(&json!({"op": "breakpoints"}));
     assert_eq!(cleared["debug"]["breakpoints"]["conditions"], json!([]));
+}
+
+/// Head to head sets two halves side by side to see what a Civ AI changes.
+/// That reads as it should only if nothing else differs: two halves of one
+/// split, given the same agent, play the same game.
+#[test]
+fn two_halves_given_the_same_civ_ai_play_the_same_game() {
+    let mut session = played();
+    end_turn(&mut session);
+    let (mut a, mut b) = (session.fork(), session.fork());
+    for _ in 0..3 {
+        assert_eq!(a.debug(&json!({"op": "step"}))["error"], Value::Null);
+        assert_eq!(b.debug(&json!({"op": "step"}))["error"], Value::Null);
+    }
+    assert_eq!(a.game.turn, 5);
+    assert_eq!(world(&a), world(&b));
+}
+
+/// The numbers `docs/SIM_DEBUGGER.md` gives for the timeline are the ones
+/// this module uses.
+#[test]
+fn the_document_gives_the_numbers_the_timeline_uses() {
+    let doc = include_str!("../../docs/SIM_DEBUGGER.md")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    for said in [
+        format!("Room is {ROOMY_MARKS} marks"),
+        format!("({} GB unless the page names another", MEMORY_LINE >> 30),
+        format!("the newest {DENSE_MARKS} stay whole"),
+        format!("and so on to one in {COARSEST_STRIDE}"),
+        format!("another 1/{MEMORY_STEPS} of the line"),
+        format!("({} MB at 1 GB)", (MEMORY_LINE / MEMORY_STEPS) >> 20),
+        format!("down to {MIN_MARKS} marks"),
+        format!("A timeline holds {MAX_SAVE_POINTS} at once"),
+    ] {
+        assert!(doc.contains(&said), "the document no longer says: {said}");
+    }
+}
+
+#[test]
+fn a_round_stepped_seat_by_seat_is_the_round_ended_at_once() {
+    let mut apart = played();
+    let mut whole = played();
+    end_turn(&mut whole);
+    let mut seats = Vec::new();
+    for _ in 0..40 {
+        apart.debug_step_seat().expect("a live game steps");
+        let state = apart.state();
+        seats.push(state["debug"]["stepped"]["seat"].as_u64().unwrap());
+        assert_eq!(state["debug"]["playing"], json!(apart.game.current));
+        if apart.game.current == 0 {
+            break;
+        }
+        // The middle of a round: the turn has not moved, and a rival's turn
+        // is neither undone nor a place to keep.
+        assert_eq!(apart.game.turn, 1);
+        assert_eq!(state["debug"]["can_undo"], json!(false));
+        assert!(apart.debug(&json!({"op": "undo"}))["error"].is_string());
+        assert!(apart.debug(&json!({"op": "save_point", "name": "mid"}))["error"].is_string());
+    }
+    assert_eq!(seats[0], 0, "the seat's own turn ends first");
+    assert!(
+        seats.len() >= 3,
+        "a rival and a city-state took turns of their own: {seats:?}"
+    );
+    assert_eq!(apart.game.turn, 2);
+    assert_eq!(marked(&apart), [1, 2]);
+    // Taken apart or taken whole, it is the same round.
+    assert_eq!(world(&apart), world(&whole));
+}
+
+#[test]
+fn a_step_in_the_middle_of_a_round_lets_the_round_finish_first() {
+    let mut session = played();
+    session.debug_step_seat().expect("the seat's turn ends");
+    assert_ne!(session.game.current, 0);
+    // A whole step finishes the round, and the turn that opens is held to
+    // the breakpoints like any other.
+    session.debug(&json!({"op": "breakpoints", "turns": [2]}));
+    let out = session.debug(&json!({"op": "step"}));
+    assert_eq!(out["turn"], json!(2));
+    assert_eq!(session.game.current, 0);
+    assert_eq!(out["debug"]["stopped"], json!({"kind": "turn", "turn": 2}));
+
+    // The smallest step in the middle of a round is the next seat's turn.
+    session.debug_step_seat().expect("the seat's turn ends");
+    let up = session.game.current;
+    let out = session.debug(&json!({"op": "step_action"}));
+    assert_eq!(out["error"], Value::Null);
+    assert_eq!(out["debug"]["stepped"]["seat"], json!(up));
+
+    // Back from the middle of a round is the top of the seat's own turn.
+    if session.game.current != 0 {
+        assert_eq!(session.debug_back(), Ok(2));
+    }
+    assert_eq!(session.game.current, 0);
+
+    // The rest of a round on request, and only when there is one.
+    session.debug_step_seat().expect("the seat's turn ends");
+    let out = session.debug(&json!({"op": "finish_round"}));
+    assert_eq!(out["error"], Value::Null);
+    assert_eq!(out["turn"], json!(3));
+    assert_eq!(session.game.current, 0);
+    assert!(session.debug(&json!({"op": "finish_round"}))["error"].is_string());
 }
