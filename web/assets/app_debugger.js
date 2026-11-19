@@ -252,11 +252,16 @@ function debugSeatName(seat) {
   const who = state.players.find(player => player.id === seat);
   return who ? titleCase(String(who.civ || who.name || `seat ${seat}`)) : `seat ${seat}`;
 }
+// Who is up, as a clause: every seat is one civilization but the Barbarians.
+function debugPlaysNext(seat) {
+  const who = state.players.find(player => player.id === seat);
+  return `${debugSeatName(seat)} ${who && who.is_barbarian ? "play" : "plays"} next`;
+}
 function debugSayRound(stepped) {
   const did = stepped.seat === 0 ? "Your turn ended"
     : `${debugSeatName(stepped.seat)} played ${stepped.actions} action${stepped.actions === 1 ? "" : "s"}`;
   debugSay(stepped.next === 0 ? `${did} · turn ${state.turn} is yours`
-    : `${did} · ${debugSeatName(stepped.next)} plays next`);
+    : `${did} · ${debugPlaysNext(stepped.next)}`);
 }
 async function debugStepSeat() {
   if (autoplaying) return null;
@@ -771,7 +776,7 @@ function drawDebugBar(seat = true) {
   // A round being stepped a seat at a time is not the person's turn, and the
   // bar says whose it is for as long as nothing newer is being said.
   const round = timeline.playing
-    ? `${debugSeatName(timeline.playing)} plays next · ▸| steps it, ▶| lets the round finish` : "";
+    ? `${debugPlaysNext(timeline.playing)} · ▸| steps it, ▶| lets the round finish` : "";
   const text = debugNoteText || round || layered;
   const html = escapeAttr(text) +
     (debugNoteText && debugNotePos ? `<button data-dbg="show" title="Centre the map there">Show</button>` : "");
@@ -1316,7 +1321,7 @@ if (DEBUG_PANE !== null) {
     if (!timeline || !timeline.playing) return sendAction(action, ...rest);
     if (action && action.type === "end_turn")
       return debugOp({op: "finish_round"}, AUTOPLAY_BATCH_TIMEOUT_MS);
-    debugSay(`${debugSeatName(timeline.playing)} plays next; your turn comes back when the round finishes`);
+    debugSay(`${debugPlaysNext(timeline.playing)}; your turn comes back when the round finishes`);
     return Promise.resolve();
   };
   const drawLoop = drawTurnLoop;
