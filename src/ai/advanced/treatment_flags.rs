@@ -465,6 +465,9 @@ impl AdvancedAi {
         /// `advanced/mobilization_hears_the_declaration.rs`.
         mobilization_hears_the_declaration => enable_mobilization_hears_the_declaration, disable_mobilization_hears_the_declaration;
         // ---- append: p-r --------------------------------------------
+        /// Opt-in gene `racer-seat-statue-civic-first`; see
+        /// `AdvancedAi::diplo_statue_civic_goal`.
+        racer_seat_statue_civic_first => enable_racer_seat_statue_civic_first, disable_racer_seat_statue_civic_first;
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;
         /// See `advanced/religion_seat_keeps_the_guard.rs`.

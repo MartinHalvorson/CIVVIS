@@ -314,3 +314,63 @@ fn a_harbor_site_without_room_for_the_statue_is_passed_over() {
     }
     assert!(!AdvancedAi::statue_room(&game, &game.cities[&cid], pos));
 }
+
+#[test]
+fn racer_seat_statue_civic_first_is_opt_in() {
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "racer-seat-statue-civic-first",
+        |ai| ai.racer_seat_statue_civic_first,
+    );
+}
+
+/// `racer-seat-statue-civic-first`: a Science seat that builds the Statue
+/// takes Civil Engineering as its civic goal from turn 120 once the Harbor
+/// stands or is queued; without the tag, before turn 120 or without
+/// `science-seat-builds-the-statue` it names nothing, and a Diplomatic seat
+/// still answers only to `diplo-seat-statue-civic-first`.
+#[test]
+fn a_racing_seat_with_the_statues_harbor_goes_for_civil_engineering() {
+    let (mut game, _) = coastal_empire();
+    game.players[0].civics.insert(crate::name!("divine_right"));
+    let mut builder = seat(VictoryTarget::Diplomacy, true);
+    builder.enable_diplo_seat_statue_civic_first();
+    claim(&builder, &mut game);
+    game.turn = 130;
+
+    let mut science = seat(VictoryTarget::Science, true);
+    science.enable_science_seat_builds_the_statue();
+    assert_eq!(
+        science.diplo_statue_civic_goal(&game, 0),
+        None,
+        "off without the tag"
+    );
+    science.enable_racer_seat_statue_civic_first();
+    assert_eq!(
+        science.diplo_statue_civic_goal(&game, 0),
+        Some("civil_engineering"),
+        "a Science seat building the Statue, its Harbor queued"
+    );
+    let mut early = game.clone();
+    early.turn = 110;
+    assert_eq!(
+        science.diplo_statue_civic_goal(&early, 0),
+        None,
+        "before turn 120"
+    );
+
+    let mut no_statue = seat(VictoryTarget::Science, true);
+    no_statue.enable_racer_seat_statue_civic_first();
+    assert_eq!(
+        no_statue.diplo_statue_civic_goal(&game, 0),
+        None,
+        "a Science seat not building the Statue"
+    );
+
+    let mut diplomat = seat(VictoryTarget::Diplomacy, true);
+    diplomat.enable_racer_seat_statue_civic_first();
+    assert_eq!(
+        diplomat.diplo_statue_civic_goal(&game, 0),
+        None,
+        "a Diplomatic seat keeps its own gene"
+    );
+}
