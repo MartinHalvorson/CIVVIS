@@ -993,19 +993,19 @@ impl Game {
         &self,
         city: &City,
         pid: usize,
-        visible: &BTreeSet<Pos>,
+        visible: &impl SightSet,
     ) -> RememberedCity {
         let mut memory = self.remember_city(city);
         memory
             .defending_districts
-            .retain(|state| city.owner == pid || visible.contains(&state.pos));
+            .retain(|state| city.owner == pid || visible.sees_tile(state.pos));
         if let Some(previous) = self.players[pid]
             .remembered_cities
             .get(&city.id)
             .filter(|old| old.owner == city.owner)
         {
             for state in &previous.defending_districts {
-                if !visible.contains(&state.pos) && city.owner != pid {
+                if !visible.sees_tile(state.pos) && city.owner != pid {
                     memory.defending_districts.push(*state);
                 }
             }
@@ -1345,8 +1345,7 @@ impl Game {
             }
             None => self.tiles_of(visible),
         };
-        let visible: BTreeSet<Pos> = self.tiles_of(visible);
-        self.refresh_visibility_snapshot_inner(pid, &visible, &fresh);
+        self.refresh_visibility_snapshot_inner(pid, visible, &fresh);
         // Record the world as it stands *after* the snapshot: taking one grows
         // what the seat has explored, which is itself part of the stamp the
         // next call will compute.
@@ -1492,7 +1491,7 @@ impl Game {
     fn refresh_visibility_snapshot_inner(
         &mut self,
         pid: usize,
-        visible: &BTreeSet<Pos>,
+        visible: &TileBits,
         fresh: &BTreeSet<Pos>,
     ) {
         let newly_explored: Vec<Pos> = fresh
@@ -1521,13 +1520,20 @@ impl Game {
             // memory even though no unit currently has sight of it. Existing
             // memories remain strictly last-seen: only current sight may
             // refresh their population, defenses, or other live details.
+            // Read the sight bits through the grid: the answers the tile set
+            // `tiles_of(visible)` would give, without building that set on
+            // every refresh.
+            let visible = &GridSight {
+                grid: &self.map.tiles,
+                bits: visible,
+            };
             let explored = &self.players[pid].explored;
             let remembered_cities = &self.players[pid].remembered_cities;
             let mut cities: Vec<RememberedCity> = self
                 .cities
                 .values()
                 .filter(|city| {
-                    visible.contains(&city.pos)
+                    visible.sees_tile(city.pos)
                         || (explored.contains(&city.pos)
                             && !remembered_cities.contains_key(&city.id))
                 })
@@ -1536,7 +1542,7 @@ impl Game {
             for previous in self.players[pid]
                 .remembered_cities
                 .values()
-                .filter(|memory| !visible.contains(&memory.pos))
+                .filter(|memory| !visible.sees_tile(memory.pos))
             {
                 let mut memory = previous.clone();
                 self.refresh_defending_district_memory(&mut memory, visible);
@@ -1557,7 +1563,7 @@ impl Game {
                 player.remembered_tiles.remember(position, tile, turn);
             }
             player.remembered_cities.retain(|city, memory| {
-                !visible.contains(&memory.pos) || live_city_ids.contains(city)
+                !visible.sees_tile(memory.pos) || live_city_ids.contains(city)
             });
             for city in cities {
                 player.remembered_cities.insert(city.id, city);
@@ -2065,6 +2071,35 @@ impl Game {
         for emergency in self.active_emergencies.clone() {
             self.share_visibility_memories(&emergency.members.iter().copied().collect::<Vec<_>>());
         }
+    }
+}
+
+/// What a city memory asks of a sight set: whether one tile is in it.
+pub(crate) trait SightSet {
+    fn sees_tile(&self, pos: Pos) -> bool;
+}
+
+impl SightSet for BTreeSet<Pos> {
+    #[inline]
+    fn sees_tile(&self, pos: Pos) -> bool {
+        self.contains(&pos)
+    }
+}
+
+/// A sight bitset read through its grid. Grid positions and indices map one
+/// to one, so it answers exactly what the tile set built from the same bits
+/// would.
+pub(crate) struct GridSight<'a> {
+    grid: &'a crate::world::TileGrid,
+    bits: &'a TileBits,
+}
+
+impl SightSet for GridSight<'_> {
+    #[inline]
+    fn sees_tile(&self, pos: Pos) -> bool {
+        self.grid
+            .index_of(pos)
+            .is_some_and(|index| self.bits.contains(index))
     }
 }
 

@@ -108,7 +108,7 @@ impl Game {
     pub(crate) fn refresh_defending_district_memory(
         &self,
         memory: &mut RememberedCity,
-        visible: &BTreeSet<Pos>,
+        visible: &impl super::visibility::SightSet,
     ) {
         let Some(city) = self
             .cities
@@ -119,11 +119,11 @@ impl Game {
         };
         memory
             .defending_districts
-            .retain(|state| !visible.contains(&state.pos));
+            .retain(|state| !visible.sees_tile(state.pos));
         memory.defending_districts.extend(
             self.defending_districts(city)
                 .filter(|state| {
-                    visible.contains(&state.pos)
+                    visible.sees_tile(state.pos)
                         && !self.district_is_family(state.kind, crate::name!("encampment"))
                 })
                 .map(DefendingDistrict::remembered),
