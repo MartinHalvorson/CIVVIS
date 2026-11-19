@@ -83,6 +83,16 @@ const DEBUG_BAR_STYLE = `
     color: var(--text); background: #060d0b; border: 1px solid #35504a; font: inherit;
   }
   #debugbar #dbg-turn:disabled { opacity: .5; }
+  /* The timeline panel: the same slider at a width a long game can be read on. */
+  #debugbar #dbg-pop-timeline { width: min(600px, calc(100vw - 32px)); }
+  #debugbar .dbg-wide { position: relative; display: flex; padding-top: 6px; }
+  #debugbar .dbg-wide input { flex: 1; min-width: 0; margin: 0; accent-color: var(--gold-bright, #e7c873); }
+  #debugbar .dbg-wide .dbg-flags { left: 8px; right: 8px; top: 0; }
+  #debugbar .dbg-wide .dbg-flags i { width: 9px; height: 9px; margin-left: -5px; }
+  #debugbar .dbg-flags i.stop { border-radius: 50%; background: #e2574c; }
+  #debugbar .dbg-chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  #debugbar .dbg-chips button { height: 22px; padding: 0 7px; font-size: 11px; }
+  #debugbar .dbg-chips .dbg-gap { flex: 1; }
 `;
 
 // One request at a time: every debugger operation replaces the world.
@@ -396,6 +406,13 @@ function debugBuildBar() {
         <button data-dbg="split-versus" title="Side by side, with a Civ AI to pick for each half and their numbers compared">Head to head</button>
       </div>
     </div>
+    <div class="dbg-pop" id="dbg-pop-timeline" hidden>
+      <h4>Timeline</h4>
+      <p id="dbg-time-kept"></p>
+      <p id="dbg-time-said" role="status" style="color:var(--text)"></p>
+      <div class="dbg-wide"><input type="range" id="dbg-wide-slider" step="1" title="Drag to any turn that was played; the wheel walks one turn at a time" aria-label="Turn, on the whole timeline"><span class="dbg-flags" id="dbg-wide-flags"></span></div>
+      <div class="dbg-chips" id="dbg-time-chips"></div>
+    </div>
     <div class="dbg-pop" id="dbg-pop-saves" hidden>
       <h4>Save points</h4>
       <p>A save point keeps this world to come back to, with the turns behind it, however the game
@@ -467,6 +484,8 @@ function debugBuildBar() {
       debugOp(request);
       return;
     }
+    const named = event.target.closest("[data-dbg-turn]");
+    if (named && debugTimeline()) { debugSay(""); debugGoToTurn(named.dataset.dbgTurn); return; }
     const point = event.target.closest("[data-dbg-goto]");
     if (point && debugTimeline()) { debugSay(""); debugOp({op: "goto_save", id: +point.dataset.dbgGoto}); return; }
     const dropped = event.target.closest("[data-dbg-drop]");
@@ -488,6 +507,7 @@ function debugBuildBar() {
     else if (action === "run") debugRun();
     else if (action === "save") debugSave();
     else if (action === "point") debugSavePoint();
+    else if (action === "pop-close") { debugPopOpen = null; drawDebugBar(); }
     else if (action === "split-row" || action === "split-col" || action === "split-versus") {
       debugPopOpen = null;
       debugSplitOpen(action === "split-col" ? "col" : "row", action === "split-versus" ? true : null);
@@ -514,10 +534,13 @@ function debugBuildBar() {
   });
   bar.addEventListener("change", event => {
     const target = event.target;
-    if (target.id === "dbg-slider") {
+    if (target.id === "dbg-slider" || target.id === "dbg-wide-slider") {
+      // Read first: once nothing is being dragged, drawing the bar puts both
+      // sliders back on the open turn.
+      const turn = target.value;
       debugScrubbing = false;
       debugSay("");
-      debugGoToTurn(target.value);
+      debugGoToTurn(turn);
     } else if (target.id === "dbg-turn") {
       target.blur();
       debugGoToTurn(target.value);
@@ -530,7 +553,7 @@ function debugBuildBar() {
     }
   });
   bar.addEventListener("input", event => {
-    if (event.target.id !== "dbg-slider") return;
+    if (event.target.id !== "dbg-slider" && event.target.id !== "dbg-wide-slider") return;
     debugScrubbing = true;
     debugSay(`Turn ${event.target.value}`);
   });
@@ -548,12 +571,26 @@ function debugBuildBar() {
     debugOp({op: forward ? "forward" : "back"});
   };
   bar.addEventListener("wheel", event => {
-    if (!event.target.closest(".dbg-track, #dbg-turn")) return;
+    if (!event.target.closest(".dbg-track, .dbg-wide, #dbg-turn")) return;
     event.preventDefault();
     const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
     if (delta) walk(delta > 0);
   }, {passive: false});
+  // Going to a turn is typed, dragged or picked: the turn box brings up the
+  // timeline at a width where a long game's turns can be told apart.
+  bar.addEventListener("focusin", event => {
+    if (event.target.id !== "dbg-turn" || debugPopOpen === "timeline") return;
+    debugPopOpen = "timeline";
+    drawDebugBar();
+  });
   bar.addEventListener("keydown", event => {
+    if (event.key === "Escape" && debugPopOpen) {
+      event.stopPropagation();
+      debugPopOpen = null;
+      if (event.target instanceof HTMLElement) event.target.blur();
+      drawDebugBar();
+      return;
+    }
     if (!event.target.matches("input[type=text]")) return;
     event.stopPropagation();
     if (event.target.id === "dbg-turn" && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
@@ -595,6 +632,10 @@ function drawDebugBar(seat = true) {
   slider.min = first; slider.max = last;
   slider.disabled = !idle || first === last;
   if (!debugScrubbing) slider.value = state.turn;
+  const wide = document.getElementById("dbg-wide-slider");
+  wide.min = first; wide.max = last;
+  wide.disabled = slider.disabled;
+  if (!debugScrubbing) wide.value = state.turn;
   slider.title = `Turn ${state.turn} of ${first} to ${last}. Drag to any turn that was played; the wheel walks one turn at a time`;
   const turnBox = document.getElementById("dbg-turn");
   turnBox.disabled = !idle;
@@ -634,6 +675,36 @@ function drawDebugBar(seat = true) {
   for (const name of ["layers", "breaks", "saves", "split"]) {
     document.getElementById(`dbg-pop-${name}`).hidden = debugPopOpen !== name;
     bar.querySelector(`[data-dbg-pop="${name}"]`).classList.toggle("on", debugPopOpen === name);
+  }
+  // The timeline panel: how much of the game can be gone back to, the slider
+  // again at a readable width with the save points and the breakpoint turns
+  // marked on it, and each of those as something to pick.
+  document.getElementById("dbg-pop-timeline").hidden = debugPopOpen !== "timeline";
+  if (debugPopOpen === "timeline") {
+    const kept = timeline.turns.length, played = last - first + 1;
+    document.getElementById("dbg-time-kept").textContent = `Turn ${state.turn}. Turns ${first} to ${last} were played, and ` +
+      (kept >= played ? "every one of them can be gone back to."
+        : `${kept} of the ${played} can be gone back to; a turn that is no longer kept answers with the nearest before it.`);
+    // What the bar has to say is under the panel while the panel is open, so
+    // it is said here as well: the turn being dragged to, why a run stopped.
+    const said = document.getElementById("dbg-time-said");
+    said.textContent = debugNoteText;
+    said.hidden = !debugNoteText;
+    const along = turn => last > first ? (turn - first) / (last - first) * 100 : 0;
+    const stops = breaks.turns.filter(turn => turn >= first && turn <= last);
+    drawn("dbg-wide-flags", stops.map(turn =>
+      `<i class="stop" data-dbg-turn="${turn}" style="left:${along(turn)}%" title="Breakpoint on turn ${turn}. Click to go there"></i>`).join("") +
+      points.filter(point => point.turn >= first && point.turn <= last).map(point =>
+        `<i${point.auto ? ' class="auto"' : ""} data-dbg-goto="${point.id}" style="left:${along(point.turn)}%"` +
+        ` title="${escapeAttr(point.name)}: turn ${point.turn}. Click to go there"></i>`).join(""));
+    const hold = idle ? "" : " disabled";
+    drawn("dbg-time-chips",
+      `<button data-dbg-turn="${first}" title="Where the timeline begins"${hold}>⏮ ${first}</button>` +
+      points.map(point => `<button data-dbg-goto="${point.id}" title="Save point on turn ${point.turn}"${hold}>⚑ ${escapeAttr(point.name)}</button>`).join("") +
+      breaks.turns.map(turn => `<button data-dbg-turn="${turn}" title="${turn > last
+        ? `Breakpoint: play to turn ${turn}` : `Breakpoint: go back to turn ${turn}`}"${hold}><span class="dbg-dot">●</span> ${turn}</button>`).join("") +
+      `<button data-dbg-turn="${last}" title="The last turn that was played"${hold}>${last} ⏭</button>` +
+      `<span class="dbg-gap"></span><button data-dbg="pop-close" title="Close the timeline (Esc)" aria-label="Close the timeline">×</button>`);
   }
 
   // The lists are the engine's: a layer or an event category added there

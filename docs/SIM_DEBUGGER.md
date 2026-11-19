@@ -44,7 +44,7 @@ do not carry, so the replay would be another world.
 | ◀ | `back` | The top of this turn if you have acted in it, otherwise the turn before |
 | ↶ (`Ctrl`/`Cmd`+`Z`) | `undo` | Take back your last action this turn |
 | slider | `jump` | Go to any turn that was played; a turn that is no longer kept answers with the nearest one before it, and the bar says so. The mouse wheel over it walks one played turn at a time |
-| turn box | `jump`, or `step` repeated | Go to a turn by its number. One already played is put back as it stood. One still ahead is played to by the seat's Civ AI, stopping early if a breakpoint does. Up and down in the box walk one played turn |
+| turn box | `jump`, or `step` repeated | Go to a turn by its number. One already played is put back as it stood. One still ahead is played to by the seat's Civ AI, stopping early if a breakpoint does. Up and down in the box walk one played turn. The box also opens the timeline panel: the slider again at a width a long game can be read on, with the save points and the breakpoint turns marked on it and listed to pick from, and how many of the played turns are still kept. `Esc` closes it |
 | ▶ | `forward` | Forward along turns already played, without playing anything |
 | ▸ | `step_action` | Step in: the seat's Civ AI takes its next action, and ends the turn when it has none left |
 | ▸\| | `step_seat` | Step one seat: end your turn as it stands, then one civilization's turn at a time |
