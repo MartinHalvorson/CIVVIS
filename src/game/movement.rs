@@ -793,6 +793,27 @@ impl Game {
         self.entry_at_neighbor(uid, from, pos, false) != Entry::Blocked
     }
 
+    /// `entry_at_neighbor(uid, …) != Entry::Blocked` for one flood of one
+    /// unit: the unit and its `unit_traversal` are read once here instead of
+    /// once per neighbour, which is exact because a flood runs over a board
+    /// it cannot change. Build it inside the flood's memo scope so the
+    /// traversal class is that scope's.
+    pub(super) fn neighbor_passer(
+        &self,
+        uid: u32,
+        through_units: bool,
+    ) -> impl Fn(Pos, Pos) -> bool + '_ {
+        let unit = self.units.get(&uid);
+        let traversal = self.unit_traversal(uid);
+        move |from, pos| {
+            let entry = match unit {
+                Some(unit) => self.entry_at_neighbor_as(unit, traversal, from, pos, through_units),
+                None => self.entry_at_neighbor(uid, from, pos, through_units),
+            };
+            entry != Entry::Blocked
+        }
+    }
+
     /// Whether two units belonging to one player contend for a single
     /// stacking layer, and so may not end a turn on the same tile.
     pub(super) fn shares_stacking_layer(
