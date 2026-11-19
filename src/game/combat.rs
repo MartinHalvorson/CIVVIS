@@ -563,10 +563,11 @@ impl Game {
         };
         let mut targets: Vec<Pos> =
             Vec::with_capacity(positions.len().saturating_mul(per_position));
-        // Targets a ranged stride has already reached. A ranged unit offers
-        // the same tile from most of the strides around it, and the answer is
-        // the union, so once one stride sees a tile the line of sight from
-        // every later stride cannot change it: those checks are skipped.
+        // Targets some stride has already reached. A unit offers the same
+        // tile from most of the strides around it, and the answer is the
+        // union, so once one stride reaches a tile the line of sight (ranged)
+        // or the domain, cliff and step-cost tests (melee) from every later
+        // stride cannot change it: those checks are skipped.
         let mut shot: crate::fast_map::FastSet<Pos> = crate::fast_map::FastSet::default();
         for (from, remaining) in positions {
             if remaining <= 0.0 {
@@ -589,14 +590,20 @@ impl Game {
             }
 
             if spec.is_melee_capable() {
+                // The answer is the union over every stride, so a tile some
+                // earlier stride already reaches is in it whatever this one
+                // finds: skip its domain, cliff and step-cost tests. A melee
+                // unit sees most tiles of its flood from several strides.
                 for target in self.nbrs(from) {
-                    if !self.unit_can_melee_target_domain(uid, target)
+                    if shot.contains(&target)
+                        || !self.unit_can_melee_target_domain(uid, target)
                         || !self.unit_can_cross_cliff(uid, from, target)
                     {
                         continue;
                     }
                     let fresh = from == start && remaining >= max_moves;
                     if fresh || remaining >= self.unit_step_cost(uid, from, target) {
+                        shot.insert(target);
                         targets.push(target);
                     }
                 }
