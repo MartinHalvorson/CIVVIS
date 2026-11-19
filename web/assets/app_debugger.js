@@ -999,6 +999,11 @@ function drawDebugSplit() {
   const run = host.querySelector('[data-dbg-split="versus-run"]');
   run.textContent = debugSplit.running > 0 ? "⏹" : "▶▶";
   run.classList.toggle("on", debugSplit.running > 0);
+  // The same start again, for another pair of Civ AIs.
+  const back = host.querySelector('[data-dbg-split="versus-back"]');
+  back.title = `Put both halves back on turn ${debugSplit.from}, where they split, to play it again with other Civ AIs`;
+  back.disabled = debugSplit.busy || debugSplit.running > 0 || debugSplit.from === null ||
+    ["a", "b"].every(letter => debugSplit.panes[letter].turn === debugSplit.from);
 }
 function debugSplitOpen(dir, versus = null) {
   if (debugSplit || DEBUG_PANE !== null || !debugTimeline() || debugBusy || autoplaying) return;
@@ -1028,6 +1033,7 @@ function debugSplitOpen(dir, versus = null) {
         <div class="dbg-vs-table" data-dbg-numbers></div>
         <canvas class="dbg-vs-chart" data-dbg-chart width="252" height="96"></canvas>
         <div class="dbg-vs-line" title="Play both halves, each with its own Civ AI, until this turn opens or a breakpoint stops one">
+          <button data-dbg-split="versus-back">↺</button>
           <input type="text" data-dbg-until inputmode="numeric" maxlength="4" aria-label="Play both to turn">
           <button data-dbg-split="versus-run"></button>
         </div>
@@ -1041,7 +1047,8 @@ function debugSplitOpen(dir, versus = null) {
   let remembered = false;
   try { remembered = localStorage.getItem("civvis-debug-versus") === "1"; } catch (_) {}
   debugSplit = {dir, linked: true, view: true, share: .5, busy: false, panes: {}, host,
-    versus: versus ?? remembered, running: 0, chart: "score", history: {a: new Map(), b: new Map()}};
+    versus: versus ?? remembered, running: 0, chart: "score", history: {a: new Map(), b: new Map()},
+    from: state ? state.turn : null};
   for (const letter of ["a", "b"]) {
     const frame = host.querySelector(`[data-dbg-frame="${letter}"]`);
     debugSplit.panes[letter] = {frame, id: `${letter}-${nonce}`, turn: null};
@@ -1072,6 +1079,12 @@ function debugSplitOpen(dir, versus = null) {
       debugSplit.versus = !debugSplit.versus;
       try { localStorage.setItem("civvis-debug-versus", debugSplit.versus ? "1" : "0"); } catch (_) {}
     } else if (action === "versus-run") debugVersusRun();
+    else if (action === "versus-back") {
+      // Each half is told by name, so it makes no difference whether they are linked.
+      for (const letter of ["a", "b"])
+        if (debugSplit.panes[letter].turn !== debugSplit.from)
+          debugSplitTell(letter, {civvis: "pane-follow", turn: debugSplit.from, how: "travel"});
+    }
     drawDebugSplit();
   });
   host.addEventListener("change", event => {
