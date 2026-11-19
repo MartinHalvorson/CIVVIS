@@ -382,8 +382,9 @@ impl Game {
         let bridged = river && self.map.tiles[&from].road >= 2 && tile.road >= 2;
         // Waive the river penalty before pricing the route. Applying
         // Amphibious afterwards would overwrite a valid road discount.
+        let waived = bridged || terms.amphibious > 0.0;
         let mut cost = self.rules.move_cost(tile);
-        if river && !bridged && !(terms.amphibious > 0.0) {
+        if river && !waived {
             cost += 2.0;
         }
         if self.map.tiles[&from].road > 0 && tile.road > 0 {
