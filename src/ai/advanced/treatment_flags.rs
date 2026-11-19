@@ -333,6 +333,9 @@ impl AdvancedAi {
         /// Opt-in gene `culture-deck-seats-the-great-person-cards`; see
         /// `advanced/culture_great_person_cards.rs`.
         culture_deck_seats_the_great_person_cards => enable_culture_deck_seats_the_great_person_cards, disable_culture_deck_seats_the_great_person_cards;
+        /// Opt-in gene `culture-theater-buildings-pass-the-claims`; see
+        /// `advanced/culture_theater_buildings_pass_the_claims.rs`.
+        culture_theater_buildings_pass_the_claims => enable_culture_theater_buildings_pass_the_claims, disable_culture_theater_buildings_pass_the_claims;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

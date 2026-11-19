@@ -7084,6 +7084,11 @@ pub struct AdvancedAi {
     /// Literary Tradition and Frescoes in its wildcard slots. See
     /// `advanced/culture_great_person_cards.rs`. Off by default.
     culture_deck_seats_the_great_person_cards: bool,
+    /// `culture-theater-buildings-pass-the-claims`: a Culture seat's next
+    /// Theater building that finishes within 15 Online turns takes the queue
+    /// head over the Campus, trade, industry, harbour and housing claims. See
+    /// `advanced/culture_theater_buildings_pass_the_claims.rs`. Off by default.
+    culture_theater_buildings_pass_the_claims: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11617,6 +11622,9 @@ mod culture_fills_its_slots;
 /// `culture-deck-seats-the-great-person-cards`: see
 /// `advanced/culture_great_person_cards.rs`.
 mod culture_great_person_cards;
+/// `culture-theater-buildings-pass-the-claims`: see
+/// `advanced/culture_theater_buildings_pass_the_claims.rs`.
+mod culture_theater_buildings_pass_the_claims;
 /// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
 mod culture_theater_first;
 /// `culture-road-takes-the-unique-first`: see `advanced/culture_unique_first.rs`.
@@ -27860,6 +27868,12 @@ impl AdvancedAi {
         // the era closes, when it turns a Dark Age Normal. Exact no-op while
         // the gene is off. See `advanced/unique_unit_closes_the_age.rs`.
         self.claim_unique_unit_for_the_age(g, pid);
+        // `culture-theater-buildings-pass-the-claims`: a Culture seat's next
+        // Theater building over the routine claims' passable heads, after
+        // every ordinary writer and before the paused-district, near-done
+        // and defence writers below. Exact no-op while the gene is off. See
+        // `advanced/culture_theater_buildings_pass_the_claims.rs`.
+        self.claim_culture_theater_buildings(g, pid, &plan);
         // `paused-district-finishes`: after every ordinary writer, before the
         // declaration response and the defence handoffs below.
         self.claim_paused_district_finishes(g, pid);
