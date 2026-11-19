@@ -9,6 +9,12 @@ The engine half is `src/server/debugger.rs`, served as `POST /debug` by the
 native server and the browser build alike. The page half is
 `web/assets/app_debugger.js`, the bar at the foot of the map.
 
+The engine half is held by `src/server/debugger_tests.rs`. The bar is held by
+`beta/debugger_test.py`, which loads the script as it ships into a real
+browser, on a page with a toy engine behind it, and drives the controls: the
+turn box, both sliders, the wheel, save points and their flags, a breakpoint
+picked from the timeline. A control added to the bar is added there.
+
 ## The timeline
 
 A played session marks the world at the top of every turn its seat opens. A
