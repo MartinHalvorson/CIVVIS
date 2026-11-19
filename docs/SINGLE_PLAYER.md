@@ -596,8 +596,8 @@ error toast when pressed.
 - **Somebody wins.** The button says the game is over and is disabled; the
   finale names the victor and the victory.
 - **You are eliminated.** The world plays on without you — the engine answers
-  your `end_turn` with "not your turn" — so the button says your civilization
-  has fallen and the finale says so too.
+  your `end_turn` with "not your turn" — so the button says you have been
+  defeated and the finale says so too.
 
 Both offer the one thing still useful: another game, on the settings currently
 in the setup panel. The observer settings' **Between-game countdown** offers
