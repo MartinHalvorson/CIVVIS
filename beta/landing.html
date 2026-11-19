@@ -218,6 +218,14 @@
   .rank-row.is-rung .rank-value { color: var(--faint); font-size: 12px; font-weight: 500; }
   .rank-note { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
   .rank-note a { color: var(--accent); }
+  /* The Tournaments table (operator 2026-11-19): one row per series of
+     verification games, across the full width above the other rankings. */
+  .rank-card.is-wide { grid-column: 1 / -1; }
+  .rank-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .rank-table th { padding: 4px 10px 4px 0; color: var(--faint); font-size: 11.5px; font-weight: 500; text-align: left; white-space: nowrap; }
+  .rank-table td { padding: 4px 10px 4px 0; border-top: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+  .rank-table td.is-record { color: #fff; font-weight: 700; }
+  .rank-table td.is-open { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -278,6 +286,21 @@
          time; a page whose slot still reads `null` (this file opened as it
          is committed, or a build with neither source) keeps it hidden. -->
     <section class="rankings" id="rankings" hidden aria-label="Rankings">
+      <!-- Tournaments: series of verification games under fixed conditions
+           (data/tournaments.json), counted from the run ledger at publish
+           time. A series has an end once it holds all its games. -->
+      <section class="rank-card is-wide" id="rank-tournaments" hidden aria-labelledby="rank-tournaments-title">
+        <h2 class="rank-title" id="rank-tournaments-title">Tournaments</h2>
+        <p class="rank-sub">Our AI in series of verification games against Civilization VI&#8217;s own AI.</p>
+        <table class="rank-table">
+          <thead><tr><th scope="col">Tournament</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Games</th><th scope="col">Record</th><th scope="col">Conditions</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <p class="rank-note">
+          <span data-rank-note></span>
+          <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Every game</a>
+        </p>
+      </section>
       <section class="rank-card" id="rank-civs" hidden aria-labelledby="rank-civs-title">
         <h2 class="rank-title" id="rank-civs-title">Winningest civs</h2>
         <p class="rank-sub">Our AI&#8217;s wins&#8211;losses as each civ, in verification games against Civilization VI&#8217;s own AI.</p>
@@ -383,7 +406,31 @@
       shown = show("rank-strategies", rows, note) || shown;
     }
 
-    if (shown) document.getElementById("rankings").hidden = false;
+    // Tournaments: a row per series, newest first; Record is wins\u2013losses.
+    let toursShown = false;
+    const tours = data.tournaments;
+    const toursCard = document.getElementById("rank-tournaments");
+    if (Array.isArray(tours) && tours.length && toursCard) {
+      const body = toursCard.querySelector("tbody");
+      for (const t of tours) {
+        const tr = el("tr");
+        tr.append(
+          el("td", "", "Tournament " + t.id),
+          el("td", "", t.start || ""),
+          el("td", t.end ? "" : "is-open", t.end || "in progress"),
+          el("td", "", t.games + " / " + t.size),
+          el("td", "is-record", t.wins + "\u2013" + t.losses),
+          el("td", "", t.conditions || ""));
+        body.append(tr);
+      }
+      toursCard.querySelector("[data-rank-note]").textContent =
+        "A win is any victory; a loss is a rival\u2019s victory, our elimination, or a game conceded early."
+        + " A launch that never reached a board is not a game.";
+      toursCard.hidden = false;
+      toursShown = true;
+    }
+
+    if (shown || toursShown) document.getElementById("rankings").hidden = false;
   })();
   </script>
 

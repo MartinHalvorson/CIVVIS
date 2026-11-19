@@ -201,7 +201,7 @@ class HomeRankings(unittest.TestCase):
             said = io.StringIO()
             with contextlib.redirect_stderr(said):
                 self.assertIsNone(home_rankings.civs(odd))
-                self.assertEqual(home_rankings.rankings(odd), {"civs": None, "strategies": None})
+                self.assertEqual(home_rankings.rankings(odd), {"civs": None, "strategies": None, "tournaments": None})
             self.assertIn("could not be ranked", said.getvalue())
         # The publish workflow is what fetches it: every branch, on checkout.
         workflow = (ROOT / ".github" / "workflows" / "to-test-auto-30.yml").read_text(encoding="utf-8")
@@ -256,6 +256,8 @@ class HomeRankings(unittest.TestCase):
         self.assertEqual(
             children,
             [
+                # The Tournaments table first, across the full width (operator 2026-11-19).
+                '<section class="rank-card is-wide" id="rank-tournaments" hidden aria-labelledby="rank-tournaments-title">',
                 '<section class="rank-card" id="rank-civs" hidden aria-labelledby="rank-civs-title">',
                 '<section class="rank-card" id="rank-strategies" hidden aria-labelledby="rank-strategies-title">',
             ],
@@ -268,7 +270,8 @@ class HomeRankings(unittest.TestCase):
             'shown = show("rank-civs", rows, note) || shown;',
             "const strategies = data.strategies;",
             'shown = show("rank-strategies", rows, note) || shown;',
-            'if (shown) document.getElementById("rankings").hidden = false;',
+            'if (shown || toursShown) document.getElementById("rankings").hidden = false;',
+            "const tours = data.tournaments;",
         ):
             self.assertIn(line, LANDING)
         # Every game behind the table is one click away, on the branch the
@@ -282,9 +285,9 @@ class HomeRankings(unittest.TestCase):
         # The home page once carried the head of the gene ranking under the
         # strategies. Neither the page nor the slot it is filled from has
         # one now: no card, no reader, no style or script left behind.
-        self.assertEqual(sorted(home_rankings.rankings(ROOT)), ["civs", "strategies"])
+        self.assertEqual(sorted(home_rankings.rankings(ROOT)), ["civs", "strategies", "tournaments"])
         self.assertFalse(hasattr(home_rankings, "genes"))
-        self.assertEqual(re.findall(r'id="(rank-[a-z]+)"', LANDING), ["rank-civs", "rank-strategies"])
+        self.assertEqual(re.findall(r'id="(rank-[a-z]+)"', LANDING), ["rank-tournaments", "rank-civs", "rank-strategies"])
         page = LANDING.lower()
         for gone in ("heuristic gene", "gene_heuristic_ranking", "data.genes", "is-gene", "is-off", "rank-stack", "has-civs"):
             self.assertNotIn(gone, page)
@@ -293,6 +296,38 @@ class HomeRankings(unittest.TestCase):
         # that page shows a list only when the slot holds its key.
         self.assertNotIn("genes", json.loads(home_rankings.SLOT.search(
             home_rankings.fill(LANDING, home_rankings.rankings(ROOT)))[2]))
+
+    def test_a_tournament_is_series_of_finished_games_newest_first(self):
+        spec = {"name": "Lv 8 Deity series", "conditions": "Lv 8 6P Continents Online",
+                "start": "civvis-20261119T184500Z", "series_size": 3,
+                "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"}}
+        on = {"players": 6, "map": "Continents.lua"}
+        rows = [
+            run("civvis-20261119T180000Z", "win", "ROME", **on),            # before the start
+            run("civvis-20261119T190000Z", "abandoned", "ROME", utc="2026-11-19T19:10:00Z", **on),
+            run("civvis-20261119T191500Z", "rival_victory", "GAUL", utc="2026-11-19T19:25:00Z", **on),
+            run("civvis-20261119T191500Z-cont1", "win", "GAUL", utc="2026-11-19T19:40:00Z", **on),  # best run counts
+            run("civvis-20261119T194500Z", "unfinished", None, players=None, map=None),           # never seated
+            run("civvis-20261119T195000Z", "win", "KOREA", utc="2026-11-19T20:05:00Z", **on),
+            run("civvis-20261119T201000Z", "defeat", "MALI", utc="2026-11-19T20:20:00Z", **on),
+            run("civvis-20261119T202000Z", "win", "MALI", utc="2026-11-19T20:30:00Z", players=4, map="Pangaea.lua"),
+        ]
+        series = home_rankings.tournament_series(rows, [spec])
+        self.assertEqual([(s["id"], s["series"], s["games"], s["wins"], s["losses"]) for s in series],
+                         [(2, 2, 1, 0, 1), (1, 1, 3, 2, 1)])
+        self.assertEqual(series[1]["start"], "2026-11-19 19:00Z")
+        self.assertEqual(series[1]["end"], "2026-11-19 20:05Z")
+        self.assertIsNone(series[0]["end"])                    # a series still being played
+        self.assertEqual(series[0]["conditions"], "Lv 8 6P Continents Online")
+        self.assertIsNone(home_rankings.tournament_series([], [spec]))
+
+    def test_the_tournament_definitions_are_committed_and_read(self):
+        specs = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))["tournaments"]
+        self.assertTrue(specs)
+        for spec in specs:
+            self.assertRegex(spec["start"], r"^civvis-\d{8}T\d{6}Z$")
+            self.assertGreater(spec["series_size"], 0)
+            self.assertTrue(spec["conditions"])
 
     def test_a_sentence_cannot_close_the_slot(self):
         data = {"civs": None, "strategies": {"rows": [{"tilt": "</script><b>x"}]}}
@@ -303,7 +338,7 @@ class HomeRankings(unittest.TestCase):
     def test_an_older_revision_publishes_without_either_ranking(self):
         with tempfile.TemporaryDirectory() as empty:
             data = home_rankings.rankings(pathlib.Path(empty))
-            self.assertEqual(data, {"civs": None, "strategies": None})
+            self.assertEqual(data, {"civs": None, "strategies": None, "tournaments": None})
             page = pathlib.Path(empty) / "index.html"
             # A landing page from before the column is left byte for byte.
             page.write_text("<html>no slot</html>", encoding="utf-8")
