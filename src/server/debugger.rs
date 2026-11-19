@@ -13,6 +13,12 @@
 //! * **step** plays one whole turn with the seat's agent and then asks the
 //!   breakpoints whether to stop: a turn number, a kind of event, a phrase in
 //!   the event log.
+//! * **step in** takes the agent's turn one action at a time: the agent plans
+//!   the turn on a copy of the world, and each step applies the next action
+//!   of that plan to the real one. When the plan is spent, the step ends the
+//!   turn.
+//! * **reveal** lifts the fog from what the page is shown. The seat still
+//!   plays by its own rules; only the observation changes.
 //! * **layers** are the rungs between playing every decision by hand and
 //!   handing the seat over: research, cities, the empire's standing choices,
 //!   diplomacy, units. The agent plans the turn on a copy of the world, and
@@ -27,7 +33,7 @@
 //! A save carries the world and not this record: a loaded game starts a
 //! timeline of its own from the turn it resumes.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 
 use serde_json::{json, Value};
 
@@ -251,6 +257,21 @@ struct Mark {
     game: Game,
 }
 
+/// The rest of a turn the seat's agent planned, good for as long as the world
+/// is where the plan left it.
+#[derive(Clone)]
+struct Plan {
+    turn: u32,
+    /// How long the action log was when the plan was made or last advanced.
+    /// Anything else that touched the world since makes the plan stale.
+    at: usize,
+    rest: VecDeque<Action>,
+    /// The world as the agent left it: the copy it played the turn on,
+    /// before the turn is ended. The last step puts this on the table, so a
+    /// turn taken apart ends on exactly the world the turn taken whole does.
+    done: Game,
+}
+
 /// A played game's marks, and what the debugger was told to do with it.
 ///
 /// Cloning one is cheap for the reason keeping one is: a mark shares with its
@@ -265,6 +286,12 @@ pub struct Timeline {
     stopped: Option<Value>,
     /// What the layers did when the open turn began.
     assisted: usize,
+    /// The agent's turn, when it is being taken an action at a time.
+    plan: Option<Plan>,
+    /// What the last single step did, until the next thing moves the world.
+    stepped: Option<Value>,
+    /// Show the page the whole world rather than what the seat can see.
+    reveal: bool,
 }
 
 impl Timeline {
@@ -344,6 +371,8 @@ impl Timeline {
             })).collect::<Vec<_>>(),
             "assisted": self.assisted,
             "stopped": self.stopped,
+            "stepped": self.stepped,
+            "reveal": self.reveal,
         })
     }
 }
@@ -393,11 +422,18 @@ impl Session {
             return;
         }
         self.debugger.stopped = None;
+        self.debugger.stepped = None;
+        self.debugger.plan = None;
         self.debugger.assisted = 0;
         self.debugger.record(&self.game);
         if assist && !self.debugger.layers.is_empty() {
             self.debugger.assisted = self.debug_assist();
         }
+    }
+
+    /// Whether the page is shown the world with the fog lifted.
+    pub(super) fn debugger_reveals(&self) -> bool {
+        self.debugger.reveal
     }
 
     /// The debugger's part of the state document.
@@ -434,6 +470,8 @@ impl Session {
         next.keeps_own_yields = own_yields;
         *self = next;
         self.debugger.stopped = None;
+        self.debugger.stepped = None;
+        self.debugger.plan = None;
         self.debugger.assisted = 0;
     }
 
@@ -540,6 +578,116 @@ impl Session {
         played > 0
     }
 
+    /// What an agent decides that is not an action: its standing preferences
+    /// for the governors of its cities. The agent's own plan-then-replay path
+    /// carries the same fields across ("These preferences are decisions",
+    /// `ai/advanced.rs`), and a turn replayed without them is not its turn.
+    fn debug_carry_preferences(&mut self, played: &Game) {
+        self.game.players[0].citizen_food_bias = played.players[0].citizen_food_bias;
+        self.game.players[0].city_directives = played.players[0].city_directives.clone();
+        self.game.heist_reads_the_host_menu = played.heist_reads_the_host_menu;
+        self.game.board_written();
+    }
+
+    /// The rivals take their turns until the round comes back to the seat.
+    /// `act` does this after the seat ends its turn; this is for a turn the
+    /// agent ended by itself.
+    fn debug_rivals_play(&mut self) {
+        let g = &mut self.game;
+        let mut guard = 0;
+        while !g.is_finished()
+            && g.current != 0
+            && g.players[0].alive
+            && guard < 2 * g.players.len()
+        {
+            let pid = g.current;
+            self.ais[pid].take_turn(g, pid);
+            if g.current == pid && !g.is_finished() {
+                let _ = g.apply(pid, &Action::EndTurn);
+            }
+            guard += 1;
+        }
+        self.debugger_turn_opened(true);
+    }
+
+    /// Step in: the seat's agent takes the next action of its turn, and only
+    /// that. With nothing left to do, the step ends the turn.
+    ///
+    /// The agent plays the whole turn once, on a copy, and the plan is kept
+    /// for the steps that follow. Each step applies the plan's next action
+    /// to the real world, so the turn is seen being put together. The last
+    /// step puts the agent's own copy on the table and ends the turn there,
+    /// which makes a turn taken apart the same turn as one taken whole.
+    ///
+    /// The plan is made again if anything else has touched the world in
+    /// between: an action by hand, an undo, a layer. An action the real
+    /// world refuses is passed over.
+    pub fn debug_step_action(&mut self) -> Result<(), String> {
+        if self.game.current != 0 || self.game.is_finished() || !self.game.players[0].alive {
+            return Err("this game has no turn left to play".to_string());
+        }
+        let current = self
+            .debugger
+            .plan
+            .as_ref()
+            .is_some_and(|plan| plan.turn == self.game.turn && plan.at == self.game.log.len());
+        if !current {
+            let mut trial = self.game.clone();
+            let before = trial.log.len();
+            self.ais[0].take_turn(&mut trial, 0);
+            let rest = trial
+                .log
+                .since(before)
+                .filter(|(seat, action)| *seat == 0 && !matches!(action, Action::EndTurn))
+                .map(|(_, action)| action.clone())
+                .collect();
+            self.debug_carry_preferences(&trial);
+            self.debugger.plan = Some(Plan {
+                turn: self.game.turn,
+                at: self.game.log.len(),
+                rest,
+                done: trial,
+            });
+        }
+        let turn = self.game.turn;
+        while let Some(action) = self
+            .debugger
+            .plan
+            .as_mut()
+            .and_then(|plan| plan.rest.pop_front())
+        {
+            if self.game.apply(0, &action).is_err() {
+                continue;
+            }
+            let at = self.game.log.len();
+            let plan = self.debugger.plan.as_mut().expect("the plan being walked");
+            plan.at = at;
+            self.debugger.stepped = Some(json!({
+                "turn": turn,
+                "action": action,
+                "left": plan.rest.len(),
+            }));
+            return Ok(());
+        }
+        // The plan is spent: what the agent does next is end the turn, on
+        // the world it played.
+        let plan = self.debugger.plan.take().expect("the plan just walked");
+        self.game = plan.done;
+        if self.game.current == 0 && !self.game.is_finished() {
+            if let Some(error) = self.act(&json!({"type": "end_turn"})) {
+                return Err(error);
+            }
+        } else {
+            self.debug_rivals_play();
+        }
+        self.debugger.stepped = Some(json!({
+            "turn": turn,
+            "action": {"type": "end_turn"},
+            "left": 0,
+        }));
+        Ok(())
+    }
+
     /// Let the seat's agent take the decisions in the layers switched on, and
     /// leave the rest of the turn where it is.
     ///
@@ -564,6 +712,9 @@ impl Session {
             .filter(|(seat, _)| *seat == 0)
             .map(|(_, action)| action.clone())
             .collect();
+        if self.debugger.layers.contains(&Layer::Cities) {
+            self.debug_carry_preferences(&trial);
+        }
         drop(trial);
         let mut applied = 0;
         for action in &planned {
@@ -620,10 +771,18 @@ impl Session {
                         Err("this game has no turn left to play".to_string())
                     }
                 }
+                "step_action" => self.debug_step_action(),
                 "assist" => {
                     self.debugger.assisted = self.debug_assist();
                     Ok(())
                 }
+                "reveal" => match request["on"].as_bool() {
+                    Some(on) => {
+                        self.debugger.reveal = on;
+                        Ok(())
+                    }
+                    None => Err("reveal needs on: true or false".to_string()),
+                },
                 "layers" => self.debug_set_layers(request),
                 "breakpoints" => Breakpoints::from_request(request).map(|breakpoints| {
                     self.debugger.breakpoints = breakpoints;
