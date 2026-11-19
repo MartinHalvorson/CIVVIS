@@ -9038,6 +9038,10 @@ pub struct AdvancedAi {
     /// `mobilization-hears-the-declaration`.
     observed_surprise_declarations: Vec<(usize, u32)>,
     // ---- append: p-r ------------------------------------------------
+    /// `racer-seat-statue-civic-first`: Civil Engineering as the civic goal of
+    /// a Science, Culture or Religious seat that reaches for the Statue of
+    /// Liberty. See `advanced/diplo_statue_harbor.rs`.
+    racer_seat_statue_civic_first: bool,
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
     religion_seat_cuts_the_upkeep: bool,
@@ -13221,6 +13225,7 @@ impl AdvancedAi {
             outmatched_war_prices_the_army: false,
             opening_ranged_support: false,
             // ---- append: p-r ----------------------------------------
+            racer_seat_statue_civic_first: false,
             parity_upgrades_before_it_buys_2: false,
             parity_upgrades_before_it_buys_3: false,
             pillaged_districts_repair_first: false,
