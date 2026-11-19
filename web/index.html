@@ -340,13 +340,13 @@
      and the text fitter shrinks the type into the lane instead of wrapping. */
   .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #bccac4; }
-  /* Home, then a game of your own. They share a row so the compact reflow
-     below moves the pair as one item rather than stacking two band-wide rows,
-     and so a window too small for both wraps them instead of clipping. The
-     row is a whole line of the lockup because the copy column beside the
-     globe is too narrow for the pair on the 332px deck a 1920 screen gets.
-     `display: flex` outranks the user agent's `[hidden]`, which is why the
-     row has to say what hidden means for itself. */
+  /* Home, then the other of this page's two sites. They share a row so the
+     compact reflow below moves the pair as one item rather than stacking two
+     band-wide rows, and so a window too small for both wraps them instead of
+     clipping. The row is a whole line of the lockup because the copy column
+     beside the globe is too narrow for the pair on the 332px deck a 1920
+     screen gets. `display: flex` outranks the user agent's `[hidden]`, which
+     is why the row has to say what hidden means for itself. */
   .head-links { display: flex; flex: 0 0 100%; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .head-links[hidden] { display: none; }
   .home-link {
@@ -356,9 +356,14 @@
     border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2);
   }
   .home-link:hover { color: var(--gold-bright); border-color: var(--gold); }
-  /* Following this link replaces the world on the table, so it is offered only
-     over a simulation, where nothing of the viewer's is at stake. */
+  /* This page is two of the site's three: CIVVIS while it watches a
+     simulation, the debugger while somebody holds a seat. It links the one it
+     is not, so the link to itself stays out. Which of the two it is is known
+     once the first observation arrives (`seat-known`); until then Home stands
+     alone, and in its own place, so nothing moves when the second chip
+     appears. */
   body:not(.watching-sim) #playlink { display: none; }
+  body.watching-sim #watchlink, html:not(.seat-known) #watchlink { display: none; }
   /* The narrowest default deck has 195px for the row: tighten the pair just
      enough to keep them side by side there. */
   @container (max-width: 236px) {
@@ -6210,14 +6215,18 @@
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
         <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI strategy development</span></div>
       </div>
-      <!-- Only the published site has a /home to go to; the head script
-           unhides this row on the hosts that serve one. Home, then the way
-           from watching the AIs into a game of your own: `?mode=play` is the
-           new single-player game the home page's Play card starts, and being
-           relative it stays in whichever lane it was clicked in. -->
+      <!-- The site is three pages, CIVVIS, Debugger and Home, and each
+           links the other two. This page is the first two: `./` is the
+           simulation the AIs play, `?mode=play` the same game with a seat of
+           your own, and the styles keep out the link to whichever is on
+           screen. Both are relative, so they stay in whichever lane they were
+           clicked in, and all three leave a split's frame for the whole
+           window. Only the published site has a /home to go to; the head
+           script unhides this row on the hosts that serve one. -->
       <div class="head-links" id="headlinks" hidden>
-        <a class="home-link" id="homelink" href="/home">⌂ Home</a>
-        <a class="home-link" id="playlink" href="?mode=play">Open sim debugger</a>
+        <a class="home-link" id="homelink" href="/home" target="_top">⌂ Home</a>
+        <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
+        <a class="home-link" id="playlink" href="?mode=play" target="_top">Debugger</a>
       </div>
     </div>
   </div>

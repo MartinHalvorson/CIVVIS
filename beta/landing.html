@@ -19,10 +19,9 @@
     --muted: #93a3b5;
     --faint: #67788b;
     --accent: #66c0f4;
-    --watch-bg: #274b66;
-    --watch-fg: #a8d8f5;
-    --play-bg: #2f512a;
-    --play-fg: #a3e08a;
+    --action-bg: #274b66;
+    --action-fg: #a8d8f5;
+    --action-hover: #315d7e;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   }
 
@@ -78,6 +77,28 @@
   .utility-link:hover,
   .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
   .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The site is three pages, CIVVIS, Debugger and this one, and each links
+     the other two. These are this page's two. They stand under the tagline,
+     where the viewer's masthead keeps its own pair, and they carry the
+     colour; the project's links across the header stay plain. */
+  .site-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .site-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 0 16px;
+    border-radius: 3px;
+    background: var(--action-bg);
+    color: var(--action-fg);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .site-link:hover,
+  .site-link:focus-visible { background: var(--action-hover); color: #fff; }
+  .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   /* The report dialog: a visitor's bug or feature request, headed for the
      project's GitHub issue tracker — filed by the site itself for anonymous
@@ -93,6 +114,11 @@
   }
   .report-dialog::backdrop { background: rgba(9, 12, 17, 0.72); }
   .report-form { display: grid; gap: 14px; padding: 18px; }
+  .report-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  /* The title yields width instead of forcing Close to wrap under it. */
+  .report-heading > div:first-child { flex: 1 1 320px; min-width: 0; }
+  .report-heading h3 { margin: 0; color: #fff; font-size: 20px; }
+  .eyebrow { margin: 0 0 4px; color: var(--faint); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
   .report-close,
   .report-choice {
     min-height: 34px;
@@ -139,12 +165,12 @@
     padding: 0 18px;
     border: 0;
     border-radius: 3px;
-    background: var(--watch-bg);
-    color: var(--watch-fg);
+    background: var(--action-bg);
+    color: var(--action-fg);
     cursor: pointer;
     font: 700 13px/1 var(--sans);
   }
-  .report-submit:hover { background: #315d7e; color: #fff; }
+  .report-submit:hover { background: var(--action-hover); color: #fff; }
   .report-submit:disabled { cursor: default; opacity: 0.6; }
   .report-status { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
   .report-status a { color: var(--accent); }
@@ -154,232 +180,20 @@
   /* The honeypot: a field no person ever sees or fills; a filled one is a bot. */
   .report-nectar { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
 
-  .intro { max-width: 860px; margin: 14px 0 18px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+  .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
 
-  /* The menu: one row of cards, and who is at the keyboard across the
-     columns — Watch (AI simulations) on the left, Play (sim debugger) on
-     the right. The site offers the full game and nothing else, so the menu
-     is the pair of cards and the two column heads above them: there is no
-     row index down the left edge and no vertical row label beside the
-     cards, because with one row neither had a row to tell apart. */
-  :root {
-    --menu-gap: 16px;
-  }
-  .quadrants {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 12px var(--menu-gap);
-    min-width: 0;
-  }
-  .col-head {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-    margin: 0 0 2px;
-    color: #fff;
-    font-size: 21px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-align: center;
-    text-transform: uppercase;
-  }
-  .col-head span { color: var(--faint); font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: none; }
-  .mode-card {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--panel);
-    /* Closing a panel scrolls back to the card that opened it; land it
-       just clear of the viewport edge. */
-    scroll-margin-top: 14px;
-  }
-  /* The photograph is a way in, not decoration: it opens the same preset the
-     verb button does. */
-  .card-thumb-link { display: block; border-bottom: 1px solid var(--border); }
-  .card-thumb-link:hover .card-thumb,
-  .card-thumb-link:focus-visible .card-thumb { opacity: 0.88; }
-  .card-thumb-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .card-thumb {
-    display: block;
-    width: 100%;
-    aspect-ratio: 1200 / 725;
-    object-fit: cover;
-    background: #0d1117;
-  }
-  /* An opening panel scrolls the row's card bodies to the top of the
-     screen; the margin keeps the very bottom of the photographs visible
-     above them. */
-  .card-body { display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; padding: 10px 12px 12px; scroll-margin-top: 26px; }
-  /* One line: the card's name on the left, who is at the keyboard on the
-     right, in the same font and size. */
-  .card-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 2px 14px; flex-wrap: wrap; }
-  .card-title { margin: 0; color: #fff; font-size: 17px; font-weight: 700; }
-  .card-title a { color: inherit; text-decoration: none; }
-  .card-title a:hover,
-  .card-title a:focus-visible { color: var(--accent); }
-  .card-title a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .card-mode { color: var(--muted); font-size: 17px; font-weight: 700; white-space: nowrap; }
-  /* The tags are shortcuts: each one opens the customization panel below the
-     row, on the section the tag names. The shelf always reserves two tag
-     lines — a tag is exactly 24px tall (14px line + 8px padding + 2px
-     border) and the rows sit 6px apart — so however a card's own tags wrap,
-     one line or two, the buttons standing above the shelf stay level across
-     the row. */
-  .card-tags { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; min-height: 54px; margin: 0; padding: 0; list-style: none; }
-  .card-tags a {
-    display: block;
-    padding: 4px 8px;
-    border: 1px solid var(--border-strong);
-    border-radius: 3px;
-    color: var(--muted);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    line-height: 14px;
-    text-decoration: none;
-  }
-  .card-tags a:hover,
-  .card-tags a:focus-visible { border-color: var(--accent); color: #fff; }
-  .card-tags a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  /* The description holds to one line — the copy is written short enough to
-     fit, and the clamp keeps a narrow viewport from staggering the cards. */
-  .card-desc { margin: 0; overflow: hidden; color: var(--muted); font-size: 13px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
-  .card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 2px; }
-  .card-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 30px;
-    padding: 0 14px;
-    border-radius: 3px;
-    font-size: 13px;
-    font-weight: 700;
-    text-decoration: none;
-  }
-  /* The verb is the card's point — one colour-carrying button a third larger
-     than the Customize beside it, so a row reads as "start this" first and
-     "or change it" second. */
-  .verb-watch,
-  .verb-play { min-height: 40px; padding: 0 20px; font-size: 16px; }
-  .verb-watch { background: var(--watch-bg); color: var(--watch-fg); }
-  .verb-play { background: var(--play-bg); color: var(--play-fg); }
-  .verb-watch:hover,
-  .verb-watch:focus-visible { background: #315d7e; color: #fff; }
-  .verb-play:hover,
-  .verb-play:focus-visible { background: #3b6534; color: #fff; }
-  .card-btn.plain { border: 1px solid var(--border-strong); background: var(--panel-raised); color: var(--muted); }
-  .card-btn.plain:hover,
-  .card-btn.plain:focus-visible { border-color: var(--accent); color: #fff; }
-  .card-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  /* The two cards of a row are the shared panel's mode selector: while the
-     panel is open, the selected option — AI simulation or Sim debugger —
-     stays highlighted and the row's other option is muted. A muted card
-     un-mutes under the pointer, because clicking it is how the panel
-     switches who is at the keyboard. */
-  .mode-card { transition: opacity 0.15s ease; }
-  .mode-card.picking { border-color: var(--accent); }
-  /* Opening a row's panel merges its two pairs of buttons into one set: the
-     panel below now holds the customization, and its own mode chips do what
-     the two Customize buttons did, so those retire and each card is left
-     with the verb that starts the game. They come back when the panel
-     closes. */
-  .mode-card.merged .card-btn.customize { display: none; }
-  .mode-card.muted { opacity: 0.55; }
-  .mode-card.muted:hover,
-  .mode-card.muted:focus-within { opacity: 1; }
-
-  /* The customization panel lives inside the menu grid as a full-width row
-     directly below the pair of cards it customizes, so Customize and the
-     tags open options in place rather than leaving the menu. It spans both
-     card columns and nothing else: with the row-label column gone there is
-     no furniture beside the cards for it to hang out past. */
-  .picker-panel {
-    display: grid;
-    grid-column: 1 / -1;
-    gap: 14px;
-    min-width: 0;
-    padding: 18px;
-    border: 1px solid var(--border-strong);
-    border-radius: 4px;
-    background: var(--panel);
-    scroll-margin-top: 12px;
-  }
-  .picker-panel[hidden] { display: none; }
-  .picker-panel:focus { outline: none; }
-  .picker-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-  /* The title block yields width instead of forcing Back and the mode badge
-     to wrap under it: the copy reflows, the controls keep the top right. */
-  .picker-heading > div:first-child { flex: 1 1 320px; min-width: 0; }
-  .eyebrow { margin: 0 0 4px; color: var(--faint); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-  .picker-heading h3 { margin: 0; color: #fff; font-size: 20px; }
-  .picker-heading p:not(.eyebrow) { max-width: 640px; margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
-  .picker-back,
-  .picker-lens {
-    min-height: 34px;
-    padding: 0 12px;
-    border: 1px solid var(--border-strong);
-    border-radius: 3px;
-    background: var(--panel-raised);
-    color: var(--muted);
-    cursor: pointer;
-    font: 600 12.5px/1 var(--sans);
-  }
-  .picker-back { flex: none; color: var(--text); }
-  .picker-controls { display: flex; align-items: center; gap: 10px; flex: none; }
-  /* The badge names who is at the keyboard — Watch or Play — at the verb
-     button's own size and in its colour, so an open panel always says which
-     of the row's two games it is customizing. */
-  .picker-mode-badge { display: inline-flex; align-items: center; min-height: 34px; padding: 0 14px; border-radius: 3px; font-size: 16px; font-weight: 700; white-space: nowrap; }
-  .picker-mode-badge.watch { background: var(--watch-bg); color: var(--watch-fg); }
-  .picker-mode-badge.play { background: var(--play-bg); color: var(--play-fg); }
-  .picker-back:hover,
-  .picker-lens:hover { border-color: var(--accent); color: #fff; }
-  .picker-lens[aria-selected="true"],
-  .picker-lens[aria-pressed="true"] { border-color: var(--accent); background: #2a3f52; color: #fff; }
-  .picker-modes { display: flex; flex-wrap: wrap; gap: 8px; }
-  .picker-back:focus-visible,
-  .picker-lens:focus-visible,
-  .picker-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .picker-lenses { display: flex; flex-wrap: wrap; gap: 8px; }
-  .picker-groups { display: grid; gap: 8px; min-width: 0; }
-  .picker-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; padding: 10px; }
-  .picker-card {
-    display: block;
-    min-width: 0;
-    padding: 11px 13px;
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    background: var(--panel);
-    color: var(--text);
-    text-decoration: none;
-  }
-  .picker-card:hover,
-  .picker-card:focus-visible { background: var(--panel-raised); border-color: var(--accent); }
-  .picker-card-name { display: block; color: #fff; font-size: 15.5px; font-weight: 700; }
-  .picker-card-meta,
-  .picker-card-detail { display: block; margin-top: 3px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
-
-  /* The rankings column, down the right-hand side: the Civ AI Agents by
-     published Elo, and the head of the heuristic gene ranking. Its figures
-     are not written here. `beta/publish.sh` fills the `rankings-data` slot
-     below from the lane's own revision (`beta/home_rankings.py`), and until
-     a slot is filled the column does not exist: no `has-rankings`, the
-     original single-column page. With it, the shell widens by the column
-     and its gutter, so the menu keeps the width it always had. */
-  .home-main { min-width: 0; }
-  body.has-rankings .shell { width: min(1452px, 100%); }
-  body.has-rankings main.shell {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 360px;
-    column-gap: 32px;
-    align-items: start;
-  }
-  .rankings { display: grid; gap: 14px; align-content: start; min-width: 0; margin-top: 14px; }
+  /* The rankings: the Civ AI Agents by published Elo, and the head of the
+     heuristic gene ranking, side by side. Their figures are not written
+     here. `beta/publish.sh` fills the `rankings-data` slot below from the
+     lane's own revision (`beta/home_rankings.py`), and until a slot is
+     filled the section stays hidden and the page is its header and the
+     paragraph above. A list whose source the revision lacks stays hidden on
+     its own and the other takes the row; a window too narrow for two
+     stacks them. `display: grid` outranks the hidden attribute's own rule,
+     so the section has to say what hidden means for itself. */
+  .rankings { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; min-width: 0; }
+  .rankings[hidden] { display: none; }
   .rank-card { min-width: 0; padding: 12px 14px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
   .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
   .rank-sub { margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
@@ -406,21 +220,6 @@
   .rank-row.is-off .rank-name { color: var(--muted); }
   .rank-note { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
   .rank-note a { color: var(--accent); }
-  @media (max-width: 1180px) {
-    /* Too narrow for a third column: the rankings follow the menu, side by
-       side while there is room for two. */
-    body.has-rankings .shell { width: min(1060px, 100%); }
-    body.has-rankings main.shell { grid-template-columns: minmax(0, 1fr); }
-    .rankings { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin-top: 22px; }
-  }
-
-  @media (max-width: 760px) {
-    /* One column of cards: the two column heads describe a pair standing
-       side by side, and each card names who is at the keyboard itself. */
-    .quadrants { grid-template-columns: 1fr; }
-    .col-head { display: none; }
-    .picker-cards { grid-template-columns: 1fr; }
-  }
 </style>
 </head>
 <body>
@@ -428,6 +227,16 @@
     <div>
       <h1 class="site-title">CIVVIS<span>.ai</span></h1>
       <p class="site-tagline">An open source Civilization VI Simulator for AI strategy development</p>
+      <!-- The site is three pages, CIVVIS, Debugger and Home, and each
+           links the other two: CIVVIS is the simulation the AIs play and
+           Debugger the same game with a seat of your own (`mode=play` in
+           beta/shim.js). Both links are lane-relative (this page lives at
+           <lane>/home/), so the test lane's home page opens the test lane's
+           viewer. -->
+      <nav class="site-nav" aria-label="CIVVIS sites">
+        <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
+        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">Debugger</a>
+      </nav>
     </div>
     <nav class="utility-nav" aria-label="CIVVIS links">
       <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
@@ -446,136 +255,27 @@
   </header>
 
   <main class="shell">
-    <div class="home-main">
     <p class="intro">
       CIVVIS is an open source re-implementation of the 4X turn-based strategy
       game <cite>Sid Meier&#8217;s Civilization VI</cite> &#8212; built with a
       simulator UI wrapping the headless mode game logic.
-      Everything below is a preset starting configuration of settings for the
-      simulator, but you can further customize the settings how you like or
-      <a href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">clone the code</a>
-      to really customize your own experience.
-    </p>
-    <p class="intro">
       Everything here is a best-effort work in progress; the AI logic in
-      particular still needs a good bit of work. Feel
-      free to request new features or
+      particular still needs a good bit of work. Feel free to
+      <a href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">clone the code</a>,
+      request new features or
       <a href="https://github.com/MartinHalvorson/CIVVIS/issues" target="_blank" rel="noreferrer">report any issues</a>
       you run into.
     </p>
 
-    <!-- The menu: one row of cards, and who is at the keyboard across the
-         columns — Watch (AI simulations) on the left, Play (sim debugger)
-         on the right. Each card reads top to bottom as name, description,
-         actions, tags: the title line carries the card's name on the left
-         and who is at the keyboard on the right; the photograph, the name
-         and the card's own colour-carrying verb all open the simulator
-         immediately on the card's preset. Four buttons stand in a row to
-         begin with — Watch and Customize on the left, Play and Customize on
-         the right — and they stand level: the description holds to one line
-         and the tag shelf below the buttons reserves two, so a card whose
-         tags wrap cannot stagger its neighbour's buttons. Customize opens
-         the row's shared world picker in place, directly below the row, and
-         each tag opens that panel on the section the tag names. Opening it
-         merges the row's two pairs into one set: both Customize buttons
-         retire into the panel (whose own chips now switch who is at the
-         keyboard), the selected card highlights and the other is muted, and
-         the pairs come back when the panel closes. Without scripting, the
-         buttons and tags still land somewhere honest: the preset itself, or
-         the simulator's own Game setup drawer (`?setup=1`). Each card's
-         photograph is a real capture of its own preset. -->
-    <section class="quadrants" aria-label="Game menu">
-      <h2 class="col-head">Design &amp; Watch <span>AI simulations</span></h2>
-      <h2 class="col-head">Play <span>Sim debugger</span></h2>
-
-      <div class="mode-card" id="row-civ">
-        <a class="card-thumb-link" href="../">
-          <img class="card-thumb" src="assets/watch-civ.jpg" alt="Watch CIVVIS: a CIVVIS globe at mid-game, AI empires sharing two continents, borders and cities drawn across the planet." fetchpriority="high">
-        </a>
-        <div class="card-body">
-          <div class="card-title-row">
-            <h3 class="card-title" id="watch-civ-title"><a href="../">Watch CIVVIS</a></h3>
-            <span class="card-mode">AI simulation</span>
-          </div>
-          <p class="card-desc">AI civilizations play a full game end to end.</p>
-          <div class="card-actions">
-            <a class="card-btn verb-watch" href="../" aria-labelledby="watch-civ-title">Watch</a>
-            <a class="card-btn plain customize" href="../?setup=1" data-pick="watch-civ" aria-label="Customize a watched game">Customize</a>
-          </div>
-          <ul class="card-tags" aria-label="Watch CIVVIS features">
-            <li><a href="../?setup=1" data-pick="watch-civ" data-lens="seats">AI Empires</a></li>
-            <li><a href="../?setup=1" data-pick="watch-civ" data-lens="worlds">Fresh World Every Visit</a></li>
-            <li><a href="../?setup=1" data-pick="watch-civ" data-lens="victory">Every Victory Lane</a></li>
-            <li><a href="../?setup=1" data-pick="watch-civ" data-lens="sizes">World Sizes</a></li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="mode-card">
-        <a class="card-thumb-link" href="../?mode=play">
-          <img class="card-thumb" src="assets/play-civ.jpg" alt="Play CIVVIS: the opening of a CIVVIS sim debugger game, a settler with its orders bar open on a young world.">
-        </a>
-        <div class="card-body">
-          <div class="card-title-row">
-            <h3 class="card-title" id="play-civ-title"><a href="../?mode=play">Play CIVVIS</a></h3>
-            <span class="card-mode">Sim debugger</span>
-          </div>
-          <p class="card-desc">A full game as one civilization vs AI rivals.</p>
-          <div class="card-actions">
-            <a class="card-btn verb-play" href="../?mode=play" aria-labelledby="play-civ-title">Play</a>
-            <a class="card-btn plain customize" href="../?mode=play&amp;setup=1" data-pick="play-civ" aria-label="Customize a played game">Customize</a>
-          </div>
-          <ul class="card-tags" aria-label="Play CIVVIS features">
-            <li><a href="../?mode=play&amp;setup=1" data-pick="play-civ" data-lens="seats">Your Seat</a></li>
-            <li><a href="../?mode=play&amp;setup=1" data-pick="play-civ" data-lens="seats">AI Rivals</a></li>
-            <li><a href="../?mode=play&amp;setup=1" data-pick="play-civ" data-lens="worlds">Custom Worlds</a></li>
-            <li><a href="../?mode=play&amp;setup=1" data-pick="play-civ" data-lens="sizes">World Sizes</a></li>
-          </ul>
-        </div>
-      </div>
-
-      <!-- The world picker: the full game's customization panel, opened in
-           place below the CIVVIS row by either full-game card. Its four
-           lenses are link catalogs into the simulator — the world types the
-           engine ships, the six world sizes, the six victory lanes, and who
-           sits at the table — and everything beyond a link's reach is one
-           click further in the simulator's own Game setup drawer. -->
-      <section class="picker-panel" id="game-picker" hidden aria-labelledby="game-picker-title" tabindex="-1">
-        <div class="picker-heading">
-          <div>
-            <h3 id="game-picker-title">Set up the world</h3>
-            <p id="game-picker-copy"></p>
-          </div>
-          <div class="picker-controls">
-            <button class="picker-back" type="button" id="game-picker-back">← Back</button>
-            <span class="picker-mode-badge watch" id="game-picker-mode">Watch CIVVIS · AI simulation</span>
-          </div>
-        </div>
-        <div class="picker-modes" id="game-modes" role="group" aria-label="Who is at the keyboard">
-          <button class="picker-lens" type="button" data-mode="watch-civ" aria-pressed="true">AI simulation</button>
-          <button class="picker-lens" type="button" data-mode="play-civ" aria-pressed="false">Sim debugger</button>
-        </div>
-        <div class="picker-lenses" id="game-lenses" role="tablist" aria-label="Game setup view">
-          <button class="picker-lens" type="button" role="tab" data-lens="worlds" aria-selected="true">Worlds</button>
-          <button class="picker-lens" type="button" role="tab" data-lens="sizes" aria-selected="false">World sizes</button>
-          <button class="picker-lens" type="button" role="tab" data-lens="victory" aria-selected="false">Victory lanes</button>
-          <button class="picker-lens" type="button" role="tab" data-lens="seats" aria-selected="false">Seats &amp; rivals</button>
-        </div>
-        <div class="picker-groups" id="game-groups"></div>
-      </section>
-
-    </section>
-    </div>
-
-    <!-- The rankings column. Two lists, both measured: the Civ AI Agents by
+    <!-- The rankings. Two lists, both measured: the Civ AI Agents by
          published Elo with Civilization VI's difficulty levels standing
          between them as the scale's landmarks, and the heuristic genes by
          the win rate a seat has with the gene on minus with it off. The
-         column is built by the script below from the `rankings-data` slot,
+         section is built by the script below from the `rankings-data` slot,
          which `beta/publish.sh` fills at publish time; a page whose slot
          still reads `null` (this file opened as it is committed, or a lane
-         whose revision has neither source) keeps the column hidden. -->
-    <aside class="rankings" id="rankings" hidden aria-label="Rankings">
+         whose revision has neither source) keeps it hidden. -->
+    <section class="rankings" id="rankings" hidden aria-label="Rankings">
       <section class="rank-card" id="rank-strategies" hidden aria-labelledby="rank-strategies-title">
         <h2 class="rank-title" id="rank-strategies-title">Player strategies</h2>
         <p class="rank-sub">Civ AI Agents by Elo. Civilization VI&#8217;s Prince is 1000.</p>
@@ -595,14 +295,14 @@
           <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/GENE_HEURISTIC_RANKING.md" target="_blank" rel="noreferrer">Full ranking</a>
         </p>
       </section>
-    </aside>
+    </section>
   </main>
 
   <script type="application/json" id="rankings-data">null</script>
   <script>
-  // The rankings column, built before first paint so the page never reflows
-  // around it. Every figure arrives through textContent: the slot holds a
-  // gene's own sentence, and none of it is trusted as markup.
+  // The rankings, built before first paint so the page never reflows around
+  // them. Every figure arrives through textContent: the slot holds a gene's
+  // own sentence, and none of it is trusted as markup.
   (() => {
     let data = null;
     try { data = JSON.parse(document.getElementById("rankings-data").textContent); } catch (_) { return; }
@@ -674,10 +374,7 @@
       shown = show("rank-genes", rows, note) || shown;
     }
 
-    if (shown) {
-      document.getElementById("rankings").hidden = false;
-      document.body.classList.add("has-rankings");
-    }
+    if (shown) document.getElementById("rankings").hidden = false;
   })();
   </script>
 
@@ -689,7 +386,7 @@
        and the dialog falls back to offering the prefilled form. -->
   <dialog class="report-dialog" id="report-dialog" aria-labelledby="report-dialog-title">
     <form class="report-form" id="report-form" novalidate>
-      <div class="picker-heading">
+      <div class="report-heading">
         <div>
           <p class="eyebrow">Feedback</p>
           <h3 id="report-dialog-title">Suggest a feature or report an issue</h3>
@@ -872,194 +569,6 @@
         submit.disabled = false;
       }
     });
-  })();
-  </script>
-
-  <script>
-  (() => {
-    const gamePicker = document.getElementById("game-picker");
-    const gameGroups = document.getElementById("game-groups");
-    const gameLensBar = document.getElementById("game-lenses");
-    const quadrants = [...document.querySelectorAll(".mode-card [data-pick]")];
-    if (!gamePicker || !gameGroups || !gameLensBar || !quadrants.length) return;
-    // Lane-relative like every link on this page (the page lives at
-    // <lane>/home/), so the test lane's picker opens the test viewer.
-    const HASH = { "play-civ": "#play-civ", "watch-civ": "#watch-civ" };
-    let mode = "watch-civ";
-    let lens = "worlds";
-    const esc = value => String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
-
-    // The world picker's catalogs. The world types carry the engine's own
-    // names and descriptions (src/setup.rs `CIV6_MAP_SCRIPTS`), the sizes are
-    // the lobby's six rungs, and the victory cards each open a world where
-    // only the named lane can win (`?victories=` in beta/shim.js). Everything
-    // a link cannot carry — leader, difficulty, the AI player pool, fog,
-    // seeds — is one click further in the simulator's Game setup drawer.
-    const WORLDS = [
-      ["tenins_ball", "Tennis Ball", "Two land lobes divided by a five-to-six-tile water seam that loops around the whole world like a tennis ball's stitching."],
-      ["continents", "Continents", "A few large landmasses separated by open water."],
-      ["pangaea", "Pangaea", "One connected supercontinent surrounded by ocean."],
-      ["earth", "Earth", "Earth's real coastlines, relief, climates, and wonders, with ordinary balanced starting positions."],
-      ["true_start_earth", "True Start Earth", "Earth itself, with every civilization founded in its own historic homeland."],
-      ["small_continents", "Small Continents", "Several smaller landmasses with more coastline and sea lanes."],
-      ["islands", "Islands", "An archipelago: many small islands, none of them a continent, every one of them its own shore."],
-      ["fjords", "Fjords", "Forty percent open water, forty percent ordinary land, and twenty percent mountain ranges, with winding sea passages and passable breaks through the ridges."],
-      ["inland_sea", "Inland Sea", "A broad connected landmass surrounding a central sea."],
-      ["lakes", "Lakes", "A world of land, broken up by lakes and inland seas instead of oceans."],
-      ["land_only", "Land Only", "Almost nothing but land — one unbroken world with a scatter of inland seas for its water."],
-      ["water_world", "Water World", "Almost nothing but ocean — scattered specks of land, and the sea lanes between them are the map."],
-      ["grand_canals", "Grand Canals", "A world of solid ground cut by six canals that each circle it: two around the poles, two around each of the other two axes, crossing at twenty-four junctions."],
-      ["grand_canals_2", "Grand Canals II", "The whole world cut into blocks of ground, each one a few dozen tiles across, and a canal around every one."],
-    ];
-    const SIZES = [
-      ["2", "Duel", "2 civs · 3 city-states · 44×26"],
-      ["4", "Tiny", "2–4 civs · 6 city-states · 60×38 · the stock world"],
-      ["6", "Small", "6 civs · 9 city-states · 74×46"],
-      ["8", "Standard", "8 civs · 12 city-states · 84×54"],
-      ["10", "Large", "10 civs · 15 city-states · 96×60"],
-      ["12", "Huge", "12 civs · 18 city-states · 106×66"],
-    ];
-    const VICTORIES = [
-      ["science", "Science", "Reach the exoplanet."],
-      ["culture", "Culture", "Win the world's visitors."],
-      ["religious", "Religion", "Convert the world."],
-      ["diplomatic", "Diplomacy", "Reach 20 Diplomatic Victory points."],
-      ["domination", "Domination", "Take every other capital."],
-      ["score", "Score", "Bank the highest score at the turn limit."],
-    ];
-    // Who is at the keyboard travels on every link: a played world seats the
-    // visitor, a watched one leaves every seat to the AI.
-    const civInto = query => query
-      ? `../?${query}${mode === "play-civ" ? "&mode=play" : ""}`
-      : (mode === "play-civ" ? "../?mode=play" : "../");
-    const civSetup = () => mode === "play-civ" ? "../?mode=play&setup=1" : "../?setup=1";
-    const gameCard = (href, name, meta, detail) =>
-      `<a class="picker-card" href="${esc(href)}">` +
-      `<span class="picker-card-name">${esc(name)}</span>` +
-      (meta ? `<span class="picker-card-meta">${esc(meta)}</span>` : "") +
-      `<span class="picker-card-detail">${esc(detail)}</span></a>`;
-    const seatsMarkup = () => mode === "play-civ"
-      ? [gameCard(civInto(""), "Your seat", "Sim debugger · first chair", "Take one civilization yourself; the AI plays every rival. Your leader and difficulty are chosen in Game setup."),
-         gameCard(civSetup(), "AI rivals", "The rated roster", "Your rivals are seated from the AI player pool — the league's proven strategies. How many of the best are eligible, per civ, is the AI player pool setting in Game setup."),
-         gameCard(civSetup(), "Everything else", "Game setup", "Leader, difficulty, teams, mercy rule, seeds and the rest — the simulator's Game setup drawer opens on arrival.")]
-      : [gameCard(civInto(""), "AI empires", "Every seat AI-played", "Every civilization is played by a rated strategy from the league roster, and the HUD shows each player's Elo and win odds."),
-         gameCard(civSetup(), "AI player pool", "Who may be seated", "How many of the roster's best strategies may play — best 1, 2, 3 or 5 per civ, or all of them — is the AI player pool setting in Game setup."),
-         gameCard(civSetup(), "Everything else", "Game setup", "Victory rules, teams, mercy rule, seeds and the rest — the simulator's Game setup drawer opens on arrival.")];
-    const gameGroupsMarkup = () => {
-      if (lens === "sizes")
-        return `<div class="picker-cards">` + SIZES.map(([n, name, detail]) =>
-          gameCard(civInto(`players=${n}`), name, null, detail)).join("") + `</div>`;
-      if (lens === "victory")
-        return `<div class="picker-cards">` +
-          gameCard(civInto(""), "Every lane open", "The stock rules", "All six victory conditions enabled; the first civilization to bank any one of them wins.") +
-          VICTORIES.map(([id, name, detail]) =>
-            gameCard(civInto(`victories=${id}`), name, "The only lane that wins", detail)).join("") + `</div>`;
-      if (lens === "seats")
-        return `<div class="picker-cards">` + seatsMarkup().join("") + `</div>`;
-      return `<div class="picker-cards">` + WORLDS.map(([id, name, detail]) =>
-        gameCard(civInto(`map=${id}`), name, null, detail)).join("") + `</div>`;
-    };
-    const renderGame = () => {
-      for (const button of gameLensBar.querySelectorAll("[data-lens]"))
-        button.setAttribute("aria-selected", String(button.dataset.lens === lens));
-      gameGroups.innerHTML = gameGroupsMarkup();
-    };
-    const heading = {
-      "play-civ": ["Play CIVVIS · sim debugger", "Set up your game",
-        "Take one civilization against AI rivals. Each card starts that game with you in the first chair; your leader, difficulty and every other setting are in the simulator’s Game setup."],
-      "watch-civ": ["Watch CIVVIS · AI simulation", "Set up the world",
-        "A fresh world every visit, played end to end by AI civilizations. Each card starts that simulation; every other setting is in the simulator’s Game setup."],
-    };
-    // The two cards of the row are their shared panel's mode selector. While
-    // the panel is open, the card whose mode is selected highlights and the
-    // other is muted; the panel's own mode chips say the same thing in
-    // place. `merged` is the same fact told to the buttons: with the panel
-    // open the row's two Customize buttons have become the panel and its
-    // chips, so both retire until it closes and each card keeps only the
-    // verb that starts the game.
-    const markPicking = () => {
-      for (const card of document.querySelectorAll(".mode-card")) {
-        const pick = card.querySelector("[data-pick]")?.dataset.pick;
-        if (!pick) continue;
-        const shown = !gamePicker.hidden;
-        const selected = shown && pick === mode;
-        card.classList.toggle("picking", selected);
-        card.classList.toggle("muted", shown && !selected);
-        card.classList.toggle("merged", shown);
-      }
-      for (const chip of document.querySelectorAll(".picker-modes [data-mode]"))
-        chip.setAttribute("aria-pressed", String(chip.dataset.mode === mode));
-    };
-    // The panel opens directly below the row of cards, on the section the
-    // click named: Customize opens the stock section, a tag opens the
-    // section it names.
-    const open = (which, section, focus = true) => {
-      mode = which;
-      lens = section || "worlds";
-      const [eyebrow, title, copy] = heading[mode];
-      const badge = document.getElementById("game-picker-mode");
-      badge.textContent = eyebrow;
-      badge.classList.toggle("watch", mode === "watch-civ");
-      badge.classList.toggle("play", mode === "play-civ");
-      document.getElementById("game-picker-title").textContent = title;
-      document.getElementById("game-picker-copy").textContent = copy;
-      gamePicker.hidden = false;
-      renderGame();
-      markPicking();
-      if (location.hash !== HASH[which]) history.replaceState(null, "", location.pathname + location.search + HASH[which]);
-      if (focus) {
-        // Land the row, not just the panel: the bottom of the row's
-        // photographs at the top of the screen, so the card titles, verbs
-        // and tags stay readable above and the customization sits roughly
-        // mid-screen. The one-column phone layout stacks the row, so there
-        // the panel itself is the only honest target.
-        const anchor = matchMedia("(max-width: 760px)").matches
-          ? gamePicker
-          : document.getElementById("row-civ").querySelector(".card-body");
-        anchor.scrollIntoView({ behavior: "smooth", block: "start" });
-        gamePicker.focus({ preventScroll: true });
-      }
-    };
-    const close = () => {
-      gamePicker.hidden = true;
-      markPicking();
-      if (Object.values(HASH).includes(location.hash))
-        history.replaceState(null, "", location.pathname + location.search);
-    };
-    for (const card of quadrants) card.addEventListener("click", event => {
-      // Plain clicks open the panel; a modified click (new tab) keeps the
-      // link's own destination — the stock world, or Game setup.
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
-      event.preventDefault();
-      open(card.dataset.pick, card.dataset.lens);
-    });
-    gameLensBar.addEventListener("click", event => {
-      const button = event.target.closest("[data-lens]");
-      if (!button) return;
-      lens = button.dataset.lens;
-      renderGame();
-    });
-    // The chips switch who is at the keyboard without closing the panel or
-    // scrolling away; the section that was open stays open.
-    document.getElementById("game-modes").addEventListener("click", event => {
-      const chip = event.target.closest("[data-mode]");
-      if (!chip) return;
-      open(chip.dataset.mode, lens, false);
-    });
-    document.getElementById("game-picker-back").addEventListener("click", () => {
-      close();
-      document.getElementById("watch-civ-title").closest(".mode-card").scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-    // A link straight to the panel — the hash names which side of the row
-    // it opens on — opens it without a click, and Back closes it the same
-    // way.
-    const fromHash = () => {
-      const which = Object.keys(HASH).find(key => HASH[key] === location.hash);
-      if (which) open(which, null, false);
-      else if (!gamePicker.hidden) close();
-    };
-    window.addEventListener("hashchange", fromHash);
-    fromHash();
   })();
   </script>
 </body>
