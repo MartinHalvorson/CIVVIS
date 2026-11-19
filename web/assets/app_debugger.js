@@ -421,7 +421,8 @@ function debugBuildBar() {
     <div class="dbg-pop" id="dbg-pop-saves" hidden>
       <h4>Save points</h4>
       <p>A save point keeps this world to come back to, with the turns behind it, however the game
-        is played on from here. Going to one keeps the world you left as a save point too.</p>
+        is played on from here. Going to one keeps the world you left as a save point too. Save points
+        last as long as this page is open; a save, below, is kept on this device.</p>
       <div class="dbg-line">
         <input type="text" data-dbg-field="pointname" maxlength="48" placeholder="a name, or leave empty for the turn" aria-label="Save point name">
         <button data-dbg="point" title="Keep the world as it stands now">Save point</button>
