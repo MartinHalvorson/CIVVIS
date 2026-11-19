@@ -7089,6 +7089,11 @@ pub struct AdvancedAi {
     /// head over the Campus, trade, industry, harbour and housing claims. See
     /// `advanced/culture_theater_buildings_pass_the_claims.rs`. Off by default.
     culture_theater_buildings_pass_the_claims: bool,
+    /// `culture-faith-patronizes-the-creators`: a Culture seat with no
+    /// religion buys the cheapest offered Writer, Artist or Musician with
+    /// Faith above its reserve once a slot stands or is being built. See
+    /// `advanced/culture_faith_patronizes_the_creators.rs`. Off by default.
+    culture_faith_patronizes_the_creators: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11625,6 +11630,9 @@ mod culture_band_bank;
 mod culture_commerce_floor;
 /// `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`.
 mod culture_drama_first;
+/// `culture-faith-patronizes-the-creators`: see
+/// `advanced/culture_faith_patronizes_the_creators.rs`.
+mod culture_faith_patronizes_the_creators;
 mod culture_faith_sources;
 /// `culture-seat-fills-its-district-slots`: a Culture seat's free district
 /// slots. See `advanced/culture_fills_its_slots.rs`.
@@ -27435,6 +27443,11 @@ impl AdvancedAi {
         if !emergency_city_defense && !surprise_defense_purchase {
             self.score_sprint_purchases(g, pid, &plan);
         }
+        // `culture-faith-patronizes-the-creators`: a Culture seat's idle Faith
+        // buys its Writers, Artists and Musicians before the ordinary pass.
+        // Exact no-op while the gene is off. See
+        // `advanced/culture_faith_patronizes_the_creators.rs`.
+        self.culture_faith_patronizes_the_creators(g, pid);
         self.advanced_great_people(g, pid, self.great_person_lane(g, pid, &plan));
         // `religion-seat-fields-apostles`: a positive saving decision below
         // reaches the later city governor, and expires before the next pass.
