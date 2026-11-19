@@ -65,12 +65,47 @@
 //!
 //! Once the rival reads Friendly, the friendship genes ask as they already
 //! do. `Kind::OptIn`.
+//!
+//! ## Version two: `tribute-buys-the-friendship-2`
+//!
+//! Live Deity games of 2026-11-18 (83 that reached turn 60, version one armed
+//! in every one):
+//! - A gift buys a point less than its Gold over ten: where the row was
+//!   visible, 60 Gold read +5, 80 read +7 twice and 90 read +8. Version one
+//!   aims at +5, so the rival lands on +4. The host must turn an Unfriendly
+//!   leader Neutral only at +5 (`Base/Assets/Gameplay/Data/DiplomaticActions.xml`,
+//!   `DiplomaticStateTransitions`: UNFRIENDLY→NEUTRAL `RequireTransitionMax`
+//!   5), and +4 does not cross.
+//! - Of 54 tributes, 39 left the rival at +4 or less over the gift turn and
+//!   the next (2,530 of 3,450 Gold). 34 of those 39 stayed Unfriendly, and 8
+//!   led to a declared friendship within ten turns. All 15 that reached +5
+//!   turned Neutral or better within three turns, and 10 led to a friendship.
+//! - The 100-Gold reserve held the gift on 1,075 bridge frames, against 131
+//!   frames that sent one. The median treasury in the twelve turns before a
+//!   war declared on us by turn 70 was 68 Gold.
+//! - Replaying the rule on the logged frames, version one paid 4 of the 80
+//!   rivals that later declared war on us before their war. Aimed at +7 from
+//!   the whole treasury it would have paid 22.
+//!
+//! Version two aims at +7, the `tribute-warms-the-neighbour` aim, so the gift
+//! clears the line with a point to spare for the row's decay. It may spend the
+//! whole treasury, less Gold another gift took this frame, and sends nothing
+//! while Gold per turn is negative. The rival, the cadence, the ten-point
+//! reach and the one-gift-per-30-turns bar are version one's. Version two
+//! carries version one: arming it replaces `tribute-buys-the-friendship`.
 use super::*;
 
 impl AdvancedAi {
-    /// Whether `tribute-buys-the-friendship` is on, for the live bridge.
+    /// Whether `tribute-buys-the-friendship` or its version two is on, for the
+    /// live bridge.
     pub fn tribute_buys_the_friendship_enabled(&self) -> bool {
-        self.tribute_buys_the_friendship
+        self.tribute_buys_the_friendship || self.tribute_buys_the_friendship_2
+    }
+
+    /// Whether `tribute-buys-the-friendship-2` is on: the bridge aims the
+    /// tribute at +7 and keeps no Gold back.
+    pub fn tribute_aims_past_the_line(&self) -> bool {
+        self.tribute_buys_the_friendship_2
     }
 }
 

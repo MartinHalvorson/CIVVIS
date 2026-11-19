@@ -324,6 +324,9 @@ impl AdvancedAi {
         /// Opt-in gene `diplo-seat-allies-every-friend`; see
         /// `advanced/diplo_allies_every_friend.rs`.
         diplo_seat_allies_every_friend => enable_diplo_seat_allies_every_friend, disable_diplo_seat_allies_every_friend;
+        /// Opt-in gene `disrupt-waits-for-the-sources`; see
+        /// `advanced/disrupt_waits_for_the_sources.rs`.
+        disrupt_waits_for_the_sources => enable_disrupt_waits_for_the_sources, disable_disrupt_waits_for_the_sources;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -617,6 +620,9 @@ impl AdvancedAi {
         /// Opt-in gene `trade-district-follows-the-campus`; see
         /// `advanced/trade_district_follows_the_campus.rs`.
         trade_district_follows_the_campus => enable_trade_district_follows_the_campus, disable_trade_district_follows_the_campus;
+        /// Opt-in gene `tribute-buys-the-friendship-2`; see
+        /// `advanced/tribute_buys_the_friendship.rs`.
+        tribute_buys_the_friendship_2 => enable_tribute_buys_the_friendship_2, disable_tribute_buys_the_friendship_2;
     }
 
     toggles! {

@@ -2182,6 +2182,12 @@ const TRIBUTE_CADENCE: u32 = 5;
 /// standing row means a gift already paid. Below the visibility that names it
 /// the row reads "Unknown Reason"; the mod's retry bar covers that case.
 const TRIBUTE_FAVORABLE_TRADE_ROW: &str = "Favorable trade deals";
+/// `tribute-buys-the-friendship-2`: the visible opinion the tribute aims for,
+/// the neighbour gift's. A gift buys a point less than its Gold over ten, so
+/// version one's +5 aim left 39 of 54 live Deity tributes (11-18) at +4 or
+/// less, under the +5 at which the host must turn an Unfriendly leader
+/// Neutral; all 15 that reached +5 crossed.
+const TRIBUTE_TARGET_OPINION_2: f64 = NEIGHBOUR_TRIBUTE_TARGET_OPINION;
 
 /// `tribute-buys-the-friendship`: a one-way Gold gift (`aid_gift` verb
 /// `TRIBUTE`) to the strongest met major at peace with us, the rival
@@ -2191,10 +2197,15 @@ const TRIBUTE_FAVORABLE_TRADE_ROW: &str = "Favorable trade deals";
 /// at all: only a gap one gift can close ([`TRIBUTE_ONE_GIFT_POINTS`]), only
 /// to a rival not already holding one, and only from the treasury over
 /// [`TRIBUTE_GOLD_RESERVE`]. `None` when a gift was pushed, else the hold.
-/// See `advanced/tribute_buys_the_friendship.rs`.
+///
+/// `past_the_line` is version two (`tribute-buys-the-friendship-2`): it aims at
+/// [`TRIBUTE_TARGET_OPINION_2`] and may pay from the whole treasury, less Gold
+/// another gift took this frame, sending nothing while Gold per turn is
+/// negative. See `advanced/tribute_buys_the_friendship.rs`.
 fn append_tribute_order(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
+    past_the_line: bool,
 ) -> Option<&'static str> {
     let Some(rival) = state
         .rivals
@@ -2234,7 +2245,12 @@ fn append_tribute_order(
     if favorable > 0.0 {
         return Some("tribute_hold:already_paid");
     }
-    let points = TRIBUTE_TARGET_OPINION - total;
+    let target = if past_the_line {
+        TRIBUTE_TARGET_OPINION_2
+    } else {
+        TRIBUTE_TARGET_OPINION
+    };
+    let points = target - total;
     if points <= 0.0 {
         return Some("tribute_hold:no_gap");
     }
@@ -2242,7 +2258,19 @@ fn append_tribute_order(
         return Some("tribute_hold:out_of_reach");
     }
     let amount = ((points.ceil() * TRIBUTE_GOLD_PER_POINT) as i64).max(TRIBUTE_MIN_GOLD);
-    if amount > state.gold - TRIBUTE_GOLD_RESERVE {
+    let kept = if past_the_line {
+        if state.gold_per_turn.is_some_and(|income| income < 0.0) {
+            return Some("tribute_hold:deficit");
+        }
+        orders
+            .iter()
+            .filter(|order| order.kind == "aid_gift")
+            .filter_map(|order| order.pos.map(|(gold, _)| i64::from(gold)))
+            .sum()
+    } else {
+        TRIBUTE_GOLD_RESERVE
+    };
+    if amount > state.gold - kept {
         return Some("tribute_hold:treasury");
     }
     // One working deal per rival, and a tribute beside a war, peace,
@@ -5503,7 +5531,7 @@ fn decide(
     // `tribute-buys-the-friendship`: Gold to the strongest neighbour at peace
     // while it is too cold for the friendship ask. See `append_tribute_order`.
     if ai.tribute_buys_the_friendship_enabled() {
-        match append_tribute_order(state, &mut orders) {
+        match append_tribute_order(state, &mut orders, ai.tribute_aims_past_the_line()) {
             None => note_bits.push("tribute=1".to_string()),
             Some(why @ ("tribute_hold:treasury" | "tribute_hold:deal_in_flight")) => {
                 note_bits.push(why.to_string())

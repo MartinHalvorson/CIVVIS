@@ -204,18 +204,19 @@ async function fileReport(request, env, url) {
   return answer(201, { url: issue.html_url || "", number: issue.number });
 }
 
-// Every compressible file of the game page. publish.sh writes a `.br` beside
-// each at brotli's slowest setting, and build.json's `download_bytes` — the
-// Build size the viewer shows — counts exactly those copies; Cloudflare's own
-// on-the-fly compression favours speed and comes out about 30% larger on the
-// engine. A lane's front door (`/`, `/test/`) is its index.html.
+// Every compressible file of the game page but the page itself. publish.sh
+// writes a `.br` beside each at brotli's slowest setting, and build.json's
+// `download_bytes` — the Build size the viewer shows — counts those copies;
+// Cloudflare's own on-the-fly compression favours speed and comes out about
+// 30% larger on the engine. HTML is left out because the edge re-encodes every
+// text/html response whatever this sends (an 85,864-byte copy of the page went
+// out as 109,582 bytes, the page unchanged), so a copy would be work for nothing.
 const PRECOMPRESSED =
-  /^(?:\/test)?\/(?:civvis\.wasm|shim\.js|worker\.js|index\.html|assets\/[^/]+\.(?:js|json|css))$/;
+  /^(?:\/test)?\/(?:civvis\.wasm|shim\.js|worker\.js|assets\/[^/]+\.(?:js|json|css))$/;
 
 /// The file a request names, if publish.sh may have precompressed it.
 function precompressedPath(pathname) {
-  const file = /^(?:\/test)?\/$/.test(pathname) ? `${pathname}index.html` : pathname;
-  return PRECOMPRESSED.test(file) ? file : null;
+  return PRECOMPRESSED.test(pathname) ? pathname : null;
 }
 
 /// The harder-compressed copy of this file, if there is one and the browser
@@ -273,7 +274,6 @@ async function asset(request, env, gated) {
     headers.set("Vary", "Accept-Encoding");
     const served = precompressedPath(path);
     if (served.endsWith(".js")) headers.set("Content-Type", "text/javascript; charset=utf-8");
-    if (served.endsWith(".html")) headers.set("Content-Type", "text/html; charset=utf-8");
     if (served.endsWith(".json")) headers.set("Content-Type", "application/json");
     if (served.endsWith(".css")) headers.set("Content-Type", "text/css; charset=utf-8");
     // `manual`: these bytes are already encoded, so the runtime must not encode

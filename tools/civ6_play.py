@@ -1385,6 +1385,16 @@ def domination_no_capital_reading(state: dict, event: dict,
 # start, like every retire key here; no launcher forwards them.
 SCIENCE_BEHIND_POLICY_KEY = "CIVVIS_RESTART_SCIENCE_BEHIND_TECHS"
 SCIENCE_BEHIND_FROM_POLICY_KEY = "CIVVIS_RESTART_SCIENCE_BEHIND_FROM_TURN"
+#: Diplomatic Victory points at or above which the rule waits (0, unset or not
+#: a whole number = never). A Science seat racing the Congress
+#: (`science-seat-races-the-congress`) has a second road, and the rule read
+#: only techs. Live Deity 2026-11-18 (session -7f's read of 83 games): the eight
+#: seats it retired held 5-12 points at turn 150, three of them 10-12; the six
+#: Diplomatic winners held 7-12, and every Science seat that reached turn 150
+#: on 11-12 points and was not retired won Diplomatic (Russia t172, Rome t154,
+#: Korea t174, Arabia t196). Seats on 10+ at turn 150, any lane: 5 wins, 10
+#: losses, 4 retired, against about 1 in 7 overall.
+SCIENCE_BEHIND_SPARE_DVP_POLICY_KEY = "CIVVIS_RESTART_SCIENCE_BEHIND_SPARE_DVP"
 SCIENCE_BEHIND_FROM_TURN = 150
 SCIENCE_BEHIND_TURNS = 3
 #: The start-of-game line's few words of evidence; the counts and where they
@@ -1437,6 +1447,27 @@ def science_behind_from_turn_policy(path: Path | None = None) -> int:
         read_policy_value(SCIENCE_BEHIND_FROM_POLICY_KEY, path))
 
 
+def parse_science_behind_spare_dvp(value: str | None) -> int:
+    """Diplomatic points from which the Science-lane rule waits; 0 = never."""
+    if value is None or value == "":
+        return 0
+    try:
+        points = int(value)
+    except ValueError:
+        points = -1
+    if points < 0:
+        print(f"[policy] ignoring {SCIENCE_BEHIND_SPARE_DVP_POLICY_KEY}={value!r}: "
+              "not a count of Diplomatic Victory points such as 10", flush=True)
+        return 0
+    return points
+
+
+def science_behind_spare_dvp_policy(path: Path | None = None) -> int:
+    """The policy's Diplomatic-point spare for the Science-lane rule; 0 when unset."""
+    return parse_science_behind_spare_dvp(
+        read_policy_value(SCIENCE_BEHIND_SPARE_DVP_POLICY_KEY, path))
+
+
 def science_out_of_reach_line(args: argparse.Namespace) -> tuple[float, int]:
     """The rule's share and its first turn at this game's speed; `(0.0, 0)` = off.
 
@@ -1465,7 +1496,8 @@ def science_out_of_reach_notice(share: float, from_turn: int, speed: str | None)
 
 
 def science_out_of_reach_reading(state: dict, event: dict,
-                                 share: float, from_turn: int) -> dict | None:
+                                 share: float, from_turn: int,
+                                 spare_dvp: int = 0) -> dict | None:
     """Fold one record into the Science-lane tech watch; a verdict once the run holds.
 
     `share` is the policy's line (0 is off) and `from_turn` is already at the
@@ -1492,6 +1524,11 @@ def science_out_of_reach_reading(state: dict, event: dict,
       median, up to 64, 9% of all the turns those 174 games played.
     Sixteen wins are few, so 0.70 sits 0.12 under the lowest of them rather
     than at it.
+
+    `spare_dvp` (policy `CIVVIS_RESTART_SCIENCE_BEHIND_SPARE_DVP`, 0 = never):
+    a record whose `dvp` is at or above it clears the run and calls nothing,
+    so a seat still on its Congress road plays it out; see
+    :data:`SCIENCE_BEHIND_SPARE_DVP_POLICY_KEY`.
     """
     if (not isinstance(share, float) or not 0.0 < share < 1.0
             or not isinstance(from_turn, int) or isinstance(from_turn, bool) or from_turn <= 0
@@ -1504,7 +1541,11 @@ def science_out_of_reach_reading(state: dict, event: dict,
     if standing is None:
         return None
     ours, best = standing
-    if ours / best >= share:
+    dvp = event.get("dvp")
+    on_the_congress_road = (isinstance(spare_dvp, int) and not isinstance(spare_dvp, bool)
+                            and spare_dvp > 0 and isinstance(dvp, int)
+                            and not isinstance(dvp, bool) and dvp >= spare_dvp)
+    if ours / best >= share or on_the_congress_road:
         state.pop("science_out_of_reach", None)
         return None
     run = state.get("science_out_of_reach")
@@ -6570,9 +6611,13 @@ def play(args: argparse.Namespace) -> int:
     science_behind_from = science_behind_from_turn_policy()
     args.restart_science_behind_techs = science_behind
     args.restart_science_behind_from_turn = science_behind_from
+    args.restart_science_behind_spare_dvp = science_behind_spare_dvp_policy()
     if science_behind > 0 and getattr(args, "civvis_victory", None) == "science":
         print(science_out_of_reach_notice(science_behind, science_behind_from,
                                           getattr(args, "speed", None)), flush=True)
+        if args.restart_science_behind_spare_dvp > 0:
+            print(f"[policy] ... unless it holds {args.restart_science_behind_spare_dvp} "
+                  "Diplomatic Victory points or more: its Congress road plays out", flush=True)
     if production_share > 0:
         speed = getattr(args, "speed", None)
         print(f"[policy] a game whose Production stays under {production_share:.0%} "
@@ -8113,7 +8158,8 @@ def _play(args: argparse.Namespace) -> int:
         # rival's techs. See `science_out_of_reach_reading`.
         if science_behind > 0:
             reading = science_out_of_reach_reading(
-                state, event, science_behind, science_behind_from)
+                state, event, science_behind, science_behind_from,
+                getattr(args, "restart_science_behind_spare_dvp", 0) or 0)
             if reading is not None and reading.get("fires"):
                 print(f"[abandon] turn {reading['turn']}: {reading['techs']} techs "
                       f"against the best met rival's {reading['rival_techs']} "

@@ -190,11 +190,13 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `diplo-seat-claims-the-competition` | off (unmeasured) | Opt-in gene `diplo-seat-claims-the-competition`; see `advanced/diplo_competition_claim.rs`. | 1 \| 1 |
 | `diplo-seat-statue-civic-first` | off (unmeasured) | Opt-in gene `diplo-seat-statue-civic-first`; see `advanced/diplo_statue_harbor.rs`. | 1 \| 1 |
 | `diplo-seat-statue-is-the-finisher` | off (unmeasured) | Opt-in gene `diplo-seat-statue-is-the-finisher`; see `advanced/diplo_wonder_claim.rs`. | 1 \| 1 |
+| `disrupt-waits-for-the-sources` | off (unmeasured) | Opt-in gene `disrupt-waits-for-the-sources`; see `advanced/disrupt_waits_for_the_sources.rs`. | 1 \| 1 |
 | `four-faces-bars-the-surprise` | off (unmeasured) | Opt-in gene `four-faces-bars-the-surprise`; see `advanced/four_faces_bars_the_surprise.rs`. | 1 \| 1 |
 | `religion-seat-seeks-the-unseen-rival` | off (unmeasured) | Opt-in gene `religion-seat-seeks-the-unseen-rival`: each met rival whose cities we cannot see enough of has a spreader looking for them; see `advanced/religion_seat_seeks_the_unseen_rival.rs`. | 1 \| 1 |
 | `religion-seat-spends-the-whole-bank` | off (unmeasured) | Opt-in gene `religion-seat-spends-the-whole-bank`: the Faith the corps caps leave banked buys spreaders in every city that sells one; see `advanced/religion_seat_spends_the_whole_bank.rs`. | 1 \| 1 |
 | `shooters-man-the-capital` | off (unmeasured) | Opt-in gene `shooters-man-the-capital`; see `advanced/shooters_man_the_capital.rs`. | 1 \| 1 |
 | `trade-district-follows-the-campus` | off (unmeasured) | Opt-in gene `trade-district-follows-the-campus`; see `advanced/trade_district_follows_the_campus.rs`. | 1 \| 1 |
+| `tribute-buys-the-friendship-2` | off (unmeasured) | Opt-in gene `tribute-buys-the-friendship-2`; see `advanced/tribute_buys_the_friendship.rs`. | 1 \| 2 |
 
 ## Removed from the code
 

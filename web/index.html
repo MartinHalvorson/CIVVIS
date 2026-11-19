@@ -1180,10 +1180,15 @@
     text-overflow: ellipsis; white-space: nowrap;
   }
   .victory-body { min-width: 0; align-self: stretch; }
-  .victory-none-note {
-    margin: 3px 0 0 8px; color: #8ea099; font-size: var(--type-small); font-weight: 650;
-    line-height: 1.45; text-wrap: pretty;
+  /* The victory types switched off in Game setup, named once under the
+     tracker's title instead of each keeping a path of its own. */
+  .victory-off-note {
+    flex: 0 0 auto; margin: -1px 3px 3px; padding-left: 10px; color: #8ea099;
+    font-size: var(--type-caption); font-weight: 700; letter-spacing: .02em; line-height: 1.35;
+    text-align: center; text-wrap: balance;
   }
+  .victory-off-note span { color: color-mix(in srgb, var(--track) 55%, #a3b5ae); }
+  #victoryhud.victory-collapsed .victory-region > .victory-off-note { display: none; }
   .victory-subheading {
     flex: 0 0 auto; display: flex; gap: .4em; color: #a3b5ae;
     font-size: var(--vt-sub-type, var(--type-caption)); font-weight: 800;
@@ -4070,6 +4075,30 @@
     font-size: var(--type-label); text-align: right; white-space: nowrap;
   }
   #playerhud .diplomacy-civ { flex: 1 1 auto; }
+  /* Each civilization's name is boxed in its own jersey, as Civ VI dresses a
+     civ on its banners: the primary colour fills the plate, the partner trims
+     it, and the ink is whichever of the partner or map cream/dark actually
+     reads on that fill — unitTokenInk(), the same rescue the map's unit tokens
+     use, because several real jerseys pair two dark halves. Every plate fills
+     its column at one fixed height, so the column reads as a stack of equal
+     nameplates however far the type fitter shrank each name. Its 4px of side
+     padding is the `slack` on this cell's type-fitter rule. City rows reuse
+     .diplomacy-civ for a city's name and stay unboxed. */
+  #playerhud .diplomacy-civ-link .diplomacy-civ {
+    padding: 1px 4px; border: 1px solid var(--civ-border); border-radius: 3px;
+    background: var(--civ); color: var(--civ-ink, #f1f4ed);
+    line-height: 16px; text-align: center; text-shadow: none; box-shadow: 0 1px 2px #0009;
+  }
+  #playerhud .diplomacy-civ-link:hover .diplomacy-civ,
+  #playerhud .diplomacy-civ-link:focus-visible .diplomacy-civ {
+    color: var(--civ-ink, #fff); filter: brightness(1.18);
+  }
+  /* The watched seat keeps its jersey and says so with a gold ring, not gold
+     type, which would fight the fill. */
+  #playerhud .diplomacy-card.focus-player .diplomacy-civ-link .diplomacy-civ {
+    color: var(--civ-ink, #f1f4ed);
+    box-shadow: 0 0 0 1px var(--gold-bright), 0 1px 2px #0009;
+  }
   #playerhud .diplomacy-leader-name { color: var(--muted); font-weight: 650; }
   #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 750; }
   #playerhud .diplomacy-civ, #playerhud .diplomacy-leader-name,
@@ -5772,9 +5801,9 @@
 <div id="solo-notice" hidden>
   <section class="solo-notice-card" role="dialog" aria-modal="true" aria-labelledby="solo-notice-title">
     <div class="capture-kicker">Heads up</div>
-    <div class="capture-title" id="solo-notice-title">Single Player isn't quite ready yet</div>
+    <div class="capture-title" id="solo-notice-title">Sim Debugger isn't quite ready yet</div>
     <p class="capture-copy">I haven't really played much of this myself yet and haven't gone through to really polish things. It should be mostly working. Feel free to give it a shot if you want.</p>
-    <p class="capture-copy">Auto-play N turns is probably the most interesting part of the single player experience right now. It's at the top of the left panel: pick how many turns and press the button.</p>
+    <p class="capture-copy">Auto-play N turns is probably the most interesting part of the sim debugger experience right now. It's at the top of the left panel: pick how many turns and press the button.</p>
     <div class="capture-actions"><button id="solo-notice-ack" class="primary" type="button">Ack</button></div>
   </section>
 </div>
@@ -5786,7 +5815,7 @@
     </header>
     <nav class="fd-nav" aria-label="Main menu">
       <button type="button" class="fd-entry" id="fd-continue" hidden><b>Continue</b><small id="fd-continue-sub"></small></button>
-      <button type="button" class="fd-entry fd-primary" id="fd-play"><b>Single player</b><small>Pick a civilization and take your first turn</small></button>
+      <button type="button" class="fd-entry fd-primary" id="fd-play"><b>Sim debugger</b><small>Pick a civilization and take your first turn</small></button>
       <button type="button" class="fd-entry" id="fd-watch"><b>Watch the AIs</b><small>This game is live: four AIs playing right now</small></button>
       <a class="fd-entry" href="/home"><b>About CIVVIS</b><small>What this is and how it was built</small></a>
     </nav>
@@ -6116,7 +6145,7 @@
            relative it stays in whichever lane it was clicked in. -->
       <div class="head-links" id="headlinks" hidden>
         <a class="home-link" id="homelink" href="/home">⌂ Home</a>
-        <a class="home-link" id="playlink" href="?mode=play">Play single player</a>
+        <a class="home-link" id="playlink" href="?mode=play">Open sim debugger</a>
       </div>
     </div>
   </div>
@@ -6385,7 +6414,7 @@
         </select></label>
         <label class="small">Human players<select id="humanplayers" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
-          <option value="single">Single player - WIP</option>
+          <option value="single">Sim debugger - WIP</option>
           <option value="civ6" hidden>Play Firaxis Civ 6 with computer control</option>
         </select></label>
         <div id="civ6-status">

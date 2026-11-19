@@ -3802,6 +3802,29 @@ impl AdvancedAi {
                 .and_then(|city| g.cities.get(&city))
                 .is_some_and(|city| city.owner != pid);
             if offensive {
+                // `disrupt-waits-for-the-sources`: a long-odds Disrupt Rocketry
+                // in a racer's city waits for a sure Gain Sources. `None` with
+                // the gene off.
+                if let Some(action) = self.sources_before_the_disrupt(
+                    g,
+                    spy_id,
+                    &legal,
+                    &racer_spy_racers,
+                    &every_pad_threats,
+                ) {
+                    if g.apply(pid, &action).is_ok() {
+                        *g.players[pid]
+                            .counters
+                            .entry("sources_before_disrupt".to_string())
+                            .or_insert(0) += 1;
+                        self.journal_sources_before_the_disrupt(g, spy_id);
+                    }
+                    self.spy_orders_until.insert(
+                        spy_id,
+                        g.turn + g.standard_duration(SPY_MISSION_ORDER_PATIENCE),
+                    );
+                    continue;
+                }
                 // `disrupt-before-the-sources`: in a racer's city an offered
                 // Disrupt Rocketry comes before the training step.
                 let training_yields = g.spies[&spy_id].level < 2

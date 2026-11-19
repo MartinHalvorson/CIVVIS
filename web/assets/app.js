@@ -3443,7 +3443,12 @@ const RESPONSIVE_TEXT_RULES = [
   // letter off. Half a point of type is invisible; a clipped head is not.
   {selector:"#playerhud .hud-head-stat", min:8.5, max:11},
   {selector:"#playerhud .diplomacy-rank", min:9, max:11},
-  {selector:"#playerhud .diplomacy-civ", min:9, max:13, exact:true},
+  // A civilization's name sits in a plate of its own jersey colour, and the
+  // plate's 4px of padding a side is inside the box the fitter measures — so
+  // ask for those 8px back, or "Portugal" fills the plate edge to edge and its
+  // last letter goes under the padding at full size.
+  {selector:"#playerhud .diplomacy-civ-link .diplomacy-civ", min:9, max:13, exact:true, slack:8},
+  {selector:"#playerhud .hud-city-name .diplomacy-civ", min:9, max:13, exact:true},
   {selector:"#playerhud .diplomacy-leader-name", min:9, max:13, exact:true},
   {selector:"#playerhud .diplomacy-player", min:9, max:13, exact:true},
   {selector:"#playerhud .diplomacy-elo-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
@@ -27741,7 +27746,7 @@ function hudTurnPlate() {
   const plateMode = livePause.available
     ? ["Firaxis Civ VI Testing", "A live Firaxis Civilization VI game under test, mirrored here turn by turn."]
     : SPEC ? ["CIVVIS Self-play", "Every civilization is played by a CIVVIS AI agent. Nobody holds a seat."]
-    : ["CIVVIS Single Player", "You play one civilization. CIVVIS AI agents play the rest."];
+    : ["CIVVIS Sim Debugger", "You play one civilization. CIVVIS AI agents play the rest."];
   const platePov = !SPEC || playerView
     ? ["Single Player", `The world as ${identity.civ || "one civilization"} sees it, behind its own fog.`]
     : ["Global", "The whole world at once, with no civilization's fog."];
@@ -27993,15 +27998,23 @@ function playerHudOverview() {
           victoryMeter(track.id, metric, progress) + `</div>`;
       }).join("") + `</div></div></section>`;
   }).join("");
-  // The lobby lets every victory condition be switched off, and then there is
-  // genuinely nothing to track: `set_winner` is gated on the condition being
-  // enabled, so the world simply runs to its turn cap and ends with nobody
-  // having won. Say that instead of standing an empty panel down the rail.
-  const victoryBody = victoryTracks ||
-    `<section class="victory-track victory-none" aria-label="No victory conditions">` +
-    `<div class="victory-heading"><b>No victory conditions</b></div>` +
-    `<div class="victory-body"><p class="victory-none-note">Every path is switched off in Game setup, so this ` +
-    `world plays to turn ${turnCapLabel()} and ends without a winner.</p></div></section>`;
+  // A victory type switched off in Game setup has no path below; the line
+  // under the title names it instead (operator, 2026-11-18: "say that at the
+  // top of the victory tracker right below the title ... then we dont need
+  // that specific box"). With every type off there is genuinely nothing to
+  // track: `set_winner` is gated on the condition being enabled, so the world
+  // runs to its turn cap and ends with nobody having won, and the line says so.
+  const offVictoryTracks = VICTORY_TRACKS
+    .filter(track => state.victory_conditions?.[track.id] === false);
+  const victoryOffNote = !offVictoryTracks.length ? ""
+    : !enabledVictoryTracks.length
+      ? `<p class="victory-off-note" title="Every victory type is switched off in Game setup, so this world ` +
+        `plays to turn ${turnCapLabel()} and ends without a winner">All victory types turned off · ` +
+        `no winner at turn ${turnCapLabel()}</p>`
+      : `<p class="victory-off-note" title="Switched off in Game setup: no civilization can win this way in this game">` +
+        `Turned off: ${offVictoryTracks.map(track =>
+          `<span style="--track:${track.color}">${track.label}</span>`).join(", ")}</p>`;
+  const victoryBody = victoryTracks;
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
   // How tall a band must be is settled by `fitVictoryTracker` from the room it
   // measures. Width has no such pass: below this the columns of the short wide
@@ -28019,7 +28032,7 @@ function playerHudOverview() {
     `aria-label="Move victory tracker; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-tracker-title">` +
     `<span>Victory tracker</span></div>` +
     hudFoldButton("victory", "victory tracker") +
-    `</div>` +
+    `</div>` + victoryOffNote +
     `<div class="hud-rail" tabindex="0" aria-label="Victory paths; scroll vertically for every path">` +
     `<div class="victory-ribbon" style="--victory-rows:${victoryCount};` +
     `--victory-min-width:${victoryMinWidth}px">` +
@@ -28671,7 +28684,7 @@ function drawPlayerHud() {
             : kind === "units" && value === null ? "—" : ribbonStat(value)}</b>${markerHtml}</button>`;
       };
       const citiesOpen = openCityPlayer?.id === p.id;
-      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${liveSeat ? " live-seat" : ""}${citiesOpen ? " cities-open" : ""}${p.id === focusSeat ? " focus-player" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
+      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${liveSeat ? " live-seat" : ""}${citiesOpen ? " cities-open" : ""}${p.id === focusSeat ? " focus-player" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)};--civ-ink:${unitTokenInk(p.id)}" role="listitem">` +
         visibleColumns.map(rowCell).join("") + `</div>` +
         (citiesOpen ? playerHudCityRows(p, openCities, hiddenCities, visibleColumns) : "");
     }).join("") + `</div>` + hudResizeHandles("player standings", ["n", "s"]);
