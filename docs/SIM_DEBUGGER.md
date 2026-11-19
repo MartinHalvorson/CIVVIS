@@ -13,9 +13,10 @@ the page beneath it.
 The engine half is held by `src/server/debugger_tests.rs`. The bar is held by
 `beta/debugger_test.py`, which loads the script as it ships into a real
 browser, on a page with a toy engine behind it, and drives the controls:
-where the bar stands and that the page stands under it, the turn box, the
-timeline back to a played turn and on to one ahead, what it says under the
-pointer, the wheel, the two ends, the Civ AI picker, save points and their
+where the bar stands and that the page stands under it, the plate at its far
+left, turn 1 at one end of the timeline and the flag on the last turn at the
+other, the marker moving right as turns open, the turn box, the timeline back
+to a played turn and on to one ahead, what it says under the pointer, the wheel, the two ends, the Civ AI picker, save points and their
 flags, a breakpoint picked from the timeline, a timeline with turns thinned
 out of it, the breakpoints form with a run stopped by a breakpoint and by
 hand, layers, reveal, undo, and a round stepped a seat at a time. It then
@@ -34,22 +35,33 @@ stands beneath it: the bar's height is measured and published as `--dbg-top`,
 the body is padded by that much, and the map is fitted again whenever it
 changes. A watched game has no bar and is not moved.
 
-The tools are the top row: where to go, what to play, and the panels. Their
-words are shown while the tools fit on one row with them, and only their signs
-when they do not. What the bar has to say (why a run stopped, what the Civ AI
-just did) stands at the end of that row when there is room left for it, and
-under the bar when there is not.
+It is laid out like the masthead of a watched game. A plate stands at the far
+left edge of the window: the turn that is open, in a box that also goes to a
+turn typed into it, the game's last turn beside it, and under them the hands
+that walk the turns already played (⏮ ◀ ▶ ⏭) and undo. In a window 720px wide
+or narrower, and in each half of a split, the plate is one flat row instead.
 
-The timeline is the row under them, and it is the whole game: turn 1 at the
-left end and the game's turn limit at the right, 250 turns when the game does
-not say, and 50 more at a time for a game played on past its limit. On it:
+The tools are the top row beside the plate: what to play, and the panels.
+Their words are shown while the tools fit on one row with them, and only their
+signs when they do not. What the bar has to say (why a run stopped, what the
+Civ AI just did) stands at the end of that row when there is room left for it,
+and under the bar when there is not.
 
-- a gold band over the turns that were played. When turns have been thinned
-  to make room the band dims and the turns still kept stand out on it;
-- the open turn, as a pill with its number. Dragging it, or clicking anywhere
-  on the timeline, goes to that turn: a turn that was played is put back as it
-  stood, and a turn still ahead is played to by the seat's Civ AI from the
-  turn that is open. While it plays, the stretch still to go is hatched;
+The timeline is the row under the tools, and it is the whole game. Turn 1 is
+named at its left end. Its right end is the game's last turn under a chequered
+flag, or turn 250 with no flag when the game does not say which turn is its
+last. A game played on past its last turn grows 50 turns at a time, and the
+flag is then a chequered line across the rail where the last turn was. The
+round turns between the ends are numbered along the top of the rail. On it:
+
+- a gold band along the bottom of the rail over the turns that were played.
+  When turns have been thinned to make room the band dims and the turns still
+  kept stand out on it;
+- the open turn, as a pill with its number, which moves right as turns open.
+  Dragging it, or clicking anywhere on the timeline, goes to that turn: a turn
+  that was played is put back as it stood, and a turn still ahead is played to
+  by the seat's Civ AI from the turn that is open. While it plays, the stretch
+  still to go is hatched;
 - save points as flags along the top edge and turn breakpoints as red marks
   along the bottom, each to click;
 - under the pointer, the turn there and what letting go would do: "play to
