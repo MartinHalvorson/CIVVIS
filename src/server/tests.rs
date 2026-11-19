@@ -17003,6 +17003,7 @@ fn no_two_page_scripts_declare_the_same_function() {
         ("app_setup.js", EMBEDDED_APP_SETUP_JS),
         ("app_moments.js", EMBEDDED_APP_MOMENTS_JS),
         ("app_frontdoor.js", EMBEDDED_APP_FRONTDOOR_JS),
+        ("app_debugger.js", super::EMBEDDED_APP_DEBUGGER_JS),
     ];
     let mut seen = std::collections::HashMap::new();
     let mut declared = 0;

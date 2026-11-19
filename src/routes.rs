@@ -397,6 +397,13 @@ pub fn step(session: &mut Session, parsed: &Value) -> StepOutcome {
     StepOutcome { out, advanced }
 }
 
+/// `POST /debug` — one simulator-debugger operation on a played game,
+/// answered with the world after it. The operations and what each refuses
+/// are `Session::debug`'s; both front ends call this and nothing else.
+pub fn debug(session: &mut Session, parsed: &Value) -> Value {
+    session.debug(parsed)
+}
+
 /// The result of shared auto-play. `replayed` means an idempotent retry was
 /// answered without simulating another batch, so native must not count it as
 /// turns that went past a visible frame.
