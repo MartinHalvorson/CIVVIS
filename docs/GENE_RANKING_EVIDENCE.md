@@ -196,6 +196,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `gun-resource-buys-the-tile` | off (unmeasured) | Opt-in gene `gun-resource-buys-the-tile`; see `advanced/gun_resource_tile.rs`. | 1 \| 1 |
 | `guns-keep-the-oil` | off (unmeasured) | Opt-in gene `guns-keep-the-oil`; see `advanced/guns_keep_the_oil.rs`. | 1 \| 1 |
 | `near-rival-deterrence-opens-early` | off (unmeasured) | Opt-in gene `near-rival-deterrence-opens-early`; see `advanced/near_rival_deterrence_opens_early.rs`. | 1 \| 1 |
+| `science-seat-campus-before-the-claims` | off (unmeasured) | Opt-in gene `science-seat-campus-before-the-claims`; see `advanced/science_seat_campus_before_the_claims.rs`. | 1 \| 1 |
 | `score-seat-raises-wonders-3` | off (unmeasured) | Opt-in gene `score-seat-raises-wonders-3`; version three of the family, so versions one and two are turned off. | 2 \| 3 |
 | `score-seat-sprints-to-the-tally` | off (unmeasured) | Opt-in gene `score-seat-sprints-to-the-tally`; see `advanced/score_sprints_to_the_tally.rs`. | — \| 2 |
 | `score-seat-sprints-to-the-tally-2` | off (unmeasured) | Opt-in gene `score-seat-sprints-to-the-tally-2`, version two of `score-seat-sprints-to-the-tally`: Great People priced with their Historic Moment, patronized with the idle currency from thirty Online turns before the limit. | — \| 2 |

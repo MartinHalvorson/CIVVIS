@@ -315,7 +315,6 @@
       "unit-objective-memory",
       "war-economy"
     ],
-    "retained_selection_note": "ca2b (3,862 games) priced ~330 genes for the first time; the mechanical +3 latest-three reselection would have turned on 197 genes, 185 of them below the screen's own z>=2 bar on a single batch (column se ~28/10k against the +/-3 band). Per the operator's 2026-11-13 direction (include beneficial genes, exclude harmful ones, omit questionable ones, no drastic changes) this publication turns on only flips with window win z>=2 (12), turns off the 11 the rule drops with no sibling, and keeps the incumbent version in the 5 family swaps whose newcomer is below z 2. Session -35, operator /goal 2026-11-18.",
     "batch_columns": {
       "acropolis-before-the-deterrent": [
         -6,
