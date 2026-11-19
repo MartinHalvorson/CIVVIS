@@ -804,7 +804,7 @@ CULTURE_RANK_SCENARIOS = r"""
 __FIGURES__
 __COMPACT__
 const victoryMetric = (player, road) => player.victories[road];
-const track = {id:"culture"}, researchField = "civics";
+const track = {id:"culture"}, tieField = "civics";
 const seat = (id, tourists, target, civics, progress) =>
   ({id, score:0, victories:{culture:{tourists, target, civics, civic_total:50, progress}}});
 const order = contenders => {
@@ -864,6 +864,78 @@ class CultureIsLedOnTouristsOverTheTouristsNeeded(unittest.TestCase):
         done = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=60)
         self.assertEqual(done.returncode, 0, done.stderr.strip())
         self.assertIn("culture rank checks passed", done.stdout)
+
+
+DOMINATION_ROW_SCENARIOS = r"""
+__FIGURES__
+__COMPACT__
+const victoryMetric = (player, road) => player.victories[road];
+const seat = (id, capitals, cities, score = 0) => ({id, score, victories:{domination:
+  {capitals, target:6, cities, city_total:40, progress:100 * capitals / 6}}});
+const order = contenders => {
+  const track = {id:"domination"};
+__TIE__
+__RANKED__
+  return ranked.map(player => player.id);
+};
+const eq = (actual, wanted, note) => {
+  if (JSON.stringify(actual) !== JSON.stringify(wanted))
+    throw new Error(`${note}: got ${JSON.stringify(actual)}, wanted ${JSON.stringify(wanted)}`);
+};
+const metric = {capitals:2, target:6, cities:9, city_total:36, progress:33.3};
+// The meter is cities out of every city on the map; the figure is capitals.
+eq(victoryMeterFill("domination", metric), 25, "the meter is the share of the map's cities");
+eq(victoryMeter("domination", metric, victoryMeterFill("domination", metric)),
+   '<div class="victory-meter"><b style="width:25%"></b></div>', "one whole meter");
+eq(victoryTrackerStats("domination", metric), "2/6", "capitals held over capitals in the game");
+eq(victoryTrackerSubheading("domination"), "<span>Cities</span><span>Capitals</span>", "the heading");
+eq(victoryDescription("domination", metric),
+   "9 of 36 cities on the map · 2 of 6 original capitals controlled, their own counted", "the hover");
+// A civilization with no city yet, and a map with none.
+eq(victoryMeterFill("domination", {capitals:1, target:6, city_total:12, progress:16.7}), 0, "no city");
+eq(victoryMeterFill("domination", {capitals:1, target:6, cities:0, city_total:0, progress:16.7}), 16.7,
+   "an empty map has no share to draw");
+// A frame recorded before the server counted cities keeps its capitals meter.
+eq(victoryMeterFill("domination", {capitals:3, target:6, progress:50}), 50, "an older frame");
+eq(victoryDescription("domination", {capitals:3, target:6}),
+   "3 of 6 original capitals controlled, their own counted", "an older frame's hover");
+// Every other path's meter is its progress, as before.
+eq(victoryMeterFill("religious", {converted:1, target:4, progress:25, cities:9, city_total:36}), 25, "religious");
+eq(victoryMeterFill("score", {points:400, progress:61.5}), 61.5, "score");
+// Capitals lead. Level on capitals, the larger empire stands first.
+eq(order([seat(0, 1, 12), seat(1, 2, 3), seat(2, 1, 5)]), [1, 0, 2], "capitals, then cities");
+eq(order([seat(0, 1, 4, 90), seat(1, 1, 4, 300), seat(2, 1, 7)]), [2, 1, 0], "then score");
+console.log("domination row checks passed");
+"""
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class DominationShowsCitiesOnItsMeterAndCapitalsBesideIt(unittest.TestCase):
+    """Operator, 2026-11-19: "domination in victory tracker should track cities
+    and capitals. bar can show cities by percent of cities on the map. on the
+    right should be capitals count N/total". The meter had drawn the capitals
+    the figure already printed, so it stood still for most of a game."""
+
+    def test_the_meter_the_figure_and_the_order(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        figures = source[source.index("function victoryMeterFill("):
+                         source.index("const DEFAULT_VICTORY_LEADERS = 3;")]
+        compact = source[source.index("function compactStat("):]
+        compact = compact[:compact.index("\n}\n") + 3]
+        overview = source[source.index("function playerHudOverview()"):]
+        overview = overview[:overview.index("\n}\n")]
+        tie = overview[overview.index("    const tieField = "):]
+        tie = tie[:tie.index("\n") + 1]
+        ranked = overview[overview.index("const ranked = [...contenders]"):]
+        ranked = ranked[:ranked.index("      });\n") + len("      });")]
+        # Both places a path's meter is drawn take their fill from one rule.
+        self.assertEqual(source.count("victoryMeterFill(track.id, metric)"), 2)
+        script = (DOMINATION_ROW_SCENARIOS.replace("__FIGURES__", figures)
+                  .replace("__COMPACT__", compact).replace("__TIE__", tie)
+                  .replace("__RANKED__", ranked))
+        done = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr.strip())
+        self.assertIn("domination row checks passed", done.stdout)
 
 
 HUD_WINDOW_SCENARIOS = r"""
