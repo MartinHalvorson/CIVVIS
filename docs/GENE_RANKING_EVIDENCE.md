@@ -186,6 +186,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 |---|---|---|---:|
 | `culture-faith-patronizes-the-creators` | off (unmeasured) | Opt-in gene `culture-faith-patronizes-the-creators`; see `advanced/culture_faith_patronizes_the_creators.rs`. | 1 \| 1 |
 | `culture-trade-district-follows-the-theater` | off (unmeasured) | Opt-in gene `culture-trade-district-follows-the-theater`; see `advanced/trade_district_follows_the_campus.rs`. | 1 \| 1 |
+| `denial-spies-fill-every-slot-3` | off (unmeasured) | Opt-in gene `denial-spies-fill-every-slot-3`, version three of `denial-spies-fill-every-slot`: version two, and on a Science, Religion or Diplomacy aim too; see `advanced/denial_spies_fill_every_slot.rs`. | 2 \| 3 |
 
 ## Removed from the code
 
