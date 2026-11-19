@@ -6170,6 +6170,13 @@ pub const GENES: &[Gene] = &[
     // `advanced/mobilization_hears_the_declaration.rs`.
     Gene { tag: "mobilization-hears-the-declaration", field: "mobilization_hears_the_declaration", kind: Kind::OptIn, enable: AdvancedAi::enable_mobilization_hears_the_declaration, disable: AdvancedAi::disable_mobilization_hears_the_declaration },
     // ---- append: p-r ------------------------------------------------
+    // `racer-seat-statue-civic-first`: Civil Engineering first for a Science,
+    // Culture or Religious seat that reaches for the Statue of Liberty, as
+    // `diplo-seat-statue-civic-first` does for a Diplomatic seat. Live Deity
+    // Tournament 1 (2026-11-19): Science seats adopted it at t166/t177 or
+    // never and claimed the Statue too late to land it. See
+    // `advanced/diplo_statue_harbor.rs`.
+    Gene { tag: "racer-seat-statue-civic-first", field: "racer_seat_statue_civic_first", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_seat_statue_civic_first, disable: AdvancedAi::disable_racer_seat_statue_civic_first },
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
     Gene { tag: "religion-seat-reaches-reformed-church", field: "religion_seat_reaches_reformed_church", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_reaches_reformed_church, disable: AdvancedAi::disable_religion_seat_reaches_reformed_church },

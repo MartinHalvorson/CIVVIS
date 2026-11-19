@@ -1,0 +1,27 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "racer-seat-statue-civic-first",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. The 16 turns on which the live seat chose a civic, from its Statue of Liberty Harbor claim up to Civil Engineering, in four Deity Science-lane games of Tournament 1, 2026-11-19 (civvis-20261119T200436Z Egypt t130-166, civvis-20261119T194013Z China t152-177, civvis-20261119T203049Z Khmer t157-172, civvis-20261119T201715Z Portugal t140-158), each the run's events.jsonl cut after the first state row of the turn (its opening frame, before the turn's orders) and replayed at that turn. Both arms run one frozen civvis_orders --resumed --explain --victory science built from the branch with the run's own requested genome (why.log line 1 forced, carrying science-seat-builds-the-statue and diplo-seat-statue-harbor); the on arm adds --with racer-seat-statue-civic-first. The off arm names the civic the live seat took on all 16 (Mercantilism, Colonialism, Natural History, Scorched Earth toward Class Struggle, then Civil Engineering). The on arm names CIVIC_CIVIL_ENGINEERING on 8 where the off arm names another civic: Egypt from t143 (live t166), China from t152 (live t177), Portugal from t145 (live t158). Mercantilism, Civil Engineering's prerequisite, reads the same in both arms, as do Egypt t139 and both Khmer turns; the turns Civil Engineering was the live choice (Egypt t166, China t177, Portugal t158) are controls where both arms name it.",
+  "archive": {
+    "path": "docs/eval/2026-11-19-racer-seat-statue-civic-first.native-queries.tar.xz",
+    "sha256": "3c892a4d7989c74a3cebbe6fc007ede32984625b86f6d821f82e089547ccb166"
+  },
+  "members": [
+    "native-queries-racer-statue-civic-first/0000/result.json",
+    "native-queries-racer-statue-civic-first/0001/result.json",
+    "native-queries-racer-statue-civic-first/0002/result.json",
+    "native-queries-racer-statue-civic-first/0003/result.json",
+    "native-queries-racer-statue-civic-first/0004/result.json",
+    "native-queries-racer-statue-civic-first/0005/result.json",
+    "native-queries-racer-statue-civic-first/0006/result.json",
+    "native-queries-racer-statue-civic-first/0007/result.json",
+    "native-queries-racer-statue-civic-first/0008/result.json",
+    "native-queries-racer-statue-civic-first/0009/result.json",
+    "native-queries-racer-statue-civic-first/0010/result.json",
+    "native-queries-racer-statue-civic-first/0011/result.json",
+    "native-queries-racer-statue-civic-first/0012/result.json",
+    "native-queries-racer-statue-civic-first/0013/result.json",
+    "native-queries-racer-statue-civic-first/0014/result.json",
+    "native-queries-racer-statue-civic-first/0015/result.json"
+  ]
+}
