@@ -143,8 +143,13 @@ class Bar:
             if self.ev(expression):
                 return
             time.sleep(0.05)
-        raise AssertionError(f"{why}: never true: {expression}; sent {self.sent()[-4:]}; "
-                             f"note {self.note()!r}; console {self.dev.console[-3:]}")
+        # Said without leaning on the page: a page that never loaded has no
+        # engine to ask, and that is exactly when this is read.
+        seen = self.ev("JSON.stringify({href: location.href, ready: document.readyState,"
+                       " scripts: document.scripts.length, bar: typeof drawDebugBar,"
+                       " engine: typeof engine === 'undefined' ? null : engine.sent.slice(-4),"
+                       " note: (document.getElementById('dbg-note') || {}).textContent})")
+        raise AssertionError(f"{why}: never true: {expression}; page {seen}; console {self.dev.console[-4:]}")
 
     def idle(self, expression: str, why: str):
         self.until(f"!debugBusy && !debugRunning && !autoplaying && ({expression})", why)
@@ -309,7 +314,7 @@ def main() -> int:
         dev.call("Emulation.setFocusEmulationEnabled", {"enabled": True})
         bar = Bar(dev)
         bar.until("typeof drawDebugBar === 'function' && typeof engineState === 'function'",
-                  "the bar's script loaded on the stand-in page")
+                  "the bar's script loaded on the stand-in page", seconds=60)
         check_the_bar(bar)
         print("the debugger bar sends what each control is for: the turn box, both sliders, "
               "the wheel, save points and their flags, a breakpoint picked from the timeline.")
