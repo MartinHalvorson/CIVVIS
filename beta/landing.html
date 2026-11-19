@@ -197,6 +197,8 @@
   .rank-card { min-width: 0; padding: 12px 14px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
   .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
   .rank-sub { margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
+  /* A date stays on one line: a narrow card would break it at a hyphen. */
+  .rank-day { white-space: nowrap; }
   .rank-list { margin: 0; padding: 0; list-style: none; }
   .rank-row {
     display: grid;
@@ -274,9 +276,12 @@
     </p>
 
     <!-- The rankings. Two lists, both measured. On the left, the
-         winningest civs: our AI's wins and losses as each civ in the
-         verification games, which it plays inside Civilization VI against
-         the game's own AI. Every finished game adds its line to the run
+         winningest civs: our AI's win rate as each civ in the verification
+         games, which it plays inside Civilization VI against the game's own
+         AI, best win rate first. Only the Lv 8 games that began on or after
+         2026-11-16 count (operator 2026-11-19; `CIVS_LEVEL` and
+         `CIVS_SINCE` in `beta/home_rankings.py`, which the slot carries as
+         `level` and `since`). Every finished game adds its line to the run
          ledger (`tools/civ6_ladder.py publish-run`), and the table is that
          record as it stood when the site was built. On the right, the
          player strategies: the Civ AI Agents by published Elo, with
@@ -303,7 +308,7 @@
       </section>
       <section class="rank-card" id="rank-civs" hidden aria-labelledby="rank-civs-title">
         <h2 class="rank-title" id="rank-civs-title">Winningest civs</h2>
-        <p class="rank-sub">Our AI&#8217;s wins&#8211;losses as each civ, in verification games against Civilization VI&#8217;s own AI.</p>
+        <p class="rank-sub">Our AI&#8217;s win rate as each civ, in verification games against Civilization VI&#8217;s own AI.</p>
         <ol class="rank-list"></ol>
         <p class="rank-note">
           <span data-rank-note></span>
@@ -371,17 +376,25 @@
     };
     let shown = false;
 
-    // The winningest civs, on the left: a row is a civ's record, wins then
-    // losses, with the highest level it has won at beside its name and its
-    // win rate beside the record. Hovering lists what it won.
+    // The winningest civs, on the left, best win rate first: a row is a
+    // civ's win rate with its record, wins then losses, beside it. Hovering
+    // lists what it won. The slot says which games were counted, one level
+    // (`level`) from one day on (`since`), and the line under the title
+    // repeats it; a table over every level names the highest level a civ
+    // has won at beside it instead.
     const civs = data.civs;
     if (civs && Array.isArray(civs.rows)) {
       const count = (n) => Number(n).toLocaleString("en-US");
       const plural = (n, one, many) => count(n) + " " + (n === 1 ? one : many);
-      const rows = civs.rows.map((c, i) => row("", String(i + 1), c.name, c.best ? "Lv " + c.best : "",
-        count(c.wins) + "\u2013" + count(c.losses), (100 * c.wins / (c.wins + c.losses)).toFixed(1) + "%",
+      const rows = civs.rows.map((c, i) => row("", String(i + 1), c.name, !civs.level && c.best ? "Lv " + c.best : "",
+        (100 * c.wins / (c.wins + c.losses)).toFixed(1) + "%", count(c.wins) + "\u2013" + count(c.losses),
         c.name + ": " + plural(c.wins, "win", "wins") + ", " + plural(c.losses, "loss", "losses")
           + (Array.isArray(c.won) && c.won.length ? ". Won: " + c.won.join(", ") : "")));
+      const sub = document.querySelector("#rank-civs .rank-sub");
+      sub.textContent = "Our AI\u2019s win rate as each civ, in " + (civs.level ? "Lv " + civs.level + " " : "")
+        + "verification games against Civilization VI\u2019s own AI" + (civs.since ? " since " : "");
+      if (civs.since) sub.append(el("span", "rank-day", civs.since));
+      sub.append(".");
       const note = plural(civs.games, "finished game", "finished games")
         + (civs.through ? " through " + civs.through : "") + "; "
         + civs.winners + " of " + plural(civs.played, "civ", "civs") + " played have won."
