@@ -325,8 +325,87 @@ def civs(source: pathlib.Path) -> dict | None:
         return None
 
 
+def game_key(row: dict) -> str | None:
+    """The game a run belongs to: its root tag, without a `-contN` resume."""
+    key = row.get("game") or row.get("tag")
+    return re.sub(r"-cont\d+$", "", key) if isinstance(key, str) else None
+
+
+def when(tag: str) -> str:
+    """A run tag's start as `YYYY-MM-DD HH:MMZ`: `civvis-20261119T184500Z`."""
+    m = re.search(r"(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})\d{2}Z", tag)
+    return f"{m[1]}-{m[2]}-{m[3]} {m[4]}:{m[5]}Z" if m else tag
+
+
+def tournament_series(rows: list[dict], tournaments: list[dict]) -> list[dict] | None:
+    """Each tournament's series: consecutive blocks of `series_size` finished games.
+
+    A tournament counts every game whose tag sorts at or after its `start` and
+    whose result line matches every `match` field (difficulty, players, map).
+    A game counts once, by its best run (`OUTCOMES`); a game whose every run is
+    `unfinished` (a launch that never reached a board) is not a game. A series
+    has an end only once it holds `series_size` games. Newest series first.
+    """
+    out = []
+    for spec in tournaments:
+        size = int(spec.get("series_size") or 10)
+        start = str(spec.get("start") or "")
+        match = spec.get("match") or {}
+        games: dict[str, list[dict]] = {}
+        for row in rows:
+            key = game_key(row)
+            if (key and key >= start and row.get("outcome") in OUTCOMES
+                    and all(row.get(field) == value for field, value in match.items())):
+                games.setdefault(key, []).append(row)
+        finished = []
+        for key in sorted(games):
+            ending = min(games[key], key=lambda row: OUTCOMES.index(row["outcome"]))
+            if ending["outcome"] != "unfinished":
+                finished.append((key, ending))
+        for number, first in enumerate(range(0, len(finished), size), 1):
+            block = finished[first:first + size]
+            wins = sum(1 for _, ending in block if ending["outcome"] == "win")
+            last = max(str(ending.get("utc") or "") for _, ending in block)
+            out.append({
+                "tournament": spec.get("name") or "",
+                "series": number,
+                "start": when(block[0][0]),
+                "end": (last[:16].replace("T", " ") + "Z") if len(block) == size and last else None,
+                "games": len(block),
+                "size": size,
+                "wins": wins,
+                "losses": len(block) - wins,
+                "conditions": spec.get("conditions") or "",
+            })
+    if not out:
+        return None
+    out.sort(key=lambda row: (row["start"], row["tournament"]), reverse=True)
+    return out
+
+
+def tournaments(source: pathlib.Path) -> list[dict] | None:
+    """The Tournaments table, or `None` without definitions or a ledger.
+
+    Like the civ table it reads the ledger branch, so a line it cannot count
+    costs the page this table, said on stderr, never the site its publish.
+    """
+    path = source / "data" / "tournaments.json"
+    if not path.is_file():
+        return None
+    rows = results(source)
+    if rows is None:
+        return None
+    try:
+        specs = json.loads(path.read_text(encoding="utf-8")).get("tournaments") or []
+        return tournament_series(rows, specs)
+    except Exception as error:  # noqa: BLE001 - see above
+        print(f"home_rankings: the tournaments could not be read ({error!r}); no tournament table", file=sys.stderr)
+        return None
+
+
 def rankings(source: pathlib.Path) -> dict:
-    return {"civs": civs(source), "strategies": strategies(source), "genes": genes(source)}
+    return {"civs": civs(source), "strategies": strategies(source), "genes": genes(source),
+            "tournaments": tournaments(source)}
 
 
 def fill(page: str, data: dict) -> str | None:

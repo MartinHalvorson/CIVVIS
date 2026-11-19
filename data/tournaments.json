@@ -1,0 +1,20 @@
+{
+  "_doc": [
+    "Tournaments shown on the home page (beta/home_rankings.py, beta/landing.html).",
+    "Each runs from its first game (`start`, a run tag; every game with a later tag",
+    "that matches `match` counts) in series of `series_size` finished games, read off",
+    "the ledger's results.jsonl at publish time. A game's best run counts once; a",
+    "launch that never reached a board (outcome unfinished) is not a game.",
+    "Operator /goal 2026-11-19 ~18:35Z: repeated 10-game series against Lv 8 Deity AI,",
+    "6P Continents; conditions Lv 8 6P Continents Online."
+  ],
+  "tournaments": [
+    {
+      "name": "Lv 8 Deity series",
+      "conditions": "Lv 8 6P Continents Online",
+      "start": "civvis-20261119T184500Z",
+      "series_size": 10,
+      "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"}
+    }
+  ]
+}
