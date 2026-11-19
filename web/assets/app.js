@@ -7573,6 +7573,8 @@ function adoptLivePause(status) {
   if (!status || typeof status !== "object") return;
   const wasAvailable = livePause.available;
   livePause.available = status.available === true;
+  // A tournament series names itself in the Mode ("Tournament 1: 2-3").
+  livePause.mode = typeof status.mode === "string" && status.mode ? status.mode : null;
   livePause.requested = status.requested === true;
   livePause.held = status.held === true;
   livePause.turn = Number.isInteger(status.turn) ? status.turn : null;
@@ -27762,7 +27764,9 @@ function hudTurnPlate() {
   const viewLabel = playerView ? "Player view" : SPEC ? "Observing" : "Your empire";
   // Who is playing, and whose eyes the map is drawn through (operator
   // 2026-11-15: a "Mode:" and a "POV:" on the turn box).
-  const plateMode = livePause.available
+  const plateMode = livePause.available && livePause.mode
+    ? [livePause.mode, "A live Firaxis Civilization VI game in a tournament series: its record so far, wins\u2013losses, as on the home page's Tournaments table."]
+    : livePause.available
     ? ["Firaxis Civ VI Testing", "A live Firaxis Civilization VI game under test, mirrored here turn by turn."]
     : SPEC ? ["CIVVIS Self-play", "Every civilization is played by a CIVVIS AI agent. Nobody holds a seat."]
     : ["CIVVIS Sim Debugger", "You play one civilization. CIVVIS AI agents play the rest."];
