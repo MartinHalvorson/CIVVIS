@@ -2102,24 +2102,38 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
     assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
 }
 
-/// The masthead offers Home, then a new single-player game. The site carries
-/// one game — the full simulation, watched or played — so the second chip is
-/// the way from watching it to playing it and names no other mode. Pinned as
-/// one literal because the row is the contract: those two, in that order,
-/// inside a row that only the hosts serving a /home reveal.
+/// The site is three pages, CIVVIS, Debugger and Home, and each links the
+/// other two. The viewer is the first two of them: it carries all three
+/// links and keeps out the one to whichever it is showing, so a watched
+/// simulation offers Home and Debugger and a played game offers Home and
+/// CIVVIS. Pinned as one literal because the row is the contract: Home in
+/// its own place first, then the other site, inside a row that only the
+/// hosts serving a /home reveal.
 #[test]
-fn viewer_masthead_offers_home_then_a_new_single_player_game() {
+fn viewer_masthead_links_the_sites_other_two_pages() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<div class=\"head-links\" id=\"headlinks\" hidden>\n",
-        "        <a class=\"home-link\" id=\"homelink\" href=\"/home\">⌂ Home</a>\n",
-        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\">Open sim debugger</a>\n",
+        "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">⌂ Home</a>\n",
+        "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
+        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">Debugger</a>\n",
         "      </div>",
     )));
-    // The link is only as good as the shim's reading of it, and it replaces
-    // the world on the table, so it stands only over a simulation.
+    // The Debugger link is only as good as the shim's reading of it, and
+    // the CIVVIS link needs no word at all: a lane's bare address is the
+    // spectated simulation.
     assert!(include_str!("../../beta/shim.js")
         .contains("if (mode === \"play\") payload.spectate = false;"));
+    // A page never links itself. `watching-sim` is the engine's own answer
+    // to which of the two it is, and until the first observation says so
+    // (`seat-known`) neither is offered: Home stands alone.
     assert!(EMBEDDED_INDEX.contains("body:not(.watching-sim) #playlink { display: none; }"));
+    assert!(EMBEDDED_INDEX.contains(
+        "body.watching-sim #watchlink, html:not(.seat-known) #watchlink { display: none; }"
+    ));
+    assert!(EMBEDDED_APP_JS.contains("document.body.classList.toggle(\"watching-sim\", SPEC);"));
+    assert!(EMBEDDED_APP_JS.contains("document.documentElement.classList.add(\"seat-known\");"));
+    // The old label named the destination twice over.
+    assert!(!EMBEDDED_INDEX.contains("Open sim debugger"));
     // A row that draws itself as a flex container outranks the user
     // agent's `[hidden]`, so it has to restate what hidden means or the
     // chips appear on desktop builds that honour neither destination.
@@ -2195,46 +2209,88 @@ fn viewer_masthead_offers_home_then_a_new_single_player_game() {
     );
 }
 
-/// The home page is one row of two cards — Watch CIVVIS and Play CIVVIS —
-/// and the world picker they open in place. The Tactics row that stood
-/// below them, the historical battle catalog its picker browsed, and the
-/// row index down the menu's left edge are all gone: the site offers the
-/// full game, watched or played, and nothing else.
+/// The home page is the third of the site's three pages and links the other
+/// two, CIVVIS and Debugger, from its header; below that it is one
+/// paragraph and the rankings. The two-card game menu that stood there, the
+/// world picker the cards opened and the photographs they carried are gone,
+/// and so is everything the Tactics row took with it before them.
 ///
-/// The two quadrants are pinned by their destinations: Play seats the
-/// visitor through the shim's `mode=play`, Watch is the stock exhibition,
-/// and both Customize buttons fall back to the simulator's own Game setup
-/// drawer when the picker cannot open.
+/// The two links are pinned by their destinations: CIVVIS is the lane's
+/// stock exhibition and Debugger seats the visitor through the shim's
+/// `mode=play`. Both are lane-relative (`../` from the lane's /home), so
+/// the test lane's home page opens the test lane's viewer.
 #[test]
-fn the_home_page_offers_the_full_game_watched_and_played() {
+fn the_home_page_links_civvis_and_the_debugger() {
     let landing = include_str!("../../beta/landing.html");
     for piece in [
-        // One row, two columns: Watch left, Play right. The immediate ways
-        // in are the photograph, the title and the card's own verb;
-        // Customize carries `data-pick` and falls back to an honest
-        // destination without scripting. Every viewer link is
-        // lane-relative (`../` from the lane's /home), so the test lane's
-        // home page opens the test lane's viewer.
-        "<h3 class=\"card-title\" id=\"play-civ-title\"><a href=\"../?mode=play\">Play CIVVIS</a></h3>",
-        "<h3 class=\"card-title\" id=\"watch-civ-title\"><a href=\"../\">Watch CIVVIS</a></h3>",
-        // The Customize buttons land in the simulator with the Game setup
-        // drawer open (`?setup=1`, honoured at the end of app.js) when
-        // nothing can open the panel in place.
-        "href=\"../?setup=1\"",
-        "href=\"../?mode=play&amp;setup=1\"",
-        // The picker and its four lenses.
-        "id=\"game-picker\"",
-        "data-lens=\"worlds\"",
-        "data-lens=\"sizes\"",
-        "data-lens=\"victory\"",
-        "data-lens=\"seats\"",
+        // The two site links, CIVVIS first, each saying in the viewer's
+        // own words what it opens. They stand under the tagline, where
+        // the viewer's masthead keeps its own pair.
+        concat!(
+            "<nav class=\"site-nav\" aria-label=\"CIVVIS sites\">\n",
+            "        <a class=\"site-link\" href=\"../\" ",
+            "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
+            "        <a class=\"site-link\" href=\"../?mode=play\" ",
+            "title=\"You play one civilization. CIVVIS AI agents play the rest.\">Debugger</a>\n",
+            "      </nav>\n    </div>",
+        ),
+        // They read as the viewer's chips do, in capitals.
+        "    text-transform: uppercase;\n  }\n  .site-link:hover,",
+        // The project's own links follow, under the label the publish
+        // check finds the page by (`beta/verify.py`).
+        "<nav class=\"utility-nav\" aria-label=\"CIVVIS links\">",
+        "id=\"report-open\"",
+        // And the rankings, which hide themselves until the slot is filled.
+        "<section class=\"rankings\" id=\"rankings\" hidden aria-label=\"Rankings\">",
+        ".rankings[hidden] { display: none; }",
+        "<script type=\"application/json\" id=\"rankings-data\">null</script>",
     ] {
         assert!(landing.contains(piece), "the home page lost {piece}");
     }
+    // The tooltips are the turn plate's own sentences, so the home page
+    // and the page it opens describe a site the same way.
+    for sentence in [
+        "Every civilization is played by a CIVVIS AI agent.",
+        "You play one civilization. CIVVIS AI agents play the rest.",
+    ] {
+        assert!(EMBEDDED_APP_JS.contains(sentence), "the turn plate lost {sentence:?}");
+    }
+    // What the game menu took with it: the cards, their verbs and tags,
+    // the world picker with its lenses and catalogs, the page-wide column
+    // the rankings stood in beside them, and the photographs.
+    for gone in [
+        "class=\"quadrants\"",
+        "class=\"mode-card\"",
+        "card-thumb",
+        "card-btn",
+        "card-tags",
+        "Watch CIVVIS",
+        "Play CIVVIS",
+        "Customize",
+        "id=\"game-picker\"",
+        "data-pick=",
+        "data-lens=",
+        "picker-",
+        "?setup=1",
+        "has-rankings",
+        "assets/",
+        "<img",
+    ] {
+        assert!(
+            !landing.contains(gone),
+            "the home page still carries {gone}"
+        );
+    }
+    assert!(
+        !std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("beta/assets")
+            .exists(),
+        "beta/assets holds photographs the home page no longer shows"
+    );
     // What the Tactics row took with it. The battle catalog was a copy of
     // `historical_scenarios::all()` kept in step by `tools/landing_battles.py`
     // and pinned here row for row; with no picker to browse it, the copy,
-    // the tool and the pin all go rather than drift together in silence.
+    // the tool and the pin all went rather than drift together in silence.
     for gone in [
         "id=\"battle-catalog\"",
         "id=\"battle-picker\"",
@@ -2254,14 +2310,13 @@ fn the_home_page_offers_the_full_game_watched_and_played() {
             .exists(),
         "tools/landing_battles.py regenerates a block the home page no longer carries"
     );
-    // And the shim knows the word the cards spend: `mode=play` seats the
-    // visitor, `mode=watch` leaves the world to its AIs.
+    // And the shim knows the word the Debugger link spends: `mode=play`
+    // seats the visitor, `mode=watch` leaves the world to its AIs.
     let shim = include_str!("../../beta/shim.js");
     assert!(shim.contains("if (mode === \"play\") payload.spectate = false;"));
     assert!(shim.contains("else if (mode === \"watch\") payload.spectate = true;"));
-    // The viewer honours the Customize links' `?setup=1`: it opens the
-    // sidebar's Game setup drawer on arrival instead of leaving the
-    // visitor to hunt for it.
+    // The viewer still honours `?setup=1` for anyone holding such a link:
+    // it opens the sidebar's Game setup drawer on arrival.
     assert!(EMBEDDED_INDEX.contains("searchParams.get(\"setup\") === \"1\""));
 }
 
@@ -2296,142 +2351,6 @@ fn the_browser_build_prices_every_frame_for_the_shims_clock() {
         "const budget = answer && typeof answer.frame_budget_ms === \"number\"\n        ? answer.frame_budget_ms : pace;"
     ));
     assert!(shim.contains("const owed = budget - (performance.now() - started);"));
-}
-
-/// The home page's cards are rows a visitor can act on anywhere: the
-/// photograph and the title open the card's preset exactly as the verb
-/// button does; the title line carries who is at the keyboard on its
-/// right, in the same font and size; each card reads name, description,
-/// actions, tags in that order; and Customize and every tag open the
-/// row's world picker in place, with each tag landing on the section it
-/// names.
-#[test]
-fn the_home_cards_link_their_art_and_open_their_panels_in_place() {
-    let landing = include_str!("../../beta/landing.html");
-    for piece in [
-        // The art is a way in: each photograph links its card's preset.
-        "<a class=\"card-thumb-link\" href=\"../\">",
-        "<a class=\"card-thumb-link\" href=\"../?mode=play\">",
-        // The title links the same preset, and the mode descriptor sits
-        // beside it on the one title line, styled at the title's own
-        // font and size.
-        "<h3 class=\"card-title\" id=\"watch-civ-title\"><a href=\"../\">Watch CIVVIS</a></h3>",
-        "<h3 class=\"card-title\" id=\"play-civ-title\"><a href=\"../?mode=play\">Play CIVVIS</a></h3>",
-        "<span class=\"card-mode\">AI simulation</span>",
-        "<span class=\"card-mode\">Sim debugger</span>",
-        ".card-mode { color: var(--muted); font-size: 17px; font-weight: 700;",
-        ".card-title { margin: 0; color: #fff; font-size: 17px; font-weight: 700; }",
-        // Customize opens the world picker in place and still names Game
-        // setup as its scriptless destination.
-        "href=\"../?setup=1\" data-pick=\"watch-civ\"",
-        "href=\"../?mode=play&amp;setup=1\" data-pick=\"play-civ\"",
-        // The tags: every one opens the panel on the section it names,
-        // with an honest scriptless destination behind it.
-        "data-pick=\"watch-civ\" data-lens=\"seats\">AI Empires</a>",
-        "data-pick=\"watch-civ\" data-lens=\"worlds\">Fresh World Every Visit</a>",
-        "data-pick=\"watch-civ\" data-lens=\"victory\">Every Victory Lane</a>",
-        "data-pick=\"play-civ\" data-lens=\"seats\">Your Seat</a>",
-        "data-pick=\"play-civ\" data-lens=\"seats\">AI Rivals</a>",
-        "data-pick=\"play-civ\" data-lens=\"worlds\">Custom Worlds</a>",
-        // A click carries both halves: which card, and which section.
-        "open(card.dataset.pick, card.dataset.lens);",
-        // The panel is a grid row of the menu itself, so it opens
-        // directly below the row of cards, spanning both card columns.
-        // With the row-label column gone there is no furniture beside
-        // the cards for it to skip.
-        "    grid-column: 1 / -1;",
-        // Two actions per card, four to a row: the card's own verb opens
-        // its preset at once — never carrying `data-pick`, because
-        // clicking it is meant to leave the page rather than open a
-        // panel — and Customize beside it opens the shared panel.
-        "<a class=\"card-btn verb-watch\" href=\"../\" aria-labelledby=\"watch-civ-title\">Watch</a>",
-        "<a class=\"card-btn verb-play\" href=\"../?mode=play\" aria-labelledby=\"play-civ-title\">Play</a>",
-        "data-pick=\"watch-civ\" aria-label=\"Customize a watched game\">Customize</a>",
-        "data-pick=\"play-civ\" aria-label=\"Customize a played game\">Customize</a>",
-        // The verb is the card's point, so it carries the colour and a
-        // third more size than the Customize beside it.
-        ".verb-play { min-height: 40px; padding: 0 20px; font-size: 16px; }",
-        // The row's four buttons stand level: the description holds to
-        // one line and the tag shelf below the buttons reserves two, so
-        // a card whose tags wrap cannot stagger its neighbour's buttons.
-        ".card-desc { margin: 0; overflow: hidden; color: var(--muted); font-size: 13px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }",
-        ".card-tags { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; min-height: 54px; margin: 0; padding: 0; list-style: none; }",
-        // An open panel names who is at the keyboard beside its Back
-        // button, at the verb button's size and in its colour.
-        "<span class=\"picker-mode-badge watch\" id=\"game-picker-mode\">",
-        ".picker-mode-badge.play { background: var(--play-bg); color: var(--play-fg); }",
-        "<div class=\"mode-card\" id=\"row-civ\">",
-        // While the panel is open, the two cards are the mode selector —
-        // the selected option highlights, the other mutes — and the
-        // panel's own chips switch between them in place. That is also
-        // when the row's four buttons merge into one set: the panel and
-        // its chips are now the customization, so both Customize buttons
-        // retire until it closes.
-        "card.classList.toggle(\"picking\", selected);",
-        "card.classList.toggle(\"muted\", shown && !selected);",
-        "card.classList.toggle(\"merged\", shown);",
-        ".mode-card.merged .card-btn.customize { display: none; }",
-        ".mode-card.muted { opacity: 0.55; }",
-        "id=\"game-modes\"",
-        "data-mode=\"watch-civ\" aria-pressed=\"true\">AI simulation</button>",
-        "data-mode=\"play-civ\" aria-pressed=\"false\">Sim debugger</button>",
-        ".picker-lens[aria-pressed=\"true\"] { border-color: var(--accent); background: #2a3f52; color: #fff; }",
-    ] {
-        assert!(landing.contains(piece), "the home page lost {piece}");
-    }
-    // The pair is back: no card offers the single merged button that
-    // stood in for it, and merging is now something the open panel does
-    // rather than something the markup ships.
-    for gone in [">Watch Customized</a>", ">Play Customized</a>"] {
-        assert!(
-            !landing.contains(gone),
-            "the home page grew the merged {gone} button back"
-        );
-    }
-    // Reading order inside a card: title row, description, actions, tags
-    // — and the panel sits below the row of cards that opens it.
-    let index = |needle: &str| {
-        landing
-            .find(needle)
-            .unwrap_or_else(|| panic!("the home page lost {needle}"))
-    };
-    for card in ["watch-civ", "play-civ"] {
-        let title = index(&format!("id=\"{card}-title\""));
-        let tags = index(&format!(
-            "aria-label=\"{}",
-            match card {
-                "watch-civ" => "Watch CIVVIS features",
-                _ => "Play CIVVIS features",
-            }
-        ));
-        let desc = landing[title..]
-            .find("class=\"card-desc\"")
-            .expect("a description")
-            + title;
-        let actions = landing[title..]
-            .find("class=\"card-actions\"")
-            .expect("actions")
-            + title;
-        assert!(
-            title < desc && desc < actions && actions < tags,
-            "{card} must read title, description, actions, tags"
-        );
-    }
-    assert!(
-        index("id=\"watch-civ-title\"") < index("id=\"play-civ-title\"")
-            && index("id=\"play-civ-title\"") < index("id=\"game-picker\""),
-        "the world picker must sit directly below its own row of cards"
-    );
-    // The LCP hint belongs to the row's own thumbnail; on any other image
-    // it would preload something below the fold.
-    assert!(
-        landing.contains(
-            "src=\"assets/watch-civ.jpg\" alt=\"Watch CIVVIS: a CIVVIS globe at mid-game, \
-AI empires sharing two continents, borders and cities drawn across the planet.\" \
-fetchpriority=\"high\""
-        ),
-        "the first card's thumbnail must carry the LCP hint"
-    );
 }
 
 #[cfg(not(target_arch = "wasm32"))]
