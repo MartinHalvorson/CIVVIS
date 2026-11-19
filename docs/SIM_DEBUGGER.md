@@ -21,13 +21,15 @@ keep a mark each and older ones keep one turn in ten.
 | ⏮ | `jump` to the first mark | Go to where the timeline begins |
 | ◀ | `back` | The top of this turn if you have acted in it, otherwise the turn before |
 | ↶ (`Ctrl`/`Cmd`+`Z`) | `undo` | Take back your last action this turn |
-| slider | `jump` | Go to any marked turn; a turn with no mark answers with the nearest one before it |
+| slider | `jump` | Go to any turn that was played; a turn that is no longer kept answers with the nearest one before it, and the bar says so |
+| turn box | `jump`, or `step` repeated | Go to a turn by its number. One already played is put back as it stood. One still ahead is played to by the seat's Civ AI, stopping early if a breakpoint does |
 | ▶ | `forward` | Forward along turns already played, without playing anything |
 | ▸ | `step_action` | Step in: the seat's Civ AI takes its next action, and ends the turn when it has none left |
 | ▶\| | `step` | The seat's Civ AI plays one whole turn |
 | ▶▶ Run | `step`, repeated | Play turns until a breakpoint stops it, or Stop |
 | ◉ | `reveal` | Show the whole map and every civilization, not only what the seat can see |
-| ⤓ | `POST /save`, `POST /load` | Saves: keep this turn under a name, or load one that was kept |
+| ⚑ | `save_point`, `goto_save`, `drop_save` | Save points: keep this world to come back to, go to one, or let one go. Each stands over the slider as a flag at its turn; clicking the flag goes there |
+| ⚑ | `POST /save`, `POST /load` | Saves, in the same panel: keep this turn on the device under a name, or load one that was kept |
 | Split | | Two simulators from this turn; see below |
 
 Going back forgets nothing. The turns ahead stay marked, and ▶ walks them
@@ -173,9 +175,31 @@ The strip between the halves holds the split's own controls:
 | A → B, B → A | Make one half a copy of the other as it stands now, turns behind it included (`copy`) |
 | Keep A, Keep B | Close the split and play on from that half (`adopt`): its session becomes the main one, with every turn it could walk back to |
 | drag the strip | Resize the halves; double-click makes them equal |
+| VS | Head to head; see below |
 
 A half that moved because it was following is not followed back. Linking two
 halves that have drifted apart brings B to A's turn.
+
+### Head to head
+
+Head to head is the split used to play two strategies out from one turn. VS
+in the strip, or "Head to head" in the Split panel, widens the strip to hold:
+
+- a Civ AI for each half. It is the agent that plays that half's seat
+  whenever the half is stepped or run; each half is a session of its own, so
+  nothing in the engine is shared between the two choices.
+- the two seats' numbers side by side, A then B, with the larger in gold:
+  Score, Cities, Population, Military strength, and Science, Culture, Gold and
+  Faith per turn. Each half reports its own (`pane-numbers`) whenever they
+  change.
+- a turn to play both to. Linked, A is run and B follows it turn by turn, each
+  with its own Civ AI. Separate, each half is run by itself. The run ends when
+  that turn opens, or earlier if a breakpoint stops a half, and the same
+  button stops it by hand.
+
+The rivals in each half are played by fresh agents from the split onward, as
+they are after any walk along the timeline, so the two halves differ only in
+what the seat does and in what follows from it.
 
 ## `POST /debug`
 

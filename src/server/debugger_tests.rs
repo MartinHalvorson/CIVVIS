@@ -261,6 +261,10 @@ fn the_page_loads_the_bar_and_sends_only_operations_the_engine_answers() {
         "assist",
         "layers",
         "breakpoints",
+        "save_point",
+        "goto_save",
+        "drop_save",
+        "room",
     ] {
         assert!(sent.contains(op), "the bar never sends {op}");
     }
@@ -309,6 +313,12 @@ fn the_split_speaks_one_set_of_messages_on_both_sides() {
         "pane-copy",
         "pane-camera",
         "pane-look",
+        // Head to head: each half's numbers and Civ AI, and playing both.
+        "pane-numbers",
+        "pane-strategy",
+        "pane-run",
+        "pane-stop",
+        "pane-ran",
     ] {
         let quoted = format!("\"{message}\"");
         assert!(
@@ -450,4 +460,41 @@ fn a_condition_stops_a_run_when_the_state_crosses_its_line() {
     // Clearing the breakpoints clears the conditions with them.
     let cleared = session.debug(&json!({"op": "breakpoints"}));
     assert_eq!(cleared["debug"]["breakpoints"]["conditions"], json!([]));
+}
+
+/// Head to head sets two halves side by side to see what a Civ AI changes.
+/// That reads as it should only if nothing else differs: two halves of one
+/// split, given the same agent, play the same game.
+#[test]
+fn two_halves_given_the_same_civ_ai_play_the_same_game() {
+    let mut session = played();
+    end_turn(&mut session);
+    let (mut a, mut b) = (session.fork(), session.fork());
+    for _ in 0..3 {
+        assert_eq!(a.debug(&json!({"op": "step"}))["error"], Value::Null);
+        assert_eq!(b.debug(&json!({"op": "step"}))["error"], Value::Null);
+    }
+    assert_eq!(a.game.turn, 5);
+    assert_eq!(world(&a), world(&b));
+}
+
+/// The numbers `docs/SIM_DEBUGGER.md` gives for the timeline are the ones
+/// this module uses.
+#[test]
+fn the_document_gives_the_numbers_the_timeline_uses() {
+    let doc = include_str!("../../docs/SIM_DEBUGGER.md")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert_eq!(COARSEST_STRIDE, 8, "the document says one in eight");
+    for said in [
+        format!("Room is {ROOMY_MARKS} marks"),
+        format!("({} GB unless the page names another", MEMORY_LINE >> 30),
+        format!("the newest {DENSE_MARKS} stay whole"),
+        "never fewer than one in eight".to_string(),
+        format!("each further {} MB takes a tenth", MEMORY_STEP >> 20),
+        format!("A timeline holds {MAX_SAVE_POINTS} at once"),
+    ] {
+        assert!(doc.contains(&said), "the document no longer says: {said}");
+    }
 }
