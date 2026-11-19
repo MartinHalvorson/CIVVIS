@@ -9,7 +9,8 @@
     "Operator /goal 2026-11-19 ~18:35Z: repeated 10-game series against Lv 8 Deity AI,",
     "6P Continents; conditions Lv 8 6P Continents Online.",
     "Operator 2026-11-19 ~21:20Z: \"Turn the ongoing tournament into a 100 game tournament\": Tournament 1 stays the",
-    "first 10-game series; from Tournament 2's first game (civvis-20261119T204058Z) the series are 100 games."
+    "first 10-game series; from Tournament 2's first game (civvis-20261119T204058Z) the series are 100 games.",
+    "Operator ~21:30Z: \"actually lets just do 30 games for now, rather than 100\": series of 30."
   ],
   "tournaments": [
     {
@@ -21,10 +22,10 @@
       "end": "civvis-20261119T204058Z"
     },
     {
-      "name": "Lv 8 Deity 100-game series",
+      "name": "Lv 8 Deity 30-game series",
       "conditions": "Lv 8 6P Continents Online",
       "start": "civvis-20261119T204058Z",
-      "series_size": 100,
+      "series_size": 30,
       "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"}
     }
   ]
