@@ -418,6 +418,25 @@ def check_the_bar(bar: Bar) -> None:
     assert [call["op"] for call in bar.sent()] == ["back", "step"], bar.sent()
     assert bar.sent()[-1].get("strategy") == "jack", bar.sent()
 
+    # The Civ AI that plays the seat is picked beside Run, from what the page's
+    # own picker lists, and a step carries it.
+    agent = "document.getElementById('dbg-agent')"
+    assert bar.ev(f"[...{agent}.options].map(option => option.value)") == ["jack", "stock"]
+    assert bar.ev(f"{agent}.value") == "jack"
+
+    def seat(name: str) -> None:
+        bar.ev(f"(() => {{ const select = {agent}; select.value = '{name}';"
+               " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+        assert bar.ev("document.getElementById('autoplaystrategy').value") == name
+
+    seat("stock")
+    bar.click('[data-dbg="step"]')
+    bar.idle("state.turn === 10", "a step with the Civ AI picked in the bar")
+    assert bar.sent()[-1] == {"op": "step", "strategy": "stock"}, bar.sent()
+    seat("jack")
+    bar.click('[data-dbg="back"]')
+    bar.idle("state.turn === 9", "back to turn 9")
+
     # A window with room has words on the tools; a narrow one keeps the signs,
     # and the page still stands under whatever height the bar comes to.
     word = "getComputedStyle(document.querySelector('#debugbar .dbg-word')).display"
@@ -628,6 +647,16 @@ def check_the_split(bar: Bar) -> None:
            " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
     bar.until(half("b", "'debugStrategy()'") + " === 'stock'", "B is told which Civ AI plays its seat")
     assert bar.ev(half("a", "'debugStrategy()'")) == "jack"
+    # The same choice stands at the head of each half's lane in the host's
+    # bar, and is made there as well. A half has no picker of its own.
+    head = "document.querySelector('#debugbar [data-dbg-agent=\"{}\"]')".format
+    bar.until(f"{head('a')}.value === 'jack' && {head('b')}.value === 'stock'", "the lanes say which Civ AI each half seats")
+    assert bar.ev(half("a", "'getComputedStyle(document.getElementById(\"dbg-agent\")).display'")) == "none"
+    for name in ("stock", "jack"):
+        bar.ev(f"(() => {{ const select = {head('a')}; select.value = '{name}';"
+               " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+        bar.until(half("a", "'debugStrategy()'") + f" === '{name}'", f"A is seated with {name} from its lane")
+        assert bar.ev(f"debugSplit.host.querySelector('[data-dbg-strategy=\"a\"]').value") == name
 
     # Linked: A is run to the turn and B follows it turn by turn, each with
     # its own Civ AI on every step.

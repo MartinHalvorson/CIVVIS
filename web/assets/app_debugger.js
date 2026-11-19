@@ -34,7 +34,7 @@ const DEBUG_BAR_STYLE = `
   #debugbar[hidden], #debugbar [hidden] { display: none !important; }
   /* While the screen is split the bar stays up, over the two halves. */
   html.dbg-split-open #debugbar { z-index: 100001; }
-  #debugbar.dbg-tight { grid-template-columns: minmax(0, 1fr); }
+  #debugbar.dbg-note-under { grid-template-columns: minmax(0, 1fr); }
   #debugbar .dbg-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0; }
   #debugbar button {
     display: inline-flex; align-items: center; justify-content: center; gap: 4px;
@@ -45,7 +45,7 @@ const DEBUG_BAR_STYLE = `
   #debugbar button:hover:not(:disabled) { border-color: var(--gold-bright, #e7c873); }
   #debugbar button:disabled { opacity: .36; cursor: default; }
   #debugbar button.on { color: #10140f; background: var(--gold-bright, #e7c873); border-color: transparent; font-weight: 700; }
-  /* A window too narrow for the words keeps the signs. */
+  /* A bar too narrow for the words on its tools keeps the signs. */
   #debugbar.dbg-tight .dbg-word, #debugbar.dbg-tight .dbg-played { display: none; }
   #debugbar .dbg-sep { width: 1px; height: 18px; background: #35504a; margin: 0 3px; }
   #debugbar .dbg-count { color: var(--gold-bright, #e7c873); font-weight: 700; }
@@ -59,12 +59,21 @@ const DEBUG_BAR_STYLE = `
   }
   #debugbar #dbg-turn:disabled { opacity: .5; }
   #debugbar .dbg-played { margin-left: 8px; color: var(--muted); white-space: nowrap; }
+  /* Which Civ AI plays the seat: beside Run for the world, and at the head
+     of its lane for each half of a split, which the host seats. */
+  #debugbar select.dbg-agent {
+    flex: none; width: 150px; height: 26px; padding: 0 4px; border-radius: 8px; cursor: pointer;
+    color: var(--text); background: #060d0b; border: 1px solid #35504a; font: inherit;
+  }
+  #debugbar select.dbg-agent:disabled { opacity: .5; cursor: default; }
+  #debugbar.dbg-tight .dbg-tools select.dbg-agent { width: 112px; }
+  #debugbar.dbg-pane select.dbg-agent { display: none; }
   /* What the bar has to say: at the end of the tools where there is room,
      and under the bar where there is not. */
   #debugbar .dbg-note { align-self: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
   #debugbar .dbg-note:empty { display: none; }
   #debugbar .dbg-note button { height: 20px; margin-left: 7px; vertical-align: middle; }
-  #debugbar.dbg-tight .dbg-note {
+  #debugbar.dbg-note-under .dbg-note {
     position: absolute; right: 8px; top: calc(100% + 7px); max-width: min(560px, calc(100vw - 16px));
     padding: 5px 11px; border-radius: 999px; white-space: normal; text-align: center;
     border: 1px solid #4d685f; background: #0a1512f2; box-shadow: var(--shadow);
@@ -72,15 +81,15 @@ const DEBUG_BAR_STYLE = `
 
   /* The timeline: a rail as long as the game, one for the world, or one for
      each half of a split. */
-  #debugbar .dbg-time { grid-column: 1 / -1; display: grid; gap: 3px; min-width: 0; }
+  #debugbar .dbg-time { grid-column: 1 / -1; display: grid; gap: 3px; min-width: 0; padding: 0 8px; }
   #debugbar .dbg-lane { display: flex; align-items: center; gap: 6px; min-width: 0; --dbg-own: var(--gold-bright, #e7c873); }
   #debugbar .dbg-lane[data-dbg-lane="a"] { --dbg-own: #ff8f6b; }
   #debugbar .dbg-lane[data-dbg-lane="b"] { --dbg-own: #6fd3e0; }
   #debugbar .dbg-lane-name { flex: none; width: 12px; text-align: center; font-weight: 700; color: var(--dbg-own); }
   #debugbar .dbg-lane-name:empty { display: none; }
   #debugbar .dbg-rail {
-    position: relative; flex: 1; min-width: 0; height: 20px; border-radius: 7px;
-    background: #060d0b; border: 1px solid #2b403a;
+    position: relative; flex: 1; min-width: 0; height: 28px; border-radius: 8px;
+    background: #060d0b; border: 1px solid #35504a;
   }
   #debugbar .dbg-rail:focus-within { border-color: var(--gold-bright, #e7c873); }
   /* A slider's thumb stops half its own width short of each end, so what is
@@ -91,42 +100,42 @@ const DEBUG_BAR_STYLE = `
     position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0;
     opacity: 0; cursor: pointer; -webkit-appearance: none; appearance: none; background: transparent;
   }
-  #debugbar .dbg-rail input::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 18px; }
-  #debugbar .dbg-rail input::-moz-range-thumb { width: 14px; height: 18px; border: 0; }
+  #debugbar .dbg-rail input::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 26px; }
+  #debugbar .dbg-rail input::-moz-range-thumb { width: 14px; height: 26px; border: 0; }
   #debugbar .dbg-rail input:disabled { pointer-events: none; }
-  #debugbar .dbg-ruler i { position: absolute; top: 0; bottom: 0; width: 1px; background: #ffffff12; }
-  #debugbar .dbg-ruler i.major { background: #ffffff30; }
+  #debugbar .dbg-ruler i { position: absolute; bottom: 0; height: 7px; width: 1px; background: #ffffff26; }
+  #debugbar .dbg-ruler i.major { top: 0; height: auto; background: #ffffff38; }
   #debugbar .dbg-ruler b {
-    position: absolute; top: 50%; transform: translateY(-50%); margin-left: 4px;
-    font-size: 9px; font-weight: 400; color: #9fb3ab; font-variant-numeric: tabular-nums;
+    position: absolute; top: 50%; transform: translateY(-50%); margin-left: 5px;
+    font-size: 10px; font-weight: 400; color: #b7c7c0; font-variant-numeric: tabular-nums;
   }
-  #debugbar .dbg-ruler b.end { transform: translate(-100%, -50%); margin-left: -4px; }
-  #debugbar .dbg-band { position: absolute; top: 4px; bottom: 4px; min-width: 3px; border-radius: 3px; background: #8a7335; }
+  #debugbar .dbg-ruler b.end { transform: translate(-100%, -50%); margin-left: -5px; }
+  #debugbar .dbg-band { position: absolute; top: 6px; bottom: 6px; min-width: 3px; border-radius: 4px; background: #9a8038; }
   #debugbar .dbg-band.dbg-own { background: var(--dbg-own); opacity: .8; }
   /* When turns were thinned to make room, the band dims and the turns that
      can still be gone back to stand out on it. */
   #debugbar .dbg-thinned .dbg-band { background: #4a4024; }
-  #debugbar .dbg-kept-turns i { position: absolute; top: 4px; bottom: 4px; width: 2px; margin-left: -1px; background: #c9ad5c; }
+  #debugbar .dbg-kept-turns i { position: absolute; top: 6px; bottom: 6px; width: 2px; margin-left: -1px; background: #c9ad5c; }
   /* Where a run is headed. */
   #debugbar .dbg-goal {
-    position: absolute; top: 4px; bottom: 4px; border-right: 2px solid var(--dbg-own);
+    position: absolute; top: 6px; bottom: 6px; border-right: 2px solid var(--dbg-own);
     background: repeating-linear-gradient(-45deg, #e7c87340 0 4px, transparent 4px 8px);
   }
   #debugbar .dbg-ghost { position: absolute; top: 0; bottom: 0; width: 1px; background: #ffffffa0; }
   #debugbar .dbg-cursor { position: absolute; top: 0; bottom: 0; width: 0; }
   #debugbar .dbg-cursor b {
-    position: absolute; left: 0; top: 50%; transform: translate(-50%, -50%); min-width: 26px; padding: 2px 5px;
-    border-radius: 999px; text-align: center; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+    position: absolute; left: 0; top: 50%; transform: translate(-50%, -50%); min-width: 30px; padding: 4px 6px;
+    border-radius: 999px; text-align: center; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
     color: #10140f; background: var(--dbg-own); box-shadow: 0 0 0 2px #060d0b, 0 2px 6px #000a;
   }
   /* Save points stand on a rail as flags and turn breakpoints as red dots,
      each at its own turn. */
   #debugbar .dbg-marks i {
-    position: absolute; top: -4px; width: 9px; height: 9px; margin-left: -5px; cursor: pointer; pointer-events: auto;
+    position: absolute; top: -5px; width: 11px; height: 11px; margin-left: -6px; cursor: pointer; pointer-events: auto;
     border-radius: 2px 2px 50% 50%; border: 1px solid #10140f; background: var(--gold-bright, #e7c873);
   }
   #debugbar .dbg-marks i.auto { background: #8fb4a8; }
-  #debugbar .dbg-marks i.stop { top: auto; bottom: -4px; border-radius: 50%; background: #e2574c; }
+  #debugbar .dbg-marks i.stop { top: auto; bottom: -5px; border-radius: 50%; background: #e2574c; }
   /* What letting go of the timeline here would do, said under the pointer. */
   #debugbar .dbg-hover {
     position: absolute; z-index: 4; top: calc(100% + 5px); transform: translateX(-50%); padding: 4px 10px;
@@ -167,8 +176,10 @@ let debugBar = null;
 const debugLanes = {}, debugLaneModels = {};
 // A slider's thumb is 14px wide; its centre stops this far short of each end.
 const DEBUG_THUMB_HALF = 7;
-// The narrowest bar that still has room for the words on its tools.
-const DEBUG_ROOMY_WIDTH = 1280;
+// The tools are one row of 26px buttons; taller than this, they have wrapped.
+// What the bar has to say stands at the end of that row while this much of
+// it is left over, and under the bar when less is.
+const DEBUG_TOOLS_ROW = 40, DEBUG_NOTE_ROOM = 240;
 // One request at a time: every debugger operation replaces the world.
 let debugBusy = false;
 // A run is a loop of single steps; the bar's Run button is also its Stop.
@@ -458,7 +469,8 @@ function debugTogglePop(name) {
 function debugLaneMarkup(key, id, label) {
   return `
       <div class="dbg-lane" data-dbg-lane="${key}">
-        <span class="dbg-lane-name">${key.toUpperCase()}</span>
+        <span class="dbg-lane-name">${key.toUpperCase()}</span>${key ? `
+        <select class="dbg-agent" data-dbg-agent="${key}" title="The Civ AI that plays ${key.toUpperCase()}'s seat when it is stepped, run or played to" aria-label="Civ AI for ${key.toUpperCase()}"></select>` : ""}
         <div class="dbg-rail">
           <div class="dbg-deco"><div class="dbg-ruler"></div><div class="dbg-band"></div><div class="dbg-band dbg-own"></div><div class="dbg-kept-turns"></div><div class="dbg-goal"></div><div class="dbg-ghost" hidden></div><div class="dbg-cursor"><b></b></div></div>
           <input type="range" id="${id}" step="1"${key ? ` data-dbg-half="${key}"` : ""} aria-label="${label}">
@@ -489,6 +501,7 @@ function debugBuildBar() {
       <button data-dbg="step-seat" title="Step one seat: end your turn as it stands, then one civilization's turn at a time" aria-label="Step one seat"><i>▸|</i><span class="dbg-word">Seat</span></button>
       <button data-dbg="step" title="Step: the Civ AI plays one turn. In the middle of a round, the rest of the round plays" aria-label="Step one turn"><i>▶|</i><span class="dbg-word">Turn</span></button>
       <button data-dbg="run" title="Run: the Civ AI plays until a breakpoint stops it" aria-label="Run to a breakpoint"><i id="dbg-run-sign">▶▶</i><span class="dbg-word" id="dbg-run-word">Run</span></button>
+      <select class="dbg-agent" id="dbg-agent" title="The Civ AI that plays your seat when a turn is stepped, run or played to" aria-label="Civ AI for your seat"></select>
       <span class="dbg-sep"></span>
       <button data-dbg-pop="layers" title="Layers: which decisions the Civ AI takes for you each turn">Layers<span class="dbg-count" id="dbg-layer-count"></span></button>
       <button data-dbg-pop="breaks" title="Breakpoints: what stops a run" aria-label="Breakpoints"><span class="dbg-dot">●</span><span class="dbg-word">Breakpoints</span><span class="dbg-count" id="dbg-break-count"></span></button>
@@ -574,7 +587,7 @@ function debugBuildBar() {
     const part = name => box.querySelector(`.dbg-${name}`);
     debugLanes[box.dataset.dbgLane] = {box, input: box.querySelector("input"), ruler: part("ruler"),
       band: part("band"), own: part("own"), kept: part("kept-turns"), goal: part("goal"), ghost: part("ghost"),
-      cursor: part("cursor"), pill: box.querySelector(".dbg-cursor b"), marks: part("marks")};
+      cursor: part("cursor"), pill: box.querySelector(".dbg-cursor b"), marks: part("marks"), agent: part("agent")};
   }
 
   bar.addEventListener("click", event => {
@@ -656,6 +669,15 @@ function debugBuildBar() {
     } else if (target.id === "dbg-turn") {
       target.blur();
       debugGoToTurn(target.value);
+    } else if (target.id === "dbg-agent") {
+      // The page's own picker is the one every step reads.
+      const page = document.getElementById("autoplaystrategy");
+      if (page) { page.value = target.value; page.dispatchEvent(new Event("change", {bubbles: true})); }
+      target.blur();
+      drawDebugBar(false);
+    } else if (target.dataset.dbgAgent) {
+      target.blur();
+      debugSplitSeat(target.dataset.dbgAgent, target.value);
     } else if (target.dataset.dbgLayer) {
       debugOp({op: "layers", layers: debugLayersFromForm()});
     } else if (target.closest("#dbg-pop-breaks")) {
@@ -719,8 +741,9 @@ function debugBuildBar() {
       drawDebugBar();
       return;
     }
-    // A slider's own keys move it a turn at a time; the page does not hear them.
-    if (event.target.matches("input[type=range]")) { event.stopPropagation(); return; }
+    // A slider's own keys move it a turn at a time, and a picker's choose from
+    // it; the page does not hear them.
+    if (event.target.matches("input[type=range], select")) { event.stopPropagation(); return; }
     if (!event.target.matches("input[type=text]")) return;
     event.stopPropagation();
     if (event.target.id === "dbg-turn" && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
@@ -731,6 +754,14 @@ function debugBuildBar() {
   return bar;
 }
 
+// The Civ AIs on offer are the ones the page's own picker lists. A picker
+// shows the one that is seated unless it is being chosen from.
+function debugOfferAgents(select, seated) {
+  const offered = [...((document.getElementById("autoplaystrategy") || {}).options || [])]
+    .map(option => `<option value="${escapeAttr(option.value)}">${escapeAttr(option.textContent)}</option>`).join("");
+  if (select.dataset.drawn !== offered) { select.dataset.drawn = offered; select.innerHTML = offered; }
+  if (seated !== undefined && document.activeElement !== select) select.value = seated;
+}
 // The whole game, end to end: a timeline is as long as the game may be, 250
 // turns when the game does not say, and longer when it is played on past that.
 function debugAxis(first, last) {
@@ -836,6 +867,22 @@ function debugHover(rail, x = 0) {
   const bar = debugBar.getBoundingClientRect(), half = tag.offsetWidth / 2;
   tag.style.left = `${Math.max(half + 4, Math.min(bar.width - half - 4, x - bar.left))}px`;
 }
+// The words on the tools are for a bar with room for them: when the tools
+// wrap, the words go and the signs stay. They are tried again only when the
+// bar's width changes, so a bar on the edge does not flicker between the two.
+// What the bar has to say needs room of its own at the end of the row, and
+// stands under the bar when there is none.
+let debugFitted = 0;
+function debugFit(bar) {
+  const tools = bar.querySelector(".dbg-tools"), width = bar.clientWidth;
+  if (width !== debugFitted) { debugFitted = width; bar.classList.remove("dbg-tight", "dbg-note-under"); }
+  const wrapped = () => tools.offsetHeight > DEBUG_TOOLS_ROW;
+  if (!bar.classList.contains("dbg-tight") && wrapped()) bar.classList.add("dbg-tight");
+  let used = 0;
+  const from = tools.getBoundingClientRect().left;
+  for (const tool of tools.children) used = Math.max(used, tool.getBoundingClientRect().right - from);
+  bar.classList.toggle("dbg-note-under", wrapped() || tools.parentElement.clientWidth - used < DEBUG_NOTE_ROOM + 30);
+}
 // The page stands under the bar. How tall the bar is depends on how its tools
 // wrap, so it is measured, and the page is told when that changes: the map is
 // fitted to the room it has.
@@ -871,6 +918,9 @@ function drawDebugBar(measure = true) {
         last: played(letter), turn, fork: debugSplit.from, kept: null, turns: null, flags: [], stops: [],
         goal: debugSplit.running > 0 ? debugSplit.until : null,
         idle: pane.turn !== null && !debugSplit.busy && debugSplit.running === 0});
+      const agent = debugLanes[letter].agent;
+      debugOfferAgents(agent, pane.strategy);
+      agent.disabled = debugSplit.busy || debugSplit.running > 0;
     }
     if (measure) debugDock(bar);
     return;
@@ -899,6 +949,10 @@ function drawDebugBar(measure = true) {
   document.getElementById("dbg-run-sign").textContent = debugRunning ? (debugStopAsked ? "…" : "⏹") : "▶▶";
   document.getElementById("dbg-run-word").textContent = debugRunning ? "Stop" : "Run";
   run.classList.toggle("on", debugRunning);
+  const agent = document.getElementById("dbg-agent");
+  debugOfferAgents(agent, debugStrategy() || "");
+  agent.disabled = !idle;
+  agent.hidden = agent.options.length === 0;
 
   const turnBox = document.getElementById("dbg-turn");
   turnBox.disabled = !idle;
@@ -1024,8 +1078,7 @@ function drawDebugBar(measure = true) {
     (debugNoteText && debugNotePos ? `<button data-dbg="show" title="Centre the map there">Show</button>` : "");
   if (note.innerHTML !== html) { note.innerHTML = html; note.title = text; }
   if (!measure) return;
-  // The words on the tools are for a window with room for them.
-  bar.classList.toggle("dbg-tight", bar.clientWidth < DEBUG_ROOMY_WIDTH);
+  debugFit(bar);
   debugDock(bar);
 }
 
@@ -1207,15 +1260,8 @@ function drawDebugSplit() {
   const versus = host.querySelector("[data-dbg-versus]");
   versus.hidden = !debugSplit.versus;
   if (!debugSplit.versus) return;
-  // The Civ AIs on offer are the ones this page's own picker lists.
-  const offered = [...((document.getElementById("autoplaystrategy") || {}).options || [])]
-    .map(option => `<option value="${escapeAttr(option.value)}">${escapeAttr(option.textContent)}</option>`).join("");
-  for (const letter of ["a", "b"]) {
-    const select = host.querySelector(`[data-dbg-strategy="${letter}"]`);
-    if (select.dataset.drawn !== offered) { select.dataset.drawn = offered; select.innerHTML = offered; }
-    const held = debugSplit.panes[letter].strategy;
-    if (held !== undefined && document.activeElement !== select) select.value = held;
-  }
+  for (const letter of ["a", "b"])
+    debugOfferAgents(host.querySelector(`[data-dbg-strategy="${letter}"]`), debugSplit.panes[letter].strategy);
   const a = debugSplit.panes.a.numbers || {}, b = debugSplit.panes.b.numbers || {};
   const table = DEBUG_VERSUS_ROWS.map(([key, label, title]) => {
     const lead = side => typeof a[key] === "number" && typeof b[key] === "number" &&
@@ -1321,9 +1367,7 @@ function debugSplitOpen(dir, versus = null) {
   });
   host.addEventListener("change", event => {
     const letter = event.target.dataset.dbgStrategy;
-    if (!letter || !debugSplit) return;
-    debugSplit.panes[letter].strategy = event.target.value;
-    debugSplitTell(letter, {civvis: "pane-strategy", name: event.target.value});
+    if (letter) debugSplitSeat(letter, event.target.value);
   });
   // The page's keys must not fire while a turn is being typed in the strip.
   host.addEventListener("keydown", event => {
@@ -1361,6 +1405,14 @@ function debugSplitOpen(dir, versus = null) {
     const pane = debugSplit.panes[letter];
     pane.frame.src = `${location.pathname}?pane=${pane.id}`;
   }
+}
+// Which Civ AI plays a half's seat is the host's to say: it keeps the choice
+// and tells the half, from the strip or from the head of the half's lane.
+function debugSplitSeat(letter, name) {
+  if (!debugSplit) return;
+  debugSplit.panes[letter].strategy = name;
+  debugSplitTell(letter, {civvis: "pane-strategy", name});
+  drawDebugSplit();
 }
 // Play halves to a turn, each with its own Civ AI. The turn is where the
 // lanes show the run is headed until every half that was run says it is done.

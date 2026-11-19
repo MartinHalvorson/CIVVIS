@@ -7,19 +7,55 @@ through the game's own history.
 
 The engine half is `src/server/debugger.rs`, served as `POST /debug` by the
 native server and the browser build alike. The page half is
-`web/assets/app_debugger.js`, the bar at the foot of the map.
+`web/assets/app_debugger.js`: a bar fixed across the top of the window, with
+the page beneath it.
 
 The engine half is held by `src/server/debugger_tests.rs`. The bar is held by
 `beta/debugger_test.py`, which loads the script as it ships into a real
-browser, on a page with a toy engine behind it, and drives the controls: the
-turn box, both sliders, the wheel, save points and their flags, a breakpoint
-picked from the timeline, the breakpoints form with a run stopped by a
-breakpoint and by hand, layers, reveal, undo, and a round stepped a seat at a
-time. It then splits the screen head to head, each half
-the same page with a toy engine of its own: a Civ AI is picked for one half,
-both are played to a turn linked and then separate, and the test reads which
-Civ AI each half's steps named, the numbers set side by side, a copy, and the
-half that is kept. A control added to the bar or the strip is added there.
+browser, on a page with a toy engine behind it, and drives the controls:
+where the bar stands and that the page stands under it, the turn box, the
+timeline back to a played turn and on to one ahead, what it says under the
+pointer, the wheel, the two ends, the Civ AI picker, save points and their
+flags, a breakpoint picked from the timeline, a timeline with turns thinned
+out of it, the breakpoints form with a run stopped by a breakpoint and by
+hand, layers, reveal, undo, and a round stepped a seat at a time. It then
+splits the screen head to head, each half the same page with a toy engine of
+its own: a Civ AI is picked for each half, from the strip and from the head
+of its lane, both are played to a turn linked and then separate, each half
+and then both are moved by the lanes in the host's bar, and the test reads
+which Civ AI each half's steps named, the numbers set side by side, a copy,
+and the half that is kept. A control added to the bar or the strip is added
+there.
+
+## The bar
+
+The bar is fixed across the top of the window at its full width. The page
+stands beneath it: the bar's height is measured and published as `--dbg-top`,
+the body is padded by that much, and the map is fitted again whenever it
+changes. A watched game has no bar and is not moved.
+
+The tools are the top row: where to go, what to play, and the panels. Their
+words are shown while the tools fit on one row with them, and only their signs
+when they do not. What the bar has to say (why a run stopped, what the Civ AI
+just did) stands at the end of that row when there is room left for it, and
+under the bar when there is not.
+
+The timeline is the row under them, and it is the whole game: turn 1 at the
+left end and the game's turn limit at the right, 250 turns when the game does
+not say, and 50 more at a time for a game played on past its limit. On it:
+
+- a gold band over the turns that were played. When turns have been thinned
+  to make room the band dims and the turns still kept stand out on it;
+- the open turn, as a pill with its number. Dragging it, or clicking anywhere
+  on the timeline, goes to that turn: a turn that was played is put back as it
+  stood, and a turn still ahead is played to by the seat's Civ AI from the
+  turn that is open. While it plays, the stretch still to go is hatched;
+- save points as flags along the top edge and turn breakpoints as red marks
+  along the bottom, each to click;
+- under the pointer, the turn there and what letting go would do: "play to
+  here", "play on from turn 7 to here" when the open turn is behind the last
+  one played (the turns after it are played over), or the turn a thinned one
+  would land on.
 
 ## The timeline
 
@@ -55,15 +91,17 @@ do not carry, so the replay would be another world.
 | ⏮ | `jump` to the first mark | Go to where the timeline begins |
 | ◀ | `back` | The top of this turn if you have acted in it, otherwise the turn before |
 | ↶ (`Ctrl`/`Cmd`+`Z`) | `undo` | Take back your last action this turn |
-| slider | `jump` | Go to any turn that was played; a turn that is no longer kept answers with the nearest one before it, and the bar says so. The mouse wheel over it walks one played turn at a time |
-| turn box | `jump`, or `step` repeated | Go to a turn by its number. One already played is put back as it stood. One still ahead is played to by the seat's Civ AI, stopping early if a breakpoint does. Up and down in the box walk one played turn. The box also opens the timeline panel: the slider again at a width a long game can be read on, with the save points and the breakpoint turns marked on it and listed to pick from, and how many of the played turns are still kept. `Esc` closes it |
+| timeline | `jump`, or `step` repeated | Go to any turn of the game. One that was played is put back as it stood; one that is no longer kept answers with the nearest before it, and the bar says so. One still ahead is played to by the seat's Civ AI, stopping early if a breakpoint does. The mouse wheel over it walks one played turn at a time, and the arrow keys move it a turn |
+| turn box | `jump`, or `step` repeated | Go to a turn by its number, the same way. Up and down in the box walk one played turn. Beside the tools the bar says which turns were played and how many are still kept |
 | ▶ | `forward` | Forward along turns already played, without playing anything |
+| ⏭ | `jump` to the last mark | Go to the last turn that was played |
 | ▸ | `step_action` | Step in: the seat's Civ AI takes its next action, and ends the turn when it has none left |
 | ▸\| | `step_seat` | Step one seat: end your turn as it stands, then one civilization's turn at a time |
 | ▶\| | `step` | The seat's Civ AI plays one whole turn |
 | ▶▶ Run | `step`, repeated | Play turns until a breakpoint stops it, or Stop |
+| Civ AI | | Which Civ AI plays the seat when a turn is stepped, run or played to. It is the page's own picker (`#autoplaystrategy`), shown beside Run |
 | ◉ | `reveal` | Show the whole map and every civilization, not only what the seat can see |
-| ⚑ | `save_point`, `goto_save`, `drop_save` | Save points: keep this world to come back to, go to one, or let one go. Each stands over the slider as a flag at its turn; clicking the flag goes there |
+| ⚑ | `save_point`, `goto_save`, `drop_save` | Save points: keep this world to come back to, go to one, or let one go. Each stands on the timeline as a flag at its turn; clicking the flag goes there |
 | ⚑ | `POST /save`, `POST /load` | Saves, in the same panel: keep this turn on the device under a name, or load one that was kept |
 | Split | | Two simulators from this turn; see below |
 
@@ -100,7 +138,7 @@ left is kept as a save point called "Where you were", unless it is a save
 point already, so going back is the same operation.
 
 In the bar they are under ⚑: a name and "Save point" to set one, and a list
-to go to one or let it go. Each also stands over the slider as a flag at its
+to go to one or let it go. Each also stands on the timeline as a flag at its
 turn, gold for one that was set and grey for "Where you were".
 
 Save points last as long as the page is open. What is to be kept longer is a
@@ -227,6 +265,9 @@ not a turn ago. One that stays true does not stop every turn after.
 The stop is reported on `state.debug.stopped` and in the bar, with a Show
 button when the event has a place on the map.
 
+A listed turn stands on the timeline as a red mark. Clicking it goes to that
+turn: back to it if it was played, and on to it if it is still ahead.
+
 ## Split screen
 
 Split puts two simulators in one window, side by side or one above the other.
@@ -254,6 +295,16 @@ A half names itself in its address (`?pane=a-<split>`):
 Only requests that read or change a world are answered from a half's
 session. A new split replaces the sessions of the one before it.
 
+The bar of the page that was split stays across the top of the window, over
+both halves, and its timeline becomes two lanes, A and B. Each lane is that
+half's history: gold up to the turn of the split, the half's own colour from
+there, and the half's open turn as its pill. A lane is the hand on its half,
+and on both halves while they are linked. Letting go of it on a turn every
+half concerned has played walks them there; on a turn ahead of any of them it
+plays them there, each with its own Civ AI. At the head of each lane is the
+Civ AI that half seats, to pick there. A half's own bar has the tools for its
+world and neither a timeline nor a picker: the host has both.
+
 The strip between the halves holds the split's own controls:
 
 | Control | What it does |
@@ -274,7 +325,8 @@ halves that have drifted apart brings B to A's turn.
 Head to head is the split used to play two strategies out from one turn. VS
 in the strip, or "Head to head" in the Split panel, widens the strip to hold:
 
-- a Civ AI for each half. It is the agent that plays that half's seat
+- a Civ AI for each half, the same choice that stands at the head of the
+  half's lane in the bar. It is the agent that plays that half's seat
   whenever the half is stepped or run; each half is a session of its own, so
   nothing in the engine is shared between the two choices.
 - the two seats' numbers side by side, A then B, with the larger in gold:
