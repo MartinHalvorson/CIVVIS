@@ -524,6 +524,7 @@ static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(||
     page.push_str(EMBEDDED_APP_SETUP_JS);
     page.push_str(EMBEDDED_APP_MOMENTS_JS);
     page.push_str(EMBEDDED_APP_FRONTDOOR_JS);
+    page.push_str(EMBEDDED_APP_DEBUGGER_JS);
     page
 });
 const EMBEDDED_APP_ARENA_JS: &str = include_str!("../web/assets/app_arena.js");
@@ -531,6 +532,7 @@ const EMBEDDED_APP_LAUNCHES_JS: &str = include_str!("../web/assets/app_launches.
 const EMBEDDED_APP_SETUP_JS: &str = include_str!("../web/assets/app_setup.js");
 const EMBEDDED_APP_FRONTDOOR_JS: &str = include_str!("../web/assets/app_frontdoor.js");
 const EMBEDDED_APP_MOMENTS_JS: &str = include_str!("../web/assets/app_moments.js");
+const EMBEDDED_APP_DEBUGGER_JS: &str = include_str!("../web/assets/app_debugger.js");
 const EMBEDDED_FEATURE_ATLAS: &[u8] = include_bytes!("../web/assets/feature-atlas.png");
 const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
     include_bytes!("../web/assets/environment-feature-atlas.png");
@@ -3416,6 +3418,7 @@ const APP_JS_TAG: &str = r#"<script src="/assets/app.js"></script>"#;
 const APP_SETUP_JS_TAG: &str = r#"<script src="/assets/app_setup.js"></script>"#;
 const APP_FRONTDOOR_JS_TAG: &str = r#"<script src="/assets/app_frontdoor.js"></script>"#;
 const APP_MOMENTS_JS_TAG: &str = r#"<script src="/assets/app_moments.js"></script>"#;
+const APP_DEBUGGER_JS_TAG: &str = r#"<script src="/assets/app_debugger.js"></script>"#;
 
 /// Give each native server's application scripts a new URL.
 ///
@@ -3435,6 +3438,8 @@ fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
         format!(r#"<script src="/assets/app_frontdoor.js?instance={instance}"></script>"#);
     let moments_tag =
         format!(r#"<script src="/assets/app_moments.js?instance={instance}"></script>"#);
+    let debugger_tag =
+        format!(r#"<script src="/assets/app_debugger.js?instance={instance}"></script>"#);
     page.replacen(APP_PALETTE_JS_TAG, &palette_tag, 1)
         .replacen(APP_ARENA_JS_TAG, &arena_tag, 1)
         .replacen(APP_LAUNCHES_JS_TAG, &launches_tag, 1)
@@ -3442,6 +3447,7 @@ fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
         .replacen(APP_SETUP_JS_TAG, &setup_tag, 1)
         .replacen(APP_FRONTDOOR_JS_TAG, &frontdoor_tag, 1)
         .replacen(APP_MOMENTS_JS_TAG, &moments_tag, 1)
+        .replacen(APP_DEBUGGER_JS_TAG, &debugger_tag, 1)
         .into_bytes()
 }
 
@@ -3485,6 +3491,11 @@ fn app_launches_js() -> Vec<u8> {
 fn app_moments_js() -> Vec<u8> {
     std::fs::read("web/assets/app_moments.js")
         .unwrap_or_else(|_| EMBEDDED_APP_MOMENTS_JS.as_bytes().to_vec())
+}
+
+fn app_debugger_js() -> Vec<u8> {
+    std::fs::read("web/assets/app_debugger.js")
+        .unwrap_or_else(|_| EMBEDDED_APP_DEBUGGER_JS.as_bytes().to_vec())
 }
 
 fn app_frontdoor_js() -> Vec<u8> {
@@ -4929,6 +4940,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 "200 OK",
                 "text/javascript; charset=utf-8",
                 &app_setup_js(),
+            );
+        }
+        ("GET", "/assets/app_debugger.js") => {
+            respond(
+                stream,
+                "200 OK",
+                "text/javascript; charset=utf-8",
+                &app_debugger_js(),
             );
         }
         ("GET", "/assets/app_moments.js") => {

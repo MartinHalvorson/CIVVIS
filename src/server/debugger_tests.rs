@@ -1,5 +1,7 @@
 //! What the simulator debugger promises about a played game's timeline.
 
+use std::collections::BTreeSet;
+
 use serde_json::{json, Value};
 
 use super::super::{stock_opening_params, Session};
@@ -219,4 +221,45 @@ fn both_front_ends_serve_the_debugger() {
     assert!(include_str!("../wasm.rs").contains("(\"POST\", \"/debug\")"));
     assert!(include_str!("../server.rs").contains("(\"POST\", \"/debug\")"));
     assert!(include_str!("../../beta/shim.js").contains("\"/debug\""));
+}
+
+#[test]
+fn the_page_loads_the_bar_and_sends_only_operations_the_engine_answers() {
+    let page = super::super::EMBEDDED_INDEX_HTML;
+    let door = page.find("/assets/app_frontdoor.js").unwrap();
+    let bar = page.find("/assets/app_debugger.js").unwrap();
+    assert!(door < bar, "the bar reads what every other script declares");
+    let served = String::from_utf8(super::super::index_with_app_instance(page, 7)).unwrap();
+    assert!(served.contains(r#"<script src="/assets/app_debugger.js?instance=7"></script>"#));
+    let script = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    assert!(script.starts_with("\"use strict\";"));
+
+    // Read the operations out of the script and put each to the engine, so
+    // one renamed on either side fails here and not in somebody's browser.
+    let mut session = played();
+    let mut rest = script;
+    let mut sent = BTreeSet::new();
+    while let Some(at) = rest.find("op: \"") {
+        rest = &rest[at + 5..];
+        let op = &rest[..rest.find('"').expect("a closed string")];
+        let answer = session.debug(&json!({"op": op}));
+        let refused = answer["error"].as_str().unwrap_or("");
+        assert!(
+            !refused.starts_with("no debugger operation"),
+            "{op}: {refused}"
+        );
+        sent.insert(op.to_string());
+    }
+    for op in [
+        "back",
+        "forward",
+        "jump",
+        "undo",
+        "step",
+        "assist",
+        "layers",
+        "breakpoints",
+    ] {
+        assert!(sent.contains(op), "the bar never sends {op}");
+    }
 }

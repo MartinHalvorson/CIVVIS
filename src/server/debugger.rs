@@ -207,6 +207,8 @@ impl Breakpoints {
             "phrases": self.phrases,
             "important": self.important,
             "every_seat": self.every_seat,
+            // The vocabulary a page offers, read from the engine's own list.
+            "known_categories": crate::game::EVENT_CATEGORIES,
         })
     }
 
@@ -343,12 +345,12 @@ impl Timeline {
 }
 
 /// The events a step added to a log that is trimmed from its front.
-fn fresh_events(
+fn fresh_events<'a>(
     before_len: usize,
     before_last: Option<&Event>,
     turn: u32,
-    now: &[Event],
-) -> &[Event] {
+    now: &'a [Event],
+) -> &'a [Event] {
     let same = |a: &Event, b: &Event| a.turn == b.turn && a.player == b.player && a.text == b.text;
     let Some(last) = before_last else {
         return now;
