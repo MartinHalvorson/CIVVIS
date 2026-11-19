@@ -2024,6 +2024,37 @@ def deal_session_quarantine(text: str) -> str:
     return f"{int(player)}:{int(turn)}"
 
 
+#: Victory types the host policy switches off at setup, comma-separated
+#: (operator 2026-11-19 ~00:53Z: "tilt harder towards science and culture
+#: wins please. we can turn off diplo in the games"). The Create Game screen
+#: is driven by the configuration database (CivvisControlConfig.xml: the
+#: FrontEnd Lua hook never runs on this install), and the shipped
+#: `VictoryUpdates` query enables exactly the `Victories` rows with
+#: `EnabledByDefault = 1` when the ruleset is chosen, so `install.py` renders
+#: one `EnabledByDefault = 0` update per named type. Unset or empty = every
+#: victory as shipped.
+VICTORIES_OFF_POLICY_KEY = "CIVVIS_VICTORIES_OFF"
+VICTORY_TYPES = ("VICTORY_TECHNOLOGY", "VICTORY_CULTURE", "VICTORY_RELIGIOUS",
+                 "VICTORY_DIPLOMATIC", "VICTORY_CONQUEST", "VICTORY_SCORE")
+
+
+def parse_victories_off(value: str | None) -> list[str]:
+    """The victory types a policy value switches off, in the shipped order."""
+    if not value:
+        return []
+    named = {part.strip().upper() for part in value.split(",") if part.strip()}
+    unknown = sorted(named - set(VICTORY_TYPES))
+    if unknown:
+        print(f"[policy] ignoring {VICTORIES_OFF_POLICY_KEY} entries {unknown}: "
+              f"not one of {', '.join(VICTORY_TYPES)}", flush=True)
+    return [victory for victory in VICTORY_TYPES if victory in named]
+
+
+def victories_off_policy(path: Path | None = None) -> list[str]:
+    """The policy's victory types to switch off; [] when unset."""
+    return parse_victories_off(read_policy_value(VICTORIES_OFF_POLICY_KEY, path))
+
+
 def build_config(args: argparse.Namespace) -> dict:
     dialogue_seconds = getattr(args, "dialogue_seconds", 0.25)
     if dialogue_seconds is None:
@@ -2066,6 +2097,8 @@ def build_config(args: argparse.Namespace) -> dict:
         # Explicit, every run, so a mode can never be inherited from whatever
         # was last configured on this installation. See GAME_MODES.
         "GameModes": {mode: mode in set(args.game_mode) for mode in GAME_MODES},
+        # `CIVVIS_VICTORIES_OFF`: victory types off at setup (rendered by install.py).
+        "VictoriesOff": list(getattr(args, "victories_off", None) or []),
         "CityTarget": args.city_target,
         # Domination on a Duel map is the only victory reachable inside a
         # hundred-odd turns — an unassisted science win lands past turn 900 —
@@ -6607,6 +6640,10 @@ def play(args: argparse.Namespace) -> int:
                   "rival's techs or more: a level game plays on", flush=True)
     # Lane rule 2026-11-17: see `science_out_of_reach_reading`. Off unless the
     # host policy file names a share; `_play` reads both from `args`.
+    args.victories_off = victories_off_policy()
+    if args.victories_off:
+        print(f"[policy] victory types switched off at setup: {', '.join(args.victories_off)} "
+              "(operator 2026-11-19: tilt towards science and culture wins)", flush=True)
     science_behind = science_behind_policy()
     science_behind_from = science_behind_from_turn_policy()
     args.restart_science_behind_techs = science_behind
