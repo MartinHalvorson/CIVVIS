@@ -270,8 +270,9 @@ fn culture_controller(gene: bool) -> AdvancedAi {
     ai
 }
 
-/// `empire` with Drama and Poetry and Humanism known, a Theater Square in
-/// the cities ranked `theaters` and its Amphitheater in those ranked
+/// `empire` grown to seven citizens (three district slots, housing to
+/// spare), with Drama and Poetry and Humanism known, a Theater Square in the
+/// cities ranked `theaters` and its Amphitheater in those ranked
 /// `amphitheaters`.
 fn culture_empire(
     tag: &str,
@@ -280,6 +281,14 @@ fn culture_empire(
     amphitheaters: &[usize],
 ) -> (Game, Vec<u32>) {
     let (mut game, ranked) = empire(tag, head);
+    for cid in &ranked {
+        game.cities.get_mut(cid).unwrap().pop = 7;
+        let adjustments = std::sync::Arc::make_mut(&mut game.observed_city_housing_adjustments);
+        adjustments.remove(cid);
+        let housing = game.city_housing(&game.cities[cid]);
+        std::sync::Arc::make_mut(&mut game.observed_city_housing_adjustments)
+            .insert(*cid, 12.0 - housing);
+    }
     for civic in ["drama_poetry", "humanism"] {
         game.players[0].civics.insert(Name::new(civic));
     }
@@ -332,8 +341,8 @@ fn a_culture_seat_claims_its_trade_district_after_the_amphitheater() {
     }
     let after = heads(&game, &ranked);
     assert_eq!(trade_districts(&game, &after), open, "{after:?}");
-    for rank in 3..ranked.len() {
-        assert_eq!(after[rank], Some(soldier.clone()), "rank {rank}");
+    for (rank, head) in after.iter().enumerate().skip(3) {
+        assert_eq!(head.as_ref(), Some(&soldier), "rank {rank}");
     }
 }
 
@@ -345,17 +354,14 @@ fn a_culture_seat_claims_its_trade_district_after_the_amphitheater() {
 fn a_culture_seats_market_never_passes_a_theater_head() {
     let (mut game, ranked) =
         culture_empire("CULTURETRADEMARKET", &building("university"), &[1, 2], &[2]);
-    let theater_site = game
-        .district_sites(ranked[3], Name::new("theater_square"))
-        .into_iter()
-        .next()
-        .expect("a Theater Square site");
+    // A Theater Square head nothing is invested in (its plot does not
+    // matter to the queue rules).
     let theater = Item::District {
         district: Name::new("theater_square"),
-        pos: theater_site,
+        pos: game.cities[&ranked[3]].pos,
     };
-    for rank in 0..5 {
-        install_test_district(&mut game, ranked[rank], "commercial_hub");
+    for cid in &ranked[..5] {
+        install_test_district(&mut game, *cid, "commercial_hub");
     }
     game.cities.get_mut(&ranked[1]).unwrap().queue = vec![building("amphitheater")];
     game.cities.get_mut(&ranked[2]).unwrap().queue = vec![building("art_museum")];
@@ -376,9 +382,9 @@ fn a_culture_seats_market_never_passes_a_theater_head() {
     let mut board = game.clone();
     controller(VictoryTarget::Science, true).claim_trade_district(&mut board, 0, &plan());
     let after = heads(&board, &ranked);
-    for rank in 0..4 {
+    for (rank, head) in after.iter().enumerate().take(4) {
         assert_eq!(
-            after[rank],
+            *head,
             Some(building("market")),
             "Science rank {rank}: {after:?}"
         );
