@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Drive the Sim debugger's bar in a real browser against a toy engine.
+"""Drive the Sim debugger's bar and split in a real browser against a toy engine.
 
 `web/assets/app_debugger.js` is loaded as it ships, on a page that stands in
 for the viewer (the handful of globals the bar reads) and an engine that
 stands in for `POST /debug` (a turn counter with marks, save points and turn
 breakpoints). Nothing here plays a game: what is checked is the wiring, that
 each control sends the operation it is for and that the bar shows the answer.
+
+A split is the same page twice more, in frames, so each half gets a toy engine
+of its own, started from the host's. The toy's score rises faster under one
+Civ AI than the other, which is all it takes to see that each half's steps
+carry its own.
 
 Why this exists: on 2026-11-19 the bar's slider stopped doing anything. Its
 handler drew the bar before reading where the slider had been dragged to, and
@@ -70,11 +75,19 @@ async function send() { return state; }
 window.requestAnimationFrame = drawn => setTimeout(drawn, 0);
 
 // ---- a toy engine: one line of turns, each kept
-const engine = {turn: 1, marks: [1], saves: [], ids: 0, breaks: [], line: null, stopped: null, sent: []};
+const engine = {turn: 1, marks: [1], saves: [], ids: 0, breaks: [], line: null, stopped: null, score: 0, sent: []};
+// Another frame's engine as it stands, for a half that is copied or kept:
+// everything but the record of what this frame's own page sent.
+function engineOf(frames, pane) {
+  const frame = [...frames].find(held => held.src.includes(`pane=${pane}`));
+  const {sent, ...world} = JSON.parse(JSON.stringify(frame.contentWindow.eval("engine")));
+  return world;
+}
 function engineState(error = null) {
   const marks = engine.marks;
   return {error, turn: engine.turn, current: 0, units: [], cities: [],
-    players: [{id: 0, civ: "rome", score: 1, cities: 1, population: 1, military: 1, yields: {}}],
+    players: [{id: 0, civ: "rome", score: engine.score, cities: 1, population: 1, military: 1,
+      yields: {science: 1, culture: 1, gold: 1, faith: 0}}],
     debug: {turn: engine.turn, turns: [...marks], first: marks[0], last: marks[marks.length - 1],
       acted: 0, can_undo: false, can_back: engine.turn > marks[0], can_forward: engine.turn < marks[marks.length - 1],
       breakpoints: {turns: [...engine.breaks], categories: [], phrases: [], conditions: [], important: false,
@@ -93,6 +106,8 @@ async function fetchJSON(path, init = {}) {
   let error = null;
   if (body.op === "step") {
     engine.turn += 1;
+    // Which Civ AI plays the seat is the one thing that tells two halves apart.
+    engine.score += body.strategy === "stock" ? 2 : 1;
     engine.marks = marks.filter(turn => turn < engine.turn).concat(engine.turn);
     if (engine.breaks.includes(engine.turn)) engine.stopped = {kind: "turn", turn: engine.turn};
   } else if (body.op === "jump") {
@@ -114,11 +129,34 @@ async function fetchJSON(path, init = {}) {
     engine.breaks = body.turns || [];
   } else if (body.op === "room") {
     engine.line = body.megabytes;
+  } else if (body.op === "copy") {
+    Object.assign(engine, engineOf(window.parent.document.querySelectorAll("iframe"), body.from));
+  } else if (body.op === "adopt") {
+    Object.assign(engine, engineOf(document.querySelectorAll("iframe"), body.pane));
   }
   return engineState(error);
 }
+
+// ---- the bar's script, and a half of a split
+// A half starts on its host's world. The real page fetches that through the
+// host's engine; here the half takes the toy engine as the host's stands.
+const pane = window.parent !== window && new URLSearchParams(location.search).get("pane");
+const barScript = document.createElement("script");
+barScript.src = "app_debugger.js";
+if (!pane) document.body.appendChild(barScript);
+else {
+  const {sent, ...world} = JSON.parse(JSON.stringify(window.parent.eval("engine")));
+  Object.assign(engine, world);
+  if (window.parent.eval("typeof lateScript !== 'undefined' && lateScript")) {
+    // The first state is on the table before the bar's script has arrived.
+    state = engineState();
+    setTimeout(() => document.body.appendChild(barScript), 300);
+  } else {
+    barScript.onload = () => render(engineState());
+    document.body.appendChild(barScript);
+  }
+}
 </script>
-<script src="app_debugger.js"></script>
 </body></html>
 """
 
@@ -275,6 +313,80 @@ def check_the_bar(bar: Bar) -> None:
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
+def check_the_split(bar: Bar) -> None:
+    """Head to head: two halves, a Civ AI each, played to a turn and compared."""
+    half = "debugSplit.panes.{}.frame.contentWindow.eval({})".format
+    ops = lambda letter: bar.ev(half(letter, json.dumps(
+        "engine.sent.filter(call => call.path === '/debug').map(call => [call.body.op, call.body.strategy])")))
+    reported = ("debugSplit && ['a', 'b'].every(letter => debugSplit.panes[letter].turn === {} "
+                "&& debugSplit.panes[letter].numbers)").format
+
+    start = bar.ev("state.turn")
+    bar.click('[data-dbg-pop="split"]')
+    bar.click('[data-dbg="split-versus"]')
+    bar.until(reported(start), "both halves say where they stand")
+    assert bar.ev("debugSplit.versus && !debugSplit.host.querySelector('[data-dbg-versus]').hidden")
+    assert bar.ev("[...debugSplit.host.querySelector('[data-dbg-strategy=\"b\"]').options].map(o => o.value)") \
+        == ["jack", "stock"], "the pickers offer what the page's own picker lists"
+
+    # A Civ AI of its own for B, told to the half.
+    bar.ev("(() => { const select = debugSplit.host.querySelector('[data-dbg-strategy=\"b\"]'); select.value = 'stock';"
+           " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    bar.until(half("b", "'debugStrategy()'") + " === 'stock'", "B is told which Civ AI plays its seat")
+    assert bar.ev(half("a", "'debugStrategy()'")) == "jack"
+
+    # Linked: A is run to the turn and B follows it turn by turn, each with
+    # its own Civ AI on every step.
+    def play_both_to(turn: int) -> None:
+        bar.ev(f"debugSplit.host.querySelector('[data-dbg-until]').value = '{turn}', true")
+        bar.click('[data-dbg-split="versus-run"]')
+        bar.until(f"debugSplit.running === 0 && debugSplit.panes.a.turn === {turn} && debugSplit.panes.b.turn === {turn}"
+                  f" && debugSplit.history.a.has({turn}) && debugSplit.history.b.has({turn})",
+                  f"both halves are played to turn {turn}")
+
+    play_both_to(start + 4)
+    assert ops("a") == [["step", "jack"]] * 4, ops("a")
+    assert ops("b") == [["step", "stock"]] * 4, ops("b")
+    scores = bar.ev("[debugSplit.panes.a.numbers.score, debugSplit.panes.b.numbers.score]")
+    assert scores[1] - scores[0] == 4, scores
+    # The numbers are set side by side with the larger marked, and charted
+    # from the turn of the split.
+    score = bar.ev("[...debugSplit.host.querySelectorAll('[data-dbg-stat=\"score\"] b')].map(b => [b.textContent, b.className])")
+    assert score == [[str(scores[0]), ""], [str(scores[1]), "lead"]], score
+    assert bar.ev("[debugSplit.history.a.size, debugSplit.history.b.size]") == [5, 5]
+    assert bar.ev("Math.min(...debugSplit.history.a.keys())") == start
+
+    # Separate: each half is run by itself.
+    bar.click('[data-dbg-split="link"]')
+    assert bar.ev("debugSplit.linked") is False
+    play_both_to(start + 6)
+    assert ops("a")[4:] == [["step", "jack"]] * 2 and ops("b")[4:] == [["step", "stock"]] * 2, (ops("a"), ops("b"))
+
+    # A -> B makes B a copy of A, its line in the chart included.
+    bar.click('[data-dbg-split="copy-a"]')
+    bar.until("debugSplit.panes.b.numbers.score === debugSplit.panes.a.numbers.score", "B becomes a copy of A")
+    assert ops("b")[-1][0] == "copy", ops("b")
+
+    # Keep B: the split closes and the host plays on from that half.
+    kept = bar.ev("debugSplit.panes.b.id")
+    bar.forget()
+    bar.click('[data-dbg-split="keep-b"]')
+    bar.until("!debugSplit", "the split closes")
+    assert bar.sent() == [{"op": "adopt", "pane": kept}], bar.sent()
+    assert bar.ev("state.turn") == start + 6
+    assert bar.note() == "Playing on from simulator B", bar.note()
+
+    # A half that drew its first state before the bar's script arrived still
+    # says where it stands. (It used to say nothing until something moved.)
+    bar.ev("window.lateScript = true")
+    bar.click('[data-dbg-pop="split"]')
+    bar.click('[data-dbg="split-row"]')
+    bar.until(reported(start + 6), "a half whose script came late still reports")
+    bar.click('[data-dbg-split="keep-a"]')
+    bar.until("!debugSplit", "the second split closes")
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+
 def main() -> int:
     here = pathlib.Path(__file__).resolve().parent
     stage = pathlib.Path(tempfile.mkdtemp(prefix="civvis-debugger-"))
@@ -335,6 +447,9 @@ def main() -> int:
         check_the_bar(bar)
         print("the debugger bar sends what each control is for: the turn box, both sliders, "
               "the wheel, save points and their flags, a breakpoint picked from the timeline.")
+        check_the_split(bar)
+        print("the split seats a Civ AI in each half, plays both to a turn linked and separate, "
+              "sets their numbers side by side, copies, keeps, and hears a half whose script came late.")
         return 0
     finally:
         chrome.terminate()
