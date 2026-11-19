@@ -11009,6 +11009,16 @@ pub struct AdvancedAi {
     /// paid from the whole treasury. See
     /// `advanced/tribute_buys_the_friendship.rs`. Off by default.
     tribute_buys_the_friendship_2: bool,
+    /// `threatened-capital-trains-its-shooters`: while a power at war with
+    /// us stands a land soldier within three tiles of the original capital
+    /// (or an engine within four), the capital's queue head is its best land
+    /// shooter until three of ours stand within two tiles, then its next wall
+    /// tier. See `advanced/threatened_capital_trains_its_shooters.rs`. Off by
+    /// default.
+    threatened_capital_trains_its_shooters: bool,
+    /// The turn `threatened-capital-trains-its-shooters` last read an enemy
+    /// at the original capital's door.
+    threatened_capital_seen: Option<u32>,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -12461,6 +12471,10 @@ mod stalled_settler_site;
 /// idle-queue claims. See
 /// `advanced/the_worked_backlog_gets_its_builder_first.rs`.
 mod the_worked_backlog_gets_its_builder_first;
+/// `threatened-capital-trains-its-shooters`: the original capital trains
+/// shooters, then walls, while an enemy at war stands at its door. See
+/// `advanced/threatened_capital_trains_its_shooters.rs`.
+mod threatened_capital_trains_its_shooters;
 /// `threatened-city-buys-its-defender`: the plan's threatened city buys
 /// its land defender while its menu sells one. See
 /// `advanced/threatened_city_purchase.rs`.
@@ -13237,6 +13251,9 @@ impl AdvancedAi {
         // `capital-walls-before-the-surprise`: the watched majors' soldiers
         // near the original capital, from the same turn-start frame.
         self.remember_capital_watch_sightings(g, pid);
+        // `threatened-capital-trains-its-shooters`: the enemy at the capital's
+        // door, from the same frame. No-op with the gene off.
+        self.remember_threatened_capital(g, pid);
         self.remember_frontier_watch_sightings(g, pid);
         // `surprise-watch-holds-its-ratio`: see `advanced/surprise_watch_latch.rs`.
         self.remember_surprise_watch_latches(g, pid);
@@ -27894,6 +27911,12 @@ impl AdvancedAi {
             &wall_breaker_claims,
             confirmed_defense_queue.as_ref(),
         );
+        // `threatened-capital-trains-its-shooters`: the original capital's
+        // shooter or walls while an enemy at war stands at its door, after
+        // every writer above, the wall-breaker restore included. Exact no-op
+        // while the gene is off. See
+        // `advanced/threatened_capital_trains_its_shooters.rs`.
+        self.claim_threatened_capital_shooters(g, pid);
         // `score-seat-plays-for-points`: observes the queues every writer
         // above has settled and journals what the gene changed. Exact no-op
         // off. See `advanced/score_seat.rs`.

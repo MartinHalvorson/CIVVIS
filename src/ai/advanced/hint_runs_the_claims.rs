@@ -391,6 +391,8 @@ impl AdvancedAi {
         self.claim_frontier_walls_before_the_surprise(g, pid);
         self.mobilize_surprise_defense_production(g, pid);
         self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
+        // `threatened-capital-trains-its-shooters`: no-op with the gene off.
+        self.claim_threatened_capital_shooters(g, pid);
     }
 
     /// Whether the city a hint is for stands in the war's reach: hit within
