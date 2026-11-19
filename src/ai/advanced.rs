@@ -7094,6 +7094,12 @@ pub struct AdvancedAi {
     /// Faith above its reserve once a slot stands or is being built. See
     /// `advanced/culture_faith_patronizes_the_creators.rs`. Off by default.
     culture_faith_patronizes_the_creators: bool,
+    /// `culture-trade-district-follows-the-theater`: the Culture seat's
+    /// `trade-district-follows-the-campus` — a calm city's Market or
+    /// Lighthouse, then a Commercial Hub or Harbor once its Theater Square
+    /// and Amphitheater stand, never ahead of a Theater building. See
+    /// `advanced/trade_district_follows_the_campus.rs`. Off by default.
+    culture_trade_district_follows_the_theater: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
