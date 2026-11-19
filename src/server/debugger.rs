@@ -19,6 +19,9 @@
 //!   turn.
 //! * **reveal** lifts the fog from what the page is shown. The seat still
 //!   plays by its own rules; only the observation changes.
+//! * **step seat** takes the round apart instead: the seat's turn ends, and
+//!   then each civilization, city-state and the barbarians play one at a
+//!   time, with the world shown between them.
 //! * **layers** are the rungs between playing every decision by hand and
 //!   handing the seat over: research, cities, the empire's standing choices,
 //!   diplomacy, units. The agent plans the turn on a copy of the world, and
@@ -49,7 +52,8 @@ use serde_json::{json, Value};
 use super::Session;
 use crate::game::{Action, Event, Game};
 
-/// The newest marks are kept one a turn, whatever else has to go.
+/// The newest marks are kept one a turn when older ones have to go, for as
+/// long as there is room for twice as many.
 const DENSE_MARKS: usize = 60;
 /// Breakpoint phrases a page may hold at once.
 const MAX_PHRASES: usize = 16;
@@ -462,13 +466,16 @@ impl Breakpoints {
 /// six-seat game when this was measured, so this many is about the ceiling of
 /// what a long game should be allowed to keep.
 const ROOMY_MARKS: usize = 480;
-/// However little room there is, a turn divisible by this keeps its mark.
-const COARSEST_STRIDE: u32 = 8;
+/// The coarsest the older turns are thinned to before the oldest simply go.
+const COARSEST_STRIDE: u32 = 64;
+/// The fewest marks a timeline is squeezed to.
+const MIN_MARKS: usize = 12;
 /// Memory in use past which the marks start giving room back, unless the
 /// page names another line (`room`).
 const MEMORY_LINE: usize = 1 << 30;
-/// Past the line, each further growth by this much takes room away again.
-const MEMORY_STEP: usize = 32 << 20;
+/// Past the line, each further growth by the line over this many takes room
+/// away again: 32 MB at 1 GB.
+const MEMORY_STEPS: usize = 32;
 /// Save points a timeline holds at once.
 const MAX_SAVE_POINTS: usize = 32;
 /// The longest name a save point is given.
@@ -604,46 +611,62 @@ impl Timeline {
 
     /// How many marks may be kept.
     fn room(&self) -> usize {
-        self.room.unwrap_or(ROOMY_MARKS).max(DENSE_MARKS)
+        self.room.unwrap_or(ROOMY_MARKS).max(MIN_MARKS)
     }
 
     /// Hear how much memory is in use. Past the line, the room becomes a
-    /// tenth less than what is held, and again each time the memory has grown
+    /// fifth less than what is held, and again each time the memory has grown
     /// by another step: memory that only grows cannot say that it was given
     /// back, so the growing is what is listened to.
+    ///
+    /// It goes on down to `MIN_MARKS`, well below the newest `DENSE_MARKS`.
+    /// A floor that kept those whole did not hold the memory: late marks are
+    /// larger than the early ones they replace, so the same number of marks
+    /// kept growing (measured, `docs/SIM_DEBUGGER.md`). Few turns to go back
+    /// to are worth more than a tab that has run out of memory.
     fn squeeze(&mut self, in_use: usize) {
         let line = self.memory_line.unwrap_or(MEMORY_LINE);
-        if in_use <= line || in_use < self.squeezed_at.saturating_add(MEMORY_STEP) {
+        let step = line / MEMORY_STEPS;
+        if in_use <= line || in_use < self.squeezed_at.saturating_add(step) {
             return;
         }
         self.squeezed_at = in_use;
         let held = self.marks.len().min(self.room());
-        self.room = Some((held - held / 10).max(DENSE_MARKS));
+        self.room = Some((held - held / 5).max(MIN_MARKS));
     }
 
-    /// Make room when there are more marks than there is room for.
+    /// Make room when there are more marks than there is room for. The room
+    /// is never exceeded.
     ///
-    /// The first mark and the newest `DENSE_MARKS` always stay. Between them
-    /// the oldest turns go first and the odd ones before the even, so a long
-    /// game's early turns are kept one in two, then one in four, and never
-    /// fewer than one in `COARSEST_STRIDE`.
+    /// The first mark always stays, and so do the newest `DENSE_MARKS`, or
+    /// the newest half of the room when that is fewer. Between them the
+    /// oldest turns go first and the odd ones before the even, so a long
+    /// game's early turns are kept one in two, then one in four, and so on to
+    /// one in `COARSEST_STRIDE`. If that is still too many, the oldest go.
     fn thin(&mut self) {
         if let Some(in_use) = memory_in_use() {
             self.squeeze(in_use);
         }
-        let mut over = self.marks.len().saturating_sub(self.room());
+        let room = self.room();
+        let dense = DENSE_MARKS.min(room / 2);
+        let mut over = self.marks.len().saturating_sub(room);
         let mut stride = 2;
-        while over > 0 && stride <= COARSEST_STRIDE {
-            let old = self.marks.len().saturating_sub(DENSE_MARKS);
+        while over > 0 {
+            let old = self.marks.len().saturating_sub(dense);
+            let last_pass = stride > COARSEST_STRIDE;
             let mut index = 0;
             self.marks.retain(|mark| {
-                let goes = over > 0 && index > 0 && index < old && mark.turn % stride != 0;
+                let kept_by_stride = !last_pass && mark.turn % stride == 0;
+                let goes = over > 0 && index > 0 && index < old && !kept_by_stride;
                 index += 1;
                 if goes {
                     over -= 1;
                 }
                 !goes
             });
+            if last_pass {
+                break;
+            }
             stride *= 2;
         }
     }
@@ -700,7 +723,10 @@ impl Timeline {
             "first": turns.first(),
             "last": turns.last(),
             "acted": acted,
-            "can_undo": acted > 0 && self.mark(game.turn).is_some(),
+            // Whose turn it is. Anything but the played seat is the middle of
+            // a round being stepped a seat at a time.
+            "playing": game.current,
+            "can_undo": acted > 0 && game.current == 0 && self.mark(game.turn).is_some(),
             "can_back": acted > 0 || turns.first().is_some_and(|first| *first < game.turn),
             "can_forward": turns.last().is_some_and(|last| *last > game.turn),
             "breakpoints": self.breakpoints.json(),
@@ -974,7 +1000,14 @@ impl Session {
         let before_len = self.game.events.len();
         let before_last = self.game.events.last().cloned();
         let read_before = readings(&self.game, &self.debugger.breakpoints.conditions);
-        let played = self.autoplay(1);
+        // In the middle of a round the next whole thing to play is the rest
+        // of it: the rivals finish, and the turn that opens is the person's.
+        let played = if self.debug_mid_round() {
+            self.debug_rivals_play();
+            1
+        } else {
+            self.autoplay(1)
+        };
         let fresh = fresh_events(before_len, before_last.as_ref(), turn, &self.game.events);
         let over = played == 0 || self.game.is_finished() || !self.game.players[0].alive;
         self.debugger.stopped = if over {
@@ -1025,6 +1058,52 @@ impl Session {
         self.debugger_turn_opened(true);
     }
 
+    /// Whether a round is under way: the played seat has ended its turn and
+    /// the round has not come back to it. Only `debug_step_seat` leaves the
+    /// world here; everything else plays a round through.
+    fn debug_mid_round(&self) -> bool {
+        self.game.current != 0 && !self.game.is_finished() && self.game.players[0].alive
+    }
+
+    /// Step one seat: the round, a civilization at a time.
+    ///
+    /// On the played seat's own turn this ends that turn as it stands and
+    /// stops there, before any rival has moved. After that each step plays
+    /// whoever is up, a rival, a city-state or the barbarians, with that
+    /// seat's own agent, and stops again. When the round comes back to the
+    /// played seat its next turn opens exactly as it does after an ordinary
+    /// end of turn, so a round taken apart is the same round as one taken
+    /// whole.
+    pub fn debug_step_seat(&mut self) -> Result<(), String> {
+        if self.game.is_finished() || !self.game.players[0].alive {
+            return Err("this game has no turn left to play".to_string());
+        }
+        let turn = self.game.turn;
+        let seat = self.game.current;
+        let before = self.game.log.len();
+        if seat == 0 {
+            self.game.apply(0, &Action::EndTurn)?;
+            self.debugger.plan = None;
+        } else {
+            let g = &mut self.game;
+            self.ais[seat].take_turn(g, seat);
+            if g.current == seat && !g.is_finished() {
+                let _ = g.apply(seat, &Action::EndTurn);
+            }
+        }
+        let actions = self.game.log.len() - before;
+        if self.game.current == 0 && !self.game.is_finished() {
+            self.debugger_turn_opened(true);
+        }
+        self.debugger.stepped = Some(json!({
+            "turn": turn,
+            "seat": seat,
+            "actions": actions,
+            "next": self.game.current,
+        }));
+        Ok(())
+    }
+
     /// Step in: the seat's agent takes the next action of its turn, and only
     /// that. With nothing left to do, the step ends the turn.
     ///
@@ -1038,6 +1117,11 @@ impl Session {
     /// between: an action by hand, an undo, a layer. An action the real
     /// world refuses is passed over.
     pub fn debug_step_action(&mut self) -> Result<(), String> {
+        // In the middle of a round the next thing that happens is a rival's
+        // turn, and that is the smallest step there is to take.
+        if self.debug_mid_round() {
+            return self.debug_step_seat();
+        }
         if self.game.current != 0 || self.game.is_finished() || !self.game.players[0].alive {
             return Err("this game has no turn left to play".to_string());
         }
@@ -1178,6 +1262,11 @@ impl Session {
                     Some(turn) => self.debug_jump(turn).map(|_| ()),
                     None => Err("jump needs a turn".to_string()),
                 },
+                // A rival's turn is not the seat's action to take back.
+                "undo" | "save_point" if self.debug_mid_round() => Err(
+                    "the rivals are playing; go back to the top of the turn, or let the round finish"
+                        .to_string(),
+                ),
                 "undo" => self.debug_undo().map(|_| ()),
                 "save_point" => self
                     .debug_save_point(request["name"].as_str().unwrap_or(""))
@@ -1208,6 +1297,16 @@ impl Session {
                     }
                 }
                 "step_action" => self.debug_step_action(),
+                "step_seat" => self.debug_step_seat(),
+                // The rest of a round that is being stepped a seat at a time.
+                "finish_round" => {
+                    if self.debug_mid_round() {
+                        self.debug_rivals_play();
+                        Ok(())
+                    } else {
+                        Err("no round is under way".to_string())
+                    }
+                }
                 "assist" => {
                     self.debugger.assisted = self.debug_assist();
                     Ok(())

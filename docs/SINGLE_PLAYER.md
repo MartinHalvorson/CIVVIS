@@ -18,6 +18,10 @@ The reference point is Civilization VI, because that is the game this engine
 models. Where Civ 6 and CIVVIS disagree on mechanics, `docs/MECHANICS.md` and
 `docs/FIDELITY.md` win; this file is only about how a person *drives* them.
 
+The played game is also the Sim debugger. What that adds on top of playing —
+the timeline, stepping, breakpoints, layers, save points and the split
+screen — is in `docs/SIM_DEBUGGER.md`.
+
 ## The shape of a Civ 6 turn
 
 A Civ 6 turn is a loop around one button. The player is never asked "what would

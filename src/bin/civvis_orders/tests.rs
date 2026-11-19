@@ -10630,6 +10630,52 @@ fn the_aluminum_ask_ceiling_tops_up_within_the_treasury() {
 /// `denial-spies-count-their-losses`: the ledger reads our Spy losses
 /// from the run's log as it grows, whole lines only, and starts over on a
 /// new (shorter) log.
+/// `mobilization-hears-the-declaration`: the ledger dates each surprise
+/// declaration on us by the state row it follows, keeps formal wars and
+/// declarations on others out, and starts over on a new (shorter) log.
+#[test]
+fn declaration_ledger_dates_the_surprise_by_the_row_before_it() {
+    let dir = std::env::temp_dir().join(format!(
+        "civvis-declaration-ledger-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("events.jsonl");
+    let state = |turn: u32| {
+        format!(
+            "{{\"cities\": [], \"kind\": \"state\", \"turn\": {turn}, \"unit_maintenance_discount\": 0, \"units\": []}}\n"
+        )
+    };
+    let declared = |from: i64, to: i64, statement: &str| {
+        format!(
+            "{{\"choice\": \"CHOICE_EXIT\", \"from_player\": {from}, \"kind\": \"diplomacy_choice\", \"statement\": \"{statement}\", \"to_player\": {to}}}\n"
+        )
+    };
+    std::fs::write(
+        &path,
+        format!(
+            "{}{}{}{}{}{}",
+            state(43),
+            state(43),
+            declared(1, 0, "DECLARE_SURPRISE_WAR"),
+            declared(2, 0, "DECLARE_FORMAL_WAR"),
+            declared(3, 4, "DECLARE_SURPRISE_WAR"),
+            state(44),
+        ),
+    )
+    .unwrap();
+    let mut ledger = DeclarationLedger::default();
+    ledger.refresh(&path);
+    assert_eq!(ledger.declarations, vec![(1, 0, 44), (3, 4, 44)]);
+
+    // A new run's shorter log starts the ledger over.
+    std::fs::write(&path, state(5)).unwrap();
+    ledger.refresh(&path);
+    assert!(ledger.declarations.is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn spy_loss_ledger_reads_the_log_as_it_grows() {
     use std::io::Write;
