@@ -1902,6 +1902,73 @@ fn victory_metrics_carry_researched_trees_and_every_capital() {
     }
 }
 
+/// The Domination meter is a civilization's cities out of every city on the
+/// map. The spectator counts all of them. A seat counts the empires it has
+/// met, and where a host reports an empire's size that figure stands in for
+/// the cities the seat's own board cannot see.
+#[test]
+fn domination_metric_counts_cities_against_every_city_on_the_map() {
+    let mut game = Game::new_full(3, 22, 16, 81_005, 120, 1, false);
+    // Seat 0 holds two cities, seat 1 one and seat 2 none: its settler's
+    // ground is where seat 0's second city stands.
+    for (founder, ground) in [(0, 0), (1, 1), (0, 2)] {
+        let settler_position = game
+            .player_unit_ids(ground)
+            .into_iter()
+            .find_map(|unit| {
+                let unit = &game.units[&unit];
+                (unit.kind == "settler").then_some(unit.pos)
+            })
+            .unwrap();
+        game.found_city_for(founder, settler_position, None);
+    }
+    for pid in 0..3 {
+        game.players[pid].met.clear();
+    }
+    let domination =
+        |observed: &Value, pid: usize| observed["players"][pid]["victories"]["domination"].clone();
+
+    let on_the_map = game.cities.len();
+    assert!(on_the_map >= 3);
+    let everything = observation_spectator(&game, 0);
+    for (pid, held) in [(0, 2), (1, 1), (2, 0)] {
+        assert_eq!(domination(&everything, pid)["cities"], json!(held));
+        assert_eq!(
+            domination(&everything, pid)["city_total"],
+            json!(on_the_map)
+        );
+        assert_eq!(domination(&everything, pid)["target"], json!(3));
+    }
+
+    let alone = observation(&game, 0);
+    assert_eq!(domination(&alone, 0)["cities"], json!(2));
+    assert_eq!(
+        domination(&alone, 0)["city_total"],
+        json!(2),
+        "an empire the seat has not met is on no ledger"
+    );
+
+    game.players[0].met.insert(1);
+    let met = observation(&game, 0);
+    assert_eq!(domination(&met, 1)["cities"], json!(1));
+    assert_eq!(domination(&met, 0)["city_total"], json!(3));
+
+    std::sync::Arc::make_mut(&mut game.observed_public_empire_stats).insert(
+        1,
+        crate::game::ObservedPublicEmpireStats {
+            city_count: Some(4),
+            ..Default::default()
+        },
+    );
+    let reported = observation(&game, 0);
+    assert_eq!(domination(&reported, 1)["cities"], json!(4));
+    assert_eq!(
+        domination(&reported, 0)["city_total"],
+        json!(6),
+        "the host's count of a rival's cities, not the one the board holds"
+    );
+}
+
 /// The score race ends on the turn limit rather than at a threshold, so
 /// its meter is the clock: the leader is exactly as far along as the game
 /// is, and every rival is that same distance cut by their share of the

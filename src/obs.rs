@@ -534,6 +534,21 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         .map(|player| g.team_score_rank_key(player.id).0)
         .max()
         .unwrap_or(0);
+    // What the Domination meter fills against: every city on the map, a
+    // city-state's and a free city's included. A host's public count stands in
+    // for a rival whose cities a mirrored board cannot all see, and an empire
+    // the seat has not met is on no ledger, this one included.
+    let city_total: usize = g
+        .players
+        .iter()
+        .filter(|player| omniscient || g.has_met(pid, player.id))
+        .map(|player| {
+            g.observed_public_empire_stats
+                .get(&player.id)
+                .and_then(|stats| stats.city_count)
+                .unwrap_or_else(|| g.player_city_ids(player.id).len())
+        })
+        .sum();
     // The three big arrays go in afterwards. `json!` copies whatever is named in
     // it by serializing it again, and every frame of a spectated game was paying
     // to rebuild thousands of tile, unit and city documents it had just made.
@@ -999,7 +1014,13 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                         .map(|city| g.cities[city].wonders.len())
                         .sum::<usize>()),
                 "victories": if !o.is_minor && !o.is_barbarian {
-                    Some(victory_progress_json(g, o.id, leading_score))
+                    Some(victory_progress_json(
+                        g,
+                        o.id,
+                        leading_score,
+                        city_count,
+                        city_total,
+                    ))
                 } else {
                     None
                 },
@@ -1683,7 +1704,17 @@ fn unit_move_trails_json(
 /// Public victory-screen metrics. Each progress value is normalized to
 /// 0..100 for sorting and meter width, while the underlying counts let the UI
 /// describe the actual victory requirement instead of showing a vague percent.
-fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
+///
+/// Domination is two figures: the original capitals that decide it, and the
+/// cities this civilization holds out of every city on the map, which is the
+/// meter the tracker draws.
+fn victory_progress_json(
+    g: &Game,
+    pid: usize,
+    leading_score: i64,
+    cities: usize,
+    city_total: usize,
+) -> Value {
     // The arithmetic lives on `Game` so the victory tracker and the AI read the
     // same standings; this only formats them.
     let r = g.victory_races(pid, leading_score);
@@ -1723,6 +1754,8 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
             "progress": round1(r.domination),
             "capitals": r.controlled_capitals,
             "target": r.capital_target,
+            "cities": cities,
+            "city_total": city_total,
         },
         "score": {
             "progress": round1(r.score),
