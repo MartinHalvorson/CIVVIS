@@ -291,26 +291,38 @@ fn a_fork_is_the_same_world_with_the_same_past_and_a_future_of_its_own() {
 fn the_split_speaks_one_set_of_messages_on_both_sides() {
     let page = super::super::EMBEDDED_APP_DEBUGGER_JS;
     let shim = include_str!("../../beta/shim.js");
-    // The published build's half asks its host for a world before anything else.
-    for message in ["pane-boot", "pane-world"] {
+    // On the published build a half has no engine: its shim asks the host's.
+    // The page script takes no part in that, and each side of it is the shim.
+    for message in ["pane-ask", "pane-answer"] {
         let quoted = format!("\"{message}\"");
-        assert!(page.contains(&quoted), "the host never handles {message}");
-        assert!(shim.contains(&quoted), "the shim never speaks {message}");
+        assert!(
+            shim.matches(&quoted).count() >= 2,
+            "the shim sends or hears {message}, not both"
+        );
+        assert!(!page.contains(&quoted), "{message} is the shim's");
     }
     // Everything else passes between the host and a pane inside the page
     // script: each message has a sender and a listener there.
     for message in [
         "pane-turn",
         "pane-follow",
-        "pane-save",
-        "pane-saved",
-        "pane-load",
+        "pane-copy",
+        "pane-camera",
+        "pane-look",
     ] {
         let quoted = format!("\"{message}\"");
         assert!(
             page.matches(&quoted).count() >= 2,
             "{message} is sent or heard, not both"
         );
+    }
+    // The split closes and copies through the engine, and the engine names
+    // those two operations as a split's when no half is named.
+    let mut session = played();
+    for op in ["adopt", "copy"] {
+        assert!(page.contains(&format!("op: \"{op}\"")), "{op}");
+        let refused = session.debug(&json!({"op": op}));
+        assert!(refused["error"].as_str().unwrap().contains("split"), "{op}");
     }
 }
 

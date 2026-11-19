@@ -1353,7 +1353,7 @@ pub struct Shared {
     pub session: Mutex<Session>,
     /// The split Sim debugger's two halves, each a session forked from the
     /// one above (`panes.rs`). Empty until a screen is split.
-    pub panes: panes::Panes,
+    pub panes: panes::socket::Held,
     /// A restart the viewer asked for, and the settings the live world was
     /// started from, both kept off the simulation lock for exactly the reason
     /// `current_seed` is.
@@ -4899,7 +4899,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
     // One half of a split screen has a session of its own; the requests that
     // concern a world are answered from it and go no further.
     if let Some(pane) = panes::named(&request_target, sender.referer.as_deref()) {
-        if let Some(answer) = panes::route(sh, pane, &method, &path, &request_target, &parsed) {
+        let asked = panes::Asked {
+            method: &method,
+            path: &path,
+            target: &request_target,
+            parsed: &parsed,
+        };
+        if let Some(answer) = panes::socket::route(sh, pane, &asked) {
             respond_json(stream, &answer);
             return;
         }
@@ -5551,6 +5557,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // undo an action, step a turn to a breakpoint, lend layers of the
         // seat to its agent (`server/debugger.rs`).
         ("POST", "/debug") => {
+            // Closing a split is the main session's word, but it is the
+            // panes that answer it: the half that is kept takes its place.
+            if let Some(pane) = panes::adopts(&parsed) {
+                respond_json(stream, &panes::socket::adopt(sh, pane));
+                return;
+            }
             let mut session = lock_or_recover(&sh.session);
             let mut out = crate::routes::debug(&mut session, &parsed);
             drop(session);
@@ -5825,7 +5837,7 @@ fn serve_opening_at_pace(
     }
     let current_seed = session.game.seed;
     let shared = Arc::new(Shared {
-        panes: panes::Panes::default(),
+        panes: Default::default(),
         current_seed: AtomicU64::new(current_seed),
         supervisor_request: Mutex::new(None),
         live_params: Mutex::new(session.params.clone()),

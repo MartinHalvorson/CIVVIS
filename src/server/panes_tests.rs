@@ -131,6 +131,123 @@ fn each_half_of_a_split_plays_a_history_of_its_own() {
     assert!(refused["error"].is_string());
     assert_eq!(get(port, "/state")["turn"], json!(2));
 
-    // The next split starts from the main game again, not from the last one.
-    assert_eq!(get(port, "/state?pane=a-s2")["turn"], json!(2));
+    // One half is made a copy of the other inside the engine, so the copy
+    // has the turns behind it too and not only the world.
+    let stepped = post(port, "/debug?pane=a-s1", None, &json!({"op": "step"}));
+    assert_eq!(stepped["turn"], json!(4));
+    let copy = post(
+        port,
+        "/debug",
+        Some(&page),
+        &json!({"op": "copy", "from": "a-s1"}),
+    );
+    assert_eq!(copy["error"], Value::Null);
+    assert_eq!(copy["turn"], json!(4));
+    assert_eq!(copy["debug"]["turns"], stepped["debug"]["turns"]);
+    for stray in ["b-s1", "a-other", "c-s1", ""] {
+        let refused = post(
+            port,
+            "/debug",
+            Some(&page),
+            &json!({"op": "copy", "from": stray}),
+        );
+        assert!(refused["error"].is_string(), "copy from {stray:?}");
+    }
+    // The copy is its own again at once.
+    assert_eq!(
+        post(port, "/action", Some(&page), &end_turn)["turn"],
+        json!(5)
+    );
+    assert_eq!(get(port, "/state?pane=a-s1")["turn"], json!(4));
+
+    // A screen that is not split has nothing to adopt, and says so.
+    let stray = post(
+        port,
+        "/debug",
+        None,
+        &json!({"op": "adopt", "pane": "a-none"}),
+    );
+    assert!(stray["error"].is_string());
+    assert_eq!(stray["turn"], json!(2), "the main game stayed");
+
+    // Closing the split onto B: B's session is the main one now, with every
+    // turn B could walk back to, and the halves are gone.
+    let before = get(port, "/state?pane=b-s1");
+    let kept = post(
+        port,
+        "/debug",
+        None,
+        &json!({"op": "adopt", "pane": "b-s1"}),
+    );
+    assert_eq!(kept["error"], Value::Null);
+    assert_eq!(kept["turn"], json!(5));
+    assert_eq!(kept["debug"]["turns"], before["debug"]["turns"]);
+    assert!(kept["debug"]["turns"].as_array().unwrap().len() >= 4);
+    let main = get(port, "/state");
+    assert_eq!(main["turn"], json!(5));
+    assert_eq!(
+        post(port, "/debug", None, &json!({"op": "back"}))["turn"],
+        json!(4)
+    );
+
+    // The next split starts from the main game as it now stands.
+    assert_eq!(get(port, "/state?pane=a-s2")["turn"], json!(4));
+}
+
+#[test]
+fn panes_fork_copy_and_adopt_without_a_socket() {
+    // The published build holds its panes behind one borrow and calls the
+    // same three steps; this is that path, with no server around it.
+    let mut params = stock_opening_params(20_261_119);
+    params.spectate = false;
+    params.num_players = 2;
+    params.num_city_states = 1;
+    params.width = 20;
+    params.height = 14;
+    params.map_topology = MapTopology::Flat;
+    params.map_script = MapScript::Pangaea;
+    params.game_speed = GameSpeed::Standard;
+    params.max_turns = 500;
+    let mut main = super::super::Session::new(params.clone());
+    let mut panes = super::Panes::default();
+    let end_turn = json!({"action": {"type": "end_turn"}});
+    let ask = |panes: &mut super::Panes,
+               main: &super::super::Session,
+               pane: &str,
+               method: &str,
+               path: &str,
+               body: &Value| {
+        let asked = super::Asked {
+            method,
+            path,
+            target: path,
+            parsed: body,
+        };
+        super::serve(panes, main, pane, &asked, None)
+    };
+    let (a, whole) = ask(&mut panes, &main, "a-x", "POST", "/action", &end_turn).unwrap();
+    assert!(whole);
+    assert_eq!(a["turn"], json!(2));
+    assert_eq!(main.game.turn, 1);
+    // A request that does not concern a world is not a pane's to answer.
+    assert!(ask(&mut panes, &main, "a-x", "GET", "/runtime", &Value::Null).is_none());
+    let (save, whole) = ask(&mut panes, &main, "a-x", "GET", "/save", &Value::Null).unwrap();
+    assert!(!whole, "a save is answered bare");
+    assert!(save.get("save_format_version").is_some() || save.get("game").is_some());
+    let copy = json!({"op": "copy", "from": "a-x"});
+    let (b, _) = ask(&mut panes, &main, "b-x", "POST", "/debug", &copy).unwrap();
+    assert_eq!(b["turn"], json!(2));
+    assert_eq!(b["debug"]["turns"], json!([1, 2]));
+    assert_eq!(panes.len(), 2);
+    assert_eq!(panes.adopt("b-x", &mut main), Ok(()));
+    assert_eq!(main.game.turn, 2);
+    assert_eq!(main.state()["debug"]["turns"], json!([1, 2]));
+    assert_eq!(panes.len(), 0);
+    assert!(panes.adopt("b-x", &mut main).is_err());
+
+    // A watched table has no seat to fork.
+    params.spectate = true;
+    let watched = super::super::Session::new(params);
+    let (refused, _) = ask(&mut panes, &watched, "a-y", "GET", "/state", &Value::Null).unwrap();
+    assert!(refused["error"].is_string());
 }

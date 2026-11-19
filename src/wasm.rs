@@ -26,6 +26,9 @@ use std::cell::{Cell, RefCell};
 thread_local! {
     /// The one game this page is playing.
     static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
+    /// The split Sim debugger's two halves: sessions forked from the one
+    /// above and kept beside it (`panes.rs`). Empty until a screen is split.
+    static PANES: RefCell<super::panes::Panes> = RefCell::new(Default::default());
     /// Why the module last died.
     ///
     /// A panic on `wasm32-unknown-unknown` unwinds nowhere: it aborts, and the
@@ -281,6 +284,29 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
     let parsed: Value = serde_json::from_str(body).unwrap_or(Value::Null);
     let path = request_path(target);
 
+    // One half of a split screen is a page whose requests arrive here with
+    // its name on them (`beta/shim.js`). The ones that concern a world are
+    // answered from that half's own session and go no further.
+    if let Some(pane) = super::panes::named(target, None) {
+        let asked = super::panes::Asked {
+            method,
+            path,
+            target,
+            parsed: &parsed,
+        };
+        let answered = with_session(|main| {
+            PANES.with(|panes| {
+                super::panes::serve(&mut panes.borrow_mut(), main, pane, &asked, None)
+            })
+        });
+        if let Some((mut out, whole)) = answered {
+            if whole {
+                decorate_browser(&mut out);
+            }
+            return out;
+        }
+    }
+
     match (method, path) {
         ("GET", "/runtime") => json!({
             "server_instance": process_identity(),
@@ -462,6 +488,17 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
         }),
 
         ("POST", "/debug") => with_session(|session| {
+            // Closing a split: the half that is kept becomes this session.
+            if let Some(pane) = super::panes::adopts(&parsed) {
+                let adopted = PANES.with(|panes| panes.borrow_mut().adopt(pane, session));
+                let mut out = session.state();
+                out["error"] = match adopted {
+                    Ok(()) => Value::Null,
+                    Err(error) => json!(error),
+                };
+                decorate_browser(&mut out);
+                return out;
+            }
             let mut out = crate::routes::debug(session, &parsed);
             decorate_browser(&mut out);
             out

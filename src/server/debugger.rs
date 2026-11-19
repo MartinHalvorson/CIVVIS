@@ -787,6 +787,11 @@ impl Session {
                 "breakpoints" => Breakpoints::from_request(request).map(|breakpoints| {
                     self.debugger.breakpoints = breakpoints;
                 }),
+                // These two belong to a split screen and are answered by its
+                // panes (`panes.rs`); reaching here means no half was named.
+                "adopt" | "copy" => {
+                    Err("that closes or copies a split, and this screen is not split".to_string())
+                }
                 other => Err(format!("no debugger operation named {other:?}")),
             }
         };

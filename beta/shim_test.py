@@ -353,24 +353,17 @@ def wait_for_harness(dev, url_part: str) -> None:
     raise AssertionError(f"the page at {url_part} never reported ready")
 
 
-def check_a_split_pane_opens_on_its_hosts_world(dev) -> None:
-    """One half of a split Sim debugger starts on the world its host hands it.
+def check_a_split_pane_asks_its_hosts_engine(dev) -> None:
+    """One half of a split Sim debugger starts no engine of its own.
 
-    The half is this build again in a frame, with an engine of its own. Before
-    it asks that engine anything it asks the page that framed it for a world,
-    and the save it is answered with is the first thing the engine is sent, so
-    the half never shows the stock exhibition on its way to the forked game.
+    The half is this build again in a frame. Its shim hands every engine
+    request to the page that framed it, and that page's engine is sent the
+    request with the half's name on it, which is what lets one engine keep a
+    session for each half. The half reads the reply as if it were its own.
     """
     seen = dev.evaluate(
         """(async () => {
-          const save = JSON.stringify({ format: "civvis", game: { turn: 77 } });
-          const asked = [];
-          window.addEventListener("message", (event) => {
-            if (!event.data || event.data.civvis !== "pane-boot") return;
-            asked.push(event.data.pane);
-            event.source.postMessage(
-              { civvis: "pane-world", pane: event.data.pane, game: save }, location.origin);
-          });
+          const before = window.workerCalls.length;
           const frame = document.createElement("iframe");
           frame.src = "index.html?pane=a-t1";
           document.body.appendChild(frame);
@@ -380,27 +373,34 @@ def check_a_split_pane_opens_on_its_hosts_world(dev) -> None:
           while (Date.now() < deadline && !ready()) await new Promise((done) => setTimeout(done, 50));
           const answer = await frame.contentWindow.fetch("/state?seat=1").then((r) => r.json());
           const seen = {
-            asked,
-            first: frame.contentWindow.workerBodies[0],
-            calls: frame.contentWindow.workerCalls.slice(0, 3),
+            ready: !!ready(),
+            own: frame.contentWindow.workerCalls.length,
+            host: window.workerCalls.slice(before),
             turn: answer.turn,
-            error: frame.contentWindow.__civvisBeta.presetError || null,
+            civ: answer.players && answer.players[0].civ,
           };
           frame.remove();
           return seen;
         })()"""
     )
-    assert seen["asked"] == ["a-t1"], seen
-    assert seen["first"] == [
-        "/load",
-        '{"game":{"format":"civvis","game":{"turn":77}}}',
-    ], seen
-    assert seen["calls"][:2] == ["/load", "/runtime"], seen
-    assert seen["error"] is None, seen
-    assert seen["turn"] == 42, seen
-    # A page nobody framed is not a pane, whatever its address says.
-    assert dev.evaluate("window.parent === window && window.workerCalls[0] !== '/load'")
-    print("a split pane asks its host for a world and loads it before anything else.")
+    assert seen["ready"], seen
+    assert seen["own"] == 0, seen
+    assert "/runtime?pane=a-t1" in seen["host"], seen
+    assert "/state?seat=1&pane=a-t1" in seen["host"], seen
+    assert seen["turn"] == 42 and seen["civ"] == "Rome", seen
+    # A page nobody framed is not a pane, whatever its address says, and a
+    # message that is not from a frame this page holds is not passed on.
+    stray = dev.evaluate(
+        """(async () => {
+          const before = window.workerCalls.length;
+          window.postMessage({ civvis: "pane-ask", id: 1, pane: "a-t1", method: "GET",
+            path: "/state?seat=1", body: "" }, location.origin);
+          await new Promise((done) => setTimeout(done, 200));
+          return window.workerCalls.length - before;
+        })()"""
+    )
+    assert stray == 0, stray
+    print("a split pane starts no engine and is answered by its host's, by name.")
 
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
@@ -717,7 +717,7 @@ def main() -> int:
         calls = dev.evaluate("window.workerCalls")
         assert calls[0] == "/new", calls
         assert not [path for path in calls if "have=11:" in path], calls
-        check_a_split_pane_opens_on_its_hosts_world(dev)
+        check_a_split_pane_asks_its_hosts_engine(dev)
         print(
             "the WASM clock reads one frame ahead and never two, sends the viewer's "
             "opening settings first, honors selected holds, and opens an installed "
