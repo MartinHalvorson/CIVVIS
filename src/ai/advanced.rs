@@ -9011,6 +9011,16 @@ pub struct AdvancedAi {
     /// declaration. See `advanced/near_rival_deterrence_opens_early.rs`. Off
     /// by default.
     near_rival_deterrence_opens_early: bool,
+    /// `mobilization-hears-the-declaration`: with `surprise-war-mobilization`
+    /// on, a surprise declaration the host announced to us (the control mod's
+    /// `diplomacy_choice` line, read by the live bridge) opens the
+    /// mobilization window the live mirror's empty war ledger never does. See
+    /// `advanced/mobilization_hears_the_declaration.rs`. Off by default.
+    mobilization_hears_the_declaration: bool,
+    /// The surprise declarations on us the live bridge heard, as
+    /// `(declarer seat, turn the war began)`, under
+    /// `mobilization-hears-the-declaration`.
+    observed_surprise_declarations: Vec<(usize, u32)>,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -12574,6 +12584,10 @@ mod forward_airfield_project;
 /// `four-faces-bars-the-surprise`: see `advanced/four_faces_bars_the_surprise.rs`.
 mod four_faces_bars_the_surprise;
 mod frontier_walls_before_the_surprise;
+/// `mobilization-hears-the-declaration`: the surprise mobilization's window
+/// opens on a declaration the host announced. See
+/// `advanced/mobilization_hears_the_declaration.rs`.
+mod mobilization_hears_the_declaration;
 mod modernization_prices_the_path;
 /// `passage-waits-past-the-opening`: no Open Borders bought in the opening,
 /// none after it from a rival over 1.5x our military. See

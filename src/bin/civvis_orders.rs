@@ -9620,6 +9620,15 @@ fn main() {
             barter_shorts.refresh(&events);
             ai.observe_luxury_barter_shorts(barter_shorts.through(state.turn));
         }
+        // `mobilization-hears-the-declaration`: the one frame reads every
+        // surprise declaration on us the log holds up to its turn. See
+        // `DeclarationLedger`.
+        if ai.mobilization_hears_the_declaration_enabled() {
+            let mut declarations = DeclarationLedger::default();
+            declarations.refresh(&events);
+            let seats = civvis::mirror::modeled_major_player_count(&live.game);
+            ai.observe_surprise_declarations(declarations.heard(&state, seats));
+        }
         let reply = decide(
             &mut live,
             &mut ai,
@@ -9691,6 +9700,8 @@ fn main() {
     let mut spy_losses = SpyLossLedger::default();
     // `luxury-asks-pay-in-strategics-2`: partners our barter could not reach.
     let mut barter_shorts = BarterShortLedger::default();
+    // `mobilization-hears-the-declaration`: surprise declarations on us.
+    let mut declarations = DeclarationLedger::default();
     // Fog the host refused a move onto as a war starter. See `closed_ground`.
     let mut closed_ground = closed_ground::Ledger::default();
     let mut explain_cursor: u64 = 0;
@@ -9757,6 +9768,13 @@ fn main() {
                 if ai.luxury_asks_pay_in_strategics_2_enabled() {
                     barter_shorts.refresh(&events);
                     ai.observe_luxury_barter_shorts(barter_shorts.through(state.turn));
+                }
+                if ai.mobilization_hears_the_declaration_enabled() {
+                    declarations.refresh(&events);
+                    let seats = live.as_ref().map_or(0, |live| {
+                        civvis::mirror::modeled_major_player_count(&live.game)
+                    });
+                    ai.observe_surprise_declarations(declarations.heard(&state, seats));
                 }
                 let reply = if fresh_board {
                     // ★★★★ A DECIDER THAT FIRST SEES THE GAME PAST TURN ONE HAS
