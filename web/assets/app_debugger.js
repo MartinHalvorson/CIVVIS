@@ -64,6 +64,10 @@ const DEBUG_BAR_STYLE = `
     flex: 1; min-width: 0; height: 26px; padding: 0 7px; border-radius: 7px;
     color: var(--text); background: #060d0b; border: 1px solid #35504a; font: inherit;
   }
+  #debugbar .dbg-pop select {
+    min-width: 0; max-width: 104px; height: 26px; border-radius: 7px;
+    color: var(--text); background: #060d0b; border: 1px solid #35504a; font: inherit;
+  }
   #debugbar .dbg-pop .dbg-line { display: flex; align-items: center; gap: 6px; }
   #debugbar .dbg-pop .dbg-line > span { flex: none; width: 58px; color: var(--muted); }
 `;
@@ -145,6 +149,15 @@ function debugSayStop(stopped) {
   if (stopped.kind === "turn") debugSay(`Stopped at turn ${stopped.turn}`);
   else if (stopped.kind === "event")
     debugSay(`Stopped on ${stopped.category}: ${stopped.text}`, stopped.pos || null);
+  else if (stopped.kind === "condition") {
+    const who = state.players.find(player => player.id === stopped.seat) || {};
+    const name = titleCase(String(who.civ || who.name || `seat ${stopped.seat}`));
+    const read = value => typeof value === "number" ? String(Math.round(value * 100) / 100) : JSON.stringify(value);
+    const what = `${name} ${stopped.key.replaceAll("_", " ")}`;
+    debugSay(stopped.test === "changes"
+      ? `Stopped on turn ${stopped.turn}: ${what} changed from ${read(stopped.was)} to ${read(stopped.now)}`
+      : `Stopped on turn ${stopped.turn}: ${what} is ${read(stopped.now)} (${stopped.test} ${read(stopped.value)}, was ${read(stopped.was)})`);
+  }
   else debugSay(`The game ended on turn ${stopped.turn}`);
 }
 async function debugStep() {
@@ -272,6 +285,8 @@ function debugBreakpointsFromForm() {
     phrases: list(pop.querySelector("[data-dbg-field=phrases]").value),
     important: pop.querySelector("[data-dbg-field=important]").checked,
     every_seat: pop.querySelector("[data-dbg-field=every_seat]").checked,
+    // Conditions are added and removed one at a time; the engine holds the set.
+    conditions: [...(debugTimeline().breakpoints.conditions || [])],
   };
 }
 function debugLayersFromForm() {
@@ -330,6 +345,15 @@ function debugBuildBar() {
         <button data-dbg="break-plus" title="Add the turn ten from now">+10</button></div>
       <div class="dbg-line"><span>Phrases</span>
         <input type="text" data-dbg-field="phrases" placeholder="declared war, captured" aria-label="Stop when the event log says"></div>
+      <div class="dbg-line" style="flex-wrap:wrap" title="Stop when this becomes true of a civilization">
+        <span>When</span>
+        <select data-dbg-field="cond-seat" aria-label="Civilization"></select>
+        <select data-dbg-field="cond-key" aria-label="What to read"></select>
+        <select data-dbg-field="cond-test" aria-label="How to hold it"></select>
+        <input type="text" data-dbg-field="cond-value" inputmode="decimal" placeholder="value" style="flex:0 0 52px" aria-label="Value">
+        <button data-dbg="cond-add" title="Stop a run on the turn this becomes true">Add</button>
+      </div>
+      <div id="dbg-condition-list" style="display:grid;gap:3px"></div>
       <div class="dbg-grid" id="dbg-category-list"></div>
       <label><input type="checkbox" data-dbg-field="important"> Any important event</label>
       <label><input type="checkbox" data-dbg-field="every_seat"> Every civilization's events, not only mine</label>
@@ -358,6 +382,13 @@ function debugBuildBar() {
       if (debugPopOpen === "saves") debugDrawSaves();
       return;
     }
+    const gone = event.target.closest("[data-dbg-cond-remove]");
+    if (gone && debugTimeline()) {
+      const request = debugBreakpointsFromForm();
+      request.conditions.splice(+gone.dataset.dbgCondRemove, 1);
+      debugOp(request);
+      return;
+    }
     const load = event.target.closest("[data-dbg-load]");
     if (load) { debugPopOpen = null; loadSave(load.dataset.dbgLoad); return; }
     const button = event.target.closest("[data-dbg]");
@@ -383,6 +414,14 @@ function debugBuildBar() {
       debugOp({op: "layers", layers: action === "layers-all" ? timeline.layers.map(layer => layer.id) : []});
     } else if (action === "break-clear") {
       debugOp({op: "breakpoints"});
+    } else if (action === "cond-add") {
+      const pop = document.getElementById("dbg-pop-breaks");
+      const field = name => pop.querySelector(`[data-dbg-field=cond-${name}]`);
+      const request = debugBreakpointsFromForm();
+      const test = field("test").value;
+      request.conditions.push({seat: +field("seat").value, key: field("key").value, test,
+        value: test === "changes" ? undefined : parseFloat(field("value").value)});
+      debugOp(request);
     } else if (action === "break-plus") {
       const request = debugBreakpointsFromForm();
       request.turns = [...new Set([...request.turns, state.turn + 10])];
@@ -399,6 +438,8 @@ function debugBuildBar() {
     } else if (target.dataset.dbgLayer) {
       debugOp({op: "layers", layers: debugLayersFromForm()});
     } else if (target.closest("#dbg-pop-breaks")) {
+      // The fields of a condition being composed are not breakpoints yet.
+      if ((target.dataset.dbgField || "").startsWith("cond-")) { drawDebugBar(false); return; }
       debugOp(debugBreakpointsFromForm());
     }
   });
@@ -451,8 +492,9 @@ function drawDebugBar(seat = true) {
   const layersOn = timeline.layers.filter(layer => layer.on).length;
   document.getElementById("dbg-layer-count").textContent = layersOn ? `${layersOn}` : "";
   const breaks = timeline.breakpoints;
+  const conditions = breaks.conditions || [];
   const breakCount = breaks.turns.length + breaks.categories.length + breaks.phrases.length +
-    (breaks.important ? 1 : 0);
+    conditions.length + (breaks.important ? 1 : 0);
   document.getElementById("dbg-break-count").textContent = breakCount ? `${breakCount}` : "";
   // A pane is already one half of a split, and does not split again.
   bar.querySelector('[data-dbg-pop="split"]').hidden = DEBUG_PANE !== null;
@@ -482,6 +524,38 @@ function drawDebugBar(seat = true) {
     box.checked = breaks.categories.includes(box.dataset.dbgCategory);
   const pop = document.getElementById("dbg-pop-breaks");
   const field = name => pop.querySelector(`[data-dbg-field=${name}]`);
+  // A condition reads one thing the observation says about one civilization.
+  // The readings on offer are the ones this seat's own entry has; the engine
+  // reads the same entry for any seat, and refuses one it cannot find.
+  const majors = state.players.filter(player => !player.is_minor && !player.is_barbarian);
+  const civName = player => titleCase(String(player.civ || player.name || `seat ${player.id}`));
+  const mine = state.players.find(player => player.id === 0) || {};
+  const readable = Object.keys(mine).filter(key => {
+    const value = mine[key];
+    return typeof value === "number" || typeof value === "boolean" || Array.isArray(value);
+  }).sort();
+  const offer = (name, options) => {
+    const select = field(`cond-${name}`), drawn = JSON.stringify(options);
+    if (select.dataset.drawn === drawn) return;
+    const held = select.value;
+    select.dataset.drawn = drawn;
+    select.innerHTML = options.map(([value, label]) =>
+      `<option value="${escapeAttr(String(value))}">${escapeAttr(label)}</option>`).join("");
+    if (options.some(([value]) => String(value) === held)) select.value = held;
+  };
+  offer("seat", majors.map(player => [player.id, civName(player)]));
+  offer("key", readable.map(key => [key, key.replaceAll("_", " ")]));
+  offer("test", (breaks.known_tests || []).map(test => [test, test]));
+  field("cond-value").hidden = field("cond-test").value === "changes";
+  const conditionList = document.getElementById("dbg-condition-list");
+  const conditionRows = conditions.map((condition, index) => {
+    const who = state.players.find(player => player.id === condition.seat);
+    const line = condition.test === "changes" ? "changes" : `${condition.test} ${condition.value}`;
+    return `<div class="dbg-line"><span style="flex:1;width:auto;color:inherit">` +
+      `${escapeAttr(who ? civName(who) : `seat ${condition.seat}`)} · ${escapeAttr(condition.key.replaceAll("_", " "))} ${escapeAttr(line)}</span>` +
+      `<button data-dbg-cond-remove="${index}" title="Remove this condition" aria-label="Remove this condition">×</button></div>`;
+  }).join("");
+  if (conditionList.innerHTML !== conditionRows) conditionList.innerHTML = conditionRows;
   if (document.activeElement !== field("turns")) field("turns").value = breaks.turns.join(", ");
   if (document.activeElement !== field("phrases")) field("phrases").value = breaks.phrases.join(", ");
   field("important").checked = breaks.important;

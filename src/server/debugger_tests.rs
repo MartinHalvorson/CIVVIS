@@ -397,3 +397,57 @@ fn reveal_lifts_the_fog_from_the_page_and_changes_nothing_else() {
     session.debug(&json!({"op": "reveal", "on": false}));
     assert_eq!(session.state()["debug"]["reveal"], json!(false));
 }
+
+#[test]
+fn a_condition_stops_a_run_when_the_state_crosses_its_line() {
+    let mut session = played();
+    for refused in [
+        json!({"seat": 99, "key": "cities", "test": ">=", "value": 1}),
+        json!({"seat": 0, "key": "no_such_reading", "test": ">", "value": 1}),
+        json!({"seat": 0, "key": "cities", "test": "~", "value": 1}),
+        json!({"seat": 0, "key": "cities", "test": ">="}),
+        // A name can change, but it is not a number to hold to a line.
+        json!({"seat": 0, "key": "civ", "test": ">", "value": 1}),
+    ] {
+        let answer = session.debug(&json!({"op": "breakpoints", "conditions": [refused.clone()]}));
+        assert!(answer["error"].is_string(), "{refused}");
+    }
+    let set = session.debug(&json!({"op": "breakpoints", "conditions": [
+        {"seat": 0, "key": "cities", "test": ">=", "value": 1},
+        {"seat": 0, "key": "civ", "test": "changes"},
+    ]}));
+    assert_eq!(set["error"], Value::Null);
+    assert_eq!(
+        set["debug"]["breakpoints"]["conditions"][0],
+        json!({"seat": 0, "key": "cities", "test": ">=", "value": 1.0})
+    );
+    assert!(set["debug"]["breakpoints"]["known_tests"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("changes")));
+
+    let mut hit = Value::Null;
+    for _ in 0..20 {
+        let out = session.debug(&json!({"op": "step"}));
+        hit = out["debug"]["stopped"].clone();
+        if !hit.is_null() {
+            break;
+        }
+    }
+    assert_eq!(
+        hit["kind"],
+        json!("condition"),
+        "twenty turns founded no city"
+    );
+    assert_eq!(hit["key"], json!("cities"));
+    assert_eq!(hit["turn"], json!(session.game.turn));
+    assert_eq!(hit["was"], json!(0.0));
+    assert!(hit["now"].as_f64().unwrap() >= 1.0);
+    // The line stays crossed from here on, and that does not stop every turn
+    // after: a condition is the moment it becomes true.
+    let next = session.debug(&json!({"op": "step"}));
+    assert_eq!(next["debug"]["stopped"], Value::Null);
+    // Clearing the breakpoints clears the conditions with them.
+    let cleared = session.debug(&json!({"op": "breakpoints"}));
+    assert_eq!(cleared["debug"]["breakpoints"]["conditions"], json!([]));
+}

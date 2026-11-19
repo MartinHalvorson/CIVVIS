@@ -48,6 +48,8 @@ const SPARSE_EVERY: u32 = 10;
 const MAX_PHRASES: usize = 16;
 /// Breakpoint turns a page may hold at once.
 const MAX_BREAK_TURNS: usize = 64;
+/// Breakpoint conditions a page may hold at once.
+const MAX_CONDITIONS: usize = 16;
 
 /// One rung of handing the seat to its agent.
 ///
@@ -148,6 +150,116 @@ impl Layer {
     }
 }
 
+/// How a condition's number is held against its line.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Test {
+    Below,
+    AtMost,
+    Above,
+    AtLeast,
+    Equals,
+    Differs,
+    /// No line at all: the value is not what it was a turn ago.
+    Changes,
+}
+
+impl Test {
+    const ALL: [Test; 7] = [
+        Test::Below,
+        Test::AtMost,
+        Test::Above,
+        Test::AtLeast,
+        Test::Equals,
+        Test::Differs,
+        Test::Changes,
+    ];
+
+    fn sign(self) -> &'static str {
+        match self {
+            Test::Below => "<",
+            Test::AtMost => "<=",
+            Test::Above => ">",
+            Test::AtLeast => ">=",
+            Test::Equals => "==",
+            Test::Differs => "!=",
+            Test::Changes => "changes",
+        }
+    }
+
+    fn parse(sign: &str) -> Option<Test> {
+        Test::ALL.into_iter().find(|test| test.sign() == sign)
+    }
+
+    fn holds(self, now: f64, line: f64) -> bool {
+        match self {
+            Test::Below => now < line,
+            Test::AtMost => now <= line,
+            Test::Above => now > line,
+            Test::AtLeast => now >= line,
+            Test::Equals => now == line,
+            Test::Differs => now != line,
+            Test::Changes => false,
+        }
+    }
+}
+
+/// A breakpoint on the state of the game rather than on its log: one thing
+/// the observation says about one civilization, held against a line.
+///
+/// What it reads is that civilization's entry in the omniscient observation
+/// (`players[seat][key]`), so anything a spectator of the whole table is
+/// told can be a condition, for any seat, without a list kept here. A number
+/// is read as itself, a yes or no as 1 or 0, and a list as its length.
+#[derive(Clone, Debug, PartialEq)]
+struct Condition {
+    seat: usize,
+    key: String,
+    test: Test,
+    line: f64,
+}
+
+impl Condition {
+    fn json(&self) -> Value {
+        json!({
+            "seat": self.seat,
+            "key": self.key,
+            "test": self.test.sign(),
+            "value": self.line,
+        })
+    }
+}
+
+/// A reading as a number, when it is something that can be held to a line.
+fn as_number(reading: &Value) -> Option<f64> {
+    match reading {
+        Value::Number(number) => number.as_f64(),
+        Value::Bool(yes) => Some(f64::from(u8::from(*yes))),
+        Value::Array(list) => Some(list.len() as f64),
+        Value::Object(map) => Some(map.len() as f64),
+        _ => None,
+    }
+}
+
+/// What each condition reads right now. `None` is a seat or a key the
+/// observation does not have.
+fn readings(game: &Game, conditions: &[Condition]) -> Vec<Option<Value>> {
+    if conditions.is_empty() {
+        return Vec::new();
+    }
+    let observed = crate::obs::observation_spectator(game, 0);
+    let players = observed["players"].as_array();
+    conditions
+        .iter()
+        .map(|condition| {
+            players?
+                .iter()
+                .find(|player| player["id"] == json!(condition.seat))?
+                .get(&condition.key)
+                .cloned()
+        })
+        .collect()
+}
+
 /// When a run stops by itself.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Breakpoints {
@@ -163,10 +275,61 @@ pub struct Breakpoints {
     /// seat's own are what a person playing it is shown; a debugger may want
     /// the ones it would not be.
     every_seat: bool,
+    /// Stop when one of these becomes true of the game's state.
+    conditions: Vec<Condition>,
 }
 
 impl Breakpoints {
-    fn from_request(request: &Value) -> Result<Breakpoints, String> {
+    fn from_request(request: &Value, game: &Game) -> Result<Breakpoints, String> {
+        let mut conditions = Vec::new();
+        for asked in request["conditions"].as_array().into_iter().flatten() {
+            let seat = asked["seat"]
+                .as_u64()
+                .and_then(|seat| usize::try_from(seat).ok())
+                .filter(|seat| *seat < game.players.len())
+                .ok_or_else(|| "a condition names a civilization by its seat".to_string())?;
+            let key = asked["key"].as_str().unwrap_or("").to_string();
+            let sign = asked["test"].as_str().unwrap_or("");
+            let test = Test::parse(sign).ok_or_else(|| {
+                format!("a condition's test is one of < <= > >= == != changes, not {sign:?}")
+            })?;
+            let line = match (test, asked["value"].as_f64()) {
+                (Test::Changes, _) => 0.0,
+                (_, Some(line)) => line,
+                (_, None) => return Err(format!("{key} {sign} needs a number to hold it to")),
+            };
+            conditions.push(Condition {
+                seat,
+                key,
+                test,
+                line,
+            });
+        }
+        if conditions.len() > MAX_CONDITIONS {
+            return Err(format!("at most {MAX_CONDITIONS} breakpoint conditions"));
+        }
+        // A condition is read back from where it lands before it is kept: a
+        // key the observation does not have would never stop anything, and
+        // would say nothing about why.
+        for (condition, reading) in conditions.iter().zip(readings(game, &conditions)) {
+            let readable = match (condition.test, &reading) {
+                (_, None) => false,
+                (Test::Changes, Some(_)) => true,
+                (_, Some(value)) => as_number(value).is_some(),
+            };
+            if !readable {
+                return Err(format!(
+                    "seat {} has no {} called {:?}",
+                    condition.seat,
+                    if condition.test == Test::Changes {
+                        "reading"
+                    } else {
+                        "number"
+                    },
+                    condition.key
+                ));
+            }
+        }
         let mut turns = BTreeSet::new();
         for turn in request["turns"].as_array().into_iter().flatten() {
             let turn = turn
@@ -203,7 +366,45 @@ impl Breakpoints {
             phrases,
             important: request["important"].as_bool().unwrap_or(false),
             every_seat: request["every_seat"].as_bool().unwrap_or(false),
+            conditions,
         })
+    }
+
+    /// The first condition a freshly played turn made true: one that holds
+    /// now and did not a turn ago. A condition that stays true does not stop
+    /// every turn it stays true for.
+    fn crossed(
+        &self,
+        turn: u32,
+        before: &[Option<Value>],
+        after: &[Option<Value>],
+    ) -> Option<Value> {
+        self.conditions
+            .iter()
+            .zip(before.iter().zip(after))
+            .find_map(|(condition, (was, now))| {
+                let (was, now) = (was.as_ref()?, now.as_ref()?);
+                let crossed = match condition.test {
+                    Test::Changes => was != now,
+                    test => {
+                        let (was, now) = (as_number(was)?, as_number(now)?);
+                        test.holds(now, condition.line) && !test.holds(was, condition.line)
+                    }
+                };
+                crossed.then(|| {
+                    // A number where the reading is one, so a list is
+                    // reported as the length it was held to and not in full.
+                    let said = |reading: &Value| {
+                        as_number(reading).map_or_else(|| reading.clone(), |number| json!(number))
+                    };
+                    let mut hit = condition.json();
+                    hit["kind"] = json!("condition");
+                    hit["turn"] = json!(turn);
+                    hit["was"] = said(was);
+                    hit["now"] = said(now);
+                    hit
+                })
+            })
     }
 
     fn json(&self) -> Value {
@@ -213,8 +414,10 @@ impl Breakpoints {
             "phrases": self.phrases,
             "important": self.important,
             "every_seat": self.every_seat,
-            // The vocabulary a page offers, read from the engine's own list.
+            "conditions": self.conditions.iter().map(Condition::json).collect::<Vec<_>>(),
+            // The vocabulary a page offers, read from the engine's own lists.
             "known_categories": crate::game::EVENT_CATEGORIES,
+            "known_tests": Test::ALL.map(Test::sign),
         })
     }
 
@@ -567,13 +770,22 @@ impl Session {
         let turn = self.game.turn;
         let before_len = self.game.events.len();
         let before_last = self.game.events.last().cloned();
+        let read_before = readings(&self.game, &self.debugger.breakpoints.conditions);
         let played = self.autoplay(1);
         let fresh = fresh_events(before_len, before_last.as_ref(), turn, &self.game.events);
         let over = played == 0 || self.game.is_finished() || !self.game.players[0].alive;
         self.debugger.stopped = if over {
             Some(json!({"kind": "end", "turn": self.game.turn}))
         } else {
-            self.debugger.breakpoints.hit(&self.game, fresh)
+            self.debugger
+                .breakpoints
+                .hit(&self.game, fresh)
+                .or_else(|| {
+                    let read_after = readings(&self.game, &self.debugger.breakpoints.conditions);
+                    self.debugger
+                        .breakpoints
+                        .crossed(self.game.turn, &read_before, &read_after)
+                })
         };
         played > 0
     }
@@ -784,9 +996,11 @@ impl Session {
                     None => Err("reveal needs on: true or false".to_string()),
                 },
                 "layers" => self.debug_set_layers(request),
-                "breakpoints" => Breakpoints::from_request(request).map(|breakpoints| {
-                    self.debugger.breakpoints = breakpoints;
-                }),
+                "breakpoints" => {
+                    Breakpoints::from_request(request, &self.game).map(|breakpoints| {
+                        self.debugger.breakpoints = breakpoints;
+                    })
+                }
                 // These two belong to a split screen and are answered by its
                 // panes (`panes.rs`); reaching here means no half was named.
                 "adopt" | "copy" => {
