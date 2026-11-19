@@ -13,7 +13,11 @@ The engine half is held by `src/server/debugger_tests.rs`. The bar is held by
 `beta/debugger_test.py`, which loads the script as it ships into a real
 browser, on a page with a toy engine behind it, and drives the controls: the
 turn box, both sliders, the wheel, save points and their flags, a breakpoint
-picked from the timeline. A control added to the bar is added there.
+picked from the timeline. It then splits the screen head to head, each half
+the same page with a toy engine of its own: a Civ AI is picked for one half,
+both are played to a turn linked and then separate, and the test reads which
+Civ AI each half's steps named, the numbers set side by side, a copy, and the
+half that is kept. A control added to the bar or the strip is added there.
 
 ## The timeline
 
