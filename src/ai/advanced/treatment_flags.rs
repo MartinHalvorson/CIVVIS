@@ -465,6 +465,9 @@ impl AdvancedAi {
         /// `advanced/mobilization_hears_the_declaration.rs`.
         mobilization_hears_the_declaration => enable_mobilization_hears_the_declaration, disable_mobilization_hears_the_declaration;
         // ---- append: p-r --------------------------------------------
+        /// Opt-in gene `racer-seat-statue-civic-first`; see
+        /// `AdvancedAi::diplo_statue_civic_goal`.
+        racer_seat_statue_civic_first => enable_racer_seat_statue_civic_first, disable_racer_seat_statue_civic_first;
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;
         /// See `advanced/religion_seat_keeps_the_guard.rs`.
@@ -6015,6 +6018,22 @@ impl AdvancedAi {
     /// The twin of `enable_score_seat_sprints_to_the_tally_2`.
     pub fn disable_score_seat_sprints_to_the_tally_2(&mut self) {
         self.score_seat_sprints_to_the_tally_2 = false;
+    }
+
+    /// Opt-in gene `denial-spies-fill-every-slot-3`, version three of
+    /// `denial-spies-fill-every-slot`: version two, and on a Science,
+    /// Religion or Diplomacy aim too; see
+    /// `advanced/denial_spies_fill_every_slot.rs`. A seat plays one version,
+    /// so this turns versions one and two off.
+    pub fn enable_denial_spies_fill_every_slot_3(&mut self) {
+        self.denial_spies_fill_every_slot = false;
+        self.denial_spies_fill_every_slot_2 = false;
+        self.denial_spies_fill_every_slot_3 = true;
+    }
+
+    /// The twin of `enable_denial_spies_fill_every_slot_3`.
+    pub fn disable_denial_spies_fill_every_slot_3(&mut self) {
+        self.denial_spies_fill_every_slot_3 = false;
     }
 
     // ---- append: a-b ------------------------------------------------

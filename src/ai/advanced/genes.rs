@@ -5862,6 +5862,13 @@ pub const GENES: &[Gene] = &[
     // with tourism 31 / 41 / 80 a turn. See
     // `advanced/trade_district_follows_the_campus.rs`.
     Gene { tag: "culture-trade-district-follows-the-theater", field: "culture_trade_district_follows_the_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_trade_district_follows_the_theater, disable: AdvancedAi::disable_culture_trade_district_follows_the_theater },
+    // Live Deity 11-19: version two is forced in every game, yet 17 of the
+    // last 21 were Science-lane seats, where it is inert; their Spy slots
+    // stood emptier than the Culture seats' (t130: 1 Spy of capacity 2.5 vs
+    // 2 of 2). Version two on a Science, Religion or Diplomacy aim as well,
+    // never taking the seat's own Spaceport city or a Builder. See
+    // `advanced/denial_spies_fill_every_slot.rs`.
+    Gene { tag: "denial-spies-fill-every-slot-3", field: "denial_spies_fill_every_slot_3", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_fill_every_slot_3, disable: AdvancedAi::disable_denial_spies_fill_every_slot_3 },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -6163,6 +6170,13 @@ pub const GENES: &[Gene] = &[
     // `advanced/mobilization_hears_the_declaration.rs`.
     Gene { tag: "mobilization-hears-the-declaration", field: "mobilization_hears_the_declaration", kind: Kind::OptIn, enable: AdvancedAi::enable_mobilization_hears_the_declaration, disable: AdvancedAi::disable_mobilization_hears_the_declaration },
     // ---- append: p-r ------------------------------------------------
+    // `racer-seat-statue-civic-first`: Civil Engineering first for a Science,
+    // Culture or Religious seat that reaches for the Statue of Liberty, as
+    // `diplo-seat-statue-civic-first` does for a Diplomatic seat. Live Deity
+    // Tournament 1 (2026-11-19): Science seats adopted it at t166/t177 or
+    // never and claimed the Statue too late to land it. See
+    // `advanced/diplo_statue_harbor.rs`.
+    Gene { tag: "racer-seat-statue-civic-first", field: "racer_seat_statue_civic_first", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_seat_statue_civic_first, disable: AdvancedAi::disable_racer_seat_statue_civic_first },
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
     Gene { tag: "religion-seat-reaches-reformed-church", field: "religion_seat_reaches_reformed_church", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_reaches_reformed_church, disable: AdvancedAi::disable_religion_seat_reaches_reformed_church },

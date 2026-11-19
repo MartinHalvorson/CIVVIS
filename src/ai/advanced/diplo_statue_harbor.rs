@@ -106,11 +106,24 @@ impl AdvancedAi {
     /// holds or queues the Statue's Harbor. `None` with the gene off, on
     /// another target, on a lost lane, and once the civic is adopted. See
     /// the module.
+    ///
+    /// `racer-seat-statue-civic-first` (operator tournament 2026-11-19): the
+    /// same goal for any other seat that reaches for the Statue
+    /// (`statue_harbor_seat`: a Science seat under
+    /// `science-seat-builds-the-statue` from turn 120, a Culture or Religious
+    /// seat under `culture-and-religion-build-the-statue`). Live Deity
+    /// Science seats of Tournament 1 adopted Civil Engineering at t166 and
+    /// t177 (Egypt civvis-20261119T200436Z claimed the Statue at t172 on 16
+    /// points and lost at t183) or never; the day's Science-seat Statue wins
+    /// claimed it by t134-143.
     pub(super) fn diplo_statue_civic_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
-        if !self.diplo_seat_statue_civic_first
-            || self.lane_lost
-            || self.active_victory_target(g) != Some(VictoryTarget::Diplomacy)
-        {
+        let diplomacy = self.diplo_seat_statue_civic_first
+            && !self.lane_lost
+            && self.active_victory_target(g) == Some(VictoryTarget::Diplomacy);
+        let racer = self.racer_seat_statue_civic_first
+            && self.active_victory_target(g) != Some(VictoryTarget::Diplomacy)
+            && self.statue_harbor_seat(g);
+        if !(diplomacy || racer) {
             return None;
         }
         let player = &g.players[pid];

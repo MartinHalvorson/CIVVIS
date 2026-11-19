@@ -9,8 +9,9 @@ The landing page (`beta/landing.html`) carries one empty slot,
 `beta/publish.sh` fills it with what this prints. Two rankings:
 
 - **Winningest civs**: our AI's wins and losses as each civ in the
-  verification games against Civilization VI's own AI, most wins first.
-  Read from `results.jsonl` on the `ledger` branch, where
+  verification games against Civilization VI's own AI, best win rate first.
+  Only the Lv 8 (Deity) games that began on or after 2026-11-16 count
+  (`CIVS_LEVEL`, `CIVS_SINCE`). Read from `results.jsonl` on the `ledger` branch, where
   `tools/civ6_ladder.py publish-run` adds a line as each game finishes, so
   it is the one ranking that is not a property of the lane's revision: both
   lanes show the record as it stood when the site was built.
@@ -39,8 +40,15 @@ import re
 import subprocess
 import sys
 
-#: How many civs the table shows: the ones that have won, most wins first.
+#: How many civs the table shows: the ones that have won, best win rate first.
 TOP_CIVS = 25
+
+#: The games the civ table counts (operator 2026-11-19: "our winningest civs
+#: ranking should be by win %. and just limited to lv 8 games, starting from
+#: 11/16"): the ones played at this Civilization VI level, Deity, that began
+#: on or after this day. The day is UTC, as every stamp in the ledger is.
+CIVS_LEVEL = 8
+CIVS_SINCE = "2026-11-16"
 
 #: The verification games' results, one JSON line per recorded run, as the
 #: clone last fetched them. The publish workflow's checkout fetches every
@@ -179,23 +187,41 @@ def level(difficulty: str | None) -> int | None:
     return CIV6_RUNGS.index(rung) + 1 if rung in CIV6_RUNGS else None
 
 
-def civ_ranking(rows: list[dict], names: list[str]) -> dict | None:
-    """Wins and losses per civ over the recorded games, most wins first.
+def began(key: str, runs: list[dict]) -> str:
+    """The day a game began, `YYYY-MM-DD` in UTC: the stamp in its tag, which
+    is when it was launched (`civvis-20261116T050606Z`), and for a tag with
+    no stamp the earliest day any of its runs was recorded."""
+    m = re.search(r"(\d{4})(\d{2})(\d{2})T\d{6}Z", key)
+    if m:
+        return f"{m[1]}-{m[2]}-{m[3]}"
+    return min((str(row["utc"])[:10] for row in runs if row.get("utc")), default="")
 
-    A game counts once, however many runs it took, and counts as a win, a
-    loss (a rival's victory, our elimination, or a game the harness conceded
-    early), or nothing: a game somebody stopped has no result. Ties in wins
-    go to the better win rate.
+
+def civ_ranking(
+    rows: list[dict], names: list[str], civ6_level: int | None = CIVS_LEVEL, since: str | None = CIVS_SINCE
+) -> dict | None:
+    """Wins and losses per civ over the recorded games, best win rate first.
+
+    Only the games played at `civ6_level` that began on or after `since`
+    count; `None` for either counts every level, or every day. A game counts
+    once, however many runs it took, and counts as a win, a loss (a rival's
+    victory, our elimination, or a game the harness conceded early), or
+    nothing: a game somebody stopped has no result. Ties in win rate go to
+    the civ with more wins, which is the same rate over more games.
     """
     games: dict[str, list[dict]] = {}
     for row in rows:
+        if civ6_level is not None and level(row.get("difficulty")) != civ6_level:
+            continue
         key = row.get("game") or row.get("tag")
         if key and row.get("outcome") in OUTCOMES:
             games.setdefault(key, []).append(row)
     civs: dict[str, dict] = {}
     total = {"wins": 0, "losses": 0, "unfinished": 0, "unattributed_wins": 0}
     through = ""
-    for runs in games.values():
+    for key, runs in games.items():
+        if since and began(key, runs) < since:
+            continue
         ending = min(runs, key=lambda row: OUTCOMES.index(row["outcome"]))
         outcome = ending["outcome"]
         if outcome == "unfinished":
@@ -235,9 +261,11 @@ def civ_ranking(rows: list[dict], names: list[str]) -> dict | None:
                 "won": won,
             }
         )
-    ranked.sort(key=lambda row: (-row["wins"], -row["wins"] / (row["wins"] + row["losses"]), row["name"]))
+    ranked.sort(key=lambda row: (-row["wins"] / (row["wins"] + row["losses"]), -row["wins"], row["name"]))
     winners = [row for row in ranked if row["wins"]]
     return {
+        "level": civ6_level,
+        "since": since,
         "games": total["wins"] + total["losses"],
         "wins": total["wins"],
         "unfinished": total["unfinished"],
@@ -285,11 +313,12 @@ def when(tag: str) -> str:
 def tournament_series(rows: list[dict], tournaments: list[dict]) -> list[dict] | None:
     """Each tournament's series: consecutive blocks of `series_size` finished games.
 
-    A tournament counts every game whose tag sorts at or after its `start` and
-    whose result line matches every `match` field (difficulty, players, map).
+    A tournament counts every game whose tag sorts at or after its `start` (and
+    before its `end`, if it has one) and whose result line matches every `match`
+    field (difficulty, players, map). A series has an end once it holds
+    `series_size` games, or once its definition's `end` closes it short.
     A game counts once, by its best run (`OUTCOMES`); a game whose every run is
-    `unfinished` (a launch that never reached a board) is not a game. A series
-    has an end only once it holds `series_size` games. Each series is a
+    `unfinished` (a launch that never reached a board) is not a game. Each series is a
     tournament with its own number (`id`), counted from 1 in the order the
     series began across every definition; the live mirror's Mode reads
     "Tournament <id>: <wins>-<losses>" from the same count. Newest first.
@@ -298,11 +327,12 @@ def tournament_series(rows: list[dict], tournaments: list[dict]) -> list[dict] |
     for spec in tournaments:
         size = int(spec.get("series_size") or 10)
         start = str(spec.get("start") or "")
+        end = str(spec.get("end") or "")
         match = spec.get("match") or {}
         games: dict[str, list[dict]] = {}
         for row in rows:
             key = game_key(row)
-            if (key and key >= start and row.get("outcome") in OUTCOMES
+            if (key and key >= start and (not end or key < end) and row.get("outcome") in OUTCOMES
                     and all(row.get(field) == value for field, value in match.items())):
                 games.setdefault(key, []).append(row)
         finished = []
@@ -310,15 +340,19 @@ def tournament_series(rows: list[dict], tournaments: list[dict]) -> list[dict] |
             ending = min(games[key], key=lambda row: OUTCOMES.index(row["outcome"]))
             if ending["outcome"] != "unfinished":
                 finished.append((key, ending))
-        for number, first in enumerate(range(0, len(finished), size), 1):
+        blocks = list(range(0, len(finished), size))
+        for number, first in enumerate(blocks, 1):
             block = finished[first:first + size]
             wins = sum(1 for _, ending in block if ending["outcome"] == "win")
             last = max(str(ending.get("utc") or "") for _, ending in block)
+            # A definition closed by its `end` closes its last series too,
+            # full or not: the operator restarted the tournament.
+            closed = len(block) == size or bool(end and first == blocks[-1])
             out.append({
                 "tournament": spec.get("name") or "",
                 "series": number,
                 "start": when(block[0][0]),
-                "end": (last[:16].replace("T", " ") + "Z") if len(block) == size and last else None,
+                "end": (last[:16].replace("T", " ") + "Z") if closed and last else None,
                 "games": len(block),
                 "size": size,
                 "wins": wins,

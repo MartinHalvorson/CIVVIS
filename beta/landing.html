@@ -191,12 +191,20 @@
      paragraph above. A list with no source stays hidden on its own and the
      other takes the row; a window too narrow for two columns stacks them in
      the same order. `display: grid` outranks the hidden attribute's own
-     rule, so the section has to say what hidden means for itself. */
-  .rankings { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; min-width: 0; }
+     rule, so the section has to say what hidden means for itself.
+
+     Two columns and never three. The Tournaments table above the lists
+     spans every track of the grid, and a track a card spans is never
+     collapsed, so a third track would stand empty beside the two lists. A
+     track is therefore at least half the row (less half the gap) and never
+     under 300px, the width below which the lists stack. */
+  .rankings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(300px, calc(50% - 8px))), 1fr)); gap: 16px; align-items: start; min-width: 0; }
   .rankings[hidden] { display: none; }
   .rank-card { min-width: 0; padding: 12px 14px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
   .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
   .rank-sub { margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
+  /* A date stays on one line: a narrow card would break it at a hyphen. */
+  .rank-day { white-space: nowrap; }
   .rank-list { margin: 0; padding: 0; list-style: none; }
   .rank-row {
     display: grid;
@@ -274,9 +282,12 @@
     </p>
 
     <!-- The rankings. Two lists, both measured. On the left, the
-         winningest civs: our AI's wins and losses as each civ in the
-         verification games, which it plays inside Civilization VI against
-         the game's own AI. Every finished game adds its line to the run
+         winningest civs: our AI's win rate as each civ in the verification
+         games, which it plays inside Civilization VI against the game's own
+         AI, best win rate first. Only the Lv 8 games that began on or after
+         2026-11-16 count (operator 2026-11-19; `CIVS_LEVEL` and
+         `CIVS_SINCE` in `beta/home_rankings.py`, which the slot carries as
+         `level` and `since`). Every finished game adds its line to the run
          ledger (`tools/civ6_ladder.py publish-run`), and the table is that
          record as it stood when the site was built. On the right, the
          player strategies: the Civ AI Agents by published Elo, with
@@ -303,7 +314,7 @@
       </section>
       <section class="rank-card" id="rank-civs" hidden aria-labelledby="rank-civs-title">
         <h2 class="rank-title" id="rank-civs-title">Winningest civs</h2>
-        <p class="rank-sub">Our AI&#8217;s wins&#8211;losses as each civ, in verification games against Civilization VI&#8217;s own AI.</p>
+        <p class="rank-sub">Our AI&#8217;s win rate as each civ, in verification games against Civilization VI&#8217;s own AI.</p>
         <ol class="rank-list"></ol>
         <p class="rank-note">
           <span data-rank-note></span>
@@ -360,28 +371,38 @@
     };
     // An entrant that never lost is rated "at least", one that never won "at most".
     const elo = (r) => (r.bound === "upper" ? "\u2264" : "") + Math.round(r.elo) + (r.bound === "lower" ? "+" : "");
-    // A Civilization VI level by its number as well as its name, which is how
-    // the game's own setup screen and most players count them: "Lv 5 King".
-    // Levels the tables cannot tell apart share a row and read as a range.
+    // Civilization VI's own AI at a level, named as the viewer names it
+    // beside a live game (`strategies::civ6_ai_seat_json`): the level's
+    // number, its name, then whose AI it is, "8 Deity AI Firaxis". Levels
+    // the tables cannot tell apart share a row and read as a range:
+    // "7–8 Immortal · Deity AI Firaxis".
     const level = (r) => {
       const lv = Array.isArray(r.levels) ? r.levels : [];
-      if (!lv.length) return "";
+      if (!lv.length) return r.name;
       const low = Math.min(...lv), high = Math.max(...lv);
-      return "Lv " + low + (high > low ? "\u2013" + high : "") + " ";
+      return low + (high > low ? "\u2013" + high : "") + " " + r.name;
     };
     let shown = false;
 
-    // The winningest civs, on the left: a row is a civ's record, wins then
-    // losses, with the highest level it has won at beside its name and its
-    // win rate beside the record. Hovering lists what it won.
+    // The winningest civs, on the left, best win rate first: a row is a
+    // civ's win rate with its record, wins then losses, beside it. Hovering
+    // lists what it won. The slot says which games were counted, one level
+    // (`level`) from one day on (`since`), and the line under the title
+    // repeats it; a table over every level names the highest level a civ
+    // has won at beside it instead.
     const civs = data.civs;
     if (civs && Array.isArray(civs.rows)) {
       const count = (n) => Number(n).toLocaleString("en-US");
       const plural = (n, one, many) => count(n) + " " + (n === 1 ? one : many);
-      const rows = civs.rows.map((c, i) => row("", String(i + 1), c.name, c.best ? "Lv " + c.best : "",
-        count(c.wins) + "\u2013" + count(c.losses), (100 * c.wins / (c.wins + c.losses)).toFixed(1) + "%",
+      const rows = civs.rows.map((c, i) => row("", String(i + 1), c.name, !civs.level && c.best ? "Lv " + c.best : "",
+        (100 * c.wins / (c.wins + c.losses)).toFixed(1) + "%", count(c.wins) + "\u2013" + count(c.losses),
         c.name + ": " + plural(c.wins, "win", "wins") + ", " + plural(c.losses, "loss", "losses")
           + (Array.isArray(c.won) && c.won.length ? ". Won: " + c.won.join(", ") : "")));
+      const sub = document.querySelector("#rank-civs .rank-sub");
+      sub.textContent = "Our AI\u2019s win rate as each civ, in " + (civs.level ? "Lv " + civs.level + " " : "")
+        + "verification games against Civilization VI\u2019s own AI" + (civs.since ? " since " : "");
+      if (civs.since) sub.append(el("span", "rank-day", civs.since));
+      sub.append(".");
       const note = plural(civs.games, "finished game", "finished games")
         + (civs.through ? " through " + civs.through : "") + "; "
         + civs.winners + " of " + plural(civs.played, "civ", "civs") + " played have won."
@@ -397,7 +418,7 @@
     if (strategies && Array.isArray(strategies.rows)) {
       let place = 0;
       const rows = strategies.rows.map((r) => r.kind === "rung"
-        ? row("is-rung", "", "Civ VI " + level(r) + r.name, "", elo(r), "", "Civilization VI difficulty: " + level(r) + r.name)
+        ? row("is-rung", "", level(r) + " AI Firaxis", "", elo(r), "", "Civilization VI\u2019s own AI at difficulty level " + level(r))
         : row("", String(++place), r.name, r.tilt, elo(r), r.sd ? "\u00b1" + Math.round(r.sd) : "",
               r.name + ": won " + r.wins + " of " + r.games + " rated tables"));
       const note = (strategies.tables ? strategies.tables + " " : "")

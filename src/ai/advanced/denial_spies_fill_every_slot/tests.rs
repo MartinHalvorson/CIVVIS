@@ -383,3 +383,137 @@ fn version_two_fills_the_slots_on_a_score_aim() {
         "never a Science aim"
     );
 }
+
+fn version_three(target: VictoryTarget) -> AdvancedAi {
+    let mut ai = seat(target, false);
+    ai.enable_denial_spies_fill_every_slot_3();
+    ai
+}
+
+#[test]
+fn fill_every_slot_3_is_opt_in() {
+    opt_in_off_in_both_controllers("denial-spies-fill-every-slot-3", |ai| {
+        ai.denial_spies_fill_every_slot_3
+    });
+}
+
+#[test]
+fn version_three_turns_the_older_versions_off() {
+    let mut ai = seat(VictoryTarget::Culture, true);
+    ai.enable_denial_spies_fill_every_slot_2();
+    ai.enable_denial_spies_fill_every_slot_3();
+    assert!(ai.denial_spies_fill_every_slot_3);
+    assert!(
+        !ai.denial_spies_fill_every_slot && !ai.denial_spies_fill_every_slot_2,
+        "a seat plays one version"
+    );
+}
+
+#[test]
+fn version_three_fills_the_slots_on_every_aim() {
+    let (g, ours) = board(false);
+    let ranked = by_production(&g, &ours);
+    let two_best = ranked.iter().take(2).copied().collect::<BTreeSet<u32>>();
+    for (target, strategy) in [
+        (VictoryTarget::Science, GrandStrategy::Science),
+        (VictoryTarget::Religion, GrandStrategy::Religion),
+        (VictoryTarget::Diplomacy, GrandStrategy::Diplomacy),
+        (VictoryTarget::Culture, GrandStrategy::Culture),
+        (VictoryTarget::Domination, GrandStrategy::Conquest),
+        (VictoryTarget::Score, GrandStrategy::Expansion),
+    ] {
+        let ai = version_three(target);
+        assert!(ai.denial_spies_fill_every_slot_on(&g), "{target:?}: on");
+        assert_eq!(
+            ai.denial_training_racers(&g, 0),
+            BTreeSet::from([1]),
+            "{target:?}: the met rival stands in"
+        );
+        let mut board = g.clone();
+        ai.claim_queues_for_denial_spies(&mut board, 0, &plan(strategy));
+        assert_eq!(training(&board), two_best, "{target:?}: both slots");
+    }
+    // Version two on the same Science seat: the old claim, no stand-in.
+    let mut v2 = seat(VictoryTarget::Science, false);
+    v2.enable_denial_spies_fill_every_slot_2();
+    let mut board = g.clone();
+    v2.claim_queues_for_denial_spies(&mut board, 0, &plan(GrandStrategy::Science));
+    assert!(training(&board).is_empty(), "version two: still inert here");
+}
+
+#[test]
+fn version_three_leaves_the_science_seat_its_launch() {
+    let (mut g, ours) = board(false);
+    let ranked = by_production(&g, &ours);
+    let pad = Item::District {
+        district: crate::name!("spaceport"),
+        pos: g.cities[&ranked[0]].pos,
+    };
+    let builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    g.cities.get_mut(&ranked[0]).unwrap().queue = vec![pad];
+    g.cities.get_mut(&ranked[1]).unwrap().queue = vec![builder];
+    let science = version_three(VictoryTarget::Science);
+    assert!(
+        science.denial_fill_keeps_the_launch(&g, ranked[0]),
+        "the pad"
+    );
+    assert!(
+        science.denial_fill_keeps_the_launch(&g, ranked[1]),
+        "the Builder"
+    );
+    assert!(!science.denial_fill_keeps_the_launch(&g, ranked[2]));
+    let mut on = g.clone();
+    science.claim_queues_for_denial_spies(&mut on, 0, &plan(GrandStrategy::Science));
+    assert_eq!(
+        training(&on),
+        BTreeSet::from([ranked[2]]),
+        "Science: the pad and the Builder stay, the third city trains"
+    );
+    // A space project anywhere in the queue keeps the city too.
+    let mut queued = g.clone();
+    queued.cities.get_mut(&ranked[2]).unwrap().queue = vec![
+        Item::Building {
+            building: crate::name!("monument"),
+        },
+        Item::Project {
+            project: crate::name!("launch_earth_satellite"),
+        },
+    ];
+    assert!(science.denial_fill_keeps_the_launch(&queued, ranked[2]));
+    // The older aims read exactly version two's claim.
+    let culture = version_three(VictoryTarget::Culture);
+    assert!(!culture.denial_fill_keeps_the_launch(&g, ranked[0]));
+    let mut old = g.clone();
+    culture.claim_queues_for_denial_spies(&mut old, 0, &plan(GrandStrategy::Culture));
+    assert_eq!(
+        training(&old),
+        BTreeSet::from([ranked[0], ranked[1]]),
+        "Culture: the old displacement rule"
+    );
+}
+
+#[test]
+fn version_three_keeps_a_religion_seats_missionary() {
+    let (mut g, ours) = board(false);
+    let ranked = by_production(&g, &ours);
+    g.cities.get_mut(&ranked[0]).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("missionary"),
+    }];
+    let run = |target: VictoryTarget, strategy: GrandStrategy| {
+        let mut board = g.clone();
+        version_three(target).claim_queues_for_denial_spies(&mut board, 0, &plan(strategy));
+        training(&board)
+    };
+    assert_eq!(
+        run(VictoryTarget::Religion, GrandStrategy::Religion),
+        BTreeSet::from([ranked[1], ranked[2]]),
+        "Religion: the Missionary stays"
+    );
+    assert_eq!(
+        run(VictoryTarget::Diplomacy, GrandStrategy::Diplomacy),
+        BTreeSet::from([ranked[0], ranked[1]]),
+        "Diplomacy: a Missionary is routine work"
+    );
+}
