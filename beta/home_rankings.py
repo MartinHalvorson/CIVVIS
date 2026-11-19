@@ -344,7 +344,10 @@ def tournament_series(rows: list[dict], tournaments: list[dict]) -> list[dict] |
     whose result line matches every `match` field (difficulty, players, map).
     A game counts once, by its best run (`OUTCOMES`); a game whose every run is
     `unfinished` (a launch that never reached a board) is not a game. A series
-    has an end only once it holds `series_size` games. Newest series first.
+    has an end only once it holds `series_size` games. Each series is a
+    tournament with its own number (`id`), counted from 1 in the order the
+    series began across every definition; the live mirror's Mode reads
+    "Tournament <id>: <wins>-<losses>" from the same count. Newest first.
     """
     out = []
     for spec in tournaments:
@@ -379,7 +382,10 @@ def tournament_series(rows: list[dict], tournaments: list[dict]) -> list[dict] |
             })
     if not out:
         return None
-    out.sort(key=lambda row: (row["start"], row["tournament"]), reverse=True)
+    out.sort(key=lambda row: (row["start"], row["tournament"]))
+    for number, row in enumerate(out, 1):
+        row["id"] = number
+    out.reverse()
     return out
 
 

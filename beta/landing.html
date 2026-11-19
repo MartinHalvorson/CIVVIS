@@ -303,7 +303,7 @@
         <h2 class="rank-title" id="rank-tournaments-title">Tournaments</h2>
         <p class="rank-sub">Our AI in series of verification games against Civilization VI&#8217;s own AI.</p>
         <table class="rank-table">
-          <thead><tr><th scope="col">Series</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Games</th><th scope="col">Record</th><th scope="col">Conditions</th></tr></thead>
+          <thead><tr><th scope="col">Tournament</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Games</th><th scope="col">Record</th><th scope="col">Conditions</th></tr></thead>
           <tbody></tbody>
         </table>
         <p class="rank-note">
@@ -451,7 +451,7 @@
       for (const t of tours) {
         const tr = el("tr");
         tr.append(
-          el("td", "", (t.tournament ? t.tournament + " #" : "#") + t.series),
+          el("td", "", "Tournament " + t.id),
           el("td", "", t.start || ""),
           el("td", t.end ? "" : "is-open", t.end || "in progress"),
           el("td", "", t.games + " / " + t.size),

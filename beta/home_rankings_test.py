@@ -316,8 +316,8 @@ class HomeRankings(unittest.TestCase):
             run("civvis-20261119T202000Z", "win", "MALI", utc="2026-11-19T20:30:00Z", players=4, map="Pangaea.lua"),
         ]
         series = home_rankings.tournament_series(rows, [spec])
-        self.assertEqual([(s["series"], s["games"], s["wins"], s["losses"]) for s in series],
-                         [(2, 1, 0, 1), (1, 3, 2, 1)])
+        self.assertEqual([(s["id"], s["series"], s["games"], s["wins"], s["losses"]) for s in series],
+                         [(2, 2, 1, 0, 1), (1, 1, 3, 2, 1)])
         self.assertEqual(series[1]["start"], "2026-11-19 19:00Z")
         self.assertEqual(series[1]["end"], "2026-11-19 20:05Z")
         self.assertIsNone(series[0]["end"])                    # a series still being played
