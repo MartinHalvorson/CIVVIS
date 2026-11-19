@@ -439,3 +439,151 @@ const SKY_TARGET_SPECS = [
    hz:"best",     tint:"#4f9fb0", dark:"#123a45", frequency:14, seed:4893,
    note:"The strongest candidate anywhere: a temperate super-Earth that may be an ocean."},
 ];
+
+// ── Colour arithmetic ──────────────────────────────────────────────────────
+// Every pure function of a colour the renderer has: nothing below reads the
+// game, the canvas or the page, which is what lets it stand ahead of app.js.
+// Carved out when the standings row's wash arrived, because app.js stood 42
+// lines under the ceiling tools/test_web_assets.py holds it to.
+
+// sRGB-weighted lightness. Only ever used to sort a pair of jersey colours, so
+// the gamma-correct version would not change an answer.
+function lightness(hex) {
+  if (typeof hex !== "string" || hex[0] !== "#" || hex.length !== 7) return 0.5;
+  const n = parseInt(hex.slice(1), 16);
+  return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255)
+          + 0.0722 * (n & 255)) / 255;
+}
+
+function shade(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  r = Math.min(255, Math.max(0, Math.round(r * f)));
+  g = Math.min(255, Math.max(0, Math.round(g * f)));
+  b = Math.min(255, Math.max(0, Math.round(b * f)));
+  return "rgb(" + r + "," + g + "," + b + ")";
+}
+
+// Compact color helpers for strategic map symbols.
+function rgbOf(col) {
+  if (col[0] === "#") {
+    const n = parseInt(col.slice(1), 16);
+    return col.length >= 7
+      ? [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+      : [((n >> 8) & 15) * 17, ((n >> 4) & 15) * 17, (n & 15) * 17];
+  }
+  const m = col.match(/[\d.]+/g) || ["0", "0", "0"];
+  return [+m[0], +m[1], +m[2]];
+}
+const clamp255 = v => v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
+// Value with hue: f > 1 walks the colour into sunlight, f < 1 into skylight.
+function tone(col, f, a) {
+  const [r, g, b] = rgbOf(col);
+  const warm = Math.max(0, f - 1), cool = Math.max(0, 1 - f);
+  const out = [clamp255(r * f + warm * 54 - cool * 12),
+               clamp255(g * f + warm * 40 + cool * 3),
+               clamp255(b * f + warm * 9 + cool * 34)];
+  return a === undefined
+    ? `rgb(${out[0]},${out[1]},${out[2]})`
+    : `rgba(${out[0]},${out[1]},${out[2]},${a})`;
+}
+function litBase(col) {
+  const [r, g, b] = rgbOf(col);
+  const lum = (r * .3 + g * .59 + b * .11) / 255;
+  if (lum >= .3) return col;
+  const t = Math.min(.62, (.3 - lum) * 2.4);
+  return `rgb(${clamp255(r + (96 - r) * t)},${clamp255(g + (104 - g) * t)},${clamp255(b + (116 - b) * t)})`;
+}
+function clothMat(col) { return col; }
+function metalMat(col) { return col; }
+function matteMat(col) { return col; }
+function ballMat(col) { return col; }
+// A rim is skylight grazing an edge, not a brighter version of the object. Its
+// first form was `tone(col, 1.75)`, which on a purple tunic is hot magenta —
+// every figure wore a neon outline, which is precisely the opposite of what a
+// rim is for. Mix the material toward the colour of the sky instead.
+function skyRim(col) {
+  const [r, g, b] = rgbOf(litBase(col));
+  const t = .56;
+  return `rgb(${clamp255(r + (208 - r) * t)},${clamp255(g + (226 - g) * t)},${clamp255(b + (248 - b) * t)})`;
+}
+
+// Positive amounts mix a district color toward white, negative toward black.
+// The dark end is the ink that the token's bars and glyphs share, so every
+// family's furniture is automatically a deep shade of its own color.
+function districtShade(color, amount) {
+  const hex = color.length === 4
+    ? "#" + [...color.slice(1)].map(ch => ch + ch).join("") : color;
+  const target = amount < 0 ? 0 : 255, weight = Math.abs(amount);
+  const mixed = [1, 3, 5].map(at => Math.round(
+    parseInt(hex.slice(at, at + 2), 16) * (1 - weight) + target * weight));
+  return `rgb(${mixed.join(",")})`;
+}
+
+// A colour at an alpha. `shade` returns an opaque `rgb()` and the tables above
+// hold hex, and both get faded out here, so this takes either. Handing a hex
+// parser an `rgb(...)` string silently yields NaN and a fill of nothing, which
+// is a blank ring rather than an error.
+function skyAlpha(colour, a) {
+  if (colour[0] === "#") {
+    const n = parseInt(colour.slice(1), 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+  }
+  const parts = colour.match(/-?\d+(\.\d+)?/g) || [0, 0, 0];
+  return `rgba(${parts[0]},${parts[1]},${parts[2]},${a})`;
+}
+
+// ── The standings row's colours ─────────────────────────────────────────────
+// A standings row wears its civilization's colour from edge to edge, so the
+// eye can follow one empire while the table re-sorts under it. The same row
+// carries a dozen figures that are each coloured by what they count, and a
+// figure in its own hue only reads on a dark ground: pink tourism on Scythia's
+// orange, or gold on Portugal's white, is a smear. So the row has two grounds.
+// The identity cells stand on the jersey itself, in one ink; everything after
+// them stands on the jersey's WASH — the same hue taken down to a deep shade.
+//
+// The wash is made in OKLab, where lightness means what the eye sees: a plain
+// mix with black leaves yellow three times as bright as blue. Lightness is
+// squeezed into a narrow dark band rather than pinned to one value, so the
+// three reds of the palette (#e57574, #ca1415, #780001) stay three shades, and
+// the band's top is where the dimmest text a row holds still clears 4.5:1.
+const HUD_ROW_WASH_FLOOR = .23, HUD_ROW_WASH_SPAN = .12, HUD_ROW_WASH_CHROMA = .62;
+const srgbLinear = v => (v /= 255) <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
+const srgbByte = v => Math.round(255 * (v <= .0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - .055));
+const hudRowWashes = new Map();
+function hudRowWash(col) {
+  const known = hudRowWashes.get(col);
+  if (known) return known;
+  const [r, g, b] = rgbOf(col).map(srgbLinear);
+  const l = Math.cbrt(.4122214708 * r + .5363325363 * g + .0514459929 * b);
+  const m = Math.cbrt(.2119034982 * r + .6806995451 * g + .1073969566 * b);
+  const s = Math.cbrt(.0883024619 * r + .2817188376 * g + .6299787005 * b);
+  const light = HUD_ROW_WASH_FLOOR
+    + HUD_ROW_WASH_SPAN * (.2104542553 * l + .793617785 * m - .0040720468 * s);
+  const a = 1.9779984951 * l - 2.428592205 * m + .4505937099 * s;
+  const bee = .0259040371 * l + .7827717662 * m - .808675766 * s;
+  // A deep yellow or aqua cannot be as vivid as a deep blue: give up chroma,
+  // never hue or lightness, until the shade is one a screen can show.
+  let out = [0, 0, 0];
+  for (let keep = HUD_ROW_WASH_CHROMA, tries = 0; tries < 40; keep *= .94, tries++) {
+    const l3 = (light + .3963377774 * a * keep + .2158037573 * bee * keep) ** 3;
+    const m3 = (light - .1055613458 * a * keep - .0638541728 * bee * keep) ** 3;
+    const s3 = (light - .0894841775 * a * keep - 1.291485548 * bee * keep) ** 3;
+    out = [4.0767416621 * l3 - 3.3077115913 * m3 + .2309699292 * s3,
+           -1.2684380046 * l3 + 2.6097574011 * m3 - .3413193965 * s3,
+           -.0041960863 * l3 - .7034186147 * m3 + 1.707614701 * s3];
+    if (out.every(v => v >= -1e-4 && v <= 1 + 1e-4)) break;
+  }
+  const wash = "#" + out.map(v => srgbByte(Math.min(1, Math.max(0, v)))
+    .toString(16).padStart(2, "0")).join("");
+  hudRowWashes.set(col, wash);
+  return wash;
+}
+// WCAG contrast between two colours, 1 (none) to 21 (black on white).
+function contrastRatio(one, other) {
+  const [a, b] = [one, other].map(col => {
+    const [r, g, bl] = rgbOf(col).map(srgbLinear);
+    return .2126 * r + .7152 * g + .0722 * bl;
+  });
+  return (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
+}

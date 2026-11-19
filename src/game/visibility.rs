@@ -2059,11 +2059,13 @@ impl Game {
             let origin = other.air_patrol_pos.unwrap_or(other.pos);
             let target = unit.air_patrol_pos.unwrap_or(unit.pos);
             let distance = self.wdist_capped(origin, target, 1);
+            // The hull test comes before the sight disk: only Destroyers and
+            // other raiders spot a raider, and most units are neither.
             distance <= 1
                 || (raider
-                    && self.unit_visible_tiles(other_id).contains(&target)
                     && (other.kind == "destroyer"
-                        || self.rules.units[other.kind].promotion_class == "naval_raider"))
+                        || self.rules.units[other.kind].promotion_class == "naval_raider")
+                    && self.unit_visible_tiles(other_id).contains(&target))
         })
     }
 

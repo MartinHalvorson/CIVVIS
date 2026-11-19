@@ -861,6 +861,7 @@ fn a_mid_turn_victory_wakes_the_waiting_state_request_immediately() {
     session.game.winner = None;
     let seed = session.game.seed;
     let shared = Arc::new(Shared {
+        panes: Default::default(),
         current_seed: AtomicU64::new(seed),
         supervisor_request: Mutex::new(None),
         live_params: Mutex::new(session.params.clone()),
@@ -8890,7 +8891,13 @@ fn browser_player_rows_use_relationship_color_only_for_active_wars() {
     ));
     assert!(EMBEDDED_INDEX.contains(".diplomacy-card.expanded:not(.at-war)"));
     assert!(EMBEDDED_INDEX.contains(".diplomacy-card:hover:not(.at-war)"));
-    assert!(EMBEDDED_INDEX.contains("#playerhud .diplomacy-card.pinned.at-war"));
+    // A standings row is its civilization's colour from edge to edge, so the
+    // red frame and edge are drawn over both of its grounds, held row or not.
+    assert!(EMBEDDED_INDEX
+        .contains("#playerhud .diplomacy-card.jersey-row.at-war { border-color: var(--danger); }"));
+    assert!(EMBEDDED_INDEX.contains(
+        "#playerhud .diplomacy-card.jersey-row.at-war::after { box-shadow: inset 3px 0 var(--danger); }"
+    ));
 }
 
 /// A defeated civilization all but disappears from the masthead — its row
@@ -11580,6 +11587,7 @@ fn settings_are_staged_while_the_simulation_lock_is_held() {
 fn shared_for(mut session: Session) -> Arc<Shared> {
     let seed = session.game.seed;
     Arc::new(Shared {
+        panes: Default::default(),
         current_seed: AtomicU64::new(seed),
         supervisor_request: Mutex::new(None),
         live_params: Mutex::new(session.params.clone()),

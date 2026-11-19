@@ -236,12 +236,55 @@
     return payload;
   })();
 
+  // One half of a split Sim debugger (`assets/app_debugger.js`). The page in
+  // each half is this whole build again, engine included, and it opens on the
+  // world the host page was playing when the screen was split: the host is
+  // asked for that world by message and answers with a save. Like a preset,
+  // it is applied before any other request, so the half never shows the stock
+  // exhibition on its way to the game it was opened for.
+  const PANE = (() => {
+    const pane = new URL(window.location.href).searchParams.get("pane");
+    return pane && window.parent !== window ? pane : null;
+  })();
+  function paneWorld() {
+    return new Promise((resolve) => {
+      const heard = (event) => {
+        if (event.source !== window.parent || event.origin !== window.location.origin) return;
+        const data = event.data;
+        if (!data || data.civvis !== "pane-world" || data.pane !== PANE) return;
+        window.removeEventListener("message", heard);
+        resolve(typeof data.game === "string" ? data.game : null);
+      };
+      window.addEventListener("message", heard);
+      window.parent.postMessage({ civvis: "pane-boot", pane: PANE }, window.location.origin);
+      // A host that never answers leaves the half on the stock world rather
+      // than on a curtain that never lifts.
+      setTimeout(() => resolve(null), 20000);
+    });
+  }
+
   // The one request that applies the link's settings. Every engine request
   // waits behind it, so the first `/state` cannot answer with the stock
   // world a preset visit never asked to see; on failure the stock world is
   // exactly what should play, and the report says why.
   let openingPresetStarted = null;
   function ensureOpeningPreset() {
+    if (PANE !== null) {
+      if (openingPresetStarted === null) {
+        openingPresetStarted = paneWorld()
+          // Spliced, not parsed: the save is text on its way to the engine.
+          .then((game) => (game === null ? null : ask("POST", "/load", `{"game":${game}}`)))
+          .then((answer) => {
+            if (answer && answer.error) report.presetError = String(answer.error);
+            return null;
+          })
+          .catch((error) => {
+            report.presetError = String(error.message || error);
+            return null;
+          });
+      }
+      return openingPresetStarted;
+    }
     if (OPENING_PRESET === null) return Promise.resolve(null);
     if (openingPresetStarted === null) {
       openingPresetStarted = ask("POST", "/new", JSON.stringify(OPENING_PRESET))

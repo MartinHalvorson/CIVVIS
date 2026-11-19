@@ -353,6 +353,56 @@ def wait_for_harness(dev, url_part: str) -> None:
     raise AssertionError(f"the page at {url_part} never reported ready")
 
 
+def check_a_split_pane_opens_on_its_hosts_world(dev) -> None:
+    """One half of a split Sim debugger starts on the world its host hands it.
+
+    The half is this build again in a frame, with an engine of its own. Before
+    it asks that engine anything it asks the page that framed it for a world,
+    and the save it is answered with is the first thing the engine is sent, so
+    the half never shows the stock exhibition on its way to the forked game.
+    """
+    seen = dev.evaluate(
+        """(async () => {
+          const save = JSON.stringify({ format: "civvis", game: { turn: 77 } });
+          const asked = [];
+          window.addEventListener("message", (event) => {
+            if (!event.data || event.data.civvis !== "pane-boot") return;
+            asked.push(event.data.pane);
+            event.source.postMessage(
+              { civvis: "pane-world", pane: event.data.pane, game: save }, location.origin);
+          });
+          const frame = document.createElement("iframe");
+          frame.src = "index.html?pane=a-t1";
+          document.body.appendChild(frame);
+          // The harness freezes performance.now; Date is the real clock.
+          const deadline = Date.now() + 10000;
+          const ready = () => frame.contentWindow.__civvisBeta && frame.contentWindow.__civvisBeta.ready;
+          while (Date.now() < deadline && !ready()) await new Promise((done) => setTimeout(done, 50));
+          const answer = await frame.contentWindow.fetch("/state?seat=1").then((r) => r.json());
+          const seen = {
+            asked,
+            first: frame.contentWindow.workerBodies[0],
+            calls: frame.contentWindow.workerCalls.slice(0, 3),
+            turn: answer.turn,
+            error: frame.contentWindow.__civvisBeta.presetError || null,
+          };
+          frame.remove();
+          return seen;
+        })()"""
+    )
+    assert seen["asked"] == ["a-t1"], seen
+    assert seen["first"] == [
+        "/load",
+        '{"game":{"format":"civvis","game":{"turn":77}}}',
+    ], seen
+    assert seen["calls"][:2] == ["/load", "/runtime"], seen
+    assert seen["error"] is None, seen
+    assert seen["turn"] == 42, seen
+    # A page nobody framed is not a pane, whatever its address says.
+    assert dev.evaluate("window.parent === window && window.workerCalls[0] !== '/load'")
+    print("a split pane asks its host for a world and loads it before anything else.")
+
+
 class Quiet(http.server.SimpleHTTPRequestHandler):
     extensions_map = {
         **http.server.SimpleHTTPRequestHandler.extensions_map,
@@ -667,6 +717,7 @@ def main() -> int:
         calls = dev.evaluate("window.workerCalls")
         assert calls[0] == "/new", calls
         assert not [path for path in calls if "have=11:" in path], calls
+        check_a_split_pane_opens_on_its_hosts_world(dev)
         print(
             "the WASM clock reads one frame ahead and never two, sends the viewer's "
             "opening settings first, honors selected holds, and opens an installed "

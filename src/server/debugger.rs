@@ -242,6 +242,7 @@ impl Breakpoints {
 }
 
 /// The world as it stood when the played seat's turn opened.
+#[derive(Clone)]
 struct Mark {
     turn: u32,
     /// How long the action log was. Everything past it in the live game is
@@ -251,7 +252,10 @@ struct Mark {
 }
 
 /// A played game's marks, and what the debugger was told to do with it.
-#[derive(Default)]
+///
+/// Cloning one is cheap for the reason keeping one is: a mark shares with its
+/// clone everything the game shares with its own.
+#[derive(Clone, Default)]
 pub struct Timeline {
     /// Oldest first, one a turn at most.
     marks: Vec<Mark>,
@@ -431,6 +435,29 @@ impl Session {
         *self = next;
         self.debugger.stopped = None;
         self.debugger.assisted = 0;
+    }
+
+    /// A second session on this one's world as it stands: the same seats and
+    /// agents, and the same turns behind it to walk back along. From here the
+    /// two play their own histories. This is what one half of a split screen
+    /// is given (`panes.rs`).
+    pub(super) fn fork(&self) -> Session {
+        let mut next = Session::from_saved_game(self.params.clone(), self.game.clone());
+        if let Some(name) = &self.rival_strategy {
+            let _ = next.seat_rivals(name);
+        }
+        if let Some(name) = &self.autoplay_strategy {
+            let _ = next.seat_strategy_at(0, name);
+        }
+        if !self.human_players.is_empty() {
+            next.human_players = self.human_players.clone();
+        }
+        next.view_player = self.view_player;
+        next.debugger = self.debugger.clone();
+        next.debugger.stopped = None;
+        next.keeps_rival_yields = self.keeps_rival_yields;
+        next.keeps_own_yields = self.keeps_own_yields;
+        next
     }
 
     /// Go to a marked turn. A turn with no mark of its own answers with the
