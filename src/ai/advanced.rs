@@ -14883,7 +14883,7 @@ impl AdvancedAi {
                     .map(String::as_str)
                     .filter(|tech| *tech != "rocketry"),
             )
-            .filter(|tech| g.rules.techs.contains_key(*tech));
+            .filter(|tech| g.rules.techs.contains_key(tech));
         let (mut path, mut completed) = (0, 0);
         for tech in rocketry_path {
             path += 1;
@@ -26094,7 +26094,7 @@ impl AdvancedAi {
                 continue;
             }
             let Some(value) =
-                self.nuclear_target_value_with(g, pid, target, thermonuclear, &mut pressures)
+                self.nuclear_target_value(g, pid, target, thermonuclear, &mut pressures)
             else {
                 continue;
             };

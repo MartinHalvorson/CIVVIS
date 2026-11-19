@@ -761,21 +761,6 @@ impl AdvancedAi {
             }
     }
 
-    /// Value the exact disruption a blast can cause at a city centre.  WMD
-    /// resolution destroys deployed forces, strips population and walls, and
-    /// pillages each district/building in its disk.  Scoring those effects is
-    /// what makes a threatened Spaceport, Holy Site, or Diplomatic Quarter
-    /// beat a merely walled city when it is the rival's actual win engine.
-    pub(super) fn nuclear_target_value(
-        &self,
-        g: &Game,
-        pid: usize,
-        target: Pos,
-        thermonuclear: bool,
-    ) -> Option<f64> {
-        self.nuclear_target_value_with(g, pid, target, thermonuclear, &mut Vec::new())
-    }
-
     /// [`Self::rival_victory_pressure`] for `owner`, read once per scan.
     ///
     /// A scan reads one board, so a rival's pressure cannot change between
@@ -795,8 +780,15 @@ impl AdvancedAi {
         focus
     }
 
-    /// [`Self::nuclear_target_value`] sharing one scan's rival pressures.
-    pub(super) fn nuclear_target_value_with(
+    /// Value the exact disruption a blast can cause at a city centre.  WMD
+    /// resolution destroys deployed forces, strips population and walls, and
+    /// pillages each district/building in its disk.  Scoring those effects is
+    /// what makes a threatened Spaceport, Holy Site, or Diplomatic Quarter
+    /// beat a merely walled city when it is the rival's actual win engine.
+    ///
+    /// `pressures` carries the scan's [`Self::remembered_rival_pressure`]
+    /// readings from target to target.
+    pub(super) fn nuclear_target_value(
         &self,
         g: &Game,
         pid: usize,
@@ -999,15 +991,11 @@ impl AdvancedAi {
                 .filter_map(|city| {
                     let standard = g
                         .wmd_can_reach(pid, city.pos, false)
-                        .then(|| {
-                            self.nuclear_target_value_with(g, pid, city.pos, false, &mut pressures)
-                        })
+                        .then(|| self.nuclear_target_value(g, pid, city.pos, false, &mut pressures))
                         .flatten();
                     let thermonuclear = g
                         .wmd_can_reach(pid, city.pos, true)
-                        .then(|| {
-                            self.nuclear_target_value_with(g, pid, city.pos, true, &mut pressures)
-                        })
+                        .then(|| self.nuclear_target_value(g, pid, city.pos, true, &mut pressures))
                         .flatten();
                     let priority = standard
                         .into_iter()
