@@ -307,7 +307,7 @@ function debugBuildBar() {
   return bar;
 }
 
-function drawDebugBar() {
+function drawDebugBar(seat = true) {
   const bar = document.getElementById("debugbar") || debugBuildBar();
   const timeline = debugTimeline();
   bar.hidden = !timeline;
@@ -379,7 +379,7 @@ function drawDebugBar() {
   const html = escapeAttr(text) +
     (debugNoteText && debugNotePos ? `<button data-dbg="show" title="Centre the map there">Show</button>` : "");
   if (note.innerHTML !== html) note.innerHTML = html;
-  debugSeatBar(bar);
+  if (seat) debugSeatBar(bar);
 }
 // In the top strip when its middle is free, on a row beneath when it is not.
 function debugSeatBar(bar) {
@@ -399,11 +399,20 @@ function debugSeatBar(bar) {
 }
 
 // `render` is the one door a state comes through, whoever asked for it.
+// `drawTurnLoop` is the page's own word that the turn's standing changed —
+// an end of turn in flight, a request finished — which is exactly when the
+// bar's buttons change what they may do, with no new state to say so.
 {
   const drawState = render;
   render = function (st, ...rest) {
     const drawn = drawState(st, ...rest);
     try { drawDebugBar(); } catch (error) { console.error("debugger bar", error); }
+    return drawn;
+  };
+  const drawLoop = drawTurnLoop;
+  drawTurnLoop = function (...rest) {
+    const drawn = drawLoop(...rest);
+    try { drawDebugBar(false); } catch (error) { console.error("debugger bar", error); }
     return drawn;
   };
 }
