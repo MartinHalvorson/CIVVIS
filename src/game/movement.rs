@@ -376,15 +376,17 @@ impl Game {
         // below caps the step at the route's own cost, which already discards
         // the surcharge, so a refund taken after that cancels nothing and
         // drives the step negative instead.
-        let bridged =
-            self.crosses_river(from, to) && self.map.tiles[&from].road >= 2 && tile.road >= 2;
+        // The crossing is read once; `step_cost` read it a second time for
+        // the unbridged step that pays it.
+        let river = self.crosses_river(from, to);
+        let bridged = river && self.map.tiles[&from].road >= 2 && tile.road >= 2;
         // Waive the river penalty before pricing the route. Applying
         // Amphibious afterwards would overwrite a valid road discount.
-        let mut cost = if bridged || terms.amphibious > 0.0 && self.crosses_river(from, to) {
-            self.rules.move_cost(tile)
-        } else {
-            self.step_cost(from, to)
-        };
+        let waived = bridged || terms.amphibious > 0.0;
+        let mut cost = self.rules.move_cost(tile);
+        if river && !waived {
+            cost += 2.0;
+        }
         if self.map.tiles[&from].road > 0 && tile.road > 0 {
             let modern_bridge = self.map.tiles[&from].wonder.as_deref()
                 == Some("golden_gate_bridge")
@@ -923,7 +925,22 @@ impl Game {
         through_units: bool,
     ) -> Entry {
         let u = &self.units[&uid];
-        if !self.unit_can_traverse(uid, pos) {
+        self.entry_at_neighbor_as(u, self.unit_traversal(uid), from, pos, through_units)
+    }
+
+    /// [`Self::entry_at_neighbor`] for a caller that has already read the
+    /// unit and its `unit_traversal`. A flood steps one unit over a board it
+    /// cannot change, so it reads both once rather than once per neighbour.
+    pub(super) fn entry_at_neighbor_as(
+        &self,
+        u: &crate::game::Unit,
+        traversal: Option<TraversalClass>,
+        from: Pos,
+        pos: Pos,
+        through_units: bool,
+    ) -> Entry {
+        let uid = u.id;
+        if !traversal.is_some_and(|class| self.class_can_enter(class, pos)) {
             return Entry::Blocked;
         }
         // Only a fighter actually flying a patrol over this very tile can

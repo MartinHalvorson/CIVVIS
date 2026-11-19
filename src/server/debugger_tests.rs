@@ -485,9 +485,36 @@ fn a_dragged_slider_is_read_before_the_bar_is_drawn_again() {
         .expect("the slider is read");
     let drawn = handler.find("debugSay(\"\")").expect("the note is cleared");
     assert!(read < drawn, "the slider is read after the bar was redrawn");
-    for slider in ["dbg-slider", "dbg-wide-slider"] {
-        assert!(handler[..read].contains(&format!("target.id === \"{slider}\"")));
+    // The world's own slider, and the two lanes the host of a split shows.
+    for slider in ["target.id === \"dbg-slider\"", "target.dataset.dbgHalf"] {
+        assert!(handler[..read].contains(slider), "{slider}");
     }
+}
+
+/// The bar is fixed across the top of the window and the page is padded by
+/// its height. Three things the page fixes to the window at a distance from
+/// its top do not move with the body, so the bar's own stylesheet moves them,
+/// by name. A name that is gone from the page would leave that rule moving
+/// nothing, and the thing it was for under the bar.
+#[test]
+fn the_docked_bar_moves_what_the_page_fixes_to_the_top_of_the_window() {
+    let page = super::super::EMBEDDED_INDEX_HTML;
+    let script = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    assert!(script.contains("html.dbg-docked body { padding-top: var(--dbg-top, 0px); }"));
+    for (rule, moved) in [
+        ("#moments {", "html.dbg-docked #moments"),
+        ("#site-pick {", "html.dbg-docked #site-pick"),
+        ("#side { position: fixed;", "html.dbg-docked #side"),
+    ] {
+        let at = page
+            .find(rule)
+            .unwrap_or_else(|| panic!("the page has no {rule}"));
+        let body = &page[at..at + page[at..].find('}').expect("a closed rule")];
+        assert!(body.contains("position: fixed"), "{rule} is not fixed");
+        assert!(script.contains(moved), "nothing moves {rule} under the bar");
+    }
+    // A split stands under the bar, not over it.
+    assert!(script.contains("position: fixed; inset: var(--dbg-top, 0px) 0 0 0;"));
 }
 
 #[test]

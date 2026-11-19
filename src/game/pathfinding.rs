@@ -1588,11 +1588,19 @@ impl Game {
             return;
         }
         let _memo = self.query_memo();
+        let unit = self.units.get(&uid);
+        let traversal = self.unit_traversal(uid);
         self.relax_movement_into(
             uid,
             start,
             moves,
-            |cur, n| self.entry_at_neighbor(uid, cur, n, through_units) != Entry::Blocked,
+            |cur, n| {
+                let entry = match unit {
+                    Some(unit) => self.entry_at_neighbor_as(unit, traversal, cur, n, through_units),
+                    None => self.entry_at_neighbor(uid, cur, n, through_units),
+                };
+                entry != Entry::Blocked
+            },
             |_, _| {}, // nobody asks this flood for the walk
             output,
         );
