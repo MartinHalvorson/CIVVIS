@@ -137,7 +137,7 @@ class Bar:
     def ev(self, expression: str):
         return self.dev.evaluate(expression)
 
-    def until(self, expression: str, why: str, seconds: float = 10.0):
+    def until(self, expression: str, why: str, seconds: float = 20.0):
         deadline = time.time() + seconds
         while time.time() < deadline:
             if self.ev(expression):
@@ -313,8 +313,13 @@ def main() -> int:
         # A headless page is not focused, and then `focus()` fires no focus events.
         dev.call("Emulation.setFocusEmulationEnabled", {"enabled": True})
         bar = Bar(dev)
+        # ⚠ Not ten seconds. The first run of this file on a CI runner failed
+        # right here with the page not yet loaded: a cold Chrome on a busy
+        # runner took longer than that to open its first page.
+        opened = time.time()
         bar.until("typeof drawDebugBar === 'function' && typeof engineState === 'function'",
                   "the bar's script loaded on the stand-in page", seconds=60)
+        print(f"the stand-in page was ready {time.time() - opened:.1f}s after Chrome answered.")
         check_the_bar(bar)
         print("the debugger bar sends what each control is for: the turn box, both sliders, "
               "the wheel, save points and their flags, a breakpoint picked from the timeline.")
