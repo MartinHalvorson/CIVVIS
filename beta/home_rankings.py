@@ -6,8 +6,14 @@
 
 The landing page (`beta/landing.html`) carries one empty slot,
 `<script type="application/json" id="rankings-data">null</script>`, and
-`beta/publish.sh` fills it with what this prints. Two rankings:
+`beta/publish.sh` fills it with what this prints. Three rankings:
 
+- **Winningest civs**: our AI's wins and losses as each civ in the
+  verification games against Civilization VI's own AI, most wins first.
+  Read from `results.jsonl` on the `ledger` branch, where
+  `tools/civ6_ladder.py publish-run` adds a line as each game finishes, so
+  it is the one ranking that is not a property of the lane's revision: both
+  lanes show the record as it stood when the site was built.
 - **Player strategies**: the Civ AI Agents by published Elo, from
   `data/strategy_elo.json` (written by `strategy_elo`, see `docs/ELO.md`),
   with their handles and tilts from `strategies::ROSTER`, and Civilization
@@ -21,6 +27,7 @@ from the same files the engine embeds, so it cannot drift from them.
 
 A revision that predates either source (the stable lane is routinely pinned
 to one) simply gets that ranking as `null`, and the page shows what it has.
+So does a clone that has never fetched the `ledger` branch.
 """
 
 from __future__ import annotations
@@ -28,10 +35,35 @@ from __future__ import annotations
 import json
 import pathlib
 import re
+import subprocess
 import sys
 
 #: How many genes the column shows. The full table is one link away.
 TOP_GENES = 15
+
+#: How many civs the table shows: the ones that have won, most wins first.
+TOP_CIVS = 25
+
+#: The verification games' results, one JSON line per recorded run, as the
+#: clone last fetched them. The publish workflow's checkout fetches every
+#: branch, so the site is built from the record of a few minutes before.
+RESULTS_REF = "refs/remotes/origin/ledger:results.jsonl"
+
+#: A recorded run's ending, best first: a game reloaded from its autosave is
+#: several runs, and it ended the best way any of them did. The last is a
+#: harness or a person stopping the game, which is not a result.
+OUTCOMES = ["win", "defeat", "rival_victory", "abandoned", "unfinished"]
+LOSSES = {"defeat", "rival_victory", "abandoned"}
+
+#: Civilization VI's victory types under the names its own screens use.
+VICTORIES = {
+    "VICTORY_TECHNOLOGY": "Science",
+    "VICTORY_CULTURE": "Culture",
+    "VICTORY_CONQUEST": "Domination",
+    "VICTORY_RELIGIOUS": "Religious",
+    "VICTORY_DIPLOMATIC": "Diplomatic",
+    "VICTORY_SCORE": "Score",
+}
 
 #: Civilization VI's own ladder, lowest first: the order pooled rungs are named
 #: in, and a rung's place in it is its level number (Settler is Lv 1, Deity
@@ -161,8 +193,140 @@ def genes(source: pathlib.Path) -> dict | None:
     }
 
 
+def results(source: pathlib.Path) -> list[dict] | None:
+    """The verification games' result lines, or `None` when this clone holds
+    no ledger (or its ledger predates the results file)."""
+    try:
+        shown = subprocess.run(
+            ["git", "-C", str(source), "show", RESULTS_REF], capture_output=True, check=False
+        )
+    except OSError:
+        return None
+    if shown.returncode != 0:
+        return None
+    rows = []
+    for line in shown.stdout.decode("utf-8", "replace").splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows or None
+
+
+def civ_name(civ: str, names: list[str]) -> str:
+    """A civ under the engine's own name for it (`data/civs.json`), from the
+    host's type: `CIVILIZATION_GRAN_COLOMBIA` is Gran Colombia. Two types do
+    not title-case into the name, `CIVILIZATION_OTTOMAN` (Ottomans) and
+    `CIVILIZATION_BABYLON_STK` (Babylon); both differ only past the name's
+    end, and a type with no such match keeps its plain reading."""
+    plain = civ.removeprefix("CIVILIZATION_").replace("_", " ").title()
+    if plain in names:
+        return plain
+    near = [name for name in names if name.startswith(plain) or plain.startswith(name + " ")]
+    return near[0] if len(near) == 1 else plain
+
+
+def level(difficulty: str | None) -> int | None:
+    """A difficulty's level number: `DIFFICULTY_DEITY` is 8."""
+    rung = (difficulty or "").removeprefix("DIFFICULTY_").lower()
+    return CIV6_RUNGS.index(rung) + 1 if rung in CIV6_RUNGS else None
+
+
+def civ_ranking(rows: list[dict], names: list[str]) -> dict | None:
+    """Wins and losses per civ over the recorded games, most wins first.
+
+    A game counts once, however many runs it took, and counts as a win, a
+    loss (a rival's victory, our elimination, or a game the harness conceded
+    early), or nothing: a game somebody stopped has no result. Ties in wins
+    go to the better win rate.
+    """
+    games: dict[str, list[dict]] = {}
+    for row in rows:
+        key = row.get("game") or row.get("tag")
+        if key and row.get("outcome") in OUTCOMES:
+            games.setdefault(key, []).append(row)
+    civs: dict[str, dict] = {}
+    total = {"wins": 0, "losses": 0, "unfinished": 0, "unattributed_wins": 0}
+    through = ""
+    for runs in games.values():
+        ending = min(runs, key=lambda row: OUTCOMES.index(row["outcome"]))
+        outcome = ending["outcome"]
+        if outcome == "unfinished":
+            total["unfinished"] += 1
+            continue
+        through = max(through, max(str(row.get("utc") or "")[:10] for row in runs))
+        total["wins" if outcome == "win" else "losses"] += 1
+        civ = next((row["civ"] for row in runs if row.get("civ")), None)
+        if civ is None:
+            total["unattributed_wins"] += outcome == "win"
+            continue
+        tally = civs.setdefault(civ, {"wins": 0, "losses": 0, "won": {}})
+        if outcome in LOSSES:
+            tally["losses"] += 1
+            continue
+        tally["wins"] += 1
+        won = (level(ending.get("difficulty")) or 0, VICTORIES.get(ending.get("victory"), ""))
+        tally["won"][won] = tally["won"].get(won, 0) + 1
+    if not total["wins"] + total["losses"]:
+        return None
+    ranked = []
+    for civ, tally in civs.items():
+        # Highest level first, then the victory's name: "Lv 8 Culture", and
+        # "Lv 5 Diplomatic ×2" for a pairing won more than once.
+        won = [
+            " ".join(part for part in (f"Lv {lv}" if lv else "", victory) if part)
+            + (f" \u00d7{count}" if count > 1 else "")
+            for (lv, victory), count in sorted(tally["won"].items(), key=lambda item: (-item[0][0], item[0][1]))
+        ]
+        ranked.append(
+            {
+                "civ": civ,
+                "name": civ_name(civ, names),
+                "wins": tally["wins"],
+                "losses": tally["losses"],
+                "best": max((lv for lv, _ in tally["won"]), default=0) or None,
+                "won": won,
+            }
+        )
+    ranked.sort(key=lambda row: (-row["wins"], -row["wins"] / (row["wins"] + row["losses"]), row["name"]))
+    winners = [row for row in ranked if row["wins"]]
+    return {
+        "games": total["wins"] + total["losses"],
+        "wins": total["wins"],
+        "unfinished": total["unfinished"],
+        "unattributed_wins": total["unattributed_wins"],
+        "played": len(ranked),
+        "winners": len(winners),
+        "through": through or None,
+        "rows": winners[:TOP_CIVS],
+    }
+
+
+def civs(source: pathlib.Path) -> dict | None:
+    """The civ table, or `None` when there is no record to draw it from.
+
+    The other two rankings read files of the revision being published, which
+    CI has already held to their shape. This one reads a branch every
+    finished game writes to and nothing tests, from inside the script that
+    publishes the whole site. A line it cannot count therefore costs the
+    page its civ table, said on stderr, and never costs the site its publish.
+    """
+    rows = results(source)
+    if rows is None:
+        return None
+    try:
+        path = source / "data" / "civs.json"
+        names = list(json.loads(path.read_text(encoding="utf-8"))) if path.is_file() else []
+        return civ_ranking(rows, names)
+    except Exception as error:  # noqa: BLE001 - see above
+        print(f"home_rankings: the ledger's results could not be ranked ({error!r}); no civ table", file=sys.stderr)
+        return None
+
+
 def rankings(source: pathlib.Path) -> dict:
-    return {"strategies": strategies(source), "genes": genes(source)}
+    return {"civs": civs(source), "strategies": strategies(source), "genes": genes(source)}
 
 
 def fill(page: str, data: dict) -> str | None:

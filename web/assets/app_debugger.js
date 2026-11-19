@@ -252,11 +252,16 @@ function debugSeatName(seat) {
   const who = state.players.find(player => player.id === seat);
   return who ? titleCase(String(who.civ || who.name || `seat ${seat}`)) : `seat ${seat}`;
 }
+// Who is up, as a clause: every seat is one civilization but the Barbarians.
+function debugPlaysNext(seat) {
+  const who = state.players.find(player => player.id === seat);
+  return `${debugSeatName(seat)} ${who && who.is_barbarian ? "play" : "plays"} next`;
+}
 function debugSayRound(stepped) {
   const did = stepped.seat === 0 ? "Your turn ended"
     : `${debugSeatName(stepped.seat)} played ${stepped.actions} action${stepped.actions === 1 ? "" : "s"}`;
   debugSay(stepped.next === 0 ? `${did} · turn ${state.turn} is yours`
-    : `${did} · ${debugSeatName(stepped.next)} plays next`);
+    : `${did} · ${debugPlaysNext(stepped.next)}`);
 }
 async function debugStepSeat() {
   if (autoplaying) return null;
@@ -416,7 +421,8 @@ function debugBuildBar() {
     <div class="dbg-pop" id="dbg-pop-saves" hidden>
       <h4>Save points</h4>
       <p>A save point keeps this world to come back to, with the turns behind it, however the game
-        is played on from here. Going to one keeps the world you left as a save point too.</p>
+        is played on from here. Going to one keeps the world you left as a save point too. Save points
+        last as long as this page is open; a save, below, is kept on this device.</p>
       <div class="dbg-line">
         <input type="text" data-dbg-field="pointname" maxlength="48" placeholder="a name, or leave empty for the turn" aria-label="Save point name">
         <button data-dbg="point" title="Keep the world as it stands now">Save point</button>
@@ -771,7 +777,7 @@ function drawDebugBar(seat = true) {
   // A round being stepped a seat at a time is not the person's turn, and the
   // bar says whose it is for as long as nothing newer is being said.
   const round = timeline.playing
-    ? `${debugSeatName(timeline.playing)} plays next · ▸| steps it, ▶| lets the round finish` : "";
+    ? `${debugPlaysNext(timeline.playing)} · ▸| steps it, ▶| lets the round finish` : "";
   const text = debugNoteText || round || layered;
   const html = escapeAttr(text) +
     (debugNoteText && debugNotePos ? `<button data-dbg="show" title="Centre the map there">Show</button>` : "");
@@ -993,6 +999,11 @@ function drawDebugSplit() {
   const run = host.querySelector('[data-dbg-split="versus-run"]');
   run.textContent = debugSplit.running > 0 ? "⏹" : "▶▶";
   run.classList.toggle("on", debugSplit.running > 0);
+  // The same start again, for another pair of Civ AIs.
+  const back = host.querySelector('[data-dbg-split="versus-back"]');
+  back.title = `Put both halves back on turn ${debugSplit.from}, where they split, to play it again with other Civ AIs`;
+  back.disabled = debugSplit.busy || debugSplit.running > 0 || debugSplit.from === null ||
+    ["a", "b"].every(letter => debugSplit.panes[letter].turn === debugSplit.from);
 }
 function debugSplitOpen(dir, versus = null) {
   if (debugSplit || DEBUG_PANE !== null || !debugTimeline() || debugBusy || autoplaying) return;
@@ -1022,6 +1033,7 @@ function debugSplitOpen(dir, versus = null) {
         <div class="dbg-vs-table" data-dbg-numbers></div>
         <canvas class="dbg-vs-chart" data-dbg-chart width="252" height="96"></canvas>
         <div class="dbg-vs-line" title="Play both halves, each with its own Civ AI, until this turn opens or a breakpoint stops one">
+          <button data-dbg-split="versus-back">↺</button>
           <input type="text" data-dbg-until inputmode="numeric" maxlength="4" aria-label="Play both to turn">
           <button data-dbg-split="versus-run"></button>
         </div>
@@ -1035,7 +1047,8 @@ function debugSplitOpen(dir, versus = null) {
   let remembered = false;
   try { remembered = localStorage.getItem("civvis-debug-versus") === "1"; } catch (_) {}
   debugSplit = {dir, linked: true, view: true, share: .5, busy: false, panes: {}, host,
-    versus: versus ?? remembered, running: 0, chart: "score", history: {a: new Map(), b: new Map()}};
+    versus: versus ?? remembered, running: 0, chart: "score", history: {a: new Map(), b: new Map()},
+    from: state ? state.turn : null};
   for (const letter of ["a", "b"]) {
     const frame = host.querySelector(`[data-dbg-frame="${letter}"]`);
     debugSplit.panes[letter] = {frame, id: `${letter}-${nonce}`, turn: null};
@@ -1066,6 +1079,12 @@ function debugSplitOpen(dir, versus = null) {
       debugSplit.versus = !debugSplit.versus;
       try { localStorage.setItem("civvis-debug-versus", debugSplit.versus ? "1" : "0"); } catch (_) {}
     } else if (action === "versus-run") debugVersusRun();
+    else if (action === "versus-back") {
+      // Each half is told by name, so it makes no difference whether they are linked.
+      for (const letter of ["a", "b"])
+        if (debugSplit.panes[letter].turn !== debugSplit.from)
+          debugSplitTell(letter, {civvis: "pane-follow", turn: debugSplit.from, how: "travel"});
+    }
     drawDebugSplit();
   });
   host.addEventListener("change", event => {
@@ -1316,7 +1335,7 @@ if (DEBUG_PANE !== null) {
     if (!timeline || !timeline.playing) return sendAction(action, ...rest);
     if (action && action.type === "end_turn")
       return debugOp({op: "finish_round"}, AUTOPLAY_BATCH_TIMEOUT_MS);
-    debugSay(`${debugSeatName(timeline.playing)} plays next; your turn comes back when the round finishes`);
+    debugSay(`${debugPlaysNext(timeline.playing)}; your turn comes back when the round finishes`);
     return Promise.resolve();
   };
   const drawLoop = drawTurnLoop;

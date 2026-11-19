@@ -187,6 +187,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-deck-seats-the-great-person-cards` | off (unmeasured) | Opt-in gene `culture-deck-seats-the-great-person-cards`; see `advanced/culture_great_person_cards.rs`. | 1 \| 1 |
 | `culture-faith-patronizes-the-creators` | off (unmeasured) | Opt-in gene `culture-faith-patronizes-the-creators`; see `advanced/culture_faith_patronizes_the_creators.rs`. | 1 \| 1 |
 | `culture-theater-buildings-pass-the-claims` | off (unmeasured) | Opt-in gene `culture-theater-buildings-pass-the-claims`; see `advanced/culture_theater_buildings_pass_the_claims.rs`. | 1 \| 1 |
+| `culture-trade-district-follows-the-theater` | off (unmeasured) | Opt-in gene `culture-trade-district-follows-the-theater`; see `advanced/trade_district_follows_the_campus.rs`. | 1 \| 1 |
 | `mobilization-hears-the-declaration` | off (unmeasured) | Opt-in gene `mobilization-hears-the-declaration`; see `advanced/mobilization_hears_the_declaration.rs`. | 1 \| 1 |
 | `threatened-capital-trains-its-shooters` | off (unmeasured) | Opt-in gene `threatened-capital-trains-its-shooters`; see `advanced/threatened_capital_trains_its_shooters.rs`. | 1 \| 1 |
 

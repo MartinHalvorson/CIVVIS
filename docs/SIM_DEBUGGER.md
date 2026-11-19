@@ -13,7 +13,13 @@ The engine half is held by `src/server/debugger_tests.rs`. The bar is held by
 `beta/debugger_test.py`, which loads the script as it ships into a real
 browser, on a page with a toy engine behind it, and drives the controls: the
 turn box, both sliders, the wheel, save points and their flags, a breakpoint
-picked from the timeline. A control added to the bar is added there.
+picked from the timeline, the breakpoints form with a run stopped by a
+breakpoint and by hand, layers, reveal, undo, and a round stepped a seat at a
+time. It then splits the screen head to head, each half
+the same page with a toy engine of its own: a Civ AI is picked for one half,
+both are played to a turn linked and then separate, and the test reads which
+Civ AI each half's steps named, the numbers set side by side, a copy, and the
+half that is kept. A control added to the bar or the strip is added there.
 
 ## The timeline
 
@@ -96,6 +102,10 @@ point already, so going back is the same operation.
 In the bar they are under ⚑: a name and "Save point" to set one, and a list
 to go to one or let it go. Each also stands over the slider as a flag at its
 turn, gold for one that was set and grey for "Where you were".
+
+Save points last as long as the page is open. What is to be kept longer is a
+save, in the same panel: it is written to the device, and carries the world
+and not the timeline.
 
 Save points live with the timeline: both halves of a split start with the
 ones there were, a save file does not carry them, and a new or loaded game
@@ -280,6 +290,10 @@ in the strip, or "Head to head" in the Split panel, widens the strip to hold:
   with its own Civ AI. Separate, each half is run by itself. The run ends when
   that turn opens, or earlier if a breakpoint stops a half, and the same
   button stops it by hand.
+- ↺, which puts both halves back on the turn they split on, linked or not, so
+  the same start can be played again with another pair of Civ AIs. Each half
+  walks back along its own timeline, so it lands on the nearest turn before
+  that one if the turn itself is no longer kept.
 
 The rivals in each half are played by fresh agents from the split onward, as
 they are after any walk along the timeline, so the two halves differ only in
