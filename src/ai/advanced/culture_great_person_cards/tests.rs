@@ -1,8 +1,10 @@
 //! `culture-deck-seats-the-great-person-cards`: unit tests.
 use super::*;
 use crate::ai::advanced::{GrandStrategy, StrategicPlan, VictoryTarget};
-use crate::game::Action;
+use crate::game::{Action, Item};
 use crate::name::Name;
+use crate::rules::Yields;
+use std::sync::Arc;
 
 const TAG: &str = "culture-deck-seats-the-great-person-cards";
 
@@ -32,6 +34,7 @@ fn board(government: &str, cards: &[&str], art_museum: bool) -> Game {
         "military_tradition",
         "recorded_history",
         "political_philosophy",
+        "early_empire",
         "drama_poetry",
         "humanism",
     ] {
@@ -187,4 +190,57 @@ fn another_lane_or_a_released_lane_wants_neither_card() {
     let mut released = seat(VictoryTarget::Culture, true, &g);
     released.lane_lost = true;
     assert!(released.culture_great_person_cards(&g, &ids).is_empty());
+}
+
+#[test]
+fn a_production_card_boosting_a_queue_head_keeps_its_seat() {
+    // Classical Republic with Colonization overflowing into the wildcard.
+    let deck = [
+        "urban_planning",
+        "natural_philosophy",
+        "charismatic_leader",
+        "colonization",
+    ];
+    let settler = || {
+        let mut g = board("classical_republic", &deck, false);
+        let cid = g.player_city_ids(0)[0];
+        Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
+            cid,
+            Yields {
+                production: 10.0,
+                ..Default::default()
+            },
+        );
+        g.cities.get_mut(&cid).unwrap().queue = vec![Item::Unit {
+            unit: crate::name!("settler"),
+        }];
+        g
+    };
+    // A Settler at the head: Colonization stays, Urban Planning makes way.
+    let mut g = settler();
+    let ai = seat(VictoryTarget::Culture, true, &g);
+    ai.strategic_policies(&mut g, 0, GrandStrategy::Culture);
+    assert!(
+        slotted(&g, "literary_tradition"),
+        "{:?}",
+        g.players[0].policies
+    );
+    assert!(slotted(&g, "colonization"), "{:?}", g.players[0].policies);
+    assert!(!slotted(&g, "urban_planning"));
+
+    // Nothing it boosts in the queue: Colonization, the oldest unwanted
+    // card, is the one that goes.
+    let mut g = settler();
+    let cid = g.player_city_ids(0)[0];
+    g.cities.get_mut(&cid).unwrap().queue = vec![Item::Building {
+        building: crate::name!("monument"),
+    }];
+    let ai = seat(VictoryTarget::Culture, true, &g);
+    ai.strategic_policies(&mut g, 0, GrandStrategy::Culture);
+    assert!(
+        slotted(&g, "literary_tradition"),
+        "{:?}",
+        g.players[0].policies
+    );
+    assert!(!slotted(&g, "colonization"), "{:?}", g.players[0].policies);
 }

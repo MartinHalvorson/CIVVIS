@@ -187,6 +187,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `chemistry-before-the-rocket` | off (unmeasured) | Opt-in gene `chemistry-before-the-rocket`; see `advanced/chemistry_before_the_rocket.rs`. | 1 \| 1 |
 | `culture-and-religion-build-the-statue` | off (unmeasured) | Opt-in gene `culture-and-religion-build-the-statue`; see `advanced/diplo_wonder_claim.rs`. | 1 \| 1 |
 | `culture-and-religion-race-the-congress` | off (unmeasured) | Opt-in gene `culture-and-religion-race-the-congress`: the same live-only ballot change for a Culture or Religious seat; see `CivvisCongressRacer` in `CivvisControlAgent.lua`. | 1 \| 1 |
+| `culture-deck-seats-the-great-person-cards` | off (unmeasured) | Opt-in gene `culture-deck-seats-the-great-person-cards`; see `advanced/culture_great_person_cards.rs`. | 1 \| 1 |
 | `disrupt-waits-for-the-sources` | off (unmeasured) | Opt-in gene `disrupt-waits-for-the-sources`; see `advanced/disrupt_waits_for_the_sources.rs`. | 1 \| 1 |
 | `science-universities-pass-the-claims` | off (unmeasured) | Opt-in gene `science-universities-pass-the-claims`; see `advanced/science_universities_pass_the_claims.rs`. | 1 \| 1 |
 | `shooters-man-the-capital` | off (unmeasured) | Opt-in gene `shooters-man-the-capital`; see `advanced/shooters_man_the_capital.rs`. | 1 \| 1 |

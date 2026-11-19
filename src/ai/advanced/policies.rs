@@ -682,8 +682,11 @@ impl AdvancedAi {
         }
         // `culture-deck-seats-the-great-person-cards`: Literary Tradition and
         // Frescoes right behind Aesthetics; the ordinary deck prices Great
-        // Person points at zero. See `advanced/culture_great_person_cards.rs`.
+        // Person points at zero. A held production card that boosts a queue
+        // head this turn keeps its seat against them. See
+        // `advanced/culture_great_person_cards.rs`.
         let great_person_cards = self.culture_great_person_cards(g, &city_ids);
+        let mut great_person_cards_spare: BTreeSet<Name> = BTreeSet::new();
         if !great_person_cards.is_empty() {
             desired.retain(|card| !great_person_cards.contains(card));
             let at = desired
@@ -691,6 +694,10 @@ impl AdvancedAi {
                 .position(|card| *card == "aesthetics")
                 .map_or(0, |index| index + 1);
             desired.splice(at..at, great_person_cards.iter().copied());
+            great_person_cards_spare = crate::ai::deck_queue::queue_card_signature(g, pid)
+                .into_iter()
+                .filter(|card| g.players[pid].policies.contains(card))
+                .collect();
         }
 
         let elite_active = g.players[pid]
@@ -1141,6 +1148,11 @@ impl AdvancedAi {
                 .iter()
                 .filter(|current| {
                     if protect_wartime_income.is_some() && current.as_str() == "economic_union" {
+                        return false;
+                    }
+                    if great_person_cards.contains(&card)
+                        && great_person_cards_spare.contains(*current)
+                    {
                         return false;
                     }
                     // An upkeep insertion must not make a later drain card

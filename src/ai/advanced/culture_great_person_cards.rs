@@ -31,9 +31,21 @@
 //! Literary Tradition before that. They are wildcard-only cards, so they take
 //! only a wildcard seat from a card the plan does not want, the oldest first;
 //! the timed Settler and Builder cards, the contest and emergency cards and
-//! every other wanted card keep theirs. The host offers each card only while
+//! every other wanted card keep theirs, and so does a held production card
+//! that boosts a city's queue head this turn (`deck_queue`'s queue-card
+//! signature: Colonization under a queued Settler, Agoge under a Spearman). The host offers each card only while
 //! its Great Person class is still available, so an exhausted class drops
 //! out by itself. Off, nothing changes.
+//!
+//!
+//! **Replays.** On 60 live policy windows of six Culture games (three weak,
+//! Gorgo and the two wins), Drama and Poetry to t160, the on arm of the first
+//! build changed the deck on 43 and nothing else: Literary Tradition 38
+//! times, Frescoes 13, over Raj, Colonization, Civil Prestige, Scripture,
+//! Agoge and Natural Philosophy. Chiefdom (no wildcard) read the same. Ten of
+//! those swaps took Colonization under a queued Settler or Agoge under a
+//! queued early soldier; the queue-card spare above was added after them so
+//! those two keep their seats.
 //!
 //! Grep the journal for `culture-deck-seats-the-great-person-cards:`.
 
