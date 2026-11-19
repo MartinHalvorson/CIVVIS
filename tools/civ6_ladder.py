@@ -42,6 +42,7 @@ Usage::
     python tools/civ6_ladder.py check --stale-hours 12
     python tools/civ6_ladder.py show
     python tools/civ6_ladder.py publish-run <tag>   # append the run to the `ledger` branch
+    python tools/civ6_ladder.py publish-results     # rebuild the branch's results.jsonl
 
 ``publish`` and ``render`` are not interchangeable. ``publish`` lands run data
 from this machine's live ledger; ``render`` only redraws the committed snapshot
@@ -2229,12 +2230,280 @@ def gzip_bytes(data: bytes) -> bytes:
     return buffer.getvalue()
 
 
+# ---------------------------------------------------------------------------
+# The results file: every recorded run's ending, one JSON line each, at the
+# root of the ledger branch. A run's summary is 60 KB and the branch held
+# 187 MB of them by 2026-11-19, which is the right record and the wrong thing
+# to read to answer "which civ wins". `publish_run` adds a run's line in the
+# commit that adds the run, so the file keeps itself current; `publish-results`
+# rebuilds it from everything on record. `beta/home_rankings.py` reads it for
+# the home page's table of the winningest civs.
+RESULTS_PATH = "results.jsonl"
+
+#: How a recorded run ended, as a closed set. The first four are a game's
+#: result; `unfinished` is a harness or a person stopping it, which the
+#: ladder's own rule counts as neither a loss nor a measurement.
+OUTCOMES = ("win", "defeat", "rival_victory", "abandoned", "unfinished")
+
+
+def result_entry(summary: dict) -> dict:
+    """The fields of `entry_from` a result line reads, and nothing else.
+
+    `entry_from` projects a run's whole measurement; a result line needs who
+    played and how it ended. Reading only that keeps one odd measurement
+    column from costing a run its line. `test_civ6_ladder` holds the two
+    equal on the fields they share.
+    """
+    return {
+        **{key: summary[key] for key in ("game_id", "seat") if key in summary},
+        "tag": summary.get("tag"),
+        "utc": summary.get("finished_utc"),
+        "difficulty": summary.get("difficulty"),
+        "won": is_win(summary),
+        "defeat": is_defeat(summary),
+        "victory": (summary.get("outcome") or {}).get("victory"),
+        "victory_type": victory_type(summary),
+        "victory_target": summary.get("victory_target"),
+        "reason": summary.get("reason"),
+        "turns": summary.get("last_turn"),
+        "score": summary.get("last_score"),
+        "rival_best": summary.get("rival_best"),
+    }
+
+
+def result_row(entry: dict) -> dict:
+    """One run's line in the results file, from its ledger entry.
+
+    `outcome` is the ending `markdown_for` prints for the same row, as one of
+    `OUTCOMES`: a win, our own elimination, a rival's victory, a game the
+    harness conceded under a recorded early-stop rule (`abandoned`), or
+    `unfinished`. `game` is what a reader counts by: a parked game reloaded
+    from its autosave is several runs and one game.
+    """
+    seat = entry.get("seat") if isinstance(entry.get("seat"), dict) else {}
+    tag = entry.get("tag")
+    outcome = ("win" if entry.get("won")
+               else "defeat" if entry.get("defeat")
+               else "rival_victory" if entry.get("victory") is not None
+               else "abandoned" if entry.get("reason") == "abandoned"
+               else "unfinished")
+    return {
+        "tag": tag,
+        "game": entry.get("game_id") or game_tag(tag),
+        "utc": entry.get("utc"),
+        "civ": seat.get("civ"),
+        "leader": seat.get("leader"),
+        "difficulty": entry.get("difficulty"),
+        "players": seat.get("players"),
+        "map": seat.get("map"),
+        "target": entry.get("victory_target"),
+        "outcome": outcome,
+        "reason": entry.get("reason"),
+        "victory": entry.get("victory_type"),
+        "turns": entry.get("turns"),
+        "score": entry.get("score"),
+        "rival_best": entry.get("rival_best"),
+    }
+
+
+def parse_results(text: str) -> dict[str, dict]:
+    """The results file by run tag. A line that is not a row raises: a caller
+    about to rewrite the file must not do it from half of one."""
+    rows: dict[str, dict] = {}
+    for line in text.splitlines():
+        if line.strip():
+            row = json.loads(line)
+            rows[row["tag"]] = row
+    return rows
+
+
+def results_text(rows: dict[str, dict]) -> str:
+    """The results file for these rows: oldest first, one compact line each,
+    so the same rows are always the same bytes."""
+    ordered = sorted(rows.values(),
+                     key=lambda row: (row.get("utc") or "", row.get("tag") or ""))
+    return "".join(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+                   for row in ordered)
+
+
+def merge_result(rows: dict[str, dict], row: dict) -> None:
+    """Fold one line in. A run known from two records keeps what either one
+    knows: a later reading fills and corrects, and never erases with `None`
+    (the live ledger's oldest entries predate the seat a summary carries)."""
+    tag = row.get("tag")
+    if not tag:
+        return
+    known = rows.get(tag, {})
+    rows[tag] = {**known, **{key: value for key, value in row.items()
+                             if value is not None or key not in known}}
+
+
+def ledger_results(repo: Path, tip: str | None, env: dict | None = None
+                   ) -> dict[str, dict]:
+    """The results file as the branch holds it at `tip`; empty before its first."""
+    if tip is None or not _git(repo, "rev-parse", "-q", "--verify",
+                               f"{tip}:{RESULTS_PATH}", env=env, check=False):
+        return {}
+    return parse_results(_git(repo, "show", f"{tip}:{RESULTS_PATH}", env=env))
+
+
+def ledger_summaries(repo: Path, tip: str, env: dict | None = None):
+    """Every run summary on the branch at `tip`, as `(tag, summary)`.
+
+    One `cat-file --batch` for all of them, read a blob at a time: 4,639
+    summaries are 187 MB, and a `git show` each is 4,639 processes.
+    """
+    import subprocess
+    wanted = []
+    for line in _git(repo, "ls-tree", "-r", f"{tip}:runs", env=env).splitlines():
+        meta, _, path = line.partition("\t")
+        parts = path.split("/")
+        if len(parts) == 2 and parts[1] == "summary.json":
+            wanted.append((parts[0], meta.split()[2]))
+    if not wanted:
+        return
+    batch = subprocess.Popen(["git", "-C", str(repo), "cat-file", "--batch"],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             env={**os.environ, **(env or {})})
+    try:
+        for tag, sha in wanted:
+            batch.stdin.write(sha.encode() + b"\n")
+            batch.stdin.flush()
+            header = batch.stdout.readline().split()
+            if len(header) != 3 or header[1] != b"blob":
+                raise RuntimeError(f"ledger summary of {tag} is not readable: {header}")
+            blob = batch.stdout.read(int(header[2]))
+            batch.stdout.read(1)
+            try:
+                summary = json.loads(blob)
+            except ValueError:
+                continue
+            if isinstance(summary, dict):
+                yield tag, summary
+    finally:
+        batch.stdin.close()
+        batch.stdout.close()
+        batch.wait()
+
+
+def results_entry(repo: Path, tip: str | None, tag: str, summary: dict,
+                  env: dict | None = None) -> list[tuple[str, bytes]]:
+    """The results file with this run's line added, as the tree entry that
+    rides in the commit publishing the run. Nothing for a diagnostic, which
+    `apply` keeps off the record too.
+
+    Never the reason a run is not published: whatever goes wrong here is said
+    on stderr (`ledger-publish.log`, beside the run) and the run goes out
+    without its line, which `publish-results` adds from the summary.
+    """
+    if "diagnostic" in summary:
+        return []
+    try:
+        rows = ledger_results(repo, tip, env=env)
+        merge_result(rows, result_row(result_entry(_tagged(tag, summary))))
+        return [(RESULTS_PATH, results_text(rows).encode())]
+    except Exception as exc:  # noqa: BLE001 - the run itself must still publish
+        print(f"results line for {tag} not written ({exc!r}); "
+              f"`civ6_ladder.py publish-results` adds it", file=sys.stderr)
+        return []
+
+
+def _tagged(tag: str, summary: dict) -> dict:
+    """A summary under the tag of the directory it was published from, when
+    it names none itself."""
+    return summary if summary.get("tag") else {**summary, "tag": tag}
+
+
+def _ledger_commit(repo: Path, tip: str | None, entries: list[tuple[str, bytes]],
+                   message: str, scratch: Path, env: dict) -> str:
+    """One commit on `tip` adding `entries`, built with plumbing in a
+    temporary index under `scratch`. Not pushed."""
+    index = scratch / f".ledger-index-{os.getpid()}"
+    index_env = {**env, "GIT_INDEX_FILE": str(index)}
+    try:
+        if tip:
+            _git(repo, "read-tree", tip, env=index_env)
+        else:
+            _git(repo, "read-tree", "--empty", env=index_env)
+        for path, blob in entries:
+            sha = _git(repo, "hash-object", "-w", "--stdin", env=env, stdin=blob)
+            _git(repo, "update-index", "--add", "--cacheinfo",
+                 f"100644,{sha},{path}", env=index_env)
+        tree = _git(repo, "write-tree", env=index_env)
+    finally:
+        try:
+            index.unlink()
+        except FileNotFoundError:
+            pass
+    parents = ["-p", tip] if tip else []
+    return _git(repo, "commit-tree", tree, *parents, "-m", message, env=env)
+
+
+def _ledger_identity(repo: Path, env: dict) -> dict:
+    """A seat with no git identity (a fresh runner) must still be able to
+    publish; a configured identity is left alone."""
+    if "GIT_COMMITTER_EMAIL" not in {**os.environ, **env} and not _git(
+            repo, "config", "user.email", env=env, check=False):
+        return {**LEDGER_IDENTITY, **env}
+    return env
+
+
+def publish_results(ledger: Path, *, remote: str = "origin",
+                    branch: str = LEDGER_BRANCH, repo: Path | None = None,
+                    env: dict | None = None, attempts: int = 3) -> str:
+    """Rebuild the results file from everything on record and push it.
+    Returns "published", or "already" when the branch's file says the same.
+
+    Three records overlap and none holds every run: this machine's live
+    ledger (seeded from the committed snapshot), the summaries on the branch
+    (another seat's runs reach it and not this ledger), and the lines the
+    branch already has. The file is their union; nothing on it is dropped.
+    It is the backfill for runs older than the file and the repair for a
+    line `publish_run` could not write.
+    """
+    from tempfile import TemporaryDirectory
+    repo = Path(repo or REPO)
+    env = _ledger_identity(repo, dict(env or {}))
+    recorded = [result_row(entry) for entry in load(ledger).get("attempts", [])
+                if isinstance(entry, dict)]
+    last_error: Exception | None = None
+    for _ in range(max(1, attempts)):
+        tip = ledger_tip(repo, remote, branch, env=env)
+        rows = ledger_results(repo, tip, env=env)
+        before = results_text(rows)
+        for row in recorded:
+            merge_result(rows, row)
+        if tip:
+            for tag, summary in ledger_summaries(repo, tip, env=env):
+                # The same rule as `apply`: a saved-board experiment is not a
+                # game of the record.
+                if "diagnostic" not in summary:
+                    merge_result(rows, result_row(result_entry(_tagged(tag, summary))))
+        text = results_text(rows)
+        if text == before:
+            return "already"
+        with TemporaryDirectory() as scratch:
+            commit = _ledger_commit(repo, tip, [(RESULTS_PATH, text.encode())],
+                                    f"ledger: results ({len(rows)} runs)",
+                                    Path(scratch), env)
+        try:
+            _git(repo, "push", "-q", remote, f"{commit}:refs/heads/{branch}", env=env)
+        except RuntimeError as exc:  # the tip moved under us: re-read, rebuild
+            last_error = exc
+            continue
+        _git(repo, "update-ref", f"refs/remotes/{remote}/{branch}", commit, env=env)
+        return "published"
+    raise RuntimeError(f"results push did not land after {attempts} attempts: "
+                       f"{last_error}")
+
+
 def publish_run(tag: str, runs_dir: Path | None = None, *,
                 remote: str = "origin", branch: str = LEDGER_BRANCH,
                 repo: Path | None = None, env: dict | None = None,
                 attempts: int = 3) -> str:
     """Append `<runs>/<tag>/summary.json` (+ gzipped `events.jsonl`) to the
-    ledger branch. Returns "published", or "already" when the branch has it.
+    ledger branch, and the run's line to its results file. Returns
+    "published", or "already" when the branch has it.
 
     Append-only by construction: the new commit's parent is the fetched tip
     and the push is a plain fast-forward; a tip that moved between fetch and
@@ -2281,6 +2550,7 @@ def publish_run(tag: str, runs_dir: Path | None = None, *,
             entries = [(ledger_summary, summary_blob)]
             if events_path.is_file():
                 entries.append((ledger_events, gzip_bytes(events_path.read_bytes())))
+            entries.extend(results_entry(repo, tip, tag, json.loads(summary_blob), env))
             for path, blob in entries:
                 sha = _git(repo, "hash-object", "-w", "--stdin", env=env, stdin=blob)
                 _git(repo, "update-index", "--add", "--cacheinfo",
@@ -3182,6 +3452,13 @@ def main(argv: list[str] | None = None) -> int:
     pub.add_argument("tag")
     pub.add_argument("--remote", default="origin")
     pub.add_argument("--branch", default=LEDGER_BRANCH)
+    res = sub.add_parser(
+        "publish-results",
+        help="rebuild the `ledger` branch's results.jsonl (one line per "
+             "recorded run: civ, level, ending) from the live ledger and the "
+             "summaries on the branch; a no-op when it already says the same")
+    res.add_argument("--remote", default="origin")
+    res.add_argument("--branch", default=LEDGER_BRANCH)
     args = ap.parse_args(argv)
     ledger = args.ledger or live_ledger_for(args.runs)
 
@@ -3214,6 +3491,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "publish-run":
         print(publish_run(args.tag, args.runs, remote=args.remote,
                           branch=args.branch))
+        return 0
+    if args.command == "publish-results":
+        print(publish_results(ledger, remote=args.remote, branch=args.branch))
         return 0
     return show(ledger)
 
