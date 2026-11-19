@@ -184,6 +184,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `chemistry-before-the-rocket` | off (unmeasured) | Opt-in gene `chemistry-before-the-rocket`; see `advanced/chemistry_before_the_rocket.rs`. | 1 \| 1 |
 | `culture-and-religion-build-the-statue` | off (unmeasured) | Opt-in gene `culture-and-religion-build-the-statue`; see `advanced/diplo_wonder_claim.rs`. | 1 \| 1 |
 | `culture-and-religion-race-the-congress` | off (unmeasured) | Opt-in gene `culture-and-religion-race-the-congress`: the same live-only ballot change for a Culture or Religious seat; see `CivvisCongressRacer` in `CivvisControlAgent.lua`. | 1 \| 1 |
 | `diplo-seat-allies-every-friend` | off (unmeasured) | Opt-in gene `diplo-seat-allies-every-friend`; see `advanced/diplo_allies_every_friend.rs`. | 1 \| 1 |

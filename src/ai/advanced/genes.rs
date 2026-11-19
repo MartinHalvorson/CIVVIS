@@ -5832,6 +5832,12 @@ pub const GENES: &[Gene] = &[
     // long-odds Spy in a racer's city prepares first, any lane, any level.
     // See `advanced/disrupt_waits_for_the_sources.rs`.
     Gene { tag: "disrupt-waits-for-the-sources", field: "disrupt_waits_for_the_sources", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_waits_for_the_sources, disable: AdvancedAi::disable_disrupt_waits_for_the_sources },
+    // Live Deity 6p Continents 11-18, 22 Science seats: Chemistry has 22
+    // ancestors but landed with 41-44 techs held; 40% of the beakers between
+    // Education and Chemistry went to Rocketry's Radio half, which the
+    // Rocketry beeline took first. A straight line was a median 12 turns
+    // sooner. See `advanced/chemistry_before_the_rocket.rs`.
+    Gene { tag: "chemistry-before-the-rocket", field: "chemistry_before_the_rocket", kind: Kind::OptIn, enable: AdvancedAi::enable_chemistry_before_the_rocket, disable: AdvancedAi::disable_chemistry_before_the_rocket },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
