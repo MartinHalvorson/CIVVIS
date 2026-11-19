@@ -174,6 +174,19 @@ def _frontend_defaults_xml(source: str, config: dict) -> str:
             flags=re.S,
         )
 
+    # `CIVVIS_VICTORIES_OFF` (operator 2026-11-19): a victory type named in
+    # `VictoriesOff` is not enabled by default, so the shipped `VictoryUpdates`
+    # query (SetupParameters.xml) leaves it off when the ruleset is chosen.
+    off = [str(victory) for victory in (config.get("VictoriesOff") or [])]
+    if any(not re.fullmatch(r"VICTORY_[A-Z_]+", victory) for victory in off):
+        raise ValueError(f"VictoriesOff names must be victory types: {off!r}")
+    if off:
+        rows = "".join(
+            f'\t\t<Update>\n\t\t\t<Where VictoryType="{victory}"/>\n'
+            f'\t\t\t<Set EnabledByDefault="0"/>\n\t\t</Update>\n'
+            for victory in off)
+        rendered = rendered.replace("</GameInfo>", f"\t<Victories>\n{rows}\t</Victories>\n</GameInfo>", 1)
+
     unresolved = re.findall(r"CIVVIS_DEFAULT_[A-Z_]+", rendered)
     if unresolved:
         raise ValueError(f"unresolved FrontEnd defaults: {sorted(set(unresolved))}")

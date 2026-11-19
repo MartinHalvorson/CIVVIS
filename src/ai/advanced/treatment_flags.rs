@@ -604,6 +604,9 @@ impl AdvancedAi {
         /// Opt-in gene `shooters-man-the-capital`; see
         /// `advanced/shooters_man_the_capital.rs`.
         shooters_man_the_capital => enable_shooters_man_the_capital, disable_shooters_man_the_capital;
+        /// Opt-in gene `science-universities-pass-the-claims`; see
+        /// `advanced/science_universities_pass_the_claims.rs`.
+        science_universities_pass_the_claims => enable_science_universities_pass_the_claims, disable_science_universities_pass_the_claims;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
