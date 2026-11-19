@@ -290,6 +290,10 @@ in the strip, or "Head to head" in the Split panel, widens the strip to hold:
   with its own Civ AI. Separate, each half is run by itself. The run ends when
   that turn opens, or earlier if a breakpoint stops a half, and the same
   button stops it by hand.
+- ↺, which puts both halves back on the turn they split on, linked or not, so
+  the same start can be played again with another pair of Civ AIs. Each half
+  walks back along its own timeline, so it lands on the nearest turn before
+  that one if the turn itself is no longer kept.
 
 The rivals in each half are played by fresh agents from the split onward, as
 they are after any walk along the timeline, so the two halves differ only in
