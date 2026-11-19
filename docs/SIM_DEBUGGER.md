@@ -13,8 +13,23 @@ native server and the browser build alike. The page half is
 
 A played session marks the world at the top of every turn its seat opens. A
 mark is a clone of the game; the game shares whatever a turn did not change
-with its clones, so a mark costs the turn's difference. The newest 60 turns
-keep a mark each and older ones keep one turn in ten.
+with its clones, so a mark costs what its turn changed and not the whole
+world. That is still megabytes (the figures are below). Every turn keeps its
+mark for as long as there is room, so any turn that was played can be put back
+on the table as it stood, and going there takes about as long as drawing it.
+
+Room is 480 marks, and in a browser tab also a line on the memory in use
+(1 GB unless the page names another with `room`), because a tab's memory only
+grows. A mark was measured at 1.3 MB in the first 60 turns of a six-seat game
+and 2.8 MB by turn 130. When room runs out the first mark and the newest 60
+stay whole, and between them the oldest turns go first, the odd ones before
+the even: a very long game keeps its early turns one in two, then one in four,
+and never fewer than one in eight. Past the memory line each further 32 MB
+takes a tenth of the room away.
+
+A thinned turn is not played again to bring it back. A turn played by hand
+cannot be played by an agent, and an agent decides things its logged actions
+do not carry, so the replay would be another world.
 
 | Control | Operation | What it does |
 |---------|-----------|--------------|
@@ -46,6 +61,25 @@ was walked to is shown as it stood.
 
 A save carries the world and not the timeline. A loaded game starts a
 timeline of its own from the turn it resumes.
+
+## Save points
+
+A save point keeps the world under a name, as it stands: part-way through a
+turn or not. It is kept beside the timeline and not on it, so it is still
+there after the game has been played on differently from an earlier turn, and
+it costs what a mark does. A timeline holds 32 at once. A name already taken
+is given to the newer world, and one with no name is called by its turn.
+
+Going to a save point puts its world on the table with the turns of its own
+history: the marks it was played on from, the top of the turn it was taken in
+(so undo works there), and whatever was played on from it. Marks of another
+history are let go, because a timeline is one history. The world that was
+left is kept as a save point called "Where you were", unless it is a save
+point already, so going back is the same operation.
+
+Save points live with the timeline: both halves of a split start with the
+ones there were, a save file does not carry them, and a new or loaded game
+starts with none.
 
 ## Stepping in
 
@@ -169,6 +203,9 @@ operation leaves the world as it was.
 | `status` | none |
 | `back`, `forward`, `restart`, `undo` | none |
 | `jump` | `turn` |
+| `save_point` | optional `name` |
+| `goto_save`, `drop_save` | `id` |
+| `room` | `megabytes`: where the memory line is, 128 to 3072 |
 | `step`, `step_action`, `assist` | optional `strategy`, the Civ AI to seat first |
 | `reveal` | `on`: true or false |
 | `layers` | `layers`: the ids to switch on; all others are switched off |
@@ -179,7 +216,8 @@ marked `turns`, `first` and `last`, how many actions the seat has taken this
 turn (`acted`), `can_undo`, `can_back`, `can_forward`, the `breakpoints` and
 the categories they may name, the `layers`, how many decisions the layers
 took this turn (`assisted`), why the last step `stopped`, what the last step
-in did (`stepped`: the action and how many are `left`), and whether the view
-is `reveal`ed.
+in did (`stepped`: the action and how many are `left`), whether the view
+is `reveal`ed, and the save points (`saves`: `id`, `name`, `turn`, `acted`,
+and `auto` for the one the debugger keeps).
 
 A watched game keeps no timeline and its state carries no `debug`.

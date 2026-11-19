@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use serde_json::{json, Value};
 
 use super::super::{stock_opening_params, Session};
-use super::Layer;
+use super::{Layer, Mark, Timeline, DENSE_MARKS, MEMORY_LINE, MEMORY_STEP, ROOMY_MARKS};
 use crate::game::Action;
 use crate::setup::{GameSpeed, MapScript, MapTopology};
 
@@ -83,6 +83,163 @@ fn a_played_game_walks_back_and_forward_along_its_own_turns() {
     // Played forward again, the old future is replaced by the new one.
     end_turn(&mut session);
     assert_eq!(marked(&session), [1, 2]);
+}
+
+/// A timeline with a mark on each of these turns, and room for so many.
+fn timeline_of(turns: std::ops::RangeInclusive<u32>, room: usize) -> Timeline {
+    let game = played().game;
+    let mut timeline = Timeline {
+        room: Some(room),
+        ..Timeline::default()
+    };
+    for turn in turns {
+        timeline.marks.push(Mark {
+            turn,
+            actions: 0,
+            game: game.clone(),
+        });
+    }
+    timeline
+}
+
+fn turns_of(timeline: &Timeline) -> Vec<u32> {
+    timeline.marks.iter().map(|mark| mark.turn).collect()
+}
+
+#[test]
+fn every_turn_keeps_its_mark_while_there_is_room_and_the_oldest_go_first() {
+    let mut roomy = timeline_of(1..=100, 100);
+    roomy.thin();
+    assert_eq!(turns_of(&roomy), (1..=100).collect::<Vec<_>>());
+
+    // Ten too many: the ten oldest odd turns go, and never the first.
+    let mut tight = timeline_of(1..=100, 90);
+    tight.thin();
+    let mut left = vec![1];
+    left.extend((2..=22).step_by(2));
+    left.extend(23..=100);
+    assert_eq!(turns_of(&tight), left);
+
+    // With no room to speak of the newest sixty are still whole, and one old
+    // turn in eight is still there to go back to.
+    let mut least = timeline_of(1..=100, 0);
+    least.thin();
+    let mut left = vec![1, 8, 16, 24, 32, 40];
+    left.extend(41..=100);
+    assert_eq!(turns_of(&least), left);
+    assert_eq!(left.len(), DENSE_MARKS + 6);
+}
+
+#[test]
+fn memory_past_the_line_takes_room_away_a_tenth_at_a_time() {
+    let mut timeline = timeline_of(1..=200, 0);
+    timeline.room = None;
+    timeline.squeeze(MEMORY_LINE);
+    assert_eq!(timeline.room(), ROOMY_MARKS);
+    timeline.squeeze(MEMORY_LINE + 1);
+    assert_eq!(timeline.room(), 180);
+    timeline.thin();
+    assert_eq!(timeline.marks.len(), 180);
+    // Memory that has not grown by a step since has nothing new to say.
+    timeline.squeeze(MEMORY_LINE + MEMORY_STEP);
+    assert_eq!(timeline.room(), 180);
+    timeline.squeeze(MEMORY_LINE + 1 + MEMORY_STEP);
+    assert_eq!(timeline.room(), 162);
+    for step in 2..40 {
+        timeline.thin();
+        timeline.squeeze(MEMORY_LINE + 1 + step * MEMORY_STEP);
+    }
+    assert_eq!(timeline.room(), DENSE_MARKS);
+
+    // A page that knows its device says where the line is.
+    let mut session = played();
+    let moved = session.debug(&json!({"op": "room", "megabytes": 2048}));
+    assert_eq!(moved["error"], Value::Null);
+    assert_eq!(session.debugger.memory_line, Some(2048 << 20));
+    assert!(session.debug(&json!({"op": "room"}))["error"].is_string());
+}
+
+#[test]
+fn a_save_point_is_a_world_to_come_back_to_with_its_own_history() {
+    let mut session = played();
+    end_turn(&mut session);
+    let top_of_two = world(&session);
+    let first = something_to_do(&session);
+    assert_eq!(session.act(&first), None);
+    let kept = world(&session);
+    let saved = session.debug(&json!({"op": "save_point", "name": "  before the fork "}));
+    assert_eq!(saved["error"], Value::Null);
+    assert_eq!(
+        saved["debug"]["saves"],
+        json!([{"id": 1, "name": "before the fork", "auto": false, "turn": 2, "acted": 1}])
+    );
+    end_turn(&mut session);
+    end_turn(&mut session);
+    assert_eq!(marked(&session), [1, 2, 3, 4]);
+
+    // Another history, played from the first turn.
+    assert_eq!(session.debug_jump(1), Ok(1));
+    end_turn(&mut session);
+    end_turn(&mut session);
+    let left = world(&session);
+    assert_eq!(marked(&session), [1, 2, 3]);
+
+    let back = session.debug(&json!({"op": "goto_save", "id": 1}));
+    assert_eq!(back["error"], Value::Null);
+    assert_eq!(world(&session), kept);
+    // The timeline is the save point's own: the first turn, which the two
+    // histories share, and the top of the turn it was taken in.
+    assert_eq!(marked(&session), [1, 2]);
+    assert_eq!(back["debug"]["acted"], json!(1));
+    // The world that was left has been kept, to go back to the same way.
+    assert_eq!(
+        back["debug"]["saves"][1],
+        json!({"id": 2, "name": "Where you were", "auto": true, "turn": 3, "acted": 0})
+    );
+    let returned = session.debug(&json!({"op": "goto_save", "id": 2}));
+    assert_eq!(returned["error"], Value::Null);
+    assert_eq!(world(&session), left);
+    assert_eq!(marked(&session), [1, 3]);
+    // Leaving a world that is a save point already keeps nothing more.
+    assert_eq!(returned["debug"]["saves"].as_array().unwrap().len(), 2);
+
+    // A save point taken part-way through a turn can be undone from.
+    assert_eq!(session.debug_goto_save(1), Ok(2));
+    assert_eq!(session.debug_undo(), Ok(0));
+    assert_eq!(world(&session), top_of_two);
+}
+
+#[test]
+fn save_points_are_named_replaced_and_let_go() {
+    let mut session = played();
+    let unnamed = session.debug(&json!({"op": "save_point"}));
+    assert_eq!(unnamed["debug"]["saves"][0]["name"], json!("Turn 1"));
+    end_turn(&mut session);
+    // A name already taken is given to the newer world.
+    let again = session.debug(&json!({"op": "save_point", "name": "Turn 1"}));
+    assert_eq!(
+        again["debug"]["saves"],
+        json!([{"id": 2, "name": "Turn 1", "auto": false, "turn": 2, "acted": 0}])
+    );
+    // Both halves of a split start with the save points there were.
+    assert_eq!(
+        session.fork().state()["debug"]["saves"],
+        again["debug"]["saves"]
+    );
+
+    assert!(session.debug(&json!({"op": "goto_save"}))["error"].is_string());
+    assert!(session.debug(&json!({"op": "goto_save", "id": 1}))["error"].is_string());
+    assert_eq!(
+        session.debug(&json!({"op": "drop_save", "id": 2}))["error"],
+        Value::Null
+    );
+    assert!(session.debug(&json!({"op": "drop_save", "id": 2}))["error"].is_string());
+    assert_eq!(session.state()["debug"]["saves"], json!([]));
+
+    // A new world starts with none.
+    assert_eq!(session.debug_save_point("kept"), Ok(3));
+    session.debugger_begins();
+    assert_eq!(session.state()["debug"]["saves"], json!([]));
 }
 
 #[test]

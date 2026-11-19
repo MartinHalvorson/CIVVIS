@@ -25,10 +25,19 @@
 //!   only the actions in a layer that is switched on are applied to the real
 //!   one. The rest of the turn is left to the person.
 //!
+//! * **save points** keep a world under a name, to come back to whatever is
+//!   played from here on. Going to one puts its world on the table with the
+//!   turns of its own history, and keeps the world that was left.
+//!
 //! A mark is a clone of the game. The game shares what a turn did not change
-//! with its clones, so a mark costs the turn's difference rather than the
-//! world. Old marks are still thinned (`DENSE_MARKS`, `SPARSE_EVERY`) because
-//! a browser tab's memory only grows.
+//! with its clones, so a mark costs what its turn changed rather than the
+//! world. That is still megabytes (`ROOMY_MARKS` has the measurement), so
+//! every turn keeps its mark only for as long as there is room
+//! (`ROOMY_MARKS`, and in a browser tab the memory line, because a tab's
+//! memory only grows). When room runs out the oldest turns are thinned first
+//! (`Timeline::thin`). Playing a thinned turn again would not bring it back:
+//! a turn played by hand cannot be played by an agent, and an agent decides
+//! things its logged actions do not carry.
 //!
 //! A save carries the world and not this record: a loaded game starts a
 //! timeline of its own from the turn it resumes.
@@ -40,10 +49,8 @@ use serde_json::{json, Value};
 use super::Session;
 use crate::game::{Action, Event, Game};
 
-/// The newest marks are kept one a turn.
+/// The newest marks are kept one a turn, whatever else has to go.
 const DENSE_MARKS: usize = 60;
-/// Behind those, one turn in this many keeps its mark.
-const SPARSE_EVERY: u32 = 10;
 /// Breakpoint phrases a page may hold at once.
 const MAX_PHRASES: usize = 16;
 /// Breakpoint turns a page may hold at once.
@@ -247,6 +254,43 @@ impl Breakpoints {
     }
 }
 
+/// Marks a timeline holds before the oldest are thinned. A mark costs what
+/// its turn changed, which was 1.3 MB early and 2.8 MB by turn 130 in a
+/// six-seat game when this was measured, so this many is about the ceiling of
+/// what a long game should be allowed to keep.
+const ROOMY_MARKS: usize = 480;
+/// However little room there is, a turn divisible by this keeps its mark.
+const COARSEST_STRIDE: u32 = 8;
+/// Memory in use past which the marks start giving room back, unless the
+/// page names another line (`room`).
+const MEMORY_LINE: usize = 1 << 30;
+/// Past the line, each further growth by this much takes room away again.
+const MEMORY_STEP: usize = 32 << 20;
+/// Save points a timeline holds at once.
+const MAX_SAVE_POINTS: usize = 32;
+/// The longest name a save point is given.
+const MAX_SAVE_NAME: usize = 48;
+/// The save point that going to another one leaves behind.
+const WHERE_YOU_WERE: &str = "Where you were";
+
+/// The memory this process can see itself using, where it can: the browser
+/// build's linear memory, which only grows and has a ceiling.
+#[cfg(target_arch = "wasm32")]
+fn memory_in_use() -> Option<usize> {
+    Some(core::arch::wasm32::memory_size(0).saturating_mul(65_536))
+}
+
+/// A native process is not told what it holds, and is not near a ceiling.
+#[cfg(not(target_arch = "wasm32"))]
+fn memory_in_use() -> Option<usize> {
+    None
+}
+
+/// Whether one of two worlds was played on from the other.
+fn on_one_line(a: &Game, b: &Game) -> bool {
+    a.log.continues(&b.log) || b.log.continues(&a.log)
+}
+
 /// The world as it stood when the played seat's turn opened.
 #[derive(Clone)]
 struct Mark {
@@ -272,6 +316,23 @@ struct Plan {
     done: Game,
 }
 
+/// A world kept under a name: somewhere to come back to however the game is
+/// played on from here. It is the world as it stood, part-way through a turn
+/// or not, and the top of that turn to undo back to.
+#[derive(Clone)]
+struct SavePoint {
+    id: u32,
+    name: String,
+    /// Kept by the debugger itself, when a world was left for a save point.
+    auto: bool,
+    turn: u32,
+    /// What the seat had done with the turn.
+    acted: usize,
+    game: Game,
+    /// The turn's own mark, which the timeline may since have replaced.
+    top: Option<Mark>,
+}
+
 /// A played game's marks, and what the debugger was told to do with it.
 ///
 /// Cloning one is cheap for the reason keeping one is: a mark shares with its
@@ -292,14 +353,29 @@ pub struct Timeline {
     stepped: Option<Value>,
     /// Show the page the whole world rather than what the seat can see.
     reveal: bool,
+    /// Worlds kept under a name.
+    saves: Vec<SavePoint>,
+    /// The id the last save point was given.
+    save_ids: u32,
+    /// How many marks there is room for, once memory has had a say.
+    room: Option<usize>,
+    /// Where the page put the memory line, if it did.
+    memory_line: Option<usize>,
+    /// The memory reading that last took room away.
+    squeezed_at: usize,
 }
 
 impl Timeline {
     /// Start over on this world: a new game, or a loaded one.
     fn begin(&mut self, game: &Game) {
         self.marks.clear();
+        self.saves.clear();
         self.stopped = None;
         self.assisted = 0;
+        // What an earlier game grew the memory to says nothing about this
+        // one; only growing past it does.
+        self.room = None;
+        self.squeezed_at = memory_in_use().unwrap_or(0);
         self.record(game);
     }
 
@@ -323,17 +399,78 @@ impl Timeline {
         game.current == 0 && game.is_human_seat(0)
     }
 
-    fn thin(&mut self) {
-        if self.marks.len() <= DENSE_MARKS {
+    /// How many marks may be kept.
+    fn room(&self) -> usize {
+        self.room.unwrap_or(ROOMY_MARKS).max(DENSE_MARKS)
+    }
+
+    /// Hear how much memory is in use. Past the line, the room becomes a
+    /// tenth less than what is held, and again each time the memory has grown
+    /// by another step: memory that only grows cannot say that it was given
+    /// back, so the growing is what is listened to.
+    fn squeeze(&mut self, in_use: usize) {
+        let line = self.memory_line.unwrap_or(MEMORY_LINE);
+        if in_use <= line || in_use < self.squeezed_at.saturating_add(MEMORY_STEP) {
             return;
         }
-        let dense_from = self.marks.len() - DENSE_MARKS;
-        let mut index = 0;
-        self.marks.retain(|mark| {
-            let keep = index >= dense_from || index == 0 || mark.turn % SPARSE_EVERY == 0;
-            index += 1;
-            keep
+        self.squeezed_at = in_use;
+        let held = self.marks.len().min(self.room());
+        self.room = Some((held - held / 10).max(DENSE_MARKS));
+    }
+
+    /// Make room when there are more marks than there is room for.
+    ///
+    /// The first mark and the newest `DENSE_MARKS` always stay. Between them
+    /// the oldest turns go first and the odd ones before the even, so a long
+    /// game's early turns are kept one in two, then one in four, and never
+    /// fewer than one in `COARSEST_STRIDE`.
+    fn thin(&mut self) {
+        if let Some(in_use) = memory_in_use() {
+            self.squeeze(in_use);
+        }
+        let mut over = self.marks.len().saturating_sub(self.room());
+        let mut stride = 2;
+        while over > 0 && stride <= COARSEST_STRIDE {
+            let old = self.marks.len().saturating_sub(DENSE_MARKS);
+            let mut index = 0;
+            self.marks.retain(|mark| {
+                let goes = over > 0 && index > 0 && index < old && mark.turn % stride != 0;
+                index += 1;
+                if goes {
+                    over -= 1;
+                }
+                !goes
+            });
+            stride *= 2;
+        }
+    }
+
+    /// Keep a world under a name. A name already taken is given to this
+    /// world instead, and the debugger's own save point is one of a kind.
+    fn keep(&mut self, name: &str, game: &Game, auto: bool) -> Result<u32, String> {
+        self.saves
+            .retain(|save| save.name != name && !(auto && save.auto));
+        if self.saves.len() >= MAX_SAVE_POINTS {
+            return Err(format!(
+                "{MAX_SAVE_POINTS} save points are kept at once; remove one first"
+            ));
+        }
+        let acted = self.acted(game);
+        let top = self
+            .mark(game.turn)
+            .filter(|mark| game.log.continues(&mark.game.log))
+            .cloned();
+        self.save_ids += 1;
+        self.saves.push(SavePoint {
+            id: self.save_ids,
+            name: name.to_string(),
+            auto,
+            turn: game.turn,
+            acted,
+            game: game.clone(),
+            top,
         });
+        Ok(self.save_ids)
     }
 
     fn mark(&self, turn: u32) -> Option<&Mark> {
@@ -373,6 +510,13 @@ impl Timeline {
             "stopped": self.stopped,
             "stepped": self.stepped,
             "reveal": self.reveal,
+            "saves": self.saves.iter().map(|save| json!({
+                "id": save.id,
+                "name": save.name,
+                "auto": save.auto,
+                "turn": save.turn,
+                "acted": save.acted,
+            })).collect::<Vec<_>>(),
         })
     }
 }
@@ -538,6 +682,64 @@ impl Session {
             return Err("nothing has been played past this turn".to_string());
         };
         self.debug_jump(next)
+    }
+
+    /// Keep the world as it stands under a name, to come back to.
+    pub fn debug_save_point(&mut self, name: &str) -> Result<u32, String> {
+        let name: String = name.trim().chars().take(MAX_SAVE_NAME).collect();
+        if name.is_empty() {
+            let turn = self.game.turn;
+            return self
+                .debugger
+                .keep(&format!("Turn {turn}"), &self.game, false);
+        }
+        self.debugger.keep(&name, &self.game, false)
+    }
+
+    /// Go to a save point: its world, with the turns of its own history.
+    ///
+    /// Marks of a line the save point is not on are let go, because a
+    /// timeline is one history. The world being left is kept as a save point
+    /// of the debugger's own, unless it is one already, so the way back is
+    /// one more of these.
+    pub fn debug_goto_save(&mut self, id: u32) -> Result<u32, String> {
+        let Some(save) = self.debugger.saves.iter().find(|save| save.id == id) else {
+            return Err("no save point has that id".to_string());
+        };
+        let (game, top) = (save.game.clone(), save.top.clone());
+        let left = &self.game;
+        let kept = self
+            .debugger
+            .saves
+            .iter()
+            .any(|save| save.game.log.len() == left.log.len() && on_one_line(&save.game, left));
+        if !kept {
+            // With no room for it the world left is simply not kept.
+            let _ = self.debugger.keep(WHERE_YOU_WERE, &self.game, true);
+        }
+        self.debugger
+            .marks
+            .retain(|mark| on_one_line(&mark.game, &game));
+        if let Some(top) = top.filter(|top| self.debugger.mark(top.turn).is_none()) {
+            let at = self
+                .debugger
+                .marks
+                .partition_point(|mark| mark.turn < top.turn);
+            self.debugger.marks.insert(at, top);
+        }
+        let turn = game.turn;
+        self.debug_put(game);
+        Ok(turn)
+    }
+
+    /// Let a save point go.
+    pub fn debug_drop_save(&mut self, id: u32) -> Result<(), String> {
+        let before = self.debugger.saves.len();
+        self.debugger.saves.retain(|save| save.id != id);
+        if self.debugger.saves.len() == before {
+            return Err("no save point has that id".to_string());
+        }
+        Ok(())
     }
 
     /// Take back the seat's last action in the open turn.
@@ -764,6 +966,27 @@ impl Session {
                     None => Err("jump needs a turn".to_string()),
                 },
                 "undo" => self.debug_undo().map(|_| ()),
+                "save_point" => self
+                    .debug_save_point(request["name"].as_str().unwrap_or(""))
+                    .map(|_| ()),
+                "goto_save" | "drop_save" => {
+                    match request["id"].as_u64().and_then(|id| u32::try_from(id).ok()) {
+                        Some(id) if request["op"] == "goto_save" => {
+                            self.debug_goto_save(id).map(|_| ())
+                        }
+                        Some(id) => self.debug_drop_save(id),
+                        None => Err("a save point is named by its id".to_string()),
+                    }
+                }
+                // Where the memory line is, for a page that knows its device.
+                "room" => match request["megabytes"].as_u64() {
+                    Some(megabytes) => {
+                        let megabytes = megabytes.clamp(128, 3072) as usize;
+                        self.debugger.memory_line = Some(megabytes << 20);
+                        Ok(())
+                    }
+                    None => Err("room needs megabytes".to_string()),
+                },
                 "step" => {
                     if self.debug_step() {
                         Ok(())
