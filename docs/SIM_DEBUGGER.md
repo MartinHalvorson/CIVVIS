@@ -23,9 +23,11 @@ keep a mark each and older ones keep one turn in ten.
 | ↶ (`Ctrl`/`Cmd`+`Z`) | `undo` | Take back your last action this turn |
 | slider | `jump` | Go to any marked turn; a turn with no mark answers with the nearest one before it |
 | ▶ | `forward` | Forward along turns already played, without playing anything |
+| ▸ | `step_action` | Step in: the seat's Civ AI takes its next action, and ends the turn when it has none left |
 | ▶\| | `step` | The seat's Civ AI plays one whole turn |
 | ▶▶ Run | `step`, repeated | Play turns until a breakpoint stops it, or Stop |
-| ⤓ | `POST /save` | Save this turn under its number |
+| ◉ | `reveal` | Show the whole map and every civilization, not only what the seat can see |
+| ⤓ | `POST /save`, `POST /load` | Saves: keep this turn under a name, or load one that was kept |
 | Split | | Two simulators from this turn; see below |
 
 Going back forgets nothing. The turns ahead stay marked, and ▶ walks them
@@ -45,6 +47,41 @@ was walked to is shown as it stood.
 A save carries the world and not the timeline. A loaded game starts a
 timeline of its own from the turn it resumes.
 
+## Stepping in
+
+Step in takes the agent's turn apart. The agent plays the whole turn once,
+on a copy of the world, and each press applies the next action of that plan
+to the real one; the bar names it and the map centres on it. When the plan is
+spent, the next press puts the agent's own copy on the table and ends the
+turn there, and the rivals play.
+
+The plan is kept between presses for as long as nothing else touches the
+world. An action by hand, an undo or a layer makes it stale, and the next
+press plans again from the world as it then stands. An action the real world
+refuses, because the plan was made before something it leaned on changed, is
+passed over. Each step is an ordinary action of the seat's, so undo takes it
+back.
+
+Taken apart or taken whole, it is the same turn, because the last step ends
+on the world the agent itself played: the test
+`stepping_in_takes_the_agents_turn_one_action_at_a_time` plays one both ways
+and compares the worlds. An agent also decides things that are not actions,
+its standing preferences for the governors of its cities. Those are carried
+onto the real world when the plan is made, the way the agent's own
+plan-then-replay path carries them, so a turn the person takes over halfway
+keeps them.
+
+## Reveal
+
+Reveal changes what the page is shown, and nothing else. The state document
+is built from the omniscient observation, the one a spectator of the whole
+table is given, with the seat's own reach to act with kept on it. The seat's
+legal actions are the same either way, and the world is not touched by
+looking. A world that is walked to, and a fork, stay revealed.
+
+In a split this is the second point of view: one half played through the
+seat's fog, the other with the fog lifted.
+
 ## Layers
 
 Between playing by hand and handing the seat over there are five layers, and
@@ -62,6 +99,8 @@ The agent plans the whole turn on a copy of the world. Its actions are then
 offered to the real world in the order it took them, and only those in a layer
 that is on are applied. One that no longer applies, because it leaned on a
 decision left to the person, is dropped. Ending the turn belongs to no layer.
+With the cities layer on, the agent's standing preferences for its governors
+are carried across too; they are decisions, though not actions.
 
 Layers that are on are played when one of your turns opens by being played
 into. "Apply to this turn" (`assist`) plays them in the turn that is open
@@ -130,7 +169,8 @@ operation leaves the world as it was.
 | `status` | none |
 | `back`, `forward`, `restart`, `undo` | none |
 | `jump` | `turn` |
-| `step`, `assist` | optional `strategy`, the Civ AI to seat first |
+| `step`, `step_action`, `assist` | optional `strategy`, the Civ AI to seat first |
+| `reveal` | `on`: true or false |
 | `layers` | `layers`: the ids to switch on; all others are switched off |
 | `breakpoints` | `turns`, `categories`, `phrases`, `important`, `every_seat`; whatever is left out is cleared |
 
@@ -138,6 +178,8 @@ Every state document of a played game carries `debug`: the open `turn`, the
 marked `turns`, `first` and `last`, how many actions the seat has taken this
 turn (`acted`), `can_undo`, `can_back`, `can_forward`, the `breakpoints` and
 the categories they may name, the `layers`, how many decisions the layers
-took this turn (`assisted`), and why the last step `stopped`.
+took this turn (`assisted`), why the last step `stopped`, what the last step
+in did (`stepped`: the action and how many are `left`), and whether the view
+is `reveal`ed.
 
 A watched game keeps no timeline and its state carries no `debug`.

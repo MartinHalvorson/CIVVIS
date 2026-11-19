@@ -19,7 +19,7 @@ const DEBUG_BAR_STYLE = `
      window, one half of a split) it drops to a row of its own beneath. */
   #debugbar {
     position: absolute; z-index: 10; left: 50%; top: 5px; transform: translateX(-50%);
-    display: flex; align-items: center; gap: 4px; height: 28px;
+    display: flex; align-items: center; gap: 3px; height: 28px;
     color: var(--text); font-size: 12px; user-select: none; white-space: nowrap;
   }
   #debugbar[hidden], #debugbar [hidden] { display: none; }
@@ -31,14 +31,14 @@ const DEBUG_BAR_STYLE = `
   }
   #debugbar.dbg-low .dbg-pop, #debugbar.dbg-low .dbg-note { left: auto; right: 0; transform: none; }
   #debugbar button {
-    min-width: 26px; height: 26px; padding: 0 5px; border-radius: 8px; cursor: pointer;
+    min-width: 25px; height: 26px; padding: 0 4px; border-radius: 8px; cursor: pointer;
     color: var(--text); background: #14231f; border: 1px solid #35504a; font: inherit; line-height: 1;
   }
   #debugbar button:hover:not(:disabled) { border-color: var(--gold-bright, #e7c873); }
   #debugbar button:disabled { opacity: .36; cursor: default; }
   #debugbar button.on { color: #10140f; background: var(--gold-bright, #e7c873); border-color: transparent; font-weight: 700; }
   #debugbar .dbg-sep { width: 1px; height: 18px; background: #35504a; margin: 0 2px; }
-  #debugbar #dbg-slider { width: clamp(64px, 7vw, 104px); margin: 0 2px; accent-color: var(--gold-bright, #e7c873); }
+  #debugbar #dbg-slider { width: clamp(60px, 5vw, 80px); margin: 0 2px; accent-color: var(--gold-bright, #e7c873); }
   #debugbar .dbg-count { color: var(--gold-bright, #e7c873); font-weight: 700; margin-left: 3px; }
   #debugbar .dbg-count:empty { display: none; }
   #debugbar button.on .dbg-count { color: inherit; }
@@ -120,9 +120,9 @@ async function debugOp(body, timeoutMs = 20000) {
       body: JSON.stringify(body),
     }, timeoutMs);
     if (next.error) { debugSay(next.error); return next; }
-    if (DEBUG_TRAVEL_OPS.has(body.op) || body.op === "step") {
+    if (DEBUG_TRAVEL_OPS.has(body.op) || body.op === "step" || body.op === "step_action") {
       sel = null; selCity = null;
-      if (next.turn !== before && body.op !== "step") debugForgetStandingOrders(next.turn);
+      if (next.turn !== before && DEBUG_TRAVEL_OPS.has(body.op)) debugForgetStandingOrders(next.turn);
     }
     render(next);
     return next;
@@ -160,6 +160,51 @@ async function debugStep() {
     drawTurnLoop();
   }
 }
+// One action of the agent's turn in a few words, and where on the map it was.
+function debugActionWords(action) {
+  const words = [titleCase(String(action.type || ""))];
+  const unit = action.unit === undefined ? null : state.units.find(held => held.id === action.unit);
+  if (unit) words.push(titleCase(String(unit.type || "")));
+  const city = action.city === undefined ? null : state.cities.find(held => held.id === action.city);
+  if (city) words.push(city.name);
+  // What was chosen is a name, sometimes one level down (`item: {unit: …}`).
+  const named = value => typeof value === "string" ? [value]
+    : value && typeof value === "object" && !Array.isArray(value)
+      ? Object.values(value).filter(inner => typeof inner === "string") : [];
+  for (const [key, value] of Object.entries(action))
+    if (key !== "type") words.push(...named(value).map(titleCase));
+  return words.filter(Boolean).join(" · ");
+}
+function debugActionPlace(action) {
+  for (const key of ["to", "target", "pos"])
+    if (Array.isArray(action[key]) && action[key].length === 2) return action[key];
+  const unit = action.unit === undefined ? null : state.units.find(held => held.id === action.unit);
+  if (unit) return unit.pos;
+  const city = action.city === undefined ? null : state.cities.find(held => held.id === action.city);
+  return city ? city.pos : null;
+}
+// Step in: one action of the agent's turn, named in the bar and centred on
+// the map, so a turn can be watched being put together.
+async function debugStepAction() {
+  if (autoplaying) return null;
+  debugSay("");
+  autoplaying = true;
+  try {
+    const next = await debugOp({op: "step_action", strategy: debugStrategy()}, AUTOPLAY_BATCH_TIMEOUT_MS);
+    const stepped = next && !next.error ? (next.debug || {}).stepped : null;
+    if (stepped) {
+      const place = debugActionPlace(stepped.action);
+      const left = stepped.left ? ` · ${stepped.left} more this turn` : "";
+      debugSay(`Civ AI: ${debugActionWords(stepped.action)}${left}`, place);
+      if (place) centerOn(place);
+    }
+    return next;
+  } finally {
+    autoplaying = false;
+    drawDebugBar();
+    drawTurnLoop();
+  }
+}
 // Played a turn a request, like auto-play, so every turn reaches the glass
 // and the Stop button is never more than one turn away.
 async function debugRun() {
@@ -184,18 +229,34 @@ async function debugRun() {
     drawTurnLoop();
   }
 }
+// A save is the world at one turn, kept under a name. The list is this
+// server's or this browser's own (`/saves`), the same one the deck shows.
 async function debugSave() {
+  const box = document.querySelector("#dbg-pop-saves [data-dbg-field=savename]");
   const stamp = new Date();
-  const name = `t${state.turn}-${String(stamp.getHours()).padStart(2, "0")}${String(stamp.getMinutes()).padStart(2, "0")}`;
+  const name = (box.value || "").trim() ||
+    `t${state.turn}-${String(stamp.getHours()).padStart(2, "0")}${String(stamp.getMinutes()).padStart(2, "0")}`;
   try {
     const done = await fetchJSON("/save", {method: "POST",
       headers: {"Content-Type": "application/json"}, body: JSON.stringify({name})});
     if (done.error) throw new Error(done.error);
+    box.value = "";
     debugSay(`Saved turn ${state.turn} as ${name}`);
     refreshSaves();
+    debugDrawSaves();
   } catch (error) {
     debugSay(`Could not save: ${error.message || error}`);
   }
+}
+async function debugDrawSaves() {
+  const list = document.getElementById("dbg-save-list");
+  let saves = [];
+  try { saves = (await fetchJSON("/saves", {}, 4000)).saves || []; } catch (_) {}
+  list.innerHTML = saves.length
+    ? saves.slice(0, 10).map(save =>
+        `<div class="dbg-line"><span style="flex:1;width:auto;color:inherit"><b>${escapeAttr(save.name)}</b> · turn ${escapeAttr(String(save.turn))}</span>` +
+        `<button data-dbg-load="${escapeAttr(save.name)}">Load</button></div>`).join("")
+    : `<p>Nothing saved yet.</p>`;
 }
 
 function debugBreakpointsFromForm() {
@@ -251,6 +312,15 @@ function debugBuildBar() {
         <button data-dbg="split-col" title="A above, B below">⬒ Top and bottom</button>
       </div>
     </div>
+    <div class="dbg-pop" id="dbg-pop-saves" hidden>
+      <h4>Saves</h4>
+      <p>A save is the world at one turn. Loading one starts a timeline of its own from there.</p>
+      <div class="dbg-line">
+        <input type="text" data-dbg-field="savename" maxlength="64" placeholder="a name, or leave empty for the turn" aria-label="Save name">
+        <button data-dbg="save" title="Save the turn that is open now">Save this turn</button>
+      </div>
+      <div id="dbg-save-list" style="display:grid;gap:4px"></div>
+    </div>
     <div class="dbg-pop" id="dbg-pop-breaks" hidden>
       <h4>Breakpoints</h4>
       <p>Run plays turns with the Civ AI until one of these stops it.</p>
@@ -268,19 +338,27 @@ function debugBuildBar() {
     <button data-dbg="undo" title="Undo your last action this turn (Ctrl+Z)" aria-label="Undo last action">↶</button>
     <input type="range" id="dbg-slider" step="1" title="Drag to any marked turn" aria-label="Turn">
     <button data-dbg="forward" title="Forward along the turns already played" aria-label="Forward one played turn">▶</button>
+    <button data-dbg="step-action" title="Step in: the Civ AI takes its next action this turn, and ends the turn when it has none left" aria-label="Step one action">▸</button>
     <button data-dbg="step" title="Step: the Civ AI plays one turn" aria-label="Step one turn">▶|</button>
     <button data-dbg="run" title="Run: the Civ AI plays until a breakpoint stops it" aria-label="Run to a breakpoint">▶▶</button>
     <span class="dbg-sep"></span>
     <button data-dbg-pop="layers" title="Layers: which decisions the Civ AI takes for you each turn">Layers<span class="dbg-count" id="dbg-layer-count"></span></button>
     <button data-dbg-pop="breaks" title="Breakpoints: what stops a run"><span class="dbg-dot">●</span><span class="dbg-count" id="dbg-break-count"></span></button>
-    <button data-dbg="save" title="Save this turn under its number" aria-label="Save this turn">⤓</button>
+    <button data-dbg="reveal" title="Reveal: show the whole map and every civilization, not only what yours can see" aria-label="Reveal the whole map">◉</button>
+    <button data-dbg-pop="saves" title="Saves: keep this turn under a name, or load one you kept" aria-label="Saves">⤓</button>
     <button data-dbg-pop="split" title="Split: two simulators from this turn, side by side or stacked">Split</button>
     <div class="dbg-note" id="dbg-note" role="status"></div>`;
   document.getElementById("maparea").appendChild(bar);
 
   bar.addEventListener("click", event => {
     const pop = event.target.closest("[data-dbg-pop]");
-    if (pop) { debugTogglePop(pop.dataset.dbgPop); return; }
+    if (pop) {
+      debugTogglePop(pop.dataset.dbgPop);
+      if (debugPopOpen === "saves") debugDrawSaves();
+      return;
+    }
+    const load = event.target.closest("[data-dbg-load]");
+    if (load) { debugPopOpen = null; loadSave(load.dataset.dbgLoad); return; }
     const button = event.target.closest("[data-dbg]");
     if (!button || button.disabled) return;
     const timeline = debugTimeline();
@@ -290,6 +368,8 @@ function debugBuildBar() {
     else if (action === "undo") debugOp({op: "undo"});
     else if (action === "forward") debugOp({op: "forward"});
     else if (action === "step") debugStep();
+    else if (action === "step-action") debugStepAction();
+    else if (action === "reveal") debugOp({op: "reveal", on: !timeline.reveal});
     else if (action === "run") debugRun();
     else if (action === "save") debugSave();
     else if (action === "split-row" || action === "split-col") {
@@ -350,6 +430,9 @@ function drawDebugBar(seat = true) {
   set("undo", idle && timeline.can_undo);
   set("forward", idle && timeline.can_forward);
   set("step", idle);
+  set("step-action", idle);
+  set("reveal", idle);
+  bar.querySelector('[data-dbg="reveal"]').classList.toggle("on", timeline.reveal === true);
   set("save", idle);
   set("assist", idle);
   const run = bar.querySelector('[data-dbg="run"]');
@@ -372,7 +455,7 @@ function drawDebugBar(seat = true) {
   document.getElementById("dbg-break-count").textContent = breakCount ? `${breakCount}` : "";
   // A pane is already one half of a split, and does not split again.
   bar.querySelector('[data-dbg-pop="split"]').hidden = DEBUG_PANE !== null;
-  for (const name of ["layers", "breaks", "split"]) {
+  for (const name of ["layers", "breaks", "saves", "split"]) {
     document.getElementById(`dbg-pop-${name}`).hidden = debugPopOpen !== name;
     bar.querySelector(`[data-dbg-pop="${name}"]`).classList.toggle("on", debugPopOpen === name);
   }
@@ -412,21 +495,23 @@ function drawDebugBar(seat = true) {
   if (note.innerHTML !== html) note.innerHTML = html;
   if (seat) debugSeatBar(bar);
 }
-// In the top strip when its middle is free, on a row beneath when it is not.
+// In the top strip when the gap between its two ends has room, on a row
+// beneath when it has not. The gap is not centred on the map, so the bar is
+// centred on the gap.
 function debugSeatBar(bar) {
   const left = document.querySelector("#civtop .civtop-left");
   const right = document.querySelector("#civtop .civtop-right");
-  if (!left || !right) { bar.classList.add("dbg-low"); return; }
-  const area = document.getElementById("maparea").getBoundingClientRect();
-  const centre = area.left + area.width / 2;
+  if (!left || !right) { bar.classList.add("dbg-low"); bar.style.left = ""; return; }
   // The controls' own width, not the box's: the low row has padding the strip does not.
   let width = 0;
   for (const child of bar.children)
     if (!child.classList.contains("dbg-pop") && !child.classList.contains("dbg-note"))
-      width += child.getBoundingClientRect().width + 4;
-  const room = 2 * Math.min(centre - left.getBoundingClientRect().right,
-    right.getBoundingClientRect().left - centre) - 20;
-  bar.classList.toggle("dbg-low", width > room);
+      width += child.getBoundingClientRect().width + 3;
+  const from = left.getBoundingClientRect().right, to = right.getBoundingClientRect().left;
+  const low = width > to - from - 24;
+  bar.classList.toggle("dbg-low", low);
+  bar.style.left = low ? ""
+    : `${(from + to) / 2 - document.getElementById("maparea").getBoundingClientRect().left}px`;
 }
 
 // ------------------------------------------------------------------ split

@@ -152,6 +152,14 @@ pub fn observation_spectator(g: &Game, pid: usize) -> Value {
     obs_impl(g, pid, true, false)
 }
 
+/// The played seat's observation with the fog lifted: everything an
+/// omniscient spectator is shown, and still the seat's own reach to act with.
+/// The Sim debugger's reveal view (`server/debugger.rs`); the rules are not
+/// changed by looking, only what the page is told.
+pub fn observation_revealed(g: &Game, pid: usize) -> Value {
+    obs_impl(g, pid, true, true)
+}
+
 /// Currently visible and ever-explored tile sets for `pid`, including
 /// Level-2+ military-alliance shared vision. Every fog-honest observation
 /// surface (the JSON protocol and the tensor builder) derives from this one

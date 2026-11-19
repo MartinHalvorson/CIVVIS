@@ -2977,7 +2977,13 @@ impl Session {
             o["server_artifact_kind"] = json!(runtime_artifact_kind());
             return o;
         }
-        let mut o = observation(&self.game, 0);
+        // The debugger's reveal view lifts the fog from what the page is
+        // shown; the seat still acts by its own rules.
+        let mut o = if self.debugger_reveals() {
+            crate::obs::observation_revealed(&self.game, 0)
+        } else {
+            observation(&self.game, 0)
+        };
         // A rival you have met has a standing, the same way a chess opponent
         // does, and the HUD has always had a column for it. It used to be
         // empty in every interactive game because only the spectator wrote

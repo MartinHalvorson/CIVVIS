@@ -256,6 +256,8 @@ fn the_page_loads_the_bar_and_sends_only_operations_the_engine_answers() {
         "jump",
         "undo",
         "step",
+        "step_action",
+        "reveal",
         "assist",
         "layers",
         "breakpoints",
@@ -310,4 +312,76 @@ fn the_split_speaks_one_set_of_messages_on_both_sides() {
             "{message} is sent or heard, not both"
         );
     }
+}
+
+#[test]
+fn stepping_in_takes_the_agents_turn_one_action_at_a_time() {
+    let mut apart = played();
+    let mut whole = played();
+    assert!(whole.debug_step());
+    let mut actions = 0;
+    for _ in 0..400 {
+        let before = apart.game.log.len();
+        apart.debug_step_action().expect("a live game steps");
+        if apart.game.turn == 2 {
+            assert_eq!(
+                apart.state()["debug"]["stepped"]["action"]["type"],
+                json!("end_turn")
+            );
+            break;
+        }
+        actions += 1;
+        assert_eq!(apart.game.log.len(), before + 1, "one action a step");
+        assert_eq!(apart.game.log.last().map(|(seat, _)| *seat), Some(0));
+        assert_eq!(apart.state()["debug"]["acted"], json!(actions));
+    }
+    assert_eq!(apart.game.turn, 2);
+    assert!(actions > 0, "an opening turn has something to do");
+    // Taken apart or taken whole, it is the same turn.
+    assert_eq!(world(&apart), world(&whole));
+}
+
+#[test]
+fn a_step_in_plans_again_once_the_person_has_acted() {
+    let mut session = played();
+    session.debug_step_action().expect("the first step");
+    let by_hand = something_to_do(&session);
+    assert_eq!(session.act(&by_hand), None);
+    // The plan was made before that action; the next step is made on the
+    // world as it now stands, and can be undone like any other.
+    session
+        .debug_step_action()
+        .expect("a step after the person's own");
+    if session.game.turn == 1 {
+        assert_eq!(session.state()["debug"]["acted"], json!(3));
+        assert_eq!(session.debug_undo(), Ok(2));
+    }
+}
+
+#[test]
+fn reveal_lifts_the_fog_from_the_page_and_changes_nothing_else() {
+    let mut session = played();
+    for _ in 0..3 {
+        assert!(session.debug_step());
+    }
+    let fogged = session.state();
+    let before = world(&session);
+    assert!(session.debug(&json!({"op": "reveal"}))["error"].is_string());
+    let answer = session.debug(&json!({"op": "reveal", "on": true}));
+    assert_eq!(answer["error"], Value::Null);
+    let revealed = session.state();
+    assert_eq!(revealed["debug"]["reveal"], json!(true));
+    let count = |state: &Value, key: &str| state[key].as_array().map_or(0, Vec::len);
+    assert!(
+        count(&revealed, "units") > count(&fogged, "units"),
+        "a rival's units come into view"
+    );
+    assert_eq!(revealed["legal_actions"], fogged["legal_actions"]);
+    assert_eq!(world(&session), before, "looking is not playing");
+    // A world walked to, and a fork, are still shown revealed.
+    assert_eq!(session.debug_jump(1), Ok(1));
+    assert_eq!(session.state()["debug"]["reveal"], json!(true));
+    assert_eq!(session.fork().state()["debug"]["reveal"], json!(true));
+    session.debug(&json!({"op": "reveal", "on": false}));
+    assert_eq!(session.state()["debug"]["reveal"], json!(false));
 }
