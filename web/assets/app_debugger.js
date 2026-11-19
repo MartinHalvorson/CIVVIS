@@ -22,12 +22,14 @@ const DEBUG_BAR_STYLE = `
     display: flex; align-items: center; gap: 4px; height: 28px;
     color: var(--text); font-size: 12px; user-select: none; white-space: nowrap;
   }
-  #debugbar[hidden] { display: none; }
+  #debugbar[hidden], #debugbar [hidden] { display: none; }
   #debugbar.dbg-low {
-    top: calc(var(--civtop-height, 38px) + 6px); height: auto; padding: 5px 7px;
+    top: calc(var(--civtop-height, 38px) + var(--solo-launch-height, 60px) + 12px);
+    left: auto; right: var(--panel-edge, 12px); transform: none; height: auto; padding: 5px 7px;
     border-radius: 12px; border: 1px solid #4d685f; background: #0a1512f2;
     box-shadow: var(--shadow); backdrop-filter: blur(18px);
   }
+  #debugbar.dbg-low .dbg-pop, #debugbar.dbg-low .dbg-note { left: auto; right: 0; transform: none; }
   #debugbar button {
     min-width: 26px; height: 26px; padding: 0 5px; border-radius: 8px; cursor: pointer;
     color: var(--text); background: #14231f; border: 1px solid #35504a; font: inherit; line-height: 1;
@@ -73,6 +75,17 @@ let debugRunning = false, debugStopAsked = false;
 let debugPopOpen = null;
 let debugNoteText = "", debugNotePos = null;
 let debugScrubbing = false;
+// Which half of a split this page is: "a-…" or "b-…" inside the host's frame,
+// and null for an ordinary page.
+const DEBUG_PANE = (() => {
+  try {
+    const pane = new URLSearchParams(location.search).get("pane");
+    return pane && window.parent !== window ? pane : null;
+  } catch (_) { return null; }
+})();
+// What is moving this pane's world right now, so its report to the host can
+// say how the turn was reached: walked to, or played after the other pane.
+let debugTravelling = false, debugFollowing = false;
 
 function debugTimeline() {
   return state && !SPEC && state.debug ? state.debug : null;
@@ -100,6 +113,7 @@ async function debugOp(body, timeoutMs = 20000) {
   drawDebugBar();
   try {
     const before = state.turn;
+    debugTravelling = DEBUG_TRAVEL_OPS.has(body.op);
     const next = await fetchJSON("/debug", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
@@ -117,6 +131,7 @@ async function debugOp(body, timeoutMs = 20000) {
     return null;
   } finally {
     debugBusy = false;
+    debugTravelling = false;
     drawDebugBar();
   }
 }
@@ -129,7 +144,7 @@ function debugSayStop(stopped) {
   if (stopped.kind === "turn") debugSay(`Stopped at turn ${stopped.turn}`);
   else if (stopped.kind === "event")
     debugSay(`Stopped on ${stopped.category}: ${stopped.text}`, stopped.pos || null);
-  else debugSay("The game has no turn left to play");
+  else debugSay(`The game ended on turn ${stopped.turn}`);
 }
 async function debugStep() {
   if (autoplaying) return null;
@@ -227,6 +242,15 @@ function debugBuildBar() {
         <button data-dbg="assist" title="Have the agent take the layers that are on in the turn that is open now">Apply to this turn</button>
       </div>
     </div>
+    <div class="dbg-pop" id="dbg-pop-split" hidden>
+      <h4>Split the screen</h4>
+      <p>Two simulators start from this turn. Each one is a whole game of its own and plays its own
+        history. Linked, they stay on the same turn; separate, each keeps its own.</p>
+      <div class="dbg-line">
+        <button data-dbg="split-row" title="A on the left, B on the right">◧ Side by side</button>
+        <button data-dbg="split-col" title="A above, B below">⬒ Top and bottom</button>
+      </div>
+    </div>
     <div class="dbg-pop" id="dbg-pop-breaks" hidden>
       <h4>Breakpoints</h4>
       <p>Run plays turns with the Civ AI until one of these stops it.</p>
@@ -249,7 +273,8 @@ function debugBuildBar() {
     <span class="dbg-sep"></span>
     <button data-dbg-pop="layers" title="Layers: which decisions the Civ AI takes for you each turn">Layers<span class="dbg-count" id="dbg-layer-count"></span></button>
     <button data-dbg-pop="breaks" title="Breakpoints: what stops a run"><span class="dbg-dot">●</span><span class="dbg-count" id="dbg-break-count"></span></button>
-    <button data-dbg="save" title="Save this turn under its number">Save</button>
+    <button data-dbg="save" title="Save this turn under its number" aria-label="Save this turn">⤓</button>
+    <button data-dbg-pop="split" title="Split: two simulators from this turn, side by side or stacked">Split</button>
     <div class="dbg-note" id="dbg-note" role="status"></div>`;
   document.getElementById("maparea").appendChild(bar);
 
@@ -267,6 +292,10 @@ function debugBuildBar() {
     else if (action === "step") debugStep();
     else if (action === "run") debugRun();
     else if (action === "save") debugSave();
+    else if (action === "split-row" || action === "split-col") {
+      debugPopOpen = null;
+      debugSplitOpen(action === "split-row" ? "row" : "col");
+    }
     else if (action === "show") { if (debugNotePos) centerOn(debugNotePos); }
     else if (action === "assist") debugOp({op: "assist", strategy: debugStrategy()}, AUTOPLAY_BATCH_TIMEOUT_MS);
     else if (action === "layers-none" || action === "layers-all") {
@@ -341,7 +370,9 @@ function drawDebugBar(seat = true) {
   const breakCount = breaks.turns.length + breaks.categories.length + breaks.phrases.length +
     (breaks.important ? 1 : 0);
   document.getElementById("dbg-break-count").textContent = breakCount ? `${breakCount}` : "";
-  for (const name of ["layers", "breaks"]) {
+  // A pane is already one half of a split, and does not split again.
+  bar.querySelector('[data-dbg-pop="split"]').hidden = DEBUG_PANE !== null;
+  for (const name of ["layers", "breaks", "split"]) {
     document.getElementById(`dbg-pop-${name}`).hidden = debugPopOpen !== name;
     bar.querySelector(`[data-dbg-pop="${name}"]`).classList.toggle("on", debugPopOpen === name);
   }
@@ -398,6 +429,274 @@ function debugSeatBar(bar) {
   bar.classList.toggle("dbg-low", width > room);
 }
 
+// ------------------------------------------------------------------ split
+//
+// Two simulators in one window. The page that was playing becomes the host:
+// it covers itself with two frames, and each frame is this same page again
+// with a simulator of its own (an engine of its own on the published build, a
+// session of its own on a socket server: `?pane=`). Both start on the host's
+// world as it stood when the screen was split, and from there each plays its
+// own history.
+//
+// Linked, the two stay on the same turn: whatever moves one — ending the
+// turn, a step, a walk along the timeline — is repeated in the other the same
+// way. Separate, neither knows about the other.
+//
+// Host and panes talk by `postMessage` on their own origin:
+//   pane → host  pane-boot   the published build's shim asking for its world
+//   host → pane  pane-world  that world, as save text
+//   pane → host  pane-turn   the turn it is on, and how it got there
+//   host → pane  pane-follow go to this turn the same way
+//   host → pane  pane-save   → pane-saved: the pane's world, as save text
+//   host → pane  pane-load   become this world
+
+const DEBUG_SPLIT_STYLE = `
+  #debugsplit {
+    position: fixed; inset: 0; z-index: 100000; display: grid; background: #050b0a;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+  }
+  #debugsplit.dbg-col { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr); }
+  #debugsplit iframe { width: 100%; height: 100%; border: 0; display: block; background: #07110f; }
+  #debugsplit .dbg-divider {
+    display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 6px;
+    width: 68px; padding: 6px 5px; background: #0a1512; border-inline: 1px solid #35504a;
+    color: var(--text, #e8e3d2); font: 11px/1.2 system-ui, sans-serif; user-select: none;
+  }
+  #debugsplit.dbg-col .dbg-divider {
+    flex-direction: row; align-items: center; width: auto; height: 36px; padding: 4px 8px;
+    border-inline: 0; border-block: 1px solid #35504a;
+  }
+  #debugsplit .dbg-divider button {
+    min-height: 26px; padding: 3px 5px; border-radius: 7px; cursor: pointer; font: inherit;
+    color: inherit; background: #14231f; border: 1px solid #35504a; white-space: normal;
+  }
+  #debugsplit.dbg-col .dbg-divider button { white-space: nowrap; padding: 3px 9px; }
+  #debugsplit .dbg-divider button:hover:not(:disabled) { border-color: #e7c873; }
+  #debugsplit .dbg-divider button:disabled { opacity: .4; cursor: default; }
+  #debugsplit .dbg-divider button.on { color: #10140f; background: #e7c873; border-color: transparent; font-weight: 700; }
+  #debugsplit .dbg-pane-name { text-align: center; font-weight: 700; color: #e7c873; font-variant-numeric: tabular-nums; }
+  #debugsplit .dbg-gap { flex: 1; }
+  #debugsplit [data-dbg-split="flip"] { font-size: 15px; }
+`;
+// The host's record of the split, or null when the screen is whole.
+let debugSplit = null;
+let debugSplitAsks = 0;
+
+function debugSplitPane(letter) { return debugSplit ? debugSplit.panes[letter] : null; }
+function debugSplitTell(letter, message) {
+  const pane = debugSplitPane(letter);
+  if (pane && pane.frame.contentWindow) pane.frame.contentWindow.postMessage(message, location.origin);
+}
+// A pane's world as save text. Answered by message, so it is awaited by id.
+function debugSplitWorld(letter) {
+  return new Promise((resolve, reject) => {
+    const id = ++debugSplitAsks;
+    const timer = setTimeout(() => {
+      debugSplit && debugSplit.waiting.delete(id);
+      reject(new Error(`simulator ${letter.toUpperCase()} did not answer`));
+    }, 30000);
+    debugSplit.waiting.set(id, game => { clearTimeout(timer); resolve(game); });
+    debugSplitTell(letter, {civvis: "pane-save", id});
+  });
+}
+function drawDebugSplit() {
+  if (!debugSplit) return;
+  const host = document.getElementById("debugsplit");
+  host.classList.toggle("dbg-col", debugSplit.dir === "col");
+  for (const letter of ["a", "b"]) {
+    const turn = debugSplit.panes[letter].turn;
+    host.querySelector(`[data-dbg-name="${letter}"]`).textContent =
+      `${letter.toUpperCase()}${turn === null ? "" : ` · ${turn}`}`;
+  }
+  const link = host.querySelector('[data-dbg-split="link"]');
+  link.classList.toggle("on", debugSplit.linked);
+  link.textContent = debugSplit.linked ? "Linked" : "Separate";
+  link.title = debugSplit.linked
+    ? "Linked: both simulators stay on the same turn. Click to let each keep its own."
+    : "Separate: each simulator keeps its own turn. Click to keep them on the same turn.";
+  host.querySelector('[data-dbg-split="flip"]').textContent = debugSplit.dir === "col" ? "◧" : "⬒";
+  for (const button of host.querySelectorAll("[data-dbg-split]")) button.disabled = debugSplit.busy;
+}
+async function debugSplitOpen(dir) {
+  if (debugSplit || DEBUG_PANE !== null || !debugTimeline() || debugBusy || autoplaying) return;
+  let world;
+  try { world = JSON.stringify(await fetchJSON("/save", {}, 30000)); }
+  catch (error) { debugSay(`Could not split: ${error.message || error}`); return; }
+  if (!document.getElementById("debugsplit-style")) {
+    const style = document.createElement("style");
+    style.id = "debugsplit-style";
+    style.textContent = DEBUG_SPLIT_STYLE;
+    document.head.appendChild(style);
+  }
+  const nonce = Date.now().toString(36);
+  const host = document.createElement("div");
+  host.id = "debugsplit";
+  host.innerHTML = `
+    <iframe data-dbg-frame="a" title="Simulator A"></iframe>
+    <div class="dbg-divider" role="toolbar" aria-label="Split simulators">
+      <div class="dbg-pane-name" data-dbg-name="a"></div>
+      <button data-dbg-split="copy-a" title="Make B a copy of A as it stands now">A → B</button>
+      <button data-dbg-split="keep-a" title="Close the split and keep playing A">Keep A</button>
+      <span class="dbg-gap"></span>
+      <button data-dbg-split="link"></button>
+      <button data-dbg-split="flip" title="Switch between side by side and top and bottom"></button>
+      <span class="dbg-gap"></span>
+      <button data-dbg-split="keep-b" title="Close the split and keep playing B">Keep B</button>
+      <button data-dbg-split="copy-b" title="Make A a copy of B as it stands now">B → A</button>
+      <div class="dbg-pane-name" data-dbg-name="b"></div>
+    </div>
+    <iframe data-dbg-frame="b" title="Simulator B"></iframe>`;
+  debugSplit = {dir, linked: true, world, busy: false, waiting: new Map(), panes: {}};
+  for (const letter of ["a", "b"]) {
+    const frame = host.querySelector(`[data-dbg-frame="${letter}"]`);
+    debugSplit.panes[letter] = {frame, id: `${letter}-${nonce}`, turn: null};
+  }
+  host.addEventListener("click", event => {
+    const button = event.target.closest("[data-dbg-split]");
+    if (!button || button.disabled || !debugSplit) return;
+    const action = button.dataset.dbgSplit;
+    if (action === "link") {
+      debugSplit.linked = !debugSplit.linked;
+      // Linking two simulators that have drifted brings B to A's turn.
+      const a = debugSplit.panes.a.turn;
+      if (debugSplit.linked && a !== null && a !== debugSplit.panes.b.turn)
+        debugSplitTell("b", {civvis: "pane-follow", turn: a, how: "end"});
+    } else if (action === "flip") debugSplit.dir = debugSplit.dir === "col" ? "row" : "col";
+    else if (action === "copy-a") debugSplitCopy("a", "b");
+    else if (action === "copy-b") debugSplitCopy("b", "a");
+    else if (action === "keep-a") debugSplitClose("a");
+    else if (action === "keep-b") debugSplitClose("b");
+    drawDebugSplit();
+  });
+  document.body.appendChild(host);
+  drawDebugSplit();
+  // Set last: a frame that loads asks for its world at once, and the record
+  // it is answered from has to exist by then.
+  for (const letter of ["a", "b"]) {
+    const pane = debugSplit.panes[letter];
+    pane.frame.src = `${location.pathname}?pane=${pane.id}`;
+  }
+}
+async function debugSplitCopy(from, to) {
+  if (!debugSplit || debugSplit.busy) return;
+  debugSplit.busy = true; drawDebugSplit();
+  try {
+    const game = await debugSplitWorld(from);
+    debugSplitTell(to, {civvis: "pane-load", game});
+  } catch (error) {
+    console.error("split copy", error);
+  } finally {
+    if (debugSplit) { debugSplit.busy = false; drawDebugSplit(); }
+  }
+}
+// The screen is whole again, playing the pane that was kept.
+async function debugSplitClose(keep) {
+  if (!debugSplit || debugSplit.busy) return;
+  debugSplit.busy = true; drawDebugSplit();
+  let note = "";
+  try {
+    const game = await debugSplitWorld(keep);
+    const next = await fetchJSON("/load", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: `{"game":${game}}`}, 60000);
+    if (next.error) throw new Error(next.error);
+    debugForgetStandingOrders(next.turn);
+    sel = null; selCity = null;
+    render(next);
+    note = `Playing on from simulator ${keep.toUpperCase()}`;
+  } catch (error) {
+    note = `Simulator ${keep.toUpperCase()} could not be kept: ${error.message || error}`;
+  }
+  document.getElementById("debugsplit").remove();
+  debugSplit = null;
+  debugSay(note);
+}
+window.addEventListener("message", event => {
+  if (!debugSplit || event.origin !== location.origin) return;
+  const data = event.data;
+  if (!data || typeof data.civvis !== "string") return;
+  const letter = ["a", "b"].find(name => debugSplit.panes[name].frame.contentWindow === event.source);
+  if (!letter) return;
+  if (data.civvis === "pane-boot") {
+    event.source.postMessage({civvis: "pane-world", pane: data.pane, game: debugSplit.world}, location.origin);
+  } else if (data.civvis === "pane-turn") {
+    debugSplit.panes[letter].turn = data.turn;
+    drawDebugSplit();
+    // A pane that moved because it was following is not followed back.
+    if (debugSplit.linked && data.how !== "follow" && data.how !== "boot")
+      debugSplitTell(letter === "a" ? "b" : "a", {civvis: "pane-follow", turn: data.turn, how: data.how});
+  } else if (data.civvis === "pane-saved") {
+    const waiting = debugSplit.waiting.get(data.id);
+    if (waiting) { debugSplit.waiting.delete(data.id); waiting(data.game); }
+  }
+});
+
+// ---- the pane's side
+let debugPaneTurn = null;
+let debugFollowWanted = null;
+function debugPaneReport() {
+  if (DEBUG_PANE === null || !state || SPEC || state.turn === debugPaneTurn) return;
+  const first = debugPaneTurn === null;
+  debugPaneTurn = state.turn;
+  // The command deck is the host's to show; half a window has no room for it.
+  if (first) togglePanel(true, false);
+  const how = first ? "boot" : debugFollowing ? "follow" : debugTravelling ? "travel"
+    : autoplaying ? "step" : "end";
+  window.parent.postMessage({civvis: "pane-turn", pane: DEBUG_PANE, turn: state.turn, how}, location.origin);
+}
+// Reach the turn the other pane is on, the way it got there: walked along
+// the timeline, stepped by the Civ AI, or by ending the turn as it stands.
+async function debugFollow(turn, how) {
+  debugFollowWanted = {turn, how};
+  if (debugFollowing) return;
+  debugFollowing = true;
+  try {
+    for (let guard = 0; guard < 1000 && debugFollowWanted; guard++) {
+      const wanted = debugFollowWanted;
+      if (!debugTimeline() || state.turn === wanted.turn || gameFinished(state)) {
+        if (debugFollowWanted === wanted) debugFollowWanted = null;
+        continue;
+      }
+      const before = state.turn;
+      if (state.turn > wanted.turn || (wanted.how === "travel" && state.debug.last >= wanted.turn)) {
+        // A walk lands on the nearest marked turn, and that is where it stays.
+        await debugOp({op: "jump", turn: wanted.turn});
+        if (debugFollowWanted === wanted) debugFollowWanted = null;
+      } else if (wanted.how === "step") await debugStep();
+      else await send({type: "end_turn"});
+      if (state.turn === before && debugFollowWanted === wanted) debugFollowWanted = null;
+    }
+  } finally {
+    debugFollowing = false;
+    debugFollowWanted = null;
+  }
+}
+if (DEBUG_PANE !== null) {
+  window.addEventListener("message", async event => {
+    if (event.source !== window.parent || event.origin !== location.origin) return;
+    const data = event.data;
+    if (!data || typeof data.civvis !== "string") return;
+    if (data.civvis === "pane-follow") debugFollow(data.turn, data.how);
+    else if (data.civvis === "pane-save") {
+      let game = null;
+      try { game = JSON.stringify(await fetchJSON("/save", {}, 30000)); } catch (_) {}
+      window.parent.postMessage({civvis: "pane-saved", id: data.id, game}, location.origin);
+    } else if (data.civvis === "pane-load") {
+      try {
+        const next = await fetchJSON("/load", {method: "POST",
+          headers: {"Content-Type": "application/json"}, body: `{"game":${data.game}}`}, 60000);
+        if (next.error) throw new Error(next.error);
+        debugForgetStandingOrders(next.turn);
+        sel = null; selCity = null;
+        debugFollowing = true;
+        try { render(next); } finally { debugFollowing = false; }
+        debugSay("Copied from the other simulator");
+      } catch (error) {
+        debugSay(`Could not copy the other simulator: ${error.message || error}`);
+      }
+    }
+  });
+}
+
 // `render` is the one door a state comes through, whoever asked for it.
 // `drawTurnLoop` is the page's own word that the turn's standing changed —
 // an end of turn in flight, a request finished — which is exactly when the
@@ -406,7 +705,7 @@ function debugSeatBar(bar) {
   const drawState = render;
   render = function (st, ...rest) {
     const drawn = drawState(st, ...rest);
-    try { drawDebugBar(); } catch (error) { console.error("debugger bar", error); }
+    try { drawDebugBar(); debugPaneReport(); } catch (error) { console.error("debugger bar", error); }
     return drawn;
   };
   const drawLoop = drawTurnLoop;

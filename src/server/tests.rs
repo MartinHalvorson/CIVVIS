@@ -861,6 +861,7 @@ fn a_mid_turn_victory_wakes_the_waiting_state_request_immediately() {
     session.game.winner = None;
     let seed = session.game.seed;
     let shared = Arc::new(Shared {
+        panes: Default::default(),
         current_seed: AtomicU64::new(seed),
         supervisor_request: Mutex::new(None),
         live_params: Mutex::new(session.params.clone()),
@@ -11580,6 +11581,7 @@ fn settings_are_staged_while_the_simulation_lock_is_held() {
 fn shared_for(mut session: Session) -> Arc<Shared> {
     let seed = session.game.seed;
     Arc::new(Shared {
+        panes: Default::default(),
         current_seed: AtomicU64::new(seed),
         supervisor_request: Mutex::new(None),
         live_params: Mutex::new(session.params.clone()),
