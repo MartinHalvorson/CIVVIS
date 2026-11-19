@@ -114,10 +114,24 @@ A run stops by itself when:
 - the turn added an event in a chosen category (`EVENT_CATEGORIES`);
 - the turn added an event whose text holds a chosen phrase;
 - the turn added an event the engine marks important, if that is on;
+- a condition on the state of the game became true;
 - the game ends or the seat is eliminated.
 
 Only the played seat's own events are read, which is what a person playing
 it is shown. "Every civilization's events" reads the others too.
+
+A condition reads one thing the observation says about one civilization and
+holds it to a line: `seat`, `key`, `test` (`<`, `<=`, `>`, `>=`, `==`, `!=` or
+`changes`) and `value`. The reading is that civilization's entry in the
+omniscient observation (`players[seat][key]`), so whatever a spectator of the
+whole table is told about a civilization can be a condition, for any seat:
+`cities`, `gold`, `score`, `population`, `unit_count`, `wonder_count` and the
+rest. A number is read as itself, a yes or no as 1 or 0, and a list as its
+length; `changes` takes any reading at all. A key the observation does not
+have is refused when the condition is set, not left to never fire.
+
+A condition stops the run on the turn it becomes true: it holds now and did
+not a turn ago. One that stays true does not stop every turn after.
 
 The stop is reported on `state.debug.stopped` and in the bar, with a Show
 button when the event has a place on the map.
@@ -129,34 +143,39 @@ Both start from the world as it stood when the screen was split, and from
 there each plays its own history: play one by hand and step the other, or
 try two answers to the same turn.
 
-Each half is the whole page again in a frame, with a simulator of its own:
+Each half is the whole page again in a frame, and both are answered by one
+engine, which keeps a session for each (`src/server/panes.rs`). A half's
+session is a fork of the main one (`Session::fork`): the same world, the same
+agents, and the timeline behind it. So a half can step back to turns played
+before the screen was split, and nothing is lost when the halves change
+places.
 
-- On the published build each page has its own engine. The half asks the
-  host page for its world by message before it asks its engine anything
-  (`beta/shim.js`, `pane-boot` / `pane-world`), so it never shows another
-  game on the way.
-- On a socket server both pages would reach the one session the process
-  plays, so a request from a half is answered from a session kept for it
-  (`src/server/panes.rs`). The half names itself in its address
-  (`?pane=a-<split>`) and its requests carry that in `Referer`. Its session
-  is a fork of the main one (`Session::fork`): the same world, the same
-  agents, and the timeline behind it to walk back along.
+A half names itself in its address (`?pane=a-<split>`):
+
+- On a socket server every request its page makes carries that in `Referer`,
+  with the page doing nothing, and the server answers it from the half's
+  session.
+- On the published build the half's shim starts no engine. It hands each
+  request to the engine of the page that framed it, with the half's name on
+  it (`beta/shim.js`, `pane-ask` / `pane-answer`), and the engine's router
+  answers from the half's session exactly as the socket server does.
+
+Only requests that read or change a world are answered from a half's
+session. A new split replaces the sessions of the one before it.
 
 The strip between the halves holds the split's own controls:
 
 | Control | What it does |
 |---------|--------------|
 | Linked / Separate | Linked, the halves stay on the same turn. Whatever moves one is repeated in the other the same way: an ended turn ends the other's turn as it stands, a step steps it, a walk along the timeline walks it. Separate, neither follows the other. |
+| View | On, the two maps move together: panning or zooming one moves the other. Off, each looks where it likes. |
 | ◧ / ⬒ | Switch between side by side and top and bottom |
-| A → B, B → A | Make one half a copy of the other as it stands now |
-| Keep A, Keep B | Close the split and play on from that half |
+| A → B, B → A | Make one half a copy of the other as it stands now, turns behind it included (`copy`) |
+| Keep A, Keep B | Close the split and play on from that half (`adopt`): its session becomes the main one, with every turn it could walk back to |
+| drag the strip | Resize the halves; double-click makes them equal |
 
 A half that moved because it was following is not followed back. Linking two
 halves that have drifted apart brings B to A's turn.
-
-On the published build a half starts from a save, so its timeline begins at
-the split; on a socket server it keeps the turns before the split too. Either
-way, the game that is kept when the split closes starts a timeline of its own.
 
 ## `POST /debug`
 
@@ -171,8 +190,10 @@ operation leaves the world as it was.
 | `jump` | `turn` |
 | `step`, `step_action`, `assist` | optional `strategy`, the Civ AI to seat first |
 | `reveal` | `on`: true or false |
+| `copy` | from a half of a split: `from`, the other half's name |
+| `adopt` | from the host of a split: `pane`, the half to keep |
 | `layers` | `layers`: the ids to switch on; all others are switched off |
-| `breakpoints` | `turns`, `categories`, `phrases`, `important`, `every_seat`; whatever is left out is cleared |
+| `breakpoints` | `turns`, `categories`, `phrases`, `important`, `every_seat`, `conditions`; whatever is left out is cleared |
 
 Every state document of a played game carries `debug`: the open `turn`, the
 marked `turns`, `first` and `last`, how many actions the seat has taken this

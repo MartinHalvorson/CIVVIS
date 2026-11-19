@@ -64,6 +64,10 @@ const DEBUG_BAR_STYLE = `
     flex: 1; min-width: 0; height: 26px; padding: 0 7px; border-radius: 7px;
     color: var(--text); background: #060d0b; border: 1px solid #35504a; font: inherit;
   }
+  #debugbar .dbg-pop select {
+    min-width: 0; max-width: 104px; height: 26px; border-radius: 7px;
+    color: var(--text); background: #060d0b; border: 1px solid #35504a; font: inherit;
+  }
   #debugbar .dbg-pop .dbg-line { display: flex; align-items: center; gap: 6px; }
   #debugbar .dbg-pop .dbg-line > span { flex: none; width: 58px; color: var(--muted); }
 `;
@@ -106,7 +110,7 @@ function debugForgetStandingOrders(turn) {
   noticeDismissed = new Set();
   noticeSeenTurn = Math.max(0, turn - 1);
 }
-const DEBUG_TRAVEL_OPS = new Set(["back", "forward", "jump", "restart", "undo"]);
+const DEBUG_TRAVEL_OPS = new Set(["back", "forward", "jump", "restart", "undo", "copy"]);
 async function debugOp(body, timeoutMs = 20000) {
   if (debugBusy || turnAdvancePending || !debugTimeline()) return null;
   debugBusy = true;
@@ -122,7 +126,8 @@ async function debugOp(body, timeoutMs = 20000) {
     if (next.error) { debugSay(next.error); return next; }
     if (DEBUG_TRAVEL_OPS.has(body.op) || body.op === "step" || body.op === "step_action") {
       sel = null; selCity = null;
-      if (next.turn !== before && DEBUG_TRAVEL_OPS.has(body.op)) debugForgetStandingOrders(next.turn);
+      if ((next.turn !== before || body.op === "copy") && DEBUG_TRAVEL_OPS.has(body.op))
+        debugForgetStandingOrders(next.turn);
     }
     render(next);
     return next;
@@ -144,6 +149,15 @@ function debugSayStop(stopped) {
   if (stopped.kind === "turn") debugSay(`Stopped at turn ${stopped.turn}`);
   else if (stopped.kind === "event")
     debugSay(`Stopped on ${stopped.category}: ${stopped.text}`, stopped.pos || null);
+  else if (stopped.kind === "condition") {
+    const who = state.players.find(player => player.id === stopped.seat) || {};
+    const name = titleCase(String(who.civ || who.name || `seat ${stopped.seat}`));
+    const read = value => typeof value === "number" ? String(Math.round(value * 100) / 100) : JSON.stringify(value);
+    const what = `${name} ${stopped.key.replaceAll("_", " ")}`;
+    debugSay(stopped.test === "changes"
+      ? `Stopped on turn ${stopped.turn}: ${what} changed from ${read(stopped.was)} to ${read(stopped.now)}`
+      : `Stopped on turn ${stopped.turn}: ${what} is ${read(stopped.now)} (${stopped.test} ${read(stopped.value)}, was ${read(stopped.was)})`);
+  }
   else debugSay(`The game ended on turn ${stopped.turn}`);
 }
 async function debugStep() {
@@ -271,6 +285,8 @@ function debugBreakpointsFromForm() {
     phrases: list(pop.querySelector("[data-dbg-field=phrases]").value),
     important: pop.querySelector("[data-dbg-field=important]").checked,
     every_seat: pop.querySelector("[data-dbg-field=every_seat]").checked,
+    // Conditions are added and removed one at a time; the engine holds the set.
+    conditions: [...(debugTimeline().breakpoints.conditions || [])],
   };
 }
 function debugLayersFromForm() {
@@ -305,8 +321,8 @@ function debugBuildBar() {
     </div>
     <div class="dbg-pop" id="dbg-pop-split" hidden>
       <h4>Split the screen</h4>
-      <p>Two simulators start from this turn. Each one is a whole game of its own and plays its own
-        history. Linked, they stay on the same turn; separate, each keeps its own.</p>
+      <p>Two simulators start from this turn, each with the turns behind it. From here each plays its
+        own history. Linked, they stay on the same turn; separate, each keeps its own.</p>
       <div class="dbg-line">
         <button data-dbg="split-row" title="A on the left, B on the right">◧ Side by side</button>
         <button data-dbg="split-col" title="A above, B below">⬒ Top and bottom</button>
@@ -329,6 +345,15 @@ function debugBuildBar() {
         <button data-dbg="break-plus" title="Add the turn ten from now">+10</button></div>
       <div class="dbg-line"><span>Phrases</span>
         <input type="text" data-dbg-field="phrases" placeholder="declared war, captured" aria-label="Stop when the event log says"></div>
+      <div class="dbg-line" style="flex-wrap:wrap" title="Stop when this becomes true of a civilization">
+        <span>When</span>
+        <select data-dbg-field="cond-seat" aria-label="Civilization"></select>
+        <select data-dbg-field="cond-key" aria-label="What to read"></select>
+        <select data-dbg-field="cond-test" aria-label="How to hold it"></select>
+        <input type="text" data-dbg-field="cond-value" inputmode="decimal" placeholder="value" style="flex:0 0 52px" aria-label="Value">
+        <button data-dbg="cond-add" title="Stop a run on the turn this becomes true">Add</button>
+      </div>
+      <div id="dbg-condition-list" style="display:grid;gap:3px"></div>
       <div class="dbg-grid" id="dbg-category-list"></div>
       <label><input type="checkbox" data-dbg-field="important"> Any important event</label>
       <label><input type="checkbox" data-dbg-field="every_seat"> Every civilization's events, not only mine</label>
@@ -357,6 +382,13 @@ function debugBuildBar() {
       if (debugPopOpen === "saves") debugDrawSaves();
       return;
     }
+    const gone = event.target.closest("[data-dbg-cond-remove]");
+    if (gone && debugTimeline()) {
+      const request = debugBreakpointsFromForm();
+      request.conditions.splice(+gone.dataset.dbgCondRemove, 1);
+      debugOp(request);
+      return;
+    }
     const load = event.target.closest("[data-dbg-load]");
     if (load) { debugPopOpen = null; loadSave(load.dataset.dbgLoad); return; }
     const button = event.target.closest("[data-dbg]");
@@ -382,6 +414,14 @@ function debugBuildBar() {
       debugOp({op: "layers", layers: action === "layers-all" ? timeline.layers.map(layer => layer.id) : []});
     } else if (action === "break-clear") {
       debugOp({op: "breakpoints"});
+    } else if (action === "cond-add") {
+      const pop = document.getElementById("dbg-pop-breaks");
+      const field = name => pop.querySelector(`[data-dbg-field=cond-${name}]`);
+      const request = debugBreakpointsFromForm();
+      const test = field("test").value;
+      request.conditions.push({seat: +field("seat").value, key: field("key").value, test,
+        value: test === "changes" ? undefined : parseFloat(field("value").value)});
+      debugOp(request);
     } else if (action === "break-plus") {
       const request = debugBreakpointsFromForm();
       request.turns = [...new Set([...request.turns, state.turn + 10])];
@@ -398,6 +438,8 @@ function debugBuildBar() {
     } else if (target.dataset.dbgLayer) {
       debugOp({op: "layers", layers: debugLayersFromForm()});
     } else if (target.closest("#dbg-pop-breaks")) {
+      // The fields of a condition being composed are not breakpoints yet.
+      if ((target.dataset.dbgField || "").startsWith("cond-")) { drawDebugBar(false); return; }
       debugOp(debugBreakpointsFromForm());
     }
   });
@@ -450,8 +492,9 @@ function drawDebugBar(seat = true) {
   const layersOn = timeline.layers.filter(layer => layer.on).length;
   document.getElementById("dbg-layer-count").textContent = layersOn ? `${layersOn}` : "";
   const breaks = timeline.breakpoints;
+  const conditions = breaks.conditions || [];
   const breakCount = breaks.turns.length + breaks.categories.length + breaks.phrases.length +
-    (breaks.important ? 1 : 0);
+    conditions.length + (breaks.important ? 1 : 0);
   document.getElementById("dbg-break-count").textContent = breakCount ? `${breakCount}` : "";
   // A pane is already one half of a split, and does not split again.
   bar.querySelector('[data-dbg-pop="split"]').hidden = DEBUG_PANE !== null;
@@ -481,6 +524,38 @@ function drawDebugBar(seat = true) {
     box.checked = breaks.categories.includes(box.dataset.dbgCategory);
   const pop = document.getElementById("dbg-pop-breaks");
   const field = name => pop.querySelector(`[data-dbg-field=${name}]`);
+  // A condition reads one thing the observation says about one civilization.
+  // The readings on offer are the ones this seat's own entry has; the engine
+  // reads the same entry for any seat, and refuses one it cannot find.
+  const majors = state.players.filter(player => !player.is_minor && !player.is_barbarian);
+  const civName = player => titleCase(String(player.civ || player.name || `seat ${player.id}`));
+  const mine = state.players.find(player => player.id === 0) || {};
+  const readable = Object.keys(mine).filter(key => {
+    const value = mine[key];
+    return typeof value === "number" || typeof value === "boolean" || Array.isArray(value);
+  }).sort();
+  const offer = (name, options) => {
+    const select = field(`cond-${name}`), drawn = JSON.stringify(options);
+    if (select.dataset.drawn === drawn) return;
+    const held = select.value;
+    select.dataset.drawn = drawn;
+    select.innerHTML = options.map(([value, label]) =>
+      `<option value="${escapeAttr(String(value))}">${escapeAttr(label)}</option>`).join("");
+    if (options.some(([value]) => String(value) === held)) select.value = held;
+  };
+  offer("seat", majors.map(player => [player.id, civName(player)]));
+  offer("key", readable.map(key => [key, key.replaceAll("_", " ")]));
+  offer("test", (breaks.known_tests || []).map(test => [test, test]));
+  field("cond-value").hidden = field("cond-test").value === "changes";
+  const conditionList = document.getElementById("dbg-condition-list");
+  const conditionRows = conditions.map((condition, index) => {
+    const who = state.players.find(player => player.id === condition.seat);
+    const line = condition.test === "changes" ? "changes" : `${condition.test} ${condition.value}`;
+    return `<div class="dbg-line"><span style="flex:1;width:auto;color:inherit">` +
+      `${escapeAttr(who ? civName(who) : `seat ${condition.seat}`)} · ${escapeAttr(condition.key.replaceAll("_", " "))} ${escapeAttr(line)}</span>` +
+      `<button data-dbg-cond-remove="${index}" title="Remove this condition" aria-label="Remove this condition">×</button></div>`;
+  }).join("");
+  if (conditionList.innerHTML !== conditionRows) conditionList.innerHTML = conditionRows;
   if (document.activeElement !== field("turns")) field("turns").value = breaks.turns.join(", ");
   if (document.activeElement !== field("phrases")) field("phrases").value = breaks.phrases.join(", ");
   field("important").checked = breaks.important;
@@ -517,39 +592,47 @@ function debugSeatBar(bar) {
 // ------------------------------------------------------------------ split
 //
 // Two simulators in one window. The page that was playing becomes the host:
-// it covers itself with two frames, and each frame is this same page again
-// with a simulator of its own (an engine of its own on the published build, a
-// session of its own on a socket server: `?pane=`). Both start on the host's
-// world as it stood when the screen was split, and from there each plays its
-// own history.
+// it covers itself with two frames, and each frame is this same page again,
+// playing a session of its own that the engine forks from the host's
+// (`src/server/panes.rs`, named by `?pane=`). Both halves start on the host's
+// world as it stood when the screen was split, with every turn behind it
+// still there to walk back to, and from there each plays its own history.
 //
 // Linked, the two stay on the same turn: whatever moves one — ending the
 // turn, a step, a walk along the timeline — is repeated in the other the same
-// way. Separate, neither knows about the other.
+// way. Separate, neither knows about the other. The view can be linked too,
+// so that moving the map in one half moves it in the other.
 //
 // Host and panes talk by `postMessage` on their own origin:
-//   pane → host  pane-boot   the published build's shim asking for its world
-//   host → pane  pane-world  that world, as save text
-//   pane → host  pane-turn   the turn it is on, and how it got there
-//   host → pane  pane-follow go to this turn the same way
-//   host → pane  pane-save   → pane-saved: the pane's world, as save text
-//   host → pane  pane-load   become this world
+//   pane → host  pane-turn    the turn it is on, and how it got there
+//   host → pane  pane-follow  go to this turn the same way
+//   host → pane  pane-copy    become a copy of the other half
+//   pane → host  pane-camera  where its map is looking
+//   host → pane  pane-look    look there too
+// Closing the split is the host's own request to the engine: the half that
+// is kept becomes the host's session (`op: "adopt"`), timeline and all.
 
 const DEBUG_SPLIT_STYLE = `
   #debugsplit {
     position: fixed; inset: 0; z-index: 100000; display: grid; background: #050b0a;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: minmax(0, var(--dbg-a, 1fr)) auto minmax(0, var(--dbg-b, 1fr));
+    grid-template-rows: minmax(0, 1fr);
   }
-  #debugsplit.dbg-col { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr); }
+  #debugsplit.dbg-col {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, var(--dbg-a, 1fr)) auto minmax(0, var(--dbg-b, 1fr));
+  }
   #debugsplit iframe { width: 100%; height: 100%; border: 0; display: block; background: #07110f; }
+  #debugsplit.dbg-dragging iframe { pointer-events: none; }
   #debugsplit .dbg-divider {
     display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 6px;
     width: 68px; padding: 6px 5px; background: #0a1512; border-inline: 1px solid #35504a;
     color: var(--text, #e8e3d2); font: 11px/1.2 system-ui, sans-serif; user-select: none;
+    cursor: col-resize; touch-action: none;
   }
   #debugsplit.dbg-col .dbg-divider {
     flex-direction: row; align-items: center; width: auto; height: 36px; padding: 4px 8px;
-    border-inline: 0; border-block: 1px solid #35504a;
+    border-inline: 0; border-block: 1px solid #35504a; cursor: row-resize;
   }
   #debugsplit .dbg-divider button {
     min-height: 26px; padding: 3px 5px; border-radius: 7px; cursor: pointer; font: inherit;
@@ -565,29 +648,17 @@ const DEBUG_SPLIT_STYLE = `
 `;
 // The host's record of the split, or null when the screen is whole.
 let debugSplit = null;
-let debugSplitAsks = 0;
 
-function debugSplitPane(letter) { return debugSplit ? debugSplit.panes[letter] : null; }
 function debugSplitTell(letter, message) {
-  const pane = debugSplitPane(letter);
+  const pane = debugSplit ? debugSplit.panes[letter] : null;
   if (pane && pane.frame.contentWindow) pane.frame.contentWindow.postMessage(message, location.origin);
-}
-// A pane's world as save text. Answered by message, so it is awaited by id.
-function debugSplitWorld(letter) {
-  return new Promise((resolve, reject) => {
-    const id = ++debugSplitAsks;
-    const timer = setTimeout(() => {
-      debugSplit && debugSplit.waiting.delete(id);
-      reject(new Error(`simulator ${letter.toUpperCase()} did not answer`));
-    }, 30000);
-    debugSplit.waiting.set(id, game => { clearTimeout(timer); resolve(game); });
-    debugSplitTell(letter, {civvis: "pane-save", id});
-  });
 }
 function drawDebugSplit() {
   if (!debugSplit) return;
   const host = debugSplit.host;
   host.classList.toggle("dbg-col", debugSplit.dir === "col");
+  host.style.setProperty("--dbg-a", `${debugSplit.share}fr`);
+  host.style.setProperty("--dbg-b", `${1 - debugSplit.share}fr`);
   for (const letter of ["a", "b"]) {
     const turn = debugSplit.panes[letter].turn;
     host.querySelector(`[data-dbg-name="${letter}"]`).textContent =
@@ -599,14 +670,16 @@ function drawDebugSplit() {
   link.title = debugSplit.linked
     ? "Linked: both simulators stay on the same turn. Click to let each keep its own."
     : "Separate: each simulator keeps its own turn. Click to keep them on the same turn.";
+  const view = host.querySelector('[data-dbg-split="view"]');
+  view.classList.toggle("on", debugSplit.view);
+  view.title = debugSplit.view
+    ? "The two maps move together. Click to let each look where it likes."
+    : "Each map looks where it likes. Click to move the two together.";
   host.querySelector('[data-dbg-split="flip"]').textContent = debugSplit.dir === "col" ? "◧" : "⬒";
   for (const button of host.querySelectorAll("[data-dbg-split]")) button.disabled = debugSplit.busy;
 }
-async function debugSplitOpen(dir) {
+function debugSplitOpen(dir) {
   if (debugSplit || DEBUG_PANE !== null || !debugTimeline() || debugBusy || autoplaying) return;
-  let world;
-  try { world = JSON.stringify(await fetchJSON("/save", {}, 30000)); }
-  catch (error) { debugSay(`Could not split: ${error.message || error}`); return; }
   if (!document.getElementById("debugsplit-style")) {
     const style = document.createElement("style");
     style.id = "debugsplit-style";
@@ -618,20 +691,21 @@ async function debugSplitOpen(dir) {
   host.id = "debugsplit";
   host.innerHTML = `
     <iframe data-dbg-frame="a" title="Simulator A"></iframe>
-    <div class="dbg-divider" role="toolbar" aria-label="Split simulators">
+    <div class="dbg-divider" role="toolbar" aria-label="Split simulators" title="Drag to resize; double-click to make the halves equal">
       <div class="dbg-pane-name" data-dbg-name="a"></div>
-      <button data-dbg-split="copy-a" title="Make B a copy of A as it stands now">A → B</button>
-      <button data-dbg-split="keep-a" title="Close the split and keep playing A">Keep A</button>
+      <button data-dbg-split="copy-a" title="Make B a copy of A as it stands now, turns behind it included">A → B</button>
+      <button data-dbg-split="keep-a" title="Close the split and keep playing A, with every turn it can walk back to">Keep A</button>
       <span class="dbg-gap"></span>
       <button data-dbg-split="link"></button>
+      <button data-dbg-split="view">View</button>
       <button data-dbg-split="flip" title="Switch between side by side and top and bottom"></button>
       <span class="dbg-gap"></span>
-      <button data-dbg-split="keep-b" title="Close the split and keep playing B">Keep B</button>
-      <button data-dbg-split="copy-b" title="Make A a copy of B as it stands now">B → A</button>
+      <button data-dbg-split="keep-b" title="Close the split and keep playing B, with every turn it can walk back to">Keep B</button>
+      <button data-dbg-split="copy-b" title="Make A a copy of B as it stands now, turns behind it included">B → A</button>
       <div class="dbg-pane-name" data-dbg-name="b"></div>
     </div>
     <iframe data-dbg-frame="b" title="Simulator B"></iframe>`;
-  debugSplit = {dir, linked: true, world, busy: false, waiting: new Map(), panes: {}, host};
+  debugSplit = {dir, linked: true, view: true, share: .5, busy: false, panes: {}, host};
   for (const letter of ["a", "b"]) {
     const frame = host.querySelector(`[data-dbg-frame="${letter}"]`);
     debugSplit.panes[letter] = {frame, id: `${letter}-${nonce}`, turn: null};
@@ -646,43 +720,55 @@ async function debugSplitOpen(dir) {
       const a = debugSplit.panes.a.turn;
       if (debugSplit.linked && a !== null && a !== debugSplit.panes.b.turn)
         debugSplitTell("b", {civvis: "pane-follow", turn: a, how: "end"});
-    } else if (action === "flip") debugSplit.dir = debugSplit.dir === "col" ? "row" : "col";
-    else if (action === "copy-a") debugSplitCopy("a", "b");
-    else if (action === "copy-b") debugSplitCopy("b", "a");
+    } else if (action === "view") debugSplit.view = !debugSplit.view;
+    else if (action === "flip") debugSplit.dir = debugSplit.dir === "col" ? "row" : "col";
+    else if (action === "copy-a") debugSplitTell("b", {civvis: "pane-copy", from: debugSplit.panes.a.id});
+    else if (action === "copy-b") debugSplitTell("a", {civvis: "pane-copy", from: debugSplit.panes.b.id});
     else if (action === "keep-a") debugSplitClose("a");
     else if (action === "keep-b") debugSplitClose("b");
     drawDebugSplit();
   });
+  // The strip between the halves is also the handle that sizes them.
+  const divider = host.querySelector(".dbg-divider");
+  divider.addEventListener("pointerdown", event => {
+    if (event.target.closest("button") || !debugSplit) return;
+    // Capture keeps the drag when the pointer runs over a frame; the frames
+    // are also made deaf to the pointer for as long as it lasts.
+    try { divider.setPointerCapture(event.pointerId); } catch (_) {}
+    host.classList.add("dbg-dragging");
+  });
+  divider.addEventListener("pointermove", event => {
+    if (!debugSplit || !host.classList.contains("dbg-dragging")) return;
+    const box = host.getBoundingClientRect();
+    const along = debugSplit.dir === "col"
+      ? (event.clientY - box.top) / box.height : (event.clientX - box.left) / box.width;
+    debugSplit.share = Math.max(.2, Math.min(.8, along));
+    drawDebugSplit();
+  });
+  for (const kind of ["pointerup", "pointercancel"])
+    divider.addEventListener(kind, () => host.classList.remove("dbg-dragging"));
+  divider.addEventListener("dblclick", event => {
+    if (event.target.closest("button") || !debugSplit) return;
+    debugSplit.share = .5;
+    drawDebugSplit();
+  });
   document.body.appendChild(host);
   drawDebugSplit();
-  // Set last: a frame that loads asks for its world at once, and the record
-  // it is answered from has to exist by then.
   for (const letter of ["a", "b"]) {
     const pane = debugSplit.panes[letter];
     pane.frame.src = `${location.pathname}?pane=${pane.id}`;
   }
 }
-async function debugSplitCopy(from, to) {
-  if (!debugSplit || debugSplit.busy) return;
-  debugSplit.busy = true; drawDebugSplit();
-  try {
-    const game = await debugSplitWorld(from);
-    debugSplitTell(to, {civvis: "pane-load", game});
-  } catch (error) {
-    console.error("split copy", error);
-  } finally {
-    if (debugSplit) { debugSplit.busy = false; drawDebugSplit(); }
-  }
-}
-// The screen is whole again, playing the pane that was kept.
+// The screen is whole again, playing the half that was kept: its session
+// takes the host's place in the engine, so nothing it could walk back to is lost.
 async function debugSplitClose(keep) {
   if (!debugSplit || debugSplit.busy) return;
   debugSplit.busy = true; drawDebugSplit();
   let note = "";
   try {
-    const game = await debugSplitWorld(keep);
-    const next = await fetchJSON("/load", {method: "POST",
-      headers: {"Content-Type": "application/json"}, body: `{"game":${game}}`}, 60000);
+    const next = await fetchJSON("/debug", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({op: "adopt", pane: debugSplit.panes[keep].id})}, 60000);
     if (next.error) throw new Error(next.error);
     debugForgetStandingOrders(next.turn);
     sel = null; selCity = null;
@@ -701,17 +787,15 @@ window.addEventListener("message", event => {
   if (!data || typeof data.civvis !== "string") return;
   const letter = ["a", "b"].find(name => debugSplit.panes[name].frame.contentWindow === event.source);
   if (!letter) return;
-  if (data.civvis === "pane-boot") {
-    event.source.postMessage({civvis: "pane-world", pane: data.pane, game: debugSplit.world}, location.origin);
-  } else if (data.civvis === "pane-turn") {
+  const other = letter === "a" ? "b" : "a";
+  if (data.civvis === "pane-turn") {
     debugSplit.panes[letter].turn = data.turn;
     drawDebugSplit();
     // A pane that moved because it was following is not followed back.
     if (debugSplit.linked && data.how !== "follow" && data.how !== "boot")
-      debugSplitTell(letter === "a" ? "b" : "a", {civvis: "pane-follow", turn: data.turn, how: data.how});
-  } else if (data.civvis === "pane-saved") {
-    const waiting = debugSplit.waiting.get(data.id);
-    if (waiting) { debugSplit.waiting.delete(data.id); waiting(data.game); }
+      debugSplitTell(other, {civvis: "pane-follow", turn: data.turn, how: data.how});
+  } else if (data.civvis === "pane-camera") {
+    if (debugSplit.view) debugSplitTell(other, {civvis: "pane-look", view: data.view});
   }
 });
 
@@ -755,31 +839,48 @@ async function debugFollow(turn, how) {
     debugFollowWanted = null;
   }
 }
+// Where this half's map is looking, as the few numbers the camera is made of.
+// A half says so when it changes; a half told to look somewhere does not say
+// it back.
+let debugCameraSaid = "";
+function debugCameraNow() {
+  return {x: cam.x, y: cam.y, scale: cam.scale, rot: cam.rot, tilt: cam.tilt,
+    pan: {x: SKY_PAN.x, y: SKY_PAN.y}};
+}
+function debugCameraLook(view) {
+  if (!state || !view || !view.pan) return;
+  cameraFlight = null; cameraZoom = null;
+  clearCameraInertia();
+  cam.x = +view.x; cam.y = +view.y; cam.scale = +view.scale; cam.rot = +view.rot; cam.tilt = +view.tilt;
+  SKY_PAN = {x: +view.pan.x, y: +view.pan.y};
+  draw(); drawMini();
+  debugCameraSaid = JSON.stringify(debugCameraNow());
+}
 if (DEBUG_PANE !== null) {
   window.addEventListener("message", async event => {
     if (event.source !== window.parent || event.origin !== location.origin) return;
     const data = event.data;
     if (!data || typeof data.civvis !== "string") return;
     if (data.civvis === "pane-follow") debugFollow(data.turn, data.how);
-    else if (data.civvis === "pane-save") {
-      let game = null;
-      try { game = JSON.stringify(await fetchJSON("/save", {}, 30000)); } catch (_) {}
-      window.parent.postMessage({civvis: "pane-saved", id: data.id, game}, location.origin);
-    } else if (data.civvis === "pane-load") {
+    else if (data.civvis === "pane-look") debugCameraLook(data.view);
+    else if (data.civvis === "pane-copy") {
+      // A copy is not a move of this half's own, so the other is not told to follow it.
+      debugFollowing = true;
       try {
-        const next = await fetchJSON("/load", {method: "POST",
-          headers: {"Content-Type": "application/json"}, body: `{"game":${data.game}}`}, 60000);
-        if (next.error) throw new Error(next.error);
-        debugForgetStandingOrders(next.turn);
-        sel = null; selCity = null;
-        debugFollowing = true;
-        try { render(next); } finally { debugFollowing = false; }
-        debugSay("Copied from the other simulator");
-      } catch (error) {
-        debugSay(`Could not copy the other simulator: ${error.message || error}`);
+        const next = await debugOp({op: "copy", from: data.from}, 60000);
+        if (next && !next.error) debugSay("Copied from the other simulator");
+      } finally {
+        debugFollowing = false;
       }
     }
   });
+  setInterval(() => {
+    if (!state || SPEC) return;
+    const said = JSON.stringify(debugCameraNow());
+    if (said === debugCameraSaid) return;
+    debugCameraSaid = said;
+    window.parent.postMessage({civvis: "pane-camera", pane: DEBUG_PANE, view: JSON.parse(said)}, location.origin);
+  }, 120);
 }
 
 // `render` is the one door a state comes through, whoever asked for it.
