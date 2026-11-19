@@ -40,7 +40,13 @@ import urllib.request
 from verify import Devtools, find_chrome, free_port, fresh_profile, tether
 
 PAGE = r"""<!doctype html><html><head><meta charset="utf-8"><title>bar</title>
-<style>* { box-sizing: border-box; margin: 0; } html, body { height: 100%; }</style></head>
+<style>
+/* The viewer's own frame: a page exactly the size of the window, which never
+   scrolls. Without the last rule the picker under the map makes this page a
+   line taller than the window, and a browser whose scrollbars take room (the
+   Linux runner's) then has a window 15px wider than anything fixed in it. */
+* { box-sizing: border-box; margin: 0; } html, body { height: 100%; } body { overflow: hidden; }
+</style></head>
 <body>
 <div id="maparea" style="height:100%"></div>
 <select id="autoplaystrategy"><option value="jack">Jack</option><option value="stock">Stock</option></select>
@@ -266,7 +272,8 @@ def check_the_bar(bar: Bar) -> None:
     # it, and the page stands beneath: the body is padded by the bar's height.
     left, top, width, height, window = bar.ev(
         "(() => { const box = document.getElementById('debugbar').getBoundingClientRect();"
-        " return [box.left, box.top, box.width, Math.ceil(box.height), innerWidth]; })()")
+        " return [box.left, box.top, box.width, Math.ceil(box.height), document.documentElement.clientWidth]; })()")
+    assert window == bar.ev("innerWidth"), "the stand-in page scrolls, and the viewer never does"
     assert (left, top, width) == (0, 0, window), (left, top, width, window)
     assert bar.ev("getComputedStyle(document.getElementById('debugbar')).position") == "fixed"
     assert bar.ev("getComputedStyle(document.body).paddingTop") == f"{height}px"
@@ -437,17 +444,29 @@ def check_the_bar(bar: Bar) -> None:
     bar.click('[data-dbg="back"]')
     bar.idle("state.turn === 9", "back to turn 9")
 
-    # A window with room has words on the tools; a narrow one keeps the signs,
-    # and the page still stands under whatever height the bar comes to.
+    # A bar with room has words on its tools; a narrow one keeps the signs,
+    # and the page still stands under whatever height the bar comes to. How
+    # wide "room" is depends on the type the browser has, so the two windows
+    # here are far to either side of it.
     word = "getComputedStyle(document.querySelector('#debugbar .dbg-word')).display"
-    assert bar.ev(word) != "none", "a wide bar has no words on its tools"
-    bar.dev.call("Emulation.setDeviceMetricsOverride", {"width": 700, "height": 900, "deviceScaleFactor": 1, "mobile": False})
-    bar.until("document.getElementById('debugbar').classList.contains('dbg-tight')", "a narrow bar is not tight")
+    tight = "document.getElementById('debugbar').classList.contains('dbg-tight')"
+    under = ("getComputedStyle(document.body).paddingTop ==="
+             " Math.ceil(document.getElementById('debugbar').getBoundingClientRect().height) + 'px'")
+    tools = "document.querySelector('#debugbar .dbg-tools').offsetHeight"
+
+    def window_of(width: int) -> None:
+        bar.dev.call("Emulation.setDeviceMetricsOverride", {"width": width, "height": 900, "deviceScaleFactor": 1, "mobile": False})
+        bar.until(f"document.documentElement.clientWidth === {width} && {under}", f"the bar in a window {width} wide")
+
+    window_of(3000)
+    bar.until(f"!{tight}", "a bar with room for the words went without them")
+    assert bar.ev(word) != "none" and bar.ev(tools) < 40, (bar.ev(word), bar.ev(tools))
+    window_of(500)
+    bar.until(tight, "a narrow bar kept the words on its tools")
     assert bar.ev(word) == "none"
-    assert bar.ev("getComputedStyle(document.body).paddingTop ==="
-                  " Math.ceil(document.getElementById('debugbar').getBoundingClientRect().height) + 'px'")
+    assert bar.ev(tools) > 40 and bar.ev(under), "the tools wrap in a narrow window, and the page stays under them"
     bar.dev.call("Emulation.clearDeviceMetricsOverride")
-    bar.until("!document.getElementById('debugbar').classList.contains('dbg-tight')", "the bar stays tight")
+    bar.until(f"document.documentElement.clientWidth === {window} && {under}", "the window is its own size again")
 
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
@@ -629,7 +648,7 @@ def check_the_split(bar: Bar) -> None:
     # timeline is two lanes, one for each half. A half carries the tools for
     # its own world and no timeline.
     assert bar.ev("(() => { const top = document.getElementById('debugbar'), box = top.getBoundingClientRect();"
-                  " return !top.hidden && box.top === 0 && box.width === innerWidth"
+                  " return !top.hidden && box.top === 0 && box.width === document.documentElement.clientWidth"
                   " && Math.round(debugSplit.host.getBoundingClientRect().top) === Math.ceil(box.height); })()"), \
         "the split does not stand under the host's bar"
     shown = lambda lane: bar.ev(f"getComputedStyle(document.querySelector('[data-dbg-lane=\"{lane}\"]')).display") != "none"
