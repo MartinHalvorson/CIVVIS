@@ -461,6 +461,12 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
             out
         }),
 
+        ("POST", "/debug") => with_session(|session| {
+            let mut out = crate::routes::debug(session, &parsed);
+            decorate_browser(&mut out);
+            out
+        }),
+
         ("POST", "/autoplay") => with_session(|session| {
             let outcome = match crate::routes::autoplay(session, &parsed, None) {
                 Ok(outcome) => outcome,

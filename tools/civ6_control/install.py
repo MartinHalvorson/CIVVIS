@@ -185,12 +185,36 @@ def _frontend_defaults_xml(source: str, config: dict) -> str:
             f'\t\t<Update>\n\t\t\t<Where VictoryType="{victory}"/>\n'
             f'\t\t\t<Set EnabledByDefault="0"/>\n\t\t</Update>\n'
             for victory in off)
-        rendered = rendered.replace("</GameInfo>", f"\t<Victories>\n{rows}\t</Victories>\n</GameInfo>", 1)
+        # ⚠ The shipped `Victories` parameter query hard-codes `1 AS DefaultValue`
+        # (SetupParameters.xml), so `EnabledByDefault` alone only stops the
+        # ruleset-change update re-ticking the box: live civvis-20261119T011552Z
+        # still read `diplomatic: true`. The query is replaced by the shipped one
+        # with its default read from the row (`EnabledByDefault` is NOT NULL
+        # DEFAULT 1, so every other victory keeps its tick).
+        query = VICTORIES_QUERY_SQL.replace("1 AS DefaultValue", "V.EnabledByDefault AS DefaultValue")
+        rendered = rendered.replace(
+            "</GameInfo>",
+            f"\t<Victories>\n{rows}\t</Victories>\n"
+            f"\t<Queries>\n\t\t<Update>\n\t\t\t<Where QueryId=\"Victories\"/>\n"
+            f"\t\t\t<Set SQL=\"{xml_escape(query)}\"/>\n\t\t</Update>\n\t</Queries>\n</GameInfo>", 1)
 
     unresolved = re.findall(r"CIVVIS_DEFAULT_[A-Z_]+", rendered)
     if unresolved:
         raise ValueError(f"unresolved FrontEnd defaults: {sorted(set(unresolved))}")
     return rendered
+
+
+#: The shipped `Victories` setup query (Base/Assets/Configuration/Data/
+#: SetupParameters.xml), verbatim. `CIVVIS_VICTORIES_OFF` replaces it with this
+#: text, its constant default swapped for the row's `EnabledByDefault`.
+VICTORIES_QUERY_SQL = (
+    "SELECT VictoryType AS ParameterId, V.Name AS Name, V.Description AS Description, "
+    "Visible, ReadOnly, 1 AS SupportsSinglePlayer, 1 AS SupportsLANMultiplayer, "
+    "1 AS SupportsInternetMultiplayer, 1 AS SupportsHotSeat, 1 AS SupportsPlayByCloud, "
+    "0 AS ChangeableAfterGameStart, 'bool' AS Domain, 0 AS Hash, 1 AS DefaultValue, "
+    "'Game' AS ConfigurationGroup, VictoryType AS ConfigurationId, 'Victories' AS GroupId, "
+    "20 AS SortIndex FROM Victories V, Rulesets WHERE RulesetType =?1 and "
+    "V.Domain = Rulesets.VictoryDomain")
 
 
 def install_dir() -> Path:
