@@ -150,10 +150,11 @@ download_page="$source_tree/beta/download.html"
 [ -f "$download_page" ] || download_page="$repo_root/beta/download.html"
 mkdir -p "$out/home"
 cp "$landing_page" "$out/home/index.html"
-# The home page's rankings column (Civ AI Agents by Elo, the head of the gene
-# ranking) is derived here from the lane's own revision rather than committed
-# as a copy that could drift. A landing page that predates the column has no
-# slot and is left as it is; a revision that predates a source shows the other.
+# The home page's rankings (the winningest civs of the verification games,
+# the Civ AI Agents by Elo) are derived here rather than committed as a copy
+# that could drift: the civs from the run ledger, the agents from the lane's
+# own revision. A landing page that predates them has no slot and is left as
+# it is; a revision that predates a source shows the other.
 python3 "$repo_root/beta/home_rankings.py" "$source_tree" "$out/home/index.html"
 # The home page carries no art of its own any more, so there is usually no
 # directory to ship; a pinned revision from when it had photographs still does.
