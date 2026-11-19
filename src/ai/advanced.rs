@@ -7075,6 +7075,11 @@ pub struct AdvancedAi {
     /// Rocketry in a space racer's city runs Gain Sources there first. See
     /// `advanced/disrupt_waits_for_the_sources.rs`. Off by default.
     disrupt_waits_for_the_sources: bool,
+    /// `chemistry-before-the-rocket`: a Science seat whose next victory
+    /// technology is Rocketry and which holds a University researches
+    /// Chemistry before Rocketry's Radio half. See
+    /// `advanced/chemistry_before_the_rocket.rs`. Off by default.
+    chemistry_before_the_rocket: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11683,6 +11688,8 @@ mod deity_habits;
 /// triggers need. Three opt-in genes; see `advanced/boost_research.rs`.
 mod boost_research;
 mod chase_every_boost;
+/// `chemistry-before-the-rocket`: see `advanced/chemistry_before_the_rocket.rs`.
+mod chemistry_before_the_rocket;
 
 /// A short, deadlined plan for the Eurekas and Inspirations the beeline is
 /// about to walk past: a six-technology, four-civic horizon, a trigger cost

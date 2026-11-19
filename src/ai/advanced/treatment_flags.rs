@@ -327,6 +327,9 @@ impl AdvancedAi {
         /// Opt-in gene `disrupt-waits-for-the-sources`; see
         /// `advanced/disrupt_waits_for_the_sources.rs`.
         disrupt_waits_for_the_sources => enable_disrupt_waits_for_the_sources, disable_disrupt_waits_for_the_sources;
+        /// Opt-in gene `chemistry-before-the-rocket`; see
+        /// `advanced/chemistry_before_the_rocket.rs`.
+        chemistry_before_the_rocket => enable_chemistry_before_the_rocket, disable_chemistry_before_the_rocket;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

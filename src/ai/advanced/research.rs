@@ -304,6 +304,11 @@ impl AdvancedAi {
                 || self.science_drive_active();
             let foundation_goal = self.science_foundation_research_goal(g, pid, plan);
             let first_launch_goal = self.first_launch_research_goal(g, pid);
+            // `chemistry-before-the-rocket`: the Research Lab's technology
+            // ahead of the Rocketry goal once a University stands. `None` with
+            // the gene off. See `advanced/chemistry_before_the_rocket.rs`.
+            let chemistry_goal =
+                self.chemistry_before_the_rocket_goal(g, pid, objective, science_lane_active);
             let science_victory_goal = first_launch_goal.or_else(|| {
                 if science_lane_active {
                     Self::science_victory_tech_goal(g, pid, objective)
@@ -766,6 +771,7 @@ impl AdvancedAi {
                 // about to land its target. See `boosted_bargain_tech_3`.
                 _ if bargain_goal_3.is_some() => bargain_goal_3.as_deref(),
                 _ if science_harbor_goal.is_some() => science_harbor_goal,
+                _ if chemistry_goal.is_some() => chemistry_goal,
                 _ if science_victory_goal.is_some() => science_victory_goal,
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 // Libraries are a paid-for foundation for the Culture lane's
@@ -920,6 +926,15 @@ impl AdvancedAi {
                     }
                 }
             }
+            // `chemistry-before-the-rocket`: the same admission while its goal
+            // owns the slot.
+            if let Some(goal) = chemistry_goal.filter(|goal| forced_goal == Some(*goal)) {
+                for tech in g.available_techs(pid) {
+                    if self.tech_leads_to(g, &tech, goal) && !available.contains(&tech) {
+                        available.push(tech);
+                    }
+                }
+            }
             self.admit_science_chain_steps(
                 g,
                 pid,
@@ -956,6 +971,12 @@ impl AdvancedAi {
                         .cloned()
                 })
             });
+            if let (Some(goal), Some(pick)) = (
+                chemistry_goal.filter(|goal| forced_goal == Some(*goal)),
+                goal_pick.as_ref(),
+            ) {
+                self.explain_chemistry_before_the_rocket(goal, pick.as_str());
+            }
             let fallback_pick = available
                 .iter()
                 .max_by(|a, b| {
