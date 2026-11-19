@@ -285,8 +285,9 @@ def when(tag: str) -> str:
 def tournament_series(rows: list[dict], tournaments: list[dict]) -> list[dict] | None:
     """Each tournament's series: consecutive blocks of `series_size` finished games.
 
-    A tournament counts every game whose tag sorts at or after its `start` and
-    whose result line matches every `match` field (difficulty, players, map).
+    A tournament counts every game whose tag sorts at or after its `start` (and
+    before its `end`, if it has one) and whose result line matches every `match`
+    field (difficulty, players, map).
     A game counts once, by its best run (`OUTCOMES`); a game whose every run is
     `unfinished` (a launch that never reached a board) is not a game. A series
     has an end only once it holds `series_size` games. Each series is a
@@ -298,11 +299,12 @@ def tournament_series(rows: list[dict], tournaments: list[dict]) -> list[dict] |
     for spec in tournaments:
         size = int(spec.get("series_size") or 10)
         start = str(spec.get("start") or "")
+        end = str(spec.get("end") or "")
         match = spec.get("match") or {}
         games: dict[str, list[dict]] = {}
         for row in rows:
             key = game_key(row)
-            if (key and key >= start and row.get("outcome") in OUTCOMES
+            if (key and key >= start and (not end or key < end) and row.get("outcome") in OUTCOMES
                     and all(row.get(field) == value for field, value in match.items())):
                 games.setdefault(key, []).append(row)
         finished = []

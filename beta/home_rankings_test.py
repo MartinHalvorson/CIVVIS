@@ -321,11 +321,32 @@ class HomeRankings(unittest.TestCase):
         self.assertEqual(series[0]["conditions"], "Lv 8 6P Continents Online")
         self.assertIsNone(home_rankings.tournament_series([], [spec]))
 
+    def test_an_end_closes_a_definition_and_the_next_one_counts_on(self):
+        # Operator 2026-11-19 ~21:20Z: "Turn the ongoing tournament into a 100
+        # game tournament": the 10-game definition ends where the 100-game one
+        # starts, and the ids run on across both.
+        match = {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"}
+        tens = {"name": "tens", "conditions": "c", "start": "civvis-20261119T180000Z",
+                "end": "civvis-20261119T200000Z", "series_size": 2, "match": match}
+        hundreds = {"name": "hundreds", "conditions": "c", "start": "civvis-20261119T200000Z",
+                    "series_size": 5, "match": match}
+        on = {"players": 6, "map": "Continents.lua"}
+        rows = [run(f"civvis-20261119T{h:02d}{m:02d}00Z", outcome, "ROME", utc=f"2026-11-19T{h:02d}:{m + 5:02d}:00Z", **on)
+                for h, m, outcome in ((18, 0, "win"), (18, 30, "defeat"), (19, 0, "defeat"),
+                                      (20, 0, "rival_victory"), (20, 30, "win"), (21, 0, "defeat"))]
+        series = home_rankings.tournament_series(rows, [tens, hundreds])
+        self.assertEqual([(s["id"], s["tournament"], s["games"], s["size"], s["wins"], s["losses"], s["end"] is None)
+                          for s in series],
+                         [(3, "hundreds", 3, 5, 1, 2, True), (2, "tens", 1, 2, 0, 1, True), (1, "tens", 2, 2, 1, 1, False)])
+
     def test_the_tournament_definitions_are_committed_and_read(self):
         specs = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))["tournaments"]
         self.assertTrue(specs)
         for spec in specs:
             self.assertRegex(spec["start"], r"^civvis-\d{8}T\d{6}Z$")
+            if "end" in spec:
+                self.assertRegex(spec["end"], r"^civvis-\d{8}T\d{6}Z$")
+                self.assertGreater(spec["end"], spec["start"])
             self.assertGreater(spec["series_size"], 0)
             self.assertTrue(spec["conditions"])
 
