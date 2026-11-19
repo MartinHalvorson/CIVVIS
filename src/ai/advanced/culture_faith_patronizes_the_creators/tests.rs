@@ -2,10 +2,9 @@
 use super::*;
 
 const TAG: &str = "culture-faith-patronizes-the-creators:";
-const CREATORS: [&str; 3] = ["writer", "artist", "musician"];
 
-/// One founded capital (its Palace holds an `any` slot) with `faith` in the
-/// bank.
+/// One founded city with a Theater Square and its Amphitheater (two open
+/// Writing slots) and `faith` in the bank.
 fn board(faith: f64) -> Game {
     let mut g = Game::new_full(
         1,
@@ -22,6 +21,13 @@ fn board(faith: f64) -> Game {
         .find(|unit| g.units[unit].kind == "settler")
         .unwrap();
     g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let cid = g.player_city_ids(0)[0];
+    crate::game::install_test_district(&mut g, cid, "theater_square");
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .push(crate::name!("amphitheater"));
     g.players[0].faith = faith;
     g
 }
@@ -48,11 +54,10 @@ fn patronize(ai: &mut AdvancedAi, g: &mut Game) -> Vec<String> {
         .collect()
 }
 
-fn cheapest(g: &Game) -> f64 {
-    CREATORS
-        .iter()
-        .filter_map(|kind| g.great_person_patronage_price(0, kind, "faith"))
-        .fold(f64::INFINITY, f64::min)
+/// The Writer's Faith price: the board's open slots are Writing slots.
+fn writer_price(g: &Game) -> f64 {
+    g.great_person_patronage_price(0, "writer", "faith")
+        .expect("a Writer is offered")
 }
 
 #[test]
@@ -63,9 +68,8 @@ fn it_is_an_opt_in_off_by_default() {
 #[test]
 fn a_culture_seat_buys_creators_with_faith_above_the_reserve() {
     let mut g = board(20_000.0);
-    assert!(cheapest(&g).is_finite(), "a creator is offered");
-    let cid = g.player_city_ids(0)[0];
-    assert!(g.cities[&cid].buildings.iter().any(|b| *b == "palace"));
+    assert!(writer_price(&g) > 0.0);
+    assert!(g.can_house_additional_great_work(0, "writing"));
     let mut ai = seat(VictoryTarget::Culture, true);
     let lines = patronize(&mut ai, &mut g);
     assert!(g.players[0].faith < 20_000.0, "{lines:?}");
@@ -80,7 +84,7 @@ fn a_culture_seat_buys_creators_with_faith_above_the_reserve() {
 #[test]
 fn the_reserve_and_the_band_reserve_hold() {
     let g = board(0.0);
-    let price = cheapest(&g);
+    let price = writer_price(&g);
     // Price plus 99: the ordinary reserve of 100 is not met.
     let mut g = board(price + 99.0);
     let mut ai = seat(VictoryTarget::Culture, true);

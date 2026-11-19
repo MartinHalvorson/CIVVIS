@@ -142,7 +142,7 @@ impl AdvancedAi {
                     self.culture_patronage_slot(g, pid, kind)
                         .map(|slot| (price, kind, slot))
                 })
-                .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+                .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(b.1)));
             let Some((price, kind, slot)) = choice else {
                 break;
             };
