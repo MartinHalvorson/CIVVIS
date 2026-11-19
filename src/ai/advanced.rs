@@ -10989,6 +10989,11 @@ pub struct AdvancedAi {
     /// claims its Market or Lighthouse. See
     /// `advanced/trade_district_follows_the_campus.rs`. Off by default.
     trade_district_follows_the_campus: bool,
+    /// `tribute-buys-the-friendship-2`: version one's tribute, aimed past
+    /// the line where the host must turn an Unfriendly leader Neutral and
+    /// paid from the whole treasury. See
+    /// `advanced/tribute_buys_the_friendship.rs`. Off by default.
+    tribute_buys_the_friendship_2: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
