@@ -1181,13 +1181,15 @@
   }
   .victory-body { min-width: 0; align-self: stretch; }
   /* The victory types switched off in Game setup, named once under the
-     tracker's title instead of each keeping a path of its own. */
+     tracker's title instead of each keeping a path of its own: "Diplomacy
+     Off", in red, because a road that is closed changes how the whole table
+     should be read. Each stays whole when the line wraps. */
   .victory-off-note {
-    flex: 0 0 auto; margin: -1px 3px 3px; padding-left: 10px; color: #8ea099;
-    font-size: var(--type-caption); font-weight: 700; letter-spacing: .02em; line-height: 1.35;
+    flex: 0 0 auto; margin: -1px 3px 3px; padding-left: 10px; color: #ff6259;
+    font-size: var(--type-small); font-weight: 800; letter-spacing: .02em; line-height: 1.3;
     text-align: center; text-wrap: balance;
   }
-  .victory-off-note span { color: color-mix(in srgb, var(--track) 55%, #a3b5ae); }
+  .victory-off-note span { white-space: nowrap; }
   #victoryhud.victory-collapsed .victory-region > .victory-off-note { display: none; }
   .victory-subheading {
     flex: 0 0 auto; display: flex; gap: .4em; color: #a3b5ae;
@@ -3975,40 +3977,19 @@
   #playerhud .lock-toggle:hover { color: #dce6e1; background: #ffffff14; transform: none; }
   #playerhud .diplomacy-card.locked .lock-toggle { color: var(--gold-bright); }
   /* A held row must be opaque: the rows sliding underneath would otherwise
-     show through both the card and the 2px gap under it. */
+     show through both the card and the 2px gap under it. Its own wash is
+     opaque already; the band of panel colour under it closes the gap. */
   #playerhud .diplomacy-card.pinned {
     position: sticky; z-index: 3;
     top: calc(var(--pin-head, 0) * var(--hud-row-pitch));
     bottom: calc(var(--pin-tail, 0) * var(--hud-row-pitch));
-    background: linear-gradient(105deg, #0d1a16, #16281f);
-    box-shadow: inset 0 1px #ffffff10, 0 0 0 1px #d7b66a33,
-                0 var(--hud-row-gap) 0 #0b1714, 0 5px 14px #0009;
   }
   #playerhud .diplomacy-card:hover { transform: none; }
   /* The seat whose eyes the page looks through — our own seat beside a live
-     Civilization VI game — is the one row a viewer always hunts for, so it
-     wears the victory tracker's gold: a warm opaque ground (it can be held
-     at an edge, where rows scroll beneath it), a gold frame and left edge,
-     and its name in bold. A war keeps its red edge on this row too. */
-  #playerhud .diplomacy-card.focus-player {
-    border-color: color-mix(in srgb, var(--gold-bright) 72%, transparent);
-    background: linear-gradient(105deg, color-mix(in srgb, var(--gold) 26%, #0b0d0f),
-                color-mix(in srgb, var(--gold) 10%, #171a1c));
-    box-shadow: inset 3px 0 var(--gold-bright), inset 0 1px #ffffff14;
-  }
-  #playerhud .diplomacy-card.focus-player:hover {
-    background: linear-gradient(100deg, color-mix(in srgb, var(--gold) 32%, #0e1113),
-                color-mix(in srgb, var(--gold) 14%, #1d2124));
-  }
-  #playerhud .diplomacy-card.focus-player.at-war {
-    box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1;
-  }
-  #playerhud .diplomacy-card.focus-player.pinned {
-    background: linear-gradient(105deg, color-mix(in srgb, var(--gold) 26%, #0b0d0f),
-                color-mix(in srgb, var(--gold) 10%, #171a1c));
-    box-shadow: inset 3px 0 var(--gold-bright), inset 0 1px #ffffff14, 0 0 0 1px #caa45655,
-                0 var(--hud-row-gap) 0 #090b0d, 0 5px 14px #0009;
-  }
+     Civilization VI game — is the one row a viewer always hunts for. It keeps
+     its civilization's colours like every other row and is ringed in the
+     victory tracker's gold, with its name in bold; the ring is drawn with
+     the other frame marks, below. */
   #playerhud .diplomacy-card.focus-player .diplomacy-civ { font-weight: 800; }
   /* ── The cities behind a count ──────────────────────────────────────────
      A CITY figure opens that empire's cities as rows of the same table,
@@ -4027,7 +4008,6 @@
     border-color: #4a5257;
     background: linear-gradient(100deg, #0e1113f5, #1a1e21f0);
   }
-  #playerhud .diplomacy-card.cities-open:not(.at-war) { border-bottom-color: #4a5257; }
   #playerhud .hud-city-name .diplomacy-identity-field { padding-left: 6px; border-left-color: transparent; }
   #playerhud .hud-city-tie {
     flex: 0 0 auto; color: var(--civ, var(--muted)); font-size: var(--type-caption); line-height: 1;
@@ -4074,47 +4054,133 @@
     font-size: var(--type-label); text-align: right; white-space: nowrap;
   }
   #playerhud .diplomacy-civ { flex: 1 1 auto; }
-  /* Each row wears its civilization's jersey from the rank column through
-     the player column, as Civ VI dresses a civ on its banners: one plate
-     behind those cells, the primary colour filling it and the partner
-     trimming it. The plate is placed on the row's own grid lines — an
-     absolutely positioned child of a grid takes the lines it names as its
-     containing block and stays out of auto-placement, so the cells keep
-     their tracks — and drawPlayerHud() names the lines, because the viewer's
-     column order decides where rank and player stand. The ink of every cell
-     over the plate is whichever of the partner or map cream/dark actually
-     reads on that fill — unitTokenInk(), the same rescue the map's unit
-     tokens use, because several real jerseys pair two dark halves. City rows
-     carry no plate. */
-  #playerhud .diplomacy-card.jersey-plate { isolation: isolate; }
-  #playerhud .diplomacy-card.jersey-plate:not(.pinned) { position: relative; }
-  #playerhud .diplomacy-card.jersey-plate::before {
-    content: ""; position: absolute; z-index: -1; inset: 0;
-    grid-column: var(--hud-jersey-start) / var(--hud-jersey-end); grid-row: 1;
-    border: 1px solid var(--civ-border); border-radius: 3px;
-    background: var(--civ); box-shadow: 0 1px 2px #0009; pointer-events: none;
+  /* Each row wears its civilization's colour from edge to edge, so the eye
+     can keep hold of one empire while the table re-sorts under it. The row
+     has two grounds, and drawPlayerHud() hands it both. Its own background
+     is the jersey's WASH: the same hue taken down to a deep shade, because
+     the figures keep the colours of what they count and a coloured figure
+     only reads on a dark ground. Over the wash, under the cells that say who
+     the row is — as shipped, from the row's edge through the player column —
+     stands the jersey itself at full strength as one plate, as Civ VI
+     dresses a civ on its banners. No figure ever stands on it.
+     The plate is placed on the row's own grid lines: an absolutely
+     positioned child of a grid takes the lines it names as its containing
+     block and stays out of auto-placement, so the cells keep their tracks,
+     and a line named `auto` is the row's padding edge, which is how the
+     plate reaches the corner. drawPlayerHud() names the lines, because the
+     viewer's column order decides where the names stand.
+     The row closes on the jersey as well: a cap of the full colour in the
+     lane the corner ✕ keeps clear, so a row read from its score end is still
+     told from its neighbours by its true colour. Two deep washes can sit
+     close — a white civilization's and a grey one's, Brazil's green and
+     Hungary's — and the cap is what parts them there.
+     Nothing on the row is boxed: no frame round the plate, no ruled cells.
+     Two colours and the type are the whole of it. City rows carry neither
+     ground and stay the quiet rows under their seat. */
+  #playerhud .diplomacy-card.jersey-row {
+    --hud-jersey-cap: 6px;
+    isolation: isolate; border-radius: 6px;
+    border-color: color-mix(in srgb, var(--civ-wash) 80%, #fff);
+    background: linear-gradient(var(--civ), var(--civ)) right / var(--hud-jersey-cap) 100% no-repeat
+                var(--civ-wash);
+    box-shadow: none;
   }
-  #playerhud .diplomacy-card.jersey-plate:hover::before { filter: brightness(1.14); }
+  /* The table is patched in place, so when two empires trade ranks each row
+     takes the other's colours where it stands. That change is the thing a
+     viewer is following, and it happens at once: an eased ground would pass
+     through a third colour that belongs to neither, under a plate and type
+     that had already changed. */
+  #playerhud .diplomacy-card.jersey-row, #playerhud .jersey-row [data-hud-jersey] { transition: none; }
+  #playerhud .diplomacy-card.jersey-row:not(.pinned) { position: relative; }
+  #playerhud .diplomacy-card.jersey-row:hover {
+    border-color: color-mix(in srgb, var(--civ-wash) 62%, #fff);
+    background-color: color-mix(in srgb, var(--civ-wash) 90%, #fff);
+  }
+  /* The plate runs on through the gutter after its last cell, so the longest
+     name on the table — which fills its track, that being how the track is
+     sized — does not end hard against the plate's edge. */
+  #playerhud .diplomacy-card.jersey-plate::before {
+    content: ""; position: absolute; z-index: -1; inset: 0 calc(-1 * var(--hud-stat-gap, 3px)) 0 0;
+    grid-column: var(--hud-jersey-start) / var(--hud-jersey-end);
+    background: var(--civ); pointer-events: none;
+  }
+  #playerhud .diplomacy-card.jersey-plate:hover::before { filter: brightness(1.08); }
+  /* Everything standing on the plate is set in one ink: the jersey's partner
+     where that reads as type, and otherwise cream or near-black, whichever
+     is further from the fill. hudJerseyInk() makes the call. */
   #playerhud [data-hud-jersey]:not(.watch-as-link),
   #playerhud [data-hud-jersey]:not(.watch-as-link) * {
-    color: var(--civ-ink, #f1f4ed); text-shadow: none;
+    color: var(--civ-ink, #fcfbf6); text-shadow: none;
   }
-  #playerhud [data-hud-jersey] .diplomacy-identity-field {
-    border-left-color: color-mix(in srgb, var(--civ-ink, #f1f4ed) 20%, transparent);
+  #playerhud [data-hud-jersey] .diplomacy-identity-field { border-left-color: transparent; }
+  /* The lock stays a quiet dot until it is reached, on either ground: in the
+     plate's ink where it stands on the plate, and a pale one on the wash. */
+  #playerhud .jersey-row .lock-toggle { color: #ffffff52; }
+  #playerhud .jersey-row.locked .lock-toggle { color: var(--gold-bright); }
+  #playerhud .lock-toggle[data-hud-jersey] {
+    color: color-mix(in srgb, var(--civ-ink, #fcfbf6) 52%, transparent);
   }
-  #playerhud [data-hud-jersey].diplomacy-civ-link .diplomacy-identity-field {
-    border-left-color: transparent;
+  #playerhud .lock-toggle[data-hud-jersey]:hover {
+    color: var(--civ-ink, #fcfbf6);
+    background: color-mix(in srgb, var(--civ-ink, #fcfbf6) 16%, transparent);
   }
+  /* Watch-as on the plate is an outline in the same ink rather than a dark
+     chip, and it drops its dot: the dot said whose colour this is, and the
+     plate it stands on says that now. Reached, it turns inside out. */
+  #playerhud .watch-as-link[data-hud-jersey] {
+    border-color: color-mix(in srgb, var(--civ-ink, #fcfbf6) 34%, transparent);
+    color: var(--civ-ink, #fcfbf6);
+    background: color-mix(in srgb, var(--civ-ink, #fcfbf6) 8%, transparent);
+    box-shadow: none; text-shadow: none; font-weight: 700; letter-spacing: .01em;
+  }
+  #playerhud .watch-as-link[data-hud-jersey]::before { content: none; }
+  #playerhud .watch-as-link[data-hud-jersey]:hover,
+  #playerhud .watch-as-link[data-hud-jersey]:focus-visible {
+    border-color: var(--civ-ink, #fcfbf6); color: var(--civ);
+    background: var(--civ-ink, #fcfbf6); box-shadow: none;
+  }
+  /* The opening estimate is dimmed against the current one, and a dimmed
+     figure has less to give up on a coloured ground than on the old black
+     one: at 62% it fell to 3.6:1 on the lightest washes. */
+  #playerhud .jersey-row .diplomacy-expected .odds-start { opacity: .84; }
   /* A civilization with no capital to fly to fades its name everywhere else;
      on a bright jersey a 38% name stops being legible, so it fades less. */
   #playerhud [data-hud-jersey].diplomacy-civ-link:disabled { opacity: .72; }
-  /* The watched seat keeps its jersey and says so with a gold ring around the
-     whole plate, not gold type, which would fight the fill. */
-  #playerhud .diplomacy-card.focus-player.jersey-plate::before {
-    box-shadow: 0 0 0 1px var(--gold-bright), 0 1px 2px #0009;
+  /* What a row's frame says, it says over both grounds. The marks are drawn
+     on a layer above the plate — an inset shadow of the row's own would be
+     painted under it — and none of them moves a cell: the row keeps its
+     padding, so every figure stays under its head.
+       · an open dossier brightens the rim;
+       · a war is a red frame with a red left edge;
+       · the seat the page looks through is ringed in the tracker's gold. */
+  #playerhud .diplomacy-card.jersey-row::after {
+    content: ""; position: absolute; inset: 0;
+    border-radius: 5px; pointer-events: none;
   }
+  #playerhud .diplomacy-card.jersey-row.expanded {
+    border-color: color-mix(in srgb, var(--civ-wash) 45%, #fff);
+  }
+  #playerhud .diplomacy-card.jersey-row.at-war { border-color: var(--danger); }
+  #playerhud .diplomacy-card.jersey-row.at-war::after { box-shadow: inset 3px 0 var(--danger); }
+  #playerhud .diplomacy-card.jersey-row.focus-player { border-color: var(--gold-bright); }
+  #playerhud .diplomacy-card.jersey-row.focus-player::after {
+    box-shadow: inset 0 0 0 1px var(--gold-bright);
+  }
+  #playerhud .diplomacy-card.jersey-row.focus-player.at-war::after {
+    box-shadow: inset 3px 0 var(--danger), inset 0 0 0 1px var(--gold-bright);
+  }
+  /* One family down the whole row. The figures were always in the interface
+     face; the names and ratings beside them were in the display serif, bold,
+     at nine to thirteen pixels, which is where a serif's thin strokes go
+     first — and on a saturated plate they went. The masthead's own serif
+     stays where it is large: the era and the turn. */
+  #playerhud .diplomacy-identity, #playerhud .diplomacy-rank {
+    font-family: var(--font-ui); letter-spacing: 0;
+  }
+  #playerhud .diplomacy-rank { font-weight: 800; font-variant-numeric: tabular-nums; }
+  #playerhud .diplomacy-civ { font-weight: 750; }
   #playerhud .diplomacy-leader-name { color: var(--muted); font-weight: 650; }
-  #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 750; }
+  #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 700; }
   #playerhud .diplomacy-civ, #playerhud .diplomacy-leader-name,
   #playerhud .diplomacy-player, #playerhud .diplomacy-elo-value,
   #playerhud .diplomacy-elo-delta-value,
@@ -4881,24 +4947,14 @@
   }
   .hud-region { background: #07090a7d; }
   .hud-section-heading, #victoryhud > .hud-section-heading { color: #c4c9c6; }
-  .diplomacy-card, #playerhud .diplomacy-card.pinned {
-    background: linear-gradient(105deg, #0b0d0ff5, #171a1cee);
-  }
-  .diplomacy-card:not(.at-war), #playerhud .diplomacy-card.pinned:not(.at-war) {
-    border-color: #42494d;
-  }
+  .diplomacy-card { background: linear-gradient(105deg, #0b0d0ff5, #171a1cee); }
+  .diplomacy-card:not(.at-war) { border-color: #42494d; }
   .diplomacy-card:hover:not(.at-war) {
     border-color: #626a6f;
     background: linear-gradient(100deg, #101315f7, #202428f2);
   }
   #playerhud .diplomacy-card.pinned {
-    box-shadow: inset 0 1px #ffffff10, 0 0 0 1px #caa45633,
-                0 var(--hud-row-gap) 0 #090b0d, 0 5px 14px #0009;
-  }
-  #playerhud .diplomacy-card.pinned.at-war {
-    box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1,
-                0 0 0 1px #caa45633,
-                0 var(--hud-row-gap) 0 #090b0d, 0 5px 14px #0009;
+    box-shadow: 0 var(--hud-row-gap) 0 #090b0d, 0 5px 14px #0009;
   }
   .victory-turn { background: linear-gradient(155deg, #caa45618, #caa45606); }
 
