@@ -5850,6 +5850,12 @@ pub const GENES: &[Gene] = &[
     // trade, industry, harbour and housing heads the routine claims hold.
     // See `advanced/culture_theater_buildings_pass_the_claims.rs`.
     Gene { tag: "culture-theater-buildings-pass-the-claims", field: "culture_theater_buildings_pass_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_theater_buildings_pass_the_claims, disable: AdvancedAi::disable_culture_theater_buildings_pass_the_claims },
+    // Live Deity 6p Continents 11-18/19, 53 Culture seats: a Writer, Artist
+    // or Musician was Faith-affordable on 773 game-turns and 59 were
+    // patronized; 319 affordable creators went to the rivals. The pass wanted
+    // an open slot now and held the band bank. See
+    // `advanced/culture_faith_patronizes_the_creators.rs`.
+    Gene { tag: "culture-faith-patronizes-the-creators", field: "culture_faith_patronizes_the_creators", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_patronizes_the_creators, disable: AdvancedAi::disable_culture_faith_patronizes_the_creators },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
