@@ -95,6 +95,7 @@ function engineOf(frames, pane) {
 function engineState(error = null) {
   const marks = engine.marks;
   return {error, turn: engine.turn, current: engine.current, units: [], cities: [],
+    ...(engine.limit ? {turn_limit: engine.limit} : {}),
     players: [{id: 0, civ: "rome", score: engine.score, cities: 1, population: 1, military: 1,
       yields: {science: 1, culture: 1, gold: 1, faith: 0}},
       {id: 1, civ: "greece"}, {id: 2, civ: "barbarians", is_barbarian: true}],
@@ -278,12 +279,40 @@ def check_the_bar(bar: Bar) -> None:
     assert bar.ev("getComputedStyle(document.getElementById('debugbar')).position") == "fixed"
     assert bar.ev("getComputedStyle(document.body).paddingTop") == f"{height}px"
     assert bar.ev("Math.round(document.getElementById('maparea').getBoundingClientRect().top)") == height
-    # The timeline is the whole game, 250 turns when the game does not say,
-    # and it is nearly as wide as the window.
+    # Like the game's masthead the bar opens with a plate at the far left edge
+    # of the window, holding the turn box and the hands that walk the turns
+    # played, and the timeline has the width that is left: it starts where the
+    # plate ends and runs to the right edge of the window.
+    plate, rail, lane_end = bar.ev(
+        "(() => { const box = name => { const at = document.querySelector(name).getBoundingClientRect();"
+        " return [at.left, at.top, at.right]; };"
+        f" return [box('#debugbar .dbg-plate'), box('{LANE} .dbg-rail'), box('{LANE} .dbg-finish')[2]]; }})()")
+    assert plate[:2] == [0, 0] and 0 < plate[2] < window / 3, plate
+    assert plate[2] <= rail[0] < plate[2] + 60 and lane_end > window - 20, (plate, rail, lane_end, window)
+    assert bar.ev("['#dbg-turn', '[data-dbg=first]', '[data-dbg=back]', '[data-dbg=forward]', '[data-dbg=last]',"
+                  " '[data-dbg=undo]'].every(name => document.querySelector('#debugbar .dbg-plate ' + name))")
+    # The timeline is the whole game, 250 turns when the game does not say:
+    # turn 1 is named at its left end and the last turn at its right, with the
+    # round turns between them on the ruler.
     assert bar.ev("(() => { const s = document.getElementById('dbg-slider'); return [s.min, s.max, s.disabled]; })()") \
         == ["1", "250", False]
-    assert bar.ev("document.getElementById('dbg-slider').getBoundingClientRect().width") > window - 40
-    assert bar.ev(f"document.querySelector('{LANE} .dbg-ruler').textContent") == "150100150200250"
+    assert bar.ev("document.getElementById('dbg-slider').getBoundingClientRect().width") > rail[2] - rail[0] - 40
+    ends = ("(() => { const lane = document.querySelector('" + LANE + "'), flag = lane.querySelector('.dbg-flag');"
+            " const start = lane.querySelector('.dbg-start'), rail = lane.querySelector('.dbg-rail').getBoundingClientRect();"
+            " return [start.textContent, lane.querySelector('.dbg-finish').textContent,"
+            " getComputedStyle(flag).display !== 'none', lane.querySelector('.dbg-ruler').textContent,"
+            " start.getBoundingClientRect().right <= rail.left"
+            " && lane.querySelector('.dbg-finish').getBoundingClientRect().left >= rail.right,"
+            " lane.querySelectorAll('.dbg-finish-line').length, document.getElementById('dbg-limit').textContent]; })()")
+    assert bar.ev(ends) == ["1", "250", False, "50100150200", True, 0, ""], bar.ev(ends)
+    # A game that says which turn is its last has a chequered flag there: at
+    # the right end of the timeline, or, when the game is played on past that
+    # turn, as a line across the rail where the turn is.
+    bar.ev("engine.limit = 250, render(engineState()), true")
+    assert bar.ev(ends) == ["1", "250", True, "50100150200", True, 0, "/ 250"], bar.ev(ends)
+    bar.ev("engine.limit = 30, render(engineState()), true")
+    assert bar.ev(ends) == ["1", "30", True, "1020", True, 0, "/ 30"], bar.ev(ends)
+    bar.ev("engine.limit = null, render(engineState()), true")
 
     # The turn box, a turn still ahead: played to, one step a request.
     bar.type_turn(6)
@@ -292,6 +321,13 @@ def check_the_bar(bar: Bar) -> None:
     assert bar.note() == "Played to turn 6", bar.note()
     assert bar.ev("state.debug.turns.length") == 6
     assert bar.ev("document.getElementById('dbg-played').textContent") == "Turns 1 to 6 played, every one kept"
+    # The marker is on the turn that is open, and it moves right as turns open.
+    marker = (f"(() => {{ const pill = document.querySelector('{LANE} .dbg-cursor b').getBoundingClientRect();"
+              " return [document.querySelector('" + LANE + " .dbg-cursor b').textContent, (pill.left + pill.right) / 2]; })()")
+    at_six = bar.ev(marker)
+    bar.ev("engine.limit = 4, render(engineState()), true")
+    assert bar.ev(ends) == ["1", "50", False, "10203040", True, 1, "/ 4"], bar.ev(ends)
+    bar.ev("engine.limit = null, render(engineState()), true")
 
     # Letting go of the slider goes to that turn. (The regression this file
     # was written for: the handler read the slider after the bar was redrawn.)
@@ -321,6 +357,8 @@ def check_the_bar(bar: Bar) -> None:
     bar.idle("state.turn === 9", "the slider plays to a turn ahead")
     assert [call["op"] for call in bar.sent()] == ["step"] * 4, bar.sent()
     assert bar.note() == "Played to turn 9", bar.note()
+    at_nine = bar.ev(marker)
+    assert (at_six[0], at_nine[0]) == ("6", "9") and at_nine[1] > at_six[1], (at_six, at_nine)
     assert bar.ev(f"document.querySelector('{LANE} .dbg-goal').hidden"), "the goal goes with the run"
 
     # Under the pointer the timeline says what the turn there is, and what
@@ -461,10 +499,14 @@ def check_the_bar(bar: Bar) -> None:
     window_of(3000)
     bar.until(f"!{tight}", "a bar with room for the words went without them")
     assert bar.ev(word) != "none" and bar.ev(tools) < 40, (bar.ev(word), bar.ev(tools))
-    window_of(500)
+    window_of(300)
     bar.until(tight, "a narrow bar kept the words on its tools")
     assert bar.ev(word) == "none"
     assert bar.ev(tools) > 40 and bar.ev(under), "the tools wrap in a narrow window, and the page stays under them"
+    # A window with no room for the plate beside the tools has it over them.
+    assert bar.ev("document.querySelector('#debugbar .dbg-plate').getBoundingClientRect().bottom"
+                  " <= document.querySelector('#debugbar .dbg-tools').getBoundingClientRect().top"), \
+        "the plate is not over the tools in a narrow window"
     bar.dev.call("Emulation.clearDeviceMetricsOverride")
     bar.until(f"document.documentElement.clientWidth === {window} && {under}", "the window is its own size again")
 
@@ -653,6 +695,13 @@ def check_the_split(bar: Bar) -> None:
         "the split does not stand under the host's bar"
     shown = lambda lane: bar.ev(f"getComputedStyle(document.querySelector('[data-dbg-lane=\"{lane}\"]')).display") != "none"
     assert (shown(""), shown("a"), shown("b")) == (False, True, True)
+    # Each lane has the width of the window to itself, between its two ends:
+    # the plate is the host's own world's, and is away with the tools.
+    wide = bar.ev("['a', 'b'].map(letter => document.getElementById('dbg-slider-' + letter).getBoundingClientRect().width)")
+    assert min(wide) > bar.ev("innerWidth") * 0.6, wide
+    assert bar.ev("getComputedStyle(document.querySelector('#debugbar .dbg-plate')).display") == "none"
+    assert bar.ev("['a', 'b'].map(letter => document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-start`).textContent"
+                  " + ' ' + document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-finish`).textContent)") == ["1 250"] * 2
     assert bar.ev("getComputedStyle(document.querySelector('#debugbar .dbg-tools')).display") == "none"
     assert bar.ev(half("a", "'getComputedStyle(document.querySelector(\"#debugbar .dbg-time\")).display'")) == "none"
     assert bar.ev(half("a", "'getComputedStyle(document.querySelector(\"#debugbar .dbg-tools\")).display'")) != "none"
