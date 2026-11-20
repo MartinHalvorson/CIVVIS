@@ -1775,6 +1775,31 @@ impl Game {
         self.query_memo.own_yields.borrow_mut().clear();
     }
 
+    /// Run `what_if`, which may rearrange the board in place and must put it
+    /// back exactly as it found it, then hand back what
+    /// [`Game::keep_rival_yields`] held before it, with the tile epoch and
+    /// settings stamp they were checked against.
+    ///
+    /// `what_if` still calls `board_written` around every rearrangement, so
+    /// nothing read under a rearranged board answers anything; what it
+    /// derives on the restored board is dropped too, since the held maps
+    /// replace it. The board after equals the board before, so every held
+    /// entry is as exact as it was. A deck what-if that runs every turn (see
+    /// `ai/deck_queue.rs`) otherwise left nothing to reuse.
+    pub(crate) fn keeping_yields_across<T>(&mut self, what_if: impl FnOnce(&mut Self) -> T) -> T {
+        let memo = &self.query_memo;
+        let rival = std::mem::take(&mut *memo.rival_yields.borrow_mut());
+        let own = std::mem::take(&mut *memo.own_yields.borrow_mut());
+        let (epoch, stamp) = (memo.rival_yields_epoch.get(), memo.own_yields_stamp.get());
+        let result = what_if(self);
+        let memo = &self.query_memo;
+        *memo.rival_yields.borrow_mut() = rival;
+        *memo.own_yields.borrow_mut() = own;
+        memo.rival_yields_epoch.set(epoch);
+        memo.own_yields_stamp.set(stamp);
+        result
+    }
+
     /// Derive every reused yield again and panic if the two differ. An
     /// instrument for tests and `civvis site-bench --audit-kept-yields`: it
     /// costs more than keeping nothing would.

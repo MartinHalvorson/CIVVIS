@@ -128,40 +128,44 @@ pub(super) fn queue_card_signature(g: &mut Game, pid: usize) -> BTreeSet<Name> {
     let base = multipliers(g);
     let mut production: Vec<Option<f64>> = vec![None; cities.len()];
     let mut signature = BTreeSet::new();
-    for card in cards {
-        let incumbent = g.players[pid].policies.contains(&card);
-        // `board_written` on both sides of each what-if, as in
-        // `policy_deck::policy_card_score`: nothing read under the rearranged
-        // deck may answer for the real one.
-        let (with, without) = if incumbent {
-            g.players[pid].policies.remove(&card);
-            g.board_written();
-            let without = multipliers(g);
-            g.players[pid].policies.insert(card);
-            g.board_written();
-            (base.clone(), without)
-        } else {
-            g.players[pid].policies.insert(card);
-            g.board_written();
-            let with = multipliers(g);
-            g.players[pid].policies.remove(&card);
-            g.board_written();
-            (with, base.clone())
-        };
-        let mut boost = 0.0;
-        for (index, cid) in cities.iter().enumerate() {
-            let gain = with[index] - without[index];
-            if gain <= 0.0 {
-                continue;
+    // Every card is put back where it was, so the yields kept before the
+    // what-ifs still answer after them.
+    g.keeping_yields_across(|g| {
+        for card in cards {
+            let incumbent = g.players[pid].policies.contains(&card);
+            // `board_written` on both sides of each what-if, as in
+            // `policy_deck::policy_card_score`: nothing read under the rearranged
+            // deck may answer for the real one.
+            let (with, without) = if incumbent {
+                g.players[pid].policies.remove(&card);
+                g.board_written();
+                let without = multipliers(g);
+                g.players[pid].policies.insert(card);
+                g.board_written();
+                (base.clone(), without)
+            } else {
+                g.players[pid].policies.insert(card);
+                g.board_written();
+                let with = multipliers(g);
+                g.players[pid].policies.remove(&card);
+                g.board_written();
+                (with, base.clone())
+            };
+            let mut boost = 0.0;
+            for (index, cid) in cities.iter().enumerate() {
+                let gain = with[index] - without[index];
+                if gain <= 0.0 {
+                    continue;
+                }
+                let yield_production = *production[index]
+                    .get_or_insert_with(|| g.city_yields(*cid).production.max(0.0));
+                boost += gain * yield_production;
             }
-            let yield_production =
-                *production[index].get_or_insert_with(|| g.city_yields(*cid).production.max(0.0));
-            boost += gain * yield_production;
+            if boost + f64::EPSILON >= DECK_QUEUE_MIN_BOOST {
+                signature.insert(card);
+            }
         }
-        if boost + f64::EPSILON >= DECK_QUEUE_MIN_BOOST {
-            signature.insert(card);
-        }
-    }
+    });
     signature
 }
 
