@@ -1942,6 +1942,9 @@
     box-shadow: 0 5px 14px #0007; backdrop-filter: blur(12px);
   }
   #livepause.live-paused .livepause-buttons { border-color: var(--gold); }
+  /* Under the debugger the box is the held seat's governors and policies.
+     The two buttons belong to a live Civilization VI game and stay with it. */
+  body.debugger-view .livepause-buttons, body.debugger-view #livepause-note { display: none; }
   .livepause-buttons button {
     flex: none; margin: 0; padding: 5px 10px; border-radius: 999px; text-align: left;
     font-size: calc(var(--type-control) * .65); font-weight: 900; letter-spacing: .04em;

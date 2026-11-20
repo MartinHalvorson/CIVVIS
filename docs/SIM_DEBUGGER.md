@@ -19,7 +19,8 @@ other, the marker moving right as turns open, the turn box, the timeline back
 to a played turn and on to one ahead, what it says under the pointer, the wheel, the two ends, the Civ AI picker, save points and their
 flags, a breakpoint picked from the timeline, a timeline with turns thinned
 out of it, the breakpoints form with a run stopped by a breakpoint and by
-hand, layers, reveal, undo, and a round stepped a seat at a time. It then
+hand, layers, reveal, the Single player switch, undo, and a round stepped a
+seat at a time. It then
 splits the screen head to head, each half the same page with a toy engine of
 its own: a Civ AI is picked for each half, from the strip and from the head
 of its lane, both are played to a turn linked and then separate, each half
@@ -68,6 +69,36 @@ round turns between the ends are numbered along the top of the rail. On it:
   here", "play on from turn 7 to here" when the open turn is behind the last
   one played (the turns after it are played over), or the turn a thinned one
   would land on.
+
+## Two views
+
+A game under the debugger is shown one of two ways, and the bar's **Single
+player** switch goes between them. The choice is this browser's, kept in
+`civvis-debugger-view-v1`.
+
+**Debugger** is how it opens, and it is the view a watched game has: the map,
+the standings across the top, the victory tracker down the right, and a box
+with the seat's governors, research, civic, government and policy cards (the
+box a mirrored Civilization VI game shows, without that game's two buttons).
+Nothing of the played seat's own screen is on it: no yield strip, launch bar,
+world tracker, notification rail, unit panel or End Turn. It is for reading
+the game while the bar plays it, so nothing is selected, a press on a unit or
+a city reads it as it does for a watcher, the keys that play the seat do
+nothing, and a turn's banners stay off the map.
+
+**Single player** is the Civilization VI screen of `docs/SINGLE_PLAYER.md`,
+for playing the seat by hand. Switching to it picks up the next unit waiting
+for orders; switching back puts the selection and any open city, empire,
+diplomacy or trade screen away.
+
+The view is the layout and nothing else. Whose eyes the map is drawn through
+is Reveal's, in either view, and the turn plate's POV line says which: Single
+Player through the seat's fog, Global with Reveal on.
+
+In the page the switch is `SOLO_UI`, read by `civ6Frame()` and
+`debuggerView()` in `web/assets/app.js`; a held seat with no debugger behind
+it (`state.debug` absent) has no switch and keeps the Civilization VI screen.
+`setSoloUi` in `web/assets/app_debugger.js` changes it.
 
 ## The timeline
 
