@@ -2519,7 +2519,43 @@ impl AdvancedAi {
     fn is_naval_explorer(&self, g: &Game, pid: usize, uid: u32) -> bool {
         (self.base.naval_recon_on() || self.base.island_exploration_active(g, pid))
             && g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea")
-            && self.naval_explorer(g, pid).contains(&uid)
+            && self.naval_explorer_holds(g, pid, uid)
+    }
+
+    /// Whether `uid` is on the `naval_explorer` roster, stopping at `uid`. The
+    /// roster is the first `NAVAL_RECON_EXPLORER_MAX` passing hulls in id
+    /// order, so a later id cannot change whether `uid` is on it: the hulls
+    /// after it are never walked for a question about it.
+    pub(super) fn naval_explorer_holds(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        if !(self.base.naval_recon_on() || self.base.island_exploration_active(g, pid))
+            || !BasicAi::unseen_water_remains(g, pid)
+        {
+            return false;
+        }
+        let mut ahead = 0;
+        let mut charts = crate::ai::naval::WaterwayCharts::new(g, pid);
+        for id in g.player_unit_ids(pid) {
+            if id > uid {
+                return false;
+            }
+            let unit = &g.units[&id];
+            let spec = &g.rules.units[unit.kind];
+            let passes = spec.class == "military"
+                && spec.domain.as_deref() == Some("sea")
+                && unit.moves_left > 0.0
+                && unit.linked_to.is_none()
+                && BasicAi::naval_recon_ship_can_chart_charted(g, id, &mut charts);
+            if id == uid {
+                return passes;
+            }
+            if passes {
+                ahead += 1;
+                if ahead == NAVAL_RECON_EXPLORER_MAX {
+                    return false;
+                }
+            }
+        }
+        false
     }
 
     /// An explorer's turn: slip out of a visible hostile's reach first, take
@@ -2544,6 +2580,7 @@ impl AdvancedAi {
     /// lake-bound hull cannot hold the job over a real scout. The production
     /// arm still buys only the first ship; this merely lets a spare hull open
     /// a distinct frontier instead of standing down. See `BasicAi::naval_recon`.
+    #[cfg(test)]
     pub(super) fn naval_explorer(&self, g: &Game, pid: usize) -> Vec<u32> {
         if !(self.base.naval_recon_on() || self.base.island_exploration_active(g, pid))
             || !BasicAi::unseen_water_remains(g, pid)
