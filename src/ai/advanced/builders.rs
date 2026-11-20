@@ -769,7 +769,10 @@ impl AdvancedAi {
                 None => {
                     let mut best: Option<(f64, Pos)> = None;
                     for cid in g.player_city_ids(pid) {
-                        let city_shortfall = self.city_production_foundation_shortfall(g, pid, cid);
+                        // Read on the first tile that prices a job: a city
+                        // whose tiles are all reserved, out of reach or
+                        // improved never needs its yields.
+                        let mut city_shortfall: Option<f64> = None;
                         for pos in &g.cities[&cid].owned_tiles {
                             if reserved.contains(pos) || !job_out_of_reach(*pos) {
                                 continue;
@@ -782,7 +785,9 @@ impl AdvancedAi {
                                     *pos,
                                     &improvement,
                                     strategy,
-                                    city_shortfall,
+                                    *city_shortfall.get_or_insert_with(|| {
+                                        self.city_production_foundation_shortfall(g, pid, cid)
+                                    }),
                                 );
                                 let distance = g.wdist(current, *pos);
                                 let score = travel.score(value, distance);
@@ -888,7 +893,8 @@ impl AdvancedAi {
         let _memo = g.query_memo();
         let mut scored: Vec<(f64, Pos)> = Vec::new();
         for cid in g.player_city_ids(pid) {
-            let city_shortfall = self.city_production_foundation_shortfall(g, pid, cid);
+            // Read on the first tile that prices a job, as above.
+            let mut city_shortfall: Option<f64> = None;
             for pos in &g.cities[&cid].owned_tiles {
                 if reserved.contains(pos) {
                     continue;
@@ -902,7 +908,9 @@ impl AdvancedAi {
                             *pos,
                             &improvement,
                             strategy,
-                            city_shortfall,
+                            *city_shortfall.get_or_insert_with(|| {
+                                self.city_production_foundation_shortfall(g, pid, cid)
+                            }),
                         ),
                         g.wdist(current, *pos),
                     );
