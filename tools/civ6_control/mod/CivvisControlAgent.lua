@@ -13542,6 +13542,40 @@ CivvisOnDealSessionClosed = function(sessionID)
 	end
 end;
 
+-- ★★ OPT-IN (`LuxuryQuoteProposals`, off unless set): A LUXURY'S PRICE IS
+-- PROPOSED BACK, AS AN OPEN BORDERS OR GREAT WORK QUOTE IS. 58 live Lv 8
+-- Deity Science games from 2026-11-19 02:01Z answered 598 `LUXURY_ANY` asks:
+-- 277 closed (every one ACCEPTED, none costing us Gold), and 159 of the 324
+-- declined came back REJECTED with the rival's price on OUR side of the deal
+-- (`ours` "RESOURCES:22=1x30,GOLD=4x30", `theirs` "RESOURCES:25=1x30"), 140
+-- of them inside our own ceiling (median 77 Gold-equivalent against 205). We
+-- walked away from all of them, while 58-60% of our cities ran the −10%
+-- amenity penalty from turn 100. This lets `CivvisOnIncomingDeal` take such
+-- an answer through the quote lifecycle the Great Work and Open Borders asks
+-- already use (317 re-proposals since 2026-11-15, every one answered ADJUSTED
+-- in the same instant and closed). It decides only WHICH asks qualify; every
+-- guard of that lifecycle still applies: REJECTED, the luxury alone on their
+-- side, our offered spares (or fewer) plus Gold on ours, a price above zero
+-- and inside the ceiling, equal working deals, no proposal while the engine
+-- holds one, and one proposal per ask.
+--   A luxury ask is a `RESOURCES:` want that is not a strategic block
+-- (`pending.strategic`) and carries no cash bid; the rival may add nothing of
+-- its own (`worth`), which on a swap is not counted as foreign.
+--   ⚠ THE TWO RESOURCE STALLS ARE A DIFFERENT ANSWER. Native 131031Z (an
+-- Aluminum barter) and 135842Z (ten Iron) re-proposed a REJECTED deal the
+-- rival had NOT priced (`pay` 0: the equalizer failed), received that
+-- EQUALIZE's late EQUALIZE_FAILED and closed the session over the core's
+-- pending proposal. `pay > 0` keeps unpriced answers out, the quote is copied,
+-- never changed (135842Z added Gold to it), and a late EQUALIZE_FAILED that
+-- finds the engine still holding our proposal waits for its verdict or the
+-- answer hold instead of closing under it.
+CivvisTrade.luxuryQuote = function(pending, worth)
+	return cfg.LuxuryQuoteProposals == true and type(pending.want) == "string"
+		and string.find(pending.want, "^RESOURCES:") ~= nil
+		and pending.strategic == nil and pending.cash_bid_requested ~= true
+		and pending.cash_offer_bid == nil and worth == 0;
+end;
+
 CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
 	if pid == nil or pid < 0 or toPlayer ~= pid or fromPlayer == nil then return; end
@@ -13725,20 +13759,24 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	-- only, a price above zero and inside the ceiling and its caps, and no
 	-- proposal while the engine still holds one.
 	local activeSession = trade.sessions[fromPlayer];
+	-- A luxury's priced refusal, under `LuxuryQuoteProposals` (see above).
+	local luxuryQuote = buying and trade.luxuryQuote(pending, worth);
 	local proposalQuote = buying and type(pending.want) == "string"
 		and (string.find(pending.want, "^GREATWORK:") ~= nil
-			or pending.want == "OPEN_BORDERS");
+			or pending.want == "OPEN_BORDERS" or luxuryQuote);
 	if proposalQuote
 			and activeSession ~= nil and activeSession.kind == "buy" and activeSession.sent then
 		local enginePending = try(function()
 			return DealManager.HasPendingDeal(pid, fromPlayer);
 		end, nil);
-		if pending.purchase_quote_proposed and action == DealProposalAction.REJECTED
+		if pending.purchase_quote_proposed and (action == DealProposalAction.REJECTED
+					or (luxuryQuote and action == DealProposalAction.EQUALIZE_FAILED))
 				and enginePending == true then
 			-- Incoming-deal and statement callbacks may describe the old
 			-- rejection while the core is still evaluating our new proposal.
 			emit("deal_proposal_wait", { turn = turn, from = fromPlayer,
-				want = pending.want, reason = "engine_pending" });
+				want = pending.want, reason = action == DealProposalAction.EQUALIZE_FAILED
+					and "late_equalize_failed" or "engine_pending" });
 			return true;
 		end
 		if not pending.purchase_quote_proposed and action == DealProposalAction.REJECTED
@@ -29011,7 +29049,8 @@ end;
 function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false,
 		strategic_quote_proposals = 4,
-		strategic_cash_ceiling_bid = cfg.StrategicCashCeilingBid == true });
+		strategic_cash_ceiling_bid = cfg.StrategicCashCeilingBid == true,
+		luxury_quote_proposals = cfg.LuxuryQuoteProposals == true });
 	-- RECORD-ONLY. `deal_response` records the rival's verdict as the
 	-- engine's DealProposalAction NUMBER, and no Lua source names the values.
 	-- Over 30 live runs the asked answers split action 1 (closable when under
