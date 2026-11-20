@@ -14228,6 +14228,10 @@ fn browser_seats_a_person_in_the_civ_six_arrangement() {
     ));
     // The published site says what single player is at each new game, Ack is
     // the way out of it, and the game's keys wait until it has been answered.
+    // The card's title calls the site by its name, AI Debugger.
+    assert!(EMBEDDED_INDEX.contains(
+        "<div class=\"capture-title\" id=\"solo-notice-title\">AI Debugger isn't polished yet</div>"
+    ));
     assert!(EMBEDDED_INDEX
         .contains("<button id=\"solo-notice-ack\" class=\"primary\" type=\"button\">Ack</button>"));
     assert!(EMBEDDED_INDEX
