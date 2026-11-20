@@ -9688,6 +9688,11 @@ pub struct AdvancedAi {
     /// price first. See `advanced/religion_seat_spends_the_whole_bank.rs`. Off
     /// by default.
     religion_seat_spends_the_whole_bank: bool,
+    /// `religion-seat-second-city-first`: a one-city Religion seat's capital
+    /// builds its first Settler once it can, ahead of the Holy Site chain and
+    /// routine work, unless one religion slot is left (never for Arabia). See
+    /// `advanced/religion_seat_second_city_first.rs`. Off by default.
+    religion_seat_second_city_first: bool,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -27897,6 +27902,12 @@ impl AdvancedAi {
         // Monument and an Archer the same turn. See
         // `advanced/religion_seat_first_shrine.rs`.
         self.claim_religion_seat_first_shrine(g, pid, &plan);
+        // `religion-seat-second-city-first`: a one-city Religion seat's first
+        // Settler over the Holy Site chain and routine work, after the first
+        // Shrine's claim and before the paused finishes, the Prayers guard
+        // and the defence handoffs below. Exact no-op while the gene is off.
+        // See `advanced/religion_seat_second_city_first.rs`.
+        self.claim_religion_seat_second_city(g, pid, &plan);
         // `capital-walls-before-the-surprise`: the original capital's Walls,
         // or its defender, after every ordinary writer (the opening book and
         // both governors), before the paused finishes and the defence
@@ -28261,6 +28272,9 @@ mod religion_seat_keeps_the_guard;
 mod religion_seat_reformed_church;
 /// An Embassy locates an otherwise unlocated rival for the religious corps.
 mod religion_seat_reveals_the_capitals;
+/// `religion-seat-second-city-first`: see
+/// `advanced/religion_seat_second_city_first.rs`.
+mod religion_seat_second_city_first;
 /// `religion-seat-seeks-the-unseen-rival`: see
 /// `advanced/religion_seat_seeks_the_unseen_rival.rs`.
 mod religion_seat_seeks_the_unseen_rival;

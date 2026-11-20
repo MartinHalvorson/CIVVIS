@@ -106,6 +106,9 @@ impl AdvancedAi {
             if (!city.queue.is_empty() && !self.religion_seat_races_the_prophet)
                 || plan.threatened_city == Some(cid)
                 || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+                // `religion-seat-second-city-first`: the capital's first
+                // Settler goes first. See `religion_seat_second_city_first.rs`.
+                || self.second_city_holds_the_holy_site(g, pid, cid, plan)
             {
                 continue;
             }

@@ -6287,6 +6287,17 @@ pub const GENES: &[Gene] = &[
     // the most spread for its price. Opt-in; see
     // `advanced/religion_seat_spends_the_whole_bank.rs`.
     Gene { tag: "religion-seat-spends-the-whole-bank", field: "religion_seat_spends_the_whole_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_spends_the_whole_bank, disable: AdvancedAi::disable_religion_seat_spends_the_whole_bank },
+    // Live Lv 8 Deity 2026-11-18/20: 13 of 26 Religion-lane games founded
+    // their second city at t28-44 or never (median t18 on Science/Culture
+    // seats), and those had ~6.7 cities following our faith at t100 against
+    // ~13 with a second city by t23, with the same founding turn. The first
+    // Settler lost the queue to the Holy Site claim, Prayers and the first
+    // Shrine. A one-city Religion capital builds it once it can; a Holy Site
+    // under way, a defender with hostiles in reach and Walls keep the head,
+    // and with one religion slot left the Holy Site and Prayers go first
+    // (never for Arabia). Opt-in; see
+    // `advanced/religion_seat_second_city_first.rs`.
+    Gene { tag: "religion-seat-second-city-first", field: "religion_seat_second_city_first", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_second_city_first, disable: AdvancedAi::disable_religion_seat_second_city_first },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
