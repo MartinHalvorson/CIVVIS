@@ -6584,7 +6584,6 @@ pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
     "culture-seat-drama-first",
     "culture-seat-theater-first",
     "culture-tourism-payback",
-    "deck-follows-the-queue",
     "defensible-sites",
     "denial-nearest-finish",
     "denial-target-leads-the-fronts",

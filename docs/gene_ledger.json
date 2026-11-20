@@ -95,7 +95,6 @@
       "culture-seat-drama-first",
       "culture-seat-theater-first",
       "culture-tourism-payback",
-      "deck-follows-the-queue",
       "defensible-sites",
       "denial-nearest-finish",
       "denial-target-leads-the-fronts",
@@ -368,7 +367,7 @@
       "war-target-prices-the-walls",
       "wonder-ring-recon-2"
     ],
-    "retained_selection_note": "Evidence-floor reselection (operator /goal 2026-11-18; operator 2026-11-13: include beneficial genes, exclude harmful ones, no drastic changes): the recorded +3 latest-three reselection proposed +295/-66; over the newest 6 reports (8,736 games) this publication turns on only flips with window win z >= 2 (7 on), and turns off only flips with z <= -2 or a family swap to a sibling at z >= 2 (0 off).",
+    "retained_selection_note": "Evidence-floor reselection (operator /goal 2026-11-18; operator 2026-11-13: include beneficial genes, exclude harmful ones, no drastic changes): the recorded +3 latest-three reselection proposed +294/-66; over the newest 6 reports (8,736 games) this publication turns on only flips with window win z >= 2 (6 on), and turns off only flips with z <= -2 or a family swap to a sibling at z >= 2 (0 off).",
     "batch_columns": {
       "acropolis-before-the-deterrent": [
         7,
@@ -6655,7 +6654,6 @@
       "culture-seat-drama-first",
       "culture-seat-theater-first",
       "culture-tourism-payback",
-      "deck-follows-the-queue",
       "defensible-sites",
       "denial-nearest-finish",
       "denial-target-leads-the-fronts",
@@ -8325,7 +8323,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 56,
-    "default_on": 229
+    "default_on": 228
   },
   "genes": [
     {
