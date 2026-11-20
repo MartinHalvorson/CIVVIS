@@ -327,6 +327,52 @@ fn a_step_plays_one_turn_and_stops_on_the_turn_it_was_told_to() {
     assert_eq!(marked(&session), [1, 2, 3]);
 }
 
+/// An era breakpoint stops a run on the first turn of a new world era, and
+/// the timeline says which turn each era it has been through began on.
+#[test]
+fn an_era_breakpoint_stops_on_the_first_turn_of_a_new_era_and_the_timeline_marks_it() {
+    let mut session = played();
+    let set = session.debug(&json!({"op": "breakpoints", "eras": true}));
+    assert_eq!(set["error"], Value::Null);
+    assert_eq!(set["debug"]["breakpoints"]["eras"], json!(true));
+    assert_eq!(
+        set["debug"]["eras"],
+        json!([{"era": 0, "name": "ancient", "turn": 1}])
+    );
+    // The world's next era is due: the countdown the engine keeps ends now.
+    session.game.world_era_countdown_end = Some(session.game.turn);
+    let mut hit = Value::Null;
+    for _ in 0..4 {
+        hit = session.debug(&json!({"op": "step"}));
+        if hit["debug"]["stopped"] != Value::Null {
+            break;
+        }
+    }
+    let began = hit["turn"].as_u64().expect("a turn");
+    assert_eq!(
+        hit["debug"]["stopped"],
+        json!({"kind": "era", "turn": began, "era": 1})
+    );
+    assert_eq!(
+        hit["debug"]["eras"],
+        json!([
+            {"era": 0, "name": "ancient", "turn": 1},
+            {"era": 1, "name": "classical", "turn": began},
+        ])
+    );
+    // An era that goes on does not stop every turn it goes on for.
+    let next = session.debug(&json!({"op": "step"}));
+    assert_eq!(next["debug"]["stopped"], Value::Null);
+    // With the breakpoint off the same change stops nothing.
+    let mut quiet = played();
+    quiet.game.world_era_countdown_end = Some(quiet.game.turn);
+    for _ in 0..4 {
+        let out = quiet.debug(&json!({"op": "step"}));
+        assert_eq!(out["debug"]["stopped"], Value::Null);
+    }
+    assert_eq!(quiet.game.world_era, 1);
+}
+
 #[test]
 fn an_event_breakpoint_reads_what_the_turn_added_to_the_log() {
     let mut session = played();
@@ -491,16 +537,27 @@ fn a_dragged_slider_is_read_before_the_bar_is_drawn_again() {
     }
 }
 
-/// The bar is fixed across the top of the window and the page is padded by
-/// its height. Three things the page fixes to the window at a distance from
-/// its top do not move with the body, so the bar's own stylesheet moves them,
-/// by name. A name that is gone from the page would leave that rule moving
-/// nothing, and the thing it was for under the bar.
+/// The header box is fixed at the top of the window beside the left panel
+/// (operator 2026-11-19: "left panel should go to the top of the screen.
+/// debugger header box should start from the right side of the left panel"),
+/// and the map area stands under it by its height. Three things the page
+/// fixes to the window at a distance from its top do not move with the map
+/// area, so the box's own stylesheet moves them, by name. A name that is gone
+/// from the page would leave that rule moving nothing, and the thing it was
+/// for under the box.
 #[test]
-fn the_docked_bar_moves_what_the_page_fixes_to_the_top_of_the_window() {
+fn the_docked_box_stands_beside_the_left_panel_and_moves_what_is_fixed_under_it() {
     let page = super::super::EMBEDDED_INDEX_HTML;
     let script = super::super::EMBEDDED_APP_DEBUGGER_JS;
-    assert!(script.contains("html.dbg-docked body { padding-top: var(--dbg-top, 0px); }"));
+    assert!(
+        script.contains("position: fixed; z-index: 8000; inset: 0 0 auto var(--dbg-left, 0px);")
+    );
+    assert!(script.contains("html.dbg-docked #maparea { margin-top: var(--dbg-top, 0px); }"));
+    assert!(
+        !script.contains("html.dbg-docked body {"),
+        "the body is padded again, and the left panel is under the box"
+    );
+    assert!(page.contains("<div id=\"maparea\">"));
     for (rule, moved) in [
         ("#moments {", "html.dbg-docked #moments"),
         ("#site-pick {", "html.dbg-docked #site-pick"),
@@ -511,10 +568,63 @@ fn the_docked_bar_moves_what_the_page_fixes_to_the_top_of_the_window() {
             .unwrap_or_else(|| panic!("the page has no {rule}"));
         let body = &page[at..at + page[at..].find('}').expect("a closed rule")];
         assert!(body.contains("position: fixed"), "{rule} is not fixed");
-        assert!(script.contains(moved), "nothing moves {rule} under the bar");
+        assert!(script.contains(moved), "nothing moves {rule} under the box");
     }
-    // A split stands under the bar, not over it.
+    // A split stands under the box, not over it, and its box has the whole
+    // width: the two halves cover the left panel.
     assert!(script.contains("position: fixed; inset: var(--dbg-top, 0px) 0 0 0;"));
+    assert!(script.contains("html.dbg-split-open #debugbar { z-index: 100001; left: 0; }"));
+    // Auto-play moved into the box, and the left panel's copy is put away.
+    assert!(page.contains("<div class=\"footer-actions\" id=\"humanfooter\">"));
+    assert!(script.contains("html.dbg-docked #humanfooter { display: none !important; }"));
+}
+
+/// The header box as the operator laid it out on 2026-11-19: the timeline on
+/// top, twice its old height; under it "Turn 1 | Era Start/Back | 10 turns
+/// back | 1 turn back | next turn | 10 turns" with the turn counter between
+/// one back and one on; and at the bottom left "civ ai, turns, auto-play",
+/// layers, breakpoints, and to their right "Branch Timeline". Auto-play
+/// counts the turns it has played while it plays.
+#[test]
+fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_order() {
+    let script = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    let built = &script[script.find("bar.innerHTML = `").expect("the box is built")..];
+    let mut from = 0;
+    for piece in [
+        "<div class=\"dbg-time\">",
+        "<div class=\"dbg-deck\">",
+        "id=\"dbg-agent\"",
+        "<select id=\"dbg-turns\"",
+        "<button data-dbg=\"autoplay\"",
+        "data-dbg-pop=\"layers\"",
+        "data-dbg-pop=\"breaks\"",
+        "<span class=\"dbg-word\">Branch Timeline</span>",
+        "<span class=\"dbg-word\">Turn 1</span>",
+        "<span class=\"dbg-word\">Era start</span>",
+        "<button data-dbg=\"back10\"",
+        "<button data-dbg=\"back\"",
+        "id=\"dbg-turn\"",
+        "<button data-dbg=\"next\"",
+        "<button data-dbg=\"next10\"",
+    ] {
+        let at = built[from..]
+            .find(piece)
+            .unwrap_or_else(|| panic!("{piece} is missing, or out of its order"));
+        from += at + piece.len();
+    }
+    for piece in [
+        // Twice the 34px the rail was.
+        "position: relative; flex: 1; min-width: 0; height: 68px; border-radius: 12px;",
+        // The count on Auto-play, of the turns asked for or so far.
+        "const runCount = !debugRunning ? \"\" : debugAsked === null ? `${debugPlayed}` : `${debugPlayed}/${debugAsked}`;",
+        // Era start, the era breakpoint and the eras named on the timeline.
+        "const began = (timeline.eras || []).filter(era => era.turn < state.turn);",
+        "<input type=\"checkbox\" data-dbg-field=\"eras\"> A new era begins</label>",
+        "eras: pop.querySelector(\"[data-dbg-field=eras]\").checked,",
+        "eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle});",
+    ] {
+        assert!(script.contains(piece), "the header box is missing {piece}");
+    }
 }
 
 #[test]
