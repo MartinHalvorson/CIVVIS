@@ -1262,6 +1262,12 @@
     line-height: var(--vt-line, 15px); text-align: right;
     font-variant-numeric: tabular-nums; white-space: nowrap;
   }
+  /* Domination's rows print two figures: the share of the map's cities, then
+     the capitals. The share is the quieter of the two, since capitals decide
+     the victory, and the one a band too narrow for both gives up: the name
+     of the civilization comes first, and the meter still draws the share. */
+  .victory-share { margin-right: .7em; color: #a3b5ae; font-style: normal; }
+  @container (max-width: 129px) { .victory-share { display: none; } }
   #victoryhud .victory-meter { height: var(--vt-meter, 4.5px); margin: 1px 0 0 var(--vt-name-inset, 10px); border-radius: 3px; }
   #victoryhud .victory-half { height: var(--vt-meter, 4.5px); }
   .diplomacy-ribbon { min-width: max-content; display: flex; align-items: stretch; gap: 4px; padding-bottom: 1px; }

@@ -804,6 +804,7 @@ CULTURE_RANK_SCENARIOS = r"""
 __FIGURES__
 __COMPACT__
 const victoryMetric = (player, road) => player.victories[road];
+const reportedTurn = () => 2;
 const track = {id:"culture"}, tieField = "civics";
 const seat = (id, tourists, target, civics, progress) =>
   ({id, score:0, victories:{culture:{tourists, target, civics, civic_total:50, progress}}});
@@ -870,6 +871,8 @@ DOMINATION_ROW_SCENARIOS = r"""
 __FIGURES__
 __COMPACT__
 const victoryMetric = (player, road) => player.victories[road];
+let turn = 2;
+const reportedTurn = () => turn;
 const seat = (id, capitals, cities, score = 0) => ({id, score, victories:{domination:
   {capitals, target:6, cities, city_total:40, progress:100 * capitals / 6}}});
 const order = contenders => {
@@ -887,7 +890,23 @@ const metric = {capitals:2, target:6, cities:9, city_total:36, progress:33.3};
 eq(victoryMeterFill("domination", metric), 25, "the meter is the share of the map's cities");
 eq(victoryMeter("domination", metric, victoryMeterFill("domination", metric)),
    '<div class="victory-meter"><b style="width:25%"></b></div>', "one whole meter");
-eq(victoryTrackerStats("domination", metric), "2/6", "capitals held over capitals in the game");
+// The row prints that share as a column of its own, left of the capitals.
+eq(victoryTrackerStats("domination", metric), '<i class="victory-share">25%</i>2/6',
+   "the share of the map's cities, then capitals held over capitals in the game");
+eq(victoryValue("domination", metric), "2/6", "the dossier's figure is still the capitals alone");
+// It is blank on turn 1 and starts on turn 2.
+turn = 1;
+eq(victoryTrackerStats("domination", metric), "2/6", "turn 1 prints the capitals alone");
+eq(victoryCityShare(metric), "", "turn 1 is blank");
+eq(victoryCityShare(metric, 2), "25%", "turn 2 starts the column");
+turn = 2;
+eq(victoryCityShare({cities:1, city_total:15}), "7%", "a whole percent");
+eq(victoryCityShare({city_total:15}), "0%", "a civilization that holds no city");
+eq(victoryCityShare({cities:15, city_total:15}), "100%", "every city on the map");
+eq(victoryCityShare({capitals:3, target:6, progress:50}), "", "an older frame has no share to print");
+eq(victoryTrackerStats("domination", {capitals:3, target:6, progress:50}), "3/6", "nor a column for it");
+// No other path gains a column.
+eq(victoryTrackerStats("religious", {converted:1, target:4, cities:9, city_total:36}), "1/4", "religious");
 eq(victoryTrackerSubheading("domination"), "<span>Cities</span><span>Capitals</span>", "the heading");
 eq(victoryDescription("domination", metric),
    "9 of 36 cities on the map · 2 of 6 original capitals controlled, their own counted", "the hover");
@@ -914,7 +933,12 @@ class DominationShowsCitiesOnItsMeterAndCapitalsBesideIt(unittest.TestCase):
     """Operator, 2026-11-19: "domination in victory tracker should track cities
     and capitals. bar can show cities by percent of cities on the map. on the
     right should be capitals count N/total". The meter had drawn the capitals
-    the figure already printed, so it stood still for most of a game."""
+    the figure already printed, so it stood still for most of a game.
+
+    Operator, 2026-11-19, later: "lets add a short city col to the left of
+    capitalis. this col can list the percent of all cities on the map
+    (including city states) that belong to the civ. should be left blank on
+    turn 1 and start on turn 2."""
 
     def test_the_meter_the_figure_and_the_order(self):
         source = (ASSETS / "app.js").read_text(encoding="utf-8")
