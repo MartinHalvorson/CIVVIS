@@ -27883,15 +27883,23 @@ local function tick()
 						-- See `CivvisDvPredict`: who takes the +2, from the rivals'
 						-- spend, recorded every session (`dv_prediction`); and, armed,
 						-- `CivvisDvJoinWinner`. The bank is the racer claim's own.
-						envoyTally.dv_prediction = CivvisDvPredict(r, candidates, pid, costs, list,
-							favor - (CivvisCongressRacer(cfg) and (envoyTally.racer_endgame
-								and CivvisRacerReserve(list, costs, cfg, true)
-								or envoyTally.racer_reserve or 0) or 0),
-							maxVotes, cfg, try(function() return wc:GetReview(pid); end, nil),
-							leader, leaderPoints);
-						if cfg.DvJoinWinner == true and CivvisCongressRacer(cfg) then
-							option, selection, n, mode = CivvisDvJoinWinner(envoyTally.dv_prediction,
-								targets, pid, option, selection, n, mode, ganged, cfg);
+						-- Both under pcall: nothing here may cost the session its
+						-- ballot, and a failure leaves today's vote standing.
+						envoyTally.dv_prediction = nil;
+						pcall(function()
+							envoyTally.dv_prediction = CivvisDvPredict(r, candidates, pid, costs, list,
+								favor - (CivvisCongressRacer(cfg) and (envoyTally.racer_endgame
+									and CivvisRacerReserve(list, costs, cfg, true)
+									or envoyTally.racer_reserve or 0) or 0),
+								maxVotes, cfg, try(function() return wc:GetReview(pid); end, nil),
+								leader, leaderPoints);
+						end);
+						if cfg.DvJoinWinner == true and CivvisCongressRacer(cfg)
+								and envoyTally.dv_prediction ~= nil then
+							local joined, jo, js, jn, jm = pcall(CivvisDvJoinWinner,
+								envoyTally.dv_prediction, targets, pid, option, selection, n, mode,
+								ganged, cfg);
+							if joined then option, selection, n, mode = jo, js, jn, jm; end
 						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;

@@ -315,6 +315,19 @@ check("no Favor entering, no prediction", row.dv_prediction.winner, nil)
 check("no prediction, today's ballot", dv.option .. "/" .. dv.selection .. "/" .. dv.votes, "2/2/1")
 check("no prediction, no choice", mode, "free")
 enteringReadable = true
+-- A prediction that raises costs the session nothing: today's ballot.
+local predict = CivvisDvPredict
+CivvisDvPredict = function() error("host table changed shape") end
+mode, dv, row = run(40, 6, field())
+check("a failed prediction leaves today's ballot", dv.option .. "/" .. dv.selection .. "/" .. dv.votes, "2/2/1")
+check("and records none", row.dv_prediction, nil)
+check("and the ballot is still sent", #requests, 3)
+CivvisDvPredict = predict
+local join = CivvisDvJoinWinner
+CivvisDvJoinWinner = function() error("broken") end
+mode, dv = run(40, 6, field())
+check("a failed arm leaves today's ballot", dv.option .. "/" .. dv.selection .. "/" .. dv.votes, "2/2/1")
+CivvisDvJoinWinner = join
 -- An entering balance that reads as the current one: no rival bought a
 -- vote, so nobody is named and a three-vote claim does not chase phantoms.
 local flat = field()
