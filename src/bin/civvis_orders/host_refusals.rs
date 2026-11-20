@@ -759,18 +759,39 @@ impl HostOrderRefusals {
 /// Returns the surviving orders and one `kind:verb reason` line per withheld
 /// order, so a refusal that stops being sent is visible in the reply rather
 /// than simply absent.
+#[cfg(test)]
 pub(super) fn withhold_refused_orders(
     orders: Vec<Order>,
     state: &civvis::mirror::StateSnapshot,
     refusals: &mut HostOrderRefusals,
 ) -> (Vec<Order>, Vec<String>) {
+    let (allowed, withheld, _) =
+        withhold_refused_orders_sparing(orders, state, refusals, |_| false);
+    (allowed, withheld)
+}
+
+/// `withhold_refused_orders`, except that an order `spare` names is sent
+/// even when it has struck out; the count of those comes back third.
+/// `tribute-and-friendship-land` spares the friendship ask, which the mod
+/// paces itself.
+pub(super) fn withhold_refused_orders_sparing(
+    orders: Vec<Order>,
+    state: &civvis::mirror::StateSnapshot,
+    refusals: &mut HostOrderRefusals,
+    spare: impl Fn(&Order) -> bool,
+) -> (Vec<Order>, Vec<String>, usize) {
     let turn = state.turn;
     refusals.observe_war_permissions(state);
     refusals.sweep(turn);
     let mut allowed = Vec::with_capacity(orders.len());
     let mut withheld = Vec::new();
+    let mut spared = 0;
     for order in orders {
         match refusals.withheld(&order, turn) {
+            Some(_) if spare(&order) => {
+                spared += 1;
+                allowed.push(order);
+            }
             Some(reason) => withheld.push(format!(
                 "{}:{} {}",
                 order.kind,
@@ -780,7 +801,7 @@ pub(super) fn withhold_refused_orders(
             None => allowed.push(order),
         }
     }
-    (allowed, withheld)
+    (allowed, withheld, spared)
 }
 
 /// Withhold only peace orders whose known Firaxis cooldown has not expired.

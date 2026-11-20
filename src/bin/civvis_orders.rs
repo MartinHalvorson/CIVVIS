@@ -2202,10 +2202,31 @@ const TRIBUTE_TARGET_OPINION_2: f64 = NEIGHBOUR_TRIBUTE_TARGET_OPINION;
 /// [`TRIBUTE_TARGET_OPINION_2`] and may pay from the whole treasury, less Gold
 /// another gift took this frame, sending nothing while Gold per turn is
 /// negative. See `advanced/tribute_buys_the_friendship.rs`.
+#[cfg(test)]
 fn append_tribute_order(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
     past_the_line: bool,
+) -> Option<&'static str> {
+    append_tribute_order_priced(state, orders, past_the_line, TRIBUTE_GOLD_PER_POINT)
+}
+
+/// The whole tribute that buys `points` of opinion at `gold_per_point`,
+/// rounded up to whole tens and never under [`TRIBUTE_MIN_GOLD`]. At
+/// [`TRIBUTE_GOLD_PER_POINT`] it is ten Gold a whole point, as before
+/// `tribute-and-friendship-land`.
+fn tribute_amount(points: f64, gold_per_point: f64) -> i64 {
+    (((points.ceil() * gold_per_point) / 10.0).ceil() as i64 * 10).max(TRIBUTE_MIN_GOLD)
+}
+
+/// [`append_tribute_order`] with the opinion gap priced at `gold_per_point`:
+/// [`TRIBUTE_GOLD_PER_POINT`], or the world era's rate under
+/// `tribute-and-friendship-land` (`AdvancedAi::tribute_gold_per_point`).
+fn append_tribute_order_priced(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    past_the_line: bool,
+    gold_per_point: f64,
 ) -> Option<&'static str> {
     let Some(rival) = state
         .rivals
@@ -2257,7 +2278,7 @@ fn append_tribute_order(
     if points > TRIBUTE_ONE_GIFT_POINTS {
         return Some("tribute_hold:out_of_reach");
     }
-    let amount = ((points.ceil() * TRIBUTE_GOLD_PER_POINT) as i64).max(TRIBUTE_MIN_GOLD);
+    let amount = tribute_amount(points, gold_per_point);
     let kept = if past_the_line {
         if state.gold_per_turn.is_some_and(|income| income < 0.0) {
             return Some("tribute_hold:deficit");
@@ -2324,9 +2345,20 @@ const NEIGHBOUR_TRIBUTE_RADIUS: i32 = 12;
 /// gift took this frame; a seat losing Gold per turn sends nothing. `None`
 /// when a gift was pushed, else the hold. See
 /// `advanced/tribute_warms_the_neighbour.rs`.
+#[cfg(test)]
 fn append_neighbour_tribute_order(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
+) -> Option<&'static str> {
+    append_neighbour_tribute_order_priced(state, orders, TRIBUTE_GOLD_PER_POINT)
+}
+
+/// [`append_neighbour_tribute_order`] with the opinion gap priced at
+/// `gold_per_point`, as [`append_tribute_order_priced`].
+fn append_neighbour_tribute_order_priced(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    gold_per_point: f64,
 ) -> Option<&'static str> {
     let ours: Vec<(i32, i32)> = state.cities.iter().map(|city| (city.x, city.y)).collect();
     let mut near: Vec<(i32, &civvis::mirror::StateRival)> = state
@@ -2373,7 +2405,7 @@ fn append_neighbour_tribute_order(
     if state.gold_per_turn.is_some_and(|income| income < 0.0) {
         return Some("neighbour_tribute_hold:deficit");
     }
-    let amount = ((points.ceil() * TRIBUTE_GOLD_PER_POINT) as i64).max(TRIBUTE_MIN_GOLD);
+    let amount = tribute_amount(points, gold_per_point);
     let committed: i64 = orders
         .iter()
         .filter(|order| order.kind == "aid_gift")
@@ -2438,6 +2470,25 @@ fn neighbour_tribute_points(rival: &civvis::mirror::StateRival) -> Result<f64, &
         return Err("neighbour_tribute_hold:out_of_reach");
     }
     Ok(points)
+}
+
+/// `tribute-and-friendship-land`: drop every delegation or embassy order to a
+/// rival this frame also asks for a friendship. The agent opens both as
+/// `DiplomacyManager.RequestSession` sessions (the shipped friendship call,
+/// `Base/Assets/UI/DiplomacyActionView.lua:473`), and on the live Deity lane
+/// an ask that shared its frame with one was accepted 3 times in 32. Returns
+/// how many were dropped.
+fn friendship_asks_alone(orders: &mut Vec<Order>) -> usize {
+    let asked: Vec<i64> = orders
+        .iter()
+        .filter(|order| order.kind == "friendship")
+        .filter_map(|order| order.subject)
+        .collect();
+    let before = orders.len();
+    orders.retain(|order| {
+        order.kind != "delegation" || !order.subject.is_some_and(|rival| asked.contains(&rival))
+    });
+    before - orders.len()
 }
 
 fn amenity_deficit(state: &civvis::mirror::StateSnapshot) -> f64 {
@@ -5530,8 +5581,18 @@ fn decide(
     }
     // `tribute-buys-the-friendship`: Gold to the strongest neighbour at peace
     // while it is too cold for the friendship ask. See `append_tribute_order`.
+    // `tribute-and-friendship-land`: both tributes price a point at what Gold
+    // buys in the world's era. Ten with the gene off.
+    let tribute_gold_per_point = ai
+        .tribute_gold_per_point(state.world_era)
+        .unwrap_or(TRIBUTE_GOLD_PER_POINT);
     if ai.tribute_buys_the_friendship_enabled() {
-        match append_tribute_order(state, &mut orders, ai.tribute_aims_past_the_line()) {
+        match append_tribute_order_priced(
+            state,
+            &mut orders,
+            ai.tribute_aims_past_the_line(),
+            tribute_gold_per_point,
+        ) {
             None => note_bits.push("tribute=1".to_string()),
             Some(why @ ("tribute_hold:treasury" | "tribute_hold:deal_in_flight")) => {
                 note_bits.push(why.to_string())
@@ -5543,7 +5604,7 @@ fn decide(
     // until it can be asked for a friendship. See
     // `append_neighbour_tribute_order`.
     if ai.tribute_warms_the_neighbour_enabled() {
-        match append_neighbour_tribute_order(state, &mut orders) {
+        match append_neighbour_tribute_order_priced(state, &mut orders, tribute_gold_per_point) {
             None => note_bits.push("neighbour_tribute=1".to_string()),
             Some("neighbour_tribute_hold:no_neighbour") => {}
             Some(why) => note_bits.push(why.to_string()),
@@ -6224,7 +6285,27 @@ fn decide(
     // `ORDER_REFUSAL_COOLDOWN_TURNS`. Placed after every other suppressor, so
     // the strike list is applied to the orders that would really have gone,
     // and before `record`, which is the ledger of what was actually sent.
-    let (mut orders, refused_before) = withhold_refused_orders(orders, state, host_order_refusals);
+    //
+    // `tribute-and-friendship-land`: a friendship ask goes alone, without a
+    // delegation or embassy session to the same rival this frame, and is
+    // never withheld here: its three "failures" are one refusal and the two
+    // turns after it, which the mod's own five-turn window refuses unasked.
+    let friendship_lands = ai.tribute_and_friendship_land_enabled();
+    if friendship_lands {
+        let missions_held = friendship_asks_alone(&mut orders);
+        if missions_held > 0 {
+            note_bits.push(format!("mission_held_for_friendship={missions_held}"));
+        }
+    }
+    let (mut orders, refused_before, friendship_spared) = withhold_refused_orders_sparing(
+        orders,
+        state,
+        host_order_refusals,
+        |order| friendship_lands && order.kind == "friendship",
+    );
+    if friendship_spared > 0 {
+        note_bits.push(format!("friendship_ask_spared={friendship_spared}"));
+    }
     if !refused_before.is_empty() {
         note_bits.push(format!(
             "withheld_refused={} [{}]",
