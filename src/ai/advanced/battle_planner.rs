@@ -2251,18 +2251,32 @@ impl AdvancedAi {
             let firing_post = self.defensive_firing_radius(g, pid, uid);
             let mut stands: Vec<Pos> = vec![unit.pos];
             stands.extend(g.reachable(uid));
+            // Tile distance is a metric, so a target farther from the unit
+            // than its farthest stand plus its range is out of range from
+            // every stand: the per-stand scans below read only the rest, in
+            // the same order.
+            let spread = stands
+                .iter()
+                .map(|stand| g.wdist(unit.pos, *stand))
+                .max()
+                .unwrap_or(0);
+            let reach = spread.saturating_add(range);
+            let near: Vec<usize> = (0..targets.len())
+                .filter(|&index| g.wdist_capped(unit.pos, targets[index].pos, reach) <= reach)
+                .collect();
             for stand in stands {
-                let ranged_stand_allowed =
-                    firing_post.is_none_or(|(city, radius)| g.wdist(stand, city) <= radius);
-                if !targets
+                if !near
                     .iter()
-                    .any(|target| g.wdist(stand, target.pos) <= range)
+                    .any(|&index| g.wdist(stand, targets[index].pos) <= range)
                 {
                     continue;
                 }
+                let ranged_stand_allowed =
+                    firing_post.is_none_or(|(city, radius)| g.wdist(stand, city) <= radius);
                 let read = |board: &Game| -> Vec<Candidate> {
                     let mut found = Vec::new();
-                    for (target_index, target) in targets.iter().enumerate() {
+                    for &target_index in &near {
+                        let target = &targets[target_index];
                         if g.wdist(stand, target.pos) > range {
                             continue;
                         }
