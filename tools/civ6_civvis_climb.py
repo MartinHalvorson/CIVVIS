@@ -2292,6 +2292,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
         + (["--luxury-quote-proposals"] if getattr(args, "luxury_quote_proposals", False) else [])
         + (["--unanswered-proposal-withdraw"]
            if getattr(args, "unanswered_proposal_withdraw", False) else [])
+        + (["--dv-join-winner"] if getattr(args, "dv_join_winner", False) else [])
         + [word for player, last_turn in sorted((quarantine or {}).items())
            for word in ("--deal-session-quarantine", f"{player}:{last_turn}")]
         + (["--no-counter-resolutions"] if args.no_counter_resolutions else [])
@@ -2817,6 +2818,23 @@ def unanswered_proposal_withdraw_mode(requested: bool | None, environ=None,
     `ai_phase_stall`; `loaded.unanswered_proposal_withdraw`).
     """
     return policy_switch("CIVVIS_UNANSWERED_PROPOSAL_WITHDRAW", requested, environ, path)
+
+
+def dv_join_winner_mode(requested: bool | None, environ=None,
+                        path: Path | None = None) -> bool:
+    """Whether the Diplomatic Victory ballot votes A on the rival predicted to
+    take the +2 when our bank cannot outvote it (`civ6_play.py
+    --dv-join-winner`, `CivvisDvJoinWinner`).
+
+    `--dv-join-winner` / `--no-dv-join-winner`, else `CIVVIS_DV_JOIN_WINNER`
+    (see `policy_switch`). Opt-in: on 92 live Deity games of 2026-11-19/20 a
+    rival took option A on its own votes in about half the sessions while we
+    cast a token B or lost a claim, and 26 losses ended at 17-19 points; the
+    prediction (each rival's Favor spent this session) is recorded either way
+    (`wc_ballot_context.dv_prediction`), and the arm's ballots read `join` or
+    `outbid` as their `diplomatic_resolution_mode`; `loaded.dv_join_winner`.
+    """
+    return policy_switch("CIVVIS_DV_JOIN_WINNER", requested, environ, path)
 
 
 def operator_victory_lane(requested: str, path: Path | None = None,
@@ -3360,6 +3378,15 @@ def main() -> int:
                     action="store_const", const=False,
                     help="end the turn after an unanswered ask's hold as before, "
                          "whatever the policy says")
+    ap.add_argument("--dv-join-winner", dest="dv_join_winner",
+                    action="store_const", const=True, default=None,
+                    help="forwarded to civ6_play.py: vote A on the rival predicted to "
+                         "take the Diplomatic Victory +2 when our bank cannot outvote "
+                         "it (default: CIVVIS_DV_JOIN_WINNER, else off)")
+    ap.add_argument("--no-dv-join-winner", dest="dv_join_winner",
+                    action="store_const", const=False,
+                    help="cast the Diplomatic Victory ballot as before, whatever the "
+                         "policy says")
     ap.add_argument("--tile-export-every", type=int, default=4,
                     help="turns between map exports; the operator watches this against the game")
     ap.add_argument("--combat-frames", type=int, default=0,
@@ -3404,6 +3431,7 @@ def main() -> int:
     args.luxury_quote_proposals = luxury_quote_proposals_mode(args.luxury_quote_proposals)
     args.unanswered_proposal_withdraw = unanswered_proposal_withdraw_mode(
         args.unanswered_proposal_withdraw)
+    args.dv_join_winner = dv_join_winner_mode(args.dv_join_winner)
     # The game's score clock: the speed's own limit unless `--max-turns` names
     # one, then the operator's per-batch cap over either. See TURN_CAP_FILE.
     args.max_turns = operator_turn_cap(

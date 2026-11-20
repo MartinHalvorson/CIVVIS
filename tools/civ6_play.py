@@ -2410,6 +2410,12 @@ def build_config(args: argparse.Namespace) -> dict:
         # before the turn ends (`CivvisTrade.withdraw`): all three such asks on
         # 2026-11-20 04:00-08:20Z hung that rival's turn. Off unless set.
         "UnansweredProposalWithdraw": bool(getattr(args, "unanswered_proposal_withdraw", False)),
+        # The Diplomatic Victory ballot reads who takes the +2 from each rival's
+        # Favor spent this session (GetFavorEnteringCongress - GetFavor, always
+        # recorded as `wc_ballot_context.dv_prediction`); armed, a bank that
+        # cannot outvote that rival casts the free vote A on it instead of a
+        # token B or a losing claim (`CivvisDvJoinWinner`). Off unless set.
+        "DvJoinWinner": bool(getattr(args, "dv_join_winner", False)),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -7288,6 +7294,7 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
             "TileDelta": getattr(args, "tile_delta", None),
             "LuxuryQuoteProposals": getattr(args, "luxury_quote_proposals", False),
             "UnansweredProposalWithdraw": getattr(args, "unanswered_proposal_withdraw", False),
+            "DvJoinWinner": getattr(args, "dv_join_winner", False),
             **{key: getattr(args, attr, None) for attr, key, _ in ORDER_QUEUE_TIMINGS},
         },
         "city_two_turn": (sorted(state.get("founds") or [])[1]
@@ -8865,6 +8872,7 @@ def _play(args: argparse.Namespace) -> int:
             "TileDelta": args.tile_delta,
             "LuxuryQuoteProposals": getattr(args, "luxury_quote_proposals", False),
             "UnansweredProposalWithdraw": getattr(args, "unanswered_proposal_withdraw", False),
+            "DvJoinWinner": getattr(args, "dv_join_winner", False),
             **{key: getattr(args, attr, None) for attr, key, _ in ORDER_QUEUE_TIMINGS},
         },
         # See `state["founds"]`: the opening tempo, recorded per run so the
@@ -9591,6 +9599,9 @@ def build_parser() -> argparse.ArgumentParser:
                     action="store_true",
                     help="withdraw an ask whose session closed unanswered before the "
                          "turn ends, when its turn hold releases (opt-in)")
+    ap.add_argument("--dv-join-winner", dest="dv_join_winner", action="store_true",
+                    help="on the Diplomatic Victory resolution, vote A on the rival "
+                         "predicted to take the +2 when our bank cannot outvote it (opt-in)")
     # Wins always finish the native movie. This setting retains a minimum
     # presentation time; it cannot shorten a winning cinematic.
     ap.add_argument("--end-game-seconds", type=float, default=10.0,
