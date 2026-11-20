@@ -188,6 +188,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `denial-spies-fill-every-slot-3` | off (unmeasured) | Opt-in gene `denial-spies-fill-every-slot-3`, version three of `denial-spies-fill-every-slot`: version two, and on a Science, Religion or Diplomacy aim too; see `advanced/denial_spies_fill_every_slot.rs`. | 2 \| 3 |
 | `racer-seat-statue-civic-first` | off (unmeasured) | Opt-in gene `racer-seat-statue-civic-first`; see `AdvancedAi::diplo_statue_civic_goal`. | 1 \| 1 |
 | `religion-seat-second-city-first` | off (unmeasured) | Opt-in gene `religion-seat-second-city-first`: a one-city Religion seat's first Settler before the Holy Site chain; see `advanced/religion_seat_second_city_first.rs`. | 1 \| 1 |
+| `settler-fallback-takes-seen-ground` | off (unmeasured) | Opt-in gene `settler-fallback-takes-seen-ground`; see `advanced/settler_fallback_takes_seen_ground.rs`. | 1 \| 1 |
 
 ## Removed from the code
 

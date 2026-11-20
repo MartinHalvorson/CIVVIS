@@ -331,8 +331,39 @@ impl AdvancedAi {
             ranked.sort_by_shared(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
         }
         self.set_aside_unpriceable_sites(g, pid, &mut ranked);
+        // `settler-fallback-takes-seen-ground`: unseen plots wait until no
+        // seen site passes either tier. Off, `fog` is empty, the block below
+        // is skipped and the order is the historical one. See
+        // `advanced/settler_fallback_takes_seen_ground.rs`.
+        let mut fog = self.exhaustion_fog_set_aside(g, &mut ranked);
+        if let Some((site, value)) = self.exhaustion_ranked_site(g, pid, uid, &mut ranked) {
+            self.journal_fog_passed_over(g, pid, uid, site, Some(value), &fog);
+            return Some(site);
+        }
+        if self.settler_fallback_takes_seen_ground {
+            if let Some(site) = self.exhaustion_legal_site(g, pid, uid, radius, avoided, true) {
+                self.journal_fog_passed_over(g, pid, uid, site, None, &fog);
+                return Some(site);
+            }
+            if let Some((site, _)) = self.exhaustion_ranked_site(g, pid, uid, &mut fog) {
+                return Some(site);
+            }
+        }
+        self.exhaustion_legal_site(g, pid, uid, radius, avoided, false)
+    }
+
+    /// Tier 2 of [`Self::settler_exhaustion_target`]: the first reachable
+    /// ranked site whose Loyalty forecast holds, paying at most
+    /// [`STRANDED_FORECAST_RETRIES`] refusals. A refused site leaves `ranked`.
+    pub(super) fn exhaustion_ranked_site(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        ranked: &mut Vec<(Pos, f64)>,
+    ) -> Option<(Pos, f64)> {
         for _ in 0..=STRANDED_FORECAST_RETRIES {
-            let Some((site, value)) = BasicAi::first_reachable_settle_site(g, uid, &ranked) else {
+            let Some((site, value)) = BasicAi::first_reachable_settle_site(g, uid, ranked) else {
                 break;
             };
             match self.exhaustion_site_revolt(g, pid, site) {
@@ -349,10 +380,26 @@ impl AdvancedAi {
                            "Settler takes a site the preferred search refused";
                            "nothing passed every filter, so {site:?} (worth {value:.1}) is taken \
                             rather than standing still"; site);
-                    return Some(site);
+                    return Some((site, value));
                 }
             }
         }
+        None
+    }
+
+    /// Tier 3 of [`Self::settler_exhaustion_target`]: any legal reachable
+    /// site. `seen_only` (asked only by `settler-fallback-takes-seen-ground`)
+    /// leaves out every plot the board marks unknown.
+    pub(super) fn exhaustion_legal_site(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        radius: i32,
+        avoided: Option<Pos>,
+        seen_only: bool,
+    ) -> Option<Pos> {
+        let from = g.units[&uid].pos;
         // Tier 3 normally asks for the nearest legal site.  The live bridge
         // has one additional failure mode: the nearest legal fallback can be
         // a visibly exposed, low-value plot even while a safer and more
@@ -380,6 +427,7 @@ impl AdvancedAi {
                     && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
                     // `settler-keeps-its-named-site`: not beside a sibling's site.
                     && !self.named_site_spaced_out(g, pid, uid, *pos)
+                    && !(seen_only && Self::plot_is_unseen(g, *pos))
             })
             .filter_map(|pos| {
                 if !live_fallback_safety {

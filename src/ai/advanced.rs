@@ -10632,6 +10632,11 @@ pub struct AdvancedAi {
     /// Lighthouse a routine claim holds there, and keeps it. See
     /// `advanced/science_universities_pass_the_claims.rs`. Off by default.
     science_universities_pass_the_claims: bool,
+    /// `settler-fallback-takes-seen-ground`: the exhaustion fallback asks
+    /// its seen sites, then the legal-site tier over seen plots, before any
+    /// plot the board marks unknown. See
+    /// `advanced/settler_fallback_takes_seen_ground.rs`. Off by default.
+    settler_fallback_takes_seen_ground: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -12484,14 +12489,17 @@ pub(super) mod rapid_city_expansion;
 /// `rear-cities-grow-through-the-war-hold`: see
 /// `advanced/rear_cities_grow_through_the_war_hold.rs`.
 mod rear_cities_grow_through_the_war_hold;
-/// `settler-never-idles`: a Settler always has somewhere to go — exhaustion
-/// asks wider questions instead of holding, and a watchdog bounds every
-/// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
-mod settler_never_idles;
+/// The exhaustion fallback takes seen ground before the fog. One opt-in
+/// gene; see `advanced/settler_fallback_takes_seen_ground.rs`.
+mod settler_fallback_takes_seen_ground;
 /// A Settler is sent only to a site it can keep, and every change of its
 /// destination is journalled. One opt-in gene; see
 /// `advanced/settler_keeps_its_named_site.rs`.
 mod settler_keeps_its_named_site;
+/// `settler-never-idles`: a Settler always has somewhere to go — exhaustion
+/// asks wider questions instead of holding, and a watchdog bounds every
+/// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
+mod settler_never_idles;
 /// `settler-founds-under-raiders`: see `advanced/settler_raiders.rs`.
 mod settler_raiders;
 /// Route around a host-refused step before discarding its city destination.
