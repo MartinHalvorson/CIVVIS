@@ -2289,6 +2289,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
         + DEAL_SESSION_FLAGS.get(getattr(args, "deal_sessions", None) or "off", [])
         + (["--deal-ask-on-tick"] if getattr(args, "deal_ask_on_tick", False) else [])
         + (["--deal-counter-refuse"] if getattr(args, "deal_counter_refuse", False) else [])
+        + (["--luxury-quote-proposals"] if getattr(args, "luxury_quote_proposals", False) else [])
         + [word for player, last_turn in sorted((quarantine or {}).items())
            for word in ("--deal-session-quarantine", f"{player}:{last_turn}")]
         + (["--no-counter-resolutions"] if args.no_counter_resolutions else [])
@@ -2782,6 +2783,22 @@ def deal_counter_refuse_mode(requested: bool | None, environ=None,
     `why=rejected_working_deal`).
     """
     return policy_switch("CIVVIS_DEAL_COUNTER_REFUSE", requested, environ, path)
+
+
+def luxury_quote_proposals_mode(requested: bool | None, environ=None,
+                                path: Path | None = None) -> bool:
+    """Whether a luxury ask the rival refuses with its own price inside our
+    ceiling is proposed back once (`civ6_play.py --luxury-quote-proposals`,
+    `CivvisTrade.luxuryQuote`).
+
+    `--luxury-quote-proposals` / `--no-luxury-quote-proposals`, else
+    `CIVVIS_LUXURY_QUOTE_PROPOSALS` (see `policy_switch`). Opt-in: 58 Lv 8
+    games on 2026-11-19 walked away from 140 such answers; whether the
+    re-proposal closes them as it closes Great Work and Open Borders quotes
+    is what turning it on measures (ledger: `deal_reproposed` then
+    `deal_closed` with a `RESOURCES:` want; `loaded.luxury_quote_proposals`).
+    """
+    return policy_switch("CIVVIS_LUXURY_QUOTE_PROPOSALS", requested, environ, path)
 
 
 def operator_victory_lane(requested: str, path: Path | None = None,
@@ -3307,6 +3324,15 @@ def main() -> int:
     ap.add_argument("--no-deal-counter-refuse", dest="deal_counter_refuse",
                     action="store_const", const=False,
                     help="close an expired counter wait as before, whatever the policy says")
+    ap.add_argument("--luxury-quote-proposals", dest="luxury_quote_proposals",
+                    action="store_const", const=True, default=None,
+                    help="forwarded to civ6_play.py: propose back a luxury ask refused "
+                         "with a price inside our ceiling (default: "
+                         "CIVVIS_LUXURY_QUOTE_PROPOSALS, else off)")
+    ap.add_argument("--no-luxury-quote-proposals", dest="luxury_quote_proposals",
+                    action="store_const", const=False,
+                    help="walk away from a priced luxury refusal as before, whatever "
+                         "the policy says")
     ap.add_argument("--tile-export-every", type=int, default=4,
                     help="turns between map exports; the operator watches this against the game")
     ap.add_argument("--combat-frames", type=int, default=0,
@@ -3348,6 +3374,7 @@ def main() -> int:
     args.deal_sessions = deal_sessions_mode(args.deal_sessions)
     args.deal_ask_on_tick = deal_ask_on_tick_mode(args.deal_ask_on_tick)
     args.deal_counter_refuse = deal_counter_refuse_mode(args.deal_counter_refuse)
+    args.luxury_quote_proposals = luxury_quote_proposals_mode(args.luxury_quote_proposals)
     # The game's score clock: the speed's own limit unless `--max-turns` names
     # one, then the operator's per-batch cap over either. See TURN_CAP_FILE.
     args.max_turns = operator_turn_cap(
