@@ -26,9 +26,10 @@ Everything the old roadmap called planned has shipped and then some:
 - **civvis.ai is live**: the WebAssembly client shipped, with a `/test` lane
   redeployed from head half-hourly, a stable front page moved by operator
   judgment (`docs/SPECTATOR_DEPLOY.md`), native/wasm build-parity gates, and
-  three pages that each link the other two — CIVVIS, a full game watched as
-  an AI simulation; Debugger, the same game played as one civilization
-  against AI rivals; and a home page with the rankings. The
+  three pages that each list all three with the one on screen in gold — a
+  home page with the rankings; CIVVIS, a full game watched as an AI
+  simulation; and Debugger, the same game played as one civilization
+  against AI rivals — over a link to Civilization VI's shop page. The
   Tactics row came off the menu 2026-09-10: the arena is still in the
   engine and still reachable by a hand-typed `?map=battlefield…`, but the
   site no longer offers it.
