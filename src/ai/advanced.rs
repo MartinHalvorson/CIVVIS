@@ -11068,6 +11068,11 @@ pub struct AdvancedAi {
     /// The turn `threatened-capital-trains-its-shooters` last read an enemy
     /// at the original capital's door.
     threatened_capital_seen: Option<u32>,
+    /// `tribute-and-friendship-land`: the tribute priced at what Gold buys in
+    /// the world's era, a friendship ask sent without a same-frame mission to
+    /// that rival, and never withheld by the refused-order rule. See
+    /// `advanced/tribute_and_friendship_land.rs`. Off by default.
+    tribute_and_friendship_land: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -12378,6 +12383,9 @@ mod sweden_builds_open_air_museums;
 /// `advanced/trade_district_follows_the_campus.rs`.
 mod trade_district_follows_the_campus;
 mod trader_fills_the_idle_route;
+/// `tribute-and-friendship-land`: see
+/// `advanced/tribute_and_friendship_land.rs`.
+mod tribute_and_friendship_land;
 /// `tribute-buys-the-friendship`: see
 /// `advanced/tribute_buys_the_friendship.rs`.
 mod tribute_buys_the_friendship;
