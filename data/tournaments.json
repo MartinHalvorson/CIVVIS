@@ -4,8 +4,9 @@
     "Each runs from its first game (`start`, a run tag; every game with a later tag",
     "that matches `match` counts) in series of `series_size` finished games, read off",
     "the ledger's results.jsonl at publish time. A game's best run counts once; a",
-    "An optional `end` (a run tag) closes a definition: only games whose tag sorts before it count.",
     "launch that never reached a board (outcome unfinished) is not a game.",
+    "An optional `end` (a run tag) closes a definition: only games whose tag sorts before it count.",
+    "An optional `note` is shown in the table's Notes column on every series of its definition.",
     "Operator /goal 2026-11-19 ~18:35Z: repeated 10-game series against Lv 8 Deity AI,",
     "6P Continents; conditions Lv 8 6P Continents Online.",
     "Operator 2026-11-19 ~21:20Z: \"Turn the ongoing tournament into a 100 game tournament\": Tournament 1 stays the",
@@ -13,7 +14,11 @@
     "Operator ~21:30Z: \"actually lets just do 30 games for now, rather than 100\": series of 30.",
     "Operator ~22:45Z: \"we should randomly choose a civ. but then we should pursue our top strategy for winning, given the civ\" and",
     "\"lets restart the tournament with this in mind. best of 30 games\": Tournament 2 closes at civvis-20261119T223800Z (a series cut short by",
-    "its definition's `end` still gets an end date); Tournament 3 is a new 30-game series from there."
+    "its definition's `end` still gets an end date); Tournament 3 is a new 30-game series from there.",
+    "Operator 2026-11-20 ~01:40Z: \"tournament 2 was scraped. (can add a notes col). both civs and strategies were being",
+    "chosen at random (random strat among the top ~5 or so I think). but what should be done is picking a civ at random",
+    "and then picking our best strategy for the civ. should be fixed in tournament 3. unsure if tournament 1 is affected",
+    "(probably is).\": the `note` on each definition."
   ],
   "tournaments": [
     {
@@ -22,7 +27,8 @@
       "start": "civvis-20261119T184500Z",
       "series_size": 10,
       "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"},
-      "end": "civvis-20261119T204058Z"
+      "end": "civvis-20261119T204058Z",
+      "note": "Probably affected like Tournament 2: civ and strategy likely both picked at random (unconfirmed)."
     },
     {
       "name": "Lv 8 Deity 30-game series",
@@ -30,14 +36,16 @@
       "start": "civvis-20261119T204058Z",
       "series_size": 30,
       "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"},
-      "end": "civvis-20261119T223800Z"
+      "end": "civvis-20261119T223800Z",
+      "note": "Scrapped: civ and strategy were both picked at random (a strategy from roughly our top 5), not a random civ playing our best strategy for it."
     },
     {
       "name": "Lv 8 Deity best of 30, best strategy per civ",
       "conditions": "Lv 8 6P Continents Online",
       "start": "civvis-20261119T223800Z",
       "series_size": 30,
-      "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"}
+      "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"},
+      "note": "A random civ playing our best strategy for that civ (the fix for Tournament 2)."
     }
   ]
 }

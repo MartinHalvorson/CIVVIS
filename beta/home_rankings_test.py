@@ -367,6 +367,8 @@ class HomeRankings(unittest.TestCase):
             'shown = show("rank-strategies", rows, note) || shown;',
             'if (shown || toursShown) document.getElementById("rankings").hidden = false;',
             "const tours = data.tournaments;",
+            '<th scope="col">Conditions</th><th scope="col">Notes</th>',
+            'el("td", "is-note", t.note || "")',
         ):
             self.assertIn(line, LANDING)
         # Every game behind the table is one click away, on the branch the
@@ -414,6 +416,7 @@ class HomeRankings(unittest.TestCase):
         self.assertEqual(series[1]["end"], "2026-11-19 20:05Z")
         self.assertIsNone(series[0]["end"])                    # a series still being played
         self.assertEqual(series[0]["conditions"], "Lv 8 6P Continents Online")
+        self.assertEqual([s["note"] for s in series], ["", ""])  # no note, an empty Notes cell
         self.assertIsNone(home_rankings.tournament_series([], [spec]))
 
     def test_an_end_closes_a_definition_and_the_next_one_counts_on(self):
@@ -422,7 +425,8 @@ class HomeRankings(unittest.TestCase):
         # starts, and the ids run on across both.
         match = {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"}
         tens = {"name": "tens", "conditions": "c", "start": "civvis-20261119T180000Z",
-                "end": "civvis-20261119T200000Z", "series_size": 2, "match": match}
+                "end": "civvis-20261119T200000Z", "series_size": 2, "match": match,
+                "note": "Scrapped: random civ, random strategy."}
         hundreds = {"name": "hundreds", "conditions": "c", "start": "civvis-20261119T200000Z",
                     "series_size": 5, "match": match}
         on = {"players": 6, "map": "Continents.lua"}
@@ -435,6 +439,10 @@ class HomeRankings(unittest.TestCase):
                          [(3, "hundreds", 3, 5, 1, 2, True), (2, "tens", 1, 2, 0, 1, False), (1, "tens", 2, 2, 1, 1, False)])
         # The short series the `end` closed has an end date: its last game's.
         self.assertEqual(series[1]["end"], "2026-11-19 19:05Z")
+        # Operator 2026-11-20: "tournament 2 was scraped. (can add a notes
+        # col)": a definition's note rides on every one of its series.
+        self.assertEqual([s["note"] for s in series], ["", "Scrapped: random civ, random strategy.",
+                                                        "Scrapped: random civ, random strategy."])
 
     def test_the_tournament_definitions_are_committed_and_read(self):
         specs = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))["tournaments"]
@@ -446,6 +454,14 @@ class HomeRankings(unittest.TestCase):
                 self.assertGreater(spec["end"], spec["start"])
             self.assertGreater(spec["series_size"], 0)
             self.assertTrue(spec["conditions"])
+            if "note" in spec:
+                self.assertIsInstance(spec["note"], str)
+                self.assertTrue(spec["note"])
+        # Operator 2026-11-20: Tournament 2 (the 30-game series closed at
+        # civvis-20261119T223800Z) was scrapped.
+        scrapped = [spec for spec in specs if spec.get("end") == "civvis-20261119T223800Z"]
+        self.assertEqual(len(scrapped), 1)
+        self.assertTrue(scrapped[0]["note"].startswith("Scrapped"))
 
     def test_a_sentence_cannot_close_the_slot(self):
         data = {"civs": None, "strategies": {"rows": [{"tilt": "</script><b>x"}]}}

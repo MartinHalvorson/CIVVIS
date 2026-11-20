@@ -234,6 +234,8 @@
   .rank-table td { padding: 4px 10px 4px 0; border-top: 1px solid var(--border); color: var(--text); white-space: nowrap; }
   .rank-table td.is-record { color: #fff; font-weight: 700; }
   .rank-table td.is-open { color: var(--muted); }
+  /* A note is a sentence: it wraps, where every other cell holds its line. */
+  .rank-table td.is-note { min-width: 16em; color: var(--muted); font-size: 12px; line-height: 1.45; white-space: normal; }
 </style>
 </head>
 <body>
@@ -304,7 +306,7 @@
         <h2 class="rank-title" id="rank-tournaments-title">Tournaments</h2>
         <p class="rank-sub">Our AI in series of verification games against Civilization VI&#8217;s own AI.</p>
         <table class="rank-table">
-          <thead><tr><th scope="col">Tournament</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Games</th><th scope="col">Record</th><th scope="col">Conditions</th></tr></thead>
+          <thead><tr><th scope="col">Tournament</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Games</th><th scope="col">Record</th><th scope="col">Conditions</th><th scope="col">Notes</th></tr></thead>
           <tbody></tbody>
         </table>
         <p class="rank-note">
@@ -441,7 +443,8 @@
           el("td", t.end ? "" : "is-open", t.end || "in progress"),
           el("td", "", t.games + " / " + t.size),
           el("td", "is-record", t.wins + "\u2013" + t.losses),
-          el("td", "", t.conditions || ""));
+          el("td", "", t.conditions || ""),
+          el("td", "is-note", t.note || ""));
         body.append(tr);
       }
       toursCard.querySelector("[data-rank-note]").textContent =
