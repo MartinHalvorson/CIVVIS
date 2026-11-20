@@ -1541,6 +1541,13 @@ struct Row {
     /// ladder reads. Only `civ6_trajectory_fidelity.py` consumes it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cities_at_game_turn_60: Option<usize>,
+    /// The game turn this seat founded (or took) its second city, and its
+    /// third: the turn before the first turn it began holding that many.
+    /// `None` when it never did, and in files written before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    city_two_turn: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    city_three_turn: Option<u32>,
     /// Techs at RAW game turn `LIVE_PACE_GAME_TURN`, the mark the live ladder
     /// reads. Only `civ6_trajectory_fidelity.py` consumes it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2775,6 +2782,24 @@ fn field_seat(target: VictoryTarget, lane_genes: &[String]) -> AdvancedAi {
 /// `--journal`: append every thought after `cursor` on the strategy, war and
 /// diplomacy topics, at Decision depth or above, as `t<turn> p<player>
 /// <topic> <headline> | <detail>`. Returns the cursor to ask with next.
+/// Record, per seat, the turn it founded (or took) its second and its third
+/// city. `counts` are the seats' cities at the START of game turn `turn`, as
+/// `run_game_observed` reads them, so a count first reached now was reached
+/// during the turn before. Each turn is kept once, the first time.
+fn note_city_milestones(
+    milestones: &mut [[Option<u32>; 2]],
+    counts: impl Iterator<Item = usize>,
+    turn: u32,
+) {
+    for (marks, count) in milestones.iter_mut().zip(counts) {
+        for (mark, needed) in marks.iter_mut().zip([2, 3]) {
+            if mark.is_none() && count >= needed {
+                *mark = Some(turn.saturating_sub(1));
+            }
+        }
+    }
+}
+
 fn drain_journal(journal: &Journal, cursor: u64, lines: &mut Vec<String>) -> u64 {
     let delta = journal.since(cursor);
     for thought in delta.thoughts {
@@ -2998,6 +3023,9 @@ fn play_game(
     // fidelity ledger. See `LIVE_BAND_GAME_TURN`.
     let mut cities_at_live_band: Option<Vec<usize>> = None;
     let mut techs_at_live_pace: Option<Vec<usize>> = None;
+    // The turns each seat founded its second and third city. See
+    // `note_city_milestones`.
+    let mut city_milestones: Vec<[Option<u32>; 2]> = vec![[None; 2]; world.players.len()];
     let mut trajectories = vec![Vec::new(); world.players.len()];
     let mut traces: Vec<Vec<TraceSample>> = vec![Vec::new(); world.players.len()];
     // ⭐ The edge ledger's marks (`edge_ledger::MARKS`), on this game's clock.
@@ -3116,6 +3144,11 @@ fn play_game(
         if techs_at_live_pace.is_none() && g.turn >= LIVE_PACE_GAME_TURN {
             techs_at_live_pace = Some(g.players.iter().map(|p| p.techs.len()).collect());
         }
+        note_city_milestones(
+            &mut city_milestones,
+            g.players.iter().map(|p| g.player_city_ids(p.id).len()),
+            g.turn,
+        );
     };
     let mut rival_war_turns: Vec<Vec<u32>> = vec![Vec::new(); world.players.len()];
     // ⭐ `--rival-host-tactics` / `--chair-tactics-census`: the chairs play
@@ -3250,6 +3283,7 @@ fn play_game(
             // reached it, and a fallback here would compare a finished game
             // with an unfinished one.
             row.cities_at_game_turn_60 = cities_at_live_band.as_ref().map(|counts| counts[seat]);
+            [row.city_two_turn, row.city_three_turn] = city_milestones[seat];
             row.techs_at_game_turn_150 = techs_at_live_pace.as_ref().map(|counts| counts[seat]);
             row.districts = Some(
                 world
@@ -3466,6 +3500,8 @@ fn row_for_seat(
         techs_150: None,
         cities_60: None,
         cities_at_game_turn_60: None,
+        city_two_turn: None,
+        city_three_turn: None,
         techs_at_game_turn_150: None,
         districts: None,
         specialty_districts: None,
@@ -8295,6 +8331,8 @@ mod tests {
             techs_150: None,
             cities_60: None,
             cities_at_game_turn_60: None,
+            city_two_turn: None,
+            city_three_turn: None,
             techs_at_game_turn_150: None,
             districts: None,
             specialty_districts: None,
@@ -8833,6 +8871,41 @@ mod tests {
         assert!(
             estimate_costs(&header, &rows).is_empty(),
             "secs are 0.0 in test rows"
+        );
+    }
+
+    /// The second and third city are each noted once, on the turn before the
+    /// first start of turn that counts them; a seat that never reaches the
+    /// count keeps `None`, and a row without the marks writes neither key.
+    #[test]
+    fn city_milestones_mark_the_founding_turns_once() {
+        let mut marks = vec![[None; 2]; 3];
+        for (turn, counts) in [
+            (1, [1, 0, 1]),
+            (12, [2, 1, 1]),
+            (20, [1, 1, 3]),
+            (31, [3, 1, 3]),
+        ] {
+            note_city_milestones(&mut marks, counts.into_iter(), turn);
+        }
+        assert_eq!(
+            marks[0],
+            [Some(11), Some(30)],
+            "a lost city does not reset the mark"
+        );
+        assert_eq!(marks[1], [None, None]);
+        assert_eq!(marks[2], [Some(19), Some(19)], "two cities in one turn");
+        let mut row = test_row(0, 0, "10", true);
+        let text = serde_json::to_string(&row).unwrap();
+        assert!(
+            !text.contains("city_two_turn") && !text.contains("city_three_turn"),
+            "{text}"
+        );
+        [row.city_two_turn, row.city_three_turn] = marks[0];
+        let back: Row = serde_json::from_str(&serde_json::to_string(&row).unwrap()).unwrap();
+        assert_eq!(
+            (back.city_two_turn, back.city_three_turn),
+            (Some(11), Some(30))
         );
     }
 
