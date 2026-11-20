@@ -12945,8 +12945,16 @@ CivvisTrade.abandon = function(subject, why)
 	-- until the rival speaks or `DealAnswerHoldSeconds` pass. See
 	-- `CivvisTrade.holdsEndTurn`.
 	if session.sent and why == "session_closed" then
+		-- `UnansweredProposalWithdraw`: a hold this replaces is never released,
+		-- so its rival's withdrawal is queued here (see `withdrawLater`).
+		local replaced = trade.turnHold;
+		if replaced ~= nil and replaced.target ~= subject then
+			trade.withdrawLater(replaced, "replaced");
+		end
+		-- What went out rides on the hold, for the withdrawal's record.
 		trade.turnHold = { turn = turn, target = subject,
-			at = CivvisClock.now() };
+			at = CivvisClock.now(), kind = session.kind, action = session.action,
+			session = session.sessionID };
 		emit("deal_turn_hold", { turn = turn, target = subject, phase = "held",
 			seconds = tonumber(cfg.DealAnswerHoldSeconds) or 30 });
 	end
@@ -13244,6 +13252,8 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		trade.turnHold = nil;
 		emit("deal_turn_hold", { turn = hold.turn, target = hold.target,
 			phase = "released", why = "rival_spoke" });
+		-- Not from inside this dispatch: the end turn's next check withdraws.
+		trade.withdrawLater(hold, "rival_spoke");
 	end
 	local session = trade.sessions[other];
 	if session == nil then return; end
@@ -26240,6 +26250,14 @@ CivvisQueue.checkAiPhaseStall = function()
 		end
 		overflow = ledger.overflow;
 	end);
+	-- What we and the engine still hold toward each player whose turn hangs
+	-- (`CivvisTrade.dealState`: pending deal, open session and its opener,
+	-- working-deal items, our own session). The 2026-11-20 stalls on an
+	-- unanswered ask showed only `open_sessions: []`, `queued: false`.
+	local dealState = {};
+	for _, p in ipairs(active) do
+		if p ~= pid then dealState[#dealState + 1] = CivvisTrade.dealState(pid, p, nil); end
+	end
 	emit("ai_phase_stall", {
 		turn = turn, waited = math.floor(waited * 10 + 0.5) / 10,
 		held_locks = held, lock_overflow = overflow,
@@ -26247,6 +26265,7 @@ CivvisQueue.checkAiPhaseStall = function()
 		processing = try(function() return UI.IsProcessingMessages(); end, nil),
 		active_players = active, open_sessions = sessions, visible = visible,
 		queued = try(function() return DiplomacyManager.HasQueuedSession(pid); end, nil),
+		deal_state = dealState,
 	});
 	-- ★★ LOAD-BEARING: THIS RECORD DELIVERS THE STALL. The game writes its
 	-- latest `Automation.Log` record only when the next one is logged, and in
@@ -26471,19 +26490,186 @@ CivvisTrade.holdsEndTurn = function(turn)
 		end
 	end
 	local hold = CivvisTrade.turnHold;
-	if hold == nil then return false; end
+	-- Off (the default), `withdrawUnanswered` has nothing queued: false.
+	if hold == nil then return CivvisTrade.withdrawUnanswered(turn); end
 	local now = CivvisClock.now();
 	local limit = tonumber(cfg.DealAnswerHoldSeconds) or 30;
 	if hold.turn ~= turn or type(now) ~= "number" or type(hold.at) ~= "number"
 			or now < hold.at or now - hold.at >= limit then
 		CivvisTrade.turnHold = nil;
+		local why = hold.turn ~= turn and "turn_over" or "expired";
 		emit("deal_turn_hold", { turn = hold.turn, target = hold.target,
-			phase = "released", why = hold.turn ~= turn and "turn_over" or "expired" });
-		return false;
+			phase = "released", why = why });
+		CivvisTrade.withdrawLater(hold, why);
+		return CivvisTrade.withdrawUnanswered(turn);
 	end
 	if not hold.reported then
 		hold.reported = true;
 		emit("deal_turn_hold", { turn = turn, target = hold.target, phase = "holding" });
+	end
+	return true;
+end;
+
+-- What the engine and the mod hold toward one rival, read only: the stall
+-- record (`ai_phase_stall.deal_state`) and the withdrawal's before/after.
+-- `pending` is `DealManager.HasPendingDeal` (a deal still in the engine's
+-- hands: the shipped deal view enables neither Accept nor an AI deal's Refuse
+-- while it is true, DLC/Expansion2/UI/Replacements/DiplomacyDealView.lua:447,
+-- :601); `session`/`initiator` the session open with that rival and who
+-- opened it; `outgoing`/`incoming` the items on each working deal;
+-- `asked_open` whether the session the ask went out in is still open; `ours`
+-- the mod's own session to that rival, if it has one.
+CivvisTrade.dealState = function(pid, other, askedSession)
+	local open = try(function() return DiplomacyManager.FindOpenSessionID(pid, other); end, nil);
+	if type(open) ~= "number" then open = nil; end
+	local state = { with = other, session = open, asked_session = askedSession,
+		pending = try(function() return DealManager.HasPendingDeal(pid, other); end, nil) };
+	if open ~= nil then
+		local info = try(function() return DiplomacyManager.GetSessionInfo(open); end, nil);
+		if type(info) == "table" then state.initiator = info.FromPlayer; end
+	end
+	state.outgoing = try(function()
+		local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, other);
+		return deal ~= nil and deal:GetItemCount() or 0;
+	end, nil);
+	state.incoming = try(function()
+		local deal = DealManager.GetWorkingDeal(DealDirection.INCOMING, pid, other);
+		return deal ~= nil and deal:GetItemCount() or 0;
+	end, nil);
+	if type(askedSession) == "number" then
+		state.asked_open = try(function() return DiplomacyManager.IsSessionIDOpen(askedSession); end, nil);
+	end
+	local mine = CivvisTrade.sessions[other];
+	if mine ~= nil then
+		state.ours, state.ours_sent, state.ours_session = mine.kind or "?", mine.sent == true, mine.sessionID;
+	end
+	return state;
+end;
+
+-- ★★ OPT-IN (`UnansweredProposalWithdraw`, off unless set): A PROPOSAL CLOSED
+-- UNANSWERED IS WITHDRAWN BEFORE THE TURN ENDS. Live 2026-11-20 04:00-08:20Z,
+-- three asks we sent closed `unanswered`/`session_closed` and all three
+-- rivals' turns hung 30 s after our end turn (`ai_phase_stall`, no open
+-- session, nothing queued): civvis-20261120T053354Z t130 (alliance to 1),
+-- 063234Z t121 (peace to 5), 081130Z t94 (EQUALIZE luxury ask to 4). Each
+-- one's native-freeze-logs/DiplomacyManager.csv ends on a statement of that
+-- rival's to us "Adding to pending", never processed: in the first two its
+-- counter ("MAKE_DEAL, POSITIVE, POSITIVE") right after an "AI_REFUSE_DEAL"
+-- the engine processed and no handler of ours recorded (405 of the 407
+-- deferred proposals of 11-18..20 logged the answer; these two did not); in
+-- the third a second "MAKE_DEAL, NONE, INITIAL" request after the rival's
+-- verdict, which the closer had answered CHOICE_EXIT. (All three EQUALIZE
+-- `session_closed` asks of those days, 1 hung and 2 not, shared a frame with
+-- a session-less TRIBUTE gift to the same rival.) Every sent ask that did
+-- not hang ended with the rival's answer in our hands or our own deal
+-- action after it (`counter_answered` sends REJECTED, 85 of them, none
+-- hung); `session_closed` is the one close that sends nothing after the
+-- question. `unanswered` with why `expired` never hung (13 since 04:00Z),
+-- but every one is `sent = false`: no question went out, so it compares
+-- nothing. So when such an ask's hold releases on its own turn
+-- (`rival_spoke`, `expired`, or `replaced` by another rival's hold), the end
+-- turn's next check withdraws it, as the shipped deal screen ends a deal the
+-- turn must not wait on:
+--  - REJECTED, its forced close of an AI's deal ("Forcing the close,
+--    usually because the turn timer expired", DiplomacyDealView.lua:608-609)
+--    and the `counter_answered` step: it answers whatever verdict or counter
+--    the rival still holds for us. NOT while the engine reports a pending
+--    deal (`HasPendingDeal`, true live in the frame an accepted deal closes):
+--    no arm here sends into one (`deal_proposal_wait engine_pending`,
+--    `*_host_pending`), and the record says `pending_left`;
+--  - a session still open with that rival, or the one the ask went out in,
+--    is closed (`DiplomacyManager.CloseSession`, :610, `CivvisTrade.close`);
+--  - the outgoing working deal is cleared once nothing is pending, the
+--    shipped guard (Base/Assets/UI/DiplomacyActionView.lua:438-439) and the
+--    `expired` path's own cleanup.
+-- The end turn then waits `UnansweredWithdrawSettleSeconds` (3, the counter
+-- hold's bound) so a statement the withdrawal provokes lands while our turn
+-- is open, the hold's own reason for being. `unanswered_withdraw` records the
+-- engine's state toward the rival before and after (`dealState`). Never
+-- touched: an answered ask (closed, not abandoned: it holds no turn), an
+-- `expired` abandon (nothing sent, no hold), a hold whose turn is over
+-- (`turn_over`: the rival's phase has run) and a rival we have opened a new
+-- session to since. Which call releases a rival is what turning it on
+-- measures. Unset, nothing here runs and the turn ends as before.
+CivvisTrade.WITHDRAW_SETTLE_SECONDS = 3;
+CivvisTrade.withdrawLater = function(hold, why)
+	if cfg.UnansweredProposalWithdraw ~= true or hold == nil then return; end
+	hold.released = why;
+	local due = CivvisTrade.withdrawDue or {};
+	due[#due + 1] = hold;
+	CivvisTrade.withdrawDue = due;
+end;
+CivvisTrade.withdraw = function(hold, turn)
+	local trade = CivvisTrade;
+	local subject = hold.target;
+	-- `ask`, not `kind`: `emit` writes the row's own kind there.
+	local row = { turn = turn, target = subject, ask = hold.kind, action = hold.action,
+		session = hold.session or -1, released = hold.released, asked_turn = hold.turn };
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if hold.turn ~= turn then
+		row.skipped = "turn_over";
+	elseif pid == nil or pid < 0 then
+		row.skipped = "no_local_player";
+	elseif trade.sessions[subject] ~= nil then
+		row.skipped = "new_session";
+	end
+	if row.skipped ~= nil then
+		row.phase = "skipped";
+		emit("unanswered_withdraw", row);
+		return false;
+	end
+	local before = trade.dealState(pid, subject, hold.session);
+	local calls = {};
+	local function call(name, fn)
+		calls[#calls + 1] = CivvisK.attempt(fn) and name or (name .. "_threw");
+	end
+	if before.pending == true then
+		calls[#calls + 1] = "pending_left";
+	else
+		call("rejected", function()
+			DealManager.SendWorkingDeal(DealProposalAction.REJECTED, pid, subject);
+		end);
+	end
+	if before.session ~= nil then
+		call("closed_session", function() DiplomacyManager.CloseSession(before.session); end);
+	end
+	if before.asked_open == true and hold.session ~= before.session then
+		call("closed_asked", function() DiplomacyManager.CloseSession(hold.session); end);
+	end
+	if try(function() return DealManager.HasPendingDeal(pid, subject); end, nil) == false then
+		call("cleared", function()
+			DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
+		end);
+	end
+	row.phase, row.calls, row.before = "withdrawn", table.concat(calls, ","), before;
+	row.after = trade.dealState(pid, subject, hold.session);
+	row.settle = tonumber(cfg.UnansweredWithdrawSettleSeconds) or trade.WITHDRAW_SETTLE_SECONDS;
+	emit("unanswered_withdraw", row);
+	return true;
+end;
+-- Called from `holdsEndTurn` wherever the deal hold no longer holds: runs
+-- the queued withdrawals, then holds the end turn through the settle window.
+-- Nothing queued and no window (always, with the arm off): false.
+CivvisTrade.withdrawUnanswered = function(turn)
+	local trade = CivvisTrade;
+	local due = trade.withdrawDue;
+	if due ~= nil then
+		trade.withdrawDue = nil;
+		for _, hold in ipairs(due) do
+			if trade.withdraw(hold, turn) then
+				trade.withdrawSettle = { turn = turn, at = CivvisClock.now() };
+			end
+		end
+	end
+	local settle = trade.withdrawSettle;
+	if settle == nil then return false; end
+	local now = CivvisClock.now();
+	local limit = tonumber(cfg.UnansweredWithdrawSettleSeconds) or trade.WITHDRAW_SETTLE_SECONDS;
+	if limit ~= limit then limit = trade.WITHDRAW_SETTLE_SECONDS; end
+	if settle.turn ~= turn or type(now) ~= "number" or type(settle.at) ~= "number"
+			or now < settle.at or now - settle.at >= limit then
+		trade.withdrawSettle = nil;
+		return false;
 	end
 	return true;
 end;
@@ -29050,7 +29236,8 @@ function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false,
 		strategic_quote_proposals = 4,
 		strategic_cash_ceiling_bid = cfg.StrategicCashCeilingBid == true,
-		luxury_quote_proposals = cfg.LuxuryQuoteProposals == true });
+		luxury_quote_proposals = cfg.LuxuryQuoteProposals == true,
+		unanswered_proposal_withdraw = cfg.UnansweredProposalWithdraw == true });
 	-- RECORD-ONLY. `deal_response` records the rival's verdict as the
 	-- engine's DealProposalAction NUMBER, and no Lua source names the values.
 	-- Over 30 live runs the asked answers split action 1 (closable when under

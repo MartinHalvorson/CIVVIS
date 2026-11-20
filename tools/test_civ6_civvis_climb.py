@@ -2989,6 +2989,30 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             self.assertIs(climb.luxury_quote_proposals_mode(
                 None, {"CIVVIS_LUXURY_QUOTE_PROPOSALS": "on"}, missing), True)
 
+    def test_withdrawing_an_unanswered_proposal_is_opt_in_and_reaches_the_play_command(self):
+        import tempfile
+        base = climb.play_command(self._play_args(), "t",
+                                  Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertNotIn("--unanswered-proposal-withdraw", base)
+        armed = climb.play_command(self._play_args(unanswered_proposal_withdraw=True), "t",
+                                   Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertEqual([word for word in armed if word != "--unanswered-proposal-withdraw"],
+                         base)
+        self.assertEqual(armed.count("--unanswered-proposal-withdraw"), 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            policy = Path(tmp) / "policy"
+            missing = Path(tmp) / "absent"
+            self.assertIs(climb.unanswered_proposal_withdraw_mode(None, {}, missing), False)
+            policy.write_text("CIVVIS_LUXURY_QUOTE_PROPOSALS=1\n")
+            self.assertIs(climb.unanswered_proposal_withdraw_mode(None, {}, policy), False)
+            policy.write_text("CIVVIS_UNANSWERED_PROPOSAL_WITHDRAW=1  # trial\n")
+            self.assertIs(climb.unanswered_proposal_withdraw_mode(None, {}, policy), True)
+            self.assertIs(climb.unanswered_proposal_withdraw_mode(False, {}, policy), False)
+            self.assertIs(climb.unanswered_proposal_withdraw_mode(
+                None, {"CIVVIS_UNANSWERED_PROPOSAL_WITHDRAW": "off"}, policy), False)
+            self.assertIs(climb.unanswered_proposal_withdraw_mode(
+                None, {"CIVVIS_UNANSWERED_PROPOSAL_WITHDRAW": "on"}, missing), True)
+
     def test_the_leader_score_line_reaches_the_play_command_only_when_set(self):
         """Legacy launchers retain their argv shape; live play ignores it and
         defaults to the full-game policy when the option is absent."""

@@ -2290,6 +2290,8 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
         + (["--deal-ask-on-tick"] if getattr(args, "deal_ask_on_tick", False) else [])
         + (["--deal-counter-refuse"] if getattr(args, "deal_counter_refuse", False) else [])
         + (["--luxury-quote-proposals"] if getattr(args, "luxury_quote_proposals", False) else [])
+        + (["--unanswered-proposal-withdraw"]
+           if getattr(args, "unanswered_proposal_withdraw", False) else [])
         + [word for player, last_turn in sorted((quarantine or {}).items())
            for word in ("--deal-session-quarantine", f"{player}:{last_turn}")]
         + (["--no-counter-resolutions"] if args.no_counter_resolutions else [])
@@ -2799,6 +2801,22 @@ def luxury_quote_proposals_mode(requested: bool | None, environ=None,
     `deal_closed` with a `RESOURCES:` want; `loaded.luxury_quote_proposals`).
     """
     return policy_switch("CIVVIS_LUXURY_QUOTE_PROPOSALS", requested, environ, path)
+
+
+def unanswered_proposal_withdraw_mode(requested: bool | None, environ=None,
+                                      path: Path | None = None) -> bool:
+    """Whether an ask we sent whose session closed unanswered is withdrawn
+    before the turn ends (`civ6_play.py --unanswered-proposal-withdraw`,
+    `CivvisTrade.withdraw`).
+
+    `--unanswered-proposal-withdraw` / `--no-unanswered-proposal-withdraw`,
+    else `CIVVIS_UNANSWERED_PROPOSAL_WITHDRAW` (see `policy_switch`). Opt-in:
+    all three `session_closed` asks of 2026-11-20 04:00-08:20Z hung that
+    rival's turn; whether the withdrawal releases it is what turning it on
+    measures (ledger: `unanswered_withdraw` with `before`/`after`, then no
+    `ai_phase_stall`; `loaded.unanswered_proposal_withdraw`).
+    """
+    return policy_switch("CIVVIS_UNANSWERED_PROPOSAL_WITHDRAW", requested, environ, path)
 
 
 def operator_victory_lane(requested: str, path: Path | None = None,
@@ -3333,6 +3351,15 @@ def main() -> int:
                     action="store_const", const=False,
                     help="walk away from a priced luxury refusal as before, whatever "
                          "the policy says")
+    ap.add_argument("--unanswered-proposal-withdraw", dest="unanswered_proposal_withdraw",
+                    action="store_const", const=True, default=None,
+                    help="forwarded to civ6_play.py: withdraw an ask whose session "
+                         "closed unanswered before the turn ends (default: "
+                         "CIVVIS_UNANSWERED_PROPOSAL_WITHDRAW, else off)")
+    ap.add_argument("--no-unanswered-proposal-withdraw", dest="unanswered_proposal_withdraw",
+                    action="store_const", const=False,
+                    help="end the turn after an unanswered ask's hold as before, "
+                         "whatever the policy says")
     ap.add_argument("--tile-export-every", type=int, default=4,
                     help="turns between map exports; the operator watches this against the game")
     ap.add_argument("--combat-frames", type=int, default=0,
@@ -3375,6 +3402,8 @@ def main() -> int:
     args.deal_ask_on_tick = deal_ask_on_tick_mode(args.deal_ask_on_tick)
     args.deal_counter_refuse = deal_counter_refuse_mode(args.deal_counter_refuse)
     args.luxury_quote_proposals = luxury_quote_proposals_mode(args.luxury_quote_proposals)
+    args.unanswered_proposal_withdraw = unanswered_proposal_withdraw_mode(
+        args.unanswered_proposal_withdraw)
     # The game's score clock: the speed's own limit unless `--max-turns` names
     # one, then the operator's per-batch cap over either. See TURN_CAP_FILE.
     args.max_turns = operator_turn_cap(
