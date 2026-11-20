@@ -859,6 +859,15 @@ impl WaterwayCharts {
                     });
             }
             if before.with(totals).can_chart() {
+                // ★★ REMEMBER A WATERWAY THAT CAN CHART ON ITS OWN. The walk
+                // stops at the first tile that proves it, so nothing used to
+                // be kept, and the next hull in the same ocean walked it all
+                // again. Totals only grow as a walk widens, so the part seen
+                // so far already licenses the whole component: mark what was
+                // reached (visited and queued) as one chartable component.
+                if totals.can_chart() {
+                    self.mark_chartable(totals, members, frontier.into_iter().map(|(_, i)| i));
+                }
                 return None;
             }
             for neighbor in g.nbrs(pos) {
@@ -866,6 +875,20 @@ impl WaterwayCharts {
                     continue;
                 }
                 if let Some(next) = g.map.tiles.index_of(neighbor) {
+                    // A finished component holds every navigable tile beside
+                    // it, so the only marked tile a fresh walk can reach is a
+                    // chartable part kept above: this water is that water.
+                    let known = self.component_of[next];
+                    if known != 0 && self.components[known as usize - 1].can_chart() {
+                        let known = known - 1;
+                        for index in members
+                            .into_iter()
+                            .chain(frontier.into_iter().map(|(_, i)| i))
+                        {
+                            self.component_of[index] = known + 1;
+                        }
+                        return None;
+                    }
                     if self.queued_by[next] != walk {
                         self.queued_by[next] = walk;
                         frontier.push_back((neighbor, next));
@@ -879,5 +902,19 @@ impl WaterwayCharts {
             self.component_of[member] = id + 1;
         }
         Some(id)
+    }
+
+    /// Keep a partly walked waterway whose `totals` can already chart.
+    fn mark_chartable(
+        &mut self,
+        totals: WaterwayTotals,
+        members: Vec<usize>,
+        queued: impl Iterator<Item = usize>,
+    ) {
+        let id = self.components.len() as u32;
+        self.components.push(totals);
+        for index in members.into_iter().chain(queued) {
+            self.component_of[index] = id + 1;
+        }
     }
 }
