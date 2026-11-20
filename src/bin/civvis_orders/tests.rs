@@ -11427,3 +11427,166 @@ fn neighbour_tribute_warms_the_nearest_stronger_cold_neighbour() {
         Some("neighbour_tribute_hold:no_neighbour")
     );
 }
+
+/// `tribute-and-friendship-land`: both tributes price the opinion gap at the
+/// world era's rate, rounded up to whole tens, and still pay whole or not at
+/// all; at ten Gold a point they pay exactly what they paid before.
+#[test]
+fn tribute_and_friendship_land_prices_the_gift_by_the_era() {
+    let reason = |score: f64| civvis::mirror::StateOpinionModifier {
+        text: "Unknown Reason".to_string(),
+        score,
+    };
+    let city = |x: i32, y: i32| StateCity {
+        x,
+        y,
+        ..StateCity::default()
+    };
+    // Turn 13: player 3's cadence turn; it is the strongest at peace and
+    // stands six tiles from our capital, at -1 (eight points from +7).
+    let mut state = StateSnapshot {
+        turn: 13,
+        gold: 200,
+        gold_per_turn: Some(5.0),
+        military: 100.0,
+        cities: vec![city(10, 10)],
+        rivals: vec![StateRival {
+            player: 3,
+            military: 500.0,
+            diplomatic_state: Some("DIPLO_STATE_UNFRIENDLY".to_string()),
+            opinion_modifiers: Some(vec![reason(-1.0)]),
+            cities: vec![city(16, 10)],
+            ..StateRival::default()
+        }],
+        ..StateSnapshot::default()
+    };
+    let paid = |state: &StateSnapshot, gold_per_point: f64| {
+        let mut orders = Vec::new();
+        let hold = append_tribute_order_priced(state, &mut orders, true, gold_per_point);
+        (hold, orders.first().and_then(|order| order.pos))
+    };
+    let paid_neighbour = |state: &StateSnapshot, gold_per_point: f64| {
+        let mut orders = Vec::new();
+        let hold = append_neighbour_tribute_order_priced(state, &mut orders, gold_per_point);
+        (hold, orders.first().and_then(|order| order.pos))
+    };
+    assert_eq!(paid(&state, TRIBUTE_GOLD_PER_POINT), (None, Some((80, 0))));
+    assert_eq!(paid(&state, 17.0), (None, Some((140, 0))), "8 x 17 = 136");
+    assert_eq!(paid(&state, 15.0), (None, Some((120, 0))));
+    assert_eq!(paid(&state, 13.0), (None, Some((110, 0))), "8 x 13 = 104");
+    assert_eq!(paid(&state, 11.0), (None, Some((90, 0))), "8 x 11 = 88");
+    assert_eq!(
+        paid_neighbour(&state, TRIBUTE_GOLD_PER_POINT),
+        (None, Some((80, 0)))
+    );
+    assert_eq!(paid_neighbour(&state, 15.0), (None, Some((120, 0))));
+    // Whole or not at all: a treasury a Gold short waits.
+    state.gold = 119;
+    assert_eq!(paid(&state, 15.0), (Some("tribute_hold:treasury"), None));
+    assert_eq!(
+        paid_neighbour(&state, 15.0),
+        (Some("neighbour_tribute_hold:treasury"), None)
+    );
+    // The reach of one gift is still ten points, whatever they cost.
+    state.gold = 500;
+    state.rivals[0].opinion_modifiers = Some(vec![reason(-3.0)]);
+    assert_eq!(paid(&state, 17.0), (None, Some((170, 0))));
+    state.rivals[0].opinion_modifiers = Some(vec![reason(-4.0)]);
+    assert_eq!(
+        paid(&state, 17.0),
+        (Some("tribute_hold:out_of_reach"), None)
+    );
+    // A point short still sends at least the smallest gift.
+    state.rivals[0].opinion_modifiers = Some(vec![reason(6.0)]);
+    assert_eq!(
+        paid(&state, 11.0),
+        (None, Some((TRIBUTE_MIN_GOLD as i32, 0)))
+    );
+    assert_eq!(tribute_amount(3.0, 11.0), 40, "3 x 11 = 33");
+    assert_eq!(tribute_amount(2.5, 10.0), 30);
+}
+
+/// `tribute-and-friendship-land`: a delegation or embassy to a rival this
+/// frame asks for a friendship is dropped; one to any other rival stays.
+#[test]
+fn tribute_and_friendship_land_sends_the_friendship_ask_alone() {
+    let ask = |kind: &'static str, subject: i64, verb: &str| Order {
+        kind,
+        subject: Some(subject),
+        verb: Some(verb.to_string()),
+        pos: None,
+    };
+    let mut orders = vec![
+        ask("friendship", 4, "DECLARE_FRIEND"),
+        ask("delegation", 4, "DIPLOMATIC_DELEGATION"),
+        ask("delegation", 5, "DIPLOMATIC_DELEGATION"),
+        ask("sell", 4, "RESOURCE_IRON=1"),
+        ask("delegation", 4, "RESIDENT_EMBASSY"),
+    ];
+    assert_eq!(friendship_asks_alone(&mut orders), 2);
+    let left: Vec<(&str, Option<i64>)> = orders
+        .iter()
+        .map(|order| (order.kind, order.subject))
+        .collect();
+    assert_eq!(
+        left,
+        [
+            ("friendship", Some(4)),
+            ("delegation", Some(5)),
+            ("sell", Some(4))
+        ]
+    );
+    let mut orders = vec![ask("delegation", 4, "DIPLOMATIC_DELEGATION")];
+    assert_eq!(friendship_asks_alone(&mut orders), 0, "no ask, no drop");
+}
+
+/// `tribute-and-friendship-land`: a friendship order that has struck out is
+/// still sent when spared; every other struck order is withheld as before.
+#[test]
+fn tribute_and_friendship_land_spares_the_struck_friendship_ask() {
+    let issued = |kind: &str, verb: &str| IssuedOrder {
+        kind: kind.to_string(),
+        subject: Some(4),
+        verb: Some(verb.to_string()),
+        pos: None,
+    };
+    let friendship = issued("friendship", "DECLARE_FRIEND");
+    let denounce = issued("denounce", "DENOUNCE");
+    let mut refusals = HostOrderRefusals::default();
+    for turn in 51..51 + ORDER_REFUSAL_STRIKES {
+        let checks: Vec<OrderCheck> = [(&friendship, "not_friends"), (&denounce, "not_denounced")]
+            .into_iter()
+            .map(|(order, why)| OrderCheck {
+                order: order.clone(),
+                verdict: Verdict::Failed(why.to_string()),
+            })
+            .collect();
+        refusals.observe(&checks, turn);
+    }
+    let wire = |order: &IssuedOrder| Order {
+        kind: if order.kind == "friendship" {
+            "friendship"
+        } else {
+            "denounce"
+        },
+        subject: order.subject,
+        verb: order.verb.clone(),
+        pos: order.pos,
+    };
+    let state = StateSnapshot {
+        turn: 54,
+        ..StateSnapshot::default()
+    };
+    let orders = || vec![wire(&friendship), wire(&denounce)];
+    let (allowed, withheld, spared) =
+        withhold_refused_orders_sparing(orders(), &state, &mut refusals, |_| false);
+    assert!(allowed.is_empty(), "off: both struck orders are withheld");
+    assert_eq!((withheld.len(), spared), (2, 0));
+    let (allowed, withheld, spared) =
+        withhold_refused_orders_sparing(orders(), &state, &mut refusals, |order| {
+            order.kind == "friendship"
+        });
+    assert_eq!(allowed.len(), 1);
+    assert_eq!(allowed[0].kind, "friendship");
+    assert_eq!((withheld.len(), spared), (1, 1));
+}

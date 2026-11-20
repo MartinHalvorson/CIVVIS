@@ -657,6 +657,9 @@ impl AdvancedAi {
         /// Opt-in gene `threatened-capital-trains-its-shooters`; see
         /// `advanced/threatened_capital_trains_its_shooters.rs`.
         threatened_capital_trains_its_shooters => enable_threatened_capital_trains_its_shooters, disable_threatened_capital_trains_its_shooters;
+        /// Opt-in gene `tribute-and-friendship-land`; see
+        /// `advanced/tribute_and_friendship_land.rs`.
+        tribute_and_friendship_land => enable_tribute_and_friendship_land, disable_tribute_and_friendship_land;
     }
 
     toggles! {

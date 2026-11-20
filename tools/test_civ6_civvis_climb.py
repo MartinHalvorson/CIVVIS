@@ -3013,6 +3013,29 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             self.assertIs(climb.unanswered_proposal_withdraw_mode(
                 None, {"CIVVIS_UNANSWERED_PROPOSAL_WITHDRAW": "on"}, missing), True)
 
+    def test_joining_the_diplomatic_victory_winner_is_opt_in_and_reaches_the_play_command(self):
+        import tempfile
+        base = climb.play_command(self._play_args(), "t",
+                                  Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertNotIn("--dv-join-winner", base)
+        armed = climb.play_command(self._play_args(dv_join_winner=True), "t",
+                                   Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertEqual([word for word in armed if word != "--dv-join-winner"], base)
+        self.assertEqual(armed.count("--dv-join-winner"), 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            policy = Path(tmp) / "policy"
+            missing = Path(tmp) / "absent"
+            self.assertIs(climb.dv_join_winner_mode(None, {}, missing), False)
+            policy.write_text("CIVVIS_UNANSWERED_PROPOSAL_WITHDRAW=1\n")
+            self.assertIs(climb.dv_join_winner_mode(None, {}, policy), False)
+            policy.write_text("CIVVIS_DV_JOIN_WINNER=1  # trial\n")
+            self.assertIs(climb.dv_join_winner_mode(None, {}, policy), True)
+            self.assertIs(climb.dv_join_winner_mode(False, {}, policy), False)
+            self.assertIs(climb.dv_join_winner_mode(
+                None, {"CIVVIS_DV_JOIN_WINNER": "off"}, policy), False)
+            self.assertIs(climb.dv_join_winner_mode(
+                None, {"CIVVIS_DV_JOIN_WINNER": "on"}, missing), True)
+
     def test_the_leader_score_line_reaches_the_play_command_only_when_set(self):
         """Legacy launchers retain their argv shape; live play ignores it and
         defaults to the full-game policy when the option is absent."""

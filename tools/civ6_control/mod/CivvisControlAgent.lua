@@ -19383,7 +19383,10 @@ CivvisCongressChoiceContext = function(rtype, row, config, candidates, request)
 	for _, candidate in ipairs(type(candidates) == "table" and candidates or {}) do
 		rivals[#rivals + 1] = object(candidate);
 	end
+	-- See `CivvisDvPredict`: on the Diplomatic Victory row only.
+	local prediction = type(request.dv_prediction) == "table" and object(request.dv_prediction) or nil;
 	return {
+		dv_prediction = prediction,
 		schema = 1, turn = scalar(request.turn) and request.turn or nil, resolution = rtype,
 		native_resolution_type = scalar(row.Type) and row.Type or nil,
 		target_type = scalar(row.TargetType) and row.TargetType or nil,
@@ -20569,6 +20572,250 @@ CivvisRacerBraces = function(ourPoints, config, warned, passed)
 	end
 	return (tonumber(warned) or 0) > 0
 		and points >= (tonumber(config.DiploRacerBraceWarned) or 14);
+end
+
+-- ★★ WHO TAKES THE +2 THIS SESSION, READ FROM WHAT THE RIVALS SPENT ON IT.
+--
+-- Live Deity, 92 games from 2026-11-19 12:00Z to 11-20 11:20Z: our seat wins
+-- by Diplomatic Victory, and 26 losses ended at 17-19 points. A major gains a
+-- point for each resolution whose winning option AND target match its vote,
+-- and the Diplomatic Victory resolution's target gains +2 (A) or loses 2 (B).
+-- Every Firaxis AI votes A on itself, and option A goes to whoever bought the
+-- most self-votes; in about half of the sessions a rival took it on its own
+-- votes while we cast one B vote on someone else or lost an A claim by a few
+-- votes, and scored nothing. A on that rival was the point
+-- (civvis-20261119T233753Z t132: our 6 votes on player 3's A, 7 -> 9).
+--
+-- The rivals vote BEFORE our ballot: their `GetFavor()` at the ballot is
+-- already spent (1,370 of 1,382 rival readings under 50 Favor beside blocks
+-- of 5-18, one over 75), so the top-Favor rival named the winner in 48 of the
+-- 147 sessions a rival took option A. `GetFavorEnteringCongress()` is the balance the session
+-- started from (WorldCongressPopup.lua:466 prices its votes with it), and the
+-- difference is what each rival paid for its votes this session.
+--
+-- The votes a spend buys, at the session's prices: the most n whose price
+-- (`costs[n-1]`, the cumulative price of n votes, the first free) the spend
+-- covers. The host's table stops at what WE can afford, so past it the price
+-- follows the table's own ladder, costs[k] = costs[1] * k(k+1)/2 (Online 4,
+-- 12, 24 ...; Standard 10, 30, 60 ...). nil without a price for a second vote.
+-- Bare global: the main chunk is at the register cap.
+CivvisDvVotesForFavor = function(spent, costs)
+	spent = tonumber(spent);
+	local step = type(costs) == "table" and tonumber(costs[1]) or nil;
+	if spent == nil or spent < 0 or step == nil or step <= 0 then return nil; end
+	local n = 1;
+	while n < 99 and (tonumber(costs[n]) or step * n * (n + 1) / 2) <= spent do
+		n = n + 1;
+	end
+	return n;
+end
+
+-- Votes the rivals have already cast on this session's Diplomatic Victory
+-- resolution, if the host shows them before our ballot: `PlayerSelections` on
+-- the ballot's own row (the shipped popup never reads one there), else the
+-- review (`GetReview`, the "Last Results" tab) when its Diplomatic Victory
+-- entry carries rival selections and none of ours -- last session's review
+-- carries our vote, so a review without it would be this session's. Returns
+-- `{ [player] = { option, target, votes } }` or nil, the source, and for the
+-- record the review's Diplomatic Victory voters ("player:option:target:votes"),
+-- whether ours is among them, how many selections the ballot row carried and
+-- the row's field names. Bare global: the main chunk is at the register cap.
+CivvisDvCastSoFar = function(row, review, pid)
+	pid = tonumber(pid);
+	local function read(selections)
+		local cast, ours, count, words = nil, false, 0, {};
+		for _, sel in pairs(type(selections) == "table" and selections or {}) do
+			if type(sel) == "table" then
+				local who = tonumber(sel.PlayerID);
+				count = count + 1;
+				words[#words + 1] = tostring(who) .. ":" .. tostring(sel.OptionChosen) .. ":"
+					.. tostring(sel.ResolutionTarget) .. ":" .. tostring(sel.Votes);
+				if who == pid then
+					ours = true;
+				elseif who ~= nil then
+					cast = cast or {};
+					cast[who] = { option = tonumber(sel.OptionChosen),
+						target = tonumber(sel.ResolutionTarget), votes = tonumber(sel.Votes) or 0 };
+				end
+			end
+		end
+		table.sort(words);
+		return cast, ours, count, table.concat(words, " ");
+	end
+	local keys = {};
+	for key in pairs(type(row) == "table" and row or {}) do keys[#keys + 1] = tostring(key); end
+	table.sort(keys);
+	local cast, _, rowCount = read(type(row) == "table" and row.PlayerSelections or nil);
+	local entry = nil;
+	for i, r in pairs(type(review) == "table" and type(review.Resolutions) == "table"
+			and review.Resolutions or {}) do
+		local info = type(i) == "number" and type(r) == "table" and r.Type ~= nil
+			and GameInfo.Resolutions[r.Type] or nil;
+		if info ~= nil and tostring(info.ResolutionType) == "WC_RES_DIPLOVICTORY" then entry = r; end
+	end
+	local seen, ours, _, words = read(entry and entry.PlayerSelections or nil);
+	local source = cast ~= nil and "ballot" or nil;
+	if cast == nil and seen ~= nil and not ours then cast, source = seen, "review"; end
+	-- `entry and ours or nil` would turn a review without our vote into nil.
+	if entry == nil then ours = nil; end
+	return cast, source, words, ours, rowCount, table.concat(keys, ",");
+end
+
+-- The rival predicted to take option A's +2, and its block. With votes
+-- already cast (`CivvisDvCastSoFar`) the A blocks by target are exact. Else
+-- from each rival's Favor spent this session: `votes_max` is what the whole
+-- spend buys, an upper bound on its Diplomatic Victory block, and
+-- `votes_split` what it buys spread evenly over the session's resolutions on
+-- which rivals buy votes -- on the kinds in `ONE` below each rival cast one
+-- vote, all 1,256 of its votes on them in those 92 games (World Religion
+-- from the 78-game count above), while its Diplomatic Victory block was
+-- within 3 votes of its block on another bought resolution in 1,006 of 1,508
+-- pairs. The winner is the largest block; of
+-- rivals tied on it, one whose +2 stays under `DvJoinCeiling` (18) points and
+-- is not the leader the ballot would deny (from `DiploVictoryVoteFloor`, 12),
+-- then the fewest points: our vote decides a tie. Records the spend on each
+-- candidate (`favor_spent`, `predicted_votes_max`, `predicted_votes_split`,
+-- `cast_*`). Returns the prediction table (empty `winner` when nothing reads),
+-- which `wc_ballot_context.dv_prediction` records. Bare global: the main
+-- chunk is at the register cap.
+CivvisDvPredict = function(row, candidates, pid, costs, entries, claimFavor, maxVotes, config, review,
+		leader, leaderPoints)
+	config = type(config) == "table" and config or {};
+	pid = tonumber(pid);
+	local ONE = { WC_RES_URBAN_DEVELOPMENT = true, WC_RES_HERITAGE_ORG = true,
+		WC_RES_DEFORESTATION_TREATY = true, WC_RES_ARMS_CONTROL = true,
+		WC_RES_GLOBAL_ENERGY_TREATY = true, WC_RES_MILITARY_ADVISORY = true,
+		WC_RES_PUBLIC_RELATIONS = true, WC_RES_ESPIONAGE_PACT = true,
+		WC_RES_BORDER_CONTROL = true, WC_RES_SOVEREIGNTY = true, WC_RES_WORLD_RELIGION = true };
+	local multi = 0;
+	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
+		local rtype = type(entry) == "table" and entry.rtype or entry;
+		if not ONE[tostring(rtype)] then multi = multi + 1; end
+	end
+	if multi < 1 then multi = 1; end
+	local cast, source, reviewVoters, reviewOurs, rowCount, rowKeys = CivvisDvCastSoFar(row, review, pid);
+	local out = { multi_vote_resolutions = multi, review_voters = reviewVoters,
+		review_has_ours = reviewOurs, row_selections = rowCount, row_keys = rowKeys,
+		afford = CivvisCongressVoteBudget(claimFavor, costs, maxVotes),
+		armed = config.DvJoinWinner == true };
+	local blocks, split, points, a, b = {}, {}, {}, 0, 0;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		local id = type(c) == "table" and tonumber(c.id) or nil;
+		if id ~= nil and id ~= pid then
+			points[id] = tonumber(c.points) or 0;
+			local entering, now = tonumber(c.favor_entering), tonumber(c.favor);
+			if entering ~= nil and now ~= nil and entering >= now then
+				c.favor_spent = entering - now;
+				c.predicted_votes_max = CivvisDvVotesForFavor(c.favor_spent, costs);
+				c.predicted_votes_split = CivvisDvVotesForFavor(c.favor_spent / multi, costs);
+			end
+			local mine = cast ~= nil and cast[id] or nil;
+			if mine ~= nil then
+				c.cast_option, c.cast_target, c.cast_votes = mine.option, mine.target, mine.votes;
+			end
+			if cast == nil and c.predicted_votes_max ~= nil then
+				blocks[id], split[id], source = c.predicted_votes_max, c.predicted_votes_split, "spend";
+			end
+		end
+	end
+	for _, sel in pairs(cast or {}) do
+		if sel.option == 1 then
+			a = a + sel.votes;
+			if sel.target ~= nil and sel.target ~= pid then
+				blocks[sel.target] = (blocks[sel.target] or 0) + sel.votes;
+				split[sel.target] = blocks[sel.target];
+			end
+		else
+			b = b + sel.votes;
+		end
+	end
+	out.source = source;
+	out.rival_a, out.rival_b = cast ~= nil and a or nil, cast ~= nil and b or nil;
+	local top = nil;
+	for _, v in pairs(blocks) do if top == nil or v > top then top = v; end end
+	if top == nil then return out; end
+	-- A spend that bought no rival a vote names nobody: rivals bought votes
+	-- in 93% of their 1,382 recorded Diplomatic Victory votes, and an entering
+	-- balance that reads as the current one would otherwise predict a field of
+	-- one-vote blocks for any claim to outbid.
+	if source == "spend" and top < 2 then
+		out.votes_max, out.why = top, "no_spend";
+		return out;
+	end
+	local ceiling = tonumber(config.DvJoinCeiling) or 18;
+	local floor = tonumber(config.DiploVictoryVoteFloor) or 12;
+	local function eligible(id)
+		return (points[id] or 0) + 2 < ceiling
+			and not (id == tonumber(leader) and (tonumber(leaderPoints) or 0) >= floor);
+	end
+	local winner = nil;
+	for id, v in pairs(blocks) do
+		if v == top and (winner == nil
+			or (eligible(id) and not eligible(winner))
+			or (eligible(id) == eligible(winner) and ((points[id] or 0) < (points[winner] or 0)
+				or ((points[id] or 0) == (points[winner] or 0) and id < winner)))) then
+			winner = id;
+		end
+	end
+	local tied = 0;
+	for _, v in pairs(blocks) do if v == top then tied = tied + 1; end end
+	out.winner, out.winner_points, out.votes_max, out.votes_split = winner, points[winner], top, split[winner];
+	out.eligible, out.tied = eligible(winner), tied;
+	return out;
+end
+
+-- ★★ OPT-IN (`DvJoinWinner`, off unless set): VOTE WITH THE RIVAL THAT TAKES
+-- THE +2 WHEN WE CANNOT TAKE IT. Replayed over the 263 recorded Diplomatic
+-- Victory sessions of those 92 games that carry our vote and a rival A block,
+-- each rival's spend rebuilt from its recorded votes on every resolution of
+-- the session and the outcome re-run with our vote replaced: +1.6, +1.5, +1.0
+-- and +1.7 points a game for the games that ended on 19, 18, 17 and 14-16
+-- points, +1.0 in the wins, 5 sessions worse, and less Favor spent. With the
+-- rivals' votes read exactly (`source` "ballot" or "review") it is +1.4 to
+-- +3.3 a game and none worse. On the ballot of a seat racing the Congress
+-- (`CivvisCongressRacer`), after its own choice:
+--   * a bank (`afford`, the claim's own Favor) that beats `votes_max` claims A
+--     on us with `votes_max` + 1 + `DvJoinMargin` (1) votes at most: the claim
+--     wins whatever the rivals split ("outbid");
+--   * one that beats only `votes_split` -- or equals that estimate -- keeps an
+--     A claim the ballot already makes, and otherwise claims with the bank
+--     ("outbid");
+--   * else the free vote goes to A on the predicted winner and the Favor is
+--     kept ("join"), when the ballot offers it as a target and it is
+--     `eligible`.
+-- Untouched: `brace` (B on us when the rivals gang on us), `deny` (B with the
+-- bank on a leader we can stop), `redirect`, a leader on the gang threshold
+-- (`ganged`), a session the votes already cast give to option B, and a
+-- session with no prediction. Returns the ballot's option, selection, votes
+-- and mode, changed or not, and records `choice` on the prediction.
+CivvisDvJoinWinner = function(prediction, targets, pid, option, selection, votes, mode, ganged, config)
+	config = type(config) == "table" and config or {};
+	local p = type(prediction) == "table" and prediction or {};
+	if config.DvJoinWinner ~= true or p.winner == nil or ganged
+		or mode == "brace" or mode == "deny" or mode == "redirect"
+		or (p.rival_b ~= nil and p.rival_b >= (p.rival_a or 0)) then
+		return option, selection, votes, mode;
+	end
+	local ours = CivvisCongressTargetIndex(targets, pid);
+	local afford = tonumber(p.afford) or 1;
+	local claiming = option == 1 and votes > 1 and ours ~= nil and selection == ours;
+	local choice, o, s, n = nil, option, selection, votes;
+	if ours ~= nil and afford > p.votes_max then
+		n = math.min(afford, p.votes_max + 1 + math.max(0, tonumber(config.DvJoinMargin) or 1));
+		choice, o, s = "outbid", 1, ours;
+	elseif ours ~= nil and (afford > (tonumber(p.votes_split) or p.votes_max)
+			or (claiming and p.source == "spend" and afford == tonumber(p.votes_split))) then
+		if not claiming then choice, o, s, n = "outbid", 1, ours, afford; end
+	elseif p.eligible and CivvisCongressTargetIndex(targets, p.winner) ~= nil then
+		choice, o, s, n = "join", 1, CivvisCongressTargetIndex(targets, p.winner), 1;
+	end
+	-- The ballot's own vote, reached the other way, keeps its mode.
+	if choice == nil or (o == option and s == selection and n == votes) then
+		return option, selection, votes, mode;
+	end
+	p.choice, p.before_mode, p.before_votes, p.before_option = choice, mode, votes, option;
+	p.before_target = type(targets) == "table" and tonumber(targets[selection]) or nil;
+	return o, s, n, choice;
 end
 
 -- A ballot is verified against all three native selection fields, not just
@@ -27341,9 +27588,13 @@ local function tick()
 							return Players[otherID]:GetStats():GetDiplomaticVictoryPoints();
 						end, 0)) or 0,
 						score = tonumber(try(function() return Players[otherID]:GetScore(); end, -1)) or -1,
-						-- Recorded with the ballot (`wc_ballot_context.rivals`) and
-						-- read by nothing: what a rival's vote count follows.
+						-- Recorded with the ballot (`wc_ballot_context.rivals`): its
+						-- balance at our ballot, after its own votes are bought.
 						favor = tonumber(try(function() return Players[otherID]:GetFavor(); end, nil)),
+						-- See `CivvisDvPredict`: what it entered the session with.
+						favor_entering = tonumber(try(function()
+							return Players[otherID]:GetFavorEnteringCongress();
+						end, nil)),
 					};
 				end
 			end
@@ -27629,6 +27880,27 @@ local function tick()
 								and not CivvisDiploRacer(cfg) then
 							n, mode = 1, "free";
 						end
+						-- See `CivvisDvPredict`: who takes the +2, from the rivals'
+						-- spend, recorded every session (`dv_prediction`); and, armed,
+						-- `CivvisDvJoinWinner`. The bank is the racer claim's own.
+						-- Both under pcall: nothing here may cost the session its
+						-- ballot, and a failure leaves today's vote standing.
+						envoyTally.dv_prediction = nil;
+						pcall(function()
+							envoyTally.dv_prediction = CivvisDvPredict(r, candidates, pid, costs, list,
+								favor - (CivvisCongressRacer(cfg) and (envoyTally.racer_endgame
+									and CivvisRacerReserve(list, costs, cfg, true)
+									or envoyTally.racer_reserve or 0) or 0),
+								maxVotes, cfg, try(function() return wc:GetReview(pid); end, nil),
+								leader, leaderPoints);
+						end);
+						if cfg.DvJoinWinner == true and CivvisCongressRacer(cfg)
+								and envoyTally.dv_prediction ~= nil then
+							local joined, jo, js, jn, jm = pcall(CivvisDvJoinWinner,
+								envoyTally.dv_prediction, targets, pid, option, selection, n, mode,
+								ganged, cfg);
+							if joined then option, selection, n, mode = jo, js, jn, jm; end
+						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;
 						favor = favor - cost;
@@ -27817,6 +28089,8 @@ local function tick()
 							threat = threat, threat_progress = threatProgress,
 							racer_slowed = racerSlowed,
 							racer_endgame = envoyTally.racer_endgame,
+							dv_prediction = rtype == "WC_RES_DIPLOVICTORY"
+								and envoyTally.dv_prediction or nil,
 						}));
 					end);
 					if not contextOK then
@@ -29237,7 +29511,8 @@ function Initialize()
 		strategic_quote_proposals = 4,
 		strategic_cash_ceiling_bid = cfg.StrategicCashCeilingBid == true,
 		luxury_quote_proposals = cfg.LuxuryQuoteProposals == true,
-		unanswered_proposal_withdraw = cfg.UnansweredProposalWithdraw == true });
+		unanswered_proposal_withdraw = cfg.UnansweredProposalWithdraw == true,
+		dv_join_winner = cfg.DvJoinWinner == true });
 	-- RECORD-ONLY. `deal_response` records the rival's verdict as the
 	-- engine's DealProposalAction NUMBER, and no Lua source names the values.
 	-- Over 30 live runs the asked answers split action 1 (closable when under
