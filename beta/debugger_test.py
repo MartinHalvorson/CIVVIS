@@ -70,6 +70,13 @@ function loadSave() {}
 function togglePanel() {}
 function gameFinished() { return false; }
 function drawTurnLoop() {}
+// The page's two views of a held seat, and what the Single player switch asks
+// the page to paint again or put away. `painted` is the record of it.
+let SOLO_UI = false;
+const painted = [];
+for (const name of ["drawSoloHud", "drawLaunchBar", "drawPlayerHud", "drawSide", "drawUbar",
+  "advanceToNextActionUnit", "clearUnitIntel", "closeCityScreen", "closeEmpire", "closeDiplomacy", "closeTrade"])
+  window[name] = () => { painted.push(name); };
 function render(next) { state = next; }
 function escapeAttr(text) {
   return String(text).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
@@ -623,6 +630,31 @@ def check_layers_reveal_and_undo(bar: Bar) -> None:
     bar.idle("state.debug.reveal === false", "the fog is put back")
     assert sent() == {"op": "reveal", "on": False}, sent()
 
+    # The Single player switch is the page's own: it sends the engine nothing,
+    # paints the page again in the other view, and keeps the choice. Going to
+    # Single player picks up a unit to order; going back puts the selection
+    # and the seat's screens away.
+    switch = "document.querySelector('[data-dbg=\"solo-ui\"]')"
+    asked = len(bar.sent())
+    assert bar.ev(f"SOLO_UI === false && !{switch}.classList.contains('on') && "
+                  f"{switch}.getAttribute('aria-pressed') === 'false'"), "the debugger opens on the Debugger view"
+    bar.ev("painted.length = 0, true")
+    bar.click('[data-dbg="solo-ui"]')
+    assert bar.ev(f"SOLO_UI === true && {switch}.classList.contains('on') && "
+                  f"{switch}.getAttribute('aria-pressed') === 'true'"), "the switch is on"
+    assert bar.ev("localStorage.getItem('civvis-debugger-view-v1')") == "single"
+    painted = bar.ev("painted")
+    assert "drawSoloHud" in painted and "advanceToNextActionUnit" in painted, painted
+    assert "closeCityScreen" not in painted, painted
+    bar.ev("sel = {id: 7}, selCity = {id: 1}, painted.length = 0, true")
+    bar.click('[data-dbg="solo-ui"]')
+    assert bar.ev(f"SOLO_UI === false && sel === null && selCity === null && !{switch}.classList.contains('on')")
+    assert bar.ev("localStorage.getItem('civvis-debugger-view-v1')") == "debugger"
+    painted = bar.ev("painted")
+    assert "drawSoloHud" in painted and "closeCityScreen" in painted, painted
+    assert "advanceToNextActionUnit" not in painted, painted
+    assert len(bar.sent()) == asked, "the switch sent the engine something"
+
     # Undo, by its button and by the key the hand expects, and not when
     # there is nothing to take back.
     assert bar.ev("document.querySelector('[data-dbg=\"undo\"]').disabled")
@@ -888,8 +920,9 @@ def main() -> int:
               "save points and their flags, a breakpoint picked from the timeline.")
         check_breakpoints_and_a_run(bar)
         check_layers_reveal_and_undo(bar)
-        print("breakpoints are set from the form, a run stops on one or by hand, and layers, "
-              "reveal and undo send what they are for.")
+        print("breakpoints are set from the form, a run stops on one or by hand, layers, "
+              "reveal and undo send what they are for, and the Single player switch changes "
+              "the page's view and keeps the choice.")
         check_stepping_a_seat(bar)
         print("a round is stepped a civilization at a time, says who is next, and End Turn finishes it.")
         check_the_split(bar)
