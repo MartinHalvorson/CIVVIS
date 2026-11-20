@@ -3,14 +3,17 @@
 //
 // A played game keeps a mark of every turn its seat has opened (the engine's
 // `server/debugger.rs`), and every state it sends says where the world sits
-// on that timeline (`state.debug`). This script is the hand on it: a bar
-// fixed across the top of the window, laid out like the game's own masthead.
-// A plate at the far left says which turn is open, and beside it the whole
-// game is one long timeline: turn 1 at its left end, the last turn under a
-// chequered flag at its right, and a marker that moves right as turns open. A turn that was played is gone back to as it stood, a
-// turn still ahead is played to by the seat's Civ AI, and the tools above the
-// timeline step, undo, run to a breakpoint, keep save points, choose which
-// layers of the turn the agent decides, and split the history in two.
+// on that timeline (`state.debug`). This script is the hand on it: a header
+// box at the top of the window, beside the left panel. The whole game is one
+// long timeline across the top of the box: turn 1 at its left end, the last
+// turn under a chequered flag at its right, the first turn of each era named
+// on it, and a marker that moves right as turns open. A turn that was played
+// is gone back to as it stood, and a turn still ahead is played to by the
+// seat's Civ AI. Under the timeline the open turn stands in the middle with
+// the turn buttons either side of it (turn 1, era start, ten back, one back;
+// one on, ten on). Auto-play, layers, breakpoints and Branch Timeline are at
+// the left, and stepping in, undo, save points, reveal and the Single player
+// switch at the right.
 //
 // A game under the debugger has two views. The Debugger view is how it opens:
 // the map with the standings across the top, the victory tracker down the
@@ -24,48 +27,47 @@
 // state comes through.
 
 const DEBUG_BAR_STYLE = `
-  /* The bar is fixed across the very top of the window, the whole width of
-     it, and the page stands beneath: the height the bar takes is measured and
-     published as --dbg-top, and the body is padded by that much. */
-  html.dbg-docked body { padding-top: var(--dbg-top, 0px); }
+  /* The header box stands at the top of the window beside the left panel:
+     it begins where the map area does (measured, and published as
+     --dbg-left) and runs to the window's right edge, so the left panel keeps
+     the window's whole height. The map area stands beneath the box: the
+     height the box takes is measured and published as --dbg-top. */
+  html.dbg-docked #maparea { margin-top: var(--dbg-top, 0px); }
   /* What the page fixes to the window at a distance from its top moves down
      by the same. */
   html.dbg-docked #moments, html.dbg-docked #site-pick { margin-top: var(--dbg-top, 0px); }
   @media (max-width: 720px) { html.dbg-docked #side { margin-top: var(--dbg-top, 0px); } }
+  /* Auto-play is in the header, so the left panel's own copy is put away. */
+  html.dbg-docked #humanfooter { display: none !important; }
   #debugbar {
-    position: fixed; z-index: 8000; inset: 0 0 auto 0;
-    display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 10px; padding: 5px 8px 6px 0;
+    position: fixed; z-index: 8000; inset: 0 0 auto var(--dbg-left, 0px);
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; padding: 8px 10px 7px;
     color: var(--text); font-size: 12px; line-height: 1.2; user-select: none;
-    border-bottom: 1px solid #4d685f; background: #0a1512; box-shadow: 0 6px 18px #0008;
+    border-bottom: 1px solid #4d685f; border-left: 1px solid #35504a; background: #0a1512; box-shadow: 0 6px 18px #0008;
   }
   /* Hidden is hidden, whatever a later rule says the thing is laid out as. */
   #debugbar[hidden], #debugbar [hidden] { display: none !important; }
-  /* While the screen is split the bar stays up, over the two halves. */
-  html.dbg-split-open #debugbar { z-index: 100001; }
-  /* Like the masthead of a watched game, the bar opens with a plate at the
-     far left edge of the window: the turn that is open, of how many, and the
-     hands that walk the turns already played. The tools and the timeline have
-     the rest of the width. */
-  #debugbar .dbg-plate {
-    display: grid; align-content: center; justify-items: center; gap: 5px; margin: -5px 0 -6px; padding: 5px 12px 6px;
-    border-right: 1px solid #35504a; background: #0e1d19;
+  /* While the screen is split the box stays up, over the two halves, and has
+     the window's whole width: the halves cover the left panel. */
+  html.dbg-split-open #debugbar { z-index: 100001; left: 0; }
+
+  /* Under the timeline, one row of three parts. The turn that is open stands
+     in the middle, under the middle of the timeline, with the turn buttons on
+     either side of it. Auto-play, layers, breakpoints and Branch Timeline are
+     at the left end, and the rest of the tools at the right end. */
+  #debugbar .dbg-deck {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; min-width: 0;
   }
-  #debugbar .dbg-walk { display: flex; align-items: center; gap: 3px; }
-  #debugbar .dbg-main {
-    display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: center; gap: 5px 10px; min-width: 0;
-  }
-  #debugbar.dbg-note-under .dbg-main { grid-template-columns: minmax(0, 1fr); }
-  /* One half of a split, and a window too narrow for a plate beside the
-     tools, keep the plate as a row of its own kind: flat, and no taller than
-     a tool. In the narrow window it stands over the tools. */
-  #debugbar.dbg-flat .dbg-plate {
-    display: flex; flex-wrap: wrap; gap: 5px 8px; margin: 0; padding: 0 0 0 8px; border: 0; background: none;
-  }
-  #debugbar.dbg-flat #dbg-turn { width: 44px; height: 24px; font-size: 14px; }
-  #debugbar.dbg-flat .dbg-turnbox { letter-spacing: 0; }
-  #debugbar.dbg-stacked, #debugbar.dbg-split-on { grid-template-columns: minmax(0, 1fr); }
-  #debugbar.dbg-stacked .dbg-main, #debugbar.dbg-split-on .dbg-main { padding-left: 8px; }
-  #debugbar .dbg-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0; }
+  #debugbar .dbg-side { display: flex; align-items: center; justify-content: space-between; gap: 6px 12px; min-width: 0; }
+  #debugbar .dbg-cluster { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 5px; min-width: 0; }
+  #debugbar .dbg-right .dbg-cluster { justify-content: flex-end; gap: 4px 12px; }
+  #debugbar .dbg-apart { margin-left: 7px; }
+  /* Turn 1 and Era start are words while there is room, and signs when not:
+     they are the first words to go (a snug box), before every tool's. */
+  #debugbar .dbg-sign { display: none; }
+  #debugbar.dbg-snug .dbg-sign, #debugbar.dbg-tight .dbg-sign { display: inline; }
+  #debugbar.dbg-snug .dbg-nav .dbg-word { display: none; }
+  #debugbar .dbg-group { flex: none; display: inline-flex; align-items: center; gap: 4px; }
   #debugbar button {
     display: inline-flex; align-items: center; justify-content: center; gap: 4px;
     min-width: 26px; height: 26px; padding: 0 6px; border-radius: 8px; cursor: pointer; white-space: nowrap;
@@ -75,64 +77,85 @@ const DEBUG_BAR_STYLE = `
   #debugbar button:hover:not(:disabled) { border-color: var(--gold-bright, #e7c873); }
   #debugbar button:disabled { opacity: .36; cursor: default; }
   #debugbar button.on { color: #10140f; background: var(--gold-bright, #e7c873); border-color: transparent; font-weight: 700; }
-  /* A bar too narrow for the words on its tools keeps the signs. */
-  #debugbar.dbg-tight .dbg-word, #debugbar.dbg-tight .dbg-played { display: none; }
-  #debugbar .dbg-sep { width: 1px; height: 18px; background: #35504a; margin: 0 3px; }
+  /* The turn buttons are the hand on the game, and are the larger for it. */
+  #debugbar .dbg-nav button { min-width: 36px; height: 32px; padding: 0 8px; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  /* A box too narrow for the words on its tools keeps the signs. */
+  #debugbar.dbg-tight .dbg-word { display: none; }
+  /* The picker's own label is for a box with room to spare. */
+  #debugbar:not(.dbg-roomy) .dbg-roomy-word { display: none; }
   #debugbar .dbg-count { color: var(--gold-bright, #e7c873); font-weight: 700; }
   #debugbar .dbg-count:empty { display: none; }
   #debugbar button.on .dbg-count { color: inherit; }
   #debugbar .dbg-dot { color: #e2574c; }
   #debugbar .dbg-turnbox {
-    display: inline-flex; align-items: center; gap: 6px; color: var(--muted); white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 6px; padding: 0 4px; color: var(--muted); white-space: nowrap;
     font-weight: 700; letter-spacing: .12em;
   }
   #debugbar #dbg-turn {
-    width: 62px; height: 30px; padding: 0 2px; border-radius: 7px; text-align: center; letter-spacing: 0;
+    width: 66px; height: 34px; padding: 0 2px; border-radius: 8px; text-align: center; letter-spacing: 0;
     color: var(--gold-bright, #e7c873); background: #060d0b; border: 1px solid #35504a;
-    font: 700 22px Georgia, serif; font-variant-numeric: tabular-nums;
+    font: 700 24px Georgia, serif; font-variant-numeric: tabular-nums;
   }
   #debugbar #dbg-limit { letter-spacing: 0; font-variant-numeric: tabular-nums; }
   #debugbar #dbg-turn:disabled { opacity: .5; }
-  #debugbar .dbg-played { margin-left: 8px; color: var(--muted); white-space: nowrap; }
-  /* Which Civ AI plays the seat: beside Run for the world, and at the head
-     of its lane for each half of a split, which the host seats. */
-  #debugbar select.dbg-agent {
-    flex: none; width: 150px; height: 26px; padding: 0 4px; border-radius: 8px; cursor: pointer;
+  /* Auto-play: which Civ AI plays the seat, for how many turns, and the
+     button that starts it. While it plays, the button counts the turns. */
+  #debugbar .dbg-field { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); white-space: nowrap; }
+  #debugbar .dbg-field > span { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+  #debugbar .dbg-deck select, #debugbar select.dbg-agent {
+    flex: none; height: 26px; padding: 0 4px; border-radius: 8px; cursor: pointer;
     color: var(--text); background: #060d0b; border: 1px solid #35504a; font: inherit;
   }
-  #debugbar select.dbg-agent:disabled { opacity: .5; cursor: default; }
-  #debugbar.dbg-tight .dbg-tools select.dbg-agent { width: 112px; }
-  /* On a phone the picker gives up the width of one tool, so the row that
-     held the tools before the Single player switch still holds them. */
-  #debugbar.dbg-stacked.dbg-tight .dbg-tools select.dbg-agent { width: 76px; }
-  #debugbar.dbg-pane select.dbg-agent { display: none; }
-  /* What the bar has to say: at the end of the tools where there is room,
-     and under the bar where there is not. */
-  #debugbar .dbg-note { align-self: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
-  #debugbar .dbg-note:empty { display: none; }
-  #debugbar .dbg-note button { height: 20px; margin-left: 7px; vertical-align: middle; }
-  #debugbar.dbg-note-under .dbg-note {
-    position: absolute; right: 8px; top: calc(100% + 7px); max-width: min(560px, calc(100vw - 16px));
-    padding: 5px 11px; border-radius: 999px; white-space: normal; text-align: center;
+  #debugbar select.dbg-agent { width: 104px; }
+  #debugbar #dbg-turns { width: 80px; }
+  #debugbar .dbg-deck select:disabled, #debugbar select.dbg-agent:disabled { opacity: .5; cursor: default; }
+  /* Wide enough for a count, so the row does not move as it plays. */
+  #debugbar [data-dbg="autoplay"] { min-width: 112px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #debugbar.dbg-tight [data-dbg="autoplay"] { min-width: 74px; }
+  #debugbar #dbg-run-count:empty { display: none; }
+  #debugbar:not(.dbg-tight) #dbg-run-count::before { content: "· "; }
+  #debugbar.dbg-tight select.dbg-agent { width: 96px; }
+  #debugbar.dbg-tight #dbg-turns { width: 78px; }
+  #debugbar.dbg-tight .dbg-nav button { min-width: 32px; padding: 0 6px; }
+  /* Each half of a split is seated by the host, at the head of its lane. */
+  #debugbar.dbg-pane .dbg-agent-field { display: none; }
+  /* A box too narrow for the three parts side by side stacks them: the turn
+     buttons are a row of their own, and the tools are under them. */
+  #debugbar.dbg-stacked .dbg-deck { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px 4px; }
+  #debugbar.dbg-stacked .dbg-side { display: contents; }
+  #debugbar.dbg-stacked .dbg-left .dbg-nav { order: 1; }
+  #debugbar.dbg-stacked .dbg-turnbox { order: 2; }
+  #debugbar.dbg-stacked .dbg-right .dbg-nav { order: 3; }
+  #debugbar.dbg-stacked .dbg-deck::before { content: ""; order: 4; flex: 0 0 100%; height: 0; }
+  #debugbar.dbg-stacked .dbg-cluster { order: 5; justify-content: center; margin: 0 6px; }
+  /* What the box has to say stands under it, at the right. */
+  #debugbar .dbg-note {
+    position: absolute; right: 8px; top: calc(100% + 7px); max-width: min(560px, calc(100% - 16px));
+    padding: 5px 11px; border-radius: 999px; text-align: center;
     border: 1px solid #4d685f; background: #0a1512f2; box-shadow: var(--shadow);
   }
+  #debugbar .dbg-note:empty { display: none; }
+  #debugbar .dbg-note button { height: 20px; margin-left: 7px; vertical-align: middle; }
 
-  /* The timeline: a rail as long as the game, one for the world, or one for
-     each half of a split. */
-  #debugbar .dbg-time { grid-column: 1 / -1; display: grid; gap: 3px; min-width: 0; }
-  #debugbar .dbg-lane { display: flex; align-items: center; gap: 6px; min-width: 0; --dbg-own: var(--gold-bright, #e7c873); }
-  #debugbar .dbg-lane[data-dbg-lane="a"] { --dbg-own: #ff8f6b; }
-  #debugbar .dbg-lane[data-dbg-lane="b"] { --dbg-own: #6fd3e0; }
+  /* The timeline is the top of the box: a rail as long as the game, one for
+     the world, or one for each half of a split. It is bright on purpose, sky
+     behind and the turns played in sun across it. */
+  #debugbar .dbg-time { display: grid; gap: 4px; min-width: 0; }
+  #debugbar .dbg-lane { display: flex; align-items: center; gap: 8px; min-width: 0; --dbg-own: #ff8a1f; }
+  #debugbar .dbg-lane[data-dbg-lane="a"] { --dbg-own: #ff6b4a; }
+  #debugbar .dbg-lane[data-dbg-lane="b"] { --dbg-own: #b06cff; }
   #debugbar .dbg-lane-name { flex: none; width: 12px; text-align: center; font-weight: 700; color: var(--dbg-own); }
   #debugbar .dbg-lane-name:empty { display: none; }
   /* The two ends of a lane: the turn the game begins on at the left, and at
      the right the turn it ends on, under a chequered flag when the game has a
-     last turn. */
+     last turn. The world's lane gives both ends the same width, so the middle
+     of its rail is the middle of the box, where the open turn stands. */
   #debugbar .dbg-start, #debugbar .dbg-finish {
     flex: none; display: inline-flex; align-items: center; gap: 5px;
-    font-weight: 700; font-variant-numeric: tabular-nums; color: #b7c7c0;
+    font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: #b7c7c0;
   }
   #debugbar .dbg-start { min-width: 10px; justify-content: flex-end; }
+  #debugbar .dbg-lane[data-dbg-lane=""] .dbg-start, #debugbar .dbg-lane[data-dbg-lane=""] .dbg-finish { width: 56px; }
   #debugbar .dbg-finish b { color: var(--text); }
   #debugbar .dbg-flag { display: none; position: relative; width: 20px; height: 22px; }
   #debugbar .dbg-flagged .dbg-flag { display: block; }
@@ -144,10 +167,13 @@ const DEBUG_BAR_STYLE = `
     background: repeating-conic-gradient(#10140f 0 25%, #f4f6f2 0 50%) 0 0 / 8px 8px; box-shadow: 0 0 0 1px #10140f;
   }
   #debugbar .dbg-rail {
-    position: relative; flex: 1; min-width: 0; height: 34px; border-radius: 8px;
-    background: #060d0b; border: 1px solid #35504a;
+    position: relative; flex: 1; min-width: 0; height: 68px; border-radius: 12px;
+    background: linear-gradient(180deg, #9be2ff 0%, #58bdf7 100%); border: 1px solid #d3f2ff;
+    box-shadow: inset 0 1px 0 #ffffffa0, 0 2px 10px #0007;
   }
-  #debugbar .dbg-rail:focus-within { border-color: var(--gold-bright, #e7c873); }
+  /* The two lanes of a split share the box, and are each the old height. */
+  #debugbar.dbg-split-on .dbg-rail { height: 40px; }
+  #debugbar .dbg-rail:focus-within { border-color: #ffffff; box-shadow: inset 0 1px 0 #ffffffa0, 0 0 0 2px #ffd23f, 0 2px 10px #0007; }
   /* The slider is set in from each end of its rail, and its thumb stops half
      its own width short of each end of that, so what is drawn on a rail is
      drawn in the thumb's travel: the marker stays whole inside the rail on
@@ -158,40 +184,46 @@ const DEBUG_BAR_STYLE = `
     position: absolute; z-index: 1; inset: 0 11px; width: calc(100% - 22px); height: 100%; margin: 0; padding: 0;
     opacity: 0; cursor: pointer; -webkit-appearance: none; appearance: none; background: transparent;
   }
-  #debugbar .dbg-rail input::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 32px; }
-  #debugbar .dbg-rail input::-moz-range-thumb { width: 14px; height: 32px; border: 0; }
+  #debugbar .dbg-rail input::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 66px; }
+  #debugbar .dbg-rail input::-moz-range-thumb { width: 14px; height: 66px; border: 0; }
   #debugbar .dbg-rail input:disabled { pointer-events: none; }
-  /* The ruler's numbers run along the top of a rail and the turns played
-     along the bottom, so a number is still read once the game is past it. */
-  #debugbar .dbg-ruler i { position: absolute; bottom: 0; height: 5px; width: 1px; background: #ffffff26; }
-  #debugbar .dbg-ruler i.major { top: 13px; height: auto; background: #ffffff38; }
+  /* The ruler's numbers run along the top of a rail, the turns played across
+     its middle, and the eras' names along the bottom. */
+  #debugbar .dbg-ruler i { position: absolute; bottom: 0; height: 6px; width: 1px; background: #0b355470; }
+  #debugbar .dbg-ruler i.major { top: 17px; height: auto; background: #0b355438; }
   #debugbar .dbg-ruler b {
-    position: absolute; top: 1px; transform: translateX(-50%);
-    font-size: 10px; font-weight: 400; color: #b7c7c0; font-variant-numeric: tabular-nums;
+    position: absolute; top: 2px; transform: translateX(-50%);
+    font-size: 11px; font-weight: 700; color: #0b3554; font-variant-numeric: tabular-nums;
   }
   /* A game played on past its last turn has the flag's line where that was. */
   #debugbar .dbg-ruler i.dbg-finish-line {
     top: 0; height: auto; width: 4px; margin-left: -2px;
     background: repeating-conic-gradient(#10140f 0 25%, #f4f6f2 0 50%) 0 0 / 4px 4px;
   }
-  #debugbar .dbg-band { position: absolute; top: 15px; bottom: 5px; min-width: 3px; border-radius: 4px; background: #9a8038; }
-  #debugbar .dbg-band.dbg-own { background: var(--dbg-own); opacity: .8; }
-  /* When turns were thinned to make room, the band dims and the turns that
+  #debugbar .dbg-band {
+    position: absolute; top: 20px; bottom: 20px; min-width: 4px; border-radius: 7px;
+    background: linear-gradient(180deg, #fff27a 0%, #ffc61a 100%); box-shadow: 0 0 0 1px #b8770a80, 0 1px 4px #0b355466;
+  }
+  #debugbar.dbg-split-on .dbg-band { top: 16px; bottom: 5px; }
+  #debugbar .dbg-band.dbg-own { background: var(--dbg-own); }
+  /* When turns were thinned to make room, the band pales and the turns that
      can still be gone back to stand out on it. */
-  #debugbar .dbg-thinned .dbg-band { background: #4a4024; }
-  #debugbar .dbg-kept-turns i { position: absolute; top: 15px; bottom: 5px; width: 2px; margin-left: -1px; background: #c9ad5c; }
+  #debugbar .dbg-thinned .dbg-band { background: #fff4b8; box-shadow: 0 0 0 1px #b8770a40; }
+  #debugbar .dbg-kept-turns i { position: absolute; top: 20px; bottom: 20px; width: 2px; margin-left: -1px; background: #e08a00; }
   /* Where a run is headed. */
   #debugbar .dbg-goal {
-    position: absolute; top: 15px; bottom: 5px; border-right: 2px solid var(--dbg-own);
-    background: repeating-linear-gradient(-45deg, #e7c87340 0 4px, transparent 4px 8px);
+    position: absolute; top: 20px; bottom: 20px; border-right: 2px solid var(--dbg-own);
+    background: repeating-linear-gradient(-45deg, #ffffffc0 0 5px, transparent 5px 10px);
   }
-  #debugbar .dbg-ghost { position: absolute; top: 0; bottom: 0; width: 1px; background: #ffffffa0; }
+  #debugbar.dbg-split-on .dbg-goal { top: 16px; bottom: 5px; }
+  #debugbar .dbg-ghost { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #0b3554c0; }
   #debugbar .dbg-cursor { position: absolute; top: 0; bottom: 0; width: 0; }
   #debugbar .dbg-cursor b {
-    position: absolute; left: 0; top: 50%; transform: translate(-50%, -50%); min-width: 34px; padding: 4px 6px;
-    border-radius: 999px; text-align: center; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
-    color: #10140f; background: var(--dbg-own); box-shadow: 0 0 0 2px #060d0b, 0 2px 6px #000a;
+    position: absolute; left: 0; top: 50%; transform: translate(-50%, -50%); min-width: 42px; padding: 6px 9px;
+    border-radius: 999px; text-align: center; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums;
+    color: #3a1d00; background: #ffffff; box-shadow: 0 0 0 3px var(--dbg-own), 0 3px 9px #0b3554a0;
   }
+  #debugbar.dbg-split-on .dbg-cursor b { min-width: 34px; padding: 4px 6px; font-size: 12px; }
   /* Save points stand on a rail as flags and turn breakpoints as red dots,
      each at its own turn. */
   #debugbar .dbg-marks i {
@@ -200,16 +232,27 @@ const DEBUG_BAR_STYLE = `
   }
   #debugbar .dbg-marks i.auto { background: #8fb4a8; }
   #debugbar .dbg-marks i.stop { top: auto; bottom: -5px; border-radius: 50%; background: #e2574c; }
+  /* The first turn of each era the game has been through: a line down the
+     rail with the era's name at its foot. The name is the thing to click. */
+  #debugbar .dbg-marks u {
+    position: absolute; top: 0; bottom: 0; display: flex; align-items: flex-end; text-decoration: none;
+    border-left: 2px dotted #0b355490;
+  }
+  #debugbar .dbg-marks u b {
+    margin: 0 0 3px 4px; padding: 1px 6px; border-radius: 999px; cursor: pointer; pointer-events: auto; white-space: nowrap;
+    font-size: 10.5px; font-weight: 700; color: #ffffff; background: #0b3554;
+  }
+  #debugbar .dbg-marks u b:hover { background: #124d78; }
   /* What letting go of the timeline here would do, said under the pointer. */
   #debugbar .dbg-hover {
-    position: absolute; z-index: 4; top: calc(100% + 5px); transform: translateX(-50%); padding: 4px 10px;
+    position: absolute; z-index: 4; top: 82px; transform: translateX(-50%); padding: 4px 10px;
     border-radius: 999px; white-space: nowrap; pointer-events: none;
     border: 1px solid #4d685f; background: #0a1512f5; box-shadow: var(--shadow);
   }
   /* The host of a split shows the two halves' lanes and nothing else: each
      half carries the tools for its own world, and no timeline. */
-  #debugbar.dbg-split-on .dbg-tools, #debugbar.dbg-split-on .dbg-note, #debugbar.dbg-split-on .dbg-pop,
-  #debugbar.dbg-split-on .dbg-plate { display: none; }
+  #debugbar.dbg-split-on .dbg-deck, #debugbar.dbg-split-on .dbg-note, #debugbar.dbg-split-on .dbg-pop { display: none; }
+  #debugbar.dbg-split-on .dbg-hover { top: calc(100% + 5px); }
   #debugbar.dbg-pane .dbg-time { display: none; }
 
   #debugbar .dbg-pop {
@@ -241,17 +284,21 @@ let debugBar = null;
 const debugLanes = {}, debugLaneModels = {};
 // A slider's thumb is 14px wide; its centre stops this far short of each end.
 const DEBUG_THUMB_HALF = 7;
-// A window no wider than this has no room for the plate beside the tools.
-const DEBUG_STACKED_UNDER = 720;
-// The tools are one row of 26px buttons; taller than this, they have wrapped.
-// What the bar has to say stands at the end of that row while this much of
-// it is left over, and under the bar when less is.
-const DEBUG_TOOLS_ROW = 40, DEBUG_NOTE_ROOM = 240;
+// A box no wider than this has no room for the tools beside the turn
+// buttons, and stacks them. One half of a split has no timeline to stand
+// under, and stacks sooner.
+const DEBUG_STACKED_UNDER = 720, DEBUG_PANE_STACKED_UNDER = 1000;
+// The tools at each end may wrap to two rows of 26px buttons; taller than
+// this, they have wrapped to three, and the words on them go. A box at least
+// `DEBUG_ROOMY` wide has room for the Civ AI picker's label as well.
+const DEBUG_DECK_ROWS = 70, DEBUG_ROOMY = 1480;
 // One request at a time: every debugger operation replaces the world.
 let debugBusy = false;
-// A run is a loop of single steps; the bar's Run button is also its Stop.
-// A run to a turn has a goal, which the timeline shows.
+// A run is a loop of single steps; the Auto-play button is also its Stop.
+// A run to a turn has a goal, which the timeline shows, and the button
+// counts the turns played of the turns asked for (null: until stopped).
 let debugRunning = false, debugStopAsked = false, debugGoal = null;
+let debugPlayed = 0, debugAsked = null;
 let debugPopOpen = null;
 let debugNoteText = "", debugNotePos = null;
 // The lane whose slider is being dragged, or null. A dragged slider is left
@@ -302,6 +349,10 @@ async function debugOp(body, timeoutMs = 20000) {
       body: JSON.stringify(body),
     }, timeoutMs);
     if (next.error) { debugSay(next.error); return next; }
+    // Turn 1 walked back to is not a new game: the page's notice for one,
+    // which goes by the first turn of a world it has not announced, is told
+    // that this world has been.
+    if (DEBUG_TRAVEL_OPS.has(body.op)) soloNoticeSeed = next.seed;
     if (DEBUG_TRAVEL_OPS.has(body.op) || body.op === "step" || body.op === "step_action" ||
         body.op === "step_seat" || body.op === "finish_round") {
       sel = null; selCity = null;
@@ -326,6 +377,10 @@ function debugStrategy() {
 function debugSayStop(stopped) {
   if (!stopped) return;
   if (stopped.kind === "turn") debugSay(`Stopped at turn ${stopped.turn}`);
+  else if (stopped.kind === "era") {
+    const era = ((debugTimeline() || {}).eras || []).find(began => began.era === stopped.era);
+    debugSay(`Stopped on turn ${stopped.turn}: the ${era && era.name ? titleCase(era.name) : "next"} era began`);
+  }
   else if (stopped.kind === "event")
     debugSay(`Stopped on ${stopped.category}: ${stopped.text}`, stopped.pos || null);
   else if (stopped.kind === "condition") {
@@ -432,6 +487,7 @@ async function debugRun(until = null) {
   if (debugRunning) { debugStopAsked = true; drawDebugBar(); return; }
   if (autoplaying || !debugTimeline()) return;
   debugRunning = true; debugStopAsked = false; autoplaying = true; debugGoal = until;
+  debugPlayed = 0; debugAsked = until === null ? null : Math.max(1, until - state.turn);
   debugSay("");
   let played = 0;
   try {
@@ -439,6 +495,7 @@ async function debugRun(until = null) {
       const next = await debugOp({op: "step", strategy: debugStrategy()}, AUTOPLAY_BATCH_TIMEOUT_MS);
       if (!next || next.error) break;
       played += 1;
+      debugPlayed = played;
       const stopped = (next.debug || {}).stopped;
       if (stopped) { debugSayStop(stopped); break; }
       if (until !== null && next.turn >= until) { debugSay(`Played to turn ${next.turn}`); break; }
@@ -451,6 +508,49 @@ async function debugRun(until = null) {
     drawTurnLoop();
     if (DEBUG_PANE !== null) window.parent.postMessage({civvis: "pane-ran", pane: DEBUG_PANE}, location.origin);
   }
+}
+// Auto-play: the seat's Civ AI plays the number of turns picked from the
+// turn that is open, or every turn the game has left, and a breakpoint stops
+// it early. Pressed while anything is being played, it stops that.
+function debugAutoPlay() {
+  if (debugRunning) { debugStopAsked = true; drawDebugBar(); return; }
+  if (!debugTimeline()) return;
+  const pick = document.getElementById("dbg-turns").value || "1";
+  debugRun(pick === "all" ? null : state.turn + Math.max(1, parseInt(pick, 10) || 1));
+}
+// The turn buttons walk the turns already played, and past the last of them
+// the Civ AI plays on. Going on does not play over what was played: it walks
+// to the last turn first. (Dragging the timeline ahead from an earlier turn
+// is the way to play those turns again; it says so under the pointer.)
+async function debugAhead(turns) {
+  const timeline = debugTimeline();
+  if (!timeline || debugBusy || autoplaying) return;
+  debugSay("");
+  const from = state.turn, goal = from + turns;
+  const last = Math.max(timeline.last ?? from, from);
+  if (from < last) {
+    let next = await debugOp(turns === 1 ? {op: "forward"} : {op: "jump", turn: Math.min(goal, last)});
+    // A turn that is no longer kept answers with the nearest before it,
+    // which may be this one: the next one that is kept is the way on.
+    if (next && !next.error && next.turn <= from) next = await debugOp({op: "forward"});
+    if (!next || next.error || next.turn >= goal || next.turn < last) return;
+  }
+  if (goal - state.turn <= 1) await debugStep();
+  else await debugRun(goal);
+}
+async function debugBehind(turns) {
+  const timeline = debugTimeline();
+  if (!timeline || debugBusy || autoplaying) return;
+  debugSay("");
+  if (turns === 1) { await debugOp({op: "back"}); return; }
+  await debugOp({op: "jump", turn: Math.max(timeline.first ?? state.turn, state.turn - turns)});
+}
+// Era start: the first turn of the era the open turn is in, and from there
+// the first turn of the era before. `eras` is the engine's: the first kept
+// turn of each era the timeline passes through.
+function debugEraBack(timeline) {
+  const began = (timeline.eras || []).filter(era => era.turn < state.turn);
+  return began.length ? began[began.length - 1] : null;
 }
 // Go to a turn, like a debugger's "run to here": a turn that was played is
 // put back as it stood, and a turn still ahead is played to.
@@ -518,6 +618,7 @@ function debugBreakpointsFromForm() {
     phrases: list(pop.querySelector("[data-dbg-field=phrases]").value),
     important: pop.querySelector("[data-dbg-field=important]").checked,
     every_seat: pop.querySelector("[data-dbg-field=every_seat]").checked,
+    eras: pop.querySelector("[data-dbg-field=eras]").checked,
     // Conditions are added and removed one at a time; the engine holds the set.
     conditions: [...(debugTimeline().breakpoints.conditions || [])],
   };
@@ -576,40 +677,53 @@ function debugBuildBar() {
   bar.setAttribute("role", "toolbar");
   bar.setAttribute("aria-label", "Simulator debugger");
   bar.innerHTML = `
-    <div class="dbg-plate">
-      <label class="dbg-turnbox" title="Go to a turn: one already played is put back as it stood, one still ahead is played to by the Civ AI. Up and down walk one played turn"><span>TURN</span>
-        <input type="text" id="dbg-turn" inputmode="numeric" maxlength="4" aria-label="Go to turn"><span id="dbg-limit"></span></label>
-      <div class="dbg-walk">
-        <button data-dbg="first" title="Go to where the timeline begins" aria-label="Go to the first turn">⏮</button>
-        <button data-dbg="back" title="Back: the top of this turn, then the turn before" aria-label="Back one turn">◀</button>
-        <button data-dbg="forward" title="Forward along the turns already played" aria-label="Forward one played turn">▶</button>
-        <button data-dbg="last" title="Go to the last turn that was played" aria-label="Go to the last turn played">⏭</button>
-        <span class="dbg-sep"></span>
-        <button data-dbg="undo" title="Undo your last action this turn (Ctrl+Z)" aria-label="Undo last action">↶</button>
-      </div>
-    </div>
-    <div class="dbg-main">
-    <div class="dbg-tools">
-      <button data-dbg="step-action" title="Step in: the Civ AI takes its next action this turn, and ends the turn when it has none left" aria-label="Step one action"><i>▸</i><span class="dbg-word">Action</span></button>
-      <button data-dbg="step-seat" title="Step one seat: end your turn as it stands, then one civilization's turn at a time" aria-label="Step one seat"><i>▸|</i><span class="dbg-word">Seat</span></button>
-      <button data-dbg="step" title="Step: the Civ AI plays one turn. In the middle of a round, the rest of the round plays" aria-label="Step one turn"><i>▶|</i><span class="dbg-word">Turn</span></button>
-      <button data-dbg="run" title="Run: the Civ AI plays until a breakpoint stops it" aria-label="Run to a breakpoint"><i id="dbg-run-sign">▶▶</i><span class="dbg-word" id="dbg-run-word">Run</span></button>
-      <select class="dbg-agent" id="dbg-agent" title="The Civ AI that plays your seat when a turn is stepped, run or played to" aria-label="Civ AI for your seat"></select>
-      <span class="dbg-sep"></span>
-      <button data-dbg-pop="layers" title="Layers: which decisions the Civ AI takes for you each turn">Layers<span class="dbg-count" id="dbg-layer-count"></span></button>
-      <button data-dbg-pop="breaks" title="Breakpoints: what stops a run" aria-label="Breakpoints"><span class="dbg-dot">●</span><span class="dbg-word">Breakpoints</span><span class="dbg-count" id="dbg-break-count"></span></button>
-      <button data-dbg="reveal" title="Reveal: show the whole map and every civilization, not only what yours can see" aria-label="Reveal the whole map"><i>◉</i><span class="dbg-word">Reveal</span></button>
-      <button data-dbg="solo-ui" aria-pressed="false" title="Single player: the Civilization VI screen for playing the seat by hand, with its yields, launch bar, notifications, unit panel and End Turn. Off, the Debugger view: standings, victory tracker, governors and policies" aria-label="Single player screen"><i>♟</i><span class="dbg-word">Single player</span></button>
-      <button data-dbg-pop="saves" title="Save points and saves: keep this world to come back to, or load one you kept" aria-label="Save points and saves"><i>⚑</i><span class="dbg-word">Save points</span><span class="dbg-count" id="dbg-point-count"></span></button>
-      <button data-dbg-pop="split" title="Split: two simulators from this turn, side by side or stacked, each with a Civ AI of its own if you like">Split</button>
-      <span class="dbg-played" id="dbg-played"></span>
-    </div>
-    <div class="dbg-note" id="dbg-note" role="status"></div>
     <div class="dbg-time">${debugLaneMarkup("", "dbg-slider", "Turn, on the whole game")}${
       debugLaneMarkup("a", "dbg-slider-a", "Turn of simulator A")}${
       debugLaneMarkup("b", "dbg-slider-b", "Turn of simulator B")}
     </div>
+    <div class="dbg-deck">
+      <div class="dbg-side dbg-left">
+        <div class="dbg-cluster">
+          <label class="dbg-field dbg-agent-field" title="The Civ AI that plays your seat when it is auto-played, stepped or played to"><span class="dbg-roomy-word">Civ AI</span>
+            <select class="dbg-agent" id="dbg-agent" aria-label="Civ AI for your seat"></select></label>
+          <select id="dbg-turns" title="How many turns Auto-play plays before it hands the seat back. All is every turn the game has left" aria-label="Turns to auto-play">${
+            [1, 2, 3, 4, 5, 10, 20, 30, 40, 50, 100, 150, 200, 250].map(turns =>
+              `<option value="${turns}">${turns} turn${turns === 1 ? "" : "s"}</option>`).join("")
+          }<option value="all">All turns</option></select>
+          <button data-dbg="autoplay" title="Auto-play: the Civ AI plays the turns picked, and stops early when a breakpoint does. While it plays this counts the turns, and pressing it stops" aria-label="Auto-play"><i id="dbg-run-sign">▶▶</i><span class="dbg-word" id="dbg-run-word">Auto-play</span><span id="dbg-run-count"></span></button>
+          <button class="dbg-apart" data-dbg-pop="layers" title="Layers: which decisions the Civ AI takes for you each turn">Layers<span class="dbg-count" id="dbg-layer-count"></span></button>
+          <button data-dbg-pop="breaks" title="Breakpoints: what stops Auto-play and a turn played to" aria-label="Breakpoints"><span class="dbg-dot">●</span><span class="dbg-word">Breakpoints</span><span class="dbg-count" id="dbg-break-count"></span></button>
+          <button data-dbg-pop="split" title="Branch Timeline: two simulators from this turn, side by side or stacked, each playing a history of its own, with a Civ AI of its own if you like" aria-label="Branch Timeline"><i>⑂</i><span class="dbg-word">Branch Timeline</span></button>
+        </div>
+        <span class="dbg-group dbg-nav">
+          <button data-dbg="first" title="Turn 1: go to where the timeline begins" aria-label="Go to the first turn"><i class="dbg-sign">⏮</i><span class="dbg-word">Turn 1</span></button>
+          <button data-dbg="era" title="Era start: back to the first turn of this era, and from there to the first turn of the era before" aria-label="Back to the start of the era"><i class="dbg-sign">⇤</i><span class="dbg-word">Era start</span></button>
+          <button data-dbg="back10" title="Back 10 turns" aria-label="Back 10 turns"><i>◀◀</i>10</button>
+          <button data-dbg="back" title="Back 1 turn: the top of this turn, then the turn before" aria-label="Back 1 turn"><i>◀</i>1</button>
+        </span>
+      </div>
+      <label class="dbg-turnbox" title="The turn that is open. Type a turn to go to it: one already played is put back as it stood, one still ahead is played to by the Civ AI. Up and down walk one played turn"><span class="dbg-word">TURN</span>
+        <input type="text" id="dbg-turn" inputmode="numeric" maxlength="4" aria-label="Go to turn"><span id="dbg-limit"></span></label>
+      <div class="dbg-side dbg-right">
+        <span class="dbg-group dbg-nav">
+          <button data-dbg="next" title="Next turn: forward along the turns already played, and past the last of them the Civ AI plays one" aria-label="Next turn">1<i>▶</i></button>
+          <button data-dbg="next10" title="10 turns on: forward along the turns already played, and past the last of them the Civ AI plays the rest" aria-label="10 turns on">10<i>▶▶</i></button>
+        </span>
+        <div class="dbg-cluster">
+          <span class="dbg-group">
+            <button data-dbg="step-action" title="Step in: the Civ AI takes its next action this turn, and ends the turn when it has none left" aria-label="Step one action"><i>▸</i><span class="dbg-word">Action</span></button>
+            <button data-dbg="step-seat" title="Step one seat: end your turn as it stands, then one civilization's turn at a time" aria-label="Step one seat"><i>▸|</i><span class="dbg-word">Seat</span></button>
+            <button data-dbg="undo" title="Undo your last action this turn (Ctrl+Z)" aria-label="Undo last action">↶</button>
+          </span>
+          <span class="dbg-group">
+            <button data-dbg-pop="saves" title="Save points and saves: keep this world to come back to, or load one you kept" aria-label="Save points and saves"><i>⚑</i><span class="dbg-word">Save points</span><span class="dbg-count" id="dbg-point-count"></span></button>
+            <button data-dbg="reveal" title="Reveal: show the whole map and every civilization, not only what yours can see" aria-label="Reveal the whole map"><i>◉</i><span class="dbg-word">Reveal</span></button>
+            <button data-dbg="solo-ui" aria-pressed="false" title="Single player: the Civilization VI screen for playing the seat by hand, with its yields, launch bar, notifications, unit panel and End Turn. Off, the Debugger view: standings, victory tracker, governors and policies" aria-label="Single player screen"><i>♟</i><span class="dbg-word">Single player</span></button>
+          </span>
+        </div>
+      </div>
     </div>
+    <div class="dbg-note" id="dbg-note" role="status"></div>
     <div class="dbg-hover" id="dbg-hover" hidden></div>
     <div class="dbg-pop" id="dbg-pop-layers" hidden>
       <h4>Who decides</h4>
@@ -623,7 +737,7 @@ function debugBuildBar() {
       </div>
     </div>
     <div class="dbg-pop" id="dbg-pop-split" hidden>
-      <h4>Split the screen</h4>
+      <h4>Branch Timeline</h4>
       <p>Two simulators start from this turn, each with the turns behind it. From here each plays its
         own history. Linked, they stay on the same turn; separate, each keeps its own.</p>
       <div class="dbg-line">
@@ -656,7 +770,8 @@ function debugBuildBar() {
     </div>
     <div class="dbg-pop" id="dbg-pop-breaks" hidden>
       <h4>Breakpoints</h4>
-      <p>Run plays turns with the Civ AI until one of these stops it.</p>
+      <p>Auto-play, and a turn played to on the timeline, stop when one of these happens.</p>
+      <label title="Stop on the first turn of each new era. The eras already played are named on the timeline at the turn they began"><input type="checkbox" data-dbg-field="eras"> A new era begins</label>
       <div class="dbg-line"><span>Turns</span>
         <input type="text" data-dbg-field="turns" inputmode="numeric" placeholder="50, 75" aria-label="Stop when these turns open">
         <button data-dbg="break-plus" title="Add the turn ten from now">+10</button></div>
@@ -713,17 +828,21 @@ function debugBuildBar() {
     const timeline = debugTimeline();
     if (!timeline) return;
     const action = button.dataset.dbg;
-    if (action === "back") debugOp({op: "back"});
+    if (action === "back") debugBehind(1);
+    else if (action === "back10") debugBehind(10);
+    else if (action === "next") debugAhead(1);
+    else if (action === "next10") debugAhead(10);
     else if (action === "undo") debugOp({op: "undo"});
-    else if (action === "forward") debugOp({op: "forward"});
     else if (action === "first") { debugSay(""); debugGoToTurn(timeline.first ?? state.turn); }
-    else if (action === "last") { debugSay(""); debugGoToTurn(Math.max(timeline.last ?? state.turn, state.turn)); }
-    else if (action === "step") debugStep();
+    else if (action === "era") {
+      const began = debugEraBack(timeline);
+      if (began) { debugSay(""); debugGoToTurn(began.turn); }
+    }
     else if (action === "step-action") debugStepAction();
     else if (action === "step-seat") debugStepSeat();
     else if (action === "reveal") debugOp({op: "reveal", on: !timeline.reveal});
     else if (action === "solo-ui") setSoloUi(!SOLO_UI);
-    else if (action === "run") debugRun();
+    else if (action === "autoplay") debugAutoPlay();
     else if (action === "save") debugSave();
     else if (action === "point") debugSavePoint();
     else if (action === "split-row" || action === "split-col" || action === "split-versus") {
@@ -812,7 +931,7 @@ function debugBuildBar() {
   // said under the pointer.
   bar.addEventListener("pointermove", event => {
     const on = event.target instanceof Element ? event.target : null;
-    debugHover(on && !on.closest(".dbg-marks i") ? on.closest(".dbg-rail") : null, event.clientX);
+    debugHover(on && !on.closest(".dbg-marks i, .dbg-marks u b") ? on.closest(".dbg-rail") : null, event.clientX);
   });
   bar.addEventListener("pointerleave", () => debugHover(null));
   // The wheel over the timeline, and the up and down arrows in the turn box,
@@ -848,6 +967,14 @@ function debugBuildBar() {
       walk(event.key === "ArrowUp");
     }
   });
+  // The left panel is folded away, brought back and dragged wider without
+  // the window changing size: the box follows the map area's left edge.
+  const area = document.getElementById("maparea");
+  if (area && typeof ResizeObserver === "function") {
+    new ResizeObserver(() => {
+      if (!bar.hidden && debugMapLeft() !== debugDockedLeft) drawDebugBar();
+    }).observe(area);
+  }
   return bar;
 }
 
@@ -952,6 +1079,9 @@ function debugDrawLane(key, model) {
   debugPlace(lane.cursor, `left:${at(shown)}%`);
   if (lane.pill.textContent !== String(shown)) lane.pill.textContent = shown;
   debugDrawn(lane.marks,
+    (model.eras || []).filter(era => era.turn >= lo && era.turn <= hi).map(era =>
+      `<u style="left:${at(era.turn)}%"><b data-dbg-turn="${era.turn}" title="The ${escapeAttr(titleCase(String(era.name || `era ${era.era}`)))} era began on turn ${era.turn}. Click to go there">${
+        escapeAttr(titleCase(String(era.name || `era ${era.era}`)))}</b></u>`).join("") +
     (model.stops || []).filter(turn => turn >= lo && turn <= hi).map(turn =>
       `<i class="stop" data-dbg-turn="${turn}" style="left:${at(turn)}%" title="Breakpoint on turn ${turn}. Click to ${
         turn > last ? "play to it" : "go there"}"></i>`).join("") +
@@ -976,30 +1106,41 @@ function debugHover(rail, x = 0) {
   const bar = debugBar.getBoundingClientRect(), half = tag.offsetWidth / 2;
   tag.style.left = `${Math.max(half + 4, Math.min(bar.width - half - 4, x - bar.left))}px`;
 }
-// The words on the tools are for a bar with room for them: when the tools
-// wrap, the words go and the signs stay. They are tried again only when the
-// bar's width changes, so a bar on the edge does not flicker between the two.
-// What the bar has to say needs room of its own at the end of the row, and
-// stands under the bar when there is none.
+// The words on the tools are for a box with room for them: when the tools at
+// either end wrap past two rows, the words go and the signs stay, first the
+// two on the turn buttons (a snug box) and then every tool's (a tight one).
+// They are tried again only when the box's width changes, so a box on the
+// edge does not flicker. One half of a split, and a stacked box, have no room
+// for words at all.
 let debugFitted = 0;
 function debugFit(bar) {
-  const tools = bar.querySelector(".dbg-tools"), width = bar.clientWidth;
-  const stacked = width <= DEBUG_STACKED_UNDER;
+  const width = bar.clientWidth;
+  const stacked = width <= (DEBUG_PANE !== null ? DEBUG_PANE_STACKED_UNDER : DEBUG_STACKED_UNDER);
   bar.classList.toggle("dbg-stacked", stacked);
-  bar.classList.toggle("dbg-flat", stacked || DEBUG_PANE !== null);
-  if (width !== debugFitted) { debugFitted = width; bar.classList.remove("dbg-tight", "dbg-note-under"); }
-  const wrapped = () => tools.offsetHeight > DEBUG_TOOLS_ROW;
-  if (!bar.classList.contains("dbg-tight") && wrapped()) bar.classList.add("dbg-tight");
-  let used = 0;
-  const from = tools.getBoundingClientRect().left;
-  for (const tool of tools.children) used = Math.max(used, tool.getBoundingClientRect().right - from);
-  bar.classList.toggle("dbg-note-under", wrapped() || tools.parentElement.clientWidth - used < DEBUG_NOTE_ROOM + 30);
+  if (width !== debugFitted) { debugFitted = width; bar.classList.remove("dbg-snug", "dbg-tight"); }
+  const deck = bar.querySelector(".dbg-deck"), has = name => bar.classList.contains(name);
+  if (stacked || DEBUG_PANE !== null) bar.classList.add("dbg-tight");
+  if (!has("dbg-tight") && !has("dbg-snug") && deck.offsetHeight > DEBUG_DECK_ROWS) bar.classList.add("dbg-snug");
+  if (!has("dbg-tight") && deck.offsetHeight > DEBUG_DECK_ROWS) bar.classList.add("dbg-tight");
+  bar.classList.toggle("dbg-roomy", width >= DEBUG_ROOMY && !has("dbg-snug") && !has("dbg-tight"));
 }
-// The page stands under the bar. How tall the bar is depends on how its tools
-// wrap, so it is measured, and the page is told when that changes: the map is
-// fitted to the room it has.
-let debugDocked = 0;
+// The box begins where the map area does, at the right side of the left
+// panel, and the map area stands under it. Where that is and how tall the box
+// is are measured, and the page is told when either changes: the map is
+// fitted to the room it has. A split covers the left panel, and its box has
+// the whole width.
+let debugDocked = 0, debugDockedLeft = -1;
+function debugMapLeft() {
+  const area = document.getElementById("maparea");
+  return area && !debugSplit ? Math.max(0, Math.round(area.getBoundingClientRect().left)) : 0;
+}
 function debugDock(bar) {
+  const left = bar.hidden ? 0 : debugMapLeft();
+  if (left !== debugDockedLeft) {
+    debugDockedLeft = left;
+    document.documentElement.style.setProperty("--dbg-left", `${left}px`);
+  }
+  if (!bar.hidden && !debugSplit) debugFit(bar);
   const height = bar.hidden ? 0 : Math.ceil(bar.getBoundingClientRect().height);
   if (height === debugDocked) return;
   debugDocked = height;
@@ -1007,7 +1148,6 @@ function debugDock(bar) {
   document.documentElement.style.setProperty("--dbg-top", `${height}px`);
   window.dispatchEvent(new Event("resize"));
 }
-
 function drawDebugBar(measure = true) {
   const bar = debugBar || debugBuildBar();
   const timeline = debugTimeline();
@@ -1044,11 +1184,18 @@ function drawDebugBar(measure = true) {
   };
   const first = timeline.first ?? state.turn, last = Math.max(timeline.last ?? state.turn, state.turn);
   set("back", idle && timeline.can_back);
+  set("back10", idle && state.turn > first);
   set("undo", idle && timeline.can_undo);
-  set("forward", idle && timeline.can_forward);
   set("first", idle && state.turn > first);
-  set("last", idle && state.turn < last);
-  set("step", idle);
+  set("next", idle);
+  set("next10", idle);
+  const eraBack = debugEraBack(timeline);
+  set("era", idle && eraBack !== null);
+  const eraButton = bar.querySelector('[data-dbg="era"]');
+  const eraTitle = eraBack
+    ? `Era start: back to turn ${eraBack.turn}, the first turn of the ${titleCase(String(eraBack.name || `era ${eraBack.era}`))} era`
+    : "Era start: this is the first turn of the first era on the timeline";
+  if (eraButton.title !== eraTitle) eraButton.title = eraTitle;
   set("step-action", idle);
   set("step-seat", idle);
   set("reveal", idle);
@@ -1059,15 +1206,22 @@ function drawDebugBar(measure = true) {
   set("save", idle);
   set("point", idle);
   set("assist", idle);
-  const run = bar.querySelector('[data-dbg="run"]');
+  // Auto-play is also the Stop of whatever is being played, and counts its
+  // turns: of the turns asked for, or so far when it plays until stopped.
+  const run = bar.querySelector('[data-dbg="autoplay"]');
   run.disabled = !(debugRunning || idle);
-  document.getElementById("dbg-run-sign").textContent = debugRunning ? (debugStopAsked ? "…" : "⏹") : "▶▶";
-  document.getElementById("dbg-run-word").textContent = debugRunning ? "Stop" : "Run";
+  const runSign = debugRunning ? (debugStopAsked ? "…" : "⏹") : "▶▶";
+  const runCount = !debugRunning ? "" : debugAsked === null ? `${debugPlayed}` : `${debugPlayed}/${debugAsked}`;
+  for (const [id, text] of [["dbg-run-sign", runSign], ["dbg-run-word", debugRunning ? "Stop" : "Auto-play"], ["dbg-run-count", runCount]]) {
+    const part = document.getElementById(id);
+    if (part.textContent !== text) part.textContent = text;
+  }
   run.classList.toggle("on", debugRunning);
   const agent = document.getElementById("dbg-agent");
   debugOfferAgents(agent, debugStrategy() || "");
   agent.disabled = !idle;
-  agent.hidden = agent.options.length === 0;
+  agent.closest(".dbg-field").hidden = agent.options.length === 0;
+  document.getElementById("dbg-turns").disabled = !idle;
 
   const turnBox = document.getElementById("dbg-turn");
   turnBox.disabled = !idle;
@@ -1085,13 +1239,14 @@ function drawDebugBar(measure = true) {
   debugDrawLane("b", null);
   debugDrawLane("", {name: "", ...debugAxis(first, last), first, last, turn: state.turn, fork: null,
     kept: thinned ? new Set(kept) : null, turns: thinned ? kept : null, flags: points, stops: breaks.turns,
-    goal: debugRunning ? debugGoal : null, idle});
-  const played = document.getElementById("dbg-played");
-  played.textContent = first === last ? `Turn ${first} is kept`
+    eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle});
+  // How much of the game can be gone back to, said by the turn box.
+  const played = first === last ? `Turn ${first} is kept`
     : `Turns ${first} to ${last} played, ${thinned ? `${kept.length} kept` : "every one kept"}`;
-  played.title = thinned
-    ? `${kept.length} of the ${last - first + 1} turns played can be gone back to; a turn that is no longer kept answers with the nearest before it.`
-    : "The start of every turn is kept: any of them can be gone back to as it stood.";
+  const turnLabel = turnBox.closest(".dbg-turnbox");
+  const turnTitle = `${played}. Type a turn to go to it: one already played is put back as it stood` +
+    `${thinned ? " (a turn no longer kept answers with the nearest before it)" : ""}, one still ahead is played to by the Civ AI`;
+  if (turnLabel.title !== turnTitle) { turnLabel.title = turnTitle; turnLabel.dataset.played = played; }
   document.getElementById("dbg-point-count").textContent = points.length ? `${points.length}` : "";
   debugDrawn(document.getElementById("dbg-point-list"), points.length ? points.map(point =>
     `<div class="dbg-line"><span style="flex:1;width:auto;color:inherit">${point.auto ? "" : "<b>"}${escapeAttr(point.name)}${point.auto ? "" : "</b>"}` +
@@ -1108,7 +1263,7 @@ function drawDebugBar(measure = true) {
   document.getElementById("dbg-layer-count").textContent = layersOn ? `${layersOn}` : "";
   const conditions = breaks.conditions || [];
   const breakCount = breaks.turns.length + breaks.categories.length + breaks.phrases.length +
-    conditions.length + (breaks.important ? 1 : 0);
+    conditions.length + (breaks.important ? 1 : 0) + (breaks.eras ? 1 : 0);
   document.getElementById("dbg-break-count").textContent = breakCount ? `${breakCount}` : "";
   // A pane is already one half of a split, and does not split again.
   bar.querySelector('[data-dbg-pop="split"]').hidden = DEBUG_PANE !== null;
@@ -1180,6 +1335,7 @@ function drawDebugBar(measure = true) {
   if (document.activeElement !== field("phrases")) field("phrases").value = breaks.phrases.join(", ");
   field("important").checked = breaks.important;
   field("every_seat").checked = breaks.every_seat;
+  field("eras").checked = breaks.eras === true;
 
   const note = document.getElementById("dbg-note");
   const layered = timeline.assisted
@@ -1187,14 +1343,12 @@ function drawDebugBar(measure = true) {
   // A round being stepped a seat at a time is not the person's turn, and the
   // bar says whose it is for as long as nothing newer is being said.
   const round = timeline.playing
-    ? `${debugPlaysNext(timeline.playing)} · ▸| steps it, ▶| lets the round finish` : "";
+    ? `${debugPlaysNext(timeline.playing)} · ▸| steps it, 1▶ lets the round finish` : "";
   const text = debugNoteText || round || layered;
   const html = escapeAttr(text) +
     (debugNoteText && debugNotePos ? `<button data-dbg="show" title="Centre the map there">Show</button>` : "");
   if (note.innerHTML !== html) { note.innerHTML = html; note.title = text; }
-  if (!measure) return;
-  debugFit(bar);
-  debugDock(bar);
+  if (measure) debugDock(bar);
 }
 
 // ------------------------------------------------------------------ split

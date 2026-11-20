@@ -288,6 +288,8 @@ pub struct Breakpoints {
     every_seat: bool,
     /// Stop when one of these becomes true of the game's state.
     conditions: Vec<Condition>,
+    /// Stop on the first turn of a new world era.
+    eras: bool,
 }
 
 impl Breakpoints {
@@ -378,6 +380,7 @@ impl Breakpoints {
             important: request["important"].as_bool().unwrap_or(false),
             every_seat: request["every_seat"].as_bool().unwrap_or(false),
             conditions,
+            eras: request["eras"].as_bool().unwrap_or(false),
         })
     }
 
@@ -426,6 +429,7 @@ impl Breakpoints {
             "important": self.important,
             "every_seat": self.every_seat,
             "conditions": self.conditions.iter().map(Condition::json).collect::<Vec<_>>(),
+            "eras": self.eras,
             // The vocabulary a page offers, read from the engine's own lists.
             "known_categories": crate::game::EVENT_CATEGORIES,
             "known_tests": Test::ALL.map(Test::sign),
@@ -714,6 +718,23 @@ impl Timeline {
             .map_or(0, |mark| game.log.len().saturating_sub(mark.actions))
     }
 
+    /// The first kept turn of each world era the marks pass through: where
+    /// the page marks an era's start on the timeline, and a turn that can be
+    /// gone back to. When the turn an era began on has been thinned away it
+    /// is the nearest kept turn after it.
+    fn eras(&self) -> Vec<(usize, u32)> {
+        let mut eras: Vec<(usize, u32)> = Vec::new();
+        for mark in &self.marks {
+            if eras
+                .last()
+                .is_none_or(|(era, _)| *era != mark.game.world_era)
+            {
+                eras.push((mark.game.world_era, mark.turn));
+            }
+        }
+        eras
+    }
+
     fn json(&self, game: &Game) -> Value {
         let turns: Vec<u32> = self.marks.iter().map(|mark| mark.turn).collect();
         let acted = self.acted(game);
@@ -729,6 +750,11 @@ impl Timeline {
             "can_undo": acted > 0 && game.current == 0 && self.mark(game.turn).is_some(),
             "can_back": acted > 0 || turns.first().is_some_and(|first| *first < game.turn),
             "can_forward": turns.last().is_some_and(|last| *last > game.turn),
+            "eras": self.eras().iter().map(|(era, turn)| json!({
+                "era": era,
+                "name": crate::rules::ERA_NAMES.get(*era),
+                "turn": turn,
+            })).collect::<Vec<_>>(),
             "breakpoints": self.breakpoints.json(),
             "layers": Layer::ALL.iter().map(|layer| json!({
                 "id": layer.id(),
@@ -1000,6 +1026,7 @@ impl Session {
         let before_len = self.game.events.len();
         let before_last = self.game.events.last().cloned();
         let read_before = readings(&self.game, &self.debugger.breakpoints.conditions);
+        let era_before = self.game.world_era;
         // In the middle of a round the next whole thing to play is the rest
         // of it: the rivals finish, and the turn that opens is the person's.
         let played = if self.debug_mid_round() {
@@ -1016,6 +1043,12 @@ impl Session {
             self.debugger
                 .breakpoints
                 .hit(&self.game, fresh)
+                .or_else(|| {
+                    // The turn that opened is the first of a new world era.
+                    (self.debugger.breakpoints.eras && self.game.world_era != era_before).then(
+                        || json!({"kind": "era", "turn": self.game.turn, "era": self.game.world_era}),
+                    )
+                })
                 .or_else(|| {
                     let read_after = readings(&self.game, &self.debugger.breakpoints.conditions);
                     self.debugger

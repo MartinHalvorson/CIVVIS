@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drive the Sim debugger's bar and split in a real browser against a toy engine.
+"""Drive the Sim debugger's header box and split in a real browser against a toy engine.
 
 `web/assets/app_debugger.js` is loaded as it ships, on a page that stands in
 for the viewer (the handful of globals the bar reads) and an engine that
@@ -46,10 +46,18 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8"><title>bar</title>
    line taller than the window, and a browser whose scrollbars take room (the
    Linux runner's) then has a window 15px wider than anything fixed in it. */
 * { box-sizing: border-box; margin: 0; } html, body { height: 100%; } body { overflow: hidden; }
+/* The viewer's own layout: the left panel is the first column and the map
+   area has the rest. The header box stands over the map area only. */
+body { display: flex; }
+#side { order: -1; flex: 0 0 200px; height: 100%; }
+#maparea { flex: 1; min-width: 0; }
 </style></head>
 <body>
-<div id="maparea" style="height:100%"></div>
-<select id="autoplaystrategy"><option value="jack">Jack</option><option value="stock">Stock</option></select>
+<div id="maparea"></div>
+<div id="side">
+  <div id="humanfooter" style="display:grid">the left panel's own auto-play</div>
+  <select id="autoplaystrategy"><option value="jack">Jack</option><option value="stock">Stock</option></select>
+</div>
 <script>
 "use strict";
 // ---- what the viewer gives the bar
@@ -58,6 +66,8 @@ let SPEC = false, autoplaying = false, turnAdvancePending = false;
 const AUTOPLAY_BATCH_TIMEOUT_MS = 60000;
 const unitOrders = new Map(), cityQueues = new Map();
 let noticeLog = [], noticeDismissed = new Set(), noticeSeenTurn = 0;
+// The world the page last announced as a new game.
+let soloNoticeSeed = null;
 let cam = {x: 0, y: 0, scale: 1, rot: 0, tilt: 0}, SKY_PAN = {x: 0, y: 0};
 let cameraFlight = null, cameraZoom = null;
 function saveCityQueues() {}
@@ -87,9 +97,13 @@ async function send() { return state; }
 window.requestAnimationFrame = drawn => setTimeout(drawn, 0);
 
 // ---- a toy engine: one line of turns, each kept
+// `eras` is the first turn of each era the game has been through, and
+// `eraAt` a turn on which the next one begins.
 const engine = {turn: 1, marks: [1], saves: [], ids: 0, breaks: [], line: null, stopped: null, score: 0,
   current: 0, stepped: null, acted: 0, reveal: false, layers: [], wait: 0,
-  watch: {categories: [], phrases: [], important: false, every_seat: false, conditions: []}, sent: []};
+  eras: [{era: 0, name: "ancient", turn: 1}], eraAt: null,
+  watch: {categories: [], phrases: [], important: false, every_seat: false, conditions: [], eras: false}, sent: []};
+const ERAS = ["ancient", "classical", "medieval"];
 // The round: the played seat, one rival, and the Barbarians.
 const SEATS = 3;
 // Another frame's engine as it stands, for a half that is copied or kept:
@@ -101,7 +115,7 @@ function engineOf(frames, pane) {
 }
 function engineState(error = null) {
   const marks = engine.marks;
-  return {error, turn: engine.turn, current: engine.current, units: [], cities: [],
+  return {error, turn: engine.turn, seed: 7, current: engine.current, units: [], cities: [],
     ...(engine.limit ? {turn_limit: engine.limit} : {}),
     players: [{id: 0, civ: "rome", score: engine.score, cities: 1, population: 1, military: 1,
       yields: {science: 1, culture: 1, gold: 1, faith: 0}},
@@ -114,6 +128,7 @@ function engineState(error = null) {
       layers: [["research", "Research"], ["cities", "Cities"]].map(([id, label]) =>
         ({id, label, on: engine.layers.includes(id)})), assisted: 0, stopped: engine.stopped,
       stepped: engine.stepped, reveal: engine.reveal, playing: engine.current, memory_line: engine.line,
+      eras: engine.eras.filter(era => era.turn <= marks[marks.length - 1]),
       saves: engine.saves.map(save => ({...save}))}};
 }
 async function fetchJSON(path, init = {}) {
@@ -147,7 +162,12 @@ async function fetchJSON(path, init = {}) {
     // Which Civ AI plays the seat is the one thing that tells two halves apart.
     engine.score += body.strategy === "stock" ? 2 : 1;
     engine.marks = marks.filter(turn => turn < engine.turn).concat(engine.turn);
+    // A turn played again is played into whatever era the game was in.
+    engine.eras = engine.eras.filter(era => era.turn < engine.turn);
+    const dawn = engine.turn === engine.eraAt;
+    if (dawn) engine.eras.push({era: engine.eras.length, name: ERAS[engine.eras.length], turn: engine.turn});
     if (engine.breaks.includes(engine.turn)) engine.stopped = {kind: "turn", turn: engine.turn};
+    else if (dawn && engine.watch.eras) engine.stopped = {kind: "era", turn: engine.turn, era: engine.eras.length - 1};
   } else if (body.op === "jump") {
     const reached = marks.filter(turn => turn <= body.turn).pop();
     if (reached === undefined) error = "before this timeline begins"; else engine.turn = reached;
@@ -167,7 +187,7 @@ async function fetchJSON(path, init = {}) {
     // Whatever a request leaves out is cleared, as the engine does it.
     engine.breaks = body.turns || [];
     engine.watch = {categories: body.categories || [], phrases: body.phrases || [], important: !!body.important,
-      every_seat: !!body.every_seat, conditions: body.conditions || []};
+      every_seat: !!body.every_seat, conditions: body.conditions || [], eras: !!body.eras};
   } else if (body.op === "layers") {
     engine.layers = body.layers || [];
   } else if (body.op === "reveal") {
@@ -192,6 +212,8 @@ const barScript = document.createElement("script");
 barScript.src = "app_debugger.js";
 if (!pane) document.body.appendChild(barScript);
 else {
+  // A half of a split has its left panel folded away, as the viewer's has.
+  document.getElementById("side").style.display = "none";
   const {sent, ...world} = JSON.parse(JSON.stringify(window.parent.eval("engine")));
   Object.assign(engine, world);
   if (window.parent.eval("typeof lateScript !== 'undefined' && lateScript")) {
@@ -276,34 +298,60 @@ def check_the_bar(bar: Bar) -> None:
     assert bar.ev("!document.getElementById('debugbar').hidden"), "the bar is hidden on a played game"
     assert bar.ev("document.getElementById('dbg-turn').value") == "1"
 
-    # The bar is fixed across the very top of the window, the whole width of
-    # it, and the page stands beneath: the body is padded by the bar's height.
-    left, top, width, height, window = bar.ev(
+    # The header box stands at the top of the window beside the left panel:
+    # it begins at the panel's right side and runs to the window's right
+    # edge, the panel keeps the window's whole height, and the map area
+    # stands under the box.
+    left, top, right, height, window = bar.ev(
         "(() => { const box = document.getElementById('debugbar').getBoundingClientRect();"
-        " return [box.left, box.top, box.width, Math.ceil(box.height), document.documentElement.clientWidth]; })()")
+        " return [box.left, box.top, box.right, Math.ceil(box.height), document.documentElement.clientWidth]; })()")
     assert window == bar.ev("innerWidth"), "the stand-in page scrolls, and the viewer never does"
-    assert (left, top, width) == (0, 0, window), (left, top, width, window)
+    side = bar.ev("(() => { const box = document.getElementById('side').getBoundingClientRect();"
+                  " return [box.left, box.top, box.right, box.height]; })()")
+    assert side == [0, 0, 200, bar.ev("innerHeight")], side
+    assert (left, top, right) == (200, 0, window), (left, top, right, window)
     assert bar.ev("getComputedStyle(document.getElementById('debugbar')).position") == "fixed"
-    assert bar.ev("getComputedStyle(document.body).paddingTop") == f"{height}px"
-    assert bar.ev("Math.round(document.getElementById('maparea').getBoundingClientRect().top)") == height
-    # Like the game's masthead the bar opens with a plate at the far left edge
-    # of the window, holding the turn box and the hands that walk the turns
-    # played, and the timeline has the width that is left: it starts where the
-    # plate ends and runs to the right edge of the window.
-    plate, rail, lane_end = bar.ev(
-        "(() => { const box = name => { const at = document.querySelector(name).getBoundingClientRect();"
-        " return [at.left, at.top, at.right]; };"
-        f" return [box('#debugbar .dbg-plate'), box('{LANE} .dbg-rail'), box('{LANE} .dbg-finish')[2]]; }})()")
-    assert plate[:2] == [0, 0] and 0 < plate[2] < window / 3, plate
-    assert plate[2] <= rail[0] < plate[2] + 60 and lane_end > window - 20, (plate, rail, lane_end, window)
-    assert bar.ev("['#dbg-turn', '[data-dbg=first]', '[data-dbg=back]', '[data-dbg=forward]', '[data-dbg=last]',"
-                  " '[data-dbg=undo]'].every(name => document.querySelector('#debugbar .dbg-plate ' + name))")
+    assert bar.ev("getComputedStyle(document.body).paddingTop") == "0px"
+    assert bar.ev("getComputedStyle(document.getElementById('maparea')).marginTop") == f"{height}px"
+    assert bar.ev("(() => { const box = document.getElementById('maparea').getBoundingClientRect();"
+                  " return [Math.round(box.left), Math.round(box.top)]; })()") == [200, height]
+    # Auto-play is in the box, and the left panel's own copy is put away.
+    assert bar.ev("getComputedStyle(document.getElementById('humanfooter')).display") == "none"
+    # The timeline is the top of the box and twice the height it was. Under
+    # it the open turn stands in the middle, under the middle of the
+    # timeline, with the turn buttons either side of it in their order:
+    # turn 1, era start, ten back, one back; one on, ten on. Auto-play (the
+    # Civ AI, the turns, the button), layers, breakpoints and Branch Timeline
+    # are at the left end in that order, before the turn buttons.
+    box = ("(name => { const at = document.querySelector(name).getBoundingClientRect();"
+           " return [at.left, at.top, at.right, at.bottom]; })")
+    rail = bar.ev(f"{box}('{LANE} .dbg-rail')")
+    deck = bar.ev(f"{box}('#debugbar .dbg-deck')")
+    assert rail[3] - rail[1] >= 64 and rail[3] <= deck[1], (rail, deck)
+    assert rail[0] > left and rail[2] < window, (rail, left, window)
+    middle = (rail[0] + rail[2]) / 2
+    turn_box = bar.ev(f"{box}('#dbg-turn')")
+    assert abs((turn_box[0] + turn_box[2]) / 2 - middle) < 40, (turn_box, middle)
+    order = ["#dbg-agent", "#dbg-turns", "[data-dbg=autoplay]", "[data-dbg-pop=layers]", "[data-dbg-pop=breaks]",
+             "[data-dbg-pop=split]", "[data-dbg=first]", "[data-dbg=era]", "[data-dbg=back10]", "[data-dbg=back]",
+             "#dbg-turn", "[data-dbg=next]", "[data-dbg=next10]"]
+    assert bar.ev("(names => { const all = [...document.querySelectorAll('#debugbar .dbg-deck *')];"
+                  " const at = names.map(name => all.indexOf(document.querySelector('#debugbar .dbg-deck ' + name)));"
+                  " return at.every((place, index) => place >= 0 && (index === 0 || place > at[index - 1])); })"
+                  f"({json.dumps(order)})"), "the box's controls are not in their order"
+    along = [bar.ev(f"{box}('#debugbar {name}')") for name in order[6:]]
+    assert all(before[2] <= after[0] for before, after in zip(along, along[1:])), along
+    assert along[3][2] <= middle <= along[5][0], "one back and one on are not either side of the middle"
+    assert bar.ev(f"{box}('#debugbar [data-dbg-pop=split]')")[2] <= along[0][0] or \
+        bar.ev(f"{box}('#debugbar [data-dbg-pop=split]')")[1] > along[0][1], "Branch Timeline is not left of the turn buttons"
+    assert bar.ev("document.querySelector('#debugbar [data-dbg-pop=split]').textContent") == "⑂Branch Timeline"
     # The timeline is the whole game, 250 turns when the game does not say:
     # turn 1 is named at its left end and the last turn at its right, with the
     # round turns between them on the ruler.
     assert bar.ev("(() => { const s = document.getElementById('dbg-slider'); return [s.min, s.max, s.disabled]; })()") \
         == ["1", "250", False]
     assert bar.ev("document.getElementById('dbg-slider').getBoundingClientRect().width") > rail[2] - rail[0] - 40
+    assert bar.ev("document.getElementById('dbg-limit').textContent") == ""
     ends = ("(() => { const lane = document.querySelector('" + LANE + "'), flag = lane.querySelector('.dbg-flag');"
             " const start = lane.querySelector('.dbg-start'), rail = lane.querySelector('.dbg-rail').getBoundingClientRect();"
             " return [start.textContent, lane.querySelector('.dbg-finish').textContent,"
@@ -327,7 +375,7 @@ def check_the_bar(bar: Bar) -> None:
     assert [call["op"] for call in bar.sent()] == ["step"] * 5, bar.sent()
     assert bar.note() == "Played to turn 6", bar.note()
     assert bar.ev("state.debug.turns.length") == 6
-    assert bar.ev("document.getElementById('dbg-played').textContent") == "Turns 1 to 6 played, every one kept"
+    assert bar.ev("document.querySelector('#debugbar .dbg-turnbox').dataset.played") == "Turns 1 to 6 played, every one kept"
     # The marker is on the turn that is open, and it moves right as turns open.
     marker = (f"(() => {{ const pill = document.querySelector('{LANE} .dbg-cursor b').getBoundingClientRect();"
               " return [document.querySelector('" + LANE + " .dbg-cursor b').textContent, (pill.left + pill.right) / 2]; })()")
@@ -395,17 +443,70 @@ def check_the_bar(bar: Bar) -> None:
     bar.idle("state.turn === 2", "the wheel walks back")
     assert [call["op"] for call in bar.sent()] == ["forward", "back"], bar.sent()
 
-    # The two ends of what was played, a button each.
+    # The turn buttons. They walk the turns already played, and past the last
+    # of them the Civ AI plays on: ten on from turn 3, with turns 1 to 9
+    # played, walks to turn 9 and plays four more.
+    sent = lambda: [(call["op"], call.get("turn")) for call in bar.sent()]
+    off = lambda name: bar.ev(f"document.querySelector('[data-dbg=\"{name}\"]').disabled")
     bar.forget()
-    bar.click('[data-dbg="last"]')
-    bar.idle("state.turn === 9", "the last turn played is gone to")
-    assert bar.ev("document.querySelector('[data-dbg=\"last\"]').disabled")
+    bar.click('[data-dbg="next"]')
+    bar.idle("state.turn === 3", "next turn walks to a turn already played")
+    assert sent() == [("forward", None)], sent()
+    bar.forget()
+    bar.click('[data-dbg="next10"]')
+    bar.idle("state.turn === 13", "ten turns on walks to the last turn played and plays the rest")
+    assert sent() == [("jump", 9)] + [("step", None)] * 4, sent()
+    assert bar.note() == "Played to turn 13", bar.note()
+    bar.forget()
+    bar.click('[data-dbg="next"]')
+    bar.idle("state.turn === 14", "next turn, past the last turn played, is one turn of the Civ AI")
+    assert bar.sent() == [{"op": "step", "strategy": "jack"}], bar.sent()
+    bar.forget()
+    bar.click('[data-dbg="back10"]')
+    bar.idle("state.turn === 4", "ten turns back")
+    bar.click('[data-dbg="back"]')
+    bar.idle("state.turn === 3", "one turn back")
     bar.click('[data-dbg="first"]')
-    bar.idle("state.turn === 1", "the first turn kept is gone to")
-    assert bar.ev("document.querySelector('[data-dbg=\"first\"]').disabled")
-    assert bar.sent() == [{"op": "jump", "turn": 9}, {"op": "jump", "turn": 1}], bar.sent()
-    bar.drag("dbg-slider", 2)
-    bar.idle("state.turn === 2", "the slider goes to turn 2")
+    bar.idle("state.turn === 1", "Turn 1 goes to where the timeline begins")
+    assert sent() == [("jump", 4), ("back", None), ("jump", 1)], sent()
+    assert off("first") and off("back10") and off("back") and off("era"), "there is nothing before turn 1 to go back to"
+    # Turn 1 walked back to is not a new game, and the page is told so: its
+    # notice for a new game stays put away.
+    assert bar.ev("soloNoticeSeed === state.seed && state.seed === 7"), "a walk back to turn 1 reads as a new game"
+    assert not off("next") and not off("next10")
+    # Ten back from a turn nearer the start than that goes to the start.
+    bar.type_turn(6)
+    bar.idle("state.turn === 6", "the turn box goes to turn 6")
+    bar.forget()
+    bar.click('[data-dbg="back10"]')
+    bar.idle("state.turn === 1", "ten back stops where the timeline begins")
+    assert sent() == [("jump", 1)], sent()
+
+    # The eras the game has been through are named on the timeline at the
+    # turn each began. A name is clicked to go there, and Era start goes back
+    # to the first turn of the era that is open, then of the era before.
+    eras = f"[...document.querySelectorAll('{LANE} .dbg-marks u b')].map(name => name.textContent)"
+    assert bar.ev(eras) == ["Ancient"], bar.ev(eras)
+    bar.ev("engine.eras.push({era: 1, name: 'classical', turn: 5}), render(engineState()), true")
+    assert bar.ev(eras) == ["Ancient", "Classical"], bar.ev(eras)
+    places = bar.ev(f"[...document.querySelectorAll('{LANE} .dbg-marks u')].map(line => line.getBoundingClientRect().left)")
+    assert places[0] < places[1] < bar.ev(marker)[1] + 400, places
+    bar.forget()
+    bar.click(f'{LANE} .dbg-marks u b[data-dbg-turn="5"]')
+    bar.idle("state.turn === 5", "an era's name goes to the turn it began")
+    assert off("era") is False and "Ancient" in bar.ev("document.querySelector('[data-dbg=\"era\"]').title")
+    bar.type_turn(9)
+    bar.idle("state.turn === 9", "the turn box goes to turn 9")
+    assert "turn 5" in bar.ev("document.querySelector('[data-dbg=\"era\"]').title")
+    bar.forget()
+    bar.click('[data-dbg="era"]')
+    bar.idle("state.turn === 5", "Era start goes to the first turn of the era that is open")
+    bar.click('[data-dbg="era"]')
+    bar.idle("state.turn === 1", "and from there to the first turn of the era before")
+    assert sent() == [("jump", 5), ("jump", 1)], sent()
+    assert off("era")
+    # Back to nine turns played and turn 2 open, for what follows.
+    bar.ev("engine.eras.length = 1, engine.marks = [1, 2, 3, 4, 5, 6, 7, 8, 9], engine.turn = 2, render(engineState()), true")
 
     # A save point: set by name, flagged on the timeline, gone to by its flag,
     # and let go from the list. Its panel opens under its own button.
@@ -452,7 +553,7 @@ def check_the_bar(bar: Bar) -> None:
     bar.ev("engine.marks = [1, 4, 8, 12], render(engineState()), true")
     assert bar.ev(f"document.querySelector('{LANE}').classList.contains('dbg-thinned')")
     assert bar.ev(f"document.querySelectorAll('{LANE} .dbg-kept-turns i').length") == 4
-    assert bar.ev("document.getElementById('dbg-played').textContent") == "Turns 1 to 12 played, 4 kept"
+    assert bar.ev("document.querySelector('#debugbar .dbg-turnbox').dataset.played") == "Turns 1 to 12 played, 4 kept"
     assert hover(6) == "Turn 6 · no longer kept, goes to turn 4", hover(6)
     bar.forget()
     bar.drag("dbg-slider", 6)
@@ -461,17 +562,8 @@ def check_the_bar(bar: Bar) -> None:
     bar.ev(f"engine.marks = {json.dumps(kept)}, engine.turn = 9, render(engineState()), true")
     assert not bar.ev(f"document.querySelector('{LANE}').classList.contains('dbg-thinned')")
 
-    # The step and back buttons, for completeness: one operation each.
-    bar.forget()
-    bar.click('[data-dbg="back"]')
-    bar.idle("state.turn === 8", "back goes one turn back")
-    bar.click('[data-dbg="step"]')
-    bar.idle("state.turn === 9", "step plays one turn")
-    assert [call["op"] for call in bar.sent()] == ["back", "step"], bar.sent()
-    assert bar.sent()[-1].get("strategy") == "jack", bar.sent()
-
-    # The Civ AI that plays the seat is picked beside Run, from what the page's
-    # own picker lists, and a step carries it.
+    # The Civ AI that plays the seat is picked beside Auto-play, from what the
+    # page's own picker lists, and a turn it plays carries it.
     agent = "document.getElementById('dbg-agent')"
     assert bar.ev(f"[...{agent}.options].map(option => option.value)") == ["jack", "stock"]
     assert bar.ev(f"{agent}.value") == "jack"
@@ -481,41 +573,82 @@ def check_the_bar(bar: Bar) -> None:
                " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
         assert bar.ev("document.getElementById('autoplaystrategy').value") == name
 
+    last = bar.ev("Math.max(...state.debug.turns)")
+    bar.type_turn(last)
+    bar.idle(f"state.turn === {last}", "the turn box goes to the last turn played")
     seat("stock")
-    bar.click('[data-dbg="step"]')
-    bar.idle("state.turn === 10", "a step with the Civ AI picked in the bar")
-    assert bar.sent()[-1] == {"op": "step", "strategy": "stock"}, bar.sent()
+    bar.forget()
+    bar.click('[data-dbg="next"]')
+    bar.idle(f"state.turn === {last + 1}", "a turn with the Civ AI picked in the box")
+    assert bar.sent() == [{"op": "step", "strategy": "stock"}], bar.sent()
     seat("jack")
-    bar.click('[data-dbg="back"]')
-    bar.idle("state.turn === 9", "back to turn 9")
 
-    # A bar with room has words on its tools; a narrow one keeps the signs,
-    # and the page still stands under whatever height the bar comes to. How
-    # wide "room" is depends on the type the browser has, so the two windows
-    # here are far to either side of it.
+    # Auto-play plays the number of turns picked, with the Civ AI picked, and
+    # while it plays the button counts them and is its own Stop.
+    turns = "document.getElementById('dbg-turns')"
+    label = lambda: [bar.ev(f"document.getElementById('dbg-run-{part}').textContent") for part in ("sign", "word", "count")]
+    assert bar.ev(f"[...{turns}.options].map(option => option.value).join()") \
+        == "1,2,3,4,5,10,20,30,40,50,100,150,200,250,all"
+    assert bar.ev(f"{turns}.value") == "1" and label() == ["▶▶", "Auto-play", ""], label()
+    bar.forget()
+    bar.click('[data-dbg="autoplay"]')
+    bar.idle(f"state.turn === {last + 2}", "auto-play plays one turn")
+    assert bar.sent() == [{"op": "step", "strategy": "jack"}], bar.sent()
+    bar.ev(f"{turns}.value = '5', engine.wait = 60, true")
+    bar.forget()
+    bar.click('[data-dbg="autoplay"]')
+    bar.until("debugRunning && debugPlayed >= 2", "auto-play is under way")
+    sign, word, count = label()
+    assert (sign, word) == ("⏹", "Stop") and count.endswith("/5") and 2 <= int(count[:-2]) <= 5, label()
+    assert bar.ev(f"{turns}.disabled && document.getElementById('dbg-agent').disabled"), "the picks are held while it plays"
+    assert bar.ev("document.querySelector('[data-dbg=\"autoplay\"]').classList.contains('on')")
+    bar.ev("engine.wait = 0, true")
+    bar.idle(f"state.turn === {last + 7}", "auto-play plays the five turns picked")
+    assert [call["op"] for call in bar.sent()] == ["step"] * 5, bar.sent()
+    assert bar.note() == f"Played to turn {last + 7}", bar.note()
+    assert label() == ["▶▶", "Auto-play", ""], label()
+    bar.ev(f"{turns}.value = '1', true")
+    bar.click('[data-dbg="back"]')
+    bar.idle(f"state.turn === {last + 6}", "one turn back")
+
+    # A box with room has words on its tools; a narrow one keeps the signs,
+    # and the map area still stands under whatever height the box comes to.
+    # How wide "room" is depends on the type the browser has, so the two
+    # windows here are far to either side of it.
     word = "getComputedStyle(document.querySelector('#debugbar .dbg-word')).display"
     tight = "document.getElementById('debugbar').classList.contains('dbg-tight')"
-    under = ("getComputedStyle(document.body).paddingTop ==="
+    under = ("getComputedStyle(document.getElementById('maparea')).marginTop ==="
              " Math.ceil(document.getElementById('debugbar').getBoundingClientRect().height) + 'px'")
-    tools = "document.querySelector('#debugbar .dbg-tools').offsetHeight"
+    deck = "document.querySelector('#debugbar .dbg-deck').offsetHeight"
 
     def window_of(width: int) -> None:
         bar.dev.call("Emulation.setDeviceMetricsOverride", {"width": width, "height": 900, "deviceScaleFactor": 1, "mobile": False})
-        bar.until(f"document.documentElement.clientWidth === {width} && {under}", f"the bar in a window {width} wide")
+        bar.until(f"document.documentElement.clientWidth === {width} && {under}", f"the box in a window {width} wide")
 
     window_of(3000)
-    bar.until(f"!{tight}", "a bar with room for the words went without them")
-    assert bar.ev(word) != "none" and bar.ev(tools) < 40, (bar.ev(word), bar.ev(tools))
-    window_of(300)
-    bar.until(tight, "a narrow bar kept the words on its tools")
+    bar.until(f"!{tight}", "a box with room for the words went without them")
+    assert bar.ev(word) != "none" and bar.ev(deck) < 70, (bar.ev(word), bar.ev(deck))
+    assert bar.ev("document.getElementById('debugbar').classList.contains('dbg-roomy')")
+    window_of(520)
+    bar.until(tight, "a narrow box kept the words on its tools")
     assert bar.ev(word) == "none"
-    assert bar.ev(tools) > 40 and bar.ev(under), "the tools wrap in a narrow window, and the page stays under them"
-    # A window with no room for the plate beside the tools has it over them.
-    assert bar.ev("document.querySelector('#debugbar .dbg-plate').getBoundingClientRect().bottom"
-                  " <= document.querySelector('#debugbar .dbg-tools').getBoundingClientRect().top"), \
-        "the plate is not over the tools in a narrow window"
+    assert bar.ev(under), "the map area does not stand under a narrow box"
+    # A box with no room for the tools beside the turn buttons stacks them:
+    # the turn buttons first, and the tools under them.
+    assert bar.ev("document.getElementById('debugbar').classList.contains('dbg-stacked')")
+    assert bar.ev("document.querySelector('#debugbar .dbg-turnbox').getBoundingClientRect().bottom"
+                  " <= document.querySelector('#debugbar .dbg-cluster').getBoundingClientRect().top"), \
+        "the turn buttons are not over the tools in a narrow window"
     bar.dev.call("Emulation.clearDeviceMetricsOverride")
     bar.until(f"document.documentElement.clientWidth === {window} && {under}", "the window is its own size again")
+
+    # The left panel is folded away and brought back without the window
+    # changing size, and the box follows the map area's left edge.
+    edge = "Math.round(document.getElementById('debugbar').getBoundingClientRect().left)"
+    bar.ev("document.getElementById('side').style.display = 'none', true")
+    bar.until(f"{edge} === 0 && {under}", "the box takes the room a folded panel leaves")
+    bar.ev("document.getElementById('side').style.display = '', true")
+    bar.until(f"{edge} === 200 && {under}", "the box starts at the panel's right side again")
 
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
@@ -536,7 +669,7 @@ def check_breakpoints_and_a_run(bar: Bar) -> None:
     # Turns are whole numbers, each once; anything else in the field is dropped.
     request = typed("turns", "12, 15, twelve, 12")
     assert request == {"op": "breakpoints", "turns": [12, 15], "categories": [], "phrases": [],
-                       "important": False, "every_seat": False, "conditions": []}, request
+                       "important": False, "every_seat": False, "eras": False, "conditions": []}, request
     assert count() == "2", count()
     request = typed("phrases", "declared war, captured")
     assert request["phrases"] == ["declared war", "captured"] and request["turns"] == [12, 15], request
@@ -573,15 +706,38 @@ def check_breakpoints_and_a_run(bar: Bar) -> None:
     bar.idle(f"state.debug.breakpoints.turns.includes({turn + 10})", "+10 adds a turn")
     assert bar.sent()[-1]["turns"] == [12, 15, turn + 10], bar.sent()
 
-    # Run plays turns until the engine says a breakpoint stopped it.
+    # Auto-play, told to play every turn, plays until the engine says a
+    # breakpoint stopped it.
+    turns = "document.getElementById('dbg-turns')"
     request = typed("turns", str(turn + 3))
     assert request["turns"] == [turn + 3], request
+    bar.ev(f"{turns}.value = 'all', true")
     bar.forget()
-    bar.click('[data-dbg="run"]')
-    bar.idle(f"state.turn === {turn + 3}", "a run stops on its breakpoint")
+    bar.click('[data-dbg="autoplay"]')
+    bar.idle(f"state.turn === {turn + 3}", "auto-play stops on its breakpoint")
     assert [call["op"] for call in bar.sent()] == ["step"] * 3, bar.sent()
     assert bar.note() == f"Stopped at turn {turn + 3}", bar.note()
     assert bar.ev("document.getElementById('dbg-run-sign').textContent") == "▶▶"
+
+    # An era breakpoint: ticked in the form, it stops auto-play on the first
+    # turn of a new era, and the timeline names the era there.
+    bar.forget()
+    bar.click('#dbg-pop-breaks [data-dbg-field=eras]')
+    bar.idle("state.debug.breakpoints.eras === true", "the era breakpoint is ticked")
+    assert bar.sent()[-1]["eras"] is True and bar.sent()[-1]["turns"] == [turn + 3], bar.sent()
+    held = count()
+    bar.ev(f"engine.eraAt = {turn + 6}, true")
+    bar.forget()
+    bar.click('[data-dbg="autoplay"]')
+    bar.idle(f"state.turn === {turn + 6}", "auto-play stops where the era begins")
+    assert [call["op"] for call in bar.sent()] == ["step"] * 3, bar.sent()
+    assert bar.note() == f"Stopped on turn {turn + 6}: the Classical era began", bar.note()
+    assert bar.ev(f"[...document.querySelectorAll('{LANE} .dbg-marks u b')].map(name => name.textContent + name.dataset.dbgTurn)") \
+        == ["Ancient1", f"Classical{turn + 6}"]
+    bar.click('#dbg-pop-breaks [data-dbg-field=eras]')
+    bar.idle("state.debug.breakpoints.eras === false", "the era breakpoint is unticked")
+    assert int(count()) == int(held) - 1, (count(), held)
+    bar.ev("engine.eraAt = null, true")
 
     # Clear all sends a request with nothing in it, and the count goes.
     bar.forget()
@@ -591,16 +747,18 @@ def check_breakpoints_and_a_run(bar: Bar) -> None:
     assert count() == "", count()
     bar.click('[data-dbg-pop="breaks"]')
 
-    # With nothing to stop it a run goes on, the same button is its Stop, and
-    # the bar says how far it got.
-    bar.click('[data-dbg="run"]')
-    bar.until(f"debugRunning && state.turn > {turn + 5}", "a run with no breakpoint keeps playing")
+    # With nothing to stop it auto-play goes on counting, the same button is
+    # its Stop, and the box says how far it got.
+    bar.click('[data-dbg="autoplay"]')
+    bar.until(f"debugRunning && state.turn > {turn + 11}", "auto-play with no breakpoint keeps playing")
     assert bar.ev("document.getElementById('dbg-run-sign').textContent") == "⏹"
     assert bar.ev("document.getElementById('dbg-run-word').textContent") == "Stop"
-    bar.click('[data-dbg="run"]')
-    bar.idle("true", "the run stops when told to")
+    assert int(bar.ev("document.getElementById('dbg-run-count').textContent")) >= 5
+    bar.click('[data-dbg="autoplay"]')
+    bar.idle("true", "auto-play stops when told to")
     assert bar.note().startswith("Stopped by hand after "), bar.note()
-    assert bar.ev("state.turn") < 400, "the run was stopped, not exhausted"
+    assert bar.ev("state.turn") < 400, "auto-play was stopped, not exhausted"
+    bar.ev(f"{turns}.value = '1', true")
 
 
 def check_layers_reveal_and_undo(bar: Bar) -> None:
@@ -693,7 +851,7 @@ def check_stepping_a_seat(bar: Bar) -> None:
     bar.click('[data-dbg="step-seat"]')
     bar.idle("state.current === 1", "a round is in the middle")
     bar.ev("debugSay(''), true")
-    assert bar.note() == "Greece plays next · ▸| steps it, ▶| lets the round finish", bar.note()
+    assert bar.note() == "Greece plays next · ▸| steps it, 1▶ lets the round finish", bar.note()
     bar.forget()
     bar.ev("send({type: 'move'}), true")
     assert bar.note() == "Greece plays next; your turn comes back when the round finishes", bar.note()
@@ -728,15 +886,14 @@ def check_the_split(bar: Bar) -> None:
     shown = lambda lane: bar.ev(f"getComputedStyle(document.querySelector('[data-dbg-lane=\"{lane}\"]')).display") != "none"
     assert (shown(""), shown("a"), shown("b")) == (False, True, True)
     # Each lane has the width of the window to itself, between its two ends:
-    # the plate is the host's own world's, and is away with the tools.
+    # the turn buttons and the tools are the host's own world's, and are away.
     wide = bar.ev("['a', 'b'].map(letter => document.getElementById('dbg-slider-' + letter).getBoundingClientRect().width)")
     assert min(wide) > bar.ev("innerWidth") * 0.6, wide
-    assert bar.ev("getComputedStyle(document.querySelector('#debugbar .dbg-plate')).display") == "none"
     assert bar.ev("['a', 'b'].map(letter => document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-start`).textContent"
                   " + ' ' + document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-finish`).textContent)") == ["1 250"] * 2
-    assert bar.ev("getComputedStyle(document.querySelector('#debugbar .dbg-tools')).display") == "none"
+    assert bar.ev("getComputedStyle(document.querySelector('#debugbar .dbg-deck')).display") == "none"
     assert bar.ev(half("a", "'getComputedStyle(document.querySelector(\"#debugbar .dbg-time\")).display'")) == "none"
-    assert bar.ev(half("a", "'getComputedStyle(document.querySelector(\"#debugbar .dbg-tools\")).display'")) != "none"
+    assert bar.ev(half("a", "'getComputedStyle(document.querySelector(\"#debugbar .dbg-deck\")).display'")) != "none"
     lanes = "['a', 'b'].map(letter => +document.getElementById('dbg-slider-' + letter).value)"
     assert bar.ev(lanes) == [start, start], bar.ev(lanes)
     assert bar.ev("[...debugSplit.host.querySelector('[data-dbg-strategy=\"b\"]').options].map(o => o.value)") \
@@ -751,7 +908,7 @@ def check_the_split(bar: Bar) -> None:
     # bar, and is made there as well. A half has no picker of its own.
     head = "document.querySelector('#debugbar [data-dbg-agent=\"{}\"]')".format
     bar.until(f"{head('a')}.value === 'jack' && {head('b')}.value === 'stock'", "the lanes say which Civ AI each half seats")
-    assert bar.ev(half("a", "'getComputedStyle(document.getElementById(\"dbg-agent\")).display'")) == "none"
+    assert bar.ev(half("a", "'document.getElementById(\"dbg-agent\").offsetParent === null'")), "a half has a picker of its own"
     for name in ("stock", "jack"):
         bar.ev(f"(() => {{ const select = {head('a')}; select.value = '{name}';"
                " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
@@ -843,7 +1000,9 @@ def check_the_split(bar: Bar) -> None:
     assert bar.note() == "Playing on from simulator B", bar.note()
     # The screen is whole again and the bar is the world's own.
     assert (shown(""), shown("a"), shown("b")) == (True, False, False)
-    assert bar.ev("getComputedStyle(document.querySelector('#debugbar .dbg-tools')).display") != "none"
+    assert bar.ev("getComputedStyle(document.querySelector('#debugbar .dbg-deck')).display") != "none"
+    bar.until("Math.round(document.getElementById('debugbar').getBoundingClientRect().left) === 200",
+              "the box is beside the left panel again once the screen is whole")
     assert bar.ev("document.getElementById('dbg-slider').value") == str(start + 10)
 
     # A half that drew its first state before the bar's script arrived still
@@ -915,14 +1074,16 @@ def main() -> int:
                 dev.call("Page.navigate", {"url": f"http://127.0.0.1:{port}/"})
         print(f"the stand-in page was ready {time.time() - opened:.1f}s after Chrome answered.")
         check_the_bar(bar)
-        print("the debugger bar stands across the top with the page beneath it and sends what each "
-              "control is for: the turn box, the timeline back and ahead, the wheel, both ends, "
-              "save points and their flags, a breakpoint picked from the timeline.")
+        print("the header box stands beside the left panel with the map area beneath it, the timeline "
+              "on top and the open turn under its middle, and sends what each control is for: the "
+              "turn box, the timeline back and ahead, the wheel, the turn buttons, the eras and Era "
+              "start, save points and their flags, a breakpoint picked from the timeline, and "
+              "Auto-play with its count.")
         check_breakpoints_and_a_run(bar)
         check_layers_reveal_and_undo(bar)
-        print("breakpoints are set from the form, a run stops on one or by hand, layers, "
-              "reveal and undo send what they are for, and the Single player switch changes "
-              "the page's view and keeps the choice.")
+        print("breakpoints are set from the form, auto-play stops on a turn, on a new era or by "
+              "hand, layers, reveal and undo send what they are for, and the Single player switch "
+              "changes the page's view and keeps the choice.")
         check_stepping_a_seat(bar)
         print("a round is stepped a civilization at a time, says who is next, and End Turn finishes it.")
         check_the_split(bar)

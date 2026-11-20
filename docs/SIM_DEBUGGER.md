@@ -7,57 +7,92 @@ through the game's own history.
 
 The engine half is `src/server/debugger.rs`, served as `POST /debug` by the
 native server and the browser build alike. The page half is
-`web/assets/app_debugger.js`: a bar fixed across the top of the window, with
-the page beneath it.
+`web/assets/app_debugger.js`: a header box at the top of the window beside
+the left panel, with the map area beneath it.
 
-The engine half is held by `src/server/debugger_tests.rs`. The bar is held by
+The engine half is held by `src/server/debugger_tests.rs`. The box is held by
 `beta/debugger_test.py`, which loads the script as it ships into a real
-browser, on a page with a toy engine behind it, and drives the controls:
-where the bar stands and that the page stands under it, the plate at its far
-left, turn 1 at one end of the timeline and the flag on the last turn at the
-other, the marker moving right as turns open, the turn box, the timeline back
-to a played turn and on to one ahead, what it says under the pointer, the wheel, the two ends, the Civ AI picker, save points and their
-flags, a breakpoint picked from the timeline, a timeline with turns thinned
-out of it, the breakpoints form with a run stopped by a breakpoint and by
-hand, layers, reveal, the Single player switch, undo, and a round stepped a
-seat at a time. It then
-splits the screen head to head, each half the same page with a toy engine of
-its own: a Civ AI is picked for each half, from the strip and from the head
-of its lane, both are played to a turn linked and then separate, each half
-and then both are moved by the lanes in the host's bar, and the test reads
-which Civ AI each half's steps named, the numbers set side by side, a copy,
-and the half that is kept. A control added to the bar or the strip is added
-there.
+browser, on a page with a left panel and a toy engine behind it, and drives
+the controls: where the box stands (beside the left panel, the map area under
+it), the timeline on top with turn 1 at one end and the flag on the last turn
+at the other, the open turn in the middle under it and the turn buttons in
+their order, the marker moving right as turns open, the turn box, the
+timeline back to a played turn and on to one ahead, what it says under the
+pointer, the wheel, the turn buttons (one and ten, back and on, turn 1), the
+eras named on the timeline and Era start, save points and their flags, a
+breakpoint picked from the timeline, a timeline with turns thinned out of it,
+the Civ AI picker, Auto-play with its count and its Stop, the breakpoints
+form with auto-play stopped by a turn, by a new era and by hand, layers,
+reveal, the Single player switch, undo, and a round stepped a seat at a time.
+It then splits the screen head to head, each half the same page with a toy
+engine of its own: a Civ AI is picked for each half, from the strip and from
+the head of its lane, both are played to a turn linked and then separate,
+each half and then both are moved by the lanes in the host's box, and the
+test reads which Civ AI each half's steps named, the numbers set side by
+side, a copy, and the half that is kept. A control added to the box or the
+strip is added there.
 
 ## The bar
 
-The bar is fixed across the top of the window at its full width. The page
-stands beneath it: the bar's height is measured and published as `--dbg-top`,
-the body is padded by that much, and the map is fitted again whenever it
-changes. A watched game has no bar and is not moved.
+The debugger's controls are one header box at the top of the window. It
+begins at the right side of the left panel and runs to the window's right
+edge, so the left panel keeps the window's whole height. The map area stands
+beneath the box: where the map area begins and how tall the box is are
+measured and published as `--dbg-left` and `--dbg-top`, and the map is fitted
+again whenever either changes (the left panel folded away, brought back or
+dragged wider). A watched game has no box and is not moved.
 
-It is laid out like the masthead of a watched game. A plate stands at the far
-left edge of the window: the turn that is open, in a box that also goes to a
-turn typed into it, the game's last turn beside it, and under them the hands
-that walk the turns already played (⏮ ◀ ▶ ⏭) and undo. In a window 720px wide
-or narrower, and in each half of a split, the plate is one flat row instead.
+The timeline is the top of the box, and under it is one row in three parts.
 
-The tools are the top row beside the plate: what to play, and the panels.
-Their words are shown while the tools fit on one row with them, and only their
-signs when they do not. What the bar has to say (why a run stopped, what the
-Civ AI just did) stands at the end of that row when there is room left for it,
-and under the bar when there is not.
+In the middle, under the middle of the timeline, is the turn that is open, in
+a box that also goes to a turn typed into it, with the game's last turn
+beside it. The turn buttons stand either side of it, in this order:
 
-The timeline is the row under the tools, and it is the whole game. Turn 1 is
-named at its left end. Its right end is the game's last turn under a chequered
-flag, or turn 250 with no flag when the game does not say which turn is its
-last. A game played on past its last turn grows 50 turns at a time, and the
-flag is then a chequered line across the rail where the last turn was. The
-round turns between the ends are numbered along the top of the rail. On it:
+- **Turn 1** goes to where the timeline begins;
+- **Era start** goes back to the first turn of the era that is open, and from
+  there to the first turn of the era before;
+- **10** and **1** back;
+- the turn box;
+- **1** and **10** on. These walk the turns already played, and past the last
+  of them the seat's Civ AI plays on. They do not play over what was played:
+  ten on from turn 3 with nine turns played walks to turn 9 and plays four
+  more. (Dragging the timeline ahead from an earlier turn is the way to play
+  those turns again, and it says so under the pointer.)
 
-- a gold band along the bottom of the rail over the turns that were played.
-  When turns have been thinned to make room the band dims and the turns still
-  kept stand out on it;
+At the left end is Auto-play, which used to be in the left panel: the Civ AI
+that plays the seat, how many turns (1 to 250, or all), and the button. It
+plays that many turns from the turn that is open and stops early when a
+breakpoint does. While it plays, the button counts the turns (`7/20`, or just
+`7` when it plays all) and is its own Stop. A turn played to from the
+timeline or by the turn buttons is counted and stopped the same way. Beside
+it are Layers, Breakpoints and **Branch Timeline** (the split screen).
+
+At the right end are the rest of the tools: step in, step a seat, undo, save
+points, Reveal and the Single player switch.
+
+The words on the tools are shown while both ends fit in two rows. When they
+do not, the words on Turn 1 and Era start go first and then every tool's,
+leaving the signs. In a box 720px wide or narrower the three parts stack, the
+turn buttons first. What the box has to say (why auto-play stopped, what the
+Civ AI just did) stands under it at the right.
+
+The timeline is the whole game, twice the height of a tool row, and bright:
+sky behind and the turns played in sun across it. Turn 1 is named at its left
+end. Its right end is the game's last turn under a chequered flag, or turn
+250 with no flag when the game does not say which turn is its last. A game
+played on past its last turn grows 50 turns at a time, and the flag is then a
+chequered line across the rail where the last turn was. The round turns
+between the ends are numbered along the top of the rail. On it:
+
+- a sunlit band across the middle of the rail over the turns that were
+  played. When turns have been thinned to make room the band pales and the
+  turns still kept stand out on it;
+- the eras the game has been through, each named at the foot of the rail on
+  the first turn it has of that era, with a dotted line up the rail. A name
+  is clicked to go to that turn. They come from the engine
+  (`state.debug.eras`: the first kept turn of each world era the marks pass
+  through), so an era whose first turn was thinned away is named on the
+  nearest kept turn after it;
 - the open turn, as a pill with its number, which moves right as turns open.
   Dragging it, or clicking anywhere on the timeline, goes to that turn: a turn
   that was played is put back as it stood, and a turn still ahead is played to
@@ -131,24 +166,25 @@ do not carry, so the replay would be another world.
 
 | Control | Operation | What it does |
 |---------|-----------|--------------|
-| ⏮ | `jump` to the first mark | Go to where the timeline begins |
-| ◀ | `back` | The top of this turn if you have acted in it, otherwise the turn before |
-| ↶ (`Ctrl`/`Cmd`+`Z`) | `undo` | Take back your last action this turn |
+| Turn 1 | `jump` to the first mark | Go to where the timeline begins |
+| Era start | `jump` | Back to the first turn of the era that is open, and from there to the first turn of the era before |
+| ◀◀ 10 | `jump` | Back ten turns, or to where the timeline begins |
+| ◀ 1 | `back` | The top of this turn if you have acted in it, otherwise the turn before |
+| turn box | `jump`, or `step` repeated | Go to a turn by its number, the same way. Up and down in the box walk one played turn. Its tooltip says which turns were played and how many are still kept |
+| 1 ▶ | `forward`, or `step` | Next turn: forward along the turns already played, and past the last of them the seat's Civ AI plays one whole turn |
+| 10 ▶▶ | `jump`, then `step` repeated | Ten turns on: forward along the turns already played, and past the last of them the Civ AI plays the rest |
 | timeline | `jump`, or `step` repeated | Go to any turn of the game. One that was played is put back as it stood; one that is no longer kept answers with the nearest before it, and the bar says so. One still ahead is played to by the seat's Civ AI, stopping early if a breakpoint does. The mouse wheel over it walks one played turn at a time, and the arrow keys move it a turn |
-| turn box | `jump`, or `step` repeated | Go to a turn by its number, the same way. Up and down in the box walk one played turn. Beside the tools the bar says which turns were played and how many are still kept |
-| ▶ | `forward` | Forward along turns already played, without playing anything |
-| ⏭ | `jump` to the last mark | Go to the last turn that was played |
+| Civ AI | | Which Civ AI plays the seat when a turn is auto-played, stepped or played to. It is the page's own picker (`#autoplaystrategy`), shown beside Auto-play |
+| Turns, ▶▶ Auto-play | `step`, repeated | Play the turns picked (1 to 250, or all) from the turn that is open, stopping early at a breakpoint. The button counts the turns as they are played and is the Stop |
+| ↶ (`Ctrl`/`Cmd`+`Z`) | `undo` | Take back your last action this turn |
 | ▸ | `step_action` | Step in: the seat's Civ AI takes its next action, and ends the turn when it has none left |
 | ▸\| | `step_seat` | Step one seat: end your turn as it stands, then one civilization's turn at a time |
-| ▶\| | `step` | The seat's Civ AI plays one whole turn |
-| ▶▶ Run | `step`, repeated | Play turns until a breakpoint stops it, or Stop |
-| Civ AI | | Which Civ AI plays the seat when a turn is stepped, run or played to. It is the page's own picker (`#autoplaystrategy`), shown beside Run |
 | ◉ | `reveal` | Show the whole map and every civilization, not only what the seat can see |
 | ⚑ | `save_point`, `goto_save`, `drop_save` | Save points: keep this world to come back to, go to one, or let one go. Each stands on the timeline as a flag at its turn; clicking the flag goes there |
 | ⚑ | `POST /save`, `POST /load` | Saves, in the same panel: keep this turn on the device under a name, or load one that was kept |
-| Split | | Two simulators from this turn; see below |
+| Branch Timeline | | Two simulators from this turn; see Split screen below |
 
-Going back forgets nothing. The turns ahead stay marked, and ▶ walks them
+Going back forgets nothing. The turns ahead stay marked, and 1 ▶ walks them
 again exactly as they were played. They are replaced only when the world is
 played forward differently from an earlier turn: by ending a turn by hand, or
 by a step.
@@ -233,7 +269,7 @@ whole, and a test plays one both ways and compares the worlds.
 In the middle of a round the turn is not the person's (`state.debug.playing`
 is the seat that is up):
 
-- ▶| (`step`) lets the rest of the round play, and holds the turn that opens
+- 1 ▶ (`step`) lets the rest of the round play, and holds the turn that opens
   to the breakpoints like any other. End Turn does the same (`finish_round`).
 - ▸ (`step_action`) steps the next seat, which is the smallest step there is.
 - ◀ goes to the top of the turn the round belongs to.
@@ -280,9 +316,11 @@ now. A turn that was walked to is left as it stood.
 
 ## Breakpoints
 
-A run stops by itself when:
+Auto-play, and a turn played to, stop by themselves when:
 
 - one of the listed turns opens;
+- the turn that opened is the first of a new world era, if "A new era
+  begins" is on (`eras`);
 - the turn added an event in a chosen category (`EVENT_CATEGORIES`);
 - the turn added an event whose text holds a chosen phrase;
 - the turn added an event the engine marks important, if that is on;
