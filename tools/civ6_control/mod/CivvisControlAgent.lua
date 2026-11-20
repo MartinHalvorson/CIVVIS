@@ -20809,7 +20809,10 @@ CivvisDvJoinWinner = function(prediction, targets, pid, option, selection, votes
 	elseif p.eligible and CivvisCongressTargetIndex(targets, p.winner) ~= nil then
 		choice, o, s, n = "join", 1, CivvisCongressTargetIndex(targets, p.winner), 1;
 	end
-	if choice == nil then return option, selection, votes, mode; end
+	-- The ballot's own vote, reached the other way, keeps its mode.
+	if choice == nil or (o == option and s == selection and n == votes) then
+		return option, selection, votes, mode;
+	end
 	p.choice, p.before_mode, p.before_votes, p.before_option = choice, mode, votes, option;
 	p.before_target = type(targets) == "table" and tonumber(targets[selection]) or nil;
 	return o, s, n, choice;
