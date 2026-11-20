@@ -644,11 +644,22 @@ def check_the_bar(bar: Bar) -> None:
 
     # The left panel is folded away and brought back without the window
     # changing size, and the box follows the map area's left edge.
+    # Its tools are fitted to each width afresh: a box that had words
+    # before the panel was folded has them again when the panel is back.
     edge = "Math.round(document.getElementById('debugbar').getBoundingClientRect().left)"
+    fitted = "document.getElementById('debugbar').className"
+    before = bar.ev(fitted)
     bar.ev("document.getElementById('side').style.display = 'none', true")
     bar.until(f"{edge} === 0 && {under}", "the box takes the room a folded panel leaves")
     bar.ev("document.getElementById('side').style.display = '', true")
     bar.until(f"{edge} === 200 && {under}", "the box starts at the panel's right side again")
+    assert bar.ev(fitted) == before, (before, bar.ev(fitted))
+    # The same through a width with room for the picker's own label.
+    window_of(3000)
+    bar.until("document.getElementById('debugbar').classList.contains('dbg-roomy')", "a wide box has the picker's label")
+    bar.dev.call("Emulation.clearDeviceMetricsOverride")
+    bar.until(f"document.documentElement.clientWidth === {window} && {under}", "the window is its own size again")
+    assert bar.ev(fitted) == before, (before, bar.ev(fitted))
 
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 

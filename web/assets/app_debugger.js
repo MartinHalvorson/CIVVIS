@@ -1117,12 +1117,16 @@ function debugFit(bar) {
   const width = bar.clientWidth;
   const stacked = width <= (DEBUG_PANE !== null ? DEBUG_PANE_STACKED_UNDER : DEBUG_STACKED_UNDER);
   bar.classList.toggle("dbg-stacked", stacked);
-  if (width !== debugFitted) { debugFitted = width; bar.classList.remove("dbg-snug", "dbg-tight"); }
+  const fresh = width !== debugFitted;
+  if (fresh) { debugFitted = width; bar.classList.remove("dbg-roomy", "dbg-snug", "dbg-tight"); }
   const deck = bar.querySelector(".dbg-deck"), has = name => bar.classList.contains(name);
+  const tall = () => deck.offsetHeight > DEBUG_DECK_ROWS;
   if (stacked || DEBUG_PANE !== null) bar.classList.add("dbg-tight");
-  if (!has("dbg-tight") && !has("dbg-snug") && deck.offsetHeight > DEBUG_DECK_ROWS) bar.classList.add("dbg-snug");
-  if (!has("dbg-tight") && deck.offsetHeight > DEBUG_DECK_ROWS) bar.classList.add("dbg-tight");
-  bar.classList.toggle("dbg-roomy", width >= DEBUG_ROOMY && !has("dbg-snug") && !has("dbg-tight"));
+  // The picker's label is tried first and is the first thing to go.
+  if (fresh && width >= DEBUG_ROOMY && !has("dbg-tight")) bar.classList.add("dbg-roomy");
+  if (has("dbg-roomy") && tall()) bar.classList.remove("dbg-roomy");
+  if (!has("dbg-tight") && !has("dbg-snug") && tall()) bar.classList.add("dbg-snug");
+  if (!has("dbg-tight") && tall()) bar.classList.add("dbg-tight");
 }
 // The box begins where the map area does, at the right side of the left
 // panel, and the map area stands under it. Where that is and how tall the box
