@@ -12,6 +12,12 @@
 // timeline step, undo, run to a breakpoint, keep save points, choose which
 // layers of the turn the agent decides, and split the history in two.
 //
+// A game under the debugger has two views. The Debugger view is how it opens:
+// the map with the standings across the top, the victory tracker down the
+// right and the seat's governors and policies, as a watched game is shown.
+// The bar's Single player switch brings the Civilization VI screen for
+// playing the seat by hand: yields, launch bar, unit panel, End Turn.
+//
 // It is a classic script like the others and loads after `app.js`, whose
 // `render`, `fetchJSON` and turn loop it uses. Nothing in `app.js` knows it
 // is here: the bar redraws by standing behind `render`, the one door every
@@ -96,6 +102,9 @@ const DEBUG_BAR_STYLE = `
   }
   #debugbar select.dbg-agent:disabled { opacity: .5; cursor: default; }
   #debugbar.dbg-tight .dbg-tools select.dbg-agent { width: 112px; }
+  /* On a phone the picker gives up the width of one tool, so the row that
+     held the tools before the Single player switch still holds them. */
+  #debugbar.dbg-stacked.dbg-tight .dbg-tools select.dbg-agent { width: 76px; }
   #debugbar.dbg-pane select.dbg-agent { display: none; }
   /* What the bar has to say: at the end of the tools where there is room,
      and under the bar where there is not. */
@@ -517,6 +526,25 @@ function debugLayersFromForm() {
   return [...document.querySelectorAll("#dbg-pop-layers [data-dbg-layer]")]
     .filter(box => box.checked).map(box => box.dataset.dbgLayer);
 }
+// The Single player switch. `SOLO_UI` is the page's (app.js reads it in
+// `civ6Frame` and `debuggerView`); this keeps the choice for the next visit
+// and paints the page again in the view it now has. The Debugger view is for
+// reading the game, so going to it puts the selection and the seat's own
+// screens away; coming back picks up the next unit waiting for orders, as
+// the top of a turn does.
+function setSoloUi(on) {
+  SOLO_UI = !!on;
+  try { localStorage.setItem("civvis-debugger-view-v1", SOLO_UI ? "single" : "debugger"); } catch (_) {}
+  if (!state || SPEC) return;
+  if (!SOLO_UI) {
+    sel = null; selCity = null;
+    clearUnitIntel(); closeCityScreen(); closeEmpire(); closeDiplomacy(); closeTrade();
+  }
+  drawSoloHud(); drawLaunchBar(); drawTurnLoop(); drawPlayerHud();
+  draw(); drawSide(); drawUbar();
+  if (SOLO_UI && !sel && !selCity) advanceToNextActionUnit(true);
+  drawDebugBar();
+}
 function debugTogglePop(name) {
   debugPopOpen = debugPopOpen === name ? null : name;
   drawDebugBar();
@@ -571,6 +599,7 @@ function debugBuildBar() {
       <button data-dbg-pop="layers" title="Layers: which decisions the Civ AI takes for you each turn">Layers<span class="dbg-count" id="dbg-layer-count"></span></button>
       <button data-dbg-pop="breaks" title="Breakpoints: what stops a run" aria-label="Breakpoints"><span class="dbg-dot">●</span><span class="dbg-word">Breakpoints</span><span class="dbg-count" id="dbg-break-count"></span></button>
       <button data-dbg="reveal" title="Reveal: show the whole map and every civilization, not only what yours can see" aria-label="Reveal the whole map"><i>◉</i><span class="dbg-word">Reveal</span></button>
+      <button data-dbg="solo-ui" aria-pressed="false" title="Single player: the Civilization VI screen for playing the seat by hand, with its yields, launch bar, notifications, unit panel and End Turn. Off, the Debugger view: standings, victory tracker, governors and policies" aria-label="Single player screen"><i>♟</i><span class="dbg-word">Single player</span></button>
       <button data-dbg-pop="saves" title="Save points and saves: keep this world to come back to, or load one you kept" aria-label="Save points and saves"><i>⚑</i><span class="dbg-word">Save points</span><span class="dbg-count" id="dbg-point-count"></span></button>
       <button data-dbg-pop="split" title="Split: two simulators from this turn, side by side or stacked, each with a Civ AI of its own if you like">Split</button>
       <span class="dbg-played" id="dbg-played"></span>
@@ -693,6 +722,7 @@ function debugBuildBar() {
     else if (action === "step-action") debugStepAction();
     else if (action === "step-seat") debugStepSeat();
     else if (action === "reveal") debugOp({op: "reveal", on: !timeline.reveal});
+    else if (action === "solo-ui") setSoloUi(!SOLO_UI);
     else if (action === "run") debugRun();
     else if (action === "save") debugSave();
     else if (action === "point") debugSavePoint();
@@ -1023,6 +1053,9 @@ function drawDebugBar(measure = true) {
   set("step-seat", idle);
   set("reveal", idle);
   bar.querySelector('[data-dbg="reveal"]').classList.toggle("on", timeline.reveal === true);
+  const soloUi = bar.querySelector('[data-dbg="solo-ui"]');
+  soloUi.classList.toggle("on", SOLO_UI);
+  soloUi.setAttribute("aria-pressed", SOLO_UI ? "true" : "false");
   set("save", idle);
   set("point", idle);
   set("assist", idle);
