@@ -37,6 +37,33 @@
 //! A seen site taken while an unseen plot ranked above it is journalled as
 //! "Settler takes seen ground before the fog", naming both plots.
 //!
+//! ## Measured (2026-11-20, PR #5570)
+//!
+//! Paired one-frame `civvis_orders` replays of 480 live frames from 88 of
+//! those runs (each turn whose live fallback named a site later dropped: 209
+//! as water or impassable, 271 for another reason), off against on, with the
+//! run's own genome. Archive:
+//! `docs/eval/2026-11-20-settler-fallback-takes-seen-ground.native-queries.tar.xz`.
+//!
+//! - The off arm's fallback named an unseen plot in 321 frames, the on arm
+//!   in 75 (no seen site passed either tier there).
+//! - A Settler's destination changed in 267 frames. In 273 the on arm passed
+//!   over an unseen plot: 223 times through the seen legal-site tier, 50
+//!   through the ranked tier. The seen site was worth a median 103.1 (the
+//!   same after visible threats) against the unseen plot's 36.0, both a
+//!   median 7 tiles away, and was worth more in 228 of the 273.
+//! - Mali t10: the on arm marches to (53, 25), worth 195.8, six tiles away.
+//!   The ranked search refused it because it lies six tiles from Geneva,
+//!   inside `CITY_STATE_SETTLEMENT_BUFFER`, which the legal-site tier does
+//!   not apply. That refusal is deliberate and left as it is.
+//! - ⚠ The same holds broadly: 216 of the 223 legal-site picks lie within six
+//!   tiles of a city-state centre the seat has seen (136 at exactly four).
+//!   Off, the Settler walks toward the fog first and the legal-site tier
+//!   names such a site only once the fog plots are spent; on, it names it at
+//!   once. An unseen plot's own distance to a city-state is unknown.
+//!
+//! No frame is played forward: the founding turn is not measured here.
+//!
 //! ## What is untouched
 //!
 //! The preferred search, the step-risk drop and the capture and
