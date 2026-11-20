@@ -358,6 +358,9 @@ def tournament_series(rows: list[dict], tournaments: list[dict]) -> list[dict] |
                 "wins": wins,
                 "losses": len(block) - wins,
                 "conditions": spec.get("conditions") or "",
+                # The operator's word on the definition (Tournament 2 scrapped,
+                # operator 2026-11-20), the same on each of its series.
+                "note": spec.get("note") or "",
             })
     if not out:
         return None
