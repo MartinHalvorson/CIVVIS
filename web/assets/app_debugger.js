@@ -128,14 +128,21 @@ const DEBUG_BAR_STYLE = `
   #debugbar.dbg-stacked .dbg-right .dbg-nav { order: 3; }
   #debugbar.dbg-stacked .dbg-deck::before { content: ""; order: 4; flex: 0 0 100%; height: 0; }
   #debugbar.dbg-stacked .dbg-cluster { order: 5; justify-content: center; margin: 0 6px; }
-  /* What the box has to say stands under it, at the right. */
+  /* What the box has to say stands in the box, between the turn buttons and
+     the tools at the right. Its room is kept whether or not there is
+     anything to say, so the tools do not move when it speaks. A stacked box
+     has no such room, and says it under itself instead. */
   #debugbar .dbg-note {
-    position: absolute; right: 8px; top: calc(100% + 7px); max-width: min(560px, calc(100% - 16px));
-    padding: 5px 11px; border-radius: 999px; text-align: center;
+    flex: 1 1 120px; min-width: 120px; max-height: 56px; overflow: hidden; align-self: center;
+    text-align: center; font-size: 11.5px; line-height: 1.25; color: var(--text);
+  }
+  #debugbar .dbg-note button { height: 18px; margin-left: 6px; vertical-align: middle; }
+  #debugbar.dbg-stacked .dbg-note {
+    position: absolute; right: 8px; top: calc(100% + 7px); min-width: 0; max-width: min(560px, calc(100% - 16px));
+    max-height: none; padding: 5px 11px; border-radius: 999px; font-size: 12px;
     border: 1px solid #4d685f; background: #0a1512f2; box-shadow: var(--shadow);
   }
-  #debugbar .dbg-note:empty { display: none; }
-  #debugbar .dbg-note button { height: 20px; margin-left: 7px; vertical-align: middle; }
+  #debugbar.dbg-stacked .dbg-note:empty { display: none; }
 
   /* The timeline is the top of the box: a rail as long as the game, one for
      the world, or one for each half of a split. It is bright on purpose, sky
@@ -217,7 +224,9 @@ const DEBUG_BAR_STYLE = `
   }
   #debugbar.dbg-split-on .dbg-goal { top: 16px; bottom: 5px; }
   #debugbar .dbg-ghost { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #0b3554c0; }
-  #debugbar .dbg-cursor { position: absolute; top: 0; bottom: 0; width: 0; }
+  /* The marker stands over whatever else is on its turn (an era's line, a
+     flag), and a press on it still reaches the slider beneath. */
+  #debugbar .dbg-cursor { position: absolute; z-index: 3; top: 0; bottom: 0; width: 0; }
   #debugbar .dbg-cursor b {
     position: absolute; left: 0; top: 50%; transform: translate(-50%, -50%); min-width: 42px; padding: 6px 9px;
     border-radius: 999px; text-align: center; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums;
@@ -709,6 +718,7 @@ function debugBuildBar() {
           <button data-dbg="next" title="Next turn: forward along the turns already played, and past the last of them the Civ AI plays one" aria-label="Next turn">1<i>▶</i></button>
           <button data-dbg="next10" title="10 turns on: forward along the turns already played, and past the last of them the Civ AI plays the rest" aria-label="10 turns on">10<i>▶▶</i></button>
         </span>
+        <div class="dbg-note" id="dbg-note" role="status"></div>
         <div class="dbg-cluster">
           <span class="dbg-group">
             <button data-dbg="step-action" title="Step in: the Civ AI takes its next action this turn, and ends the turn when it has none left" aria-label="Step one action"><i>▸</i><span class="dbg-word">Action</span></button>
@@ -723,7 +733,6 @@ function debugBuildBar() {
         </div>
       </div>
     </div>
-    <div class="dbg-note" id="dbg-note" role="status"></div>
     <div class="dbg-hover" id="dbg-hover" hidden></div>
     <div class="dbg-pop" id="dbg-pop-layers" hidden>
       <h4>Who decides</h4>
