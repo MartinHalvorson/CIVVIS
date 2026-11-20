@@ -7,44 +7,52 @@
 //!
 //! Live Lv 8 Deity games, 2026-11-19 12:00Z to 11-20 09:30Z (121 runs, both
 //! `tribute-buys-the-friendship-2` and `tribute-warms-the-neighbour` armed in
-//! every one). Of 27 wars on us where the attacker was within one gift's
-//! reach or read Friendly before its war, read frame by frame:
-//! - In ten the attacker had been sent a tribute that landed short: the gift
-//!   bought fewer points than it was priced at, the rival sat at +3 or +4 and
-//!   stayed Unfriendly, and every top-up the bridge ordered afterwards was
-//!   refused by the mod's 30-turn bar (`aid_gift_cooldown`).
-//! - In six the attacker read Friendly for 5 to 23 turns and the friendship
-//!   order was withheld for most of them by the bridge's refused-order rule
-//!   (three `not_friends` failures withhold an order for ten turns). The
-//!   three failures are one real ask and the two turns after it, which the
-//!   mod itself refuses inside its five-turn `PeaceRetryTurns` window, so a
-//!   Friendly rival is asked once every thirteen turns, not every five.
-//! - In two the only ask shared its frame with a delegation or embassy to
-//!   the same rival and never reached the rival.
+//! every one). 27 wars on us whose attacker was within one gift's reach or
+//! read Friendly beforehand, read frame by frame:
+//! - In ten the attacker's tribute had failed. Nine enacted but left the
+//!   rival at +5 or under and Unfriendly; one never enacted. Every top-up the
+//!   bridge ordered afterwards was refused by the mod's 30-turn bar
+//!   (`aid_gift_cooldown`).
+//! - In seven the attacker read Friendly and no ask reached it. In three, the
+//!   only ask shared its frame with a delegation or embassy to that rival.
+//!   In six, the friendship order was withheld for most of the Friendly turns
+//!   by the bridge's refused-order rule: three `not_friends` failures
+//!   withhold an order for ten turns. The three failures are one real ask
+//!   plus the two turns after it, which the mod refuses unasked inside its
+//!   five-turn `PeaceRetryTurns` window. So a Friendly rival is asked once
+//!   every thirteen turns, not every five.
+//! - The other ten: a whole gift unaffordable or out of reach (five),
+//!   neither tribute's pick (three), `friendship-spares-the-converter` (one,
+//!   deliberate), and a war we declared (one).
 //!
-//! What a gift buys: 178 of 202 tributes enacted. Where the rival held no
-//! favorable-deal row, the opinion bought per ten Gold, by the world era the
-//! frame reports (`world_era`, 0 the Ancient era), had medians 0.60 (era 0,
-//! 14 gifts), 0.67 (era 1, 39), 0.78 (era 2, 38) and 0.89 (era 3 and later,
-//! 95). Version two prices every point at ten Gold, less a point
-//! (`TRIBUTE_TARGET_OPINION_2`), which holds from the fourth era on. Earlier
-//! it does not: 80 Gold bought +5, 90 bought +6, 100 bought +6 or +7. Gifts
-//! to an Unfriendly rival left it under +5 in 11 of 13 at era 0, 20 of 38 at
-//! era 1, 7 of 37 at era 2 and 2 of 89 later. Under +5 they bought nothing:
-//! 1 of 47 turned Neutral or better within three turns, against 16 of 25 at
-//! +5, 57 of 68 at +6 and 26 of 29 at +7 or more. The era rate predicts the
-//! points bought within one in 86% of gifts, against 70% for the flat rate.
-//! The most any gift bought was +10.
+//! What a gift buys. 178 of 202 tributes enacted. Where the rival held no
+//! favorable-deal row, the opinion bought per ten Gold, by the frame's world
+//! era (`world_era`, 0 the Ancient era), had medians 0.60 (era 0, 14 gifts),
+//! 0.67 (era 1, 39), 0.78 (era 2, 38) and 0.89 (era 3 and later, 95).
+//! - Version two prices a point at ten Gold and aims a point high
+//!   (`TRIBUTE_TARGET_OPINION_2`). That holds from the fourth era on. Before
+//!   it, 80 Gold bought +5, 90 bought +6, 100 bought +6 or +7.
+//! - Gifts to an Unfriendly rival left it under +5 in 11 of 13 at era 0,
+//!   20 of 38 at era 1, 7 of 37 at era 2 and 2 of 89 later. Under +5 they
+//!   bought nothing: 1 of 47 turned Neutral or better within three turns,
+//!   against 16 of 25 at +5, 57 of 68 at +6 and 26 of 29 at +7 or more.
+//! - The era rate predicts the points bought within one in 86% of gifts.
+//!   The flat rate does so in 70%. No gift bought more than +10.
+//! - For 94 tributes sent before the fourth era, the era-priced gift was
+//!   affordable a median two turns after the live one, with the live gift's
+//!   Gold kept.
 //!
-//! What a re-ask buys: 1,143 friendship asks reached a Friendly rival; 1,071
-//! were accepted within two turns. An ask sharing its frame with a
-//! delegation or embassy session to the same rival was accepted 3 times in
-//! 32 (the agent opens both with `DiplomacyManager.RequestSession`, the
-//! shipped call, `Base/Assets/UI/DiplomacyActionView.lua:473`, and the second
-//! session takes the frame); without one, 95%. The next ask after a refused
-//! one, to a rival still Friendly, was accepted 33 times in 43. 388
-//! rival-turns in 38 of the 121 games read Friendly while the friendship
-//! order was withheld.
+//! What an ask buys. 1,071 of 1,143 asks to a Friendly rival were accepted
+//! within two turns.
+//! - An ask beside a delegation or embassy order to the same rival was
+//!   accepted 3 times in 32. Without one, 1,068 of 1,111 were. The agent
+//!   opens all three as `DiplomacyManager.RequestSession` sessions (for the
+//!   friendship, the shipped `Base/Assets/UI/DiplomacyActionView.lua:473`),
+//!   and the mission's session went through.
+//! - The next ask after a refusal, to a rival still Friendly, was accepted
+//!   33 times in 43.
+//! - 388 rival-turns in 38 of the 121 games read Friendly while the
+//!   friendship order was withheld.
 //!
 //! ## What the gene does
 //!
