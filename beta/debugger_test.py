@@ -850,10 +850,16 @@ def check_layers_reveal_and_undo(bar: Bar) -> None:
     assert bar.ev("document.querySelector('[data-dbg=\"undo\"]').disabled")
     bar.ev("engine.acted = 2, render(engineState()), true")
     bar.forget()
+    # The note stood on the action that is about to be taken back.
+    bar.ev("debugSay('Civ AI: Move To · Settler · 2 more this turn', {x: 1, y: 1}), true")
     bar.click('[data-dbg="undo"]')
     bar.idle("state.debug.acted === 1", "the button takes back an action")
+    bar.until("document.getElementById('dbg-note').textContent === 'Last action undone · 1 more can be undone'",
+              "the note says an action was taken back, and no longer names it")
     bar.ev("window.dispatchEvent(new KeyboardEvent('keydown', {key: 'z', ctrlKey: true, bubbles: true})), true")
     bar.idle("state.debug.acted === 0", "Ctrl+Z takes back an action")
+    bar.until("document.getElementById('dbg-note').textContent === 'Last action undone · nothing left to undo'",
+              "the note says there is nothing left to take back")
     assert bar.sent() == [{"op": "undo"}] * 2, bar.sent()
     bar.ev("window.dispatchEvent(new KeyboardEvent('keydown', {key: 'z', ctrlKey: true, bubbles: true})), true")
     time.sleep(0.2)
