@@ -3454,11 +3454,11 @@ if (playerHudPanel) {
 const RESPONSIVE_TEXT_RULES = [
   // The tagline's two phrases are unbreakable on every band — the simulator's
   // name on the first line, its purpose on the second — so both entries
-  // measure for real and shrink the run instead of letting it fold. The split
-  // keeps the compact band's smaller ceiling and retires a stale fitted size
-  // left behind when the deck crosses the band boundary.
-  {selector:"#side:not([data-type-size=compact]) .tagline span", min:12, max:15},
-  {selector:"#side[data-type-size=compact] .tagline span", min:10, max:12},
+  // measure for real and shrink the run instead of letting it fold, `together`
+  // so the two lines stay one size. The split keeps the compact band's smaller
+  // ceiling and retires a stale fitted size left when the deck changes band.
+  {selector:"#side:not([data-type-size=compact]) .tagline span", min:12, max:15, together:true},
+  {selector:"#side[data-type-size=compact] .tagline span", min:10, max:12, together:true},
   {selector:"#side .section-title > span:last-child", min:10, max:13},
   {selector:"#side .event-scope", min:9, max:12},
   {selector:"#side .sec h2", min:10, max:12},

@@ -2102,46 +2102,83 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
     assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
 }
 
-/// The site is three pages, CIVVIS, Debugger and Home, and each links the
-/// other two. The viewer is the first two of them: it carries all three
-/// links and keeps out the one to whichever it is showing, so a watched
-/// simulation offers Home and Debugger and a played game offers Home and
-/// CIVVIS. Pinned as one literal because the row is the contract: Home in
-/// its own place first, then the other site, inside a row that only the
+/// The site is three pages, Home, CIVVIS and Debugger, and every one of them
+/// lists all three in that order, with the page on screen in gold and a
+/// link to the game they are built on under them (operator, 2026-11-19).
+/// The viewer is the middle two: a watched simulation lights CIVVIS and a
+/// played game lights Debugger. Pinned as one literal because the list is
+/// the contract: four links in this order, inside a list that only the
 /// hosts serving a /home reveal.
 #[test]
-fn viewer_masthead_links_the_sites_other_two_pages() {
+fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     assert!(EMBEDDED_INDEX.contains(concat!(
-        "<div class=\"head-links\" id=\"headlinks\" hidden>\n",
-        "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">⌂ Home</a>\n",
+        "<nav class=\"head-links\" id=\"headlinks\" aria-label=\"CIVVIS sites\" hidden>\n",
+        "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">Debugger</a>\n",
-        "      </div>",
+        "        <a class=\"home-link\" id=\"civ6link\" ",
+        "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
+        "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
+        "      </nav>",
     )));
     // The Debugger link is only as good as the shim's reading of it, and
     // the CIVVIS link needs no word at all: a lane's bare address is the
     // spectated simulation.
     assert!(include_str!("../../beta/shim.js")
         .contains("if (mode === \"play\") payload.spectate = false;"));
-    // A page never links itself. `watching-sim` is the engine's own answer
-    // to which of the two it is, and until the first observation says so
-    // (`seat-known`) neither is offered: Home stands alone.
-    assert!(EMBEDDED_INDEX.contains("body:not(.watching-sim) #playlink { display: none; }"));
-    assert!(EMBEDDED_INDEX.contains(
-        "body.watching-sim #watchlink, html:not(.seat-known) #watchlink { display: none; }"
-    ));
+    // The page on screen is the one in gold. `watching-sim` is the
+    // engine's own answer to which of the two this is, and until the first
+    // observation says so (`seat-known`) neither is lit. Every link is
+    // there from the start, so no rule hides one any more.
+    assert!(EMBEDDED_INDEX.contains(concat!(
+        "  body.watching-sim #watchlink,\n",
+        "  html.seat-known body:not(.watching-sim) #playlink {\n",
+        "    color: #17130c; border-color: #efd184;\n",
+        "    background: linear-gradient(145deg, #dec176, #aa7d30);\n",
+        "  }",
+    )));
+    for hides in [
+        "#playlink { display: none; }",
+        "#watchlink { display: none; }",
+    ] {
+        assert!(
+            !EMBEDDED_INDEX.contains(hides),
+            "the masthead still hides a site's link with {hides}"
+        );
+    }
     assert!(EMBEDDED_APP_JS.contains("document.body.classList.toggle(\"watching-sim\", SPEC);"));
     assert!(EMBEDDED_APP_JS.contains("document.documentElement.classList.add(\"seat-known\");"));
     // The old label named the destination twice over.
     assert!(!EMBEDDED_INDEX.contains("Open sim debugger"));
-    // A row that draws itself as a flex container outranks the user
-    // agent's `[hidden]`, so it has to restate what hidden means or the
-    // chips appear on desktop builds that honour neither destination.
-    // The whole line of the lockup, or the pair stacks on a 1920 screen.
-    assert!(EMBEDDED_INDEX.contains(".head-links { display: flex; flex: 0 0 100%;"));
+    // A list that draws itself as a grid outranks the user agent's
+    // `[hidden]`, so it has to restate what hidden means or the links
+    // appear on desktop builds that honour neither destination.
+    assert!(EMBEDDED_INDEX
+        .contains(".head-links {\n    display: grid; grid-template-columns: 1fr 1fr;"));
     assert!(EMBEDDED_INDEX.contains(".head-links[hidden] { display: none; }"));
     assert!(EMBEDDED_INDEX
         .contains("#side[data-type-size=\"compact\"] .head-links {\n    grid-column: 1 / -1;"));
+    // With room beside the lockup the list is a column down its right
+    // side: the third track of the lockup's grid, across both of its rows,
+    // one link to a line. It applies only while the list is showing, so a
+    // desktop build's lockup keeps the whole band.
+    assert!(EMBEDDED_INDEX.contains(concat!(
+        "  @container (min-width: 229px) {\n",
+        "    #side .brand:has(> .head-links:not([hidden])) {\n",
+        "      --site-rail: 84px; --site-mark: clamp(40px, 19cqw, 72px);\n",
+        "      display: grid; grid-template-columns: auto minmax(0, 1fr) var(--site-rail);\n",
+    )));
+    assert!(EMBEDDED_INDEX.contains(concat!(
+        "    #side .brand:has(> .head-links:not([hidden])) .head-links {\n",
+        "      grid-column: 3; grid-row: 1 / span 2; grid-template-columns: minmax(0, 1fr);\n",
+    )));
+    // The wordmark is sized from the lane the column leaves it, and the
+    // tagline's two lines are fitted as one so they stay one size in it.
+    assert!(EMBEDDED_INDEX
+        .contains("calc((100cqw - var(--site-rail) - var(--site-mark) - 20px) / 4.85)"));
+    assert!(EMBEDDED_APP_JS.contains(
+        "{selector:\"#side[data-type-size=compact] .tagline span\", min:10, max:12, together:true},"
+    ));
     // The whole row is revealed together, and only on the hosts that
     // serve a /home to return to.
     assert!(
@@ -2209,33 +2246,45 @@ fn viewer_masthead_links_the_sites_other_two_pages() {
     );
 }
 
-/// The home page is the third of the site's three pages and links the other
-/// two, CIVVIS and Debugger, from its header; below that it is one
+/// The home page is one of the site's three pages and lists all three from
+/// its header, Home, CIVVIS and Debugger, with itself in gold and the Civ 6
+/// link under them, as the viewer's masthead does; below that it is one
 /// paragraph and the rankings. The two-card game menu that stood there, the
 /// world picker the cards opened and the photographs they carried are gone,
 /// and so is everything the Tactics row took with it before them.
 ///
-/// The two links are pinned by their destinations: CIVVIS is the lane's
-/// stock exhibition and Debugger seats the visitor through the shim's
+/// The links are pinned by their destinations: CIVVIS is the lane's stock
+/// exhibition and Debugger seats the visitor through the shim's
 /// `mode=play`. Both are lane-relative (`../` from the lane's /home), so
 /// the test lane's home page opens the test lane's viewer.
 #[test]
-fn the_home_page_links_civvis_and_the_debugger() {
+fn the_home_page_lists_the_sites_with_itself_in_gold() {
     let landing = include_str!("../../beta/landing.html");
     for piece in [
-        // The two site links, CIVVIS first, each saying in the viewer's
-        // own words what it opens. They stand under the tagline, where
-        // the viewer's masthead keeps its own pair.
+        // The site's pages in the viewer's order, this one marked as the
+        // page on screen and the other two saying in the viewer's own
+        // words what they open, then the game itself. They stand beside
+        // the title, where the viewer's masthead keeps the same four.
         concat!(
             "<nav class=\"site-nav\" aria-label=\"CIVVIS sites\">\n",
+            "        <a class=\"site-link\" href=\"./\" aria-current=\"page\">Home</a>\n",
             "        <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "        <a class=\"site-link\" href=\"../?mode=play\" ",
             "title=\"You play one civilization. CIVVIS AI agents play the rest.\">Debugger</a>\n",
+            "        <a class=\"site-link\" ",
+            "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
+            "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
             "      </nav>\n    </div>",
         ),
-        // They read as the viewer's chips do, in capitals.
+        // They read as the viewer's links do, in capitals and one to a
+        // line, and the page on screen is the gold one.
         "    text-transform: uppercase;\n  }\n  .site-link:hover,",
+        ".site-nav { display: grid; flex: none; gap: 4px; }",
+        concat!(
+            ".site-link[aria-current=\"page\"],\n",
+            "  .site-link[aria-current=\"page\"]:hover { background: var(--gold); color: #17130c; }",
+        ),
         // The project's own links follow, under the label the publish
         // check finds the page by (`beta/verify.py`).
         "<nav class=\"utility-nav\" aria-label=\"CIVVIS links\">",
