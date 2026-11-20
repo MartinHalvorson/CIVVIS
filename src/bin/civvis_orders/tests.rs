@@ -11530,7 +11530,7 @@ fn tribute_and_friendship_land_sends_the_friendship_ask_alone() {
         .collect();
     assert_eq!(
         left,
-        vec![
+        [
             ("friendship", Some(4)),
             ("delegation", Some(5)),
             ("sell", Some(4))
