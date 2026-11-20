@@ -457,6 +457,14 @@ def check_the_bar(bar: Bar) -> None:
     bar.idle("state.turn === 13", "ten turns on walks to the last turn played and plays the rest")
     assert sent() == [("jump", 9)] + [("step", None)] * 4, sent()
     assert bar.note() == "Played to turn 13", bar.note()
+    # What the box has to say stands inside the box, between the turn buttons
+    # and the tools at the right, and not over the page beneath.
+    said = bar.ev("(() => { const box = name => document.querySelector(name).getBoundingClientRect();"
+                  " const note = box('#dbg-note'), whole = box('#debugbar'), on = box('#debugbar [data-dbg=next10]'),"
+                  " tools = box('#debugbar .dbg-right .dbg-cluster');"
+                  " return [note.width > 60, note.top >= whole.top && note.bottom <= whole.bottom,"
+                  " note.left >= on.right, note.right <= tools.left]; })()")
+    assert said == [True] * 4, said
     bar.forget()
     bar.click('[data-dbg="next"]')
     bar.idle("state.turn === 14", "next turn, past the last turn played, is one turn of the Civ AI")
@@ -494,6 +502,13 @@ def check_the_bar(bar: Bar) -> None:
     bar.forget()
     bar.click(f'{LANE} .dbg-marks u b[data-dbg-turn="5"]')
     bar.idle("state.turn === 5", "an era's name goes to the turn it began")
+    # The marker is on the era's first turn now, and stands over its line.
+    assert bar.ev(f"(() => {{ const pill = document.querySelector('{LANE} .dbg-cursor b').getBoundingClientRect();"
+                  " const over = document.elementsFromPoint((pill.left + pill.right) / 2, (pill.top + pill.bottom) / 2);"
+                  " const line = over.findIndex(found => found.matches('.dbg-marks u')),"
+                  " mark = over.findIndex(found => found.matches('.dbg-cursor b'));"
+                  " return getComputedStyle(document.querySelector('" + LANE + " .dbg-cursor')).zIndex === '3'"
+                  " && (line < 0 || mark < 0 || mark < line); })()"), "an era's line is drawn over the marker"
     assert off("era") is False and "Ancient" in bar.ev("document.querySelector('[data-dbg=\"era\"]').title")
     bar.type_turn(9)
     bar.idle("state.turn === 9", "the turn box goes to turn 9")
@@ -639,6 +654,12 @@ def check_the_bar(bar: Bar) -> None:
     assert bar.ev("document.querySelector('#debugbar .dbg-turnbox').getBoundingClientRect().bottom"
                   " <= document.querySelector('#debugbar .dbg-cluster').getBoundingClientRect().top"), \
         "the turn buttons are not over the tools in a narrow window"
+    # A stacked box has no room for what it says, and says it under itself.
+    bar.ev("debugSay('A word from the box'), true")
+    assert bar.ev("document.getElementById('dbg-note').getBoundingClientRect().top"
+                  " >= document.getElementById('debugbar').getBoundingClientRect().bottom"), "a stacked box's note is not under it"
+    bar.ev("debugSay(''), true")
+    assert bar.ev("getComputedStyle(document.getElementById('dbg-note')).display") == "none"
     bar.dev.call("Emulation.clearDeviceMetricsOverride")
     bar.until(f"document.documentElement.clientWidth === {window} && {under}", "the window is its own size again")
 

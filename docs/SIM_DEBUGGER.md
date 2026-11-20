@@ -74,7 +74,8 @@ The words on the tools are shown while both ends fit in two rows. When they
 do not, the words on Turn 1 and Era start go first and then every tool's,
 leaving the signs. In a box 720px wide or narrower the three parts stack, the
 turn buttons first. What the box has to say (why auto-play stopped, what the
-Civ AI just did) stands under it at the right.
+Civ AI just did) stands in the box, between the turn buttons and the tools at
+the right; a stacked box says it under itself.
 
 The timeline is the whole game, twice the height of a tool row, and bright:
 sky behind and the turns played in sun across it. Turn 1 is named at its left
