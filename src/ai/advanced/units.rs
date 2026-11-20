@@ -2557,6 +2557,8 @@ impl AdvancedAi {
         let ids = g.player_unit_ids(pid);
         debug_assert!(ids.windows(2).all(|pair| pair[0] < pair[1]));
         let mut ships = Vec::with_capacity(NAVAL_RECON_EXPLORER_MAX);
+        // Hulls on one charted sea share its walk; see `WaterwayCharts`.
+        let mut charts = crate::ai::naval::WaterwayCharts::new(g, pid);
         for uid in ids {
             let unit = &g.units[&uid];
             let spec = &g.rules.units[unit.kind];
@@ -2564,7 +2566,7 @@ impl AdvancedAi {
                 && spec.domain.as_deref() == Some("sea")
                 && unit.moves_left > 0.0
                 && unit.linked_to.is_none()
-                && BasicAi::naval_recon_ship_can_chart(g, pid, uid)
+                && BasicAi::naval_recon_ship_can_chart_charted(g, uid, &mut charts)
             {
                 ships.push(uid);
                 if ships.len() == NAVAL_RECON_EXPLORER_MAX {
