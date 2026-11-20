@@ -6462,6 +6462,12 @@ pub const GENES: &[Gene] = &[
     // median 9-35 turns after Education, 20 Science short at t100. See
     // `advanced/science_universities_pass_the_claims.rs`.
     Gene { tag: "science-universities-pass-the-claims", field: "science_universities_pass_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_science_universities_pass_the_claims, disable: AdvancedAi::disable_science_universities_pass_the_claims },
+    // Live Deity 11-19/20, 110 runs: the exhaustion fallback named 626 sites;
+    // 217 were unseen plots dropped as water or impassable at the next change
+    // (643 walking turns). Mali civvis-20261120T071206Z walked toward four
+    // such plots t10-t15 while a seen site worth 160.8 stood seven tiles
+    // away. See `advanced/settler_fallback_takes_seen_ground.rs`.
+    Gene { tag: "settler-fallback-takes-seen-ground", field: "settler_fallback_takes_seen_ground", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_fallback_takes_seen_ground, disable: AdvancedAi::disable_settler_fallback_takes_seen_ground },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

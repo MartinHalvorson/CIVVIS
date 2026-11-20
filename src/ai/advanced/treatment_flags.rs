@@ -632,6 +632,9 @@ impl AdvancedAi {
         /// Opt-in gene `science-universities-pass-the-claims`; see
         /// `advanced/science_universities_pass_the_claims.rs`.
         science_universities_pass_the_claims => enable_science_universities_pass_the_claims, disable_science_universities_pass_the_claims;
+        /// Opt-in gene `settler-fallback-takes-seen-ground`; see
+        /// `advanced/settler_fallback_takes_seen_ground.rs`.
+        settler_fallback_takes_seen_ground => enable_settler_fallback_takes_seen_ground, disable_settler_fallback_takes_seen_ground;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

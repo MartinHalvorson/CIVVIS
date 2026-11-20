@@ -185,6 +185,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `religion-seat-second-city-first` | off (unmeasured) | Opt-in gene `religion-seat-second-city-first`: a one-city Religion seat's first Settler before the Holy Site chain; see `advanced/religion_seat_second_city_first.rs`. | 1 \| 1 |
+| `settler-fallback-takes-seen-ground` | off (unmeasured) | Opt-in gene `settler-fallback-takes-seen-ground`; see `advanced/settler_fallback_takes_seen_ground.rs`. | 1 \| 1 |
 
 ## Removed from the code
 
