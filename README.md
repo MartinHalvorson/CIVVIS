@@ -2,6 +2,8 @@
 
 On a quest to fix Civ 6 AI.
 
+[Better than Deity AI](https://www.youtube.com/watch?v=HgqxiWQKCqc) that plays by all the same rules as human players.
+
 All for fun. Everything is free, open source, and runs locally. Only ask is don't use AI against other players in multiplayer online.
 
 Design & watch Civ 6 AI simulations yourself in CIVVIS.
