@@ -32,8 +32,9 @@
 //! does not place a Holy Site there meanwhile. The head keeps its place when
 //! it is already a Settler, finishes this turn, is Walls, is a Holy Site with
 //! production already paid into it (it finishes, then the Settler), or is a
-//! soldier while hostile military is in reach or the opening's barbarian gap
-//! is open. Everything else (a new Holy Site, Prayers, the Shrine, a Builder
+//! soldier while hostile military is in reach or the barbarian alarm still
+//! asks the capital for a defender (`barbarian_defense_item`, the answer the
+//! opening's preempt plays). Everything else (a new Holy Site, Prayers, the Shrine, a Builder
 //! or a routine unit) waits with its progress kept. The claim runs after
 //! every ordinary writer and before the paused-district, Prayers-guard and
 //! defence handoffs, which keep the last word.
@@ -142,7 +143,7 @@ impl AdvancedAi {
                     .get(unit)
                     .is_some_and(|spec| spec.class == "military")
                     && (self.hint_city_in_reach_of_war(g, pid, cid)
-                        || self.base.barbarian_defense_gap(g, pid, cid) > 0) =>
+                        || self.base.barbarian_defense_item(g, pid, cid).is_some()) =>
             {
                 return Some("a defender with hostiles in reach");
             }

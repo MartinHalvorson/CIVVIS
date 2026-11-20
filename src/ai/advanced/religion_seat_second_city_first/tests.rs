@@ -25,6 +25,7 @@ fn lone_capital(head: Option<Item>) -> (Game, u32) {
     ] {
         game.players[0].techs.insert(Name::new(tech));
     }
+    game.barb_camps.clear();
     let capital = game.player_city_ids(0)[0];
     let city = game.cities.get_mut(&capital).unwrap();
     city.pop = 2;
@@ -146,6 +147,36 @@ fn under_way_work_and_a_settled_seat_keep_the_queue() {
     small.cities.get_mut(&capital).unwrap().pop = 1;
     claim(&ai, &mut small);
     assert_eq!(small.cities[&capital].queue.first(), Some(&prayers()));
+}
+
+/// A soldier at the head keeps it while a barbarian stands in reach of the
+/// capital: the opening's defence is a threat guard, not routine work.
+#[test]
+fn a_defender_facing_barbarians_keeps_the_queue() {
+    let ai = seat(VictoryTarget::Religion, true);
+    let warrior = Item::Unit {
+        unit: crate::name!("warrior"),
+    };
+    let (mut game, capital) = lone_capital(Some(warrior.clone()));
+    let barbarian = game
+        .players
+        .iter()
+        .position(|player| player.is_barbarian)
+        .expect("fixture: the barbarian seat");
+    let pos = game.cities[&capital].pos;
+    let near =
+        game.wdisk(pos, 2)
+            .into_iter()
+            .find(|at| {
+                game.wdist(*at, pos) == 2
+                    && game.map.get(*at).is_some_and(|tile| {
+                        !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                    })
+            })
+            .expect("fixture: a dry tile two away");
+    game.spawn_unit("warrior", barbarian, near);
+    claim(&ai, &mut game);
+    assert_eq!(game.cities[&capital].queue.first(), Some(&warrior));
 }
 
 /// With one religion slot left Prayers go first; Arabia never takes the
