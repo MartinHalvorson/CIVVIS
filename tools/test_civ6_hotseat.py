@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import tempfile
@@ -184,6 +185,116 @@ class MenuReadingTest(unittest.TestCase):
         self.assertEqual(problems, ["Map Size shows 'Small', wanted 'Tiny'"])
         rows[-1] = dict(rows[-1], text="Tiny", norm="tiny")
         self.assertEqual(hotseat.check_host_settings(rows, game_args()), [])
+
+
+class NearMatchTest(unittest.TestCase):
+    """OCR misreads a letter now and then; a label is still found."""
+
+    def test_a_misread_letter_still_finds_the_button(self) -> None:
+        # Read on a 1710x1107 MacBook Air (2026-11-19): setup stalled here.
+        rows = ocr(("Load Game", 520, 1088), ("Confirm Settinas", 1194, 1088))
+        self.assertEqual([r["text"] for r in hotseat.find(rows, "Confirm Settings")],
+                         ["Confirm Settinas"])
+
+    def test_an_exact_reading_wins_over_a_near_one(self) -> None:
+        rows = ocr(("START GANE", 900, 700), ("START GAME", 900, 740))
+        self.assertEqual([r["y"] for r in hotseat.find(rows, "START GAME")], [740])
+
+    def test_short_labels_match_exactly_only(self) -> None:
+        rows = ocr(("OR", 10, 10), ("Kong", 10, 30), ("YEA", 10, 50))
+        for label in ("OK", "King", "YES"):
+            self.assertEqual(hotseat.find(rows, label), [], label)
+
+    def test_a_different_label_is_not_a_misread(self) -> None:
+        rows = ocr(("Load Game", 10, 10), ("STAGING ROOM", 10, 30))
+        self.assertEqual(hotseat.find(rows, "Load Configuration"), [])
+        self.assertEqual(hotseat.find(rows, "START GAME"), [])
+
+    def test_the_setup_page_reads_back_through_a_misread(self) -> None:
+        rows = ocr(("Game Speed", 336, 562), ("Onlime", 439, 563), ("Map", 350, 576),
+                   ("Pangaea", 440, 577), ("Map Size", 342, 590), ("Tiny", 440, 590))
+        self.assertEqual(hotseat.check_host_settings(rows, game_args()), [])
+
+
+class PersonOptionsTest(unittest.TestCase):
+    """A person plays a hotseat game: only the front end's options move."""
+
+    def test_how_the_game_plays_and_looks_stays_theirs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            user = Path(tmp)
+            (user / "AppOptions.txt").write_text(
+                "PlayIntroVideo 1\nAcceptedUnknownDevice 0\nAcceptedOutdatedDriver 0\n")
+            mine = "AutoSaveFrequency 1\nAutoSaveKeepCount 10\nPlayHistoricMomentAnimation 1\n"
+            (user / "UserOptions.txt").write_text(mine)
+            graphics = "EnableShadows 1\nEnableCloudShadows 1\nVSync 1\n"
+            (user / "GraphicsOptions.txt").write_text(graphics)
+            with patch.object(hotseat.env, "user_dir", return_value=user), \
+                    patch.object(hotseat.env, "game_pids", return_value=[]):
+                applied = hotseat.apply_person_options(lambda _message: None)
+            self.assertEqual(set(applied), {"AppOptions.txt"})
+            self.assertEqual((user / "UserOptions.txt").read_text(), mine)
+            self.assertEqual((user / "GraphicsOptions.txt").read_text(), graphics)
+            self.assertIn("PlayIntroVideo 0", (user / "AppOptions.txt").read_text())
+
+
+class FitOnScreenTest(unittest.TestCase):
+    """A window as tall as the display is lifted until its bottom shows."""
+
+    def fit(self, bounds, screen=(1710, 1107)):
+        placed = []
+        frame = hotseat.fit_on_screen(get_window=lambda: bounds, get_desktop=lambda: screen,
+                                      place=placed.append)
+        return frame, placed
+
+    def test_a_full_height_window_under_the_menu_bar_moves_up(self) -> None:
+        # Measured 2026-11-19: windowed Civ VI kept 1710x1107 at y=33, and the
+        # Confirm Settings row sat below the screen.
+        frame, placed = self.fit((0, 33, 1710, 1107))
+        self.assertEqual(frame, (0, 0, 1710, 1107))
+        self.assertEqual(placed, [(0, 0, 1710, 1107)])
+
+    def test_a_window_that_fits_is_left_alone(self) -> None:
+        self.assertEqual(self.fit((0, 33, 1710, 1074)), (None, []))
+        self.assertEqual(self.fit((0, 0, 1710, 1107)), (None, []))
+
+    def test_only_as_far_as_needed(self) -> None:
+        frame, _ = self.fit((40, 200, 1200, 1000))
+        self.assertEqual(frame, (40, 107, 1200, 1000))
+
+    def test_no_window_no_move(self) -> None:
+        self.assertEqual(self.fit(None), (None, []))
+
+
+class StaleWorkerTest(unittest.TestCase):
+    """A seat never ends up with two decision workers."""
+
+    def test_a_leftover_worker_on_the_seat_is_stopped(self) -> None:
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            seat_dir = Path(tmp) / "run-p1"
+            seat_dir.mkdir()
+            # Stands in for an orphaned `civ6_brain.py --run-dir <seat_dir>`.
+            script = Path(tmp) / "civ6_brain.py"
+            script.write_text("import time\ntime.sleep(60)\n")
+            worker = subprocess.Popen([sys.executable, str(script), "--run-dir", str(seat_dir)])
+            try:
+                (seat_dir / "brain.pid").write_text(f"{worker.pid}\n")
+                self.assertEqual(hotseat.stop_stale_worker(seat_dir, grace_s=2.0), worker.pid)
+                self.assertIsNotNone(worker.wait(timeout=5))
+            finally:
+                if worker.poll() is None:
+                    worker.kill()
+
+    def test_a_reused_pid_is_not_touched(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            seat_dir = Path(tmp) / "run-p1"
+            seat_dir.mkdir()
+            (seat_dir / "brain.pid").write_text(f"{os.getpid()}\n")
+            self.assertIsNone(hotseat.stop_stale_worker(seat_dir))
+
+    def test_no_record_no_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(hotseat.stop_stale_worker(Path(tmp)))
 
 
 class DifficultyCellTest(unittest.TestCase):
