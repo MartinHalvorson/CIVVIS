@@ -379,6 +379,14 @@ async function debugOp(body, timeoutMs = 20000) {
     drawDebugBar();
   }
 }
+// One action of this turn taken back. The note says so: what it said before
+// was about an action that may be the one that is gone.
+async function debugUndo() {
+  const next = await debugOp({op: "undo"});
+  if (!next || next.error) return;
+  const acted = (next.debug || {}).acted || 0;
+  debugSay(`Last action undone · ${acted ? `${acted} more can be undone` : "nothing left to undo"}`);
+}
 function debugStrategy() {
   return (document.getElementById("autoplaystrategy") || {}).value || undefined;
 }
@@ -841,7 +849,7 @@ function debugBuildBar() {
     else if (action === "back10") debugBehind(10);
     else if (action === "next") debugAhead(1);
     else if (action === "next10") debugAhead(10);
-    else if (action === "undo") debugOp({op: "undo"});
+    else if (action === "undo") debugUndo();
     else if (action === "first") { debugSay(""); debugGoToTurn(timeline.first ?? state.turn); }
     else if (action === "era") {
       const began = debugEraBack(timeline);
@@ -1940,7 +1948,7 @@ window.addEventListener("keydown", event => {
   const timeline = debugTimeline();
   if (!timeline || !timeline.can_undo || autoplaying) return;
   event.preventDefault();
-  debugOp({op: "undo"});
+  debugUndo();
 });
 window.addEventListener("resize", () => { if (debugTimeline()) drawDebugBar(); });
 // A page whose first state was drawn before this script arrived has had no
