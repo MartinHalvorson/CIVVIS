@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import tempfile
@@ -234,6 +235,66 @@ class PersonOptionsTest(unittest.TestCase):
             self.assertEqual((user / "UserOptions.txt").read_text(), mine)
             self.assertEqual((user / "GraphicsOptions.txt").read_text(), graphics)
             self.assertIn("PlayIntroVideo 0", (user / "AppOptions.txt").read_text())
+
+
+class FitOnScreenTest(unittest.TestCase):
+    """A window as tall as the display is lifted until its bottom shows."""
+
+    def fit(self, bounds, screen=(1710, 1107)):
+        placed = []
+        frame = hotseat.fit_on_screen(get_window=lambda: bounds, get_desktop=lambda: screen,
+                                      place=placed.append)
+        return frame, placed
+
+    def test_a_full_height_window_under_the_menu_bar_moves_up(self) -> None:
+        # Measured 2026-11-19: windowed Civ VI kept 1710x1107 at y=33, and the
+        # Confirm Settings row sat below the screen.
+        frame, placed = self.fit((0, 33, 1710, 1107))
+        self.assertEqual(frame, (0, 0, 1710, 1107))
+        self.assertEqual(placed, [(0, 0, 1710, 1107)])
+
+    def test_a_window_that_fits_is_left_alone(self) -> None:
+        self.assertEqual(self.fit((0, 33, 1710, 1074)), (None, []))
+        self.assertEqual(self.fit((0, 0, 1710, 1107)), (None, []))
+
+    def test_only_as_far_as_needed(self) -> None:
+        frame, _ = self.fit((40, 200, 1200, 1000))
+        self.assertEqual(frame, (40, 107, 1200, 1000))
+
+    def test_no_window_no_move(self) -> None:
+        self.assertEqual(self.fit(None), (None, []))
+
+
+class StaleWorkerTest(unittest.TestCase):
+    """A seat never ends up with two decision workers."""
+
+    def test_a_leftover_worker_on_the_seat_is_stopped(self) -> None:
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            seat_dir = Path(tmp) / "run-p1"
+            seat_dir.mkdir()
+            # Stands in for an orphaned `civ6_brain.py --run-dir <seat_dir>`.
+            script = Path(tmp) / "civ6_brain.py"
+            script.write_text("import time\ntime.sleep(60)\n")
+            worker = subprocess.Popen([sys.executable, str(script), "--run-dir", str(seat_dir)])
+            try:
+                (seat_dir / "brain.pid").write_text(f"{worker.pid}\n")
+                self.assertEqual(hotseat.stop_stale_worker(seat_dir, grace_s=2.0), worker.pid)
+                self.assertIsNotNone(worker.wait(timeout=5))
+            finally:
+                if worker.poll() is None:
+                    worker.kill()
+
+    def test_a_reused_pid_is_not_touched(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            seat_dir = Path(tmp) / "run-p1"
+            seat_dir.mkdir()
+            (seat_dir / "brain.pid").write_text(f"{os.getpid()}\n")
+            self.assertIsNone(hotseat.stop_stale_worker(seat_dir))
+
+    def test_no_record_no_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(hotseat.stop_stale_worker(Path(tmp)))
 
 
 class DifficultyCellTest(unittest.TestCase):

@@ -248,6 +248,40 @@ def brain_command(seat_dir: Path, orders_db: Path, binary: Path, victory: str) -
             "--seconds", str(14 * 24 * 3600)]
 
 
+def stop_stale_worker(seat_dir: Path, *, grace_s: float = 5.0) -> int | None:
+    """Stop the seat's previous decision worker if it is still running.
+
+    Workers run in their own sessions so a terminal's Ctrl-C cannot take one
+    down mid-decision, which also means a harness that dies hard (killed, or a
+    laptop that slept through a crash) leaves them running. A later `--attach`
+    then started a second worker on the same seat directory, and two deciders
+    read one board and both answered it. The pid recorded at start is checked
+    against its command line before anything is signalled, so a pid the system
+    has since reused is never touched. Returns the pid stopped, if any.
+    """
+    try:
+        pid = int((seat_dir / "brain.pid").read_text().strip())
+    except (OSError, ValueError):
+        return None
+    try:
+        command = subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
+                                 capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if "civ6_brain.py" not in command or str(seat_dir) not in command:
+        return None
+    try:
+        os.kill(pid, signal.SIGTERM)
+        deadline = time.monotonic() + grace_s
+        while time.monotonic() < deadline:
+            os.kill(pid, 0)
+            time.sleep(0.2)
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    return pid
+
+
 class Brains:
     """One `civ6_brain.py` per jack seat, restarted if one dies."""
 
@@ -265,12 +299,16 @@ class Brains:
         seat_dir = self.seat_dir(seat)
         seat_dir.mkdir(parents=True, exist_ok=True)
         (seat_dir / "events.jsonl").touch(exist_ok=True)
+        stopped = stop_stale_worker(seat_dir)
+        if stopped:
+            self.log(f"seat {seat}: stopped a decision worker left running (pid {stopped})")
         out = (seat_dir / "brain.log").open("a", buffering=1)
         self.procs[seat] = subprocess.Popen(
             brain_command(seat_dir, self.orders_db, self.binary, self.victory),
             cwd=str(HERE.parent), stdout=out, stderr=subprocess.STDOUT, text=True,
             start_new_session=True)
         out.close()
+        (seat_dir / "brain.pid").write_text(f"{self.procs[seat].pid}\n")
 
     def start_all(self) -> None:
         # Create the shared database, WAL and all, before three workers race to:
@@ -401,11 +439,42 @@ def click(log: Log, point: tuple[int, int]) -> None:
     play.click_at(int(point[0]), int(point[1]))
 
 
+def fit_on_screen(get_window=None, get_desktop=None, place=None) -> tuple | None:
+    """Lift the game window until its bottom edge is on the screen.
+
+    Civ VI in windowed mode keeps its window exactly as tall as the display
+    and will not shrink it, so parked below the menu bar its bottom 33 points
+    -- the setup page's Load Game / Confirm Settings row -- are off-screen:
+    on a 1710x1107 MacBook Air setup read every option and never found the
+    button (2026-11-19, after the operator had switched Civ VI to windowed
+    in the previous game). Moved to y=0 the whole frame shows, and the game
+    covers the menu bar the way its full-screen mode does. Returns the frame
+    asked for, or None when nothing needed to move.
+    """
+    get_window = get_window or play.game_window
+    get_desktop = get_desktop or play.desktop_size
+    place = place or (lambda frame: play.macos_window.place_game(
+        play.GAME_PROCESS, frame=frame, get_desktop_size=get_desktop,
+        get_game_window=get_window))
+    bounds, screen = get_window(), get_desktop()
+    if bounds is None or screen is None:
+        return None
+    x, y, width, height = bounds
+    if y + height <= screen[1]:
+        return None
+    frame = (x, max(0, screen[1] - height), width, height)
+    place(frame)
+    return frame
+
+
 def open_hotseat_setup(run_dir: Path, log: Log, attempts: int = 12) -> tuple | None:
     """Main menu -> Multiplayer -> Hot Seat, to the MULTIPLAYER GAME SETUP page."""
     for attempt in range(1, attempts + 1):
         wait_for_hands_off(log)
         play.ensure_game_frontmost()
+        moved = fit_on_screen()
+        if moved:
+            log(f"[setup] the game window ran off the bottom of the screen; moved it to {moved}")
         time.sleep(1.0)
         bounds, rows = read_screen(run_dir, f"menu-{attempt}")
         if bounds is None:
@@ -1190,6 +1259,7 @@ def run(args: argparse.Namespace) -> int:
                 play.place_game(play.GAME_SIDE, play.GAME_FRACTION, play.GAME_VFRACTION)
             else:
                 play.place_game("left", 1.0, 1.0)
+                fit_on_screen()
         bridges = [watch.EventLogBridge(run_dir, tag=args.tag)]
         for seat in agent_seats(args.players, args.auto_human):
             bridges.append(watch.EventLogBridge(
