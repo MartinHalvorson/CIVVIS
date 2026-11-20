@@ -27504,7 +27504,16 @@ function victoryTrackerStats(victory, metric) {
       ? `${compactStat(metric.distance)}/${compactStat(metric.distance_target)}ly`
       : `${metric.projects || 0}/${target}`;
   }
-  return victoryValue(victory, metric);
+  const share = victory === "domination" && victoryCityShare(metric);
+  return (share ? `<i class="victory-share">${share}</i>` : "") + victoryValue(victory, metric);
+}
+// Domination's second column, left of its capitals: the share of every city on
+// the map, city-states' included, that the civilization holds. It is blank on
+// turn 1 and starts on turn 2 (operator, 2026-11-19): a world opens with its
+// city-states standing and no capital founded, so turn 1 is 0% on every row.
+function victoryCityShare(metric, turn = reportedTurn()) {
+  return turn >= 2 && +metric.city_total > 0
+    ? `${Math.round(100 * (+metric.cities || 0) / metric.city_total)}%` : "";
 }
 
 // What a path's rows are ranked on. Culture is led on the figure its rows
