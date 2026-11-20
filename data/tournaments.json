@@ -18,7 +18,9 @@
     "Operator 2026-11-20 ~01:40Z: \"tournament 2 was scraped. (can add a notes col). both civs and strategies were being",
     "chosen at random (random strat among the top ~5 or so I think). but what should be done is picking a civ at random",
     "and then picking our best strategy for the civ. should be fixed in tournament 3. unsure if tournament 1 is affected",
-    "(probably is).\": the `note` on each definition."
+    "(probably is).\": the `note` on each definition.",
+    "Operator 2026-11-20 ~05:50Z: \"make the ongoing tournament a 100 game tourney please. continue the existing games series\":",
+    "Tournament 3 stays the best-of-30 that ended at civvis-20261120T045254Z; Tournament 4 keeps its games from there as a 100-game series."
   ],
   "tournaments": [
     {
@@ -45,7 +47,15 @@
       "start": "civvis-20261119T223800Z",
       "series_size": 30,
       "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"},
-      "note": "A random civ playing our best strategy for that civ (the fix for Tournament 2)."
+      "note": "A random civ playing our best strategy for that civ (the fix for Tournament 2).",
+      "end": "civvis-20261120T045254Z"
+    },
+    {
+      "name": "Lv 8 Deity 100-game series, best strategy per civ",
+      "conditions": "Lv 8 6P Continents Online",
+      "start": "civvis-20261120T045254Z",
+      "series_size": 100,
+      "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"}
     }
   ]
 }
