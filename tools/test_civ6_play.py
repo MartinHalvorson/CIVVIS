@@ -3375,6 +3375,18 @@ class DealSessionConfigTests(unittest.TestCase):
         self.assertEqual(source.count(
             '"LuxuryQuoteProposals": getattr(args, "luxury_quote_proposals", False),'), 2)
 
+    def test_withdrawing_an_unanswered_proposal_is_opt_in_and_recorded(self):
+        self.assertIs(self._config()["UnansweredProposalWithdraw"], False)
+        self.assertIs(self._config(unanswered_proposal_withdraw=True)
+                      ["UnansweredProposalWithdraw"], True)
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('ap.add_argument("--unanswered-proposal-withdraw", '
+                      'dest="unanswered_proposal_withdraw",', source)
+        # Each game's summary says which arm it played, in both summary writers.
+        self.assertEqual(source.count(
+            '"UnansweredProposalWithdraw": getattr(args, "unanswered_proposal_withdraw", False),'),
+            2)
+
     def test_civvis_decider_keeps_non_modal_deals_by_default(self):
         self.assertIs(self._config(civvis_decides=True)["DealSessions"], False)
 
