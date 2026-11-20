@@ -2102,11 +2102,12 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
     assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
 }
 
-/// The site is three pages, Home, CIVVIS and Debugger, and every one of them
-/// lists all three in that order, with the page on screen in gold and a
-/// link to the game they are built on under them (operator, 2026-11-19).
-/// The viewer is the middle two: a watched simulation lights CIVVIS and a
-/// played game lights Debugger. Pinned as one literal because the list is
+/// The site is three pages, Home, CIVVIS and AI Debugger (the operator's
+/// name for the Debugger since 2026-11-20), and every one of them lists all
+/// three in that order, with the page on screen in gold and a link to the
+/// game they are built on under them (operator, 2026-11-19). The viewer is
+/// the middle two: a watched simulation lights CIVVIS and a played game
+/// lights AI Debugger. Pinned as one literal because the list is
 /// the contract: four links in this order, inside a list that only the
 /// hosts serving a /home reveal.
 #[test]
@@ -2115,7 +2116,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         "<nav class=\"head-links\" id=\"headlinks\" aria-label=\"CIVVIS sites\" hidden>\n",
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
-        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">Debugger</a>\n",
+        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
         "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
@@ -2158,19 +2159,28 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     assert!(EMBEDDED_INDEX.contains(".head-links[hidden] { display: none; }"));
     assert!(EMBEDDED_INDEX
         .contains("#side[data-type-size=\"compact\"] .head-links {\n    grid-column: 1 / -1;"));
-    // With room beside the lockup the list is a column down its right
-    // side: the third track of the lockup's grid, across both of its rows,
-    // one link to a line. It applies only while the list is showing, so a
-    // desktop build's lockup keeps the whole band.
+    // With room beside the lockup the list is a column on its right: the
+    // third track of the lockup's grid, one link to a line, beside the
+    // globe and the wordmark with the tagline under all three. It applies
+    // only while the list is showing, so a desktop build's lockup keeps the
+    // whole band. The column's width is the longest label's, AI DEBUGGER.
     assert!(EMBEDDED_INDEX.contains(concat!(
-        "  @container (min-width: 229px) {\n",
+        "  @container (min-width: 233px) {\n",
         "    #side .brand:has(> .head-links:not([hidden])) {\n",
-        "      --site-rail: 84px; --site-mark: clamp(40px, 19cqw, 72px);\n",
+        "      --site-rail: 88px; --site-mark: clamp(40px, 19cqw, 72px);\n",
         "      display: grid; grid-template-columns: auto minmax(0, 1fr) var(--site-rail);\n",
     )));
     assert!(EMBEDDED_INDEX.contains(concat!(
         "    #side .brand:has(> .head-links:not([hidden])) .head-links {\n",
-        "      grid-column: 3; grid-row: 1 / span 2; grid-template-columns: minmax(0, 1fr);\n",
+        "      grid-column: 3; grid-row: 1; grid-template-columns: minmax(0, 1fr);\n",
+    )));
+    // A little wider and the tagline fits beside the column as well, which
+    // then runs the whole height of the lockup.
+    assert!(EMBEDDED_INDEX.contains(concat!(
+        "  @container (min-width: 246px) {\n",
+        "    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 1 / 3; }\n",
+        "    #side .brand:has(> .head-links:not([hidden])) .head-links { grid-row: 1 / span 2; }\n",
+        "  }",
     )));
     // The wordmark is sized from the lane the column leaves it, and the
     // tagline's two lines are fitted as one so they stay one size in it.
@@ -2247,7 +2257,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
 }
 
 /// The home page is one of the site's three pages and lists all three from
-/// its header, Home, CIVVIS and Debugger, with itself in gold and the Civ 6
+/// its header, Home, CIVVIS and AI Debugger, with itself in gold and the Civ 6
 /// link under them, as the viewer's masthead does; below that it is one
 /// paragraph and the rankings. The two-card game menu that stood there, the
 /// world picker the cards opened and the photographs they carried are gone,
@@ -2271,7 +2281,7 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
             "        <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "        <a class=\"site-link\" href=\"../?mode=play\" ",
-            "title=\"You play one civilization. CIVVIS AI agents play the rest.\">Debugger</a>\n",
+            "title=\"You play one civilization. CIVVIS AI agents play the rest.\">AI Debugger</a>\n",
             "        <a class=\"site-link\" ",
             "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
             "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",

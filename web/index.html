@@ -340,8 +340,8 @@
      and the text fitter shrinks the type into the lane instead of wrapping. */
   .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #bccac4; }
-  /* The site's pages from the top down: Home, CIVVIS and Debugger, and under
-     them the game all three are built on. The block below is how they stand
+  /* The site's pages from the top down: Home, CIVVIS and AI Debugger, and
+     under them the game all three are built on. The block below is how they stand
      when there is no room beside the lockup, or no way to ask whether they
      are showing (`:has`): two by two under the tagline. `display: grid`
      outranks the user agent's `[hidden]`, which is why the block has to say
@@ -351,15 +351,15 @@
   }
   .head-links[hidden] { display: none; }
   .home-link {
-    display: block; min-width: 0; padding: 2px 6px 3px; overflow: hidden;
-    color: var(--muted); font-size: var(--type-label); font-weight: 650; line-height: 1.3;
-    letter-spacing: .08em; text-transform: uppercase; text-decoration: none; white-space: nowrap;
+    display: block; min-width: 0; padding: 2px 5px 3px; overflow: hidden;
+    color: var(--muted); font-size: var(--type-caption); font-weight: 650; line-height: 1.3;
+    letter-spacing: .04em; text-transform: uppercase; text-decoration: none; white-space: nowrap;
     border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2);
   }
   .home-link:hover { color: var(--gold-bright); border-color: var(--gold); }
   .home-link:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 1px; }
   /* The page on screen is the one in gold. This page is two of them: CIVVIS
-     while it watches a simulation, the Debugger while somebody holds a seat.
+     while it watches a simulation, AI Debugger while somebody holds a seat.
      Which of the two is known once the first observation arrives
      (`seat-known`); until then neither is lit, and nothing moves when one
      is, because every link is there from the start. */
@@ -368,19 +368,18 @@
     color: #17130c; border-color: #efd184;
     background: linear-gradient(145deg, #dec176, #aa7d30);
   }
-  /* With 229px or more across the band the links leave the lockup's foot and
-     stand in a column down its right side. The lockup gives the column its
-     width (`--site-rail`, which holds DEBUGGER with a fifth to spare for a
-     wider typeface than this one) and reflows in what is left: the globe
-     and the wordmark on one line, the tagline under both, as the compact
-     band already sets them. The wordmark's lane is the band less the column,
-     the globe and the two gutters, and the CIVVIS.ai run is 4.65em wide
-     (4.85 leaves fallback-font slack), so dividing the lane by that fills it
-     without tripping the ellipsis. 229px is where the tagline's second line
-     still fits beside the column at its smallest size. */
-  @container (min-width: 229px) {
+  /* With 233px or more across the band the links leave the lockup's foot and
+     stand in a column on its right, beside the globe and the wordmark, with
+     the tagline across the band under all three. The lockup gives the column
+     its width (`--site-rail`: AI DEBUGGER, the longest of the four, with a
+     tenth to spare for a wider typeface than this one) and the wordmark's
+     lane is the band less the column, the globe and the two gutters. The
+     CIVVIS.ai run is 4.65em wide (4.85 leaves fallback-font slack), so
+     dividing the lane by that fills it without tripping the ellipsis. Under
+     233px that leaves the wordmark too small to be the page's name. */
+  @container (min-width: 233px) {
     #side .brand:has(> .head-links:not([hidden])) {
-      --site-rail: 84px; --site-mark: clamp(40px, 19cqw, 72px);
+      --site-rail: 88px; --site-mark: clamp(40px, 19cqw, 72px);
       display: grid; grid-template-columns: auto minmax(0, 1fr) var(--site-rail);
       align-items: center; gap: 7px 10px;
     }
@@ -392,17 +391,18 @@
     #side .brand:has(> .head-links:not([hidden])) h1 {
       font-size: clamp(15px, calc((100cqw - var(--site-rail) - var(--site-mark) - 20px) / 4.85), 36px);
     }
-    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 1 / 3; margin-top: 0; }
+    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 1 / -1; margin-top: 0; }
     #side .brand:has(> .head-links:not([hidden])) .head-links {
-      grid-column: 3; grid-row: 1 / span 2; grid-template-columns: minmax(0, 1fr);
+      grid-column: 3; grid-row: 1; grid-template-columns: minmax(0, 1fr);
       align-content: center; justify-self: stretch; margin-top: 0;
     }
   }
-  /* Under 260px the column gives the lockup back eight pixels, with its type
-     half a point smaller and set closer. */
-  @container (min-width: 229px) and (max-width: 259px) {
-    #side .brand:has(> .head-links:not([hidden])) { --site-rail: 76px; }
-    .home-link { padding: 2px 5px 3px; font-size: var(--type-caption); letter-spacing: .04em; }
+  /* From 246px the tagline's two lines fit beside the column too, so the
+     column runs the whole height of the lockup and the box is no taller than
+     the four links. */
+  @container (min-width: 246px) {
+    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 1 / 3; }
+    #side .brand:has(> .head-links:not([hidden])) .head-links { grid-row: 1 / span 2; }
   }
   /* A split-screen deck cannot afford the landing-page-sized mark and title.
      The compact band preserves both, but reflows the lockup: the copy column
@@ -6256,8 +6256,8 @@
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
         <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI strategy development</span></div>
       </div>
-      <!-- The site is three pages, Home, CIVVIS and Debugger, and every one
-           of them lists all three in that order with the one on screen in
+      <!-- The site is three pages, Home, CIVVIS and AI Debugger, and every
+           one of them lists all three in that order with the one on screen in
            gold. This page is the middle two: `./` is the simulation the AIs
            play and `?mode=play` the same game with a seat of your own. Both
            are relative, so they stay in whichever lane they were clicked in,
@@ -6268,7 +6268,7 @@
       <nav class="head-links" id="headlinks" aria-label="CIVVIS sites" hidden>
         <a class="home-link" id="homelink" href="/home" target="_top">Home</a>
         <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
-        <a class="home-link" id="playlink" href="?mode=play" target="_top">Debugger</a>
+        <a class="home-link" id="playlink" href="?mode=play" target="_top">AI Debugger</a>
         <a class="home-link" id="civ6link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
     </div>
