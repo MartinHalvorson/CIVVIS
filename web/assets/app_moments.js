@@ -224,8 +224,9 @@ function showNextMoment() {
 }
 // Called once for each turn's fresh events. An agent holding the seat is
 // playing dozens of turns a minute, and a banner for each would be a blur.
+// The debugger's own view is for reading the game, and keeps the map clear.
 function announceMoments(events) {
-  if (SPEC || autoplaying) return;
+  if (SPEC || autoplaying || debuggerView()) return;
   const moments = [...events.map(momentFrom).filter(Boolean), ...rivalMoments(), ...boostMoments()]
     .sort((a, b) => a.rank - b.rank).slice(0, MOMENT_PER_TURN);
   momentQueue.push(...moments);

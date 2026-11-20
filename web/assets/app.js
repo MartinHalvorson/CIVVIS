@@ -7340,7 +7340,7 @@ function paintLiveTracker() {
   const panel = document.getElementById("livetracker");
   const body = document.getElementById("livetracker-body");
   if (!panel || !body) return;
-  const me = livePause.available && state && state.me;
+  const me = (livePause.available || debuggerView()) && state && state.me;
   panel.hidden = !me;
   if (!me) return;
   const html = liveTrackerHtml(me);
@@ -7408,10 +7408,10 @@ function setLiveTrackerScale(scale, persist = false) {
 function paintLivePause() {
   const box = document.getElementById("livepause");
   if (!box) return;
-  box.hidden = !livePause.available;
+  box.hidden = !(livePause.available || debuggerView());
   document.body.classList.toggle("live-pause-available", livePause.available);
   paintLiveTracker();
-  if (!livePause.available) return;
+  if (!livePause.available) { placeLivePause(); return; }
   const button = document.getElementById("livepause-button");
   const fresh = document.getElementById("livenewgame-button");
   const note = document.getElementById("livepause-note");
@@ -8954,7 +8954,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     applyQueuedSimulationSettings(st.next_game_settings);
     updateRestartSimulationButton();
   }
-  if (SPEC) sel = null;
+  if (SPEC || debuggerView()) sel = null;
   if (sel) sel = st.units.find(u => u.id === sel.id && u.owner === 0) || null;
   TMAP = new Map(st.map.tiles.map(t => [key(t.pos), t]));
   syncMapSearchCivilizations(st);
@@ -27779,7 +27779,7 @@ function hudTurnPlate() {
     ? ["Firaxis Civ VI Testing", "A live Firaxis Civilization VI game under test, mirrored here turn by turn."]
     : SPEC ? ["CIVVIS Self-play", "Every civilization is played by a CIVVIS AI agent. Nobody holds a seat."]
     : ["CIVVIS Sim Debugger", "You play one civilization. CIVVIS AI agents play the rest."];
-  const platePov = !SPEC || playerView
+  const platePov = (!SPEC && !state.debug?.reveal) || playerView
     ? ["Single Player", `The world as ${identity.civ || "one civilization"} sees it, behind its own fog.`]
     : ["Global", "The whole world at once, with no civilization's fog."];
   const mapScript = state.map.script || "tenins_ball";
@@ -29784,9 +29784,9 @@ function drawLaunchBar() {
   // Civilization VI game the research box (`liveTrackerHtml`) already carries
   // both studies and opens both trees, so the two hooks would only repeat it
   // (operator 2026-10-14: "remove the old tech and civic buttons").
-  if (SPEC) {
+  if (SPEC || debuggerView()) {
     const treeHooks = arrangementSeat() !== null && worldStandingsInPlay() &&
-      !(livePause.available && state.me);
+      !((livePause.available || debuggerView()) && state.me);
     if (tabs) tabs.innerHTML = treeHooks ? launchTreeHook("science") + launchTreeHook("culture") : "";
     bar.classList.toggle("on", treeHooks);
     if (hooks) hooks.innerHTML = "";
@@ -29870,12 +29870,14 @@ function drawLaunchBar() {
 // engine's own answer, so this cannot drift from what the server thinks.
 function playingSolo() { return !!state && !SPEC; }
 
-// The Civilization VI arrangement is in force, which only a held seat wears.
-// A watched world keeps the laboratory: the operator reading one is reading an
-// experiment rather than playing a turn, so the standings stay across the sky
-// and the arena rail stays down the right. #2382 gave the watcher this frame
-// and put both behind a button; over a simulation that hid the instrument.
-function civ6Frame() { return playingSolo(); }
+// The Civilization VI arrangement is in force, which only a held seat wears,
+// and under the debugger only when its Single player switch is on (`SOLO_UI`,
+// kept by `setSoloUi` in app_debugger.js). Off, the seat gets the Debugger
+// view: the laboratory a watched world keeps, standings across the sky and
+// the arena rail down the right, with the seat's governors and policies.
+let SOLO_UI = (() => { try { return localStorage.getItem("civvis-debugger-view-v1") === "single"; } catch (_) { return false; } })();
+function civ6Frame() { return playingSolo() && (SOLO_UI || !state.debug); }
+function debuggerView() { return playingSolo() && !civ6Frame(); }
 
 // The empire the frame is describing, or null when there is not one.
 //
@@ -30187,9 +30189,12 @@ document.getElementById("solo-notice-ack").onclick = () => {
 
 function drawSoloHud() {
   const solo = playingSolo();
-  const changed = document.body.classList.contains("playing-solo") !== solo;
+  const changed = document.body.classList.contains("playing-solo") !== solo ||
+    document.body.classList.contains("civ6-frame") !== civ6Frame();
   document.body.classList.toggle("playing-solo", solo);
-  document.body.classList.toggle("civ6-frame", solo);
+  document.body.classList.toggle("civ6-frame", civ6Frame());
+  document.body.classList.toggle("debugger-view", debuggerView());
+  paintLivePause();
   // The arrangement hands the standings masthead's band and the arena rail's
   // column back to the world. A fitted map area follows chrome that moves,
   // and this is the largest move it ever makes.
@@ -37542,7 +37547,7 @@ cv.addEventListener("click", ev => {
   }
   // A plate is a button: your own opens that city, wherever the plate has
   // drifted relative to the tiles under it.
-  if (!tackMode && !interfaceMode && !sitePick && !SPEC && state) {
+  if (!tackMode && !interfaceMode && !sitePick && !SPEC && state && !debuggerView()) {
     const plate = cityPlateAt(sx, sy);
     const city = plate && state.cities.find(candidate => candidate.id === plate.city);
     if (city && city.owner === 0) {
@@ -37564,7 +37569,7 @@ cv.addEventListener("click", ev => {
   }
   // An armed map verb consumes this click before ordinary selection.
   if (applyInterfaceMode(pos)) return;
-  if (SPEC) {
+  if (SPEC || debuggerView()) {
     const unit = state.units.find(candidate => key(candidate.pos) === k);
     // A spectator's press on a unit already meant "that one" — the camera has
     // followed it since long before this reading existed. It still does; the
@@ -38350,7 +38355,7 @@ function closestActionUnit(candidates, origin) {
   })[0];
 }
 function advanceToNextActionUnit(force = false) {
-  const waiting = unitsNeedingOrders();
+  const waiting = debuggerView() ? [] : unitsNeedingOrders();
   if (!waiting.length) { sel = null; draw(); drawSide(); drawUbar(); drawTurnLoop(); return; }
   if (!force && sel && unitNeedsOrders(sel)) { drawTurnLoop(); return; }
   resetNextActionVisitsForCurrentTurn();
@@ -38667,7 +38672,7 @@ function drawTurnLoop() {
 function drawTurnButton() {
   const rail = document.getElementById("notify");
   const button = document.getElementById("endturn");
-  if (!state || SPEC) { rail.classList.remove("on"); return; }
+  if (!state || SPEC || debuggerView()) { rail.classList.remove("on"); return; }
   wakeSleepers();
   const blockers = turnBlockers();
   const chips = blockers.map(b => ({...b, blocking: true}))
@@ -39387,7 +39392,7 @@ document.addEventListener("keydown", ev => {
 
   const binding = bindingFor(ev);
   if (binding) {
-    if (SPEC && !binding.spectator) return;
+    if ((SPEC || debuggerView()) && !binding.spectator) return;
     // The arrows scroll a page by default; the board owns its selected keys.
     ev.preventDefault();
     binding.run(ev);

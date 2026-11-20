@@ -8711,8 +8711,8 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
 /// (operator, same day: "Change Civ VI to CIVVIS Self-play, Firaxis Civ VI
 /// Testing, and CIVVIS Single Player"; then 2026-11-18: "Change single
 /// player to 'sim debugger'"). POV is Global for the omniscient
-/// spectator and Single Player for a played seat or a Watch-as view, whose
-/// tooltip names the civilization.
+/// spectator and for a debugger game with Reveal on, and Single Player for
+/// a played seat or a Watch-as view, whose tooltip names the civilization.
 ///
 /// The two rows open the settings list, above the setup line. Live time and
 /// Max Speed stand above the age and the turn counter: they spent an
@@ -8731,7 +8731,7 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
         "? [\"Firaxis Civ VI Testing\", \"A live Firaxis Civilization VI game under test, mirrored here turn by turn.\"]",
         ": SPEC ? [\"CIVVIS Self-play\", \"Every civilization is played by a CIVVIS AI agent. Nobody holds a seat.\"]",
         ": [\"CIVVIS Sim Debugger\", \"You play one civilization. CIVVIS AI agents play the rest.\"];",
-        "const platePov = !SPEC || playerView",
+        "const platePov = (!SPEC && !state.debug?.reveal) || playerView",
         "? [\"Single Player\", `The world as ${identity.civ || \"one civilization\"} sees it, behind its own fog.`]",
         ": [\"Global\", \"The whole world at once, with no civilization's fog.\"];",
         "frameRow(\"Mode:\", plateMode) + frameRow(\"POV:\", platePov) +\n    `<div class=\"turn-setting turn-setup-line\"",
@@ -9516,7 +9516,7 @@ fn a_game_has_a_start_a_pause_and_its_payoffs() {
     // never builds a context.
     assert!(EMBEDDED_APP_MOMENTS_JS.contains("if (!soundEnabled) return null;"));
     // An agent holding the seat plays dozens of turns a minute.
-    assert!(EMBEDDED_APP_MOMENTS_JS.contains("if (SPEC || autoplaying) return;"));
+    assert!(EMBEDDED_APP_MOMENTS_JS.contains("if (SPEC || autoplaying || debuggerView()) return;"));
     assert!(EMBEDDED_APP_JS.contains("announceMoments(fresh);"));
     // A new game from the menu is a new map: the form refills its seed from the
     // running world, so without this every game was the same one.
@@ -14041,6 +14041,51 @@ fn a_study_plan_starts_its_next_step_as_each_turn_opens() {
     assert!(EMBEDDED_APP_JS.contains("(n === current ? \"\" : ` onclick='pickTree"));
 }
 
+/// A game under the debugger opens on the Debugger view (operator
+/// 2026-11-19: the single player UI "really gunks up the screen" and "should
+/// kinda really be replaced with the player hud, governors+policy box, and
+/// victory tracker ... We can call this Debugger. we can save the existing
+/// layout as like a single player mode"). The bar's Single player switch
+/// puts the Civilization VI arrangement on and takes it off, and the choice
+/// is kept for the next visit. A held seat with no debugger behind it has no
+/// switch, so it keeps the arrangement.
+#[test]
+fn the_debugger_opens_on_the_debugger_view_and_single_player_is_a_switch() {
+    for piece in [
+        // One flag, off unless this browser chose Single player.
+        "let SOLO_UI = (() => { try { return localStorage.getItem(\"civvis-debugger-view-v1\") === \"single\"; } catch (_) { return false; } })();",
+        "function civ6Frame() { return playingSolo() && (SOLO_UI || !state.debug); }",
+        "function debuggerView() { return playingSolo() && !civ6Frame(); }",
+        "document.body.classList.toggle(\"debugger-view\", debuggerView());",
+        // The switch is in the bar, pressed while the arrangement is on.
+        "<button data-dbg=\"solo-ui\" aria-pressed=\"false\"",
+        "<span class=\"dbg-word\">Single player</span></button>",
+        "else if (action === \"solo-ui\") setSoloUi(!SOLO_UI);",
+        "try { localStorage.setItem(\"civvis-debugger-view-v1\", SOLO_UI ? \"single\" : \"debugger\"); } catch (_) {}",
+        "soloUi.setAttribute(\"aria-pressed\", SOLO_UI ? \"true\" : \"false\");",
+        // The seat's governors and policies stand on the map, without the
+        // two buttons that belong to a live Civilization VI game.
+        "const me = (livePause.available || debuggerView()) && state && state.me;",
+        "box.hidden = !(livePause.available || debuggerView());",
+        "body.debugger-view .livepause-buttons, body.debugger-view #livepause-note { display: none; }",
+        // The view is for reading: nothing is selected, a press on the map
+        // reads as it does for a watcher, and the seat's rail and launch
+        // bar stay off.
+        "if (SPEC || debuggerView()) sel = null;",
+        "const waiting = debuggerView() ? [] : unitsNeedingOrders();",
+        "if (!state || SPEC || debuggerView()) { rail.classList.remove(\"on\"); return; }",
+        // The keys that play the seat wait for Single player too: a stray
+        // Enter must not end a turn that was only being read.
+        "if ((SPEC || debuggerView()) && !binding.spectator) return;",
+        "!((livePause.available || debuggerView()) && state.me);",
+    ] {
+        assert!(
+            EMBEDDED_INDEX.contains(piece),
+            "the Debugger view is missing {piece}"
+        );
+    }
+}
+
 #[test]
 fn browser_seats_a_person_in_the_civ_six_arrangement() {
     for piece in [
@@ -14053,7 +14098,7 @@ fn browser_seats_a_person_in_the_civ_six_arrangement() {
         "function drawWorldTracker()",
         "function launchTreeHook(kind)",
         "document.body.classList.toggle(\"playing-solo\", solo);",
-        "document.body.classList.toggle(\"civ6-frame\", solo);",
+        "document.body.classList.toggle(\"civ6-frame\", civ6Frame());",
     ] {
         assert!(
             EMBEDDED_INDEX.contains(piece),
@@ -14494,9 +14539,11 @@ fn a_selected_city_shows_what_its_land_yields() {
 /// none of them.
 #[test]
 fn a_watched_simulation_keeps_the_laboratory() {
-    // The frame answers to one predicate, and that predicate is the seat.
-    assert!(EMBEDDED_INDEX.contains("function civ6Frame() { return playingSolo(); }"));
-    assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"civ6-frame\", solo);"));
+    // The frame answers to one predicate, and that predicate starts with the
+    // seat: nobody watching can reach it.
+    assert!(EMBEDDED_INDEX
+        .contains("function civ6Frame() { return playingSolo() && (SOLO_UI || !state.debug); }"));
+    assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"civ6-frame\", civ6Frame());"));
 
     // Every piece #2382 added for the watcher is gone, markup, style and
     // pass alike. A spectator-only element that nothing paints is worse
