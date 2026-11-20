@@ -1,0 +1,16 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "religion-seat-second-city-first",
+  "scope": "Paired chained decider replays of the opening (turns 3-30) of five live\nReligion-lane Lv 8 Deity games (6 players, Small Continents, Online),\n2026-11-19/20: four whose first Settler was displaced by the religion claims\n(Russia civvis-20261119T195219Z, Arabia civvis-20261120T003425Z, Mali\ncivvis-20261120T005009Z, Russia civvis-20261120T015835Z) and one where it was\nnot (Russia civvis-20261119T235505Z).\n\n`religion-seat-second-city-first` is the only bit that varies. Each arm is one\npersistent `civvis_orders --serve --fresh-board` process (the live bridge's\nmode, so the opening book and the agent's memory carry across turns), built\nfrom the branch (profile ci), with the run's own requested genome (why.log\nline 1 `forced`, each as `--with`); the on arm adds `--with\nreligion-seat-second-city-first`. Before each turn its mirror's events.jsonl\nis the live log cut after the FIRST state row of that turn. One read per turn.\n\nRead per turn and arm: the capital's produce orders (the last is the head it\nleaves) and its production journal. The off arm leaves the head the live seat\nhad on the next state row on 91 of 96 comparable turns.\n\nThe board each turn is the live board, so after the first turn the arms differ\nit keeps following the off arm; later changes partly reflect the on process\nre-deciding a queue whose host item it did not ask for. Replays never reach the\nfounding: whether a religion is still founded is not measured here. Nothing is\nexecuted in Civ VI.",
+  "archive": {
+    "path": "docs/eval/2026-11-20-religion-seat-second-city-first.native-queries.tar.xz",
+    "sha256": "d0b157fa4e8038051553e57251415e4d9d7152c61bc4ee0845c3791695bcc994"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json"
+  ]
+}

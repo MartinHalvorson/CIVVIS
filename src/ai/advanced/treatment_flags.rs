@@ -548,6 +548,10 @@ impl AdvancedAi {
         /// corps caps leave banked buys spreaders in every city that sells
         /// one; see `advanced/religion_seat_spends_the_whole_bank.rs`.
         religion_seat_spends_the_whole_bank => enable_religion_seat_spends_the_whole_bank, disable_religion_seat_spends_the_whole_bank;
+        /// Opt-in gene `religion-seat-second-city-first`: a one-city Religion
+        /// seat's first Settler before the Holy Site chain; see
+        /// `advanced/religion_seat_second_city_first.rs`.
+        religion_seat_second_city_first => enable_religion_seat_second_city_first, disable_religion_seat_second_city_first;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
