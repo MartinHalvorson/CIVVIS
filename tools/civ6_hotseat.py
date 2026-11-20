@@ -68,6 +68,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE / "civ6_control"))
 import civ6_env as env  # noqa: E402
+import civ6_setup  # noqa: E402
 import civ6_play as play  # noqa: E402
 from civ6_control import gamelock, launcher, operator_presence, popup_clear, watch  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
@@ -113,6 +114,33 @@ class Log:
 
 
 # --------------------------------------------------------------- the settings
+
+#: The options files a hotseat launch may touch: only the front end's. A person
+#: plays this game, so how it plays and looks is theirs -- historic-moment
+#: animations, the autosave cadence and the shadow passes the verification seat
+#: cuts all stay as they set them (before 2026-11-19 a hotseat run applied the
+#: verification lane's whole table and left autosave at every fourth turn and
+#: historic moments off afterwards). The intro video and the two one-time
+#: front-end acknowledgements remain, because the setup reads the main menu
+#: and those dialogs cover it.
+PERSON_OPTIONS = {"AppOptions.txt": dict(civ6_setup.VERIFICATION_OPTIONS["AppOptions.txt"])}
+
+
+def apply_person_options(log: Log) -> dict:
+    """The front-end options a launch needs, applied while Civ VI is closed."""
+    if env.game_pids():
+        return {}
+    try:
+        applied = civ6_setup.apply_verification(env.user_dir(), PERSON_OPTIONS)
+    except Exception as error:  # noqa: BLE001 - a cosmetic cut must never cost a launch
+        log(f"could not apply the front-end options: {error}")
+        return {}
+    for name, changes in applied.items():
+        for key, (old, new) in changes.items():
+            if old is not None:
+                log(f"options: {name} {key} {old} -> {new}")
+    return applied
+
 
 def jack_seats(players: int) -> list[int]:
     return [seat for seat in range(players) if seat != HUMAN_SEAT]
@@ -305,10 +333,44 @@ def read_screen(run_dir: Path, name: str) -> tuple[tuple | None, list[dict]]:
     return bounds, rows
 
 
+#: Labels shorter than this match exactly only: "OK" against "OR", or "King"
+#: against "Kong", is a different word, not a misread. Vision misreads a letter
+#: now and then, and more often at smaller text: on a 1710x1107 MacBook Air
+#: screen "Confirm Settings" came back "Confirm Settinas" and setup stalled on
+#: the very page it was looking for (2026-11-19).
+NEAR_MATCH_MIN_LEN = 5
+
+
+def edit_distance(a: str, b: str) -> int:
+    """Levenshtein distance: letters inserted, dropped or changed."""
+    previous = list(range(len(b) + 1))
+    for i, left in enumerate(a, 1):
+        current = [i]
+        for j, right in enumerate(b, 1):
+            current.append(min(previous[j] + 1, current[j - 1] + 1,
+                               previous[j - 1] + (left != right)))
+        previous = current
+    return previous[-1]
+
+
+def near(text: str, want: str) -> bool:
+    """Whether normalised `text` is `want` give or take an OCR misread: one
+    letter in a short label, two in one of nine letters or more."""
+    if text == want:
+        return True
+    if len(want) < NEAR_MATCH_MIN_LEN:
+        return False
+    allowed = 1 if len(want) < 9 else 2
+    return abs(len(text) - len(want)) <= allowed and edit_distance(text, want) <= allowed
+
+
 def find(rows: list[dict], label: str, *, exact: bool = True) -> list[dict]:
+    """The lines reading `label`. An exact reading wins; failing one, a line
+    `label` would be but for a misread letter or two (`near`)."""
     want = _norm(label)
     if exact:
-        return [r for r in rows if r["norm"] == want]
+        return ([r for r in rows if r["norm"] == want]
+                or [r for r in rows if near(r["norm"], want)])
     return [r for r in rows if want in r["norm"]]
 
 
@@ -379,7 +441,8 @@ def check_host_settings(rows: list[dict], args: argparse.Namespace) -> list[str]
     problems = []
     for label, value in wanted.items():
         shown = value_beside(rows, label)
-        if shown is None or _norm(value) not in _norm(shown):
+        if shown is None or (_norm(value) not in _norm(shown)
+                             and not near(_norm(shown), _norm(value))):
             problems.append(f"{label} shows {shown!r}, wanted {value!r}")
     return problems
 
@@ -1110,7 +1173,7 @@ def run(args: argparse.Namespace) -> int:
             log(f"game: {args.players} players on {args.map} {args.map_size}, "
                 f"{args.speed}, {args.difficulty}, turn limit {args.max_turns}; "
                 f"you: {args.leader or 'random leader'}; save every {args.save_every} turns")
-            play.apply_verification_options()
+            apply_person_options(log)
             launcher.clear_run_logs()
             process = launcher.launch(stdout=run_dir / "stdout.log")
             launched = True
@@ -1120,7 +1183,13 @@ def run(args: argparse.Namespace) -> int:
             if not launcher.wait_for_launched_main_menu(process, 420):
                 log("Civ VI never reached its main menu")
                 return 3
-            play.place_game(play.GAME_SIDE, play.GAME_FRACTION, play.GAME_VFRACTION)
+            # The verification seat's half-screen window leaves room for its
+            # viewer; a person playing wants the whole screen. The stub test
+            # keeps the seat's layout.
+            if args.auto_human:
+                play.place_game(play.GAME_SIDE, play.GAME_FRACTION, play.GAME_VFRACTION)
+            else:
+                play.place_game("left", 1.0, 1.0)
         bridges = [watch.EventLogBridge(run_dir, tag=args.tag)]
         for seat in agent_seats(args.players, args.auto_human):
             bridges.append(watch.EventLogBridge(
