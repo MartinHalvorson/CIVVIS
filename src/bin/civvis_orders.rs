@@ -6297,12 +6297,10 @@ fn decide(
             note_bits.push(format!("mission_held_for_friendship={missions_held}"));
         }
     }
-    let (mut orders, refused_before, friendship_spared) = withhold_refused_orders_sparing(
-        orders,
-        state,
-        host_order_refusals,
-        |order| friendship_lands && order.kind == "friendship",
-    );
+    let (mut orders, refused_before, friendship_spared) =
+        withhold_refused_orders_sparing(orders, state, host_order_refusals, |order| {
+            friendship_lands && order.kind == "friendship"
+        });
     if friendship_spared > 0 {
         note_bits.push(format!("friendship_ask_spared={friendship_spared}"));
     }
