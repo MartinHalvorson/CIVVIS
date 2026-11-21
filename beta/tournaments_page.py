@@ -28,6 +28,16 @@ Each series carries its games in the order they were played (the civ, how
 the game ended, the turn), the wins by victory type, the losses by how they
 were lost, and a record per level when its games were not all at one level.
 
+A date is written `YYYY-MM-DD HH:MM`, on the 24-hour clock, with no `Z`
+after it (operator 2026-11-21: "for all start and end dates, lets use
+YYYY-MM-DD 24 hr time with no z"). It is still UTC, which the page says once.
+A series also carries two durations (the same order: "add a wall time and
+run time duration cols"). Its wall time is the clock time it took, from its
+first game starting to its last game ending. Its run time is the time its
+games were in play, each from its start to its result, added up; the time
+between games (a restart, a wait, a night the machine was off) is in the
+first and not in the second.
+
 A tournament whose result video is on the CIVVIS YouTube channel links it
 (operator 2026-11-21: "we can link to the youtube tournament result
 videos"). The definitions file lists them under `videos`, by the
@@ -45,6 +55,7 @@ about the queue, not about the revision a lane is pinned to.
 
 from __future__ import annotations
 
+import datetime
 import json
 import pathlib
 import re
@@ -71,6 +82,60 @@ def video(videos: dict, number: int) -> str:
         print(f"tournaments_page: Tournament {number}'s video is not a YouTube link; left out", file=sys.stderr)
         return ""
     return f"https://www.youtube.com/watch?v={found[1]}"
+
+
+#: A date as `home_rankings` writes one: `2026-11-19 18:45Z`.
+STAMPED = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}Z")
+
+#: The moment a run tag names, to the second: `civvis-20261119T184500Z`.
+TAGGED = re.compile(r"\d{8}T\d{6}Z")
+
+
+def plain(stamp: str | None) -> str | None:
+    """A date as the page shows it: `2026-11-19 18:45`, 24-hour, no `Z`.
+    A start that is not a date (an old tag with no time in it) is left as
+    it is, and a series with no end has none here either."""
+    return stamp[:-1] if isinstance(stamp, str) and STAMPED.fullmatch(stamp) else stamp
+
+
+def began(tag: str) -> datetime.datetime | None:
+    """When a game started: the moment its tag names."""
+    found = TAGGED.search(tag)
+    try:
+        return datetime.datetime.strptime(found[0], "%Y%m%dT%H%M%SZ") if found else None
+    except ValueError:
+        return None
+
+
+def ended(result: dict) -> datetime.datetime | None:
+    """When a game ended: the moment its result line was written."""
+    try:
+        return datetime.datetime.strptime(str(result.get("utc") or ""), "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return None
+
+
+def lasted(seconds: float) -> str:
+    """A duration in hours and minutes, `22h 03m`, or `46m` under an hour."""
+    minutes = int(seconds // 60 + (seconds % 60 >= 30))
+    return f"{minutes // 60}h {minutes % 60:02d}m" if minutes >= 60 else f"{minutes}m"
+
+
+def durations(played: list) -> tuple[str, str]:
+    """A series' wall time and run time, each `""` when no game of it has
+    both a start and an end to measure.
+
+    The wall time runs from the first game's start to the last game's end.
+    The run time adds up each game's own time, from its start to its
+    result. A game that was resumed (`-cont1`) is one game from the start
+    its tag names to the result that counted."""
+    spans = [(start, end) for start, end in ((began(key), ended(result)) for key, result in played)
+             if start and end and end >= start]
+    if not spans:
+        return "", ""
+    wall = max(end for _, end in spans) - min(start for start, _ in spans)
+    run = sum(((end - start) for start, end in spans), datetime.timedelta())
+    return lasted(wall.total_seconds()), lasted(run.total_seconds())
 
 
 def ending(row: dict) -> tuple[bool, str]:
@@ -113,14 +178,18 @@ def series_view(row: dict, spec: dict, names: list[str], videos: dict) -> dict:
     """A series as the page draws it: the table's row and its games."""
     games = [game(result, names) for _, result in row["played"]]
     levels = sorted({g["level"] for g in games if g["level"]})
+    wall, run = durations(row["played"])
     return {
         "id": row["id"],
         "name": row["tournament"],
         "idea": spec.get("idea") or "",
         "conditions": row["conditions"],
         "note": row["note"],
-        "start": row["start"],
-        "end": row["end"],
+        "start": plain(row["start"]),
+        "end": plain(row["end"]),
+        # A running series' two durations run to its last finished game.
+        "wall": wall,
+        "run": run,
         "video": video(videos, row["id"]),
         "games": row["games"],
         "size": row["size"],
@@ -184,7 +253,7 @@ def record(rows: list[dict], specs: list[dict], names: list[str], videos: dict |
         })
     last = max((str(result.get("utc") or "") for row in series for _, result in row["played"]), default="")
     return {
-        "through": (last[:16].replace("T", " ") + "Z") if last else None,
+        "through": last[:16].replace("T", " ") if last else None,
         "running": [view for view in views if view["end"] is None],
         "scheduled": scheduled,
         "finished": [view for view in views if view["end"] is not None],

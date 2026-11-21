@@ -861,35 +861,109 @@ def completed_turns(conn: sqlite3.Connection, run: str) -> set[int]:
     )}
 
 
-def completed_game_turns(events: Path, run: str) -> set[int]:
-    """Recover turns the game has already completed from its append-only journal.
+def forget_answers_from(conn: sqlite3.Connection, run: str, turn: int) -> int:
+    """Delete this run's answers to `turn` and every later turn.
 
-    ``ready`` is the normal restart checkpoint.  The game's ``turn`` record is a
-    second, narrower recovery checkpoint: it is emitted only after a turn has
-    been actuated and ended.  If an operator replaces the SQLite database while
-    the game remains open, replaying every old ``state`` would rewrite history
-    before reaching the live turn.  These records let a new brain skip only turns
-    the game itself proves are already over.
+    They were written for a future the game has since been reloaded away from.
+    `ready` goes first: it is the mod's signal, and an order row without it is
+    never actuated. Returns how many turns lost their answer.
     """
-    done: set[int] = set()
+    removed = conn.execute("DELETE FROM ready WHERE run = ? AND turn >= ?",
+                           (run, turn)).rowcount
+    conn.execute("DELETE FROM orders WHERE run = ? AND turn >= ?", (run, turn))
+    conn.commit()
+    return max(0, removed)
+
+
+class TurnLedger:
+    """Which boards the game no longer needs answered, read off its journal in order.
+
+    ``ready`` is the normal restart checkpoint and seeds `served`.  The journal
+    is the second one: a ``turn`` record is emitted only after a turn's opening
+    answer was actuated (or given up on), so it proves that turn is over even
+    when an operator has replaced the SQLite database under an open game.
+
+    The journal is also the only record that the game went BACK.  It is
+    append-only across a save reload, so after one it still holds the ``turn``
+    records of the turns the reload undid.  Read as a flat set, those records
+    made a restarted brain refuse the reloaded game's opening boards: Tournament
+    6 game 2 was resumed from its turn-200 save with turns 200-204 journaled,
+    each seat waited out the mod's 1,800 polls (about nine minutes) on every one
+    of those turns, and played them on the fallback instead of CIVVIS.  The mod
+    writes ``loaded`` once per game load; the first board after it names the
+    turn the save opened on, and every turn from there on is open again.
+
+    A mid-turn frame is over once the mod reports its ``orders`` or its
+    ``combat_frame_timeout``.
+    """
+
+    def __init__(self, run: str, served: set[int] | None = None) -> None:
+        self.run = run
+        self.served: set[int] = set(served or ())
+        self.frames: set[tuple[int, int]] = set()
+        #: The turn of the newest board, which is where the game stands.
+        self.turn = -1
+        self._loading = False
+
+    def note(self, event: dict) -> int | None:
+        """Account for one journal record.  Returns the turn a save reload has
+        just reopened the game at, or None."""
+        kind = event.get("kind")
+        if kind == "loaded":
+            # The agent's own record: the setup screen's script writes one too,
+            # at the main menu, and that is not a game opening.
+            if event.get("ctx") in (None, "agent"):
+                self._loading = True
+            return None
+        if kind not in {"state", "turn", "orders", "combat_frame_timeout"}:
+            return None
+        if kind != "state" and event.get("run") != self.run:
+            return None
+        try:
+            turn = int(event.get("turn"))
+        except (TypeError, ValueError):
+            return None
+        if turn < 0:
+            return None
+        if kind == "turn":
+            self.served.add(turn)
+            return None
+        if kind != "state":
+            frame = board_frame(event)
+            if frame > 0:
+                self.frames.add((turn, frame))
+            return None
+        reopened = None
+        if self._loading:
+            self._loading = False
+            # A new game's first board, or a save that opens on a turn the
+            # journal has never reached, undoes nothing.
+            if turn <= self.turn:
+                self.served = {done for done in self.served if done < turn}
+                self.frames = {(done, frame) for done, frame in self.frames
+                               if done < turn}
+                reopened = turn
+        self.turn = turn
+        return reopened
+
+    def answered(self, turn: int, frame: int) -> bool:
+        if frame > 0:
+            return (turn, frame) in self.frames
+        return turn in self.served
+
+    def mark(self, turn: int, frame: int) -> None:
+        if frame > 0:
+            self.frames.add((turn, frame))
+        else:
+            self.served.add(turn)
+
+
+def board_frame(event: dict) -> int:
+    """A record's mid-turn frame; 0, absent or unreadable is the opening board."""
     try:
-        with events.open("r", errors="replace") as handle:
-            for raw in handle:
-                try:
-                    event = json.loads(raw)
-                except ValueError:
-                    continue
-                if event.get("kind") != "turn" or event.get("run") != run:
-                    continue
-                try:
-                    turn = int(event.get("turn"))
-                except (TypeError, ValueError):
-                    continue
-                if turn >= 0:
-                    done.add(turn)
-    except OSError:
-        pass
-    return done
+        return max(0, int(event.get("frame") or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def reopen_saved_turns(served: set[int], requested: list[int]) -> list[int]:
@@ -1289,44 +1363,30 @@ def main() -> int:
     offset = 0
     # A brain is intentionally time-bounded so an operator can upgrade or
     # restart it during a long game. `ready` is written only after the full batch
-    # is committed, which makes it the authoritative resume checkpoint.  When an
-    # operator has replaced the DB, completed game records recover old turns so
-    # replay cannot rewrite the history before reaching the live state.
-    served = completed_turns(conn, run_tag)
-    journaled = completed_game_turns(events, run_tag)
-    recovered = journaled - served
-    served.update(journaled)
-    replay_turns = reopen_saved_turns(served, args.replay_turn)
-    if replay_turns:
-        # An AutoSave is made at the opening of its numbered turn.  Its prior
-        # incarnation may already have emitted a terminal `turn` journal row,
-        # but the reloaded game is nevertheless waiting for the opening board
-        # again.  Preserve every other completed checkpoint and deliberately
-        # reopen only the operator-specified live turn.
-        print(f"[brain] reopening saved-game turn(s): "
-              f"{', '.join(str(turn) for turn in replay_turns)}",
-              flush=True)
+    # is committed, which makes it the authoritative resume checkpoint.  The
+    # journal corrects it: completed game records recover old turns when an
+    # operator has replaced the DB, and a save reload reopens the turns it undid.
+    ledger = TurnLedger(run_tag, completed_turns(conn, run_tag))
+    checkpointed = len(ledger.served)
     seat_civ: str | None = None
-    if recovered:
-        print(f"[brain] recovered {len(recovered)} completed turn(s) from the "
-              f"game journal after the SQLite checkpoint was absent; "
-              f"latest={max(recovered)}", flush=True)
-    if served:
-        print(f"[brain] resuming after {len(served)} completed turn(s); "
-              f"latest={max(served)}", flush=True)
     # Reconstructed by replaying every state in the append-only journal, including
     # already-served turns.  That makes a restarted brain retain the Firaxis history
     # the fresh-board decider necessarily loses.
     seen_governments: set[str] = set()
-    # (turn, frame) pairs already answered this session; frames are never
-    # recovered across a restart — a frame's board is gone with the turn.
-    served_frames: set[tuple[int, int]] = set()
+    # The first read is the journal as it stood when this brain started: history.
+    # Only its newest board can still have the game waiting on it, because the
+    # mod opens a board only after the one before it was answered or given up
+    # on.  Answering the older ones cost a restart one decision per mid-turn
+    # frame ever played (338 at turn 204) and filed each under its turn, where
+    # a reloaded game then found a previous incarnation's orders.
+    replaying = True
     clock = OperatorHoldClock(deadline)
     while clock.running(time.time()):
         if not events.exists():
             time.sleep(0.5)
             continue
         fresh, offset = read_event_lines(events, offset)
+        boards: list[tuple[dict, int, int]] = []
         for raw in fresh:
             try:
                 event = json.loads(raw)
@@ -1339,19 +1399,66 @@ def main() -> int:
                 if decider is not None:
                     decider.set_civ(seat_civ)
                 continue
+            reopened = ledger.note(event)
+            if reopened is not None:
+                # Every board before the load belongs to the game it replaced.
+                boards.clear()
+                if not replaying:
+                    dropped = forget_answers_from(conn, run_tag, reopened)
+                    print(f"[brain] the game was reloaded at turn {reopened}: turns "
+                          f"from {reopened} on are open again ({dropped} old "
+                          f"answer(s) dropped)", flush=True)
             if event.get("kind") != "state":
                 continue
             current_government = event.get("government")
             if current_government is not None and str(current_government).strip():
                 seen_governments.add(str(current_government).strip())
-            turn = int(event.get("turn", -1))
+            try:
+                turn = int(event.get("turn", -1))
+            except (TypeError, ValueError):
+                continue
+            if turn < 0:
+                continue
             # A mid-turn combat frame re-plans the same turn on a newer board:
             # frame 0 is the opening board and is served once; frame N is
             # served once too, keyed apart, and never counts as the turn's
             # opening answer.
-            frame = int(event.get("frame", 0) or 0)
-            if turn < 0 or (frame == 0 and turn in served) or (frame > 0 and (turn, frame) in served_frames):
-                continue
+            frame = board_frame(event)
+            if replaying:
+                boards = [(event, turn, frame)]
+            elif not ledger.answered(turn, frame):
+                ledger.mark(turn, frame)
+                boards.append((event, turn, frame))
+        if replaying:
+            replaying = False
+            if ledger.turn >= 0:
+                # An answer to a turn after the newest board was written for a
+                # future the game has been reloaded away from.
+                stale = forget_answers_from(conn, run_tag, ledger.turn + 1)
+                ledger.served = {done for done in ledger.served if done <= ledger.turn}
+                if stale:
+                    print(f"[brain] dropped {stale} answer(s) to turns after "
+                          f"{ledger.turn}, where the game stands", flush=True)
+            replay_turns = reopen_saved_turns(ledger.served, args.replay_turn)
+            if replay_turns:
+                # An AutoSave is made at the opening of its numbered turn.  Its
+                # prior incarnation may already have emitted a terminal `turn`
+                # journal row, but the reloaded game is nevertheless waiting for
+                # the opening board again.  Preserve every other completed
+                # checkpoint and deliberately reopen only the operator-specified
+                # live turn.
+                print(f"[brain] reopening saved-game turn(s): "
+                      f"{', '.join(str(turn) for turn in replay_turns)}",
+                      flush=True)
+            if ledger.served:
+                print(f"[brain] resuming after {len(ledger.served)} completed "
+                      f"turn(s); latest={max(ledger.served)} "
+                      f"({checkpointed} in the SQLite checkpoint)", flush=True)
+            boards = [board for board in boards
+                      if not ledger.answered(board[1], board[2])]
+            for _, turn, frame in boards:
+                ledger.mark(turn, frame)
+        for event, turn, frame in boards:
             runtime = updater.take_ready() if updater is not None else None
             if runtime is not None:
                 previous = runtime_revision
@@ -1384,10 +1491,6 @@ def main() -> int:
                     if decider is not None:
                         decider.use_runtime(binary)
                     updater.start()
-            if frame == 0:
-                served.add(turn)
-            else:
-                served_frames.add((turn, frame))
             started = time.time()
             if args.mode == "stub":
                 rows = stub_orders(event)

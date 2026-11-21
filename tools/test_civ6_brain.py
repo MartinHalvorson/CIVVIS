@@ -18,6 +18,129 @@ import civ6_brain
 import civ6_play  # noqa: E402
 
 
+class _JournalRead(Exception):
+    """Raised by the scripted journal once every batch has been handed over."""
+
+
+def run_brain_over(batches: list[list[dict]], *extra: str,
+                   seed: list[tuple[int, int]] = ()) -> tuple[list[tuple], str]:
+    """Run the stub brain over a journal delivered in `batches`: the first is
+    what stood in the file when the brain started, the rest arrive while it
+    runs.  `seed` is (turn, frame) answers already in the database.  Returns
+    the (turn, frame) answers the database holds afterwards, each with its
+    order count, and what the brain printed."""
+    pending = [[json.dumps(event) + "\n" for event in batch] for batch in batches]
+
+    def scripted(events: Path, offset: int) -> tuple[list[str], int]:
+        if not pending:
+            raise _JournalRead
+        return pending.pop(0), offset + 1
+
+    with tempfile.TemporaryDirectory() as temporary:
+        run_dir = Path(temporary) / "live"
+        run_dir.mkdir()
+        (run_dir / "events.jsonl").touch()
+        if seed:
+            conn = civ6_brain.connect(run_dir / "orders.sqlite")
+            for turn, frame in seed:
+                civ6_brain.write_turn(conn, "live", turn, [], frame)
+            conn.close()
+        argv = ["civ6_brain.py", "--run-dir", str(run_dir), "--mode", "stub", *extra]
+        printed = io.StringIO()
+        with mock.patch.object(sys, "argv", argv), \
+                mock.patch.object(civ6_brain, "read_event_lines", scripted), \
+                mock.patch.object(civ6_brain.time, "sleep"), \
+                mock.patch("sys.stdout", printed):
+            try:
+                civ6_brain.main()
+            except _JournalRead:
+                pass
+        conn = civ6_brain.connect(run_dir / "orders.sqlite")
+        answers = conn.execute(
+            "SELECT turn, frame, count(*) FROM orders WHERE run = 'live' "
+            "GROUP BY turn, frame ORDER BY turn, frame").fetchall()
+        conn.close()
+    return answers, printed.getvalue()
+
+
+def played_turn(turn: int, frames: int = 1) -> list[dict]:
+    """The journal of one turn played to its end, `frames` mid-turn frames in."""
+    events = [{"kind": "state", "run": "live", "turn": turn, "frame": 0},
+              {"kind": "orders", "run": "live", "turn": turn, "frame": 0},
+              {"kind": "turn", "run": "live", "turn": turn}]
+    for frame in range(1, frames + 1):
+        events += [{"kind": "state", "run": "live", "turn": turn, "frame": frame},
+                   {"kind": "orders", "run": "live", "turn": turn, "frame": frame}]
+    return events
+
+
+LOADED = {"kind": "loaded", "ctx": "agent", "run": "live"}
+
+
+class ReloadedGameTest(unittest.TestCase):
+    """A brain started on, or running through, a game resumed from an earlier save."""
+
+    def test_a_restarted_brain_answers_only_the_board_the_game_waits_on(self) -> None:
+        history = [LOADED] + [e for turn in (1, 2, 3) for e in played_turn(turn, frames=2)]
+        history += [{"kind": "state", "run": "live", "turn": 4, "frame": 0}]
+
+        answers, printed = run_brain_over([history])
+
+        self.assertEqual(answers, [(4, 0, 1)],
+                         "no old frame is decided again, and the open turn is answered")
+        self.assertIn("resuming after 3 completed turn(s); latest=3", printed)
+
+    def test_a_restarted_brain_does_not_answer_a_finished_board(self) -> None:
+        history = [LOADED] + [e for turn in (1, 2, 3) for e in played_turn(turn, frames=2)]
+
+        answers, _ = run_brain_over([history])
+
+        self.assertEqual(answers, [])
+
+    def test_a_brain_started_on_a_resumed_save_plays_the_reopened_turns(self) -> None:
+        # The journal ran to turn 5; the game was resumed from the turn-3 save
+        # and has fallen back on turn 3 already.  The database carries what the
+        # old restart wrote there: answers to the undone turns 4 and 5.
+        history = [LOADED] + [e for turn in range(1, 6) for e in played_turn(turn)]
+        history += [LOADED, {"kind": "state", "run": "live", "turn": 3, "frame": 0},
+                    {"kind": "turn", "run": "live", "turn": 3},
+                    {"kind": "orders", "run": "live", "turn": 3, "source": "fallback"},
+                    {"kind": "state", "run": "live", "turn": 4, "frame": 0}]
+        live = [{"kind": "turn", "run": "live", "turn": 4},
+                {"kind": "state", "run": "live", "turn": 5, "frame": 0},
+                {"kind": "state", "run": "live", "turn": 5, "frame": 1}]
+
+        answers, printed = run_brain_over([history, live],
+                                          seed=[(2, 1), (4, 1), (5, 1)])
+
+        self.assertEqual(answers, [(4, 0, 1), (5, 0, 1), (5, 1, 1)],
+                         "turn 4 is answered though its old self is journaled; "
+                         "the undone turn 5 lost its old answer and got a new one")
+        self.assertIn("dropped 1 answer(s) to turns after 4", printed)
+
+    def test_a_running_brain_follows_a_reload_back(self) -> None:
+        history = [LOADED] + [e for turn in range(1, 6) for e in played_turn(turn)]
+        # Tournament 6: the workers were up before the resumed save's first board.
+        live = [LOADED, {"kind": "state", "run": "live", "turn": 3, "frame": 0}]
+        later = [{"kind": "turn", "run": "live", "turn": 3},
+                 {"kind": "state", "run": "live", "turn": 4, "frame": 0}]
+
+        answers, printed = run_brain_over([history, live, later], seed=[(5, 1)])
+
+        self.assertEqual(answers, [(3, 0, 1), (4, 0, 1)])
+        self.assertIn("the game was reloaded at turn 3", printed)
+
+    def test_an_explicit_replay_turn_still_reopens_the_live_board(self) -> None:
+        history = [LOADED] + [e for turn in (1, 2) for e in played_turn(turn, frames=0)]
+        history += [{"kind": "state", "run": "live", "turn": 2, "frame": 0}]
+
+        self.assertEqual(run_brain_over([history])[0], [])
+        answers, printed = run_brain_over([history], "--replay-turn", "2")
+
+        self.assertEqual(answers, [(2, 0, 1)])
+        self.assertIn("reopening saved-game turn(s): 2", printed)
+
+
 class EventJournalTailTest(unittest.TestCase):
     def test_split_board_arrives_once_and_keeps_utf8_intact(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -578,20 +701,79 @@ class Civ6BrainTest(unittest.TestCase):
                 [(0, 0), (1, civ6_brain.FRAME_SEQ_STRIDE)])
             conn.close()
 
-    def test_completed_game_turns_recovers_only_finished_turns_for_the_run(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            events = Path(temporary) / "events.jsonl"
-            events.write_text("\n".join([
-                json.dumps({"kind": "state", "run": "live", "turn": 5}),
-                json.dumps({"kind": "turn", "run": "other", "turn": 6}),
-                json.dumps({"kind": "turn", "run": "live", "turn": 7}),
-                json.dumps({"kind": "turn", "run": "live", "turn": "8"}),
-                json.dumps({"kind": "turn", "run": "live", "turn": "bad"}),
-                "not json",
-            ]) + "\n")
+    def test_the_ledger_recovers_only_finished_turns_for_the_run(self) -> None:
+        ledger = civ6_brain.TurnLedger("live")
+        for event in [
+            {"kind": "state", "run": "live", "turn": 5},
+            {"kind": "turn", "run": "other", "turn": 6},
+            {"kind": "turn", "run": "live", "turn": 7},
+            {"kind": "turn", "run": "live", "turn": "8"},
+            {"kind": "turn", "run": "live", "turn": "bad"},
+        ]:
+            self.assertIsNone(ledger.note(event))
 
-            self.assertEqual(civ6_brain.completed_game_turns(events, "live"), {7, 8})
-            self.assertEqual(civ6_brain.completed_game_turns(events, "other"), {6})
+        self.assertEqual(ledger.served, {7, 8})
+        self.assertTrue(ledger.answered(7, 0))
+        self.assertFalse(ledger.answered(5, 0), "an exported board is not a finished turn")
+
+    def test_a_save_reload_reopens_the_turns_it_undid(self) -> None:
+        # Tournament 6 game 2: turns through 204 were journaled, then the game
+        # was resumed from its turn-200 save and waited on each of 200-204.
+        ledger = civ6_brain.TurnLedger("live", served={1, 2})
+        self.assertIsNone(ledger.note({"kind": "loaded", "ctx": "agent", "run": "live"}))
+        self.assertIsNone(ledger.note({"kind": "state", "run": "live", "turn": 1}),
+                          "a new game's first board undoes nothing")
+        self.assertEqual(ledger.served, {1, 2}, "the SQLite checkpoint survives the opening")
+        for turn in range(1, 205):
+            ledger.note({"kind": "state", "run": "live", "turn": turn})
+            ledger.note({"kind": "turn", "run": "live", "turn": turn})
+            ledger.note({"kind": "state", "run": "live", "turn": turn, "frame": 1})
+            ledger.note({"kind": "orders", "run": "live", "turn": turn, "frame": 1})
+        self.assertTrue(ledger.answered(200, 0))
+        self.assertTrue(ledger.answered(203, 1))
+
+        ledger.note({"kind": "loaded", "ctx": "setup"})
+        self.assertIsNone(ledger.note({"kind": "state", "run": "live", "turn": 204, "frame": 2}),
+                          "the setup screen's script loading is not a game load")
+        ledger.note({"kind": "loaded", "ctx": "agent", "run": "live"})
+        self.assertEqual(ledger.note({"kind": "state", "run": "live", "turn": 200}), 200)
+
+        self.assertEqual(ledger.turn, 200)
+        self.assertEqual(max(ledger.served), 199)
+        for turn in range(200, 205):
+            self.assertFalse(ledger.answered(turn, 0))
+            self.assertFalse(ledger.answered(turn, 1))
+        self.assertTrue(ledger.answered(199, 1))
+        # The reloaded game plays on, and its own turns are finished turns.
+        ledger.note({"kind": "turn", "run": "live", "turn": 200})
+        self.assertTrue(ledger.answered(200, 0))
+        self.assertFalse(ledger.answered(201, 0))
+
+    def test_a_frame_the_mod_gave_up_on_is_over(self) -> None:
+        ledger = civ6_brain.TurnLedger("live")
+        ledger.note({"kind": "state", "run": "live", "turn": 9, "frame": 1})
+        self.assertFalse(ledger.answered(9, 1))
+        ledger.note({"kind": "combat_frame_timeout", "run": "live", "turn": 9, "frame": 1})
+        self.assertTrue(ledger.answered(9, 1))
+        self.assertFalse(ledger.answered(9, 0), "a frame never stands for the opening board")
+
+    def test_forgetting_answers_keeps_earlier_turns_and_other_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            conn = civ6_brain.connect(Path(temporary) / "orders.sqlite")
+            row = [("research", None, "TECH_MINING", None, None)]
+            for turn in (3, 4, 5):
+                civ6_brain.write_turn(conn, "live", turn, row)
+                civ6_brain.write_turn(conn, "live", turn, row, frame=1)
+            civ6_brain.write_turn(conn, "other", 5, row)
+
+            self.assertEqual(civ6_brain.forget_answers_from(conn, "live", 4), 2)
+
+            self.assertEqual(civ6_brain.completed_turns(conn, "live"), {3})
+            self.assertEqual(civ6_brain.completed_turns(conn, "other"), {5})
+            self.assertEqual(
+                conn.execute("SELECT DISTINCT run, turn FROM orders ORDER BY run, turn").fetchall(),
+                [("live", 3), ("other", 5)])
+            conn.close()
 
     def test_default_orders_database_is_scoped_to_its_run(self) -> None:
         run = Path("/tmp/civvis-run")

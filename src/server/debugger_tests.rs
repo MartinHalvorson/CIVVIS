@@ -103,6 +103,7 @@ fn timeline_of(turns: std::ops::RangeInclusive<u32>, room: usize) -> Timeline {
             by: None,
             whole: false,
             minds: None,
+            world: u64::from(turn),
         });
     }
     timeline
@@ -669,8 +670,10 @@ fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_orde
         from += at + piece.len();
     }
     for piece in [
-        // Twice the 34px the rail was.
-        "position: relative; flex: 1; min-width: 0; height: 68px; border-radius: 12px;",
+        // Twice the 34px the rail was. The rail is where the slider is, and
+        // the sky is the rail as it is seen.
+        "#debugbar .dbg-rail { position: relative; flex: 1; min-width: 0; height: 68px; border: 1px solid transparent; }",
+        "position: absolute; inset: -1px; border-radius: 12px; pointer-events: none;",
         // Auto-play is set to ten turns when the box is built (operator,
         // 2026-11-20: "default for auto play can be 10 turns").
         "const DEBUG_AUTOPLAY_TURNS = 10;",
@@ -837,6 +840,112 @@ fn a_split_opens_at_once_and_locked_with_a_lock_between_its_lanes_and_one_panel(
     ] {
         assert!(!page.contains(gone), "{gone} is still on the page");
     }
+}
+
+/// The print of each marked turn's world, as the state document gives them.
+fn prints(session: &Session) -> Vec<u64> {
+    let state = session.state();
+    let worlds: Vec<u64> = state["debug"]["worlds"]
+        .as_array()
+        .expect("the state gives a print for each marked turn")
+        .iter()
+        .map(|world| world.as_u64().expect("a print is a whole number"))
+        .collect();
+    assert_eq!(worlds.len(), marked(session).len(), "one print a turn");
+    worlds
+}
+
+/// Operator 2026-11-21: "branching the timeline should keep 1 timeline where
+/// they share the timeline and then branch to 2 when they actually diverge
+/// in simulated worlds".
+///
+/// Which turns are the same world in two sessions is read off the print
+/// every mark carries (`world_print`). What the two halves of a split say of
+/// theirs is held by `panes_tests.rs`
+/// (`halves_say_up_to_which_turn_they_hold_the_same_world`), and what the
+/// timeline then looks like in a browser by `beta/debugger_test.py`
+/// (`one_timeline`, `branched`). This holds what a print is, and the pieces
+/// to the page.
+#[test]
+fn a_branched_timeline_is_one_until_its_two_worlds_differ() {
+    // A print is a turn's own, and carries the turns before it.
+    let mut session = played();
+    for _ in 0..3 {
+        assert!(session.debug_step());
+    }
+    let line = prints(&session);
+    assert_eq!(marked(&session), [1, 2, 3, 4]);
+    assert_eq!(
+        line.iter().collect::<BTreeSet<_>>().len(),
+        4,
+        "every turn is a world of its own"
+    );
+    assert!(
+        line.iter().all(|world| *world < 1 << 53),
+        "a print is a number a page holds exactly"
+    );
+
+    // Two more sessions on the same world give the same prints, and go on
+    // giving the same ones for as long as they are played the same way.
+    // (They are compared with each other and not with the session they were
+    // taken from: a fork's agents have just sat down, `Session::fork`.)
+    let mut one = session.fork();
+    let mut two = session.fork();
+    let mut other = session.fork();
+    assert_eq!(prints(&one), line);
+    assert!(one.debug_step());
+    assert!(two.debug_step());
+    assert_eq!(world(&one), world(&two));
+    assert_eq!(prints(&one), prints(&two));
+
+    // One that is played another way gives another print from the turn that
+    // opens on another world, and for every turn after it: here the seat
+    // does one thing by hand and ends the turn, where an agent played it.
+    let moved = something_to_do(&other);
+    assert_eq!(other.act(&moved), None);
+    end_turn(&mut other);
+    assert_ne!(world(&other), world(&one));
+    let apart = prints(&other);
+    assert_eq!(apart[..4], line[..]);
+    assert_ne!(apart[4], prints(&one)[4]);
+    assert!(one.debug_step());
+    assert!(other.debug_step());
+    assert_ne!(prints(&other)[5], prints(&one)[5]);
+    assert_eq!(prints(&other)[..4], line[..]);
+
+    // Walking a timeline changes no print on it.
+    let held = prints(&session);
+    assert_eq!(session.debug_jump(2), Ok(2));
+    assert_eq!(prints(&session), held);
+
+    let page = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    for piece in [
+        // A half tells the host the turns it holds and the print of each.
+        "const turns = timeline.turns || [], worlds = timeline.worlds || null;",
+        "window.parent.postMessage({civvis: \"pane-marks\", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds},",
+        // The host reads the branch off the two lists: the last turn both
+        // give the same print for, and whether each holds a turn past it.
+        "function debugSplitFork() {",
+        "if (theirs.get(lines.a.turns[at]) !== lines.a.worlds[at]) continue;",
+        "return {turn: shared, forked: Math.min(last.a, last.b) > shared, first, last};",
+        // The timeline is drawn from that: the trunk up to the turn, a rail
+        // for each half from it, and one marker for two halves on one turn
+        // of the trunk.
+        "bar.classList.toggle(\"dbg-forked\", fork.forked);",
+        "bar.style.setProperty(\"--dbg-fork\", along);",
+        "const one = stands.a === stands.b && onTrunk(stands.a);",
+        "goal, idle: false, marker: one ? stands.a : null, branches: fork.forked ? fork.turn : null});",
+        "#debugbar.dbg-forked .dbg-lane[data-dbg-lane=\"\"] .dbg-deco { clip-path: inset(0 calc(100% * (1 - var(--dbg-fork, 1))) 0 0); }",
+        "#debugbar.dbg-split-on .dbg-half .dbg-deco { clip-path: inset(0 0 0 calc(100% * var(--dbg-fork, 1))); }",
+        "#debugbar:not(.dbg-forked) .dbg-half .dbg-sky { background: none; border-color: transparent; box-shadow: none; }",
+        // The trunk is drawn and not pressed: each half keeps a slider the
+        // length of the game.
+        "#debugbar.dbg-split-on .dbg-lane[data-dbg-lane=\"\"] .dbg-rail { height: auto; align-self: stretch; pointer-events: none; }",
+    ] {
+        assert!(page.contains(piece), "the branching timeline is missing {piece}");
+    }
+    // The turn the screen was split on no longer says where the lanes part.
+    assert!(!page.contains("fork: debugSplit.from"));
 }
 
 #[test]
