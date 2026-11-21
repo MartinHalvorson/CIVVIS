@@ -159,6 +159,19 @@ function enginePlayedAhead() {
   while (engine.marks.includes(last + 1) && engine.by[last + 1] === engine.seat) last += 1;
   return last > engine.turn ? last : null;
 }
+// Whose play each stretch of the kept turns was, as the engine gives it
+// (`Timeline::played_by`): a stretch begins on the turn its first turn was
+// played from. Every kept turn is in it, the ones ahead that are not on the
+// seat's line as well.
+function enginePlayedBy(marks) {
+  const stretches = [];
+  for (let at = 1; at < marks.length; at++) {
+    const by = engine.by[marks[at]] || null, last = stretches[stretches.length - 1];
+    if (last && last.by === by) last.to = marks[at];
+    else stretches.push({from: marks[at - 1], to: marks[at], by});
+  }
+  return stretches;
+}
 function engineState(error = null) {
   const marks = engineLine(), kept = engine.marks;
   return {error, turn: engine.turn, seed: 7, current: engine.current, units: [], cities: [],
@@ -179,6 +192,7 @@ function engineState(error = null) {
         ({id, label, on: engine.layers.includes(id)})), assisted: 0, stopped: engine.stopped,
       stepped: engine.stepped, reveal: engine.reveal, playing: engine.current, memory_line: engine.line,
       eras: engine.eras.filter(era => era.turn <= marks[marks.length - 1]),
+      played_by: enginePlayedBy(kept),
       saves: engine.saves.map(save => ({...save}))}};
 }
 async function fetchJSON(path, init = {}) {
@@ -284,6 +298,11 @@ async function fetchJSON(path, init = {}) {
     if (engine.acted > 0) engine.acted -= 1; else error = "nothing has been done this turn";
   } else if (body.op === "room") {
     engine.line = body.megabytes;
+  } else if (body.op === "branch") {
+    // A branch begins on the open turn: nothing kept past it is its own.
+    engine.marks = engine.marks.filter(turn => turn <= engine.turn);
+    for (const kept of [engine.by, engine.worlds])
+      for (const turn of Object.keys(kept)) if (+turn > engine.turn) delete kept[turn];
   } else if (body.op === "copy") {
     Object.assign(engine, engineOf(window.parent.document.querySelectorAll("iframe"), body.from));
   } else if (body.op === "adopt") {
@@ -418,12 +437,11 @@ def check_the_bar(bar: Bar) -> None:
                   " return [Math.round(box.left), Math.round(box.top)]; })()") == [200, height]
     # Auto-play is in the box, and the left panel's own copy is put away.
     assert bar.ev("getComputedStyle(document.getElementById('humanfooter')).display") == "none"
-    # The timeline is the top of the box and twice the height it was. Under
-    # it the open turn stands in the middle, under the middle of the
-    # timeline, with the turn buttons either side of it in their order:
-    # turn 1, era start, ten back, one back; one on, ten on. Auto-play (the
-    # Civ AI, the turns, the button), layers, breakpoints and Branch Timeline
-    # are at the left end in that order, before the turn buttons.
+    # The timeline is twice the height it was. Under it the open turn stands
+    # in the middle, under the middle of the timeline, with the turn buttons
+    # either side of it in their order: turn 1, era start, ten back, one
+    # back; one on, ten on. Auto-play (the turns, the button), layers and
+    # breakpoints are at the left end in that order, before the turn buttons.
     box = ("(name => { const at = document.querySelector(name).getBoundingClientRect();"
            " return [at.left, at.top, at.right, at.bottom]; })")
     rail = bar.ev(f"{box}('{LANE} .dbg-rail')")
@@ -433,20 +451,36 @@ def check_the_bar(bar: Bar) -> None:
     middle = (rail[0] + rail[2]) / 2
     turn_box = bar.ev(f"{box}('#dbg-turn')")
     assert abs((turn_box[0] + turn_box[2]) / 2 - middle) < 40, (turn_box, middle)
-    order = ["#dbg-agent", "#dbg-turns", "[data-dbg=autoplay]", "[data-dbg-pop=layers]", "[data-dbg-pop=breaks]",
-             "[data-dbg=split]", "[data-dbg=first]", "[data-dbg=era]", "[data-dbg=back10]", "[data-dbg=back]",
+    order = ["#dbg-turns", "[data-dbg=autoplay]", "[data-dbg-pop=layers]", "[data-dbg-pop=breaks]",
+             "[data-dbg=first]", "[data-dbg=era]", "[data-dbg=back10]", "[data-dbg=back]",
              "#dbg-turn", "[data-dbg=next]", "[data-dbg=next10]", "[data-dbg=era-next]", "[data-dbg=end]"]
     assert bar.ev("(names => { const all = [...document.querySelectorAll('#debugbar .dbg-deck *')];"
                   " const at = names.map(name => all.indexOf(document.querySelector('#debugbar .dbg-deck ' + name)));"
                   " return at.every((place, index) => place >= 0 && (index === 0 || place > at[index - 1])); })"
                   f"({json.dumps(order)})"), "the box's controls are not in their order"
-    along = [bar.ev(f"{box}('#debugbar {name}')") for name in order[6:]]
+    along = [bar.ev(f"{box}('#debugbar {name}')") for name in order[4:]]
     assert all(before[2] <= after[0] for before, after in zip(along, along[1:])), along
     assert along[3][2] <= middle <= along[5][0], "one back and one on are not either side of the middle"
-    assert bar.ev(f"{box}('#debugbar [data-dbg=split]')")[2] <= along[0][0] or \
-        bar.ev(f"{box}('#debugbar [data-dbg=split]')")[1] > along[0][1], "Branch Timeline is not left of the turn buttons"
-    assert bar.ev("document.querySelector('#debugbar [data-dbg=split]').textContent") == "⑂Branch Timeline"
-    # Branch Timeline asks nothing first: it is a button, and has no panel.
+    # The Civ AI picker is above the timeline, from where the rail begins
+    # (operator, 2026-11-21: "move 1202 ffor... box ... above the timeline").
+    picker = bar.ev(f"{box}('#dbg-agent')")
+    assert picker[3] <= rail[1] and picker[0] >= rail[0] and picker[1] >= top, (picker, rail)
+    assert bar.ev("!document.querySelector('#debugbar .dbg-deck #dbg-agent')"), "the picker is still in the deck"
+    assert bar.ev("document.querySelector('#debugbar .dbg-who .dbg-field > span').textContent") == "Civ AI"
+    # Branch stands under the timeline's marker, between the rail and the
+    # deck, and says its name whatever room the box has (operator: "branch
+    # should say \"Branch\" and should move around below where the timeline
+    # \"cursor\" is. always rpesenting the option to branch").
+    under = ("(() => { const pill = document.querySelector('" + LANE + " .dbg-cursor b').getBoundingClientRect();"
+             " const branch = document.querySelector('#debugbar [data-dbg=split]').getBoundingClientRect();"
+             " return [(pill.left + pill.right) / 2, (branch.left + branch.right) / 2, branch.top, branch.bottom, branch.width]; })()")
+    pill_at, branch_at, branch_top, branch_bottom, branch_width = bar.ev(under)
+    assert abs(pill_at - branch_at) < 1.5 and branch_width > 40, (pill_at, branch_at, branch_width)
+    assert rail[3] <= branch_top and branch_bottom <= deck[1], (rail, branch_top, branch_bottom, deck)
+    assert bar.ev("document.querySelector('#debugbar [data-dbg=split]').textContent.trim()") == "⑂Branch"
+    assert bar.ev("!document.querySelector('#debugbar .dbg-deck [data-dbg=split]')"), "Branch is still in the deck"
+    assert bar.ev("!document.querySelector('#debugbar [data-dbg=split] .dbg-word')"), "Branch loses its word in a tight box"
+    # Branch asks nothing first: it is a button, and has no panel.
     assert bar.ev("!document.getElementById('dbg-pop-split') && !document.querySelector('[data-dbg-pop=split]')")
     # The timeline is the whole game, 250 turns when the game does not say:
     # turn 1 is named at its left end and the last turn at its right, with the
@@ -518,6 +552,9 @@ def check_the_bar(bar: Bar) -> None:
     assert bar.note() == "Played to turn 9", bar.note()
     at_nine = bar.ev(marker)
     assert (at_six[0], at_nine[0]) == ("6", "9") and at_nine[1] > at_six[1], (at_six, at_nine)
+    # Branch has moved with the marker.
+    pill_at, branch_at = bar.ev(under)[:2]
+    assert abs(pill_at - at_nine[1]) < 1.5 and abs(pill_at - branch_at) < 1.5, (at_nine, pill_at, branch_at)
     assert bar.ev(f"document.querySelector('{LANE} .dbg-goal').hidden"), "the goal goes with the run"
 
     # Under the pointer the timeline says what the turn there is, and what
@@ -530,8 +567,10 @@ def check_the_bar(bar: Bar) -> None:
         assert bar.ev("!document.getElementById('dbg-hover').hidden"), "nothing is said under the pointer"
         return bar.ev("document.getElementById('dbg-hover').textContent")
 
-    assert hover(4) == "Turn 4", hover(4)
-    assert hover(9) == "Turn 9 · open now", hover(9)
+    # A turn that was played is said with whose play opened it.
+    assert hover(1) == "Turn 1", hover(1)
+    assert hover(4) == "Turn 4 · Jack", hover(4)
+    assert hover(9) == "Turn 9 · open now · Jack", hover(9)
     assert hover(40) == "Turn 40 · play to here", hover(40)
     bar.drag("dbg-slider", 2)
     bar.idle("state.turn === 2", "the slider goes back")
@@ -673,7 +712,7 @@ def check_the_bar(bar: Bar) -> None:
     assert bar.sent()[-1] == {"op": "save_point", "name": "here"}, bar.sent()
     assert bar.ev("document.getElementById('dbg-point-count').textContent") == "1"
     assert bar.ev(f"document.querySelectorAll('{flags}').length") == 1
-    assert hover(2) == "Turn 2 · open now · ⚑ here", hover(2)
+    assert hover(2) == "Turn 2 · open now · Jack · ⚑ here", hover(2)
     bar.drag("dbg-slider", 6)
     bar.idle("state.turn === 6", "the slider still jumps with a panel open")
     bar.click(flags)
@@ -713,8 +752,8 @@ def check_the_bar(bar: Bar) -> None:
     bar.ev(f"engine.marks = {json.dumps(kept)}, engine.turn = 9, render(engineState()), true")
     assert not bar.ev(f"document.querySelector('{LANE}').classList.contains('dbg-thinned')")
 
-    # The Civ AI that plays the seat is picked beside Auto-play, from what the
-    # page's own picker lists, and a turn it plays carries it.
+    # The Civ AI that plays the seat is picked above the timeline, from what
+    # the page's own picker lists, and a turn it plays carries it.
     agent = "document.getElementById('dbg-agent')"
     assert bar.ev(f"[...{agent}.options].map(option => option.value)") == ["jack", "stock"]
     assert bar.ev(f"{agent}.value") == "jack"
@@ -773,6 +812,31 @@ def check_the_bar(bar: Bar) -> None:
     assert bar.ev("priced.join()") == "false", bar.ev("priced.join()")
     assert bar.note() == f"Played to turn {last + 7}", bar.note()
     assert label() == ["▶▶", "Auto-play", ""], label()
+
+    # Each stretch of the timeline is named by the Civ AI that played it
+    # (operator, 2026-11-21: "lets label ai strats on the timeline too, to make
+    # the branching more clear"): the one turn Stock played stands between
+    # Jack's, every other stretch a shade darker and a line where the seat
+    # changed hands. The last name has the rail ahead of it to run on over,
+    # and steps past the marker that stands at the end of its stretch.
+    assert bar.ev("state.debug.played_by.slice(-2)") == [
+        {"from": last, "to": last + 1, "by": "stock"}, {"from": last + 1, "to": last + 7, "by": "jack"}], \
+        bar.ev("state.debug.played_by")
+    named = bar.ev(f"[...document.querySelectorAll('{LANE} .dbg-by s')].map(s => [s.textContent, s.className])")
+    assert len(named) == bar.ev("state.debug.played_by.length") and named[-2][0] == "Stock" and named[-1][0] == "Jack", named
+    assert "dbg-next" in named[-2][1] and "dbg-free" not in named[-2][1], named
+    assert "dbg-next" in named[-1][1] and "dbg-free" in named[-1][1], named
+    assert ("dbg-alt" in named[-2][1]) != ("dbg-alt" in named[-1][1]), named
+    stands = bar.ev(
+        "(() => { const s = document.getElementById('dbg-slider'), box = s.getBoundingClientRect();"
+        " const x = turn => box.left + 7 + (turn - s.min) / (s.max - s.min) * (box.width - 14);"
+        f" const all = document.querySelectorAll('{LANE} .dbg-by s'), stock = all[all.length - 2].getBoundingClientRect();"
+        " const name = all[all.length - 1].querySelector('b').getBoundingClientRect();"
+        f" const pill = document.querySelector('{LANE} .dbg-cursor b').getBoundingClientRect();"
+        f" return [stock.left - x({last}), stock.right - x({last + 1}), name.left >= pill.right || name.right <= pill.left,"
+        " name.width]; })()")
+    assert abs(stands[0]) < 1.5 and abs(stands[1]) < 1.5, stands
+    assert stands[2] and stands[3] > 20, f"the last name stands under the marker: {stands}"
     bar.ev(f"{turns}.value = '1', true")
     bar.click('[data-dbg="back"]')
     bar.idle(f"state.turn === {last + 6}", "one turn back")
@@ -794,7 +858,6 @@ def check_the_bar(bar: Bar) -> None:
     window_of(3000)
     bar.until(f"!{tight}", "a box with room for the words went without them")
     assert bar.ev(word) != "none" and bar.ev(deck) < 70, (bar.ev(word), bar.ev(deck))
-    assert bar.ev("document.getElementById('debugbar').classList.contains('dbg-roomy')")
     window_of(520)
     bar.until(tight, "a narrow box kept the words on its tools")
     assert bar.ev(word) == "none"
@@ -825,12 +888,6 @@ def check_the_bar(bar: Bar) -> None:
     bar.until(f"{edge} === 0 && {under}", "the box takes the room a folded panel leaves")
     bar.ev("document.getElementById('side').style.display = '', true")
     bar.until(f"{edge} === 200 && {under}", "the box starts at the panel's right side again")
-    assert bar.ev(fitted) == before, (before, bar.ev(fitted))
-    # The same through a width with room for the picker's own label.
-    window_of(3000)
-    bar.until("document.getElementById('debugbar').classList.contains('dbg-roomy')", "a wide box has the picker's label")
-    bar.dev.call("Emulation.clearDeviceMetricsOverride")
-    bar.until(f"document.documentElement.clientWidth === {window} && {under}", "the window is its own size again")
     assert bar.ev(fitted) == before, (before, bar.ev(fitted))
 
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
@@ -1490,7 +1547,7 @@ def check_the_split(bar: Bar) -> None:
     bar.until("!debugSplit", "the split closes")
     assert bar.sent() == [{"op": "adopt", "pane": kept}], bar.sent()
     assert bar.ev("state.turn") == start + 10
-    assert bar.note() == "Playing on from simulator B", bar.note()
+    assert bar.note() == "Branch A closed · B is the timeline", bar.note()
     # The half that is kept keeps its Civ AI: the seat is still that agent's,
     # the box says so, and it is the page's choice from here.
     assert bar.ev("[document.getElementById('autoplaystrategy').value, document.getElementById('dbg-agent').value,"
@@ -1689,13 +1746,12 @@ def check_the_lock(bar: Bar) -> None:
     bar.ev(half("a", json.dumps("document.querySelector('[data-dbg=\"next\"]').click(), true")))
     bar.until(both(start + 6, start + 5), "A's own panel plays A alone")
     assert calls("a") == [["/debug", "step", None]] and calls("b") == [], (calls("a"), calls("b"))
-    # A has played a turn B has not. That is not two worlds on one turn: the
-    # rail stays one, with A's turn on it in A's colour and row, and each
-    # half's marker where the half stands.
-    bar.until(f"debugSplit.panes.a.marks.turns.includes({start + 6})", "A says it holds the turn it played")
-    seen = timeline(bar)
-    assert (seen["forked"], seen["tag"], seen["sky"]["a"], seen["sky"]["b"]) == (False, None, None, None), seen
-    assert seen["marker"] == {"trunk": None, "a": start + 6, "b": start + 5}, seen
+    # A has played a turn B has not, by itself: that turn is A's own, and the
+    # timeline forks on the last turn the two hold as one, with A's turn on
+    # A's branch in A's colour and each half's marker where the half stands.
+    bar.until(f"debugSplit.panes.a.marks.turns.includes({start + 6}) && debugBar.classList.contains('dbg-forked')",
+              "A says it holds the turn it played")
+    branched(bar, start + 5, start + 6, start + 5, "A played on alone")
     own = bar.ev("['a', 'b'].map(letter => { const band = document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-own`);"
                  " return !band.hidden && band.getBoundingClientRect().width > 0"
                  " && getComputedStyle(band.parentNode).visibility === 'visible'; })")
@@ -1779,6 +1835,135 @@ def check_the_lock(bar: Bar) -> None:
     bar.click('[data-dbg-split="keep-a"]')
     bar.until("!debugSplit", "the split closes")
     assert bar.ev(deck_shown) and not bar.ev("debugBar.classList.contains('dbg-merged')")
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+
+def check_a_branch_forks_the_timeline(bar: Bar) -> None:
+    """Branch under the marker, a fork on the turn branched on, an ✕ on each branch, and whose play each stretch was.
+
+    Operator, 2026-11-21: "each branch should have an X on the left side.
+    collapsing a branch should reduce the tree appropriately. a branch should
+    fork the tree appropriate (1 timeline into 2 at the branch). if the
+    initial is deleted though, the branchbecomes the main tree, transitioning
+    from one ai strat to another. lets label ai strats on the timeline too".
+    """
+    half = "debugSplit.panes.{}.frame.contentWindow.eval({})".format
+    ops = lambda letter: bar.ev(half(letter, json.dumps(
+        "engine.sent.filter(call => call.path === '/debug' && call.body.op !== 'status').map(call => call.body.op)")))
+    both = "debugSplit.panes.a.turn === {} && debugSplit.panes.b.turn === {}".format
+    deck_idle = "!!debugSplitDeck() && debugSplitDeck().idle && !debugSplit.busy"
+    said = "debugSplit.panes.a.marks && debugSplit.panes.b.marks"
+    names = lambda lane: bar.ev(f"[...document.querySelectorAll('[data-dbg-lane=\"{lane}\"] .dbg-by s')].map(s => s.textContent)")
+    shown = lambda name: bar.ev(f"document.querySelector({json.dumps(name)}).offsetParent !== null")
+
+    # Jack plays six turns past the last one played, and the world is walked
+    # four of them back: that is where the timeline is branched.
+    bar.ev("(() => { const select = document.getElementById('dbg-agent'); select.value = 'jack';"
+           " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    bar.idle("engine.seat === 'jack'", "Jack holds the seat")
+    # Nothing an earlier check left behind stops the run.
+    bar.ev("debugOp({op: 'breakpoints'}), true")
+    bar.idle("state.debug.breakpoints.turns.length === 0", "the breakpoints are cleared")
+    bar.type_turn(bar.ev("Math.max(state.debug.last, state.turn)"))
+    bar.idle("state.turn === Math.max(state.debug.last, state.turn)", "the world stands on the last turn played")
+    end = bar.ev("state.turn") + 6
+    bar.drag("dbg-slider", end)
+    bar.idle(f"state.turn === {end}", "six turns are played on")
+    back = end - 4
+    bar.drag("dbg-slider", back)
+    bar.idle(f"state.turn === {back} && state.debug.last === {end}", "the world is walked four turns back")
+    assert shown("#debugbar [data-dbg=split]") and shown("#debugbar .dbg-who")
+    bar.click('[data-dbg="split"]')
+    bar.until(f"debugSplit && {both(back, back)} && {said} && {deck_idle}", "both branches say where they stand")
+    # Two branches are the most there are: a split has no Branch, and each
+    # branch's Civ AI is picked at the head of its lane.
+    assert not shown("#debugbar [data-dbg=split]") and not shown("#debugbar .dbg-who")
+
+    # A is the timeline as it was and keeps the turns it holds past the open
+    # one. B is the branch: it is told that it begins here, and holds none.
+    bar.until(f"Math.max(...debugSplit.panes.b.marks.turns) === {back} && debugBar.classList.contains('dbg-forked')",
+              "the branch holds nothing past the turn it was made on")
+    assert (ops("a"), ops("b")) == ([], ["branch"]), (ops("a"), ops("b"))
+    # So the timeline forks there at once: one rail up to that turn, A's from
+    # it with the turns A holds on it, and B's from it with nothing on it yet.
+    branched(bar, back, back, back, "a branch made behind the last turn played")
+    assert bar.ev("debugSplitFork()") == {"turn": back, "forked": True, "first": {"a": 1, "b": 1},
+                                          "last": {"a": end, "b": back}}
+    own = ("['a', 'b'].map(letter => { const band = document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-own`);"
+           " return !band.hidden && band.getBoundingClientRect().width > 0; })")
+    assert bar.ev(own) == [True, False], bar.ev(own)
+    # Who played what is named where it stands: on the trunk, and on A's branch.
+    assert names("")[-1] == "Jack" and names("a") == ["Jack"] and names("b") == [], (names(""), names("a"), names("b"))
+
+    # Each branch has an ✕ at its left, before its letter and its picker.
+    for letter in "ab":
+        places = bar.ev(
+            f"['[data-dbg-close=\"{letter}\"]', '[data-dbg-lane=\"{letter}\"] .dbg-lane-name', '[data-dbg-agent=\"{letter}\"]',"
+            f" '[data-dbg-lane=\"{letter}\"] .dbg-rail'].map(name => {{"
+            " const box = document.querySelector('#debugbar ' + name).getBoundingClientRect();"
+            " return [box.left, box.right, box.top, box.bottom]; })")
+        cross, name, picker, rail = places
+        assert cross[1] > cross[0] and cross[1] <= name[0] and name[1] <= picker[0] and picker[1] <= rail[0], (letter, places)
+        assert rail[2] <= (cross[2] + cross[3]) / 2 <= rail[3], (letter, places)
+        assert bar.ev(f"document.querySelector('[data-dbg-close=\"{letter}\"]').textContent") == "✕"
+
+    # Locked, one turn on: A walks to the turn it holds, and B, which holds
+    # none, plays it. Jack plays B's seat too, so the toy's two worlds are the
+    # same on that turn, and the fork stands one turn further on.
+    bar.click('[data-dbg="next"]')
+    bar.until(f"{both(back + 1, back + 1)} && {deck_idle} && debugSplitFork().turn === {back + 1}",
+              "both branches go one turn on")
+    assert (ops("a"), ops("b")) == (["forward"], ["branch", "step"]), (ops("a"), ops("b"))
+    branched(bar, back + 1, back + 1, back + 1, "the branch played the turn the timeline holds, the same way")
+
+    # Another Civ AI in the branch, and one more turn: two worlds from there.
+    bar.ev("(() => { const select = document.querySelector('#debugbar [data-dbg-agent=\"b\"]'); select.value = 'stock';"
+           " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    bar.until(half("b", "'engine.seat'") + f" === 'stock' && {deck_idle}", "Stock holds the branch's seat")
+    bar.click('[data-dbg="next"]')
+    bar.until(f"{both(back + 2, back + 2)} && {deck_idle} && debugSplit.panes.b.marks.turns.includes({back + 2})",
+              "both branches go another turn on")
+    assert (ops("a"), ops("b")) == (["forward"] * 2, ["branch", "step", "step"]), (ops("a"), ops("b"))
+    branched(bar, back + 1, back + 2, back + 2, "another Civ AI played the branch's turn")
+    assert names("a") == ["Jack"] and names("b") == ["Stock"], (names("a"), names("b"))
+    words = bar.ev(f"debugTurnWords(debugLaneModels.b, {back + 2})")
+    assert words == f"B · turn {back + 2} · open now · Stock", words
+    # A name on a branch does not stand under the branch's marker.
+    clear = bar.ev("['a', 'b'].map(letter => { const lane = document.querySelector(`[data-dbg-lane=\"${letter}\"]`);"
+                   " const name = lane.querySelector('.dbg-by b').getBoundingClientRect();"
+                   " const pill = lane.querySelector('.dbg-cursor b').getBoundingClientRect();"
+                   " return name.width > 20 && (name.left >= pill.right || name.right <= pill.left); })")
+    assert clear == [True, True], clear
+
+    # The ✕ on A closes the timeline as it was, and the branch is the
+    # timeline: Jack's turns up to the fork, and Stock's from it.
+    kept = bar.ev("debugSplit.panes.b.id")
+    bar.forget()
+    bar.click('[data-dbg-close="a"]')
+    bar.until("!debugSplit", "the ✕ on A closes the split")
+    assert bar.sent() == [{"op": "adopt", "pane": kept}], bar.sent()
+    assert bar.note() == "Branch A closed · B is the timeline", bar.note()
+    assert bar.ev("[state.turn, state.debug.last]") == [back + 2, back + 2]
+    assert bar.ev("state.debug.played_by.slice(-1)") == [{"from": back + 1, "to": back + 2, "by": "stock"}]
+    assert bar.ev("state.debug.played_by.slice(-2)[0].by") == "jack" and bar.ev("state.debug.played_by.slice(-2)[0].to") == back + 1
+    assert names("")[-2:] == ["Jack", "Stock"], names("")
+    assert bar.ev("document.getElementById('dbg-agent').value") == "stock"
+    assert shown("#debugbar [data-dbg=split]") and shown("#debugbar .dbg-who")
+
+    # Branched on the last turn played, there is nothing to leave with A: the
+    # branch is asked nothing, and the two are one timeline until they differ.
+    bar.click('[data-dbg="split"]')
+    bar.until(f"debugSplit && {both(back + 2, back + 2)} && {said} && {deck_idle}", "a second branch opens")
+    assert (ops("a"), ops("b")) == ([], []), (ops("a"), ops("b"))
+    one_timeline(bar, back + 2, "a branch made on the last turn played")
+    # The ✕ on B closes the branch, and A is the timeline as it was.
+    kept = bar.ev("debugSplit.panes.a.id")
+    bar.forget()
+    bar.click('[data-dbg-close="b"]')
+    bar.until("!debugSplit", "the ✕ on B closes the split")
+    assert bar.sent() == [{"op": "adopt", "pane": kept}], bar.sent()
+    assert bar.note() == "Branch B closed · A is the timeline", bar.note()
+    assert bar.ev("[state.turn, state.debug.last]") == [back + 2, back + 2]
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
@@ -1870,8 +2055,12 @@ def main() -> int:
         print("the lock joins the two halves and closes only on one turn, the host's deck is the one "
               "panel of a locked split and each half's own comes back when it opens, two "
               "identical halves are played once and stay one timeline, a half that plays ahead "
-              "alone does not branch it, and the timeline shows each half's breakpoints and save "
+              "alone has a branch of its own until the other plays the same turn, and the timeline shows each half's breakpoints and save "
               "points, once while they are locked, and goes to the one that is clicked.")
+        check_a_branch_forks_the_timeline(bar)
+        print("Branch under the marker forks the timeline on the turn it is pressed on, the branch "
+              "holding nothing past it; each branch has an ✕ at its left, and closing the timeline as "
+              "it was leaves the branch as the timeline, named by the Civ AI that played each stretch.")
         return 0
     finally:
         chrome.terminate()
