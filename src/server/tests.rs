@@ -10822,20 +10822,26 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
             .expect("table")
     );
     // Only the rows are named, each on its civilization's plate in both jersey
-    // colours. A column is that civilization's colour, dimmed to one quiet
-    // lightness, and meets its row on the diagonal, which shows the plate.
+    // colours. A column is that civilization's colour in full, the same as the
+    // plate, and meets its row on the diagonal, which adds the trim.
     assert!(!matrix.contains("<thead>") && !matrix.contains("<tfoot>"));
     assert!(matrix.contains("const jersey = id => `--civ:${pcol(id)};--civ-trim:${pcol2(id)}`;"));
     assert!(matrix.contains("--civ-ink:${hudJerseyInk(row.id)}"));
     assert!(matrix.contains("civs.map(civ => `<col style=\"--civ:${pcol(civ.id)}\">`)"));
     assert!(EMBEDDED_INDEX.contains(".politics-matrix col + col {"));
-    assert!(EMBEDDED_INDEX
-        .contains("background: oklch(from var(--civ) calc(.26 + l * .2) calc(c * .6) h);"));
+    assert!(EMBEDDED_INDEX.contains(".politics-matrix col + col { background: var(--civ); }"));
+    // No column is dimmed or mixed into the ground any more.
+    assert!(!EMBEDDED_INDEX.contains("calc(.26 + l * .2)"));
+    assert!(!EMBEDDED_INDEX.contains("var(--civ) 40%, var(--politics-ground)"));
     assert!(EMBEDDED_INDEX.contains(
         ".politics-matrix tbody td.self { background: var(--civ); box-shadow: inset 3px 0 var(--civ-trim); }"
     ));
-    // Every face keeps a dark rim, so it reads on any civilization's colour.
-    assert!(EMBEDDED_INDEX.contains(".politics-matrix .politics-mark { filter: drop-shadow("));
+    // Every face in the table sits on a dark disc of its own, so it and its
+    // cut-out features read on any civilization's colour at full strength.
+    assert!(EMBEDDED_INDEX.contains(
+        ".politics-matrix .politics-mark::after {\n    content: \"\"; position: absolute; inset: -1.5px; z-index: -2; border-radius: 50%;\n    background: var(--politics-disc);"
+    ));
+    assert!(EMBEDDED_INDEX.contains("--politics-disc: #0b1513;"));
     // Pointing at a column lights it and the name of the civilization it is.
     assert!(EMBEDDED_INDEX.contains("table.tBodies[0].rows[column - 1]?.cells[0]"));
     // The slanted column names along the bottom are gone, with their corner.
