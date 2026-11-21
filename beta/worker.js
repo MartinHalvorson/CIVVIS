@@ -11,6 +11,9 @@
 
 let engine = null;
 let ready = null;
+// The compiled module. A fork is handed this rather than sent to the network
+// for it, so a fork is running the very code its engine was.
+let compiled = null;
 
 function boot(wasmUrl) {
   if (!ready) {
@@ -30,10 +33,48 @@ function boot(wasmUrl) {
         return WebAssembly.instantiate(await response.arrayBuffer(), {});
       })
       .then((result) => {
+        compiled = result.module;
         engine = result.instance.exports;
         return engine;
       });
   }
+  return ready;
+}
+
+// ---------------------------------------------------------------------- forks
+//
+// The module imports nothing and keeps everything it knows in its own memory:
+// the game, the turns behind it, both halves of a split. Between two requests
+// nothing of it is anywhere else. So a second instance of the same module,
+// given a copy of that memory, *is* the same engine, and from there the two
+// play their own histories. Copying takes about as long as the memory is big
+// (a few tens of milliseconds) where saving a game and loading it takes
+// seconds, and a fork runs on its own thread: this is what lets many futures
+// of one world be played at the same time (`shim.js`, "forks").
+
+const PAGE_BYTES = 65536;
+
+// This engine's memory as it stands: one half of a fork.
+function leave() {
+  return { module: compiled, memory: engine.memory.buffer.slice(0) };
+}
+
+// Become the engine that memory was taken from. `ready` is replaced before
+// anything is awaited, so a request posted straight after this one waits for
+// the adopted engine rather than fetching a new one.
+function adopt(module, memory) {
+  ready = WebAssembly.instantiate(module, {}).then((instance) => {
+    const fresh = instance.exports;
+    const short = memory.byteLength - fresh.memory.buffer.byteLength;
+    if (short < 0 || short % PAGE_BYTES !== 0) {
+      throw new Error("that memory was not taken from this engine");
+    }
+    if (short > 0) fresh.memory.grow(short / PAGE_BYTES);
+    new Uint8Array(fresh.memory.buffer).set(new Uint8Array(memory));
+    compiled = module;
+    engine = fresh;
+    return engine;
+  });
   return ready;
 }
 
@@ -76,9 +117,19 @@ function request(method, path, body, seed) {
 }
 
 self.onmessage = async (event) => {
-  const { id, method, path, body, wasmUrl, seed } = event.data;
+  const { id, method, path, body, wasmUrl, seed, fork } = event.data;
   try {
+    if (fork === "adopt") {
+      await adopt(event.data.module, event.data.memory);
+      self.postMessage({ id, ok: true, answer: null });
+      return;
+    }
     await boot(wasmUrl);
+    if (fork === "leave") {
+      const answer = leave();
+      self.postMessage({ id, ok: true, answer }, [answer.memory]);
+      return;
+    }
     const answer = request(method, path, body, seed);
     self.postMessage({ id, ok: true, answer }, [answer.buffer]);
   } catch (error) {

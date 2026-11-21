@@ -33,8 +33,9 @@ side, a copy, and the half that is kept. A last part holds the lock: that
 Branch Timeline opens the split at once, that the lock stands between the two
 lanes and closes only on one turn, that the host's deck is the one panel of a
 locked split and plays both halves, that each half shows its own panel again
-when the lock opens, and that two identical halves are asked for once. A
-control added to the box or the strip is added there.
+when the lock opens, that two identical halves are asked for once, and that
+a lane shows its half's breakpoint turns and save points and goes to the one
+that is clicked. A control added to the box or the strip is added there.
 
 ## The bar
 
@@ -393,6 +394,14 @@ half concerned has played walks them there; on a turn ahead of any of them it
 plays them there, each with its own Civ AI. At the head of each lane is the
 Civ AI that half seats, to pick there.
 
+A lane also carries what stands on its half's timeline, as the timeline of an
+unsplit page does: a red dot on each breakpoint turn and a flag on each save
+point. A half has no timeline of its own to show them on, so it tells the
+host whenever they change (`pane-marks`), locked or not. Clicking a dot goes
+to that turn the way letting go of the lane there does. Clicking a flag takes
+that half to its save point; locked, the other half is brought to the same
+turn. Unlocked, each lane's marks are its half's alone.
+
 ### The lock
 
 A lock joins the two lanes, on a bracket that runs from the middle of one
@@ -514,6 +523,45 @@ agents that lived through those turns. When the two are then asked to play
 apart (a request that may change one of them, with no twin on the same line),
 the half that played is seated anew as well. From there nothing but what is
 asked of each tells them apart, as when the screen was first split.
+
+## Forks
+
+A fork is the whole engine again on a thread of its own: the same game, the
+same turns behind it to walk back along, the same split halves, as they stood
+when the fork was made. From there it plays its own history and the page's
+engine never hears of it. A split plays two futures of one world side by side
+for a person to watch; forks are for playing many of them at once and only
+reading how each came out, which is what a search does.
+
+The published build has them (`beta/shim.js`, `beta/worker.js`):
+
+| Request | What it does |
+|---------|--------------|
+| `POST /forks` `{"count": N}` | N forks (0 to 16) of the engine as it stands now, in place of any there were. Answers `forks`, `memory_bytes` (one engine's memory) and `ms`. A count of 0 lets them all go. |
+| any engine request with `?fork=K` | Answered by fork K (1 to N) instead of the page's engine: `POST /debug?fork=2` steps, jumps and reads fork 2. |
+
+The engine imports nothing and keeps everything it knows in its own memory,
+so a second instance of the same module given a copy of that memory is the
+same engine. Nothing is saved or loaded, and nothing in the engine is asked to
+take part: the copy is made between two requests, by the worker that holds
+the engine.
+
+Measured on published build `145fabd` (six seats, seed 7, at turn 60, an
+engine of 114 MB; Chrome for Testing on an 18-core computer that was busy
+with other work):
+
+- four forks were made in 83 ms, and one more later in 27 ms; a JSON save and
+  load of the same world takes seconds;
+- five turns on each of four forks took 676 ms together, and five turns on
+  the one engine took 671 ms: four futures in the time of one;
+- every fork ended on the state document the engine itself reached after the
+  same five turns, byte for byte, and each walked back to the same turn 64.
+
+What a fork costs is memory. Each is the engine's memory over again, every
+mark on the timeline included (about 385 MB by turn 140 with every turn
+kept), so many forks late in a long game are counted in gigabytes; `room`
+lowers what the timeline keeps before the forks are made. The desktop
+program has no forks yet: its server does not know `/forks`.
 
 ## `POST /debug`
 

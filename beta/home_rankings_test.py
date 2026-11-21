@@ -444,13 +444,34 @@ class HomeRankings(unittest.TestCase):
         self.assertEqual([s["note"] for s in series], ["", "Scrapped: random civ, random strategy.",
                                                         "Scrapped: random civ, random strategy."])
 
+    def test_a_table_owning_a_tag_prefix_does_not_close_the_series_it_interrupts(self):
+        # Operator 2026-11-21: Tournament 6 is a hotseat table tagged
+        # `civvis-t6-...`; the single-seat definition ends at "civvis-t" and
+        # stays open until a game past that end is played after its last one.
+        match = {"players": 6, "map": "Continents.lua"}
+        seat = {"name": "seat", "conditions": "c", "start": "civvis-20261120T000000Z",
+                "end": "civvis-t", "series_size": 3, "match": match}
+        table = {"name": "table", "conditions": "c", "start": "civvis-t6-", "end": "civvis-t7-",
+                 "series_size": 2, "match": match}
+        on = {"players": 6, "map": "Continents.lua"}
+        rows = [run("civvis-20261120T010000Z", "win", "ROME", utc="2026-11-20T01:10:00Z", **on),
+                run("civvis-20261120T020000Z", "defeat", "ROME", utc="2026-11-20T02:10:00Z", **on)]
+        series = home_rankings.tournament_series(rows, [seat, table])
+        self.assertEqual([(s["tournament"], s["games"], s["end"]) for s in series], [("seat", 2, None)])
+        rows.append(run("civvis-t6-20261120T030000Z", "win", "GAUL", utc="2026-11-20T03:10:00Z", **on))
+        series = home_rankings.tournament_series(rows, [seat, table])
+        self.assertEqual([(s["id"], s["tournament"], s["games"], s["end"] is None) for s in series],
+                         [(2, "table", 1, True), (1, "seat", 2, False)])
+
     def test_the_tournament_definitions_are_committed_and_read(self):
         specs = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))["tournaments"]
         self.assertTrue(specs)
         for spec in specs:
-            self.assertRegex(spec["start"], r"^civvis-\d{8}T\d{6}Z$")
+            # A run tag, or a tag prefix a whole table owns (`civvis-t6-`).
+            tag = r"^civvis-(\d{8}T\d{6}Z|t\d*-?)$"
+            self.assertRegex(spec["start"], tag)
             if "end" in spec:
-                self.assertRegex(spec["end"], r"^civvis-\d{8}T\d{6}Z$")
+                self.assertRegex(spec["end"], tag)
                 self.assertGreater(spec["end"], spec["start"])
             self.assertGreater(spec["series_size"], 0)
             self.assertTrue(spec["conditions"])

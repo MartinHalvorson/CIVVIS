@@ -2293,6 +2293,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
         + (["--unanswered-proposal-withdraw"]
            if getattr(args, "unanswered_proposal_withdraw", False) else [])
         + (["--dv-join-winner"] if getattr(args, "dv_join_winner", False) else [])
+        + (["--wc-join-plurality"] if getattr(args, "wc_join_plurality", False) else [])
         + [word for player, last_turn in sorted((quarantine or {}).items())
            for word in ("--deal-session-quarantine", f"{player}:{last_turn}")]
         + (["--no-counter-resolutions"] if args.no_counter_resolutions else [])
@@ -2835,6 +2836,22 @@ def dv_join_winner_mode(requested: bool | None, environ=None,
     `outbid` as their `diplomatic_resolution_mode`; `loaded.dv_join_winner`.
     """
     return policy_switch("CIVVIS_DV_JOIN_WINNER", requested, environ, path)
+
+
+def wc_join_plurality_mode(requested: bool | None, environ=None,
+                           path: Path | None = None) -> bool:
+    """Whether a seat racing the Congress votes the Migration Treaty, World
+    Ideology and Mercenary Companies with the block predicted to carry them
+    (`civ6_play.py --wc-join-plurality`, `CivvisWcJoinPlurality`).
+
+    `--wc-join-plurality` / `--no-wc-join-plurality`, else
+    `CIVVIS_WC_JOIN_PLURALITY` (see `policy_switch`). Opt-in: on 746 regular
+    resolutions of 55 live Deity games of 2026-11-19/20 our vote matched the
+    winner on 512, and the rivals' own blocks carried 222 of the 234 misses;
+    the reading is recorded either way (`wc_ballot_context.wc_prediction`,
+    `would` when unarmed, `choice` when armed); `loaded.wc_join_plurality`.
+    """
+    return policy_switch("CIVVIS_WC_JOIN_PLURALITY", requested, environ, path)
 
 
 def operator_victory_lane(requested: str, path: Path | None = None,
@@ -3387,6 +3404,14 @@ def main() -> int:
                     action="store_const", const=False,
                     help="cast the Diplomatic Victory ballot as before, whatever the "
                          "policy says")
+    ap.add_argument("--wc-join-plurality", dest="wc_join_plurality",
+                    action="store_const", const=True, default=None,
+                    help="forwarded to civ6_play.py: vote the Migration Treaty, World "
+                         "Ideology and Mercenary Companies with the block predicted to "
+                         "carry them (default: CIVVIS_WC_JOIN_PLURALITY, else off)")
+    ap.add_argument("--no-wc-join-plurality", dest="wc_join_plurality",
+                    action="store_const", const=False,
+                    help="cast those resolutions as before, whatever the policy says")
     ap.add_argument("--tile-export-every", type=int, default=4,
                     help="turns between map exports; the operator watches this against the game")
     ap.add_argument("--combat-frames", type=int, default=0,
@@ -3432,6 +3457,7 @@ def main() -> int:
     args.unanswered_proposal_withdraw = unanswered_proposal_withdraw_mode(
         args.unanswered_proposal_withdraw)
     args.dv_join_winner = dv_join_winner_mode(args.dv_join_winner)
+    args.wc_join_plurality = wc_join_plurality_mode(args.wc_join_plurality)
     # The game's score clock: the speed's own limit unless `--max-turns` names
     # one, then the operator's per-batch cap over either. See TURN_CAP_FILE.
     args.max_turns = operator_turn_cap(

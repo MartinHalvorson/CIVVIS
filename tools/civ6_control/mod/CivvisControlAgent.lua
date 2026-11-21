@@ -19387,6 +19387,8 @@ CivvisCongressChoiceContext = function(rtype, row, config, candidates, request)
 	local prediction = type(request.dv_prediction) == "table" and object(request.dv_prediction) or nil;
 	return {
 		dv_prediction = prediction,
+		-- See `CivvisWcJoinPlurality`: on its three kinds, for a racer.
+		wc_prediction = type(request.wc_prediction) == "table" and object(request.wc_prediction) or nil,
 		schema = 1, turn = scalar(request.turn) and request.turn or nil, resolution = rtype,
 		native_resolution_type = scalar(row.Type) and row.Type or nil,
 		target_type = scalar(row.TargetType) and row.TargetType or nil,
@@ -20661,12 +20663,30 @@ CivvisDvCastSoFar = function(row, review, pid)
 	return cast, source, words, ours, rowCount, table.concat(keys, ",");
 end
 
+-- The session's resolutions on which rivals buy votes (at least 1): every
+-- kind but those in `ONE` (see `CivvisDvPredict`). `entries` is the ballot's list (rows
+-- with `rtype`, or bare names). `CivvisDvPredict` and `CivvisWcJoinPlurality`
+-- read it. Bare global: the main chunk is at the register cap.
+CivvisWcMultiVote = function(entries)
+	local ONE = { WC_RES_URBAN_DEVELOPMENT = true, WC_RES_HERITAGE_ORG = true,
+		WC_RES_DEFORESTATION_TREATY = true, WC_RES_ARMS_CONTROL = true,
+		WC_RES_GLOBAL_ENERGY_TREATY = true, WC_RES_MILITARY_ADVISORY = true,
+		WC_RES_PUBLIC_RELATIONS = true, WC_RES_ESPIONAGE_PACT = true,
+		WC_RES_BORDER_CONTROL = true, WC_RES_SOVEREIGNTY = true, WC_RES_WORLD_RELIGION = true };
+	local multi = 0;
+	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
+		local rtype = type(entry) == "table" and entry.rtype or entry;
+		if not ONE[tostring(rtype)] then multi = multi + 1; end
+	end
+	return multi < 1 and 1 or multi;
+end
+
 -- The rival predicted to take option A's +2, and its block. With votes
 -- already cast (`CivvisDvCastSoFar`) the A blocks by target are exact. Else
 -- from each rival's Favor spent this session: `votes_max` is what the whole
 -- spend buys, an upper bound on its Diplomatic Victory block, and
 -- `votes_split` what it buys spread evenly over the session's resolutions on
--- which rivals buy votes -- on the kinds in `ONE` below each rival cast one
+-- which rivals buy votes -- on the kinds in `CivvisWcMultiVote`'s `ONE` each rival cast one
 -- vote, all 1,256 of its votes on them in those 92 games (World Religion
 -- from the 78-game count above), while its Diplomatic Victory block was
 -- within 3 votes of its block on another bought resolution in 1,006 of 1,508
@@ -20682,17 +20702,7 @@ CivvisDvPredict = function(row, candidates, pid, costs, entries, claimFavor, max
 		leader, leaderPoints)
 	config = type(config) == "table" and config or {};
 	pid = tonumber(pid);
-	local ONE = { WC_RES_URBAN_DEVELOPMENT = true, WC_RES_HERITAGE_ORG = true,
-		WC_RES_DEFORESTATION_TREATY = true, WC_RES_ARMS_CONTROL = true,
-		WC_RES_GLOBAL_ENERGY_TREATY = true, WC_RES_MILITARY_ADVISORY = true,
-		WC_RES_PUBLIC_RELATIONS = true, WC_RES_ESPIONAGE_PACT = true,
-		WC_RES_BORDER_CONTROL = true, WC_RES_SOVEREIGNTY = true, WC_RES_WORLD_RELIGION = true };
-	local multi = 0;
-	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
-		local rtype = type(entry) == "table" and entry.rtype or entry;
-		if not ONE[tostring(rtype)] then multi = multi + 1; end
-	end
-	if multi < 1 then multi = 1; end
+	local multi = CivvisWcMultiVote(entries);
 	local cast, source, reviewVoters, reviewOurs, rowCount, rowKeys = CivvisDvCastSoFar(row, review, pid);
 	local out = { multi_vote_resolutions = multi, review_voters = reviewVoters,
 		review_has_ours = reviewOurs, row_selections = rowCount, row_keys = rowKeys,
@@ -20816,6 +20826,169 @@ CivvisDvJoinWinner = function(prediction, targets, pid, option, selection, votes
 	p.choice, p.before_mode, p.before_votes, p.before_option = choice, mode, votes, option;
 	p.before_target = type(targets) == "table" and tonumber(targets[selection]) or nil;
 	return o, s, n, choice;
+end
+
+-- ★★ OPT-IN (`WcJoinPlurality`, off unless set): THREE REGULAR RESOLUTIONS
+-- VOTE WITH THE BLOCK THAT CARRIES THEM, WHERE THE BALLOT CAN READ IT.
+--
+-- A major gains a Diplomatic Victory point for each resolution whose winning
+-- option AND target match its vote. Live Deity, 746 regular resolutions of 55
+-- games (2026-11-19 12:00Z to 11-20): our vote matched 512, and in 222 of the
+-- 234 misses the winner was simply the largest block of AI votes. The option
+-- each AI takes is on the ballot row: of 3,710 rival votes, the row's
+-- `FavoredPlayerIDs` voted A 257 of 257 times and `DisfavoredPlayerIDs` B 261
+-- of 261 (WorldCongressPopup.lua:627-650 shows both lists). Three kinds give
+-- their block away at the ballot:
+--   * Migration Treaty: rivals vote A on themselves (199 of 286 rival votes;
+--     34 named us) and the largest self-block wins unless ours is larger. We
+--     claimed it every session and won 26 of 58. A rival's block is read from
+--     what it paid this session (`GetFavorEnteringCongress()` - `GetFavor()`,
+--     as `CivvisDvPredict`): `WcJoinSpendShare` (0.25) of it, priced on the
+--     session's table -- a rival put a fifth of its session spend on this
+--     treaty on average. A claim with at least the largest block stands;
+--     otherwise the free vote goes to A on that rival ("join") and the
+--     claim's Favor is kept. Disfavoring rivals vote B and are left out.
+--   * World Ideology: each rival votes A on the government it holds (166 of
+--     178 rival votes whose government the log names) and spends on it. The
+--     target is the government with the largest block, each rival weighted by
+--     its spend spread over the session's bought resolutions
+--     (`CivvisWcMultiVote`), one vote where the spend is unread. This replaces
+--     `CivvisRacerUsualWinner`'s Fascism and head-count landslide; the
+--     ballot's count stands.
+--   * Mercenary Companies: option B won 72 of 72, on Production 55 times and
+--     Gold 17, and a field keeps its yield (the last winner won again 22 of
+--     28). The ballot repeats the option and target that won the last session
+--     this game voted on it (`wc_last_win`, from the review); with none on
+--     record it votes as today. The ballot's count stands.
+-- Replayed over those 746 resolutions with the recorded rival votes deciding
+-- and our changed vote added: Migration Treaty 26 -> 42, World Ideology 29 ->
+-- 35, Mercenary Companies 55 -> 58, +0.45 points a game, five worse.
+-- Left alone, because no ballot-time reading beat today's vote: Luxury (B won
+-- 76 of 82, but the luxury is each AI's own pick and the best reading, last
+-- session's bans, named it 6 times in 82), Patronage (A on the Great
+-- Scientist is still the best fixed pick), Trade Treaty (rivals vote for a
+-- trading partner; no reading of routes or spend beat our claim's 41 of 70),
+-- Public Works (B on the leading space racer's next project is worth more
+-- than a point) and the kinds already at 0.89-1.00.
+-- Only for a seat racing the Congress (`CivvisCongressRacer`), and only from
+-- the ballot's plain choice: a Migration Treaty vote that is not A on us (the
+-- Culture counter's B on a threat) and a World Ideology vote on B stand.
+-- `q`: `rtype`, `row`, `targets`, `candidates`, `pid`, `option`, `selection`,
+-- `votes`, `entries`, `costs`, `config`, `last` (`wc_last_win`) and an
+-- injectable `governmentOf`. Returns `option, selection, votes` (nil when the
+-- ballot stands) and the record, armed or not
+-- (`wc_ballot_context.wc_prediction`; `would` names what an unarmed arm
+-- would cast). Bare global: the main chunk is at the register cap.
+CivvisWcJoinPlurality = function(q)
+	q = type(q) == "table" and q or {};
+	local config = type(q.config) == "table" and q.config or {};
+	local rtype, pid = tostring(q.rtype), tonumber(q.pid);
+	local targets = type(q.targets) == "table" and q.targets or {};
+	local option, selection, votes = tonumber(q.option) or 1, tonumber(q.selection) or 1, tonumber(q.votes) or 1;
+	if not CivvisCongressRacer(config) or (rtype ~= "WC_RES_MIGRATION_TREATY"
+			and rtype ~= "WC_RES_WORLD_IDEOLOGY" and rtype ~= "WC_RES_MERCENARY_COMPANIES") then
+		return nil, nil, nil, nil;
+	end
+	local rec = { armed = config.WcJoinPlurality == true, ours = votes };
+	local function index(want)
+		for i, t in pairs(targets) do
+			if type(i) == "number" and want ~= nil and tostring(t) == tostring(want) then return i; end
+		end
+		return nil;
+	end
+	local function paid(c)
+		local entering, now = tonumber(c.favor_entering), tonumber(c.favor);
+		if entering ~= nil and now ~= nil and entering >= now then return entering - now; end
+		return nil;
+	end
+	local candidates = type(q.candidates) == "table" and q.candidates or {};
+	local o, s, n = nil, nil, nil;
+	if rtype == "WC_RES_MIGRATION_TREATY" then
+		rec.kind = "claim_or_join";
+		local disfavored = {};
+		for _, id in pairs(type(q.row) == "table" and type(q.row.DisfavoredPlayerIDs) == "table"
+				and q.row.DisfavoredPlayerIDs or {}) do
+			if tonumber(id) ~= nil then disfavored[tonumber(id)] = true; end
+		end
+		local share = tonumber(config.WcJoinSpendShare) or 0.25;
+		local top, winner = nil, nil;
+		for _, c in ipairs(candidates) do
+			local id = type(c) == "table" and tonumber(c.id) or nil;
+			local spend = id ~= nil and id ~= pid and not disfavored[id] and paid(c) or nil;
+			local block = spend ~= nil and CivvisDvVotesForFavor(spend * share, q.costs) or nil;
+			if block ~= nil and (top == nil or block > top or (block == top and id < winner)) then
+				top, winner = block, id;
+			end
+		end
+		rec.winner, rec.block = winner, top;
+		if option ~= 1 or index(pid) ~= selection then
+			rec.why = "not_a_claim";
+		elseif top == nil or top < 2 then
+			rec.why = "no_spend";
+		elseif votes >= top then
+			rec.why = "claim_carries";
+		elseif index(winner) == nil then
+			rec.why = "not_offered";
+		else
+			o, s, n, rec.choice = 1, index(winner), 1, "join";
+		end
+	elseif rtype == "WC_RES_WORLD_IDEOLOGY" then
+		rec.kind = "government";
+		local multi = CivvisWcMultiVote(q.entries);
+		rec.multi = multi;
+		local governmentOf = q.governmentOf or function(id)
+			if not Players[pid]:GetDiplomacy():HasMet(id) then return nil; end
+			local row = GameInfo.Governments[Players[id]:GetCulture():GetCurrentGovernment()];
+			return row and row.Name or nil;
+		end;
+		local weight, best = {}, nil;
+		for _, c in ipairs(candidates) do
+			local id = type(c) == "table" and tonumber(c.id) or nil;
+			local name = (id ~= nil and id ~= pid) and try(function() return governmentOf(id); end, nil) or nil;
+			if type(name) == "string" and index(name) ~= nil then
+				local spend = paid(c);
+				weight[name] = (weight[name] or 0)
+					+ ((spend ~= nil and CivvisDvVotesForFavor(spend / multi, q.costs)) or 1);
+			end
+		end
+		for name, w in pairs(weight) do
+			if best == nil or w > weight[best] or (w == weight[best] and index(name) < index(best)) then
+				best = name;
+			end
+		end
+		rec.winner, rec.block = best, best ~= nil and weight[best] or nil;
+		if best == nil then
+			rec.why = "no_government";
+		elseif option ~= 1 then
+			rec.why = "not_a_claim";
+		elseif index(best) == selection then
+			rec.why = "already";
+		else
+			o, s, n, rec.choice = 1, index(best), votes, "government";
+		end
+	else
+		rec.kind = "repeat";
+		local last = type(q.last) == "table" and q.last[rtype] or nil;
+		local lastOption = type(last) == "table" and tonumber(last.option) or nil;
+		rec.winner, rec.last_option = type(last) == "table" and last.target or nil, lastOption;
+		if lastOption ~= 1 and lastOption ~= 2 then
+			rec.why = "no_history";
+		elseif index(last.target) == nil then
+			rec.why = "not_offered";
+		elseif lastOption == option and index(last.target) == selection then
+			rec.why = "already";
+		else
+			o, s, n, rec.choice = lastOption, index(last.target), votes, "repeat";
+		end
+	end
+	if o == nil then return nil, nil, nil, rec; end
+	rec.before_option, rec.before_votes = option, votes;
+	rec.before_target = targets[selection] ~= nil and tostring(targets[selection]) or nil;
+	if not rec.armed then
+		rec.would, rec.choice = rec.choice, nil;
+		return nil, nil, nil, rec;
+	end
+	return o, s, n, rec;
 end
 
 -- A ballot is verified against all three native selection fields, not just
@@ -25752,6 +25925,10 @@ local function beginTurn(player, pid, turn)
 				end
 				envoyTally.wc_last_a = envoyTally.wc_last_a or {};
 				envoyTally.wc_last_a[rtype] = a;
+				-- See `CivvisWcJoinPlurality`: each kind's last winning option and
+				-- target, kept across sessions that do not vote on it.
+				envoyTally.wc_last_win = envoyTally.wc_last_win or {};
+				envoyTally.wc_last_win[rtype] = { option = won, target = tostring(r.ChosenThing or "") };
 				resolutions[#resolutions + 1] = {
 					type = rtype,
 					target_type = tostring(r.TargetType or ""),
@@ -28071,6 +28248,28 @@ local function tick()
 							spent = spent + price;
 						end
 					end
+					-- See `CivvisWcJoinPlurality`: a racer's Migration Treaty, World
+					-- Ideology and Mercenary Companies vote with the block that
+					-- carries them (opt-in), after the counts above so that a join
+					-- is the free vote and its Favor comes back to the bank. The
+					-- reading is recorded armed or not. Under pcall: a failure
+					-- leaves today's vote.
+					envoyTally.wc_prediction = nil;
+					if rtype ~= "WC_RES_DIPLOVICTORY" then
+						local joinOK, jo, js, jn, joinRecord = pcall(CivvisWcJoinPlurality, {
+							rtype = rtype, row = r, targets = targets, candidates = candidates,
+							pid = pid, option = option, selection = selection, votes = votes,
+							entries = list, costs = costs, config = cfg, last = envoyTally.wc_last_win });
+						if joinOK then
+							envoyTally.wc_prediction = joinRecord;
+							if jo ~= nil then
+								local back = ((votes > 1 and tonumber(costs[votes - 1])) or 0)
+									- ((jn > 1 and tonumber(costs[jn - 1])) or 0);
+								option, selection, votes = jo, js, jn;
+								favor, spent = favor + back, spent - back;
+							end
+						end
+					end
 					local params = {};
 					params[PlayerOperations.PARAM_RESOLUTION_TYPE] = info.Hash;
 					params[PlayerOperations.PARAM_WORLD_CONGRESS_VOTES] = votes;
@@ -28091,6 +28290,7 @@ local function tick()
 							racer_endgame = envoyTally.racer_endgame,
 							dv_prediction = rtype == "WC_RES_DIPLOVICTORY"
 								and envoyTally.dv_prediction or nil,
+							wc_prediction = envoyTally.wc_prediction,
 						}));
 					end);
 					if not contextOK then
@@ -29512,7 +29712,8 @@ function Initialize()
 		strategic_cash_ceiling_bid = cfg.StrategicCashCeilingBid == true,
 		luxury_quote_proposals = cfg.LuxuryQuoteProposals == true,
 		unanswered_proposal_withdraw = cfg.UnansweredProposalWithdraw == true,
-		dv_join_winner = cfg.DvJoinWinner == true });
+		dv_join_winner = cfg.DvJoinWinner == true,
+		wc_join_plurality = cfg.WcJoinPlurality == true });
 	-- RECORD-ONLY. `deal_response` records the rival's verdict as the
 	-- engine's DealProposalAction NUMBER, and no Lua source names the values.
 	-- Over 30 live runs the asked answers split action 1 (closable when under

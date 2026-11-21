@@ -73,6 +73,7 @@ to be movable.
 | `beta/verify.py` | Opens the assembled bundle in a real browser, watches it play, and walks through the password door. |
 | `beta/worker_test.py` | Calls `_worker.js` directly — the forward, the password, the headers — needing only Chrome. |
 | `beta/debugger_test.py` | Drives the Sim debugger's bar and its split screen (`web/assets/app_debugger.js`, as it ships) against a toy engine: each control sends the operation it is for, and the two halves of a head to head are told, run, compared, copied and kept. Needs only Chrome; run on every pull request with the other `*_test.py` scripts here. |
+| `beta/forks_test.py` | Forks an engine to parallel workers (`shim.js` and `worker.js`, as they ship) against a toy engine: a fork carries on from where its engine was, each plays its own history, and a request that names a fork reaches it. |
 | `beta/serve.sh` | Serves `beta/dist/` locally the way a static host would. |
 
 Nothing under `web/` is edited to suit the web build, and none of `src/wasm.rs`
