@@ -1652,12 +1652,18 @@ fn game_stats_json(g: &Game) -> Value {
     let column = |turn: u32| turns.binary_search(&turn).ok();
     let mut players: BTreeMap<u16, [Vec<Value>; 6]> = BTreeMap::new();
     for row in rows {
-        let Some(index) = column(row.turn) else { continue };
-        let series = players.entry(row.player).or_insert_with(|| {
-            std::array::from_fn(|_| vec![Value::Null; turns.len()])
-        });
+        let Some(index) = column(row.turn) else {
+            continue;
+        };
+        let series = players
+            .entry(row.player)
+            .or_insert_with(|| std::array::from_fn(|_| vec![Value::Null; turns.len()]));
         let figures = [
-            row.science, row.culture, row.production, row.faith, row.gold,
+            row.science,
+            row.culture,
+            row.production,
+            row.faith,
+            row.gold,
             f32::from(row.cities),
         ];
         for (line, figure) in series.iter_mut().zip(figures) {
