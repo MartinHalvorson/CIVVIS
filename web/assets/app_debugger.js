@@ -447,7 +447,7 @@ function debugForgetStandingOrders(turn) {
   noticeDismissed = new Set();
   noticeSeenTurn = Math.max(0, turn - 1);
 }
-const DEBUG_TRAVEL_OPS = new Set(["back", "forward", "jump", "restart", "undo", "copy", "goto_save"]);
+const DEBUG_TRAVEL_OPS = new Set(["back", "forward", "jump", "walk", "restart", "undo", "copy", "goto_save"]);
 // `run` is a run's own: the request it has out for its next turn (`ahead`)
 // and whether an answer leaves it another turn to play (`more`). A run asks
 // for the next turn the moment a turn is answered and draws that turn while
@@ -671,6 +671,13 @@ async function debugStepSeat() {
 // Played a turn a request, like auto-play, so every turn reaches the glass
 // and the Stop button is never more than one turn away. `era` is a world era
 // to play out of (Era Next): the run stops on the first turn of a new one.
+//
+// Turns ahead that the seated Civ AI has already played from the open turn
+// are not played again (`debug.played_ahead`, the last of them): playing
+// them would only arrive at the turns that are kept. The run first asks the
+// engine to `walk` to the latest of them it reaches, which stops where a
+// breakpoint would have stopped the run that played them, and the Civ AI
+// plays on from there. Forward 50, back 20, forward 30 plays ten turns.
 async function debugRun(until = null, era = null) {
   if (debugRunning) { debugStopAsked = true; drawDebugBar(); return; }
   if (autoplaying || !debugTimeline()) return;
@@ -685,16 +692,34 @@ async function debugRun(until = null, era = null) {
   const dawn = next => era !== null && next.world_era !== undefined && next.world_era !== era;
   const run = {ahead: null, more: next => !debugStopAsked && !(next.debug || {}).stopped &&
     !(until !== null && next.turn >= until) && !dawn(next)};
+  // Whether the turn just answered is where the run ends, and the bar told why.
+  const over = next => {
+    const stopped = (next.debug || {}).stopped;
+    if (stopped) debugSayStop(stopped);
+    else if (until !== null && next.turn >= until) debugSay(`Played to turn ${next.turn}`);
+    else if (dawn(next)) debugSayStop({kind: "era", turn: next.turn, era: next.world_era});
+    else return false;
+    return true;
+  };
   try {
-    do {
+    const from = state.turn;
+    let on = true;
+    if ((debugTimeline().played_ahead ?? from) > from) {
+      const next = await debugOp({op: "walk", turn: until, era: era !== null, strategy: debugStrategy()},
+        AUTOPLAY_BATCH_TIMEOUT_MS);
+      on = !!next && !next.error;
+      if (on) {
+        played = next.turn - from;
+        debugPlayed = played;
+        on = !over(next) && !debugStopAsked;
+      }
+    }
+    if (on) do {
       const next = await debugOp({op: "step", strategy: debugStrategy()}, AUTOPLAY_BATCH_TIMEOUT_MS, run);
       if (!next || next.error) break;
       played += 1;
       debugPlayed = played;
-      const stopped = (next.debug || {}).stopped;
-      if (stopped) { debugSayStop(stopped); break; }
-      if (until !== null && next.turn >= until) { debugSay(`Played to turn ${next.turn}`); break; }
-      if (dawn(next)) { debugSayStop({kind: "era", turn: next.turn, era: next.world_era}); break; }
+      if (over(next)) break;
       await new Promise(drawn => requestAnimationFrame(drawn));
     } while (run.ahead);
     if (debugStopAsked) debugSay(`Stopped by hand after ${played} turn${played === 1 ? "" : "s"}`);
@@ -730,7 +755,9 @@ function debugAutoPlay() {
 // The turn buttons walk the turns already played, and past the last of them
 // the Civ AI plays on. Going on does not play over what was played: it walks
 // to the last turn first. (Dragging the timeline ahead from an earlier turn
-// is the way to play those turns again; it says so under the pointer.)
+// plays on from that turn, over what was played after it; it says so under
+// the pointer. Auto-play does the same. Neither plays again a turn the
+// seated Civ AI already played from there: see `debugRun`.)
 //
 // The walk: along the turns already played towards `goal` (null, the last of
 // them), and whether the Civ AI is to play on from where it stopped, which is
