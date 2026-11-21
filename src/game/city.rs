@@ -3538,18 +3538,32 @@ impl Game {
         if self.is_arena() && !self.tactics.unique_units {
             return unit;
         }
-        self.rules
-            .units
-            .iter()
-            .find(|(_, spec)| {
-                spec.replaces == Some(unit)
-                    && spec
-                        .unique_to
-                        .as_deref()
-                        .is_some_and(|owner| self.owns_civ_unique(pid, owner))
-            })
-            .map(|(name, _)| *name)
-            .unwrap_or(unit)
+        let owned = |name: &Name| {
+            self.rules.units[*name]
+                .unique_to
+                .as_deref()
+                .is_some_and(|owner| self.owns_civ_unique(pid, owner))
+        };
+        let replacement = self
+            .rules
+            .unit_replacements
+            .get_interned(unit)
+            .into_iter()
+            .flatten()
+            .find(|name| owned(name))
+            .copied()
+            .unwrap_or(unit);
+        debug_assert_eq!(
+            replacement,
+            self.rules
+                .units
+                .iter()
+                .find(|(name, spec)| spec.replaces == Some(unit) && owned(name))
+                .map(|(name, _)| *name)
+                .unwrap_or(unit),
+            "Rules::unit_replacements is built at load; a unit added after load is missing"
+        );
+        replacement
     }
 
     /// Direct, currently unlocked successor for one unit kind. Upgrade

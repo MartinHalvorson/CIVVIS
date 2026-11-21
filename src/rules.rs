@@ -1783,6 +1783,11 @@ pub struct Rules {
     /// `RwLock` read and a hash to intern it. The keys are fixed when the
     /// ruleset loads and never change afterwards, so they are read once here.
     pub district_adjacency_counts: SpecMap<Vec<AdjacencyCount>>,
+    /// For each unit, the units that declare they replace it, in
+    /// `Rules::units` order. `Game::player_unit_replacement` read every unit
+    /// spec to find a civilization's replacement, once per unit kind per
+    /// city whenever production was listed; `replaces` is fixed at load.
+    pub unit_replacements: SpecMap<Vec<Name>>,
 }
 
 /// What a district adjacency key (`DistrictSpec::adjacency`) counts among
@@ -2976,6 +2981,7 @@ impl Rules {
             civic_ancestors: SpecMap::default(),
             effect_index: EffectIndex::default(),
             district_adjacency_counts: SpecMap::default(),
+            unit_replacements: SpecMap::default(),
         };
         let effects: TreeEffectsData = take(&mut files, "tree_effects")?;
         for (node, values) in effects.techs {
@@ -3032,6 +3038,7 @@ impl Rules {
         rules.civic_ancestors = ancestry(&rules.civics);
         rules.effect_index = rules.build_effect_index();
         rules.district_adjacency_counts = rules.build_district_adjacency_counts();
+        rules.unit_replacements = rules.build_unit_replacements();
         Ok(rules)
     }
 
@@ -3074,6 +3081,21 @@ impl Rules {
 
     /// Read every district adjacency key once. See
     /// [`Rules::district_adjacency_counts`].
+    /// [`Rules::unit_replacements`].
+    fn build_unit_replacements(&self) -> SpecMap<Vec<Name>> {
+        let mut replacements: SpecMap<Vec<Name>> = SpecMap::new();
+        for (name, spec) in self.units.iter() {
+            let Some(base) = spec.replaces else { continue };
+            match replacements.get_interned_mut(base) {
+                Some(list) => list.push(*name),
+                None => {
+                    replacements.insert(base.to_string(), vec![*name]);
+                }
+            }
+        }
+        replacements
+    }
+
     fn build_district_adjacency_counts(&self) -> SpecMap<Vec<AdjacencyCount>> {
         self.districts
             .iter()
