@@ -387,6 +387,14 @@ def main(argv: list[str] | None = None) -> int:
             home["status"] == 200 and home["body"].strip() == "asset:/home",
             f"got {home['status']} {home['body'][:60]!r}",
         )
+        # So is /tournaments, the page between Home and the viewer.
+        tournaments = hit(path="/tournaments/")
+        check(
+            problems,
+            "/tournaments/ passes through to the Tournaments page",
+            tournaments["status"] == 200 and tournaments["body"].strip() == "asset:/tournaments/",
+            f"got {tournaments['status']} {tournaments['body'][:60]!r}",
+        )
         download = hit(path="/download/")
         check(
             problems,
@@ -422,6 +430,11 @@ def main(argv: list[str] | None = None) -> int:
               f"got {test_home['status']} {test_home['body'][:60]!r}")
         check(problems, "the test landing page is not indexed",
               test_home["robots"] == "noindex", f"got {test_home['robots']!r}")
+        test_tournaments = hit(path="/test/tournaments/")
+        check(problems, "/test/tournaments/ passes through to the test Tournaments page",
+              test_tournaments["status"] == 200 and test_tournaments["body"].strip() == "asset:/test/tournaments/"
+              and test_tournaments["robots"] == "noindex",
+              f"got {test_tournaments['status']} {test_tournaments['body'][:60]!r} {test_tournaments['robots']!r}")
         test_download = hit(path="/test/download/")
         check(problems, "/test/download/ passes through to the test downloads page",
               test_download["status"] == 200 and "asset:/test/download/" in test_download["body"],

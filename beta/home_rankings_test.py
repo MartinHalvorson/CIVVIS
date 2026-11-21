@@ -332,17 +332,14 @@ class HomeRankings(unittest.TestCase):
         self.assertEqual(
             children,
             [
-                # The Tournaments table first, across the full width (operator 2026-11-19).
-                '<section class="rank-card is-wide" id="rank-tournaments" hidden aria-labelledby="rank-tournaments-title">',
                 '<section class="rank-card" id="rank-civs" hidden aria-labelledby="rank-civs-title">',
                 '<section class="rank-card" id="rank-strategies" hidden aria-labelledby="rank-strategies-title">',
             ],
         )
-        # Two columns and never three. The Tournaments table spans every
-        # track, and a track a card spans is never collapsed: with a bare
-        # 300px minimum a wide window held three, and the two lists stood in
-        # two of them beside an empty third (#5541). So the rule is read back
-        # and counted the way the browser counts auto-fit tracks.
+        # Two columns and never three. The rule dates from when the
+        # Tournaments table spanned every track above the lists (#5541, #5550)
+        # and is kept now the table has its own page: it is read back and
+        # counted the way the browser counts auto-fit tracks.
         rule = re.search(
             r"\.rankings \{ display: grid; grid-template-columns: repeat\(auto-fit, "
             r"minmax\(min\(100%, max\((\d+)px, calc\(50% - (\d+)px\)\)\), 1fr\)\); gap: (\d+)px;",
@@ -351,7 +348,6 @@ class HomeRankings(unittest.TestCase):
         self.assertIsNotNone(rule)
         floor, half_gap, gap = (int(figure) for figure in rule.groups())
         self.assertEqual(half_gap * 2, gap)
-        self.assertIn(".rank-card.is-wide { grid-column: 1 / -1; }", LANDING)
 
         def tracks(width: int) -> int:
             least = min(width, max(floor, width / 2 - half_gap))
@@ -365,12 +361,16 @@ class HomeRankings(unittest.TestCase):
             'shown = show("rank-civs", rows, note) || shown;',
             "const strategies = data.strategies;",
             'shown = show("rank-strategies", rows, note) || shown;',
-            'if (shown || toursShown) document.getElementById("rankings").hidden = false;',
-            "const tours = data.tournaments;",
-            '<th scope="col">Conditions</th><th scope="col">Notes</th>',
-            'el("td", "is-note", t.note || "")',
+            'if (shown) document.getElementById("rankings").hidden = false;',
         ):
             self.assertIn(line, LANDING)
+        # The Tournaments table stood above the two lists until the operator
+        # gave tournaments their own page (2026-11-21: "The tournament tables
+        # on home right now can move to Tournaments"). Nothing of it is left
+        # here but the link to that page (`tournaments_page_test.py`).
+        for gone in ("rank-tournaments", "rank-table", "is-wide", "data.tournaments", "toursShown"):
+            self.assertNotIn(gone, LANDING)
+        self.assertIn('<a class="site-link" href="../tournaments/"', LANDING)
         # Every game behind the table is one click away, on the branch the
         # table is read from.
         self.assertIn(
@@ -384,7 +384,7 @@ class HomeRankings(unittest.TestCase):
         # one now: no card, no reader, no style or script left behind.
         self.assertEqual(sorted(home_rankings.rankings(ROOT)), ["civs", "strategies", "tournaments"])
         self.assertFalse(hasattr(home_rankings, "genes"))
-        self.assertEqual(re.findall(r'id="(rank-[a-z]+)"', LANDING), ["rank-tournaments", "rank-civs", "rank-strategies"])
+        self.assertEqual(re.findall(r'id="(rank-[a-z]+)"', LANDING), ["rank-civs", "rank-strategies"])
         page = LANDING.lower()
         for gone in ("heuristic gene", "gene_heuristic_ranking", "data.genes", "is-gene", "is-off", "rank-stack", "has-civs"):
             self.assertNotIn(gone, page)
@@ -501,7 +501,22 @@ class HomeRankings(unittest.TestCase):
             self.assertEqual(page.read_text(encoding="utf-8"), "<html>no slot</html>")
             page.write_text(LANDING, encoding="utf-8")
             self.assertEqual(home_rankings.main(["home_rankings.py", empty, str(page)]), 0)
-            self.assertEqual(json.loads(home_rankings.SLOT.search(page.read_text(encoding="utf-8"))[2]), data)
+            self.assertEqual(json.loads(home_rankings.SLOT.search(page.read_text(encoding="utf-8"))[2]),
+                             {"civs": None, "strategies": None})
+
+    def test_only_a_page_with_the_tournaments_card_is_sent_its_rows(self):
+        # The table lives on the Tournaments page now. A lane pinned to a home
+        # page that still has the card is published by this script too and
+        # keeps its table; head's page has no card and is not sent the rows.
+        data = {"civs": None, "strategies": None, "tournaments": [{"id": 1}]}
+        self.assertEqual(home_rankings.for_page(LANDING, data), {"civs": None, "strategies": None})
+        older = LANDING.replace('id="rank-civs"', 'id="rank-tournaments"></section><section id="rank-civs"', 1)
+        self.assertEqual(home_rankings.for_page(older, data), data)
+        with tempfile.TemporaryDirectory() as empty:
+            page = pathlib.Path(empty) / "index.html"
+            page.write_text(older, encoding="utf-8")
+            self.assertEqual(home_rankings.main(["home_rankings.py", empty, str(page)]), 0)
+            self.assertIn("tournaments", json.loads(home_rankings.SLOT.search(page.read_text(encoding="utf-8"))[2]))
 
 
 if __name__ == "__main__":
