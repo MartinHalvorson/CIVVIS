@@ -301,6 +301,8 @@ const DEBUG_STACKED_UNDER = 720, DEBUG_PANE_STACKED_UNDER = 1000;
 // this, they have wrapped to three, and the words on them go. A box at least
 // `DEBUG_ROOMY` wide has room for the Civ AI picker's label as well.
 const DEBUG_DECK_ROWS = 70, DEBUG_ROOMY = 1480;
+// The turns Auto-play is set to when the box is built.
+const DEBUG_AUTOPLAY_TURNS = 10;
 // One request at a time: every debugger operation replaces the world.
 let debugBusy = false;
 // A run is a loop of single steps; the Auto-play button is also its Stop.
@@ -532,7 +534,7 @@ async function debugRun(until = null) {
 function debugAutoPlay() {
   if (debugRunning) { debugStopAsked = true; drawDebugBar(); return; }
   if (!debugTimeline()) return;
-  const pick = document.getElementById("dbg-turns").value || "1";
+  const pick = document.getElementById("dbg-turns").value || String(DEBUG_AUTOPLAY_TURNS);
   debugRun(pick === "all" ? null : state.turn + Math.max(1, parseInt(pick, 10) || 1));
 }
 // The turn buttons walk the turns already played, and past the last of them
@@ -705,7 +707,7 @@ function debugBuildBar() {
             <select class="dbg-agent" id="dbg-agent" aria-label="Civ AI for your seat"></select></label>
           <select id="dbg-turns" title="How many turns Auto-play plays before it hands the seat back. All is every turn the game has left" aria-label="Turns to auto-play">${
             [1, 2, 3, 4, 5, 10, 20, 30, 40, 50, 100, 150, 200, 250].map(turns =>
-              `<option value="${turns}">${turns} turn${turns === 1 ? "" : "s"}</option>`).join("")
+              `<option value="${turns}"${turns === DEBUG_AUTOPLAY_TURNS ? " selected" : ""}>${turns} turn${turns === 1 ? "" : "s"}</option>`).join("")
           }<option value="all">All turns</option></select>
           <button data-dbg="autoplay" title="Auto-play: the Civ AI plays the turns picked, and stops early when a breakpoint does. While it plays this counts the turns, and pressing it stops" aria-label="Auto-play"><i id="dbg-run-sign">▶▶</i><span class="dbg-word" id="dbg-run-word">Auto-play</span><span id="dbg-run-count"></span></button>
           <button class="dbg-apart" data-dbg-pop="layers" title="Layers: which decisions the Civ AI takes for you each turn">Layers<span class="dbg-count" id="dbg-layer-count"></span></button>

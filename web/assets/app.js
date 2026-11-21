@@ -39510,7 +39510,7 @@ function fillRivalStrategies(rules, roster) {
 // cap, so use a stop-button-sized horizon: a next-victory run will finish when
 // the engine declares it, and an indefinite run continues until stopped.
 function autoplayRequest() {
-  const pick = (document.getElementById("autoplayturns") || {}).value || "1";
+  const pick = (document.getElementById("autoplayturns") || {}).value || "10";
   if (pick === "all" && (state || {}).turn_limit === null) return 1000000000;
   const cap = +(state || {}).turn_limit || +(state || {}).max_turns || 0;
   const left = Math.max(1, cap - (+(state || {}).turn || 0) + 1);
@@ -39523,7 +39523,7 @@ function autoplayRequest() {
 function syncAutoplayLabel() {
   const button = document.getElementById("autoplaybtn");
   if (!button || autoplaying) return;
-  const pick = (document.getElementById("autoplayturns") || {}).value || "1";
+  const pick = (document.getElementById("autoplayturns") || {}).value || "10";
   const unbounded = pick === "all" && !!state && (state.turn_limit ?? state.max_turns) === null;
   const turns = state ? autoplayRequest() : (pick === "all" ? null : +pick);
   button.textContent = unbounded ? "▶▶ Auto-play until stopped"

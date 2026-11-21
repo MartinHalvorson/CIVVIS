@@ -615,6 +615,10 @@ fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_orde
     for piece in [
         // Twice the 34px the rail was.
         "position: relative; flex: 1; min-width: 0; height: 68px; border-radius: 12px;",
+        // Auto-play is set to ten turns when the box is built (operator,
+        // 2026-11-20: "default for auto play can be 10 turns").
+        "const DEBUG_AUTOPLAY_TURNS = 10;",
+        "<option value=\"${turns}\"${turns === DEBUG_AUTOPLAY_TURNS ? \" selected\" : \"\"}>",
         // The count on Auto-play, of the turns asked for or so far.
         "const runCount = !debugRunning ? \"\" : debugAsked === null ? `${debugPlayed}` : `${debugPlayed}/${debugAsked}`;",
         // Era start, the era breakpoint and the eras named on the timeline.
