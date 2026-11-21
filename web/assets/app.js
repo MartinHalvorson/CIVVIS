@@ -28,7 +28,8 @@ const PLANET_GPU_MAP_STATS = {frames:0, nearFrames:0, fullBakes:0, faceBakes:0, 
 let PLANET_GPU = null;
 // The command deck's scrolling sections — Display Settings, Game setup, World
 // politics, AI strategy, War log, Game event log, Government — are one
-// accordion: at most one is open at a time, and none is fine. Opening a section closes whichever
+// accordion: at most one is open at a time, and none is fine. World politics
+// opens by itself; a section the reader left open keeps its place over it. Opening a section closes whichever
 // other one was open, so two long logs never stack and push a third off the
 // bottom of the deck. The markup asks the browser for the same rule natively
 // (one `name="deck-section"` shared by their `<details>` tags); this closes
@@ -76,12 +77,14 @@ function initSidebarSections() {
   // sections; the first in reading order keeps its place and the rest close,
   // and the store is rewritten so the next load agrees with what was shown.
   let opened = false;
+  // A section the reader left open outranks the one the markup opens.
+  const keptOpen = [...document.querySelectorAll(SIDEBAR_SECTIONS)].some(s => saved[s.dataset.section] === true);
   // The lens dock is a fixed panel at the deck's lower edge now, so it needs
   // no scroll-into-view choreography — only the same saved disclosure state
   // as the scrolling sections above it.
   for (const section of document.querySelectorAll("#side details[data-section]")) {
     const key = section.dataset.section;
-    let open = section.open;
+    let open = section.open && !(keptOpen && section.classList.contains("sidebar-section"));
     if (Object.prototype.hasOwnProperty.call(saved, key)) {
       open = !!saved[key];
     } else if (key === "active-strategy" &&
@@ -33856,9 +33859,9 @@ function worldPoliticsMatrix(civs, bonds, wars, attitudes) {
   for (const bond of bonds) place(bond, worldPoliticsBondTie(bond));
   for (const war of wars) place(war, worldPoliticsWarTie(war));
   const seat = new Map((attitudes.civs || []).map((id, index) => [id, index]));
-  const label = id => `<i class="politics-chip" aria-hidden="true" ` +
-    `style="background:${pcol(id)};border-color:${pcol2(id)}"></i>${warEntityLink(id)}`;
-  const head = civs.map(civ => `<th scope="col"><span>${label(civ.id)}</span></th>`).join("");
+  const label = id => `<span class="politics-name" style="--civ:${pcol(id)};--civ-trim:${pcol2(id)};` +
+    `--civ-ink:${hudJerseyInk(id)}">${warEntityLink(id)}</span>`;
+  const foot = civs.map(civ => `<th scope="col">${label(civ.id)}</th>`).join("");
   const rows = civs.map(row => {
     const stances = attitudes.rows?.[seat.get(row.id)] || "";
     const cells = civs.map(column => {
@@ -33871,11 +33874,10 @@ function worldPoliticsMatrix(civs, bonds, wars, attitudes) {
         : `${row.civ} toward ${column.civ}: ${WORLD_POLITICS_LABELS.get(kind)}`;
       return `<td title="${escapeAttr(text)}">${worldPoliticsMark(kind)}</td>`;
     }).join("");
-    return `<tr><th scope="row"><span>${label(row.id)}</span></th>${cells}</tr>`;
+    return `<tr><th scope="row">${label(row.id)}</th>${cells}</tr>`;
   }).join("");
   return `<table class="politics-matrix"><colgroup><col>${"<col>".repeat(civs.length)}</colgroup>` +
-    `<thead><tr><td class="politics-corner"></td>${head}</tr></thead>` +
-    `<tbody>${rows}</tbody></table>`;
+    `<tbody>${rows}</tbody><tfoot><tr><td class="politics-corner"></td>${foot}</tr></tfoot></table>`;
 }
 // Hovering a row is CSS's to light, but no selector can light a column. The
 // column is remembered because a new turn's patch takes the marks back off.
@@ -33887,7 +33889,7 @@ function markPoliticsColumn(column) {
   const table = list.querySelector("table");
   if (!table || column < 1) return;
   table.querySelector("colgroup").children[column]?.classList.add("politics-crossed");
-  table.tHead.rows[0].cells[column]?.classList.add("politics-crossed");
+  table.tFoot.rows[0].cells[column]?.classList.add("politics-crossed");
 }
 function drawWorldPolitics() {
   const list = document.getElementById("worldpolitics");
@@ -33914,6 +33916,9 @@ function drawWorldPolitics() {
     ? worldPoliticsMatrix(civs, bonds, wars, attitudes)
     : `<div class="politics-none">No other civilizations met yet.</div>`);
   markPoliticsColumn(politicsColumn);
+  // A slant is invisible to layout, so the foot is sized to the longest column name.
+  const run = Math.max(0, ...[...list.querySelectorAll("tfoot .politics-name")].map(name => name.offsetWidth));
+  list.style.setProperty("--politics-run", `${run}px`);
   const key = document.getElementById("politicskey");
   key.hidden = !met;
   key.innerHTML = met ? worldPoliticsKey(bonds) : "";
@@ -39683,6 +39688,7 @@ document.getElementById("tradebtn").onclick = () => openTrade();
   matrix.addEventListener("pointerover", event =>
     markPoliticsColumn(event.target.closest("td, th")?.cellIndex ?? -1));
   matrix.addEventListener("pointerleave", () => markPoliticsColumn(-1));
+  matrix.addEventListener("scroll", () => matrix.classList.toggle("politics-slid", matrix.scrollLeft > 0), { passive: true });
 }
 {
   const player = document.getElementById("warplayer");
