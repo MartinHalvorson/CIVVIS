@@ -5162,3 +5162,49 @@ old flood took 32 ms natively and the new one 4 ms, with the same rings.
   against 0.64 ms for a 637-tile region): the sources are spread over the
   region, so nearly every tile is on some source's front at every step, and a
   region about 40 across takes as many steps as there are sources to share.
+
+## 2026-11-21 — the browser build makes the world it is asked for, once
+
+A profile cannot show a thing done three times over as anything but a larger
+number. Reading the route did: in the browser build `POST /new` let
+`start_new_game` build the session and then threw it away for a second one
+built from the same setup (`reseat_browser_session_from_host`, left from
+when a desktop page's seats came from its host). Every new game generated
+its world twice. And a visit whose link names a world (the AI Debugger, every
+Play link) asks for that world before anything else, so the engine first made
+the stock opening world, which nobody looked at.
+
+The second session also lost what the first had been given: the rivals
+`start_new_game` seats from `rival_strategy`. Choosing who to play against
+in the setup panel did nothing in this build.
+
+`POST /new` now plays the session `start_new_game` leaves, and when nothing
+has asked for the opening world yet it makes the asked-for world in its
+place (`Session::first_game_asked_for`, which leaves every refusal to a
+session opened the old way).
+
+### Evidence
+
+Production modules from `wasm-qualify` for main `f3bc188` (run 44893545556),
+with the one build (`804c780`, run 44893543389) and with the opening world
+skipped as well (`bd34e40`, run 44893772407). One `POST /new` (six seats,
+Continents, played) as the first request of a fresh node process,
+alternating, three times:
+
+| | main | made once | and no opening world | |
+| --- | ---: | ---: | ---: | ---: |
+| instructions retired, whole process | 16.48 G, 16.49 G, 16.50 G | 15.19 G, 15.17 G, 15.21 G | 13.47 G, 13.48 G, 13.51 G | **−18.2%** |
+| that `POST /new`, as the engine is timed | 325, 395, 380 ms | 325, 324, 314 ms | 236, 239, 204 ms | about −130 ms |
+| a later `POST /new` | 145 ms | 79 ms | | |
+
+The new game's state is the same in all three, and so is every seat's score
+thirty debugger turns on, whether the game is asked for first or after the
+opening world has been read. With `rival_strategy: "wheels"` those scores
+were the house fleet's on main and are another game's now. An unknown rival
+and an unforced request are refused as before, with the opening world behind
+the answer.
+
+With the rivals seated, 80 lean debugger turns of that game take 5.8 s
+against the house fleet, 4.6 s against `stock`, 3.1 s against `oldguard` and
+2.9 s against `wheels`: a search that only needs the seat's own line can buy
+its rollouts at half price.
