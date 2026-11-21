@@ -259,9 +259,7 @@ impl Game {
         let with;
         let bare;
         if n <= exact_cards {
-            let readings: Vec<EmpireReading> = (0..1usize << n)
-                .map(|mask| self.reading_with_cards(pid, &deck, mask))
-                .collect();
+            let readings = self.readings_of_every_sub_deck(pid, &deck);
             // A sub-deck of `s` cards precedes card i in s!(n-1-s)! of the n!
             // orders.
             let factorial = |k: usize| (1..=k).map(|v| v as f64).product::<f64>();
@@ -300,15 +298,79 @@ impl Game {
         }
     }
 
+    /// The empire read under every sub-deck of `deck`, by mask.
+    ///
+    /// ★★ A SUB-DECK IS READ ONCE FOR ALL THE SUB-DECKS THAT CANNOT DIFFER
+    /// FROM IT. Each reading is taken under a policy-read trace
+    /// (`Game::trace_policy_reads`), which records every question the sweep
+    /// asked the deck. A card that answers none of them is inert to that
+    /// reading: slotting or unslotting it leaves every number bit for bit the
+    /// same (`PolicyReadSet::card_is_inert`), and the sweep asks the same
+    /// questions again, so the next inert card is inert still. Every sub-deck
+    /// that differs from a read one only in its inert cards therefore has its
+    /// reading already.
+    ///
+    /// The readings were 2^n: 512 of them for nine cards, 0.65 s of a turn 150
+    /// empire in the browser build, after every step that stood on screen
+    /// (`docs/SIMULATOR_PERFORMANCE.md`). A deck late in a game holds cards
+    /// for what the empire is not doing at the moment (a unit class nobody is
+    /// training, spies, upgrades, tile purchases), and each of those halves
+    /// the readings that are left.
+    ///
+    /// A seat carrying a runtime modifier attachment is matched against its
+    /// deck by card name, so no trace can call a card of its inert
+    /// (`PolicyReadSet::is_opaque`); it is read once per sub-deck as before.
+    /// So is a deck whose every card the bare empire already asks about:
+    /// there is nothing to share, and a traced reading costs about a fifth
+    /// more than a plain one.
+    fn readings_of_every_sub_deck(&mut self, pid: usize, deck: &[Name]) -> Vec<EmpireReading> {
+        // What has been read: the cards that reading can be moved by, which
+        // of them it was read under, and the reading.
+        let mut read: Vec<(usize, usize, EmpireReading)> = Vec::new();
+        // Nothing is shared: every sub-deck is read with its cards slotted.
+        let mut plain = false;
+        (0..1usize << deck.len())
+            .map(|mask| {
+                if let Some((_, _, reading)) = read
+                    .iter()
+                    .find(|(moved_by, under, _)| mask & moved_by == *under)
+                {
+                    return *reading;
+                }
+                if plain {
+                    return self.reading_with_cards(pid, deck, mask);
+                }
+                self.seat_cards(pid, deck, mask);
+                let trace = self.trace_policy_reads(pid);
+                let reading = self.empire_reading(pid);
+                let reads = trace.finish();
+                let moved_by = (0..deck.len())
+                    .filter(|card| !reads.card_is_inert(&self.rules, deck[*card]))
+                    .fold(0usize, |bits, card| bits | 1 << card);
+                if reads.is_opaque() || (read.is_empty() && moved_by + 1 == 1 << deck.len()) {
+                    plain = true;
+                    return reading;
+                }
+                read.push((moved_by, mask & moved_by, reading));
+                reading
+            })
+            .collect()
+    }
+
     /// The empire read with only the cards of `deck` that `mask` names.
     fn reading_with_cards(&mut self, pid: usize, deck: &[Name], mask: usize) -> EmpireReading {
+        self.seat_cards(pid, deck, mask);
+        self.empire_reading(pid)
+    }
+
+    /// Slot exactly the cards of `deck` that `mask` names.
+    fn seat_cards(&mut self, pid: usize, deck: &[Name], mask: usize) {
         self.players[pid].policies = deck
             .iter()
             .enumerate()
             .filter(|(i, _)| mask >> i & 1 == 1)
             .map(|(_, card)| *card)
             .collect();
-        self.empire_reading(pid)
     }
 }
 
@@ -431,6 +493,83 @@ mod tests {
                 .map(|card| card.policy)
                 .collect::<Vec<_>>()
         );
+    }
+
+    /// Every sub-deck's reading, taken the short way, is the reading taken
+    /// with those cards slotted and nothing assumed: for a deck of cards that
+    /// move something here, cards that move nothing here, a card that only
+    /// counts toward what one city is building, and a seat whose deck no
+    /// trace can speak for.
+    #[test]
+    fn a_sub_deck_read_for_another_is_the_reading_it_would_have_had() {
+        let deck: Vec<Name> = [
+            "urban_planning",
+            "colonization",
+            "conscription",
+            "god_king",
+            "survey",
+            "ilkum",
+            "charismatic_leader",
+            "land_surveyors",
+        ]
+        .into_iter()
+        .map(Name::new)
+        .collect();
+        let every_sub_deck = |game: &Game| -> Vec<EmpireReading> {
+            let mut branch = game.clone();
+            (0..1usize << deck.len())
+                .map(|mask| branch.reading_with_cards(0, &deck, mask))
+                .collect()
+        };
+        let (mut game, cid) = founded_game();
+        game.players[0].government = Some("chiefdom".to_string());
+        game.players[0].policies = deck.iter().copied().collect();
+        game.spawn_test_unit("warrior", 0, (6, 12));
+        for building in [None, Some("settler"), Some("builder")] {
+            let city = game.cities.get_mut(&cid).unwrap();
+            city.queue.clear();
+            if let Some(unit) = building {
+                city.queue.push(Item::Unit {
+                    unit: Name::new(unit),
+                });
+            }
+            let slow = every_sub_deck(&game);
+            let fast = game.clone().readings_of_every_sub_deck(0, &deck);
+            assert_eq!(fast, slow, "building {building:?}");
+            assert!(
+                slow.iter().any(|reading| *reading != slow[0]),
+                "building {building:?}: the deck moves something"
+            );
+            // And the ledger made of them is the one made the long way.
+            let ledger = game.clone().into_policy_ledger(0);
+            assert_eq!(ledger.with, slow[slow.len() - 1]);
+            assert_eq!(ledger.net, slow[slow.len() - 1].minus(&slow[0]));
+            assert_shares_sum_to_net(&ledger);
+        }
+        // The short way reads far fewer than all of them: four of these
+        // cards ask nothing of an empire that is building nothing.
+        game.cities.get_mut(&cid).unwrap().queue.clear();
+        let mut branch = game.clone();
+        let mut asked = 0;
+        let mut read: Vec<(usize, usize)> = Vec::new();
+        for mask in 0..1usize << deck.len() {
+            if read
+                .iter()
+                .any(|(moved_by, under)| mask & moved_by == *under)
+            {
+                continue;
+            }
+            branch.seat_cards(0, &deck, mask);
+            let trace = branch.trace_policy_reads(0);
+            branch.empire_reading(0);
+            let reads = trace.finish();
+            let moved_by = (0..deck.len())
+                .filter(|card| !reads.card_is_inert(&branch.rules, deck[*card]))
+                .fold(0usize, |bits, card| bits | 1 << card);
+            read.push((moved_by, mask & moved_by));
+            asked += 1;
+        }
+        assert!(asked <= 64, "{asked} of 256 sub-decks were read");
     }
 
     #[test]
