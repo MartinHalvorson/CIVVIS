@@ -292,8 +292,10 @@ function CivvisSeatWatch.beat(source)
 	w.prev = now;
 	if s.paused == true then
 		-- The Start Turn dialog is up: the hand-over owns the pause and
-		-- CivvisControlAutoClose presses it (0.3 s, then every 2 s).
-		if s.handover_hidden == false and s.dialog_hidden == false then
+		-- CivvisControlAutoClose presses it (0.3 s, then every 2 s). A screen
+		-- that could not be read is taken as up: the pause is released only
+		-- when the hand-over, or its dialog, is known to be hidden.
+		if not (s.handover_hidden == true or s.dialog_hidden == true) then
 			w.pausedFor, w.quiet = nil, 0;
 			return;
 		end

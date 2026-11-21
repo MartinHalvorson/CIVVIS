@@ -502,6 +502,14 @@ do
     assert(#h.requests == 0, "a released seat gets its own 45 s")
     h.second(false)
     assert(#h.requests == 1, "and is ended if its controller still does not move")
+    -- A hand-over that cannot be read is taken as up: nothing is released blind.
+    h = seatHost(HOTSEAT)
+    h.second(true)
+    h.paused = true
+    h.env.ContextPtr.LookUpControl = function() error("no such control") end
+    for _ = 1, 120 do h.second(false) end
+    assert(h.pause_set == nil and #h.kinds("hotseat_pause_released") == 0 and #h.requests == 0,
+        "an unreadable hand-over is never unpaused or ended")
     -- A release the engine refuses is tried again, not looped on every frame.
     h = seatHost(HOTSEAT)
     h.second(true)
