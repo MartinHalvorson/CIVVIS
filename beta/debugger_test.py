@@ -10,7 +10,9 @@ each control sends the operation it is for and that the bar shows the answer.
 A split is the same page twice more, in frames, so each half gets a toy engine
 of its own, started from the host's. The toy's score rises faster under one
 Civ AI than the other, which is all it takes to see that each half's steps
-carry its own.
+carry its own. A request that names the other half as its twin is answered
+the way the real engine answers one: when the two toy worlds are the same,
+the other is made a copy of the answer and the answer says so.
 
 Why this exists: on 2026-11-19 the bar's slider stopped doing anything. Its
 handler drew the bar before reading where the slider had been dragged to, and
@@ -113,6 +115,12 @@ function engineOf(frames, pane) {
   const {sent, ...world} = JSON.parse(JSON.stringify(frame.contentWindow.eval("engine")));
   return world;
 }
+// A toy engine's world: everything but the record of what its page sent and
+// how slow the test made it.
+function worldOf(held) {
+  const {sent, wait, ...world} = JSON.parse(JSON.stringify(held));
+  return world;
+}
 function engineState(error = null) {
   const marks = engine.marks;
   return {error, turn: engine.turn, seed: 7, current: engine.current, units: [], cities: [],
@@ -135,9 +143,17 @@ async function fetchJSON(path, init = {}) {
   const body = init.body ? JSON.parse(init.body) : null;
   engine.sent.push({path, body});
   if (path === "/saves") return {saves: []};
+  // A half reads the world it holds after its twin was played for both.
+  if (path === "/state") return engineState();
   if (path !== "/debug") return {error: null};
   // A slowed engine, so that a run can be seen on its way.
   if (engine.wait) await new Promise(done => setTimeout(done, engine.wait));
+  // A request that names the other half as its twin. The real engine knows
+  // from its own record whether the two are the same world; the toy reads
+  // it off the two worlds as they stand before the request.
+  const twin = body.twin ? [...window.parent.document.querySelectorAll("iframe")]
+    .find(held => held.src.includes(`pane=${body.twin}`)).contentWindow.eval("engine") : null;
+  const alike = twin !== null && JSON.stringify(worldOf(engine)) === JSON.stringify(worldOf(twin));
   engine.stopped = null;
   engine.stepped = null;
   // The round comes back to the played seat, and that is the next turn.
@@ -201,7 +217,13 @@ async function fetchJSON(path, init = {}) {
   } else if (body.op === "adopt") {
     Object.assign(engine, engineOf(document.querySelectorAll("iframe"), body.pane));
   }
-  return engineState(error);
+  const answer = engineState(error);
+  // Played once for both: the twin is made a copy of what this half holds.
+  if (twin !== null) {
+    if (alike) Object.assign(twin, worldOf(engine));
+    answer.debug.twinned = alike;
+  }
+  return answer;
 }
 
 // ---- the bar's script, and a half of a split
@@ -333,7 +355,7 @@ def check_the_bar(bar: Bar) -> None:
     turn_box = bar.ev(f"{box}('#dbg-turn')")
     assert abs((turn_box[0] + turn_box[2]) / 2 - middle) < 40, (turn_box, middle)
     order = ["#dbg-agent", "#dbg-turns", "[data-dbg=autoplay]", "[data-dbg-pop=layers]", "[data-dbg-pop=breaks]",
-             "[data-dbg-pop=split]", "[data-dbg=first]", "[data-dbg=era]", "[data-dbg=back10]", "[data-dbg=back]",
+             "[data-dbg=split]", "[data-dbg=first]", "[data-dbg=era]", "[data-dbg=back10]", "[data-dbg=back]",
              "#dbg-turn", "[data-dbg=next]", "[data-dbg=next10]"]
     assert bar.ev("(names => { const all = [...document.querySelectorAll('#debugbar .dbg-deck *')];"
                   " const at = names.map(name => all.indexOf(document.querySelector('#debugbar .dbg-deck ' + name)));"
@@ -342,9 +364,11 @@ def check_the_bar(bar: Bar) -> None:
     along = [bar.ev(f"{box}('#debugbar {name}')") for name in order[6:]]
     assert all(before[2] <= after[0] for before, after in zip(along, along[1:])), along
     assert along[3][2] <= middle <= along[5][0], "one back and one on are not either side of the middle"
-    assert bar.ev(f"{box}('#debugbar [data-dbg-pop=split]')")[2] <= along[0][0] or \
-        bar.ev(f"{box}('#debugbar [data-dbg-pop=split]')")[1] > along[0][1], "Branch Timeline is not left of the turn buttons"
-    assert bar.ev("document.querySelector('#debugbar [data-dbg-pop=split]').textContent") == "⑂Branch Timeline"
+    assert bar.ev(f"{box}('#debugbar [data-dbg=split]')")[2] <= along[0][0] or \
+        bar.ev(f"{box}('#debugbar [data-dbg=split]')")[1] > along[0][1], "Branch Timeline is not left of the turn buttons"
+    assert bar.ev("document.querySelector('#debugbar [data-dbg=split]').textContent") == "⑂Branch Timeline"
+    # Branch Timeline asks nothing first: it is a button, and has no panel.
+    assert bar.ev("!document.getElementById('dbg-pop-split') && !document.querySelector('[data-dbg-pop=split]')")
     # The timeline is the whole game, 250 turns when the game does not say:
     # turn 1 is named at its left end and the last turn at its right, with the
     # round turns between them on the ruler.
@@ -910,29 +934,33 @@ def check_the_split(bar: Bar) -> None:
                 "&& debugSplit.panes[letter].numbers)").format
 
     start = bar.ev("state.turn")
-    bar.click('[data-dbg-pop="split"]')
-    bar.click('[data-dbg="split-versus"]')
+    # Branch Timeline splits the screen at once: side by side, and locked.
+    # Head to head is the strip's own button.
+    bar.click('[data-dbg="split"]')
     bar.until(reported(start), "both halves say where they stand")
+    assert bar.ev("[debugSplit.dir, debugSplit.locked]") == ["row", True]
+    bar.click('[data-dbg-split="versus"]')
     assert bar.ev("debugSplit.versus && !debugSplit.host.querySelector('[data-dbg-versus]').hidden")
 
     # The host's bar stays up across the top, over the two halves, and its
-    # timeline is two lanes, one for each half. A half carries the tools for
-    # its own world and no timeline.
-    assert bar.ev("(() => { const top = document.getElementById('debugbar'), box = top.getBoundingClientRect();"
-                  " return !top.hidden && box.top === 0 && box.width === document.documentElement.clientWidth"
-                  " && Math.round(debugSplit.host.getBoundingClientRect().top) === Math.ceil(box.height); })()"), \
-        "the split does not stand under the host's bar"
+    # timeline is two lanes, one for each half. Locked, as a split opens, the
+    # host's deck under the lanes is the one panel for both halves, and each
+    # half's own bar is put away.
+    deck_shown = "getComputedStyle(document.querySelector('#debugbar .dbg-deck')).display !== 'none'"
+    bar_shown = "'getComputedStyle(document.getElementById(\"debugbar\")).display !== \"none\"'"
+    bar.until(f"debugBar.classList.contains('dbg-merged') && {deck_shown}", "the host's deck is the one panel of a locked split")
+    bar.until("(() => { const top = document.getElementById('debugbar'), box = top.getBoundingClientRect();"
+              " return !top.hidden && box.top === 0 && box.width === document.documentElement.clientWidth"
+              " && Math.round(debugSplit.host.getBoundingClientRect().top) === Math.ceil(box.height); })()",
+              "the split stands under the host's bar")
     shown = lambda lane: bar.ev(f"getComputedStyle(document.querySelector('[data-dbg-lane=\"{lane}\"]')).display") != "none"
     assert (shown(""), shown("a"), shown("b")) == (False, True, True)
-    # Each lane has the width of the window to itself, between its two ends:
-    # the turn buttons and the tools are the host's own world's, and are away.
+    # Each lane has the width of the window to itself, between its two ends.
     wide = bar.ev("['a', 'b'].map(letter => document.getElementById('dbg-slider-' + letter).getBoundingClientRect().width)")
     assert min(wide) > bar.ev("innerWidth") * 0.6, wide
     assert bar.ev("['a', 'b'].map(letter => document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-start`).textContent"
                   " + ' ' + document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-finish`).textContent)") == ["1 250"] * 2
-    assert bar.ev("getComputedStyle(document.querySelector('#debugbar .dbg-deck')).display") == "none"
-    assert bar.ev(half("a", "'getComputedStyle(document.querySelector(\"#debugbar .dbg-time\")).display'")) == "none"
-    assert bar.ev(half("a", "'getComputedStyle(document.querySelector(\"#debugbar .dbg-deck\")).display'")) != "none"
+    assert [bar.ev(half(letter, bar_shown)) for letter in "ab"] == [False, False], "a locked half shows a bar of its own"
     lanes = "['a', 'b'].map(letter => +document.getElementById('dbg-slider-' + letter).value)"
     assert bar.ev(lanes) == [start, start], bar.ev(lanes)
     assert bar.ev("[...debugSplit.host.querySelector('[data-dbg-strategy=\"b\"]').options].map(o => o.value)") \
@@ -954,7 +982,7 @@ def check_the_split(bar: Bar) -> None:
         bar.until(half("a", "'debugStrategy()'") + f" === '{name}'", f"A is seated with {name} from its lane")
         assert bar.ev(f"debugSplit.host.querySelector('[data-dbg-strategy=\"a\"]').value") == name
 
-    # Linked: A is run to the turn and B follows it turn by turn, each with
+    # Locked: A is run to the turn and B follows it turn by turn, each with
     # its own Civ AI on every step.
     def play_both_to(turn: int) -> None:
         bar.ev(f"debugSplit.host.querySelector('[data-dbg-until]').value = '{turn}', true")
@@ -980,9 +1008,17 @@ def check_the_split(bar: Bar) -> None:
     assert bar.ev("[debugSplit.panes.a.first, debugSplit.panes.b.last]") == [1, start + 4]
     assert bar.ev("['a', 'b'].every(letter => !document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-own`).hidden)")
 
-    # Separate: each half is run by itself.
-    bar.click('[data-dbg-split="link"]')
-    assert bar.ev("debugSplit.linked") is False
+    # Unlocked: the host's deck goes, and each half has the tools for its own
+    # world again, with neither a timeline nor a picker: the host has both.
+    bar.click('[data-dbg-lock]')
+    assert bar.ev("debugSplit.locked") is False
+    bar.until(f"!({deck_shown})", "the host of an unlocked split shows no deck")
+    for letter in "ab":
+        bar.until(half(letter, bar_shown), f"{letter.upper()} has a bar of its own once unlocked")
+        assert bar.ev(half(letter, "'getComputedStyle(document.querySelector(\"#debugbar .dbg-time\")).display'")) == "none"
+        assert bar.ev(half(letter, "'getComputedStyle(document.querySelector(\"#debugbar .dbg-deck\")).display'")) != "none"
+        assert bar.ev(half(letter, "'document.getElementById(\"dbg-agent\").offsetParent === null'")), "a half has a picker of its own"
+    # Each half is run by itself.
     play_both_to(start + 6)
     assert ops("a")[4:] == [["step", "jack"]] * 2 and ops("b")[4:] == [["step", "stock"]] * 2, (ops("a"), ops("b"))
 
@@ -994,13 +1030,13 @@ def check_the_split(bar: Bar) -> None:
     bar.until(f"debugSplit.panes.a.turn === {start} && debugSplit.panes.b.turn === {start} && {back}.disabled",
               "both halves go back to the turn of the split")
     assert ops("a")[6:] == [["jump", None]] and ops("b")[6:] == [["jump", None]], (ops("a"), ops("b"))
-    assert bar.ev("debugSplit.linked") is False
+    assert bar.ev("debugSplit.locked") is False
     # They are played again from there, still each by itself.
     play_both_to(start + 6)
     assert ops("a")[7:] == [["step", "jack"]] * 6 and ops("b")[7:] == [["step", "stock"]] * 6, (ops("a"), ops("b"))
     assert bar.ev("[debugSplit.history.a.size, debugSplit.history.b.size]") == [7, 7]
 
-    # Separate, a lane is the hand on its own half. B walks back two turns
+    # Unlocked, a lane is the hand on its own half. B walks back two turns
     # along what it played and A stays where it is.
     both = "debugSplit.running === 0 && debugSplit.panes.a.turn === {} && debugSplit.panes.b.turn === {}".format
     bar.drag("dbg-slider-b", start + 4)
@@ -1011,15 +1047,23 @@ def check_the_split(bar: Bar) -> None:
     bar.until(both(start + 6, start + 8), "B's lane plays B on")
     assert ops("b")[14:] == [["step", "stock"]] * 4 and len(ops("a")) == 13, (ops("a"), ops("b"))
     assert bar.ev(lanes) == [start + 6, start + 8], bar.ev(lanes)
-    # Linked, either lane moves both halves: back along what both have played,
+    # The lock closes only on two halves that stand on the same turn: with B
+    # two turns ahead of A it cannot be pressed, and asking does nothing.
+    lock = "document.querySelector('[data-dbg-lock]')"
+    assert bar.ev(f"[{lock}.disabled, {lock}.getAttribute('aria-pressed')]") == [True, "false"]
+    bar.ev("debugSplitLock(true), true")
+    assert bar.ev("debugSplit.locked") is False
+    bar.drag("dbg-slider-b", start + 6)
+    bar.until(both(start + 6, start + 6) + f" && !{lock}.disabled", "the lock is offered once both halves stand on one turn")
+    bar.click('[data-dbg-lock]')
+    assert bar.ev(f"[debugSplit.locked, {lock}.getAttribute('aria-pressed')]") == [True, "true"]
+    # Locked, either lane moves both halves: back along what both have played,
     # and on past it with A run and B following turn by turn.
-    bar.click('[data-dbg-split="link"]')
-    bar.until(both(start + 6, start + 6), "linking brings B to A's turn")
     bar.drag("dbg-slider-b", start + 2)
-    bar.until(both(start + 2, start + 2), "a lane walks both halves back when they are linked")
-    assert ops("a")[13:] == [["jump", None]] and ops("b")[-1] == ["jump", None], (ops("a"), ops("b"))
+    bar.until(both(start + 2, start + 2), "a lane walks both halves back when they are locked")
+    assert ops("a")[13:] == [["jump", None]] and ops("b")[-2:] == [["jump", None]] * 2, (ops("a"), ops("b"))
     bar.drag("dbg-slider-a", start + 10)
-    bar.until(both(start + 10, start + 10), "a lane plays both halves on when they are linked")
+    bar.until(both(start + 10, start + 10), "a lane plays both halves on when they are locked")
     assert ops("a")[14:] == [["step", "jack"]] * 8, ops("a")
     assert ops("b")[-8:] == [["step", "stock"]] * 8, ops("b")
     assert bar.ev("debugSplit.until") is None, "the run is over and the lanes still show where it was headed"
@@ -1047,11 +1091,165 @@ def check_the_split(bar: Bar) -> None:
     # A half that drew its first state before the bar's script arrived still
     # says where it stands. (It used to say nothing until something moved.)
     bar.ev("window.lateScript = true")
-    bar.click('[data-dbg-pop="split"]')
-    bar.click('[data-dbg="split-row"]')
+    bar.click('[data-dbg="split"]')
     bar.until(reported(start + 10), "a half whose script came late still reports")
     bar.click('[data-dbg-split="keep-a"]')
     bar.until("!debugSplit", "the second split closes")
+    bar.ev("window.lateScript = false")
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+
+def check_the_lock(bar: Bar) -> None:
+    """The lock that joins the two timelines, the one panel, and identical halves played once."""
+    half = "debugSplit.panes.{}.frame.contentWindow.eval({})".format
+    # Everything a half's page asked its engine: the path, the operation, and the twin it named.
+    calls = lambda letter: bar.ev(half(letter, json.dumps(
+        "engine.sent.map(call => [call.path, call.body ? call.body.op : null, call.body ? call.body.twin || null : null])")))
+    strategies = lambda letter: bar.ev(half(letter, json.dumps(
+        "engine.sent.filter(call => call.body && call.body.op === 'step').map(call => call.body.strategy)")))
+
+    def forget() -> None:
+        for letter in "ab":
+            bar.ev(half(letter, json.dumps("engine.sent.length = 0, true")))
+
+    both = "debugSplit.panes.a.turn === {} && debugSplit.panes.b.turn === {}".format
+    same_score = "debugSplit.panes.a.numbers.score === debugSplit.panes.b.numbers.score"
+    deck_idle = "debugSplitDeck() && debugSplitDeck().idle"
+    head = "document.querySelector('#debugbar [data-dbg-agent=\"{}\"]')".format
+
+    def seat(letter: str, name: str) -> None:
+        bar.ev(f"(() => {{ const select = {head(letter)}; select.value = '{name}';"
+               " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+        bar.until(half(letter, "'debugStrategy()'") + f" === '{name}'", f"{letter.upper()} is seated with {name}")
+
+    start = bar.ev("state.turn")
+    bar.click('[data-dbg="split"]')
+    bar.until(f"debugSplit && {both(start, start)} && debugSplit.panes.a.numbers && debugSplit.panes.b.numbers",
+              "both halves say where they stand")
+    a, b = bar.ev("[debugSplit.panes.a.id, debugSplit.panes.b.id]")
+    bar.until(f"debugBar.classList.contains('dbg-merged') && {deck_idle}", "the one panel is up")
+
+    # The lock joins the two lanes: it stands between the middles of the two
+    # rails, shut, and the two markers are linked while they are on one turn.
+    lock = "document.querySelector('[data-dbg-lock]')"
+    at = bar.ev("(() => { const middle = name => { const box = document.querySelector(name).getBoundingClientRect();"
+                " return [box.width, (box.top + box.bottom) / 2, box.left]; };"
+                " return [middle('[data-dbg-lock]'), middle('[data-dbg-lane=\"a\"] .dbg-rail'),"
+                " middle('[data-dbg-lane=\"b\"] .dbg-rail')]; })()")
+    assert at[0][0] > 0 and at[1][1] < at[0][1] < at[2][1] and at[0][2] < at[1][2], at
+    assert bar.ev(f"[{lock}.disabled, {lock}.getAttribute('aria-pressed'), debugBar.classList.contains('dbg-locked'),"
+                  " debugBar.classList.contains('dbg-joined')]") == [False, "true", True, True]
+    assert bar.ev(f"{lock}.title").startswith("Locked: the two simulators stay on the same turn"), bar.ev(f"{lock}.title")
+
+    # Two locked halves that are the same world, seated with the same Civ AI,
+    # are played once: A is asked for both and names B as its twin, and B's
+    # page only reads the world it then holds.
+    bar.until(half("a", "'debugTwin'") + f" === '{b}'", "A is told who its twin is")
+    forget()
+    bar.click('[data-dbg="next"]')
+    bar.until(f"{both(start + 1, start + 1)} && {same_score} && {deck_idle}", "the one panel plays both halves a turn")
+    assert calls("a") == [["/debug", "step", b]], calls("a")
+    assert calls("b") == [["/state", None, None]], calls("b")
+    assert bar.ev("document.getElementById('dbg-turn').value") == str(start + 1)
+
+    # A change on the one panel that leaves the turn where it was is asked
+    # once as well: a layer.
+    forget()
+    bar.click('[data-dbg-pop="layers"]')
+    bar.until("!document.getElementById('dbg-pop-layers').hidden", "the one panel opens its own panels")
+    bar.click('#dbg-pop-layers [data-dbg-layer="research"]')
+    bar.until(half("b", "'state.debug.layers[0].on'") + " && debugSplitDeck().timeline.layers[0].on",
+              "a layer set on the one panel is on in both halves")
+    assert calls("a") == [["/debug", "layers", b]], calls("a")
+    assert calls("b") == [["/state", None, None]], calls("b")
+    assert bar.ev("document.getElementById('dbg-layer-count').textContent") == "1"
+    bar.click('[data-dbg-pop="layers"]')
+
+    # A Civ AI of its own in B: the two would not be asked the same thing, so
+    # no twin is named, and each half plays its own turn.
+    seat("b", "stock")
+    bar.until(half("a", "'debugTwin'") + " === null", "A has no twin while B seats another Civ AI")
+    forget()
+    bar.click('[data-dbg="next"]')
+    bar.until(f"{both(start + 2, start + 2)} && {deck_idle}", "the one panel plays both halves, each with its own Civ AI")
+    assert calls("a") == [["/debug", "step", None]] and calls("b") == [["/debug", "step", None]], (calls("a"), calls("b"))
+    assert (strategies("a"), strategies("b")) == (["jack"], ["stock"])
+    assert not bar.ev(same_score), "the two halves have parted"
+
+    # The same Civ AI again, but no longer the same world: A names B, the
+    # engine finds them apart, and B is asked to play its own turn.
+    seat("b", "jack")
+    bar.until(half("a", "'debugTwin'") + f" === '{b}'", "A is told who its twin is again")
+    forget()
+    bar.click('[data-dbg="next"]')
+    bar.until(f"{both(start + 3, start + 3)} && {deck_idle}", "halves that have parted are both played")
+    assert calls("a") == [["/debug", "step", b]] and calls("b") == [["/debug", "step", None]], (calls("a"), calls("b"))
+    # What leaves the turn where it was is done in both: Reveal, and Undo.
+    forget()
+    bar.click('[data-dbg="reveal"]')
+    bar.until(half("b", "'state.debug.reveal'") + " === true && debugSplitDeck().timeline.reveal === true",
+              "Reveal on the one panel reveals both halves")
+    assert calls("a") == [["/debug", "reveal", b]] and calls("b") == [["/debug", "reveal", None]], (calls("a"), calls("b"))
+
+    # The turn box and the wheel over it walk both halves: A goes, B follows.
+    bar.until(deck_idle, "the one panel is free")
+    forget()
+    bar.type_turn(start + 1)
+    bar.until(f"{both(start + 1, start + 1)} && {deck_idle}", "the turn box walks both halves back")
+    assert calls("a") == [["/debug", "jump", b]] and calls("b") == [["/debug", "jump", None]], (calls("a"), calls("b"))
+    bar.wheel("#dbg-turn", 100)
+    bar.until(f"{both(start + 2, start + 2)} && {deck_idle}", "the wheel over the turn box walks both halves on")
+    assert calls("a")[1:] == [["/debug", "forward", b]] and calls("b")[1:] == [["/debug", "jump", None]], (calls("a"), calls("b"))
+    # Auto-play on the one panel counts A's turns, and the lanes show where it is headed.
+    bar.ev("(() => { const turns = document.getElementById('dbg-turns'); turns.value = '2';"
+           " turns.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    bar.click('[data-dbg="autoplay"]')
+    bar.until(f"{both(start + 4, start + 4)} && {deck_idle}", "Auto-play on the one panel plays both halves")
+    assert bar.note() == f"Played to turn {start + 4}", bar.note()
+
+    # A -> B makes the two the same world again, and they are played once again.
+    bar.click('[data-dbg-split="copy-a"]')
+    bar.until(same_score, "B becomes a copy of A")
+    forget()
+    bar.click('[data-dbg="next"]')
+    bar.until(f"{both(start + 5, start + 5)} && {same_score} && {deck_idle}", "a copy is a twin")
+    assert calls("a") == [["/debug", "step", b]] and calls("b") == [["/state", None, None]], (calls("a"), calls("b"))
+
+    # Unlocked, the one panel goes and each half shows its own. A half's own
+    # panel plays that half and nothing else, and names no twin.
+    bar_shown = "'getComputedStyle(document.getElementById(\"debugbar\")).display !== \"none\"'"
+    deck_shown = "getComputedStyle(document.querySelector('#debugbar .dbg-deck')).display !== 'none'"
+    assert bar.ev(deck_shown) and [bar.ev(half(letter, bar_shown)) for letter in "ab"] == [False, False]
+    bar.click('[data-dbg-lock]')
+    bar.until(f"!debugSplit.locked && !({deck_shown}) && !debugBar.classList.contains('dbg-locked')",
+              "the lock opens and the one panel goes")
+    for letter in "ab":
+        bar.until(half(letter, bar_shown), f"{letter.upper()} shows its own panel once unlocked")
+    bar.until(half("a", "'debugTwin'") + " === null", "an unlocked half has no twin")
+    forget()
+    bar.ev(half("a", json.dumps("document.querySelector('[data-dbg=\"next\"]').click(), true")))
+    bar.until(both(start + 6, start + 5), "A's own panel plays A alone")
+    assert calls("a") == [["/debug", "step", None]] and calls("b") == [], (calls("a"), calls("b"))
+    # Apart, the lock cannot close; B changes a layer of its own meanwhile.
+    assert bar.ev(f"[{lock}.disabled, {lock}.getAttribute('aria-pressed')]") == [True, "false"]
+    assert "same turn" in bar.ev(f"{lock}.title"), bar.ev(f"{lock}.title")
+    bar.ev(half("b", json.dumps("document.querySelector('[data-dbg-pop=\"layers\"]').click(), true")))
+    bar.ev(half("b", json.dumps("document.querySelector('#dbg-pop-layers [data-dbg-layer=\"cities\"]').click(), true")))
+    bar.until(half("b", "'state.debug.layers[1].on'"), "B switches a layer on by itself")
+    bar.ev(half("b", json.dumps("document.querySelector('[data-dbg=\"next\"]').click(), true")))
+    bar.until(f"{both(start + 6, start + 6)} && !{lock}.disabled", "the lock is offered on the same turn")
+    # Locked again, B is made the same in what the one panel shows: A's layers.
+    forget()
+    bar.click('[data-dbg-lock]')
+    bar.until(f"debugSplit.locked && debugBar.classList.contains('dbg-merged') && {deck_idle}", "the one panel is back")
+    bar.until(half("b", "'state.debug.layers.map(layer => layer.on).join()'") + " === 'true,false'",
+              "B takes A's layers when the two are locked")
+    assert calls("a") == [] and calls("b") == [["/debug", "layers", None]], (calls("a"), calls("b"))
+    assert [bar.ev(half(letter, bar_shown)) for letter in "ab"] == [False, False]
+
+    bar.click('[data-dbg-split="keep-a"]')
+    bar.until("!debugSplit", "the split closes")
+    assert bar.ev(deck_shown) and not bar.ev("debugBar.classList.contains('dbg-merged')")
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
@@ -1126,10 +1324,14 @@ def main() -> int:
         check_stepping_a_seat(bar)
         print("a round is stepped a civilization at a time, says who is next, and End Turn finishes it.")
         check_the_split(bar)
-        print("the split seats a Civ AI in each half, plays both to a turn linked and separate, "
-              "sets their numbers side by side, starts both again from the split, moves each half "
-              "or both by the lanes in the host's bar, copies, keeps, and hears a half whose "
-              "script came late.")
+        print("the split opens at once, seats a Civ AI in each half, plays both to a turn locked and "
+              "unlocked, sets their numbers side by side, starts both again from the split, moves "
+              "each half or both by the lanes in the host's bar, copies, keeps, and hears a half "
+              "whose script came late.")
+        check_the_lock(bar)
+        print("the lock joins the two lanes and closes only on one turn, the host's deck is the one "
+              "panel of a locked split and each half's own comes back when it opens, and two "
+              "identical halves are played once.")
         return 0
     finally:
         chrome.terminate()

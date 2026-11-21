@@ -620,12 +620,12 @@ fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_orde
         "const DEBUG_AUTOPLAY_TURNS = 10;",
         "<option value=\"${turns}\"${turns === DEBUG_AUTOPLAY_TURNS ? \" selected\" : \"\"}>",
         // The count on Auto-play, of the turns asked for or so far.
-        "const runCount = !debugRunning ? \"\" : debugAsked === null ? `${debugPlayed}` : `${debugPlayed}/${debugAsked}`;",
+        "const runCount = !deck.running ? \"\" : deck.asked === null ? `${deck.played}` : `${deck.played}/${deck.asked}`;",
         // Era start, the era breakpoint and the eras named on the timeline.
         "const began = (timeline.eras || []).filter(era => era.turn < state.turn);",
         "<input type=\"checkbox\" data-dbg-field=\"eras\"> A new era begins</label>",
         "eras: pop.querySelector(\"[data-dbg-field=eras]\").checked,",
-        "eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle});",
+        "eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle: deck.idle});",
     ] {
         assert!(script.contains(piece), "the header box is missing {piece}");
     }
@@ -680,6 +680,18 @@ fn the_split_speaks_one_set_of_messages_on_both_sides() {
         "pane-run",
         "pane-stop",
         "pane-ran",
+        // The lock: whether the halves are locked and who is whose twin,
+        // what a half did that left its turn where it was, and the one
+        // panel of a locked split (a half's deck, and what is pressed or
+        // changed on the host's).
+        "pane-lock",
+        "pane-did",
+        "pane-op",
+        "pane-deck",
+        "pane-press",
+        "pane-change",
+        "pane-solo",
+        "pane-go",
     ] {
         let quoted = format!("\"{message}\"");
         assert!(
@@ -694,6 +706,63 @@ fn the_split_speaks_one_set_of_messages_on_both_sides() {
         assert!(page.contains(&format!("op: \"{op}\"")), "{op}");
         let refused = session.debug(&json!({"op": op}));
         assert!(refused["error"].as_str().unwrap().contains("split"), "{op}");
+    }
+}
+
+/// Operator 2026-11-20: "2 linked universes should have a lock connecting
+/// timelines to show they are one. clicking on the lock can unlock. can only
+/// lock if on the same turn. locking keeps them on the same turn. replacing
+/// linking with locking. default open view for the multiverse is 2 window
+/// views side by side. don't ask when button is clicked initially. just
+/// open. if 2 games are identical, we should also not have to simulate both
+/// (only if they are entirely identical). we can just simulate one. if two
+/// windows are locked, the 2 top control panels should merge into 1 (as they
+/// will be the same)".
+///
+/// What each of those does in a browser is held by `beta/debugger_test.py`
+/// (`check_the_lock`); this holds the pieces to the page.
+#[test]
+fn a_split_opens_at_once_and_locked_with_a_lock_between_its_lanes_and_one_panel() {
+    let page = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    for piece in [
+        // Branch Timeline is a button, not a panel that asks: side by side.
+        "<button data-dbg=\"split\"",
+        "else if (action === \"split\") { debugPopOpen = null; debugSplitOpen(\"row\"); }",
+        // The lock stands in the lanes, shut as the split opens.
+        "<div class=\"dbg-tie\"><button class=\"dbg-lock\" data-dbg-lock aria-pressed=\"true\">",
+        "debugSplit = {dir, locked: true, settling: true,",
+        "if (debugSplit) debugSplitLock(!debugSplit.locked);",
+        // It closes only on two halves that stand on the same turn.
+        "if (on && (a.turn === null || a.turn !== b.turn)) return;",
+        "lock.disabled = debugSplit.busy || running || (!debugSplit.locked && !together);",
+        // Locked, a half that moves is followed, and so is what it did
+        // that left its turn where it was.
+        "if (debugSplit.locked && data.how !== \"follow\" && data.how !== \"boot\")",
+        "else debugSplitTell(other, {civvis: \"pane-op\", body: debugMirrored(data.body)});",
+        // Locked, the host's deck is the one panel and each half's is away.
+        "return debugSplit && debugSplit.locked ? debugSplit.panes.a.deck || null : null;",
+        "#debugbar.dbg-split-on:not(.dbg-merged) .dbg-deck, #debugbar.dbg-split-on:not(.dbg-merged) .dbg-pop { display: none; }",
+        "html.dbg-pane-locked #debugbar, html.dbg-pane-locked #humanfooter { display: none !important; }",
+        "if (debugSplit) { debugRemote(\"pane-press\", event.target); return; }",
+        // Two locked halves that seat the same Civ AI name each other as
+        // twins, for the engine to play once if they are the same world.
+        "const twins = debugSplit.locked && a.strategy !== undefined && a.strategy === b.strategy;",
+        "body: JSON.stringify(led && debugTwin ? {...body, twin: debugTwin} : body),",
+        "debugTwinned = led && !!(next.debug && next.debug.twinned);",
+        "how: data.twinned ? \"twin\" : data.how});",
+    ] {
+        assert!(page.contains(piece), "the split is missing {piece}");
+    }
+    // Linking, and the panel that asked how to split, are gone.
+    for gone in [
+        "dbg-pop-split",
+        "data-dbg-split=\"link\"",
+        "debugSplit.linked",
+        "split-row",
+        "split-col",
+        "split-versus",
+    ] {
+        assert!(!page.contains(gone), "{gone} is still on the page");
     }
 }
 

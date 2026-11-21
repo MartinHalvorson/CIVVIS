@@ -14124,7 +14124,8 @@ fn the_debugger_opens_on_the_debugger_view_and_single_player_is_a_switch() {
         "<span class=\"dbg-word\">Single player</span></button>",
         "else if (action === \"solo-ui\") setSoloUi(!SOLO_UI);",
         "try { localStorage.setItem(\"civvis-debugger-view-v1\", SOLO_UI ? \"single\" : \"debugger\"); } catch (_) {}",
-        "soloUi.setAttribute(\"aria-pressed\", SOLO_UI ? \"true\" : \"false\");",
+        "solo: SOLO_UI,",
+        "soloUi.setAttribute(\"aria-pressed\", deck.solo ? \"true\" : \"false\");",
         // The seat's governors and policies stand on the map, without the
         // two buttons that belong to a live Civilization VI game.
         "const me = (livePause.available || debuggerView()) && state && state.me;",
