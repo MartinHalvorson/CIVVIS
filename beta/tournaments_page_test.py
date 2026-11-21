@@ -277,34 +277,37 @@ class TournamentsPage(unittest.TestCase):
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
             '        <a class="site-link" href="../home/">Home</a>\n'
             '        <a class="site-link" href="../research/" '
-            'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Research</a>\n'
+            'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Musings</a>\n'
             '        <a class="site-link" href="./" aria-current="page">Tournaments</a>\n'
             '        <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
             '        <a class="site-link" href="../?mode=play" '
-            'title="You play one civilization. CIVVIS AI agents play the rest.">Strat Debugger</a>\n'
+            'title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>\n'
             '        <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" '
             'target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>\n'
             "      </nav>",
             PAGE,
         )
         self.assertIn('.site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }', PAGE)
-        # Strat Debugger (operator 2026-11-21: "shortern to 'Strat Debugger'
-        # and make sure it fits on one line") is the longest name in the
-        # column, which is as wide as that name on one line at every width:
-        # the rule that narrowed the column on a phone under 380px, and put
-        # the longer Strategy Debugger on two lines there, is gone.
+        # The Debugger is AI Debugger in this list again (operator
+        # 2026-11-21: "AI Debugger (rename plz)", after a day as Strategy
+        # Debugger and Strat Debugger), and every name stands on one line
+        # ("make sure it fits on one line"): the column is as wide as its
+        # longest name, TOURNAMENTS, at every width, and the rule that
+        # narrowed it on a phone under 380px is still gone.
+        for page in (PAGE, LANDING, VIEWER):
+            self.assertNotIn("Strategy Debugger", page)
+            self.assertNotIn("Strat Debugger", page)
         for page in (PAGE, LANDING):
             self.assertNotIn("min-content", page)
-            self.assertNotIn("Strategy Debugger", page)
-        # The home page and the viewer name it third, after Research (which
-        # joined between Home and Tournaments the same day; its own test is
-        # `research_page_test.py`), each in its own markup.
+        # The home page and the viewer name it third, after Musings (which
+        # joined between Home and Tournaments the same day as Research; its
+        # own test is `research_page_test.py`), each in its own markup.
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Research</a>'
+            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Musings</a>'
                       r'\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Tournaments</a>'
                       r'\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="researchlink" href="/research" target="_top">Research</a>\s*'
+                     r'<a class="home-link" id="researchlink" href="/research" target="_top">Musings</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>\s*'
                      r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>'),
         ):

@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#171d25">
-<title>Research · CIVVIS.ai</title>
-<meta name="description" content="CIVVIS research: what the CIVVIS AI agents' games show, starting with when in the game each victory type lands, against Civilization VI's Deity AI and in self-play.">
+<title>Musings · CIVVIS.ai</title>
+<meta name="description" content="CIVVIS musings: what the CIVVIS AI agents' games show, starting with when in the game each victory type lands, against Civilization VI's Deity AI and in self-play.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
 <style>
   /* The home page's own palette, header and cards (`beta/landing.html`), as
@@ -90,7 +90,7 @@
   .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
   .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* The site's pages, listed in the same order on every one of them with
-     the page on screen in gold: Home, Research, Tournaments, CIVVIS and Strat
+     the page on screen in gold: Home, Musings, Tournaments, CIVVIS and AI
      Debugger, and under them the game they are built on. As on the home
      page, whose header this is, the column stands to the left of the title. */
   .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
@@ -114,11 +114,14 @@
   .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .site-link[aria-current="page"],
   .site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }
-  /* The column is as wide as its longest name, STRAT DEBUGGER, on one line:
-     150px. The name was shortened to stand on one line (operator,
-     2026-11-21: "shortern to 'Strat Debugger' and make sure it fits on one
-     line"), and it does down to a 320px phone, where the title beside the
-     column still has its room. */
+  /* The column is as wide as its longest name, TOURNAMENTS, on one line:
+     132px. Every name stands on one line (operator, 2026-11-21: "make sure
+     it fits on one line"), down to a 320px phone, where the title beside
+     the column still has its room. The list is a tree that keeps its
+     branches folded (operator, 2026-11-21: "a somewhat collapsable model
+     for the info"): a page's own pages are listed under it only on that
+     page. CIVVIS has one, Performance, which the viewer lists; none of the
+     pages with this header has any yet. */
 
   .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
@@ -221,16 +224,19 @@
   <header class="shell site-header">
     <div class="site-brand">
       <!-- The site's pages, in the order every one of them lists them, with
-           the page on screen in gold: this is Research, between Home and
-           Tournaments. Every link is lane-relative (this page lives at
+           the page on screen in gold: this is Musings, between Home and
+           Tournaments. It was named Research until 2026-11-21 (operator:
+           "musings (rename research)"); the name in the list and the tab
+           changed, and the address, this file and its data kept theirs.
+           Every link is lane-relative (this page lives at
            <lane>/research/), so the test lane's page opens the test lane's
            other pages and viewer. -->
       <nav class="site-nav" aria-label="CIVVIS sites">
         <a class="site-link" href="../home/">Home</a>
-        <a class="site-link" href="./" aria-current="page">Research</a>
+        <a class="site-link" href="./" aria-current="page">Musings</a>
         <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
-        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">Strat Debugger</a>
+        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
         <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
       <div class="site-lockup">
