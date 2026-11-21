@@ -1588,9 +1588,9 @@ function drawDebugBar(measure = true) {
     // are said once only while the halves are locked and go together: a
     // save point at the top, a breakpoint turn at the foot.
     const same = {
-      flags: (one, other) => one.turn === other.turn && one.name === other.name,
-      stops: (one, other) => one === other,
-      eras: (one, other) => one.turn === other.turn && one.era === other.era,
+      flags: (mine, theirs) => mine.turn === theirs.turn && mine.name === theirs.name,
+      stops: (mine, theirs) => mine === theirs,
+      eras: (mine, theirs) => mine.turn === theirs.turn && mine.era === theirs.era,
     };
     const both = (kind, letter, mark) => onTrunk(kind === "stops" ? mark : mark.turn) &&
       told(letter === "a" ? "b" : "a", kind).some(other => same[kind](mark, other));
