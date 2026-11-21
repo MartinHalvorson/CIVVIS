@@ -341,23 +341,32 @@
   .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #bccac4; }
   /* The site's pages from the top down: Home, Research, Tournaments, CIVVIS
-     and Strategy Debugger, and under them the game all five are built on. The block below is how they stand
+     and Strat Debugger, and under them the game all five are built on. The block below is how they stand
      when there is no room beside the lockup, or no way to ask whether they
      are showing (`:has`): two by two under the tagline. `display: grid`
      outranks the user agent's `[hidden]`, which is why the block has to say
      what hidden means for itself. */
   .head-links {
-    display: grid; grid-template-columns: 1fr 1fr; flex: 0 0 100%; gap: 3px; margin-top: 8px;
+    display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); flex: 0 0 100%; gap: 3px; margin-top: 8px;
   }
   .head-links[hidden] { display: none; }
+  /* Two to a row is half the row each: five of the ten tracks. */
+  .head-links > * { grid-column: span 5; }
   /* An odd number of links two by two leaves the last on a row of its own,
      and it takes the whole row rather than half of it. */
   .head-links > :last-child:nth-child(odd) { grid-column: 1 / -1; }
-  /* A name stands on one line wherever it fits. STRATEGY DEBUGGER fits
-     neither the column nor half a row, so it takes two lines, a word to
-     each, and the link beside it in a row is as tall with its name centred.
-     A single word too wide for its box is cut at the edge, as it always
-     was. */
+  /* The site's name for the Debugger in this list is STRAT DEBUGGER, short
+     so that it stands on one line (operator, 2026-11-21: "shortern to
+     'Strat Debugger' and make sure it fits on one line"). It is 95px wide
+     here and half a row holds 84px at its narrowest, so its row is split
+     six to four with CIV 6, the shortest name, which leaves it 104px. */
+  .head-links > #playlink { grid-column: span 6; }
+  .head-links > #civ6link { grid-column: span 4; }
+  /* A name stands on one line wherever it fits, and every one of the six
+     does in the typefaces measured. In a wider one a name of two words
+     takes two lines, a word to each, and the link beside it in a row is as
+     tall with its name centred. A single word too wide for its box is cut
+     at the edge, as it always was. */
   .home-link {
     display: grid; align-content: center; min-width: 0; padding: 2px 5px 3px; overflow: hidden;
     color: var(--muted); font-size: var(--type-caption); font-weight: 650; line-height: 1.3;
@@ -367,7 +376,7 @@
   .home-link:hover { color: var(--gold-bright); border-color: var(--gold); }
   .home-link:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 1px; }
   /* The page on screen is the one in gold. This page is two of them: CIVVIS
-     while it watches a simulation, Strategy Debugger while somebody holds a seat.
+     while it watches a simulation, Strat Debugger while somebody holds a seat.
      Which of the two is known once the first observation arrives
      (`seat-known`); until then neither is lit, and nothing moves when one
      is, because every link is there from the start. */
@@ -384,15 +393,15 @@
      of the lockup's grid though the list is the last thing in the markup,
      so the narrower layouts still find it under the tagline. The lockup
      gives the column its width (`--site-rail`) and the wordmark's
-     lane is the band less the column, the globe and the two gutters. The
+     lane is the band less the column, the globe and the two 7px gutters. The
      CIVVIS.ai run is 4.65em wide (4.85 leaves fallback-font slack), so
      dividing the lane by that fills it without tripping the ellipsis. Under
      233px that leaves the wordmark too small to be the page's name. */
   @container (min-width: 233px) {
     #side .brand:has(> .head-links:not([hidden])) {
-      --site-rail: 88px; --site-mark: clamp(40px, 19cqw, 72px);
+      --site-rail: 92px; --site-mark: clamp(40px, 19cqw, 72px);
       display: grid; grid-template-columns: var(--site-rail) auto minmax(0, 1fr);
-      align-items: center; gap: 7px 10px;
+      align-items: center; gap: 7px;
     }
     #side .brand:has(> .head-links:not([hidden])) .brand-copy { display: contents; }
     #side .brand:has(> .head-links:not([hidden])) .brand-mark {
@@ -401,7 +410,7 @@
     #side .brand:has(> .head-links:not([hidden])) .brand-mark svg { width: 91%; height: 91%; }
     #side .brand:has(> .head-links:not([hidden])) h1 {
       grid-column: 3; grid-row: 1;
-      font-size: clamp(15px, calc((100cqw - var(--site-rail) - var(--site-mark) - 20px) / 4.85), 36px);
+      font-size: clamp(15px, calc((100cqw - var(--site-rail) - var(--site-mark) - 14px) / 4.85), 36px);
     }
     #side .brand:has(> .head-links:not([hidden])) .tagline {
       grid-column: 1 / -1; grid-row: 2; margin-top: 0;
@@ -410,18 +419,19 @@
       grid-column: 1; grid-row: 1; grid-template-columns: minmax(0, 1fr);
       align-content: center; justify-self: stretch; margin-top: 0;
     }
-    /* Six to the column, and TOURNAMENTS is the longest word among them.
-       The column keeps the width it had for four (a wider one would take
-       the tagline's lane on a 1512px window), so in the column the labels
-       are set a little smaller and closer: TOURNAMENTS then leaves a
-       twentieth of the width spare for a wider typeface than this one.
-       Five links stood about as tall as four did; the sixth, Research,
-       made the column 115px and the box 12px (1920px window) to 20px
-       (1470px and 1512px) taller than five did. STRATEGY DEBUGGER is 109px
-       on one line against the 80px inside the column, so it stands on two,
-       which makes the column 127px and the box 12px taller again. */
+    /* Six to the column, a name to a line, and STRAT DEBUGGER is the
+       longest of them: 83px in this type against the 86px inside the
+       column. The column was 88px for TOURNAMENTS at 9px, where the longer
+       name is 89px and stood on two lines. It is 92px now, with the type
+       half a pixel smaller and a little closer, and the lockup's two
+       gutters are 7px each where they were 10px. So the column and its
+       gutter take 99px of the band where they took 98px, the tagline keeps
+       its lane on a 1512px window, the wordmark's lane is 2px wider, and
+       neither width at which the lockup changes shape has moved. Each link
+       is one track here, whatever it spans two by two. Six one-line links
+       make the column 111px, where the two-line name made it 127px. */
     #side .brand:has(> .head-links:not([hidden])) .home-link {
-      padding: 1px 3px 2px; font-size: 9px; letter-spacing: .03em;
+      grid-column: auto; padding: 1px 2px 2px; font-size: 8.5px; letter-spacing: .02em;
     }
   }
   /* From 246px the tagline's two lines fit beside the column too, under the
@@ -2945,7 +2955,7 @@
   #side.deck-stops #politicssec[open] ~ .sidebar-section:not([open]) { position: static; box-shadow: none; }
   #side.deck-stops #politicssec[open] { scroll-margin-bottom: 0; }
   .politics-list {
-    --politics-ground: #12211e; --politics-lit: #213a34; --politics-cell: 22px;
+    --politics-ground: #12211e; --politics-lit: #213a34; --politics-cell: 22px; --politics-disc: #0b1513;
     position: relative; isolation: isolate; overflow: auto; max-width: 100%; max-height: 220px;
     overscroll-behavior-x: contain; scrollbar-color: #385148 transparent; scrollbar-width: thin;
   }
@@ -2959,18 +2969,16 @@
     min-width: var(--politics-cell); height: var(--politics-cell); text-align: center;
     border-right: 1px solid var(--politics-ground); border-bottom: 1px solid #0a12107a;
   }
-  /* A column is its civilization's colour, held dark and quiet: every hue is
-     brought to nearly one lightness, so the faces read the same on all of
-     them. A browser without relative colours mixes the colour into the ground. */
-  .politics-matrix col + col {
-    background: color-mix(in oklab, var(--civ) 40%, var(--politics-ground));
-    background: oklch(from var(--civ) calc(.26 + l * .2) calc(c * .6) h);
-  }
+  /* A column is its civilization's colour, in full: the same colour as the
+     plate its row's name is on. The faces carry their own ground (below), so
+     no colour has to be dimmed for them. The column under the pointer steps
+     a tenth toward the middle lightness, which shows on white and on navy. */
+  .politics-matrix col + col { background: var(--civ); }
   .politics-matrix col + col.politics-crossed {
-    background: color-mix(in oklab, var(--civ) 52%, var(--politics-ground));
-    background: oklch(from var(--civ) calc(.32 + l * .2) calc(c * .72) h);
+    background: color-mix(in oklab, var(--civ) 82%, #808080);
+    background: oklch(from var(--civ) calc(l + clamp(-.1, (.62 - l) * 10, .1)) c h);
   }
-  .politics-matrix tbody tr:hover td:not(.self) { background: #ffffff12; }
+  .politics-matrix tbody tr:hover td:not(.self) { background: #ffffff2e; }
   /* Where a civilization's row crosses its own column it shows its plate. */
   .politics-matrix tbody td.self { background: var(--civ); box-shadow: inset 3px 0 var(--civ-trim); }
   /* The rail is opaque so that what scrolls under it cannot show through. */
@@ -3003,8 +3011,15 @@
     content: ""; position: absolute; inset: 0; z-index: -1; background: var(--mark-color);
     -webkit-mask: var(--mark) center / contain no-repeat; mask: var(--mark) center / contain no-repeat;
   }
-  /* A dark rim keeps every face clear of whatever colour its column is. */
-  .politics-matrix .politics-mark { filter: drop-shadow(0 0 1px #050b09) drop-shadow(0 0 .5px #050b09); }
+  /* In the table every face sits on a dark disc of its own. A face is drawn
+     in its own colour with its eyes and mouth cut out of it, so on a bare
+     column a green face on a green civilization is gone and its mouth is the
+     column showing through. On the disc the face and its features read the
+     same on every colour, white and yellow included. */
+  .politics-matrix .politics-mark::after {
+    content: ""; position: absolute; inset: -1.5px; z-index: -2; border-radius: 50%;
+    background: var(--politics-disc);
+  }
   .politics-mark.war {
     --mark-color: var(--politics-war);
     --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M2.5 2.5 12 12M13.5 2.5 4 12M9.5 13.5l4-4M2.5 9.5l4 4'/%3E%3C/svg%3E");
@@ -6332,7 +6347,7 @@
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
         <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI strategy development</span></div>
       </div>
-      <!-- The site is five pages, Home, Research, Tournaments, CIVVIS and Strategy
+      <!-- The site is five pages, Home, Research, Tournaments, CIVVIS and Strat
            Debugger, and every one of them lists all five in that order with
            the one on screen in gold. This page is the last two: `./` is the simulation
            the AIs play and `?mode=play` the same game with a seat of your
@@ -6348,7 +6363,7 @@
         <a class="home-link" id="researchlink" href="/research" target="_top">Research</a>
         <a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>
         <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
-        <a class="home-link" id="playlink" href="?mode=play" target="_top">Strategy Debugger</a>
+        <a class="home-link" id="playlink" href="?mode=play" target="_top">Strat Debugger</a>
         <a class="home-link" id="civ6link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
     </div>

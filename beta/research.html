@@ -90,7 +90,7 @@
   .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
   .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* The site's pages, listed in the same order on every one of them with
-     the page on screen in gold: Home, Research, Tournaments, CIVVIS and Strategy
+     the page on screen in gold: Home, Research, Tournaments, CIVVIS and Strat
      Debugger, and under them the game they are built on. As on the home
      page, whose header this is, the column stands to the left of the title. */
   .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
@@ -114,11 +114,11 @@
   .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .site-link[aria-current="page"],
   .site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }
-  /* STRATEGY DEBUGGER on one line makes the column 178px wide, and on a
-     phone under 380px that leaves the title less room than it needs (at
-     320px the page ran 15px past the screen). There the column is as wide
-     as TOURNAMENTS, its longest word, and that name takes two lines. */
-  @media (max-width: 379px) { .site-nav { width: min-content; } }
+  /* The column is as wide as its longest name, STRAT DEBUGGER, on one line:
+     150px. The name was shortened to stand on one line (operator,
+     2026-11-21: "shortern to 'Strat Debugger' and make sure it fits on one
+     line"), and it does down to a 320px phone, where the title beside the
+     column still has its room. */
 
   .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
@@ -197,6 +197,10 @@
   .res-details { margin-top: 10px; }
   .res-details summary { color: var(--accent); font-size: 12.5px; font-weight: 600; cursor: pointer; }
   .res-details .rank-table td:first-child { font-weight: 500; }
+  /* The table of spans is a group of six columns per column chart, wider
+     than the page: its first column, the turns, stays in view as it scrolls. */
+  .res-details .rank-table th:first-child,
+  .res-details .rank-table td:first-child { position: sticky; left: 0; background: var(--panel); }
 
   /* One tooltip for every chart: the value first, then what it is. */
   .res-tip {
@@ -226,7 +230,7 @@
         <a class="site-link" href="./" aria-current="page">Research</a>
         <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
-        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">Strategy Debugger</a>
+        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">Strat Debugger</a>
         <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
       <div class="site-lockup">
@@ -273,6 +277,8 @@
           Every game that ended in a victory, by the turn it ended on and the victory that ended it.
           Both kinds of game are six players on a Continents map at Online speed, 250 turns.
           A column is the share of the games counted that ended in its span of turns.
+          The Deity games are drawn three times: every victory, then only the Deity AI&#8217;s wins, then only
+          CIVVIS&#8217;s wins. All three are shares of the same games, so the second and third add up to the first.
         </p>
         <div class="res-controls">
           <div class="res-control" role="group" aria-label="Games counted">
@@ -293,8 +299,20 @@
         </div>
         <p class="res-counted" id="res-counted"></p>
         <ul class="res-legend" id="res-legend" aria-label="Victory types"></ul>
+        <!-- The column charts, in the order the script's `CHARTS` lists them
+             (operator 2026-11-21: "start with all victories by type along
+             timeline, then just the deity ai wins, then the civvis wins,
+             then the civvis self play stuff"). -->
         <div class="res-kind" id="res-kind-deity">
-          <h3 class="res-kind-title">CIVVIS vs Deity AI <small data-count></small></h3>
+          <h3 class="res-kind-title">CIVVIS vs Deity AI: every victory <small data-count></small></h3>
+          <div class="res-plot" data-plot></div>
+        </div>
+        <div class="res-kind" id="res-kind-deity-ai">
+          <h3 class="res-kind-title">CIVVIS vs Deity AI: Deity AI wins <small data-count></small></h3>
+          <div class="res-plot" data-plot></div>
+        </div>
+        <div class="res-kind" id="res-kind-deity-civvis">
+          <h3 class="res-kind-title">CIVVIS vs Deity AI: CIVVIS wins <small data-count></small></h3>
           <div class="res-plot" data-plot></div>
         </div>
         <div class="res-kind" id="res-kind-self_play">
@@ -319,14 +337,14 @@
 
       <section class="res-section" id="res-table" aria-labelledby="res-table-title">
         <h2 class="rank-title" id="res-table-title">The figures</h2>
-        <p class="rank-sub">For the games chosen above: how many each victory ended, its share of the games, its median turn, and the span of turns it ended in most.</p>
+        <p class="rank-sub">For the games chosen above: how many each victory ended, its share of the games, how many of the Deity games each side won, its median turn, and the span of turns it ended in most.</p>
         <div class="res-scroll">
           <table class="rank-table" id="res-summary">
             <thead>
-              <tr><th></th><th class="is-group" colspan="5">CIVVIS vs Deity AI</th><th class="is-group" colspan="4">CIVVIS self-play</th></tr>
+              <tr><th></th><th class="is-group" colspan="6">CIVVIS vs Deity AI</th><th class="is-group" colspan="4">CIVVIS self-play</th></tr>
               <tr>
                 <th scope="col">Victory</th>
-                <th scope="col">Games</th><th scope="col">Share</th><th scope="col">CIVVIS won</th><th scope="col">Median turn</th><th scope="col">Busiest span</th>
+                <th scope="col">Games</th><th scope="col">Share</th><th scope="col">Deity AI won</th><th scope="col">CIVVIS won</th><th scope="col">Median turn</th><th scope="col">Busiest span</th>
                 <th scope="col">Games</th><th scope="col">Share</th><th scope="col">Median turn</th><th scope="col">Busiest span</th>
               </tr>
             </thead>
@@ -368,6 +386,18 @@
     // Deity games first (operator 2026-11-21).
     const KINDS = ["deity", "self_play"];
     const LABEL = { self_play: "CIVVIS self-play", deity: "CIVVIS vs Deity AI" };
+    // The column charts, in the order they stand on the page (operator
+    // 2026-11-21: "start with all victories by type along timeline, then
+    // just the deity ai wins, then the civvis wins, then the civvis self
+    // play stuff"). `side` is whose victories a chart counts: every one,
+    // the Deity AI's, or CIVVIS's. `short` heads its hover box and `total`
+    // names the box's last row.
+    const CHARTS = [
+      { id: "deity", kind: "deity", side: "all", label: "CIVVIS vs Deity AI: every victory", short: "CIVVIS vs Deity AI", total: "All victories" },
+      { id: "deity-ai", kind: "deity", side: "rival", label: "CIVVIS vs Deity AI: Deity AI wins", short: "Deity AI wins", total: "All Deity AI wins", none: "The Deity AI won none of these games." },
+      { id: "deity-civvis", kind: "deity", side: "civvis", label: "CIVVIS vs Deity AI: CIVVIS wins", short: "CIVVIS wins", total: "All CIVVIS wins", none: "CIVVIS won none of these games." },
+      { id: "self_play", kind: "self_play", side: "all", label: "CIVVIS self-play", short: "CIVVIS self-play", total: "All victories" },
+    ];
     const state = { window: "7", span: 5 };
     const SVG = "http://www.w3.org/2000/svg";
     const colour = (v) => "var(--v-" + v + ")";
@@ -404,6 +434,16 @@
       const out = new Array(Math.ceil(TURNS / span)).fill(0);
       (Array.isArray(turns) ? turns : []).forEach((n, i) => { if (i < TURNS) out[Math.floor(i / span)] += Number(n) || 0; });
       return out;
+    };
+    // A victory's count on each turn for one side: every victory, CIVVIS's
+    // own (`won_turns`, missing where CIVVIS never won it), or what is left,
+    // which is the Deity AI's.
+    const sided = (vic, side) => {
+      const all = Array.isArray(vic && vic.turns) ? vic.turns : [];
+      if (side === "all") return all;
+      const won = Array.isArray(vic && vic.won_turns) ? vic.won_turns : [];
+      if (side === "civvis") return won;
+      return all.map((n, i) => Math.max(0, (Number(n) || 0) - (Number(won[i]) || 0)));
     };
     const spanName = (i, span) => "Turns " + (i * span + 1) + "–" + Math.min(TURNS, (i + 1) * span);
     const busiest = (bins, span) => {
@@ -478,25 +518,35 @@
       item.append(swatch, NAMES[v]);
       legend.append(item);
     }
-    const stacks = (kind) => {
-      const w = win(kind);
+    // A chart's games: per victory the count in each span, and the spans'
+    // totals. `games` is the chart's own count (one side's wins, or every
+    // victory); a column's height is always a share of `w.games`, every game
+    // of the kind in the window, so the two sides' charts add up to the
+    // chart of every victory.
+    const stacks = (chart) => {
+      const w = win(chart.kind);
       if (!w || !w.games) return null;
       const bins = {};
-      for (const v of VICTORIES) bins[v] = binned((w.victories[v] || {}).turns, state.span);
+      for (const v of VICTORIES) bins[v] = binned(sided(w.victories[v], chart.side), state.span);
       const totals = bins[VICTORIES[0]].map((_, i) => VICTORIES.reduce((s, v) => s + bins[v][i], 0));
-      return { w, bins, totals };
+      const games = chart.side === "all" ? w.games : totals.reduce((s, n) => s + n, 0);
+      return { w, bins, totals, games };
     };
-    const drawStacks = (kind, ymax) => {
-      const box = document.getElementById("res-kind-" + kind);
+    const drawStacks = (chart, ymax) => {
+      const box = document.getElementById("res-kind-" + chart.id);
       const plot = box.querySelector("[data-plot]");
-      const s = stacks(kind);
+      const s = stacks(chart);
       plot.replaceChildren();
-      box.querySelector("[data-count]").textContent = s ? fmt(s.w.games) + " games · " + days(s.w) : "";
+      box.querySelector("[data-count]").textContent = !s ? ""
+        : chart.side === "all" ? fmt(s.w.games) + " games · " + days(s.w)
+        : fmt(s.games) + " of " + fmt(s.w.games) + " games · " + pct(s.games / s.w.games);
       if (!s) { plot.append(el("p", "is-none", "No games of this kind in the window.")); return; }
+      if (!s.games) { plot.append(el("p", "is-none", chart.none)); return; }
       const width = Math.max(280, plot.clientWidth), height = 214, m = { l: 40, r: 6, t: 8, b: 38 };
       const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
-      const top = VICTORIES.map((v) => NAMES[v] + " " + pct1((s.w.victories[v] || {}).games / s.w.games || 0)).join(", ");
-      root.setAttribute("aria-label", LABEL[kind] + ": " + fmt(s.w.games) + " games by the turn they ended, " + top + ". Every figure is in the tables below.");
+      const top = VICTORIES.map((v) => NAMES[v] + " " + pct1(s.bins[v].reduce((sum, n) => sum + n, 0) / s.w.games)).join(", ");
+      root.setAttribute("aria-label", chart.label + ": " + fmt(s.games) + (chart.side === "all" ? "" : " of " + fmt(s.w.games))
+        + " games by the turn they ended, " + top + (chart.side === "all" ? "" : " of the games") + ". Every figure is in the tables below.");
       const { x, y } = frame(root, width, height, m, ymax, (t) => (t === 0 ? "0" : (100 * t).toFixed(t * 100 % 1 ? 1 : 0) + "%"));
       const hover = svg("rect", { class: "res-hover", y: m.t, height: height - m.t - m.b, width: 0, visibility: "hidden" });
       root.append(hover);
@@ -531,8 +581,8 @@
           const rows = VICTORIES.filter((v) => s.bins[v][i] > 0).reverse().map((v) => ({
             colour: colour(v), value: pct1(s.bins[v][i] / s.w.games), name: NAMES[v], n: fmt(s.bins[v][i]),
           }));
-          rows.push({ colour: "transparent", value: pct1(total / s.w.games), name: "All victories", n: fmt(total) });
-          showTip(event, spanName(i, state.span) + " · " + LABEL[kind], rows);
+          rows.push({ colour: "transparent", value: pct1(total / s.w.games), name: chart.total, n: fmt(total) });
+          showTip(event, spanName(i, state.span) + " · " + chart.short, rows);
         });
         hit.addEventListener("pointerleave", () => { hover.setAttribute("visibility", "hidden"); hideTip(); });
         root.append(hit);
@@ -647,13 +697,14 @@
           const vic = w && w.victories ? w.victories[v] || {} : {};
           const n = vic.games || 0;
           const cells = [fmt(n), w && w.games ? pct1(n / w.games) : "—"];
-          if (kind === "deity") cells.push(n ? fmt(vic.won || 0) : "—");
+          if (kind === "deity") cells.push(n ? fmt(n - (vic.won || 0)) : "—", n ? fmt(vic.won || 0) : "—");
           cells.push(n ? String(vic.median) : "—", n ? busiest(binned(vic.turns, state.span), state.span) : "—");
           cells.forEach((text) => tr.append(el("td", n ? "" : "is-zero", text)));
         }
         body.append(tr);
       }
-      // Every span with an ending in either kind: its counts per victory.
+      // Every span with an ending in either kind: its counts per victory,
+      // a group of columns per column chart and in the charts' order.
       const table = document.getElementById("res-spans");
       const head = table.querySelector("thead"), rows = table.querySelector("tbody");
       head.replaceChildren(); rows.replaceChildren();
@@ -662,21 +713,21 @@
       const cols = el("tr");
       cols.append(el("th", "", "Turns"));
       const bins = {};
-      for (const kind of KINDS) {
-        const th = el("th", "is-group", LABEL[kind]);
+      for (const chart of CHARTS) {
+        const th = el("th", "is-group", chart.label);
         th.colSpan = VICTORIES.length;
         group.append(th);
-        const w = win(kind);
-        bins[kind] = {};
+        const w = win(chart.kind);
+        bins[chart.id] = {};
         for (const v of VICTORIES) {
           cols.append(el("th", "", NAMES[v]));
-          bins[kind][v] = binned(w && w.victories ? (w.victories[v] || {}).turns : [], state.span);
+          bins[chart.id][v] = binned(sided(w && w.victories ? w.victories[v] : null, chart.side), state.span);
         }
       }
       head.append(group, cols);
       const count = Math.ceil(TURNS / state.span);
       for (let i = 0; i < count; i++) {
-        const values = KINDS.flatMap((kind) => VICTORIES.map((v) => bins[kind][v][i]));
+        const values = CHARTS.flatMap((chart) => VICTORIES.map((v) => bins[chart.id][v][i]));
         if (!values.some(Boolean)) continue;
         const tr = el("tr");
         tr.append(el("td", "", (i * state.span + 1) + "–" + Math.min(TURNS, (i + 1) * state.span)));
@@ -689,7 +740,10 @@
       const self = win("self_play"), deity = win("deity");
       document.getElementById("res-counted").textContent = KINDS.map((kind) => {
         const w = win(kind);
-        return LABEL[kind] + ": " + (w ? fmt(w.games) + " games, " + days(w) : "none");
+        if (!w) return LABEL[kind] + ": none";
+        const won = VICTORIES.reduce((sum, v) => sum + ((w.victories[v] || {}).won || 0), 0);
+        return LABEL[kind] + ": " + fmt(w.games) + " games, " + days(w)
+          + (kind === "deity" ? " (Deity AI won " + fmt(w.games - won) + ", CIVVIS won " + fmt(won) + ")" : "");
       }).join(" · ");
       document.getElementById("res-note-self").textContent = "Self-play: every seat a CIVVIS AI agent, in the simulator; these are the "
         + "tournament batches the agents' rules are screened in, a game counted once whichever seat won it"
@@ -701,11 +755,12 @@
     };
 
     const draw = () => {
-      const ymax = Math.max(0, ...KINDS.map((kind) => {
-        const s = stacks(kind);
+      // One scale for every column chart: the tallest column of any of them.
+      const ymax = Math.max(0, ...CHARTS.map((chart) => {
+        const s = stacks(chart);
         return s ? Math.max(...s.totals) / s.w.games : 0;
       }));
-      for (const kind of KINDS) drawStacks(kind, ymax);
+      for (const chart of CHARTS) drawStacks(chart, ymax);
       drawTiming();
     };
     const render = () => { notes(); draw(); drawTables(); };

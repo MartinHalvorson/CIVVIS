@@ -674,18 +674,17 @@ fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_orde
         // the sky is the rail as it is seen.
         "#debugbar .dbg-rail { position: relative; flex: 1; min-width: 0; height: 68px; border: 1px solid transparent; }",
         "position: absolute; inset: -1px; border-radius: 12px; pointer-events: none;",
-        // Auto-play is set to ten turns when the box is built (operator,
-        // 2026-11-20: "default for auto play can be 10 turns").
-        "const DEBUG_AUTOPLAY_TURNS = 10;",
-        "<option value=\"${turns}\"${turns === DEBUG_AUTOPLAY_TURNS ? \" selected\" : \"\"}>",
-        // Era among the turn counts, between 30 and 40 on Online and moved
-        // with the game's speed (operator, 2026-11-21: "add era between 30
-        // and 40. though this can move i guess depending on the speed of the
-        // game"). Picked, Auto-play plays until a new era begins.
-        "const DEBUG_ERA_TURNS = {online: 33, quick: 42, standard: 50, epic: 65, marathon: 100};",
-        "turns === debugEraAfter() ? '<option value=\"era\">Era</option>' : \"\"}`).join(\"\")",
+        // What Auto-play offers, and Era is what it is set to when the box
+        // is built (operator, 2026-11-21: "strat debugger auto play can
+        // start on Era. have options 1, 3, 5, 10, 20, Era, 100, Indefinite").
+        // Era plays until a new era begins, and Indefinite until it is
+        // stopped.
+        "  [\"1\", \"1 turn\"], [\"3\", \"3 turns\"], [\"5\", \"5 turns\"], [\"10\", \"10 turns\"], [\"20\", \"20 turns\"],\n  \
+         [\"era\", \"Era\"], [\"100\", \"100 turns\"], [\"indefinite\", \"Indefinite\"]];",
+        "const DEBUG_AUTOPLAY_PICK = \"era\";",
+        "`<option value=\"${pick}\"${pick === DEBUG_AUTOPLAY_PICK ? \" selected\" : \"\"}>${word}</option>`).join(\"\")\n          }</select>",
         "if (pick === \"era\") { debugRun(null, state.world_era ?? 0); return; }",
-        "debugPlaceEra(turnsPick);",
+        "debugRun(pick === \"indefinite\" ? null : state.turn + Math.max(1, parseInt(pick, 10) || 1));",
         // The count on Auto-play, of the turns asked for or so far.
         "const runCount = !deck.running ? \"\" : deck.asked === null ? `${deck.played}` : `${deck.played}/${deck.asked}`;",
         // Era Back, Era Next, the era breakpoint and the eras named on the

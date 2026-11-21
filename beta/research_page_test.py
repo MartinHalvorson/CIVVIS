@@ -124,6 +124,13 @@ class Windows(unittest.TestCase):
         self.assertEqual(week["victories"]["science"]["median"], 200)
         self.assertEqual(week["victories"]["diplomatic"]["median"], 185)
         self.assertEqual(week["victories"]["diplomatic"]["won"], 1)
+        # CIVVIS's wins are placed on their turns too, so the page can draw
+        # them apart from the Deity AI's; a victory CIVVIS never won carries
+        # no row of zeros.
+        won = week["victories"]["diplomatic"]["won_turns"]
+        self.assertEqual((len(won), won[204], sum(won)), (250, 1, 1))
+        self.assertNotIn("won_turns", week["victories"]["science"])
+        self.assertNotIn("won_turns", week["victories"]["score"])
         self.assertEqual(week["victories"]["score"]["games"], 0)
         self.assertIsNone(week["victories"]["score"]["median"])
         turns = week["victories"]["diplomatic"]["turns"]
@@ -238,6 +245,40 @@ class Page(unittest.TestCase):
         for piece in ('id="res-kind-self_play"', 'id="res-kind-deity"', 'id="res-timing"', 'id="res-summary"', 'id="res-spans"'):
             self.assertIn(piece, PAGE)
 
+    def test_the_deity_games_are_drawn_by_every_victory_then_by_each_sides_wins(self):
+        # Operator 2026-11-21: "on civvis vs deity ai, start with all
+        # victories by type along timeline, then just the deity ai wins, then
+        # the civvis wins, then the civvis self play stuff".
+        # The script draws its column charts, and the groups of the table of
+        # spans, off one list in that order.
+        charts = re.findall(r'\{ id: "([\w-]+)", kind: "(\w+)", side: "(\w+)", label: "([^"]+)"', PAGE)
+        self.assertEqual(
+            charts,
+            [
+                ("deity", "deity", "all", "CIVVIS vs Deity AI: every victory"),
+                ("deity-ai", "deity", "rival", "CIVVIS vs Deity AI: Deity AI wins"),
+                ("deity-civvis", "deity", "civvis", "CIVVIS vs Deity AI: CIVVIS wins"),
+                ("self_play", "self_play", "all", "CIVVIS self-play"),
+            ],
+        )
+        self.assertIn("for (const chart of CHARTS) drawStacks(chart, ymax);", PAGE)
+        self.assertIn("for (const chart of CHARTS) {\n        const th = el(\"th\", \"is-group\", chart.label);", PAGE)
+        # The markup the script fills stands in the same order, each chart
+        # under the title the list gives it.
+        at = []
+        for name, _, _, label in charts:
+            box = f'<div class="res-kind" id="res-kind-{name}">\n          <h3 class="res-kind-title">{label} <small data-count></small></h3>'
+            self.assertEqual(PAGE.count(box), 1, name)
+            at.append(PAGE.index(box))
+        self.assertEqual(at, sorted(at))
+        self.assertEqual(PAGE.count('<div class="res-kind" id="res-kind-'), len(charts))
+        # The two sides' charts are the first one split by who won: what is
+        # not CIVVIS's win on a turn is the Deity AI's, and every column is a
+        # share of all the games counted, so the two add up to the first.
+        self.assertIn('if (side === "civvis") return won;', PAGE)
+        self.assertIn("return all.map((n, i) => Math.max(0, (Number(n) || 0) - (Number(won[i]) || 0)));", PAGE)
+        self.assertIn("const h = y(0) - y(s.bins[v][i] / s.w.games);", PAGE)
+
     def test_the_deity_games_are_listed_before_the_self_play_games(self):
         # Operator 2026-11-21: "list the civvis vs deity ai stuff before the
         # civvis self-play. still side by side, just swap the ordering".
@@ -255,16 +296,17 @@ class Page(unittest.TestCase):
             self.assertEqual((PAGE.count(first), PAGE.count(second)), (1, 1), (first, second))
             self.assertLess(PAGE.index(first), PAGE.index(second), (first, second))
         # The figures table keeps the two side by side, the Deity columns on
-        # the left with the one column self-play has no use for.
+        # the left with the two columns self-play has no use for: who won,
+        # the Deity AI before CIVVIS as the charts stand.
         self.assertIn(
-            '<tr><th></th><th class="is-group" colspan="5">CIVVIS vs Deity AI</th>'
+            '<tr><th></th><th class="is-group" colspan="6">CIVVIS vs Deity AI</th>'
             '<th class="is-group" colspan="4">CIVVIS self-play</th></tr>',
             PAGE,
         )
         self.assertRegex(
             PAGE,
             r'<th scope="col">Victory</th>\s*'
-            r'<th scope="col">Games</th><th scope="col">Share</th><th scope="col">CIVVIS won</th>'
+            r'<th scope="col">Games</th><th scope="col">Share</th><th scope="col">Deity AI won</th><th scope="col">CIVVIS won</th>'
             r'<th scope="col">Median turn</th><th scope="col">Busiest span</th>\s*'
             r'<th scope="col">Games</th><th scope="col">Share</th>'
             r'<th scope="col">Median turn</th><th scope="col">Busiest span</th>\s*</tr>',

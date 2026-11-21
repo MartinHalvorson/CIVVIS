@@ -742,18 +742,12 @@ def check_the_bar(bar: Bar) -> None:
     # while it plays the button counts them and is its own Stop.
     turns = "document.getElementById('dbg-turns')"
     label = lambda: [bar.ev(f"document.getElementById('dbg-run-{part}').textContent") for part in ("sign", "word", "count")]
-    assert bar.ev(f"[...{turns}.options].map(option => option.value).join()") \
-        == "1,2,3,4,5,10,20,30,era,40,50,100,150,200,250,all"
-    # Era stands between 30 and 40 on Online, the stock speed, and moves with
-    # the game's speed; what is picked stays picked.
-    bar.ev(f"{turns}.value = '20', render({{...engineState(), game_speed: 'standard'}}), true")
-    assert bar.ev(f"[...{turns}.options].map(option => option.value).join()") \
-        == "1,2,3,4,5,10,20,30,40,50,era,100,150,200,250,all"
-    assert bar.ev(f"{turns}.value") == "20"
-    bar.ev(f"{turns}.value = '10', render(engineState()), true")
-    assert bar.ev(f"[...{turns}.options].map(option => option.value).join()") \
-        == "1,2,3,4,5,10,20,30,era,40,50,100,150,200,250,all"
-    assert bar.ev(f"{turns}.value") == "10" and label() == ["▶▶", "Auto-play", ""], label()
+    # What it offers, in the operator's order, and it is set to Era from the
+    # start: nothing has picked anything yet.
+    assert bar.ev(f"[...{turns}.options].map(option => option.value).join()") == "1,3,5,10,20,era,100,indefinite"
+    assert bar.ev(f"[...{turns}.options].map(option => option.textContent).join()") \
+        == "1 turn,3 turns,5 turns,10 turns,20 turns,Era,100 turns,Indefinite"
+    assert bar.ev(f"{turns}.value") == "era" and label() == ["▶▶", "Auto-play", ""], label()
     bar.ev(f"{turns}.value = '1', true")
     bar.forget()
     bar.click('[data-dbg="autoplay"]')
@@ -900,12 +894,12 @@ def check_breakpoints_and_a_run(bar: Bar) -> None:
     bar.idle(f"state.debug.breakpoints.turns.includes({turn + 10})", "+10 adds a turn")
     assert bar.sent()[-1]["turns"] == [12, 15, turn + 10], bar.sent()
 
-    # Auto-play, told to play every turn, plays until the engine says a
-    # breakpoint stopped it.
+    # Auto-play, set to Indefinite, plays until the engine says a breakpoint
+    # stopped it.
     turns = "document.getElementById('dbg-turns')"
     request = typed("turns", str(turn + 3))
     assert request["turns"] == [turn + 3], request
-    bar.ev(f"{turns}.value = 'all', true")
+    bar.ev(f"{turns}.value = 'indefinite', true")
     bar.forget()
     bar.click('[data-dbg="autoplay"]')
     bar.idle(f"state.turn === {turn + 3}", "auto-play stops on its breakpoint")
@@ -942,7 +936,7 @@ def check_breakpoints_and_a_run(bar: Bar) -> None:
     bar.idle(f"state.turn === {era_at}", "auto-play picked to an era plays until the era begins")
     assert [call["op"] for call in bar.sent()] == ["step"] * 4, bar.sent()
     assert bar.note() == f"Stopped on turn {era_at}: the Medieval era began", bar.note()
-    bar.ev(f"engine.eraAt = null, {turns}.value = 'all', true")
+    bar.ev(f"engine.eraAt = null, {turns}.value = 'indefinite', true")
 
     # Clear all sends a request with nothing in it, and the count goes.
     bar.forget()
@@ -1218,17 +1212,17 @@ def check_a_run_takes_the_turns_already_played(bar: Bar) -> None:
     # A run that ends on a kept turn plays nothing, and the turns past it stay.
     bar.drag("dbg-slider", start + 1)
     bar.idle(f"state.turn === {start + 1}", "the timeline is walked back")
-    pick(2)
-    auto_play(start + 3, "Auto-play to a kept turn goes to it")
-    assert ops() == [("walk", start + 3)] and bar.ev("engine.score") == score + 2, ops()
-    assert bar.note() == f"Played to turn {start + 3}", bar.note()
+    pick(3)
+    auto_play(start + 4, "Auto-play to a kept turn goes to it")
+    assert ops() == [("walk", start + 4)] and bar.ev("engine.score") == score + 2, ops()
+    assert bar.note() == f"Played to turn {start + 4}", bar.note()
     assert bar.ev("[state.debug.last, state.debug.played_ahead]") == [start + 7, start + 7]
 
     # A breakpoint on a kept turn stops the walk there, as it stopped the run.
     bar.ev(f"engine.breaks = [{start + 5}], render(engineState()), true")
     pick(5)
     auto_play(start + 5, "the walk stops on a breakpoint's turn")
-    assert ops() == [("walk", start + 8)], ops()
+    assert ops() == [("walk", start + 9)], ops()
     assert bar.note() == f"Stopped at turn {start + 5}", bar.note()
     bar.ev("engine.breaks = [], render(engineState()), true")
 
@@ -1245,9 +1239,9 @@ def check_a_run_takes_the_turns_already_played(bar: Bar) -> None:
     bar.idle(f"state.turn === {start + 6}", "the timeline is walked back")
     bar.ev("engine.acted = 1, render(engineState()), true")
     assert bar.ev("state.debug.played_ahead") is None
-    pick(2)
-    auto_play(start + 8, "Auto-play plays on from a turn that was touched")
-    assert ops() == [("step", None)] * 2, ops()
+    pick(3)
+    auto_play(start + 9, "Auto-play plays on from a turn that was touched")
+    assert ops() == [("step", None)] * 3, ops()
     bar.ev("engine.acted = 0, render(engineState()), true")
     pick(1)
 
@@ -1655,11 +1649,13 @@ def check_the_lock(bar: Bar) -> None:
     assert calls("a") == [["/debug", "forward", b]] and calls("b") == [["/debug", "step", None]], (calls("a"), calls("b"))
     assert strategies("b") == ["jack"], strategies("b")
     bar.until("!debugSplit.panes.b.marks.beyond", "B has played over the turns that were another Civ AI's")
-    # Auto-play on the one panel counts A's turns, and the lanes show where it is headed.
-    bar.ev("(() => { const turns = document.getElementById('dbg-turns'); turns.value = '2';"
+    # Auto-play on the one panel counts A's turns, and the lanes show where it
+    # is headed. Set to one turn and pressed twice, it plays two.
+    bar.ev("(() => { const turns = document.getElementById('dbg-turns'); turns.value = '1';"
            " turns.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
-    bar.click('[data-dbg="autoplay"]')
-    bar.until(f"{both(start + 4, start + 4)} && {deck_idle}", "Auto-play on the one panel plays both halves")
+    for turn in (start + 3, start + 4):
+        bar.click('[data-dbg="autoplay"]')
+        bar.until(f"{both(turn, turn)} && {deck_idle}", "Auto-play on the one panel plays both halves")
     assert bar.note() == f"Played to turn {start + 4}", bar.note()
 
     # B went back onto the trunk and played its turns again with the Civ AI A

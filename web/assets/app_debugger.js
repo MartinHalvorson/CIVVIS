@@ -430,28 +430,17 @@ const DEBUG_STACKED_UNDER = 720, DEBUG_PANE_STACKED_UNDER = 1000;
 // this, they have wrapped to three, and the words on them go. A box at least
 // `DEBUG_ROOMY` wide has room for the Civ AI picker's label as well.
 const DEBUG_DECK_ROWS = 70, DEBUG_ROOMY = 1480;
-// The turns Auto-play is set to when the box is built.
-const DEBUG_AUTOPLAY_TURNS = 10;
-// The turn counts Auto-play offers, with Era among them: played until a new
-// era begins. An era is held open 40 to 60 Standard turns (`ERA_MINIMUM_TURNS`
-// and `ERA_MAXIMUM_TURNS` in src/game.rs), scaled by the game's speed, so Era
-// stands where the middle of that span falls: between 30 and 40 on Online
-// (27 to 40 turns, the stock speed), and later on slower speeds.
-const DEBUG_AUTOPLAY_CHOICES = [1, 2, 3, 4, 5, 10, 20, 30, 40, 50, 100, 150, 200, 250];
-const DEBUG_ERA_TURNS = {online: 33, quick: 42, standard: 50, epic: 65, marathon: 100};
-function debugEraAfter() {
-  const turns = DEBUG_ERA_TURNS[(state || {}).game_speed] || DEBUG_ERA_TURNS.online;
-  return DEBUG_AUTOPLAY_CHOICES.filter(choice => choice <= turns).pop();
-}
-// A game of another speed moves Era to its place, and what is picked stays.
-function debugPlaceEra(select) {
-  const era = select.querySelector('option[value="era"]');
-  const after = select.querySelector(`option[value="${debugEraAfter()}"]`);
-  if (!era || !after || after.nextElementSibling === era) return;
-  const pick = select.value;
-  after.after(era);
-  select.value = pick;
-}
+// What Auto-play offers, in the order the picker lists it: a number of turns,
+// Era (until a new era begins) and Indefinite (until it is stopped, a
+// breakpoint stops it or the game ends). An era is held open 27 to 40 turns
+// on Online, the stock speed, and longer on a slower one (`ERA_MINIMUM_TURNS`
+// and `ERA_MAXIMUM_TURNS` in src/game.rs, scaled by the game's speed), so Era
+// stands after 20 turns.
+const DEBUG_AUTOPLAY_CHOICES = [
+  ["1", "1 turn"], ["3", "3 turns"], ["5", "5 turns"], ["10", "10 turns"], ["20", "20 turns"],
+  ["era", "Era"], ["100", "100 turns"], ["indefinite", "Indefinite"]];
+// What Auto-play is set to when the box is built.
+const DEBUG_AUTOPLAY_PICK = "era";
 // One request at a time: every debugger operation replaces the world.
 let debugBusy = false;
 // A run is a loop of single steps; the Auto-play button is also its Stop.
@@ -802,14 +791,15 @@ async function debugRun(until = null, era = null) {
 }
 // Auto-play: the seat's Civ AI plays the number of turns picked from the
 // turn that is open, until a new era begins (Era; in the last era, the game
-// out), or every turn the game has left, and a breakpoint stops it early.
-// Pressed while anything is being played, it stops that.
+// out), or until it is stopped (Indefinite: every turn the game has left),
+// and a breakpoint stops it early. Pressed while anything is being played,
+// it stops that.
 function debugAutoPlay() {
   if (debugRunning) { debugStopAsked = true; drawDebugBar(); return; }
   if (!debugTimeline()) return;
-  const pick = document.getElementById("dbg-turns").value || String(DEBUG_AUTOPLAY_TURNS);
+  const pick = document.getElementById("dbg-turns").value || DEBUG_AUTOPLAY_PICK;
   if (pick === "era") { debugRun(null, state.world_era ?? 0); return; }
-  debugRun(pick === "all" ? null : state.turn + Math.max(1, parseInt(pick, 10) || 1));
+  debugRun(pick === "indefinite" ? null : state.turn + Math.max(1, parseInt(pick, 10) || 1));
 }
 // The turn buttons walk the turns already played, and past the last of them
 // the Civ AI plays on. Going on does not play over what was played: it walks
@@ -1021,11 +1011,10 @@ function debugBuildBar() {
         <div class="dbg-cluster">
           <label class="dbg-field dbg-agent-field" title="The Civ AI that plays your seat when it is auto-played, stepped or played to"><span class="dbg-roomy-word">Civ AI</span>
             <select class="dbg-agent" id="dbg-agent" aria-label="Civ AI for your seat"></select></label>
-          <select id="dbg-turns" title="How many turns Auto-play plays before it hands the seat back. Era is until a new era begins (in the last era, to the end of the game), and All is every turn the game has left" aria-label="Turns to auto-play">${
-            DEBUG_AUTOPLAY_CHOICES.map(turns =>
-              `<option value="${turns}"${turns === DEBUG_AUTOPLAY_TURNS ? " selected" : ""}>${turns} turn${turns === 1 ? "" : "s"}</option>${
-                turns === debugEraAfter() ? '<option value="era">Era</option>' : ""}`).join("")
-          }<option value="all">All turns</option></select>
+          <select id="dbg-turns" title="How many turns Auto-play plays before it hands the seat back. Era is until a new era begins (in the last era, to the end of the game), and Indefinite is until it is stopped or the game ends" aria-label="Turns to auto-play">${
+            DEBUG_AUTOPLAY_CHOICES.map(([pick, word]) =>
+              `<option value="${pick}"${pick === DEBUG_AUTOPLAY_PICK ? " selected" : ""}>${word}</option>`).join("")
+          }</select>
           <button data-dbg="autoplay" title="Auto-play: the Civ AI plays the turns picked, and stops early when a breakpoint does. While it plays this counts the turns, and pressing it stops" aria-label="Auto-play"><i id="dbg-run-sign">▶▶</i><span class="dbg-word" id="dbg-run-word">Auto-play</span><span id="dbg-run-count"></span></button>
           <button class="dbg-apart" data-dbg-pop="layers" title="Layers: which decisions the Civ AI takes for you each turn">Layers<span class="dbg-count" id="dbg-layer-count"></span></button>
           <button data-dbg-pop="breaks" title="Breakpoints: what stops Auto-play and a turn played to" aria-label="Breakpoints"><span class="dbg-dot">●</span><span class="dbg-word">Breakpoints</span><span class="dbg-count" id="dbg-break-count"></span></button>
@@ -1752,9 +1741,7 @@ function debugDrawDeck(bar, deck) {
   debugOfferAgents(agent, deck.strategy);
   agent.disabled = !idle;
   agent.closest(".dbg-field").hidden = agent.options.length === 0;
-  const turnsPick = document.getElementById("dbg-turns");
-  turnsPick.disabled = !idle;
-  debugPlaceEra(turnsPick);
+  document.getElementById("dbg-turns").disabled = !idle;
 
   const turnBox = document.getElementById("dbg-turn");
   turnBox.disabled = !idle;

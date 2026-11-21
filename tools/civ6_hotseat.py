@@ -163,6 +163,12 @@ def seat_name(index: int) -> str:
     return f"CIVVIS jack {index}"
 
 
+def victory_switch_key(victory: str) -> str:
+    """`VICTORY_DIPLOMATIC` -> `diplomatic`, the key of the seat event's
+    `victories` table (CivvisControlAgent.lua, `Game.IsVictoryEnabled`)."""
+    return victory.removeprefix("VICTORY_").lower()
+
+
 def default_max_turns(speed: str) -> int:
     return SPEED_TURNS.get(speed, 500)
 
@@ -186,6 +192,10 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
     settings = play.build_parser().parse_args(flags)
     if not args.leader:
         settings.leader = None
+    # `--victories-off`: civ6_play takes this list from the host policy
+    # (`CIVVIS_VICTORIES_OFF`), which a hotseat table does not read; the table
+    # names its own, and `Monitor` reads the started game's switches back.
+    settings.victories_off = list(getattr(args, "victories_off", None) or [])
     config = play.build_config(settings)
     civvis_seats = getattr(args, "civvis_seats", None)
     seats = jack_seats(args.players, civvis_seats)
@@ -893,6 +903,11 @@ class Monitor:
         self.seat_info: dict[int, dict] = {}
         self.defeated: set[int] = set()
         self.result: dict | None = None
+        # `--victories-off`, read back: what the game's own switches say, and
+        # the first asked-off victory a seat found still on (or unreadable).
+        self.victories_off = list(getattr(args, "victories_off", None) or [])
+        self.victories: dict | None = None
+        self.setup_fault: str | None = None
         if args.auto_human:
             self.names[HUMAN_SEAT] = "Test stub"
         self.base = Journal(run_dir / "events.jsonl")
@@ -910,6 +925,7 @@ class Monitor:
         self.notified_turn = -1
         self.rescued_at = 0.0
         self.quiet = False
+        self.seat_stalls = 0
 
     def catch_up(self) -> None:
         """Read the record so far without replaying it (`--attach`): learn whose
@@ -1008,6 +1024,22 @@ class Monitor:
             self.say(f"saved the game as {event.get('name')!r} (Load Game -> Hot Seat)")
         elif kind == "hotseat_start_turn" and event.get("pressed") is False:
             self.say(f"⚠ could not press Start Turn for seat {event.get('player')}")
+        # The HUD's seat watch (CivvisControlHeartbeat.lua, `CivvisSeatWatch`): a
+        # CIVVIS seat whose turn is active while its controller does not move.
+        elif kind == "seat_quiet":
+            self.seat_stalls += 1
+            self.say(f"⚠ turn {event.get('turn')}: seat {event.get('player')} quiet for "
+                     f"{event.get('quiet')} s on its own turn (paused {event.get('paused')}, "
+                     f"turn complete sent {event.get('sent')}, blocker {event.get('blocker')}, "
+                     f"hand-over hidden {event.get('handover_hidden')}, controller ran "
+                     f"{event.get('controller_ran')})")
+        elif kind == "seat_quiet_end_turn":
+            self.say(f"turn {event.get('turn')}: the HUD ended seat {event.get('player')}'s quiet "
+                     f"turn (asked {event.get('asked')}, request {event.get('forces')})")
+        elif kind == "hotseat_pause_released":
+            self.say(f"⚠ turn {event.get('turn')}: seat {event.get('player')}'s hand-over pause stood "
+                     f"{event.get('waited')} s with no Start Turn on screen; released "
+                     f"(still paused {event.get('still_paused')})")
 
     def your_turn(self, turn: int) -> None:
         if turn == self.notified_turn:
@@ -1031,6 +1063,7 @@ class Monitor:
             self.seat_info[seat] = {k: event.get(k) for k in
                                     ("civ", "leader", "team", "player", "difficulty", "map",
                                      "size", "speed", "victory_types", "players")}
+            self.read_back_victories(seat, event)
         if kind == "hotseat_seat":
             self.say(f"seat {seat} is {event.get('shown')!r} "
                      f"(asked {event.get('name')!r}, applied {event.get('applied')})")
@@ -1054,6 +1087,27 @@ class Monitor:
             stats["errors"] += 1
             if stats["errors"] <= 5:
                 self.say(f"⚠ {self.name(seat)} mod error: {str(event)[:200]}")
+
+    def read_back_victories(self, seat: int, event: dict) -> None:
+        """A victory asked off is off only when the game says so: the seat's
+        `seat` event carries `Game.IsVictoryEnabled` per type (the shipped
+        WorldRankings.lua check). Anything but a plain `false` is a fault."""
+        switches = event.get("victories")
+        if isinstance(switches, dict):
+            self.victories = switches
+        if not self.victories_off:
+            return
+        wrong = [victory for victory in self.victories_off
+                 if not isinstance(switches, dict)
+                 or switches.get(victory_switch_key(victory)) is not False]
+        if wrong:
+            if self.setup_fault is None:
+                self.setup_fault = ("victory switch not applied: " + ", ".join(wrong)
+                                    + f" asked off, the game reads {switches!r}")
+                self.log(f"⚠ {self.name(seat)}: {self.setup_fault}")
+        else:
+            self.say(f"{self.name(seat)}: victories off, read back from the game: "
+                     + ", ".join(self.victories_off))
 
     def stalled(self, seconds: float) -> bool:
         return (self.active is not None and not self.active_human
@@ -1189,6 +1243,11 @@ class Stop(Exception):
     pass
 
 
+#: summary.json's `reason` for a table stopped because its game was not set up
+#: as asked. Not a game: a runner replays it from a fresh start, never a save.
+SETUP_FAULT_REASON = "setup fault"
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1234,6 +1293,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="unattended: CIVVIS plays seats 0..N-1 and the other seats up to "
                          "--players are Firaxis AI (no person at the Mac); the run stops at "
                          "the game's ending with the result in summary.json and closes Civ VI")
+    ap.add_argument("--victories-off", default="", metavar="VICTORY_TYPE[,...]",
+                    help="victory types switched off at setup, e.g. VICTORY_DIPLOMATIC "
+                         "(the host policy's CIVVIS_VICTORIES_OFF is not read here); each "
+                         "is read back from the started game, and an unattended table "
+                         "whose game still has one on stops without a result")
     ap.add_argument("--play-flags", default="", metavar="FLAGS",
                     help="civ6_play switches every jack seat plays with, as one string "
                          "(--play-flags='--dv-join-winner --luxury-quote-proposals')")
@@ -1252,6 +1316,13 @@ def main(argv: list[str] | None = None) -> int:
         args.leader = None
     if args.max_turns is None:
         args.max_turns = default_max_turns(args.speed)
+    named = {part.strip().upper() for part in args.victories_off.split(",") if part.strip()}
+    unknown = sorted(named - set(play.VICTORY_TYPES))
+    if unknown:
+        print(f"--victories-off: {', '.join(unknown)} is not one of "
+              f"{', '.join(play.VICTORY_TYPES)}", file=sys.stderr)
+        return 2
+    args.victories_off = [victory for victory in play.VICTORY_TYPES if victory in named]
     if args.civvis_seats is not None and not 1 <= args.civvis_seats < args.players:
         print(f"--civvis-seats must leave at least one Firaxis AI seat "
               f"(1..{args.players - 1} of --players {args.players})", file=sys.stderr)
@@ -1289,6 +1360,7 @@ def run(args: argparse.Namespace) -> int:
         args.auto_human = (None if not attach_config.get("HotseatStubSeats")
                            else "gated" if attach_config.get("HotseatHumanSeats") else "stub")
         args.victory = attach_config.get("VictoryLane") or args.victory
+        args.victories_off = list(attach_config.get("VictoriesOff") or [])
     elif env.game_pids():
         print("Civ VI is already running. Quit it first (this starts a fresh game), "
               "or pass --attach to drive a hotseat game you loaded.", file=sys.stderr)
@@ -1409,6 +1481,10 @@ def run(args: argparse.Namespace) -> int:
                 stop_reason = f"reached turn {args.turns}"
                 log(f"turn {args.turns} is complete")
                 break
+            if monitor.setup_fault and monitor.unattended:
+                stop_reason = SETUP_FAULT_REASON
+                log(f"stopping the table: {monitor.setup_fault}")
+                break
             if monitor.result is not None and monitor.unattended:
                 stop_reason = "game over"
                 # The end screen stays up a little, as civ6_play holds it, so a
@@ -1448,7 +1524,10 @@ def run(args: argparse.Namespace) -> int:
                     "eliminated": sorted(monitor.defeated), "turn": monitor.turn,
                     "difficulty": args.difficulty, "players": args.players, "map": args.map,
                     "map_size": args.map_size, "speed": args.speed, "max_turns": args.max_turns,
-                    "civvis_seats": seats, "victory_target": args.victory})
+                    "civvis_seats": seats, "victory_target": args.victory,
+                    "victories_off": monitor.victories_off, "victories": monitor.victories,
+                    "setup_fault": monitor.setup_fault,
+                    "seat_stalls": monitor.seat_stalls})
             monitor.close()
         request = {}
         try:
