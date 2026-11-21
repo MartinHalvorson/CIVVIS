@@ -463,6 +463,26 @@ class UnattendedTableTest(unittest.TestCase):
             monitor.poll()
             self.assertEqual((monitor.result["ours"], monitor.result["team"]), (False, 4))
 
+    def test_a_stalled_civvis_seat_presses_next_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            monitor = self.monitor(Path(tmp))
+            rows = [{"text": "NEXT TURN", "norm": "next turn", "x": 820, "y": 770}]
+            clicks = []
+            with patch.object(hotseat, "click", lambda _log, point: clicks.append(point)):
+                monitor.active, monitor.active_human = 1, False
+                self.assertTrue(hotseat.end_stalled_turn(monitor, lambda m: None, rows))
+                self.assertEqual(clicks, [(820, 770)])
+                monitor.active_human = True
+                self.assertFalse(hotseat.end_stalled_turn(monitor, lambda m: None, rows),
+                                 "never a person's turn")
+                monitor.active, monitor.active_human = 4, False
+                self.assertFalse(hotseat.end_stalled_turn(monitor, lambda m: None, rows),
+                                 "never a Firaxis AI seat")
+                monitor.active = 0
+                self.assertFalse(hotseat.end_stalled_turn(monitor, lambda m: None, []),
+                                 "no NEXT TURN on the map")
+            self.assertEqual(len(clicks), 1)
+
     def test_the_table_is_lost_only_when_both_seats_are_eliminated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp)
