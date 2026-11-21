@@ -420,8 +420,14 @@ function debugForgetStandingOrders(turn) {
   noticeSeenTurn = Math.max(0, turn - 1);
 }
 const DEBUG_TRAVEL_OPS = new Set(["back", "forward", "jump", "restart", "undo", "copy", "goto_save"]);
-async function debugOp(body, timeoutMs = 20000) {
-  if (debugBusy || turnAdvancePending || !debugTimeline()) return null;
+// `run` is a run's own: the request it has out for its next turn (`ahead`)
+// and whether an answer leaves it another turn to play (`more`). A run asks
+// for the next turn the moment a turn is answered and draws that turn while
+// the engine plays, where it used to draw first and leave the engine with
+// nothing to do for as long as drawing took (17 to 30 ms of every turn).
+async function debugOp(body, timeoutMs = 20000, run = null) {
+  const ahead = run ? run.ahead : null;
+  if ((debugBusy && !ahead) || turnAdvancePending || !debugTimeline()) return null;
   debugBusy = true;
   drawDebugBar();
   try {
@@ -430,12 +436,15 @@ async function debugOp(body, timeoutMs = 20000) {
     // What a half does of its own accord it does for its twin as well. What
     // it does because the other half did is the other half's to have said.
     const led = DEBUG_PANE !== null && !debugFollowing && !debugMirroring;
-    const next = await fetchJSON("/debug", {
+    const ask = () => fetchJSON("/debug", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(led && debugTwin ? {...body, twin: debugTwin} : body),
     }, timeoutMs);
+    if (run) run.ahead = null;
+    const next = await (ahead || ask());
     if (next.error) { debugSay(next.error); return next; }
+    if (run && run.more(next)) run.ahead = ask();
     debugTwinned = led && !!(next.debug && next.debug.twinned);
     // Turn 1 walked back to is not a new game: the page's notice for one,
     // which goes by the first turn of a world it has not announced, is told
@@ -457,7 +466,9 @@ async function debugOp(body, timeoutMs = 20000) {
     debugSay(`The debugger could not ${body.op}: ${error.message || error}`);
     return null;
   } finally {
-    debugBusy = false;
+    // A run with a turn asked for is still busy: nothing else is to be
+    // asked of the engine in between.
+    debugBusy = !!(run && run.ahead);
     debugTravelling = false;
     debugTwinned = false;
     drawDebugBar();
@@ -611,9 +622,15 @@ async function debugRun(until = null) {
   debugPlayed = 0; debugAsked = until === null ? null : Math.max(1, until - state.turn);
   debugSay("");
   let played = 0;
+  // Whether the turn just answered leaves the run another to play. The next
+  // is asked for on this answer, before the turn is drawn (`debugOp`), so a
+  // Stop pressed while a turn is being drawn takes effect a turn later: the
+  // engine was already playing it.
+  const run = {ahead: null, more: next => !debugStopAsked && !(next.debug || {}).stopped &&
+    !(until !== null && next.turn >= until)};
   try {
-    while (!debugStopAsked) {
-      const next = await debugOp({op: "step", strategy: debugStrategy()}, AUTOPLAY_BATCH_TIMEOUT_MS);
+    do {
+      const next = await debugOp({op: "step", strategy: debugStrategy()}, AUTOPLAY_BATCH_TIMEOUT_MS, run);
       if (!next || next.error) break;
       played += 1;
       debugPlayed = played;
@@ -621,9 +638,16 @@ async function debugRun(until = null) {
       if (stopped) { debugSayStop(stopped); break; }
       if (until !== null && next.turn >= until) { debugSay(`Played to turn ${next.turn}`); break; }
       await new Promise(drawn => requestAnimationFrame(drawn));
-    }
+    } while (run.ahead);
     if (debugStopAsked) debugSay(`Stopped by hand after ${played} turn${played === 1 ? "" : "s"}`);
   } finally {
+    // A turn asked for and never taken (drawing the one before it failed) has
+    // still been played: the page reads the world it left.
+    if (run.ahead) {
+      const late = await run.ahead.catch(() => null);
+      debugBusy = false;
+      if (late && !late.error) render(late);
+    }
     debugRunning = false; debugStopAsked = false; autoplaying = false; debugGoal = null;
     drawDebugBar();
     drawTurnLoop();

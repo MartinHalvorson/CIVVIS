@@ -89,7 +89,9 @@ const painted = [];
 for (const name of ["drawSoloHud", "drawLaunchBar", "drawPlayerHud", "drawSide", "drawUbar",
   "advanceToNextActionUnit", "clearUnitIntel", "closeCityScreen", "closeEmpire", "closeDiplomacy", "closeTrade"])
   window[name] = () => { painted.push(name); };
-function render(next) { state = next; }
+// How many debugger requests had been sent each time a world was drawn.
+const drawn = [];
+function render(next) { state = next; drawn.push(engine.sent.filter(call => call.path === "/debug").length); }
 function escapeAttr(text) {
   return String(text).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 }
@@ -636,6 +638,7 @@ def check_the_bar(bar: Bar) -> None:
     assert bar.sent() == [{"op": "step", "strategy": "jack"}], bar.sent()
     bar.ev(f"{turns}.value = '5', engine.wait = 60, true")
     bar.forget()
+    bar.ev("drawn.length = 0, true")
     bar.click('[data-dbg="autoplay"]')
     bar.until("debugRunning && debugPlayed >= 2", "auto-play is under way")
     sign, word, count = label()
@@ -645,6 +648,9 @@ def check_the_bar(bar: Bar) -> None:
     bar.ev("engine.wait = 0, true")
     bar.idle(f"state.turn === {last + 7}", "auto-play plays the five turns picked")
     assert [call["op"] for call in bar.sent()] == ["step"] * 5, bar.sent()
+    # Each turn but the last is drawn with the next already asked for: the
+    # engine plays while the page draws, and never plays a turn past the count.
+    assert bar.ev("drawn.join()") == "2,3,4,5,5", bar.ev("drawn.join()")
     assert bar.note() == f"Played to turn {last + 7}", bar.note()
     assert label() == ["▶▶", "Auto-play", ""], label()
     bar.ev(f"{turns}.value = '1', true")
