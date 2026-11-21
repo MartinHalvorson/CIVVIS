@@ -143,6 +143,16 @@ function engineLine() {
   while (held < kept.length && !others(kept[held])) held += 1;
   return kept.slice(0, held);
 }
+// The last turn ahead that playing on from the open turn would only play
+// again: the Civ AI seated played every turn from here to it, and the open
+// turn stands as it opened. A half of a split has none, as in the engine.
+const HALF = new URLSearchParams(location.search).has("pane") && window.parent !== window;
+function enginePlayedAhead() {
+  if (HALF || engine.seat === null || engine.acted > 0 || engine.current !== 0) return null;
+  let last = engine.turn;
+  while (engine.marks.includes(last + 1) && engine.by[last + 1] === engine.seat) last += 1;
+  return last > engine.turn ? last : null;
+}
 function engineState(error = null) {
   const marks = engineLine(), kept = engine.marks;
   return {error, turn: engine.turn, seed: 7, current: engine.current, units: [], cities: [],
@@ -152,7 +162,7 @@ function engineState(error = null) {
       yields: {science: 1, culture: 1, gold: 1, faith: 0}},
       {id: 1, civ: "greece"}, {id: 2, civ: "barbarians", is_barbarian: true}],
     debug: {turn: engine.turn, turns: [...marks], first: marks[0], last: marks[marks.length - 1],
-      seat: engine.seat, beyond: marks.length < kept.length
+      seat: engine.seat, played_ahead: enginePlayedAhead(), beyond: marks.length < kept.length
         ? {from: kept[marks.length], to: kept[kept.length - 1], by: engine.by[kept[marks.length]] || null} : null,
       acted: engine.acted, can_undo: engine.acted > 0 && engine.current === 0,
       can_back: engine.acted > 0 || engine.turn > marks[0], can_forward: engine.turn < marks[marks.length - 1],
@@ -221,6 +231,18 @@ async function fetchJSON(path, init = {}) {
     else if (dawn && engine.watch.eras) engine.stopped = {kind: "era", turn: engine.turn, era: engine.eras.length - 1};
     // The game is over at its last turn.
     else if (engine.limit && engine.turn >= engine.limit) engine.stopped = {kind: "end", turn: engine.turn};
+  } else if (body.op === "walk") {
+    // Along the turns the seated Civ AI already played, as far as asked and
+    // no further than the first a breakpoint names. Nothing is played, so
+    // nothing kept is let go and the score a step adds to stays as it is.
+    const last = Math.min(enginePlayedAhead() ?? engine.turn, body.turn ?? Infinity);
+    while (engine.turn < last && !engine.stopped) {
+      engine.turn += 1;
+      const dawn = engine.eras.find(era => era.turn === engine.turn);
+      if (engine.breaks.includes(engine.turn)) engine.stopped = {kind: "turn", turn: engine.turn};
+      else if (dawn && (body.era || engine.watch.eras)) engine.stopped = {kind: "era", turn: engine.turn, era: dawn.era};
+      else if (engine.limit && engine.turn >= engine.limit) engine.stopped = {kind: "end", turn: engine.turn};
+    }
   } else if (body.op === "jump") {
     const reached = marks.filter(turn => turn <= body.turn).pop();
     if (others !== undefined && others <= body.turn) error = `turn ${others} was played by another Civ AI`;
@@ -480,7 +502,8 @@ def check_the_bar(bar: Bar) -> None:
     assert bar.ev("document.getElementById('dbg-slider').disabled"), "the slider waits for the run"
     bar.ev("engine.wait = 0, true")
     bar.idle("state.turn === 9", "the slider plays to a turn ahead")
-    assert [call["op"] for call in bar.sent()] == ["step"] * 4, bar.sent()
+    # Turn 6 was played before: it is walked to, and the three past it played.
+    assert [call["op"] for call in bar.sent()] == ["walk"] + ["step"] * 3, bar.sent()
     assert bar.note() == "Played to turn 9", bar.note()
     at_nine = bar.ev(marker)
     assert (at_six[0], at_nine[0]) == ("6", "9") and at_nine[1] > at_six[1], (at_six, at_nine)
@@ -654,12 +677,13 @@ def check_the_bar(bar: Bar) -> None:
     assert bar.ev("document.getElementById('dbg-pop-saves').hidden"), "Escape closes a panel"
 
     # A breakpoint on a turn ahead stands on the timeline as a mark: picked,
-    # it is played to from turn 2, and the run stops because the engine said so.
+    # it is played to from turn 2, and the run stops because the engine said
+    # so. The turns to 9 were played before and are walked: three are played.
     bar.ev("engine.breaks = [12], render(engineState()), true")
     bar.forget()
     bar.click(f'{LANE} .dbg-marks i.stop[data-dbg-turn="12"]')
     bar.idle("state.turn === 12", "a breakpoint ahead is played to")
-    assert [call["op"] for call in bar.sent()] == ["step"] * 10, bar.sent()
+    assert [call["op"] for call in bar.sent()] == ["walk"] + ["step"] * 3, bar.sent()
     assert bar.note() == "Stopped at turn 12", bar.note()
     bar.ev("engine.breaks = [], render(engineState()), true")
 
@@ -819,6 +843,11 @@ def check_breakpoints_and_a_run(bar: Bar) -> None:
         bar.idle("true", f"the {field} field is sent")
         return bar.sent()[-1]
 
+    # The runs here are played from the last turn played, so each turn of
+    # them is a step: a run from an earlier turn walks the kept turns first
+    # (`check_a_run_takes_the_turns_already_played`).
+    bar.type_turn(bar.ev("Math.max(...state.debug.turns)"))
+    bar.idle("state.turn === state.debug.last", "the last turn played is open")
     bar.click('[data-dbg-pop="breaks"]')
     # Turns are whole numbers, each once; anything else in the field is dropped.
     request = typed("turns", "12, 15, twelve, 12")
@@ -1139,6 +1168,77 @@ def check_a_picked_civ_ai_plays_its_own_turns(bar: Bar) -> None:
     bar.idle(f"state.turn === {start + 4}", "1 on plays")
     assert bar.sent() == [{"op": "step", "strategy": "jack"}], bar.sent()
     bar.ev("document.getElementById('dbg-turns').value = '1', true")
+
+
+def check_a_run_takes_the_turns_already_played(bar: Bar) -> None:
+    """Forward, back, forward again: the turns already played are not played again.
+
+    Why this exists: on 2026-11-21 the operator played 50 turns on, went back
+    20 and played 30 on, and the first 20 of those were played a second time
+    although every one of them was kept. A run now asks the engine to walk
+    to the latest kept turn on its way and plays on from there.
+    """
+    ops = lambda: [(call["op"], call.get("turn")) for call in bar.sent()]
+    pick = lambda turns: bar.ev(f"document.getElementById('dbg-turns').value = '{turns}', true")
+
+    def auto_play(goal: int, why: str) -> None:
+        bar.forget()
+        bar.click('[data-dbg="autoplay"]')
+        bar.idle(f"state.turn === {goal}", why)
+
+    bar.type_turn(bar.ev("Math.max(...state.debug.turns)"))
+    bar.idle("state.turn === state.debug.last && !state.debug.beyond", "the last turn played is open")
+    start = bar.ev("state.turn")
+    pick(5)
+    auto_play(start + 5, "five turns are played")
+    assert ops() == [("step", None)] * 5 and bar.ev("state.debug.played_ahead") is None, ops()
+
+    # Back three and five on: three of the five are kept, and two are played.
+    bar.drag("dbg-slider", start + 2)
+    bar.idle(f"state.turn === {start + 2}", "the timeline is walked back")
+    assert bar.ev("state.debug.played_ahead") == start + 5
+    score = bar.ev("engine.score")
+    auto_play(start + 7, "Auto-play takes the kept turns and plays the rest")
+    assert ops() == [("walk", start + 7)] + [("step", None)] * 2, ops()
+    assert bar.sent()[0] == {"op": "walk", "turn": start + 7, "era": False, "strategy": "jack"}, bar.sent()
+    assert bar.ev("engine.score") == score + 2, "a kept turn was played again"
+    assert bar.note() == f"Played to turn {start + 7}", bar.note()
+
+    # A run that ends on a kept turn plays nothing, and the turns past it stay.
+    bar.drag("dbg-slider", start + 1)
+    bar.idle(f"state.turn === {start + 1}", "the timeline is walked back")
+    pick(2)
+    auto_play(start + 3, "Auto-play to a kept turn goes to it")
+    assert ops() == [("walk", start + 3)] and bar.ev("engine.score") == score + 2, ops()
+    assert bar.note() == f"Played to turn {start + 3}", bar.note()
+    assert bar.ev("[state.debug.last, state.debug.played_ahead]") == [start + 7, start + 7]
+
+    # A breakpoint on a kept turn stops the walk there, as it stopped the run.
+    bar.ev(f"engine.breaks = [{start + 5}], render(engineState()), true")
+    pick(5)
+    auto_play(start + 5, "the walk stops on a breakpoint's turn")
+    assert ops() == [("walk", start + 8)], ops()
+    assert bar.note() == f"Stopped at turn {start + 5}", bar.note()
+    bar.ev("engine.breaks = [], render(engineState()), true")
+
+    # The turn box, typed past the last turn played from an earlier one.
+    bar.forget()
+    bar.type_turn(start + 9)
+    bar.idle(f"state.turn === {start + 9}", "the turn box takes the kept turns and plays the rest")
+    assert ops() == [("walk", start + 9)] + [("step", None)] * 2, ops()
+    assert bar.ev("engine.score") == score + 4, "a kept turn was played again"
+
+    # A turn with something done in it by hand is not the turn that was
+    # played: the Civ AI plays on from it, and no kept turn is taken.
+    bar.drag("dbg-slider", start + 6)
+    bar.idle(f"state.turn === {start + 6}", "the timeline is walked back")
+    bar.ev("engine.acted = 1, render(engineState()), true")
+    assert bar.ev("state.debug.played_ahead") is None
+    pick(2)
+    auto_play(start + 8, "Auto-play plays on from a turn that was touched")
+    assert ops() == [("step", None)] * 2, ops()
+    bar.ev("engine.acted = 0, render(engineState()), true")
+    pick(1)
 
 
 def check_the_split(bar: Bar) -> None:
@@ -1622,6 +1722,9 @@ def main() -> int:
         print("a Civ AI picked on an earlier turn is said to the engine at once, the turns another one "
               "played ahead are drawn apart and named, and the turn buttons, the turn box, the "
               "timeline and Auto-play all play from there with the Civ AI picked.")
+        check_a_run_takes_the_turns_already_played(bar)
+        print("a run takes the turns its Civ AI already played from where they are kept, stops on a "
+              "breakpoint among them, and plays only the turns past the last of them.")
         check_the_split(bar)
         print("the split opens at once, seats a Civ AI in each half, plays both to a turn locked and "
               "unlocked, sets their numbers side by side, starts both again from the split, moves "

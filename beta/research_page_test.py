@@ -238,6 +238,38 @@ class Page(unittest.TestCase):
         for piece in ('id="res-kind-self_play"', 'id="res-kind-deity"', 'id="res-timing"', 'id="res-summary"', 'id="res-spans"'):
             self.assertIn(piece, PAGE)
 
+    def test_the_deity_games_are_listed_before_the_self_play_games(self):
+        # Operator 2026-11-21: "list the civvis vs deity ai stuff before the
+        # civvis self-play. still side by side, just swap the ordering".
+        # The script lists per kind in this order: the counts, the figures
+        # above each small chart, the hover rows and both tables' rows.
+        self.assertIn('const KINDS = ["deity", "self_play"];', PAGE)
+        # And the markup the script fills, in the same order: the two charts,
+        # the line key, the notes and their sources.
+        for first, second in (
+            ('id="res-kind-deity"', 'id="res-kind-self_play"'),
+            ("</span>CIVVIS vs Deity AI</li>", "</span>CIVVIS self-play (in the victory"),
+            ('id="res-note-deity"', 'id="res-note-self"'),
+            (">Deity games</a>", ">Self-play games</a>"),
+        ):
+            self.assertEqual((PAGE.count(first), PAGE.count(second)), (1, 1), (first, second))
+            self.assertLess(PAGE.index(first), PAGE.index(second), (first, second))
+        # The figures table keeps the two side by side, the Deity columns on
+        # the left with the one column self-play has no use for.
+        self.assertIn(
+            '<tr><th></th><th class="is-group" colspan="5">CIVVIS vs Deity AI</th>'
+            '<th class="is-group" colspan="4">CIVVIS self-play</th></tr>',
+            PAGE,
+        )
+        self.assertRegex(
+            PAGE,
+            r'<th scope="col">Victory</th>\s*'
+            r'<th scope="col">Games</th><th scope="col">Share</th><th scope="col">CIVVIS won</th>'
+            r'<th scope="col">Median turn</th><th scope="col">Busiest span</th>\s*'
+            r'<th scope="col">Games</th><th scope="col">Share</th>'
+            r'<th scope="col">Median turn</th><th scope="col">Busiest span</th>\s*</tr>',
+        )
+
     def test_every_page_lists_research_between_home_and_tournaments(self):
         # Operator 2026-11-21: "between home and tournaments, we should add a
         # "Research"." This page lists the site's pages as the others do,

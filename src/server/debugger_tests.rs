@@ -101,6 +101,7 @@ fn timeline_of(turns: std::ops::RangeInclusive<u32>, room: usize) -> Timeline {
             actions: 0,
             game: game.clone(),
             by: None,
+            whole: false,
             minds: None,
         });
     }
@@ -689,7 +690,7 @@ fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_orde
         "const began = (timeline.eras || []).filter(era => era.turn < state.turn);",
         "return (timeline.eras || []).find(era => era.turn > state.turn) || null;",
         "if (await debugWalkOn(null)) await debugRun(null, state.world_era ?? 0);",
-        "if (dawn(next)) { debugSayStop({kind: \"era\", turn: next.turn, era: next.world_era}); break; }",
+        "else if (dawn(next)) debugSayStop({kind: \"era\", turn: next.turn, era: next.world_era});",
         // Play to End walks the turns played, then plays the game out.
         "if (await debugWalkOn(null)) await debugRun(null);",
         "<input type=\"checkbox\" data-dbg-field=\"eras\"> A new era begins</label>",
@@ -1401,6 +1402,198 @@ fn a_turn_stepped_in_is_its_agents_and_its_plan_goes_with_the_seat() {
     assert_eq!(session.game.turn, 2);
     let newest = session.debugger.marks.last().expect("the turn is marked");
     assert_eq!((newest.turn, newest.by.as_deref()), (2, Some("siege")));
+}
+
+/// One `walk`, as a run asks it before it plays (`debugRun`).
+fn walk(session: &mut Session, request: Value) -> Value {
+    let answer = session.debug(&request);
+    assert_eq!(answer["error"], Value::Null);
+    answer["debug"].clone()
+}
+
+/// Operator 2026-11-21: "when sim forward 50 turns, back 20, then forward
+/// 30, turns 1-20 of the forward 30 step dont need to be recomputed. we
+/// already have the saves. take the latest save on the path and start from
+/// there". A run walks to the last kept turn it would only play again, and
+/// the turns played from there are the turns the whole run would have played.
+#[test]
+fn a_run_takes_the_turns_its_civ_ai_already_played_from_their_marks() {
+    let mut session = played();
+    for _ in 0..6 {
+        step_as(&mut session, "jack");
+    }
+    let seventh = world(&session);
+    // The same game played on without a walk: back three, six turns on.
+    assert_eq!(session.debug_jump(4), Ok(4));
+    let played_again: Vec<String> = (0..6)
+        .map(|_| {
+            step_as(&mut session, "jack");
+            world(&session)
+        })
+        .collect();
+    assert_eq!(played_again[2], seventh);
+    assert_eq!(session.game.turn, 10);
+
+    // Back six, and nine turns on: the first six are kept.
+    assert_eq!(session.debug_jump(4), Ok(4));
+    assert_eq!(session.state()["debug"]["played_ahead"], json!(10));
+    let actions = session.game.log.len();
+    let walked = walk(
+        &mut session,
+        json!({"op": "walk", "turn": 13, "strategy": "jack"}),
+    );
+    assert_eq!(session.game.turn, 10);
+    assert_eq!(walked["stopped"], Value::Null);
+    assert_eq!(walked["played_ahead"], Value::Null);
+    assert_eq!(world(&session), played_again[5]);
+    // Nothing was played to get there, and nothing kept was let go.
+    assert_eq!(session.game.log.len(), session.debugger.marks[9].actions);
+    assert!(session.game.log.len() > actions);
+    assert_eq!(marked(&session), (1..=10).collect::<Vec<u64>>());
+
+    // A walk that stops short of the last kept turn keeps the rest.
+    assert_eq!(session.debug_jump(4), Ok(4));
+    walk(&mut session, json!({"op": "walk", "turn": 7}));
+    assert_eq!(session.game.turn, 7);
+    assert_eq!(world(&session), seventh);
+    assert_eq!(marked(&session), (1..=10).collect::<Vec<u64>>());
+    assert_eq!(session.state()["debug"]["played_ahead"], json!(10));
+
+    // On the last turn played there is nothing to take, and nothing is said.
+    assert_eq!(session.debug_jump(10), Ok(10));
+    let stays = walk(&mut session, json!({"op": "walk", "turn": 30}));
+    assert_eq!((session.game.turn, &stays["stopped"]), (10, &Value::Null));
+
+    // Every run of the page asks for the walk before it plays, whichever
+    // control began it: Auto-play, the turn box, the timeline, a half's run.
+    let script = include_str!("../../web/assets/app_debugger.js");
+    for piece in [
+        "if ((debugTimeline().played_ahead ?? from) > from) {",
+        "const next = await debugOp({op: \"walk\", turn: until, era: era !== null, strategy: debugStrategy()},",
+        "on = !over(next) && !debugStopAsked;",
+    ] {
+        assert!(script.contains(piece), "a run no longer walks its kept turns: {piece}");
+    }
+}
+
+/// A walk passes a breakpoint no more than the run that played the turns
+/// would: a turn, an era and a state condition each stop it on their turn.
+#[test]
+fn a_walk_along_kept_turns_stops_where_a_breakpoint_would_have_stopped_the_run() {
+    let mut session = played();
+    for _ in 0..8 {
+        step_as(&mut session, "jack");
+    }
+    assert_eq!(session.debug_jump(2), Ok(2));
+    let set = session.debug(&json!({"op": "breakpoints", "turns": [5]}));
+    assert_eq!(set["error"], Value::Null);
+    let walked = walk(&mut session, json!({"op": "walk"}));
+    assert_eq!(session.game.turn, 5);
+    assert_eq!(walked["stopped"], json!({"kind": "turn", "turn": 5}));
+    // From the breakpoint's own turn the walk goes on past it.
+    let walked = walk(&mut session, json!({"op": "walk"}));
+    assert_eq!((session.game.turn, &walked["stopped"]), (9, &Value::Null));
+
+    // A condition is held against the turn before, as a step holds it: the
+    // walk stops on the turn, and for the reason, that playing them does.
+    assert_eq!(session.debug_jump(2), Ok(2));
+    let changes = json!({"seat": 0, "key": "score", "test": "changes"});
+    let set = session.debug(&json!({"op": "breakpoints", "conditions": [changes]}));
+    assert_eq!(set["error"], Value::Null);
+    let mut ran = Value::Null;
+    while session.game.turn < 9 {
+        let answer = session.debug(&json!({"op": "step", "strategy": "jack", "lean": true}));
+        assert_eq!(answer["error"], Value::Null);
+        if ran.is_null() {
+            ran = answer["debug"]["stopped"].clone();
+        }
+    }
+    assert_eq!(session.debug_jump(2), Ok(2));
+    let walked = walk(&mut session, json!({"op": "walk"}));
+    assert_eq!(walked["stopped"], ran);
+    let stop = ran["turn"].as_u64().unwrap_or(9);
+    assert_eq!(u64::from(session.game.turn), stop);
+
+    // A run that plays until an era begins stops on the era's first kept
+    // turn, breakpoint or none: here there is none ahead, so it does not.
+    let clear = session.debug(&json!({"op": "breakpoints"}));
+    assert_eq!(clear["error"], Value::Null);
+    assert_eq!(session.debug_jump(2), Ok(2));
+    let walked = walk(&mut session, json!({"op": "walk", "era": true}));
+    assert_eq!((session.game.turn, &walked["stopped"]), (9, &Value::Null));
+    let dawn = session.debugger.marks[5].game.world_era + 1;
+    for mark in &mut session.debugger.marks[5..] {
+        mark.game.world_era = dawn;
+    }
+    assert_eq!(session.debug_jump(2), Ok(2));
+    let walked = walk(&mut session, json!({"op": "walk", "era": true}));
+    assert_eq!(session.game.turn, 6);
+    assert_eq!(
+        walked["stopped"],
+        json!({"kind": "era", "turn": 6, "era": dawn})
+    );
+}
+
+/// Only a turn the seated Civ AI would play again exactly is taken from its
+/// mark. A turn the person ended, a turn touched by hand before the agent
+/// took it, another Civ AI's turn and a turn in a half of a split are played.
+#[test]
+fn a_walk_takes_no_turn_the_seated_civ_ai_would_not_play_again() {
+    // Ended by hand: the agent's game from there is another game.
+    let mut session = played();
+    pick(&mut session, "jack");
+    end_turn(&mut session);
+    step_as(&mut session, "jack");
+    step_as(&mut session, "jack");
+    assert_eq!(session.debug_jump(1), Ok(1));
+    assert_eq!(session.state()["debug"]["played_ahead"], Value::Null);
+    walk(&mut session, json!({"op": "walk"}));
+    assert_eq!(session.game.turn, 1);
+    // From the turn the agent took over on, its turns are taken.
+    assert_eq!(session.debug_jump(2), Ok(2));
+    assert_eq!(session.state()["debug"]["played_ahead"], json!(4));
+
+    // Touched first: the turn the agent finished is not the one it plays
+    // from the top, and the turns after it are.
+    let mut session = played();
+    pick(&mut session, "jack");
+    let hand = something_to_do(&session);
+    assert_eq!(session.act(&hand), None);
+    for _ in 0..3 {
+        step_as(&mut session, "jack");
+    }
+    assert_eq!(session.debug_jump(1), Ok(1));
+    assert_eq!(session.state()["debug"]["played_ahead"], Value::Null);
+    assert_eq!(session.debug_jump(2), Ok(2));
+    assert_eq!(session.state()["debug"]["played_ahead"], json!(4));
+    // With something done in the open turn it no longer stands as it opened.
+    let hand = something_to_do(&session);
+    assert_eq!(session.act(&hand), None);
+    assert_eq!(session.state()["debug"]["played_ahead"], Value::Null);
+    walk(&mut session, json!({"op": "walk"}));
+    assert_eq!(session.game.turn, 2);
+    // Taken back, it does again.
+    while session.debugger.acted(&session.game) > 0 {
+        session
+            .debug_undo()
+            .expect("an action by hand is taken back");
+    }
+    assert_eq!(session.state()["debug"]["played_ahead"], json!(4));
+
+    // Another Civ AI's turns: the walk names the one picked, and stays.
+    walk(&mut session, json!({"op": "walk", "strategy": "siege"}));
+    assert_eq!(session.game.turn, 2);
+    step_as(&mut session, "siege");
+    assert_eq!(marked(&session), [1, 2, 3]);
+
+    // A half of a split seats new agents wherever it is walked to, so what
+    // it plays from a kept turn is not the turn that was kept.
+    let mut half = session.fork();
+    for _ in 0..2 {
+        step_as(&mut half, "siege");
+    }
+    assert_eq!(half.debug_jump(3), Ok(3));
+    assert_eq!(half.state()["debug"]["played_ahead"], Value::Null);
 }
 
 /// Operator 2026-11-21: "when the debugger jumps back in time, then changes

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#171d25">
 <title>Research · CIVVIS.ai</title>
-<meta name="description" content="CIVVIS research: what the CIVVIS AI agents' games show, starting with when in the game each victory type lands, in self-play and against Civilization VI's Deity AI.">
+<meta name="description" content="CIVVIS research: what the CIVVIS AI agents' games show, starting with when in the game each victory type lands, against Civilization VI's Deity AI and in self-play.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
 <style>
   /* The home page's own palette, header and cards (`beta/landing.html`), as
@@ -90,7 +90,7 @@
   .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
   .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* The site's pages, listed in the same order on every one of them with
-     the page on screen in gold: Home, Research, Tournaments, CIVVIS and AI
+     the page on screen in gold: Home, Research, Tournaments, CIVVIS and Strategy
      Debugger, and under them the game they are built on. As on the home
      page, whose header this is, the column stands to the left of the title. */
   .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
@@ -114,6 +114,11 @@
   .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .site-link[aria-current="page"],
   .site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }
+  /* STRATEGY DEBUGGER on one line makes the column 178px wide, and on a
+     phone under 380px that leaves the title less room than it needs (at
+     320px the page ran 15px past the screen). There the column is as wide
+     as TOURNAMENTS, its longest word, and that name takes two lines. */
+  @media (max-width: 379px) { .site-nav { width: min-content; } }
 
   .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
@@ -221,7 +226,7 @@
         <a class="site-link" href="./" aria-current="page">Research</a>
         <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
-        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
+        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">Strategy Debugger</a>
         <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
       <div class="site-lockup">
@@ -250,9 +255,9 @@
   <main class="shell">
     <p class="intro">
       What the games show. Every chart here is read off games the CIVVIS AI
-      agents have played: against each other in the simulator, and one agent
-      at a time inside <cite>Sid Meier&#8217;s Civilization VI</cite> against
-      the game&#8217;s own AI.
+      agents have played: one agent at a time inside
+      <cite>Sid Meier&#8217;s Civilization VI</cite> against the game&#8217;s
+      own AI, and against each other in the simulator.
     </p>
 
     <!-- The figures. `beta/publish.sh` fills the `research-data` slot below
@@ -288,12 +293,12 @@
         </div>
         <p class="res-counted" id="res-counted"></p>
         <ul class="res-legend" id="res-legend" aria-label="Victory types"></ul>
-        <div class="res-kind" id="res-kind-self_play">
-          <h3 class="res-kind-title">CIVVIS self-play <small data-count></small></h3>
-          <div class="res-plot" data-plot></div>
-        </div>
         <div class="res-kind" id="res-kind-deity">
           <h3 class="res-kind-title">CIVVIS vs Deity AI <small data-count></small></h3>
+          <div class="res-plot" data-plot></div>
+        </div>
+        <div class="res-kind" id="res-kind-self_play">
+          <h3 class="res-kind-title">CIVVIS self-play <small data-count></small></h3>
           <div class="res-plot" data-plot></div>
         </div>
       </section>
@@ -306,8 +311,8 @@
           most often lands, however rare the victory is. How common it is stands above each chart.
         </p>
         <ul class="res-legend">
-          <li><span class="res-linekey is-wash" style="border-color: var(--muted); background: rgba(147, 163, 181, 0.16)"></span>CIVVIS self-play (in the victory&#8217;s colour)</li>
           <li><span class="res-linekey" style="background: var(--text)"></span>CIVVIS vs Deity AI</li>
+          <li><span class="res-linekey is-wash" style="border-color: var(--muted); background: rgba(147, 163, 181, 0.16)"></span>CIVVIS self-play (in the victory&#8217;s colour)</li>
         </ul>
         <div class="res-timing" id="res-timing"></div>
       </section>
@@ -318,11 +323,11 @@
         <div class="res-scroll">
           <table class="rank-table" id="res-summary">
             <thead>
-              <tr><th></th><th class="is-group" colspan="4">CIVVIS self-play</th><th class="is-group" colspan="5">CIVVIS vs Deity AI</th></tr>
+              <tr><th></th><th class="is-group" colspan="5">CIVVIS vs Deity AI</th><th class="is-group" colspan="4">CIVVIS self-play</th></tr>
               <tr>
                 <th scope="col">Victory</th>
-                <th scope="col">Games</th><th scope="col">Share</th><th scope="col">Median turn</th><th scope="col">Busiest span</th>
                 <th scope="col">Games</th><th scope="col">Share</th><th scope="col">CIVVIS won</th><th scope="col">Median turn</th><th scope="col">Busiest span</th>
+                <th scope="col">Games</th><th scope="col">Share</th><th scope="col">Median turn</th><th scope="col">Busiest span</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -335,12 +340,12 @@
           </div>
         </details>
         <div class="rank-note">
-          <p id="res-note-self"></p>
           <p id="res-note-deity"></p>
+          <p id="res-note-self"></p>
           <p>
             A window counts back from the newest game of its kind.
-            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/research/self_play_endings.json" target="_blank" rel="noreferrer">Self-play games</a> ·
-            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Deity games</a>
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Deity games</a> ·
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/research/self_play_endings.json" target="_blank" rel="noreferrer">Self-play games</a>
           </p>
         </div>
       </section>
@@ -359,7 +364,9 @@
     const NAMES = { science: "Science", culture: "Culture", diplomatic: "Diplomatic", religious: "Religious", domination: "Domination", score: "Score" };
     const VICTORIES = (Array.isArray(data.victories) ? data.victories : []).filter((v) => NAMES[v]);
     const TURNS = Number(data.turns) || 250;
-    const KINDS = ["self_play", "deity"];
+    // The order the two kinds are listed in, everywhere on the page: the
+    // Deity games first (operator 2026-11-21).
+    const KINDS = ["deity", "self_play"];
     const LABEL = { self_play: "CIVVIS self-play", deity: "CIVVIS vs Deity AI" };
     const state = { window: "7", span: 5 };
     const SVG = "http://www.w3.org/2000/svg";
