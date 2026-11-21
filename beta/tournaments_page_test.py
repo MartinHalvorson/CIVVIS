@@ -71,7 +71,10 @@ class TournamentsPage(unittest.TestCase):
             run("settler-20260730T101433Z", "win", None, 0, utc="2026-07-30T10:20:00Z", players=None, map=None),
             run("civvis-tinywar-20260731T231249Z", "unfinished", None, 0, utc="2026-07-31T23:30:00Z", players=None, map=None),
         ]
-        return tournaments_page.record(rows + list(more), specs, ["Rome", "Gran Colombia", "Mali", "Gaul", "Korea"])
+        return tournaments_page.record(rows + list(more), specs, ["Rome", "Gran Colombia", "Mali", "Gaul", "Korea"], self.videos)
+
+    #: The definitions file's `videos`, as `record` is handed it.
+    videos: dict | None = None
 
     def test_the_record_is_what_runs_what_waits_and_what_has_finished(self):
         record = self.record()
@@ -225,7 +228,11 @@ class TournamentsPage(unittest.TestCase):
     def test_every_page_lists_tournaments_between_home_and_civvis(self):
         # Operator 2026-11-21: "Between Home and CIVVIS, we want to add a
         # Tournaments view." This page lists the site's pages as the others
-        # do, with itself in gold.
+        # do, with itself in gold. As on the home page, the list stands to
+        # the left of the title (operator 2026-11-21, of the home page: "on
+        # the left side, to the left of civvis.ai").
+        self.assertRegex(PAGE, r'<div class="site-brand">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"[^>]*>[\s\S]*?</nav>\s*<div class="site-lockup">')
+        self.assertRegex(LANDING, r'<div class="site-brand">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"[^>]*>[\s\S]*?</nav>\s*<div class="site-lockup">')
         self.assertIn(
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
             '        <a class="site-link" href="../home/">Home</a>\n'
@@ -250,6 +257,48 @@ class TournamentsPage(unittest.TestCase):
             self.assertRegex(page, pattern)
         # The viewer's link is root-absolute as written and lane-relative as published.
         self.assertIn("""('href="/tournaments"', 'href="tournaments/"')""", PUBLISH)
+
+    def test_a_tournament_links_its_result_video_on_youtube(self):
+        # Operator 2026-11-21: "on our new tournaments page we are building
+        # out. we can link to the youtube tournament result videos."
+        self.assertEqual([t["video"] for t in self.record()["finished"] + self.record()["running"]], ["", ""])
+        # A video is listed by its tournament's number, in either address
+        # YouTube gives, and is carried as the watch page.
+        self.videos = {"1": "https://youtu.be/an7y2IlGhU0?si=abc", "2": "https://www.youtube.com/watch?v=HgqxiWQKCqc&t=5s"}
+        record = self.record()
+        self.assertEqual(record["finished"][0]["video"], "https://www.youtube.com/watch?v=an7y2IlGhU0")
+        self.assertEqual(record["running"][0]["video"], "https://www.youtube.com/watch?v=HgqxiWQKCqc")
+        self.assertNotIn("video", record["scheduled"][0])
+        # Anything that is not a YouTube video is left out, and said.
+        for elsewhere in ("https://example.com/watch?v=an7y2IlGhU0", "javascript:alert(1)",
+                          "http://www.youtube.com/watch?v=an7y2IlGhU0", "https://www.youtube.com/@civvis", 7):
+            self.videos = {"1": elsewhere}
+            said = io.StringIO()
+            with contextlib.redirect_stderr(said):
+                self.assertEqual(self.record()["finished"][0]["video"], "")
+            self.assertIn("Tournament 1's video is not a YouTube link", said.getvalue())
+        self.videos = ["not", "a", "map"]
+        self.assertEqual(self.record()["finished"][0]["video"], "")
+        # The page links it under the tournament's name, in a tab of its
+        # own, and checks the address again before it does.
+        for piece in (
+            'const link = el("a", "tour-video", "Result video");',
+            r'if (!/^https:\/\/www\.youtube\.com\/watch\?v=[\w-]{11}$/.test(t.video || "")) return null;',
+            'link.target = "_blank";',
+            "if (video(t)) name.append(video(t));",
+            "if (video(t)) title.append(video(t));",
+        ):
+            self.assertIn(piece, PAGE)
+        # The definitions name the three videos the channel has, by number,
+        # and the record made from them carries each on its own tournament.
+        defined = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))
+        self.assertEqual(defined["videos"], {
+            "1": "https://www.youtube.com/watch?v=an7y2IlGhU0",
+            "3": "https://www.youtube.com/watch?v=HgqxiWQKCqc",
+            "4": "https://www.youtube.com/watch?v=4pQAMeV5W2Q",
+        })
+        for link in defined["videos"].values():
+            self.assertTrue(tournaments_page.VIDEO.fullmatch(link), link)
 
     def test_the_page_draws_three_lists_and_trusts_nothing_as_markup(self):
         for piece in (
