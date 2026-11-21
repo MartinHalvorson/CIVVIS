@@ -65,6 +65,32 @@ def with_ledger(clone: pathlib.Path, rows: list[dict]) -> None:
 
 
 class HomeRankings(unittest.TestCase):
+    def test_each_agent_carries_its_95_percent_margin_and_the_window_its_runs(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = pathlib.Path(scratch)
+            (root / "data").mkdir()
+            (root / "src").mkdir()
+            (root / "src" / "strategies.rs").write_text(
+                (ROOT / "src" / "strategies.rs").read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            rating = {"elo": 1200.0, "sd": 40.0, "games": 100, "wins": 30, "bound": ""}
+            published = {
+                "tables": 2640,
+                "players": 4,
+                "turns": 250,
+                "runs": [{"run": "", "tables": 1320}, {"run": "2026-11-23-15125c4", "tables": 1320}],
+                "ratings": {"jack": rating, "holy": dict(rating, margin95=50.0), "stock": dict(rating, elo=1000.0)},
+                "ladder": {},
+            }
+            (root / "data" / "strategy_elo.json").write_text(json.dumps(published), encoding="utf-8")
+            ranking = home_rankings.strategies(root)
+        margins = {row["id"]: row["margin"] for row in ranking["rows"] if row["kind"] == "agent"}
+        # A file without `margin95` (written before it existed) gets 1.96 sd.
+        self.assertEqual(margins["jack"], 78)
+        self.assertEqual(margins["holy"], 50.0)
+        self.assertEqual((ranking["runs"], ranking["latest_run"]), (2, "2026-11-23"))
+        self.assertIn('" \\u00b1 is the 95% margin of error."', LANDING)
+
     def test_the_agents_are_ranked_by_published_elo_under_their_handles(self):
         published = json.loads((ROOT / "data" / "strategy_elo.json").read_text(encoding="utf-8"))
         ranking = home_rankings.strategies(ROOT)

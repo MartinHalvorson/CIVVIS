@@ -85,12 +85,48 @@ to `data/strategy_elo_games.jsonl`.
 ### Re-rating after the genome moves
 
 The Deployment agents play the default genome, so every defaults update moves
-them. When it has moved a lot, empty the log and play fresh tables rather than
-adding to old ones (the old log stays in git history). The published file was
-re-rated this way on 2026-11-21: 1,320 tables (`--games 480 --rung-games 120`)
-on the 242-gene defaults, replacing the 660 tables of 2026-11-11 played on
-about 200. A table now costs about 1.6 CPU-seconds (it was about 35), so a
-full re-rate takes about 20 minutes on three cores.
+them. Ratings are therefore kept current by **rating runs**: each run adds a
+fresh batch of tables under its own label, and the fit uses a window of the
+newest runs.
+
+```bash
+strategy_elo --run 2026-11-23-15125c4 --add-games 480 --add-rung-games 120 \
+  --keep-runs 4 --jobs 3
+```
+
+- `--run LABEL` stamps every table the run plays (`"run"` in the log). The
+  label starts with the run's date; the scheduled runs add the revision.
+- `--add-games N` and `--add-rung-games M` add N pool tables and M tables at
+  each rung, numbered on after the newest table of each series
+  (`strategies::added_indices`), so they are new deals and seeds. A killed run
+  resumes under its label rather than adding twice.
+- `--keep-runs K` drops every table outside the newest K runs
+  (`strategies::kept_runs`) before fitting. Tables logged before runs were
+  labelled count as one run, the oldest.
+
+The published file lists the runs it was fitted on (`runs`) and gives each
+rating a `margin95`: the 95% margin of error, `strategies::MARGIN_Z` (1.96)
+times the bootstrap deviation. The home page lists every agent with that
+margin (`1291 ±78`).
+
+**Why a window:** a run's tables describe the genome of its day. A window of K
+runs trades freshness for precision: the margin shrinks with the square root
+of the tables in it (about ±75 at 1,320 tables, ±37 at four runs of 1,320),
+while a genome change older than K runs ages out entirely. The scheduled job
+keeps K = 4 runs, one every two days, so no table in the fit is older than
+about eight days. A run costs about 40 minutes on three cores. To narrow the
+margin further, raise the tables per run before raising K.
+
+**Schedule:** on the tournament host a launchd job starts a run every two
+days. It borrows three of the gene screen tournament's seven worker slots for
+the build and the run, gives them back, and ships the new ratings as a PR the
+same way the defaults updates ship.
+
+The first re-rate, on 2026-11-21, replaced the 11-11 log outright: 1,320
+tables (`--games 480 --rung-games 120`) on the 242-gene defaults, replacing
+the 660 tables of 2026-11-11 played on about 200. Those 1,320 tables are the
+window's first, unlabelled run. A table now costs about 1.6 CPU-seconds (it
+was about 35).
 
 | Entrant | 2026-11-11 | 2026-11-21 |
 |---|---|---|
@@ -105,9 +141,9 @@ full re-rate takes about 20 minutes on three cores.
 | Immortal (rung) | ≥1660 | 1515 |
 | Deity (rung) | ≥1660 | ≥1762 |
 
-The bootstrap deviation is about 35-40 for each agent. The upper rungs came
-down: at Emperor the challengers won 12 of 120 (2 of 60 before), at Immortal
-3 of 120 (0 of 60), at Deity none.
+The bootstrap deviation is about 35-40 for each agent (a 95% margin of about
+±70-80). The upper rungs came down: at Emperor the challengers won 12 of 120
+(2 of 60 before), at Immortal 3 of 120 (0 of 60), at Deity none.
 
 ## What the Civilization VI mapping does and does not prove
 

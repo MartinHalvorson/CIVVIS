@@ -415,15 +415,21 @@
 
     // The player strategies, on the right.
     const strategies = data.strategies;
+    // The 95% margin of error (`margin`); a slot built before it carries only `sd`.
+    const margin = (r) => Math.round(r.margin != null ? r.margin : (r.sd ? 1.96 * r.sd : 0));
     if (strategies && Array.isArray(strategies.rows)) {
       let place = 0;
       const rows = strategies.rows.map((r) => r.kind === "rung"
         ? row("is-rung", "", level(r) + " AI Firaxis", "", elo(r), "", "Civilization VI\u2019s own AI at difficulty level " + level(r))
-        : row("", String(++place), r.name, r.tilt, elo(r), r.sd ? "\u00b1" + Math.round(r.sd) : "",
-              r.name + ": won " + r.wins + " of " + r.games + " rated tables"));
-      const note = (strategies.tables ? strategies.tables + " " : "")
+        : row("", String(++place), r.name, r.tilt, elo(r), margin(r) ? "\u00b1" + margin(r) : "",
+              r.name + ": won " + r.wins + " of " + r.games + " rated tables"
+                + (margin(r) ? "; 95% interval " + Math.round(r.elo - margin(r)) + "\u2013" + Math.round(r.elo + margin(r)) : "")));
+      const note = (strategies.tables ? Number(strategies.tables).toLocaleString("en-US") + " " : "")
         + (strategies.players === 4 ? "four-player " : "") + "tables"
-        + (strategies.turns ? " of " + strategies.turns + " turns" : "") + ".";
+        + (strategies.turns ? " of " + strategies.turns + " turns" : "")
+        + (strategies.runs > 1 ? " over the last " + strategies.runs + " rating runs" : "")
+        + (strategies.latest_run ? ", newest " + strategies.latest_run : "") + "."
+        + " \u00b1 is the 95% margin of error.";
       shown = show("rank-strategies", rows, note) || shown;
     }
 
