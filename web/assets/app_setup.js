@@ -1308,7 +1308,10 @@ async function startNewSimulation(restartSource = "manual") {
   if (newSimulationBusy) return;
   if (readSetting("humanplayers") === "civ6") { startCiv6Game(); return; }
   cancelFinaleCountdown();
-  const wasPaused = specPaused;
+  // A pause carries over to the world that replaces a running one. A pause
+  // on a finished result was put there to hold the result, which is what
+  // Pause here on the result card asks for, so the next game opens playing.
+  const wasPaused = specPaused && !gameFinished(state);
   const payload = {...newSimulationPayload(), paused: wasPaused};
   const supervised = !!(state && state.supervised) && payload.spectate;
   const handoff = {
