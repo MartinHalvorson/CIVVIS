@@ -82,6 +82,33 @@ add. A killed run resumes, and a later run with larger totals only plays the
 difference. `--fit-only` refits without playing. Finished tables are appended
 to `data/strategy_elo_games.jsonl`.
 
+### Re-rating after the genome moves
+
+The Deployment agents play the default genome, so every defaults update moves
+them. When it has moved a lot, empty the log and play fresh tables rather than
+adding to old ones (the old log stays in git history). The published file was
+re-rated this way on 2026-11-21: 1,320 tables (`--games 480 --rung-games 120`)
+on the 242-gene defaults, replacing the 660 tables of 2026-11-11 played on
+about 200. A table now costs about 1.6 CPU-seconds (it was about 35), so a
+full re-rate takes about 20 minutes on three cores.
+
+| Entrant | 2026-11-11 | 2026-11-21 |
+|---|---|---|
+| `tourist` TouristTrap | 1178 | 1291 |
+| `holy` HolyRoller | 1128 | 1247 |
+| `jack` JackOfAllTrades | 1211 | 1143 |
+| `forward` ForwardSettle | 1202 | 1138 |
+| `moonshot` MoonshotMaven | 1164 | 1095 |
+| `siege` SiegeTheDay | 1137 | 1073 |
+| `swing` SwingVote | 1192 | 1037 |
+| Emperor (rung) | 1461 | 1287 |
+| Immortal (rung) | ≥1660 | 1515 |
+| Deity (rung) | ≥1660 | ≥1762 |
+
+The bootstrap deviation is about 35-40 for each agent. The upper rungs came
+down: at Emperor the challengers won 12 of 120 (2 of 60 before), at Immortal
+3 of 120 (0 of 60), at Deity none.
+
 ## What the Civilization VI mapping does and does not prove
 
 It measures, in our engine, what each rung's *handicap* is worth: the yield
@@ -165,7 +192,7 @@ on our stand-in for Civilization VI's AI, not on that AI.
 
 - The setup panel's **Rival Civ AI Agent** select, under Difficulty, seats every
   rival major with one agent. Each option reads Elo first, then the handle
-  (`1211 - JackOfAllTrades`), then the nearest Civilization VI level and the
+  (`1291 - TouristTrap`), then the nearest Civilization VI level and the
   tilt; the note under it is the whole ladder in Elo. `House mix` is the
   default fleet and changes nothing.
 - The auto-play bar's **Civ AI** select hands your own seat to an agent. It
@@ -176,7 +203,8 @@ on our stand-in for Civilization VI's AI, not on that AI.
   accepts `rival_strategy` by id or handle and refuses a name nobody registered.
 
 Difficulty and rival are separate dials. Difficulty is what the rules hand the
-rivals; the agent is how well they play. As measured on 2026-11-11 no
-unhandicapped agent of ours rates nearer Emperor than King, so a harder game than that is a strong agent *and* a higher
+rivals; the agent is how well they play. As measured on 2026-11-21 the
+strongest unhandicapped agent rates level with Emperor and none reaches
+Immortal, so a harder game than that is a strong agent *and* a higher
 Difficulty, and it will be harder than the rung's own number, which was
 measured with the reference agent in the rival seats.

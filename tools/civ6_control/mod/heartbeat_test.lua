@@ -341,3 +341,243 @@ do
     assert(h.pulses == before + 1, "at scale 1 one frame second pulses")
 end
 print("all real-seconds heartbeat checks passed")
+
+-- The seat watch (`CivvisSeatWatch`): a CIVVIS hotseat seat whose turn is
+-- active while its controller's stamp does not move. Tournament 6, 2026-11-21:
+-- 12 minutes at civvis-t6-20261121T131243Z t61 and 7 at
+-- civvis-t6-20261121T135836Z t180, the map on NEXT TURN and no record at all.
+local function seatHost(cfg)
+    local h = { clock = 1000, logs = {}, requests = {}, broadcasts = 0, stockTicks = 0,
+                local_player = 0, turn = 61, active = true, paused = false, sent = false,
+                handover_hidden = true, dialog_hidden = true, end_game_hidden = true,
+                blocker = 0 }
+    local env = setmetatable({ CivvisControlConfig = cfg }, { __index = _G })
+    env.include = function(name)
+        if name ~= "TopPanel" then error("unavailable expansion") end
+        env.LateInitialize = function() h.registered = env.OnRefreshTimeTick end
+        env.OnRefreshTimeTick = function() h.stockTicks = h.stockTicks + 1 end
+    end
+    env.ContextPtr = {
+        SetUpdate = function(_, callback) h.update = callback end,
+        LookUpControl = function(_, path)
+            local hidden
+            if path == "/InGame/PlayerChange" then hidden = h.handover_hidden
+            elseif path == "/InGame/PlayerChange/PopupAlphaIn" then hidden = h.dialog_hidden
+            elseif path == "/InGame/EndGameMenu" then hidden = h.end_game_hidden
+            else error("unknown control " .. path) end
+            return { IsHidden = function() return hidden end }
+        end,
+    }
+    env.LuaEvents = { CivvisControlPulse = function() end, CivvisControlPeek = function() end }
+    env.Automation = {
+        GetTime = function() return h.clock end,
+        Log = function(line) h.logs[#h.logs + 1] = line end,
+    }
+    env.Game = { GetLocalPlayer = function() return h.local_player end,
+                 GetCurrentGameTurn = function() return h.turn end }
+    env.Players = setmetatable({}, { __index = function() return {
+        IsTurnActive = function() return h.active end } end })
+    env.PlayerConfigurations = setmetatable({}, { __index = function() return {
+        GetWantsPause = function() return h.paused end,
+        SetWantsPause = function(_, value) h.paused = value; h.pause_set = value end } end })
+    env.Network = { BroadcastPlayerInfo = function() h.broadcasts = h.broadcasts + 1 end }
+    env.UI = {
+        HasSentTurnComplete = function() return h.sent end,
+        CanEndTurn = function() return true end,
+        IsGameCoreBusy = function() return false end,
+        RequestAction = function(action, parameters)
+            h.requests[#h.requests + 1] = { action = action, reason = parameters and parameters.REASON }
+        end,
+    }
+    env.ActionTypes = { ACTION_ENDTURN = "ACTION_ENDTURN" }
+    env.EndTurnBlockingTypes = { NO_ENDTURN_BLOCKING = 0, ENDTURN_BLOCKING_UNITS = 7 }
+    env.NotificationManager = { GetFirstEndTurnBlocking = function() return h.blocker end }
+    env.ExposedMembers = { CivvisSeatBeat = {} }
+    env.Events = { TeamVictory = { Add = function(listener) h.victory = listener end } }
+    local chunk = assert(loadfile(here .. "/CivvisControlHeartbeat.lua"))
+    setfenv(chunk, env)
+    chunk()
+    env.LateInitialize()
+    h.env = env
+    -- One second passes: the frame clock's pulse, then the shipped clock's timer.
+    h.second = function(playing)
+        h.clock = h.clock + 1
+        if playing then env.ExposedMembers.CivvisSeatBeat[h.local_player] = h.clock end
+        h.update(1)
+        h.registered()
+    end
+    h.kinds = function(kind)
+        local found = {}
+        for _, line in ipairs(h.logs) do
+            if line:find('"kind":"' .. kind .. '"', 1, true) then found[#found + 1] = line end
+        end
+        return found
+    end
+    return h
+end
+local HOTSEAT = { CivvisDecides = true, Hotseat = true, HotseatSeats = { 0, 1 },
+                  HotseatHumanSeats = {}, RunTag = "table" }
+do
+    -- Armed on the shipped clock's timer, which keeps repainting the time.
+    local h = seatHost(HOTSEAT)
+    assert(#h.kinds("seat_watch_armed") == 1, "the watch says it is armed")
+    assert(h.logs[1]:find('"clock":true', 1, true), "armed on the shipped clock timer")
+    h.registered()
+    assert(h.stockTicks == 1, "the shipped clock tick still runs")
+    -- A seat being played is left alone, however long the game is.
+    for _ = 1, 300 do h.second(true) end
+    assert(#h.requests == 0 and #h.kinds("seat_quiet") == 0, "a playing seat is never ended")
+    -- The controller stops: 44 quiet seconds are nothing, the 45th is a stall.
+    for _ = 1, 44 do h.second(false) end
+    assert(#h.requests == 0 and #h.kinds("seat_quiet") == 0, "44 quiet seconds are not a stall")
+    h.second(false)
+    assert(#h.kinds("seat_quiet") == 1, "45 quiet seconds are reported")
+    assert(#h.requests == 1 and h.requests[1].action == "ACTION_ENDTURN"
+        and h.requests[1].reason == "UserForced", "the turn is ended with the shipped forced request")
+    local quiet = h.kinds("seat_quiet")[1]
+    for _, piece in ipairs({ '"ctx":"heartbeat"', '"run":"table"', '"turn":61', '"player":0',
+            '"paused":false', '"sent":false', '"blocker":null', '"handover_hidden":true',
+            '"controller_ran":true', '"quiet":45' }) do
+        assert(quiet:find(piece, 1, true), "seat_quiet lacks " .. piece .. ": " .. quiet)
+    end
+    assert(h.logs[#h.logs]:find('"kind":"seat_watch_flush"', 1, true),
+        "a record behind each report delivers it (the game writes one record late)")
+    -- Retried every 20 s while it stays quiet, six times a turn, reported once a minute.
+    for _ = 1, 19 do h.second(false) end
+    assert(#h.requests == 1, "not asked again inside 20 s")
+    h.second(false)
+    assert(#h.requests == 2, "asked again after 20 s")
+    for _ = 1, 400 do h.second(false) end
+    assert(#h.requests == 6, "six forced requests a turn at most: " .. #h.requests)
+    assert(#h.kinds("seat_quiet") == 8, "reported once a minute: " .. #h.kinds("seat_quiet"))
+    -- The seat's next activation starts clean, in the same game turn too
+    -- (the World Congress phase hands a seat a second turn inside one).
+    h.active = false; h.second(false); h.active = true
+    local asked = #h.requests
+    for _ = 1, 44 do h.second(false) end
+    assert(#h.requests == asked, "a new activation gets its own 45 s")
+    for _ = 1, 3 do h.second(false) end
+    assert(#h.requests == asked + 1, "and is ended when it too stays quiet")
+    -- An unknown blocker is named by its number, a known one by its name.
+    h.active = false; h.second(false); h.active = true
+    h.blocker = 7
+    for _ = 1, 47 do h.second(false) end
+    assert(h.kinds("seat_quiet")[#h.kinds("seat_quiet")]:find('"blocker":"ENDTURN_BLOCKING_UNITS"', 1, true),
+        "the standing blocker is named")
+end
+do
+    -- A turn already sent complete, and a seat no controller ever ran on,
+    -- are reported and never ended from here.
+    local h = seatHost(HOTSEAT)
+    h.sent = true
+    h.second(true)
+    for _ = 1, 120 do h.second(false) end
+    assert(#h.kinds("seat_quiet") == 2 and #h.requests == 0, "a sent turn is the engine's to finish")
+    h = seatHost(HOTSEAT)
+    for _ = 1, 120 do h.second(false) end
+    assert(#h.requests == 0, "no controller ever ran: nothing of ours to end")
+    assert(h.kinds("seat_quiet")[1]:find('"controller_ran":false', 1, true), "and the report says so")
+end
+do
+    -- The hand-over's pause. With its Start Turn dialog up it is the screen
+    -- closer's to press, for as long as it takes.
+    local h = seatHost(HOTSEAT)
+    h.second(true)
+    h.paused, h.handover_hidden, h.dialog_hidden = true, false, false
+    for _ = 1, 300 do h.second(false) end
+    assert(h.pause_set == nil and #h.requests == 0 and #h.kinds("seat_quiet") == 0,
+        "a hand-over on screen is left to its own press")
+    -- Left standing with no dialog (hidden, or the screen in Please Wait), it
+    -- is released after six seconds the way Start Turn releases it.
+    h.dialog_hidden = true
+    for _ = 1, 5 do h.second(false) end
+    assert(h.pause_set == nil, "five seconds of a bare pause are not yet a stuck one")
+    h.second(false)
+    assert(h.pause_set == false and h.broadcasts == 1, "a pause with no dialog is released and broadcast")
+    local released = h.kinds("hotseat_pause_released")
+    assert(#released == 1 and released[1]:find('"still_paused":false', 1, true)
+        and released[1]:find('"waited":6', 1, true), "and the release is read back: " .. tostring(released[1]))
+    -- The seat then has its 45 s again before anything is ended.
+    for _ = 1, 44 do h.second(false) end
+    assert(#h.requests == 0, "a released seat gets its own 45 s")
+    h.second(false)
+    assert(#h.requests == 1, "and is ended if its controller still does not move")
+    -- A hand-over that cannot be read is taken as up: nothing is released blind.
+    h = seatHost(HOTSEAT)
+    h.second(true)
+    h.paused = true
+    h.env.ContextPtr.LookUpControl = function() error("no such control") end
+    for _ = 1, 120 do h.second(false) end
+    assert(h.pause_set == nil and #h.kinds("hotseat_pause_released") == 0 and #h.requests == 0,
+        "an unreadable hand-over is never unpaused or ended")
+    -- A release the engine refuses is tried again, not looped on every frame.
+    h = seatHost(HOTSEAT)
+    h.second(true)
+    h.paused = true
+    h.env.PlayerConfigurations = setmetatable({}, { __index = function() return {
+        GetWantsPause = function() return true end,
+        SetWantsPause = function() h.refused = (h.refused or 0) + 1 end } end })
+    for _ = 1, 30 do h.second(false) end
+    assert(h.refused == 5, "one release attempt per six seconds: " .. tostring(h.refused))
+    assert(h.kinds("hotseat_pause_released")[1]:find('"still_paused":true', 1, true),
+        "a refused release says the pause still stands")
+end
+do
+    -- Nobody else's turn is ever touched.
+    for _, change in ipairs({
+        function(h) h.local_player = 3 end,                        -- a Firaxis AI's turn
+        function(h) h.active = false end,                          -- between turns
+        function(h) h.end_game_hidden = false end,                 -- the end screen is up
+        function(h) h.env.ExposedMembers.CivvisOperatorHold = true end,  -- the operator's pause
+        function(h) h.victory() end,                               -- the game is over
+    }) do
+        local h = seatHost(HOTSEAT)
+        h.second(true)
+        change(h)
+        for _ = 1, 200 do h.second(false) end
+        assert(#h.requests == 0 and h.pause_set == nil and #h.kinds("seat_quiet") == 0,
+            "the watch acted where it must not")
+    end
+    -- A person's seat: their turn is theirs for as long as they like.
+    local human = { CivvisDecides = true, Hotseat = true, HotseatSeats = { 1, 2, 3 },
+                    HotseatHumanSeats = { 0 }, RunTag = "table" }
+    local h = seatHost(human)
+    h.paused = true
+    for _ = 1, 600 do h.second(false) end
+    assert(#h.requests == 0 and h.pause_set == nil, "the operator's seat is never ended or unpaused")
+    -- A HUD hidden for a minute (a leader screen stops both clocks) is not a quiet minute.
+    h = seatHost(HOTSEAT)
+    h.second(true)
+    for _ = 1, 30 do h.second(false) end
+    h.clock = h.clock + 600
+    h.second(false)
+    assert(#h.requests == 0, "a gap the watch slept through is not counted")
+    for _ = 1, 11 do h.second(false) end
+    assert(#h.requests == 0, "33 watched quiet seconds are not 45")
+    for _ = 1, 3 do h.second(false) end
+    assert(#h.requests == 1, "45 watched quiet seconds are")
+end
+do
+    -- Not a hotseat game: no watch, and the shipped clock tick is untouched.
+    for _, cfg in ipairs({ { CivvisDecides = true }, { CivvisDecides = true, Hotseat = false },
+                           { CivvisDecides = true, Hotseat = true, Play = false },
+                           { Hotseat = true } }) do
+        local h = { stockTicks = 0, logs = {} }
+        local env = setmetatable({ CivvisControlConfig = cfg }, { __index = _G })
+        local stock = function() h.stockTicks = h.stockTicks + 1 end
+        env.include = function(name)
+            if name ~= "TopPanel" then error("unavailable expansion") end
+            env.LateInitialize = function() end
+            env.OnRefreshTimeTick = stock
+        end
+        env.ContextPtr = { SetUpdate = function(_, callback) h.update = callback end }
+        env.LuaEvents = { CivvisControlPulse = function() end }
+        env.Automation = { Log = function(line) h.logs[#h.logs + 1] = line end }
+        local chunk = assert(loadfile(here .. "/CivvisControlHeartbeat.lua"))
+        setfenv(chunk, env)
+        chunk()
+        assert(env.OnRefreshTimeTick == stock, "outside hotseat the shipped clock tick is not wrapped")
+        assert(#h.logs == 0, "outside hotseat the watch is not armed")
+    end
+end
+print("all seat watch checks passed")
