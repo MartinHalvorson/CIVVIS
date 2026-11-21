@@ -987,14 +987,22 @@
   .turn-count.turn-count-long .turn-label { letter-spacing: .04em; }
   /* The live stopwatch, the plate's top section when the world is watched. */
   .victory-turn.has-live-time { grid-template-rows: auto auto auto auto minmax(0, 1fr); }
+  /* The label, the clock and its hundredths are one reading and scale as one:
+     every part is sized in em from this row, and the type fitter sizes the
+     row. The row ends short of the fold button in the plate's corner, and
+     `safe` keeps an overflow on the right, where the fitter can measure it. */
   .turn-live {
-    min-width: 0; display: flex; align-items: baseline; justify-content: center; gap: 6px;
-    margin: 0 0 4px; padding: 0 16px; white-space: nowrap;
+    min-width: 0; display: flex; align-items: baseline; justify-content: safe center; gap: .4em;
+    margin: 0 12px 4px 0; white-space: nowrap; font-size: 14px;
   }
-  .turn-live .turn-label { font-size: var(--type-small); }
+  .turn-live .turn-label { font-size: .8em; }
   .turn-live b {
-    color: #f4d892; font: 850 clamp(14px, 1vw, 15px)/1 var(--font-ui); font-variant-numeric: tabular-nums;
+    color: #f4d892; font: 850 1.04em/1 var(--font-ui); font-variant-numeric: tabular-nums;
   }
+  /* The hundredths of a second ride on an attribute and are printed here, so
+     the fraction can change with every painted frame without being a change
+     of words the type fitter has to answer (`paintLiveClock`). */
+  .turn-live b[data-hundredths]::after { content: "." attr(data-hundredths); font-size: .78em; }
   .turn-era {
     min-width: 0; overflow: hidden; color: #e1e8e4;
     font-size: clamp(14px, 1vw, 15px); font-weight: 850; letter-spacing: -.01em;
@@ -1117,7 +1125,8 @@
   /* The map, level and speed line is one reading: it keeps the whole width. */
   #playerhud.turn-plate-wide .turn-setup-line { grid-column: 1 / -1; }
   #playerhud.turn-plate-wide .victory-turn.has-live-time { grid-template-rows: auto auto auto minmax(0, 1fr); }
-  #playerhud.turn-plate-wide .turn-live { grid-column: 1 / -1; grid-row: 1; }
+  #playerhud.turn-plate-wide .turn-live { grid-column: 1 / -1; grid-row: 1; margin: 0 0 4px; padding: 0 16px; }
+  #playerhud.turn-plate-wide .turn-live .turn-label { font-size: 1em; }
   #playerhud.turn-plate-wide .has-live-time .turn-pace-line { grid-row: 2; }
   #playerhud.turn-plate-wide .has-live-time .turn-era,
   #playerhud.turn-plate-wide .has-live-time .turn-count { grid-row: 3; }
@@ -7118,6 +7127,7 @@
 <script src="/assets/app_palette.js"></script>
 <script src="/assets/app_arena.js"></script>
 <script src="/assets/app_launches.js"></script>
+<script src="/assets/app_clock.js"></script>
 <script src="/assets/app.js"></script>
 <script src="/assets/app_setup.js"></script>
 <script src="/assets/app_moments.js"></script>

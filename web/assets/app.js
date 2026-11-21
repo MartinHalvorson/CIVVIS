@@ -3504,7 +3504,11 @@ const RESPONSIVE_TEXT_RULES = [
   // inside the button at every width.
   {selector:"#playerhud .watch-as-link", min:9, max:12, slack:6},
   {selector:"#playerhud .turn-era", min:12, max:17},
-  {selector:"#playerhud .turn-live .turn-label", min:11, max:14},
+  // The stopwatch row is fitted as one piece, like the turn count below it:
+  // "Live time", the clock and its hundredths are sized in em from this row.
+  // Fitted apart, the label kept its full size because it fit on its own, and
+  // a reading with hundredths ran off both edges of a 144px plate.
+  {selector:"#playerhud .turn-live", min:10, max:14},
   // The word, the number and the cap are one reading and scale as one: every
   // part is sized in em from this box. Fitted apart, the label and the cap each
   // kept their full size because each fit on its own, and the turn number took
@@ -7672,90 +7676,8 @@ async function pressLiveNewGame() {
   }
   paintLivePause();
 }
-// --- Live time: the turn plate's stopwatch, its top section above the age. It
-// reads how long the world on screen has actually been playing: it starts
-// with the world's first unpaused frame, stops while the simulation is paused
-// or a result is on screen, and a new world starts it over from zero. A
-// restart that comes back paused at the opening position therefore sits at
-// 0:00 until somebody presses Start — an unstarted game has no live time.
-let liveClock = {seed: undefined, ms: 0, runningSince: null};
-const LIVE_CLOCK_STORE = "civvis-live-time-v1";
-function liveClockMs() {
-  return liveClock.ms +
-    (liveClock.runningSince !== null ? Math.max(0, Date.now() - liveClock.runningSince) : 0);
-}
-function liveClockLabel() {
-  const total = Math.floor(liveClockMs() / 1000);
-  const seconds = String(total % 60).padStart(2, "0");
-  const minutes = Math.floor(total / 60) % 60;
-  const hours = Math.floor(total / 3600);
-  return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
-}
-// Start or stop the accumulator against what the page is showing right now.
-// Paused covers the unstarted opening as well: a clock that has never run
-// and is not running reads 0:00, which is what an unstarted game has played.
-// On the mirror beside a Civilization VI verification game this page's own
-// simulation never runs — the world is a picture of the Firaxis game — so the
-// clock follows that game instead: it runs while the game plays and stops
-// while the operator's Pause holds it (`livePause.held`, the mod's own word).
-function syncLiveClockRun() {
-  const over = gameFinished(state);
-  const paused = livePause.available ? livePause.held : specPaused;
-  const shouldRun = SPEC && !!state && !paused && !over;
-  if (shouldRun && liveClock.runningSince === null) {
-    liveClock.runningSince = Date.now();
-  } else if (!shouldRun && liveClock.runningSince !== null) {
-    liveClock.ms += Math.max(0, Date.now() - liveClock.runningSince);
-    liveClock.runningSince = null;
-  }
-}
-function syncLiveClock(st, newWorld) {
-  if (newWorld) {
-    // A page's first world may be the one it was already showing — a reload,
-    // or a supervised binary swap resuming the same map — so the first world
-    // resumes the reading the predecessor document banked. Every later new
-    // world is a restart and starts over from zero.
-    if (liveClock.seed === undefined) restoreLiveClock(st);
-    else { liveClock.ms = 0; liveClock.runningSince = null; }
-    liveClock.seed = st.seed ?? null;
-  }
-  syncLiveClockRun();
-  saveLiveClock(st);
-}
-function saveLiveClock(st) {
-  try {
-    sessionStorage.setItem(LIVE_CLOCK_STORE, JSON.stringify({
-      seed: st.seed ?? null, turn: st.turn ?? 0, wall: Date.now(),
-      ms: liveClockMs(), running: liveClock.runningSince !== null,
-    }));
-  } catch (e) {}
-}
-function restoreLiveClock(st) {
-  liveClock.ms = 0;
-  liveClock.runningSince = null;
-  let stored = null;
-  try { stored = JSON.parse(sessionStorage.getItem(LIVE_CLOCK_STORE)); } catch (e) {}
-  // The banked reading belongs to this world only while the world is the same
-  // one and has not been wound back: a same-seed restart returns to turn 1,
-  // and its clock must return to zero with it.
-  if (!stored || stored.seed !== (st.seed ?? null) || stored.turn > (st.turn ?? 0)) return;
-  liveClock.ms = Math.max(0, Number(stored.ms) || 0);
-  // The world kept playing while no document watched it, so the time away is
-  // live time too — but only when the clock was running on both sides of the
-  // gap; a pause of unknown length inside it would otherwise be counted.
-  if (stored.running && st.paused === false && !gameFinished(st))
-    liveClock.ms += Math.max(0, Date.now() - (Number(stored.wall) || Date.now()));
-}
-// The plate is only rebuilt when a frame changes it, which at a slow watch
-// pace is many seconds apart; the clock ticks between those rebuilds by
-// repainting its one value in place, the way the restart countdown does.
-function paintLiveClock() {
-  const value = document.querySelector("[data-live-time]");
-  if (!value) return;
-  const text = liveClockLabel();
-  if (value.textContent !== text) value.textContent = text;
-}
-setInterval(paintLiveClock, 500);
+// Live time, the turn plate's stopwatch, lives in app_clock.js, loaded ahead
+// of this script.
 function warPairKey(war) {
   return `${Math.min(war.aggressor, war.defender)}:${Math.max(war.aggressor, war.defender)}:${war.started}`;
 }
@@ -15453,6 +15375,7 @@ function drawPlanetGpuAnimationFrame() {
   const [centerX, centerY] = planetEarthCenter(radius);
   if (!drawPlanetGpuSurface(camera, radius, centerX, centerY)) return false;
   paintPlanetEmpireLabelLayer(camera, radius, centerX, centerY);
+  paintLiveClockWithFrame();
   return true;
 }
 
@@ -26248,6 +26171,7 @@ function draw() {
   const started = performance.now();
   drawScene();
   recordPerformanceRender(performance.now() - started);
+  paintLiveClockWithFrame();
 }
 
 // ------------------------------------------------------- nuclear detonation
@@ -27867,7 +27791,8 @@ function hudTurnPlate() {
   // been playing, with pauses and the between-game result screen left out. A
   // hand-played game has no pause or restart to measure against, so the row
   // belongs to the watched regimes only.
-  const liveTimeText = SPEC ? liveClockLabel() : null;
+  const liveTime = SPEC ? liveClockReading() : null;
+  const liveTimeText = liveTime ? liveTime.text : null;
   // The arena's fog is a rule of the battle on screen, and it can be turned
   // while the battle runs: the engine reads it on every sight computation. A
   // scenario keeps its own fixed rule, exactly as the lobby presents it.
@@ -27912,7 +27837,8 @@ function hudTurnPlate() {
     hudFoldButton("turnplate", "turn box", "turn-plate-fold") +
     (liveTimeText !== null
       ? `<div class="turn-live" title="How long this world has been playing. Pauses stop the clock; a restart starts it over.">` +
-        `<span class="turn-label">Live time</span><b data-live-time>${liveTimeText}</b></div>`
+        `<span class="turn-label">Live time</span>` +
+        `<b data-live-time data-hundredths="${liveTime.hundredths}">${liveTimeText}</b></div>`
       : ``) +
     `<div class="turn-setting turn-pace-line"><span>Max Speed:</span>${watchPaceValue}</div>` +
     `<span class="turn-era">${ageLabel}</span>` +

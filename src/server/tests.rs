@@ -9587,6 +9587,13 @@ fn a_game_has_a_start_a_pause_and_its_payoffs() {
         .find(r#"<script src="/assets/app_launches.js?instance=7"></script>"#)
         .expect("the launches script is served under the instance");
     assert!(launches < renderer, "app_launches.js loads before app.js");
+    // And the turn plate's stopwatch, which the renderer starts, stops and
+    // paints with its own frames.
+    assert!(super::EMBEDDED_APP_CLOCK_JS.starts_with("\"use strict\";"));
+    let clock = served
+        .find(r#"<script src="/assets/app_clock.js?instance=7"></script>"#)
+        .expect("the stopwatch script is served under the instance");
+    assert!(clock < renderer, "app_clock.js loads before app.js");
     for id in [
         "moments",
         "fd-pause",
@@ -17171,6 +17178,7 @@ fn no_two_page_scripts_declare_the_same_function() {
         ("app_palette.js", super::EMBEDDED_APP_PALETTE_JS),
         ("app_arena.js", super::EMBEDDED_APP_ARENA_JS),
         ("app_launches.js", super::EMBEDDED_APP_LAUNCHES_JS),
+        ("app_clock.js", super::EMBEDDED_APP_CLOCK_JS),
         ("app.js", EMBEDDED_APP_JS),
         ("app_setup.js", EMBEDDED_APP_SETUP_JS),
         ("app_moments.js", EMBEDDED_APP_MOMENTS_JS),
