@@ -9029,7 +9029,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         <span class="winner-actions${SPEC ? " winner-actions-sim" : ""}">
           ${winnerActions}
         </span>
-        ${finaleCountdownChoiceMarkup()}
+        ${finaleCountdownChoiceMarkup()}${gameStatsMarkup(st)}
       </div>`;
       settleResultActions();
       recordSimulationResult(st, signature, winnerIds);

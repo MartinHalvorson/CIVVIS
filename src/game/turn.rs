@@ -146,6 +146,7 @@ impl Game {
         let mut cul = 0.0;
         let mut gold = 0.0;
         let mut faith = 0.0;
+        let mut production = 0.0;
         // City processing already has the complete local state needed to
         // price infrastructure. Keep the derived per-city answers in a
         // stable ledger so upkeep is reduced once here rather than by a
@@ -160,6 +161,7 @@ impl Game {
             cul += ys.culture;
             gold += ys.gold;
             faith += ys.faith;
+            production += ys.production;
             infrastructure_upkeep.insert(cid, city_upkeep);
             for (changed_city, upkeep) in upkeep_updates {
                 // A city not reached yet will derive its post-wonder answer
@@ -247,6 +249,25 @@ impl Game {
         gold -= self.unit_gold_maintenance(pid);
         gold -= infrastructure_upkeep.values().copied().sum::<f64>();
         gold -= self.nuclear_gold_maintenance(pid);
+        // The result screen's graphs: what this turn paid, net of upkeep.
+        // A planning world is a copy the search throws away, so only the
+        // played world keeps the record.
+        if self.planning_role == PlanningRole::Off
+            && !self.players[pid].is_minor
+            && !self.players[pid].is_barbarian
+        {
+            let row = TurnStats {
+                turn: self.turn,
+                player: pid as u16,
+                cities: turn_city_ids.len().min(u16::MAX as usize) as u16,
+                science: sci as f32,
+                culture: cul as f32,
+                production: production as f32,
+                faith: faith as f32,
+                gold: gold as f32,
+            };
+            Arc::make_mut(&mut self.turn_stats).push(row);
+        }
         self.settle_gold_budget(pid, gold);
         self.players[pid].faith += faith;
         let research = self.players[pid].research.clone();
