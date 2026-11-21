@@ -36,7 +36,7 @@
     "/state", "/status", "/runtime", "/rules", "/gene-program", "/pedia", "/save", "/saves",
     "/load", "/action", "/step", "/autoplay", "/debug", "/play-on", "/route", "/forecast", "/city-focus", "/city-citizen", "/view",
     "/intel", "/spectator-status", "/next-game-settings", "/new",
-    "/supervisor-new", "/pace", "/next-game",
+    "/supervisor-new", "/pace", "/next-game", "/forks",
     "/machine-metrics", "/civ6", "/civ6/start", "/policy-effects", "/map-search-buildings",
     "/live-pause", "/live-new-game",
   ]);
@@ -131,7 +131,8 @@
     if (!ok) { waiting.reject(new Error(error)); return; }
     if (waiting.raw) { waiting.resolve(answer); return; }
     const parsed = JSON.parse(new TextDecoder().decode(answer));
-    if (waiting.path.startsWith("/state")) {
+    // A fork's frames are not the page's: they are not what it is watching.
+    if (!waiting.on && waiting.path.startsWith("/state")) {
       const bytes = answer.byteLength;
       if (Array.isArray(parsed?.map?.tiles)) {
         report.fullMapFrames++;
@@ -321,6 +322,83 @@
     ask(String(data.method), named, String(data.body || ""), true)
       .then((bytes) => reply(true, bytes, null), (error) => reply(false, null, String(error.message || error)));
   });
+
+  // ------------------------------------------------------------------- forks
+  //
+  // A fork is the whole engine again, on a thread of its own: the same game,
+  // the same turns behind it, the same split halves, as they stood when it
+  // was made (`worker.js`, "forks"). From there it plays its own history and
+  // the page's engine never hears of it, so any number of futures of one
+  // world can be played at once and only read, which is what a search does.
+  //
+  //   POST /forks {"count": N}   N forks of the engine as it stands now, in
+  //                              place of any there were; 0 lets them all go.
+  //   <any engine request>?fork=K   answered by fork K (1..N) instead.
+  //
+  // A fork costs the engine's memory over again and a copy of it takes a few
+  // tens of milliseconds, so making them is cheap and keeping many is not.
+  const FORKS_MOST = 16;
+  const forks = [];
+
+  // One message to one worker, answered with whatever it answers.
+  function tell(target, message, transfer, path, raw) {
+    return new Promise((resolve, reject) => {
+      const id = nextId++;
+      pending.set(id, { resolve, reject, path, raw, on: target });
+      target.postMessage({ id, ...message }, transfer);
+    });
+  }
+
+  // Nothing is coming from a fork that has gone.
+  function release(fork, why) {
+    fork.terminate();
+    for (const [id, waiting] of pending) {
+      if (waiting.on !== fork) continue;
+      pending.delete(id);
+      waiting.reject(new Error(why));
+    }
+  }
+
+  async function forkEngine(count) {
+    if (!worker) throw new Error("only the page that holds the engine can fork it");
+    if (!Number.isInteger(count) || count < 0 || count > FORKS_MOST) {
+      throw new Error(`a count of forks is 0 to ${FORKS_MOST}`);
+    }
+    const started = performance.now();
+    while (forks.length > count) release(forks.pop(), "that fork was let go");
+    if (count === 0) return { forks: 0 };
+    // Asked before any fork is started: the engine answers in turn, so this
+    // is its memory between two requests and never part-way through one.
+    const { module, memory } = await tell(worker, { fork: "leave", wasmUrl: WASM_URL }, [], "/forks", true);
+    const bytes = memory.byteLength;
+    while (forks.length < count) {
+      const fork = new Worker(WORKER_URL);
+      fork.onmessage = answered;
+      fork.onerror = (event) => release(fork, event.message || "a fork stopped");
+      forks.push(fork);
+    }
+    // Each fork is sent its own copy; the last is given the one in hand.
+    await Promise.all(forks.map((fork, at) => tell(
+      fork, { fork: "adopt", module, memory }, at === forks.length - 1 ? [memory] : [], "/forks", true)));
+    return { forks: forks.length, memory_bytes: bytes, ms: Math.round(performance.now() - started) };
+  }
+
+  // Which fork a request names, if it names one, and the request without the name.
+  function forkNamed(target) {
+    const url = new URL(target, window.location.href);
+    const named = url.searchParams.get("fork");
+    if (named === null) return null;
+    url.searchParams.delete("fork");
+    return { number: Number(named), target: url.pathname + url.search };
+  }
+
+  function askFork(named, method, body) {
+    const fork = Number.isInteger(named.number) ? forks[named.number - 1] : undefined;
+    if (!fork) return Promise.reject(new Error(`there is no fork ${named.number}`));
+    return tell(fork, {
+      method, path: named.target, body: body || "", wasmUrl: WASM_URL, seed: OPENING_SEED,
+    }, [], named.target, false);
+  }
 
   const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
@@ -951,9 +1029,17 @@
     // The engine is given the request target rather than the URL: several
     // routes read their parameters straight off the query string.
     const relative = target.startsWith("http") ? path + new URL(target).search : target;
+    const fork = forkNamed(relative);
     return ensureOpeningPreset()
       .then(() => {
         sendOpeningSettings();
+        // A fork answers for itself, and making forks is this file's own
+        // work: neither is a request to the page's engine.
+        if (fork !== null) return askFork(fork, method, options_.body || "").then(json);
+        if (path === "/forks") {
+          dropAhead(false);
+          return forkEngine(safeParse(options_.body || "{}").count).then(json);
+        }
         return serve(method, relative, options_.body || "");
       })
       .catch((error) => json({ error: String(error.message || error) }));
