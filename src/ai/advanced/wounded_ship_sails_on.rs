@@ -41,7 +41,7 @@ impl AdvancedAi {
             && std::iter::once(unit.pos)
                 .chain(g.reachable(uid))
                 .all(|tile| g.unit_heal_rate_at(uid, tile) <= 0)
-            && self.naval_explorer(g, pid).contains(&uid)
+            && self.naval_explorer_holds(g, pid, uid)
     }
 }
 
