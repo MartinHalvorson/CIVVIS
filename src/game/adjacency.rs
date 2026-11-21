@@ -22,7 +22,11 @@ use crate::Pos;
 
 /// District adjacency one settlement scan has already priced, by plot and
 /// district. See [`Game::settlement_adjacency_summary_from_positions`].
-pub(crate) type PlotAdjacencies = crate::fast_map::FastMap<(Pos, Name), Yields>;
+/// What one plot of a settlement scan pays: each placeable district's index
+/// in the scan's `plannable_districts` list, with its adjacency.  Only plots
+/// that do not neighbour the scanned center are kept (see
+/// [`Game::settlement_adjacency_summary_from_positions`]).
+pub(crate) type PlotAdjacencies = crate::fast_map::FastMap<Pos, Vec<(usize, Yields)>>;
 
 /// Planning assumptions layered onto the live adjacency rules.  `None`
 /// everywhere reproduces live yields exactly.
@@ -203,51 +207,40 @@ impl Game {
             .collect();
         let mut bests: Vec<(f64, Yields)> =
             districts.iter().map(|_| (0.0, Yields::default())).collect();
-        for pos in positions
-            .iter()
-            .copied()
-            .filter(|pos| *pos != center && self.plot_could_hold_a_district(*pos))
-        {
-            let candidate_neighbors = self.nbrs(pos);
-            let mut neighbor_tiles = [None; 6];
-            for (index, neighbor) in candidate_neighbors.iter().copied().enumerate() {
-                neighbor_tiles[index] = self.map.get(neighbor);
+        let mut keep = |index: usize, yields: Yields| {
+            if yields.total() > bests[index].0 {
+                bests[index] = (yields.total(), yields);
             }
-            let district_count =
-                self.settlement_neighbor_district_count(pos, &neighbor_tiles, &assume);
-            let beside_center = neighbor_tiles
-                .iter()
-                .flatten()
-                .any(|tile| assume.treats_as_city_center(tile.pos));
-            for (district_index, (district, family)) in districts.iter().copied().enumerate() {
-                if !self.plot_fits_placement_with_neighbors(
+        };
+        for pos in positions.iter().copied().filter(|pos| *pos != center) {
+            let candidate_neighbors = self.nbrs(pos);
+            if candidate_neighbors.contains(&center) {
+                self.settlement_plot_adjacencies(
                     pid,
-                    district,
                     pos,
                     center,
                     &candidate_neighbors,
-                ) {
-                    continue;
-                }
-                let price = || {
-                    self.district_adjacency_with_neighbors(
-                        district,
-                        pos,
-                        Some(&assume),
-                        None,
-                        family,
-                        &neighbor_tiles,
-                        Some(district_count),
-                    )
-                };
-                let yields = if beside_center {
-                    price()
-                } else {
-                    *plots.entry((pos, district)).or_insert_with(price)
-                };
-                if yields.total() > bests[district_index].0 {
-                    bests[district_index] = (yields.total(), yields);
-                }
+                    &districts,
+                    &assume,
+                    &mut keep,
+                );
+                continue;
+            }
+            let priced = plots.entry(pos).or_insert_with(|| {
+                let mut priced = Vec::new();
+                self.settlement_plot_adjacencies(
+                    pid,
+                    pos,
+                    center,
+                    &candidate_neighbors,
+                    &districts,
+                    &assume,
+                    &mut |index, yields| priced.push((index, yields)),
+                );
+                priced
+            });
+            for (index, yields) in priced.iter() {
+                keep(*index, *yields);
             }
         }
         let mut summary = Yields::default();
@@ -255,6 +248,48 @@ impl Game {
             summary.add(best_yields);
         }
         summary
+    }
+
+    /// Every district of `districts` that fits at `pos` for a city at
+    /// `center`, with the adjacency it would pay there, in list order.
+    /// `pos` reaches `center` only through `neighbors`: a plot that does not
+    /// neighbour the center gets the same answer for every center of a scan.
+    #[allow(clippy::too_many_arguments)]
+    fn settlement_plot_adjacencies(
+        &self,
+        pid: usize,
+        pos: Pos,
+        center: Pos,
+        neighbors: &crate::hex::Neighbors,
+        districts: &[(Name, Name)],
+        assume: &PlanAssumption,
+        visit: &mut impl FnMut(usize, Yields),
+    ) {
+        if !self.plot_could_hold_a_district(pos) {
+            return;
+        }
+        let mut neighbor_tiles = [None; 6];
+        for (index, neighbor) in neighbors.iter().copied().enumerate() {
+            neighbor_tiles[index] = self.map.get(neighbor);
+        }
+        let district_count = self.settlement_neighbor_district_count(pos, &neighbor_tiles, assume);
+        for (index, (district, family)) in districts.iter().copied().enumerate() {
+            if !self.plot_fits_placement_with_neighbors(pid, district, pos, center, neighbors) {
+                continue;
+            }
+            visit(
+                index,
+                self.district_adjacency_with_neighbors(
+                    district,
+                    pos,
+                    Some(assume),
+                    None,
+                    family,
+                    &neighbor_tiles,
+                    Some(district_count),
+                ),
+            );
+        }
     }
 
     /// How many standing or assumed districts neighbour `pos` — the count
