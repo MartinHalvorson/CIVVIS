@@ -925,6 +925,7 @@ class Monitor:
         self.notified_turn = -1
         self.rescued_at = 0.0
         self.quiet = False
+        self.seat_stalls = 0
 
     def catch_up(self) -> None:
         """Read the record so far without replaying it (`--attach`): learn whose
@@ -1023,6 +1024,22 @@ class Monitor:
             self.say(f"saved the game as {event.get('name')!r} (Load Game -> Hot Seat)")
         elif kind == "hotseat_start_turn" and event.get("pressed") is False:
             self.say(f"⚠ could not press Start Turn for seat {event.get('player')}")
+        # The HUD's seat watch (CivvisControlHeartbeat.lua, `CivvisSeatWatch`): a
+        # CIVVIS seat whose turn is active while its controller does not move.
+        elif kind == "seat_quiet":
+            self.seat_stalls += 1
+            self.say(f"⚠ turn {event.get('turn')}: seat {event.get('player')} quiet for "
+                     f"{event.get('quiet')} s on its own turn (paused {event.get('paused')}, "
+                     f"turn complete sent {event.get('sent')}, blocker {event.get('blocker')}, "
+                     f"hand-over hidden {event.get('handover_hidden')}, controller ran "
+                     f"{event.get('controller_ran')})")
+        elif kind == "seat_quiet_end_turn":
+            self.say(f"turn {event.get('turn')}: the HUD ended seat {event.get('player')}'s quiet "
+                     f"turn (asked {event.get('asked')}, request {event.get('forces')})")
+        elif kind == "hotseat_pause_released":
+            self.say(f"⚠ turn {event.get('turn')}: seat {event.get('player')}'s hand-over pause stood "
+                     f"{event.get('waited')} s with no Start Turn on screen; released "
+                     f"(still paused {event.get('still_paused')})")
 
     def your_turn(self, turn: int) -> None:
         if turn == self.notified_turn:
@@ -1509,7 +1526,8 @@ def run(args: argparse.Namespace) -> int:
                     "map_size": args.map_size, "speed": args.speed, "max_turns": args.max_turns,
                     "civvis_seats": seats, "victory_target": args.victory,
                     "victories_off": monitor.victories_off, "victories": monitor.victories,
-                    "setup_fault": monitor.setup_fault})
+                    "setup_fault": monitor.setup_fault,
+                    "seat_stalls": monitor.seat_stalls})
             monitor.close()
         request = {}
         try:
