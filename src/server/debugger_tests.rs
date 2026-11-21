@@ -563,6 +563,7 @@ fn the_page_loads_the_bar_and_sends_only_operations_the_engine_answers() {
         "goto_save",
         "drop_save",
         "room",
+        "branch",
     ] {
         assert!(sent.contains(op), "the bar never sends {op}");
     }
@@ -640,6 +641,15 @@ fn the_docked_box_stands_beside_the_left_panel_and_moves_what_is_fixed_under_it(
 /// buttons became "Turn 1, Era Back (... the same symbol as 10 back button
 /// except swap 10 for the word era), 10 Back, 1 back, 1 next, 10 next, era
 /// next, Play to End".
+///
+/// Later that day the Civ AI picker and the branch button left the bottom
+/// row: "move 1202 ffor... box, from >>| arrow above the timeline. branch
+/// should say "Branch" and should move around below where the timeline
+/// "cursor" is. always rpesenting the option to branch" (the box that read
+/// "1202 - ForwardSettle" is the Civ AI picker). The picker is the first
+/// thing in the box, over the timeline, and Branch is part of the timeline's
+/// marker, drawn under it. Where each stands in a browser is held by
+/// `beta/debugger_test.py` (`check_the_bar`).
 #[test]
 fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_order() {
     let script = super::super::EMBEDDED_APP_DEBUGGER_JS;
@@ -647,13 +657,14 @@ fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_orde
     let mut from = 0;
     for piece in [
         "<div class=\"dbg-time\">",
-        "<div class=\"dbg-deck\">",
+        "<div class=\"dbg-who\">",
         "id=\"dbg-agent\"",
+        "debugLaneMarkup(\"\", \"dbg-slider\", \"Turn, on the whole game\")",
+        "<div class=\"dbg-deck\">",
         "<select id=\"dbg-turns\"",
         "<button data-dbg=\"autoplay\"",
         "data-dbg-pop=\"layers\"",
         "data-dbg-pop=\"breaks\"",
-        "<span class=\"dbg-word\">Branch Timeline</span>",
         "<span class=\"dbg-word\">Turn 1</span>",
         "aria-label=\"Era Back\"><i>◀◀</i>Era</button>",
         "<button data-dbg=\"back10\"",
@@ -698,8 +709,24 @@ fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_orde
         "<input type=\"checkbox\" data-dbg-field=\"eras\"> A new era begins</label>",
         "eras: pop.querySelector(\"[data-dbg-field=eras]\").checked,",
         "eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle: deck.idle});",
+        // Branch is in the world's marker, so it is wherever the marker is,
+        // and hangs under the rail. It says its name in a box of any width.
+        "<div class=\"dbg-cursor\"><b></b>${key ? \"\" : `\n            <button class=\"dbg-branch\" data-dbg=\"split\"",
+        "aria-label=\"Branch the timeline on this turn\"><i>⑂</i>Branch</button>`}</div></div>",
+        "position: absolute; left: 0; top: calc(100% + 6px); transform: translateX(-50%); pointer-events: auto;",
+        "#debugbar:not(.dbg-split-on) .dbg-lane[data-dbg-lane=\"\"] { margin-bottom: 26px; }",
     ] {
         assert!(script.contains(piece), "the header box is missing {piece}");
+    }
+    // The picker and Branch are no longer among the tools under the timeline.
+    let deck = &built[built
+        .find("<div class=\"dbg-deck\">")
+        .expect("the deck is built")..];
+    let deck = &deck[..deck
+        .find("<div class=\"dbg-hover\"")
+        .expect("the deck ends where what is said under the pointer begins")];
+    for gone in ["dbg-agent", "data-dbg=\"split\"", "Branch Timeline"] {
+        assert!(!deck.contains(gone), "{gone} is still under the timeline");
     }
 }
 
@@ -800,8 +827,8 @@ fn the_split_speaks_one_set_of_messages_on_both_sides() {
 fn a_split_opens_at_once_and_locked_with_a_lock_between_its_lanes_and_one_panel() {
     let page = super::super::EMBEDDED_APP_DEBUGGER_JS;
     for piece in [
-        // Branch Timeline is a button, not a panel that asks: side by side.
-        "<button data-dbg=\"split\"",
+        // Branch is a button, not a panel that asks: side by side.
+        "<button class=\"dbg-branch\" data-dbg=\"split\"",
         "else if (action === \"split\") { debugPopOpen = null; debugSplitOpen(\"row\"); }",
         // The lock stands in the lanes, shut as the split opens.
         "<div class=\"dbg-tie\"><button class=\"dbg-lock\" data-dbg-lock aria-pressed=\"true\">",
@@ -921,12 +948,14 @@ fn a_branched_timeline_is_one_until_its_two_worlds_differ() {
     for piece in [
         // A half tells the host the turns it holds and the print of each.
         "const turns = timeline.turns || [], worlds = timeline.worlds || null;",
-        "window.parent.postMessage({civvis: \"pane-marks\", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds},",
+        "window.parent.postMessage({civvis: \"pane-marks\", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by},",
         // The host reads the branch off the two lists: the last turn both
-        // give the same print for, and whether each holds a turn past it.
+        // give the same print for, and whether either holds a turn past it
+        // (`a_branch_begins_on_the_turn_it_is_made_on`).
         "function debugSplitFork() {",
         "if (theirs.get(lines.a.turns[at]) !== lines.a.worlds[at]) continue;",
-        "return {turn: shared, forked: Math.min(last.a, last.b) > shared, first, last};",
+        "const apart = Math.min(last.a, last.b) > shared, ahead = Math.max(last.a, last.b) > shared;",
+        "return {turn: shared, forked: apart || (ahead && (!moving || debugSplit.forked === true)), first, last};",
         // The timeline is drawn from that: the trunk up to the turn, a rail
         // for each half from it, and one marker for two halves on one turn
         // of the trunk.
@@ -1482,6 +1511,127 @@ fn turns_ended_by_hand_are_walked_under_any_civ_ai() {
     assert_eq!(picked["turns"], json!([1, 2, 3]));
     assert_eq!(picked["beyond"], Value::Null);
     assert_eq!(session.debug_forward(), Ok(2));
+}
+
+/// Operator 2026-11-21: "lets label ai strats on the timeline too, to make
+/// the branching more clear".
+///
+/// The state says whose play each stretch of the kept turns was, from the
+/// turn it was played from to the last turn it opened: the page names each
+/// stretch on the timeline (`debugStretchMarkup`). A timeline that passes
+/// from one Civ AI to another says on which turn it did, which is what a
+/// branch that was kept looks like.
+#[test]
+fn the_timeline_says_whose_play_each_stretch_was() {
+    let mut session = played();
+    assert_eq!(session.state()["debug"]["played_by"], json!([]));
+    end_turn(&mut session);
+    step_as(&mut session, "jack");
+    step_as(&mut session, "jack");
+    step_as(&mut session, "siege");
+    assert_eq!(marked(&session), [1, 2, 3, 4, 5]);
+    let whole = json!([
+        {"from": 1, "to": 2, "by": null},
+        {"from": 2, "to": 4, "by": "jack"},
+        {"from": 4, "to": 5, "by": "siege"},
+    ]);
+    assert_eq!(session.state()["debug"]["played_by"], whole);
+    // Walking the timeline changes nothing of whose it was. Siege holds the
+    // seat, so Jack's turn ahead of turn 3 is not on the seat's line
+    // (`Timeline::line`); it is kept, and still said to be Jack's.
+    assert_eq!(session.debug_jump(3), Ok(3));
+    let stands = session.state()["debug"].clone();
+    assert_eq!(stands["turns"], json!([1, 2, 3]));
+    assert_eq!(stands["beyond"], json!({"from": 4, "to": 5, "by": "jack"}));
+    assert_eq!(stands["played_by"], whole);
+    // Nor does who is picked for the seat.
+    let picked = pick(&mut session, "jack");
+    assert_eq!(picked["turns"], json!([1, 2, 3, 4]));
+    assert_eq!(picked["played_by"], whole);
+    // A fork carries it: a half of a split, and the game it is kept as.
+    assert_eq!(session.fork().state()["debug"]["played_by"], whole);
+
+    let page = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    for piece in [
+        "by: timeline.played_by || [], played: timeline.played_by || [],",
+        "function debugStretchMarkup(model, at, travel, blocks, free) {",
+        "return stretch.by ? debugAgentName(stretch.by) : \"By hand\";",
+        "<div class=\"dbg-band\"></div><div class=\"dbg-band dbg-own\"></div><div class=\"dbg-by\"></div>",
+        // A split names the trunk from one half and each branch from its own.
+        "by: stretches(letter, fork.turn, kept(letter)), played: told(letter, \"by\"),",
+    ] {
+        assert!(page.contains(piece), "the named timeline is missing {piece}");
+    }
+}
+
+/// Operator 2026-11-21: "a branch should fork the tree appropriate (1
+/// timeline into 2 at the branch)", "each branch should have an X on the left
+/// side. collapsing a branch should reduce the tree appropriately", and "if
+/// the initial is deleted though, the branchbecomes the main tree,
+/// transitioning from one ai strat to another".
+///
+/// A branch made behind the last turn played begins on the turn it is made
+/// on: the half that is the branch lets go of the turns kept ahead
+/// (`op: "branch"`), and the half that is the timeline as it was keeps them.
+/// The page then draws the fork there (`debugSplitFork`), which a browser
+/// holds in `beta/debugger_test.py` (`check_a_branch_forks_the_timeline`).
+#[test]
+fn a_branch_begins_on_the_turn_it_is_made_on() {
+    let mut session = played();
+    for _ in 0..4 {
+        step_as(&mut session, "jack");
+    }
+    assert_eq!(session.debug_jump(3), Ok(3));
+    let third = world(&session);
+    let line = prints(&session);
+
+    let mut initial = session.fork();
+    let mut branch = session.fork();
+    let answer = branch.debug(&json!({"op": "branch"}));
+    assert_eq!(answer["error"], Value::Null);
+    // The branch holds the turns behind it and none ahead, on the same world.
+    assert_eq!(marked(&branch), [1, 2, 3]);
+    assert_eq!(answer["debug"]["last"], json!(3));
+    assert_eq!(answer["debug"]["can_forward"], json!(false));
+    assert_eq!(answer["debug"]["beyond"], Value::Null);
+    assert_eq!(world(&branch), third);
+    assert_eq!(prints(&branch), line[..3]);
+    // The timeline it was branched from is as it was.
+    assert_eq!(marked(&initial), [1, 2, 3, 4, 5]);
+    assert_eq!(prints(&initial), line);
+    assert_eq!(initial.debug_forward(), Ok(4));
+
+    // Another Civ AI plays the branch on, and the branch that is kept is a
+    // line that passes from one to the other on the turn it was made on.
+    step_as(&mut branch, "siege");
+    step_as(&mut branch, "siege");
+    assert_eq!(
+        branch.state()["debug"]["played_by"],
+        json!([{"from": 1, "to": 3, "by": "jack"}, {"from": 3, "to": 5, "by": "siege"}])
+    );
+    // Walked back and handed to Jack again, the line is Jack's as far as
+    // Jack played it, and Siege's turns stand ahead of it.
+    assert_eq!(branch.debug_jump(1), Ok(1));
+    let picked = pick(&mut branch, "jack");
+    assert_eq!(picked["turns"], json!([1, 2, 3]));
+    assert_eq!(picked["beyond"], json!({"from": 4, "to": 5, "by": "siege"}));
+
+    let page = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    for piece in [
+        // B is the branch, and is told so when turns are kept ahead.
+        "branches: Math.max(timeline.last ?? state.turn, (timeline.beyond || {}).to ?? 0) > state.turn};",
+        "if (letter === \"b\" && debugSplit.branches) debugSplitTell(\"b\", {civvis: \"pane-op\", body: {op: \"branch\"}});",
+        // Until it says it holds none of them, they are left out of its line.
+        "const cut = letter === \"b\" && debugSplit.branches ? from : Infinity;",
+        // The ✕ at the left of a branch closes it: the other is kept.
+        "<button class=\"dbg-close\" data-dbg-close=\"${key}\"",
+        "if (debugSplit && !closed.disabled) debugSplitClose(closed.dataset.dbgClose === \"a\" ? \"b\" : \"a\");",
+        "#debugbar.dbg-split-on .dbg-close { grid-column: 1; }",
+        // Two branches are the most there are.
+        "#debugbar.dbg-split-on .dbg-branch, #debugbar.dbg-split-on .dbg-who { display: none; }",
+    ] {
+        assert!(page.contains(piece), "the branch is missing {piece}");
+    }
 }
 
 /// A turn taken an action at a time is the agent's turn as much as one taken

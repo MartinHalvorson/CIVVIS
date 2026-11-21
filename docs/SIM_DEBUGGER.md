@@ -37,15 +37,20 @@ test reads which Civ AI each half's steps named, the numbers set side by
 side, a copy, and the half that is kept. It reads the timeline as it is
 drawn at each step: one rail and one marker while the two halves hold the
 same worlds, a branch for each from the last turn they do, and one rail
-again when one is made a copy of the other. A last part holds the lock: that
-Branch Timeline opens the split at once, that the lock stands between the two
+again when one is made a copy of the other. A part holds the lock: that
+Branch opens the split at once, that the lock stands between the two
 rows and closes only on one turn, that the host's deck is the one panel of a
 locked split and plays both halves, that each half shows its own panel again
 when the lock opens, that two identical halves are asked for once and stay
-one timeline, that a half playing ahead by itself does not branch it, and
-that the timeline shows each half's breakpoint turns and save points and
-goes to the one that is clicked. A control added to the box or the strip is
-added there.
+one timeline, that a half playing ahead by itself has a branch of its own
+until the other plays the same turn, and that the timeline shows each half's
+breakpoint turns and save points and goes to the one that is clicked. A last
+part holds the branch: that Branch stands under the marker and moves with
+it, that a branch made behind the last turn played forks the timeline on
+that turn with the branch holding nothing past it, that each branch has an ✕
+at its left, that closing the timeline as it was leaves the branch as the
+timeline, and that each stretch is named by the Civ AI that played it. A
+control added to the box or the strip is added there.
 
 ## The bar
 
@@ -57,7 +62,12 @@ measured and published as `--dbg-left` and `--dbg-top`, and the map is fitted
 again whenever either changes (the left panel folded away, brought back or
 dragged wider). A watched game has no box and is not moved.
 
-The timeline is the top of the box, and under it is one row in three parts.
+Above the timeline is the Civ AI that plays the seat from the open turn, to
+pick there. Under the timeline's marker, wherever the marker stands, is
+Branch (operator 2026-11-21: "branch should say "Branch" and should move
+around below where the timeline "cursor" is. always rpesenting the option to
+branch"); it keeps its word in a box of any width. Under that is one row in
+three parts.
 
 In the middle, under the middle of the timeline, is the turn that is open, in
 a box that also goes to a turn typed into it, with the game's last turn
@@ -201,7 +211,7 @@ do not carry, so the replay would be another world.
 | Era ▶▶ (Era Next) | `jump`, then `step` repeated | On to the first turn of the next era. One the turns already played reach is gone to; otherwise the walk goes to the last turn played and the Civ AI plays until the state's `world_era` changes (the page stops the run itself, as the "A new era begins" breakpoint would). Off in the last era |
 | Play to End (⏭) | `jump`, then `step` repeated | Along the turns already played to the last of them, then the Civ AI plays until the game is over, stopping early at a breakpoint |
 | timeline | `jump`, or `walk` then `step` repeated | Go to any turn of the game. One that was played is put back as it stood; one that is no longer kept answers with the nearest before it, and the bar says so. One still ahead is played to by the seat's Civ AI, stopping early if a breakpoint does. The mouse wheel over it walks one played turn at a time, and the arrow keys move it a turn |
-| Civ AI | | Which Civ AI plays the seat when a turn is auto-played, stepped or played to. It is the page's own picker (`#autoplaystrategy`), shown beside Auto-play. Each Civ AI reads `<Elo> - <name>`, the highest Elo first, and the box is as wide as its longest listing, so the Elo and the whole name are read without opening it. A wide enough box costs the tools their words sooner (a 1600px window shows signs) |
+| Civ AI | | Which Civ AI plays the seat when a turn is auto-played, stepped or played to. It is the page's own picker (`#autoplaystrategy`), shown above the timeline, from where the rail begins. Each Civ AI reads `<Elo> - <name>`, the highest Elo first, and the box is as wide as its longest listing, so the Elo and the whole name are read without opening it |
 | Turns, ▶▶ Auto-play | `walk`, then `step` repeated | Play the turns picked (1 to 250, or all; 10 unless changed) from the turn that is open, stopping early at a breakpoint. Turns among them that the Civ AI already played from here are taken as they are kept and not played again (see below). The button counts the turns as they are played and is the Stop. Each turn is asked for the moment the one before it is answered, so the engine plays it while the page draws that one; a Stop pressed while a turn is being drawn lands a turn later. In the browser build the request is handed to the engine's worker inside the `fetch` call itself (`beta/shim.js`): handed over in a `then`, it waited for the draw that follows it in the same task, 18 to 30 ms a turn |
 | ↶ (`Ctrl`/`Cmd`+`Z`) | `undo` | Take back your last action this turn; the note says so, and how many more can be taken back |
 | ▸ | `step_action` | Step in: the seat's Civ AI takes its next action, and ends the turn when it has none left |
@@ -209,7 +219,26 @@ do not carry, so the replay would be another world.
 | ◉ | `reveal` | Show the whole map and every civilization, not only what the seat can see |
 | ⚑ | `save_point`, `goto_save`, `drop_save` | Save points: keep this world to come back to, go to one, or let one go. Each stands on the timeline as a flag at its turn; clicking the flag goes there |
 | ⚑ | `POST /save`, `POST /load` | Saves, in the same panel: keep this turn on the device under a name, or load one that was kept |
-| Branch Timeline | | Two simulators from this turn, side by side and locked on the same turn; see Split screen below |
+| ⑂ Branch | `branch`, in the new half | A second timeline from this turn, side by side with this one and locked on the same turn. It hangs under the timeline's marker and moves with it; see Split screen below |
+
+### Whose play each stretch was
+
+Each stretch of the turns played is named on the timeline by the Civ AI
+that played it (operator 2026-11-21: "lets label ai strats on the timeline
+too, to make the branching more clear"). The name stands at the start of its
+stretch, every other stretch is a shade darker, and a line stands on the
+turn the seat passed from one Civ AI to the next. A stretch the person
+played reads "By hand". A name is cut short at the end of its stretch,
+except the last, which has the rail ahead of it to run on over; a name the
+marker stands on steps past the marker, and in a split's rows past an era's
+name as well. The words under the pointer say whose play opened the turn
+there.
+
+The engine says it in `debug.played_by`: for every kept turn, the ones ahead
+that another Civ AI played too, a list of `from`, `to` and `by`. A stretch
+begins on the turn its first turn was played from, so each begins where the
+one before it ends. The turns ahead that are not on the seat's line keep
+their grey dashes and are named the same way.
 
 Going back forgets nothing. The turns ahead stay marked, and 1 ▶ walks them
 again exactly as they were played. They are replaced only when the world is
@@ -480,12 +509,30 @@ turn: back to it if it was played, and on to it if it is still ahead.
 
 ## Split screen
 
-Branch Timeline puts two simulators in one window. It asks nothing first:
-the screen splits at once, side by side, and the two halves begin locked on
-the same turn (the strip between them can stack them instead). Both start
-from the world as it stood when the screen was split, and from there each
-can play its own history: play one by hand and step the other, or try two
-answers to the same turn.
+Branch puts two simulators in one window. It asks nothing first: the screen
+splits at once, side by side, and the two halves begin locked on the same
+turn (the strip between them can stack them instead). Both start from the
+world as it stood when the screen was split, and from there each can play
+its own history: play one by hand and step the other, or try two answers to
+the same turn.
+
+A is the timeline as it was, and B is the branch. A keeps every turn it
+holds, the ones past the open turn included. B begins on the open turn: when
+turns are kept past it, the host tells B so as it loads, and B lets go of
+them (`branch`). A branch made on the last turn played has nothing to let
+go of and is asked nothing, so the two stay twins ("Identical halves are
+played once"). Two branches are the most there are: while the screen is
+split there is no Branch, and closing one brings it back.
+
+Each branch has an ✕ at its left, before its letter and its Civ AI (operator
+2026-11-21: "each branch should have an X on the left side. collapsing a
+branch should reduce the tree appropriately"). It closes that branch, and
+the other is the timeline from then on with every turn it holds (`adopt`,
+the same as Keep A and Keep B on the strip). Closing B leaves the timeline
+as it was. Closing A leaves the branch: one timeline that passes from the
+Civ AI that played up to the fork to the one that played the branch
+(operator: "if the initial is deleted though, the branchbecomes the main
+tree, transitioning from one ai strat to another"), each stretch named.
 
 Each half is the whole page again in a frame, and both are answered by one
 engine, which keeps a session for each (`src/server/panes.rs`). A half's
@@ -524,9 +571,11 @@ and a half that is kept keeps its own.
 ### One timeline until the worlds differ
 
 The timeline stays one for as long as the two halves hold the same world,
-and branches in two on the turn their worlds differ (operator 2026-11-21:
+and forks in two from the last turn they do (operator 2026-11-21:
 "branching the timeline should keep 1 timeline where they share the timeline
-and then branch to 2 when they actually diverge in simulated worlds").
+and then branch to 2 when they actually diverge in simulated worlds", and
+later that day "a branch should fork the tree appropriate (1 timeline into 2
+at the branch)").
 
 - **One world**: one rail as tall as both rows, the turns played in gold
   across it, and one marker ringed in both halves' colours. This is how a
@@ -539,11 +588,18 @@ and then branch to 2 when they actually diverge in simulated worlds").
   rail of its own in its row, with its own ruler, its turns in its own
   colour and its own marker. Two halves that both stand on a turn of the
   trunk have one marker there.
-- **One half ahead**: a half that has played turns the other has not has not
-  left it, because the other may yet play the same turns. The rail stays
-  one, and the turns only one half holds are drawn in that half's row and
-  colour. It branches when the other half holds a different world on one of
-  those turns.
+- **One half ahead**: turns that only one half holds are that half's own,
+  and the timeline forks on the last turn the two hold as one, with a rail
+  for each from there and nothing yet on the other's. This is what a branch
+  made behind the last turn played looks like at once: A's rail carries the
+  turns A holds past the fork, and B's is empty. If the other half then
+  plays those turns to the same worlds, the fork moves on with them, and the
+  timeline is one again when neither holds a turn the other does not.
+- **In the middle of a move**: two locked halves are played one after the
+  other, so one is a turn ahead for a moment on every turn of a run. That
+  does not fork a timeline that was one: while a split is moving (a run, a
+  locked half still following, a request out), a half that is only ahead
+  forks the timeline if it was forked already, and not otherwise.
 
 Which worlds are the same is the engine's to say, and it says it turn by
 turn. Every mark carries a print of its world (`world_print` in
@@ -561,10 +617,17 @@ order of `debug.turns`).
 Each half tells the host the turns it holds and their prints (`pane-marks`),
 and the host reads the branch off the two lists (`debugSplitFork` in
 `web/assets/app_debugger.js`): the last turn both give the same print for is
-the last one they share, and the timeline has branched once each half holds
-a turn past it. Nothing is remembered between draws, so the timeline is one
-again as soon as the halves hold the same worlds again: after a copy, or
-after one half goes back and plays its turns as the other played them.
+the last one they share, and the timeline forks there once either half
+holds a turn past it. All that is remembered between draws is whether the
+timeline was last drawn forked, for a split in the middle of a move, so the
+timeline is one again as soon as the halves hold the same worlds again:
+after a copy, or after one half goes back and plays its turns as the other
+played them.
+
+The stretches are named on a split's timeline as on any ("Whose play each
+stretch was"): the turns the halves hold as one on the trunk, and what each
+holds past them on its own row. Each half sends its `played_by` with what
+else it holds (`pane-marks`).
 
 When turns have been thinned to make room ("The timeline"), only the turns
 both halves still keep can be compared, so the branch is drawn on the last
@@ -635,7 +698,7 @@ The strip between the halves holds the split's other controls:
 | View | On, the two maps move together: panning or zooming one moves the other. Off, each looks where it likes. |
 | ◧ / ⬒ | Switch between side by side and top and bottom |
 | A → B, B → A | Make one half a copy of the other as it stands now, turns behind it included (`copy`) |
-| Keep A, Keep B | Close the split and play on from that half (`adopt`): its session becomes the main one, with every turn it could walk back to |
+| Keep A, Keep B | Close the split and play on from that half (`adopt`): its session becomes the main one, with every turn it could walk back to. The ✕ at the left of the other branch's row does the same |
 | drag the strip | Resize the halves; double-click makes them equal |
 | VS | Head to head; see below |
 
@@ -805,6 +868,7 @@ operation leaves the world as it was.
 | `status` | optional `strategy`: seat that Civ AI and play nothing, which is how the page says a pick |
 | `step_seat`, `finish_round` | none |
 | `reveal` | `on`: true or false |
+| `branch` | none. Lets go of every turn kept ahead of the open one: what a half of a split that is a new branch is asked, so that it begins on the turn it was made on |
 | `copy` | from a half of a split: `from`, the other half's name |
 | any, from a half of a split | optional `twin`, the other half's name: do it once for both if the two are the same world (see "Identical halves are played once") |
 | `adopt` | from the host of a split: `pane`, the half to keep |
@@ -818,7 +882,9 @@ of those turns' worlds (`worlds`, in the order of `turns`; see "One timeline
 until the worlds differ"), the Civ AI seated
 (`seat`, once one has been named), the kept turns ahead that another Civ AI
 played (`beyond`: `from`, `to`, and `by`, who played the first of them; null
-when there are none), the last turn ahead that playing on would only play
+when there are none), whose play each stretch of the kept turns was
+(`played_by`: `from`, `to`, and `by`, null for turns ended by hand), the
+last turn ahead that playing on would only play
 again (`played_ahead`, null when there is none), how many actions the seat has taken this
 turn (`acted`), `can_undo`, `can_back`, `can_forward`, the `breakpoints` and
 the categories they may name, the `layers`, how many decisions the layers

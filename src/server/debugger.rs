@@ -912,6 +912,34 @@ impl Timeline {
         eras
     }
 
+    /// Who played each stretch of the kept turns: from which kept turn, to
+    /// which, and the Civ AI whose play it was (`Mark::by`; `None` for turns
+    /// the person ended by hand). A stretch begins on the turn its first
+    /// turn was played from, so each begins where the one before it ends,
+    /// and a timeline that changes hands says on which turn it did.
+    ///
+    /// These are all the marks and not only the seat's line (`line`): the
+    /// turns ahead that another Civ AI played are kept, and the page says
+    /// whose they are as well.
+    fn played_by(&self) -> Vec<(u32, u32, Option<&str>)> {
+        let mut stretches: Vec<(u32, u32, Option<&str>)> = Vec::new();
+        for pair in self.marks.windows(2) {
+            let (from, mark) = (pair[0].turn, &pair[1]);
+            match stretches.last_mut() {
+                Some((_, to, by)) if *by == mark.by.as_deref() => *to = mark.turn,
+                _ => stretches.push((from, mark.turn, mark.by.as_deref())),
+            }
+        }
+        stretches
+    }
+
+    /// Let go of every turn kept ahead of `turn`: the world there is the
+    /// start of a branch of its own, and what was played past it stays with
+    /// the timeline it was branched from.
+    fn branch(&mut self, turn: u32) {
+        self.marks.retain(|mark| mark.turn <= turn);
+    }
+
     /// `seat` is the Civ AI seated at the played seat, when one has been
     /// named: the turns given are its line (`line`).
     fn json(&self, game: &Game, seat: Option<&str>) -> Value {
@@ -946,6 +974,14 @@ impl Timeline {
                 "era": era,
                 "name": crate::rules::ERA_NAMES.get(*era),
                 "turn": turn,
+            })).collect::<Vec<_>>(),
+            // Whose play each stretch of the kept turns was, the ones ahead
+            // that are not on the line too, for the page to name on the
+            // timeline (`played_by`).
+            "played_by": self.played_by().iter().map(|(from, to, by)| json!({
+                "from": from,
+                "to": to,
+                "by": by,
             })).collect::<Vec<_>>(),
             "breakpoints": self.breakpoints.json(),
             "layers": Layer::ALL.iter().map(|layer| json!({
@@ -1832,6 +1868,12 @@ impl Session {
                     Breakpoints::from_request(request, &self.game).map(|breakpoints| {
                         self.debugger.breakpoints = breakpoints;
                     })
+                }
+                // A half of a split that is a new branch from the open turn
+                // holds nothing past it (`Timeline::branch`).
+                "branch" => {
+                    self.debugger.branch(self.game.turn);
+                    Ok(())
                 }
                 // These two belong to a split screen and are answered by its
                 // panes (`panes.rs`); reaching here means no half was named.
