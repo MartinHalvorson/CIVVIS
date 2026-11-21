@@ -38,7 +38,12 @@
     "`videos` names a tournament's result video on the CIVVIS YouTube channel, by the tournament's number as the page shows it (a",
     "definition played as repeated series is several tournaments, so the link cannot sit on a definition). The page links it under the",
     "tournament's name. The operator posts the videos; add a line here when one is up. Only a YouTube watch link is linked.",
-    "Operator 2026-11-21 ~14:50Z: \"for tournament 6, lets cut back to 5 games at each level (5 on lv 4... 5 on lv 8)\": 25 games."
+    "Operator 2026-11-21 ~14:50Z: \"for tournament 6, lets cut back to 5 games at each level (5 on lv 4... 5 on lv 8)\": 25 games.",
+    "Operator 2026-11-21 ~20:38Z: \"for tournament 6 we should just have 1 of our civvis in the game. other 5 are ai. please restart",
+    "tournament 6\" and \"no diplo allowed for any level\": Tournament 6 starts again at the first table tagged after the restart",
+    "(`start` is that moment as a table tag), one CIVVIS agent and five Firaxis AI, the Diplomatic victory switched off in every game.",
+    "The first attempt's games (two CIVVIS agents; civvis-t6-20261121T131243Z, a win, and one table never finished) sort before",
+    "`start` and count in no tournament."
   ],
   "videos": {
     "1": "https://www.youtube.com/watch?v=an7y2IlGhU0",
@@ -84,13 +89,14 @@
       "end": "civvis-t"
     },
     {
-      "name": "Level ladder Lv 4-8, 2 CIVVIS agents + 4 AI",
-      "idea": "Five games at each level from Lv 4 to Lv 8, with two CIVVIS agents and four Firaxis AI at the table. A game is a win when either CIVVIS agent wins.",
-      "conditions": "Lv 4-8 6P Continents Online, 2 CIVVIS + 4 AI",
-      "start": "civvis-t6-",
+      "name": "Level ladder Lv 4-8, 1 CIVVIS agent + 5 AI",
+      "idea": "Five games at each level from Lv 4 to Lv 8, with one CIVVIS agent and five Firaxis AI at the table and the Diplomatic victory off.",
+      "conditions": "Lv 4-8 6P Continents Online, 1 CIVVIS + 5 AI, no Diplomatic victory",
+      "start": "civvis-t6-20261121T204000Z",
       "end": "civvis-t7-",
       "series_size": 25,
-      "match": {"players": 6, "map": "Continents.lua"}
+      "match": {"players": 6, "map": "Continents.lua"},
+      "note": "Restarted on 2026-11-21 with one CIVVIS agent instead of two; the first attempt's one finished game is not counted."
     }
   ]
 }
