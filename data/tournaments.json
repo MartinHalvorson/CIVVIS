@@ -39,12 +39,28 @@
     "definition played as repeated series is several tournaments, so the link cannot sit on a definition). The page links it under the",
     "tournament's name. The operator posts the videos; add a line here when one is up. Only a YouTube watch link is linked.",
     "Operator 2026-11-21 ~14:50Z: \"for tournament 6, lets cut back to 5 games at each level (5 on lv 4... 5 on lv 8)\": 25 games.",
+    "Operator 2026-11-21 ~20:35Z: \"for each tournament, we should have a short description. T1: Proof of concept, 10 game series.",
+    "T2: Abandoned. T3: 30 game series. T4: 50 game series T5: Repeat 50 game series but with 2/6 CIVVIS AI Agents (2nd half no",
+    "Diplo allowed). T6: Benchmarking across levels: 5 games at each level (no Diplo allowed). the descriptions can be on the title",
+    "line. please make title line bigger too.\": `descriptions` gives a tournament's short description, by the tournament's number",
+    "as the page shows it, like `videos` and for the same reason (Tournaments 4 and 5 are one definition). The page writes it on the",
+    "tournament's title line, \"Tournament 4: 50 game series\". They are the operator's words; every tournament has one, so add a",
+    "line here when a tournament is scheduled or begins. A definition may carry its own `description` instead, which is used when",
+    "`descriptions` has no line for its number (a scheduled tournament's number can move if the queue is reordered).",
     "Operator 2026-11-21 ~20:38Z: \"for tournament 6 we should just have 1 of our civvis in the game. other 5 are ai. please restart",
     "tournament 6\" and \"no diplo allowed for any level\": Tournament 6 starts again at the first table tagged after the restart",
     "(`start` is that moment as a table tag), one CIVVIS agent and five Firaxis AI, the Diplomatic victory switched off in every game.",
     "The first attempt's games (two CIVVIS agents; civvis-t6-20261121T131243Z, a win, and one table never finished) sort before",
     "`start` and count in no tournament."
   ],
+  "descriptions": {
+    "1": "Proof of concept, 10 game series",
+    "2": "Abandoned",
+    "3": "30 game series",
+    "4": "50 game series",
+    "5": "Repeat 50 game series but with 2/6 CIVVIS AI Agents (2nd half no Diplo allowed)",
+    "6": "Benchmarking across levels: 5 games at each level (no Diplo allowed)"
+  },
   "videos": {
     "1": "https://www.youtube.com/watch?v=an7y2IlGhU0",
     "3": "https://www.youtube.com/watch?v=HgqxiWQKCqc",
