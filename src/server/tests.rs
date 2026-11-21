@@ -10764,14 +10764,21 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
     // Pointing at a column lights it and the name of the civilization it is.
     assert!(EMBEDDED_INDEX.contains("table.tBodies[0].rows[column - 1]?.cells[0]"));
     // The slanted column names along the bottom are gone, with their corner.
-    for gone in ["politics-corner", "politics-slid", "--politics-run", "--politics-foot", "table.tFoot"] {
+    for gone in [
+        "politics-corner",
+        "politics-slid",
+        "--politics-run",
+        "--politics-foot",
+        "table.tFoot",
+    ] {
         assert!(!EMBEDDED_INDEX.contains(gone), "{gone}");
     }
     assert!(!EMBEDDED_INDEX.contains("politics-legend"));
 
     // The names stay put while the table scrolls under them. Six rows always
     // fit, and the labels below stop covering the table while it is open.
-    assert!(EMBEDDED_INDEX.contains(".politics-matrix tbody th {\n    position: sticky; left: 0; z-index: 1;"));
+    assert!(EMBEDDED_INDEX
+        .contains(".politics-matrix tbody th {\n    position: sticky; left: 0; z-index: 1;"));
     assert!(EMBEDDED_INDEX.contains(
         "#side.deck-stops .politics-list { max-height: max(calc(20px + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }"
     ));
