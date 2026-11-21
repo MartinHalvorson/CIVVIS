@@ -634,7 +634,10 @@ fn the_docked_box_stands_beside_the_left_panel_and_moves_what_is_fixed_under_it(
 /// back | 1 turn back | next turn | 10 turns" with the turn counter between
 /// one back and one on; and at the bottom left "civ ai, turns, auto-play",
 /// layers, breakpoints, and to their right "Branch Timeline". Auto-play
-/// counts the turns it has played while it plays.
+/// counts the turns it has played while it plays. On 2026-11-21 the turn
+/// buttons became "Turn 1, Era Back (... the same symbol as 10 back button
+/// except swap 10 for the word era), 10 Back, 1 back, 1 next, 10 next, era
+/// next, Play to End".
 #[test]
 fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_order() {
     let script = super::super::EMBEDDED_APP_DEBUGGER_JS;
@@ -650,12 +653,14 @@ fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_orde
         "data-dbg-pop=\"breaks\"",
         "<span class=\"dbg-word\">Branch Timeline</span>",
         "<span class=\"dbg-word\">Turn 1</span>",
-        "<span class=\"dbg-word\">Era start</span>",
+        "aria-label=\"Era Back\"><i>◀◀</i>Era</button>",
         "<button data-dbg=\"back10\"",
         "<button data-dbg=\"back\"",
         "id=\"dbg-turn\"",
         "<button data-dbg=\"next\"",
         "<button data-dbg=\"next10\"",
+        "aria-label=\"Era Next\">Era<i>▶▶</i></button>",
+        "<span class=\"dbg-word\">Play to End</span>",
     ] {
         let at = built[from..]
             .find(piece)
@@ -671,8 +676,14 @@ fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_orde
         "<option value=\"${turns}\"${turns === DEBUG_AUTOPLAY_TURNS ? \" selected\" : \"\"}>",
         // The count on Auto-play, of the turns asked for or so far.
         "const runCount = !deck.running ? \"\" : deck.asked === null ? `${deck.played}` : `${deck.played}/${deck.asked}`;",
-        // Era start, the era breakpoint and the eras named on the timeline.
+        // Era Back, Era Next, the era breakpoint and the eras named on the
+        // timeline. Era Next played on stops on the turn a new era opens.
         "const began = (timeline.eras || []).filter(era => era.turn < state.turn);",
+        "return (timeline.eras || []).find(era => era.turn > state.turn) || null;",
+        "if (await debugWalkOn(null)) await debugRun(null, state.world_era ?? 0);",
+        "if (dawn(next)) { debugSayStop({kind: \"era\", turn: next.turn, era: next.world_era}); break; }",
+        // Play to End walks the turns played, then plays the game out.
+        "if (await debugWalkOn(null)) await debugRun(null);",
         "<input type=\"checkbox\" data-dbg-field=\"eras\"> A new era begins</label>",
         "eras: pop.querySelector(\"[data-dbg-field=eras]\").checked,",
         "eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle: deck.idle});",
