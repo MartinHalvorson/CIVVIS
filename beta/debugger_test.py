@@ -58,7 +58,7 @@ body { display: flex; }
 <div id="maparea"></div>
 <div id="side">
   <div id="humanfooter" style="display:grid">the left panel's own auto-play</div>
-  <select id="autoplaystrategy"><option value="jack">Jack</option><option value="stock">Stock</option></select>
+  <select id="autoplaystrategy"><option value="jack">1211 - JackOfAllTrades</option><option value="stock">1000 - ByTheBook</option></select>
 </div>
 <script>
 "use strict";
@@ -68,8 +68,6 @@ let SPEC = false, autoplaying = false, turnAdvancePending = false;
 const AUTOPLAY_BATCH_TIMEOUT_MS = 60000;
 const unitOrders = new Map(), cityQueues = new Map();
 let noticeLog = [], noticeDismissed = new Set(), noticeSeenTurn = 0;
-// The world the page last announced as a new game.
-let soloNoticeSeed = null;
 let cam = {x: 0, y: 0, scale: 1, rot: 0, tilt: 0}, SKY_PAN = {x: 0, y: 0};
 let cameraFlight = null, cameraZoom = null;
 function saveCityQueues() {}
@@ -315,6 +313,13 @@ class Bar:
 LANE = '[data-dbg-lane=""]'
 
 
+# Whether a select is as wide as it would be left to itself: its longest
+# option, read whole without opening it.
+PICKER_FITS = ("(select => { const twin = select.cloneNode(true); twin.removeAttribute('id');"
+               " twin.style.cssText = 'width:auto;max-width:none;flex:none;position:absolute;visibility:hidden';"
+               " select.parentNode.appendChild(twin); const need = twin.offsetWidth; twin.remove();"
+               " return select.offsetWidth >= need; })")
+
 def check_the_bar(bar: Bar) -> None:
     bar.ev("render(engineState()), true")
     assert bar.ev("!document.getElementById('debugbar').hidden"), "the bar is hidden on a played game"
@@ -502,9 +507,6 @@ def check_the_bar(bar: Bar) -> None:
     bar.idle("state.turn === 1", "Turn 1 goes to where the timeline begins")
     assert sent() == [("jump", 4), ("back", None), ("jump", 1)], sent()
     assert off("first") and off("back10") and off("back") and off("era"), "there is nothing before turn 1 to go back to"
-    # Turn 1 walked back to is not a new game, and the page is told so: its
-    # notice for a new game stays put away.
-    assert bar.ev("soloNoticeSeed === state.seed && state.seed === 7"), "a walk back to turn 1 reads as a new game"
     assert not off("next") and not off("next10")
     # Ten back from a turn nearer the start than that goes to the start.
     bar.type_turn(6)
@@ -606,6 +608,10 @@ def check_the_bar(bar: Bar) -> None:
     agent = "document.getElementById('dbg-agent')"
     assert bar.ev(f"[...{agent}.options].map(option => option.value)") == ["jack", "stock"]
     assert bar.ev(f"{agent}.value") == "jack"
+    # It lists them as the page does, Elo then name, and is wide enough to
+    # read the longest of them whole without being opened.
+    assert bar.ev(f"[...{agent}.options].map(option => option.textContent)") == ["1211 - JackOfAllTrades", "1000 - ByTheBook"]
+    assert bar.ev(f"{PICKER_FITS}({agent})"), "the Civ AI picker cuts its longest listing short"
 
     def seat(name: str) -> None:
         bar.ev(f"(() => {{ const select = {agent}; select.value = '{name}';"
@@ -975,6 +981,8 @@ def check_the_split(bar: Bar) -> None:
     # bar, and is made there as well. A half has no picker of its own.
     head = "document.querySelector('#debugbar [data-dbg-agent=\"{}\"]')".format
     bar.until(f"{head('a')}.value === 'jack' && {head('b')}.value === 'stock'", "the lanes say which Civ AI each half seats")
+    for select in (head("a"), head("b"), "debugSplit.host.querySelector('[data-dbg-strategy=\"a\"]')"):
+        assert bar.ev(f"{PICKER_FITS}({select})"), f"{select} cuts its longest listing short"
     assert bar.ev(half("a", "'document.getElementById(\"dbg-agent\").offsetParent === null'")), "a half has a picker of its own"
     for name in ("stock", "jack"):
         bar.ev(f"(() => {{ const select = {head('a')}; select.value = '{name}';"

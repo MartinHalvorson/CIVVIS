@@ -164,10 +164,14 @@ on our stand-in for Civilization VI's AI, not on that AI.
 ## Where a person sees it
 
 - The setup panel's **Rival Civ AI Agent** select, under Difficulty, seats every
-  rival major with one agent. Each option shows the handle, the tilt, the Elo
-  and the nearest Civilization VI level; the note under it is the whole ladder
-  in Elo. `House mix` is the default fleet and changes nothing.
-- The auto-play bar's **Civ AI** select hands your own seat to an agent.
+  rival major with one agent. Each option reads Elo first, then the handle
+  (`1211 - JackOfAllTrades`), then the nearest Civilization VI level and the
+  tilt; the note under it is the whole ladder in Elo. `House mix` is the
+  default fleet and changes nothing.
+- The auto-play bar's **Civ AI** select hands your own seat to an agent. It
+  lists the agents the same way, `<Elo> - <handle>`.
+- Every list of agents is in Elo order, the highest first; an agent nothing
+  has rated yet follows the rated ones under its handle alone.
 - `/rules` publishes `strategies`, `civ6_ladder` and `rival_strategy`; `/new`
   accepts `rival_strategy` by id or handle and refuses a name nobody registered.
 

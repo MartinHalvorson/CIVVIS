@@ -5737,21 +5737,6 @@
     background: linear-gradient(180deg, #f3d995, #c9a24f);
   }
   #fd-intro-go:hover, #fd-intro-go:focus-visible { filter: brightness(1.08); outline: 2px solid #fff3cf; outline-offset: 2px; }
-  /* What single player is, said at the start of each new game. Above the main
-     menu too, because a game begun from there opens its leader intro at once:
-     the player acknowledges this and finds the intro waiting underneath. */
-  #solo-notice {
-    position: fixed; inset: 0; z-index: 9100; display: grid; place-items: center;
-    padding: 16px; background: #050b09b8;
-  }
-  #solo-notice[hidden] { display: none; }
-  .solo-notice-card {
-    box-sizing: border-box; width: min(520px, 100%); max-height: 100%; overflow: auto;
-    padding: clamp(16px, 3vmin, 26px); color: var(--text);
-    border: 1px solid #9f8050; border-radius: 18px;
-    background: radial-gradient(circle at 25% 0, #3a3024f8, #091310fc 62%);
-    box-shadow: 0 32px 120px #000f, inset 0 1px #ffffff17;
-  }
   /* Payoffs: what a turn delivered, across the top and clear of the panels. */
   #moments {
     /* Above the map's panels and under the screens (14 and up): a banner over
@@ -5919,15 +5904,6 @@
 </head>
 <body aria-busy="false">
 <div id="moments" aria-live="polite"></div>
-<div id="solo-notice" hidden>
-  <section class="solo-notice-card" role="dialog" aria-modal="true" aria-labelledby="solo-notice-title">
-    <div class="capture-kicker">Heads up</div>
-    <div class="capture-title" id="solo-notice-title">AI Debugger isn't polished yet</div>
-    <p class="capture-copy">There's definitely something there but needs more finesse to be great.</p>
-    <p class="capture-copy">Feel free to play around here though. Using Civ 6 AI Agents to play out turns is probably the most interesting feature here. Skipping backwards and forwards through time is probably the most interesting idea. Maybe play out a game until a nuclear war, backtrack, and try a different strategy to avoid the war but still win.</p>
-    <div class="capture-actions"><button id="solo-notice-ack" class="primary" type="button">Ack</button></div>
-  </section>
-</div>
 <div id="frontdoor" role="dialog" aria-modal="true" aria-label="CIVVIS main menu" hidden>
   <section class="fd-menu" id="fd-menu">
     <header>

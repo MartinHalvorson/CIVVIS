@@ -111,7 +111,8 @@ const DEBUG_BAR_STYLE = `
     flex: none; height: 26px; padding: 0 4px; border-radius: 8px; cursor: pointer;
     color: var(--text); background: #060d0b; border: 1px solid #35504a; font: inherit;
   }
-  #debugbar select.dbg-agent { width: 104px; }
+  /* A Civ AI picker has no width of its own: it is as wide as its longest
+     listing, so the Elo and the whole name are read without opening it. */
   #debugbar #dbg-turns { width: 80px; }
   #debugbar .dbg-deck select:disabled, #debugbar select.dbg-agent:disabled { opacity: .5; cursor: default; }
   /* Wide enough for a count, so the row does not move as it plays. */
@@ -119,7 +120,6 @@ const DEBUG_BAR_STYLE = `
   #debugbar.dbg-tight [data-dbg="autoplay"] { min-width: 74px; }
   #debugbar #dbg-run-count:empty { display: none; }
   #debugbar:not(.dbg-tight) #dbg-run-count::before { content: "· "; }
-  #debugbar.dbg-tight select.dbg-agent { width: 96px; }
   #debugbar.dbg-tight #dbg-turns { width: 78px; }
   #debugbar.dbg-tight .dbg-nav button { min-width: 32px; padding: 0 6px; }
   /* Each half of a split is seated by the host, at the head of its lane. */
@@ -437,10 +437,6 @@ async function debugOp(body, timeoutMs = 20000) {
     }, timeoutMs);
     if (next.error) { debugSay(next.error); return next; }
     debugTwinned = led && !!(next.debug && next.debug.twinned);
-    // Turn 1 walked back to is not a new game: the page's notice for one,
-    // which goes by the first turn of a world it has not announced, is told
-    // that this world has been.
-    if (DEBUG_TRAVEL_OPS.has(body.op)) soloNoticeSeed = next.seed;
     if (DEBUG_TRAVEL_OPS.has(body.op) || body.op === "step" || body.op === "step_action" ||
         body.op === "step_seat" || body.op === "finish_round") {
       sel = null; selCity = null;
@@ -472,7 +468,6 @@ async function debugRefresh() {
     const before = state.turn;
     const next = await fetchJSON("/state", {}, 20000);
     if (!next || next.error) return;
-    soloNoticeSeed = next.seed;
     sel = null; selCity = null;
     if (next.turn !== before) debugForgetStandingOrders(next.turn);
     render(next);
@@ -1634,8 +1629,9 @@ const DEBUG_SPLIT_STYLE = `
   #debugsplit .dbg-pane-name { text-align: center; font-weight: 700; color: #e7c873; font-variant-numeric: tabular-nums; }
   #debugsplit .dbg-gap { flex: 1; }
   #debugsplit [data-dbg-split="flip"] { font-size: 15px; }
-  /* Head to head: the strip widens to hold each half's Civ AI and numbers. */
-  #debugsplit.dbg-versus-on:not(.dbg-col) .dbg-divider { width: 138px; }
+  /* Head to head: the strip widens to hold each half's Civ AI and numbers.
+     It is as wide as a picker's longest listing asks, Elo and whole name. */
+  #debugsplit.dbg-versus-on:not(.dbg-col) .dbg-divider { width: min-content; min-width: 138px; }
   #debugsplit .dbg-versus { display: flex; flex-direction: column; gap: 5px; cursor: default; min-width: 0; }
   #debugsplit .dbg-versus[hidden] { display: none; }
   #debugsplit.dbg-col .dbg-versus { flex-direction: row; align-items: center; gap: 10px; overflow: hidden; }
@@ -1643,7 +1639,7 @@ const DEBUG_SPLIT_STYLE = `
     min-width: 0; height: 24px; padding: 0 4px; border-radius: 7px; font: inherit; line-height: normal;
     color: inherit; background: #060d0b; border: 1px solid #35504a;
   }
-  #debugsplit .dbg-versus select { flex: 1; max-width: 132px; }
+  #debugsplit .dbg-versus select { flex: none; width: auto; max-width: none; }
   #debugsplit .dbg-versus input { width: 44px; text-align: center; }
   #debugsplit .dbg-vs-line { display: flex; align-items: center; gap: 4px; min-width: 0; }
   #debugsplit .dbg-vs-line > span { font-weight: 700; }

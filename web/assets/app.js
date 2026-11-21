@@ -30170,23 +30170,6 @@ function settleSoloDeck() {
   togglePanel(chosen ? chosen === "closed" : window.matchMedia("(max-width: 720px)").matches, false);
 }
 
-// The published site says plainly what single player is whenever a new game
-// starts. Turn 1 of a world not yet announced is what makes it new, so a save
-// resumed mid-game stays quiet. Clearing the seed once the game has moved on
-// lets a replay of the same seed count as new as well.
-let soloNoticeSeed = null;
-function soloNoticeOpen() { return !document.getElementById("solo-notice").hidden; }
-function settleSoloNotice() {
-  if (state.turn !== 1) { soloNoticeSeed = null; return; }
-  if (!window.CIVVIS_PUBLISHED_BUILD || state.seed === soloNoticeSeed) return;
-  soloNoticeSeed = state.seed;
-  document.getElementById("solo-notice").hidden = false;
-  document.getElementById("solo-notice-ack").focus();
-}
-document.getElementById("solo-notice-ack").onclick = () => {
-  document.getElementById("solo-notice").hidden = true;
-};
-
 function drawSoloHud() {
   const solo = playingSolo();
   const changed = document.body.classList.contains("playing-solo") !== solo ||
@@ -30211,7 +30194,6 @@ function drawSoloHud() {
   }
   settleSoloRankings();
   settleSoloDeck();
-  settleSoloNotice();
   drawCivTop();
   drawWorldTracker();
   drawLeaderRibbon();
@@ -39442,7 +39424,7 @@ function closeTopmostScreen() {
 }
 // A visible screen keeps global action keys out of its controls.
 function screenHoldsKeyboard() {
-  return anyScreenOpen() || soloNoticeOpen();
+  return anyScreenOpen();
 }
 document.getElementById("endturn").onclick = ev => advanceTurn(ev.shiftKey);
 // Hand your own seat to one of our strategies for a stretch of turns. Useful
@@ -39461,9 +39443,9 @@ function fillStrategies(rules) {
   const select = document.getElementById("autoplaystrategy");
   const roster = Array.isArray(rules.strategies) ? rules.strategies : [];
   if (!select || !roster.length) return;
-  select.innerHTML = roster.map(entry =>
+  select.innerHTML = strategiesByElo(roster).map(entry =>
     `<option value="${escapeAttr(entry.name)}" title="${escapeAttr(entry.label || entry.name)}">` +
-      `${escapeAttr(entry.username || entry.name)}${strategyEloSuffix(entry)}</option>`).join("");
+      `${escapeAttr(strategyListing(entry))}</option>`).join("");
   fillRivalStrategies(rules, roster);
   let remembered = null;
   try { remembered = localStorage.getItem(AUTOPLAY_STRATEGY_KEY); } catch (e) {}
@@ -39473,12 +39455,24 @@ function fillStrategies(rules) {
   syncAutoplayLabel();
 }
 // A rating is shown only once something measured it, and a thin one says so.
-function strategyEloSuffix(entry) {
+function strategyElo(entry) {
   if (entry.elo === null || entry.elo === undefined) return "";
   // An agent that has never won a table is rated "at most"; one that has
   // never lost, "at least". Either outranks the provisional mark.
   const lead = entry.bound === "upper" ? "≤" : entry.provisional && entry.bound !== "lower" ? "~" : "";
-  return ` · ${lead}${Math.round(entry.elo)}${entry.bound === "lower" ? "+" : ""}`;
+  return `${lead}${Math.round(entry.elo)}${entry.bound === "lower" ? "+" : ""}`;
+}
+// How every picker lists a Civ AI Agent: its Elo, then its name, as in
+// "1512 - JackOfAllTrades" (operator, 2026-11-21). One nothing has measured
+// yet is its name alone.
+function strategyListing(entry) {
+  const elo = strategyElo(entry), name = entry.username || entry.name;
+  return elo ? `${elo} - ${name}` : name;
+}
+// The highest Elo first. The unrated follow, in the roster's own order.
+function strategiesByElo(roster) {
+  const elo = entry => entry.elo === null || entry.elo === undefined ? -Infinity : Number(entry.elo);
+  return [...roster].sort((a, b) => elo(b) === elo(a) ? 0 : elo(b) - elo(a));
 }
 // Who a person plays against. Each Civ AI Agent carries its measured Elo and
 // the Civilization VI level whose rivals rate nearest it, so somebody who
@@ -39487,13 +39481,12 @@ function strategyEloSuffix(entry) {
 function fillRivalStrategies(rules, roster) {
   const select = document.getElementById("rivalstrategy");
   if (!select) return;
-  select.innerHTML = `<option value="">House mix</option>` + roster.map(entry => {
-    // Rating before tilt: the sidebar is narrow, and a closed select shows
+  select.innerHTML = `<option value="">House mix</option>` + strategiesByElo(roster).map(entry => {
+    // Level before tilt: the sidebar is narrow, and a closed select shows
     // only the start of its option.
-    const rated = entry.elo === null || entry.elo === undefined ? ""
-      : `${strategyEloSuffix(entry)}${entry.civ6_level ? ` ≈ ${entry.civ6_level}` : ""}`;
+    const level = entry.civ6_level && strategyElo(entry) ? ` ≈ ${entry.civ6_level}` : "";
     return `<option value="${escapeAttr(entry.name)}" title="${escapeAttr(entry.blurb || entry.label || "")}">` +
-      `${escapeAttr(entry.username || entry.name)}${escapeAttr(rated)} — ${escapeAttr(entry.tilt || "")}</option>`;
+      `${escapeAttr(strategyListing(entry) + level)} — ${escapeAttr(entry.tilt || "")}</option>`;
   }).join("");
   const wanted = rules.rival_strategy;
   select.value = wanted && roster.some(entry => entry.name === wanted) ? wanted : "";
