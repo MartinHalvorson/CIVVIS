@@ -467,8 +467,9 @@ class HomeRankings(unittest.TestCase):
         specs = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))["tournaments"]
         self.assertTrue(specs)
         for spec in specs:
-            # A run tag, or a tag prefix a whole table owns (`civvis-t6-`).
-            tag = r"^civvis-(\d{8}T\d{6}Z|t\d*-?)$"
+            # A run tag (a hotseat table's carries its tournament's prefix,
+            # `civvis-t6-<utc>`), or a tag prefix a whole table owns (`civvis-t6-`).
+            tag = r"^civvis-((t\d+-)?\d{8}T\d{6}Z|t\d*-?)$"
             self.assertRegex(spec["start"], tag)
             if "end" in spec:
                 self.assertRegex(spec["end"], tag)
