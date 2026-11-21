@@ -1365,11 +1365,53 @@ impl Session {
                 other => Err(format!("no debugger operation named {other:?}")),
             }
         };
-        let mut out = self.state();
+        let mut out = if request["lean"] == json!(true) {
+            self.debug_lean()
+        } else {
+            self.state()
+        };
         out["error"] = match result {
             Ok(()) => Value::Null,
             Err(error) => json!(error),
         };
+        out
+    }
+
+    /// The answer to an operation that asked to be answered `lean`: where the
+    /// world stands, every seat's score and what the debugger holds, and no
+    /// state document.
+    ///
+    /// The document is the map as the seat sees it, every city and unit, and
+    /// everything the seat may do next. At turn 80 of a six-seat game it took
+    /// 9 ms to build, of a jump's 20 and a step's 130, and whatever plays
+    /// many futures of a world to compare how they came out reads none of
+    /// it. The scores are
+    /// every seat's, met or not: this is a reading of the world, as a
+    /// breakpoint condition is, not what the seat is shown.
+    fn debug_lean(&self) -> Value {
+        let game = &self.game;
+        let scores: Vec<Value> = game
+            .players
+            .iter()
+            .enumerate()
+            .filter(|(_, player)| !player.is_minor && !player.is_barbarian)
+            .map(|(seat, player)| {
+                json!({"id": seat, "alive": player.alive, "score": game.score(seat)})
+            })
+            .collect();
+        let mut out = json!({
+            "lean": true,
+            "turn": game.turn,
+            "current": game.current,
+            "seed": game.seed,
+            "finished": game.is_finished(),
+            "draw": game.is_draw(),
+            "winner": game.winner,
+            "scores": scores,
+        });
+        if self.debuggable() {
+            out["debug"] = self.debugger_json();
+        }
         out
     }
 }

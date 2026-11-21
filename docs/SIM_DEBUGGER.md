@@ -585,6 +585,7 @@ operation leaves the world as it was.
 | `adopt` | from the host of a split: `pane`, the half to keep |
 | `layers` | `layers`: the ids to switch on; all others are switched off |
 | `breakpoints` | `turns`, `categories`, `phrases`, `important`, `every_seat`, `conditions`; whatever is left out is cleared |
+| any | optional `lean`: true to be answered without the state document (see below) |
 
 Every state document of a played game carries `debug`: the open `turn`, the
 marked `turns`, `first` and `last`, how many actions the seat has taken this
@@ -598,3 +599,13 @@ and `auto` for the one the debugger keeps). The answer to a request that
 named a `twin` also says whether the twin was made a copy of it (`twinned`).
 
 A watched game keeps no timeline and its state carries no `debug`.
+
+An operation sent with `"lean": true` does exactly what it does without it
+and is answered with a small document in place of the state: `lean`, `turn`,
+`current`, `seed`, `finished`, `draw`, `winner`, `error`, the same `debug`,
+and `scores`, one of `id`, `alive` and `score` for every civilization, met or
+not. The state document is the map as the seat sees it, every city and unit
+and everything the seat may do next. At turn 80 of a six-seat game on
+published build `145fabd` it took 9 ms to build, of a jump's 20 ms and a
+step's 130 ms. Something that plays a world forward only to read how it came
+out asks lean and reads the scores.
