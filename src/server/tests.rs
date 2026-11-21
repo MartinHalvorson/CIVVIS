@@ -6870,7 +6870,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     for fold in [
         "data-hud-fold=\"standings\"",
         "data-hud-fold=\"turnplate\"",
-        "hudFoldButton(\"simstats\", \"Arena Stats\")",
+        "hudFoldButton(\"simstats\", \"CIVVIS Arena Stats\")",
         "hudFoldButton(\"victory\", \"victory tracker\")",
         "hudFoldButton(\"turnplate\", \"turn box\", \"turn-plate-fold\")",
     ] {
@@ -6906,7 +6906,18 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "a live frame frees the repeat guard for the next result"
     );
     for arena_stats_contract in [
-        "<span>Arena Stats</span>",
+        // The panel is titled for the product, and its summary opens with
+        // the day the record began, stamped with the first game it counts.
+        "<span>CIVVIS Arena&nbsp;Stats</span>",
+        "if (!bucket.games) bucket.since = Date.now();",
+        "`${start ? `<span>${start.short} start,</span> ` : \"\"}` +",
+        // A narrow panel breaks the summary after the start: Reset floats
+        // beside the first line and the games take the second.
+        ".sim-stats-summary-row .sim-stats-clear { float: right; margin-left: 6px; }",
+        ".sim-stats-summary > span { white-space: nowrap; }",
+        // And the title stands on two lines there, fitted by its real run.
+        "@container sim-stats-bar (max-width: 157px) {",
+        "{selector:\"#sim-stats-title > span\", min:8.5, max:12, parentWidth:true, exact:true},",
         "#victoryhud > .sim-stats-region .hud-region-bar { margin-right: 27px; }",
         "#victoryhud > .sim-stats-region .hud-region-bar > .hud-section-heading { width: auto; }",
         "victories: {label: \"Victory types\", title: \"Wins by victory type\"},",
@@ -6929,10 +6940,10 @@ fn browser_orders_controls_interface_setup_and_logs() {
         );
     }
     let arena_stats_summary = EMBEDDED_INDEX
-        .find("<div class=\"sim-stats-summary-row\"><div class=\"sim-stats-summary\">")
+        .find("`<div class=\"sim-stats-summary-row\">` +")
         .expect("Arena Stats summary row");
     let arena_stats_views = EMBEDDED_INDEX
-        .find("<div class=\"sim-stats-controls\" role=\"group\" aria-label=\"Arena Stats record view\">")
+        .find("<div class=\"sim-stats-controls\" role=\"group\" aria-label=\"CIVVIS Arena Stats record view\">")
         .expect("Arena Stats view controls");
     assert!(
         arena_stats_summary < arena_stats_views,

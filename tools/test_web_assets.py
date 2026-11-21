@@ -1750,6 +1750,141 @@ class LiveTimeCountsHundredthsWithTheFramesAlreadyPainting(unittest.TestCase):
             self.assertIn(piece, row)
 
 
+ARENA_STATS_SCENARIOS = r"""
+const stored = {};
+const localStorage = {getItem: key => stored[key] ?? null, setItem: (key, value) => { stored[key] = value; }};
+// The viewer's own calendar: every date here is built from local parts, so
+// the day read back is the day written whatever zone the runner keeps.
+let now = new Date(2026, 10, 21, 15, 0).getTime();
+Date.now = () => now;
+const RULES = {strategies: []};
+const isBattlefieldMapScript = script => script === "battlefield";
+const reportedTurn = st => st.turn;
+const victoryVerdict = type => type;
+const escapeAttr = text => text;
+const hudFoldButton = (name, label) => `<fold ${name}: ${label}>`;
+let hudDraws = 0;
+const drawPlayerHud = () => { hudDraws++; };
+const world = turn => ({server_instance: "one", turn, victory_type: "Science", map: {script: "continents"},
+  players: [{id: 0, civ: "Rome"}, {id: 1, civ: "Greece"}]});
+let state = world(120);
+__SCRIPT__
+const expect = (ok, note) => { if (!ok) throw new Error(note); };
+const summary = () => {
+  const markup = simulationStatsSection();
+  const row = markup.match(/<div class="sim-stats-summary"( title="([^"]*)")?>(.*?)<\/div>/);
+  expect(row, `no summary in ${markup}`);
+  return {text: row[3].replace(/<[^>]+>/g, ""), parts: row[3], title: row[2] ?? null, markup};
+};
+const reads = (text, title, note) => {
+  const got = summary();
+  expect(got.text === text && got.title === title, `${note}: read "${got.text}" titled ${got.title}`);
+};
+// The panel is named for the product, in its heading and in what it tells a
+// screen reader.
+const titled = summary().markup;
+// Its one break is after CIVVIS, so a narrow panel sets it on two lines.
+expect(titled.includes("<span>CIVVIS Arena&nbsp;Stats</span>"), "the heading is not CIVVIS Arena Stats");
+expect(titled.includes('aria-label="Move CIVVIS Arena Stats; use arrow keys or drag"'), "the handle");
+expect(titled.includes("<fold simstats: CIVVIS Arena Stats>"), "the fold control");
+expect(!/[^S] Arena Stats|>Arena Stats/.test(titled), "the old title is still printed somewhere");
+// Before any game there is no record, so no day.
+reads("No finished games yet", null, "an empty record");
+
+// The first game a record counts stamps the day, and the day stands before
+// the games.
+recordSimulationResult(state, "first", [0]);
+expect(simulationStats.civ.since === now, "the first game did not stamp the start");
+reads("11-21 start, 1 game, avg 120 turns", "This record began 2026-11-21", "one game");
+// The start and the games are two parts, each kept whole, so a narrow panel
+// breaks the line between them. Reset is written ahead of both: it floats
+// beside the first line.
+expect(summary().parts === "<span>11-21 start,</span> <span>1 game, avg 120 turns</span>",
+  `the summary's parts are ${summary().parts}`);
+expect(/<div class="sim-stats-summary-row"><button class="sim-stats-clear"[^>]*>Reset<\/button><div class="sim-stats-summary"/
+  .test(summary().markup), "Reset is not ahead of the summary it floats beside");
+expect(JSON.parse(stored["civvis-simulation-stats-v1"]).civ.since === now, "the start was not saved");
+
+// Later games add to the record and leave its start where it was.
+const began = now;
+now = new Date(2026, 10, 23, 9, 30).getTime();
+state = world(180);
+recordSimulationResult(state, "second", [1]);
+expect(simulationStats.civ.since === began, "a later game moved the start");
+reads("11-21 start, 2 games, avg 150 turns", "This record began 2026-11-21", "two games");
+
+// Reset drops the day with the rest; the next game begins a new record.
+clearSimulationStats("civ");
+expect(simulationStats.civ === undefined, "Reset left a record behind");
+reads("No finished games yet", null, "a reset record");
+now = new Date(2027, 0, 5, 0, 5).getTime();
+recordSimulationResult(state, "third", [0]);
+reads("01-05 start, 1 game, avg 180 turns", "This record began 2027-01-05", "a record begun in January");
+
+// Each mode keeps its own record and its own day.
+now = new Date(2027, 0, 9, 23, 55).getTime();
+state = {...world(40), map: {script: "battlefield"}};
+recordSimulationResult(state, "fourth", [1]);
+reads("01-09 start, 1 game, avg 40 turns", "This record began 2027-01-09", "the Tactics record");
+expect(simulationStats.civ.since === new Date(2027, 0, 5, 0, 5).getTime(), "Tactics moved the Civ start");
+
+// A record kept before the stamp existed has no day to give. It prints none,
+// and counting another game does not date the games already in it.
+state = world(200);
+simulationStats.civ = {games: 5, turns: 500, civs: {}, agents: {}, victories: {}};
+reads("5 games, avg 100 turns", null, "a record with no saved start");
+recordSimulationResult(state, "fifth", [0]);
+expect(simulationStats.civ.since === undefined, "an old record was dated by a later game");
+reads("6 games, avg 117 turns", null, "an old record after another game");
+for (const junk of ["soon", -1, 0, null, NaN, 8.7e15])
+  expect(simulationStatsStart(junk) === null, `${junk} read as a day`);
+console.log("arena stats checks passed");
+"""
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class ArenaStatsNameTheProductAndTheDayTheRecordBegan(unittest.TestCase):
+    """Operator, 2026-11-21: "change "arena stats" to CIVVIS Arena Stats. add a
+    MM-DD start before games".
+
+    The record is the viewer's own, kept in their browser, so the day is read
+    on their calendar. It is stamped with the first game the record counts and
+    goes with the rest on Reset. A record that was already being kept when the
+    stamp arrived never saved a day, and is given none."""
+
+    def test_a_narrow_panel_breaks_the_line_and_never_a_part(self):
+        page = INDEX.read_text(encoding="utf-8")
+        for rule in (
+            ".sim-stats-summary-row { flex: 0 0 auto; display: flow-root; min-width: 0; overflow: hidden; }",
+            ".sim-stats-summary::first-line { line-height: 1.9; }",
+            ".sim-stats-summary > span { white-space: nowrap; }",
+            ".sim-stats-summary-row .sim-stats-clear { float: right; margin-left: 6px; }",
+            # The title stands on two lines where its bar is too narrow for
+            # one, and the bar's own width is what decides it.
+            "#victoryhud > .sim-stats-region .hud-region-bar { container: sim-stats-bar / inline-size; }",
+            "#sim-stats-title > span { min-width: 0; }",
+            "@container sim-stats-bar (max-width: 157px) {\n"
+            "    #sim-stats-title > span { white-space: normal; text-align: center; line-height: 1.1; }\n  }",
+        ):
+            self.assertIn(rule, page)
+        # It is fitted by the run it really sets, after the rule every heading
+        # in the panel shares: the later rule is the one an element keeps.
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        shared = '{selector:"#victoryhud .hud-section-heading > span", min:8.5, max:12, parentWidth:true},'
+        own = '{selector:"#sim-stats-title > span", min:8.5, max:12, parentWidth:true, exact:true},'
+        self.assertIn(shared, source)
+        self.assertIn(own, source)
+        self.assertLess(source.index(shared), source.index(own))
+
+    def test_the_title_and_the_start_before_the_games(self):
+        script = (ASSETS / "app_arena.js").read_text(encoding="utf-8")
+        done = subprocess.run(
+            [NODE, "-e", ARENA_STATS_SCENARIOS.replace("__SCRIPT__", script)],
+            capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr.strip())
+        self.assertIn("arena stats checks passed", done.stdout)
+
+
 @unittest.skipUnless(NODE, "no node on this host; CI runners have one")
 class LaunchesLeaveTheirSpaceport(unittest.TestCase):
     """A launch starts at its Spaceport and flies its own path, or is not drawn.

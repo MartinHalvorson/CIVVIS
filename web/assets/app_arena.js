@@ -1,5 +1,5 @@
 "use strict";
-// Arena Stats: the record that persists between simulations, carved out of
+// CIVVIS Arena Stats: the record that persists between simulations, carved out of
 // app.js. The ledger in the viewer's own browser, the three views of it
 // (civilizations, player strategies, victory types) and the section of the
 // victory panel that prints whichever view was chosen last.
@@ -31,6 +31,11 @@
 // could add to. Nothing reads it any more and nothing deletes it.
 // Aggregates only — the ledger stays a few hundred bytes however many games
 // it has seen.
+//
+// A record also knows the day it began: `since` is stamped with the first
+// game it counts, and Reset drops it with the rest so the next game starts a
+// new one. A record kept before the stamp existed has no day to give, and
+// prints none rather than a guess.
 const SIMULATION_STATS_KEY = "civvis-simulation-stats-v1";
 const SIM_STATS_VIEW_KEY = "civvis-sim-stats-view-v1";
 const SIM_STATS_VIEWS = {
@@ -92,6 +97,7 @@ function recordSimulationResult(st, signature, winnerIds) {
   if (simulationStats.last === key) return;
   simulationStats.last = key;
   const bucket = simulationStatsBucket(simulationStatsMode(st));
+  if (!bucket.games) bucket.since = Date.now();
   bucket.games += 1;
   bucket.turns += Number(reportedTurn(st)) || 0;
   const winnerSeats = new Set(winnerIds
@@ -138,16 +144,31 @@ function compareSimulationRecords([aName, a], [bName, b]) {
     || a.l - b.l
     || aName.localeCompare(bName);
 }
-// The persistent record above the victory tracker: this mode's games and
-// average length, then the win–loss ledger by civilization or by player
-// strategy, or its wins by victory type — whichever view was chosen last.
+// The day a record began, on the viewer's own calendar: `{short: "11-21",
+// full: "2026-11-21"}`, or null for a record that never saved one.
+function simulationStatsStart(since) {
+  const stamp = Number(since);
+  if (!Number.isFinite(stamp) || stamp <= 0) return null;
+  const day = new Date(stamp);
+  if (Number.isNaN(day.getTime())) return null;
+  const short = `${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+  return {short, full: `${day.getFullYear()}-${short}`};
+}
+// The persistent record above the victory tracker: the day this mode's record
+// began, its games and average length, then the win–loss ledger by
+// civilization or by player strategy, or its wins by victory type — whichever
+// view was chosen last.
 function simulationStatsSection() {
   const mode = simulationStatsMode();
   const bucket = simulationStats[mode];
   const games = bucket?.games || 0;
   const modeLabel = mode === "tactics" ? "Tactics" : "Civvis";
+  // Two parts, each kept whole: a panel too narrow for both on one line
+  // breaks between them, after the start.
+  const start = games ? simulationStatsStart(bucket.since) : null;
   const summary = games
-    ? `${games} game${games === 1 ? "" : "s"}, avg ${Math.round(bucket.turns / games)} turns`
+    ? `${start ? `<span>${start.short} start,</span> ` : ""}` +
+      `<span>${games} game${games === 1 ? "" : "s"}, avg ${Math.round(bucket.turns / games)} turns</span>`
     : "No finished games yet";
   const table = bucket?.[SIM_STATS_VIEWS[simStatsView].table || simStatsView] || {};
   // A Civ AI Agent's row carries the rating it plays at beside its record.
@@ -185,18 +206,23 @@ function simulationStatsSection() {
   return `<section class="hud-region sim-stats-region" data-key="sim-stats" aria-labelledby="sim-stats-title">` +
     `<div class="hud-region-bar">` +
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
-    `aria-label="Move Arena Stats; use arrow keys or drag" title="Drag to move · arrow keys also move" id="sim-stats-title">` +
-    `<span>Arena Stats</span></div>` +
-    hudFoldButton("simstats", "Arena Stats") +
+    `aria-label="Move CIVVIS Arena Stats; use arrow keys or drag" title="Drag to move · arrow keys also move" id="sim-stats-title">` +
+    // The one place the title may break is after CIVVIS: a narrow panel sets
+    // it on two lines, never three.
+    `<span>CIVVIS Arena&nbsp;Stats</span></div>` +
+    hudFoldButton("simstats", "CIVVIS Arena Stats") +
     `</div>` +
     `<div class="sim-stats-body">` +
-    `<div class="sim-stats-summary-row"><div class="sim-stats-summary">${summary}</div>` +
+    // Reset is written ahead of the summary because it floats: a float can sit
+    // beside the summary's first line only if it comes before that line.
+    `<div class="sim-stats-summary-row">` +
     (games ? `<button class="sim-stats-clear" type="button" data-sim-stats-clear ` +
       `title="Reset the saved ${modeLabel} record" aria-label="Reset the saved ${modeLabel} record">Reset</button>` : ``) +
+    `<div class="sim-stats-summary"${start ? ` title="This record began ${start.full}"` : ""}>${summary}</div>` +
     `</div>` +
     // A ledger with nothing in it has no views to choose between, and the panel
     // gives the whole section up until the first game finishes (`sim-stats-none`).
-    (games ? `<div class="sim-stats-controls" role="group" aria-label="Arena Stats record view">` +
+    (games ? `<div class="sim-stats-controls" role="group" aria-label="CIVVIS Arena Stats record view">` +
       viewButton("civs") + viewButton("strategies") + viewButton("victories") +
       `</div>` +
       // Games on record and no player strategy among them: every one was

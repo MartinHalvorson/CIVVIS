@@ -172,8 +172,8 @@ What the page shows of it:
   one's bootstrap deviation, so the **START** odds differ by seat. A table with
   one unrated seat (a person, the house fleet) keeps the flat prior for
   everybody: the published ratings share one scale and nothing else is on it.
-- **Arena Stats → Strategies** keeps a win–loss record per handle in the
-  viewer's own browser. It is a tally of the games that browser watched, not a
+- **CIVVIS Arena Stats → Strategies** keeps a win–loss record per handle in
+  the viewer's own browser. It is a tally of the games that browser watched, not a
   rating: it moves no number in `data/strategy_elo.json`.
 
 A mirrored game of Civilization VI (`civvis play --mirror`, the page beside a
