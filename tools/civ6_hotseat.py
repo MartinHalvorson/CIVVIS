@@ -56,6 +56,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -179,6 +180,9 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
              "--civvis-victory", args.victory, "--orders-db", str(orders_db)]
     if args.leader:
         flags += ["--leader", args.leader]
+    # `--play-flags`: civ6_play switches every jack seat plays with (Tournament 6
+    # passes the policy arms with a measured gain, e.g. --dv-join-winner).
+    flags += shlex.split(getattr(args, "play_flags", None) or "")
     settings = play.build_parser().parse_args(flags)
     if not args.leader:
         settings.leader = None
@@ -1208,6 +1212,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="unattended: CIVVIS plays seats 0..N-1 and the other seats up to "
                          "--players are Firaxis AI (no person at the Mac); the run stops at "
                          "the game's ending with the result in summary.json and closes Civ VI")
+    ap.add_argument("--play-flags", default="", metavar="FLAGS",
+                    help="civ6_play switches every jack seat plays with, as one string "
+                         "(--play-flags='--dv-join-winner --luxury-quote-proposals')")
     ap.add_argument("--auto-human", nargs="?", const="stub", choices=["stub", "gated"],
                     default=None,
                     help="TEST: a stub plays seat 0 instead of you; `gated` keeps seat 0 "

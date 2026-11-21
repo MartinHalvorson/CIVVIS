@@ -412,6 +412,16 @@ class UnattendedTableTest(unittest.TestCase):
         self.assertEqual(hotseat.agent_seats(6, None, 2), [0, 1])
         self.assertEqual(hotseat.jack_seats(4), [1, 2, 3], "the operator's table is unchanged")
 
+    def test_play_flags_reach_every_seats_settings(self) -> None:
+        args = game_args(players=6, civvis_seats=2, leader=None,
+                         play_flags="--dv-join-winner --luxury-quote-proposals")
+        config = hotseat.hotseat_config(args, Path("/tmp/run"), Path("/tmp/run/o.sqlite"))
+        plain = hotseat.hotseat_config(game_args(players=6, civvis_seats=2, leader=None),
+                                       Path("/tmp/run"), Path("/tmp/run/o.sqlite"))
+        changed = {k for k in config if config[k] != plain.get(k)}
+        self.assertTrue(changed, "the flags change the seats' settings")
+        self.assertTrue(any("Dv" in k or "Luxury" in k for k in changed), changed)
+
     def test_the_staging_room_wants_two_humans_and_four_computers(self) -> None:
         want = hotseat.wanted_slots(6, 2)
         self.assertEqual(want, ["host", "player"] + ["computer"] * 4)
