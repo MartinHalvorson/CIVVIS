@@ -89,7 +89,7 @@ class TournamentsPage(unittest.TestCase):
         }])
         first, second = record["finished"][0], record["running"][0]
         self.assertEqual((first["games"], first["size"], first["wins"], first["losses"]), (2, 2, 1, 1))
-        self.assertEqual((first["start"], first["end"]), ("2026-11-21 10:00Z", "2026-11-21 10:15Z"))
+        self.assertEqual((first["start"], first["end"]), ("2026-11-21 10:00", "2026-11-21 10:15"))
         self.assertEqual((first["idea"], first["note"]), ("Does the opening matter?", "Kept."))
         self.assertEqual((second["games"], second["size"], second["wins"], second["losses"]), (3, 5, 1, 2))
         self.assertIsNone(second["end"])
@@ -101,7 +101,47 @@ class TournamentsPage(unittest.TestCase):
         self.assertEqual(self.record(later)["scheduled"], [])
         # The totals count every game of every tournament begun.
         self.assertEqual(record["totals"], {"tournaments": 2, "games": 5, "wins": 2, "losses": 3})
-        self.assertEqual(record["through"], "2026-11-21 10:55Z")
+        self.assertEqual(record["through"], "2026-11-21 10:55")
+
+    def test_dates_are_plain_and_a_series_carries_its_wall_time_and_run_time(self):
+        # Operator 2026-11-21: "for all start and end dates, lets use
+        # YYYY-MM-DD 24 hr time with no z. add a wall time and run time
+        # duration cols."
+        record = self.record()
+        first, second = record["finished"][0], record["running"][0]
+        dated = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}")
+        for stamp in (first["start"], first["end"], second["start"], record["through"]):
+            self.assertTrue(dated.fullmatch(stamp), stamp)
+        self.assertEqual(second["start"], "2026-11-21 10:20")
+        # The home page's count is not touched: it still writes its `Z`, for
+        # the live mirror's Mode line and a lane pinned to the older page.
+        series = tournaments_page.ranks.tournament_series(
+            [run("civvis-20261121T100000Z", "win", "CIVILIZATION_ROME", 5)],
+            [{"name": "n", "start": "civvis-20261121T100000Z", "series_size": 1, "match": MATCH}])
+        self.assertEqual((series[0]["start"], series[0]["end"]), ("2026-11-21 10:00Z", "2026-11-21 10:05Z"))
+        # The first idea's two games ran 10:00 to 10:05 and 10:10 to 10:15:
+        # a quarter of an hour on the clock, ten minutes of it in play.
+        self.assertEqual((first["wall"], first["run"]), ("15m", "10m"))
+        # The running one's three: 10:20 to 10:25, 10:35 to the 10:45 result
+        # of the resumed run that counted, and 10:50 to 10:55. Both run to
+        # its last finished game.
+        self.assertEqual((second["wall"], second["run"]), ("35m", "20m"))
+        # Hours and minutes from an hour up, to the nearest minute.
+        self.assertEqual([tournaments_page.lasted(seconds) for seconds in (0, 59 * 60 + 29, 59 * 60 + 30, 79380, 100 * 3600)],
+                         ["0m", "59m", "1h 00m", "22h 03m", "100h 00m"])
+        # A night the machine was off is wall time and not run time.
+        night = [("civvis-20261120T230000Z", {"utc": "2026-11-20T23:12:00Z"}),
+                 ("civvis-20261121T090000Z", {"utc": "2026-11-21T09:15:00Z"})]
+        self.assertEqual(tournaments_page.durations(night), ("10h 15m", "27m"))
+        # A game with no time in its tag, or no result time, is not measured,
+        # and a series with none that can be has neither figure.
+        self.assertEqual(tournaments_page.durations(night + [("civvis-t6-", {"utc": "2026-11-21T09:30:00Z"}),
+                                                             ("civvis-20261121T093000Z", {"utc": None})]),
+                         ("10h 15m", "27m"))
+        self.assertEqual(tournaments_page.durations([("settler-old", {"utc": "2026-07-30T10:20:00Z"})]), ("", ""))
+        # A start that is not a date is shown as it is, and no end stays none.
+        self.assertEqual(tournaments_page.plain("settler-old"), "settler-old")
+        self.assertIsNone(tournaments_page.plain(None))
 
     def test_a_series_carries_its_games_in_the_order_played(self):
         first, second = self.record()["finished"][0], self.record()["running"][0]
@@ -317,9 +357,28 @@ class TournamentsPage(unittest.TestCase):
             '<section class="tour-section" id="tour-running" hidden aria-labelledby="tour-running-title">',
             '<section class="tour-section" id="tour-scheduled" aria-labelledby="tour-scheduled-title">',
             '<section class="tour-section" id="tour-finished" hidden aria-labelledby="tour-finished-title">',
-            # The table that stood on the home page, with the win rate added.
-            '<th scope="col">Tournament</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Games</th>'
+            # The table that stood on the home page, with the win rate added
+            # and, after the two dates, the two durations.
+            '<th scope="col">Tournament</th><th scope="col">Start</th><th scope="col">End</th>'
+            '<th scope="col" title="From the first game starting to the last game ending">Wall time</th>'
+            '<th scope="col" title="The time the games were in play, added up">Run time</th>'
+            '<th scope="col">Games</th>'
             '<th scope="col">Record</th><th scope="col">Won</th><th scope="col">Conditions</th><th scope="col">Notes</th>',
+            'el("td", "", t.wall || ""),\n          el("td", "", t.run || ""),',
+            't.wall ? "wall time " + t.wall : "", t.run ? "run time " + t.run : ""',
+            # What the bare dates and the two durations mean, said once.
+            "Dates are UTC, on the 24-hour clock.",
+            "Wall time is from a tournament&#8217;s first game starting to its last game ending.",
+            "Run time is the time its games were in play, added up, without the time between them.",
+            # What is scheduled stands in a column of its own on the right
+            # (operator 2026-11-21: "lets have schedule in a col off on the
+            # right"), from the width at which the table still fits beside
+            # it; narrower, the three lists are one under another.
+            "  @media (min-width: 1420px) {\n"
+            "    .tour-record { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }\n"
+            "    .tour-record > * { grid-column: 1; }\n"
+            "    .tour-record > #tour-scheduled { grid-column: 2; grid-row: 1 / span 3; }\n"
+            "  }",
             "const running = list(data.running);",
             "const scheduled = list(data.scheduled);",
             "const finished = list(data.finished);",
