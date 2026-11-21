@@ -26828,6 +26828,10 @@ impl AdvancedAi {}
 const RING_CITY_SHOT_BONUS: f64 = 40.0;
 
 impl Ai for AdvancedAi {
+    fn fork(&self) -> Option<Box<dyn Ai + Send>> {
+        Some(Box::new(self.clone()))
+    }
+
     fn expansion_census(&self) -> Option<ExpansionCensus> {
         Some(AdvancedAi::expansion_census(self))
     }

@@ -234,10 +234,34 @@ went on, and was shown the first one's turns again. Auto-play did play from
 there with the new pick. The turn buttons, the turn box and the timeline
 walked whatever was kept ahead, and nothing asked whose turns those were.
 
-A walked-to world gets fresh agents, as a loaded save does: their plans belong
-to the future the world was taken out of. The page drops its own standing
-orders (a unit's journey, a city's queue) for the same reason, so a turn that
-was walked to is shown as it stood.
+A walked-to world is played on by the agents that were playing it. An agent
+keeps plans from turn to turn (where its Settlers are headed, who it means to
+fight), so the world alone is not all of a game. Each mark and each save point
+therefore keeps the agents as they sat at that moment, every seat's, each a
+copy with what it remembered then. Putting the world back seats copies of
+those. The agents sitting at the time of the walk are not used: their plans
+belong to the future the world was taken out of. So a turn walked back to and
+played again with the same Civ AI is the turn that was played, and so is every
+turn after it; stepping into a turn that was walked to shows what the agent
+did there, not what a newcomer would do.
+
+Two things seat a new agent instead. A Civ AI picked for the seat since the
+turn was marked plays from there as itself (the kept agent was another's), and
+rivals seated with another Civ AI since then are seated anew likewise. A game
+that was loaded from a save starts with new agents, because a save carries the
+world and not the agents.
+
+Why: walked on civvis.ai/test on 2026-11-21 (build `2e641775a`, four seats,
+TouristTrap in the seat). A game played from turn 10 to turn 40, walked back
+to turn 10 and played to turn 40 again parted from the first on turn 14. Walked
+back to turn 25 of the second and played on, it parted on turn 26, the very
+next turn. Two walks back to the same turn agreed with each other turn for
+turn, so nothing but the agents' memory was missing. Until then a walked-to
+world was given new agents, as a loaded save is.
+
+The page drops its own standing orders (a unit's journey, a city's queue)
+when a world is walked to: those belong to the future the world was taken out
+of, and a turn that was walked to is shown as it stood.
 
 A save carries the world and not the timeline. A loaded game starts a
 timeline of its own from the turn it resumes.
@@ -523,9 +547,12 @@ in the strip widens it to hold:
   walks back along its own timeline, so it lands on the nearest turn before
   that one if the turn itself is no longer kept.
 
-The rivals in each half are played by fresh agents from the split onward, as
-they are after any walk along the timeline, so the two halves differ only in
-what the seat does and in what follows from it.
+The rivals in each half are played by fresh agents from the split onward, and
+again after any walk along a half's timeline: a half keeps no agents with its
+marks and seats none from them, unlike an unsplit game. So the two halves
+start level every time, at the split and at every rematch, and differ only in
+what the seat does and in what follows from it. A half that is kept (Keep A,
+Keep B) is the game itself again, and keeps its agents from then on.
 
 ### Identical halves are played once
 

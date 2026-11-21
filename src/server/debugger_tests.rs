@@ -101,6 +101,7 @@ fn timeline_of(turns: std::ops::RangeInclusive<u32>, room: usize) -> Timeline {
             actions: 0,
             game: game.clone(),
             by: None,
+            minds: None,
         });
     }
     timeline
@@ -958,6 +959,155 @@ fn two_halves_given_the_same_civ_ai_play_the_same_game() {
     }
     assert_eq!(a.game.turn, 5);
     assert_eq!(world(&a), world(&b));
+}
+
+/// Play `turns` turns with the seat's Civ AI and return the world after each.
+fn stepped(session: &mut Session, turns: usize) -> Vec<String> {
+    (0..turns)
+        .map(|_| {
+            assert_eq!(session.debug(&json!({"op": "step"}))["error"], Value::Null);
+            world(session)
+        })
+        .collect()
+}
+
+/// A turn walked back to is played again as it was played: the agents that
+/// were sitting when it opened sit down again with what they remembered.
+/// An agent keeps plans from turn to turn, so a world put back and played on
+/// by agents that had only just sat down was another game within a turn or
+/// two (walked on civvis.ai/test, 2026-11-21: a jump back to turn 25 and the
+/// same Civ AI played on parted from the turns kept ahead on turn 26).
+#[test]
+fn a_turn_walked_back_to_is_played_again_as_it_was() {
+    let mut session = played();
+    let first = stepped(&mut session, 8);
+    for back in [6, 3] {
+        assert_eq!(
+            session.debug(&json!({"op": "jump", "turn": back}))["error"],
+            Value::Null
+        );
+        assert_eq!(session.game.turn, back);
+        let from = (back - 1) as usize;
+        let again = stepped(&mut session, first.len() - from);
+        for (turn, (was, is)) in first[from..].iter().zip(&again).enumerate() {
+            assert!(
+                was == is,
+                "walked back to turn {back} and played on, turn {} is not the turn that was played",
+                back as usize + turn + 1
+            );
+        }
+    }
+}
+
+/// A save point is come back to with its agents too, wherever the game has
+/// been played to since and whichever way.
+#[test]
+fn a_save_point_is_played_on_as_the_game_was() {
+    let mut session = played();
+    stepped(&mut session, 3);
+    session
+        .debug_save_point("here")
+        .expect("a save point is set");
+    let id = session.state()["debug"]["saves"][0]["id"]
+        .as_u64()
+        .expect("the save point has an id");
+    let first = stepped(&mut session, 4);
+    assert_eq!(
+        session.debug(&json!({"op": "goto_save", "id": id}))["error"],
+        Value::Null
+    );
+    assert_eq!(stepped(&mut session, 4), first);
+}
+
+/// An agent that remembers how many turns it has taken, and says each count
+/// where a test can read it. It plays nothing: the server ends its turn.
+#[derive(Clone, Default)]
+struct Counting {
+    taken: u32,
+    said: std::sync::Arc<std::sync::Mutex<Vec<u32>>>,
+}
+
+impl crate::ai::Ai for Counting {
+    fn take_turn(&mut self, _game: &mut crate::game::Game, _seat: usize) {
+        self.taken += 1;
+        self.said
+            .lock()
+            .expect("the list is the test's own")
+            .push(self.taken);
+    }
+
+    fn fork(&self) -> Option<Box<dyn crate::ai::Ai + Send>> {
+        Some(Box::new(self.clone()))
+    }
+}
+
+/// The agent that sits down again after a walk back is the one that was
+/// sitting when that turn opened, with what it remembered then: not the one
+/// sitting now, whose memory is of turns this world has not had, and not a
+/// new one, which remembers nothing.
+#[test]
+fn a_walk_back_seats_the_agent_that_was_sitting_then() {
+    let mut session = played();
+    let said = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    session.ais[1] = Box::new(Counting {
+        taken: 0,
+        said: said.clone(),
+    });
+    let heard = || std::mem::take(&mut *said.lock().expect("the list is the test's own"));
+    stepped(&mut session, 5);
+    assert_eq!(heard(), [1, 2, 3, 4, 5]);
+    assert_eq!(session.game.turn, 6);
+    // Turn 3 opened after the rival's second turn.
+    session.debug(&json!({"op": "jump", "turn": 3}));
+    stepped(&mut session, 2);
+    assert_eq!(heard(), [3, 4]);
+    // Walked on along the turns kept ahead, it is the agent of that turn.
+    session.debug(&json!({"op": "jump", "turn": 1}));
+    stepped(&mut session, 1);
+    assert_eq!(heard(), [1]);
+    // A save point is come back to with its agents as well.
+    session
+        .debug_save_point("here")
+        .expect("a save point is set");
+    let id = session.state()["debug"]["saves"][0]["id"].clone();
+    stepped(&mut session, 3);
+    assert_eq!(heard(), [2, 3, 4]);
+    assert_eq!(
+        session.debug(&json!({"op": "goto_save", "id": id}))["error"],
+        Value::Null
+    );
+    stepped(&mut session, 1);
+    assert_eq!(heard(), [2]);
+}
+
+/// A half of a split keeps no agents and seats none: a walk in a half seats
+/// new agents, as it always has, so the two halves of a head to head differ
+/// only in the Civ AI each seats. A half that is kept is the game itself,
+/// and keeps them again.
+#[test]
+fn a_half_of_a_split_seats_new_agents_until_it_is_kept() {
+    let minded = |session: &Session| matches!(session.debugger.marks.last(), Some(mark) if mark.minds.is_some());
+    let mut session = played();
+    let said = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    session.ais[1] = Box::new(Counting {
+        taken: 0,
+        said: said.clone(),
+    });
+    let heard = || std::mem::take(&mut *said.lock().expect("the list is the test's own"));
+    stepped(&mut session, 4);
+    assert!(minded(&session));
+    assert_eq!(heard(), [1, 2, 3, 4]);
+    let mut half = session.fork();
+    assert!(half.debugger.forgetful && !session.debugger.forgetful);
+    stepped(&mut half, 2);
+    assert!(!minded(&half));
+    // A walk back in the half does not seat the agents the game kept.
+    half.debug(&json!({"op": "jump", "turn": 3}));
+    stepped(&mut half, 1);
+    assert_eq!(heard(), [] as [u32; 0]);
+    half.debug_remembers();
+    stepped(&mut half, 1);
+    assert!(minded(&half));
 }
 
 /// The numbers `docs/SIM_DEBUGGER.md` gives for the timeline are the ones

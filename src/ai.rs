@@ -742,6 +742,16 @@ pub trait Ai {
     /// agent with nothing to say about itself — the random baseline — ignores
     /// this, which is what the default does.
     fn attach_journal(&mut self, _journal: Journal) {}
+
+    /// A second agent with everything this one remembers: its plans, and
+    /// what it has settled on so far. The debugger keeps one with each turn
+    /// it marks, so that a turn walked back to is played on by the agent
+    /// that was playing it rather than by one that has just sat down
+    /// (`server/debugger.rs`). `None` from an agent that cannot be copied;
+    /// its seat is then given a new agent, as it was before.
+    fn fork(&self) -> Option<Box<dyn Ai + Send>> {
+        None
+    }
 }
 
 impl<T: Ai + ?Sized> Ai for Box<T> {
@@ -770,6 +780,10 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 
     fn attach_journal(&mut self, journal: Journal) {
         (**self).attach_journal(journal);
+    }
+
+    fn fork(&self) -> Option<Box<dyn Ai + Send>> {
+        (**self).fork()
     }
 
     fn set_site_shortcuts(&mut self, shortcuts: SiteShortcuts) {
@@ -4516,6 +4530,10 @@ impl BasicAi {
 }
 
 impl Ai for BasicAi {
+    fn fork(&self) -> Option<Box<dyn Ai + Send>> {
+        Some(Box::new(self.clone()))
+    }
+
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
         // Stamp the context once. Nothing below repeats the turn number or the
         // acting civilization; the journal carries both. `AdvancedAi` opens
