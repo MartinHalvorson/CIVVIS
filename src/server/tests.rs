@@ -2164,8 +2164,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // Both of the viewer's own links leave the lane-relative rewrite to
     // `beta/publish.sh`, which turns `/home` and `/tournaments` into the
     // lane's own pages and refuses to publish a root link it does not know.
-    assert!(include_str!("../../beta/publish.sh")
-        .contains("('href=\"/home\"', 'href=\"home/\"'), ('href=\"/tournaments\"', 'href=\"tournaments/\"')"));
+    assert!(include_str!("../../beta/publish.sh").contains(
+        "('href=\"/home\"', 'href=\"home/\"'), ('href=\"/tournaments\"', 'href=\"tournaments/\"')"
+    ));
     // Five links two by two leave the last alone on its row, which it takes whole.
     assert!(EMBEDDED_INDEX
         .contains(".head-links > :last-child:nth-child(odd) { grid-column: 1 / -1; }"));
