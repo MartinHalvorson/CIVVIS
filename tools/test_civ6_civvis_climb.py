@@ -3036,6 +3036,29 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             self.assertIs(climb.dv_join_winner_mode(
                 None, {"CIVVIS_DV_JOIN_WINNER": "on"}, missing), True)
 
+    def test_joining_the_congress_plurality_is_opt_in_and_reaches_the_play_command(self):
+        import tempfile
+        base = climb.play_command(self._play_args(), "t",
+                                  Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertNotIn("--wc-join-plurality", base)
+        armed = climb.play_command(self._play_args(wc_join_plurality=True), "t",
+                                   Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertEqual([word for word in armed if word != "--wc-join-plurality"], base)
+        self.assertEqual(armed.count("--wc-join-plurality"), 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            policy = Path(tmp) / "policy"
+            missing = Path(tmp) / "absent"
+            self.assertIs(climb.wc_join_plurality_mode(None, {}, missing), False)
+            policy.write_text("CIVVIS_DV_JOIN_WINNER=1\n")
+            self.assertIs(climb.wc_join_plurality_mode(None, {}, policy), False)
+            policy.write_text("CIVVIS_WC_JOIN_PLURALITY=1  # trial\n")
+            self.assertIs(climb.wc_join_plurality_mode(None, {}, policy), True)
+            self.assertIs(climb.wc_join_plurality_mode(False, {}, policy), False)
+            self.assertIs(climb.wc_join_plurality_mode(
+                None, {"CIVVIS_WC_JOIN_PLURALITY": "off"}, policy), False)
+            self.assertIs(climb.wc_join_plurality_mode(
+                None, {"CIVVIS_WC_JOIN_PLURALITY": "on"}, missing), True)
+
     def test_the_leader_score_line_reaches_the_play_command_only_when_set(self):
         """Legacy launchers retain their argv shape; live play ignores it and
         defaults to the full-game policy when the option is absent."""
