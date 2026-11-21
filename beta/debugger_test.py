@@ -1369,7 +1369,7 @@ def check_the_split(bar: Bar) -> None:
                 "&& debugSplit.panes[letter].numbers)").format
 
     start = bar.ev("state.turn")
-    # Branch Timeline splits the screen at once: side by side, and locked.
+    # Branch splits the screen at once: side by side, and locked.
     # Head to head is the strip's own button.
     bar.click('[data-dbg="split"]')
     bar.until(reported(start), "both halves say where they stand")

@@ -66,8 +66,8 @@ const DEBUG_BAR_STYLE = `
 
   /* Under the timeline, one row of three parts. The turn that is open stands
      in the middle, under the middle of the timeline, with the turn buttons on
-     either side of it. Auto-play, layers, breakpoints and Branch Timeline are
-     at the left end, and the rest of the tools at the right end. */
+     either side of it. Auto-play, layers and breakpoints are at the left
+     end, and the rest of the tools at the right end. */
   #debugbar .dbg-deck {
     display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; min-width: 0;
   }
@@ -1602,7 +1602,8 @@ function debugHover(rail, x = 0) {
   tag.style.left = `${Math.max(half + 4, Math.min(bar.width - half - 4, x - bar.left))}px`;
 }
 // The words on the tools are for a box with room for them: when the tools at
-// either end wrap past two rows, the words go and the signs stay, first the
+// either end wrap past two rows, or have so little room that they stand over
+// the turn buttons beside them, the words go and the signs stay, first the
 // two on the turn buttons (a snug box) and then every tool's (a tight one).
 // They are tried again only when the box's width changes, so a box on the
 // edge does not flicker. One half of a split, and a stacked box, have no room
@@ -1615,9 +1616,20 @@ function debugFit(bar) {
   const fresh = width !== debugFitted;
   if (fresh) { debugFitted = width; bar.classList.remove("dbg-snug", "dbg-tight"); }
   const deck = bar.querySelector(".dbg-deck"), has = name => bar.classList.contains(name);
-  const tall = () => deck.offsetHeight > DEBUG_DECK_ROWS;
+  // A row of tools that cannot shrink any further runs on over what is
+  // beside it without making the deck any taller: over the room kept for
+  // what the box says, which the turn buttons' words give back, and then
+  // over the turn buttons themselves.
+  const crowded = beside => [...deck.querySelectorAll(".dbg-side")].some(side => {
+    const kept = [...side.querySelectorAll(beside)].map(held => held.getBoundingClientRect());
+    return [...side.querySelectorAll(".dbg-cluster > *")].some(tool => {
+      const box = tool.getBoundingClientRect();
+      return box.width > 0 && kept.some(held => box.left < held.right - 1 && box.right > held.left + 1);
+    });
+  });
+  const tall = () => deck.offsetHeight > DEBUG_DECK_ROWS || crowded(".dbg-nav");
   if (stacked || DEBUG_PANE !== null) bar.classList.add("dbg-tight");
-  if (!has("dbg-tight") && !has("dbg-snug") && tall()) bar.classList.add("dbg-snug");
+  if (!has("dbg-tight") && !has("dbg-snug") && (tall() || crowded(".dbg-note"))) bar.classList.add("dbg-snug");
   if (!has("dbg-tight") && tall()) bar.classList.add("dbg-tight");
 }
 // The box begins where the map area does, at the right side of the left
