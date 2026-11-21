@@ -51,6 +51,8 @@
 use super::AdvancedAi;
 #[allow(unused_imports)]
 use super::{GeneVerdict, Measure, Verdict};
+use crate::fast_map::FastMap;
+use std::sync::OnceLock;
 
 /// Which half of the native repair bundle a `Repair` belongs to. Split so the
 /// bundle's interaction stays measurable: if the whole bundle beats stock by
@@ -134,8 +136,26 @@ impl Gene {
 }
 
 /// The gene by its published tag.
+///
+/// Read from an index made the first time anything asks. Applying the ledger
+/// to one agent asks this of every gene several times over, and a new fleet
+/// is seated on every timeline jump, split and new game: scanning the pool
+/// for each tag was a million string comparisons an agent, and eight
+/// milliseconds of every jump.
 pub fn gene(tag: &str) -> Option<&'static Gene> {
-    GENES.iter().find(|gene| gene.tag == tag)
+    static BY_TAG: OnceLock<FastMap<&'static str, &'static Gene>> = OnceLock::new();
+    BY_TAG
+        .get_or_init(|| {
+            let pool: &'static [Gene] = GENES;
+            let mut by_tag = FastMap::default();
+            for gene in pool {
+                // The first row with a tag is the gene, as a scan from the top found it.
+                by_tag.entry(gene.tag).or_insert(gene);
+            }
+            by_tag
+        })
+        .get(tag)
+        .copied()
 }
 
 /// Every `live()` tag, in registry order — what the live bundle stamps on a
