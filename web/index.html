@@ -2905,7 +2905,7 @@
   #side.deck-stops #politicssec[open] ~ .sidebar-section:not([open]) { position: static; box-shadow: none; }
   #side.deck-stops #politicssec[open] { scroll-margin-bottom: 0; }
   .politics-list {
-    --politics-ground: #12211e; --politics-lit: #213a34; --politics-cell: 22px;
+    --politics-ground: #12211e; --politics-lit: #213a34; --politics-cell: 22px; --politics-disc: #0b1513;
     position: relative; isolation: isolate; overflow: auto; max-width: 100%; max-height: 220px;
     overscroll-behavior-x: contain; scrollbar-color: #385148 transparent; scrollbar-width: thin;
   }
@@ -2919,18 +2919,16 @@
     min-width: var(--politics-cell); height: var(--politics-cell); text-align: center;
     border-right: 1px solid var(--politics-ground); border-bottom: 1px solid #0a12107a;
   }
-  /* A column is its civilization's colour, held dark and quiet: every hue is
-     brought to nearly one lightness, so the faces read the same on all of
-     them. A browser without relative colours mixes the colour into the ground. */
-  .politics-matrix col + col {
-    background: color-mix(in oklab, var(--civ) 40%, var(--politics-ground));
-    background: oklch(from var(--civ) calc(.26 + l * .2) calc(c * .6) h);
-  }
+  /* A column is its civilization's colour, in full: the same colour as the
+     plate its row's name is on. The faces carry their own ground (below), so
+     no colour has to be dimmed for them. The column under the pointer steps
+     a tenth toward the middle lightness, which shows on white and on navy. */
+  .politics-matrix col + col { background: var(--civ); }
   .politics-matrix col + col.politics-crossed {
-    background: color-mix(in oklab, var(--civ) 52%, var(--politics-ground));
-    background: oklch(from var(--civ) calc(.32 + l * .2) calc(c * .72) h);
+    background: color-mix(in oklab, var(--civ) 82%, #808080);
+    background: oklch(from var(--civ) calc(l + clamp(-.1, (.62 - l) * 10, .1)) c h);
   }
-  .politics-matrix tbody tr:hover td:not(.self) { background: #ffffff12; }
+  .politics-matrix tbody tr:hover td:not(.self) { background: #ffffff2e; }
   /* Where a civilization's row crosses its own column it shows its plate. */
   .politics-matrix tbody td.self { background: var(--civ); box-shadow: inset 3px 0 var(--civ-trim); }
   /* The rail is opaque so that what scrolls under it cannot show through. */
@@ -2963,8 +2961,15 @@
     content: ""; position: absolute; inset: 0; z-index: -1; background: var(--mark-color);
     -webkit-mask: var(--mark) center / contain no-repeat; mask: var(--mark) center / contain no-repeat;
   }
-  /* A dark rim keeps every face clear of whatever colour its column is. */
-  .politics-matrix .politics-mark { filter: drop-shadow(0 0 1px #050b09) drop-shadow(0 0 .5px #050b09); }
+  /* In the table every face sits on a dark disc of its own. A face is drawn
+     in its own colour with its eyes and mouth cut out of it, so on a bare
+     column a green face on a green civilization is gone and its mouth is the
+     column showing through. On the disc the face and its features read the
+     same on every colour, white and yellow included. */
+  .politics-matrix .politics-mark::after {
+    content: ""; position: absolute; inset: -1.5px; z-index: -2; border-radius: 50%;
+    background: var(--politics-disc);
+  }
   .politics-mark.war {
     --mark-color: var(--politics-war);
     --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M2.5 2.5 12 12M13.5 2.5 4 12M9.5 13.5l4-4M2.5 9.5l4 4'/%3E%3C/svg%3E");
