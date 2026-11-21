@@ -49,10 +49,12 @@
 //! timeline of its own from the turn it resumes.
 
 use std::collections::{BTreeSet, VecDeque};
+use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
 
 use super::Session;
+use crate::ai::Ai;
 use crate::game::{Action, Event, Game};
 
 /// The newest marks are kept one a turn when older ones have to go, for as
@@ -520,6 +522,33 @@ struct Mark {
     /// for the turn before. `None` for a turn the person ended by hand, and
     /// for the turn a timeline begins on.
     by: Option<String>,
+    /// The agents as they sat when the turn opened. `None` in a half of a
+    /// split, which keeps none.
+    minds: Option<Minds>,
+}
+
+/// One seat's agent as it was kept, or `None` for one that could not be
+/// copied (`Ai::fork`).
+type Seated = Option<Box<dyn Ai + Send>>;
+
+/// The agents at one moment, each a copy with what it remembered then.
+///
+/// An agent keeps plans from turn to turn, so the world alone is not all of
+/// a game: the same world played on by an agent that has just sat down is
+/// another game within a turn or two (measured, `docs/SIM_DEBUGGER.md`).
+/// Kept with a mark or a save point, these are who plays on when that world
+/// is put back, so a turn played again from there is the turn that was
+/// played.
+///
+/// A copy is taken out through the lock and the kept ones are never played,
+/// so every clone of a mark may share them.
+#[derive(Clone)]
+struct Minds {
+    seats: Arc<Mutex<Vec<Seated>>>,
+    /// The Civ AI seated in the played seat then, by its id.
+    seat: Option<String>,
+    /// The Civ AI the rivals were seated with then, if one had been chosen.
+    rivals: Option<String>,
 }
 
 /// The rest of a turn the seat's agent planned, good for as long as the world
@@ -552,6 +581,9 @@ struct SavePoint {
     game: Game,
     /// The turn's own mark, which the timeline may since have replaced.
     top: Option<Mark>,
+    /// The agents as they sat when it was set (`Minds`). `None` in a half of
+    /// a split.
+    minds: Option<Minds>,
 }
 
 /// A played game's marks, and what the debugger was told to do with it.
@@ -584,6 +616,11 @@ pub struct Timeline {
     memory_line: Option<usize>,
     /// The memory reading that last took room away.
     squeezed_at: usize,
+    /// A half of a split keeps no agents with its marks and seats none from
+    /// them (`Session::fork`): a walk in a half seats new agents, as it
+    /// always has, so the two halves of a head to head differ only in the
+    /// Civ AI each seats.
+    forgetful: bool,
 }
 
 impl Timeline {
@@ -612,6 +649,7 @@ impl Timeline {
             actions: game.log.len(),
             game: game.clone(),
             by: None,
+            minds: None,
         });
         self.thin();
     }
@@ -728,6 +766,7 @@ impl Timeline {
             acted,
             game: game.clone(),
             top,
+            minds: None,
         });
         Ok(self.save_ids)
     }
@@ -850,6 +889,7 @@ impl Session {
     pub(super) fn debugger_begins(&mut self) {
         if self.debuggable() {
             self.debugger.begin(&self.game);
+            self.debug_keep_minds();
         }
     }
 
@@ -866,6 +906,7 @@ impl Session {
         self.debugger.plan = None;
         self.debugger.assisted = 0;
         self.debugger.record(&self.game);
+        self.debug_keep_minds();
         if assist && !self.debugger.layers.is_empty() {
             self.debugger.assisted = self.debug_assist();
         }
@@ -888,6 +929,72 @@ impl Session {
         }
     }
 
+    /// The agents as they sit now, each a copy with what it remembers.
+    fn debug_minds(&self) -> Minds {
+        Minds {
+            seats: Arc::new(Mutex::new(self.ais.iter().map(|ai| ai.fork()).collect())),
+            seat: self.autoplay_strategy.clone(),
+            rivals: self.rival_strategy.clone(),
+        }
+    }
+
+    /// Keep the agents as they sit with the mark of the turn that just
+    /// opened. A half of a split keeps none (`Timeline::forgetful`).
+    fn debug_keep_minds(&mut self) {
+        let turn = self.game.turn;
+        let wanted = matches!(self.debugger.marks.last(), Some(mark) if mark.turn == turn && mark.minds.is_none());
+        if self.debugger.forgetful || !wanted {
+            return;
+        }
+        let minds = self.debug_minds();
+        if let Some(mark) = self.debugger.marks.last_mut() {
+            mark.minds = Some(minds);
+        }
+    }
+
+    /// Keep the agents as they sit with the save point just set.
+    fn debug_mind_save(&mut self) {
+        if self.debugger.forgetful {
+            return;
+        }
+        let minds = self.debug_minds();
+        if let Some(save) = self.debugger.saves.last_mut() {
+            save.minds = Some(minds);
+        }
+    }
+
+    /// Seat the agents kept with the world that was just put on the table.
+    ///
+    /// The played seat's is taken only while the Civ AI seated there is the
+    /// one that was seated then: one picked since plays from here as itself.
+    /// The rivals' are taken only while they are seated with what they were
+    /// seated with then. A seat whose agent could not be copied keeps the
+    /// new one it was just given.
+    fn debug_seat_minds(&mut self, minds: &Minds) {
+        let Ok(kept) = minds.seats.lock() else {
+            return;
+        };
+        let rivals = minds.rivals == self.rival_strategy;
+        for (seat, mind) in kept.iter().enumerate().take(self.ais.len()) {
+            let held = if seat == 0 {
+                minds.seat == self.autoplay_strategy
+            } else {
+                rivals
+            };
+            let Some(mind) = mind.as_ref().filter(|_| held).and_then(|mind| mind.fork()) else {
+                continue;
+            };
+            self.ais[seat] = mind;
+            self.ais[seat].attach_journal(self.journal.handle());
+        }
+    }
+
+    /// A half that is kept becomes the game itself (`Panes::adopt`), and from
+    /// then on keeps its agents with its marks as any game does.
+    pub(super) fn debug_remembers(&mut self) {
+        self.debugger.forgetful = false;
+    }
+
     /// The marks on the seat's line as it stands (`Timeline::line`).
     fn debug_line(&self) -> &[Mark] {
         self.debugger
@@ -907,9 +1014,12 @@ impl Session {
 
     /// Put a marked world on the table in place of the live one.
     ///
-    /// The agents are rebuilt, as they are for a loaded save: their plans
-    /// belong to the future this world is being taken out of.
-    fn debug_put(&mut self, game: Game) {
+    /// The agents sitting now are not the ones to play it: their plans belong
+    /// to the future this world is being taken out of. The agents kept with
+    /// the world (`Minds`) sit down again, so it is played on as it was.
+    /// Where none were kept the agents are rebuilt, as they are for a loaded
+    /// save.
+    fn debug_put(&mut self, game: Game, minds: Option<Minds>) {
         let seat = self.autoplay_strategy.clone();
         let rivals = self.rival_strategy.clone();
         let view = self.view_player;
@@ -923,6 +1033,9 @@ impl Session {
         }
         if let Some(name) = seat {
             let _ = next.seat_strategy_at(0, &name);
+        }
+        if let Some(minds) = minds.filter(|_| !debugger.forgetful) {
+            next.debug_seat_minds(&minds);
         }
         if !humans.is_empty() {
             next.human_players = humans;
@@ -956,6 +1069,7 @@ impl Session {
         }
         next.view_player = self.view_player;
         next.debugger = self.debugger.clone();
+        next.debugger.forgetful = true;
         next.debugger.stopped = None;
         next.keeps_rival_yields = self.keeps_rival_yields;
         next.keeps_own_yields = self.keeps_own_yields;
@@ -978,8 +1092,8 @@ impl Session {
         let Some(mark) = line.iter().rev().find(|mark| mark.turn <= turn) else {
             return Err(format!("turn {turn} is before this timeline begins"));
         };
-        let (reached, game) = (mark.turn, mark.game.clone());
-        self.debug_put(game);
+        let (reached, game, minds) = (mark.turn, mark.game.clone(), mark.minds.clone());
+        self.debug_put(game, minds);
         Ok(reached)
     }
 
@@ -1025,7 +1139,11 @@ impl Session {
                 .debugger
                 .keep(&format!("Turn {turn}"), &self.game, false);
         }
-        self.debugger.keep(&name, &self.game, false)
+        let kept = self.debugger.keep(&name, &self.game, false);
+        if kept.is_ok() {
+            self.debug_mind_save();
+        }
+        kept
     }
 
     /// Go to a save point: its world, with the turns of its own history.
@@ -1038,7 +1156,7 @@ impl Session {
         let Some(save) = self.debugger.saves.iter().find(|save| save.id == id) else {
             return Err("no save point has that id".to_string());
         };
-        let (game, top) = (save.game.clone(), save.top.clone());
+        let (game, top, minds) = (save.game.clone(), save.top.clone(), save.minds.clone());
         let left = &self.game;
         let kept = self
             .debugger
@@ -1047,7 +1165,9 @@ impl Session {
             .any(|save| save.game.log.len() == left.log.len() && on_one_line(&save.game, left));
         if !kept {
             // With no room for it the world left is simply not kept.
-            let _ = self.debugger.keep(WHERE_YOU_WERE, &self.game, true);
+            if self.debugger.keep(WHERE_YOU_WERE, &self.game, true).is_ok() {
+                self.debug_mind_save();
+            }
         }
         self.debugger
             .marks
@@ -1060,7 +1180,7 @@ impl Session {
             self.debugger.marks.insert(at, top);
         }
         let turn = game.turn;
-        self.debug_put(game);
+        self.debug_put(game, minds);
         Ok(turn)
     }
 
@@ -1084,12 +1204,12 @@ impl Session {
         if done.is_empty() {
             return Err("nothing has been done this turn".to_string());
         }
-        let mut game = mark.game.clone();
+        let (mut game, minds) = (mark.game.clone(), mark.minds.clone());
         for (seat, action) in &done[..done.len() - 1] {
             game.apply(*seat, action)
                 .map_err(|error| format!("the turn could not be replayed: {error}"))?;
         }
-        self.debug_put(game);
+        self.debug_put(game, minds);
         Ok(done.len() - 1)
     }
 

@@ -251,6 +251,7 @@ impl Panes {
             return Err("no half of a split is called that".to_string());
         };
         *main = kept.session;
+        main.debug_remembers();
         self.halves.clear();
         Ok(())
     }
