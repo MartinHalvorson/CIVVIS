@@ -300,6 +300,50 @@ class Page(unittest.TestCase):
         # Authored lane-relative: nothing in it links the site root.
         self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', PAGE), [])
 
+    def test_a_page_from_before_the_level_picker_is_sent_the_deity_games_where_it_reads_them(self):
+        # The stable lane serves its own revision's page with head's figures
+        # (`publish.sh`: the page from `$source_tree`, the script from
+        # `$repo_root`). Up to 2026-11-21 the page read the Deity games under
+        # `deity`; sent only `levels` it would show its Deity charts empty
+        # until the next promotion.
+        self.assertIn('research_page="$source_tree/beta/research.html"', PUBLISH)
+        self.assertIn('python3 "$repo_root/beta/research_page.py" "$repo_root" "$out/research/index.html"', PUBLISH)
+        deity = {"name": "CIVVIS vs Lv 8 Deity AI", "windows": {"7": {"games": 3}, "30": {"games": 3}, "all": {"games": 3}}}
+        king = {"name": "CIVVIS vs Lv 5 King AI", "windows": {"7": {"games": 1}, "30": {"games": 1}, "all": {"games": 1}}}
+        data = {"turns": 250, "victories": ["science"], "self_play": None, "self_play_taken": "", "levels": {"5": king, "8": deity}, "level": 8}
+        old = '<html><script type="application/json" id="research-data">null</script><script>data["deity"]</script></html>'
+        sent = research_page.for_page(old, data)
+        self.assertEqual(sent["deity"], {"name": "CIVVIS vs Deity AI", "windows": deity["windows"]})
+        self.assertNotIn("levels", sent)
+        self.assertNotIn("level", sent)
+        self.assertEqual((sent["turns"], sent["victories"], sent["self_play"]), (250, ["science"], None))
+        # No Deity games: the old page is told so, as it always was.
+        self.assertIsNone(research_page.for_page(old, {**data, "levels": {"5": king}, "level": 5})["deity"])
+        self.assertIsNone(research_page.for_page(old, None))
+        # This revision's page has the picker and is sent the record whole.
+        self.assertEqual(PAGE.count(research_page.LEVEL_PICKER), 1)
+        self.assertIs(research_page.for_page(PAGE, data), data)
+        # And that is what publishing writes into each: the same record, in
+        # the shape the page on disk reads.
+        with tempfile.TemporaryDirectory() as scratch:
+            rows = [
+                run("civvis-20261120T100000Z", "rival_victory", 185, "VICTORY_TECHNOLOGY"),
+                run("civvis-20261101T050000Z", "win", 233, "VICTORY_TECHNOLOGY", difficulty="DIFFICULTY_KING"),
+            ]
+            source = GamesAgainstTheAI().ledger(scratch, rows)
+            said = io.StringIO()
+            for name, page in (("old.html", old), ("new.html", PAGE)):
+                (source / name).write_text(page, encoding="utf-8")
+                with contextlib.redirect_stderr(said):
+                    self.assertEqual(research_page.main(["research_page.py", scratch, str(source / name)]), 0)
+            sent_old = json.loads(research_page.SLOT.search((source / "old.html").read_text(encoding="utf-8"))[2])
+            sent_new = json.loads(research_page.SLOT.search((source / "new.html").read_text(encoding="utf-8"))[2])
+        self.assertEqual(sent_old["deity"]["windows"], sent_new["levels"]["8"]["windows"])
+        self.assertNotIn("levels", sent_old)
+        self.assertEqual((list(sent_new["levels"]), sent_new["level"], "deity" in sent_new), (["5", "8"], 8, False))
+        self.assertIn("wrote 1 CIVVIS vs Deity AI games into", said.getvalue())
+        self.assertIn("wrote 1 CIVVIS vs Lv 5 King AI games and 1 CIVVIS vs Lv 8 Deity AI games into", said.getvalue())
+
     def test_without_figures_the_page_says_so(self):
         with tempfile.TemporaryDirectory() as empty:
             source = pathlib.Path(empty)

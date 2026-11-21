@@ -58,7 +58,10 @@ which days each window holds.
 Like the home page's tables this runs inside the script that publishes the
 whole site, so what it cannot read costs the page its figures, said on
 stderr, and never costs the site its publish. Both lanes are sent head's
-figures: they are facts about the games played, not about a revision.
+figures: they are facts about the games played, not about a revision. The
+page a lane serves is its own revision's, though, and a page from before the
+level picker reads the Deity games under `deity`; `for_page` hands such a
+page that, so a lane pinned to an older revision keeps its charts.
 """
 
 from __future__ import annotations
@@ -393,6 +396,27 @@ def written(data: dict) -> str:
 
 # --- The page ---------------------------------------------------------------
 
+#: The level picker as the page carries it. A page without it is a lane
+#: pinned to a revision from before the picker (2026-11-21): it draws the
+#: Deity games alone and reads them under `deity`, not `levels`.
+LEVEL_PICKER = 'id="res-level"'
+
+
+def for_page(page: str, data: dict | None) -> dict | None:
+    """The record in the shape this page reads.
+
+    The stable lane serves its own revision's page, filled with head's
+    figures (`beta/publish.sh`). Sent `levels`, a page from before the picker
+    would find no `deity` and show its Deity charts empty until the next
+    promotion, so it is sent the Deity games where it looks for them and
+    nothing it has no place for."""
+    if data is None or LEVEL_PICKER in page:
+        return data
+    out = {key: value for key, value in data.items() if key not in ("levels", "level")}
+    deity = data.get("levels", {}).get(str(ranks.CIV6_RUNGS.index("deity") + 1))
+    out["deity"] = {**deity, "name": "CIVVIS vs Deity AI"} if deity else None
+    return out
+
 
 def fill(page: str, data: dict | None) -> str | None:
     """The page with its slot filled, or `None` when it has no slot."""
@@ -420,7 +444,9 @@ def main(argv: list[str]) -> int:
         print()
         return 0
     page = pathlib.Path(argv[2])
-    filled = fill(page.read_text(encoding="utf-8"), data)
+    text = page.read_text(encoding="utf-8")
+    data = for_page(text, data)
+    filled = fill(text, data)
     if filled is None:
         print(f"research_page: {page} has no research slot; left as it is", file=sys.stderr)
         return 0
@@ -428,7 +454,7 @@ def main(argv: list[str]) -> int:
     if data is None:
         print(f"research_page: no figures to write into {page}", file=sys.stderr)
     else:
-        kinds = [*data["levels"].values(), data.get("self_play")]
+        kinds = [*data.get("levels", {}).values(), data.get("deity"), data.get("self_play")]
         said = [f"{k['windows']['all']['games']} {k['name']} games" for k in kinds if k]
         print(f"research_page: wrote {' and '.join(said)} into {page}", file=sys.stderr)
     return 0
