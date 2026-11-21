@@ -2241,3 +2241,158 @@ const civ = {id:5};
 expect(skyOrbiter({mission:"satellite"}, civ) === civ, "a satellite did not fly to its civilization's orbit");
 '''
         self.run_node(block + scenarios)
+
+
+GAME_STATS_SCENARIOS = r"""
+const SPEC = true;
+const document = {querySelector: () => null};
+const isBattlefieldMapScript = script => script === "battlefield";
+const pcol = id => ["#111111", "#222222", "#333333", "#444444", "#555555", "#666666"][id % 6];
+const playerHudEloValue = player => player.ai_elo ?? null;
+const playerEloLabel = player => String(Math.round(player.ai_elo));
+const escapeAttr = text => String(text ?? "");
+__COMPACT__
+__BLOCK__
+const expect = (condition, note) => { if (!condition) throw new Error(note); };
+const eq = (actual, wanted, note) => expect(JSON.stringify(actual) === JSON.stringify(wanted),
+  `${note}: got ${JSON.stringify(actual)}, wanted ${JSON.stringify(wanted)}`);
+
+// The arrangement the operator named, and the same rule for every other table.
+eq(gameStatsLayout(4), {cols: 2, rows: 2}, "four civilizations");
+eq(gameStatsLayout(6), {cols: 3, rows: 2}, "six civilizations");
+eq(gameStatsLayout(6, true), {cols: 2, rows: 3}, "six on a card taller than it is wide");
+for (let count = 1; count <= 24; count++) {
+  const {cols, rows} = gameStatsLayout(count), turned = gameStatsLayout(count, true);
+  expect(cols * rows >= count, `${count} civilizations do not fit ${cols} by ${rows}`);
+  expect(cols * (rows - 1) < count, `${count} civilizations leave a row of ${cols} by ${rows} empty`);
+  expect(cols >= rows, `${count} civilizations are stacked taller than wide`);
+  eq(turned, {cols: rows, rows: cols}, `${count} civilizations turned on their side`);
+}
+
+// A world: `count` civilizations over `turns` turns, each a little richer
+// than the one before it, the second in deficit and the last one fallen.
+const world = (count, turns, fallen = false) => {
+  const axis = Array.from({length: turns}, (_, i) => i + 1);
+  const grow = (rate, gone) => axis.map((turn, i) => gone && i > turns / 2 ? null : Math.round(rate * turn));
+  return {winner: 1, winners: [1], map: {script: "continents"},
+    players: Array.from({length: count}, (_, id) => ({id, civ: `Civ ${id}`, score: 100 + id, cities: 3 + id,
+      population: 20 + id, wonder_count: id % 2, ai_username: `Agent${id}`, ai_elo: 1100 + id,
+      alive: !(fallen && id === count - 1)})),
+    game_stats: {turns: axis, players: Array.from({length: count}, (_, id) => {
+      const gone = fallen && id === count - 1;
+      return {id, science: grow(0.5 + id, gone), production: grow(1 + id, gone), culture: grow(0.5 + id, gone),
+        gold: grow(id === 1 ? -0.1 : 0.4, gone), faith: grow(0.45, gone), cities: grow(0.05 + id * 0.01, gone)};
+    })}};
+};
+
+// The markup: the arrangement, one chart each, the winner first, and on a
+// watched table the Civ AI Agent that played each civilization.
+for (const [count, cols, rows] of [[4, 2, 2], [6, 3, 2]]) {
+  const markup = gameStatsMarkup(world(count, 120));
+  expect(markup.includes(`style="--gs-cols:${cols};--gs-rows:${rows}"`), `${count} civilizations are not ${cols} by ${rows}`);
+  eq(markup.split('<figure class="game-stats-civ"').length - 1, count, "a chart for each civilization");
+  eq(markup.split('<svg class="game-stats-chart"').length - 1, count, "a drawing in each chart");
+  eq(gameStatsView.rows.map(row => row.id), [1, ...Array.from({length: count}, (_, i) => count - 1 - i).filter(id => id !== 1)],
+    "the winner first, then by score");
+  expect(markup.includes('<span class="gs-by">Agent1 1101</span>'), "the agent and its rating are not named");
+  expect(markup.includes('<span class="gs-won">Winner</span>'), "the winner is not marked");
+}
+expect(gameStatsMarkup(world(6, 120, true)).includes('<span class="gs-out">Out on turn 61</span>'), "a fallen civilization's last turn");
+eq(gameStatsMarkup({...world(4, 120), map: {script: "battlefield"}}), "", "a Tactics battle has no charts");
+eq(gameStatsMarkup({...world(4, 1)}), "", "one turn is not a history");
+
+// The drawing, at every size a chart is given from a phone to a large screen,
+// on both scales: everything drawn is inside the chart, every line is inside
+// its plot, and no two last figures are printed over each other.
+for (const [w, h] of [[150, 120], [194, 130], [233, 210], [337, 300], [519, 300], [706, 390], [1060, 400]])
+  for (const log of [false, true])
+    for (const [count, turns, fallen] of [[4, 120, false], [6, 250, true], [12, 500, false]]) {
+      const st = world(count, turns, fallen), where = `${w}x${h} ${log ? "log" : "linear"} ${count} civs`;
+      gameStatsMarkup(st);
+      const view = gameStatsView, scale = gameStatsScales(view, log, w, h), box = scale.box;
+      expect(box.left < box.right && box.top < box.bottom && box.bottom < box.stripTop && box.stripBottom < h,
+        `${where}: the parts are out of order`);
+      const charts = gameStatsCharts(view, log, w, h);
+      eq(charts.length, count, `${where}: a drawing each`);
+      for (const [index, chart] of charts.entries()) {
+        expect(chart.includes(`width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"`), `${where}: not drawn for its pixels`);
+        const lines = [...chart.matchAll(/class="gs-line"[^>]* d="([^"]*)"/g)].map(match => match[1]);
+        eq(lines.length, 5, `${where}: five yields`);
+        for (const path of lines) for (const [, x, y] of path.matchAll(/[ML]([\d.-]+) ([\d.-]+)/g))
+          expect(+x >= box.left - 0.1 && +x <= box.right + 0.1 && +y >= box.top - 0.1 && +y <= box.bottom + 0.1,
+            `${where}: a line leaves its plot at ${x},${y}`);
+        for (const [, x, y] of chart.matchAll(/<text[^>]* x="([\d.-]+)" y="([\d.-]+)"/g))
+          expect(+x >= 0 && +x <= w && +y >= box.font * 0.6 && +y <= h, `${where}: a label is off the chart at ${x},${y}`);
+        const ends = gameStatsEnds(view.turns, view.rows[index], scale);
+        eq(ends.map(end => end.label).sort(), ["Cities", "Culture", "Faith", "Gold", "Production", "Science"], `${where}: a last figure each`);
+        const yields = ends.filter(end => end.label !== "Cities").map(end => end.y).sort((a, b) => a - b);
+        // Five figures need five lines of type; a plot shorter than that keeps them in order instead.
+        if (box.bottom - box.top >= 5 * (box.font + 1)) {
+          for (let i = 1; i < yields.length; i++)
+            expect(yields[i] - yields[i - 1] >= box.font + 1 - 0.01, `${where}: two last figures overprint`);
+          expect(yields[0] >= box.top - 0.01 && yields[4] <= box.bottom + 2.01, `${where}: a last figure left its plot`);
+        }
+        for (const end of ends) expect(end.x + 6 + end.text.length * box.font * 0.62 <= w + 0.5 || end.x < box.right - 1,
+          `${where}: the last figure ${end.text} runs off the chart`);
+      }
+      // One scale for every chart: the same amount is the same height in each.
+      const again = gameStatsScales(view, log, w, h);
+      eq([again.y(40), again.cy(2)], [scale.y(40), scale.cy(2)], `${where}: the scale moved`);
+      // Linear: the highest figure stands in the top half step, so no step is empty.
+      if (!log) {
+        const high = Math.max(...view.rows.flatMap(row => ["science", "production", "culture", "gold", "faith"]
+          .flatMap(key => row[key].filter(value => value !== null))));
+        const steps = scale.ticks.filter(tick => tick > 0).sort((a, b) => a - b);
+        expect(scale.y(high) >= box.top && scale.y(high) - box.top <= (box.bottom - box.top) * 0.36,
+          `${where}: the lines do not take the plot's height`);
+        expect(steps.length >= 2 || h < 200, `${where}: too few rules to read a height from`);
+      }
+    }
+console.log("game stats checks passed");
+"""
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class TheResultScreenIsAScreenOfCharts(unittest.TestCase):
+    """Operator, 2026-11-21: "4p game should have 2 x 2 enx screen of charts.
+    6p game is 3 wide x 2 tall. all on screen. no screen. maximize information
+    conveyed cleanly" (read as: end screen, and no scrolling).
+
+    A finished game's card takes the map area. Its verdict is one band across
+    the top and the charts share the rest in a fixed arrangement, each drawn
+    for the pixels it is given, so nothing is cut off and nothing scrolls."""
+
+    def test_the_arrangement_and_the_drawing(self):
+        moments = (ASSETS / "app_moments.js").read_text(encoding="utf-8")
+        app = (ASSETS / "app.js").read_text(encoding="utf-8")
+        block = moments[moments.index("const GAME_STATS_SERIES = ["):moments.index("// Hover: one turn cursor")]
+        start = app.index("function compactStat(")
+        compact = app[start:app.index("\n}\n", start)] + "\n}\n"
+        done = subprocess.run(
+            [NODE, "-e", GAME_STATS_SCENARIOS.replace("__COMPACT__", compact).replace("__BLOCK__", block)],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(done.returncode, 0, done.stderr.strip()[-3000:])
+        self.assertIn("game stats checks passed", done.stdout)
+
+    def test_the_card_takes_the_map_area_and_does_not_scroll(self):
+        page = INDEX.read_text(encoding="utf-8")
+        start = page.index("#winner:has(.game-stats) {")
+        card = page[start:page.index("}", start)]
+        self.assertIn("height: min(1180px, calc(100% - 24px));", card)
+        self.assertIn("overflow: hidden;", card)
+        self.assertNotIn("overflow-y", card)
+        for rule in (
+            # Every chart the same size, and together what the card has left.
+            "grid-template-columns: repeat(var(--gs-cols, 3), minmax(0, 1fr));",
+            "grid-template-rows: repeat(var(--gs-rows, 2), minmax(0, 1fr));",
+            ".game-stats-plot { flex: 1; position: relative; min-height: 0; overflow: hidden; }",
+            # The drawing lies over the box it was measured from.
+            ".game-stats-chart { position: absolute; inset: 0; display: block; }",
+            # The charts are the last row of the card and the one that stretches.
+            '"stats   stats   stats   stats   stats   stats";',
+        ):
+            self.assertIn(rule, page)
+        moments = (ASSETS / "app_moments.js").read_text(encoding="utf-8")
+        # Drawn again whenever the card is given a different size.
+        self.assertIn("gameStatsObserver = new ResizeObserver(gameStatsFit);", moments)
+        self.assertIn("queueMicrotask(gameStatsMount);", moments)
