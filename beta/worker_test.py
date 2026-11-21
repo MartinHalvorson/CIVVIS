@@ -395,6 +395,14 @@ def main(argv: list[str] | None = None) -> int:
             tournaments["status"] == 200 and tournaments["body"].strip() == "asset:/tournaments/",
             f"got {tournaments['status']} {tournaments['body'][:60]!r}",
         )
+        # And /research, between Home and Tournaments.
+        research = hit(path="/research/")
+        check(
+            problems,
+            "/research/ passes through to the Research page",
+            research["status"] == 200 and research["body"].strip() == "asset:/research/",
+            f"got {research['status']} {research['body'][:60]!r}",
+        )
         download = hit(path="/download/")
         check(
             problems,
@@ -435,6 +443,11 @@ def main(argv: list[str] | None = None) -> int:
               test_tournaments["status"] == 200 and test_tournaments["body"].strip() == "asset:/test/tournaments/"
               and test_tournaments["robots"] == "noindex",
               f"got {test_tournaments['status']} {test_tournaments['body'][:60]!r} {test_tournaments['robots']!r}")
+        test_research = hit(path="/test/research/")
+        check(problems, "/test/research/ passes through to the test Research page",
+              test_research["status"] == 200 and test_research["body"].strip() == "asset:/test/research/"
+              and test_research["robots"] == "noindex",
+              f"got {test_research['status']} {test_research['body'][:60]!r} {test_research['robots']!r}")
         test_download = hit(path="/test/download/")
         check(problems, "/test/download/ passes through to the test downloads page",
               test_download["status"] == 200 and "asset:/test/download/" in test_download["body"],

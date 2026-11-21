@@ -340,8 +340,8 @@
      and the text fitter shrinks the type into the lane instead of wrapping. */
   .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #bccac4; }
-  /* The site's pages from the top down: Home, Tournaments, CIVVIS and AI
-     Debugger, and under them the game all four are built on. The block below is how they stand
+  /* The site's pages from the top down: Home, Research, Tournaments, CIVVIS
+     and AI Debugger, and under them the game all five are built on. The block below is how they stand
      when there is no room beside the lockup, or no way to ask whether they
      are showing (`:has`): two by two under the tagline. `display: grid`
      outranks the user agent's `[hidden]`, which is why the block has to say
@@ -350,8 +350,8 @@
     display: grid; grid-template-columns: 1fr 1fr; flex: 0 0 100%; gap: 3px; margin-top: 8px;
   }
   .head-links[hidden] { display: none; }
-  /* Five links two by two leave the last on a row of its own, and it takes
-     the whole row rather than half of it. */
+  /* An odd number of links two by two leaves the last on a row of its own,
+     and it takes the whole row rather than half of it. */
   .head-links > :last-child:nth-child(odd) { grid-column: 1 / -1; }
   .home-link {
     display: block; min-width: 0; padding: 2px 5px 3px; overflow: hidden;
@@ -398,19 +398,21 @@
       grid-column: 3; grid-row: 1; grid-template-columns: minmax(0, 1fr);
       align-content: center; justify-self: stretch; margin-top: 0;
     }
-    /* Five to the column, and TOURNAMENTS is the longest of them. The column
+    /* Six to the column, and TOURNAMENTS is the longest of them. The column
        keeps the width it had for four (a wider one would take the tagline's
        lane on a 1512px window), so in the column the labels are set a
        little smaller and closer: TOURNAMENTS then leaves a twentieth of the
-       width spare for a wider typeface than this one, and five links stand
-       about as tall as four did. */
+       width spare for a wider typeface than this one. Five links stood
+       about as tall as four did; the sixth, Research, makes the column
+       115px and the box 12px (1920px window) to 20px (1470px and 1512px)
+       taller than five did. */
     #side .brand:has(> .head-links:not([hidden])) .home-link {
       padding: 1px 3px 2px; font-size: 9px; letter-spacing: .03em;
     }
   }
   /* From 246px the tagline's two lines fit beside the column too, so the
      column runs the whole height of the lockup and the box is no taller than
-     the five links. */
+     the six links. */
   @container (min-width: 246px) {
     #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 1 / 3; }
     #side .brand:has(> .head-links:not([hidden])) .head-links { grid-row: 1 / span 2; }
@@ -6246,18 +6248,20 @@
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
         <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI strategy development</span></div>
       </div>
-      <!-- The site is four pages, Home, Tournaments, CIVVIS and AI Debugger,
-           and every one of them lists all four in that order with the one on
-           screen in gold. This page is the last two: `./` is the simulation
+      <!-- The site is five pages, Home, Research, Tournaments, CIVVIS and AI
+           Debugger, and every one of them lists all five in that order with
+           the one on screen in gold. This page is the last two: `./` is the simulation
            the AIs play and `?mode=play` the same game with a seat of your
            own. Both are relative, so they stay in whichever lane they were
-           clicked in, and all four leave a split's frame for the whole
+           clicked in, and all five leave a split's frame for the whole
            window. Under them is the game itself, on the shop page that sells
-           it. Only the published site has a /home and a /tournaments to go
-           to (`beta/publish.sh` makes both links lane-relative); the head
+           it. Only the published site has a /home, a /research and a
+           /tournaments to go to (`beta/publish.sh` makes the three links
+           lane-relative); the head
            script unhides the list on the hosts that serve them. -->
       <nav class="head-links" id="headlinks" aria-label="CIVVIS sites" hidden>
         <a class="home-link" id="homelink" href="/home" target="_top">Home</a>
+        <a class="home-link" id="researchlink" href="/research" target="_top">Research</a>
         <a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>
         <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
         <a class="home-link" id="playlink" href="?mode=play" target="_top">AI Debugger</a>

@@ -2102,20 +2102,22 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
     assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
 }
 
-/// The site is four pages, Home, Tournaments, CIVVIS and AI Debugger (the
-/// operator's name for the Debugger since 2026-11-20; Tournaments joined
-/// them between Home and CIVVIS on 2026-11-21), and every one of them lists
-/// all four in that order, with the page on screen in gold and a link to the
-/// game they are built on under them (operator, 2026-11-19). The viewer is
-/// the last two: a watched simulation lights CIVVIS and a played game
-/// lights AI Debugger. Pinned as one literal because the list is
-/// the contract: five links in this order, inside a list that only the
-/// hosts serving a /home and a /tournaments reveal.
+/// The site is five pages, Home, Research, Tournaments, CIVVIS and AI
+/// Debugger (the operator's name for the Debugger since 2026-11-20;
+/// Tournaments joined them between Home and CIVVIS on 2026-11-21, and
+/// Research between Home and Tournaments the same day), and every one of
+/// them lists all five in that order, with the page on screen in gold and a
+/// link to the game they are built on under them (operator, 2026-11-19).
+/// The viewer is the last two: a watched simulation lights CIVVIS and a
+/// played game lights AI Debugger. Pinned as one literal because the list
+/// is the contract: six links in this order, inside a list that only the
+/// hosts serving a /home, a /research and a /tournaments reveal.
 #[test]
 fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<nav class=\"head-links\" id=\"headlinks\" aria-label=\"CIVVIS sites\" hidden>\n",
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
+        "        <a class=\"home-link\" id=\"researchlink\" href=\"/research\" target=\"_top\">Research</a>\n",
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
@@ -2161,13 +2163,17 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     assert!(EMBEDDED_INDEX.contains(".head-links[hidden] { display: none; }"));
     assert!(EMBEDDED_INDEX
         .contains("#side[data-type-size=\"compact\"] .head-links {\n    grid-column: 1 / -1;"));
-    // Both of the viewer's own links leave the lane-relative rewrite to
-    // `beta/publish.sh`, which turns `/home` and `/tournaments` into the
-    // lane's own pages and refuses to publish a root link it does not know.
-    assert!(include_str!("../../beta/publish.sh").contains(
-        "('href=\"/home\"', 'href=\"home/\"'), ('href=\"/tournaments\"', 'href=\"tournaments/\"')"
-    ));
-    // Five links two by two leave the last alone on its row, which it takes whole.
+    // The viewer's links to the other pages leave the lane-relative rewrite
+    // to `beta/publish.sh`, which turns `/home`, `/research` and
+    // `/tournaments` into the lane's own pages and refuses to publish a root
+    // link it does not know.
+    assert!(include_str!("../../beta/publish.sh").contains(concat!(
+        "    ('href=\"/home\"', 'href=\"home/\"'),\n",
+        "    ('href=\"/research\"', 'href=\"research/\"'),\n",
+        "    ('href=\"/tournaments\"', 'href=\"tournaments/\"'),\n",
+    )));
+    // An odd number of links two by two leaves the last alone on its row,
+    // which it takes whole.
     assert!(EMBEDDED_INDEX
         .contains(".head-links > :last-child:nth-child(odd) { grid-column: 1 / -1; }"));
     // With room beside the lockup the list is a column on its right: the
@@ -2176,7 +2182,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // only while the list is showing, so a desktop build's lockup keeps the
     // whole band. The column kept the width it had for four links, so in
     // the column the labels are set a little smaller and closer and the
-    // longest of the five, TOURNAMENTS, fits it.
+    // longest of the six, TOURNAMENTS, fits it.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  @container (min-width: 233px) {\n",
         "    #side .brand:has(> .head-links:not([hidden])) {\n",
@@ -2274,8 +2280,8 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     );
 }
 
-/// The home page is one of the site's four pages and lists all four from
-/// its header, Home, Tournaments, CIVVIS and AI Debugger, with itself in gold
+/// The home page is one of the site's five pages and lists all five from
+/// its header, Home, Research, Tournaments, CIVVIS and AI Debugger, with itself in gold
 /// and the Civ 6 link under them, as the viewer's masthead does; below that
 /// it is one paragraph and the rankings. The Tournaments table that stood
 /// above the rankings moved to the Tournaments page (operator, 2026-11-21;
@@ -2300,11 +2306,13 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
         // column is the first thing in the header and the title follows it.
         concat!(
             "<div class=\"site-brand\">\n",
-            "      <!-- The site is four pages,",
+            "      <!-- The site is five pages,",
         ),
         concat!(
             "<nav class=\"site-nav\" aria-label=\"CIVVIS sites\">\n",
             "        <a class=\"site-link\" href=\"./\" aria-current=\"page\">Home</a>\n",
+            "        <a class=\"site-link\" href=\"../research/\" ",
+            "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Research</a>\n",
             "        <a class=\"site-link\" href=\"../tournaments/\" ",
             "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
             "running, scheduled and finished.\">Tournaments</a>\n",
