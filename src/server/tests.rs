@@ -2177,23 +2177,37 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // which it takes whole.
     assert!(EMBEDDED_INDEX
         .contains(".head-links > :last-child:nth-child(odd) { grid-column: 1 / -1; }"));
-    // With room beside the lockup the list is a column on its right: the
-    // third track of the lockup's grid, one link to a line, beside the
-    // globe and the wordmark with the tagline under all three. It applies
-    // only while the list is showing, so a desktop build's lockup keeps the
-    // whole band. The column kept the width it had for four links, so in
-    // the column the labels are set a little smaller and closer and the
-    // longest word of the six, TOURNAMENTS, fits it.
+    // With room beside the lockup the list is a column on its left
+    // (operator, 2026-11-21: the list goes "to the left side" of the
+    // civvis.ai title, as it is on Home): the first track of the lockup's
+    // grid, one link to a line, with the globe and the wordmark to the
+    // right of it and the tagline under all three. The list is still the
+    // last thing in the lockup's markup, so each of the three is given its
+    // track by name. It applies only while the list is showing, so a
+    // desktop build's lockup keeps the whole band. The column kept the
+    // width it had for four links, so in the column the labels are set a
+    // little smaller and closer and the longest word of the six,
+    // TOURNAMENTS, fits it.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  @container (min-width: 233px) {\n",
         "    #side .brand:has(> .head-links:not([hidden])) {\n",
         "      --site-rail: 88px; --site-mark: clamp(40px, 19cqw, 72px);\n",
-        "      display: grid; grid-template-columns: auto minmax(0, 1fr) var(--site-rail);\n",
+        "      display: grid; grid-template-columns: var(--site-rail) auto minmax(0, 1fr);\n",
     )));
     assert!(EMBEDDED_INDEX.contains(concat!(
         "    #side .brand:has(> .head-links:not([hidden])) .head-links {\n",
-        "      grid-column: 3; grid-row: 1; grid-template-columns: minmax(0, 1fr);\n",
+        "      grid-column: 1; grid-row: 1; grid-template-columns: minmax(0, 1fr);\n",
     )));
+    assert!(EMBEDDED_INDEX.contains(concat!(
+        "    #side .brand:has(> .head-links:not([hidden])) .brand-mark {\n",
+        "      grid-column: 2; grid-row: 1; flex: none;",
+    )));
+    assert!(EMBEDDED_INDEX.contains(concat!(
+        "    #side .brand:has(> .head-links:not([hidden])) h1 {\n",
+        "      grid-column: 3; grid-row: 1;\n",
+    )));
+    // The column is not on the right any more.
+    assert!(!EMBEDDED_INDEX.contains("auto minmax(0, 1fr) var(--site-rail)"));
     assert!(EMBEDDED_INDEX.contains(concat!(
         "    #side .brand:has(> .head-links:not([hidden])) .home-link {\n",
         "      padding: 1px 3px 2px; font-size: 9px; letter-spacing: .03em;\n",
@@ -2218,11 +2232,12 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         !home_link.contains("nowrap"),
         "a site's name is held to one line again, which cuts STRATEGY DEBUGGER off"
     );
-    // A little wider and the tagline fits beside the column as well, which
-    // then runs the whole height of the lockup.
+    // A little wider and the tagline fits beside the column as well, under
+    // the globe and the wordmark, and the column then runs the whole height
+    // of the lockup.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  @container (min-width: 246px) {\n",
-        "    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 1 / 3; }\n",
+        "    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 2 / 4; }\n",
         "    #side .brand:has(> .head-links:not([hidden])) .head-links { grid-row: 1 / span 2; }\n",
         "  }",
     )));

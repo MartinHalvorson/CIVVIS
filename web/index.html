@@ -377,9 +377,13 @@
     background: linear-gradient(145deg, #dec176, #aa7d30);
   }
   /* With 233px or more across the band the links leave the lockup's foot and
-     stand in a column on its right, beside the globe and the wordmark, with
-     the tagline across the band under all three. The lockup gives the column
-     its width (`--site-rail`) and the wordmark's
+     stand in a column on its left, at the box's left edge, with the globe
+     and the wordmark to the right of it (operator, 2026-11-21: the list goes
+     "to the left side" of the civvis.ai title, as it is on Home) and the
+     tagline across the band under all three. The column is the first track
+     of the lockup's grid though the list is the last thing in the markup,
+     so the narrower layouts still find it under the tagline. The lockup
+     gives the column its width (`--site-rail`) and the wordmark's
      lane is the band less the column, the globe and the two gutters. The
      CIVVIS.ai run is 4.65em wide (4.85 leaves fallback-font slack), so
      dividing the lane by that fills it without tripping the ellipsis. Under
@@ -387,20 +391,23 @@
   @container (min-width: 233px) {
     #side .brand:has(> .head-links:not([hidden])) {
       --site-rail: 88px; --site-mark: clamp(40px, 19cqw, 72px);
-      display: grid; grid-template-columns: auto minmax(0, 1fr) var(--site-rail);
+      display: grid; grid-template-columns: var(--site-rail) auto minmax(0, 1fr);
       align-items: center; gap: 7px 10px;
     }
     #side .brand:has(> .head-links:not([hidden])) .brand-copy { display: contents; }
     #side .brand:has(> .head-links:not([hidden])) .brand-mark {
-      flex: none; width: var(--site-mark); height: var(--site-mark);
+      grid-column: 2; grid-row: 1; flex: none; width: var(--site-mark); height: var(--site-mark);
     }
     #side .brand:has(> .head-links:not([hidden])) .brand-mark svg { width: 91%; height: 91%; }
     #side .brand:has(> .head-links:not([hidden])) h1 {
+      grid-column: 3; grid-row: 1;
       font-size: clamp(15px, calc((100cqw - var(--site-rail) - var(--site-mark) - 20px) / 4.85), 36px);
     }
-    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 1 / -1; margin-top: 0; }
+    #side .brand:has(> .head-links:not([hidden])) .tagline {
+      grid-column: 1 / -1; grid-row: 2; margin-top: 0;
+    }
     #side .brand:has(> .head-links:not([hidden])) .head-links {
-      grid-column: 3; grid-row: 1; grid-template-columns: minmax(0, 1fr);
+      grid-column: 1; grid-row: 1; grid-template-columns: minmax(0, 1fr);
       align-content: center; justify-self: stretch; margin-top: 0;
     }
     /* Six to the column, and TOURNAMENTS is the longest word among them.
@@ -417,11 +424,11 @@
       padding: 1px 3px 2px; font-size: 9px; letter-spacing: .03em;
     }
   }
-  /* From 246px the tagline's two lines fit beside the column too, so the
-     column runs the whole height of the lockup and the box is no taller than
-     the six links. */
+  /* From 246px the tagline's two lines fit beside the column too, under the
+     globe and the wordmark, so the column runs the whole height of the
+     lockup and the box is no taller than the six links. */
   @container (min-width: 246px) {
-    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 1 / 3; }
+    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 2 / 4; }
     #side .brand:has(> .head-links:not([hidden])) .head-links { grid-row: 1 / span 2; }
   }
   /* A split-screen deck cannot afford the landing-page-sized mark and title.
