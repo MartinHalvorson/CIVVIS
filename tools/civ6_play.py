@@ -2416,6 +2416,13 @@ def build_config(args: argparse.Namespace) -> dict:
         # cannot outvote that rival casts the free vote A on it instead of a
         # token B or a losing claim (`CivvisDvJoinWinner`). Off unless set.
         "DvJoinWinner": bool(getattr(args, "dv_join_winner", False)),
+        # A racer's Migration Treaty, World Ideology and Mercenary Companies
+        # vote with the block predicted to carry them: the free vote with the
+        # top self-voter when our claim is smaller than its block (each
+        # rival's Favor spent this session), the spend-weighted government,
+        # the last winning yield (`CivvisWcJoinPlurality`; the reading is
+        # always recorded as `wc_ballot_context.wc_prediction`). Off unless set.
+        "WcJoinPlurality": bool(getattr(args, "wc_join_plurality", False)),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -7295,6 +7302,7 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
             "LuxuryQuoteProposals": getattr(args, "luxury_quote_proposals", False),
             "UnansweredProposalWithdraw": getattr(args, "unanswered_proposal_withdraw", False),
             "DvJoinWinner": getattr(args, "dv_join_winner", False),
+            "WcJoinPlurality": getattr(args, "wc_join_plurality", False),
             **{key: getattr(args, attr, None) for attr, key, _ in ORDER_QUEUE_TIMINGS},
         },
         "city_two_turn": (sorted(state.get("founds") or [])[1]
@@ -8873,6 +8881,7 @@ def _play(args: argparse.Namespace) -> int:
             "LuxuryQuoteProposals": getattr(args, "luxury_quote_proposals", False),
             "UnansweredProposalWithdraw": getattr(args, "unanswered_proposal_withdraw", False),
             "DvJoinWinner": getattr(args, "dv_join_winner", False),
+            "WcJoinPlurality": getattr(args, "wc_join_plurality", False),
             **{key: getattr(args, attr, None) for attr, key, _ in ORDER_QUEUE_TIMINGS},
         },
         # See `state["founds"]`: the opening tempo, recorded per run so the
@@ -9602,6 +9611,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--dv-join-winner", dest="dv_join_winner", action="store_true",
                     help="on the Diplomatic Victory resolution, vote A on the rival "
                          "predicted to take the +2 when our bank cannot outvote it (opt-in)")
+    ap.add_argument("--wc-join-plurality", dest="wc_join_plurality", action="store_true",
+                    help="on the Migration Treaty, World Ideology and Mercenary Companies "
+                         "resolutions, vote with the block predicted to carry them (opt-in)")
     # Wins always finish the native movie. This setting retains a minimum
     # presentation time; it cannot shorten a winning cinematic.
     ap.add_argument("--end-game-seconds", type=float, default=10.0,
