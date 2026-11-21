@@ -26,11 +26,15 @@ form with auto-play stopped by a turn, by a new era and by hand, layers,
 reveal, the Single player switch, undo, and a round stepped a seat at a time.
 It then splits the screen head to head, each half the same page with a toy
 engine of its own: a Civ AI is picked for each half, from the strip and from
-the head of its lane, both are played to a turn linked and then separate,
+the head of its lane, both are played to a turn locked and then unlocked,
 each half and then both are moved by the lanes in the host's box, and the
 test reads which Civ AI each half's steps named, the numbers set side by
-side, a copy, and the half that is kept. A control added to the box or the
-strip is added there.
+side, a copy, and the half that is kept. A last part holds the lock: that
+Branch Timeline opens the split at once, that the lock stands between the two
+lanes and closes only on one turn, that the host's deck is the one panel of a
+locked split and plays both halves, that each half shows its own panel again
+when the lock opens, and that two identical halves are asked for once. A
+control added to the box or the strip is added there.
 
 ## The bar
 
@@ -183,7 +187,7 @@ do not carry, so the replay would be another world.
 | ◉ | `reveal` | Show the whole map and every civilization, not only what the seat can see |
 | ⚑ | `save_point`, `goto_save`, `drop_save` | Save points: keep this world to come back to, go to one, or let one go. Each stands on the timeline as a flag at its turn; clicking the flag goes there |
 | ⚑ | `POST /save`, `POST /load` | Saves, in the same panel: keep this turn on the device under a name, or load one that was kept |
-| Branch Timeline | | Two simulators from this turn; see Split screen below |
+| Branch Timeline | | Two simulators from this turn, side by side and locked on the same turn; see Split screen below |
 
 Going back forgets nothing. The turns ahead stay marked, and 1 ▶ walks them
 again exactly as they were played. They are replaced only when the world is
@@ -277,8 +281,8 @@ is the seat that is up):
 - A rival's turn is not the seat's action to take back, and not a place to
   keep: undo and save points are refused until the round finishes.
 
-In a linked split the other half follows when the turn changes, as it does
-for an ended turn.
+In a locked split the other half steps the same seat, and follows when the
+turn changes, as it does for an ended turn.
 
 ## Reveal
 
@@ -352,10 +356,12 @@ turn: back to it if it was played, and on to it if it is still ahead.
 
 ## Split screen
 
-Split puts two simulators in one window, side by side or one above the other.
-Both start from the world as it stood when the screen was split, and from
-there each plays its own history: play one by hand and step the other, or
-try two answers to the same turn.
+Branch Timeline puts two simulators in one window. It asks nothing first:
+the screen splits at once, side by side, and the two halves begin locked on
+the same turn (the strip between them can stack them instead). Both start
+from the world as it stood when the screen was split, and from there each
+can play its own history: play one by hand and step the other, or try two
+answers to the same turn.
 
 Each half is the whole page again in a frame, and both are answered by one
 engine, which keeps a session for each (`src/server/panes.rs`). A half's
@@ -381,17 +387,56 @@ The bar of the page that was split stays across the top of the window, over
 both halves, and its timeline becomes two lanes, A and B. Each lane is that
 half's history: gold up to the turn of the split, the half's own colour from
 there, and the half's open turn as its pill. A lane is the hand on its half,
-and on both halves while they are linked. Letting go of it on a turn every
+and on both halves while they are locked. Letting go of it on a turn every
 half concerned has played walks them there; on a turn ahead of any of them it
 plays them there, each with its own Civ AI. At the head of each lane is the
-Civ AI that half seats, to pick there. A half's own bar has the tools for its
-world and neither a timeline nor a picker: the host has both.
+Civ AI that half seats, to pick there.
 
-The strip between the halves holds the split's own controls:
+### The lock
+
+A lock joins the two lanes, on a bracket that runs from the middle of one
+rail to the middle of the other. It says whether the two halves are one.
+
+- **Locked** (how a split opens): the bracket is whole and the lock is shut.
+  The halves stay on the same turn. Whatever moves one is repeated in the
+  other the same way: an ended turn ends the other's turn as it stands, a
+  step steps it, a walk along the timeline walks it. What one is asked that
+  leaves its turn where it was is asked of the other too: a layer, a
+  breakpoint, Reveal, one action or one seat stepped, an undo, a save point.
+  While both stand on one turn a link joins their two markers.
+- **Unlocked**: the bracket is broken and the lock is open. Neither half
+  follows the other.
+
+Clicking the lock opens it. It closes only on two halves that stand on the
+same turn, which is where it then keeps them; while they stand on different
+turns it cannot be pressed, and its tooltip says why. (Walk one half's lane
+to the other's turn first, or make one a copy of the other.)
+
+Locked, the two halves are one thing to play, so there is one control panel:
+the host's deck, under the lanes. Each half puts its own bar away and tells
+the host what was on its deck (`pane-deck`). The host draws its deck from
+half A's, and a press or a change on it is passed to A's own deck
+(`pane-press`, `pane-change`), which does what it would have done had it
+been pressed there; B follows. So every control on the panel means what it
+means for one world, and applies to both. The Civ AI is not on the panel: it
+is picked at the head of each lane, one for each half. Saves to the device
+are one world's and are kept from a half's own panel, unlocked.
+
+When two halves are locked after playing apart, B takes A's layers,
+breakpoints and Reveal, so that the one panel is true of both.
+
+Unlocked, the host shows the two lanes and no deck, and each half shows its
+own bar again: the tools for its world, with neither a timeline nor a picker.
+
+Two locked halves that seat the same Civ AI would be asked the same things,
+so A names B as its twin in what it asks the engine. If the two are also the
+same world, the engine plays them once, and B's page only reads its state;
+see "Identical halves are played once".
+
+The strip between the halves holds the split's other controls:
 
 | Control | What it does |
 |---------|--------------|
-| Linked / Separate | Linked, the halves stay on the same turn. Whatever moves one is repeated in the other the same way: an ended turn ends the other's turn as it stands, a step steps it, a walk along the timeline walks it. Separate, neither follows the other. |
 | View | On, the two maps move together: panning or zooming one moves the other. Off, each looks where it likes. |
 | ◧ / ⬒ | Switch between side by side and top and bottom |
 | A → B, B → A | Make one half a copy of the other as it stands now, turns behind it included (`copy`) |
@@ -399,13 +444,12 @@ The strip between the halves holds the split's own controls:
 | drag the strip | Resize the halves; double-click makes them equal |
 | VS | Head to head; see below |
 
-A half that moved because it was following is not followed back. Linking two
-halves that have drifted apart brings B to A's turn.
+A half that moved because it was following is not followed back.
 
 ### Head to head
 
 Head to head is the split used to play two strategies out from one turn. VS
-in the strip, or "Head to head" in the Split panel, widens the strip to hold:
+in the strip widens it to hold:
 
 - a Civ AI for each half, the same choice that stands at the head of the
   half's lane in the bar. It is the agent that plays that half's seat
@@ -420,11 +464,11 @@ in the strip, or "Head to head" in the Split panel, widens the strip to hold:
   is clicked. A half that has walked back keeps its line, with a mark where it
   now stands; turns it plays over again replace what the line showed, and a
   copy takes the other half's line with it.
-- a turn to play both to. Linked, A is run and B follows it turn by turn, each
-  with its own Civ AI. Separate, each half is run by itself. The run ends when
+- a turn to play both to. Locked, A is run and B follows it turn by turn, each
+  with its own Civ AI. Unlocked, each half is run by itself. The run ends when
   that turn opens, or earlier if a breakpoint stops a half, and the same
   button stops it by hand.
-- ↺, which puts both halves back on the turn they split on, linked or not, so
+- ↺, which puts both halves back on the turn they split on, locked or not, so
   the same start can be played again with another pair of Civ AIs. Each half
   walks back along its own timeline, so it lands on the nearest turn before
   that one if the turn itself is no longer kept.

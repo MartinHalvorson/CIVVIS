@@ -15,6 +15,11 @@
 // the left, and stepping in, undo, save points, reveal and the Single player
 // switch at the right.
 //
+// Branch Timeline splits the screen in two, side by side, at once. The two
+// halves begin locked: a lock joins their two timelines, they stay on the
+// same turn, and this box is the one control panel for both. Clicking the
+// lock opens it, and then each half has a panel of its own.
+//
 // A game under the debugger has two views. The Debugger view is how it opens:
 // the map with the standings across the top, the victory tracker down the
 // right and the seat's governors and policies, as a watched game is shown.
@@ -180,6 +185,51 @@ const DEBUG_BAR_STYLE = `
   }
   /* The two lanes of a split share the box, and are each the old height. */
   #debugbar.dbg-split-on .dbg-rail { height: 40px; }
+  /* They are two rows of one grid, so that what joins them can stand across
+     both: the lock, between each lane's first turn and its rail. */
+  #debugbar.dbg-split-on .dbg-time {
+    grid-template-columns: auto auto auto auto minmax(0, 1fr) auto; column-gap: 8px; align-items: center;
+  }
+  #debugbar.dbg-split-on .dbg-lane { display: contents; }
+  #debugbar.dbg-split-on .dbg-lane[data-dbg-lane="a"] > * { grid-row: 1; }
+  #debugbar.dbg-split-on .dbg-lane[data-dbg-lane="b"] > * { grid-row: 2; }
+  #debugbar.dbg-split-on .dbg-lane-name { grid-column: 1; }
+  #debugbar.dbg-split-on .dbg-lane select.dbg-agent { grid-column: 2; }
+  #debugbar.dbg-split-on .dbg-start { grid-column: 3; }
+  #debugbar.dbg-split-on .dbg-rail { grid-column: 5; }
+  #debugbar.dbg-split-on .dbg-finish { grid-column: 6; }
+  /* The lock that joins the two timelines of a split. A bracket runs from
+     the middle of one rail to the middle of the other with the lock on it:
+     whole and bright while the halves are locked on the same turn, broken
+     and dim while each keeps its own. */
+  #debugbar .dbg-tie { display: none; }
+  #debugbar.dbg-split-on .dbg-tie {
+    display: block; grid-column: 4; grid-row: 1 / span 2; align-self: stretch; position: relative;
+    width: 32px; margin-right: -8px;
+  }
+  #debugbar .dbg-tie::before {
+    content: ""; position: absolute; left: 14px; right: 0; top: 20px; bottom: 20px;
+    border: 2px dashed #6f8a80; border-right: 0; border-radius: 9px 0 0 9px;
+  }
+  #debugbar.dbg-locked .dbg-tie::before { border-style: solid; border-color: #ffd23f; }
+  #debugbar button.dbg-lock {
+    position: absolute; left: 0; top: 50%; transform: translateY(-50%); min-width: 0; width: 30px; height: 30px;
+    padding: 0; border-radius: 50%; color: #b7c7c0; background: #14231f; border: 1px solid #6f8a80;
+  }
+  #debugbar.dbg-locked button.dbg-lock { color: #3a1d00; background: #ffd23f; border-color: #fff3b0; }
+  /* A lock that is shut stays whole while the halves are being played: it
+     is still what holds them. An open one that cannot be shut yet is dim. */
+  #debugbar.dbg-locked button.dbg-lock:disabled { opacity: 1; }
+  #debugbar:not(.dbg-locked) button.dbg-lock:disabled { opacity: .5; }
+  #debugbar .dbg-lock svg { display: block; }
+  #debugbar .dbg-lock .dbg-shackle { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+  #debugbar.dbg-locked .dbg-lock .dbg-shackle-open, #debugbar:not(.dbg-locked) .dbg-lock .dbg-shackle-shut { display: none; }
+  /* Locked and on the same turn, the two markers are one: a link stands
+     between them, from the middle of A's to the middle of B's. */
+  #debugbar.dbg-joined .dbg-lane[data-dbg-lane="a"] .dbg-cursor::after {
+    content: ""; position: absolute; z-index: -1; left: -2px; top: 50%; width: 4px; height: 44px;
+    border-radius: 2px; background: #ffd23f; box-shadow: 0 0 0 1px #3a1d0060;
+  }
   #debugbar .dbg-rail:focus-within { border-color: #ffffff; box-shadow: inset 0 1px 0 #ffffffa0, 0 0 0 2px #ffd23f, 0 2px 10px #0007; }
   /* The slider is set in from each end of its rail, and its thumb stops half
      its own width short of each end of that, so what is drawn on a rail is
@@ -258,11 +308,19 @@ const DEBUG_BAR_STYLE = `
     border-radius: 999px; white-space: nowrap; pointer-events: none;
     border: 1px solid #4d685f; background: #0a1512f5; box-shadow: var(--shadow);
   }
-  /* The host of a split shows the two halves' lanes and nothing else: each
-     half carries the tools for its own world, and no timeline. */
-  #debugbar.dbg-split-on .dbg-deck, #debugbar.dbg-split-on .dbg-note, #debugbar.dbg-split-on .dbg-pop { display: none; }
+  /* The host of a split shows the two halves' lanes. While the halves are
+     unlocked that is all it shows: each half carries the tools for its own
+     world, and no timeline. While they are locked the two are one, and the
+     host's deck is the one control panel for both: the halves put theirs
+     away (dbg-pane-locked). */
+  #debugbar.dbg-split-on:not(.dbg-merged) .dbg-deck, #debugbar.dbg-split-on:not(.dbg-merged) .dbg-pop { display: none; }
   #debugbar.dbg-split-on .dbg-hover { top: calc(100% + 5px); }
+  #debugbar.dbg-merged .dbg-hover { top: 98px; }
+  /* Each half's Civ AI is picked at the head of its lane, and a save is one
+     world's, kept from that half's own panel. */
+  #debugbar.dbg-split-on .dbg-agent-field, #debugbar.dbg-split-on .dbg-file-saves { display: none; }
   #debugbar.dbg-pane .dbg-time { display: none; }
+  html.dbg-pane-locked #debugbar, html.dbg-pane-locked #humanfooter { display: none !important; }
 
   #debugbar .dbg-pop {
     position: absolute; z-index: 3; left: 8px; top: calc(100% + 6px);
@@ -323,7 +381,18 @@ const DEBUG_PANE = (() => {
 })();
 // What is moving this pane's world right now, so its report to the host can
 // say how the turn was reached: walked to, or played after the other pane.
-let debugTravelling = false, debugFollowing = false;
+// `debugMirroring` is one thing done because the other half did it.
+let debugTravelling = false, debugFollowing = false, debugMirroring = false;
+// A half of a split begins locked to the other, as the split does: the host
+// says so again when the lock is opened or closed (`pane-lock`). A locked
+// half puts its own deck away and tells the host what was on it, and the
+// host's deck is the one panel for both.
+let debugPaneLocked = true;
+// The other half's name, while the two are locked and seat the same Civ AI.
+// A request that names it is played once for both when the engine finds the
+// two to be the same world (`src/server/panes.rs`), and the answer says
+// whether it was (`debug.twinned`).
+let debugTwin = null, debugTwinned = false;
 
 function debugTimeline() {
   return state && !SPEC && state.debug ? state.debug : null;
@@ -352,12 +421,16 @@ async function debugOp(body, timeoutMs = 20000) {
   try {
     const before = state.turn;
     debugTravelling = DEBUG_TRAVEL_OPS.has(body.op);
+    // What a half does of its own accord it does for its twin as well. What
+    // it does because the other half did is the other half's to have said.
+    const led = DEBUG_PANE !== null && !debugFollowing && !debugMirroring;
     const next = await fetchJSON("/debug", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(body),
+      body: JSON.stringify(led && debugTwin ? {...body, twin: debugTwin} : body),
     }, timeoutMs);
     if (next.error) { debugSay(next.error); return next; }
+    debugTwinned = led && !!(next.debug && next.debug.twinned);
     // Turn 1 walked back to is not a new game: the page's notice for one,
     // which goes by the first turn of a world it has not announced, is told
     // that this world has been.
@@ -369,6 +442,10 @@ async function debugOp(body, timeoutMs = 20000) {
         debugForgetStandingOrders(next.turn);
     }
     render(next);
+    // A turn that moved has been said (`debugPaneReport`). What left the
+    // turn where it was is said here, for a locked other half to do too.
+    if (led && next.turn === before)
+      window.parent.postMessage({civvis: "pane-did", pane: DEBUG_PANE, body, twinned: debugTwinned}, location.origin);
     return next;
   } catch (error) {
     debugSay(`The debugger could not ${body.op}: ${error.message || error}`);
@@ -376,6 +453,27 @@ async function debugOp(body, timeoutMs = 20000) {
   } finally {
     debugBusy = false;
     debugTravelling = false;
+    debugTwinned = false;
+    drawDebugBar();
+  }
+}
+// The engine has already made this half a copy of its twin, which was asked
+// for both: only the page is behind, and reads the world it now holds.
+async function debugRefresh() {
+  if (debugBusy || !debugTimeline()) return;
+  debugBusy = true;
+  try {
+    const before = state.turn;
+    const next = await fetchJSON("/state", {}, 20000);
+    if (!next || next.error) return;
+    soloNoticeSeed = next.seed;
+    sel = null; selCity = null;
+    if (next.turn !== before) debugForgetStandingOrders(next.turn);
+    render(next);
+  } catch (error) {
+    debugSay(`The debugger could not read this half: ${error.message || error}`);
+  } finally {
+    debugBusy = false;
     drawDebugBar();
   }
 }
@@ -697,6 +795,10 @@ function debugBuildBar() {
     <div class="dbg-time">${debugLaneMarkup("", "dbg-slider", "Turn, on the whole game")}${
       debugLaneMarkup("a", "dbg-slider-a", "Turn of simulator A")}${
       debugLaneMarkup("b", "dbg-slider-b", "Turn of simulator B")}
+      <div class="dbg-tie"><button class="dbg-lock" data-dbg-lock aria-pressed="true"><svg viewBox="0 0 16 18" width="15" height="17" aria-hidden="true">
+        <path class="dbg-shackle dbg-shackle-shut" d="M4.5 8.5V5.5a3.5 3.5 0 0 1 7 0v3"/>
+        <path class="dbg-shackle dbg-shackle-open" d="M4.5 8.5V4.5a3.5 3.5 0 0 1 7 0v.5"/>
+        <rect x="2" y="8" width="12" height="9" rx="2" fill="currentColor"/></svg></button></div>
     </div>
     <div class="dbg-deck">
       <div class="dbg-side dbg-left">
@@ -710,7 +812,7 @@ function debugBuildBar() {
           <button data-dbg="autoplay" title="Auto-play: the Civ AI plays the turns picked, and stops early when a breakpoint does. While it plays this counts the turns, and pressing it stops" aria-label="Auto-play"><i id="dbg-run-sign">▶▶</i><span class="dbg-word" id="dbg-run-word">Auto-play</span><span id="dbg-run-count"></span></button>
           <button class="dbg-apart" data-dbg-pop="layers" title="Layers: which decisions the Civ AI takes for you each turn">Layers<span class="dbg-count" id="dbg-layer-count"></span></button>
           <button data-dbg-pop="breaks" title="Breakpoints: what stops Auto-play and a turn played to" aria-label="Breakpoints"><span class="dbg-dot">●</span><span class="dbg-word">Breakpoints</span><span class="dbg-count" id="dbg-break-count"></span></button>
-          <button data-dbg-pop="split" title="Branch Timeline: two simulators from this turn, side by side or stacked, each playing a history of its own, with a Civ AI of its own if you like" aria-label="Branch Timeline"><i>⑂</i><span class="dbg-word">Branch Timeline</span></button>
+          <button data-dbg="split" title="Branch Timeline: two simulators from this turn, side by side. They begin locked on the same turn, with this one panel for both; click the lock between their timelines and each plays a history of its own" aria-label="Branch Timeline"><i>⑂</i><span class="dbg-word">Branch Timeline</span></button>
         </div>
         <span class="dbg-group dbg-nav">
           <button data-dbg="first" title="Turn 1: go to where the timeline begins" aria-label="Go to the first turn"><i class="dbg-sign">⏮</i><span class="dbg-word">Turn 1</span></button>
@@ -753,20 +855,6 @@ function debugBuildBar() {
         <button data-dbg="assist" title="Have the agent take the layers that are on in the turn that is open now">Apply to this turn</button>
       </div>
     </div>
-    <div class="dbg-pop" id="dbg-pop-split" hidden>
-      <h4>Branch Timeline</h4>
-      <p>Two simulators start from this turn, each with the turns behind it. From here each plays its
-        own history. Linked, they stay on the same turn; separate, each keeps its own.</p>
-      <div class="dbg-line">
-        <button data-dbg="split-row" title="A on the left, B on the right">◧ Side by side</button>
-        <button data-dbg="split-col" title="A above, B below">⬒ Top and bottom</button>
-      </div>
-      <p>Head to head seats a Civ AI of its own in each half and sets their numbers side by side,
-        to play two strategies out from this turn.</p>
-      <div class="dbg-line">
-        <button data-dbg="split-versus" title="Side by side, with a Civ AI to pick for each half and their numbers compared">Head to head</button>
-      </div>
-    </div>
     <div class="dbg-pop" id="dbg-pop-saves" hidden>
       <h4>Save points</h4>
       <p>A save point keeps this world to come back to, with the turns behind it, however the game
@@ -777,13 +865,15 @@ function debugBuildBar() {
         <button data-dbg="point" title="Keep the world as it stands now">Save point</button>
       </div>
       <div id="dbg-point-list" style="display:grid;gap:4px"></div>
-      <h4>Saves</h4>
-      <p>A save is the world at one turn, kept on this device. Loading one starts a timeline of its own from there.</p>
-      <div class="dbg-line">
-        <input type="text" data-dbg-field="savename" maxlength="64" placeholder="a name, or leave empty for the turn" aria-label="Save name">
-        <button data-dbg="save" title="Save the turn that is open now">Save this turn</button>
+      <div class="dbg-file-saves" style="display:grid;gap:8px">
+        <h4>Saves</h4>
+        <p>A save is the world at one turn, kept on this device. Loading one starts a timeline of its own from there.</p>
+        <div class="dbg-line">
+          <input type="text" data-dbg-field="savename" maxlength="64" placeholder="a name, or leave empty for the turn" aria-label="Save name">
+          <button data-dbg="save" title="Save the turn that is open now">Save this turn</button>
+        </div>
+        <div id="dbg-save-list" style="display:grid;gap:4px"></div>
       </div>
-      <div id="dbg-save-list" style="display:grid;gap:4px"></div>
     </div>
     <div class="dbg-pop" id="dbg-pop-breaks" hidden>
       <h4>Breakpoints</h4>
@@ -819,12 +909,19 @@ function debugBuildBar() {
   }
 
   bar.addEventListener("click", event => {
+    if (event.target.closest("[data-dbg-lock]")) {
+      if (debugSplit) debugSplitLock(!debugSplit.locked);
+      return;
+    }
     const pop = event.target.closest("[data-dbg-pop]");
     if (pop) {
       debugTogglePop(pop.dataset.dbgPop);
-      if (debugPopOpen === "saves") debugDrawSaves();
+      if (debugPopOpen === "saves" && !debugSplit) debugDrawSaves();
       return;
     }
+    // The deck of a locked split is the one panel for both halves: a press
+    // on it is theirs, not this page's own world's, which waits under them.
+    if (debugSplit) { debugRemote("pane-press", event.target); return; }
     const gone = event.target.closest("[data-dbg-cond-remove]");
     if (gone && debugTimeline()) {
       const request = debugBreakpointsFromForm();
@@ -862,10 +959,9 @@ function debugBuildBar() {
     else if (action === "autoplay") debugAutoPlay();
     else if (action === "save") debugSave();
     else if (action === "point") debugSavePoint();
-    else if (action === "split-row" || action === "split-col" || action === "split-versus") {
-      debugPopOpen = null;
-      debugSplitOpen(action === "split-col" ? "col" : "row", action === "split-versus" ? true : null);
-    }
+    // Side by side, at once: the strip between the halves stacks them
+    // instead, and brings up head to head.
+    else if (action === "split") { debugPopOpen = null; debugSplitOpen("row"); }
     else if (action === "show") { if (debugNotePos) centerOn(debugNotePos); }
     else if (action === "assist") debugOp({op: "assist", strategy: debugStrategy()}, AUTOPLAY_BATCH_TIMEOUT_MS);
     else if (action === "layers-none" || action === "layers-all") {
@@ -899,6 +995,13 @@ function debugBuildBar() {
       debugSay("");
       if (target.dataset.dbgHalf) debugSplitGoTo(target.dataset.dbgHalf, turn);
       else debugGoToTurn(turn);
+    } else if (target.dataset.dbgAgent) {
+      target.blur();
+      debugSplitSeat(target.dataset.dbgAgent, target.value);
+    } else if (debugSplit) {
+      // The one panel of a locked split: what is changed on it is the halves'.
+      if (target.id === "dbg-turn") target.blur();
+      debugRemote("pane-change", target);
     } else if (target.id === "dbg-turn") {
       target.blur();
       debugGoToTurn(target.value);
@@ -908,9 +1011,6 @@ function debugBuildBar() {
       if (page) { page.value = target.value; page.dispatchEvent(new Event("change", {bubbles: true})); }
       target.blur();
       drawDebugBar(false);
-    } else if (target.dataset.dbgAgent) {
-      target.blur();
-      debugSplitSeat(target.dataset.dbgAgent, target.value);
     } else if (target.dataset.dbgLayer) {
       debugOp({op: "layers", layers: debugLayersFromForm()});
     } else if (target.closest("#dbg-pop-breaks")) {
@@ -954,6 +1054,13 @@ function debugBuildBar() {
   // The wheel over the timeline, and the up and down arrows in the turn box,
   // walk the played turns one at a time.
   const walk = forward => {
+    if (debugSplit) {
+      // The one panel of a locked split walks both halves: A is asked, and B follows.
+      const deck = debugSplitDeck();
+      if (deck && deck.idle && (forward ? deck.timeline.can_forward : deck.timeline.can_back))
+        debugSplitTell("a", {civvis: "pane-op", body: {op: forward ? "forward" : "back"}, lead: true});
+      return;
+    }
     const timeline = debugTimeline();
     if (!timeline || debugBusy || autoplaying || turnAdvancePending) return;
     if (!(forward ? timeline.can_forward : timeline.can_back)) return;
@@ -1161,7 +1268,7 @@ function debugDock(bar) {
     debugDockedLeft = left;
     document.documentElement.style.setProperty("--dbg-left", `${left}px`);
   }
-  if (!bar.hidden && !debugSplit) debugFit(bar);
+  if (!bar.hidden && (!debugSplit || bar.classList.contains("dbg-merged"))) debugFit(bar);
   const height = bar.hidden ? 0 : Math.ceil(bar.getBoundingClientRect().height);
   if (height === debugDocked) return;
   debugDocked = height;
@@ -1169,14 +1276,54 @@ function debugDock(bar) {
   document.documentElement.style.setProperty("--dbg-top", `${height}px`);
   window.dispatchEvent(new Event("resize"));
 }
+// What the deck is drawn from: the turn that is open, what the engine says of
+// its timeline, and what this page is doing with it. A page draws its own
+// deck from this. A half of a split that is locked to the other sends it to
+// the host instead (`pane-deck`), whose deck is then the one panel for both.
+function debugDeckNow() {
+  const timeline = debugTimeline();
+  const mine = state.players.find(player => player.id === 0) || {};
+  const layered = timeline.assisted
+    ? `The Civ AI took ${timeline.assisted} decision${timeline.assisted === 1 ? "" : "s"} in its layers this turn` : "";
+  // A round being stepped a seat at a time is not the person's turn, and the
+  // bar says whose it is for as long as nothing newer is being said.
+  const round = timeline.playing
+    ? `${debugPlaysNext(timeline.playing)} · ▸| steps it, 1▶ lets the round finish` : "";
+  return {
+    turn: state.turn,
+    limit: Number.isFinite(state.turn_limit) && state.turn_limit > 0 ? state.turn_limit : null,
+    timeline,
+    idle: !debugBusy && !autoplaying && !turnAdvancePending,
+    running: debugRunning, stopping: debugStopAsked, played: debugPlayed, asked: debugAsked, goal: debugGoal,
+    strategy: debugStrategy() || "",
+    solo: SOLO_UI,
+    eraBack: debugEraBack(timeline),
+    note: debugNoteText || round || layered,
+    show: !!(debugNoteText && debugNotePos),
+    // A condition reads one thing the observation says about one
+    // civilization. The readings on offer are the ones this seat's own entry
+    // has; the engine reads the same entry for any seat, and refuses one it
+    // cannot find.
+    seats: state.players.map(player => ({id: player.id, name: debugSeatName(player.id),
+      major: !player.is_minor && !player.is_barbarian})),
+    readable: Object.keys(mine).filter(key => {
+      const value = mine[key];
+      return typeof value === "number" || typeof value === "boolean" || Array.isArray(value);
+    }).sort(),
+  };
+}
 function drawDebugBar(measure = true) {
   const bar = debugBar || debugBuildBar();
   const timeline = debugTimeline();
   bar.hidden = !timeline;
+  document.documentElement.classList.toggle("dbg-pane-locked", DEBUG_PANE !== null && debugPaneLocked);
   if (!timeline) { debugDock(bar); return; }
   bar.classList.toggle("dbg-split-on", debugSplit !== null);
   bar.classList.toggle("dbg-pane", DEBUG_PANE !== null);
   document.documentElement.classList.toggle("dbg-split-open", debugSplit !== null);
+  const deck = debugSplit ? debugSplitDeck() : debugDeckNow();
+  bar.classList.toggle("dbg-merged", debugSplit !== null && deck !== null);
+  bar.classList.toggle("dbg-locked", debugSplit !== null && debugSplit.locked);
   if (debugSplit) {
     // The host of a split: its own world waits under the two halves, and the
     // bar shows each half's history as a lane, the same colour up to the
@@ -1184,33 +1331,68 @@ function drawDebugBar(measure = true) {
     const panes = debugSplit.panes;
     const played = letter => Math.max(panes[letter].last ?? 0, panes[letter].turn ?? 0, debugSplit.from ?? state.turn);
     const axis = debugAxis(1, Math.max(played("a"), played("b")));
+    // A run asked for on the one panel is the half's own, and the half says
+    // where it is headed.
+    const running = debugSplit.running > 0 || (deck !== null && deck.running);
+    const goal = debugSplit.running > 0 ? debugSplit.until : deck !== null && deck.running ? deck.goal : null;
     debugDrawLane("", null);
     for (const letter of ["a", "b"]) {
       const pane = panes[letter], turn = pane.turn ?? debugSplit.from ?? state.turn;
       debugDrawLane(letter, {name: letter.toUpperCase(), ...axis, first: Math.min(pane.first ?? turn, turn),
         last: played(letter), turn, fork: debugSplit.from, kept: null, turns: null, flags: [], stops: [],
-        goal: debugSplit.running > 0 ? debugSplit.until : null,
-        idle: pane.turn !== null && !debugSplit.busy && debugSplit.running === 0});
+        goal, idle: pane.turn !== null && !debugSplit.busy && !running});
       const agent = debugLanes[letter].agent;
       debugOfferAgents(agent, pane.strategy);
-      agent.disabled = debugSplit.busy || debugSplit.running > 0;
+      agent.disabled = debugSplit.busy || running;
     }
-    if (measure) debugDock(bar);
-    return;
+    // The lock that joins the two lanes. It closes only on two halves that
+    // stand on the same turn, and keeps them there.
+    const together = panes.a.turn !== null && panes.a.turn === panes.b.turn;
+    bar.classList.toggle("dbg-joined", debugSplit.locked && together);
+    const lock = bar.querySelector("[data-dbg-lock]");
+    lock.disabled = debugSplit.busy || running || (!debugSplit.locked && !together);
+    lock.setAttribute("aria-pressed", debugSplit.locked ? "true" : "false");
+    const lockTitle = debugSplit.locked
+      ? "Locked: the two simulators stay on the same turn, and this one panel plays both. Click to unlock them, and each keeps a turn and a panel of its own"
+      : together ? "Unlocked: each simulator keeps its own turn and its own panel. Click to lock them on this turn"
+      : "Unlocked: each simulator keeps its own turn and its own panel. They can be locked when both stand on the same turn";
+    if (lock.title !== lockTitle) { lock.title = lockTitle; lock.setAttribute("aria-label", lockTitle.split(".")[0]); }
+    if (deck === null) { if (measure) debugDock(bar); return; }
+  } else {
+    bar.classList.remove("dbg-joined");
+    // The timeline: the whole game, the turns played on it, the save points
+    // and the breakpoint turns, and where a run is headed.
+    const first = timeline.first ?? state.turn, last = Math.max(timeline.last ?? state.turn, state.turn);
+    const kept = timeline.turns || [], thinned = kept.length < last - first + 1;
+    debugDrawLane("a", null);
+    debugDrawLane("b", null);
+    debugDrawLane("", {name: "", ...debugAxis(first, last), first, last, turn: state.turn, fork: null,
+      kept: thinned ? new Set(kept) : null, turns: thinned ? kept : null,
+      flags: [...(timeline.saves || [])].sort((a, b) => a.turn - b.turn || a.id - b.id), stops: timeline.breakpoints.turns,
+      eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle: deck.idle});
   }
-  const idle = !debugBusy && !autoplaying && !turnAdvancePending;
+  debugDrawDeck(bar, deck);
+  if (DEBUG_PANE !== null) debugPaneDeck(deck);
+  if (measure) debugDock(bar);
+}
+// The deck under the timeline, and the panels that open from it, drawn from
+// one account of a world (`debugDeckNow`): this page's own, or, on the host
+// of a locked split, the one half A sent.
+function debugDrawDeck(bar, deck) {
+  const timeline = deck.timeline;
+  const idle = deck.idle && !(debugSplit && debugSplit.busy);
   const set = (action, enabled) => {
     const button = bar.querySelector(`[data-dbg="${action}"]`);
     if (button) button.disabled = !enabled;
   };
-  const first = timeline.first ?? state.turn, last = Math.max(timeline.last ?? state.turn, state.turn);
+  const first = timeline.first ?? deck.turn, last = Math.max(timeline.last ?? deck.turn, deck.turn);
   set("back", idle && timeline.can_back);
-  set("back10", idle && state.turn > first);
+  set("back10", idle && deck.turn > first);
   set("undo", idle && timeline.can_undo);
-  set("first", idle && state.turn > first);
+  set("first", idle && deck.turn > first);
   set("next", idle);
   set("next10", idle);
-  const eraBack = debugEraBack(timeline);
+  const eraBack = deck.eraBack;
   set("era", idle && eraBack !== null);
   const eraButton = bar.querySelector('[data-dbg="era"]');
   const eraTitle = eraBack
@@ -1222,24 +1404,24 @@ function drawDebugBar(measure = true) {
   set("reveal", idle);
   bar.querySelector('[data-dbg="reveal"]').classList.toggle("on", timeline.reveal === true);
   const soloUi = bar.querySelector('[data-dbg="solo-ui"]');
-  soloUi.classList.toggle("on", SOLO_UI);
-  soloUi.setAttribute("aria-pressed", SOLO_UI ? "true" : "false");
+  soloUi.classList.toggle("on", deck.solo);
+  soloUi.setAttribute("aria-pressed", deck.solo ? "true" : "false");
   set("save", idle);
   set("point", idle);
   set("assist", idle);
   // Auto-play is also the Stop of whatever is being played, and counts its
   // turns: of the turns asked for, or so far when it plays until stopped.
   const run = bar.querySelector('[data-dbg="autoplay"]');
-  run.disabled = !(debugRunning || idle);
-  const runSign = debugRunning ? (debugStopAsked ? "…" : "⏹") : "▶▶";
-  const runCount = !debugRunning ? "" : debugAsked === null ? `${debugPlayed}` : `${debugPlayed}/${debugAsked}`;
-  for (const [id, text] of [["dbg-run-sign", runSign], ["dbg-run-word", debugRunning ? "Stop" : "Auto-play"], ["dbg-run-count", runCount]]) {
+  run.disabled = !(deck.running || idle);
+  const runSign = deck.running ? (deck.stopping ? "…" : "⏹") : "▶▶";
+  const runCount = !deck.running ? "" : deck.asked === null ? `${deck.played}` : `${deck.played}/${deck.asked}`;
+  for (const [id, text] of [["dbg-run-sign", runSign], ["dbg-run-word", deck.running ? "Stop" : "Auto-play"], ["dbg-run-count", runCount]]) {
     const part = document.getElementById(id);
     if (part.textContent !== text) part.textContent = text;
   }
-  run.classList.toggle("on", debugRunning);
+  run.classList.toggle("on", deck.running);
   const agent = document.getElementById("dbg-agent");
-  debugOfferAgents(agent, debugStrategy() || "");
+  debugOfferAgents(agent, deck.strategy);
   agent.disabled = !idle;
   agent.closest(".dbg-field").hidden = agent.options.length === 0;
   document.getElementById("dbg-turns").disabled = !idle;
@@ -1247,20 +1429,12 @@ function drawDebugBar(measure = true) {
   const turnBox = document.getElementById("dbg-turn");
   turnBox.disabled = !idle;
   // A number being typed is left alone, unless the turn moved under it.
-  if (document.activeElement !== turnBox || turnBox.dataset.turn !== String(state.turn)) turnBox.value = state.turn;
-  turnBox.dataset.turn = String(state.turn);
-  const limit = Number.isFinite(state.turn_limit) && state.turn_limit > 0 ? state.turn_limit : null;
-  document.getElementById("dbg-limit").textContent = limit === null ? "" : `/ ${limit}`;
-  // The timeline: the whole game, the turns played on it, the save points and
-  // the breakpoint turns, and where a run is headed.
+  if (document.activeElement !== turnBox || turnBox.dataset.turn !== String(deck.turn)) turnBox.value = deck.turn;
+  turnBox.dataset.turn = String(deck.turn);
+  document.getElementById("dbg-limit").textContent = deck.limit === null ? "" : `/ ${deck.limit}`;
   const points = [...(timeline.saves || [])].sort((a, b) => a.turn - b.turn || a.id - b.id);
   const breaks = timeline.breakpoints;
   const kept = timeline.turns || [], thinned = kept.length < last - first + 1;
-  debugDrawLane("a", null);
-  debugDrawLane("b", null);
-  debugDrawLane("", {name: "", ...debugAxis(first, last), first, last, turn: state.turn, fork: null,
-    kept: thinned ? new Set(kept) : null, turns: thinned ? kept : null, flags: points, stops: breaks.turns,
-    eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle});
   // How much of the game can be gone back to, said by the turn box.
   const played = first === last ? `Turn ${first} is kept`
     : `Turns ${first} to ${last} played, ${thinned ? `${kept.length} kept` : "every one kept"}`;
@@ -1275,7 +1449,8 @@ function drawDebugBar(measure = true) {
     `<button data-dbg-goto="${point.id}" title="Put this world back on the table">Go</button>` +
     `<button data-dbg-drop="${point.id}" title="Remove this save point" aria-label="Remove this save point">×</button></div>`).join("")
     : `<p>No save points yet.</p>`);
-  if (DEBUG_SMALL_DEVICE && idle && timeline.memory_line == null && Date.now() - debugRoomAskedAt > 10000) {
+  // The host of a split asks nothing of its own world, which waits.
+  if (DEBUG_SMALL_DEVICE && !debugSplit && idle && timeline.memory_line == null && Date.now() - debugRoomAskedAt > 10000) {
     debugRoomAskedAt = Date.now();
     debugOp({op: "room", megabytes: 384});
   }
@@ -1286,9 +1461,11 @@ function drawDebugBar(measure = true) {
   const breakCount = breaks.turns.length + breaks.categories.length + breaks.phrases.length +
     conditions.length + (breaks.important ? 1 : 0) + (breaks.eras ? 1 : 0);
   document.getElementById("dbg-break-count").textContent = breakCount ? `${breakCount}` : "";
-  // A pane is already one half of a split, and does not split again.
-  bar.querySelector('[data-dbg-pop="split"]').hidden = DEBUG_PANE !== null;
-  for (const name of ["layers", "breaks", "saves", "split"]) {
+  // A pane is already one half of a split, and a split does not split again.
+  const split = bar.querySelector('[data-dbg="split"]');
+  split.hidden = DEBUG_PANE !== null || debugSplit !== null;
+  split.disabled = !idle;
+  for (const name of ["layers", "breaks", "saves"]) {
     const pop = document.getElementById(`dbg-pop-${name}`), button = bar.querySelector(`[data-dbg-pop="${name}"]`);
     pop.hidden = debugPopOpen !== name;
     button.classList.toggle("on", debugPopOpen === name);
@@ -1320,16 +1497,6 @@ function drawDebugBar(measure = true) {
     box.checked = breaks.categories.includes(box.dataset.dbgCategory);
   const pop = document.getElementById("dbg-pop-breaks");
   const field = name => pop.querySelector(`[data-dbg-field=${name}]`);
-  // A condition reads one thing the observation says about one civilization.
-  // The readings on offer are the ones this seat's own entry has; the engine
-  // reads the same entry for any seat, and refuses one it cannot find.
-  const majors = state.players.filter(player => !player.is_minor && !player.is_barbarian);
-  const civName = player => titleCase(String(player.civ || player.name || `seat ${player.id}`));
-  const mine = state.players.find(player => player.id === 0) || {};
-  const readable = Object.keys(mine).filter(key => {
-    const value = mine[key];
-    return typeof value === "number" || typeof value === "boolean" || Array.isArray(value);
-  }).sort();
   const offer = (name, options) => {
     const select = field(`cond-${name}`), drawn = JSON.stringify(options);
     if (select.dataset.drawn === drawn) return;
@@ -1339,16 +1506,16 @@ function drawDebugBar(measure = true) {
       `<option value="${escapeAttr(String(value))}">${escapeAttr(label)}</option>`).join("");
     if (options.some(([value]) => String(value) === held)) select.value = held;
   };
-  offer("seat", majors.map(player => [player.id, civName(player)]));
-  offer("key", readable.map(key => [key, key.replaceAll("_", " ")]));
+  offer("seat", deck.seats.filter(seat => seat.major).map(seat => [seat.id, seat.name]));
+  offer("key", deck.readable.map(key => [key, key.replaceAll("_", " ")]));
   offer("test", (breaks.known_tests || []).map(test => [test, test]));
   field("cond-value").hidden = field("cond-test").value === "changes";
   const conditionList = document.getElementById("dbg-condition-list");
   const conditionRows = conditions.map((condition, index) => {
-    const who = state.players.find(player => player.id === condition.seat);
+    const who = deck.seats.find(seat => seat.id === condition.seat);
     const line = condition.test === "changes" ? "changes" : `${condition.test} ${condition.value}`;
     return `<div class="dbg-line"><span style="flex:1;width:auto;color:inherit">` +
-      `${escapeAttr(who ? civName(who) : `seat ${condition.seat}`)} · ${escapeAttr(condition.key.replaceAll("_", " "))} ${escapeAttr(line)}</span>` +
+      `${escapeAttr(who ? who.name : `seat ${condition.seat}`)} · ${escapeAttr(condition.key.replaceAll("_", " "))} ${escapeAttr(line)}</span>` +
       `<button data-dbg-cond-remove="${index}" title="Remove this condition" aria-label="Remove this condition">×</button></div>`;
   }).join("");
   if (conditionList.innerHTML !== conditionRows) conditionList.innerHTML = conditionRows;
@@ -1359,17 +1526,9 @@ function drawDebugBar(measure = true) {
   field("eras").checked = breaks.eras === true;
 
   const note = document.getElementById("dbg-note");
-  const layered = timeline.assisted
-    ? `The Civ AI took ${timeline.assisted} decision${timeline.assisted === 1 ? "" : "s"} in its layers this turn` : "";
-  // A round being stepped a seat at a time is not the person's turn, and the
-  // bar says whose it is for as long as nothing newer is being said.
-  const round = timeline.playing
-    ? `${debugPlaysNext(timeline.playing)} · ▸| steps it, 1▶ lets the round finish` : "";
-  const text = debugNoteText || round || layered;
-  const html = escapeAttr(text) +
-    (debugNoteText && debugNotePos ? `<button data-dbg="show" title="Centre the map there">Show</button>` : "");
-  if (note.innerHTML !== html) { note.innerHTML = html; note.title = text; }
-  if (measure) debugDock(bar);
+  const html = escapeAttr(deck.note) +
+    (deck.show ? `<button data-dbg="show" title="Centre the map there">Show</button>` : "");
+  if (note.innerHTML !== html) { note.innerHTML = html; note.title = deck.note; }
 }
 
 // ------------------------------------------------------------------ split
@@ -1381,14 +1540,37 @@ function drawDebugBar(measure = true) {
 // world as it stood when the screen was split, with every turn behind it
 // still there to walk back to, and from there each plays its own history.
 //
-// Linked, the two stay on the same turn: whatever moves one — ending the
-// turn, a step, a walk along the timeline — is repeated in the other the same
-// way. Separate, neither knows about the other. The view can be linked too,
-// so that moving the map in one half moves it in the other.
+// The split opens locked. Locked, the two stay on the same turn: whatever
+// moves one — ending the turn, a step, a walk along the timeline — is
+// repeated in the other the same way, and what one is asked that leaves its
+// turn where it was (a layer, a breakpoint, one action stepped) the other is
+// asked too. A lock joins the two lanes in the host's bar to say so. Clicking
+// it opens it, and then neither half knows about the other. It closes again
+// only on two halves that stand on the same turn. The view can be linked
+// too, so that moving the map in one half moves it in the other.
+//
+// Locked, the two halves are one thing to play, so there is one control
+// panel: the host's deck. Each half puts its own deck away and sends the host
+// what was on it, the host draws its deck from half A's, and a press on the
+// host's deck is passed to A's own deck, which does what it would have done
+// had it been pressed there. B follows. Unlocked, each half shows its own.
+//
+// Two locked halves that are the same world, seated with the same Civ AI,
+// are played once: A names B as its twin in what it asks the engine, the
+// engine makes B a copy of the answer when the two really are the same
+// (`src/server/panes.rs`), and B's page only reads its state.
 //
 // Host and panes talk by `postMessage` on their own origin:
-//   pane → host  pane-turn    the turn it is on, and how it got there
-//   host → pane  pane-follow  go to this turn the same way
+//   pane → host  pane-turn    the turn it is on, how it got there, and whether its twin was played with it
+//   host → pane  pane-follow  go to this turn the same way, or read the state its twin's play left
+//   pane → host  pane-did     what it did that left its turn where it was
+//   host → pane  pane-op      do this too, or (from the host's own deck) do this
+//   host → pane  pane-lock    whether the halves are locked, and who its twin is
+//   pane → host  pane-deck    what is on its deck, while it is put away
+//   host → pane  pane-press   a press on the host's deck, for its own to take
+//   host → pane  pane-change  a field changed on the host's deck
+//   host → pane  pane-solo    which of the two views to show
+//   host → pane  pane-go      go to this turn of its own accord
 //   host → pane  pane-copy    become a copy of the other half
 //   pane → host  pane-camera  where its map is looking
 //   host → pane  pane-look    look there too
@@ -1397,7 +1579,7 @@ function drawDebugBar(measure = true) {
 //
 // The host's bar stays up across the top of the window while the screen is
 // split, and its timeline becomes two lanes, one for each half's history.
-// A lane is the hand on its half, and on both halves while they are linked.
+// A lane is the hand on its half, and on both halves while they are locked.
 
 const DEBUG_SPLIT_STYLE = `
   #debugsplit {
@@ -1519,6 +1701,88 @@ function debugSplitTell(letter, message) {
   const pane = debugSplit ? debugSplit.panes[letter] : null;
   if (pane && pane.frame.contentWindow) pane.frame.contentWindow.postMessage(message, location.origin);
 }
+// What the host's deck is drawn from: half A's account of its own, while the
+// halves are locked and A has given one. Otherwise the host shows no deck.
+function debugSplitDeck() {
+  return debugSplit && debugSplit.locked ? debugSplit.panes.a.deck || null : null;
+}
+// Open or close the lock. It closes only on two halves that stand on the
+// same turn, which is where it then keeps them.
+function debugSplitLock(on) {
+  if (!debugSplit || debugSplit.busy || debugSplit.running > 0) return;
+  const {a, b} = debugSplit.panes;
+  if (on && (a.turn === null || a.turn !== b.turn)) return;
+  debugSplit.locked = on;
+  debugPopOpen = null;
+  // The decks as they stand under the new lock are still to come.
+  a.deck = b.deck = null;
+  debugSplit.settling = on;
+  drawDebugSplit();
+}
+// Each half is told how the split stands whenever that changes: whether the
+// two are locked, and whether the other is its twin. Two locked halves that
+// seat the same Civ AI would be asked the same things; if they are also the
+// same world, which only the engine knows, they are played once.
+function debugSplitSync(again = null) {
+  const {a, b} = debugSplit.panes;
+  const twins = debugSplit.locked && a.strategy !== undefined && a.strategy === b.strategy;
+  const stands = `${debugSplit.locked}:${twins}`;
+  for (const [letter, other] of [["a", b], ["b", a]]) {
+    const pane = debugSplit.panes[letter];
+    if (pane.told === stands && again !== letter) continue;
+    pane.told = stands;
+    debugSplitTell(letter, {civvis: "pane-lock", on: debugSplit.locked, twin: twins ? other.id : null});
+  }
+}
+// Two halves locked after playing apart are made the same in what the one
+// panel shows of them: B takes A's layers, breakpoints and view of the map.
+// Halves that already agree are asked nothing, and stay the same world.
+function debugSplitSettle() {
+  const {a, b} = debugSplit.panes;
+  if (!debugSplit.settling || !a.deck || !b.deck) return;
+  debugSplit.settling = false;
+  const mine = a.deck.timeline, theirs = b.deck.timeline;
+  const differ = (one, other) => JSON.stringify(one) !== JSON.stringify(other);
+  const ask = body => debugSplitTell("b", {civvis: "pane-op", body});
+  if (differ(mine.layers, theirs.layers))
+    ask({op: "layers", layers: mine.layers.filter(layer => layer.on).map(layer => layer.id)});
+  if (mine.reveal !== theirs.reveal) ask({op: "reveal", on: mine.reveal === true});
+  if (differ(mine.breakpoints, theirs.breakpoints)) {
+    const {turns, categories, phrases, important, every_seat, eras, conditions} = mine.breakpoints;
+    ask({op: "breakpoints", turns, categories, phrases, important, every_seat, eras, conditions});
+  }
+}
+// A control on the deck, named so that the same control can be found on
+// another page's deck.
+function debugRemoteKey(element) {
+  if (element.id) return `#${element.id}`;
+  const named = [...element.attributes].find(attribute => attribute.name.startsWith("data-dbg"));
+  return named ? `[${named.name}="${named.value.replace(/["\\]/g, "\\$&")}"]` : null;
+}
+// A press or a change on the host's deck while the halves are locked. It is
+// passed to half A's own deck with the host's fields as they stand, and that
+// deck does what it would have done had it been pressed there. B follows.
+// A press is a button's, and a change is a field's: a box that is ticked is
+// heard once, as the change it makes.
+const DEBUG_REMOTE_FIELDS = "#dbg-turns, [data-dbg-field], [data-dbg-layer], [data-dbg-category]";
+function debugRemote(kind, target) {
+  const held = target instanceof Element ? target.closest(kind === "pane-press"
+    ? "[data-dbg], [data-dbg-goto], [data-dbg-drop], [data-dbg-cond-remove]" : `#dbg-turn, ${DEBUG_REMOTE_FIELDS}`) : null;
+  if (!held || held.disabled || !debugSplitDeck() || debugSplit.busy) return;
+  const key = debugRemoteKey(held);
+  // Which view a page shows is the page's own: each half is told.
+  if (key === '[data-dbg="solo-ui"]') {
+    for (const letter of ["a", "b"]) debugSplitTell(letter, {civvis: "pane-solo", on: !debugSplitDeck().solo});
+    return;
+  }
+  const fields = [...new Set([held, ...debugBar.querySelectorAll(DEBUG_REMOTE_FIELDS)])]
+    .filter(field => field.matches("input, select"))
+    .map(field => field.type === "checkbox" ? {key: debugRemoteKey(field), checked: field.checked}
+      : {key: debugRemoteKey(field), value: field.value});
+  debugSplitTell("a", {civvis: kind, key, fields});
+  // A save point's name has been sent with the press that used it.
+  if (key === '[data-dbg="point"]') debugBar.querySelector("[data-dbg-field=pointname]").value = "";
+}
 function drawDebugSplit() {
   if (!debugSplit) return;
   const host = debugSplit.host;
@@ -1530,12 +1794,7 @@ function drawDebugSplit() {
     host.querySelector(`[data-dbg-name="${letter}"]`).textContent =
       `${letter.toUpperCase()}${turn === null ? "" : ` · ${turn}`}`;
   }
-  const link = host.querySelector('[data-dbg-split="link"]');
-  link.classList.toggle("on", debugSplit.linked);
-  link.textContent = debugSplit.linked ? "Linked" : "Separate";
-  link.title = debugSplit.linked
-    ? "Linked: both simulators stay on the same turn. Click to let each keep its own."
-    : "Separate: each simulator keeps its own turn. Click to keep them on the same turn.";
+  debugSplitSync();
   const view = host.querySelector('[data-dbg-split="view"]');
   view.classList.toggle("on", debugSplit.view);
   view.title = debugSplit.view
@@ -1543,7 +1802,8 @@ function drawDebugSplit() {
     : "Each map looks where it likes. Click to move the two together.";
   host.querySelector('[data-dbg-split="flip"]').textContent = debugSplit.dir === "col" ? "◧" : "⬒";
   for (const button of host.querySelectorAll("[data-dbg-split]")) button.disabled = debugSplit.busy;
-  // The two lanes in the bar are drawn from the same record.
+  // The two lanes in the bar, and the lock that joins them, are drawn from
+  // the same record.
   drawDebugBar();
   host.classList.toggle("dbg-versus-on", debugSplit.versus);
   host.querySelector('[data-dbg-split="versus"]').classList.toggle("on", debugSplit.versus);
@@ -1591,7 +1851,6 @@ function debugSplitOpen(dir, versus = null) {
       <button data-dbg-split="copy-a" title="Make B a copy of A as it stands now, turns behind it included">A → B</button>
       <button data-dbg-split="keep-a" title="Close the split and keep playing A, with every turn it can walk back to">Keep A</button>
       <span class="dbg-gap"></span>
-      <button data-dbg-split="link"></button>
       <button data-dbg-split="view">View</button>
       <button data-dbg-split="flip" title="Switch between side by side and top and bottom"></button>
       <button data-dbg-split="versus" title="Head to head: seat a Civ AI of its own in each half, play both and set their numbers side by side">VS</button>
@@ -1614,12 +1873,13 @@ function debugSplitOpen(dir, versus = null) {
     <iframe data-dbg-frame="b" title="Simulator B"></iframe>`;
   let remembered = false;
   try { remembered = localStorage.getItem("civvis-debug-versus") === "1"; } catch (_) {}
-  debugSplit = {dir, linked: true, view: true, share: .5, busy: false, panes: {}, host,
+  debugSplit = {dir, locked: true, settling: true, view: true, share: .5, busy: false, panes: {}, host,
     versus: versus ?? remembered, running: 0, until: null, chart: "score", history: {a: new Map(), b: new Map()},
     from: state ? state.turn : null};
   for (const letter of ["a", "b"]) {
     const frame = host.querySelector(`[data-dbg-frame="${letter}"]`);
-    debugSplit.panes[letter] = {frame, id: `${letter}-${nonce}`, turn: null, first: null, last: null};
+    debugSplit.panes[letter] = {frame, id: `${letter}-${nonce}`, turn: null, first: null, last: null,
+      deck: null, told: null};
   }
   host.addEventListener("click", event => {
     const stat = event.target.closest("[data-dbg-stat]");
@@ -1627,13 +1887,7 @@ function debugSplitOpen(dir, versus = null) {
     const button = event.target.closest("[data-dbg-split]");
     if (!button || button.disabled || !debugSplit) return;
     const action = button.dataset.dbgSplit;
-    if (action === "link") {
-      debugSplit.linked = !debugSplit.linked;
-      // Linking two simulators that have drifted brings B to A's turn.
-      const a = debugSplit.panes.a.turn;
-      if (debugSplit.linked && a !== null && a !== debugSplit.panes.b.turn)
-        debugSplitTell("b", {civvis: "pane-follow", turn: a, how: "end"});
-    } else if (action === "view") debugSplit.view = !debugSplit.view;
+    if (action === "view") debugSplit.view = !debugSplit.view;
     else if (action === "flip") debugSplit.dir = debugSplit.dir === "col" ? "row" : "col";
     else if (action === "copy-a" || action === "copy-b") {
       // A copy is the other half's whole history, and so is its line in the chart.
@@ -1648,7 +1902,7 @@ function debugSplitOpen(dir, versus = null) {
       try { localStorage.setItem("civvis-debug-versus", debugSplit.versus ? "1" : "0"); } catch (_) {}
     } else if (action === "versus-run") debugVersusRun();
     else if (action === "versus-back") {
-      // Each half is told by name, so it makes no difference whether they are linked.
+      // Each half is told by name, so it makes no difference whether they are locked.
       for (const letter of ["a", "b"])
         if (debugSplit.panes[letter].turn !== debugSplit.from)
           debugSplitTell(letter, {civvis: "pane-follow", turn: debugSplit.from, how: "travel"});
@@ -1711,8 +1965,8 @@ function debugSplitRun(until, runners) {
   debugSplit.running = runners.length;
   for (const letter of runners) debugSplitTell(letter, {civvis: "pane-run", until});
 }
-// Play both halves to a turn. Linked, A is run and B follows it turn by
-// turn; separate, each is run by itself. The same button stops them.
+// Play both halves to a turn. Locked, A is run and B follows it turn by
+// turn; unlocked, each is run by itself. The same button stops them.
 function debugVersusRun() {
   if (!debugSplit || debugSplit.busy) return;
   if (debugSplit.running > 0) {
@@ -1725,20 +1979,27 @@ function debugVersusRun() {
   const until = parseInt(box.value || box.placeholder, 10);
   const reached = Math.max(debugSplit.panes.a.turn ?? 0, debugSplit.panes.b.turn ?? 0);
   if (!Number.isFinite(until) || until <= reached) { box.value = ""; box.focus(); return; }
-  debugSplitRun(until, debugSplit.linked ? ["a"] : ["a", "b"]);
+  debugSplitRun(until, debugSplit.locked ? ["a"] : ["a", "b"]);
 }
-// A lane of the split's timeline, let go of on a turn. Linked, both halves
-// go; separate, only the half whose lane it is. A turn every one of them has
+// A lane of the split's timeline, let go of on a turn. Locked, both halves
+// go; unlocked, only the half whose lane it is. A turn every one of them has
 // played is walked to as it stood, and a turn ahead of any is played to.
+// Locked, the half whose lane it is goes of its own accord and the other
+// follows it, so two halves that are one world are walked as one.
 function debugSplitGoTo(letter, text) {
   const turn = parseInt(text, 10);
   if (!debugSplit || debugSplit.busy || debugSplit.running > 0 || !Number.isFinite(turn)) { drawDebugSplit(); return; }
-  const letters = debugSplit.linked ? ["a", "b"] : [letter];
+  const letters = debugSplit.locked ? ["a", "b"] : [letter];
   const played = name => Math.max(debugSplit.panes[name].last ?? 0, debugSplit.panes[name].turn ?? 0);
-  if (letters.some(name => turn > played(name))) debugSplitRun(turn, debugSplit.linked ? ["a"] : [letter]);
-  else for (const name of letters)
-    if (debugSplit.panes[name].turn !== turn) debugSplitTell(name, {civvis: "pane-follow", turn, how: "travel"});
+  if (letters.some(name => turn > played(name))) debugSplitRun(turn, debugSplit.locked ? ["a"] : [letter]);
+  else if (debugSplit.panes[letter].turn !== turn)
+    debugSplitTell(letter, debugSplit.locked ? {civvis: "pane-go", turn} : {civvis: "pane-follow", turn, how: "travel"});
   drawDebugSplit();
+}
+// What a half did that left its turn where it was, as the other half is
+// asked to do it. A walk that ended on the same turn went to the top of it.
+function debugMirrored(body) {
+  return ["back", "forward", "jump", "restart"].includes(body.op) ? {op: "restart"} : body;
 }
 // The screen is whole again, playing the half that was kept: its session
 // takes the host's place in the engine, so nothing it could walk back to is lost.
@@ -1771,10 +2032,22 @@ window.addEventListener("message", event => {
   const other = letter === "a" ? "b" : "a";
   if (data.civvis === "pane-turn") {
     debugSplit.panes[letter].turn = data.turn;
+    // A half that has just loaded is told how the split stands.
+    if (data.how === "boot") debugSplitSync(letter);
     drawDebugSplit();
-    // A pane that moved because it was following is not followed back.
-    if (debugSplit.linked && data.how !== "follow" && data.how !== "boot")
-      debugSplitTell(other, {civvis: "pane-follow", turn: data.turn, how: data.how});
+    // A pane that moved because it was following is not followed back. A
+    // twin that was played with it has only its state to read.
+    if (debugSplit.locked && data.how !== "follow" && data.how !== "boot")
+      debugSplitTell(other, {civvis: "pane-follow", turn: data.turn, how: data.twinned ? "twin" : data.how});
+  } else if (data.civvis === "pane-did") {
+    // What one locked half did without its turn moving, the other does too.
+    if (!debugSplit.locked || !data.body) return;
+    if (data.twinned) debugSplitTell(other, {civvis: "pane-follow", turn: debugSplit.panes[letter].turn, how: "twin"});
+    else debugSplitTell(other, {civvis: "pane-op", body: debugMirrored(data.body)});
+  } else if (data.civvis === "pane-deck") {
+    debugSplit.panes[letter].deck = data.deck;
+    debugSplitSettle();
+    drawDebugBar();
   } else if (data.civvis === "pane-camera") {
     if (debugSplit.view) debugSplitTell(other, {civvis: "pane-look", view: data.view});
   } else if (data.civvis === "pane-numbers") {
@@ -1808,9 +2081,32 @@ function debugPaneReport() {
   debugPaneTurn = state.turn;
   // The command deck is the host's to show; half a window has no room for it.
   if (first) togglePanel(true, false);
-  const how = first ? "boot" : debugFollowing ? "follow" : debugTravelling ? "travel"
+  const how = first ? "boot" : debugFollowing || debugMirroring ? "follow" : debugTravelling ? "travel"
     : autoplaying ? "step" : "end";
-  window.parent.postMessage({civvis: "pane-turn", pane: DEBUG_PANE, turn: state.turn, how}, location.origin);
+  window.parent.postMessage({civvis: "pane-turn", pane: DEBUG_PANE, turn: state.turn, how, twinned: debugTwinned},
+    location.origin);
+}
+// What is on this half's deck, for the host to draw the one panel of a
+// locked split from. Said when it changes, and only while this half's own
+// deck is put away.
+let debugDeckSaid = "";
+function debugPaneDeck(deck) {
+  if (!debugPaneLocked) return;
+  const said = JSON.stringify(deck);
+  if (said === debugDeckSaid) return;
+  debugDeckSaid = said;
+  window.parent.postMessage({civvis: "pane-deck", pane: DEBUG_PANE, deck}, location.origin);
+}
+// What the host tells a half to do after the other is done one thing at a
+// time, in the order it was told, and not while the half is in the middle of
+// something else.
+let debugTold = Promise.resolve();
+function debugInTurn(work) {
+  debugTold = debugTold.then(async () => {
+    for (let waited = 0; waited < 1200 && (debugBusy || turnAdvancePending); waited++)
+      await new Promise(next => setTimeout(next, 25));
+    await work();
+  }).catch(error => console.error("debugger split", error));
 }
 // What this half says about its seat, for the host to set beside the other's.
 let debugNumbersSaid = "";
@@ -1837,6 +2133,12 @@ async function debugFollow(turn, how) {
   try {
     for (let guard = 0; guard < 1000 && debugFollowWanted; guard++) {
       const wanted = debugFollowWanted;
+      if (wanted.how === "twin") {
+        // The engine made this half a copy of the other as it answered it.
+        await debugRefresh();
+        if (debugFollowWanted === wanted) debugFollowWanted = null;
+        continue;
+      }
       if (!debugTimeline() || state.turn === wanted.turn || gameFinished(state)) {
         if (debugFollowWanted === wanted) debugFollowWanted = null;
         continue;
@@ -1877,7 +2179,37 @@ if (DEBUG_PANE !== null) {
     if (event.source !== window.parent || event.origin !== location.origin) return;
     const data = event.data;
     if (!data || typeof data.civvis !== "string") return;
-    if (data.civvis === "pane-follow") debugFollow(data.turn, data.how);
+    if (data.civvis === "pane-follow") debugInTurn(() => debugFollow(data.turn, data.how));
+    else if (data.civvis === "pane-lock") {
+      debugPaneLocked = data.on === true;
+      debugTwin = typeof data.twin === "string" ? data.twin : null;
+      debugDeckSaid = "";
+      drawDebugBar();
+    } else if (data.civvis === "pane-press" || data.civvis === "pane-change") {
+      // The host's deck, pressed or changed while the halves are locked.
+      // This half's own deck takes it, with the host's fields as they stood.
+      if (!debugBar || typeof data.key !== "string") return;
+      for (const field of data.fields || []) {
+        const held = field.key ? debugBar.querySelector(field.key) : null;
+        if (!held) continue;
+        if (field.checked === undefined) held.value = field.value; else held.checked = field.checked;
+      }
+      const held = debugBar.querySelector(data.key);
+      if (!held || held.disabled) return;
+      if (data.civvis === "pane-press") held.click();
+      else held.dispatchEvent(new Event("change", {bubbles: true}));
+    } else if (data.civvis === "pane-op" && data.body) {
+      // Asked from the host's own deck, this is this half's to do and to
+      // say. Otherwise it is what the other half did, done here too with
+      // this half's own Civ AI, and not a move of its own to be followed.
+      const body = "strategy" in data.body ? {...data.body, strategy: debugStrategy()} : data.body;
+      if (data.lead === true) { debugSay(""); debugOp(body, AUTOPLAY_BATCH_TIMEOUT_MS); }
+      else debugInTurn(async () => {
+        debugMirroring = true;
+        try { await debugOp(body, AUTOPLAY_BATCH_TIMEOUT_MS); } finally { debugMirroring = false; }
+      });
+    } else if (data.civvis === "pane-solo") setSoloUi(data.on === true);
+    else if (data.civvis === "pane-go") { debugSay(""); debugGoToTurn(String(data.turn)); }
     else if (data.civvis === "pane-look") debugCameraLook(data.view);
     else if (data.civvis === "pane-strategy") {
       const select = document.getElementById("autoplaystrategy");
@@ -1893,13 +2225,15 @@ if (DEBUG_PANE !== null) {
     }
     else if (data.civvis === "pane-copy") {
       // A copy is not a move of this half's own, so the other is not told to follow it.
-      debugFollowing = true;
-      try {
-        const next = await debugOp({op: "copy", from: data.from}, 60000);
-        if (next && !next.error) debugSay("Copied from the other simulator");
-      } finally {
-        debugFollowing = false;
-      }
+      debugInTurn(async () => {
+        debugMirroring = true;
+        try {
+          const next = await debugOp({op: "copy", from: data.from}, 60000);
+          if (next && !next.error) debugSay("Copied from the other simulator");
+        } finally {
+          debugMirroring = false;
+        }
+      });
     }
   });
   setInterval(() => {
@@ -1945,6 +2279,12 @@ if (DEBUG_PANE !== null) {
 window.addEventListener("keydown", event => {
   if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "z") return;
   if (event.target instanceof HTMLElement && event.target.matches("input, textarea, select")) return;
+  // Under a split this page's own world waits: the key is the halves', through the one panel.
+  if (debugSplit) {
+    const deck = debugSplitDeck();
+    if (deck && deck.timeline.can_undo) { event.preventDefault(); debugRemote("pane-press", debugBar.querySelector('[data-dbg="undo"]')); }
+    return;
+  }
   const timeline = debugTimeline();
   if (!timeline || !timeline.can_undo || autoplaying) return;
   event.preventDefault();
