@@ -3336,6 +3336,7 @@ impl Session {
             if self.game.is_finished() || !self.game.players[0].alive {
                 break;
             }
+            let turn = self.game.turn;
             self.ais[0].take_turn(&mut self.game, 0);
             if self.game.current == 0 && !self.game.is_finished() {
                 let _ = self.game.apply(0, &Action::EndTurn);
@@ -3356,8 +3357,10 @@ impl Session {
             }
             played += 1;
             // The agent played the whole turn, so the one it opens is marked
-            // and the layers are not asked: there is no person to leave it to.
+            // as its work, and the layers are not asked: there is no person
+            // to leave it to.
             self.debugger_turn_opened(false);
+            self.debugger_agent_played(turn);
         }
         played
     }

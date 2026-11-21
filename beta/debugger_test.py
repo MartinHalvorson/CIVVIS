@@ -66,6 +66,9 @@ body { display: flex; }
 let state = null, sel = null, selCity = null;
 let SPEC = false, autoplaying = false, turnAdvancePending = false;
 const AUTOPLAY_BATCH_TIMEOUT_MS = 60000;
+// The roster the viewer reads the Civ AIs' names from, and where it keeps its choice.
+const RULES = {strategies: [{name: "jack", username: "Jack"}, {name: "stock", username: "Stock"}]};
+const AUTOPLAY_STRATEGY_KEY = "civvis-autoplay-strategy-v1";
 const unitOrders = new Map(), cityQueues = new Map();
 let noticeLog = [], noticeDismissed = new Set(), noticeSeenTurn = 0;
 let cam = {x: 0, y: 0, scale: 1, rot: 0, tilt: 0}, SKY_PAN = {x: 0, y: 0};
@@ -100,8 +103,10 @@ window.requestAnimationFrame = drawn => setTimeout(drawn, 0);
 
 // ---- a toy engine: one line of turns, each kept
 // `eras` is the first turn of each era the game has been through, and
-// `eraAt` a turn on which the next one begins.
+// `eraAt` a turn on which the next one begins. `seat` is the Civ AI last
+// named for the seat, and `by` the one whose play opened each turn.
 const engine = {turn: 1, marks: [1], saves: [], ids: 0, breaks: [], line: null, stopped: null, score: 0,
+  seat: null, by: {},
   current: 0, stepped: null, acted: 0, reveal: false, layers: [], wait: 0,
   eras: [{era: 0, name: "ancient", turn: 1}], eraAt: null,
   watch: {categories: [], phrases: [], important: false, every_seat: false, conditions: [], eras: false}, sent: []};
@@ -121,14 +126,25 @@ function worldOf(held) {
   const {sent, wait, ...world} = JSON.parse(JSON.stringify(held));
   return world;
 }
+// The seat's line, as the engine keeps it: every kept turn up to the open
+// one, and the turns ahead for as long as the Civ AI seated played them.
+function engineLine() {
+  const kept = engine.marks;
+  let held = kept.filter(turn => turn <= engine.turn).length;
+  const others = turn => engine.seat !== null && !!engine.by[turn] && engine.by[turn] !== engine.seat;
+  while (held < kept.length && !others(kept[held])) held += 1;
+  return kept.slice(0, held);
+}
 function engineState(error = null) {
-  const marks = engine.marks;
+  const marks = engineLine(), kept = engine.marks;
   return {error, turn: engine.turn, seed: 7, current: engine.current, units: [], cities: [],
     ...(engine.limit ? {turn_limit: engine.limit} : {}),
     players: [{id: 0, civ: "rome", score: engine.score, cities: 1, population: 1, military: 1,
       yields: {science: 1, culture: 1, gold: 1, faith: 0}},
       {id: 1, civ: "greece"}, {id: 2, civ: "barbarians", is_barbarian: true}],
     debug: {turn: engine.turn, turns: [...marks], first: marks[0], last: marks[marks.length - 1],
+      seat: engine.seat, beyond: marks.length < kept.length
+        ? {from: kept[marks.length], to: kept[kept.length - 1], by: engine.by[kept[marks.length]] || null} : null,
       acted: engine.acted, can_undo: engine.acted > 0 && engine.current === 0,
       can_back: engine.acted > 0 || engine.turn > marks[0], can_forward: engine.turn < marks[marks.length - 1],
       breakpoints: {turns: [...engine.breaks], ...JSON.parse(JSON.stringify(engine.watch)),
@@ -156,15 +172,25 @@ async function fetchJSON(path, init = {}) {
   const alike = twin !== null && JSON.stringify(worldOf(engine)) === JSON.stringify(worldOf(twin));
   engine.stopped = null;
   engine.stepped = null;
+  // A request that names a Civ AI seats it, whatever else it asks.
+  if (body.strategy) engine.seat = body.strategy;
+  // A turn that opens is whoever's play opened it, and the turns that were
+  // ahead of it are gone.
+  const played = by => {
+    engine.marks = engine.marks.filter(turn => turn < engine.turn).concat(engine.turn);
+    engine.by = Object.fromEntries(Object.entries(engine.by).filter(([turn]) => +turn < engine.turn));
+    if (by) engine.by[engine.turn] = by;
+  };
   // The round comes back to the played seat, and that is the next turn.
   const opens = () => {
     engine.current = 0;
     engine.turn += 1;
-    engine.marks = engine.marks.filter(turn => turn < engine.turn).concat(engine.turn);
+    played(null);
   };
   // Anything that plays, in the middle of a round, lets the round finish first.
   if (engine.current !== 0 && (body.op === "step" || body.op === "finish_round")) opens();
-  const marks = engine.marks, at = marks.indexOf(engine.turn);
+  const marks = engineLine(), at = marks.indexOf(engine.turn);
+  const others = engine.marks[marks.length];
   let error = null;
   if (body.op === "step_seat") {
     const seat = engine.current, next = (seat + 1) % SEATS;
@@ -177,7 +203,7 @@ async function fetchJSON(path, init = {}) {
     engine.turn += 1;
     // Which Civ AI plays the seat is the one thing that tells two halves apart.
     engine.score += body.strategy === "stock" ? 2 : 1;
-    engine.marks = marks.filter(turn => turn < engine.turn).concat(engine.turn);
+    played(engine.seat);
     // A turn played again is played into whatever era the game was in.
     engine.eras = engine.eras.filter(era => era.turn < engine.turn);
     const dawn = engine.turn === engine.eraAt;
@@ -186,11 +212,13 @@ async function fetchJSON(path, init = {}) {
     else if (dawn && engine.watch.eras) engine.stopped = {kind: "era", turn: engine.turn, era: engine.eras.length - 1};
   } else if (body.op === "jump") {
     const reached = marks.filter(turn => turn <= body.turn).pop();
-    if (reached === undefined) error = "before this timeline begins"; else engine.turn = reached;
+    if (others !== undefined && others <= body.turn) error = `turn ${others} was played by another Civ AI`;
+    else if (reached === undefined) error = "before this timeline begins"; else engine.turn = reached;
   } else if (body.op === "back") {
     if (at > 0) engine.turn = marks[at - 1]; else error = "this is where the timeline begins";
   } else if (body.op === "forward") {
-    if (at < marks.length - 1) engine.turn = marks[at + 1]; else error = "nothing has been played past this turn";
+    if (at < marks.length - 1) engine.turn = marks[at + 1];
+    else error = others === undefined ? "nothing has been played past this turn" : `turn ${others} was played by another Civ AI`;
   } else if (body.op === "save_point") {
     engine.ids += 1;
     engine.saves.push({id: engine.ids, name: body.name || `Turn ${engine.turn}`, auto: false, turn: engine.turn, acted: 0});
@@ -937,11 +965,124 @@ def check_stepping_a_seat(bar: Bar) -> None:
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
+def check_a_picked_civ_ai_plays_its_own_turns(bar: Bar) -> None:
+    """Walked back and handed to another Civ AI, the seat goes forward by playing.
+
+    Why this exists: on 2026-11-21 the operator walked a game back, picked
+    another Civ AI and went on, and saw the turns recorded under the first
+    one come back. The turn buttons, the turn box and the timeline all walk
+    turns already played, and whose turns they were was not asked.
+    """
+    agent = "document.getElementById('dbg-agent')"
+    beyond_shown = f"!document.querySelector('{LANE} .dbg-beyond').hidden"
+
+    def seat(name: str) -> None:
+        bar.forget()
+        bar.ev(f"(() => {{ const select = {agent}; select.value = '{name}';"
+               " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+        bar.idle(f"engine.seat === '{name}'", f"{name} is said to the engine when it is picked")
+        # The pick is said at once, and nothing is played by saying it.
+        assert bar.sent() == [{"op": "status", "strategy": name}], bar.sent()
+
+    bar.type_turn(bar.ev("Math.max(...state.debug.turns)"))
+    bar.idle("state.turn === state.debug.last && !state.debug.beyond", "the last turn played is open")
+    seat("jack")
+    assert bar.ev("localStorage.getItem(AUTOPLAY_STRATEGY_KEY)") == "jack", "the pick is the page's choice"
+    start = bar.ev("state.turn")
+    bar.ev("document.getElementById('dbg-turns').value = '5', true")
+    bar.click('[data-dbg="autoplay"]')
+    bar.idle(f"state.turn === {start + 5}", "Jack plays five turns")
+
+    # Walked back under the Civ AI that played them, the turns ahead are this
+    # timeline's: the turn button walks to the next one.
+    bar.drag("dbg-slider", start + 1)
+    bar.idle(f"state.turn === {start + 1}", "the timeline is walked back")
+    assert bar.ev("[state.debug.last, state.debug.beyond]") == [start + 5, None]
+    assert not bar.ev(beyond_shown)
+    bar.forget()
+    bar.click('[data-dbg="next"]')
+    bar.idle(f"state.turn === {start + 2}", "a turn Jack played is walked to while Jack is picked")
+    assert bar.sent() == [{"op": "forward"}], bar.sent()
+    bar.click('[data-dbg="back"]')
+    bar.idle(f"state.turn === {start + 1}", "one turn back")
+
+    # Another Civ AI is picked there. The turns ahead are Jack's game: the
+    # timeline's played part ends on the open turn, the kept turns past it
+    # are drawn apart, and the box says whose they are.
+    seat("stock")
+    assert bar.ev("[state.debug.last, state.debug.can_forward, state.debug.beyond]") == \
+        [start + 1, False, {"from": start + 2, "to": start + 5, "by": "jack"}]
+    assert bar.ev(beyond_shown), "the turns another Civ AI played are not drawn on the lane"
+    said = f"Stock plays on from here · turns {start + 2} to {start + 5} are by Jack"
+    assert bar.note() == said, bar.note()
+    words = bar.ev(f"debugTurnWords(debugLaneModels[''], {start + 3})")
+    assert words == f"Turn {start + 3} · play to here, over the turns Jack played", words
+    # The wheel walks played turns only, and there is none ahead to walk.
+    bar.forget()
+    bar.wheel(LANE, 100)
+    time.sleep(0.2)
+    assert bar.sent() == [] and bar.ev("state.turn") == start + 1, bar.sent()
+
+    # Picked again before anything is played, Jack's turns are the timeline again.
+    seat("jack")
+    assert bar.ev("[state.debug.last, state.debug.beyond]") == [start + 5, None]
+    assert not bar.ev(beyond_shown) and bar.note() == "", bar.note()
+    seat("stock")
+
+    # Every way forward now plays, with the Civ AI that is picked: the turn
+    # button, ten at once, the turn box and the timeline itself.
+    bar.forget()
+    bar.click('[data-dbg="next"]')
+    bar.idle(f"state.turn === {start + 2}", "1 on plays a turn with the Civ AI picked")
+    assert bar.sent() == [{"op": "step", "strategy": "stock"}], bar.sent()
+    assert bar.ev("[state.debug.last, state.debug.beyond]") == [start + 2, None], "Jack's turns are played over"
+    assert not bar.ev(beyond_shown)
+
+    def played_from(turn: int, forward, goal: int, why: str) -> None:
+        """Jack plays `start` to `start + 5` again, the world is walked back, Stock is picked and `forward` is done."""
+        seat("jack")
+        bar.drag("dbg-slider", start)
+        bar.idle(f"state.turn === {start}", "back to where Jack began")
+        bar.type_turn(start + 5)
+        bar.idle(f"state.turn === {start + 5}", "Jack plays its five turns again")
+        assert bar.ev("Object.values(engine.by).slice(-5)") == ["jack"] * 5
+        bar.drag("dbg-slider", turn)
+        bar.idle(f"state.turn === {turn}", "the timeline is walked back")
+        seat("stock")
+        bar.forget()
+        forward()
+        bar.idle(f"state.turn === {goal}", why)
+        sent = bar.sent()
+        assert sent == [{"op": "step", "strategy": "stock"}] * (goal - turn), sent
+
+    played_from(start + 1, lambda: bar.click('[data-dbg="next10"]'), start + 11, "10 on plays ten turns")
+    played_from(start + 2, lambda: bar.type_turn(start + 4), start + 4, "the turn box plays to a turn Jack had played")
+    played_from(start + 2, lambda: bar.drag("dbg-slider", start + 5), start + 5, "the timeline plays to a turn Jack had played")
+    played_from(start + 1, lambda: bar.click('[data-dbg="autoplay"]'), start + 6, "Auto-play plays the turns picked")
+
+    # The Civ AI picked before the walk back, and not after it, changes nothing:
+    # the turns ahead are still another agent's.
+    seat("jack")
+    bar.drag("dbg-slider", start + 3)
+    bar.idle(f"state.turn === {start + 3} && !!state.debug.beyond", "walked back onto turns Stock played")
+    assert bar.ev("state.debug.beyond") == {"from": start + 4, "to": start + 6, "by": "stock"}
+    bar.forget()
+    bar.click('[data-dbg="next"]')
+    bar.idle(f"state.turn === {start + 4}", "1 on plays")
+    assert bar.sent() == [{"op": "step", "strategy": "jack"}], bar.sent()
+    bar.ev("document.getElementById('dbg-turns').value = '1', true")
+
+
 def check_the_split(bar: Bar) -> None:
     """Head to head: two halves, a Civ AI each, played to a turn and compared."""
     half = "debugSplit.panes.{}.frame.contentWindow.eval({})".format
+    # What a half was asked to play or walk. Being told which Civ AI holds its
+    # seat is asked of the engine too (`status`), and is looked at by itself.
     ops = lambda letter: bar.ev(half(letter, json.dumps(
-        "engine.sent.filter(call => call.path === '/debug').map(call => [call.body.op, call.body.strategy])")))
+        "engine.sent.filter(call => call.path === '/debug' && call.body.op !== 'status')"
+        ".map(call => [call.body.op, call.body.strategy])")))
+    seated = lambda letter: bar.ev(half(letter, json.dumps(
+        "engine.sent.filter(call => call.path === '/debug' && call.body.op === 'status').map(call => call.body.strategy)")))
     reported = ("debugSplit && ['a', 'b'].every(letter => debugSplit.panes[letter].turn === {} "
                 "&& debugSplit.panes[letter].numbers)").format
 
@@ -995,6 +1136,11 @@ def check_the_split(bar: Bar) -> None:
                " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
         bar.until(half("a", "'debugStrategy()'") + f" === '{name}'", f"A is seated with {name} from its lane")
         assert bar.ev(f"debugSplit.host.querySelector('[data-dbg-strategy=\"a\"]').value") == name
+    # A half says the Civ AI it was given to its engine when it is given it,
+    # and not first at the next step: its timeline is that agent's from then.
+    bar.until(half("a", "'engine.seat'") + " === 'jack' && " + half("b", "'engine.seat'") + " === 'stock'",
+              "each half's engine is told which Civ AI holds its seat")
+    assert (seated("a"), seated("b")) == (["stock", "jack"], ["stock"]), (seated("a"), seated("b"))
 
     # Locked: A is run to the turn and B follows it turn by turn, each with
     # its own Civ AI on every step.
@@ -1095,6 +1241,10 @@ def check_the_split(bar: Bar) -> None:
     assert bar.sent() == [{"op": "adopt", "pane": kept}], bar.sent()
     assert bar.ev("state.turn") == start + 10
     assert bar.note() == "Playing on from simulator B", bar.note()
+    # The half that is kept keeps its Civ AI: the seat is still that agent's,
+    # the box says so, and it is the page's choice from here.
+    assert bar.ev("[document.getElementById('autoplaystrategy').value, document.getElementById('dbg-agent').value,"
+                  " localStorage.getItem(AUTOPLAY_STRATEGY_KEY)]") == ["stock"] * 3
     # The screen is whole again and the bar is the world's own.
     assert (shown(""), shown("a"), shown("b")) == (True, False, False)
     assert bar.ev("getComputedStyle(document.querySelector('#debugbar .dbg-deck')).display") != "none"
@@ -1136,10 +1286,15 @@ def check_the_lock(bar: Bar) -> None:
                " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
         bar.until(half(letter, "'debugStrategy()'") + f" === '{name}'", f"{letter.upper()} is seated with {name}")
 
+    # The halves of a split start on the Civ AI picked in the box.
+    bar.ev("(() => { const select = document.getElementById('dbg-agent'); select.value = 'jack';"
+           " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    bar.idle("engine.seat === 'jack'", "the Civ AI picked in the box is said to the engine")
     start = bar.ev("state.turn")
     bar.click('[data-dbg="split"]')
     bar.until(f"debugSplit && {both(start, start)} && debugSplit.panes.a.numbers && debugSplit.panes.b.numbers",
               "both halves say where they stand")
+    assert bar.ev("[debugSplit.panes.a.strategy, debugSplit.panes.b.strategy]") == ["jack", "jack"]
     a, b = bar.ev("[debugSplit.panes.a.id, debugSplit.panes.b.id]")
     bar.until(f"debugBar.classList.contains('dbg-merged') && {deck_idle}", "the one panel is up")
 
@@ -1211,9 +1366,21 @@ def check_the_lock(bar: Bar) -> None:
     bar.type_turn(start + 1)
     bar.until(f"{both(start + 1, start + 1)} && {deck_idle}", "the turn box walks both halves back")
     assert calls("a") == [["/debug", "jump", b]] and calls("b") == [["/debug", "jump", None]], (calls("a"), calls("b"))
+    # B's next turn was played by Stock, while B seated it, and B seats Jack
+    # now. On B's lane the turns ahead are drawn apart as another Civ AI's,
+    # and A's, which Jack played, are A's timeline as before.
+    bar.until("debugSplit.panes.b.marks && debugSplit.panes.b.marks.beyond", "B says the turns ahead are another Civ AI's")
+    assert bar.ev("[debugSplit.panes.a.marks.beyond, debugSplit.panes.b.marks.beyond]") == \
+        [None, {"from": start + 2, "to": start + 3, "by": "stock"}]
+    assert bar.ev("['a', 'b'].map(letter => document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-beyond`).hidden)") \
+        == [True, False]
     bar.wheel("#dbg-turn", 100)
-    bar.until(f"{both(start + 2, start + 2)} && {deck_idle}", "the wheel over the turn box walks both halves on")
-    assert calls("a")[1:] == [["/debug", "forward", b]] and calls("b")[1:] == [["/debug", "jump", None]], (calls("a"), calls("b"))
+    bar.until(f"{both(start + 2, start + 2)} && {deck_idle}", "the wheel over the turn box takes both halves on")
+    # A walks to the turn it played. B does not walk to Stock's turn: it
+    # plays the turn, with the Civ AI it seats now.
+    assert calls("a")[1:] == [["/debug", "forward", b]] and calls("b")[1:] == [["/debug", "step", None]], (calls("a"), calls("b"))
+    assert strategies("b") == ["jack"], strategies("b")
+    bar.until("!debugSplit.panes.b.marks.beyond", "B has played over the turns that were another Civ AI's")
     # Auto-play on the one panel counts A's turns, and the lanes show where it is headed.
     bar.ev("(() => { const turns = document.getElementById('dbg-turns'); turns.value = '2';"
            " turns.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
@@ -1382,6 +1549,10 @@ def main() -> int:
               "changes the page's view and keeps the choice.")
         check_stepping_a_seat(bar)
         print("a round is stepped a civilization at a time, says who is next, and End Turn finishes it.")
+        check_a_picked_civ_ai_plays_its_own_turns(bar)
+        print("a Civ AI picked on an earlier turn is said to the engine at once, the turns another one "
+              "played ahead are drawn apart and named, and the turn buttons, the turn box, the "
+              "timeline and Auto-play all play from there with the Civ AI picked.")
         check_the_split(bar)
         print("the split opens at once, seats a Civ AI in each half, plays both to a turn locked and "
               "unlocked, sets their numbers side by side, starts both again from the split, moves "

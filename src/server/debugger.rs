@@ -6,7 +6,10 @@
 //!
 //! * **back / forward / jump** put a marked turn on the table again. Going
 //!   back does not forget the turns ahead: they stay marked until the world
-//!   is played forward differently, and then they are replaced.
+//!   is played forward differently, and then they are replaced. A turn ahead
+//!   is walked to only under the Civ AI that played it (`Timeline::line`):
+//!   with another one seated it is that other agent's game, and going on
+//!   from here plays, with the one that is seated.
 //! * **undo** takes back the played seat's last action inside the open turn,
 //!   by replaying the others on the turn's mark. The engine is deterministic
 //!   and the random stream is part of the game, so the replay is exact.
@@ -513,6 +516,10 @@ struct Mark {
     /// what the seat has done with the turn since.
     actions: usize,
     game: Game,
+    /// The Civ AI whose play opened this turn, by its id: it held the seat
+    /// for the turn before. `None` for a turn the person ended by hand, and
+    /// for the turn a timeline begins on.
+    by: Option<String>,
 }
 
 /// The rest of a turn the seat's agent planned, good for as long as the world
@@ -604,8 +611,30 @@ impl Timeline {
             turn: game.turn,
             actions: game.log.len(),
             game: game.clone(),
+            by: None,
         });
         self.thin();
+    }
+
+    /// The marks that are the seat's own line under the Civ AI seated there:
+    /// every turn up to the open one, and the turns ahead for as long as that
+    /// agent is the one that played them.
+    ///
+    /// A turn ahead that another Civ AI played is that agent's game, not what
+    /// this one would do from here. It is not walked to and not counted among
+    /// the turns played; it stays kept, and is this line again if its agent
+    /// is seated again before the turns are played over. A turn the person
+    /// ended by hand is nobody else's, and neither is any turn while no agent
+    /// has been named for the seat.
+    fn line(&self, turn: u32, seat: Option<&str>) -> &[Mark] {
+        let mut held = self.marks.partition_point(|mark| mark.turn <= turn);
+        while let Some(mark) = self.marks.get(held) {
+            if matches!((mark.by.as_deref(), seat), (Some(by), Some(seat)) if by != seat) {
+                break;
+            }
+            held += 1;
+        }
+        &self.marks[..held]
     }
 
     /// Only the top of the played seat's own turn is a place to come back to.
@@ -722,9 +751,9 @@ impl Timeline {
     /// the page marks an era's start on the timeline, and a turn that can be
     /// gone back to. When the turn an era began on has been thinned away it
     /// is the nearest kept turn after it.
-    fn eras(&self) -> Vec<(usize, u32)> {
+    fn eras(marks: &[Mark]) -> Vec<(usize, u32)> {
         let mut eras: Vec<(usize, u32)> = Vec::new();
-        for mark in &self.marks {
+        for mark in marks {
             if eras
                 .last()
                 .is_none_or(|(era, _)| *era != mark.game.world_era)
@@ -735,14 +764,25 @@ impl Timeline {
         eras
     }
 
-    fn json(&self, game: &Game) -> Value {
-        let turns: Vec<u32> = self.marks.iter().map(|mark| mark.turn).collect();
+    /// `seat` is the Civ AI seated at the played seat, when one has been
+    /// named: the turns given are its line (`line`).
+    fn json(&self, game: &Game, seat: Option<&str>) -> Value {
+        let line = self.line(game.turn, seat);
+        let turns: Vec<u32> = line.iter().map(|mark| mark.turn).collect();
         let acted = self.acted(game);
         json!({
             "turn": game.turn,
             "turns": turns,
             "first": turns.first(),
             "last": turns.last(),
+            // The Civ AI seated, and the kept turns ahead that another one
+            // played: from which turn, to which, and who played the first.
+            "seat": seat,
+            "beyond": self.marks.get(line.len()).map(|mark| json!({
+                "from": mark.turn,
+                "to": self.marks.last().map(|last| last.turn),
+                "by": mark.by,
+            })),
             "acted": acted,
             // Whose turn it is. Anything but the played seat is the middle of
             // a round being stepped a seat at a time.
@@ -750,7 +790,7 @@ impl Timeline {
             "can_undo": acted > 0 && game.current == 0 && self.mark(game.turn).is_some(),
             "can_back": acted > 0 || turns.first().is_some_and(|first| *first < game.turn),
             "can_forward": turns.last().is_some_and(|last| *last > game.turn),
-            "eras": self.eras().iter().map(|(era, turn)| json!({
+            "eras": Self::eras(line).iter().map(|(era, turn)| json!({
                 "era": era,
                 "name": crate::rules::ERA_NAMES.get(*era),
                 "turn": turn,
@@ -831,6 +871,29 @@ impl Session {
         }
     }
 
+    /// The seat's agent played the turn that was open on `from`. If that
+    /// opened the seat's next turn, the turn is marked as that agent's work
+    /// (`Mark::by`), which is what says whose game the turns ahead are once
+    /// the world is walked back.
+    pub(super) fn debugger_agent_played(&mut self, from: u32) {
+        let turn = self.game.turn;
+        if !self.debuggable() || turn <= from || !Timeline::markable(&self.game) {
+            return;
+        }
+        let by = self.autoplay_strategy.clone();
+        if let Some(mark) = self.debugger.marks.last_mut() {
+            if mark.turn == turn {
+                mark.by = by;
+            }
+        }
+    }
+
+    /// The marks on the seat's line as it stands (`Timeline::line`).
+    fn debug_line(&self) -> &[Mark] {
+        self.debugger
+            .line(self.game.turn, self.autoplay_strategy.as_deref())
+    }
+
     /// Whether the page is shown the world with the fog lifted.
     pub(super) fn debugger_reveals(&self) -> bool {
         self.debugger.reveal
@@ -838,7 +901,8 @@ impl Session {
 
     /// The debugger's part of the state document.
     pub(super) fn debugger_json(&self) -> Value {
-        self.debugger.json(&self.game)
+        self.debugger
+            .json(&self.game, self.autoplay_strategy.as_deref())
     }
 
     /// Put a marked world on the table in place of the live one.
@@ -899,9 +963,19 @@ impl Session {
     }
 
     /// Go to a marked turn. A turn with no mark of its own answers with the
-    /// nearest one before it.
+    /// nearest one before it. A turn ahead that another Civ AI played is not
+    /// on this seat's line (`Timeline::line`) and is refused.
     pub fn debug_jump(&mut self, turn: u32) -> Result<u32, String> {
-        let Some(mark) = self.debugger.mark_at_or_before(turn) else {
+        let line = self.debug_line();
+        if let Some(other) = self.debugger.marks.get(line.len()) {
+            if other.turn <= turn {
+                return Err(format!(
+                    "turn {} was played by another Civ AI; the one seated plays on from here",
+                    other.turn
+                ));
+            }
+        }
+        let Some(mark) = line.iter().rev().find(|mark| mark.turn <= turn) else {
             return Err(format!("turn {turn} is before this timeline begins"));
         };
         let (reached, game) = (mark.turn, mark.game.clone());
@@ -926,6 +1000,8 @@ impl Session {
     }
 
     /// Step forward along turns already played, without playing anything.
+    /// Only the seat's own line is walked: a turn ahead that another Civ AI
+    /// played is refused (`debug_jump`).
     pub fn debug_forward(&mut self) -> Result<u32, String> {
         let turn = self.game.turn;
         let Some(next) = self
@@ -1212,6 +1288,8 @@ impl Session {
         } else {
             self.debug_rivals_play();
         }
+        // A turn taken apart is the agent's turn all the same.
+        self.debugger_agent_played(turn);
         self.debugger.stepped = Some(json!({
             "turn": turn,
             "action": {"type": "end_turn"},
@@ -1275,7 +1353,16 @@ impl Session {
         // A step and the layers are played by whichever agent holds the seat;
         // a request may name it, exactly as an auto-play request does.
         let seated = match request["strategy"].as_str() {
-            Some(name) if self.debuggable() => self.seat_strategy_at(0, name),
+            Some(name) if self.debuggable() => {
+                let held = self.autoplay_strategy.clone();
+                let seated = self.seat_strategy_at(0, name);
+                // The rest of a turn being stepped in was planned by the
+                // agent that held the seat, and is not this one's turn.
+                if self.autoplay_strategy != held {
+                    self.debugger.plan = None;
+                }
+                seated
+            }
             _ => Ok(()),
         };
         let result: Result<(), String> = if !self.debuggable() {

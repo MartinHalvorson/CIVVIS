@@ -24,6 +24,10 @@ breakpoint picked from the timeline, a timeline with turns thinned out of it,
 the Civ AI picker, Auto-play with its count and its Stop, the breakpoints
 form with auto-play stopped by a turn, by a new era and by hand, layers,
 reveal, the Single player switch, undo, and a round stepped a seat at a time.
+It walks a game back, picks another Civ AI and goes on by each way there is
+(the turn buttons, the turn box, the timeline, Auto-play), and reads that the
+pick was said to the engine at once and that every one of them played, with
+the Civ AI picked, where the turns ahead were another one's.
 It then splits the screen head to head, each half the same page with a toy
 engine of its own: a Civ AI is picked for each half, from the strip and from
 the head of its lane, both are played to a turn locked and then unlocked,
@@ -61,8 +65,9 @@ beside it. The turn buttons stand either side of it, in this order:
 - **1** and **10** on. These walk the turns already played, and past the last
   of them the seat's Civ AI plays on. They do not play over what was played:
   ten on from turn 3 with nine turns played walks to turn 9 and plays four
-  more. (Dragging the timeline ahead from an earlier turn is the way to play
-  those turns again, and it says so under the pointer.)
+  more. (Auto-play from an earlier turn is the way to play those turns
+  again.) Turns that another Civ AI played are not walked to at all: see
+  "Whose turns are walked".
 
 At the left end is Auto-play, which used to be in the left panel: the Civ AI
 that plays the seat, how many turns (1 to 250, or all; it is set to 10 to
@@ -199,6 +204,35 @@ by a step.
 Undo replays the turn. It puts the turn's mark back and applies every action
 the seat took except the last. The engine is deterministic and the random
 stream is part of the game, so the replay is the same world.
+
+### Whose turns are walked
+
+A turn ahead is walked to only under the Civ AI that played it. Each mark
+remembers the Civ AI whose play opened its turn, and what the engine gives as
+the seat's timeline (`turns`, `last`, `can_forward`) is every turn up to the
+open one and, ahead of it, the turns the Civ AI now seated played. With
+another one seated, the kept turns ahead are that other agent's game and not
+what this one would do from here. They are not walked to by 1 ▶, 10 ▶▶, the
+turn box, the timeline or the wheel, `forward` and a `jump` onto them are
+refused, and every way forward plays instead, with the Civ AI that is picked.
+The page says the pick to the engine when it is made (`status` with
+`strategy`), so this holds from the pick and not first from the next step.
+
+The turns are still kept. The timeline draws them apart, as a grey dashed
+stretch past the gold; the note says what going on does and whose they are
+("SiegeTheDay plays on from here · turns 11 to 41 are by JackOfAllTrades");
+and picking
+their Civ AI again before they are played over makes them the timeline again.
+The first turn played from there replaces them, as it replaces any turns
+ahead. It makes no difference whether the Civ AI was picked after the walk
+back or before it. A turn the person ended by hand is nobody else's, and is
+walked to under any pick. A turn being stepped in is planned again when the
+seat changes hands in the middle of it.
+
+Why: on 2026-11-21 the operator walked a game back, picked another Civ AI and
+went on, and was shown the first one's turns again. Auto-play did play from
+there with the new pick. The turn buttons, the turn box and the timeline
+walked whatever was kept ahead, and nothing asked whose turns those were.
 
 A walked-to world gets fresh agents, as a loaded save does: their plans belong
 to the future the world was taken out of. The page drops its own standing
@@ -392,7 +426,13 @@ there, and the half's open turn as its pill. A lane is the hand on its half,
 and on both halves while they are locked. Letting go of it on a turn every
 half concerned has played walks them there; on a turn ahead of any of them it
 plays them there, each with its own Civ AI. At the head of each lane is the
-Civ AI that half seats, to pick there.
+Civ AI that half seats, to pick there. A half is told which Civ AI holds its
+seat when it is picked, and says so to its engine at once. Kept turns ahead
+that another Civ AI played are drawn apart on the half's lane as they are on
+an unsplit timeline ("Whose turns are walked"), and a locked half that is
+asked to follow the other onto such a turn plays to it with its own Civ AI.
+The halves of a new split start on the Civ AI picked in the box, and a half
+that is kept keeps its own.
 
 A lane also carries what stands on its half's timeline, as the timeline of an
 unsplit page does: a red dot on each breakpoint turn and a flag on each save
@@ -571,13 +611,13 @@ operation leaves the world as it was.
 
 | `op` | Fields |
 |------|--------|
-| `status` | none |
 | `back`, `forward`, `restart`, `undo` | none |
 | `jump` | `turn` |
 | `save_point` | optional `name` |
 | `goto_save`, `drop_save` | `id` |
 | `room` | `megabytes`: where the memory line is, 128 to 3072 |
 | `step`, `step_action`, `assist` | optional `strategy`, the Civ AI to seat first |
+| `status` | optional `strategy`: seat that Civ AI and play nothing, which is how the page says a pick |
 | `step_seat`, `finish_round` | none |
 | `reveal` | `on`: true or false |
 | `copy` | from a half of a split: `from`, the other half's name |
@@ -588,7 +628,10 @@ operation leaves the world as it was.
 | any | optional `lean`: true to be answered without the state document (see below) |
 
 Every state document of a played game carries `debug`: the open `turn`, the
-marked `turns`, `first` and `last`, how many actions the seat has taken this
+marked `turns`, `first` and `last` of the seat's own line, the Civ AI seated
+(`seat`, once one has been named), the kept turns ahead that another Civ AI
+played (`beyond`: `from`, `to`, and `by`, who played the first of them; null
+when there are none), how many actions the seat has taken this
 turn (`acted`), `can_undo`, `can_back`, `can_forward`, the `breakpoints` and
 the categories they may name, the `layers`, how many decisions the layers
 took this turn (`assisted`), why the last step `stopped`, what the last step
