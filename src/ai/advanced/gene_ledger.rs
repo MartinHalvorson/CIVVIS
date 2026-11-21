@@ -94,6 +94,8 @@
 //! the membership tests.
 
 use super::AdvancedAi;
+use crate::fast_map::FastSet;
+use std::sync::OnceLock;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Verdict {
@@ -259,7 +261,10 @@ pub fn deployment_policy() -> &'static str {
 /// strictly above +3 wins per 10,000 player seats, or it was already on and
 /// that average is not strictly below −3 (the hysteresis band).
 pub fn deployment_default_on(tag: &str) -> bool {
-    table::DEPLOYMENT_GENOME.contains(&tag)
+    // Asked of every gene each time an agent is seated; see `genes::gene`.
+    static ON: OnceLock<FastSet<&'static str>> = OnceLock::new();
+    ON.get_or_init(|| table::DEPLOYMENT_GENOME.iter().copied().collect())
+        .contains(tag)
 }
 
 /// ⭐ The genes the operator named on by hand, in generated order. Each ships
@@ -589,6 +594,34 @@ impl AdvancedAi {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The two lookups an agent's seating leans on are read from indexes.
+    /// Each must answer what a scan of its list answers, for every tag there
+    /// is and for one there is not.
+    #[test]
+    fn the_indexed_lookups_answer_as_a_scan_of_the_lists_does() {
+        let pool = super::super::GENES;
+        for tag in pool.iter().map(|gene| gene.tag).chain(["no-such-gene", ""]) {
+            let scanned = pool.iter().find(|gene| gene.tag == tag);
+            let indexed = super::super::gene(tag);
+            assert_eq!(
+                scanned.map(|gene| (gene.tag, gene.field)),
+                indexed.map(|gene| (gene.tag, gene.field)),
+                "{tag}: the gene by its tag"
+            );
+            assert_eq!(
+                table::DEPLOYMENT_GENOME.contains(&tag),
+                deployment_default_on(tag),
+                "{tag}: in the deployment genome"
+            );
+        }
+        for tag in table::DEPLOYMENT_GENOME {
+            assert!(
+                deployment_default_on(tag),
+                "{tag} is in the deployment genome"
+            );
+        }
+    }
 
     fn deployment_lists_tag_or_its_family_member(deployed: &[&str], tag: &str) -> bool {
         if deployed.contains(&tag) {
