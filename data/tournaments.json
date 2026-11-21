@@ -22,7 +22,11 @@
     "Operator 2026-11-20 ~05:50Z: \"make the ongoing tournament a 100 game tourney please. continue the existing games series\":",
     "Tournament 3 stays the best-of-30 that ended at civvis-20261120T045254Z; Tournament 4 keeps its games from there as a 100-game series.",
     "Operator 2026-11-21 ~02:35Z: \"finish off the 50 game tournament please. make the video\": the 100-game definition becomes 50-game series,",
-    "so Tournament 4 is its first 50 games (through civvis-20261120T150010Z) and Tournament 5 continues from the next."
+    "so Tournament 4 is its first 50 games (through civvis-20261120T150010Z) and Tournament 5 continues from the next.",
+    "Operator 2026-11-21 ~05:20Z: \"have tournament 6 be: 10 games on lv 4, 10 games on lv 5, 10 games on lv 6, 10 games on lv 7, 10 games",
+    "on lv 8. 6p continents. 2 civvis agents and 4 deity ais ... start automatically once you finish the current tournament\"; whole game",
+    "at that level, a game is a win when either CIVVIS agent wins. Those games are hotseat tables tagged `civvis-t6-<utc>`, so the",
+    "single-seat 50-game definition ends at \"civvis-t\" (every `civvis-2026...` tag sorts before it) and the table owns its own prefix."
   ],
   "tournaments": [
     {
@@ -57,7 +61,16 @@
       "conditions": "Lv 8 6P Continents Online",
       "start": "civvis-20261120T045254Z",
       "series_size": 50,
-      "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"}
+      "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"},
+      "end": "civvis-t"
+    },
+    {
+      "name": "Level ladder Lv 4-8, 2 CIVVIS agents + 4 AI",
+      "conditions": "Lv 4-8 6P Continents Online, 2 CIVVIS + 4 AI",
+      "start": "civvis-t6-",
+      "end": "civvis-t7-",
+      "series_size": 50,
+      "match": {"players": 6, "map": "Continents.lua"}
     }
   ]
 }

@@ -142,12 +142,19 @@ def apply_person_options(log: Log) -> dict:
     return applied
 
 
-def jack_seats(players: int) -> list[int]:
+def jack_seats(players: int, civvis_seats: int | None = None) -> list[int]:
+    """The seats CIVVIS plays. Unattended (`--civvis-seats N`, operator
+    2026-11-21: "2 civvis agents and 4 deity ais"): seats 0..N-1, no person at
+    the Mac, and the rest of the table Firaxis AI."""
+    if civvis_seats:
+        return list(range(civvis_seats))
     return [seat for seat in range(players) if seat != HUMAN_SEAT]
 
 
-def agent_seats(players: int, auto_human: bool) -> list[int]:
+def agent_seats(players: int, auto_human: bool, civvis_seats: int | None = None) -> list[int]:
     """Every seat with an agent context: the jack seats, and the test stub."""
+    if civvis_seats:
+        return jack_seats(players, civvis_seats)
     return jack_seats(players) + ([HUMAN_SEAT] if auto_human else [])
 
 
@@ -176,15 +183,16 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
     if not args.leader:
         settings.leader = None
     config = play.build_config(settings)
-    seats = jack_seats(args.players)
+    civvis_seats = getattr(args, "civvis_seats", None)
+    seats = jack_seats(args.players, civvis_seats)
     config.update({
         "Hotseat": True,
         "HotseatSeats": seats,
         # `--auto-human gated` keeps seat 0 the operator's in every gate, with
         # the stub playing it once its hand-over is pressed: the operator path,
-        # testable without a person.
-        "HotseatHumanSeats": ([] if args.auto_human == "stub" else [HUMAN_SEAT]),
-        "HotseatStubSeats": [HUMAN_SEAT] if args.auto_human else [],
+        # testable without a person. Unattended, no seat is a person's.
+        "HotseatHumanSeats": ([] if civvis_seats or args.auto_human == "stub" else [HUMAN_SEAT]),
+        "HotseatStubSeats": [HUMAN_SEAT] if args.auto_human and not civvis_seats else [],
         "HotseatNames": {str(seat): seat_name(i) for i, seat in enumerate(seats, 1)},
         "HotseatSaveEvery": args.save_every,
         "HotseatSaveName": args.tag,
@@ -192,7 +200,7 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
         # difficulty is per player (the staging room's Difficulty column).
         "PlayerDifficulty": args.difficulty,
         "Leader": args.leader,
-        "HumanPlayers": args.players,
+        "HumanPlayers": civvis_seats or args.players,
         # Nothing that changes how the game runs for the person at it: no debug
         # timescale, no VSync A/B, no camera (the map view stands down itself).
         "DebugTimeScale": None,
@@ -559,18 +567,33 @@ def choose_from_dropdown(run_dir: Path, log: Log, row: dict, option: str,
     return True
 
 
-def seat_the_players(run_dir: Path, bounds: tuple, players: int, log: Log) -> bool:
-    """Make rows 1..players-1 hotseat humans and close every row after them."""
-    for step in range(1, 25):
+def wanted_slots(players: int, humans: int | None = None) -> list[str]:
+    """The staging room's seat column as asked: the host, then hotseat humans
+    up to `humans` (every seat by default), then Firaxis AI ("Computer")."""
+    humans = players if humans is None else humans
+    return ["host"] + ["player"] * (humans - 1) + ["computer"] * (players - humans)
+
+
+def slots_match(kinds: list[str], want: list[str]) -> bool:
+    return (len(kinds) == len(want) and kinds[0] in ("host", "player")
+            and kinds[1:] == want[1:])
+
+
+def seat_the_players(run_dir: Path, bounds: tuple, players: int, log: Log,
+                     humans: int | None = None) -> bool:
+    """Make rows 1..humans-1 hotseat humans, the rest up to `players` Firaxis
+    AI, and close every row after them (every seat human by default)."""
+    want = wanted_slots(players, humans)
+    for step in range(1, 30):
         _, rows = read_screen(run_dir, f"staging-{step}")
         seats = slot_rows(rows, bounds)
         kinds = [s["slot"] for s in seats]
         if not seats:
             time.sleep(2.0)
             continue
-        if len(seats) == players and kinds[0] in ("host", "player") \
-                and all(k == "player" for k in kinds[1:]):
-            log(f"[setup] staging room: {players} hotseat seats, verified")
+        if slots_match(kinds, want):
+            log(f"[setup] staging room: {want.count('player') + 1} hotseat seats and "
+                f"{want.count('computer')} Firaxis AI, verified")
             return True
         if len(seats) > players:
             choose_from_dropdown(run_dir, log, seats[-1], "Closed", bounds, step)
@@ -583,8 +606,11 @@ def seat_the_players(run_dir: Path, bounds: tuple, players: int, log: Log) -> bo
             click(log, (add[0]["x"], add[0]["y"]))
             time.sleep(1.5)
             continue
-        target = next(s for s in seats[1:] if s["slot"] != "player")
-        choose_from_dropdown(run_dir, log, target, "Human", bounds, step)
+        index = next(i for i in range(1, len(want)) if kinds[i] != want[i])
+        if want[index] == "player":
+            choose_from_dropdown(run_dir, log, seats[index], "Human", bounds, step)
+        elif not choose_from_dropdown(run_dir, log, seats[index], "Computer", bounds, step):
+            choose_from_dropdown(run_dir, log, seats[index], "AI", bounds, step)
     log("[setup] could not seat the players; the staging room is left as it is")
     return False
 
@@ -751,7 +777,8 @@ def set_up_game(run_dir: Path, args: argparse.Namespace, log: Log) -> bool:
     confirm = find(rows, "Confirm Settings")
     click(log, (confirm[0]["x"], confirm[0]["y"]))
     time.sleep(4.0)
-    if not seat_the_players(run_dir, bounds, args.players, log):
+    if not seat_the_players(run_dir, bounds, args.players, log,
+                            humans=getattr(args, "civvis_seats", None)):
         return False
     if not set_difficulties(run_dir, bounds, args.difficulty, log):
         return False
@@ -854,7 +881,14 @@ class Monitor:
                  log: Log):
         self.run_dir, self.tag, self.seats, self.args, self.log = run_dir, tag, seats, args, log
         self.names = {seat: seat_name(i) for i, seat in enumerate(seats, 1)}
-        watched = agent_seats(len(seats) + 1, args.auto_human)
+        self.unattended = bool(getattr(args, "civvis_seats", None))
+        watched = list(seats) if self.unattended else agent_seats(len(seats) + 1, args.auto_human)
+        # The game's ending, for an unattended table: each CIVVIS seat's own
+        # `seat` event (civ, leader, team, the host's victory table), the
+        # victory event, and which of our seats were eliminated.
+        self.seat_info: dict[int, dict] = {}
+        self.defeated: set[int] = set()
+        self.result: dict | None = None
         if args.auto_human:
             self.names[HUMAN_SEAT] = "Test stub"
         self.base = Journal(run_dir / "events.jsonl")
@@ -890,7 +924,7 @@ class Monitor:
             self.log(f"attached: turn {self.turn}, {self.name(self.active)} is playing")
 
     def name(self, player: int) -> str:
-        if player == HUMAN_SEAT:
+        if player == HUMAN_SEAT and not self.unattended:
             return "test stub (seat 0)" if self.args.auto_human else "you (Player 1)"
         return f"{self.names.get(player, f'seat {player}')} (seat {player})"
 
@@ -907,8 +941,37 @@ class Monitor:
         if not self.quiet:
             self.log(message)
 
+    def our_teams(self) -> dict:
+        """Team -> our seat. A free-for-all puts each player on its own team,
+        so a seat whose event names no team is taken as its own."""
+        return {int(info.get("team", seat)) if info.get("team") is not None else seat: seat
+                for seat, info in ((seat, self.seat_info.get(seat, {})) for seat in self.seats)}
+
+    def on_ending(self, seat: int | None, event: dict) -> None:
+        """A victory ends the game for every seat; an elimination is one seat's.
+        The table's result is ours when the winning team is one of our seats'."""
+        kind = event.get("kind")
+        if kind == "victory" and self.result is None:
+            team = event.get("team")
+            teams = self.our_teams()
+            ours = team is not None and int(team) in teams
+            self.result = {"kind": "victory", "team": team, "victory": event.get("victory"),
+                           "turn": event.get("turn"), "ours": ours,
+                           "winner_seat": teams.get(int(team)) if ours else None}
+            self.log(f"game over at turn {event.get('turn')}: team {team} won "
+                     f"({'ours' if ours else 'a rival'}), victory {event.get('victory')}")
+        elif kind == "defeat" and event.get("ours") and seat is not None:
+            self.defeated.add(seat)
+            self.log(f"{self.name(seat)} was eliminated at turn {event.get('turn')}")
+            if self.result is None and self.defeated >= set(self.seats):
+                self.result = {"kind": "defeat", "turn": event.get("turn"), "ours": False}
+                self.log("every CIVVIS seat is eliminated")
+
     def on_base(self, event: dict) -> None:
         kind = event.get("kind")
+        if kind in ("victory", "defeat"):
+            self.on_ending(None, event)
+            return
         if kind == "hotseat_armed":
             self.say("the hand-over screen is under CIVVIS control")
         elif kind == "hotseat_turn":
@@ -957,6 +1020,13 @@ class Monitor:
     def on_seat(self, seat: int, event: dict) -> None:
         kind = event.get("kind")
         stats = self.stats[seat]
+        if kind in ("victory", "defeat"):
+            self.on_ending(seat, event)
+            return
+        if kind == "seat":
+            self.seat_info[seat] = {k: event.get(k) for k in
+                                    ("civ", "leader", "team", "player", "difficulty", "map",
+                                     "size", "speed", "victory_types", "players")}
         if kind == "hotseat_seat":
             self.say(f"seat {seat} is {event.get('shown')!r} "
                      f"(asked {event.get('name')!r}, applied {event.get('applied')})")
@@ -1134,6 +1204,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--quit-game", action="store_true",
                     help="with --stop: also close Civ VI if the harness started it")
     ap.add_argument("--status", action="store_true")
+    ap.add_argument("--civvis-seats", type=int, default=None, metavar="N",
+                    help="unattended: CIVVIS plays seats 0..N-1 and the other seats up to "
+                         "--players are Firaxis AI (no person at the Mac); the run stops at "
+                         "the game's ending with the result in summary.json and closes Civ VI")
     ap.add_argument("--auto-human", nargs="?", const="stub", choices=["stub", "gated"],
                     default=None,
                     help="TEST: a stub plays seat 0 instead of you; `gated` keeps seat 0 "
@@ -1149,6 +1223,10 @@ def main(argv: list[str] | None = None) -> int:
         args.leader = None
     if args.max_turns is None:
         args.max_turns = default_max_turns(args.speed)
+    if args.civvis_seats is not None and not 1 <= args.civvis_seats < args.players:
+        print(f"--civvis-seats must leave at least one Firaxis AI seat "
+              f"(1..{args.players - 1} of --players {args.players})", file=sys.stderr)
+        return 2
     args.resume_save = None
     if args.resume is not None:
         save = newest_save() if args.resume == "latest" else Path(args.resume).expanduser()
@@ -1202,7 +1280,7 @@ def run(args: argparse.Namespace) -> int:
     if halt:
         log(f"note: the unattended lanes stay halted ({halt}); this game is yours")
     launched = False
-    seats = jack_seats(args.players)
+    seats = jack_seats(args.players, getattr(args, "civvis_seats", None))
     brains = None
     monitor = None
     bridges: list[watch.EventLogBridge] = []
@@ -1255,18 +1333,18 @@ def run(args: argparse.Namespace) -> int:
             # The verification seat's half-screen window leaves room for its
             # viewer; a person playing wants the whole screen. The stub test
             # keeps the seat's layout.
-            if args.auto_human:
+            if args.auto_human or getattr(args, "civvis_seats", None):
                 play.place_game(play.GAME_SIDE, play.GAME_FRACTION, play.GAME_VFRACTION)
             else:
                 play.place_game("left", 1.0, 1.0)
                 fit_on_screen()
         bridges = [watch.EventLogBridge(run_dir, tag=args.tag)]
-        for seat in agent_seats(args.players, args.auto_human):
+        for seat in agent_seats(args.players, args.auto_human, getattr(args, "civvis_seats", None)):
             bridges.append(watch.EventLogBridge(
                 run_dir / modinstall.hotseat_seat_tag(args.tag, seat),
                 tag=modinstall.hotseat_seat_tag(args.tag, seat)))
         if not args.attach and not set_up_game(run_dir, args, log):
-            if args.auto_human:
+            if args.auto_human or getattr(args, "civvis_seats", None):
                 log("setup failed; the game window is left as it is for a look")
                 stop_reason = "setup failed"
                 return 5
@@ -1302,6 +1380,16 @@ def run(args: argparse.Namespace) -> int:
                 stop_reason = f"reached turn {args.turns}"
                 log(f"turn {args.turns} is complete")
                 break
+            if monitor.result is not None and monitor.unattended:
+                stop_reason = "game over"
+                # The end screen stays up a little, as civ6_play holds it, so a
+                # recording of the table ends on Civ VI's own verdict.
+                for _ in range(24):
+                    for bridge in bridges:
+                        bridge.pump()
+                    monitor.poll()
+                    time.sleep(0.5)
+                break
             if not monitor.started and time.monotonic() - waited_for_game > 300:
                 log("⚠ no hand-over event five minutes after START GAME; is the game up?")
                 waited_for_game = time.monotonic()
@@ -1325,14 +1413,23 @@ def run(args: argparse.Namespace) -> int:
         if monitor is not None:
             monitor.poll()
             summary["report"] = smoke_report(monitor, log)
+            if monitor.unattended:
+                summary.update({
+                    "result": monitor.result, "seats": {str(k): v for k, v in monitor.seat_info.items()},
+                    "eliminated": sorted(monitor.defeated), "turn": monitor.turn,
+                    "difficulty": args.difficulty, "players": args.players, "map": args.map,
+                    "map_size": args.map_size, "speed": args.speed, "max_turns": args.max_turns,
+                    "civvis_seats": seats, "victory_target": args.victory})
             monitor.close()
         request = {}
         try:
             request = json.loads((run_dir / "stop.json").read_text())
         except (OSError, ValueError):
             pass
+        # An unattended table always closes Civ VI: the next table starts clean.
         quit_game = launched and (bool(request.get("quit_game"))
-                                  or (args.auto_human and args.turns is not None))
+                                  or (args.auto_human and args.turns is not None)
+                                  or bool(getattr(args, "civvis_seats", None)))
         if quit_game and env.game_pids():
             log("closing Civ VI")
             if not quit_civ(run_dir, log):
