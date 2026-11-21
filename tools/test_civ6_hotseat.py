@@ -397,5 +397,82 @@ class LockTest(unittest.TestCase):
                 gamelock.release()
 
 
+
+
+class UnattendedTableTest(unittest.TestCase):
+    """Operator 2026-11-21: "2 civvis agents and 4 deity ais", unattended."""
+
+    def test_civvis_plays_the_first_seats_and_no_seat_is_a_persons(self) -> None:
+        args = game_args(players=6, civvis_seats=2, leader=None)
+        config = hotseat.hotseat_config(args, Path("/tmp/run"), Path("/tmp/run/o.sqlite"))
+        self.assertEqual(config["HotseatSeats"], [0, 1])
+        self.assertEqual(config["HotseatHumanSeats"], [])
+        self.assertEqual(config["HotseatStubSeats"], [])
+        self.assertEqual(config["HumanPlayers"], 2)
+        self.assertEqual(hotseat.agent_seats(6, None, 2), [0, 1])
+        self.assertEqual(hotseat.jack_seats(4), [1, 2, 3], "the operator's table is unchanged")
+
+    def test_play_flags_reach_every_seats_settings(self) -> None:
+        args = game_args(players=6, civvis_seats=2, leader=None,
+                         play_flags="--dv-join-winner --luxury-quote-proposals")
+        config = hotseat.hotseat_config(args, Path("/tmp/run"), Path("/tmp/run/o.sqlite"))
+        plain = hotseat.hotseat_config(game_args(players=6, civvis_seats=2, leader=None),
+                                       Path("/tmp/run"), Path("/tmp/run/o.sqlite"))
+        changed = {k for k in config if config[k] != plain.get(k)}
+        self.assertTrue(changed, "the flags change the seats' settings")
+        self.assertTrue(any("Dv" in k or "Luxury" in k for k in changed), changed)
+
+    def test_the_staging_room_wants_two_humans_and_four_computers(self) -> None:
+        want = hotseat.wanted_slots(6, 2)
+        self.assertEqual(want, ["host", "player"] + ["computer"] * 4)
+        default = [r["slot"] for r in hotseat.slot_rows(STAGING, BOUNDS)]
+        self.assertFalse(hotseat.slots_match(default, want), "one AI seat short")
+        self.assertTrue(hotseat.slots_match(default + ["computer"], want))
+        self.assertEqual(hotseat.wanted_slots(4), ["host", "player", "player", "player"])
+
+    def monitor(self, run_dir: Path) -> "hotseat.Monitor":
+        monitor = hotseat.Monitor(run_dir, "hs", [0, 1], game_args(players=6, civvis_seats=2),
+                                  lambda m: None)
+        self.addCleanup(monitor.close)
+        return monitor
+
+    def seat_event(self, run_dir: Path, seat: int, **event) -> None:
+        seat_dir = run_dir / f"hs-p{seat}"
+        seat_dir.mkdir(exist_ok=True)
+        with (seat_dir / "events.jsonl").open("a") as out:
+            out.write(json.dumps(event) + "\n")
+
+    def test_either_civvis_seat_winning_is_our_win(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor = self.monitor(run_dir)
+            self.seat_event(run_dir, 0, kind="seat", civ="CIVILIZATION_GAUL", team=0)
+            self.seat_event(run_dir, 1, kind="seat", civ="CIVILIZATION_ROME", team=1)
+            self.seat_event(run_dir, 1, kind="victory", team=1, victory=3, turn=180)
+            monitor.poll()
+            self.assertEqual(monitor.result["ours"], True)
+            self.assertEqual(monitor.result["winner_seat"], 1)
+            self.assertEqual(monitor.seat_info[0]["civ"], "CIVILIZATION_GAUL")
+
+    def test_a_rival_victory_is_a_loss(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor = self.monitor(run_dir)
+            with (run_dir / "events.jsonl").open("a") as out:
+                out.write(json.dumps({"kind": "victory", "team": 4, "victory": 0, "turn": 190}) + "\n")
+            monitor.poll()
+            self.assertEqual((monitor.result["ours"], monitor.result["team"]), (False, 4))
+
+    def test_the_table_is_lost_only_when_both_seats_are_eliminated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor = self.monitor(run_dir)
+            self.seat_event(run_dir, 0, kind="defeat", ours=True, player=0, turn=60)
+            monitor.poll()
+            self.assertIsNone(monitor.result)
+            self.seat_event(run_dir, 1, kind="defeat", ours=True, player=1, turn=90)
+            monitor.poll()
+            self.assertEqual(monitor.result, {"kind": "defeat", "turn": 90, "ours": False})
+
 if __name__ == "__main__":
     unittest.main()
