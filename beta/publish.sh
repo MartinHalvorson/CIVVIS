@@ -3,8 +3,9 @@
 # Assemble a published build of CIVVIS for civvis.ai.
 #
 # The output is one complete LANE of the site — the viewer at its root with
-# the engine compiled to WebAssembly beside it, the landing page at /home and
-# the downloads page at /download — a plain directory of static files with no
+# the engine compiled to WebAssembly beside it, the landing page at /home, the
+# Tournaments page at /tournaments and the downloads page at /download — a
+# plain directory of static files with no
 # host-specific anything beyond the two Cloudflare Pages control files, which
 # any other host simply ignores. Every link between the pages is
 # lane-relative, so the same tree serves unchanged at the site root (the
@@ -148,6 +149,8 @@ landing_assets="$source_tree/beta/assets"
 [ -d "$landing_assets" ] || landing_assets="$repo_root/beta/assets"
 download_page="$source_tree/beta/download.html"
 [ -f "$download_page" ] || download_page="$repo_root/beta/download.html"
+tournaments_page="$source_tree/beta/tournaments.html"
+[ -f "$tournaments_page" ] || tournaments_page="$repo_root/beta/tournaments.html"
 mkdir -p "$out/home"
 cp "$landing_page" "$out/home/index.html"
 # The home page's rankings (the winningest civs of the verification games,
@@ -156,6 +159,13 @@ cp "$landing_page" "$out/home/index.html"
 # own revision. A landing page that predates them has no slot and is left as
 # it is; a revision that predates a source shows the other.
 python3 "$repo_root/beta/home_rankings.py" "$source_tree" "$out/home/index.html"
+# The Tournaments page (running, scheduled and finished series of the
+# verification games) is filled the same way, from the run ledger. Its
+# definitions are head's in both lanes: what is scheduled is a fact about the
+# queue, not about the revision a lane is pinned to.
+mkdir -p "$out/tournaments"
+cp "$tournaments_page" "$out/tournaments/index.html"
+python3 "$repo_root/beta/tournaments_page.py" "$repo_root" "$out/tournaments/index.html"
 # The home page carries no art of its own any more, so there is usually no
 # directory to ship; a pinned revision from when it had photographs still does.
 if [ -d "$landing_assets" ]; then cp -R "$landing_assets" "$out/home/assets"; fi
@@ -231,7 +241,7 @@ for needle, replacement in edits:
 # viewer linking `/home` would silently drop the visitor back into prod.
 # Tolerated as already absent (a revision may predate the link); the guard
 # below is what is enforced.
-for needle, replacement in [('href="/home"', 'href="home/"')]:
+for needle, replacement in [('href="/home"', 'href="home/"'), ('href="/tournaments"', 'href="tournaments/"')]:
     page = page.replace(needle, replacement)
     for path in scripts:
         scripts[path] = scripts[path].replace(needle, replacement)
@@ -385,6 +395,9 @@ edits = {
         ('"/?map=', '"../?map='),
         ('`/?map=', '`../?map='),
     ],
+    # Authored lane-relative from its first day, so there is nothing to
+    # translate; it is listed for the guard below.
+    out / "tournaments" / "index.html": [],
     out / "download" / "index.html": [
         ('href="/test/"', 'href="../"'),  # the lane's own viewer
         ('href="/home"', 'href="../home/"'),

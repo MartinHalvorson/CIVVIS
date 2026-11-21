@@ -23,6 +23,12 @@ The landing page (`beta/landing.html`) carries one empty slot,
 The page once listed the head of the heuristic gene ranking as well. It does
 not any more; `GENE_HEURISTIC_RANKING.md` is the place to read that.
 
+It also carried the Tournaments table until 2026-11-21, when the operator gave
+tournaments a page of their own between Home and CIVVIS
+(`beta/tournaments.html`, `beta/tournaments_page.py`). `tournament_series`
+still lives here, because that page, the live mirror's Mode line and a lane
+pinned to a home page that still has the card all count the same series.
+
 Nothing here is committed as a copy. The page once kept a hand-synced battle
 catalog and it went the way such copies go; this is derived at publish time
 from the same files the engine embeds, so it cannot drift from them.
@@ -310,7 +316,7 @@ def when(tag: str) -> str:
     return f"{m[1]}-{m[2]}-{m[3]} {m[4]}:{m[5]}Z" if m else tag
 
 
-def tournament_series(rows: list[dict], tournaments: list[dict]) -> list[dict] | None:
+def tournament_series(rows: list[dict], tournaments: list[dict], detail: bool = False) -> list[dict] | None:
     """Each tournament's series: consecutive blocks of `series_size` finished games.
 
     A tournament counts every game whose tag sorts at or after its `start` (and
@@ -322,9 +328,15 @@ def tournament_series(rows: list[dict], tournaments: list[dict]) -> list[dict] |
     tournament with its own number (`id`), counted from 1 in the order the
     series began across every definition; the live mirror's Mode reads
     "Tournament <id>: <wins>-<losses>" from the same count. Newest first.
+
+    With `detail` each series also carries what the Tournaments page
+    (`beta/tournaments_page.py`) draws beyond the table: the place of its
+    definition in the list (`definition`) and its games in the order they were
+    played (`played`, each a game's tag and the result line of its best run).
+    The home page's table never asks for it.
     """
     out = []
-    for spec in tournaments:
+    for place, spec in enumerate(tournaments):
         size = int(spec.get("series_size") or 10)
         start = str(spec.get("start") or "")
         end = str(spec.get("end") or "")
@@ -361,6 +373,7 @@ def tournament_series(rows: list[dict], tournaments: list[dict]) -> list[dict] |
                 # The operator's word on the definition (Tournament 2 scrapped,
                 # operator 2026-11-20), the same on each of its series.
                 "note": spec.get("note") or "",
+                **({"definition": place, "played": block} if detail else {}),
             })
     if not out:
         return None
@@ -395,6 +408,20 @@ def rankings(source: pathlib.Path) -> dict:
     return {"civs": civs(source), "strategies": strategies(source), "tournaments": tournaments(source)}
 
 
+#: The home page's Tournaments card as pages up to 2026-11-21 carried it. The
+#: table lives on the Tournaments page now (`beta/tournaments.html`, filled by
+#: `beta/tournaments_page.py`), and only a page that still has the card is
+#: sent its rows: a lane pinned to an older revision keeps the table it shows.
+TOURNAMENTS_CARD = 'id="rank-tournaments"'
+
+
+def for_page(page: str, data: dict) -> dict:
+    """The rankings this page has a place for."""
+    if TOURNAMENTS_CARD in page:
+        return data
+    return {key: value for key, value in data.items() if key != "tournaments"}
+
+
 def fill(page: str, data: dict) -> str | None:
     """The page with its slot filled, or `None` when it has no slot."""
     # `<` is escaped so no name or sentence can close the script element.
@@ -413,7 +440,9 @@ def main(argv: list[str]) -> int:
         print()
         return 0
     page = pathlib.Path(argv[2])
-    filled = fill(page.read_text(encoding="utf-8"), data)
+    text = page.read_text(encoding="utf-8")
+    data = for_page(text, data)
+    filled = fill(text, data)
     if filled is None:
         # A landing page from before the column: nothing to fill.
         print(f"home_rankings: {page} has no rankings slot; left as it is", file=sys.stderr)
