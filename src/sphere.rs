@@ -57,6 +57,7 @@ use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 
+use crate::fast_map::FastMap;
 use crate::hex;
 use crate::Pos;
 
@@ -1164,14 +1165,19 @@ fn rhombus_point(
 
 /// Matches lattice points that two rhombi both compute, so a shared edge is
 /// one tile rather than two.
+///
+/// A point is looked for in its own bucket and the 26 around it, so a globe
+/// asks this map 27 questions for each lattice point it lays down. It is
+/// only ever asked and added to, never walked, so which hash spreads its keys
+/// cannot change which tile a point is.
 struct Weld {
-    buckets: HashMap<(i64, i64, i64), u32>,
+    buckets: FastMap<(i64, i64, i64), u32>,
 }
 
 impl Weld {
     fn new() -> Weld {
         Weld {
-            buckets: HashMap::new(),
+            buckets: FastMap::default(),
         }
     }
 
@@ -1386,8 +1392,24 @@ fn build(frequency: i32) -> Sphere {
         .filter(|(_, degree)| **degree == 5)
         .map(|(index, _)| sphere.search_all(index as u32))
         .collect();
-    sphere.rings = (0..sphere.len())
-        .map(|index| sphere.ring_of(index as u32))
+    // One flood per tile, each over the same scratch: `seen` is blank again
+    // when a flood hands it back, so the table is cleared once for the globe
+    // and not once a tile.
+    let mut seen = vec![u8::MAX; sphere.len()];
+    let mut reached = Vec::new();
+    sphere.ring_indices = (0..sphere.len())
+        .map(|index| sphere.ring_of(index as u32, &mut seen, &mut reached))
+        .collect();
+    // Storage order is ascending position order, so a ring sorted by storage
+    // index is the same ring sorted by position.
+    sphere.rings = sphere
+        .ring_indices
+        .iter()
+        .map(|ring| {
+            ring.iter()
+                .map(|(cell, distance)| (sphere.pos[*cell as usize], *distance))
+                .collect()
+        })
         .collect();
     sphere.near = sphere
         .rings
@@ -1399,51 +1421,51 @@ fn build(frequency: i32) -> Sphere {
                 .collect()
         })
         .collect();
-    sphere.ring_indices = sphere
-        .rings
-        .iter()
-        .map(|ring| {
-            ring.iter()
-                .map(|(pos, distance)| {
-                    (
-                        sphere
-                            .index_of(*pos)
-                            .expect("a precomputed local ring only holds sphere tiles"),
-                        *distance,
-                    )
-                })
-                .collect()
-        })
-        .collect();
     sphere
 }
 
 impl Sphere {
     /// Exact distances from one tile out to [`RING_RADIUS`], the tile itself
-    /// included.
-    fn ring_of(&self, from: u32) -> Box<[(Pos, u8)]> {
-        let mut seen: HashMap<u32, u8> = HashMap::new();
-        seen.insert(from, 0);
-        let mut frontier = vec![from];
-        let mut next = Vec::new();
+    /// included, as `(storage index, distance)` in ascending index order.
+    ///
+    /// `seen` holds `u8::MAX` for every tile of the globe, on the way in and
+    /// again on the way out; `reached` is scratch. A globe is built by one of
+    /// these floods per tile, and each reaches at most 127 tiles: keeping
+    /// what it has seen in a hash map of its own cost some seven hundred
+    /// SipHash rounds and a sort by position per tile, which was a quarter of
+    /// the first new game an engine makes (`docs/SIMULATOR_PERFORMANCE.md`).
+    /// A table indexed by tile answers the same question with an array read,
+    /// and the tiles reached sort as plain integers.
+    fn ring_of(&self, from: u32, seen: &mut [u8], reached: &mut Vec<u32>) -> Box<[(u32, u8)]> {
+        reached.clear();
+        seen[from as usize] = 0;
+        reached.push(from);
+        // `reached` is the flood's queue as well as its answer: everything
+        // before `at` has been stepped out of, and a step's tiles end where
+        // the queue ended when the step began.
+        let mut at = 0;
         for step in 1..=RING_RADIUS as u8 {
-            for cell in frontier.drain(..) {
-                let cell = cell as usize;
+            let end = reached.len();
+            while at < end {
+                let cell = reached[at] as usize;
+                at += 1;
                 for neighbor in &self.adjacent[cell][..self.degree[cell] as usize] {
-                    seen.entry(*neighbor).or_insert_with(|| {
-                        next.push(*neighbor);
-                        step
-                    });
+                    if seen[*neighbor as usize] == u8::MAX {
+                        seen[*neighbor as usize] = step;
+                        reached.push(*neighbor);
+                    }
                 }
             }
-            std::mem::swap(&mut frontier, &mut next);
         }
-        let mut out: Vec<(Pos, u8)> = seen
-            .into_iter()
-            .map(|(cell, distance)| (self.pos[cell as usize], distance))
+        reached.sort_unstable();
+        let ring = reached
+            .iter()
+            .map(|cell| (*cell, seen[*cell as usize]))
             .collect();
-        out.sort_by_key_shared(|(pos, _)| *pos);
-        out.into_boxed_slice()
+        for cell in reached.iter() {
+            seen[*cell as usize] = u8::MAX;
+        }
+        ring
     }
 }
 
@@ -1577,6 +1599,52 @@ mod tests {
             assert!(neighbors.len() == 5 || neighbors.len() == 6);
             for neighbor in neighbors {
                 assert!(globe.contains(neighbor));
+            }
+        }
+    }
+
+    /// The rings a globe is built with, flooded the way they were before the
+    /// flood kept what it had seen in a table: a hash map of its own for each
+    /// tile, and the tiles it reached sorted by position.
+    #[test]
+    fn a_ring_flooded_over_the_table_is_the_ring_flooded_into_a_map() {
+        for frequency in [1, 2, 3, 7, 11] {
+            let globe = sphere(frequency);
+            assert!(
+                globe.pos.windows(2).all(|pair| pair[0] < pair[1]),
+                "storage order is position order, which the rings are sorted by"
+            );
+            for from in 0..globe.len() {
+                let mut seen: HashMap<u32, u8> = HashMap::from([(from as u32, 0)]);
+                let mut frontier = vec![from as u32];
+                for step in 1..=RING_RADIUS as u8 {
+                    let mut next = Vec::new();
+                    for cell in frontier {
+                        let cell = cell as usize;
+                        for neighbor in &globe.adjacent[cell][..globe.degree[cell] as usize] {
+                            seen.entry(*neighbor).or_insert_with(|| {
+                                next.push(*neighbor);
+                                step
+                            });
+                        }
+                    }
+                    frontier = next;
+                }
+                let mut ring: Vec<(Pos, u8)> = seen
+                    .into_iter()
+                    .map(|(cell, distance)| (globe.pos[cell as usize], distance))
+                    .collect();
+                ring.sort_by_key(|(pos, _)| *pos);
+                assert_eq!(
+                    globe.rings[from].as_ref(),
+                    ring.as_slice(),
+                    "frequency {frequency}, tile {from}"
+                );
+                let indexed: Vec<(Pos, u8)> = globe.ring_indices[from]
+                    .iter()
+                    .map(|(cell, distance)| (globe.pos[*cell as usize], *distance))
+                    .collect();
+                assert_eq!(indexed, ring, "frequency {frequency}, tile {from}");
             }
         }
     }

@@ -5118,3 +5118,47 @@ moved the same way and is not quoted. Memory grows by the slabs' slack, 3 MB.
 
 A small module that does nothing but allocate (maps of strings, vectors that
 grow, clones) ran in 550 ms where it took 835 ms, with the same checksum.
+
+## 2026-11-21 — a globe's local rings are flooded over a table
+
+Every engine builds its globe once, in the first new game it makes: on the
+site that is every page load. A profile of that first game in the published
+browser build (six seats, Continents, node) put a quarter of it in
+`sphere::build`, and nearly all of that in the local rings: one flood per
+tile out to six steps, each keeping what it had seen in a `HashMap` of its
+own (SipHash, some seven hundred probes a tile, and the map's growth) and
+then sorting the 127 tiles it reached by position.
+
+Storage order is ascending position order, so a ring sorted by storage index
+is the same ring. The flood now marks a table indexed by tile, shared by
+every flood of the build and blank again when each hands it back, and sorts
+plain integers. The position rings are read off the index rings instead of
+the other way round. The lattice weld, which asks its map 27 questions a
+point and never walks it, takes `FastMap`.
+
+### Evidence
+
+Production modules built by `wasm-qualify` for main `f7cc0c3` (run
+44884406184) and the change on top of it (`a0bf262`, run 44884403419), each
+making one new game in a fresh node process, alternating, three times:
+
+| | main | with the change | |
+| --- | ---: | ---: | ---: |
+| instructions retired, whole process | 18.28 G, 18.25 G, 18.28 G | 16.37 G, 16.39 G, 16.43 G | **−10.3%** |
+| the first `POST /new`, as the engine is timed | 465, 425, 423 ms | 308, 316, 334 ms | about −110 ms |
+
+The state the new game answers with is the same in both (seeds 7, 8 and 11),
+and so is every seat's score thirty debugger turns on. The process figure
+includes V8 compiling the module, the same work in both arms; a process that
+only instantiates it retires 0.82 G. On a synthetic 5,060-tile hex grid the
+old flood took 32 ms natively and the new one 4 ms, with the same rings.
+
+### Measured and left
+
+- `mapgen::starts::region_center` is the other quarter of a first new game
+  and 43% of each later one (about 65 of 155 ms): 48 floods a call, and a
+  pass of the region division asks for every region's centre. One flood for
+  all 48 sources, a bit a source, gives the same sums and was slower (1.67 ms
+  against 0.64 ms for a 637-tile region): the sources are spread over the
+  region, so nearly every tile is on some source's front at every step, and a
+  region about 40 across takes as many steps as there are sources to share.
