@@ -674,6 +674,14 @@ fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_orde
         // 2026-11-20: "default for auto play can be 10 turns").
         "const DEBUG_AUTOPLAY_TURNS = 10;",
         "<option value=\"${turns}\"${turns === DEBUG_AUTOPLAY_TURNS ? \" selected\" : \"\"}>",
+        // Era among the turn counts, between 30 and 40 on Online and moved
+        // with the game's speed (operator, 2026-11-21: "add era between 30
+        // and 40. though this can move i guess depending on the speed of the
+        // game"). Picked, Auto-play plays until a new era begins.
+        "const DEBUG_ERA_TURNS = {online: 33, quick: 42, standard: 50, epic: 65, marathon: 100};",
+        "turns === debugEraAfter() ? '<option value=\"era\">Era</option>' : \"\"}`).join(\"\")",
+        "if (pick === \"era\") { debugRun(null, state.world_era ?? 0); return; }",
+        "debugPlaceEra(turnsPick);",
         // The count on Auto-play, of the turns asked for or so far.
         "const runCount = !deck.running ? \"\" : deck.asked === null ? `${deck.played}` : `${deck.played}/${deck.asked}`;",
         // Era Back, Era Next, the era breakpoint and the eras named on the
