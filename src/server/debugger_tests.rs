@@ -1061,23 +1061,24 @@ fn a_walk_back_seats_the_agent_that_was_sitting_then() {
     session.debug(&json!({"op": "jump", "turn": 3}));
     stepped(&mut session, 2);
     assert_eq!(heard(), [3, 4]);
-    // Walked on along the turns kept ahead, it is the agent of that turn.
-    session.debug(&json!({"op": "jump", "turn": 1}));
-    stepped(&mut session, 1);
-    assert_eq!(heard(), [1]);
     // A save point is come back to with its agents as well.
     session
         .debug_save_point("here")
         .expect("a save point is set");
     let id = session.state()["debug"]["saves"][0]["id"].clone();
     stepped(&mut session, 3);
-    assert_eq!(heard(), [2, 3, 4]);
+    assert_eq!(heard(), [5, 6, 7]);
     assert_eq!(
         session.debug(&json!({"op": "goto_save", "id": id}))["error"],
         Value::Null
     );
     stepped(&mut session, 1);
-    assert_eq!(heard(), [2]);
+    assert_eq!(heard(), [5]);
+    // The agent kept with a turn is the one that was sitting then. The
+    // timeline began before this one sat down, so turn 1 is not its turn.
+    session.debug(&json!({"op": "jump", "turn": 1}));
+    stepped(&mut session, 1);
+    assert_eq!(heard(), [] as [u32; 0]);
 }
 
 /// A half of a split keeps no agents and seats none: a walk in a half seats

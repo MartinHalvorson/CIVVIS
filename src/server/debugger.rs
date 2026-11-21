@@ -527,6 +527,10 @@ struct Mark {
     minds: Option<Minds>,
 }
 
+/// One seat's agent as it was kept, or `None` for one that could not be
+/// copied (`Ai::fork`).
+type Seated = Option<Box<dyn Ai + Send>>;
+
 /// The agents at one moment, each a copy with what it remembered then.
 ///
 /// An agent keeps plans from turn to turn, so the world alone is not all of
@@ -540,7 +544,7 @@ struct Mark {
 /// so every clone of a mark may share them.
 #[derive(Clone)]
 struct Minds {
-    seats: Arc<Mutex<Vec<Option<Box<dyn Ai + Send>>>>>,
+    seats: Arc<Mutex<Vec<Seated>>>,
     /// The Civ AI seated in the played seat then, by its id.
     seat: Option<String>,
     /// The Civ AI the rivals were seated with then, if one had been chosen.
