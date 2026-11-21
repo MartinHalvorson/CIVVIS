@@ -291,6 +291,10 @@ const DEBUG_BAR_STYLE = `
   }
   #debugbar .dbg-marks i.auto { background: #8fb4a8; }
   #debugbar .dbg-marks i.stop { top: auto; bottom: -5px; border-radius: 50%; background: #e2574c; }
+  /* Two lanes stand four pixels apart, so there a mark keeps to its own rail:
+     A's breakpoint would otherwise sit under B's save point on the same turn. */
+  #debugbar.dbg-split-on .dbg-marks i { top: -2px; }
+  #debugbar.dbg-split-on .dbg-marks i.stop { top: auto; bottom: -2px; }
   /* The first turn of each era the game has been through: a line down the
      rail with the era's name at its foot. The name is the thing to click. */
   #debugbar .dbg-marks u {
@@ -921,6 +925,17 @@ function debugBuildBar() {
       if (debugPopOpen === "saves" && !debugSplit) debugDrawSaves();
       return;
     }
+    // A mark on a lane of the split is that half's: a breakpoint turn is gone
+    // to the way the lane's slider goes there, and a save point is the
+    // half's own to go to. Locked, the other half follows either.
+    const lane = debugSplit ? event.target.closest(".dbg-lane") : null;
+    const mark = lane && lane.dataset.dbgLane ? event.target.closest("[data-dbg-turn], [data-dbg-goto]") : null;
+    if (mark) {
+      debugSay("");
+      if (mark.dataset.dbgTurn) debugSplitGoTo(lane.dataset.dbgLane, mark.dataset.dbgTurn);
+      else debugSplitGoToSave(lane.dataset.dbgLane, +mark.dataset.dbgGoto);
+      return;
+    }
     // The deck of a locked split is the one panel for both halves: a press
     // on it is theirs, not this page's own world's, which waits under them.
     if (debugSplit) { debugRemote("pane-press", event.target); return; }
@@ -1340,8 +1355,11 @@ function drawDebugBar(measure = true) {
     debugDrawLane("", null);
     for (const letter of ["a", "b"]) {
       const pane = panes[letter], turn = pane.turn ?? debugSplit.from ?? state.turn;
+      // A half has no timeline of its own to show them on, so its save
+      // points and breakpoint turns stand on its lane (`pane-marks`).
+      const marks = pane.marks || {flags: [], stops: []};
       debugDrawLane(letter, {name: letter.toUpperCase(), ...axis, first: Math.min(pane.first ?? turn, turn),
-        last: played(letter), turn, fork: debugSplit.from, kept: null, turns: null, flags: [], stops: [],
+        last: played(letter), turn, fork: debugSplit.from, kept: null, turns: null, flags: marks.flags, stops: marks.stops,
         goal, idle: pane.turn !== null && !debugSplit.busy && !running});
       const agent = debugLanes[letter].agent;
       debugOfferAgents(agent, pane.strategy);
@@ -1374,7 +1392,7 @@ function drawDebugBar(measure = true) {
       eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle: deck.idle});
   }
   debugDrawDeck(bar, deck);
-  if (DEBUG_PANE !== null) debugPaneDeck(deck);
+  if (DEBUG_PANE !== null) { debugPaneDeck(deck); debugPaneMarks(timeline); }
   if (measure) debugDock(bar);
 }
 // The deck under the timeline, and the panels that open from it, drawn from
@@ -2000,6 +2018,13 @@ function debugSplitGoTo(letter, text) {
 }
 // What a half did that left its turn where it was, as the other half is
 // asked to do it. A walk that ended on the same turn went to the top of it.
+// A save point is one half's own, so the half whose lane it stands on is
+// asked to go to it. It goes of its own accord, as from its own panel, so a
+// locked other half is brought to the same turn.
+function debugSplitGoToSave(letter, id) {
+  if (!debugSplit || debugSplit.busy || debugSplit.running > 0 || !Number.isFinite(id)) return;
+  debugSplitTell(letter, {civvis: "pane-op", body: {op: "goto_save", id}, lead: true});
+}
 function debugMirrored(body) {
   return ["back", "forward", "jump", "restart"].includes(body.op) ? {op: "restart"} : body;
 }
@@ -2046,6 +2071,10 @@ window.addEventListener("message", event => {
     if (!debugSplit.locked || !data.body) return;
     if (data.twinned) debugSplitTell(other, {civvis: "pane-follow", turn: debugSplit.panes[letter].turn, how: "twin"});
     else debugSplitTell(other, {civvis: "pane-op", body: debugMirrored(data.body)});
+  } else if (data.civvis === "pane-marks") {
+    debugSplit.panes[letter].marks = {flags: Array.isArray(data.flags) ? data.flags : [],
+      stops: Array.isArray(data.stops) ? data.stops : []};
+    drawDebugBar();
   } else if (data.civvis === "pane-deck") {
     debugSplit.panes[letter].deck = data.deck;
     debugSplitSettle();
@@ -2098,6 +2127,18 @@ function debugPaneDeck(deck) {
   if (said === debugDeckSaid) return;
   debugDeckSaid = said;
   window.parent.postMessage({civvis: "pane-deck", pane: DEBUG_PANE, deck}, location.origin);
+}
+// What stands on this half's timeline, for the host to draw on the half's
+// lane: its save points and its breakpoint turns. Said when it changes,
+// locked or not, because the lane is the only timeline a half has.
+let debugMarksSaid = "";
+function debugPaneMarks(timeline) {
+  const flags = [...(timeline.saves || [])].sort((a, b) => a.turn - b.turn || a.id - b.id);
+  const stops = timeline.breakpoints.turns;
+  const said = JSON.stringify([flags, stops]);
+  if (said === debugMarksSaid) return;
+  debugMarksSaid = said;
+  window.parent.postMessage({civvis: "pane-marks", pane: DEBUG_PANE, flags, stops}, location.origin);
 }
 // What the host tells a half to do after the other is done one thing at a
 // time, in the order it was told, and not while the half is in the middle of

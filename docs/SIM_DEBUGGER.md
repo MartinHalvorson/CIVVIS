@@ -33,8 +33,9 @@ side, a copy, and the half that is kept. A last part holds the lock: that
 Branch Timeline opens the split at once, that the lock stands between the two
 lanes and closes only on one turn, that the host's deck is the one panel of a
 locked split and plays both halves, that each half shows its own panel again
-when the lock opens, and that two identical halves are asked for once. A
-control added to the box or the strip is added there.
+when the lock opens, that two identical halves are asked for once, and that
+a lane shows its half's breakpoint turns and save points and goes to the one
+that is clicked. A control added to the box or the strip is added there.
 
 ## The bar
 
@@ -392,6 +393,14 @@ and on both halves while they are locked. Letting go of it on a turn every
 half concerned has played walks them there; on a turn ahead of any of them it
 plays them there, each with its own Civ AI. At the head of each lane is the
 Civ AI that half seats, to pick there.
+
+A lane also carries what stands on its half's timeline, as the timeline of an
+unsplit page does: a red dot on each breakpoint turn and a flag on each save
+point. A half has no timeline of its own to show them on, so it tells the
+host whenever they change (`pane-marks`), locked or not. Clicking a dot goes
+to that turn the way letting go of the lane there does. Clicking a flag takes
+that half to its save point; locked, the other half is brought to the same
+turn. Unlocked, each lane's marks are its half's alone.
 
 ### The lock
 
