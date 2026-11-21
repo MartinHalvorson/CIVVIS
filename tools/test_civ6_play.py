@@ -3397,6 +3397,16 @@ class DealSessionConfigTests(unittest.TestCase):
         self.assertEqual(source.count(
             '"DvJoinWinner": getattr(args, "dv_join_winner", False),'), 2)
 
+    def test_joining_the_congress_plurality_is_opt_in_and_recorded(self):
+        self.assertIs(self._config()["WcJoinPlurality"], False)
+        self.assertIs(self._config(wc_join_plurality=True)["WcJoinPlurality"], True)
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('ap.add_argument("--wc-join-plurality", dest="wc_join_plurality", '
+                      'action="store_true",', source)
+        # Each game's summary says which arm it played, in both summary writers.
+        self.assertEqual(source.count(
+            '"WcJoinPlurality": getattr(args, "wc_join_plurality", False),'), 2)
+
     def test_civvis_decider_keeps_non_modal_deals_by_default(self):
         self.assertIs(self._config(civvis_decides=True)["DealSessions"], False)
 
