@@ -2878,7 +2878,9 @@
     --politics-friend: #79e077; --politics-alliance: #74a3f3; --politics-war: #e58a7a;
     --politics-friendly: #a8d89a; --politics-neutral: #7f918b;
     --politics-unfriendly: #e8c060; --politics-denounced: #ef8f4a; --politics-unmet: #6f827b;
-    --politics-name: clamp(42px, calc(var(--deck-window, 400px) * .26), 96px);
+    /* The column names hang at 45° below the table, as deep as the longest
+       name's run down the slant (measured each turn) plus its plate's width. */
+    --politics-foot: calc(var(--politics-run, 64px) * .71 + 16px);
   }
   #side.deck-stops #politicssec[open] ~ .sidebar-section:not([open]) { position: static; box-shadow: none; }
   #side.deck-stops #politicssec[open] { scroll-margin-bottom: 0; }
@@ -2889,11 +2891,11 @@
   }
   /* Never less than the column names and six rows, so a six-player world is
      read whole on any window, plus a scrollbar's width. A larger world takes the
-     height down to the deck's floor, less the key above it and the padding. */
-  #side.deck-stops .politics-list { max-height: max(calc(var(--politics-name) + 35px + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }
+     height down to the deck's floor, less the key below it and the padding. */
+  #side.deck-stops .politics-list { max-height: max(calc(var(--politics-foot) + 20px + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }
   .politics-matrix { min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: calc(var(--type-secondary) - 1px); line-height: 1.2; }
   .politics-matrix th, .politics-matrix td { padding: 0; }
-  .politics-matrix tbody td, .politics-matrix thead th {
+  .politics-matrix tbody td, .politics-matrix tfoot th {
     min-width: var(--politics-cell); text-align: center;
     border-right: 1px solid #29413b66; border-bottom: 1px solid #29413b66;
   }
@@ -2901,31 +2903,36 @@
   .politics-matrix tbody td.self { background: #ffffff0d; }
   .politics-matrix tbody tr:hover td:not(.self), .politics-matrix col.politics-crossed { background: #ffffff0a; }
   /* Both rails are opaque so that what scrolls under them cannot show through. */
-  .politics-matrix thead th, .politics-matrix tbody th, .politics-corner { position: sticky; background: var(--politics-ground); }
-  .politics-matrix thead th { top: 0; z-index: 2; vertical-align: bottom; padding: 3px 0; box-shadow: 0 1px 0 var(--line); }
+  .politics-matrix tfoot th, .politics-matrix tbody th, .politics-corner { position: sticky; background: var(--politics-ground); }
+  .politics-matrix tfoot th { bottom: 0; z-index: 2; height: var(--politics-foot); vertical-align: top; box-shadow: 0 -1px 0 var(--line); }
   .politics-matrix tbody th { left: 0; z-index: 1; text-align: left; font-weight: 650; box-shadow: 1px 0 0 var(--line), 5px 0 5px -3px #0009; }
-  .politics-matrix tbody tr:hover th, .politics-matrix thead th.politics-crossed { background: var(--politics-lit); }
-  .politics-matrix tbody th > span {
-    display: flex; align-items: center; gap: 4px; max-width: 96px; padding-right: 6px;
+  .politics-matrix tbody tr:hover th, .politics-matrix tfoot th.politics-crossed { background: var(--politics-lit); }
+  /* Every name is on its civilization's plate: the jersey's first colour for
+     the ground, its partner for the trim and, wherever it reads, the ink. */
+  .politics-name {
+    display: flex; align-items: center; box-sizing: border-box; max-width: 96px; height: 16px;
+    padding: 0 5px 0 4px; border-left: 3px solid var(--civ-trim); border-radius: 2px;
+    background: var(--civ); font-weight: 650;
   }
-  .politics-matrix thead th > span {
-    display: inline-flex; align-items: center; gap: 4px; font-weight: 650;
-    writing-mode: vertical-rl; transform: rotate(180deg);
+  .politics-matrix tbody th > .politics-name { margin: 0 6px 0 2px; }
+  /* A column's name ends at the column and runs down to the left, under the
+     row names, whose corner is empty. Its trim is the end at the column. */
+  .politics-matrix tfoot th > .politics-name {
+    position: absolute; top: 4px; right: calc(50% + 6px); max-width: 128px;
+    border-left: 0; border-right: 3px solid var(--civ-trim); padding: 0 4px 0 5px;
+    transform-origin: 100% 0; transform: rotate(-45deg);
   }
-  .politics-corner { top: 0; left: 0; z-index: 3; box-shadow: 1px 1px 0 var(--line), 5px 0 5px -3px #0009; }
-  .politics-key { display: flex; flex-wrap: wrap; gap: 2px 8px; padding: 0 0 6px; color: var(--muted); font-size: var(--type-label); }
+  /* The corner is the column names' room until the table slides sideways;
+     then it covers the columns that went under the row names. */
+  .politics-corner { bottom: 0; left: 0; z-index: 2; box-shadow: 1px -1px 0 var(--line); }
+  .politics-slid .politics-corner { z-index: 3; box-shadow: 1px -1px 0 var(--line), 5px 0 5px -3px #0009; }
+  .politics-key { display: flex; flex-wrap: wrap; gap: 2px 8px; padding: 6px 0 0; color: var(--muted); font-size: var(--type-label); }
   .politics-key > span { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
   .politics-key > .politics-key-note { flex-basis: 100%; color: var(--faint); white-space: normal; }
   /* A short window needs the row more, and every face says the same on hover. */
   @media (max-height: 880px) { .politics-key > .politics-key-note { display: none; } }
-  .politics-matrix .war-entity-link { overflow: hidden; color: var(--text); font-weight: inherit; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+  .politics-matrix .war-entity-link { overflow: hidden; color: var(--civ-ink, var(--text)); font-weight: inherit; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
   .politics-matrix .war-entity-link:hover, .politics-matrix .war-entity-link:focus-visible { text-decoration: underline; }
-  /* Column names give way first in a short deck, where every row counts. */
-  .politics-matrix thead th .war-entity-link { max-height: var(--politics-name); }
-  .politics-chip {
-    flex: 0 0 auto; box-sizing: border-box; width: 9px; height: 9px;
-    border: 1.5px solid; border-radius: 50%;
-  }
   .politics-mark {
     position: relative; isolation: isolate; display: inline-grid; place-items: center; flex: 0 0 auto;
     width: 14px; height: 14px; vertical-align: middle;
@@ -6840,16 +6847,17 @@
       <button class="primary" id="setup-start" type="button" hidden>Start new game</button>
       </div>
     </details>
-    <!-- The key is new so that readers whose browsers saved this section open while
-         it opened by default also start with it collapsed. -->
-    <details class="sidebar-section" id="politicssec" data-section="world-politics-v2" name="deck-section">
+    <!-- The one section that opens by itself. The key is new because every
+         browser that loaded the deck while the section started collapsed saved
+         it shut, and a saved value beats the markup. -->
+    <details class="sidebar-section" id="politicssec" data-section="world-politics-v3" open name="deck-section">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">⚖</span><span>World politics</span></span>
         <span class="section-meta"><span class="event-scope" id="politicsscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
       </summary>
       <div class="sec">
-        <div id="politicskey" class="politics-key" hidden></div>
         <div id="worldpolitics" class="politics-list"></div>
+        <div id="politicskey" class="politics-key" hidden></div>
         <div id="politicscaveat" class="politics-caveat" hidden>Civ VI reports pacts and attitudes for our own seat only, so those cells between rivals are blank.</div>
       </div>
     </details>

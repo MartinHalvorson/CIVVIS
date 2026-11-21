@@ -7819,7 +7819,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     for tag in [
         "<details class=\"sidebar-section\" data-section=\"display-settings\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"setupsec\" data-section=\"game-settings\" name=\"deck-section\">",
-        "<details class=\"sidebar-section\" id=\"politicssec\" data-section=\"world-politics-v2\" name=\"deck-section\">",
+        "<details class=\"sidebar-section\" id=\"politicssec\" data-section=\"world-politics-v3\" open name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"strategysec\" data-section=\"active-strategy\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"warsec\" data-section=\"war-log\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"eventsec\" data-section=\"event-log\" name=\"deck-section\">",
@@ -10655,7 +10655,7 @@ fn browser_minimap_highlights_the_camera_footprint_for_both_map_shapes() {
 }
 
 #[test]
-fn world_politics_sits_under_game_setup_and_starts_collapsed() {
+fn world_politics_sits_under_game_setup_and_opens_by_default() {
     let setup = EMBEDDED_INDEX.find("id=\"setupsec\"").expect("Game setup");
     let politics = EMBEDDED_INDEX
         .find("id=\"politicssec\"")
@@ -10665,16 +10665,24 @@ fn world_politics_sits_under_game_setup_and_starts_collapsed() {
         .expect("AI strategy");
     assert!(setup < politics && politics < strategy);
     assert!(EMBEDDED_INDEX.contains("<span>World politics</span>"));
-    // No section of the deck opens by itself.
+    // World politics is the one section of the deck that opens by itself.
     assert_eq!(
         EMBEDDED_INDEX
             .matches(" open name=\"deck-section\">")
             .count(),
-        0
+        1
     );
-    // Browsers saved the old key as open while the section opened by default,
-    // and a saved value beats the markup, so the old key must not come back.
+    assert!(
+        EMBEDDED_INDEX.contains("id=\"politicssec\" data-section=\"world-politics-v3\" open name=")
+    );
+    // A saved value beats the markup. Browsers saved the first key open and the
+    // second shut while each was the default, so neither may come back.
     assert!(!EMBEDDED_INDEX.contains("data-section=\"world-politics\""));
+    assert!(!EMBEDDED_INDEX.contains("data-section=\"world-politics-v2\""));
+    // A section the reader left open still outranks the default.
+    assert!(EMBEDDED_INDEX.contains(
+        "let open = section.open && !(keptOpen && section.classList.contains(\"sidebar-section\"));"
+    ));
     // A battlefield has no politics, and the section hands over its room.
     assert!(EMBEDDED_INDEX.contains("body.watching-tactics #politicssec,"));
     assert!(EMBEDDED_INDEX.contains("document.getElementById(\"politicssec\")?.open ||"));
@@ -10727,25 +10735,36 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
         assert!(EMBEDDED_INDEX.contains(&format!("[\"{state}\", \"")));
     }
     // The key is outside the name column, which holds names and nothing else,
-    // and is read before the table it explains.
+    // and sits below the table it explains.
     let key = EMBEDDED_INDEX
         .find("<div id=\"politicskey\" class=\"politics-key\" hidden></div>")
         .expect("key");
     assert!(
-        key < EMBEDDED_INDEX
+        key > EMBEDDED_INDEX
             .find("<div id=\"worldpolitics\"")
             .expect("table")
     );
     assert!(matrix.contains("<td class=\"politics-corner\"></td>"));
+    // The column names run along the bottom, slanted, and every name stands on
+    // its civilization's plate in both jersey colours.
+    assert!(matrix.contains("<tfoot><tr><td class=\"politics-corner\"></td>${foot}</tr></tfoot>"));
+    assert!(!matrix.contains("<thead>"));
+    assert!(matrix.contains("--civ:${pcol(id)};--civ-trim:${pcol2(id)};"));
+    assert!(matrix.contains("--civ-ink:${hudJerseyInk(id)}"));
+    assert!(EMBEDDED_INDEX.contains("transform-origin: 100% 0; transform: rotate(-45deg);"));
+    assert!(panel.contains("list.style.setProperty(\"--politics-run\", `${run}px`);"));
+    assert!(EMBEDDED_INDEX.contains("table.tFoot.rows[0].cells[column]"));
     assert!(!EMBEDDED_INDEX.contains("politics-legend"));
 
     // Both sets of names stay put while the table scrolls under them. Six rows
     // always fit, and the labels below stop covering the table while it is open.
     assert!(EMBEDDED_INDEX.contains(".politics-matrix tbody th { left: 0; z-index: 1;"));
-    assert!(EMBEDDED_INDEX.contains(".politics-matrix thead th { top: 0; z-index: 2;"));
+    assert!(EMBEDDED_INDEX.contains(".politics-matrix tfoot th { bottom: 0; z-index: 2;"));
     assert!(EMBEDDED_INDEX.contains(
-        "#side.deck-stops .politics-list { max-height: max(calc(var(--politics-name) + 35px + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }"
+        "#side.deck-stops .politics-list { max-height: max(calc(var(--politics-foot) + 20px + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }"
     ));
+    // Slid sideways, the corner covers the columns that went under the names.
+    assert!(EMBEDDED_INDEX.contains(".politics-slid .politics-corner { z-index: 3;"));
     assert!(EMBEDDED_INDEX.contains(
         "#side.deck-stops #politicssec[open] ~ .sidebar-section:not([open]) { position: static; box-shadow: none; }"
     ));
