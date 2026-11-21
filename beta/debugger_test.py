@@ -604,7 +604,8 @@ def check_the_bar(bar: Bar) -> None:
     label = lambda: [bar.ev(f"document.getElementById('dbg-run-{part}').textContent") for part in ("sign", "word", "count")]
     assert bar.ev(f"[...{turns}.options].map(option => option.value).join()") \
         == "1,2,3,4,5,10,20,30,40,50,100,150,200,250,all"
-    assert bar.ev(f"{turns}.value") == "1" and label() == ["▶▶", "Auto-play", ""], label()
+    assert bar.ev(f"{turns}.value") == "10" and label() == ["▶▶", "Auto-play", ""], label()
+    bar.ev(f"{turns}.value = '1', true")
     bar.forget()
     bar.click('[data-dbg="autoplay"]')
     bar.idle(f"state.turn === {last + 2}", "auto-play plays one turn")

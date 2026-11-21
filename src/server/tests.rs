@@ -13886,6 +13886,9 @@ fn browser_offers_a_strategy_and_a_turn_count_to_auto_play() {
         );
     }
     assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All</option>"));
+    // Ten turns is what it is set to before anyone picks (operator, 2026-11-20:
+    // "default for auto play can be 10 turns").
+    assert!(EMBEDDED_INDEX.contains("<option value=\"10\" selected>10</option>"));
     // The picker is filled from the server's roster, never a hardcoded list.
     assert!(EMBEDDED_INDEX
         .contains("const roster = Array.isArray(rules.strategies) ? rules.strategies : []"));
@@ -14654,7 +14657,7 @@ fn a_watched_simulation_keeps_the_laboratory() {
     );
     // The auto-play button says how long the loan is, and follows the
     // picker beside it.
-    assert!(EMBEDDED_INDEX.contains("▶▶ Auto-play 1 turn</button>"));
+    assert!(EMBEDDED_INDEX.contains("▶▶ Auto-play 10 turns</button>"));
     assert!(EMBEDDED_INDEX.contains("function syncAutoplayLabel()"));
     assert!(EMBEDDED_INDEX.contains("`▶▶ Auto-play ${turns} turn${turns === 1 ? \"\" : \"s\"}`"));
     assert!(EMBEDDED_INDEX.contains(

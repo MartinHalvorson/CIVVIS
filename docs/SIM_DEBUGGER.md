@@ -60,12 +60,13 @@ beside it. The turn buttons stand either side of it, in this order:
   those turns again, and it says so under the pointer.)
 
 At the left end is Auto-play, which used to be in the left panel: the Civ AI
-that plays the seat, how many turns (1 to 250, or all), and the button. It
-plays that many turns from the turn that is open and stops early when a
-breakpoint does. While it plays, the button counts the turns (`7/20`, or just
-`7` when it plays all) and is its own Stop. A turn played to from the
-timeline or by the turn buttons is counted and stopped the same way. Beside
-it are Layers, Breakpoints and **Branch Timeline** (the split screen).
+that plays the seat, how many turns (1 to 250, or all; it is set to 10 to
+begin with), and the button. It plays that many turns from the turn that is
+open and stops early when a breakpoint does. While it plays, the button
+counts the turns (`7/20`, or just `7` when it plays all) and is its own Stop.
+A turn played to from the timeline or by the turn buttons is counted and
+stopped the same way. Beside it are Layers, Breakpoints and **Branch
+Timeline** (the split screen).
 
 At the right end are the rest of the tools: step in, step a seat, undo, save
 points, Reveal and the Single player switch.
@@ -176,7 +177,7 @@ do not carry, so the replay would be another world.
 | 10 ▶▶ | `jump`, then `step` repeated | Ten turns on: forward along the turns already played, and past the last of them the Civ AI plays the rest |
 | timeline | `jump`, or `step` repeated | Go to any turn of the game. One that was played is put back as it stood; one that is no longer kept answers with the nearest before it, and the bar says so. One still ahead is played to by the seat's Civ AI, stopping early if a breakpoint does. The mouse wheel over it walks one played turn at a time, and the arrow keys move it a turn |
 | Civ AI | | Which Civ AI plays the seat when a turn is auto-played, stepped or played to. It is the page's own picker (`#autoplaystrategy`), shown beside Auto-play |
-| Turns, ▶▶ Auto-play | `step`, repeated | Play the turns picked (1 to 250, or all) from the turn that is open, stopping early at a breakpoint. The button counts the turns as they are played and is the Stop |
+| Turns, ▶▶ Auto-play | `step`, repeated | Play the turns picked (1 to 250, or all; 10 unless changed) from the turn that is open, stopping early at a breakpoint. The button counts the turns as they are played and is the Stop |
 | ↶ (`Ctrl`/`Cmd`+`Z`) | `undo` | Take back your last action this turn; the note says so, and how many more can be taken back |
 | ▸ | `step_action` | Step in: the seat's Civ AI takes its next action, and ends the turn when it has none left |
 | ▸\| | `step_seat` | Step one seat: end your turn as it stands, then one civilization's turn at a time |
