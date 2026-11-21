@@ -408,6 +408,14 @@ have is refused when the condition is set, not left to never fire.
 A condition stops the run on the turn it becomes true: it holds now and did
 not a turn ago. One that stays true does not stop every turn after.
 
+Reading the conditions is building that observation, which is the whole
+table, so a step with a condition set pays for it: 60 to 80 ms of a 150 ms
+step at turns 80 to 105 of a six-seat game when a step read it before and
+after. A step now keeps what it read after, and the next step uses that as
+its reading before when the world is still that world (the same log, action
+for action) and the conditions are the same; any other debugger operation
+lets go of it. A run with conditions set reads the table once a turn.
+
 The stop is reported on `state.debug.stopped` and in the bar, with a Show
 button when the event has a place on the map.
 

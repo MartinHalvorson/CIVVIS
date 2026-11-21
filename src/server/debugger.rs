@@ -276,6 +276,36 @@ fn readings(game: &Game, conditions: &[Condition]) -> Vec<Option<Value>> {
         .collect()
 }
 
+/// What the conditions read of the world a step left.
+///
+/// A step holds each condition's reading before it against the reading after
+/// it, and both are the omniscient observation of the whole table: at turn
+/// 80 to 105 of a six-seat game the two cost a step 60 to 80 ms of its 150.
+/// The reading after one step is the reading before the next whenever the
+/// world between them is the same world and the conditions are the same
+/// conditions, so it is kept and only then used.
+#[derive(Clone)]
+struct Read {
+    /// The world it was read of. A game is its seed and its log, so a world
+    /// with this log, action for action, is that world.
+    log: crate::actionlog::ActionLog,
+    turn: u32,
+    conditions: Vec<Condition>,
+    readings: Vec<Option<Value>>,
+}
+
+impl Read {
+    /// These readings, if `game` is the world they were read of and
+    /// `conditions` are what was read.
+    fn of(self, game: &Game, conditions: &[Condition]) -> Option<Vec<Option<Value>>> {
+        (self.turn == game.turn
+            && self.log.len() == game.log.len()
+            && game.log.continues(&self.log)
+            && self.conditions == conditions)
+            .then_some(self.readings)
+    }
+}
+
 /// When a run stops by itself.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Breakpoints {
@@ -598,6 +628,9 @@ pub struct Timeline {
     layers: BTreeSet<Layer>,
     /// Why the last step stopped a run, until the next thing moves the world.
     stopped: Option<Value>,
+    /// What the conditions read after the last step (`Read`). Any other
+    /// debugger operation lets go of it.
+    read: Option<Read>,
     /// What the layers did when the open turn began.
     assisted: usize,
     /// The agent's turn, when it is being taken an action at a time.
@@ -1221,7 +1254,13 @@ impl Session {
         let turn = self.game.turn;
         let before_len = self.game.events.len();
         let before_last = self.game.events.last().cloned();
-        let read_before = readings(&self.game, &self.debugger.breakpoints.conditions);
+        let read_before = self
+            .debugger
+            .read
+            .take()
+            .and_then(|read| read.of(&self.game, &self.debugger.breakpoints.conditions))
+            .unwrap_or_else(|| readings(&self.game, &self.debugger.breakpoints.conditions));
+        let mut read_after = None;
         let era_before = self.game.world_era;
         // In the middle of a round the next whole thing to play is the rest
         // of it: the rivals finish, and the turn that opens is the person's.
@@ -1246,12 +1285,23 @@ impl Session {
                     )
                 })
                 .or_else(|| {
-                    let read_after = readings(&self.game, &self.debugger.breakpoints.conditions);
-                    self.debugger
-                        .breakpoints
-                        .crossed(self.game.turn, &read_before, &read_after)
+                    let after = readings(&self.game, &self.debugger.breakpoints.conditions);
+                    let hit =
+                        self.debugger
+                            .breakpoints
+                            .crossed(self.game.turn, &read_before, &after);
+                    read_after = Some(after);
+                    hit
                 })
         };
+        self.debugger.read = read_after
+            .filter(|readings| !readings.is_empty())
+            .map(|readings| Read {
+                log: self.game.log.clone(),
+                turn: self.game.turn,
+                conditions: self.debugger.breakpoints.conditions.clone(),
+                readings,
+            });
         played > 0
     }
 
@@ -1490,7 +1540,13 @@ impl Session {
         } else if let Err(error) = seated {
             Err(error)
         } else {
-            match request["op"].as_str().unwrap_or("status") {
+            let op = request["op"].as_str().unwrap_or("status");
+            // Only a step straight after a step reads the world the last one
+            // left; whatever else is asked may have moved it (`Read`).
+            if op != "step" {
+                self.debugger.read = None;
+            }
+            match op {
                 "status" => Ok(()),
                 "back" => self.debug_back().map(|_| ()),
                 "forward" => self.debug_forward().map(|_| ()),

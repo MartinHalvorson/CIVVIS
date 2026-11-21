@@ -945,6 +945,65 @@ fn a_condition_stops_a_run_when_the_state_crosses_its_line() {
     assert_eq!(cleared["debug"]["breakpoints"]["conditions"], json!([]));
 }
 
+/// A step keeps what its conditions read of the world it left, for the step
+/// after it. A run that does stops where a run that reads the world afresh
+/// before every step stops, for the same reason, and what was kept is not
+/// used for a world that has since been played on, walked away from, or
+/// asked about under other conditions.
+#[test]
+fn a_reading_kept_from_the_last_step_is_the_reading_before_the_next() {
+    let conditions = json!({"op": "breakpoints", "conditions": [
+        {"seat": 0, "key": "cities", "test": ">=", "value": 1},
+        {"seat": 1, "key": "cities", "test": "changes"},
+        {"seat": 0, "key": "score", "test": "changes"},
+    ]});
+    let (mut kept, mut fresh) = (played(), played());
+    for session in [&mut kept, &mut fresh] {
+        assert_eq!(session.debug(&conditions)["error"], Value::Null);
+    }
+    let mut stops = 0;
+    for step in 0..24 {
+        // The twin reads the world itself, every step.
+        fresh.debugger.read = None;
+        let (a, b) = (
+            kept.debug(&json!({"op": "step", "lean": true})),
+            fresh.debug(&json!({"op": "step", "lean": true})),
+        );
+        assert_eq!(a["debug"]["stopped"], b["debug"]["stopped"], "step {step}");
+        assert_eq!(world(&kept), world(&fresh), "step {step}");
+        stops += usize::from(!a["debug"]["stopped"].is_null());
+        if step == 0 {
+            assert!(kept.debugger.read.is_some(), "a step keeps what it read");
+        }
+        // Part-way, the seat is walked back a turn and its conditions are
+        // set again: neither world is the one the last step left.
+        if step == 9 {
+            for session in [&mut kept, &mut fresh] {
+                session.debug(&json!({"op": "back"}));
+                assert!(session.debugger.read.is_none(), "another operation lets go");
+            }
+        }
+    }
+    assert!(stops >= 2, "the conditions stopped the run {stops} times");
+
+    // A world played on by hand is not the world that was read.
+    let read = kept.debugger.read.clone().expect("the last step read it");
+    let conditions = kept.debugger.breakpoints.conditions.clone();
+    assert!(read.clone().of(&kept.game, &conditions).is_some());
+    assert!(read.clone().of(&kept.game, &conditions[..1]).is_none());
+    let mut moved = kept.fork();
+    let action = moved
+        .game
+        .legal_actions(0)
+        .into_iter()
+        .find(|action| !matches!(action, Action::EndTurn))
+        .expect("something to do");
+    moved.game.apply(0, &action).expect("a legal action");
+    assert!(read.clone().of(&moved.game, &conditions).is_none());
+    // A fork is the same world, and may use it.
+    assert!(read.of(&kept.fork().game, &conditions).is_some());
+}
+
 /// Head to head sets two halves side by side to see what a Civ AI changes.
 /// That reads as it should only if nothing else differs: two halves of one
 /// split, given the same agent, play the same game.
