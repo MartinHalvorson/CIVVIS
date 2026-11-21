@@ -2581,6 +2581,7 @@ impl Session {
     ///
     /// `None` where that session would have refused the request outright:
     /// the caller opens the stock world and lets `start_new_game` say why.
+    #[cfg(any(test, target_arch = "wasm32"))]
     pub(crate) fn first_game_asked_for(
         opening: &Params,
         request: &Value,
