@@ -78,7 +78,7 @@
   .utility-link:hover,
   .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
   .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  /* The site is five pages, Home, Research, Tournaments, CIVVIS and Strat
+  /* The site is five pages, Home, Musings, Tournaments, CIVVIS and AI
      Debugger, and every one of them lists all five in that order, with the game they are
      built on under them and the page on screen in gold. Here they stand in a column
      to the left of the title (operator, 2026-11-21: "on the left side, to
@@ -107,11 +107,14 @@
   .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .site-link[aria-current="page"],
   .site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }
-  /* The column is as wide as its longest name, STRAT DEBUGGER, on one line:
-     150px. The name was shortened to stand on one line (operator,
-     2026-11-21: "shortern to 'Strat Debugger' and make sure it fits on one
-     line"), and it does down to a 320px phone, where the title beside the
-     column still has its room. */
+  /* The column is as wide as its longest name, TOURNAMENTS, on one line:
+     132px. Every name stands on one line (operator, 2026-11-21: "make sure
+     it fits on one line"), down to a 320px phone, where the title beside
+     the column still has its room. The list is a tree that keeps its
+     branches folded (operator, 2026-11-21: "a somewhat collapsable model
+     for the info"): a page's own pages are listed under it only on that
+     page. CIVVIS has one, Performance, which the viewer lists; none of the
+     pages with this header has any yet. */
 
   /* The report dialog: a visitor's bug or feature request, headed for the
      project's GitHub issue tracker — filed by the site itself for anonymous
@@ -243,12 +246,13 @@
 <body>
   <header class="shell site-header">
     <div class="site-brand">
-      <!-- The site is five pages, Home, Research, Tournaments, CIVVIS and Strat
+      <!-- The site is five pages, Home, Musings, Tournaments, CIVVIS and AI
            Debugger, listed in that order on every one of them with the page
-           on screen in gold: this is Home, Research is the charts read off
-           the games, Tournaments is the series of verification
+           on screen in gold: this is Home, Musings is the charts read off
+           the games (the page was named Research, and its address is still
+           <lane>/research/), Tournaments is the series of verification
            games (running, scheduled and finished), CIVVIS is the simulation
-           the AIs play and Strat Debugger the same game with a seat of your own
+           the AIs play and AI Debugger the same game with a seat of your own
            (`mode=play` in beta/shim.js). All three are lane-relative (this
            page lives at <lane>/home/), so the test lane's home page opens
            the test lane's pages. Under them is the game itself, on the shop
@@ -256,10 +260,10 @@
            stands to the left of the title. -->
       <nav class="site-nav" aria-label="CIVVIS sites">
         <a class="site-link" href="./" aria-current="page">Home</a>
-        <a class="site-link" href="../research/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Research</a>
+        <a class="site-link" href="../research/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Musings</a>
         <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
-        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">Strat Debugger</a>
+        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
         <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
       <div class="site-lockup">
