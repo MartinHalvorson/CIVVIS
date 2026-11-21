@@ -115,6 +115,10 @@ const engine = {turn: 1, marks: [1], saves: [], ids: 0, breaks: [], line: null, 
   eras: [{era: 0, name: "ancient", turn: 1}], eraAt: null,
   watch: {categories: [], phrases: [], important: false, every_seat: false, conditions: [], eras: false}, sent: []};
 const ERAS = ["ancient", "classical", "medieval"];
+// The page's own list of the world eras (`app.js`), which the bar names an
+// era it has not seen yet from.
+const ERA_NAMES = ["ancient", "classical", "medieval", "renaissance", "industrial", "modern", "atomic",
+  "information", "future"];
 // The round: the played seat, one rival, and the Barbarians.
 const SEATS = 3;
 // Another frame's engine as it stands, for a half that is copied or kept:
@@ -142,6 +146,7 @@ function engineLine() {
 function engineState(error = null) {
   const marks = engineLine(), kept = engine.marks;
   return {error, turn: engine.turn, seed: 7, current: engine.current, units: [], cities: [],
+    world_era: engine.eras.filter(era => era.turn <= engine.turn).pop().era,
     ...(engine.limit ? {turn_limit: engine.limit} : {}),
     players: [{id: 0, civ: "rome", score: engine.score, cities: 1, population: 1, military: 1,
       yields: {science: 1, culture: 1, gold: 1, faith: 0}},
@@ -214,6 +219,8 @@ async function fetchJSON(path, init = {}) {
     if (dawn) engine.eras.push({era: engine.eras.length, name: ERAS[engine.eras.length], turn: engine.turn});
     if (engine.breaks.includes(engine.turn)) engine.stopped = {kind: "turn", turn: engine.turn};
     else if (dawn && engine.watch.eras) engine.stopped = {kind: "era", turn: engine.turn, era: engine.eras.length - 1};
+    // The game is over at its last turn.
+    else if (engine.limit && engine.turn >= engine.limit) engine.stopped = {kind: "end", turn: engine.turn};
   } else if (body.op === "jump") {
     const reached = marks.filter(turn => turn <= body.turn).pop();
     if (others !== undefined && others <= body.turn) error = `turn ${others} was played by another Civ AI`;
@@ -395,7 +402,7 @@ def check_the_bar(bar: Bar) -> None:
     assert abs((turn_box[0] + turn_box[2]) / 2 - middle) < 40, (turn_box, middle)
     order = ["#dbg-agent", "#dbg-turns", "[data-dbg=autoplay]", "[data-dbg-pop=layers]", "[data-dbg-pop=breaks]",
              "[data-dbg=split]", "[data-dbg=first]", "[data-dbg=era]", "[data-dbg=back10]", "[data-dbg=back]",
-             "#dbg-turn", "[data-dbg=next]", "[data-dbg=next10]"]
+             "#dbg-turn", "[data-dbg=next]", "[data-dbg=next10]", "[data-dbg=era-next]", "[data-dbg=end]"]
     assert bar.ev("(names => { const all = [...document.querySelectorAll('#debugbar .dbg-deck *')];"
                   " const at = names.map(name => all.indexOf(document.querySelector('#debugbar .dbg-deck ' + name)));"
                   " return at.every((place, index) => place >= 0 && (index === 0 || place > at[index - 1])); })"
@@ -551,7 +558,7 @@ def check_the_bar(bar: Bar) -> None:
     assert sent() == [("jump", 1)], sent()
 
     # The eras the game has been through are named on the timeline at the
-    # turn each began. A name is clicked to go there, and Era start goes back
+    # turn each began. A name is clicked to go there, and Era Back goes back
     # to the first turn of the era that is open, then of the era before.
     eras = f"[...document.querySelectorAll('{LANE} .dbg-marks u b')].map(name => name.textContent)"
     assert bar.ev(eras) == ["Ancient"], bar.ev(eras)
@@ -575,13 +582,47 @@ def check_the_bar(bar: Bar) -> None:
     assert "turn 5" in bar.ev("document.querySelector('[data-dbg=\"era\"]').title")
     bar.forget()
     bar.click('[data-dbg="era"]')
-    bar.idle("state.turn === 5", "Era start goes to the first turn of the era that is open")
+    bar.idle("state.turn === 5", "Era Back goes to the first turn of the era that is open")
     bar.click('[data-dbg="era"]')
     bar.idle("state.turn === 1", "and from there to the first turn of the era before")
     assert sent() == [("jump", 5), ("jump", 1)], sent()
     assert off("era")
+    # Era Next goes on to the first turn of the next era the turns already
+    # played reach, and past the last of them the Civ AI plays until a new
+    # era begins: from turn 5, it walks to the last turn played and plays the
+    # three turns to the one the next era begins on.
+    era_next = "document.querySelector('[data-dbg=\"era-next\"]').title"
+    assert off("era-next") is False and "turn 5" in bar.ev(era_next), bar.ev(era_next)
+    bar.forget()
+    bar.click('[data-dbg="era-next"]')
+    bar.idle("state.turn === 5", "Era Next goes to the first turn of the next era already played")
+    assert sent() == [("jump", 5)], sent()
+    assert "until the Medieval era begins" in bar.ev(era_next), bar.ev(era_next)
+    score, last = bar.ev("[engine.score, debugTimeline().last]")
+    assert last > 6, last
+    bar.ev(f"engine.eraAt = {last + 3}, true")
+    bar.forget()
+    bar.click('[data-dbg="era-next"]')
+    bar.idle(f"state.turn === {last + 3}", "Era Next walks to the last turn played and plays until a new era begins")
+    assert sent() == [("jump", last)] + [("step", None)] * 3, sent()
+    assert bar.note() == f"Stopped on turn {last + 3}: the Medieval era began", bar.note()
+    # Play to End walks to the last turn played and plays the game out.
+    last += 3
+    bar.ev(f"engine.limit = {last + 4}, true")
+    bar.type_turn(3)
+    bar.idle("state.turn === 3", "the turn box goes to turn 3")
+    assert bar.ev("document.querySelector('[data-dbg=\"end\"] .dbg-word').textContent") == "Play to End"
+    bar.forget()
+    bar.click('[data-dbg="end"]')
+    bar.idle(f"state.turn === {last + 4}", "Play to End plays the game out")
+    assert sent() == [("jump", last)] + [("step", None)] * 4, sent()
+    assert bar.note() == f"The game ended on turn {last + 4}", bar.note()
+    # A game in its last era has no next one.
+    bar.ev(f"engine.eras.push({{era: 8, name: 'future', turn: {last + 4}}}), render(engineState()), true")
+    assert off("era-next") and "the last era" in bar.ev(era_next), bar.ev(era_next)
     # Back to nine turns played and turn 2 open, for what follows.
-    bar.ev("engine.eras.length = 1, engine.marks = [1, 2, 3, 4, 5, 6, 7, 8, 9], engine.turn = 2, render(engineState()), true")
+    bar.ev(f"engine.eras.length = 1, engine.eraAt = null, engine.limit = null, engine.score = {score},"
+           " engine.marks = [1, 2, 3, 4, 5, 6, 7, 8, 9], engine.turn = 2, render(engineState()), true")
 
     # A save point: set by name, flagged on the timeline, gone to by its flag,
     # and let go from the list. Its panel opens under its own button.
@@ -1546,8 +1587,9 @@ def main() -> int:
         check_the_bar(bar)
         print("the header box stands beside the left panel with the map area beneath it, the timeline "
               "on top and the open turn under its middle, and sends what each control is for: the "
-              "turn box, the timeline back and ahead, the wheel, the turn buttons, the eras and Era "
-              "start, save points and their flags, a breakpoint picked from the timeline, and "
+              "turn box, the timeline back and ahead, the wheel, the turn buttons, the eras, Era Back, "
+              "Era Next and Play to End, save points and their flags, a breakpoint picked from the "
+              "timeline, and "
               "Auto-play with its count.")
         check_breakpoints_and_a_run(bar)
         check_layers_reveal_and_undo(bar)

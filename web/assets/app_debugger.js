@@ -10,8 +10,9 @@
 // on it, and a marker that moves right as turns open. A turn that was played
 // is gone back to as it stood, and a turn still ahead is played to by the
 // seat's Civ AI. Under the timeline the open turn stands in the middle with
-// the turn buttons either side of it (turn 1, era start, ten back, one back;
-// one on, ten on). Auto-play, layers, breakpoints and Branch Timeline are at
+// the turn buttons either side of it (Turn 1, Era Back, ten back, one back;
+// one on, ten on, Era Next, Play to End). Auto-play, layers, breakpoints and
+// Branch Timeline are at
 // the left, and stepping in, undo, save points, reveal and the Single player
 // switch at the right.
 //
@@ -67,8 +68,8 @@ const DEBUG_BAR_STYLE = `
   #debugbar .dbg-cluster { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 5px; min-width: 0; }
   #debugbar .dbg-right .dbg-cluster { justify-content: flex-end; gap: 4px 12px; }
   #debugbar .dbg-apart { margin-left: 7px; }
-  /* Turn 1 and Era start are words while there is room, and signs when not:
-     they are the first words to go (a snug box), before every tool's. */
+  /* Turn 1 and Play to End are words while there is room, and signs when
+     not: they are the first words to go (a snug box), before every tool's. */
   #debugbar .dbg-sign { display: none; }
   #debugbar.dbg-snug .dbg-sign, #debugbar.dbg-tight .dbg-sign { display: inline; }
   #debugbar.dbg-snug .dbg-nav .dbg-word { display: none; }
@@ -542,8 +543,8 @@ function debugSayStop(stopped) {
   if (!stopped) return;
   if (stopped.kind === "turn") debugSay(`Stopped at turn ${stopped.turn}`);
   else if (stopped.kind === "era") {
-    const era = ((debugTimeline() || {}).eras || []).find(began => began.era === stopped.era);
-    debugSay(`Stopped on turn ${stopped.turn}: the ${era && era.name ? titleCase(era.name) : "next"} era began`);
+    const era = ((debugTimeline() || {}).eras || []).find(began => began.era === stopped.era) || {era: stopped.era};
+    debugSay(`Stopped on turn ${stopped.turn}: the ${debugEraName(era)} era began`);
   }
   else if (stopped.kind === "event")
     debugSay(`Stopped on ${stopped.category}: ${stopped.text}`, stopped.pos || null);
@@ -648,8 +649,9 @@ async function debugStepSeat() {
   return next;
 }
 // Played a turn a request, like auto-play, so every turn reaches the glass
-// and the Stop button is never more than one turn away.
-async function debugRun(until = null) {
+// and the Stop button is never more than one turn away. `era` is a world era
+// to play out of (Era Next): the run stops on the first turn of a new one.
+async function debugRun(until = null, era = null) {
   if (debugRunning) { debugStopAsked = true; drawDebugBar(); return; }
   if (autoplaying || !debugTimeline()) return;
   debugRunning = true; debugStopAsked = false; autoplaying = true; debugGoal = until;
@@ -660,8 +662,9 @@ async function debugRun(until = null) {
   // is asked for on this answer, before the turn is drawn (`debugOp`), so a
   // Stop pressed while a turn is being drawn takes effect a turn later: the
   // engine was already playing it.
+  const dawn = next => era !== null && next.world_era !== undefined && next.world_era !== era;
   const run = {ahead: null, more: next => !debugStopAsked && !(next.debug || {}).stopped &&
-    !(until !== null && next.turn >= until)};
+    !(until !== null && next.turn >= until) && !dawn(next)};
   try {
     do {
       const next = await debugOp({op: "step", strategy: debugStrategy()}, AUTOPLAY_BATCH_TIMEOUT_MS, run);
@@ -671,6 +674,7 @@ async function debugRun(until = null) {
       const stopped = (next.debug || {}).stopped;
       if (stopped) { debugSayStop(stopped); break; }
       if (until !== null && next.turn >= until) { debugSay(`Played to turn ${next.turn}`); break; }
+      if (dawn(next)) { debugSayStop({kind: "era", turn: next.turn, era: next.world_era}); break; }
       await new Promise(drawn => requestAnimationFrame(drawn));
     } while (run.ahead);
     if (debugStopAsked) debugSay(`Stopped by hand after ${played} turn${played === 1 ? "" : "s"}`);
@@ -705,21 +709,45 @@ function debugAutoPlay() {
 // the Civ AI plays on. Going on does not play over what was played: it walks
 // to the last turn first. (Dragging the timeline ahead from an earlier turn
 // is the way to play those turns again; it says so under the pointer.)
+//
+// The walk: along the turns already played towards `goal` (null, the last of
+// them), and whether the Civ AI is to play on from where it stopped, which is
+// when it reached the last turn played short of the goal.
+async function debugWalkOn(goal) {
+  const timeline = debugTimeline(), from = state.turn;
+  const last = Math.max(timeline.last ?? from, from);
+  if (from >= last) return true;
+  const to = goal === null ? last : Math.min(goal, last);
+  let next = await debugOp(to === from + 1 ? {op: "forward"} : {op: "jump", turn: to});
+  // A turn that is no longer kept answers with the nearest before it,
+  // which may be this one: the next one that is kept is the way on.
+  if (next && !next.error && next.turn <= from) next = await debugOp({op: "forward"});
+  return !!next && !next.error && next.turn >= last && (goal === null || next.turn < goal);
+}
 async function debugAhead(turns) {
+  if (!debugTimeline() || debugBusy || autoplaying) return;
+  debugSay("");
+  const goal = state.turn + turns;
+  if (!await debugWalkOn(goal)) return;
+  if (goal - state.turn <= 1) await debugStep();
+  else await debugRun(goal);
+}
+// Play to End: the turns already played, and from the last of them the Civ
+// AI plays the game out. A breakpoint stops it, and so does Stop.
+async function debugToEnd() {
+  if (!debugTimeline() || debugBusy || autoplaying) return;
+  debugSay("");
+  if (await debugWalkOn(null)) await debugRun(null);
+}
+// Era Next: the first turn of the next era. One already played is gone to;
+// past the last turn played the Civ AI plays on until a new era begins.
+async function debugEraOn() {
   const timeline = debugTimeline();
   if (!timeline || debugBusy || autoplaying) return;
   debugSay("");
-  const from = state.turn, goal = from + turns;
-  const last = Math.max(timeline.last ?? from, from);
-  if (from < last) {
-    let next = await debugOp(turns === 1 ? {op: "forward"} : {op: "jump", turn: Math.min(goal, last)});
-    // A turn that is no longer kept answers with the nearest before it,
-    // which may be this one: the next one that is kept is the way on.
-    if (next && !next.error && next.turn <= from) next = await debugOp({op: "forward"});
-    if (!next || next.error || next.turn >= goal || next.turn < last) return;
-  }
-  if (goal - state.turn <= 1) await debugStep();
-  else await debugRun(goal);
+  const began = debugEraNext(timeline);
+  if (began) { await debugGoToTurn(began.turn); return; }
+  if (await debugWalkOn(null)) await debugRun(null, state.world_era ?? 0);
 }
 async function debugBehind(turns) {
   const timeline = debugTimeline();
@@ -728,12 +756,21 @@ async function debugBehind(turns) {
   if (turns === 1) { await debugOp({op: "back"}); return; }
   await debugOp({op: "jump", turn: Math.max(timeline.first ?? state.turn, state.turn - turns)});
 }
-// Era start: the first turn of the era the open turn is in, and from there
+// Era Back: the first turn of the era the open turn is in, and from there
 // the first turn of the era before. `eras` is the engine's: the first kept
 // turn of each era the timeline passes through.
 function debugEraBack(timeline) {
   const began = (timeline.eras || []).filter(era => era.turn < state.turn);
   return began.length ? began[began.length - 1] : null;
+}
+// Era Next: the first kept turn of the era after the open one, when the
+// turns already played reach it.
+function debugEraNext(timeline) {
+  return (timeline.eras || []).find(era => era.turn > state.turn) || null;
+}
+// An era's name, as the page writes it.
+function debugEraName(era) {
+  return titleCase(String(era.name || ERA_NAMES[era.era] || `era ${era.era}`));
 }
 // Go to a turn, like a debugger's "run to here": a turn that was played is
 // put back as it stood, and a turn still ahead is played to.
@@ -884,7 +921,7 @@ function debugBuildBar() {
         </div>
         <span class="dbg-group dbg-nav">
           <button data-dbg="first" title="Turn 1: go to where the timeline begins" aria-label="Go to the first turn"><i class="dbg-sign">⏮</i><span class="dbg-word">Turn 1</span></button>
-          <button data-dbg="era" title="Era start: back to the first turn of this era, and from there to the first turn of the era before" aria-label="Back to the start of the era"><i class="dbg-sign">⇤</i><span class="dbg-word">Era start</span></button>
+          <button data-dbg="era" title="Era Back: back to the first turn of this era, and from there to the first turn of the era before" aria-label="Era Back"><i>◀◀</i>Era</button>
           <button data-dbg="back10" title="Back 10 turns" aria-label="Back 10 turns"><i>◀◀</i>10</button>
           <button data-dbg="back" title="Back 1 turn: the top of this turn, then the turn before" aria-label="Back 1 turn"><i>◀</i>1</button>
         </span>
@@ -895,6 +932,8 @@ function debugBuildBar() {
         <span class="dbg-group dbg-nav">
           <button data-dbg="next" title="Next turn: forward along the turns already played, and past the last of them the Civ AI plays one" aria-label="Next turn">1<i>▶</i></button>
           <button data-dbg="next10" title="10 turns on: forward along the turns already played, and past the last of them the Civ AI plays the rest" aria-label="10 turns on">10<i>▶▶</i></button>
+          <button data-dbg="era-next" title="Era Next: on to the first turn of the next era, along the turns already played, and past the last of them the Civ AI plays until a new era begins" aria-label="Era Next">Era<i>▶▶</i></button>
+          <button data-dbg="end" title="Play to End: along the turns already played, and from the last of them the Civ AI plays the game out. A breakpoint stops it, and so does Stop" aria-label="Play to the end of the game"><span class="dbg-word">Play to End</span><i class="dbg-sign">⏭</i></button>
         </span>
         <div class="dbg-note" id="dbg-note" role="status"></div>
         <div class="dbg-cluster">
@@ -1031,6 +1070,8 @@ function debugBuildBar() {
       const began = debugEraBack(timeline);
       if (began) { debugSay(""); debugGoToTurn(began.turn); }
     }
+    else if (action === "era-next") debugEraOn();
+    else if (action === "end") debugToEnd();
     else if (action === "step-action") debugStepAction();
     else if (action === "step-seat") debugStepSeat();
     else if (action === "reveal") debugOp({op: "reveal", on: !timeline.reveal});
@@ -1387,6 +1428,10 @@ function debugDeckNow() {
     strategy: debugStrategy() || "",
     solo: SOLO_UI,
     eraBack: debugEraBack(timeline),
+    eraNext: debugEraNext(timeline),
+    // The era the open turn is in, and whether there is one after it.
+    era: state.world_era ?? 0,
+    lastEra: (state.world_era ?? 0) >= ERA_NAMES.length - 1,
     note: debugNoteText || round || layered || beyond,
     show: !!(debugNoteText && debugNotePos),
     // A condition reads one thing the observation says about one
@@ -1486,13 +1531,21 @@ function debugDrawDeck(bar, deck) {
   set("first", idle && deck.turn > first);
   set("next", idle);
   set("next10", idle);
-  const eraBack = deck.eraBack;
+  set("end", idle);
+  const {eraBack, eraNext} = deck;
   set("era", idle && eraBack !== null);
-  const eraButton = bar.querySelector('[data-dbg="era"]');
-  const eraTitle = eraBack
-    ? `Era start: back to turn ${eraBack.turn}, the first turn of the ${titleCase(String(eraBack.name || `era ${eraBack.era}`))} era`
-    : "Era start: this is the first turn of the first era on the timeline";
-  if (eraButton.title !== eraTitle) eraButton.title = eraTitle;
+  set("era-next", idle && (eraNext !== null || !deck.lastEra));
+  const titled = (action, title) => {
+    const button = bar.querySelector(`[data-dbg="${action}"]`);
+    if (button.title !== title) button.title = title;
+  };
+  titled("era", eraBack
+    ? `Era Back: back to turn ${eraBack.turn}, the first turn of the ${debugEraName(eraBack)} era`
+    : "Era Back: this is the first turn of the first era on the timeline");
+  titled("era-next", eraNext
+    ? `Era Next: on to turn ${eraNext.turn}, the first turn of the ${debugEraName(eraNext)} era`
+    : deck.lastEra ? "Era Next: this is the last era"
+    : `Era Next: the Civ AI plays on until the ${debugEraName({era: deck.era + 1})} era begins. A breakpoint stops it sooner, and so does Stop`);
   set("step-action", idle);
   set("step-seat", idle);
   set("reveal", idle);

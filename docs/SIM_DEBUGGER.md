@@ -19,7 +19,8 @@ at the other, the open turn in the middle under it and the turn buttons in
 their order, the marker moving right as turns open, the turn box, the
 timeline back to a played turn and on to one ahead, what it says under the
 pointer, the wheel, the turn buttons (one and ten, back and on, turn 1), the
-eras named on the timeline and Era start, save points and their flags, a
+eras named on the timeline, Era Back, Era Next and Play to End, save points
+and their flags, a
 breakpoint picked from the timeline, a timeline with turns thinned out of it,
 the Civ AI picker, Auto-play with its count and its Stop, the breakpoints
 form with auto-play stopped by a turn, by a new era and by hand, layers,
@@ -58,16 +59,23 @@ a box that also goes to a turn typed into it, with the game's last turn
 beside it. The turn buttons stand either side of it, in this order:
 
 - **Turn 1** goes to where the timeline begins;
-- **Era start** goes back to the first turn of the era that is open, and from
-  there to the first turn of the era before;
-- **10** and **1** back;
+- **◀◀ Era** (Era Back) goes back to the first turn of the era that is open,
+  and from there to the first turn of the era before;
+- **◀◀ 10** and **◀ 1** back;
 - the turn box;
-- **1** and **10** on. These walk the turns already played, and past the last
-  of them the seat's Civ AI plays on. They do not play over what was played:
-  ten on from turn 3 with nine turns played walks to turn 9 and plays four
-  more. (Auto-play from an earlier turn is the way to play those turns
-  again.) Turns that another Civ AI played are not walked to at all: see
-  "Whose turns are walked".
+- **1 ▶** and **10 ▶▶** on;
+- **Era ▶▶** (Era Next) goes on to the first turn of the next era: one the
+  turns already played reach is gone to, and past the last of them the Civ AI
+  plays until a new world era begins. It is off in the last era;
+- **Play to End** plays the game out.
+
+The buttons that go on walk the turns already played, and past the last of
+them the seat's Civ AI plays on. They do not play over what was played: ten
+on from turn 3 with nine turns played walks to turn 9 and plays four more.
+(Auto-play from an earlier turn is the way to play those turns again.) Turns
+that another Civ AI played are not walked to at all: see "Whose turns are
+walked". Whatever they play, a breakpoint stops early and Auto-play's button
+is the Stop.
 
 At the left end is Auto-play, which used to be in the left panel: the Civ AI
 that plays the seat, how many turns (1 to 250, or all; it is set to 10 to
@@ -82,7 +90,7 @@ At the right end are the rest of the tools: step in, step a seat, undo, save
 points, Reveal and the Single player switch.
 
 The words on the tools are shown while both ends fit in two rows. When they
-do not, the words on Turn 1 and Era start go first and then every tool's,
+do not, the words on Turn 1 and Play to End go first (⏮ and ⏭) and then every tool's,
 leaving the signs. In a box 720px wide or narrower the three parts stack, the
 turn buttons first. What the box has to say (why auto-play stopped, what the
 Civ AI just did) stands in the box, between the turn buttons and the tools at
@@ -179,12 +187,14 @@ do not carry, so the replay would be another world.
 | Control | Operation | What it does |
 |---------|-----------|--------------|
 | Turn 1 | `jump` to the first mark | Go to where the timeline begins |
-| Era start | `jump` | Back to the first turn of the era that is open, and from there to the first turn of the era before |
+| ◀◀ Era (Era Back) | `jump` | Back to the first turn of the era that is open, and from there to the first turn of the era before |
 | ◀◀ 10 | `jump` | Back ten turns, or to where the timeline begins |
 | ◀ 1 | `back` | The top of this turn if you have acted in it, otherwise the turn before |
 | turn box | `jump`, or `step` repeated | Go to a turn by its number, the same way. Up and down in the box walk one played turn. Its tooltip says which turns were played and how many are still kept |
 | 1 ▶ | `forward`, or `step` | Next turn: forward along the turns already played, and past the last of them the seat's Civ AI plays one whole turn |
 | 10 ▶▶ | `jump`, then `step` repeated | Ten turns on: forward along the turns already played, and past the last of them the Civ AI plays the rest |
+| Era ▶▶ (Era Next) | `jump`, then `step` repeated | On to the first turn of the next era. One the turns already played reach is gone to; otherwise the walk goes to the last turn played and the Civ AI plays until the state's `world_era` changes (the page stops the run itself, as the "A new era begins" breakpoint would). Off in the last era |
+| Play to End (⏭) | `jump`, then `step` repeated | Along the turns already played to the last of them, then the Civ AI plays until the game is over, stopping early at a breakpoint |
 | timeline | `jump`, or `step` repeated | Go to any turn of the game. One that was played is put back as it stood; one that is no longer kept answers with the nearest before it, and the bar says so. One still ahead is played to by the seat's Civ AI, stopping early if a breakpoint does. The mouse wheel over it walks one played turn at a time, and the arrow keys move it a turn |
 | Civ AI | | Which Civ AI plays the seat when a turn is auto-played, stepped or played to. It is the page's own picker (`#autoplaystrategy`), shown beside Auto-play. Each Civ AI reads `<Elo> - <name>`, the highest Elo first, and the box is as wide as its longest listing, so the Elo and the whole name are read without opening it. A wide enough box costs the tools their words sooner (a 1600px window shows signs) |
 | Turns, ▶▶ Auto-play | `step`, repeated | Play the turns picked (1 to 250, or all; 10 unless changed) from the turn that is open, stopping early at a breakpoint. The button counts the turns as they are played and is the Stop. Each turn is asked for the moment the one before it is answered, so the engine plays it while the page draws that one; a Stop pressed while a turn is being drawn lands a turn later. In the browser build the request is handed to the engine's worker inside the `fetch` call itself (`beta/shim.js`): handed over in a `then`, it waited for the draw that follows it in the same task, 18 to 30 ms a turn |
@@ -212,7 +222,7 @@ remembers the Civ AI whose play opened its turn, and what the engine gives as
 the seat's timeline (`turns`, `last`, `can_forward`) is every turn up to the
 open one and, ahead of it, the turns the Civ AI now seated played. With
 another one seated, the kept turns ahead are that other agent's game and not
-what this one would do from here. They are not walked to by 1 ▶, 10 ▶▶, the
+what this one would do from here. They are not walked to by 1 ▶, 10 ▶▶, Era ▶▶, Play to End, the
 turn box, the timeline or the wheel, `forward` and a `jump` onto them are
 refused, and every way forward plays instead, with the Civ AI that is picked.
 The page says the pick to the engine when it is made (`status` with
