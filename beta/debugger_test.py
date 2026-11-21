@@ -1007,7 +1007,7 @@ def check_a_picked_civ_ai_plays_its_own_turns(bar: Bar) -> None:
     assert bar.ev("[state.debug.last, state.debug.can_forward, state.debug.beyond]") == \
         [start + 1, False, {"from": start + 2, "to": start + 5, "by": "jack"}]
     assert bar.ev(beyond_shown), "the turns another Civ AI played are not drawn on the lane"
-    said = f"Turns {start + 2} to {start + 5} were played by Jack · Stock plays on from turn {start + 1}"
+    said = f"Stock plays on from here · turns {start + 2} to {start + 5} are by Jack"
     assert bar.note() == said, bar.note()
     words = bar.ev(f"debugTurnWords(debugLaneModels[''], {start + 3})")
     assert words == f"Turn {start + 3} · play to here, over the turns Jack played", words

@@ -277,7 +277,7 @@ const DEBUG_BAR_STYLE = `
      played over by the one picked now. */
   #debugbar .dbg-beyond {
     position: absolute; top: 25px; bottom: 25px; min-width: 4px; border-radius: 0 5px 5px 0;
-    background: repeating-linear-gradient(90deg, #4f6f8ab0 0 4px, transparent 4px 8px); box-shadow: 0 0 0 1px #4f6f8a70;
+    background: repeating-linear-gradient(90deg, #3f5f7ad0 0 4px, transparent 4px 8px); box-shadow: 0 0 0 1px #3f5f7a90;
   }
   #debugbar.dbg-split-on .dbg-beyond { top: 20px; bottom: 9px; }
   #debugbar .dbg-ghost { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #0b3554c0; }
@@ -520,9 +520,10 @@ function debugAgentName(id) {
 }
 // Kept turns ahead that another Civ AI played (`debug.beyond`), in a line.
 // They are not walked to: going on from here plays, with the one picked.
-function debugBeyondWords(beyond, turn) {
-  const turns = beyond.from === beyond.to ? `Turn ${beyond.from} was` : `Turns ${beyond.from} to ${beyond.to} were`;
-  return `${turns} played by ${debugAgentName(beyond.by)} · ${debugAgentName(debugStrategy())} plays on from turn ${turn}`;
+// What happens next is said first, because the box has little room.
+function debugBeyondWords(beyond) {
+  const turns = beyond.from === beyond.to ? `turn ${beyond.from} is` : `turns ${beyond.from} to ${beyond.to} are`;
+  return `${debugAgentName(debugStrategy())} plays on from here · ${turns} by ${debugAgentName(beyond.by)}`;
 }
 // The page's choice of Civ AI is kept where a page reads it when it loads,
 // which is also how the halves of a split start on it.
@@ -1375,7 +1376,7 @@ function debugDeckNow() {
     ? `${debugPlaysNext(timeline.playing)} · ▸| steps it, 1▶ lets the round finish` : "";
   // Turns ahead that another Civ AI played are said for as long as they
   // stand there: it is why going on from here plays instead of walking.
-  const beyond = timeline.beyond ? debugBeyondWords(timeline.beyond, state.turn) : "";
+  const beyond = timeline.beyond ? debugBeyondWords(timeline.beyond) : "";
   return {
     turn: state.turn,
     limit: Number.isFinite(state.turn_limit) && state.turn_limit > 0 ? state.turn_limit : null,

@@ -219,8 +219,9 @@ The page says the pick to the engine when it is made (`status` with
 `strategy`), so this holds from the pick and not first from the next step.
 
 The turns are still kept. The timeline draws them apart, as a grey dashed
-stretch past the gold; the note says whose they are ("Turns 11 to 41 were
-played by JackOfAllTrades · SiegeTheDay plays on from turn 10"); and picking
+stretch past the gold; the note says what going on does and whose they are
+("SiegeTheDay plays on from here · turns 11 to 41 are by JackOfAllTrades");
+and picking
 their Civ AI again before they are played over makes them the timeline again.
 The first turn played from there replaces them, as it replaces any turns
 ahead. It makes no difference whether the Civ AI was picked after the walk
