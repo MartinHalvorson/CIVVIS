@@ -184,6 +184,7 @@ def required(mount: str) -> list:
         # checked against the disk further down instead.
         f"{lane}home/index.html",
         f"{lane}tournaments/index.html",
+        f"{lane}research/index.html",
         f"{lane}download/index.html",
         # Deployment-global rather than lane content: the shell always sits at
         # the site root, whichever lane is being checked.
@@ -454,6 +455,9 @@ def check_gate(dist: pathlib.Path) -> list[str]:
         # the slot `beta/publish.sh` fills with the record.
         if b'id="tournaments-data"' not in get("/tournaments/").read():
             problems.append("the Tournaments page is not being served at /tournaments")
+        # And the Research page between Home and Tournaments, by its slot.
+        if b'id="research-data"' not in get("/research/").read():
+            problems.append("the Research page is not being served at /research")
 
         # So is the downloads page.
         if b"releases/latest/download/" not in get("/download/").read():
@@ -479,6 +483,8 @@ def check_gate(dist: pathlib.Path) -> list[str]:
                 problems.append("the test lane's landing page is not being served at /test/home")
             if b'id="tournaments-data"' not in get("/test/tournaments/").read():
                 problems.append("the test lane's Tournaments page is not being served at /test/tournaments")
+            if b'id="research-data"' not in get("/test/research/").read():
+                problems.append("the test lane's Research page is not being served at /test/research")
             if b"releases/latest/download/" not in get("/test/download/").read():
                 problems.append("/test/download/ is not serving the downloads page")
         else:

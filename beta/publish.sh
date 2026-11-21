@@ -4,7 +4,8 @@
 #
 # The output is one complete LANE of the site — the viewer at its root with
 # the engine compiled to WebAssembly beside it, the landing page at /home, the
-# Tournaments page at /tournaments and the downloads page at /download — a
+# Research page at /research, the Tournaments page at /tournaments and the
+# downloads page at /download — a
 # plain directory of static files with no
 # host-specific anything beyond the two Cloudflare Pages control files, which
 # any other host simply ignores. Every link between the pages is
@@ -151,6 +152,8 @@ download_page="$source_tree/beta/download.html"
 [ -f "$download_page" ] || download_page="$repo_root/beta/download.html"
 tournaments_page="$source_tree/beta/tournaments.html"
 [ -f "$tournaments_page" ] || tournaments_page="$repo_root/beta/tournaments.html"
+research_page="$source_tree/beta/research.html"
+[ -f "$research_page" ] || research_page="$repo_root/beta/research.html"
 mkdir -p "$out/home"
 cp "$landing_page" "$out/home/index.html"
 # The home page's rankings (the winningest civs of the verification games,
@@ -166,6 +169,14 @@ python3 "$repo_root/beta/home_rankings.py" "$source_tree" "$out/home/index.html"
 mkdir -p "$out/tournaments"
 cp "$tournaments_page" "$out/tournaments/index.html"
 python3 "$repo_root/beta/tournaments_page.py" "$repo_root" "$out/tournaments/index.html"
+# The Research page (when in the game each victory type lands, in self-play
+# and against the Deity AI) is filled the same way: the self-play games from
+# head's snapshot in data/research/, the Deity games from the run ledger. Like
+# the tournaments these are facts about the games played, so both lanes get
+# head's figures.
+mkdir -p "$out/research"
+cp "$research_page" "$out/research/index.html"
+python3 "$repo_root/beta/research_page.py" "$repo_root" "$out/research/index.html"
 # The home page carries no art of its own any more, so there is usually no
 # directory to ship; a pinned revision from when it had photographs still does.
 if [ -d "$landing_assets" ]; then cp -R "$landing_assets" "$out/home/assets"; fi
@@ -241,7 +252,11 @@ for needle, replacement in edits:
 # viewer linking `/home` would silently drop the visitor back into prod.
 # Tolerated as already absent (a revision may predate the link); the guard
 # below is what is enforced.
-for needle, replacement in [('href="/home"', 'href="home/"'), ('href="/tournaments"', 'href="tournaments/"')]:
+for needle, replacement in [
+    ('href="/home"', 'href="home/"'),
+    ('href="/research"', 'href="research/"'),
+    ('href="/tournaments"', 'href="tournaments/"'),
+]:
     page = page.replace(needle, replacement)
     for path in scripts:
         scripts[path] = scripts[path].replace(needle, replacement)
@@ -398,6 +413,7 @@ edits = {
     # Authored lane-relative from its first day, so there is nothing to
     # translate; it is listed for the guard below.
     out / "tournaments" / "index.html": [],
+    out / "research" / "index.html": [],
     out / "download" / "index.html": [
         ('href="/test/"', 'href="../"'),  # the lane's own viewer
         ('href="/home"', 'href="../home/"'),
