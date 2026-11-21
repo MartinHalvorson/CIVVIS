@@ -8,7 +8,7 @@ All for fun. Everything is free, open source, and runs locally. Only ask is don'
 
 Design & watch Civ 6 AI simulations yourself in CIVVIS.
 
-Or try the Strategy Debugger to walk forward and backwards through time to study the AI decision-making and explore alternative paths. The sim debugger is still a WIP.
+Or try the AI Debugger to walk forward and backwards through time to study the AI decision-making and explore alternative paths. The sim debugger is still a WIP.
 
 Posting progress videos on the YouTube channel [CIVVIS](https://www.youtube.com/@civvis). Deity is fairly beat at this point. Video production is all automated; I just stamp the ones that go to the channel. Most videos don't have audio and are simply screen recordings of games with Civ 6 and CIVVIS side-by-side.
 - [Lv 8 wins playlist](https://www.youtube.com/playlist?list=PLWcKlP8e8iy4)

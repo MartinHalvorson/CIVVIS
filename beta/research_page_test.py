@@ -507,22 +507,27 @@ class Page(unittest.TestCase):
     def test_every_page_lists_research_between_home_and_tournaments(self):
         # Operator 2026-11-21: "between home and tournaments, we should add a
         # "Research"." This page lists the site's pages as the others do,
-        # with itself in gold.
+        # with itself in gold. Its name in the list and on the tab is
+        # Musings since later that day (operator: "musings (rename
+        # research)"); the address, the file and the data kept theirs.
         self.assertIn(
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
             '        <a class="site-link" href="../home/">Home</a>\n'
-            '        <a class="site-link" href="./" aria-current="page">Research</a>\n'
+            '        <a class="site-link" href="./" aria-current="page">Musings</a>\n'
             '        <a class="site-link" href="../tournaments/" ',
             PAGE,
         )
         self.assertRegex(PAGE, r'<div class="site-brand">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"[^>]*>[\s\S]*?</nav>\s*<div class="site-lockup">')
+        self.assertIn("<title>Musings · CIVVIS.ai</title>", PAGE)
+        for page in (PAGE, LANDING, TOURNAMENTS, VIEWER):
+            self.assertNotIn(">Research</a>", page)
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Research</a>'
+            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Musings</a>'
                       r'\s*<a class="site-link" href="\.\./tournaments/"'),
-            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Research</a>'
+            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Musings</a>'
                           r'\s*<a class="site-link" href="\./" aria-current="page">Tournaments</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="researchlink" href="/research" target="_top">Research</a>\s*'
+                     r'<a class="home-link" id="researchlink" href="/research" target="_top">Musings</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>'),
         ):
             self.assertRegex(page, pattern)
