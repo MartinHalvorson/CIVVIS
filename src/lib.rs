@@ -39,6 +39,13 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+// The browser build has no mimalloc to use. Its small blocks come from
+// per-size pools laid over the target's own allocator (`pools.rs`), which is
+// sound for exactly the build it is switched on for: one thread.
+#[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
+#[global_allocator]
+static GLOBAL: pools::Pooled<std::alloc::System> = pools::Pooled::new(std::alloc::System);
+
 // The action encoder's consumers are all in `experiments/closed/`; the module
 // compiles only `kind_name` without the `closed-experiments` feature.
 pub mod action_space;
@@ -89,6 +96,8 @@ pub mod obs_tensor;
 pub mod decision_features;
 pub mod mods;
 pub mod pedia;
+#[cfg(any(test, target_arch = "wasm32"))]
+mod pools;
 pub mod reasoning;
 pub mod rng;
 pub mod rules;

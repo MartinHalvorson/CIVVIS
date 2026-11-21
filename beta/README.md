@@ -13,14 +13,16 @@ apart from the asset paths a subdirectory forces.
 ```
 civvis.ai                 the STABLE lane — the promoted build, moved by a person
 civvis.ai/home            its landing page
+civvis.ai/tournaments     its Tournaments page: series of verification games, running, scheduled and finished
 civvis.ai/download        its native-binaries page, from the latest GitHub release
 civvis.ai/test            the HEAD lane — latest main, republished automatically
 civvis.ai/test/home       head's landing page
+civvis.ai/test/tournaments  head's Tournaments page
 civvis.ai/test/download   head's binaries page
 ```
 
 **The site is the same set of pages twice, from two commits.** Each lane is a
-complete tree — the viewer at its root, `/home` and `/download` beside it —
+complete tree — the viewer at its root, `/home`, `/tournaments` and `/download` beside it —
 and every link inside a lane is lane-relative, so reviewing `/test` means
 clicking around `/test` and never landing in prod. `/test` follows `main` on
 a schedule so the newest site is always reviewable without anyone deciding
@@ -59,7 +61,9 @@ to be movable.
 | `beta/worker.js` | Runs the module off the main thread. A turn is not a quick call, and the viewer paints on `requestAnimationFrame`; on the page's own thread the engine would stall the frames it exists to produce. |
 | `beta/shim.js` | Intercepts `fetch` before it reaches the network. Also owns the three things that genuinely became the page's job: the turn clock, the selected between-game finale countdown, and saved games in IndexedDB. |
 | `beta/_worker.js` | The whole site's routing: the two lanes, the optional gates on `/` and `/test`, and the response headers. |
-| `beta/landing.html` | `civvis.ai/home` (and `/test/home` from head's revision) — the landing page, one of the site's three pages: the list of all three beside its title (Home, in gold because it is this page; CIVVIS, the simulation the AIs play; and Debugger, the same game with a seat of your own through `?mode=play`) with a Civ 6 link to the game's shop page under them, the project's links, one paragraph and the rankings. The viewer's masthead carries the same four in the same order down its right side, with whichever of CIVVIS and Debugger it is showing in gold. |
+| `beta/landing.html` | `civvis.ai/home` (and `/test/home` from head's revision) — the landing page, one of the site's four pages: the list of all four beside its title (Home, in gold because it is this page; Tournaments; CIVVIS, the simulation the AIs play; and AI Debugger, the same game with a seat of your own through `?mode=play`) with a Civ 6 link to the game's shop page under them, the project's links, one paragraph and the rankings. The viewer's masthead carries the same five in the same order down its right side, with whichever of CIVVIS and AI Debugger it is showing in gold. |
+| `beta/tournaments.html` | `civvis.ai/tournaments` (and `/test/tournaments`) — the Tournaments page, between Home and CIVVIS in every page's list. A tournament is one idea played out: a set number of verification games under fixed conditions. The page shows the one running (record, a square per game in the order played, wins by victory, the latest games), the ones scheduled after it, and the finished ones in the table that stood on the home page until 2026-11-21. |
+| `beta/tournaments_page.py` | That page's record. `publish.sh` runs it and writes the result into the page's `tournaments-data` slot. It reads the definitions in `data/tournaments.json` (head's, in both lanes) and counts the games off `results.jsonl` on the `ledger` branch with `home_rankings.tournament_series`, the same count the live mirror's Mode line uses. **Scheduling a tournament is adding its definition** (`name`, optional `idea`, `conditions`, `start`, `series_size`, `match`): a definition none of whose games has finished is listed as scheduled, in file order. A page whose slot is still `null` says it has no record. |
 | `beta/home_rankings.py` | The home page's rankings: the winningest civs of the verification games (our AI's win rate as each civ against Civilization VI's own AI, best first, over the Lv 8 games that began on or after 2026-11-16: `CIVS_LEVEL`, `CIVS_SINCE`), on the left, and the Civ AI Agents by published Elo (`data/strategy_elo.json`, handles from `strategies::ROSTER`) on the right. `publish.sh` runs it against the lane's own revision and writes the result into the landing page's `rankings-data` slot, so nothing is committed as a copy; a page whose slot is still `null` hides the section. The civs are the one list that is not a property of the revision: they are read from `results.jsonl` on the `ledger` branch, where `tools/civ6_ladder.py publish-run` adds a line as each game finishes, so both lanes show the record as of the build (the publish workflow's checkout fetches every branch; a clone without the branch publishes without that list). `home_rankings_test.py` holds the parse, the count and the slot. |
 | `beta/download.html` | `civvis.ai/download` (and `/test/download`). Links `releases/latest/download/<asset>`, so it never needs republishing when a release is cut. |
 | `.github/workflows/release.yml` | Builds those assets for Windows, macOS (both architectures) and Linux on a `v*` tag. |

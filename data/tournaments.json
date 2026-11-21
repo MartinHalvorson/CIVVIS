@@ -1,6 +1,7 @@
 {
   "_doc": [
-    "Tournaments shown on the home page (beta/home_rankings.py, beta/landing.html).",
+    "Tournaments shown on the Tournaments page (beta/tournaments_page.py, beta/tournaments.html); the home page",
+    "(beta/home_rankings.py, beta/landing.html) carried them as a table until 2026-11-21.",
     "Each runs from its first game (`start`, a run tag; every game with a later tag",
     "that matches `match` counts) in series of `series_size` finished games, read off",
     "the ledger's results.jsonl at publish time. A game's best run counts once; a",
@@ -26,11 +27,18 @@
     "Operator 2026-11-21 ~05:20Z: \"have tournament 6 be: 10 games on lv 4, 10 games on lv 5, 10 games on lv 6, 10 games on lv 7, 10 games",
     "on lv 8. 6p continents. 2 civvis agents and 4 deity ais ... start automatically once you finish the current tournament\"; whole game",
     "at that level, a game is a win when either CIVVIS agent wins. Those games are hotseat tables tagged `civvis-t6-<utc>`, so the",
-    "single-seat 50-game definition ends at \"civvis-t\" (every `civvis-2026...` tag sorts before it) and the table owns its own prefix."
+    "single-seat 50-game definition ends at \"civvis-t\" (every `civvis-2026...` tag sorts before it) and the table owns its own prefix.",
+    "Operator 2026-11-21 ~05:35Z: \"Between Home and CIVVIS, we want to add a Tournaments view. This is my Simulator Experiments page",
+    "essentially. I have an idea I want to run. I schedule in a tournament for it. The AI models just keep working away at games.\":",
+    "scheduling a tournament is adding its definition to this list. A definition none of whose games has finished is listed on the",
+    "Tournaments page as scheduled, in the order of this list, numbered on from the last tournament begun. One that is to wait its turn",
+    "owns a tag prefix (`civvis-t7-`), as Tournament 6 does, so it can be defined before the games ahead of it are played.",
+    "An optional `idea` says in a sentence what the tournament tests; the page shows it under the tournament's name."
   ],
   "tournaments": [
     {
       "name": "Lv 8 Deity series",
+      "idea": "Repeated 10-game series against the Lv 8 Deity AI, playing to win by any victory type.",
       "conditions": "Lv 8 6P Continents Online",
       "start": "civvis-20261119T184500Z",
       "series_size": 10,
@@ -58,6 +66,7 @@
     },
     {
       "name": "Lv 8 Deity 50-game series, best strategy per civ",
+      "idea": "A random civ each game, playing our best strategy for that civ, over 50 games.",
       "conditions": "Lv 8 6P Continents Online",
       "start": "civvis-20261120T045254Z",
       "series_size": 50,
@@ -66,6 +75,7 @@
     },
     {
       "name": "Level ladder Lv 4-8, 2 CIVVIS agents + 4 AI",
+      "idea": "Ten games at each level from Lv 4 to Lv 8, with two CIVVIS agents and four Firaxis AI at the table. A game is a win when either CIVVIS agent wins.",
       "conditions": "Lv 4-8 6P Continents Online, 2 CIVVIS + 4 AI",
       "start": "civvis-t6-",
       "end": "civvis-t7-",

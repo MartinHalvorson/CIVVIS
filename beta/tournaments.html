@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#171d25">
+<title>Tournaments · CIVVIS.ai</title>
+<meta name="description" content="CIVVIS tournaments: series of verification games against Civilization VI's own AI, running, scheduled and finished.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
+<style>
+  /* The home page's own palette, header and cards (`beta/landing.html`): the
+     two pages are one site and read as one. Each is a single file with no
+     shared stylesheet, so what they share is repeated here. */
+  :root {
+    color-scheme: dark;
+    --bg: #171d25;
+    --panel: #1f2733;
+    --panel-raised: #242f3d;
+    --border: #2e3a4a;
+    --border-strong: #46566a;
+    --text: #e2e8ef;
+    --muted: #93a3b5;
+    --faint: #67788b;
+    --accent: #66c0f4;
+    --action-bg: #274b66;
+    --action-fg: #a8d8f5;
+    --action-hover: #315d7e;
+    --gold: #d7b66a;
+    --loss: #3d4b5d;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    min-width: 320px;
+    margin: 0;
+    overflow-x: hidden;
+    color: var(--text);
+    background: var(--bg);
+    font: 15px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  .shell { width: min(1060px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
+  main { padding-bottom: 48px; }
+
+  .site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding-top: 26px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .site-title { margin: 0; color: #fff; font-size: 26px; font-weight: 700; letter-spacing: 0.04em; }
+  .site-title span { color: var(--accent); font-weight: 600; }
+  .site-tagline { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
+  .site-tagline span { display: block; }
+  .utility-nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-left: auto; }
+  .utility-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    background: var(--panel);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .utility-link svg { width: 15px; height: 15px; flex: none; }
+  .utility-link:hover,
+  .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
+  .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The site's pages, listed in the same order on every one of them with
+     the page on screen in gold: Home, Tournaments, CIVVIS and AI Debugger,
+     and under them the game they are built on. */
+  .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
+  .site-lockup { min-width: 0; }
+  .site-nav { display: grid; flex: none; gap: 4px; }
+  .site-link {
+    display: block;
+    padding: 3px 12px 4px;
+    border-radius: 3px;
+    background: var(--action-bg);
+    color: var(--action-fg);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1.4;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .site-link:hover,
+  .site-link:focus-visible { background: var(--action-hover); color: #fff; }
+  .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .site-link[aria-current="page"],
+  .site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }
+
+  .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+  .intro a { color: var(--accent); }
+
+  /* The record: what is running, what is scheduled and what has finished,
+     one under another. Its figures are not written here. `beta/publish.sh`
+     fills the `tournaments-data` slot below (`beta/tournaments_page.py`);
+     until it is filled the record stays hidden and one sentence says so. */
+  .tour-record { display: grid; gap: 16px; min-width: 0; }
+  .tour-record[hidden], .tour-section[hidden], .tour-empty[hidden] { display: none; }
+  .tour-empty { margin: 0; color: var(--faint); font-size: 13px; }
+  .tour-section { min-width: 0; padding: 12px 14px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .rank-sub { margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
+  .rank-note { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+  .rank-note a { color: var(--accent); }
+
+  /* A tournament in full: its number and name, the idea it tests, the
+     record, and a square per game in the order played. */
+  .tour-card { display: grid; gap: 8px; padding: 10px 0 4px; border-top: 1px solid var(--border); }
+  .tour-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .tour-head > div:first-child { min-width: 0; }
+  .tour-number { margin: 0; color: var(--gold); font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+  .tour-name { margin: 1px 0 0; color: #fff; font-size: 17px; font-weight: 700; line-height: 1.3; }
+  .tour-idea { margin: 3px 0 0; color: var(--text); font-size: 13.5px; line-height: 1.5; }
+  .tour-meta { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+  .tour-figure { flex: none; text-align: right; }
+  .tour-score { margin: 0; color: #fff; font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
+  .tour-rate { margin: 2px 0 0; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* A square per game, in the order played: a win in gold, a loss in slate,
+     a game still to be played as an outline. Hovering a square names the
+     game: the civ, how it ended and the turn. */
+  .tour-strip { display: flex; flex-wrap: wrap; gap: 3px; margin: 0; padding: 0; list-style: none; }
+  .tour-game { width: 11px; height: 11px; border-radius: 2px; background: var(--loss); }
+  .tour-game.is-win { background: var(--gold); }
+  .tour-game.is-open { background: none; box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .tour-key { display: inline-block; width: 9px; height: 9px; margin-right: 4px; border-radius: 2px; background: var(--loss); vertical-align: -1px; }
+  .tour-key.is-win { background: var(--gold); }
+  .tour-legend { margin: 0; color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+
+  /* The counts under the squares, a line each: wins by victory, losses by
+     how they were lost, and the record per level when the levels differ. */
+  .tour-counts { display: grid; gap: 2px; margin: 0; font-size: 12.5px; line-height: 1.5; }
+  .tour-counts div { display: flex; flex-wrap: wrap; gap: 0 10px; }
+  .tour-counts dt { flex: none; min-width: 52px; color: var(--faint); }
+  .tour-counts dd { margin: 0; color: var(--text); font-variant-numeric: tabular-nums; }
+  .tour-counts dd b { color: #fff; font-weight: 700; }
+
+  /* The games just finished, newest first. */
+  .tour-latest { margin: 0; padding: 0; list-style: none; font-size: 12.5px; line-height: 1.5; }
+  .tour-latest li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 3px 0; border-top: 1px solid var(--border); }
+  .tour-latest .n { color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  .tour-latest .who { min-width: 0; overflow: hidden; color: var(--text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .tour-latest .how { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tour-latest li.is-win .how { color: var(--gold); font-weight: 700; }
+  .tour-latest-title { margin: 4px 0 0; color: var(--faint); font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+
+  /* The queue: what is played next, in order. */
+  .tour-queue { margin: 0; padding: 0; list-style: none; }
+  .tour-queue li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 16px; padding: 8px 0; border-top: 1px solid var(--border); }
+  .tour-queue .tour-name { font-size: 15px; }
+  .tour-queue .tour-size { color: #fff; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tour-queue .tour-idea, .tour-queue .tour-meta { grid-column: 1 / -1; }
+
+  /* The finished tournaments: the table that stood on the home page, a row
+     each, with the row's games as squares under it. A window too narrow
+     for the table scrolls it sideways rather than the page. */
+  .tour-scroll { overflow-x: auto; }
+  .rank-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .rank-table th { padding: 4px 10px 4px 0; color: var(--faint); font-size: 11.5px; font-weight: 500; text-align: left; white-space: nowrap; }
+  .rank-table td { padding: 6px 10px 2px 0; border-top: 1px solid var(--border); color: var(--text); vertical-align: top; white-space: nowrap; }
+  .rank-table td.is-record { color: #fff; font-weight: 700; }
+  .rank-table td.is-note { min-width: 14em; color: var(--muted); font-size: 12px; line-height: 1.45; white-space: normal; }
+  .rank-table td.is-name { min-width: 13em; white-space: normal; }
+  .rank-table td.is-name b { display: block; color: #fff; font-weight: 700; white-space: nowrap; }
+  .rank-table td.is-name small { display: block; color: var(--muted); font-size: 12px; line-height: 1.4; }
+  .rank-table tr.is-games td { padding: 4px 10px 8px 0; border-top: 0; white-space: normal; }
+  .rank-table tr.is-games .tour-counts { margin-top: 5px; }
+</style>
+</head>
+<body>
+  <header class="shell site-header">
+    <div class="site-brand">
+      <div class="site-lockup">
+        <h1 class="site-title">CIVVIS<span>.ai</span></h1>
+        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for AI strategy development</span></p>
+      </div>
+      <!-- The site's pages, in the order every one of them lists them, with
+           the page on screen in gold: this is Tournaments, between Home and
+           the simulation. Every link is lane-relative (this page lives at
+           <lane>/tournaments/), so the test lane's page opens the test
+           lane's home page and viewer. -->
+      <nav class="site-nav" aria-label="CIVVIS sites">
+        <a class="site-link" href="../home/">Home</a>
+        <a class="site-link" href="./" aria-current="page">Tournaments</a>
+        <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
+        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
+        <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
+      </nav>
+    </div>
+    <nav class="utility-nav" aria-label="CIVVIS links">
+      <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
+        GitHub
+      </a>
+      <a class="utility-link" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+        Dev Progress
+      </a>
+      <!-- The home page files a report itself, from a dialog; here the same
+           button is GitHub's own form, which needs no script on this page. -->
+      <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS/issues/new/choose" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2C6.5 2 2 5.9 2 10.7c0 2.8 1.5 5.3 3.9 6.9L5 22l4.6-2.4c.8.2 1.6.3 2.4.3 5.5 0 10-3.9 10-8.7S17.5 2 12 2zm-1 4.5h2v6h-2v-6zm0 7.5h2v2h-2v-2z"/></svg>
+        Suggest Feature / Report Issue
+      </a>
+    </nav>
+  </header>
+
+  <main class="shell">
+    <p class="intro">
+      A tournament is one idea, played out: a set number of verification
+      games under fixed conditions, in which a CIVVIS AI agent plays inside
+      <cite>Sid Meier&#8217;s Civilization VI</cite> against the game&#8217;s
+      own AI. Tournaments are scheduled one after another, and the agents
+      play them in order, game after game.
+    </p>
+
+    <!-- The record. Three lists, all read from the run ledger and the
+         definitions in `data/tournaments.json` when the site is published
+         (`beta/tournaments_page.py`): the tournament being played, the ones
+         scheduled after it, and the ones that have finished. The script
+         below builds them from the `tournaments-data` slot; a page whose
+         slot still reads `null` (this file opened as it is committed, or a
+         build with no ledger) shows the one sentence instead. -->
+    <p class="tour-empty" id="tour-empty">This copy of the page has no tournament record. It is written in when the site is published.</p>
+    <div class="tour-record" id="tour-record" hidden>
+      <section class="tour-section" id="tour-running" hidden aria-labelledby="tour-running-title">
+        <h2 class="rank-title" id="tour-running-title">Running</h2>
+        <p class="rank-sub" data-sub></p>
+        <div data-cards></div>
+      </section>
+      <section class="tour-section" id="tour-scheduled" aria-labelledby="tour-scheduled-title">
+        <h2 class="rank-title" id="tour-scheduled-title">Scheduled</h2>
+        <p class="rank-sub" data-sub></p>
+        <ol class="tour-queue"></ol>
+        <p class="rank-note">
+          Scheduling a tournament is adding its definition, the idea, the conditions and the number of games, to
+          <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/tournaments.json" target="_blank" rel="noreferrer">data/tournaments.json</a>.
+          It is listed here until its first game finishes.
+        </p>
+      </section>
+      <section class="tour-section" id="tour-finished" hidden aria-labelledby="tour-finished-title">
+        <h2 class="rank-title" id="tour-finished-title">Finished</h2>
+        <p class="rank-sub" data-sub></p>
+        <div class="tour-scroll">
+          <table class="rank-table">
+            <thead><tr><th scope="col">Tournament</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Games</th><th scope="col">Record</th><th scope="col">Won</th><th scope="col">Conditions</th><th scope="col">Notes</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="rank-note">
+          <span data-rank-note></span>
+          <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Every game</a>
+        </p>
+      </section>
+      <p class="tour-legend">
+        <span class="tour-key is-win"></span>win &#160; <span class="tour-key"></span>loss &#160;
+        A square is a game, in the order played; hover one for the civ, the ending and the turn.
+        A win is any victory. A loss is a rival&#8217;s victory, our elimination, or a game conceded early.
+        A launch that never reached a board is not a game.
+      </p>
+    </div>
+  </main>
+
+  <script type="application/json" id="tournaments-data">null</script>
+  <script>
+  // The record, built before first paint. Every figure arrives through
+  // textContent: the slot holds names and sentences from the repository's
+  // own files, and none of it is trusted as markup.
+  (() => {
+    let data = null;
+    try { data = JSON.parse(document.getElementById("tournaments-data").textContent); } catch (_) { return; }
+    if (!data) return;
+    const el = (tag, cls, text) => {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text != null) node.textContent = text;
+      return node;
+    };
+    const list = (value) => (Array.isArray(value) ? value : []);
+    const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
+    const record = (t) => t.wins + "–" + t.losses;
+    const rate = (t) => (t.games ? (100 * t.wins / t.games).toFixed(1) + "%" : "");
+
+    // A game in words: "Rome · Diplomatic victory · turn 153", with its
+    // level in front when the tournament's games are not all at one level.
+    const told = (g, mixed) => [mixed && g.level ? "Lv " + g.level : "", g.civ, g.how, g.turns != null ? "turn " + g.turns : ""]
+      .filter(Boolean).join(" · ");
+    // A square per game in the order played, then an outline per game a
+    // running tournament has still to play.
+    const strip = (t, open) => {
+      const row = el("ol", "tour-strip");
+      const mixed = list(t.levels).length > 0;
+      list(t.results).forEach((g, i) => {
+        const square = el("li", "tour-game" + (g.won ? " is-win" : ""));
+        square.title = "Game " + (i + 1) + ": " + told(g, mixed);
+        row.append(square);
+      });
+      for (let i = t.games; open && i < t.size; i++) {
+        const square = el("li", "tour-game is-open");
+        square.title = "Game " + (i + 1) + ": not played yet";
+        row.append(square);
+      }
+      row.setAttribute("aria-label", plural(t.wins, "win", "wins") + " and " + plural(t.losses, "loss", "losses") + ", in the order played");
+      return row;
+    };
+    // "Diplomatic 3 · Religious 2", the counts in white.
+    const counted = (pairs) => {
+      const dd = el("dd");
+      list(pairs).forEach(([label, n], i) => {
+        if (i) dd.append(" · ");
+        dd.append(label + " ", el("b", "", String(n)));
+      });
+      return dd;
+    };
+    const counts = (t) => {
+      const dl = el("dl", "tour-counts");
+      const line = (label, dd) => { const div = el("div"); div.append(el("dt", "", label), dd); dl.append(div); };
+      if (list(t.victories).length) line("Wins", counted(t.victories));
+      if (list(t.endings).length) line("Losses", counted(t.endings));
+      if (list(t.levels).length) {
+        const dd = el("dd");
+        t.levels.forEach(([lv, wins, losses], i) => {
+          if (i) dd.append(" · ");
+          dd.append("Lv " + lv + " ", el("b", "", wins + "–" + losses));
+        });
+        line("Levels", dd);
+      }
+      return dl;
+    };
+
+    // Running: the tournament being played, in full.
+    const running = list(data.running);
+    const runningBox = document.getElementById("tour-running");
+    for (const t of running) {
+      const card = el("article", "tour-card");
+      const head = el("div", "tour-head");
+      const title = el("div");
+      title.append(el("p", "tour-number", "Tournament " + t.id), el("h3", "tour-name", t.name));
+      if (t.idea) title.append(el("p", "tour-idea", t.idea));
+      const figure = el("div", "tour-figure");
+      figure.append(el("p", "tour-score", record(t)), el("p", "tour-rate", plural(t.games, "game", "games") + " of " + t.size + (t.games ? " · " + rate(t) + " won" : "")));
+      head.append(title, figure);
+      card.append(head, strip(t, true), counts(t));
+      card.append(el("p", "tour-meta", [t.conditions, "started " + t.start, t.note].filter(Boolean).join(" · ")));
+      const results = list(t.results);
+      if (results.length) {
+        const mixed = list(t.levels).length > 0;
+        const latest = el("ol", "tour-latest");
+        results.slice(-6).reverse().forEach((g, back) => {
+          const item = el("li", g.won ? "is-win" : "");
+          item.append(el("span", "n", "#" + (results.length - back)),
+            el("span", "who", (mixed && g.level ? "Lv " + g.level + " · " : "") + (g.civ || "")),
+            el("span", "how", g.how + (g.turns != null ? " · turn " + g.turns : "")));
+          latest.append(item);
+        });
+        card.append(el("p", "tour-latest-title", "Latest games"), latest);
+      }
+      runningBox.querySelector("[data-cards]").append(card);
+    }
+    if (running.length) {
+      runningBox.querySelector("[data-sub]").textContent = "The agents are playing "
+        + (running.length === 1 ? "this tournament" : "these tournaments") + " now"
+        + (data.through ? ". Last game finished " + data.through : "") + ".";
+      runningBox.hidden = false;
+    }
+
+    // Scheduled: the queue, in the order it will be played.
+    const scheduled = list(data.scheduled);
+    const queueBox = document.getElementById("tour-scheduled");
+    let before = running.length ? running[running.length - 1].id : null;
+    for (const t of scheduled) {
+      const item = el("li");
+      const title = el("div");
+      title.append(el("p", "tour-number", "Tournament " + t.id), el("h3", "tour-name", t.name));
+      item.append(title, el("span", "tour-size", plural(t.size, "game", "games")));
+      if (t.idea) item.append(el("p", "tour-idea", t.idea));
+      item.append(el("p", "tour-meta", [t.conditions, before ? "after Tournament " + before : "next to start", t.note].filter(Boolean).join(" · ")));
+      queueBox.querySelector(".tour-queue").append(item);
+      before = t.id;
+    }
+    queueBox.querySelector("[data-sub]").textContent = scheduled.length
+      ? plural(scheduled.length, "tournament is", "tournaments are") + " waiting, in the order " + (scheduled.length === 1 ? "it" : "they") + " will be played."
+      : "Nothing is scheduled. Until something is, the running definition keeps playing new series.";
+
+    // Finished: the table, newest first, each row with its games under it.
+    const finished = list(data.finished);
+    const finishedBox = document.getElementById("tour-finished");
+    if (finished.length) {
+      const body = finishedBox.querySelector("tbody");
+      const columns = finishedBox.querySelectorAll("thead th").length;
+      for (const t of finished) {
+        const tr = el("tr");
+        const name = el("td", "is-name");
+        name.append(el("b", "", "Tournament " + t.id), el("small", "", t.name));
+        // The note is a sentence or two and runs down beside the games,
+        // so the squares stay right under their row however long it is.
+        const note = el("td", "is-note", [t.idea, t.note].filter(Boolean).join(" "));
+        note.rowSpan = 2;
+        tr.append(name,
+          el("td", "", t.start || ""),
+          el("td", "", t.end || ""),
+          el("td", "", t.games + " / " + t.size),
+          el("td", "is-record", record(t)),
+          el("td", "", rate(t)),
+          el("td", "", t.conditions || ""),
+          note);
+        const games = el("tr", "is-games");
+        const cell = el("td");
+        cell.colSpan = columns - 1;
+        cell.append(strip(t, false), counts(t));
+        games.append(cell);
+        body.append(tr, games);
+      }
+      const totals = data.totals || {};
+      finishedBox.querySelector("[data-sub]").textContent = "Newest first, with each tournament’s games under its row.";
+      finishedBox.querySelector("[data-rank-note]").textContent = totals.games
+        ? "Every tournament so far: " + plural(totals.games, "game", "games") + ", "
+          + totals.wins + "–" + totals.losses + " (" + (100 * totals.wins / totals.games).toFixed(1) + "% won)"
+          + (data.through ? ", through " + data.through : "") + "."
+        : "";
+      finishedBox.hidden = false;
+    }
+
+    document.getElementById("tour-empty").hidden = true;
+    document.getElementById("tour-record").hidden = false;
+  })();
+  </script>
+</body>
+</html>
