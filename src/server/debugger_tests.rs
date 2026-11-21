@@ -669,8 +669,10 @@ fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_orde
         from += at + piece.len();
     }
     for piece in [
-        // Twice the 34px the rail was.
-        "position: relative; flex: 1; min-width: 0; height: 68px; border-radius: 12px;",
+        // Twice the 34px the rail was. The rail is where the slider is, and
+        // the sky is the rail as it is seen.
+        "#debugbar .dbg-rail { position: relative; flex: 1; min-width: 0; height: 68px; border: 1px solid transparent; }",
+        "position: absolute; inset: -1px; border-radius: 12px; pointer-events: none;",
         // Auto-play is set to ten turns when the box is built (operator,
         // 2026-11-20: "default for auto play can be 10 turns").
         "const DEBUG_AUTOPLAY_TURNS = 10;",
