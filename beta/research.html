@@ -830,12 +830,18 @@
     };
 
     const draw = () => {
-      // One scale for every column chart: the tallest column of any of them.
-      const ymax = Math.max(0, ...CHARTS.map((chart) => {
+      // One scale per kind of game: the tallest column of any of its charts.
+      // The three charts of the games against the AI share theirs, so a
+      // side's column stands as tall as its part of the first chart's.
+      // Self-play keeps its own: a level with a handful of games has columns
+      // of 20% and more (one game in five), and on that scale the thousands
+      // of self-play games would lie flat.
+      const ymax = {};
+      for (const chart of CHARTS) {
         const s = stacks(chart);
-        return s ? Math.max(...s.totals) / s.w.games : 0;
-      }));
-      for (const chart of CHARTS) drawStacks(chart, ymax);
+        ymax[chart.kind] = Math.max(ymax[chart.kind] || 0, s ? Math.max(...s.totals) / s.w.games : 0);
+      }
+      for (const chart of CHARTS) drawStacks(chart, ymax[chart.kind]);
       drawTiming();
     };
     const render = () => { notes(); draw(); drawTables(); };

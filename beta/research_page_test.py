@@ -348,7 +348,9 @@ class Page(unittest.TestCase):
                 ("self_play", "self_play", "all", "CIVVIS self-play"),
             ],
         )
-        self.assertIn("for (const chart of CHARTS) drawStacks(chart, ymax);", PAGE)
+        # The charts of one kind share a scale, so the two sides' charts
+        # stand against the first; self-play has its own.
+        self.assertIn("for (const chart of CHARTS) drawStacks(chart, ymax[chart.kind]);", PAGE)
         self.assertIn("for (const chart of CHARTS) {\n        const th = el(\"th\", \"is-group\", worded(chart.label));", PAGE)
         self.assertIn('box.querySelector("[data-title]").textContent = worded(chart.label);', PAGE)
         # The markup the script fills stands in the same order, each chart
