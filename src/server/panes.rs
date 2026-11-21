@@ -14,6 +14,23 @@
 //! other (`copy`), and the split closes by making the half that is kept the
 //! main session, timeline and all (`adopt`).
 //!
+//! Two halves that are the same world need playing only once. Each half
+//! carries the number of the line it is on (`Half::line`): every request that
+//! may change a half gives it a number no other half has, and a copy takes
+//! the number of what it was copied from. Two halves with one number are
+//! therefore the same world and timeline with the same agents seated, and
+//! nothing has been asked of either since. A debugger request from one half may name the other as its
+//! `twin`; when the two are on one line the request is answered once and the
+//! twin is made a copy of the result, which costs a fork instead of a turn
+//! (`serve`). The answer says whether that happened (`debug.twinned`).
+//!
+//! A copy is seated with agents of its own (`Session::fork`), and an agent
+//! keeps plans from turn to turn. So of two halves played as one, only the
+//! half that was asked has agents that lived through those turns. When the
+//! two are then asked to play apart, that half is seated anew as well
+//! (`Panes::part`): from there nothing but what is asked of each tells them
+//! apart, which is what a head to head of two Civ AIs rests on.
+//!
 //! Both front ends keep their panes here. A pane names itself in its address
 //! (`?pane=a-<split>`). On the socket server every request its page makes then
 //! carries the name in `Referer`, with the page doing nothing; on the
@@ -41,9 +58,29 @@ pub(super) struct Asked<'a> {
     pub parsed: &'a Value,
 }
 
+/// One half of a split: its session, and the line it is on.
+struct Half {
+    session: Session,
+    /// `UNTOUCHED` for a half that is still the main session as it stood
+    /// when the screen was split. Otherwise the number the last request that
+    /// may have changed this half was given, or the number of the half this
+    /// one was copied from.
+    line: u64,
+    /// Whether the session is as `Session::fork` made it: nothing that may
+    /// change it has been asked of it, and its agents hold no plans yet.
+    fresh: bool,
+}
+
+/// The line of a half nothing has been asked to change since it was forked.
+const UNTOUCHED: u64 = 0;
+
 /// The sessions kept beside the main one, by pane name.
 #[derive(Default)]
-pub struct Panes(BTreeMap<String, Session>);
+pub struct Panes {
+    halves: BTreeMap<String, Half>,
+    /// The last line number given out.
+    lines: u64,
+}
 
 /// The pane a request is for: named on the request itself, or by the page
 /// that sent it.
@@ -58,6 +95,18 @@ fn well_formed(pane: &str) -> bool {
     (3..=24).contains(&pane.len())
         && (pane.starts_with("a-") || pane.starts_with("b-"))
         && pane[2..].bytes().all(|byte| byte.is_ascii_alphanumeric())
+}
+
+/// The other half of `pane`'s split, when `name` is that.
+fn other_half<'a>(pane: &str, name: &'a str) -> Option<&'a str> {
+    let halves = well_formed(pane) && well_formed(name);
+    (halves && name != pane && name[2..] == pane[2..]).then_some(name)
+}
+
+/// Whether a request leaves the world it is answered from as it was. These
+/// are the routes that take the session by shared reference in `answer`.
+fn only_reads(method: &str, path: &str) -> bool {
+    method == "GET" || matches!(path, "/route" | "/forecast" | "/intel")
 }
 
 /// Whether a request is one a pane answers from its own session.
@@ -90,29 +139,107 @@ pub(super) fn concerns_a_world(method: &str, path: &str) -> bool {
 impl Panes {
     /// The pane's session, forked from the main one the first time the pane
     /// asks. A new split replaces the panes of the one before it.
+    ///
+    /// The second half of a split is forked from the first while nothing has
+    /// been asked to change the first: that is the main session as it stood
+    /// when the screen was split, and it makes the two halves the same world
+    /// whatever the main session has been asked since.
     pub(super) fn seat(&mut self, pane: &str, main: &Session) -> Result<&mut Session, String> {
-        if !self.0.contains_key(pane) {
+        if !self.halves.contains_key(pane) {
             if main.params.spectate {
                 return Err("a split forks a game with a seat of its own".to_string());
             }
             let split = &pane[2..];
-            self.0.retain(|name, _| &name[2..] == split);
-            self.0.insert(pane.to_string(), main.fork());
+            self.halves.retain(|name, _| &name[2..] == split);
+            let begun = match self.halves.values().find(|half| half.line == UNTOUCHED) {
+                Some(first) => first.session.fork(),
+                None => main.fork(),
+            };
+            // A first half that has already been played is not this world.
+            let line = if self.halves.values().all(|half| half.line == UNTOUCHED) {
+                UNTOUCHED
+            } else {
+                self.next_line()
+            };
+            self.halves.insert(
+                pane.to_string(),
+                Half {
+                    session: begun,
+                    line,
+                    fresh: true,
+                },
+            );
         }
-        Ok(self.0.get_mut(pane).expect("the pane was just seated"))
+        Ok(&mut self
+            .halves
+            .get_mut(pane)
+            .expect("the pane was just seated")
+            .session)
+    }
+
+    /// A line number no half is on.
+    fn next_line(&mut self) -> u64 {
+        self.lines += 1;
+        self.lines
+    }
+
+    /// A request that may have changed this half was answered from it: the
+    /// half is on a line of its own until it is copied, or copied from.
+    fn changed(&mut self, pane: &str) {
+        let line = self.next_line();
+        if let Some(half) = self.halves.get_mut(pane) {
+            half.line = line;
+            half.fresh = false;
+        }
+    }
+
+    /// This half is about to be asked something the other is not, while the
+    /// two are alike. Of two halves played as one, the half that was asked
+    /// has agents that lived through those turns and the half that was
+    /// copied has agents seated anew, so the one that played is seated anew
+    /// too. The world and the timeline are not touched.
+    fn part(&mut self, pane: &str) {
+        let Some(line) = self.halves.get(pane).map(|half| half.line) else {
+            return;
+        };
+        let on_the_line = |half: &&Half| half.line == line;
+        if self.halves.values().filter(on_the_line).count() < 2 {
+            return;
+        }
+        for half in self.halves.values_mut() {
+            if half.line == line && !half.fresh {
+                half.session = half.session.fork();
+                half.fresh = true;
+            }
+        }
+    }
+
+    /// Whether two halves are the same world and timeline, with the same
+    /// agents seated: one was made from the other, or both from the main
+    /// session, and nothing has been asked to change either since.
+    pub(super) fn alike(&self, a: &str, b: &str) -> bool {
+        a != b
+            && match (self.halves.get(a), self.halves.get(b)) {
+                (Some(a), Some(b)) => a.line == b.line,
+                _ => false,
+            }
     }
 
     /// Make `to` a copy of `from` as it stands: the same world, agents and
     /// timeline. From there the two play apart again.
     pub(super) fn copy(&mut self, from: &str, to: &str) -> Result<(), String> {
-        if !well_formed(from) || from == to || from[2..] != to[2..] {
+        if other_half(to, from).is_none() {
             return Err("copy names the other half of this split".to_string());
         }
-        let Some(source) = self.0.get(from) else {
+        let Some(source) = self.halves.get(from) else {
             return Err("the other half of this split has not started".to_string());
         };
-        let copied = source.fork();
-        self.0.insert(to.to_string(), copied);
+        let copied = Half {
+            session: source.session.fork(),
+            line: source.line,
+            fresh: true,
+        };
+        self.halves.insert(to.to_string(), copied);
         Ok(())
     }
 
@@ -120,17 +247,17 @@ impl Panes {
     /// the main one, with every turn it can walk back to, and the other half
     /// is let go.
     pub(super) fn adopt(&mut self, pane: &str, main: &mut Session) -> Result<(), String> {
-        let Some(kept) = self.0.remove(pane) else {
+        let Some(kept) = self.halves.remove(pane) else {
             return Err("no half of a split is called that".to_string());
         };
-        *main = kept;
-        self.0.clear();
+        *main = kept.session;
+        self.halves.clear();
         Ok(())
     }
 
     #[cfg(test)]
     pub(super) fn len(&self) -> usize {
-        self.0.len()
+        self.halves.len()
     }
 }
 
@@ -219,6 +346,16 @@ pub(super) fn answer(
 /// behind one borrow, which the published build does; the socket server
 /// wraps the same steps in its locks and adds the saves on its disk
 /// (`socket`). `None` is a request that does not concern a world.
+///
+/// A debugger request may name the other half as its `twin`. When the two
+/// halves are alike as the request arrives, it is answered from this half
+/// and the twin is made a copy of what this half then holds, so the two are
+/// alike again and only one of them was played. When they are not alike the
+/// twin is left as it is, for its own page to ask the same of. Either way
+/// the answer's `debug.twinned` says which.
+///
+/// Any other request that may change this half while the two are alike
+/// parts them (`Panes::part`).
 pub(super) fn serve(
     panes: &mut Panes,
     main: &Session,
@@ -234,9 +371,9 @@ pub(super) fn serve(
     // answer is the world it now holds.
     if (method, path) == ("POST", "/debug") && parsed["op"] == json!("copy") {
         let copied = panes.copy(parsed["from"].as_str().unwrap_or(""), pane);
-        return Some(match (copied, panes.0.get(pane)) {
-            (Ok(()), Some(session)) => {
-                let mut out = session.state();
+        return Some(match (copied, panes.halves.get(pane)) {
+            (Ok(()), Some(half)) => {
+                let mut out = half.session.state();
                 out["error"] = Value::Null;
                 (out, true)
             }
@@ -244,11 +381,34 @@ pub(super) fn serve(
             (Ok(()), None) => (json!({"error": "the copy was not seated"}), false),
         });
     }
-    let session = match panes.seat(pane, main) {
-        Ok(session) => session,
+    let twin = if (method, path) == ("POST", "/debug") {
+        parsed["twin"].as_str()
+    } else {
+        None
+    };
+    // Read before this half is asked anything: the request is about to put
+    // it on a line of its own.
+    let alike = twin.is_some_and(|twin| panes.alike(pane, twin));
+    let changes = !only_reads(method, path);
+    if changes && !alike {
+        panes.part(pane);
+    }
+    let mut answered = match panes.seat(pane, main) {
+        Ok(session) => answer(session, asked, server_instance),
         Err(error) => return Some((json!({"error": error}), false)),
     };
-    answer(session, asked, server_instance)
+    if changes {
+        panes.changed(pane);
+    }
+    if let Some(twin) = twin {
+        let twinned = alike && panes.copy(pane, twin).is_ok();
+        if let Some((out, _)) = answered.as_mut() {
+            if out["debug"].is_object() {
+                out["debug"]["twinned"] = json!(twinned);
+            }
+        }
+    }
+    answered
 }
 
 /// The main session's own word in a split: `POST /debug {"op": "adopt",
@@ -314,6 +474,9 @@ pub(super) mod socket {
                     Ok(()) => Value::Null,
                     Err(error) => json!(error),
                 };
+                // A loaded game is another world: this half is on a line of
+                // its own, as it is after any request `serve` answers.
+                panes.changed(pane);
                 (out, true)
             }
         } else {

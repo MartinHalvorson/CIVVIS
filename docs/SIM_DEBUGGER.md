@@ -477,6 +477,43 @@ The rivals in each half are played by fresh agents from the split onward, as
 they are after any walk along the timeline, so the two halves differ only in
 what the seat does and in what follows from it.
 
+### Identical halves are played once
+
+Two halves that are the same world do not both need playing. The engine
+knows when they are: each half is on a numbered line, every request that may
+change a half puts it on a line of its own, and a copy takes the line of the
+half it was copied from (`src/server/panes.rs`). Two halves on one line are
+the same world and timeline with the same agents seated, and nothing has been
+asked of either since. Reading a half (its state, the rules, a route or a
+combat preview) leaves it on its line.
+
+A `POST /debug` request from one half may name the other as its `twin`. When
+the two are on one line as the request arrives, it is answered from the half
+that was asked, and the twin is made a copy of what that half then holds: one
+turn played, and a fork. The answer's `debug.twinned` is true, and the twin's
+page only has to read its state. When the halves are not on one line the twin
+is left as it is and `twinned` is false, so the page asks the twin to do the
+same thing itself. The page names a twin only when it would ask both halves
+for the same thing with the same Civ AI.
+
+Measured on the published engine (build `02525709d` in node, 6 seats,
+Continents), a step against the fork and state document that stand in for
+the second one:
+
+| Turn | Step | Fork and answer |
+|------|------|-----------------|
+| 10 | 89 ms | 14 ms |
+| 40 | 110 ms | 14 ms |
+| 80 | 240 ms | 25 ms |
+| 120 | 310 ms | 36 ms |
+
+A copy is seated with agents of its own, and an agent keeps plans from turn
+to turn. So of two halves played as one, only the half that was asked has
+agents that lived through those turns. When the two are then asked to play
+apart (a request that may change one of them, with no twin on the same line),
+the half that played is seated anew as well. From there nothing but what is
+asked of each tells them apart, as when the screen was first split.
+
 ## `POST /debug`
 
 `{"op": ...}` and the operation's fields. The answer is the state document
@@ -495,6 +532,7 @@ operation leaves the world as it was.
 | `step_seat`, `finish_round` | none |
 | `reveal` | `on`: true or false |
 | `copy` | from a half of a split: `from`, the other half's name |
+| any, from a half of a split | optional `twin`, the other half's name: do it once for both if the two are the same world (see "Identical halves are played once") |
 | `adopt` | from the host of a split: `pane`, the half to keep |
 | `layers` | `layers`: the ids to switch on; all others are switched off |
 | `breakpoints` | `turns`, `categories`, `phrases`, `important`, `every_seat`, `conditions`; whatever is left out is cleared |
@@ -507,6 +545,7 @@ took this turn (`assisted`), why the last step `stopped`, what the last step
 in did (`stepped`: the action and how many are `left`), whether the view
 is `reveal`ed, the `memory_line` in megabytes if the page set one, and the
 save points (`saves`: `id`, `name`, `turn`, `acted`,
-and `auto` for the one the debugger keeps).
+and `auto` for the one the debugger keeps). The answer to a request that
+named a `twin` also says whether the twin was made a copy of it (`twinned`).
 
 A watched game keeps no timeline and its state carries no `debug`.
