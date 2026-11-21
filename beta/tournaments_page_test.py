@@ -71,10 +71,12 @@ class TournamentsPage(unittest.TestCase):
             run("settler-20260730T101433Z", "win", None, 0, utc="2026-07-30T10:20:00Z", players=None, map=None),
             run("civvis-tinywar-20260731T231249Z", "unfinished", None, 0, utc="2026-07-31T23:30:00Z", players=None, map=None),
         ]
-        return tournaments_page.record(rows + list(more), specs, ["Rome", "Gran Colombia", "Mali", "Gaul", "Korea"], self.videos)
+        return tournaments_page.record(rows + list(more), specs, ["Rome", "Gran Colombia", "Mali", "Gaul", "Korea"],
+                                       self.videos, self.descriptions)
 
-    #: The definitions file's `videos`, as `record` is handed it.
+    #: The definitions file's `videos` and `descriptions`, as `record` is handed them.
     videos: dict | None = None
+    descriptions: dict | None = None
 
     def test_the_record_is_what_runs_what_waits_and_what_has_finished(self):
         record = self.record()
@@ -84,7 +86,7 @@ class TournamentsPage(unittest.TestCase):
         # last tournament begun. One whose `end` the games have passed never
         # ran and is not listed.
         self.assertEqual(record["scheduled"], [{
-            "id": 3, "name": "Level ladder", "idea": "Two agents at one table, level by level.",
+            "id": 3, "description": "", "name": "Level ladder", "idea": "Two agents at one table, level by level.",
             "conditions": "Lv 4-8 6P Continents Online, 2 CIVVIS + 4 AI", "note": "", "size": 50,
         }])
         first, second = record["finished"][0], record["running"][0]
@@ -356,6 +358,77 @@ class TournamentsPage(unittest.TestCase):
         })
         for link in defined["videos"].values():
             self.assertTrue(tournaments_page.VIDEO.fullmatch(link), link)
+
+    def test_a_tournament_has_a_short_description_on_its_title_line(self):
+        # Operator 2026-11-21: "for each tournament, we should have a short
+        # description. T1: Proof of concept, 10 game series. T2: Abandoned.
+        # T3: 30 game series. T4: 50 game series T5: Repeat 50 game series
+        # but with 2/6 CIVVIS AI Agents (2nd half no Diplo allowed). T6:
+        # Benchmarking across levels: 5 games at each level (no Diplo
+        # allowed). the descriptions can be on the title line. please make
+        # title line bigger too."
+        every = lambda record: {t["id"]: t["description"] for t in record["finished"] + record["running"] + record["scheduled"]}
+        self.assertEqual(every(self.record()), {1: "", 2: "", 3: ""})
+        # A description is listed by its tournament's number, as a video
+        # is, whether the tournament has finished, is running or waits.
+        self.descriptions = {"1": "Proof of concept", "2": "  Repeat it,\n over 5 games ", "3": "Benchmarking across levels"}
+        self.assertEqual(every(self.record()), {1: "Proof of concept", 2: "Repeat it, over 5 games", 3: "Benchmarking across levels"})
+        # A definition's own description is used for a number with no line,
+        # and the line listed for a number is the one shown.
+        spec = {"name": "n", "description": "From the definition", "conditions": "c", "start": "civvis-t6-", "series_size": 2, "match": MATCH}
+        rows = [run("civvis-t6-20261121T100000Z", "win", "CIVILIZATION_ROME", 5)]
+        own = lambda listed: tournaments_page.record(rows, [spec], ["Rome"], None, listed)["running"][0]["description"]
+        self.assertEqual(own(None), "From the definition")
+        self.assertEqual(own({"2": "Another tournament's"}), "From the definition")
+        self.assertEqual(own({"1": "From the list"}), "From the list")
+        # Anything that is not a few words is not a description.
+        for odd in ({"1": ""}, {"1": "   "}, {"1": 7}, {"1": None}, ["not", "a", "map"]):
+            self.assertEqual(own(odd), "From the definition")
+        # The page writes it on the title line after the number, the same
+        # line in all three lists, with the definition's name under it. In
+        # the finished table that line is a row of its own across the table.
+        for piece in (
+            'line.append(el("span", "tour-no", "Tournament " + t.id + (t.description ? ":" : "")));',
+            'if (t.description) line.append(" " + t.description);',
+            'title.append(titled(t, "h3"), el("p", "tour-name", t.name));',
+            'const head = el("tr", "is-title");',
+            "line.colSpan = columns;",
+            'line.append(titled(t, "div"));',
+            'name.append(el("small", "", t.name));',
+            "body.append(head, tr, games);",
+            # The largest line a tournament has, the number in gold.
+            "  .tour-title { margin: 0; color: #fff; font-size: 19px; font-weight: 700; line-height: 1.3; }\n"
+            "  .tour-title .tour-no { color: var(--gold); }",
+            "  .tour-queue .tour-title { font-size: 16px; }",
+            # It is read whole on a phone: under it, not beside it, the
+            # record; and in the table, which scrolls sideways there, as
+            # wide as the part in view and held at its left edge.
+            "  @media (max-width: 600px) {\n"
+            "    .tour-head { display: block; }\n"
+            "    .tour-figure { margin-top: 6px; text-align: left; }\n"
+            "  }",
+            "  .tour-scroll { overflow-x: auto; container-type: inline-size; }",
+            "  .rank-table tr.is-title .tour-title { position: sticky; left: 0; max-width: 100cqi; }",
+        ):
+            self.assertIn(piece, PAGE)
+        self.assertEqual(PAGE.count('title.append(titled(t, "h3"), el("p", "tour-name", t.name));'), 2)   # running and scheduled
+        # Bigger than the lines it replaced: the 13px number in the table
+        # and the 11.5px number over a 17px name in the two lists.
+        for gone in ("tour-number", 'el("b", "", "Tournament " + t.id)', "td.is-name b"):
+            self.assertNotIn(gone, PAGE)
+        # The definitions carry the operator's six, word for word, and no
+        # tournament from the first to the last described is left out.
+        defined = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))
+        self.assertEqual(defined["descriptions"], {
+            "1": "Proof of concept, 10 game series",
+            "2": "Abandoned",
+            "3": "30 game series",
+            "4": "50 game series",
+            "5": "Repeat 50 game series but with 2/6 CIVVIS AI Agents (2nd half no Diplo allowed)",
+            "6": "Benchmarking across levels: 5 games at each level (no Diplo allowed)",
+        })
+        self.assertEqual(list(defined["descriptions"]), [str(n) for n in range(1, len(defined["descriptions"]) + 1)])
+        self.assertGreaterEqual(len(defined["descriptions"]), len(defined["tournaments"]))
 
     def test_the_page_draws_three_lists_and_trusts_nothing_as_markup(self):
         for piece in (

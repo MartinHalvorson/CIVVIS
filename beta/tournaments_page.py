@@ -45,6 +45,15 @@ tournament's number as the page shows it, and a series carries its link as
 `video`. Only a YouTube watch link is carried; anything else is left out and
 said on stderr.
 
+Every tournament has a short description, a few words on what it was
+(operator 2026-11-21: "for each tournament, we should have a short
+description ... the descriptions can be on the title line"). The
+definitions file lists them under `descriptions`, by the tournament's
+number like the videos, and a tournament carries its own as `description`;
+the page writes it on the tournament's title line, "Tournament 4: 50 game
+series". A definition may carry a `description` of its own, used when the
+list has no line for its number.
+
 Like the home page's civ table this reads a branch every finished game
 writes to, from inside the script that publishes the whole site. So a
 definition or a line it cannot count costs the page its record, said on
@@ -82,6 +91,16 @@ def video(videos: dict, number: int) -> str:
         print(f"tournaments_page: Tournament {number}'s video is not a YouTube link; left out", file=sys.stderr)
         return ""
     return f"https://www.youtube.com/watch?v={found[1]}"
+
+
+def description(descriptions: dict, number: int, spec: dict) -> str:
+    """A tournament's short description, the few words after its number on
+    its title line, or `""`. The line listed for its number is the one
+    shown; without one, its definition's own `description` is."""
+    for listed in (descriptions.get(str(number)), spec.get("description")):
+        if isinstance(listed, str) and listed.strip():
+            return " ".join(listed.split())
+    return ""
 
 
 #: A date as `home_rankings` writes one: `2026-11-19 18:45Z`.
@@ -174,13 +193,14 @@ def tally(labels: list[str]) -> list[list]:
     return [[label, count] for label, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))]
 
 
-def series_view(row: dict, spec: dict, names: list[str], videos: dict) -> dict:
+def series_view(row: dict, spec: dict, names: list[str], videos: dict, descriptions: dict) -> dict:
     """A series as the page draws it: the table's row and its games."""
     games = [game(result, names) for _, result in row["played"]]
     levels = sorted({g["level"] for g in games if g["level"]})
     wall, run = durations(row["played"])
     return {
         "id": row["id"],
+        "description": description(descriptions, row["id"], spec),
         "name": row["tournament"],
         "idea": spec.get("idea") or "",
         "conditions": row["conditions"],
@@ -227,14 +247,17 @@ def passed_over(spec: dict, rows: list[dict]) -> bool:
     return any(key >= end and utc > before for key, utc in played)
 
 
-def record(rows: list[dict], specs: list[dict], names: list[str], videos: dict | None = None) -> dict:
+def record(rows: list[dict], specs: list[dict], names: list[str], videos: dict | None = None,
+           descriptions: dict | None = None) -> dict:
     """The page's three lists and the totals over every game counted.
-    `videos` is the definitions file's own: a result video's address by the
-    number of its tournament."""
+    `videos` and `descriptions` are the definitions file's own: a result
+    video's address, and a short description, by the number of its
+    tournament."""
     series = ranks.tournament_series(rows, specs, detail=True) or []
     started = {row["definition"] for row in series}
     videos = videos if isinstance(videos, dict) else {}
-    views = [series_view(row, specs[row["definition"]], names, videos) for row in series]
+    descriptions = descriptions if isinstance(descriptions, dict) else {}
+    views = [series_view(row, specs[row["definition"]], names, videos, descriptions) for row in series]
     number = max((view["id"] for view in views), default=0)
     scheduled = []
     for place, spec in enumerate(specs):
@@ -245,6 +268,7 @@ def record(rows: list[dict], specs: list[dict], names: list[str], videos: dict |
         number += 1
         scheduled.append({
             "id": number,
+            "description": description(descriptions, number, spec),
             "name": spec.get("name") or "",
             "idea": spec.get("idea") or "",
             "conditions": spec.get("conditions") or "",
@@ -279,7 +303,7 @@ def tournaments(source: pathlib.Path) -> dict | None:
         specs = defined.get("tournaments") or []
         civs = source / "data" / "civs.json"
         names = list(json.loads(civs.read_text(encoding="utf-8"))) if civs.is_file() else []
-        return record(rows, specs, names, defined.get("videos"))
+        return record(rows, specs, names, defined.get("videos"), defined.get("descriptions"))
     except Exception as error:  # noqa: BLE001 - see the module's last paragraph
         print(f"tournaments_page: the tournaments could not be read ({error!r}); no record", file=sys.stderr)
         return None

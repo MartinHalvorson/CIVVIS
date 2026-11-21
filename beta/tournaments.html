@@ -141,13 +141,20 @@
   .rank-note { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
   .rank-note a { color: var(--accent); }
 
-  /* A tournament in full: its number and name, the idea it tests, the
-     record, and a square per game in the order played. */
+  /* A tournament in full: its title line, its name, the idea it tests,
+     the record, and a square per game in the order played. */
   .tour-card { display: grid; gap: 8px; padding: 10px 0 4px; border-top: 1px solid var(--border); }
   .tour-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
   .tour-head > div:first-child { min-width: 0; }
-  .tour-number { margin: 0; color: var(--gold); font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
-  .tour-name { margin: 1px 0 0; color: #fff; font-size: 17px; font-weight: 700; line-height: 1.3; }
+  /* A tournament's title line: its number in gold and, after a colon, its
+     short description, "Tournament 4: 50 game series" (operator,
+     2026-11-21: "the descriptions can be on the title line. please make
+     title line bigger too"). It is the largest line a tournament has, the
+     same in all three lists; the definition's name is a small line under
+     it. A tournament with no description yet has its number alone. */
+  .tour-title { margin: 0; color: #fff; font-size: 19px; font-weight: 700; line-height: 1.3; }
+  .tour-title .tour-no { color: var(--gold); }
+  .tour-name { margin: 2px 0 0; color: var(--muted); font-size: 13px; font-weight: 400; line-height: 1.4; }
   .tour-idea { margin: 3px 0 0; color: var(--text); font-size: 13.5px; line-height: 1.5; }
   .tour-meta { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
   /* A tournament's result video on YouTube, linked under its name when the
@@ -159,6 +166,13 @@
   .tour-figure { flex: none; text-align: right; }
   .tour-score { margin: 0; color: #fff; font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
   .tour-rate { margin: 2px 0 0; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* On a phone the record stands under the title line, not beside it.
+     Beside it the title had half the card to wrap in, and at 320px its
+     longest word and the record together were wider than the card. */
+  @media (max-width: 600px) {
+    .tour-head { display: block; }
+    .tour-figure { margin-top: 6px; text-align: left; }
+  }
 
   /* A square per game, in the order played: a win in gold, a loss in slate,
      a game still to be played as an outline. Hovering a square names the
@@ -191,14 +205,14 @@
   /* The queue: what is played next, in order. */
   .tour-queue { margin: 0; padding: 0; list-style: none; }
   .tour-queue li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 16px; padding: 8px 0; border-top: 1px solid var(--border); }
-  .tour-queue .tour-name { font-size: 15px; }
+  .tour-queue .tour-title { font-size: 16px; }
   .tour-queue .tour-size { color: #fff; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .tour-queue .tour-idea, .tour-queue .tour-meta { grid-column: 1 / -1; }
 
-  /* The finished tournaments: the table that stood on the home page, a row
-     each, with the row's games as squares under it. A window too narrow
-     for the table scrolls it sideways rather than the page. */
-  .tour-scroll { overflow-x: auto; }
+  /* The finished tournaments: the table that stood on the home page, with
+     each tournament's games as squares under its figures. A window too
+     narrow for the table scrolls it sideways rather than the page. */
+  .tour-scroll { overflow-x: auto; container-type: inline-size; }
   .rank-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
   .rank-table th { padding: 4px 10px 4px 0; color: var(--faint); font-size: 11.5px; font-weight: 500; text-align: left; white-space: nowrap; }
   .rank-table td { padding: 6px 10px 2px 0; border-top: 1px solid var(--border); color: var(--text); vertical-align: top; white-space: nowrap; }
@@ -208,8 +222,16 @@
      the dates and the two durations their one line each. */
   .rank-table td.is-conditions { min-width: 10em; white-space: normal; }
   .rank-table td.is-name { min-width: 13em; white-space: normal; }
-  .rank-table td.is-name b { display: block; color: #fff; font-weight: 700; white-space: nowrap; }
   .rank-table td.is-name small { display: block; color: var(--muted); font-size: 12px; line-height: 1.4; }
+  /* A finished tournament is three rows: its title line across the whole
+     table, its figures, and its games. The line between two tournaments
+     is drawn over the title, so the figures under it have none. */
+  .rank-table tr.is-title td { padding: 12px 0 0; white-space: normal; }
+  /* Where the table is wider than the window and scrolls sideways, the
+     title line is as wide as the part in view and stays at its left edge,
+     so it is read whole whichever columns are on screen. */
+  .rank-table tr.is-title .tour-title { position: sticky; left: 0; max-width: 100cqi; }
+  .rank-table tr.is-figures td { padding-top: 3px; border-top: 0; }
   .rank-table tr.is-games td { padding: 4px 10px 8px 0; border-top: 0; white-space: normal; }
   .rank-table tr.is-games .tour-counts { margin-top: 5px; }
 </style>
@@ -393,6 +415,16 @@
       return link;
     };
 
+    // A tournament's title line: "Tournament 4: 50 game series", the
+    // number and then its short description. One with no description yet
+    // is its number alone.
+    const titled = (t, tag) => {
+      const line = el(tag, "tour-title");
+      line.append(el("span", "tour-no", "Tournament " + t.id + (t.description ? ":" : "")));
+      if (t.description) line.append(" " + t.description);
+      return line;
+    };
+
     // Running: the tournament being played, in full.
     const running = list(data.running);
     const runningBox = document.getElementById("tour-running");
@@ -400,7 +432,7 @@
       const card = el("article", "tour-card");
       const head = el("div", "tour-head");
       const title = el("div");
-      title.append(el("p", "tour-number", "Tournament " + t.id), el("h3", "tour-name", t.name));
+      title.append(titled(t, "h3"), el("p", "tour-name", t.name));
       if (t.idea) title.append(el("p", "tour-idea", t.idea));
       if (video(t)) title.append(video(t));
       const figure = el("div", "tour-figure");
@@ -438,7 +470,7 @@
     for (const t of scheduled) {
       const item = el("li");
       const title = el("div");
-      title.append(el("p", "tour-number", "Tournament " + t.id), el("h3", "tour-name", t.name));
+      title.append(titled(t, "h3"), el("p", "tour-name", t.name));
       item.append(title, el("span", "tour-size", plural(t.size, "game", "games")));
       if (t.idea) item.append(el("p", "tour-idea", t.idea));
       item.append(el("p", "tour-meta", [t.conditions, before ? "after Tournament " + before : "next to start", t.note].filter(Boolean).join(" · ")));
@@ -449,16 +481,22 @@
       ? plural(scheduled.length, "tournament is", "tournaments are") + " waiting, in the order " + (scheduled.length === 1 ? "it" : "they") + " will be played."
       : "Nothing is scheduled. Until something is, the running definition keeps playing new series.";
 
-    // Finished: the table, newest first, each row with its games under it.
+    // Finished: the table, newest first. A tournament is its title line
+    // across the table, then its figures, then its games.
     const finished = list(data.finished);
     const finishedBox = document.getElementById("tour-finished");
     if (finished.length) {
       const body = finishedBox.querySelector("tbody");
       const columns = finishedBox.querySelectorAll("thead th").length;
       for (const t of finished) {
-        const tr = el("tr");
+        const head = el("tr", "is-title");
+        const line = el("td");
+        line.colSpan = columns;
+        line.append(titled(t, "div"));
+        head.append(line);
+        const tr = el("tr", "is-figures");
         const name = el("td", "is-name");
-        name.append(el("b", "", "Tournament " + t.id), el("small", "", t.name));
+        name.append(el("small", "", t.name));
         if (video(t)) name.append(video(t));
         // The note is a sentence or two and runs down beside the games,
         // so the squares stay right under their row however long it is.
@@ -479,10 +517,10 @@
         cell.colSpan = columns - 1;
         cell.append(strip(t, false), counts(t));
         games.append(cell);
-        body.append(tr, games);
+        body.append(head, tr, games);
       }
       const totals = data.totals || {};
-      finishedBox.querySelector("[data-sub]").textContent = "Newest first, with each tournament’s games under its row"
+      finishedBox.querySelector("[data-sub]").textContent = "Newest first, with each tournament’s games under its figures"
         + (finished.some(video) ? " and its result video, where there is one, under its name." : ".");
       finishedBox.querySelector("[data-rank-note]").textContent = totals.games
         ? "Every tournament so far: " + plural(totals.games, "game", "games") + ", "
