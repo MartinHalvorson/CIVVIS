@@ -320,11 +320,15 @@ impl Game {
     /// A seat carrying a runtime modifier attachment is matched against its
     /// deck by card name, so no trace can call a card of its inert
     /// (`PolicyReadSet::is_opaque`); it is read once per sub-deck as before.
+    /// So is a deck whose every card the bare empire already asks about:
+    /// there is nothing to share, and a traced reading costs about a fifth
+    /// more than a plain one.
     fn readings_of_every_sub_deck(&mut self, pid: usize, deck: &[Name]) -> Vec<EmpireReading> {
         // What has been read: the cards that reading can be moved by, which
         // of them it was read under, and the reading.
         let mut read: Vec<(usize, usize, EmpireReading)> = Vec::new();
-        let mut opaque = false;
+        // Nothing is shared: every sub-deck is read with its cards slotted.
+        let mut plain = false;
         (0..1usize << deck.len())
             .map(|mask| {
                 if let Some((_, _, reading)) = read
@@ -333,20 +337,20 @@ impl Game {
                 {
                     return *reading;
                 }
-                if opaque {
+                if plain {
                     return self.reading_with_cards(pid, deck, mask);
                 }
                 self.seat_cards(pid, deck, mask);
                 let trace = self.trace_policy_reads(pid);
                 let reading = self.empire_reading(pid);
                 let reads = trace.finish();
-                if reads.is_opaque() {
-                    opaque = true;
-                    return reading;
-                }
                 let moved_by = (0..deck.len())
                     .filter(|card| !reads.card_is_inert(&self.rules, deck[*card]))
                     .fold(0usize, |bits, card| bits | 1 << card);
+                if reads.is_opaque() || (read.is_empty() && moved_by + 1 == 1 << deck.len()) {
+                    plain = true;
+                    return reading;
+                }
                 read.push((moved_by, mask & moved_by, reading));
                 reading
             })
