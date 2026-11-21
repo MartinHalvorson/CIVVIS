@@ -5079,3 +5079,42 @@ PGO needs a training corpus and a two-stage build, which is an operational
 commitment to the release path rather than a dependency line, and `lto = "thin"`
 with `codegen-units = 1` has already taken some of what it would find. This task
 stays single-purpose.
+
+## 2026-11-21 — the browser build gets an allocator of its own
+
+The 2026-09-10 entry replaced the platform allocator in every native binary
+and left the browser build where it was: mimalloc has no wasm32 target, so
+the module a visitor runs still allocated through the target's `dlmalloc`. A
+profile of 140 debugger turns on published build `145fabd` (`node --cpu-prof`,
+names from the `civvis-wasm-symbols` artifact) put **5.5%** of all samples in
+its `malloc` and `free` alone, the two largest leaves in the profile.
+
+### The change
+
+`src/pools.rs`, the global allocator on wasm32 only (`lib.rs`). A block of up
+to 2 KB aligned to 16 or less comes off a free list kept for its size, rounded
+up to 16 bytes, and goes back onto it: one pop, one push. Lists are fed from
+256 KB slabs of `dlmalloc`; a pooled block is never handed back, only reused
+for its size. Larger blocks are `dlmalloc`'s as before. It keeps no lock and
+is `Sync` only on wasm32 without threads, the one build that uses it.
+
+### Evidence
+
+Production modules built by `wasm-qualify` for main `d06dbf7` (run
+44874688296) and for the change on top of it (`f8b2292`, run 44874664476),
+each driven in node for 100 debugger turns of a six-seat game, alternating,
+twice a seed. Instructions retired are the whole process, V8's compiling
+included, which is the same work in both arms:
+
+| seed | world at turn 100 | instructions, main | with pools | | engine memory |
+| ---: | --- | ---: | ---: | ---: | --- |
+| 7 | the same (`dd7eb097bcd3`) | 217.2 G, 217.3 G | 206.2 G, 206.6 G | **−5.0%** | 214 MB to 217 MB |
+| 8 | the same (`e007e93bde46`) | 219.3 G, 219.1 G | 208.6 G, 209.2 G | **−4.8%** | 217 MB to 220 MB |
+
+The same game on both seeds, as the native allocator change found: nothing
+in the engine reads an address. A run repeats to 0.3%, so the difference is
+sixteen times the noise. Wall time on the host that measured it (load 25)
+moved the same way and is not quoted. Memory grows by the slabs' slack, 3 MB.
+
+A small module that does nothing but allocate (maps of strings, vectors that
+grow, clones) ran in 550 ms where it took 835 ms, with the same checksum.
