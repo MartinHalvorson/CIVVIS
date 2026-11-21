@@ -273,6 +273,13 @@ const DEBUG_BAR_STYLE = `
     background: repeating-linear-gradient(-45deg, #ffffffc0 0 5px, transparent 5px 10px);
   }
   #debugbar.dbg-split-on .dbg-goal { top: 16px; bottom: 5px; }
+  /* Kept turns ahead that another Civ AI played: not this seat's line, and
+     played over by the one picked now. */
+  #debugbar .dbg-beyond {
+    position: absolute; top: 25px; bottom: 25px; min-width: 4px; border-radius: 0 5px 5px 0;
+    background: repeating-linear-gradient(90deg, #4f6f8ab0 0 4px, transparent 4px 8px); box-shadow: 0 0 0 1px #4f6f8a70;
+  }
+  #debugbar.dbg-split-on .dbg-beyond { top: 20px; bottom: 9px; }
   #debugbar .dbg-ghost { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #0b3554c0; }
   /* The marker stands over whatever else is on its turn (an era's line, a
      flag), and a press on it still reaches the slider beneath. */
@@ -493,6 +500,35 @@ async function debugUndo() {
 }
 function debugStrategy() {
   return (document.getElementById("autoplaystrategy") || {}).value || undefined;
+}
+// A Civ AI by the name its picker shows.
+function debugAgentName(id) {
+  const roster = typeof RULES !== "undefined" && RULES && Array.isArray(RULES.strategies) ? RULES.strategies : [];
+  const row = roster.find(entry => entry.name === id);
+  return row ? row.username || row.name : id || "another Civ AI";
+}
+// Kept turns ahead that another Civ AI played (`debug.beyond`), in a line.
+// They are not walked to: going on from here plays, with the one picked.
+function debugBeyondWords(beyond, turn) {
+  const turns = beyond.from === beyond.to ? `Turn ${beyond.from} was` : `Turns ${beyond.from} to ${beyond.to} were`;
+  return `${turns} played by ${debugAgentName(beyond.by)} · ${debugAgentName(debugStrategy())} plays on from turn ${turn}`;
+}
+// The page's choice of Civ AI is kept where a page reads it when it loads,
+// which is also how the halves of a split start on it.
+function debugRememberSeat() {
+  const name = debugStrategy();
+  if (!name || DEBUG_PANE !== null) return;
+  try { localStorage.setItem(AUTOPLAY_STRATEGY_KEY, name); } catch (_) {}
+}
+// The Civ AI picked for the seat is said to the engine when it is picked, not
+// at the next step. The turns the engine counts as played ahead are the ones
+// that agent played (`Timeline::line`), so the timeline and every way forward
+// on it are the picked agent's from the moment of the pick: a turn another
+// Civ AI played is never walked to as if it were this one's.
+function debugSeat() {
+  debugRememberSeat();
+  const name = debugStrategy();
+  return name && debugTimeline() ? debugOp({op: "status", strategy: name}) : null;
 }
 // Why the engine stopped a run, in a line, with somewhere to look if it has one.
 function debugSayStop(stopped) {
@@ -781,7 +817,7 @@ function debugLaneMarkup(key, id, label) {
         <select class="dbg-agent" data-dbg-agent="${key}" title="The Civ AI that plays ${key.toUpperCase()}'s seat when it is stepped, run or played to" aria-label="Civ AI for ${key.toUpperCase()}"></select>` : ""}
         <b class="dbg-start"></b>
         <div class="dbg-rail">
-          <div class="dbg-deco"><div class="dbg-ruler"></div><div class="dbg-band"></div><div class="dbg-band dbg-own"></div><div class="dbg-kept-turns"></div><div class="dbg-goal"></div><div class="dbg-ghost" hidden></div><div class="dbg-cursor"><b></b></div></div>
+          <div class="dbg-deco"><div class="dbg-ruler"></div><div class="dbg-band"></div><div class="dbg-band dbg-own"></div><div class="dbg-beyond" hidden></div><div class="dbg-kept-turns"></div><div class="dbg-goal"></div><div class="dbg-ghost" hidden></div><div class="dbg-cursor"><b></b></div></div>
           <input type="range" id="${id}" step="1"${key ? ` data-dbg-half="${key}"` : ""} aria-label="${label}">
           <div class="dbg-marks"></div>
         </div>
@@ -909,7 +945,7 @@ function debugBuildBar() {
   for (const box of bar.querySelectorAll(".dbg-lane")) {
     const part = name => box.querySelector(`.dbg-${name}`);
     debugLanes[box.dataset.dbgLane] = {box, input: box.querySelector("input"), ruler: part("ruler"),
-      band: part("band"), own: part("own"), kept: part("kept-turns"), goal: part("goal"), ghost: part("ghost"),
+      band: part("band"), own: part("own"), beyond: part("beyond"), kept: part("kept-turns"), goal: part("goal"), ghost: part("ghost"),
       cursor: part("cursor"), pill: box.querySelector(".dbg-cursor b"), marks: part("marks"), agent: part("agent"),
       start: part("start"), finish: part("finish")};
   }
@@ -1028,6 +1064,7 @@ function debugBuildBar() {
       if (page) { page.value = target.value; page.dispatchEvent(new Event("change", {bubbles: true})); }
       target.blur();
       drawDebugBar(false);
+      debugSeat();
     } else if (target.dataset.dbgLayer) {
       debugOp({op: "layers", layers: debugLayersFromForm()});
     } else if (target.closest("#dbg-pop-breaks")) {
@@ -1168,8 +1205,11 @@ function debugPlace(box, css) {
 // slider there does.
 function debugTurnWords(model, turn) {
   const name = model.name ? `${model.name} · turn ${turn}` : `Turn ${turn}`;
-  if (turn > model.last)
-    return model.turn < model.last ? `${name} · play on from turn ${model.turn} to here` : `${name} · play to here`;
+  if (turn > model.last) {
+    const beyond = model.beyond && turn >= model.beyond.from && turn <= model.beyond.to
+      ? `, over the turns ${debugAgentName(model.beyond.by)} played` : "";
+    return (model.turn < model.last ? `${name} · play on from turn ${model.turn} to here` : `${name} · play to here`) + beyond;
+  }
   if (turn < model.first) return `${name} · before the timeline begins, goes to turn ${model.first}`;
   if (model.kept && !model.kept.has(turn)) {
     const near = model.turns.filter(kept => kept <= turn).pop() ?? model.first;
@@ -1208,6 +1248,9 @@ function debugDrawLane(key, model) {
   debugPlace(lane.band, span(first, fork));
   lane.own.hidden = fork >= last;
   debugPlace(lane.own, span(fork, last));
+  const beyond = model.beyond && model.beyond.to > last ? model.beyond : null;
+  lane.beyond.hidden = !beyond;
+  if (beyond) debugPlace(lane.beyond, span(last, beyond.to));
   lane.box.classList.toggle("dbg-thinned", !!model.kept);
   const kept = model.kept ? `${lo}:${hi}:${model.turns.join()}` : "";
   if (lane.kept.dataset.turns !== kept) {
@@ -1306,6 +1349,9 @@ function debugDeckNow() {
   // bar says whose it is for as long as nothing newer is being said.
   const round = timeline.playing
     ? `${debugPlaysNext(timeline.playing)} · ▸| steps it, 1▶ lets the round finish` : "";
+  // Turns ahead that another Civ AI played are said for as long as they
+  // stand there: it is why going on from here plays instead of walking.
+  const beyond = timeline.beyond ? debugBeyondWords(timeline.beyond, state.turn) : "";
   return {
     turn: state.turn,
     limit: Number.isFinite(state.turn_limit) && state.turn_limit > 0 ? state.turn_limit : null,
@@ -1315,7 +1361,7 @@ function debugDeckNow() {
     strategy: debugStrategy() || "",
     solo: SOLO_UI,
     eraBack: debugEraBack(timeline),
-    note: debugNoteText || round || layered,
+    note: debugNoteText || round || layered || beyond,
     show: !!(debugNoteText && debugNotePos),
     // A condition reads one thing the observation says about one
     // civilization. The readings on offer are the ones this seat's own entry
@@ -1347,7 +1393,8 @@ function drawDebugBar(measure = true) {
     // turn they split on and each half's own from there.
     const panes = debugSplit.panes;
     const played = letter => Math.max(panes[letter].last ?? 0, panes[letter].turn ?? 0, debugSplit.from ?? state.turn);
-    const axis = debugAxis(1, Math.max(played("a"), played("b")));
+    const kept = letter => Math.max(played(letter), ((panes[letter].marks || {}).beyond || {}).to ?? 0);
+    const axis = debugAxis(1, Math.max(kept("a"), kept("b")));
     // A run asked for on the one panel is the half's own, and the half says
     // where it is headed.
     const running = debugSplit.running > 0 || (deck !== null && deck.running);
@@ -1360,7 +1407,7 @@ function drawDebugBar(measure = true) {
       const marks = pane.marks || {flags: [], stops: []};
       debugDrawLane(letter, {name: letter.toUpperCase(), ...axis, first: Math.min(pane.first ?? turn, turn),
         last: played(letter), turn, fork: debugSplit.from, kept: null, turns: null, flags: marks.flags, stops: marks.stops,
-        goal, idle: pane.turn !== null && !debugSplit.busy && !running});
+        beyond: marks.beyond || null, goal, idle: pane.turn !== null && !debugSplit.busy && !running});
       const agent = debugLanes[letter].agent;
       debugOfferAgents(agent, pane.strategy);
       agent.disabled = debugSplit.busy || running;
@@ -1386,8 +1433,9 @@ function drawDebugBar(measure = true) {
     const kept = timeline.turns || [], thinned = kept.length < last - first + 1;
     debugDrawLane("a", null);
     debugDrawLane("b", null);
-    debugDrawLane("", {name: "", ...debugAxis(first, last), first, last, turn: state.turn, fork: null,
-      kept: thinned ? new Set(kept) : null, turns: thinned ? kept : null,
+    const beyond = timeline.beyond || null;
+    debugDrawLane("", {name: "", ...debugAxis(first, Math.max(last, beyond ? beyond.to : 0)), first, last, turn: state.turn,
+      fork: null, beyond, kept: thinned ? new Set(kept) : null, turns: thinned ? kept : null,
       flags: [...(timeline.saves || [])].sort((a, b) => a.turn - b.turn || a.id - b.id), stops: timeline.breakpoints.turns,
       eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle: deck.idle});
   }
@@ -1898,9 +1946,11 @@ function debugSplitOpen(dir, versus = null) {
     from: state ? state.turn : null};
   for (const letter of ["a", "b"]) {
     const frame = host.querySelector(`[data-dbg-frame="${letter}"]`);
+    // A half starts on the Civ AI picked here, and is told if it loads on another.
     debugSplit.panes[letter] = {frame, id: `${letter}-${nonce}`, turn: null, first: null, last: null,
-      deck: null, told: null};
+      deck: null, told: null, strategy: debugStrategy()};
   }
+  debugRememberSeat();
   host.addEventListener("click", event => {
     const stat = event.target.closest("[data-dbg-stat]");
     if (stat && debugSplit) { debugSplit.chart = stat.dataset.dbgStat; drawDebugSplit(); return; }
@@ -2041,6 +2091,10 @@ async function debugSplitClose(keep) {
     if (next.error) throw new Error(next.error);
     debugForgetStandingOrders(next.turn);
     sel = null; selCity = null;
+    // The half that is kept keeps its Civ AI: the seat is still that agent's.
+    const page = document.getElementById("autoplaystrategy"), kept = debugSplit.panes[keep].strategy;
+    if (page && kept && [...page.options].some(option => option.value === kept)) page.value = kept;
+    debugRememberSeat();
     render(next);
     note = `Playing on from simulator ${keep.toUpperCase()}`;
   } catch (error) {
@@ -2073,7 +2127,7 @@ window.addEventListener("message", event => {
     else debugSplitTell(other, {civvis: "pane-op", body: debugMirrored(data.body)});
   } else if (data.civvis === "pane-marks") {
     debugSplit.panes[letter].marks = {flags: Array.isArray(data.flags) ? data.flags : [],
-      stops: Array.isArray(data.stops) ? data.stops : []};
+      stops: Array.isArray(data.stops) ? data.stops : [], beyond: data.beyond || null};
     drawDebugBar();
   } else if (data.civvis === "pane-deck") {
     debugSplit.panes[letter].deck = data.deck;
@@ -2102,6 +2156,13 @@ window.addEventListener("message", event => {
     drawDebugSplit();
   }
 });
+
+// The left panel's picker is the same choice, made in the single player view.
+// (The header's picker writes it and says so itself.)
+{
+  const picker = document.getElementById("autoplaystrategy");
+  if (picker) picker.addEventListener("change", event => { if (event.isTrusted) debugSeat(); });
+}
 
 // ---- the pane's side
 let debugPaneTurn = null;
@@ -2135,10 +2196,12 @@ let debugMarksSaid = "";
 function debugPaneMarks(timeline) {
   const flags = [...(timeline.saves || [])].sort((a, b) => a.turn - b.turn || a.id - b.id);
   const stops = timeline.breakpoints.turns;
-  const said = JSON.stringify([flags, stops]);
+  // And the kept turns ahead that another Civ AI played, when there are any.
+  const beyond = timeline.beyond || null;
+  const said = JSON.stringify([flags, stops, beyond]);
   if (said === debugMarksSaid) return;
   debugMarksSaid = said;
-  window.parent.postMessage({civvis: "pane-marks", pane: DEBUG_PANE, flags, stops}, location.origin);
+  window.parent.postMessage({civvis: "pane-marks", pane: DEBUG_PANE, flags, stops, beyond}, location.origin);
 }
 // What the host tells a half to do after the other is done one thing at a
 // time, in the order it was told, and not while the half is in the middle of
@@ -2191,7 +2254,9 @@ async function debugFollow(turn, how) {
         // A walk lands on the nearest marked turn, and that is where it stays.
         await debugOp({op: "jump", turn: wanted.turn});
         if (debugFollowWanted === wanted) debugFollowWanted = null;
-      } else if (wanted.how === "step") await debugStep();
+      // A turn the other half walked to and this one has no turn of its own
+      // for is played to, by this half's Civ AI.
+      } else if (wanted.how === "step" || wanted.how === "travel") await debugStep();
       else await send({type: "end_turn"});
       if (state.turn === before && debugFollowWanted === wanted) debugFollowWanted = null;
     }
@@ -2258,6 +2323,11 @@ if (DEBUG_PANE !== null) {
       const select = document.getElementById("autoplaystrategy");
       if (select && [...select.options].some(option => option.value === data.name)) select.value = data.name;
       debugPaneNumbers();
+      // It is this half's own seat, and nothing for the other half to do too.
+      debugInTurn(async () => {
+        debugMirroring = true;
+        try { await debugSeat(); } finally { debugMirroring = false; }
+      });
     } else if (data.civvis === "pane-run") {
       // A half that cannot run says so, or the host would wait on it.
       if (debugRunning || autoplaying || !debugTimeline())

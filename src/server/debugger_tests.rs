@@ -100,6 +100,7 @@ fn timeline_of(turns: std::ops::RangeInclusive<u32>, room: usize) -> Timeline {
             turn,
             actions: 0,
             game: game.clone(),
+            by: None,
         });
     }
     timeline
@@ -1046,4 +1047,163 @@ fn a_step_in_the_middle_of_a_round_lets_the_round_finish_first() {
     assert_eq!(out["turn"], json!(3));
     assert_eq!(session.game.current, 0);
     assert!(session.debug(&json!({"op": "finish_round"}))["error"].is_string());
+}
+
+/// One whole turn played by the Civ AI named.
+fn step_as(session: &mut Session, agent: &str) {
+    let answer = session.debug(&json!({"op": "step", "strategy": agent, "lean": true}));
+    assert_eq!(answer["error"], Value::Null);
+}
+
+/// The Civ AI picked for the seat, with nothing played.
+fn pick(session: &mut Session, agent: &str) -> Value {
+    let answer = session.debug(&json!({"op": "status", "strategy": agent}));
+    assert_eq!(answer["error"], Value::Null);
+    answer["debug"].clone()
+}
+
+/// A recording is the Civ AI's that made it. Walked back and handed to
+/// another one, the seat's line ends on the open turn: the turns ahead are
+/// kept, are not walked to, and are played over by the agent now seated.
+/// What goes forward under a picked Civ AI is that agent's own play, never a
+/// recording of another's.
+#[test]
+fn a_turn_ahead_is_walked_to_only_under_the_civ_ai_that_played_it() {
+    let mut session = played();
+    for _ in 0..4 {
+        step_as(&mut session, "jack");
+    }
+    assert_eq!(session.game.turn, 5);
+    let fifth = world(&session);
+    assert_eq!(session.debug_jump(2), Ok(2));
+    // Under the agent that played them, the turns ahead are this line.
+    assert_eq!(marked(&session), [1, 2, 3, 4, 5]);
+    assert_eq!(session.state()["debug"]["beyond"], Value::Null);
+
+    // Another Civ AI is picked on the earlier turn, and nothing is played.
+    let picked = pick(&mut session, "siege");
+    assert_eq!(picked["seat"], json!("siege"));
+    assert_eq!(picked["turns"], json!([1, 2]));
+    assert_eq!(picked["last"], json!(2));
+    assert_eq!(picked["can_forward"], json!(false));
+    assert_eq!(picked["beyond"], json!({"from": 3, "to": 5, "by": "jack"}));
+    // Neither way of walking reaches the other agent's turns.
+    assert!(session.debug_forward().is_err());
+    assert!(session.debug_jump(4).is_err());
+    assert!(session.debug(&json!({"op": "jump", "turn": 5}))["error"].is_string());
+    assert_eq!(session.game.turn, 2);
+
+    // Picked again before anything is played, its turns are this line again.
+    let again = pick(&mut session, "jack");
+    assert_eq!(again["beyond"], Value::Null);
+    assert_eq!(again["turns"], json!([1, 2, 3, 4, 5]));
+    assert_eq!(session.debug_jump(5), Ok(5));
+    assert_eq!(world(&session), fifth);
+
+    // The other one plays from the earlier turn, over the recording.
+    assert_eq!(session.debug_jump(2), Ok(2));
+    step_as(&mut session, "siege");
+    assert_eq!(session.game.turn, 3);
+    assert_eq!(marked(&session), [1, 2, 3]);
+    assert_eq!(session.state()["debug"]["beyond"], Value::Null);
+    let newest = session.debugger.marks.last().expect("the turn is marked");
+    assert_eq!(newest.by.as_deref(), Some("siege"));
+}
+
+/// The order does not matter: a Civ AI picked on the last turn played, and
+/// the world then walked back, stands before another agent's turns too.
+#[test]
+fn a_civ_ai_picked_before_the_walk_back_does_not_walk_another_agents_turns() {
+    let mut session = played();
+    for _ in 0..3 {
+        step_as(&mut session, "jack");
+    }
+    // On the last turn played there is nothing ahead to be another's.
+    let picked = pick(&mut session, "siege");
+    assert_eq!(picked["turns"], json!([1, 2, 3, 4]));
+    assert_eq!(picked["beyond"], Value::Null);
+
+    assert_eq!(session.debug_jump(2), Ok(2));
+    let stands = session.state()["debug"].clone();
+    assert_eq!(stands["turns"], json!([1, 2]));
+    assert_eq!(stands["beyond"]["by"], json!("jack"));
+    assert!(session.debug_forward().is_err());
+    // Back is every turn behind, whoever played it.
+    assert_eq!(session.debug_back(), Ok(1));
+}
+
+/// A turn the person ended is nobody else's game, whichever Civ AI is picked
+/// to take the seat over: it is walked to as before.
+#[test]
+fn turns_ended_by_hand_are_walked_under_any_civ_ai() {
+    let mut session = played();
+    end_turn(&mut session);
+    end_turn(&mut session);
+    assert_eq!(session.debug_jump(1), Ok(1));
+    let picked = pick(&mut session, "siege");
+    assert_eq!(picked["turns"], json!([1, 2, 3]));
+    assert_eq!(picked["beyond"], Value::Null);
+    assert_eq!(session.debug_forward(), Ok(2));
+}
+
+/// A turn taken an action at a time is the agent's turn as much as one taken
+/// whole, and the rest of it is not kept for an agent that did not plan it.
+#[test]
+fn a_turn_stepped_in_is_its_agents_and_its_plan_goes_with_the_seat() {
+    let mut session = played();
+    let step_in = |session: &mut Session, agent: &str| {
+        let answer = session.debug(&json!({"op": "step_action", "strategy": agent, "lean": true}));
+        assert_eq!(answer["error"], Value::Null);
+    };
+    step_in(&mut session, "jack");
+    assert!(
+        session.debugger.plan.is_some(),
+        "an opening turn is planned"
+    );
+    // Another Civ AI takes the seat mid-turn: the plan was not its own.
+    pick(&mut session, "siege");
+    assert!(session.debugger.plan.is_none());
+    for _ in 0..400 {
+        if session.game.turn == 2 {
+            break;
+        }
+        step_in(&mut session, "siege");
+    }
+    assert_eq!(session.game.turn, 2);
+    let newest = session.debugger.marks.last().expect("the turn is marked");
+    assert_eq!((newest.turn, newest.by.as_deref()), (2, Some("siege")));
+}
+
+/// Operator 2026-11-21: "when the debugger jumps back in time, then changes
+/// the strategy, then autoplays, it must play under the new strategy. i think
+/// it may be playing out the previous forward recording".
+///
+/// The engine's half is the seat's line
+/// (`a_turn_ahead_is_walked_to_only_under_the_civ_ai_that_played_it`). The
+/// page's is that a pick reaches the engine when it is made, from the box's
+/// picker and in each half of a split, so the timeline it is answered with
+/// is the picked agent's before anything else is pressed. What that does in
+/// a browser is held by `beta/debugger_test.py`
+/// (`check_a_picked_civ_ai_plays_its_own_turns`).
+#[test]
+fn the_page_says_a_picked_civ_ai_to_the_engine_when_it_is_picked() {
+    let script = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    let said = script
+        .split_once("function debugSeat() {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .expect("debugSeat is a top-level function")
+        .0;
+    assert!(said.contains(r#"debugOp({op: "status", strategy: name})"#));
+    // The branch that hears each picker, up to the branch after it.
+    let branch = |heard: &str| {
+        let rest = script.split_once(heard).expect("the picker is heard").1;
+        &rest[..rest.find("} else if").expect("another branch follows")]
+    };
+    assert!(branch(r#"target.id === "dbg-agent""#).contains("debugSeat();"));
+    assert!(branch(r#"data.civvis === "pane-strategy""#).contains("await debugSeat();"));
+    // Whose the turns ahead are is the engine's to say, and the page draws it.
+    assert!(script.contains("timeline.beyond"));
+    let answer = played().debug(&json!({"op": "status", "strategy": "jack"}));
+    assert_eq!(answer["debug"]["seat"], json!("jack"));
+    assert_eq!(answer["debug"]["beyond"], Value::Null);
 }
