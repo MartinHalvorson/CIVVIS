@@ -2651,3 +2651,74 @@ fn a_marked_frame_builds_exactly_the_tiles_it_sends() {
     assert_eq!(first["map"]["tiles"], json!([]));
     assert_eq!(second, observation_spectator(&game, 0));
 }
+
+/// The result screen draws the whole game from `game_stats`: one turn axis and,
+/// per major civilization, a series for each figure that lines up with it. A
+/// running game sends none of it, and a planning copy of the world records
+/// nothing, so the history costs a played turn one row per civilization.
+#[test]
+fn a_finished_game_sends_every_civilization_s_history_on_one_turn_axis() {
+    let mut game = Game::new_full(2, 20, 14, 19_068, 250, 0, false);
+    for _ in 0..12 {
+        game.apply(game.current, &crate::game::Action::EndTurn)
+            .unwrap();
+    }
+    assert!(
+        observation_spectator(&game, 0)["game_stats"].is_null(),
+        "a running game's frames do not carry the history"
+    );
+    let rows = game.turn_stats.len();
+    assert!(
+        rows >= 10,
+        "every played turn of every major leaves a row, got {rows}"
+    );
+    let mut planning = game.clone();
+    planning.set_planning_role(crate::game::PlanningRole::Rolling);
+    planning
+        .apply(planning.current, &crate::game::Action::EndTurn)
+        .unwrap();
+    planning
+        .apply(planning.current, &crate::game::Action::EndTurn)
+        .unwrap();
+    assert_eq!(
+        planning.turn_stats.len(),
+        rows,
+        "a planning copy records nothing"
+    );
+    game.winner = Some(0);
+    game.victory_type = Some("score".to_string());
+    let stats = observation_spectator(&game, 0)["game_stats"].clone();
+    let turns = stats["turns"].as_array().expect("one turn axis");
+    assert!(turns.len() >= 5);
+    assert!(
+        turns
+            .windows(2)
+            .all(|pair| pair[0].as_u64() < pair[1].as_u64()),
+        "ascending turns"
+    );
+    let players = stats["players"]
+        .as_array()
+        .expect("a series per civilization");
+    let majors = game
+        .players
+        .iter()
+        .filter(|p| !p.is_minor && !p.is_barbarian)
+        .count();
+    assert_eq!(players.len(), majors, "{stats}");
+    for player in players {
+        for key in [
+            "science",
+            "culture",
+            "production",
+            "faith",
+            "gold",
+            "cities",
+        ] {
+            assert_eq!(
+                player[key].as_array().map(Vec::len),
+                Some(turns.len()),
+                "{key}: {player}"
+            );
+        }
+    }
+}

@@ -232,3 +232,198 @@ function announceMoments(events) {
   momentQueue.push(...moments);
   showNextMoment();
 }
+
+// The game in figures. Civ VI closes a game with graphs of how every empire
+// grew, and so does this result card: a finished world sends its whole history
+// as `game_stats` (one turn axis, a series per civilization), and each
+// civilization gets one chart. Its five yields share a scale with every other
+// chart, so two empires compare at a glance; under them a strip of cities on
+// its own axis, whose ceiling is the most cities any civilization held. One
+// switch puts every chart on a log scale, where an early game is readable
+// beside a late one.
+const GAME_STATS_SERIES = [
+  // Ordered so neighbours in the key differ most; checked for colour vision
+  // deficiency against the dark card. The hues are the game's own yields.
+  {key: "science", label: "Science", color: "#3a95e0"},
+  {key: "production", label: "Production", color: "#d95926"},
+  {key: "culture", label: "Culture", color: "#a874e6"},
+  {key: "gold", label: "Gold", color: "#b88c00"},
+  {key: "faith", label: "Faith", color: "#c86e9f"},
+];
+const GAME_STATS_LOG_KEY = "civvis-game-stats-log-v1";
+// Chart geometry in viewBox units: the yields plot, a gap, the cities strip,
+// then the turn labels under it.
+const GAME_STATS_BOX = {w: 300, left: 34, right: 8, top: 6, plot: 92, gap: 17, strip: 26, axis: 13};
+let gameStatsView = null;
+
+function gameStatsLogScale() {
+  try { return localStorage.getItem(GAME_STATS_LOG_KEY) === "1"; } catch (e) { return false; }
+}
+
+// Called from the result card's markup. Empty for a running game, a Tactics
+// battle (its card must not cover the field) and a world too young to graph.
+function gameStatsMarkup(st) {
+  const stats = st?.game_stats;
+  gameStatsView = null;
+  if (!stats || !Array.isArray(stats.turns) || stats.turns.length < 2 ||
+      !Array.isArray(stats.players) || !stats.players.length ||
+      isBattlefieldMapScript(st.map?.script)) return "";
+  const winners = new Set(Array.isArray(st.winners) && st.winners.length ? st.winners : [st.winner]);
+  const score = id => Number(st.players[id]?.score) || 0;
+  const rows = stats.players.filter(row => st.players?.[row.id])
+    .map(row => ({...row, civ: st.players[row.id].civ, color: pcol(row.id), won: winners.has(row.id),
+      score: score(row.id), wonders: st.players[row.id].wonder_count ?? 0}))
+    .sort((a, b) => b.won - a.won || b.score - a.score || a.id - b.id);
+  gameStatsView = {turns: stats.turns, rows};
+  const key = GAME_STATS_SERIES.map(series =>
+    `<span><i style="--c:${series.color}"></i>${series.label}</span>`).join("") +
+    `<span><i class="gs-strip" style="--c:#cbd3ce"></i>Cities</span>`;
+  return `<section class="game-stats" aria-label="Game stats">
+    <div class="game-stats-head">
+      <span class="game-stats-title">Game stats <small>per turn</small></span>
+      <span class="game-stats-key" aria-label="Key">${key}</span>
+      <label class="game-stats-log"><input type="checkbox" id="game-stats-log"
+        ${gameStatsLogScale() ? "checked" : ""} onchange="setGameStatsLogScale(this.checked)">Log scale</label>
+    </div>
+    <div class="game-stats-grid">${gameStatsCharts(gameStatsView, gameStatsLogScale())}</div>
+    <div class="game-stats-tip" hidden></div>
+  </section>`;
+}
+
+function setGameStatsLogScale(log) {
+  try { localStorage.setItem(GAME_STATS_LOG_KEY, log ? "1" : "0"); } catch (e) {}
+  const grid = document.querySelector("#winner .game-stats-grid");
+  if (grid && gameStatsView) grid.innerHTML = gameStatsCharts(gameStatsView, log);
+}
+
+// A round number at or above `value`: 1, 2, 2.5 or 5 times a power of ten.
+function gameStatsNiceCeiling(value) {
+  if (!(value > 0)) return 1;
+  const power = 10 ** Math.floor(Math.log10(value));
+  return power * ([1, 2, 2.5, 5, 10].find(step => step * power >= value) ?? 10);
+}
+
+// One scale for every chart, so the same height means the same amount in each.
+function gameStatsScales(view, log) {
+  let high = 1, low = 0, cities = 1;
+  for (const row of view.rows) {
+    for (const series of GAME_STATS_SERIES)
+      for (const value of row[series.key] || []) if (value !== null) {
+        if (value > high) high = value;
+        if (value < low) low = value;
+      }
+    for (const value of row.cities || []) if (value !== null && value > cities) cities = value;
+  }
+  const box = GAME_STATS_BOX;
+  const t0 = view.turns[0], t1 = view.turns[view.turns.length - 1];
+  const x = turn => box.left + (box.w - box.left - box.right) * (turn - t0) / Math.max(1, t1 - t0);
+  const stripTop = box.top + box.plot + box.gap;
+  // Log: anything under 1 (a deficit, a turn of anarchy) sits on the floor.
+  const logY = (value, top, height, ceiling) =>
+    top + height * (1 - Math.log10(Math.max(1, value)) / Math.log10(Math.max(2, ceiling)));
+  if (log) {
+    const ticks = [];
+    for (let tick = 1; tick <= high; tick *= 10) ticks.push(tick);
+    return {x, cities, stripTop, ticks, cityTicks: [1, cities],
+      y: value => logY(value, box.top, box.plot, high),
+      cy: value => logY(value, stripTop, box.strip, cities)};
+  }
+  const top = gameStatsNiceCeiling(high), bottom = low < 0 ? -gameStatsNiceCeiling(-low) : 0;
+  const ticks = bottom < 0 ? [bottom, 0, top] : [0, top / 2, top];
+  return {x, cities, stripTop, ticks, cityTicks: [0, cities],
+    y: value => box.top + box.plot * (1 - (value - bottom) / (top - bottom)),
+    cy: value => stripTop + box.strip * (1 - value / cities)};
+}
+
+// A line through the turns a civilization played, broken where it did not.
+function gameStatsPath(turns, values, x, y) {
+  let path = "", open = false;
+  for (let i = 0; i < turns.length; i++) {
+    const value = values?.[i];
+    if (value === null || value === undefined) { open = false; continue; }
+    path += `${open ? "L" : "M"}${x(turns[i]).toFixed(1)} ${y(value).toFixed(1)}`;
+    open = true;
+  }
+  return path;
+}
+
+function gameStatsCharts(view, log) {
+  const box = GAME_STATS_BOX, scale = gameStatsScales(view, log);
+  const height = scale.stripTop + box.strip + box.axis;
+  const right = box.w - box.right, t0 = view.turns[0], t1 = view.turns[view.turns.length - 1];
+  const rule = (y, label) => `<line class="gs-grid" x1="${box.left}" x2="${right}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}"/>` +
+    `<text x="${box.left - 4}" y="${(y + 3).toFixed(1)}" text-anchor="end">${label}</text>`;
+  const grid = scale.ticks.map(tick => rule(scale.y(tick), compactStat(tick))).join("") +
+    scale.cityTicks.map(tick => rule(scale.cy(tick), compactStat(tick))).join("") +
+    `<text x="${box.left}" y="${height - 2}">Turn ${t0}</text>` +
+    `<text x="${right}" y="${height - 2}" text-anchor="end">${t1}</text>`;
+  return view.rows.map(row => {
+    // The strip is filled down to its floor so a count reads as an amount.
+    const area = gameStatsArea(view.turns, row.cities, scale, scale.cy(log ? 1 : 0).toFixed(1));
+    const lines = GAME_STATS_SERIES.map(series =>
+      `<path class="gs-line" stroke="${series.color}" d="${gameStatsPath(view.turns, row[series.key], scale.x, scale.y)}"/>`).join("");
+    const peak = Math.max(0, ...(row.cities || []).filter(value => value !== null));
+    const last = series => [...(row[series.key] || [])].reverse().find(value => value !== null);
+    const summary = GAME_STATS_SERIES.map(series => `${series.label} ${compactStat(last(series) ?? 0)}`).join(", ");
+    return `<figure class="game-stats-civ" style="--civ:${row.color}" data-player="${row.id}">
+      <figcaption><span class="gs-civ">${escapeAttr(row.civ)}</span>${row.won ? `<span class="gs-won">Winner</span>` : ``}
+        <small>Score ${Math.round(row.score).toLocaleString()} · ${peak} ${peak === 1 ? "city" : "cities"} at most · ${row.wonders} ${row.wonders === 1 ? "wonder" : "wonders"}</small></figcaption>
+      <svg class="game-stats-chart" viewBox="0 0 ${box.w} ${height}" role="img"
+        aria-label="${escapeAttr(`${row.civ}, turns ${t0} to ${t1}. Last turn: ${summary}. Most cities: ${peak}.`)}">
+        ${grid}${area}${lines}
+        <line class="gs-cursor" x1="0" x2="0" y1="${box.top}" y2="${scale.stripTop + box.strip}" visibility="hidden"/>
+      </svg>
+    </figure>`;
+  }).join("");
+}
+
+function gameStatsArea(turns, values, scale, floor) {
+  let area = "", run = [];
+  const close = () => {
+    if (run.length) area += `M${run[0][0]} ${floor}` + run.map(([x, y]) => `L${x} ${y}`).join("") +
+      `L${run[run.length - 1][0]} ${floor}Z`;
+    run = [];
+  };
+  for (let i = 0; i < turns.length; i++) {
+    const value = values?.[i];
+    if (value === null || value === undefined) { close(); continue; }
+    run.push([scale.x(turns[i]).toFixed(1), scale.cy(value).toFixed(1)]);
+  }
+  close();
+  return area ? `<path class="gs-cities" d="${area}"/>` : "";
+}
+
+// Hover: a turn cursor on the chart and that turn's figures beside it.
+function gameStatsHover(event) {
+  const view = gameStatsView, section = event.target.closest?.(".game-stats");
+  const tip = section?.querySelector(".game-stats-tip");
+  const chart = event.target.closest?.(".game-stats-chart");
+  document.querySelectorAll("#winner .gs-cursor").forEach(line => {
+    if (!chart || !chart.contains(line)) line.setAttribute("visibility", "hidden");
+  });
+  if (!view || !tip) return;
+  const row = chart && view.rows.find(entry => String(entry.id) === chart.closest("figure")?.dataset.player);
+  if (!row) { tip.hidden = true; return; }
+  const box = GAME_STATS_BOX, rect = chart.getBoundingClientRect();
+  const t0 = view.turns[0], t1 = view.turns[view.turns.length - 1];
+  const fraction = ((event.clientX - rect.left) / rect.width * box.w - box.left) / (box.w - box.left - box.right);
+  const turn = t0 + Math.min(1, Math.max(0, fraction)) * (t1 - t0);
+  let index = 0;
+  for (let i = 1; i < view.turns.length; i++)
+    if (Math.abs(view.turns[i] - turn) < Math.abs(view.turns[index] - turn)) index = i;
+  const x = (box.left + (box.w - box.left - box.right) * (view.turns[index] - t0) / Math.max(1, t1 - t0)).toFixed(1);
+  const cursor = chart.querySelector(".gs-cursor");
+  cursor.setAttribute("x1", x); cursor.setAttribute("x2", x); cursor.setAttribute("visibility", "visible");
+  const figure = value => value === null || value === undefined ? "—" : Math.round(value).toLocaleString();
+  tip.innerHTML = `<b>${escapeAttr(row.civ)} · Turn ${view.turns[index]}</b>` +
+    GAME_STATS_SERIES.map(series =>
+      `<span><em><i style="--c:${series.color}"></i>${series.label}</em>${figure(row[series.key]?.[index])}</span>`).join("") +
+    `<span><em><i class="gs-strip" style="--c:#cbd3ce"></i>Cities</em>${figure(row.cities?.[index])}</span>`;
+  tip.hidden = false;
+  const host = section.getBoundingClientRect();
+  const left = event.clientX - host.left + 14, width = tip.offsetWidth;
+  tip.style.left = `${Math.max(0, left + width > host.width ? left - width - 28 : left)}px`;
+  tip.style.top = `${Math.max(0, event.clientY - host.top - tip.offsetHeight / 2)}px`;
+}
+document.getElementById("winner")?.addEventListener("pointermove", gameStatsHover);
+document.getElementById("winner")?.addEventListener("pointerleave", gameStatsHover);

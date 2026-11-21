@@ -2627,6 +2627,46 @@
   .reign-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
   .reign-stat b { color: #f3e5bd; font: 700 19px/1.1 Georgia, serif; font-variant-numeric: tabular-nums; }
   .reign-stat small { color: var(--muted); font: 700 10px/1.25 var(--font-ui); letter-spacing: .04em; text-align: center; }
+  /* The game in figures (gameStatsMarkup, app_moments.js). A result card
+     holding the graphs widens to fit them and scrolls inside the map area. */
+  #winner:has(.game-stats) {
+    top: 50%; width: min(1100px, calc(100% - 2 * var(--workspace-inline-inset)));
+    max-height: calc(100% - 24px); overflow-y: auto;
+  }
+  .winner-content > .game-stats {
+    position: relative; margin-top: 18px; padding-top: 14px; border-top: 1px solid #d7b66a33;
+    text-align: left; font: 600 12px/1.35 var(--font-ui);
+  }
+  .game-stats-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 10px; color: #cbd3ce; }
+  .game-stats-title { margin-right: auto; color: var(--gold-bright); font: 600 18px/1.2 Georgia, serif; }
+  .game-stats-title small { color: var(--muted); font: 700 10px/1 var(--font-ui); letter-spacing: .08em; text-transform: uppercase; }
+  .game-stats-key { display: flex; flex-wrap: wrap; gap: 4px 12px; font-weight: 700; }
+  .game-stats i { display: inline-block; width: 14px; height: 3px; margin-right: 5px; vertical-align: middle; border-radius: 2px; background: var(--c); }
+  .game-stats i.gs-strip { height: 9px; background: color-mix(in srgb, var(--c) 35%, transparent); border-top: 2px solid var(--c); border-radius: 0; }
+  .game-stats-log { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .game-stats-log input { width: auto; margin: 0; }
+  .game-stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+  .game-stats-civ {
+    min-width: 0; margin: 0; padding: 7px 8px 3px; background: #050a08a8;
+    border: 1px solid #ffffff14; border-top: 3px solid var(--civ); border-radius: 10px;
+  }
+  .game-stats-civ figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; color: #f3e5bd; font-weight: 800; }
+  .game-stats-civ figcaption small { width: 100%; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .gs-won { color: var(--gold-bright); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+  .game-stats-chart { display: block; width: 100%; height: auto; overflow: visible; }
+  .game-stats-chart text { fill: #9aa49f; font: 600 9px var(--font-ui); font-variant-numeric: tabular-nums; }
+  .game-stats-chart .gs-grid { stroke: #ffffff17; stroke-width: 1; }
+  .game-stats-chart .gs-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .game-stats-chart .gs-cities { fill: #cbd3ce30; stroke: #cbd3ce; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .game-stats-chart .gs-cursor { stroke: #f3e5bdaa; stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .game-stats-tip {
+    position: absolute; z-index: 2; min-width: 150px; padding: 7px 9px; pointer-events: none;
+    color: #e6ebe8; background: #050807f2; border: 1px solid #d7b66a55; border-radius: 8px; box-shadow: 0 6px 20px #000a;
+  }
+  .game-stats-tip[hidden] { display: none; }
+  .game-stats-tip b { display: block; margin-bottom: 2px; color: var(--gold-bright); }
+  .game-stats-tip span { display: flex; justify-content: space-between; gap: 14px; font-variant-numeric: tabular-nums; }
+  .game-stats-tip em { font-style: normal; color: #cbd3ce; }
   .winner-countdown {
     margin-top: 16px; color: #f6edcf; font-size: var(--type-control); letter-spacing: .10em;
     text-shadow: 0 2px 10px #000, 0 0 18px color-mix(in srgb, var(--winner-color, #d7b66a) 40%, transparent);
