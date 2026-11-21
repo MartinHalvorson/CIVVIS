@@ -14365,17 +14365,10 @@ fn browser_seats_a_person_in_the_civ_six_arrangement() {
     assert!(EMBEDDED_INDEX.contains(
         "togglePanel(chosen ? chosen === \"closed\" : window.matchMedia(\"(max-width: 720px)\").matches, false);"
     ));
-    // The published site says what single player is at each new game, Ack is
-    // the way out of it, and the game's keys wait until it has been answered.
-    // The card's title calls the site by its name, AI Debugger.
-    assert!(EMBEDDED_INDEX.contains(
-        "<div class=\"capture-title\" id=\"solo-notice-title\">AI Debugger isn't polished yet</div>"
-    ));
-    assert!(EMBEDDED_INDEX
-        .contains("<button id=\"solo-notice-ack\" class=\"primary\" type=\"button\">Ack</button>"));
-    assert!(EMBEDDED_INDEX
-        .contains("if (!window.CIVVIS_PUBLISHED_BUILD || state.seed === soloNoticeSeed) return;"));
-    assert!(EMBEDDED_INDEX.contains("return anyScreenOpen() || soloNoticeOpen();"));
+    // The debugger opens straight onto the game: no card stands in front of
+    // it (operator, 2026-11-21: "remove the warning on the AI debugger").
+    assert!(!EMBEDDED_INDEX.contains("solo-notice") && !EMBEDDED_INDEX.contains("soloNotice"));
+    assert!(EMBEDDED_INDEX.contains("return anyScreenOpen();"));
 
     // Rankings remain available on demand. Initialization must not save the
     // default as though the player had explicitly chosen it.
