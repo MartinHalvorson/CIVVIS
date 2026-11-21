@@ -13461,18 +13461,44 @@ fn browser_stops_asking_for_turns_after_any_terminal_result() {
         EMBEDDED_INDEX.contains("class=\"primary winner-again\" onclick=\"startNewSimulation()\"")
     );
     assert!(EMBEDDED_INDEX.contains("id=\"respawn\" role=\"timer\""));
-    // A simulation victory has its clear two-action choice while a
-    // person at the keyboard retains the fuller three-way continuation.
-    // A draw has no victor/result to play on past and offers the next
-    // battle.
+    // A simulation victory has three plain answers in one row, One more
+    // turn, Pause here and New Game, while a person at the keyboard
+    // retains the fuller three-way continuation. A draw has no
+    // victor/result to play on past and offers the next battle.
     assert!(EMBEDDED_INDEX.contains("const winnerActions = SPEC"));
     assert!(EMBEDDED_INDEX.contains("winner-actions-sim"));
     assert!(EMBEDDED_INDEX.contains("id=\"play-on-one-more-turn\""));
+    // One more turn is the whole label: it still plays the world out to
+    // its last civilization, and the title says so for anyone who asks.
     assert!(EMBEDDED_INDEX.contains(
-        "onclick=\"playOnPastVictory('last_civ_standing', false)\"\n            title=\"Keep this world playing until only one civilization remains.\">One more turn<span class=\"winner-again-note\">(play until only one Civ remains)</span></button>"
+        "onclick=\"playOnPastVictory('last_civ_standing', false)\"\n            title=\"Keep this world playing until only one civilization remains.\">One more turn</button>"
     ));
+    assert!(!EMBEDDED_INDEX.contains("winner-again-note"));
+    assert!(!EMBEDDED_INDEX.contains("(play until only one Civ remains)"));
     // A result that already left one civilization has nothing to play on to.
     assert!(EMBEDDED_INDEX.contains("const oneMoreTurn = st.last_civ_standing === null"));
+    // Pause here is the simulation's own pause, which already holds a
+    // result and its countdown, and it sits between the other two.
+    assert!(EMBEDDED_INDEX.contains(
+        "id=\"finale-pause\" onclick=\"toggleSpecPause()\"\n            title=\"Keep this result on screen. The next game waits until you resume.\">Pause here</button>"
+    ));
+    let one_more_turn = EMBEDDED_INDEX.find("id=\"play-on-one-more-turn\"").unwrap();
+    let pause_here = EMBEDDED_INDEX.find("id=\"finale-pause\"").unwrap();
+    let new_game = EMBEDDED_INDEX.find("id=\"finale-new-game\"").unwrap();
+    assert!(one_more_turn < pause_here && pause_here < new_game);
+    // The button reads Resume while the hold is on, from the one place
+    // every pause control is labelled.
+    assert!(EMBEDDED_INDEX
+        .contains("if (held) held.textContent = specPaused ? \"Resume\" : \"Pause here\";"));
+    // The row takes as many answers as are on offer, two or three.
+    assert!(EMBEDDED_INDEX.contains(
+        "grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);"
+    ));
+    // The mirror beside a live Civilization VI game has its own pause.
+    assert!(EMBEDDED_INDEX.contains("body.live-pause-available #finale-pause,"));
+    // A hold on a result is not a wish for the next world to open
+    // stopped: New Game from a paused result starts a game that plays.
+    assert!(EMBEDDED_INDEX.contains("const wasPaused = specPaused && !gameFinished(state);"));
     assert!(EMBEDDED_INDEX.contains("id=\"finale-new-game\""));
     assert!(EMBEDDED_INDEX.contains(">New Game</button>"));
     assert!(EMBEDDED_INDEX.contains("id=\"play-on-look-around\""));
