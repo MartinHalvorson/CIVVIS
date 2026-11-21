@@ -47,6 +47,11 @@
 //!
 //! A save carries the world and not this record: a loaded game starts a
 //! timeline of its own from the turn it resumes.
+//!
+//! Every mark also carries a print of its world (`world_print`), a number
+//! two marks share only when they hold the same world. The two halves of a
+//! split are played apart, and their prints are how the page knows up to
+//! which turn they are still one game (`debug.worlds`).
 
 use std::collections::{BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -540,6 +545,64 @@ fn on_one_line(a: &Game, b: &Game) -> bool {
     a.log.continues(&b.log) || b.log.continues(&a.log)
 }
 
+/// A running FNV-1a of what is written to it.
+struct Print(u64);
+
+impl Print {
+    const START: u64 = 0xCBF2_9CE4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01B3;
+}
+
+impl std::fmt::Write for Print {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        for byte in text.bytes() {
+            self.0 = (self.0 ^ u64::from(byte)).wrapping_mul(Self::PRIME);
+        }
+        Ok(())
+    }
+}
+
+/// A print of the world that has just been marked: a number two marks share
+/// only when they hold the same world.
+///
+/// Two sessions that began as one world and were then each played by
+/// themselves, as the halves of a split are, hold the same world for as long
+/// as the same actions were applied to both: the engine is deterministic and
+/// the random stream is part of the game. So the print is the print of the
+/// mark this world was played on from, carried on over every action applied
+/// since, by whichever seat. It then takes in a few things read off the world
+/// itself, the turn, the random stream and what every seat has in its
+/// treasury and towards its research and its civic, which tell apart two
+/// worlds that differ by something no action carries (how a city was told to
+/// work its tiles).
+///
+/// `earlier` is the newest mark before this one. A world that was not played
+/// on from it, the first of a timeline, starts a print of its own: the two
+/// halves of a split share that mark as they share every turn behind the
+/// split, by having been copied from one session.
+fn world_print(game: &Game, earlier: Option<&Mark>) -> u64 {
+    use std::fmt::Write;
+    let (mut print, since) = match earlier.filter(|mark| game.log.continues(&mark.game.log)) {
+        Some(mark) => (Print(mark.world), mark.actions),
+        None => (Print(Print::START), game.log.len()),
+    };
+    // Writing to a print cannot fail.
+    for (seat, action) in game.log.since(since) {
+        let _ = write!(print, "{seat}{action:?};");
+    }
+    let _ = write!(print, "{}|{}|{:?}", game.turn, game.log.len(), game.rng);
+    for player in &game.players {
+        let held = [player.gold, player.research_progress, player.civic_progress];
+        for number in held {
+            let _ = write!(print, "|{}", number.to_bits());
+        }
+    }
+    print.0
+}
+
+/// A print as the page is given it: the bits a number in a browser keeps.
+const PRINT_SHIFT: u32 = 12;
+
 /// The world as it stood when the played seat's turn opened.
 #[derive(Clone)]
 struct Mark {
@@ -560,6 +623,8 @@ struct Mark {
     /// The agents as they sat when the turn opened. `None` in a half of a
     /// split, which keeps none.
     minds: Option<Minds>,
+    /// The print of this world (`world_print`).
+    world: u64,
 }
 
 /// One seat's agent as it was kept, or `None` for one that could not be
@@ -685,6 +750,7 @@ impl Timeline {
             return;
         }
         self.marks.retain(|mark| mark.turn < game.turn);
+        let world = world_print(game, self.marks.last());
         self.marks.push(Mark {
             turn: game.turn,
             actions: game.log.len(),
@@ -692,6 +758,7 @@ impl Timeline {
             by: None,
             whole: false,
             minds: None,
+            world,
         });
         self.thin();
     }
@@ -854,6 +921,10 @@ impl Timeline {
         json!({
             "turn": game.turn,
             "turns": turns,
+            // The print of each of those turns' worlds, in the same order:
+            // two timelines hold the same world on a turn they both give the
+            // same print for (`world_print`).
+            "worlds": line.iter().map(|mark| mark.world >> PRINT_SHIFT).collect::<Vec<_>>(),
             "first": turns.first(),
             "last": turns.last(),
             // The Civ AI seated, and the kept turns ahead that another one

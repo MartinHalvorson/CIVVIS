@@ -31,16 +31,21 @@ pick was said to the engine at once and that every one of them played, with
 the Civ AI picked, where the turns ahead were another one's.
 It then splits the screen head to head, each half the same page with a toy
 engine of its own: a Civ AI is picked for each half, from the strip and from
-the head of its lane, both are played to a turn locked and then unlocked,
-each half and then both are moved by the lanes in the host's box, and the
+the head of its row, both are played to a turn locked and then unlocked,
+each half and then both are moved by the sliders in the host's box, and the
 test reads which Civ AI each half's steps named, the numbers set side by
-side, a copy, and the half that is kept. A last part holds the lock: that
+side, a copy, and the half that is kept. It reads the timeline as it is
+drawn at each step: one rail and one marker while the two halves hold the
+same worlds, a branch for each from the last turn they do, and one rail
+again when one is made a copy of the other. A last part holds the lock: that
 Branch Timeline opens the split at once, that the lock stands between the two
-lanes and closes only on one turn, that the host's deck is the one panel of a
+rows and closes only on one turn, that the host's deck is the one panel of a
 locked split and plays both halves, that each half shows its own panel again
-when the lock opens, that two identical halves are asked for once, and that
-a lane shows its half's breakpoint turns and save points and goes to the one
-that is clicked. A control added to the box or the strip is added there.
+when the lock opens, that two identical halves are asked for once and stay
+one timeline, that a half playing ahead by itself does not branch it, and
+that the timeline shows each half's breakpoint turns and save points and
+goes to the one that is clicked. A control added to the box or the strip is
+added there.
 
 ## The bar
 
@@ -503,32 +508,88 @@ Only requests that read or change a world are answered from a half's
 session. A new split replaces the sessions of the one before it.
 
 The bar of the page that was split stays across the top of the window, over
-both halves, and its timeline becomes two lanes, A and B. Each lane is that
-half's history: gold up to the turn of the split, the half's own colour from
-there, and the half's open turn as its pill. A lane is the hand on its half,
-and on both halves while they are locked. Letting go of it on a turn every
-half concerned has played walks them there; on a turn ahead of any of them it
-plays them there, each with its own Civ AI. At the head of each lane is the
-Civ AI that half seats, to pick there. A half is told which Civ AI holds its
-seat when it is picked, and says so to its engine at once. Kept turns ahead
-that another Civ AI played are drawn apart on the half's lane as they are on
-an unsplit timeline ("Whose turns are walked"), and a locked half that is
-asked to follow the other onto such a turn plays to it with its own Civ AI.
-The halves of a new split start on the Civ AI picked in the box, and a half
-that is kept keeps its own.
+both halves, and its timeline is theirs. It has two rows, A's over B's, with
+the Civ AI each half seats at the head of its row, to pick there. Each half
+has a slider the length of the game in its row. A slider is the hand on its
+half, and on both halves while they are locked. Letting go of it on a turn
+every half concerned has played walks them there; on a turn ahead of any of
+them it plays them there, each with its own Civ AI. A half is told which Civ
+AI holds its seat when it is picked, and says so to its engine at once. Kept
+turns ahead that another Civ AI played are drawn apart in the half's row as
+they are on an unsplit timeline ("Whose turns are walked"), and a locked
+half that is asked to follow the other onto such a turn plays to it with its
+own Civ AI. The halves of a new split start on the Civ AI picked in the box,
+and a half that is kept keeps its own.
 
-A lane also carries what stands on its half's timeline, as the timeline of an
-unsplit page does: a red dot on each breakpoint turn and a flag on each save
-point. A half has no timeline of its own to show them on, so it tells the
-host whenever they change (`pane-marks`), locked or not. Clicking a dot goes
-to that turn the way letting go of the lane there does. Clicking a flag takes
-that half to its save point; locked, the other half is brought to the same
-turn. Unlocked, each lane's marks are its half's alone.
+### One timeline until the worlds differ
+
+The timeline stays one for as long as the two halves hold the same world,
+and branches in two on the turn their worlds differ (operator 2026-11-21:
+"branching the timeline should keep 1 timeline where they share the timeline
+and then branch to 2 when they actually diverge in simulated worlds").
+
+- **One world**: one rail as tall as both rows, the turns played in gold
+  across it, and one marker ringed in both halves' colours. This is how a
+  split opens, and how it stays while the halves are played alike: twins
+  played once, or each played by itself to the same worlds. Two different
+  Civ AIs that play the same opening are one timeline until the first turn
+  they play differently.
+- **Two worlds**: the rail ends on the last turn the halves hold as one
+  world, with that turn's number beside a ⑂, and from there each half has a
+  rail of its own in its row, with its own ruler, its turns in its own
+  colour and its own marker. Two halves that both stand on a turn of the
+  trunk have one marker there.
+- **One half ahead**: a half that has played turns the other has not has not
+  left it, because the other may yet play the same turns. The rail stays
+  one, and the turns only one half holds are drawn in that half's row and
+  colour. It branches when the other half holds a different world on one of
+  those turns.
+
+Which worlds are the same is the engine's to say, and it says it turn by
+turn. Every mark carries a print of its world (`world_print` in
+`src/server/debugger.rs`): the print of the mark it was played on from,
+carried on over every action applied since by any seat, and then the turn,
+the random stream, and each seat's treasury and progress towards its
+research and its civic. The engine is deterministic and the random stream is
+part of the game, so two sessions that began as one world hold the same
+world for as long as the same actions were applied to both, and their prints
+agree for exactly that long. What is read off the world itself tells apart
+two worlds that differ by something no action carries. A state document
+gives the prints beside the turns they belong to (`debug.worlds`, in the
+order of `debug.turns`).
+
+Each half tells the host the turns it holds and their prints (`pane-marks`),
+and the host reads the branch off the two lists (`debugSplitFork` in
+`web/assets/app_debugger.js`): the last turn both give the same print for is
+the last one they share, and the timeline has branched once each half holds
+a turn past it. Nothing is remembered between draws, so the timeline is one
+again as soon as the halves hold the same worlds again: after a copy, or
+after one half goes back and plays its turns as the other played them.
+
+When turns have been thinned to make room ("The timeline"), only the turns
+both halves still keep can be compared, so the branch is drawn on the last
+kept turn they share, which may be earlier than the turn they parted on.
+
+The timeline also carries what stands on each half's own, as the timeline of
+an unsplit page does: a flag on each save point, a red dot on each
+breakpoint turn, and the name of each era on the turn it began. A half has
+no timeline of its own to show them on, so it tells the host whenever they
+change (`pane-marks`), locked or not. A's stand in the top row and B's in
+the bottom row. Clicking a dot goes to that turn the way letting go of the
+half's slider there does. Clicking a flag takes that half to its save point;
+locked, the other half is brought to the same turn. On the trunk, an era
+both halves began on the same turn is named once, at the foot. A save point
+and a breakpoint turn are a half's own to go to, so those are said once only
+while the halves are locked: the save point at the top and the breakpoint at
+the foot, as on an unsplit timeline. Unlocked, each row's marks are its
+half's alone.
 
 ### The lock
 
-A lock joins the two lanes, on a bracket that runs from the middle of one
-rail to the middle of the other. It says whether the two halves are one.
+A lock joins the two halves, on a bracket that runs from the middle of one
+half's row to the middle of the other's, left of the timeline. It says
+whether the two halves are held on one turn. (Whether they are one world is
+what the timeline itself shows.)
 
 - **Locked** (how a split opens): the bracket is whole and the lock is shut.
   The halves stay on the same turn. Whatever moves one is repeated in the
@@ -536,29 +597,30 @@ rail to the middle of the other. It says whether the two halves are one.
   step steps it, a walk along the timeline walks it. What one is asked that
   leaves its turn where it was is asked of the other too: a layer, a
   breakpoint, Reveal, one action or one seat stepped, an undo, a save point.
-  While both stand on one turn a link joins their two markers.
+  While both stand on one turn of their own branches a link joins their two
+  markers.
 - **Unlocked**: the bracket is broken and the lock is open. Neither half
   follows the other.
 
 Clicking the lock opens it. It closes only on two halves that stand on the
 same turn, which is where it then keeps them; while they stand on different
-turns it cannot be pressed, and its tooltip says why. (Walk one half's lane
-to the other's turn first, or make one a copy of the other.)
+turns it cannot be pressed, and its tooltip says why. (Walk one half's
+slider to the other's turn first, or make one a copy of the other.)
 
 Locked, the two halves are one thing to play, so there is one control panel:
-the host's deck, under the lanes. Each half puts its own bar away and tells
+the host's deck, under the timeline. Each half puts its own bar away and tells
 the host what was on its deck (`pane-deck`). The host draws its deck from
 half A's, and a press or a change on it is passed to A's own deck
 (`pane-press`, `pane-change`), which does what it would have done had it
 been pressed there; B follows. So every control on the panel means what it
 means for one world, and applies to both. The Civ AI is not on the panel: it
-is picked at the head of each lane, one for each half. Saves to the device
+is picked at the head of each row, one for each half. Saves to the device
 are one world's and are kept from a half's own panel, unlocked.
 
 When two halves are locked after playing apart, B takes A's layers,
 breakpoints and Reveal, so that the one panel is true of both.
 
-Unlocked, the host shows the two lanes and no deck, and each half shows its
+Unlocked, the host shows the timeline and no deck, and each half shows its
 own bar again: the tools for its world, with neither a timeline nor a picker.
 
 Two locked halves that seat the same Civ AI would be asked the same things,
@@ -585,7 +647,7 @@ Head to head is the split used to play two strategies out from one turn. VS
 in the strip widens it to hold:
 
 - a Civ AI for each half, the same choice that stands at the head of the
-  half's lane in the bar. It is the agent that plays that half's seat
+  half's row in the bar. It is the agent that plays that half's seat
   whenever the half is stepped or run; each half is a session of its own, so
   nothing in the engine is shared between the two choices.
 - the two seats' numbers side by side, A then B, with the larger in gold:
@@ -751,7 +813,9 @@ operation leaves the world as it was.
 | any | optional `lean`: true to be answered without the state document (see below) |
 
 Every state document of a played game carries `debug`: the open `turn`, the
-marked `turns`, `first` and `last` of the seat's own line, the Civ AI seated
+marked `turns`, `first` and `last` of the seat's own line, the print of each
+of those turns' worlds (`worlds`, in the order of `turns`; see "One timeline
+until the worlds differ"), the Civ AI seated
 (`seat`, once one has been named), the kept turns ahead that another Civ AI
 played (`beyond`: `from`, `to`, and `by`, who played the first of them; null
 when there are none), the last turn ahead that playing on would only play
