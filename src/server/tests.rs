@@ -13414,6 +13414,89 @@ fn a_new_game_seats_the_rivals_a_person_asked_for() {
         .start_new_game(&json!({"seed": 13, "spectate": false, "force": true}))
         .expect("the house fleet needs no name");
     assert_eq!(session.rival_strategy_name(), None);
+
+    // The browser build plays the session this leaves. Building another from
+    // its setup made every new world twice and unseated the rivals.
+    let router = include_str!("../wasm.rs");
+    let arm = router
+        .split("(\"POST\", \"/new\") | (\"POST\", \"/supervisor-new\") =>")
+        .nth(1)
+        .expect("the browser build serves /new");
+    let arm = &arm[..arm.find("decorate_browser").expect("the answer")];
+    assert!(arm.contains("crate::routes::new_game(session, &parsed)"));
+    assert!(!arm.contains("browser_session") && !arm.contains("Session::new"));
+    assert!(!router.contains("reseat_browser_session"));
+    assert!(arm.contains("Session::first_game_asked_for(&opening_params(), &parsed)"));
+}
+
+/// A page that has made no world yet is asked for one: it makes that world,
+/// as a session opened on the stock setup and then asked would have, and not
+/// the stock world first. What that session would have refused is left for it
+/// to refuse.
+#[test]
+fn the_first_game_asked_for_is_the_game_a_new_session_would_start() {
+    let opening = Params {
+        spectate: true,
+        ..current()
+    };
+    let asks = [
+        json!({"seed": 31, "spectate": false, "force": true}),
+        json!({"seed": 32, "spectate": false, "force": true, "rival_strategy": "siege"}),
+        json!({"seed": 33, "spectate": true, "force": true, "num_players": 3}),
+    ];
+    for ask in asks {
+        let first = Session::first_game_asked_for(&opening, &ask)
+            .expect("a forced new game is not refused")
+            .expect("the game is made");
+        let mut opened = Session::new(opening.clone());
+        opened
+            .start_new_game(&ask)
+            .expect("the same game, asked the long way");
+        assert_eq!(
+            crate::protocol::save_value(&first.game).expect("a save"),
+            crate::protocol::save_value(&opened.game).expect("a save"),
+            "{ask}"
+        );
+        assert_eq!(first.params.spectate, opened.params.spectate, "{ask}");
+        assert_eq!(first.view_player, opened.view_player, "{ask}");
+        assert_eq!(
+            first.human_players.keys().collect::<Vec<_>>(),
+            opened.human_players.keys().collect::<Vec<_>>(),
+            "{ask}"
+        );
+        assert_eq!(
+            first.rival_strategy_name(),
+            opened.rival_strategy_name(),
+            "{ask}"
+        );
+    }
+    // An unknown rival is the error `start_new_game` gives, and no session.
+    let unknown = json!({"seed": 34, "spectate": false, "force": true, "rival_strategy": "nobody"});
+    assert_eq!(
+        Session::first_game_asked_for(&opening, &unknown).map(|made| made.map(|_| ())),
+        Some(Err("no strategy named nobody".to_string()))
+    );
+    // Refusals stay the opened session's to give.
+    for ask in [
+        json!({"seed": 35, "spectate": false}),
+        json!({"seed": 36, "force": true, "replace_finished": {"seed": 1, "server_instance": 1}}),
+    ] {
+        assert!(
+            Session::first_game_asked_for(&opening, &ask).is_none(),
+            "{ask}"
+        );
+        assert!(
+            Session::new(opening.clone()).start_new_game(&ask).is_err(),
+            "{ask}"
+        );
+    }
+    let supervised = Params {
+        supervised: true,
+        ..opening.clone()
+    };
+    let watch = json!({"seed": 37, "force": true});
+    assert!(Session::first_game_asked_for(&supervised, &watch).is_none());
+    assert!(Session::new(supervised).start_new_game(&watch).is_err());
 }
 
 /// Auto-play used to be one button that ran whichever agent the fleet

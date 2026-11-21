@@ -2540,8 +2540,18 @@ impl Session {
             // The visible setup button explicitly opts into a manual reset.
             return Err("active spectator game requires an explicit reset".into());
         }
-        let previous_view = self.view_player;
-        let params = new_game_params(&self.params, request);
+        *self = Session::asked_for(&self.params, self.view_player, request)?;
+        Ok(())
+    }
+
+    /// The world a request asks for, on the setup `base` wherever it names
+    /// none, watched from where the world before it was.
+    fn asked_for(
+        base: &Params,
+        previous_view: Option<usize>,
+        request: &Value,
+    ) -> Result<Session, String> {
+        let params = new_game_params(base, request);
         let mut next = Session::new(params);
         if let Some(name) = request["rival_strategy"].as_str() {
             next.seat_rivals(name)?;
@@ -2557,8 +2567,29 @@ impl Session {
                     .is_some_and(|player| !player.is_minor && !player.is_barbarian)
             });
         }
-        *self = next;
-        Ok(())
+        Ok(next)
+    }
+
+    /// The world a request asks for when nothing has been made yet: what
+    /// `start_new_game` would leave of a session just opened on `opening`,
+    /// without making the opening world only to replace it.
+    ///
+    /// A page that is the whole runtime opens its world the first time
+    /// anything asks for it, and a visit whose link names a world asks for
+    /// that one first (`beta/shim.js`): the stock opening world was made,
+    /// never looked at and thrown away.
+    ///
+    /// `None` where that session would have refused the request outright:
+    /// the caller opens the stock world and lets `start_new_game` say why.
+    #[cfg(any(test, target_arch = "wasm32"))]
+    pub(crate) fn first_game_asked_for(
+        opening: &Params,
+        request: &Value,
+    ) -> Option<Result<Session, String>> {
+        let refused = (opening.supervised && request["spectate"].as_bool() != Some(false))
+            || request.get("replace_finished").is_some()
+            || (opening.spectate && request["force"].as_bool() != Some(true));
+        (!refused).then(|| Session::asked_for(opening, None, request))
     }
 
     /// Queue setup controls for the next world without changing this one.
