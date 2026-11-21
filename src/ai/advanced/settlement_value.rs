@@ -145,22 +145,45 @@ impl AdvancedAi {
         let horizon = g.standard_duration(SETTLEMENT_FORECAST_HORIZON) as f64;
         let ring_two_at = g.standard_duration(SETTLEMENT_SECOND_RING_DELAY) as f64;
         let housing = Self::settlement_base_housing(g, pid, pos);
-        let mut beam = vec![SettlementForecastState {
-            selected: [0; SETTLEMENT_FORECAST_POPULATION],
-            selected_len: 0,
-            total: center,
-            elapsed: 0.0,
-            accumulated: 0.0,
-            reached_population: 0,
-            reached_four_at: None,
-        }];
-        let mut terminal = Vec::new();
+        // Each beam state carries its `settlement_forecast_rank`, read once
+        // when the state is made instead of twice per comparison while the
+        // layer is cut to the beam; nothing changes a state after that.
+        let mut beam = vec![(
+            0.0,
+            SettlementForecastState {
+                selected: [0; SETTLEMENT_FORECAST_POPULATION],
+                selected_len: 0,
+                total: center,
+                elapsed: 0.0,
+                accumulated: 0.0,
+                reached_population: 0,
+                reached_four_at: None,
+            },
+        )];
+        // The best finished state so far, by the order `Iterator::max_by`
+        // would pick it from every finished state in the order they finish
+        // (a later equal one wins), without keeping the others.
+        let mut best: Option<SettlementForecastState> = None;
+        let mut finish = |state: SettlementForecastState| {
+            let keep = best.as_ref().is_some_and(|kept| {
+                kept.accumulated
+                    .total_cmp(&state.accumulated)
+                    .then_with(|| {
+                        state.selected[..state.selected_len]
+                            .cmp(&kept.selected[..kept.selected_len])
+                    })
+                    .is_gt()
+            });
+            if !keep {
+                best = Some(state);
+            }
+        };
 
         for population in 1..=SETTLEMENT_FORECAST_POPULATION {
             let mut next = Vec::new();
-            for state in beam.drain(..) {
+            for (_, state) in beam.drain(..) {
                 if state.elapsed >= horizon - 1e-9 {
-                    terminal.push(state);
+                    finish(state);
                     continue;
                 }
                 for (index, tile) in candidates.iter().enumerate() {
@@ -180,7 +203,7 @@ impl AdvancedAi {
                         branch.reached_four_at = Some(branch.elapsed);
                         branch.accumulated += (horizon - branch.elapsed).max(0.0) * output;
                         branch.elapsed = horizon;
-                        terminal.push(branch);
+                        finish(branch);
                         continue;
                     }
 
@@ -197,20 +220,19 @@ impl AdvancedAi {
                     branch.accumulated += duration * output;
                     branch.elapsed += duration;
                     if growth_turns <= remaining + 1e-9 {
-                        next.push(branch);
+                        next.push((Self::settlement_forecast_rank(&branch, horizon), branch));
                     } else {
-                        terminal.push(branch);
+                        finish(branch);
                     }
                 }
             }
             let mut forecast_order =
-                |left: &SettlementForecastState, right: &SettlementForecastState| {
-                    Self::settlement_forecast_rank(right, horizon)
-                        .total_cmp(&Self::settlement_forecast_rank(left, horizon))
-                        .then_with(|| {
-                            left.selected[..left.selected_len]
-                                .cmp(&right.selected[..right.selected_len])
-                        })
+                |(left_rank, left): &(f64, SettlementForecastState),
+                 (right_rank, right): &(f64, SettlementForecastState)| {
+                    right_rank.total_cmp(left_rank).then_with(|| {
+                        left.selected[..left.selected_len]
+                            .cmp(&right.selected[..right.selected_len])
+                    })
                 };
             // Only the best beam-width states survive. Partition first so a
             // large branch layer does not pay a full sort for discarded
@@ -226,20 +248,14 @@ impl AdvancedAi {
                 break;
             }
         }
-        for mut state in beam {
+        for (_, mut state) in beam {
             let output =
                 Self::settlement_output_value(state.total, state.reached_population.max(1));
             state.accumulated += (horizon - state.elapsed).max(0.0) * output;
             state.elapsed = horizon;
-            terminal.push(state);
+            finish(state);
         }
-        let Some(best) = terminal.into_iter().max_by(|left, right| {
-            left.accumulated
-                .total_cmp(&right.accumulated)
-                .then_with(|| {
-                    right.selected[..right.selected_len].cmp(&left.selected[..left.selected_len])
-                })
-        }) else {
+        let Some(best) = best else {
             return SettlementGrowthForecast::default();
         };
         let worked = best
