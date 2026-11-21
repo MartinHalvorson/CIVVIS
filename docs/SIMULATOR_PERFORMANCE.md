@@ -5208,3 +5208,48 @@ With the rivals seated, 80 lean debugger turns of that game take 5.8 s
 against the house fleet, 4.6 s against `stock`, 3.1 s against `oldguard` and
 2.9 s against `wheels`: a search that only needs the seat's own line can buy
 its rollouts at half price.
+
+## 2026-11-21 — the policy ledger reads the empire once per sub-deck that can differ
+
+`/policy-effects` prices each slotted card as its share of what the deck is
+worth, averaged over every order the cards could be slotted in. That needs
+the empire read under every sub-deck: 2^n readings, 512 at nine cards. In
+the browser build, six seats, seed 7, it was 23 ms at turn 70, 69 ms at turn
+130 and 450 to 700 ms at turn 150 with nine cards, and the page asks for it
+after every step or jump that stands on screen.
+
+Each reading is now taken under a policy-read trace
+(`Game::trace_policy_reads`), which records every question the sweep asked
+the deck. A card that answers none of them cannot move that reading, slotted
+or not, bit for bit (`PolicyReadSet::card_is_inert`, the property the policy
+scorer already plays by), and the sweep then asks the same questions again.
+So every sub-deck that differs from a read one only in such cards has its
+reading already, and is not read. A late deck holds cards for what the
+empire is not doing at the moment: a unit class nobody is training, spies,
+upgrades, tile purchases.
+
+A traced reading costs about a fifth more than a plain one, so a deck whose
+every card the bare empire already asks about is read plainly, as before,
+and so is a seat carrying a runtime modifier attachment, which no trace can
+speak for.
+
+### Evidence
+
+Production modules from `wasm-qualify` for `bd34e40` (run 44893772407) and
+the change (`81727aa`, run 44904484019), one game each in node, the request
+timed three times at each stop and the middle one kept; seed 7 run twice.
+The host was at load 22 to 28, so the times are ranges:
+
+| seed | turn, cards | before | after | the answer |
+| ---: | --- | ---: | ---: | --- |
+| 7 | 70, six | 18 to 23 ms | 9 ms | the same |
+| 7 | 110, six | 29 to 48 ms | 38 to 42 ms | the same |
+| 7 | 130, six | 69 to 82 ms | 31 to 43 ms | the same |
+| 7 | 150, nine | 447 to 702 ms | 92 to 153 ms | the same |
+| 7 | 160, eleven (shares in deck order) | 12 to 19 ms | 13 to 17 ms | the same |
+| 8 | 100, 125, 150, six | 14, 15, 14 ms | 13, 4, 5 ms | the same |
+| 11 | 100, 125, 150, six | 14, 21, 30 ms | 5, 12, 32 ms | the same |
+
+"The same" is the whole answer, byte for byte, at all thirteen stops, and
+the games reached the same scores. Where the time did not move, every card
+was one the bare empire asks about.
