@@ -708,7 +708,16 @@ def check_the_bar(bar: Bar) -> None:
     turns = "document.getElementById('dbg-turns')"
     label = lambda: [bar.ev(f"document.getElementById('dbg-run-{part}').textContent") for part in ("sign", "word", "count")]
     assert bar.ev(f"[...{turns}.options].map(option => option.value).join()") \
-        == "1,2,3,4,5,10,20,30,40,50,100,150,200,250,all"
+        == "1,2,3,4,5,10,20,30,era,40,50,100,150,200,250,all"
+    # Era stands between 30 and 40 on Online, the stock speed, and moves with
+    # the game's speed; what is picked stays picked.
+    bar.ev(f"{turns}.value = '20', render({{...engineState(), game_speed: 'standard'}}), true")
+    assert bar.ev(f"[...{turns}.options].map(option => option.value).join()") \
+        == "1,2,3,4,5,10,20,30,40,50,era,100,150,200,250,all"
+    assert bar.ev(f"{turns}.value") == "20"
+    bar.ev(f"{turns}.value = '10', render(engineState()), true")
+    assert bar.ev(f"[...{turns}.options].map(option => option.value).join()") \
+        == "1,2,3,4,5,10,20,30,era,40,50,100,150,200,250,all"
     assert bar.ev(f"{turns}.value") == "10" and label() == ["▶▶", "Auto-play", ""], label()
     bar.ev(f"{turns}.value = '1', true")
     bar.forget()
@@ -884,6 +893,17 @@ def check_breakpoints_and_a_run(bar: Bar) -> None:
     assert int(count()) == int(held) - 1, (count(), held)
     bar.ev("engine.eraAt = null, true")
 
+    # Era picked: auto-play plays until a new era begins with no breakpoint
+    # ticked, and counts the turns as it goes, there being no number asked.
+    era_at = int(bar.ev("state.turn")) + 4
+    bar.ev(f"{turns}.value = 'era', engine.eraAt = {era_at}, true")
+    bar.forget()
+    bar.click('[data-dbg="autoplay"]')
+    bar.idle(f"state.turn === {era_at}", "auto-play picked to an era plays until the era begins")
+    assert [call["op"] for call in bar.sent()] == ["step"] * 4, bar.sent()
+    assert bar.note() == f"Stopped on turn {era_at}: the Medieval era began", bar.note()
+    bar.ev(f"engine.eraAt = null, {turns}.value = 'all', true")
+
     # Clear all sends a request with nothing in it, and the count goes.
     bar.forget()
     bar.click('[data-dbg="break-clear"]')
@@ -895,7 +915,7 @@ def check_breakpoints_and_a_run(bar: Bar) -> None:
     # With nothing to stop it auto-play goes on counting, the same button is
     # its Stop, and the box says how far it got.
     bar.click('[data-dbg="autoplay"]')
-    bar.until(f"debugRunning && state.turn > {turn + 11}", "auto-play with no breakpoint keeps playing")
+    bar.until(f"debugRunning && state.turn > {era_at + 5}", "auto-play with no breakpoint keeps playing")
     assert bar.ev("document.getElementById('dbg-run-sign').textContent") == "⏹"
     assert bar.ev("document.getElementById('dbg-run-word').textContent") == "Stop"
     assert int(bar.ev("document.getElementById('dbg-run-count').textContent")) >= 5
