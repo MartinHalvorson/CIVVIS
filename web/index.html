@@ -2686,10 +2686,11 @@
   #winner:has(.game-stats) .winner-verdict { grid-area: verdict; align-self: baseline; font-size: 16px; }
   #winner:has(.game-stats) .winner-meta { grid-area: turn; }
   #winner:has(.game-stats) .winner-meta.winner-player { grid-area: player; }
+  /* The count is set smaller in the band, and the line keeps the height of
+     that smaller count when it says Game paused. */
   #winner:has(.game-stats) .winner-countdown {
-    grid-area: count; min-width: 128px; text-align: center; line-height: 1.3;
+    grid-area: count; min-width: 128px; text-align: center; line-height: 1.3; --winner-count-size: 26px;
   }
-  #winner:has(.game-stats) .winner-countdown-time { font-size: 26px; }
   #winner:has(.game-stats) .reign {
     grid-area: reign; width: auto; gap: 16px; padding: 0; border: 0;
   }
@@ -2706,6 +2707,9 @@
     grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: max-content;
     justify-self: end; margin-top: 0;
   }
+  /* Pause here keeps the width of its longer reading while it says Resume,
+     so the row does not re-divide under the pointer. */
+  #winner:has(.game-stats) #finale-pause { min-width: 110px; }
   #winner:has(.game-stats) .winner-content > .winner-countdown-choice {
     grid-area: choice; justify-self: end; margin-top: 4px;
   }
@@ -2754,6 +2758,7 @@
     #winner .winner-content:has(> .game-stats) > .winner-actions.winner-actions-sim {
       grid-auto-columns: minmax(0, 1fr); justify-self: stretch;
     }
+    #winner:has(.game-stats) #finale-pause { min-width: 0; }
   }
   .winner-content > .game-stats {
     grid-area: stats; align-self: stretch; position: relative; display: flex; flex-direction: column;
