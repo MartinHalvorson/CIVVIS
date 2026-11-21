@@ -722,6 +722,9 @@ fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_orde
     let deck = &built[built
         .find("<div class=\"dbg-deck\">")
         .expect("the deck is built")..];
+    let deck = &deck[..deck
+        .find("<div class=\"dbg-hover\"")
+        .expect("the deck ends where what is said under the pointer begins")];
     for gone in ["dbg-agent", "data-dbg=\"split\"", "Branch Timeline"] {
         assert!(!deck.contains(gone), "{gone} is still under the timeline");
     }
@@ -1551,7 +1554,7 @@ fn the_timeline_says_whose_play_each_stretch_was() {
     let page = super::super::EMBEDDED_APP_DEBUGGER_JS;
     for piece in [
         "by: timeline.played_by || [], played: timeline.played_by || [],",
-        "function debugStretchMarkup(model, at, travel, marker, half, free) {",
+        "function debugStretchMarkup(model, at, travel, blocks, free) {",
         "return stretch.by ? debugAgentName(stretch.by) : \"By hand\";",
         "<div class=\"dbg-band\"></div><div class=\"dbg-band dbg-own\"></div><div class=\"dbg-by\"></div>",
         // A split names the trunk from one half and each branch from its own.
@@ -1617,7 +1620,9 @@ fn a_branch_begins_on_the_turn_it_is_made_on() {
     for piece in [
         // B is the branch, and is told so when turns are kept ahead.
         "branches: Math.max(timeline.last ?? state.turn, (timeline.beyond || {}).to ?? 0) > state.turn};",
-        "debugSplitTell(\"b\", {civvis: \"pane-op\", body: {op: \"branch\"}});",
+        "if (letter === \"b\" && debugSplit.branches) debugSplitTell(\"b\", {civvis: \"pane-op\", body: {op: \"branch\"}});",
+        // Until it says it holds none of them, they are left out of its line.
+        "const cut = letter === \"b\" && debugSplit.branches ? from : Infinity;",
         // The ✕ at the left of a branch closes it: the other is kept.
         "<button class=\"dbg-close\" data-dbg-close=\"${key}\"",
         "if (debugSplit && !closed.disabled) debugSplitClose(closed.dataset.dbgClose === \"a\" ? \"b\" : \"a\");",

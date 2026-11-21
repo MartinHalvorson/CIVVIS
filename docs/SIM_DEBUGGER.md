@@ -230,8 +230,9 @@ stretch, every other stretch is a shade darker, and a line stands on the
 turn the seat passed from one Civ AI to the next. A stretch the person
 played reads "By hand". A name is cut short at the end of its stretch,
 except the last, which has the rail ahead of it to run on over; a name the
-marker stands on steps past the marker. The words under the pointer say
-whose play opened the turn there.
+marker stands on steps past the marker, and in a split's rows past an era's
+name as well. The words under the pointer say whose play opened the turn
+there.
 
 The engine says it in `debug.played_by`: for every kept turn, the ones ahead
 that another Civ AI played too, a list of `from`, `to` and `by`. A stretch

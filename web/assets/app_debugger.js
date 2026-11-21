@@ -169,7 +169,7 @@ const DEBUG_BAR_STYLE = `
   #debugbar:not(.dbg-split-on) .dbg-lane[data-dbg-lane=""] { margin-bottom: 26px; }
   #debugbar button.dbg-branch {
     position: absolute; left: 0; top: calc(100% + 6px); transform: translateX(-50%); pointer-events: auto;
-    min-width: 0; height: 22px; padding: 0 10px; border-radius: 999px; font-weight: 700;
+    min-width: 0; height: 22px; margin: 0; padding: 0 10px; border-radius: 999px; font-weight: 700;
     color: #3a1d00; background: #ffd23f; border: 1px solid #fff3b0; box-shadow: 0 2px 6px #0007;
   }
   #debugbar button.dbg-branch::before {
@@ -234,7 +234,7 @@ const DEBUG_BAR_STYLE = `
   #debugbar.dbg-split-on .dbg-finish { grid-column: 7; }
   /* The ✕ at the left of a branch closes it, and the other is the timeline. */
   #debugbar button.dbg-close {
-    min-width: 0; width: 22px; height: 22px; padding: 0; border-radius: 50%; margin-right: -3px;
+    min-width: 0; width: 22px; height: 22px; margin: 0 -3px 0 0; padding: 0; border-radius: 50%;
     color: var(--dbg-own); border-color: var(--dbg-own); font-weight: 700;
   }
   #debugbar button.dbg-close:hover:not(:disabled) { color: #10140f; background: var(--dbg-own); border-color: transparent; }
@@ -1025,7 +1025,7 @@ function debugLaneMarkup(key, id, label) {
   return `
       <div class="dbg-lane${key ? " dbg-half" : ""}" data-dbg-lane="${key}">${key ? `
         <button class="dbg-close" data-dbg-close="${key}" title="Close branch ${key.toUpperCase()}: ${key === "a" ? "B" : "A"} is the timeline from then on, with every turn it holds" aria-label="Close branch ${key.toUpperCase()}">✕</button>` : ""}
-        <span class="dbg-lane-name">${key.toUpperCase()}</span>${key ? `
+        <span class="dbg-lane-name"${key ? ` title="${key === "a" ? "A: the timeline as it was when it was branched" : "B: the branch"}"` : ""}>${key.toUpperCase()}</span>${key ? `
         <select class="dbg-agent" data-dbg-agent="${key}" title="The Civ AI that plays ${key.toUpperCase()}'s seat when it is stepped, run or played to" aria-label="Civ AI for ${key.toUpperCase()}"></select>` : ""}
         <b class="dbg-start"></b>
         <div class="dbg-rail">
@@ -1470,32 +1470,33 @@ function debugNameWidth(name) {
 // The stretches of a lane's band, each named by who played it (`model.by`:
 // from which turn, to which, and whose play). A name stands at the start of
 // its stretch. The last stretch has the rail ahead of it, so its name may run
-// on past its end (`free`), and steps past a marker that stands on it. The
-// turns kept ahead of the lane's line, which another Civ AI played, are
-// named the same way where they are drawn (`far`).
-// `travel` is the width the lane's turns are drawn across, in pixels
-// (`debugTravel`); `marker` is the turn a marker stands on in the lane's
-// row, or null, and `half` half that marker's width with the air kept
-// either side of it.
-function debugStretchMarkup(model, at, travel, marker, half, free) {
+// on past its end (`free`). The turns kept ahead of the lane's line, which
+// another Civ AI played, are named the same way where they are drawn (`far`).
+//
+// A name steps past what stands on it: the lane's marker, and in a half's
+// row, which is not tall enough for both, an era's name. `blocks` is where
+// those stand, each from and to in pixels along the lane and in their order,
+// and `travel` the width the lane's turns are drawn across (`debugTravel`).
+// Where there is no rail to step on to, the name is cut short before the
+// thing instead.
+function debugStretchMarkup(model, at, travel, blocks, free) {
   const stretches = model.by || [];
   const px = turn => at(turn) / 100 * travel;
   return stretches.map((stretch, index) => {
     const name = debugPlayedBy(stretch), width = debugNameWidth(name);
     const from = px(stretch.from), to = px(stretch.to);
     const last = free && index === stretches.length - 1;
-    // Where the name begins, from the start of its stretch.
+    // How far the name may reach, and where it begins, both from the start
+    // of its stretch.
+    const reach = last ? travel + 14 - from : to - from;
     let left = 3, room = null;
-    if (travel > 0 && marker !== null) {
-      const stands = px(marker) - from;
-      if (stands + half > left && stands - half < left + width) {
-        // The marker is on the name: the name goes after it where there is
-        // rail to stand on, and is cut short before it where there is not.
-        const after = stands + half + 2;
-        if (last ? from + after + width <= travel + 14 : to - from - after >= Math.min(width, 44)) left = Math.round(after);
-        else if (stands - half - left >= 30) room = Math.round(stands - half - left);
-        else if (last) left = Math.round(Math.max(left, stands - half - 2 - width));
-      }
+    for (const [lo, hi] of travel > 0 ? blocks : []) {
+      if (hi - from <= left || lo - from >= left + width) continue;
+      const after = hi - from + 2;
+      if (after + Math.min(width, last ? width : 40) <= reach) { left = Math.round(after); continue; }
+      if (lo - from - left >= 24) room = Math.round(lo - from - left);
+      else if (last) left = Math.round(Math.max(3, lo - from - 2 - width));
+      break;
     }
     const far = stretch.from >= model.last;
     const kind = [far ? "dbg-far" : index % 2 ? "dbg-alt" : "", index && !far ? "dbg-next" : "", last ? "dbg-free" : ""]
@@ -1545,11 +1546,16 @@ function debugDrawLane(key, model) {
   lane.beyond.hidden = !beyond;
   if (beyond) debugPlace(lane.beyond, span(last, beyond.to));
   // A lane's last name runs on over the rail ahead unless something else is
-  // drawn there (a trunk's branches). The marker in a half's row may be the
-  // trunk's (`over`), which is wider.
+  // drawn there (a trunk's branches). What a name steps past: the marker in
+  // the lane's row, which in a half's row may be the trunk's (`over`), the
+  // wider of the two, and in a half's row the names of its eras.
+  const travel = debugTravel[key] || 0, along = turn => at(turn) / 100 * travel;
   const over = model.over ?? null, pill = over !== null ? over : shown;
-  debugDrawn(lane.by, debugStretchMarkup(model, at, debugTravel[key] || 0, pill,
-    over !== null || !model.name ? 30 : 23, model.free !== false));
+  const wide = over !== null || !model.name ? 30 : 23;
+  const blocks = pill === null ? [] : [[along(pill) - wide, along(pill) + wide]];
+  if (model.name) for (const era of model.eras || [])
+    blocks.push([along(era.turn) + 2, along(era.turn) + 6 + debugNameWidth(debugEraName(era))]);
+  debugDrawn(lane.by, debugStretchMarkup(model, at, travel, blocks.sort((one, other) => one[0] - other[0]), model.free !== false));
   lane.box.classList.toggle("dbg-thinned", !!model.kept);
   const kept = model.kept ? `${lo}:${hi}:${model.turns.join()}` : "";
   if (lane.kept.dataset.turns !== kept) {
@@ -2215,11 +2221,19 @@ function debugSplitFork() {
   const lines = {}, first = {}, last = {};
   for (const letter of ["a", "b"]) {
     const pane = debugSplit.panes[letter], marks = pane.marks || {}, turn = pane.turn ?? from;
-    const line = Array.isArray(marks.turns) && marks.turns.length > 0 && Array.isArray(marks.worlds) &&
+    let line = Array.isArray(marks.turns) && marks.turns.length > 0 && Array.isArray(marks.worlds) &&
       marks.worlds.length === marks.turns.length ? marks : null;
+    // A branch that has not yet said it begins on the turn it was made on
+    // (`debugSplit.branches`) still names the turns ahead of it. They are
+    // not its own, and are left out as they will be.
+    const cut = letter === "b" && debugSplit.branches ? from : Infinity;
+    if (line && cut !== Infinity) {
+      const held = line.turns.filter(kept => kept <= cut).length;
+      line = held > 0 ? {turns: line.turns.slice(0, held), worlds: line.worlds.slice(0, held)} : null;
+    }
     lines[letter] = line;
     first[letter] = Math.min(line ? line.turns[0] : pane.first ?? turn, turn);
-    last[letter] = Math.max(line ? line.turns[line.turns.length - 1] : pane.last ?? from, turn);
+    last[letter] = Math.min(cut, Math.max(line ? line.turns[line.turns.length - 1] : pane.last ?? from, turn));
   }
   // Until both halves have said what they hold, and with an engine that
   // gives no prints, they are taken to be one world up to the turn the
@@ -2410,7 +2424,7 @@ function debugSplitOpen(dir, versus = null) {
   try { remembered = localStorage.getItem("civvis-debug-versus") === "1"; } catch (_) {}
   // A is the timeline as it stands, and B the branch made on the open turn.
   // When turns are kept ahead of that turn they stay A's, and B is told to
-  // begin where it stands (`branches`, until it has been).
+  // begin where it stands (`branches`, until B says it holds none of them).
   const timeline = debugTimeline();
   debugSplit = {dir, locked: true, settling: true, view: true, share: .5, busy: false, panes: {}, host,
     versus: versus ?? remembered, running: 0, until: null, chart: "score", history: {a: new Map(), b: new Map()},
@@ -2589,10 +2603,7 @@ window.addEventListener("message", event => {
     // branch that it holds nothing past the turn it was made on.
     if (data.how === "boot") {
       debugSplitSync(letter);
-      if (letter === "b" && debugSplit.branches) {
-        debugSplit.branches = false;
-        debugSplitTell("b", {civvis: "pane-op", body: {op: "branch"}});
-      }
+      if (letter === "b" && debugSplit.branches) debugSplitTell("b", {civvis: "pane-op", body: {op: "branch"}});
     }
     drawDebugSplit();
     // A pane that moved because it was following is not followed back. A
@@ -2609,6 +2620,9 @@ window.addEventListener("message", event => {
       stops: Array.isArray(data.stops) ? data.stops : [], beyond: data.beyond || null,
       eras: Array.isArray(data.eras) ? data.eras : [], by: Array.isArray(data.by) ? data.by : [],
       turns: Array.isArray(data.turns) ? data.turns : null, worlds: Array.isArray(data.worlds) ? data.worlds : null};
+    // The branch has let go of the turns that were ahead of it.
+    if (letter === "b" && debugSplit.branches && Array.isArray(data.turns) && !data.beyond &&
+        data.turns.every(turn => turn <= debugSplit.from)) debugSplit.branches = false;
     drawDebugBar();
   } else if (data.civvis === "pane-deck") {
     debugSplit.panes[letter].deck = data.deck;

@@ -1956,6 +1956,19 @@ def check_a_branch_forks_the_timeline(bar: Bar) -> None:
     bar.until(f"debugSplit && {both(back + 2, back + 2)} && {said} && {deck_idle}", "a second branch opens")
     assert (ops("a"), ops("b")) == ([], []), (ops("a"), ops("b"))
     one_timeline(bar, back + 2, "a branch made on the last turn played")
+    # Played on, the two are told of each turn one after the other, so one is
+    # a turn ahead for a moment every turn. That is not a fork, and the
+    # timeline is never drawn as one: every change of it is counted here.
+    bar.ev("(() => { window.flips = 0; let was = debugBar.classList.contains('dbg-forked');"
+           " new MutationObserver(() => { const now = debugBar.classList.contains('dbg-forked');"
+           " if (now !== was) { was = now; window.flips += 1; } }).observe(debugBar, {attributes: true, attributeFilter: ['class']});"
+           " return true; })()")
+    for turn in (back + 3, back + 4):
+        bar.click('[data-dbg="next"]')
+        bar.until(f"{both(turn, turn)} && {deck_idle} && debugSplit.panes.b.marks.turns.includes({turn})",
+                  "both branches are played on as one")
+    one_timeline(bar, back + 4, "two branches played the same way")
+    assert bar.ev("window.flips") == 0, "the timeline forked for a moment while two branches were played as one"
     # The ✕ on B closes the branch, and A is the timeline as it was.
     kept = bar.ev("debugSplit.panes.a.id")
     bar.forget()
@@ -1963,7 +1976,7 @@ def check_a_branch_forks_the_timeline(bar: Bar) -> None:
     bar.until("!debugSplit", "the ✕ on B closes the split")
     assert bar.sent() == [{"op": "adopt", "pane": kept}], bar.sent()
     assert bar.note() == "Branch B closed · A is the timeline", bar.note()
-    assert bar.ev("[state.turn, state.debug.last]") == [back + 2, back + 2]
+    assert bar.ev("[state.turn, state.debug.last]") == [back + 4, back + 4]
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
