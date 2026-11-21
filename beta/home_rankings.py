@@ -80,6 +80,9 @@ VICTORIES = {
 #: Civilization VI's own ladder, lowest first: the order pooled rungs are named
 #: in, and a rung's place in it is its level number (Settler is Lv 1, Deity
 #: Lv 8). `home_rankings_test.py` holds it equal to `strategies::CIV6_RUNGS`.
+# Half-width of the 95% interval in standard deviations (`strategies::MARGIN_Z`).
+MARGIN_Z = 1.96
+
 CIV6_RUNGS = ["settler", "chieftain", "warlord", "prince", "king", "emperor", "immortal", "deity"]
 
 SLOT = re.compile(
@@ -119,6 +122,9 @@ def strategies(source: pathlib.Path) -> dict | None:
                 "tilt": shown["tilt"],
                 "elo": rating["elo"],
                 "sd": rating.get("sd", 0.0),
+                # The 95% margin of error: the file's own, or 1.96 sd for a
+                # file written before `strategy_elo` published one.
+                "margin": rating.get("margin95", round(MARGIN_Z * rating.get("sd", 0.0))),
                 "games": rating.get("games", 0),
                 "wins": rating.get("wins", 0),
                 "bound": rating.get("bound", ""),
@@ -144,10 +150,14 @@ def strategies(source: pathlib.Path) -> dict | None:
         )
     # Strongest first; at a tie the agent stands above the rung it equals.
     rows.sort(key=lambda row: (-row["elo"], row["kind"] != "agent", row["name"]))
+    runs = [run for run in published.get("runs") or [] if isinstance(run, dict)]
     return {
         "tables": published.get("tables"),
         "players": published.get("players"),
         "turns": published.get("turns"),
+        # Rating runs in the window; their labels begin with the run's date.
+        "runs": len(runs),
+        "latest_run": (runs[-1].get("run") or "")[:10] if runs else "",
         "rows": rows,
     }
 

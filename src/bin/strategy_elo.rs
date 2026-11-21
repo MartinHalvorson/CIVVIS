@@ -24,12 +24,27 @@
 //! `--games` and `--rung-games` are totals the log should reach, not amounts
 //! to add: running the same command twice plays nothing the second time.
 //! `--fit-only` refits and republishes without playing.
+//!
+//! A scheduled re-rate instead adds a labelled run and keeps a window:
+//!
+//! ```text
+//! strategy_elo --run 2026-11-23-15125c4 --add-games 480 --add-rung-games 120 \
+//!   --keep-runs 4 --jobs 3
+//! ```
+//!
+//! The run's tables continue after the newest logged index of each series
+//! (`strategies::added_indices`), carry the label, and resume under it if the
+//! run is killed. `--keep-runs K` then drops every table outside the newest K
+//! runs (`strategies::kept_runs`), so the window tracks the genome while the
+//! margin of error shrinks as runs accumulate.
 use civvis::ai::{Ai, BasicAi};
 use civvis::game::{Action, Game, GameOptions};
 use civvis::parallel;
 use civvis::rng::Rng;
 use civvis::setup::MapSize;
-use civvis::strategies::{self, Table, CIV6_REFERENCE, CIV6_RUNGS, PRINCE, PRINCE_ELO, ROSTER};
+use civvis::strategies::{
+    self, Table, CIV6_REFERENCE, CIV6_RUNGS, MARGIN_Z, PRINCE, PRINCE_ELO, ROSTER,
+};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -49,6 +64,13 @@ struct Options {
     jobs: usize,
     games: usize,
     rung_games: usize,
+    /// Tables a labelled run adds to the pool and to each rung.
+    add_games: usize,
+    add_rung_games: usize,
+    /// The label every table this run plays carries.
+    run: Option<String>,
+    /// Runs the window keeps; 0 keeps the whole log.
+    keep_runs: usize,
     log: String,
     out: String,
     fit_only: bool,
@@ -269,6 +291,8 @@ fn publish(options: &Options) {
     let lines = read_log(options);
     let mut index: BTreeMap<String, usize> = BTreeMap::new();
     let mut tables = Vec::new();
+    // The runs the window holds, oldest first, with their rated tables.
+    let mut runs: Vec<(String, usize)> = Vec::new();
     let mut victories: BTreeMap<String, u32> = BTreeMap::new();
     for line in &lines {
         let seats: Vec<String> = line["seats"]
@@ -301,6 +325,11 @@ fn publish(options: &Options) {
             .entry(line["victory"].as_str().unwrap_or("unknown").to_string())
             .or_default() += 1;
         tables.push(Table { seats, winner });
+        let run = line["run"].as_str().unwrap_or("");
+        match runs.iter_mut().find(|(label, _)| label == run) {
+            Some((_, count)) => *count += 1,
+            None => runs.push((run.to_string(), 1)),
+        }
     }
     let reference = options.reference.as_str();
     let Some(&anchor) = index.get(reference) else {
@@ -328,6 +357,8 @@ fn publish(options: &Options) {
             json!({
                 "elo": round(elo[*at] - elo[anchor] + PRINCE_ELO),
                 "sd": round(sd[*at]),
+                // The 95% margin of error the rating is listed with.
+                "margin95": (MARGIN_Z * sd[*at]).round(),
                 "games": sat[*at],
                 "wins": won[*at],
                 // Never lost, or never won: the fit bounds it from one side.
@@ -378,6 +409,10 @@ fn publish(options: &Options) {
         "turns": options.turns,
         "speed": SPEED,
         "tables": tables.len(),
+        "runs": runs
+            .iter()
+            .map(|(run, count)| json!({"run": run, "tables": count}))
+            .collect::<Vec<_>>(),
         "victories": victories,
         "ladder": ladder,
         "ratings": ratings,
@@ -396,15 +431,16 @@ fn publish(options: &Options) {
     println!("{} rated tables -> {}", tables.len(), options.out);
     println!("ladder: {}", json!(ladder));
     println!(
-        "{:<18} {:>6} {:>5} {:>6} {:>5}",
-        "entrant", "elo", "sd", "tables", "wins"
+        "{:<18} {:>6} {:>5} {:>5} {:>6} {:>5}",
+        "entrant", "elo", "sd", "±95%", "tables", "wins"
     );
     for (key, row) in rows {
         println!(
-            "{:<18} {:>6.0} {:>5.0} {:>6} {:>5}",
+            "{:<18} {:>6.0} {:>5.0} {:>5.0} {:>6} {:>5}",
             key,
             row["elo"].as_f64().unwrap_or(0.0),
             row["sd"].as_f64().unwrap_or(0.0),
+            row["margin95"].as_f64().unwrap_or(0.0),
             row["games"],
             row["wins"]
         );
@@ -420,6 +456,10 @@ fn main() {
         jobs: number(&args, "--jobs", parallel::default_jobs() as u64).max(1) as usize,
         games: number(&args, "--games", 0) as usize,
         rung_games: number(&args, "--rung-games", 0) as usize,
+        add_games: number(&args, "--add-games", 0) as usize,
+        add_rung_games: number(&args, "--add-rung-games", 0) as usize,
+        run: text(&args, "--run").filter(|label| !label.is_empty()),
+        keep_runs: number(&args, "--keep-runs", 0) as usize,
         log: text(&args, "--log").unwrap_or_else(|| DEFAULT_LOG.to_string()),
         out: text(&args, "--out").unwrap_or_else(|| DEFAULT_OUT.to_string()),
         fit_only: args.iter().any(|arg| arg == "--fit-only"),
@@ -427,6 +467,16 @@ fn main() {
     };
     if strategies::find(&options.reference).map(|row| row.id) != Some(options.reference.as_str()) {
         eprintln!("--reference wants a roster id, not {:?}", options.reference);
+        std::process::exit(2);
+    }
+
+    let adding = options.add_games > 0 || options.add_rung_games > 0;
+    if adding && options.run.is_none() {
+        eprintln!("--add-games and --add-rung-games want a --run label to resume under");
+        std::process::exit(2);
+    }
+    if adding && (options.games > 0 || options.rung_games > 0) {
+        eprintln!("--add-* adds a labelled run; --games/--rung-games fill totals. Pick one.");
         std::process::exit(2);
     }
 
@@ -440,6 +490,33 @@ fn main() {
                 .collect()
         };
         let mut plans = Vec::new();
+        // A labelled run: each series adds its count after its newest index.
+        let added = |kind: &str, rung: &str, count: usize| {
+            let run = options.run.as_deref();
+            strategies::added_indices(
+                logged
+                    .iter()
+                    .filter(|line| line["kind"] == kind && line["rung"] == rung)
+                    .filter_map(|line| {
+                        let index = line["index"].as_u64()? as usize;
+                        Some((index, line["run"].as_str() == run))
+                    }),
+                count,
+            )
+        };
+        if adding {
+            for index in added("pool", PRINCE, options.add_games) {
+                plans.push(pool_plan(&options, index));
+            }
+            for (order, (rung, _)) in CIV6_RUNGS.iter().enumerate() {
+                if *rung == PRINCE {
+                    continue;
+                }
+                for index in added("rung", rung, options.add_rung_games) {
+                    plans.push(rung_plan(&options, order, rung, index));
+                }
+            }
+        }
         let played = have("pool", PRINCE);
         for index in (0..options.games).filter(|index| !played.contains(&(*index as u64))) {
             plans.push(pool_plan(&options, index));
@@ -472,7 +549,10 @@ fn main() {
         let mut done = 0;
         for batch in plans.chunks(options.jobs * 2) {
             let results = parallel::map(batch.len(), options.jobs, |at| play(&options, &batch[at]));
-            for line in results {
+            for mut line in results {
+                if let Some(run) = &options.run {
+                    line["run"] = json!(run);
+                }
                 writeln!(log, "{line}").expect("the game log is writable");
             }
             log.flush().expect("the game log is writable");
@@ -484,5 +564,40 @@ fn main() {
             );
         }
     }
+    if options.keep_runs > 0 {
+        keep_window(&options);
+    }
     publish(&options);
+}
+
+/// Rewrite the log with only the newest `--keep-runs` runs' tables.
+fn keep_window(options: &Options) {
+    let Ok(body) = std::fs::read_to_string(&options.log) else {
+        return;
+    };
+    let lines: Vec<(&str, String)> = body
+        .lines()
+        .filter_map(|line| {
+            let value: Value = serde_json::from_str(line).ok()?;
+            Some((line, value["run"].as_str().unwrap_or("").to_string()))
+        })
+        .collect();
+    let kept = strategies::kept_runs(lines.iter().map(|(_, run)| run.as_str()), options.keep_runs);
+    let mut out = String::new();
+    let mut dropped = 0;
+    for (line, run) in &lines {
+        if kept.contains(run) {
+            out.push_str(line);
+            out.push('\n');
+        } else {
+            dropped += 1;
+        }
+    }
+    if dropped > 0 {
+        std::fs::write(&options.log, out).expect("the game log is writable");
+        println!(
+            "window: kept the newest {} runs, dropped {dropped} older tables",
+            options.keep_runs
+        );
+    }
 }

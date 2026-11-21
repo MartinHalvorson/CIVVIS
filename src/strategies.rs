@@ -17,7 +17,7 @@ use crate::ai::{AdvancedAi, Ai, BasicAi, VictoryTarget};
 use crate::shared_sort::SharedSort;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// What a person is shown for one of these.
 pub const CONCEPT_NAME: &str = "Civ AI Agent";
@@ -562,10 +562,85 @@ pub fn bootstrap_sd(
         .collect()
 }
 
+/// Half-width of the 95% interval in bootstrap deviations: a rating's
+/// margin of error is `MARGIN_Z * sd`.
+pub const MARGIN_Z: f64 = 1.96;
+
+/// The run labels a rating window keeps: the newest `keep` distinct labels in
+/// log order, a run's place being its first table. Tables logged before runs
+/// were labelled carry `""` and count as one run, the oldest. `keep == 0`
+/// keeps every run.
+pub fn kept_runs<'a>(labels: impl IntoIterator<Item = &'a str>, keep: usize) -> BTreeSet<String> {
+    let mut order: Vec<&str> = Vec::new();
+    for label in labels {
+        if !order.contains(&label) {
+            order.push(label);
+        }
+    }
+    let skip = if keep == 0 {
+        0
+    } else {
+        order.len().saturating_sub(keep)
+    };
+    order[skip..]
+        .iter()
+        .map(|label| label.to_string())
+        .collect()
+}
+
+/// The indices one series (the pool, or one rung) plays so that a labelled
+/// run adds `count` tables to it. They continue after the highest index the
+/// series has logged, so every added table is a new deal and seed even once
+/// older runs have left the window, and a killed run resumes rather than
+/// adding twice. `logged` pairs each logged index with whether this run
+/// played it.
+pub fn added_indices(
+    logged: impl IntoIterator<Item = (usize, bool)>,
+    count: usize,
+) -> std::ops::Range<usize> {
+    let mut next = 0;
+    let mut mine = 0;
+    for (index, this_run) in logged {
+        next = next.max(index + 1);
+        if this_run {
+            mine += 1;
+        }
+    }
+    next..next + count.saturating_sub(mine)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn a_window_keeps_the_newest_runs_in_log_order() {
+        let labels = ["", "", "a", "a", "b", "a", "c"];
+        let kept = |keep| kept_runs(labels.iter().copied(), keep);
+        assert_eq!(kept(2), ["b", "c"].iter().map(|s| s.to_string()).collect());
+        assert_eq!(
+            kept(0).len(),
+            4,
+            "0 keeps every run, the unlabelled one too"
+        );
+        assert_eq!(kept(9).len(), 4);
+        assert!(kept(3).contains("a") && !kept(3).contains(""));
+    }
+
+    #[test]
+    fn an_added_run_continues_after_the_newest_index_and_resumes() {
+        assert_eq!(added_indices([], 5), 0..5);
+        // Older runs (some of them already out of the window) end at 41.
+        assert_eq!(added_indices([(30, false), (41, false)], 5), 42..47);
+        // Killed after two of its five tables: three more, after them.
+        assert_eq!(
+            added_indices([(41, false), (42, true), (43, true)], 5),
+            44..47
+        );
+        // Already complete: nothing to play.
+        assert_eq!(added_indices([(42, true), (43, true)], 2), 44..44);
+    }
 
     #[test]
     fn every_roster_row_builds() {
