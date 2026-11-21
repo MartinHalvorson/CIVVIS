@@ -90,7 +90,7 @@
   .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
   .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* The site's pages, listed in the same order on every one of them with
-     the page on screen in gold: Home, Research, Tournaments, CIVVIS and Strategy
+     the page on screen in gold: Home, Research, Tournaments, CIVVIS and Strat
      Debugger, and under them the game they are built on. As on the home
      page, whose header this is, the column stands to the left of the title. */
   .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
@@ -114,11 +114,11 @@
   .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .site-link[aria-current="page"],
   .site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }
-  /* STRATEGY DEBUGGER on one line makes the column 178px wide, and on a
-     phone under 380px that leaves the title less room than it needs (at
-     320px the page ran 15px past the screen). There the column is as wide
-     as TOURNAMENTS, its longest word, and that name takes two lines. */
-  @media (max-width: 379px) { .site-nav { width: min-content; } }
+  /* The column is as wide as its longest name, STRAT DEBUGGER, on one line:
+     150px. The name was shortened to stand on one line (operator,
+     2026-11-21: "shortern to 'Strat Debugger' and make sure it fits on one
+     line"), and it does down to a 320px phone, where the title beside the
+     column still has its room. */
 
   .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
@@ -252,7 +252,7 @@
         <a class="site-link" href="./" aria-current="page">Research</a>
         <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
-        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">Strategy Debugger</a>
+        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">Strat Debugger</a>
         <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
       <div class="site-lockup">
