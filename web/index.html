@@ -2878,9 +2878,6 @@
     --politics-friend: #79e077; --politics-alliance: #74a3f3; --politics-war: #e58a7a;
     --politics-friendly: #a8d89a; --politics-neutral: #7f918b;
     --politics-unfriendly: #e8c060; --politics-denounced: #ef8f4a; --politics-unmet: #6f827b;
-    /* The column names hang at 45° below the table, as deep as the longest
-       name's run down the slant (measured each turn) plus its plate's width. */
-    --politics-foot: calc(var(--politics-run, 64px) * .71 + 16px);
   }
   #side.deck-stops #politicssec[open] ~ .sidebar-section:not([open]) { position: static; box-shadow: none; }
   #side.deck-stops #politicssec[open] { scroll-margin-bottom: 0; }
@@ -2889,24 +2886,36 @@
     position: relative; isolation: isolate; overflow: auto; max-width: 100%; max-height: 220px;
     overscroll-behavior-x: contain; scrollbar-color: #385148 transparent; scrollbar-width: thin;
   }
-  /* Never less than the column names and six rows, so a six-player world is
-     read whole on any window, plus a scrollbar's width. A larger world takes the
-     height down to the deck's floor, less the key below it and the padding. */
-  #side.deck-stops .politics-list { max-height: max(calc(var(--politics-foot) + 20px + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }
+  /* Never less than six rows, so a six-player world is read whole on any
+     window, plus a scrollbar's width. A larger world takes the height down to
+     the deck's floor, less the key below it and the padding. */
+  #side.deck-stops .politics-list { max-height: max(calc(20px + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }
   .politics-matrix { min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: calc(var(--type-secondary) - 1px); line-height: 1.2; }
   .politics-matrix th, .politics-matrix td { padding: 0; }
-  .politics-matrix tbody td, .politics-matrix tfoot th {
-    min-width: var(--politics-cell); text-align: center;
-    border-right: 1px solid #29413b66; border-bottom: 1px solid #29413b66;
+  .politics-matrix tbody td {
+    min-width: var(--politics-cell); height: var(--politics-cell); text-align: center;
+    border-right: 1px solid var(--politics-ground); border-bottom: 1px solid #0a12107a;
   }
-  .politics-matrix tbody td { height: var(--politics-cell); }
-  .politics-matrix tbody td.self { background: #ffffff0d; }
-  .politics-matrix tbody tr:hover td:not(.self), .politics-matrix col.politics-crossed { background: #ffffff0a; }
-  /* Both rails are opaque so that what scrolls under them cannot show through. */
-  .politics-matrix tfoot th, .politics-matrix tbody th, .politics-corner { position: sticky; background: var(--politics-ground); }
-  .politics-matrix tfoot th { bottom: 0; z-index: 2; height: var(--politics-foot); vertical-align: top; box-shadow: 0 -1px 0 var(--line); }
-  .politics-matrix tbody th { left: 0; z-index: 1; text-align: left; font-weight: 650; box-shadow: 1px 0 0 var(--line), 5px 0 5px -3px #0009; }
-  .politics-matrix tbody tr:hover th, .politics-matrix tfoot th.politics-crossed { background: var(--politics-lit); }
+  /* A column is its civilization's colour, held dark and quiet: every hue is
+     brought to nearly one lightness, so the faces read the same on all of
+     them. A browser without relative colours mixes the colour into the ground. */
+  .politics-matrix col + col {
+    background: color-mix(in oklab, var(--civ) 40%, var(--politics-ground));
+    background: oklch(from var(--civ) calc(.26 + l * .2) calc(c * .6) h);
+  }
+  .politics-matrix col + col.politics-crossed {
+    background: color-mix(in oklab, var(--civ) 52%, var(--politics-ground));
+    background: oklch(from var(--civ) calc(.32 + l * .2) calc(c * .72) h);
+  }
+  .politics-matrix tbody tr:hover td:not(.self) { background: #ffffff12; }
+  /* Where a civilization's row crosses its own column it shows its plate. */
+  .politics-matrix tbody td.self { background: var(--civ); box-shadow: inset 3px 0 var(--civ-trim); }
+  /* The rail is opaque so that what scrolls under it cannot show through. */
+  .politics-matrix tbody th {
+    position: sticky; left: 0; z-index: 1; background: var(--politics-ground); text-align: left; font-weight: 650;
+    box-shadow: 1px 0 0 var(--line), 5px 0 5px -3px #0009;
+  }
+  .politics-matrix tbody tr:hover th, .politics-matrix tbody th.politics-crossed { background: var(--politics-lit); }
   /* Every name is on its civilization's plate: the jersey's first colour for
      the ground, its partner for the trim and, wherever it reads, the ink. */
   .politics-name {
@@ -2915,17 +2924,6 @@
     background: var(--civ); font-weight: 650;
   }
   .politics-matrix tbody th > .politics-name { margin: 0 6px 0 2px; }
-  /* A column's name ends at the column and runs down to the left, under the
-     row names, whose corner is empty. Its trim is the end at the column. */
-  .politics-matrix tfoot th > .politics-name {
-    position: absolute; top: 4px; right: calc(50% + 6px); max-width: 128px;
-    border-left: 0; border-right: 3px solid var(--civ-trim); padding: 0 4px 0 5px;
-    transform-origin: 100% 0; transform: rotate(-45deg);
-  }
-  /* The corner is the column names' room until the table slides sideways;
-     then it covers the columns that went under the row names. */
-  .politics-corner { bottom: 0; left: 0; z-index: 2; box-shadow: 1px -1px 0 var(--line); }
-  .politics-slid .politics-corner { z-index: 3; box-shadow: 1px -1px 0 var(--line), 5px 0 5px -3px #0009; }
   .politics-key { display: flex; flex-wrap: wrap; gap: 2px 8px; padding: 6px 0 0; color: var(--muted); font-size: var(--type-label); }
   .politics-key > span { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
   .politics-key > .politics-key-note { flex-basis: 100%; color: var(--faint); white-space: normal; }
@@ -2942,6 +2940,8 @@
     content: ""; position: absolute; inset: 0; z-index: -1; background: var(--mark-color);
     -webkit-mask: var(--mark) center / contain no-repeat; mask: var(--mark) center / contain no-repeat;
   }
+  /* A dark rim keeps every face clear of whatever colour its column is. */
+  .politics-matrix .politics-mark { filter: drop-shadow(0 0 1px #050b09) drop-shadow(0 0 .5px #050b09); }
   .politics-mark.war {
     --mark-color: var(--politics-war);
     --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M2.5 2.5 12 12M13.5 2.5 4 12M9.5 13.5l4-4M2.5 9.5l4 4'/%3E%3C/svg%3E");

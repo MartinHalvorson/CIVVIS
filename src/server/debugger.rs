@@ -615,6 +615,11 @@ struct Mark {
     /// for the turn before. `None` for a turn the person ended by hand, and
     /// for the turn a timeline begins on.
     by: Option<String>,
+    /// Whether that agent played the turn before from its top to its end,
+    /// with nothing done in it first by hand or by a layer. Only such a turn
+    /// is what the agent plays from the mark before it, so only such a turn
+    /// is taken from its mark instead of being played again (`debug_walk`).
+    whole: bool,
     /// The agents as they sat when the turn opened. `None` in a half of a
     /// split, which keeps none.
     minds: Option<Minds>,
@@ -655,6 +660,9 @@ struct Plan {
     /// Anything else that touched the world since makes the plan stale.
     at: usize,
     rest: VecDeque<Action>,
+    /// Whether the plan was made at the top of the turn, before anything was
+    /// done in it (`Mark::whole`).
+    whole: bool,
     /// The world as the agent left it: the copy it played the turn on,
     /// before the turn is ended. The last step puts this on the table, so a
     /// turn taken apart ends on exactly the world the turn taken whole does.
@@ -748,6 +756,7 @@ impl Timeline {
             actions: game.log.len(),
             game: game.clone(),
             by: None,
+            whole: false,
             minds: None,
             world,
         });
@@ -1016,11 +1025,22 @@ impl Session {
         }
     }
 
+    /// Whether the open turn stands as it opened: it is the seat's to play,
+    /// it has its mark, and nothing has been done in it since.
+    pub(super) fn debugger_turn_stands(&self) -> bool {
+        let game = &self.game;
+        game.current == 0
+            && self.debugger.mark(game.turn).is_some_and(|mark| {
+                mark.actions == game.log.len() && game.log.continues(&mark.game.log)
+            })
+    }
+
     /// The seat's agent played the turn that was open on `from`. If that
     /// opened the seat's next turn, the turn is marked as that agent's work
     /// (`Mark::by`), which is what says whose game the turns ahead are once
-    /// the world is walked back.
-    pub(super) fn debugger_agent_played(&mut self, from: u32) {
+    /// the world is walked back. `whole` is whether the turn stood as it
+    /// opened when the agent took it (`debugger_turn_stands`, `Mark::whole`).
+    pub(super) fn debugger_agent_played(&mut self, from: u32, whole: bool) {
         let turn = self.game.turn;
         if !self.debuggable() || turn <= from || !Timeline::markable(&self.game) {
             return;
@@ -1029,6 +1049,7 @@ impl Session {
         if let Some(mark) = self.debugger.marks.last_mut() {
             if mark.turn == turn {
                 mark.by = by;
+                mark.whole = whole;
             }
         }
     }
@@ -1112,8 +1133,15 @@ impl Session {
 
     /// The debugger's part of the state document.
     pub(super) fn debugger_json(&self) -> Value {
-        self.debugger
-            .json(&self.game, self.autoplay_strategy.as_deref())
+        let mut out = self
+            .debugger
+            .json(&self.game, self.autoplay_strategy.as_deref());
+        // The last turn ahead that playing on from here would only play
+        // again, which a run walks to instead (`debug_walk`).
+        out["played_ahead"] = json!(self
+            .debug_played_ahead()
+            .map(|(_, last)| self.debugger.marks[last].turn));
+        out
     }
 
     /// Put a marked world on the table in place of the live one.
@@ -1232,6 +1260,108 @@ impl Session {
             return Err("nothing has been played past this turn".to_string());
         };
         self.debug_jump(next)
+    }
+
+    /// The kept turns ahead that playing on from here would only play again,
+    /// as the places of the open turn's mark and of the last of them.
+    ///
+    /// A turn is one of them where its mark is what the seated Civ AI makes
+    /// of the turn before: the open turn stands as it opened, with the
+    /// agents kept there to sit down again (`Minds`; a half of a split keeps
+    /// none) and the rivals seated as they were, and every turn from here to
+    /// there was that agent's from top to end (`Mark::by`, `Mark::whole`),
+    /// with no turn between thinned away. A turn the person ended, touched
+    /// first, or another Civ AI played is where they end: from there the
+    /// seated agent's play is another game.
+    fn debug_played_ahead(&self) -> Option<(usize, usize)> {
+        let seat = self.autoplay_strategy.as_deref()?;
+        let marks = &self.debugger.marks;
+        let at = marks.partition_point(|mark| mark.turn < self.game.turn);
+        let here = marks.get(at)?;
+        let stands = here.turn == self.game.turn
+            && !self.debugger.forgetful
+            && self.debugger_turn_stands()
+            && here
+                .minds
+                .as_ref()
+                .is_some_and(|minds| minds.rivals == self.rival_strategy);
+        if !stands {
+            return None;
+        }
+        let mut last = at;
+        while let Some(next) = marks.get(last + 1) {
+            let played_again =
+                next.whole && next.by.as_deref() == Some(seat) && next.turn == marks[last].turn + 1;
+            if !played_again {
+                break;
+            }
+            last += 1;
+        }
+        (last > at).then_some((at, last))
+    }
+
+    /// Go on along the turns the seated Civ AI has already played from this
+    /// world, to `until` at most, without playing any of them again: the
+    /// latest kept turn on the way is put on the table, and a run plays on
+    /// from there (`debug_played_ahead` says which turns those are).
+    ///
+    /// The breakpoints are asked of every turn passed, each against the turn
+    /// before it as when it was played, so the walk stops where the run that
+    /// played them would have. `era` stops it on the first turn of a new
+    /// world era as well, for a run that plays until one begins. The answer
+    /// is the turn reached: the open one when there was nothing to take.
+    pub fn debug_walk(&mut self, until: Option<u32>, era: bool) -> u32 {
+        let turn = self.game.turn;
+        let Some((at, last)) = self.debug_played_ahead() else {
+            return turn;
+        };
+        let marks = &self.debugger.marks;
+        let breakpoints = &self.debugger.breakpoints;
+        let mut read = readings(&self.game, &breakpoints.conditions);
+        let mut reached = at;
+        let mut stopped = None;
+        for next in at + 1..=last {
+            let (before, mark) = (&marks[reached].game, &marks[next]);
+            if until.is_some_and(|until| mark.turn > until) {
+                break;
+            }
+            let game = &mark.game;
+            let fresh = fresh_events(
+                before.events.len(),
+                before.events.last(),
+                before.turn,
+                &game.events,
+            );
+            stopped = if game.is_finished() || !game.players[0].alive {
+                Some(json!({"kind": "end", "turn": game.turn}))
+            } else {
+                breakpoints
+                    .hit(game, fresh)
+                    .or_else(|| {
+                        ((era || breakpoints.eras) && game.world_era != before.world_era).then(
+                            || json!({"kind": "era", "turn": game.turn, "era": game.world_era}),
+                        )
+                    })
+                    .or_else(|| {
+                        let after = readings(game, &breakpoints.conditions);
+                        let hit = breakpoints.crossed(game.turn, &read, &after);
+                        read = after;
+                        hit
+                    })
+            };
+            reached = next;
+            if stopped.is_some() {
+                break;
+            }
+        }
+        if reached == at {
+            return turn;
+        }
+        let mark = &marks[reached];
+        let (to, game, minds) = (mark.turn, mark.game.clone(), mark.minds.clone());
+        self.debug_put(game, minds);
+        self.debugger.stopped = stopped;
+        to
     }
 
     /// Keep the world as it stands under a name, to come back to.
@@ -1481,6 +1611,7 @@ impl Session {
             .as_ref()
             .is_some_and(|plan| plan.turn == self.game.turn && plan.at == self.game.log.len());
         if !current {
+            let whole = self.debugger_turn_stands();
             let mut trial = self.game.clone();
             let before = trial.log.len();
             self.ais[0].take_turn(&mut trial, 0);
@@ -1495,6 +1626,7 @@ impl Session {
                 turn: self.game.turn,
                 at: self.game.log.len(),
                 rest,
+                whole,
                 done: trial,
             });
         }
@@ -1521,6 +1653,7 @@ impl Session {
         // The plan is spent: what the agent does next is end the turn, on
         // the world it played.
         let plan = self.debugger.plan.take().expect("the plan just walked");
+        let whole = plan.whole;
         self.game = plan.done;
         if self.game.current == 0 && !self.game.is_finished() {
             if let Some(error) = self.act(&json!({"type": "end_turn"})) {
@@ -1530,7 +1663,7 @@ impl Session {
             self.debug_rivals_play();
         }
         // A turn taken apart is the agent's turn all the same.
-        self.debugger_agent_played(turn);
+        self.debugger_agent_played(turn, whole);
         self.debugger.stepped = Some(json!({
             "turn": turn,
             "action": {"type": "end_turn"},
@@ -1656,6 +1789,15 @@ impl Session {
                     }
                     None => Err("room needs megabytes".to_string()),
                 },
+                // Never refused: with no kept turn to take, the world stays
+                // where it is and the run that asked plays on from it.
+                "walk" => {
+                    let until = request["turn"]
+                        .as_u64()
+                        .and_then(|turn| u32::try_from(turn).ok());
+                    self.debug_walk(until, request["era"] == json!(true));
+                    Ok(())
+                }
                 "step" => {
                     if self.debug_step() {
                         Ok(())

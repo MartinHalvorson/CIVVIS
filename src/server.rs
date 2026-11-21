@@ -3368,6 +3368,7 @@ impl Session {
                 break;
             }
             let turn = self.game.turn;
+            let whole = self.debugger_turn_stands();
             self.ais[0].take_turn(&mut self.game, 0);
             if self.game.current == 0 && !self.game.is_finished() {
                 let _ = self.game.apply(0, &Action::EndTurn);
@@ -3391,7 +3392,7 @@ impl Session {
             // as its work, and the layers are not asked: there is no person
             // to leave it to.
             self.debugger_turn_opened(false);
-            self.debugger_agent_played(turn);
+            self.debugger_agent_played(turn, whole);
         }
         played
     }

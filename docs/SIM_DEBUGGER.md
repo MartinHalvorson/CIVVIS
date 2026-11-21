@@ -195,14 +195,14 @@ do not carry, so the replay would be another world.
 | ◀◀ Era (Era Back) | `jump` | Back to the first turn of the era that is open, and from there to the first turn of the era before |
 | ◀◀ 10 | `jump` | Back ten turns, or to where the timeline begins |
 | ◀ 1 | `back` | The top of this turn if you have acted in it, otherwise the turn before |
-| turn box | `jump`, or `step` repeated | Go to a turn by its number, the same way. Up and down in the box walk one played turn. Its tooltip says which turns were played and how many are still kept |
+| turn box | `jump`, or `walk` then `step` repeated | Go to a turn by its number, the same way. Up and down in the box walk one played turn. Its tooltip says which turns were played and how many are still kept |
 | 1 ▶ | `forward`, or `step` | Next turn: forward along the turns already played, and past the last of them the seat's Civ AI plays one whole turn |
 | 10 ▶▶ | `jump`, then `step` repeated | Ten turns on: forward along the turns already played, and past the last of them the Civ AI plays the rest |
 | Era ▶▶ (Era Next) | `jump`, then `step` repeated | On to the first turn of the next era. One the turns already played reach is gone to; otherwise the walk goes to the last turn played and the Civ AI plays until the state's `world_era` changes (the page stops the run itself, as the "A new era begins" breakpoint would). Off in the last era |
 | Play to End (⏭) | `jump`, then `step` repeated | Along the turns already played to the last of them, then the Civ AI plays until the game is over, stopping early at a breakpoint |
-| timeline | `jump`, or `step` repeated | Go to any turn of the game. One that was played is put back as it stood; one that is no longer kept answers with the nearest before it, and the bar says so. One still ahead is played to by the seat's Civ AI, stopping early if a breakpoint does. The mouse wheel over it walks one played turn at a time, and the arrow keys move it a turn |
+| timeline | `jump`, or `walk` then `step` repeated | Go to any turn of the game. One that was played is put back as it stood; one that is no longer kept answers with the nearest before it, and the bar says so. One still ahead is played to by the seat's Civ AI, stopping early if a breakpoint does. The mouse wheel over it walks one played turn at a time, and the arrow keys move it a turn |
 | Civ AI | | Which Civ AI plays the seat when a turn is auto-played, stepped or played to. It is the page's own picker (`#autoplaystrategy`), shown beside Auto-play. Each Civ AI reads `<Elo> - <name>`, the highest Elo first, and the box is as wide as its longest listing, so the Elo and the whole name are read without opening it. A wide enough box costs the tools their words sooner (a 1600px window shows signs) |
-| Turns, ▶▶ Auto-play | `step`, repeated | Play the turns picked (1 to 250, or all; 10 unless changed) from the turn that is open, stopping early at a breakpoint. The button counts the turns as they are played and is the Stop. Each turn is asked for the moment the one before it is answered, so the engine plays it while the page draws that one; a Stop pressed while a turn is being drawn lands a turn later. In the browser build the request is handed to the engine's worker inside the `fetch` call itself (`beta/shim.js`): handed over in a `then`, it waited for the draw that follows it in the same task, 18 to 30 ms a turn |
+| Turns, ▶▶ Auto-play | `walk`, then `step` repeated | Play the turns picked (1 to 250, or all; 10 unless changed) from the turn that is open, stopping early at a breakpoint. Turns among them that the Civ AI already played from here are taken as they are kept and not played again (see below). The button counts the turns as they are played and is the Stop. Each turn is asked for the moment the one before it is answered, so the engine plays it while the page draws that one; a Stop pressed while a turn is being drawn lands a turn later. In the browser build the request is handed to the engine's worker inside the `fetch` call itself (`beta/shim.js`): handed over in a `then`, it waited for the draw that follows it in the same task, 18 to 30 ms a turn |
 | ↶ (`Ctrl`/`Cmd`+`Z`) | `undo` | Take back your last action this turn; the note says so, and how many more can be taken back |
 | ▸ | `step_action` | Step in: the seat's Civ AI takes its next action, and ends the turn when it has none left |
 | ▸\| | `step_seat` | Step one seat: end your turn as it stands, then one civilization's turn at a time |
@@ -248,6 +248,47 @@ Why: on 2026-11-21 the operator walked a game back, picked another Civ AI and
 went on, and was shown the first one's turns again. Auto-play did play from
 there with the new pick. The turn buttons, the turn box and the timeline
 walked whatever was kept ahead, and nothing asked whose turns those were.
+
+### Turns that are not played again
+
+A run does not play a turn the engine already holds. Played 50 turns on,
+walked 20 back and played 30 on, the first 20 of the 30 are kept turns: the
+run goes to the last of them in one request and the Civ AI plays ten.
+
+Every run of the page (Auto-play, the turn box and the timeline past the last
+turn played, a breakpoint picked on the timeline) first sends `walk`, with
+the turn it is headed for. The engine puts the latest kept turn on the way on
+the table and plays nothing; the run's `step`s go on from there. On the way
+it asks the breakpoints of every kept turn it passes, each against the turn
+before it as a step does, so the walk stops on the turn, and for the reason,
+that the run which played those turns would have stopped. `"era": true`
+stops it on the first turn of a new world era too, for a run that plays
+until one begins.
+
+A turn is taken from its mark only where playing it again would arrive at
+the same world, and `debug.played_ahead` is the last such turn ahead (null
+when there is none, and then the page sends no `walk`):
+
+- the open turn stands as it opened: nothing done in it by hand or by a
+  layer, and not in the middle of a round;
+- the agents kept with it are the ones to sit down again (a half of a split
+  keeps none and so walks nothing), and the rivals are seated as they were;
+- each turn from here to there was played by the Civ AI now seated, from its
+  top to its end. A turn the person ended, a turn that was touched before the
+  agent took it, and another Civ AI's turn are where the walk ends: the
+  seated agent's play from there is another game, and it is played;
+- no turn between has been thinned away.
+
+Where the walk ends short of the run's turn, the first turn played replaces
+the kept turns past it, as it always has. The turn buttons are as they were:
+they walk every turn of the seat's line, hand-ended ones included, and play
+only past the last of them.
+
+Why: on 2026-11-21 the operator played 50 turns on, went 20 back and played
+30 on, and the 20 kept turns were played a second time: "we already have the
+saves. take the latest save on the path and start from there". Auto-play,
+the turn box and the timeline asked for a `step` a turn from the open turn,
+and the first step let go of every turn kept ahead.
 
 A walked-to world is played on by the agents that were playing it. An agent
 keeps plans from turn to turn (where its Settlers are headed, who it means to
@@ -760,6 +801,7 @@ operation leaves the world as it was.
 | `goto_save`, `drop_save` | `id` |
 | `room` | `megabytes`: where the memory line is, 128 to 3072 |
 | `step`, `step_action`, `assist` | optional `strategy`, the Civ AI to seat first |
+| `walk` | optional `turn`, the furthest to go; optional `era`: true to stop where a new era begins; optional `strategy`. Goes on along the kept turns the seated Civ AI would only play again, plays nothing, and is never refused: with none to take the world stays where it is |
 | `status` | optional `strategy`: seat that Civ AI and play nothing, which is how the page says a pick |
 | `step_seat`, `finish_round` | none |
 | `reveal` | `on`: true or false |
@@ -776,7 +818,8 @@ of those turns' worlds (`worlds`, in the order of `turns`; see "One timeline
 until the worlds differ"), the Civ AI seated
 (`seat`, once one has been named), the kept turns ahead that another Civ AI
 played (`beyond`: `from`, `to`, and `by`, who played the first of them; null
-when there are none), how many actions the seat has taken this
+when there are none), the last turn ahead that playing on would only play
+again (`played_ahead`, null when there is none), how many actions the seat has taken this
 turn (`acted`), `can_undo`, `can_back`, `can_forward`, the `breakpoints` and
 the categories they may name, the `layers`, how many decisions the layers
 took this turn (`assisted`), why the last step `stopped`, what the last step
