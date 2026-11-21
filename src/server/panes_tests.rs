@@ -251,3 +251,198 @@ fn panes_fork_copy_and_adopt_without_a_socket() {
     let (refused, _) = ask(&mut panes, &watched, "a-y", "GET", "/state", &Value::Null).unwrap();
     assert!(refused["error"].is_string());
 }
+
+/// A small table with a seat of its own, for the halves of a split to fork.
+fn small_table() -> super::super::Session {
+    let mut params = stock_opening_params(20_261_120);
+    params.spectate = false;
+    params.num_players = 2;
+    params.num_city_states = 1;
+    params.width = 20;
+    params.height = 14;
+    params.map_topology = MapTopology::Flat;
+    params.map_script = MapScript::Pangaea;
+    params.game_speed = GameSpeed::Standard;
+    params.max_turns = 500;
+    super::super::Session::new(params)
+}
+
+/// One request of one half, answered the way the published build answers it.
+fn asked_of(
+    panes: &mut super::Panes,
+    main: &super::super::Session,
+    pane: &str,
+    method: &str,
+    path: &str,
+    body: &Value,
+) -> Value {
+    let asked = super::Asked {
+        method,
+        path,
+        target: path,
+        parsed: body,
+    };
+    super::serve(panes, main, pane, &asked, None)
+        .expect("a request that concerns a world")
+        .0
+}
+
+/// The whole world of one half, as a save would carry it.
+fn world_of(panes: &mut super::Panes, main: &super::super::Session, pane: &str) -> String {
+    asked_of(panes, main, pane, "GET", "/save", &Value::Null).to_string()
+}
+
+/// Two halves that are the same world are played once (operator 2026-11-20:
+/// "if 2 games are identical, we should also not have to simulate both (only
+/// if they are entirely identical). we can just simulate one"). A debugger
+/// request that names the other half as its twin is answered from one half,
+/// and the other is made a copy of what that half then holds.
+#[test]
+fn halves_that_are_alike_are_played_once() {
+    let main = small_table();
+    let mut panes = super::Panes::default();
+    let none = Value::Null;
+    let step_both = json!({"op": "step", "twin": "b-x"});
+
+    // Both halves begin as the main session, and reading does not part them.
+    let a = asked_of(&mut panes, &main, "a-x", "GET", "/state", &none);
+    assert_eq!(a["turn"], json!(1));
+    assert!(!panes.alike("a-x", "b-x"), "one half is not a pair");
+    asked_of(&mut panes, &main, "b-x", "GET", "/state", &none);
+    asked_of(&mut panes, &main, "b-x", "POST", "/forecast", &json!({}));
+    asked_of(&mut panes, &main, "a-x", "GET", "/rules", &none);
+    assert!(panes.alike("a-x", "b-x"));
+
+    // A is asked to step for both: B is on each turn without playing it.
+    for turn in 2..=4 {
+        let a = asked_of(&mut panes, &main, "a-x", "POST", "/debug", &step_both);
+        assert_eq!(a["error"], none);
+        assert_eq!(a["debug"]["twinned"], json!(true));
+        assert_eq!(a["turn"], json!(turn));
+        assert!(panes.alike("a-x", "b-x"));
+    }
+    let b = asked_of(&mut panes, &main, "b-x", "GET", "/state", &none);
+    assert_eq!(b["turn"], json!(4));
+    assert_eq!(b["debug"]["turns"], json!([1, 2, 3, 4]));
+    let together = world_of(&mut panes, &main, "b-x");
+    assert_eq!(world_of(&mut panes, &main, "a-x"), together);
+
+    // It is the game the two halves play when each is asked to play itself.
+    let mut apart = super::Panes::default();
+    for _ in 0..3 {
+        for pane in ["a-y", "b-y"] {
+            let stepped = asked_of(
+                &mut apart,
+                &main,
+                pane,
+                "POST",
+                "/debug",
+                &json!({"op": "step"}),
+            );
+            assert_eq!(stepped["error"], none);
+            assert!(
+                stepped["debug"].get("twinned").is_none(),
+                "nobody named a twin"
+            );
+        }
+    }
+    assert!(
+        !apart.alike("a-y", "b-y"),
+        "each was asked to play turns of its own"
+    );
+    assert_eq!(world_of(&mut apart, &main, "a-y"), together);
+    assert_eq!(world_of(&mut apart, &main, "b-y"), together);
+}
+
+/// A half that was asked anything of its own is not a twin. A request for
+/// both then plays only the half it was asked of, and says so, so that the
+/// page asks the other half as well. Nothing is copied over a half that has
+/// a history of its own.
+#[test]
+fn a_half_with_a_history_of_its_own_is_not_played_for() {
+    let main = small_table();
+    let mut panes = super::Panes::default();
+    let none = Value::Null;
+    let step_both = json!({"op": "step", "twin": "b-x"});
+    asked_of(&mut panes, &main, "a-x", "GET", "/state", &none);
+    asked_of(&mut panes, &main, "b-x", "GET", "/state", &none);
+
+    // B is shown the whole map. Nothing in its world moved, but it was asked.
+    let reveal = json!({"op": "reveal", "on": true});
+    let b = asked_of(&mut panes, &main, "b-x", "POST", "/debug", &reveal);
+    assert_eq!(b["error"], none);
+    assert!(!panes.alike("a-x", "b-x"));
+    let a = asked_of(&mut panes, &main, "a-x", "POST", "/debug", &step_both);
+    assert_eq!(a["debug"]["twinned"], json!(false));
+    assert_eq!(a["turn"], json!(2));
+    let b = asked_of(&mut panes, &main, "b-x", "GET", "/state", &none);
+    assert_eq!(b["turn"], json!(1), "B is left for its own page to play");
+    assert_eq!(b["debug"]["reveal"], json!(true));
+
+    // A copy puts the two on one line again, in either direction.
+    let copy = json!({"op": "copy", "from": "a-x"});
+    assert_eq!(
+        asked_of(&mut panes, &main, "b-x", "POST", "/debug", &copy)["turn"],
+        json!(2)
+    );
+    assert!(panes.alike("a-x", "b-x"));
+    let a = asked_of(&mut panes, &main, "a-x", "POST", "/debug", &step_both);
+    assert_eq!(a["debug"]["twinned"], json!(true));
+    let b = asked_of(&mut panes, &main, "b-x", "GET", "/state", &none);
+    assert_eq!(b["turn"], json!(3));
+    assert_eq!(b["debug"]["reveal"], json!(false), "B is A's copy now");
+
+    // Only the other half of this split is a twin.
+    for stray in ["a-x", "b-other", "c-x", "b", ""] {
+        asked_of(&mut panes, &main, "b-x", "POST", "/debug", &copy);
+        assert!(panes.alike("a-x", "b-x"));
+        let asked = json!({"op": "status", "twin": stray});
+        let a = asked_of(&mut panes, &main, "a-x", "POST", "/debug", &asked);
+        assert_eq!(a["debug"]["twinned"], json!(false), "{stray:?}");
+        assert_eq!(panes.len(), 2, "{stray:?}");
+    }
+
+    // A request that is not the debugger's names no twin.
+    asked_of(&mut panes, &main, "b-x", "POST", "/debug", &copy);
+    let end_turn = json!({"action": {"type": "end_turn"}, "twin": "b-x"});
+    let a = asked_of(&mut panes, &main, "a-x", "POST", "/action", &end_turn);
+    assert_eq!(a["turn"], json!(4));
+    assert!(a["debug"].get("twinned").is_none());
+    assert!(!panes.alike("a-x", "b-x"));
+    let b = asked_of(&mut panes, &main, "b-x", "GET", "/state", &none);
+    assert_eq!(b["turn"], json!(3));
+}
+
+/// Of two halves played as one, only the half that was asked has agents
+/// that lived through those turns: the copy's agents are seated anew. When
+/// the two are then played apart, the half that played is seated anew as
+/// well, so the two go on to play the same game for as long as they are
+/// asked the same. A head to head of two Civ AIs rests on that.
+#[test]
+fn halves_played_as_one_and_then_apart_go_on_alike() {
+    let main = small_table();
+    let mut panes = super::Panes::default();
+    let none = Value::Null;
+    let step = json!({"op": "step"});
+    let step_both = json!({"op": "step", "twin": "b-x"});
+    asked_of(&mut panes, &main, "a-x", "GET", "/state", &none);
+    asked_of(&mut panes, &main, "b-x", "GET", "/state", &none);
+    for _ in 0..6 {
+        let a = asked_of(&mut panes, &main, "a-x", "POST", "/debug", &step_both);
+        assert_eq!(a["debug"]["twinned"], json!(true));
+    }
+    // Apart from here: each is asked for itself, turn about.
+    for turn in 8..=13 {
+        for pane in ["a-x", "b-x"] {
+            let stepped = asked_of(&mut panes, &main, pane, "POST", "/debug", &step);
+            assert_eq!(stepped["error"], none);
+            assert_eq!(stepped["turn"], json!(turn));
+        }
+        assert!(!panes.alike("a-x", "b-x"));
+        assert_eq!(
+            world_of(&mut panes, &main, "a-x"),
+            world_of(&mut panes, &main, "b-x"),
+            "turn {turn}"
+        );
+    }
+}
