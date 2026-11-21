@@ -33737,7 +33737,8 @@ function releaseWatchedWar() {
 // order so nobody's place moves as the game goes on. A pact or a war belongs to
 // the pair and is written in both of its cells. Otherwise a cell holds what its
 // row's leader makes of its column's, which the other leader need not share.
-// The engine reports the pairs; the War log below keeps the history. The
+// A column wears its civilization's colour instead of a name, and meets that
+// civilization's row on the diagonal. The engine reports the pairs; the War log below keeps the history. The
 // heading's count is cheap and always current, and the table is built only
 // while somebody can see it.
 const WORLD_POLITICS_MARKS = [
@@ -33785,13 +33786,11 @@ function worldPoliticsMatrix(civs, bonds, wars, attitudes) {
   for (const bond of bonds) place(bond, worldPoliticsBondTie(bond));
   for (const war of wars) place(war, worldPoliticsWarTie(war));
   const seat = new Map((attitudes.civs || []).map((id, index) => [id, index]));
-  const label = id => `<span class="politics-name" style="--civ:${pcol(id)};--civ-trim:${pcol2(id)};` +
-    `--civ-ink:${hudJerseyInk(id)}">${warEntityLink(id)}</span>`;
-  const foot = civs.map(civ => `<th scope="col">${label(civ.id)}</th>`).join("");
+  const jersey = id => `--civ:${pcol(id)};--civ-trim:${pcol2(id)}`;
   const rows = civs.map(row => {
     const stances = attitudes.rows?.[seat.get(row.id)] || "";
     const cells = civs.map(column => {
-      if (column.id === row.id) return `<td class="self"></td>`;
+      if (column.id === row.id) return `<td class="self" style="${jersey(row.id)}"></td>`;
       const tie = ties.get(`${row.id}:${column.id}`);
       if (tie) return `<td title="${escapeAttr(`${row.civ} and ${column.civ}: ${tie.text}`)}">${tie.mark}</td>`;
       const kind = WORLD_POLITICS_ATTITUDES[stances[seat.get(column.id)]];
@@ -33800,13 +33799,15 @@ function worldPoliticsMatrix(civs, bonds, wars, attitudes) {
         : `${row.civ} toward ${column.civ}: ${WORLD_POLITICS_LABELS.get(kind)}`;
       return `<td title="${escapeAttr(text)}">${worldPoliticsMark(kind)}</td>`;
     }).join("");
-    return `<tr><th scope="row">${label(row.id)}</th>${cells}</tr>`;
+    return `<tr><th scope="row"><span class="politics-name" style="${jersey(row.id)};` +
+      `--civ-ink:${hudJerseyInk(row.id)}">${warEntityLink(row.id)}</span></th>${cells}</tr>`;
   }).join("");
-  return `<table class="politics-matrix"><colgroup><col>${"<col>".repeat(civs.length)}</colgroup>` +
-    `<tbody>${rows}</tbody><tfoot><tr><td class="politics-corner"></td>${foot}</tr></tfoot></table>`;
+  const columns = civs.map(civ => `<col style="--civ:${pcol(civ.id)}">`).join("");
+  return `<table class="politics-matrix"><colgroup><col>${columns}</colgroup><tbody>${rows}</tbody></table>`;
 }
-// Hovering a row is CSS's to light, but no selector can light a column. The
-// column is remembered because a new turn's patch takes the marks back off.
+// Hovering a row is CSS's to light, but no selector can light a column, or the
+// name of the civilization whose column it is. The column is remembered
+// because a new turn's patch takes the marks back off.
 let politicsColumn = -1;
 function markPoliticsColumn(column) {
   politicsColumn = column;
@@ -33815,7 +33816,7 @@ function markPoliticsColumn(column) {
   const table = list.querySelector("table");
   if (!table || column < 1) return;
   table.querySelector("colgroup").children[column]?.classList.add("politics-crossed");
-  table.tFoot.rows[0].cells[column]?.classList.add("politics-crossed");
+  table.tBodies[0].rows[column - 1]?.cells[0].classList.add("politics-crossed");
 }
 function drawWorldPolitics() {
   const list = document.getElementById("worldpolitics");
@@ -33842,9 +33843,6 @@ function drawWorldPolitics() {
     ? worldPoliticsMatrix(civs, bonds, wars, attitudes)
     : `<div class="politics-none">No other civilizations met yet.</div>`);
   markPoliticsColumn(politicsColumn);
-  // A slant is invisible to layout, so the foot is sized to the longest column name.
-  const run = Math.max(0, ...[...list.querySelectorAll("tfoot .politics-name")].map(name => name.offsetWidth));
-  list.style.setProperty("--politics-run", `${run}px`);
   const key = document.getElementById("politicskey");
   key.hidden = !met;
   key.innerHTML = met ? worldPoliticsKey(bonds) : "";
@@ -39614,7 +39612,6 @@ document.getElementById("tradebtn").onclick = () => openTrade();
   matrix.addEventListener("pointerover", event =>
     markPoliticsColumn(event.target.closest("td, th")?.cellIndex ?? -1));
   matrix.addEventListener("pointerleave", () => markPoliticsColumn(-1));
-  matrix.addEventListener("scroll", () => matrix.classList.toggle("politics-slid", matrix.scrollLeft > 0), { passive: true });
 }
 {
   const player = document.getElementById("warplayer");
