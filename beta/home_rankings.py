@@ -345,9 +345,16 @@ def tournament_series(rows: list[dict], tournaments: list[dict]) -> list[dict] |
             block = finished[first:first + size]
             wins = sum(1 for _, ending in block if ending["outcome"] == "win")
             last = max(str(ending.get("utc") or "") for _, ending in block)
-            # A definition closed by its `end` closes its last series too,
-            # full or not: the operator restarted the tournament.
-            closed = len(block) == size or bool(end and first == blocks[-1])
+            # A definition closed by its `end` closes its last series too, full
+            # or not (the operator restarted the tournament), once a game past
+            # that end has been played after the series' last one. An `end`
+            # that is a tag prefix another table owns (`civvis-t`) closes
+            # nothing on its own: the games played after that table still
+            # sort before it and form the next series.
+            closed = len(block) == size or bool(
+                end and first == blocks[-1] and any(
+                    (game_key(row) or "") >= end and str(row.get("utc") or "") > last
+                    for row in rows))
             out.append({
                 "tournament": spec.get("name") or "",
                 "series": number,
