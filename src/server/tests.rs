@@ -12314,15 +12314,19 @@ fn spectator_state_reports_the_pause_liveness_signal() {
         .is_some_and(|name| name != "AI player"));
     session.step();
     let stepped = session.state();
-    assert_eq!(stepped["players"][0]["ai_strategy"], "expansion");
-    assert!(["Frontier", "Horizon", "Homestead", "Border"]
-        .iter()
-        .any(|prefix| stepped["players"][0]["ai_name"]
-            .as_str()
-            .is_some_and(|name| name.starts_with(prefix))));
+    // Which plan seat 0 opens with follows the published Elo order (the
+    // watched table seats the top four agents), so read it back rather than
+    // pin it: the handle and the expanded plan must both follow it.
+    let strategy = stepped["players"][0]["ai_strategy"]
+        .as_str()
+        .expect("a stepped seat reports its grand strategy");
+    assert_eq!(
+        stepped["players"][0]["ai_name"],
+        generated_ai_name(session.game.seed, 0, Some(strategy))
+    );
     // The expanded HUD card reads the whole plan, not just its label.
     let plan = &stepped["players"][0]["ai_plan"];
-    assert_eq!(plan["strategy"], "expansion");
+    assert_eq!(plan["strategy"], strategy);
     assert!(plan["desired_cities"].as_u64().is_some());
     assert!(plan["assessed_turn"].as_u64().is_some());
     assert!(plan["forces"].is_array());
