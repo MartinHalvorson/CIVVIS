@@ -2102,14 +2102,15 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
     assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
 }
 
-/// The site is five pages, Home, Research, Tournaments, CIVVIS and AI
-/// Debugger (the operator's name for the Debugger since 2026-11-20;
+/// The site is five pages, Home, Research, Tournaments, CIVVIS and Strategy
+/// Debugger (the operator's name for the Debugger since 2026-11-21, "change
+/// ai debugger to strategy debugger", after a day as AI Debugger;
 /// Tournaments joined them between Home and CIVVIS on 2026-11-21, and
 /// Research between Home and Tournaments the same day), and every one of
 /// them lists all five in that order, with the page on screen in gold and a
 /// link to the game they are built on under them (operator, 2026-11-19).
 /// The viewer is the last two: a watched simulation lights CIVVIS and a
-/// played game lights AI Debugger. Pinned as one literal because the list
+/// played game lights Strategy Debugger. Pinned as one literal because the list
 /// is the contract: six links in this order, inside a list that only the
 /// hosts serving a /home, a /research and a /tournaments reveal.
 #[test]
@@ -2120,7 +2121,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         "        <a class=\"home-link\" id=\"researchlink\" href=\"/research\" target=\"_top\">Research</a>\n",
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
-        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
+        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">Strategy Debugger</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
         "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
@@ -2182,7 +2183,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // only while the list is showing, so a desktop build's lockup keeps the
     // whole band. The column kept the width it had for four links, so in
     // the column the labels are set a little smaller and closer and the
-    // longest of the six, TOURNAMENTS, fits it.
+    // longest word of the six, TOURNAMENTS, fits it.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  @container (min-width: 233px) {\n",
         "    #side .brand:has(> .head-links:not([hidden])) {\n",
@@ -2198,6 +2199,25 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         "      padding: 1px 3px 2px; font-size: 9px; letter-spacing: .03em;\n",
         "    }",
     )));
+    // STRATEGY DEBUGGER is wider than the column and than half a row, so a
+    // name may take two lines: the links no longer hold their text to one,
+    // and each centres its name, so the link beside a two-line one in a row
+    // matches it. Measured on the published page with the name swapped in:
+    // 109px on one line against 80px inside the column, cut off at
+    // "STRATEGY DEBU" at every window width while the rule said `nowrap`.
+    assert!(EMBEDDED_INDEX.contains(concat!(
+        "  .home-link {\n",
+        "    display: grid; align-content: center; min-width: 0; padding: 2px 5px 3px; overflow: hidden;\n",
+    )));
+    let home_link = EMBEDDED_INDEX
+        .split_once("  .home-link {\n")
+        .and_then(|(_, rest)| rest.split_once("  }\n"))
+        .map(|(rule, _)| rule)
+        .expect("the masthead's link rule");
+    assert!(
+        !home_link.contains("nowrap"),
+        "a site's name is held to one line again, which cuts STRATEGY DEBUGGER off"
+    );
     // A little wider and the tagline fits beside the column as well, which
     // then runs the whole height of the lockup.
     assert!(EMBEDDED_INDEX.contains(concat!(
@@ -2281,7 +2301,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
 }
 
 /// The home page is one of the site's five pages and lists all five from
-/// its header, Home, Research, Tournaments, CIVVIS and AI Debugger, with itself in gold
+/// its header, Home, Research, Tournaments, CIVVIS and Strategy Debugger, with itself in gold
 /// and the Civ 6 link under them, as the viewer's masthead does; below that
 /// it is one paragraph and the rankings. The Tournaments table that stood
 /// above the rankings moved to the Tournaments page (operator, 2026-11-21;
@@ -2319,7 +2339,7 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
             "        <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "        <a class=\"site-link\" href=\"../?mode=play\" ",
-            "title=\"You play one civilization. CIVVIS AI agents play the rest.\">AI Debugger</a>\n",
+            "title=\"You play one civilization. CIVVIS AI agents play the rest.\">Strategy Debugger</a>\n",
             "        <a class=\"site-link\" ",
             "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
             "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
@@ -2330,6 +2350,12 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
         // line, and the page on screen is the gold one.
         "    text-transform: uppercase;\n  }\n  .site-link:hover,",
         ".site-nav { display: grid; flex: none; gap: 4px; }",
+        // The column is as wide as its longest name on one line, which is
+        // STRATEGY DEBUGGER. On a phone under 380px that left the title
+        // too little room (the page ran 15px past a 320px screen), so
+        // there the column is as wide as its longest word and that name
+        // takes two lines.
+        "@media (max-width: 379px) { .site-nav { width: min-content; } }",
         concat!(
             ".site-link[aria-current=\"page\"],\n",
             "  .site-link[aria-current=\"page\"]:hover { background: var(--gold); color: #17130c; }",
