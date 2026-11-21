@@ -37,7 +37,8 @@
     "Operator 2026-11-21 ~07:00Z: \"on our new tournaments page we are building out. we can link to the youtube tournament result videos.\":",
     "`videos` names a tournament's result video on the CIVVIS YouTube channel, by the tournament's number as the page shows it (a",
     "definition played as repeated series is several tournaments, so the link cannot sit on a definition). The page links it under the",
-    "tournament's name. The operator posts the videos; add a line here when one is up. Only a YouTube watch link is linked."
+    "tournament's name. The operator posts the videos; add a line here when one is up. Only a YouTube watch link is linked.",
+    "Operator 2026-11-21 ~14:50Z: \"for tournament 6, lets cut back to 5 games at each level (5 on lv 4... 5 on lv 8)\": 25 games."
   ],
   "videos": {
     "1": "https://www.youtube.com/watch?v=an7y2IlGhU0",
@@ -84,11 +85,11 @@
     },
     {
       "name": "Level ladder Lv 4-8, 2 CIVVIS agents + 4 AI",
-      "idea": "Ten games at each level from Lv 4 to Lv 8, with two CIVVIS agents and four Firaxis AI at the table. A game is a win when either CIVVIS agent wins.",
+      "idea": "Five games at each level from Lv 4 to Lv 8, with two CIVVIS agents and four Firaxis AI at the table. A game is a win when either CIVVIS agent wins.",
       "conditions": "Lv 4-8 6P Continents Online, 2 CIVVIS + 4 AI",
       "start": "civvis-t6-",
       "end": "civvis-t7-",
-      "series_size": 50,
+      "series_size": 25,
       "match": {"players": 6, "map": "Continents.lua"}
     }
   ]
