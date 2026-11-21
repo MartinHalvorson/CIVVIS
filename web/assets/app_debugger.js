@@ -570,6 +570,7 @@ async function debugStep() {
     autoplaying = false;
     drawDebugBar();
     drawTurnLoop();
+    currentPolicyLedger();
   }
 }
 // One action of the agent's turn in a few words, and where on the map it was.
@@ -616,6 +617,7 @@ async function debugStepAction() {
     autoplaying = false;
     drawDebugBar();
     drawTurnLoop();
+    currentPolicyLedger();
   }
 }
 // Step one seat: the round, a civilization at a time. On your own turn it
@@ -683,6 +685,10 @@ async function debugRun(until = null) {
     debugRunning = false; debugStopAsked = false; autoplaying = false; debugGoal = null;
     drawDebugBar();
     drawTurnLoop();
+    // The deck is not priced while a turn is being played (`currentPolicyLedger`
+    // in app.js); the turn the run ended on is the one to price. A single
+    // step asks the same way, above.
+    currentPolicyLedger();
     if (DEBUG_PANE !== null) window.parent.postMessage({civvis: "pane-ran", pane: DEBUG_PANE}, location.origin);
   }
 }
