@@ -1247,6 +1247,51 @@ def check_the_lock(bar: Bar) -> None:
     assert calls("a") == [] and calls("b") == [["/debug", "layers", None]], (calls("a"), calls("b"))
     assert [bar.ev(half(letter, bar_shown)) for letter in "ab"] == [False, False]
 
+    # A lane shows what stands on its half's timeline: its breakpoint turns
+    # and its save points. A half's own timeline is put away in a split, so
+    # the lanes are the only place to see them, and a mark is its half's own
+    # to go to. Locked, the other half is brought along.
+    mark = "document.querySelector('#debugbar [data-dbg-lane=\"{}\"] .dbg-marks {}')".format
+    stop = f'i.stop[data-dbg-turn="{start + 16}"]'
+    flag = lambda name: f'i[title^="{name}:"]'
+
+    def point(name: str) -> None:
+        bar.ev(f"document.querySelector('#dbg-pop-saves [data-dbg-field=pointname]').value = '{name}', true")
+        bar.click('[data-dbg="point"]')
+        bar.until(f"{mark('a', flag(name))} && {mark('b', flag(name))} && {deck_idle}",
+                  f"the save point {name}, set on the one panel, stands on both lanes")
+
+    point("fork")
+    bar.click('[data-dbg="break-plus"]')
+    bar.until(f"{mark('a', stop)} && {mark('b', stop)} && {deck_idle}", "a breakpoint turn stands on both lanes")
+    assert "play to it" in bar.ev(f"{mark('b', stop)}.title"), bar.ev(f"{mark('b', stop)}.title")
+    bar.ev(f"{mark('b', stop)}.click(), true")
+    bar.until(f"{both(start + 16, start + 16)} && {deck_idle}", "a breakpoint clicked on B's lane is played to by both halves")
+    # Two lanes stand close. A's breakpoint and B's save point on the same
+    # turn each keep to their own rail, so neither covers the other.
+    point("there")
+    apart = bar.ev(f"(() => {{ const box = held => held.getBoundingClientRect(), dot = box({mark('a', stop)}),"
+                   f" pin = box({mark('b', flag('there'))}); return [dot.bottom, pin.top, Math.abs(dot.left - pin.left)]; }})()")
+    assert apart[0] <= apart[1] and apart[2] < 1, apart
+    forget()
+    bar.ev(f"{mark('a', flag('fork'))}.click(), true")
+    bar.until(f"{both(start + 6, start + 6)} && {deck_idle}", "a save point clicked on A's lane takes both halves to it")
+    assert calls("a")[0][:2] == ["/debug", "goto_save"], calls("a")
+    # Unlocked, a lane's marks are that half's alone, and so is going to one.
+    bar.click('[data-dbg-lock]')
+    bar.until("!debugSplit.locked", "the lock opens")
+    bar.until(half("b", bar_shown), "B shows its own panel again")
+    bar.ev(half("b", json.dumps("document.querySelector('[data-dbg=\"next\"]').click(), true")))
+    bar.until(both(start + 6, start + 7), "B walks on alone")
+    bar.ev(half("b", json.dumps("document.querySelector('[data-dbg=\"break-plus\"]').click(), true")))
+    own = f'i.stop[data-dbg-turn="{start + 17}"]'
+    bar.until(f"{mark('b', own)} && !{mark('a', own)}", "a breakpoint B sets by itself stands on B's lane alone")
+    forget()
+    bar.ev(f"{mark('b', flag('fork'))}.click(), true")
+    bar.until(both(start + 6, start + 6), "a save point clicked on B's lane takes B alone to it")
+    bar.until(half("b", "'!debugBusy'"), "B is done")
+    assert calls("a") == [] and calls("b") == [["/debug", "goto_save", None]], (calls("a"), calls("b"))
+
     bar.click('[data-dbg-split="keep-a"]')
     bar.until("!debugSplit", "the split closes")
     assert bar.ev(deck_shown) and not bar.ev("debugBar.classList.contains('dbg-merged')")
@@ -1330,8 +1375,9 @@ def main() -> int:
               "whose script came late.")
         check_the_lock(bar)
         print("the lock joins the two lanes and closes only on one turn, the host's deck is the one "
-              "panel of a locked split and each half's own comes back when it opens, and two "
-              "identical halves are played once.")
+              "panel of a locked split and each half's own comes back when it opens, two "
+              "identical halves are played once, and a lane shows its half's breakpoints and "
+              "save points and goes to the one that is clicked.")
         return 0
     finally:
         chrome.terminate()
