@@ -139,6 +139,229 @@ function CivvisUiGap.frame(dt, uiBefore)
 	g.wall = wall;
 end
 
+-- ★★★ A CIVVIS HOTSEAT SEAT WHOSE TURN IS UP AND NOTHING IS PLAYING IT.
+--
+-- Tournament 6, 2026-11-21, twice in two games: the map on a CIVVIS seat's
+-- turn, NEXT TURN lit, and the seat's controller silent -- 12 minutes at
+-- civvis-t6-20261121T131243Z t61 (the World Congress phase gives a seat a
+-- second turn inside the same game turn, which the controller had already
+-- booked as played; its own record said `ai_phase_stall`, `active_players:
+-- [1]`, on its own seat) and 7 minutes at civvis-t6-20261121T135836Z t180
+-- (the first turn after a save was loaded: a forced end turn, 84
+-- `turn_retry_settled`, then not one record). The outside harness can only
+-- click NEXT TURN with Civ VI in front and nobody at the Mac, so both tables
+-- sat until a watchdog killed them or somebody looked.
+--
+-- The controller cannot see this from inside: every one of its entry points
+-- goes through `CivvisSeat.gate`, which is shut while the hand-over's pause
+-- stands (`PlayerConfigurations[pid]:GetWantsPause()`, set by the shipped
+-- Base/Assets/UI/Popups/PlayerChange.lua:229 `SetWantsPause(bNewPause)` and
+-- released only by its Start Turn, :54 `OnOk` -> :57 `SetPause(false)`), and
+-- a game waiting on input publishes no game-core events to tick it. Hotseat
+-- hides the pause banner too (Panels/PausePanel.lua:77), so a pause left
+-- standing with no hand-over on screen looks exactly like a game waiting for
+-- NEXT TURN.
+--
+-- So the HUD watches the seat instead, from the two clocks that kept running
+-- through both stalls: this context's frame update, and the shipped clock
+-- label's own two-second timer (TopPanel.lua:516
+-- `Controls.TimeCallback:RegisterEndCallback( OnRefreshTimeTick )`, which was
+-- still repainting the time through the t180 stall). The seat's controller
+-- stamps `ExposedMembers.CivvisSeatBeat[seat]` on every pass
+-- (`CivvisSeat.beat`); while the seat's turn is active and that stamp does
+-- not move:
+--
+--   * the hand-over's pause standing WITHOUT its Start Turn dialog on screen
+--     for `SeatPauseGraceSeconds` (6) is released the way the dialog itself
+--     would (`SetWantsPause(false)` and `Network.BroadcastPlayerInfo()`,
+--     PlayerChange.lua:229-230) -> `hotseat_pause_released`;
+--   * `SeatQuietSeconds` (45) of a quiet controller is reported with what
+--     the engine says about the turn (`seat_quiet`: paused, turn complete
+--     sent, the first end-turn blocker, whether the hand-over is up), and
+--     the turn is ended with the shipped SHIFT+ENTER request
+--     (ActionPanel.lua:1099 `UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+--     { REASON = "UserForced" } )`) -> `seat_quiet_end_turn`. Today's 4,000
+--     seat turns took 5-8 s each; a seat idle 45 s on its own active turn is
+--     not thinking.
+--
+-- Only seconds this watch itself saw pass are counted (at most 3 a reading),
+-- so a leader screen that hides the HUD for a minute is not a quiet minute.
+-- A person's seat (`HotseatHumanSeats`), a game held by the operator
+-- (`CivvisOperatorHold`), a finished game and every single-player run are
+-- left alone: the watch arms only when `cfg.Hotseat` is set.
+CivvisSeatWatch = { quiet = 0, forces = 0, over = false };
+function CivvisSeatWatch.now()
+	local t = nil;
+	pcall(function() t = Automation.GetTime(); end);
+	if type(t) ~= "number" then pcall(function() t = os.time(); end); end
+	if type(t) ~= "number" or t ~= t then return nil; end
+	return t;
+end
+function CivvisSeatWatch.listed(list, pid)
+	if type(list) ~= "table" then return false; end
+	for _, seat in ipairs(list) do
+		if tonumber(seat) == pid then return true; end
+	end
+	return false;
+end
+function CivvisSeatWatch.reset()
+	local w = CivvisSeatWatch;
+	w.key, w.prev, w.lastBeat, w.pausedFor = nil, nil, nil, nil;
+	w.quiet, w.forces, w.reported, w.forced = 0, 0, nil, nil;
+end
+-- What the engine says about the seat's turn; every read guarded, a failed
+-- one left nil (and written as null).
+function CivvisSeatWatch.read(pid)
+	local s = { player = pid };
+	pcall(function() s.turn = Game.GetCurrentGameTurn(); end);
+	pcall(function() s.active = Players[pid]:IsTurnActive() == true; end);
+	pcall(function() s.paused = PlayerConfigurations[pid]:GetWantsPause() == true; end);
+	pcall(function() s.sent = UI.HasSentTurnComplete() == true; end);
+	pcall(function() s.can_end = UI.CanEndTurn() == true; end);
+	pcall(function() s.busy = UI.IsGameCoreBusy() == true; end);
+	pcall(function()
+		local blocker = NotificationManager.GetFirstEndTurnBlocking(pid);
+		if blocker ~= nil and blocker ~= EndTurnBlockingTypes.NO_ENDTURN_BLOCKING then
+			s.blocker = tostring(blocker);
+			for name, value in pairs(EndTurnBlockingTypes) do
+				if value == blocker then s.blocker = tostring(name); end
+			end
+		end
+	end);
+	pcall(function()
+		s.handover_hidden = ContextPtr:LookUpControl("/InGame/PlayerChange"):IsHidden() == true;
+	end);
+	pcall(function()
+		s.dialog_hidden = ContextPtr:LookUpControl("/InGame/PlayerChange/PopupAlphaIn"):IsHidden() == true;
+	end);
+	pcall(function()
+		s.end_game = ContextPtr:LookUpControl("/InGame/EndGameMenu"):IsHidden() == false;
+	end);
+	pcall(function() s.held = ExposedMembers.CivvisOperatorHold == true; end);
+	return s;
+end
+function CivvisSeatWatch.field(value)
+	if type(value) == "boolean" then return tostring(value); end
+	if type(value) == "number" and value == value then return string.format("%.14g", value); end
+	if type(value) == "string" then
+		return '"' .. value:gsub('[%c"\\]', "_") .. '"';
+	end
+	return "null";
+end
+function CivvisSeatWatch.report(kind, s, extra)
+	-- `t` first: it dates the record, and keeps the event bridge from taking
+	-- a later turn's identical report for one it has already copied.
+	local parts = { string.format('"t":%s', CivvisSeatWatch.field(CivvisSeatWatch.now())) };
+	for _, key in ipairs({ "turn", "player", "active", "paused", "sent", "can_end", "busy",
+			"blocker", "handover_hidden", "dialog_hidden" }) do
+		parts[#parts + 1] = string.format('"%s":%s', key, CivvisSeatWatch.field(s[key]));
+	end
+	for _, pair in ipairs(extra or {}) do
+		parts[#parts + 1] = string.format('"%s":%s', pair[1], CivvisSeatWatch.field(pair[2]));
+	end
+	CivvisVSyncAB.log(kind, table.concat(parts, ","));
+	-- The game writes its latest Automation.Log record only when the next one
+	-- is logged, and a stalled game logs nothing else: this delivers it.
+	CivvisVSyncAB.log("seat_watch_flush", string.format('"turn":%s', CivvisSeatWatch.field(s.turn)));
+end
+function CivvisSeatWatch.beat(source)
+	local w = CivvisSeatWatch;
+	if w.over then return; end
+	local now = w.now();
+	if now == nil or w.checked == now then return; end
+	w.checked = now;
+	local pid = -1;
+	pcall(function() pid = Game.GetLocalPlayer(); end);
+	if type(pid) ~= "number" or pid < 0 or not w.listed(cfg.HotseatSeats, pid)
+			or w.listed(cfg.HotseatHumanSeats, pid) then
+		w.reset();
+		return;
+	end
+	local s = w.read(pid);
+	if s.active ~= true or s.end_game == true or s.held == true then
+		w.reset();
+		return;
+	end
+	local key = pid .. ":" .. tostring(s.turn);
+	if w.key ~= key then
+		w.reset();
+		w.key = key;
+	end
+	-- Seconds this watch saw pass since its last reading, never a gap it slept through.
+	local dt = (type(w.prev) == "number" and now > w.prev) and math.min(now - w.prev, 3) or 0;
+	w.prev = now;
+	if s.paused == true then
+		-- The Start Turn dialog is up: the hand-over owns the pause and
+		-- CivvisControlAutoClose presses it (0.3 s, then every 2 s).
+		if s.handover_hidden == false and s.dialog_hidden == false then
+			w.pausedFor, w.quiet = nil, 0;
+			return;
+		end
+		w.pausedFor = (w.pausedFor or 0) + dt;
+		w.quiet = 0;
+		if w.pausedFor >= (tonumber(cfg.SeatPauseGraceSeconds) or 6) then
+			local waited = w.pausedFor;
+			w.pausedFor = nil;
+			local released = pcall(function()
+				PlayerConfigurations[pid]:SetWantsPause(false);
+				Network.BroadcastPlayerInfo();
+			end);
+			local still = nil;
+			pcall(function() still = PlayerConfigurations[pid]:GetWantsPause() == true; end);
+			w.report("hotseat_pause_released", s, {
+				{ "waited", waited }, { "released", released }, { "still_paused", still },
+				{ "source", source } });
+		end
+		return;
+	end
+	w.pausedFor = nil;
+	local beat = nil;
+	pcall(function() beat = ExposedMembers.CivvisSeatBeat[pid]; end);
+	if beat ~= w.lastBeat then
+		w.lastBeat, w.quiet = beat, 0;
+		return;
+	end
+	w.quiet = w.quiet + dt;
+	if w.quiet < (tonumber(cfg.SeatQuietSeconds) or 45) then return; end
+	local forceNow = type(beat) == "number" and s.sent ~= true
+		and w.forces < (tonumber(cfg.SeatQuietMaxForces) or 6)
+		and (w.forced == nil or now - w.forced >= (tonumber(cfg.SeatQuietForceEvery) or 20));
+	if w.reported == nil or now - w.reported >= 60 then
+		w.reported = now;
+		w.report("seat_quiet", s, {
+			{ "quiet", w.quiet }, { "controller_ran", type(beat) == "number" },
+			{ "forces", w.forces }, { "source", source } });
+	end
+	-- A seat no controller ever ran on has nothing of ours to end, and a turn
+	-- already sent complete is the engine's to finish.
+	if not forceNow then return; end
+	w.forced, w.forces = now, w.forces + 1;
+	local asked = pcall(function()
+		UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
+	end);
+	w.report("seat_quiet_end_turn", s, {
+		{ "quiet", w.quiet }, { "asked", asked }, { "forces", w.forces }, { "source", source } });
+end
+function CivvisSeatWatch.arm()
+	-- The shipped clock label's timer, kept: LateInitialize registers whatever
+	-- `OnRefreshTimeTick` names when the context initializes, after this file.
+	local stockTick = OnRefreshTimeTick;
+	if type(stockTick) == "function" then
+		OnRefreshTimeTick = function(...)
+			pcall(CivvisSeatWatch.beat, "clock");
+			return stockTick(...);
+		end;
+	end
+	pcall(function()
+		Events.TeamVictory.Add(function() CivvisSeatWatch.over = true; end);
+	end);
+	CivvisVSyncAB.log("seat_watch_armed", string.format('"clock":%s,"quiet_seconds":%s',
+		tostring(type(stockTick) == "function"),
+		CivvisSeatWatch.field(tonumber(cfg.SeatQuietSeconds) or 45)));
+end
+local seatWatch = cfg.Play ~= false and cfg.CivvisDecides and cfg.Hotseat == true;
+if seatWatch then CivvisSeatWatch.arm(); end
+
 if cfg.Play ~= false and cfg.CivvisDecides then
 	local elapsed = 0;
 	local abTurns = math.floor(tonumber(cfg.VSyncABTurns) or 0);
@@ -163,6 +386,7 @@ if cfg.Play ~= false and cfg.CivvisDecides then
 		elapsed = 0;
 		pcall(function() CivvisMapView.Pulse(); end);
 		pcall(function() LuaEvents.CivvisControlPulse("TopPanel"); end);
+		if seatWatch then pcall(CivvisSeatWatch.beat, "frame"); end
 		if abTurns > 0 then pcall(CivvisVSyncAB.pulse, abTurns); end
 	end);
 end

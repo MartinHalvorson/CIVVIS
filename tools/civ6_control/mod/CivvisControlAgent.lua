@@ -60,6 +60,19 @@ function CivvisSeat.gate(handler)
 		if CivvisSeat.mine() then return handler(...); end
 	end;
 end
+-- This seat's controller ran a pass: the stamp the HUD's seat watch reads
+-- (CivvisControlHeartbeat.lua, `CivvisSeatWatch`), which ends a turn this
+-- controller has stopped playing. `Automation.GetTime()` is the one clock
+-- both contexts read; single-player runs have no seat and no watch.
+function CivvisSeat.beat()
+	if CivvisSeat.seat == nil then return; end
+	local beats = ExposedMembers.CivvisSeatBeat;
+	if type(beats) ~= "table" then
+		beats = {};
+		ExposedMembers.CivvisSeatBeat = beats;
+	end
+	beats[CivvisSeat.seat] = Automation.GetTime();
+end
 -- Whether `name` is a civilization's own Holy Site. Russia's Lavra is ordered
 -- under its own type (`DistrictReplaces`, Districts.xml:34), so a test for
 -- DISTRICT_HOLY_SITE alone never sees it.
@@ -27552,6 +27565,7 @@ local function tick()
 	inTick = true;
 	CivvisQueue.controllerTicks = (CivvisQueue.controllerTicks or 0) + 1;
 	CivvisQueue.lastTickAt = CivvisClock.now();
+	pcall(CivvisSeat.beat);
 	local ok, err = pcall(function()
 		-- ★★★★ RETIRE, WHICH IS HOW A QUIT GAME GETS A RESULT AT ALL.
 		--

@@ -483,6 +483,29 @@ class UnattendedTableTest(unittest.TestCase):
                                  "no NEXT TURN on the map")
             self.assertEqual(len(clicks), 1)
 
+    def test_the_huds_seat_watch_is_told_in_the_log(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            lines: list[str] = []
+            monitor = hotseat.Monitor(run_dir, "hs", [0, 1], game_args(players=6, civvis_seats=2),
+                                      lines.append)
+            self.addCleanup(monitor.close)
+            with (run_dir / "events.jsonl").open("a") as out:
+                for event in (
+                    {"kind": "seat_quiet", "turn": 61, "player": 1, "quiet": 45, "paused": False,
+                     "sent": False, "blocker": None, "handover_hidden": True, "controller_ran": True},
+                    {"kind": "seat_quiet_end_turn", "turn": 61, "player": 1, "asked": True, "forces": 1},
+                    {"kind": "hotseat_pause_released", "turn": 180, "player": 0, "waited": 6,
+                     "still_paused": False},
+                ):
+                    out.write(json.dumps(event) + "\n")
+            monitor.poll()
+            self.assertEqual(monitor.seat_stalls, 1)
+            text = "\n".join(lines)
+            self.assertIn("seat 1 quiet for 45 s on its own turn", text)
+            self.assertIn("the HUD ended seat 1's quiet turn (asked True, request 1)", text)
+            self.assertIn("seat 0's hand-over pause stood 6 s with no Start Turn on screen", text)
+
     def test_the_table_is_lost_only_when_both_seats_are_eliminated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp)
