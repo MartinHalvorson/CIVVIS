@@ -3524,6 +3524,9 @@ const RESPONSIVE_TEXT_RULES = [
   // Max Speed sits alone above the age, so it is fitted on its own.
   {selector:"#playerhud .turn-pace-line", min:8.5, max:12, slack:4},
   {selector:"#victoryhud .hud-section-heading > span", min:8.5, max:12, parentWidth:true},
+  // "CIVVIS Arena Stats" is fitted at most widths, where a shorter heading
+  // never was, so its run is measured where it lands and not by the ratio.
+  {selector:"#sim-stats-title > span", min:8.5, max:12, parentWidth:true, exact:true},
   {selector:".dossier-window .dossier-title", min:11, max:18},
   {selector:".dossier-window .dossier-tag", min:9, max:11},
   {selector:".dossier-window .dossier-btn", min:10, max:14},

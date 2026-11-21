@@ -4426,6 +4426,16 @@
   }
   #victoryhud > .sim-stats-region .hud-region-bar { margin-right: 27px; }
   #victoryhud > .sim-stats-region .hud-region-bar > .hud-section-heading { width: auto; }
+  /* "CIVVIS Arena Stats" on one line needs more bar than a narrow panel has,
+     even at the smallest size a heading is fitted to. Under that width it
+     stands on two lines, CIVVIS over ARENA STATS, and is fitted there. The
+     span may be narrower than its words, so the fitter measures the run
+     against the room it really has. */
+  #victoryhud > .sim-stats-region .hud-region-bar { container: sim-stats-bar / inline-size; }
+  #sim-stats-title > span { min-width: 0; }
+  @container sim-stats-bar (max-width: 157px) {
+    #sim-stats-title > span { white-space: normal; text-align: center; line-height: 1.1; }
+  }
   #victoryhud .hud-region-bar > .hud-section-heading {
     position: relative; flex: 1 1 auto; min-width: 0; justify-content: center;
     margin: 0; padding-left: 10px; color: #c7d3ce; font-size: var(--type-secondary);
@@ -4452,10 +4462,14 @@
     flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 3px;
     padding: 0 3px 2px; overflow-y: auto; overscroll-behavior: contain;
   }
-  .sim-stats-summary-row { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .sim-stats-summary {
-    flex: 1 1 auto; min-width: 0; color: #c7d3ce; font-size: var(--type-label); white-space: nowrap;
-  }
+  /* "11-21 start, 128 games, avg 187 turns" with Reset at its right. A panel
+     too narrow for that on one line breaks it after the start and never
+     inside a part: Reset floats beside the first line, which is as tall as
+     the control, and the games take the whole of the second. */
+  .sim-stats-summary-row { flex: 0 0 auto; display: flow-root; min-width: 0; overflow: hidden; }
+  .sim-stats-summary { min-width: 0; color: #c7d3ce; font-size: var(--type-label); line-height: 1.5; }
+  .sim-stats-summary::first-line { line-height: 1.9; }
+  .sim-stats-summary > span { white-space: nowrap; }
   .sim-stats-controls { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
   .sim-stats-view, .sim-stats-clear {
     margin: 0; padding: 1px 7px; border: 1px solid #526a618f; border-radius: 6px;
@@ -4464,7 +4478,7 @@
   }
   .sim-stats-view:hover, .sim-stats-clear:hover { color: #fff; transform: none; box-shadow: none; }
   .sim-stats-view.active { color: #ecd37e; border-color: #d7b66a8c; background: #d7b66a1a; }
-  .sim-stats-summary-row .sim-stats-clear { flex: 0 0 auto; margin-left: auto; }
+  .sim-stats-summary-row .sim-stats-clear { float: right; margin-left: 6px; }
   .sim-stats-clear:hover { border-color: #9b6c66; background: #35201e; }
   .sim-stats-rows { min-height: 0; display: flex; flex-direction: column; gap: 1px; }
   .sim-stat-row {
