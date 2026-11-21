@@ -643,13 +643,13 @@ program has no forks yet: its server does not know `/forks`.
 A search plays many futures of one world and reads how each came out. These
 are the pieces it is made of and what each costs, measured in the browser
 build (six seats, seed 7, Continents, node on an 18-core computer busy with
-other work; the builds are named in `docs/SIMULATOR_PERFORMANCE.md` under
-2026-11-21).
+other work; published builds `e188e21` and `6bc58ca`, and the qualification
+build of `65cafca` for the rivals, the conditions and the search below).
 
 | Piece | How it is asked | What it costs |
 |-------|-----------------|---------------|
-| A turn played and only its outcome read | `step` with `"lean": true` | 34 ms a turn over turns 1 to 20, 69 ms over 40 to 60, 107 ms over 80 to 100. It is the seats' turns and nothing else: nine tenths of it is the Civ AIs deciding |
-| The same turn with the page's document | `step` | 4 ms more at turn 40, 15 ms and a megabyte at turn 100 |
+| A turn played and only its outcome read | `step` with `"lean": true` | 36 ms a turn over turns 1 to 20, 69 ms over 40 to 60, 107 ms over 80 to 100. It is the seats' turns and nothing else: nine tenths of it is the Civ AIs deciding |
+| The same turn with the page's document | `step` | 3 ms more at turn 40, 15 ms and a megabyte at turn 100 |
 | Back to a turn already played | `jump`, `back` with `"lean": true` | 0.5 ms |
 | The futures side by side | `POST /forks`, then `?fork=K` | 82 ms for four forks of a 79 MB engine; each fork is the engine's memory again (76 MB at turn 30, 140 MB at 60, 268 MB at 100) |
 | Stop when something becomes true | `breakpoints` with `conditions` | one reading of the whole table a turn, about a fifth on top of a turn at turns 80 to 105 |
