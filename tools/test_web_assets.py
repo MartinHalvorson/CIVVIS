@@ -1589,6 +1589,167 @@ expect(far(film.end, goal) < 1e-9 && film.hull >= 20.4 && !film.leaving, "a trip
         self.assertIn("drawSkyLaunches(crews, placements, camera, radius, centerX, centerY, now, crowd);", sky)
 
 
+LIVE_CLOCK_SCENARIOS = r"""
+let now = 1_000_000;
+Date.now = () => now;
+const timers = [];
+const setInterval = (fn, ms) => { timers.push([fn.name, ms]); };
+// The value on the plate: its words and the attribute the stylesheet prints.
+const writes = {words: 0, hundredths: 0, lookups: 0};
+const value = () => {
+  const dataset = {};
+  let hundredths = "00", words = "0:00";
+  Object.defineProperty(dataset, "hundredths", {
+    get: () => hundredths, set: next => { hundredths = next; writes.hundredths++; }});
+  return {isConnected: true, dataset,
+    get textContent() { return words; },
+    set textContent(next) { words = next; writes.words++; }};
+};
+let plate = value();
+const document = {querySelector: selector => {
+  if (selector !== "[data-live-time]") throw new Error(`looked for ${selector}`);
+  writes.lookups++;
+  return plate;
+}};
+__BLOCK__
+const expect = (ok, note) => { if (!ok) throw new Error(note); };
+const reads = (ms, text, hundredths) => {
+  liveClock.ms = ms; liveClock.runningSince = null;
+  const reading = liveClockReading();
+  expect(reading.text === text && reading.hundredths === hundredths,
+    `${ms} ms read ${reading.text}.${reading.hundredths}, wanted ${text}.${hundredths}`);
+};
+reads(0, "0:00", "00");
+reads(9, "0:00", "00");
+reads(10, "0:00", "01");
+reads(12_345, "0:12", "34");
+reads(59_999, "0:59", "99");
+reads(60_000, "1:00", "00");
+reads(754_560, "12:34", "56");
+reads(3_599_990, "59:59", "99");
+reads(5_025_678, "1:23:45", "67");
+// The hundredths have no timer: the half-second tick is the only one.
+expect(JSON.stringify(timers) === JSON.stringify([["paintLiveClock", 500]]),
+  `the clock's timers are ${JSON.stringify(timers)}`);
+// A stopped clock posts nothing with a frame, and does not look for the plate.
+liveClock.ms = 4_000; liveClock.runningSince = null;
+paintLiveClockWithFrame();
+expect(writes.lookups === 0 && writes.words === 0 && writes.hundredths === 0, "a stopped clock posted");
+// A running one posts with every frame that has a new hundredth, and writes
+// the words only when the second turns.
+liveClock.runningSince = now;
+paintLiveClockWithFrame();
+expect(plate.textContent === "0:04" && plate.dataset.hundredths === "00" &&
+       writes.words === 1 && writes.hundredths === 0 && writes.lookups === 1, "the first frame");
+for (const [later, text, hundredths] of [[16, "0:04", "01"], [33, "0:04", "03"], [50, "0:04", "05"]]) {
+  now = 1_000_000 + later;
+  paintLiveClockWithFrame();
+  expect(plate.textContent === text && plate.dataset.hundredths === hundredths, `the frame at ${later} ms`);
+}
+expect(writes.words === 1 && writes.hundredths === 3 && writes.lookups === 1,
+  `three frames wrote ${JSON.stringify(writes)}`);
+// Two frames inside one hundredth are one post.
+now = 1_000_000 + 52;
+paintLiveClockWithFrame();
+expect(writes.hundredths === 3, "a frame with nothing new posted");
+// The second turns: the words and the fraction come from one reading.
+now = 1_000_000 + 1_004;
+paintLiveClockWithFrame();
+expect(plate.textContent === "0:05" && plate.dataset.hundredths === "00" && writes.words === 2,
+  "the second did not turn with its fraction");
+// The plate was rebuilt: the next frame finds the new value.
+plate.isConnected = false;
+plate = value();
+now = 1_000_000 + 1_250;
+paintLiveClockWithFrame();
+expect(writes.lookups === 2 && plate.textContent === "0:05" && plate.dataset.hundredths === "25",
+  "a rebuilt plate was not followed");
+// No plate at all (a hand-played game has no stopwatch) is not an error.
+plate.isConnected = false;
+plate = null;
+paintLiveClockWithFrame();
+paintLiveClock();
+console.log("live clock checks passed");
+"""
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class LiveTimeCountsHundredthsWithTheFramesAlreadyPainting(unittest.TestCase):
+    """Operator, 2026-11-21: "add hundredths of a second to the live time count
+    (not every one will post... only when frames are already updating".
+
+    The fraction is posted by the two calls that put a picture of the map on
+    screen and by the half-second tick the seconds already had. It is an
+    attribute the stylesheet prints, because the type fitter answers every
+    change of words in the masthead by measuring all of it.
+
+    The stopwatch is a script of its own, ahead of the renderer: app.js stood
+    three lines under this file's ceiling when the hundredths arrived."""
+
+    def setUp(self):
+        self.source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        self.clock = (ASSETS / "app_clock.js").read_text(encoding="utf-8")
+        self.page = INDEX.read_text(encoding="utf-8")
+
+    def cut(self, start, end):
+        begin = self.source.index(start)
+        return self.source[begin:self.source.index(end, begin)]
+
+    def test_the_stopwatch_loads_ahead_of_the_renderer_that_calls_it(self):
+        scripts = page_scripts()
+        self.assertLess(scripts.index("app_clock.js"), scripts.index("app.js"))
+        self.assertTrue(self.clock.startswith('"use strict";'))
+        for name in ("liveClockReading", "syncLiveClockRun", "syncLiveClock", "paintLiveClock",
+                     "paintLiveClockWithFrame"):
+            self.assertIn(f"\nfunction {name}(", self.clock)
+            self.assertNotIn(f"function {name}(", self.source)
+        for call in ("syncLiveClockRun();", "syncLiveClock(st, newWorld);", "liveClockReading()"):
+            self.assertIn(call, self.source)
+
+    def test_the_reading_and_when_it_is_posted(self):
+        clock = self.clock
+        block = (clock[clock.index("let liveClock = {seed: undefined"):
+                       clock.index("// Start or stop the accumulator")]
+                 + clock[clock.index("let liveClockValue = null;"):])
+        done = subprocess.run(
+            [NODE, "-e", LIVE_CLOCK_SCENARIOS.replace("__BLOCK__", block)],
+            capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr.strip())
+        self.assertIn("live clock checks passed", done.stdout)
+
+    def test_the_frames_that_carry_it_are_the_maps_own(self):
+        for painter in ("function draw() {", "function drawPlanetGpuAnimationFrame() {"):
+            body = self.cut(painter, "\n}\n")
+            self.assertEqual(body.count("paintLiveClockWithFrame();"), 1, painter)
+        # Nothing else asks for a frame on the clock's account.
+        self.assertEqual(self.source.count("paintLiveClockWithFrame()"), 2)
+        self.assertEqual(self.clock.count("paintLiveClockWithFrame()"), 1)
+        self.assertEqual((self.source + self.clock).count("setInterval(paintLiveClock"), 1)
+        self.assertNotIn("requestAnimationFrame(paintLiveClock", self.source + self.clock)
+
+    def test_the_fraction_is_not_a_change_of_words(self):
+        # The fitter follows text and child changes in the masthead, never
+        # attributes, and the plate's value carries the fraction as one.
+        self.assertIn(
+            "responsiveTypeMutationObserver.observe(root, {subtree:true, childList:true, characterData:true});",
+            self.source)
+        self.assertIn('`<b data-live-time data-hundredths="${liveTime.hundredths}">${liveTimeText}</b></div>`',
+                      self.source)
+        self.assertIn('.turn-live b[data-hundredths]::after { content: "." attr(data-hundredths); font-size: .78em; }',
+                      self.page)
+        # What a screen reader is told stays in whole seconds.
+        self.assertIn("(liveTimeText ? `live time ${liveTimeText}; ` : ``) +", self.source)
+
+    def test_the_row_is_fitted_as_one_reading(self):
+        self.assertIn('{selector:"#playerhud .turn-live", min:10, max:14},', self.source)
+        self.assertNotIn('"#playerhud .turn-live .turn-label"', self.source)
+        row = self.page[self.page.index("  .turn-live {"):self.page.index("  .turn-era {")]
+        for piece in ("justify-content: safe center;", "margin: 0 12px 4px 0;", "font-size: 14px;",
+                      ".turn-live .turn-label { font-size: .8em; }", "font: 850 1.04em/1 var(--font-ui);",
+                      "font-variant-numeric: tabular-nums;"):
+            self.assertIn(piece, row)
+
+
 @unittest.skipUnless(NODE, "no node on this host; CI runners have one")
 class LaunchesLeaveTheirSpaceport(unittest.TestCase):
     """A launch starts at its Spaceport and flies its own path, or is not drawn.
