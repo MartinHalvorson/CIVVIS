@@ -87,19 +87,6 @@ fn start_automatic_browser_next_game(session: &mut Session, queued: Option<Param
     *session = browser_session(params);
 }
 
-fn reseat_browser_session_from_host(session: &mut Session) {
-    let view = session.view_player;
-    let params = session.params.clone();
-    let mut next = browser_session(params);
-    next.view_player = view.filter(|pid| {
-        next.game
-            .players
-            .get(*pid)
-            .is_some_and(|player| !player.is_minor && !player.is_barbarian)
-    });
-    *session = next;
-}
-
 /// Run `f` against this page's session, creating the opening world the first
 /// time anything asks for it.
 fn with_session<T>(f: impl FnOnce(&mut Session) -> T) -> T {
@@ -573,10 +560,15 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
         // A page in this build is the whole runtime, so there is no successor
         // process to hand a new world to: the supervised route and the plain
         // one are the same act.
+        //
+        // The session `new_game` leaves is the one that is played. It used
+        // to be thrown away for a second one built from the same setup: the
+        // same world made twice for every new game, and without the rivals
+        // the request had just seated (`Session::seat_rivals`), so choosing
+        // who to play against did nothing in this build.
         ("POST", "/new") | ("POST", "/supervisor-new") => with_session(|session| {
             let result = crate::routes::new_game(session, &parsed);
             if result.is_ok() {
-                reseat_browser_session_from_host(session);
                 let paused = parsed["paused"]
                     .as_bool()
                     .unwrap_or_else(|| PAUSED.with(Cell::get));

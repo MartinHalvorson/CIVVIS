@@ -13414,6 +13414,18 @@ fn a_new_game_seats_the_rivals_a_person_asked_for() {
         .start_new_game(&json!({"seed": 13, "spectate": false, "force": true}))
         .expect("the house fleet needs no name");
     assert_eq!(session.rival_strategy_name(), None);
+
+    // The browser build plays the session this leaves. Building another from
+    // its setup made every new world twice and unseated the rivals.
+    let router = include_str!("../wasm.rs");
+    let arm = router
+        .split("(\"POST\", \"/new\") | (\"POST\", \"/supervisor-new\") =>")
+        .nth(1)
+        .expect("the browser build serves /new");
+    let arm = &arm[..arm.find("decorate_browser").expect("the answer")];
+    assert!(arm.contains("crate::routes::new_game(session, &parsed)"));
+    assert!(!arm.contains("browser_session") && !arm.contains("Session::new"));
+    assert!(!router.contains("reseat_browser_session"));
 }
 
 /// Auto-play used to be one button that ran whichever agent the fleet
