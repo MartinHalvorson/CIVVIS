@@ -28,6 +28,13 @@ Each series carries its games in the order they were played (the civ, how
 the game ended, the turn), the wins by victory type, the losses by how they
 were lost, and a record per level when its games were not all at one level.
 
+A tournament whose result video is on the CIVVIS YouTube channel links it
+(operator 2026-11-21: "we can link to the youtube tournament result
+videos"). The definitions file lists them under `videos`, by the
+tournament's number as the page shows it, and a series carries its link as
+`video`. Only a YouTube watch link is carried; anything else is left out and
+said on stderr.
+
 Like the home page's civ table this reads a branch every finished game
 writes to, from inside the script that publishes the whole site. So a
 definition or a line it cannot count costs the page its record, said on
@@ -48,6 +55,22 @@ import home_rankings as ranks
 SLOT = re.compile(
     r'(<script type="application/json" id="tournaments-data">)(.*?)(</script>)', re.S
 )
+
+#: A result video is a video on YouTube, named by its eleven-character id in
+#: either of the two addresses YouTube gives for one.
+VIDEO = re.compile(r"https://(?:www\.youtube\.com/watch\?v=|youtu\.be/)([\w-]{11})(?:[?&#].*)?")
+
+
+def video(videos: dict, number: int) -> str:
+    """A tournament's result video as its YouTube watch page, or `""`."""
+    listed = videos.get(str(number))
+    if not listed:
+        return ""
+    found = VIDEO.fullmatch(str(listed))
+    if not found:
+        print(f"tournaments_page: Tournament {number}'s video is not a YouTube link; left out", file=sys.stderr)
+        return ""
+    return f"https://www.youtube.com/watch?v={found[1]}"
 
 
 def ending(row: dict) -> tuple[bool, str]:
@@ -86,7 +109,7 @@ def tally(labels: list[str]) -> list[list]:
     return [[label, count] for label, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))]
 
 
-def series_view(row: dict, spec: dict, names: list[str]) -> dict:
+def series_view(row: dict, spec: dict, names: list[str], videos: dict) -> dict:
     """A series as the page draws it: the table's row and its games."""
     games = [game(result, names) for _, result in row["played"]]
     levels = sorted({g["level"] for g in games if g["level"]})
@@ -98,6 +121,7 @@ def series_view(row: dict, spec: dict, names: list[str]) -> dict:
         "note": row["note"],
         "start": row["start"],
         "end": row["end"],
+        "video": video(videos, row["id"]),
         "games": row["games"],
         "size": row["size"],
         "wins": row["wins"],
@@ -134,11 +158,14 @@ def passed_over(spec: dict, rows: list[dict]) -> bool:
     return any(key >= end and utc > before for key, utc in played)
 
 
-def record(rows: list[dict], specs: list[dict], names: list[str]) -> dict:
-    """The page's three lists and the totals over every game counted."""
+def record(rows: list[dict], specs: list[dict], names: list[str], videos: dict | None = None) -> dict:
+    """The page's three lists and the totals over every game counted.
+    `videos` is the definitions file's own: a result video's address by the
+    number of its tournament."""
     series = ranks.tournament_series(rows, specs, detail=True) or []
     started = {row["definition"] for row in series}
-    views = [series_view(row, specs[row["definition"]], names) for row in series]
+    videos = videos if isinstance(videos, dict) else {}
+    views = [series_view(row, specs[row["definition"]], names, videos) for row in series]
     number = max((view["id"] for view in views), default=0)
     scheduled = []
     for place, spec in enumerate(specs):
@@ -179,10 +206,11 @@ def tournaments(source: pathlib.Path) -> dict | None:
     if rows is None:
         return None
     try:
-        specs = json.loads(path.read_text(encoding="utf-8")).get("tournaments") or []
+        defined = json.loads(path.read_text(encoding="utf-8"))
+        specs = defined.get("tournaments") or []
         civs = source / "data" / "civs.json"
         names = list(json.loads(civs.read_text(encoding="utf-8"))) if civs.is_file() else []
-        return record(rows, specs, names)
+        return record(rows, specs, names, defined.get("videos"))
     except Exception as error:  # noqa: BLE001 - see the module's last paragraph
         print(f"tournaments_page: the tournaments could not be read ({error!r}); no record", file=sys.stderr)
         return None

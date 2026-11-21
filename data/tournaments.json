@@ -33,8 +33,17 @@
     "scheduling a tournament is adding its definition to this list. A definition none of whose games has finished is listed on the",
     "Tournaments page as scheduled, in the order of this list, numbered on from the last tournament begun. One that is to wait its turn",
     "owns a tag prefix (`civvis-t7-`), as Tournament 6 does, so it can be defined before the games ahead of it are played.",
-    "An optional `idea` says in a sentence what the tournament tests; the page shows it under the tournament's name."
+    "An optional `idea` says in a sentence what the tournament tests; the page shows it under the tournament's name.",
+    "Operator 2026-11-21 ~07:00Z: \"on our new tournaments page we are building out. we can link to the youtube tournament result videos.\":",
+    "`videos` names a tournament's result video on the CIVVIS YouTube channel, by the tournament's number as the page shows it (a",
+    "definition played as repeated series is several tournaments, so the link cannot sit on a definition). The page links it under the",
+    "tournament's name. The operator posts the videos; add a line here when one is up. Only a YouTube watch link is linked."
   ],
+  "videos": {
+    "1": "https://www.youtube.com/watch?v=an7y2IlGhU0",
+    "3": "https://www.youtube.com/watch?v=HgqxiWQKCqc",
+    "4": "https://www.youtube.com/watch?v=4pQAMeV5W2Q"
+  },
   "tournaments": [
     {
       "name": "Lv 8 Deity series",

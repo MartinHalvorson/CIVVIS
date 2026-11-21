@@ -2294,8 +2294,14 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
         // The site's pages in the viewer's order, this one marked as the
         // page on screen, Tournaments saying what it lists and the other
         // two saying in the viewer's own words what they open, then the
-        // game itself. They stand beside the title, where the viewer's
-        // masthead keeps the same five.
+        // game itself. They stand to the left of the title (operator,
+        // 2026-11-21: "on home, lets have the home/civvis/ai debugger/civ 6
+        // button stack on the left side, to the left of civvis.ai"), so the
+        // column is the first thing in the header and the title follows it.
+        concat!(
+            "<div class=\"site-brand\">\n",
+            "      <!-- The site is four pages,",
+        ),
         concat!(
             "<nav class=\"site-nav\" aria-label=\"CIVVIS sites\">\n",
             "        <a class=\"site-link\" href=\"./\" aria-current=\"page\">Home</a>\n",
@@ -2309,7 +2315,8 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
             "        <a class=\"site-link\" ",
             "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
             "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
-            "      </nav>\n    </div>",
+            "      </nav>\n      <div class=\"site-lockup\">\n",
+            "        <h1 class=\"site-title\">CIVVIS<span>.ai</span></h1>",
         ),
         // They read as the viewer's links do, in capitals and one to a
         // line, and the page on screen is the gold one.
