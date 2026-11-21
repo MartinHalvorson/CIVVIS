@@ -18,33 +18,42 @@ on a Continents map at Online speed, 250 turns:
   that plays them, not in the repository, so the counts come from a snapshot,
   `data/research/self_play_endings.json`, which `--self-play` rebuilds from
   the batch directories (one game per seed: the victory and the turn).
-- **against Deity**: one CIVVIS AI agent inside Civilization VI against the
-  game's own AI at Deity (Lv 8). These are the verification games, read off
+- **against the game's AI**: one CIVVIS AI agent inside Civilization VI
+  against the game's own AI. These are the verification games, read off
   `results.jsonl` on the ledger branch at publish, so the figures move with
-  every finished game. A game counts once however many runs it took, and only
-  a game that ended in a victory, ours or a rival's, has a victory type and a
-  turn; an elimination or a stopped game has neither and is left out. Some
-  series were played to a shorter limit (170, 160 and 120 turns in the Score
-  series of 2026-11-12 to 15), where the limit's Score victory and the
-  victories it cut off would bend the chart, so a game counts only when its
-  run summary on the ledger (`runs/<tag>/summary.json`) says Online speed and
-  a limit of at least 250 turns. A run with no summary is left out too.
+  every finished game. They are kept apart by the level the AI played at,
+  Settler (Lv 1) to Deity (Lv 8), and the page draws one level at a time
+  (operator 2026-11-21: "an option to select by level too. so i could for
+  example go to level 4 and see the win rate of civvis against level 4"),
+  opening on Deity, where most of them were played. A game counts once
+  however many runs it took, and only a game that ended in a victory, ours or
+  a rival's, has a victory type and a turn; an elimination or a stopped game
+  has neither and is left out. Some series were played to a shorter limit
+  (170, 160 and 120 turns in the Score series of 2026-11-12 to 15), where the
+  limit's Score victory and the victories it cut off would bend the chart, so
+  a game counts only when its run summary on the ledger
+  (`runs/<tag>/summary.json`) says Online speed and a limit of at least 250
+  turns. A run with no summary is left out too, and so is a table with more
+  than one CIVVIS agent at it, where a win is either agent's.
 
 The record holds, for three windows of each kind (its last 7 days, its last
 30 days, every game), the games counted and for each victory type: the games
-it ended, the CIVVIS wins among them (Deity only; in self-play every winner is
-a CIVVIS agent), the median turn, and the count on each turn from 1 to 250.
+it ended, the CIVVIS wins among them (against the AI only; in self-play every
+winner is a CIVVIS agent), the median turn, and the count on each turn from 1
+to 250. The games against the AI are a kind per level, under `levels`, and a
+level nobody has played is not in it.
 A victory CIVVIS won at least once also holds CIVVIS's wins on each turn
-(`won_turns`), so the page can draw the Deity games three times (operator
+(`won_turns`), so the page can draw a level's games three times (operator
 2026-11-21: "start with all victories by type along timeline, then just the
 deity ai wins, then the civvis wins"): what is left of a turn's count after
-CIVVIS's wins is the Deity AI's.
+CIVVIS's wins is the AI's.
 The page groups the turns into spans itself; a single turn matters, because
 the Diplomatic victories land on the World Congress's own turns (185, 205,
 225 and 245 at Online speed).
-A window is measured back from the kind's own newest game, so a snapshot left
-unrefreshed still shows its last week rather than an empty one, and the page
-says which days each window holds.
+A window is measured back from the kind's own newest game, a level's from
+that level's, so a snapshot left unrefreshed, or a level last played weeks
+ago, still shows its last week rather than an empty one, and the page says
+which days each window holds.
 
 Like the home page's tables this runs inside the script that publishes the
 whole site, so what it cannot read costs the page its figures, said on
@@ -83,7 +92,11 @@ LEDGER = {
 
 #: The table both kinds are played at, and the game's length in turns.
 TURNS = 250
-DEITY = {"players": 6, "map": "Continents.lua"}
+TABLE = {"players": 6, "map": "Continents.lua"}
+
+#: The level the page opens on: Deity, the level most of the games against
+#: the AI were played at.
+OPENING_LEVEL = 8
 
 #: The windows, newest first: days back from a kind's newest game (`None` is
 #: every game).
@@ -201,15 +214,24 @@ def full_length(limit: tuple | None) -> bool:
     return speed == "GAMESPEED_ONLINE" and isinstance(max_turns, int) and max_turns >= TURNS
 
 
-def deity_groups(rows: list[dict], limit=lambda tags: {}) -> list[dict]:
-    """The Deity verification games that ended in a victory, a group per day
-    the game began. `limit` answers each ending run's speed and turn limit
-    (`limits`); a game not played to the full length is left out."""
+def level_name(level: int) -> str:
+    """A level as the site writes it: `Lv 4 Prince`."""
+    return f"Lv {level} {ranks.CIV6_RUNGS[level - 1].title()}"
+
+
+def level_groups(rows: list[dict], limit=lambda tags: {}) -> dict[int, list[dict]]:
+    """The verification games that ended in a victory, by the level the
+    game's AI played at (Deity is 8): for each level a group per day a game
+    began. `limit` answers each ending run's speed and turn limit (`limits`);
+    a game not played to the full length is left out. So is a table with more
+    than one CIVVIS agent at it (its row names them all, `A+B`): either agent
+    winning is a win there, which is not one agent's chance against the AI.
+    A level with no game counted is not in the answer."""
     games: dict[str, list[dict]] = {}
     for row in rows:
-        if ranks.level(row.get("difficulty")) != 8:
+        if ranks.level(row.get("difficulty")) is None or "+" in str(row.get("civ") or ""):
             continue
-        if any(row.get(key) != value for key, value in DEITY.items()):
+        if any(row.get(key) != value for key, value in TABLE.items()):
             continue
         key = row.get("game") or row.get("tag")
         if key and row.get("outcome") in ranks.OUTCOMES:
@@ -222,11 +244,12 @@ def deity_groups(rows: list[dict], limit=lambda tags: {}) -> list[dict]:
         if ending["outcome"] in ("win", "rival_victory") and victory and isinstance(turn, int) and 1 <= turn <= TURNS:
             endings[key] = (ending, victory, turn)
     known = limit([ending.get("tag") or key for key, (ending, _, _) in endings.items()])
-    days: dict[str, dict] = {}
+    levels: dict[int, dict[str, dict]] = {}
     for key, (ending, victory, turn) in endings.items():
         if not full_length(known.get(ending.get("tag") or key)):
             continue
         day = ranks.began(key, games[key])
+        days = levels.setdefault(ranks.level(ending.get("difficulty")), {})
         group = days.setdefault(day, {"day": day, "games": 0, "turns": {}, "won": {}})
         group["games"] += 1
         tally = group["turns"].setdefault(victory, {})
@@ -234,7 +257,7 @@ def deity_groups(rows: list[dict], limit=lambda tags: {}) -> list[dict]:
         if ending["outcome"] == "win":
             tally = group["won"].setdefault(victory, {})
             tally[turn] = tally.get(turn, 0) + 1
-    return sorted(days.values(), key=lambda g: g["day"])
+    return {level: sorted(days.values(), key=lambda g: g["day"]) for level, days in sorted(levels.items())}
 
 
 def self_play_groups(snapshot: dict) -> list[dict]:
@@ -269,15 +292,23 @@ def research(source: pathlib.Path) -> dict | None:
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         print(f"research_page: no self-play figures ({error})", file=sys.stderr)
         out["self_play"] = None
+    # The games against the AI, a kind per level under the level's number;
+    # the page opens on `level`, or on the highest level played when nobody
+    # has played that one.
+    out["levels"] = {}
     try:
         rows = ranks.results(source)
-        groups = deity_groups(rows, lambda tags: limits(source, tags)) if rows else []
-        out["deity"] = kind("CIVVIS vs Deity AI", groups)
+        played = level_groups(rows, lambda tags: limits(source, tags)) if rows else {}
+        for level, groups in played.items():
+            games = kind(f"CIVVIS vs {level_name(level)} AI", groups)
+            if games:
+                out["levels"][str(level)] = games
     except (ValueError, KeyError, TypeError, AttributeError) as error:
-        print(f"research_page: no Deity figures ({error})", file=sys.stderr)
-        out["deity"] = None
-    if not out["self_play"] and not out["deity"]:
+        print(f"research_page: no figures against the game's AI ({error})", file=sys.stderr)
+        out["levels"] = {}
+    if not out["self_play"] and not out["levels"]:
         return None
+    out["level"] = OPENING_LEVEL if str(OPENING_LEVEL) in out["levels"] else max(map(int, out["levels"]), default=OPENING_LEVEL)
     return out
 
 
@@ -397,11 +428,8 @@ def main(argv: list[str]) -> int:
     if data is None:
         print(f"research_page: no figures to write into {page}", file=sys.stderr)
     else:
-        said = [
-            f"{data[key]['windows']['all']['games']} {data[key]['name']} games"
-            for key in ("self_play", "deity")
-            if data.get(key)
-        ]
+        kinds = [*data["levels"].values(), data.get("self_play")]
+        said = [f"{k['windows']['all']['games']} {k['name']} games" for k in kinds if k]
         print(f"research_page: wrote {' and '.join(said)} into {page}", file=sys.stderr)
     return 0
 
