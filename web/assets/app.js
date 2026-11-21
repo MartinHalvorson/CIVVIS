@@ -29670,8 +29670,8 @@ const POLICY_MEASURES = [
   ["tourism", "✈", "Tourism"], ["influence", "✉", "Influence"],
   ["strength", "⚔", "Combat strength, army average"],
 ];
-const POLICY_LEDGER_RETRY_MS = 30000;
-let policyLedger = null, policyLedgerAsked = "", policyLedgerFailedAt = 0;
+const POLICY_LEDGER_RETRY_MS = 30000, POLICY_LEDGER_QUIET_MS = 350;
+let policyLedger = null, policyLedgerAsked = "", policyLedgerFailedAt = 0, policyLedgerTimer = 0;
 function policyLedgerKey() {
   if (!state || !state.me) return "";
   const me = state.me;
@@ -29681,20 +29681,26 @@ function policyLedgerKey() {
 // The ledger for the deck on screen, asked for once per turn and deck. A
 // ledger read for another deck would price the wrong cards, so until the new
 // one arrives there is none; one read earlier in the same deck's life is
-// close enough to keep showing meanwhile.
+// close enough to keep showing meanwhile. It is asked for once the turn has
+// stood a moment with no run playing: the engine reads the empire once per
+// sub-deck (2^n readings, 0.6 s of it at nine cards), and a turn passed
+// through was priced for nothing while the next turn waited behind it.
 function currentPolicyLedger() {
   const key = policyLedgerKey();
   if (!key) return null;
-  if (policyLedgerAsked !== key && Date.now() - policyLedgerFailedAt > POLICY_LEDGER_RETRY_MS) {
-    policyLedgerAsked = key;
-    fetchJSON("/policy-effects").then(answer => {
-      if (policyLedgerAsked !== key) return;
-      policyLedger = answer;
-      paintLiveTracker();
-      if (empireOpen() && empireTab === "government") drawEmpire();
-    }).catch(() => {
-      if (policyLedgerAsked === key) { policyLedgerAsked = ""; policyLedgerFailedAt = Date.now(); }
-    });
+  if (policyLedgerAsked !== key && !autoplaying && Date.now() - policyLedgerFailedAt > POLICY_LEDGER_RETRY_MS) {
+    policyLedgerAsked = key; clearTimeout(policyLedgerTimer);
+    policyLedgerTimer = setTimeout(() => {
+      if (policyLedgerAsked !== key || autoplaying) { if (policyLedgerAsked === key) policyLedgerAsked = ""; return; }
+      fetchJSON("/policy-effects").then(answer => {
+        if (policyLedgerAsked !== key) return;
+        policyLedger = answer;
+        paintLiveTracker();
+        if (empireOpen() && empireTab === "government") drawEmpire();
+      }).catch(() => {
+        if (policyLedgerAsked === key) { policyLedgerAsked = ""; policyLedgerFailedAt = Date.now(); }
+      });
+    }, POLICY_LEDGER_QUIET_MS);
   }
   const deck = [...(state.me.policies || [])].sort().join(",");
   const priced = policyLedger && (policyLedger.cards || []).map(card => card.policy).sort().join(",");
@@ -39631,7 +39637,7 @@ async function autoplay(turns) {
       document.getElementById(field).disabled = false;
     autoplaying = false; autoplayStop = false;
     syncAutoplayLabel();
-    drawTurnLoop();
+    drawTurnLoop(); currentPolicyLedger();
   }
 }
 document.getElementById("autoplaybtn").onclick = () => autoplay(autoplayRequest());

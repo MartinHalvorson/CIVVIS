@@ -93,6 +93,10 @@ for (const name of ["drawSoloHud", "drawLaunchBar", "drawPlayerHud", "drawSide",
 // How many debugger requests had been sent each time a world was drawn.
 const drawn = [];
 function render(next) { state = next; drawn.push(engine.sent.filter(call => call.path === "/debug").length); }
+// Each time the page was told to price the policy deck on screen (the viewer's
+// own `currentPolicyLedger`), and whether a turn was still being played.
+const priced = [];
+function currentPolicyLedger() { priced.push(autoplaying); }
 function escapeAttr(text) {
   return String(text).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 }
@@ -672,7 +676,7 @@ def check_the_bar(bar: Bar) -> None:
     assert bar.sent() == [{"op": "step", "strategy": "jack"}], bar.sent()
     bar.ev(f"{turns}.value = '5', engine.wait = 60, true")
     bar.forget()
-    bar.ev("drawn.length = 0, true")
+    bar.ev("drawn.length = 0, priced.length = 0, true")
     bar.click('[data-dbg="autoplay"]')
     bar.until("debugRunning && debugPlayed >= 2", "auto-play is under way")
     sign, word, count = label()
@@ -685,6 +689,9 @@ def check_the_bar(bar: Bar) -> None:
     # Each turn but the last is drawn with the next already asked for: the
     # engine plays while the page draws, and never plays a turn past the count.
     assert bar.ev("drawn.join()") == "2,3,4,5,5", bar.ev("drawn.join()")
+    # The policy deck is priced once, for the turn the run ended on, when
+    # nothing is being played any more: not for each turn it passed through.
+    assert bar.ev("priced.join()") == "false", bar.ev("priced.join()")
     assert bar.note() == f"Played to turn {last + 7}", bar.note()
     assert label() == ["▶▶", "Auto-play", ""], label()
     bar.ev(f"{turns}.value = '1', true")
