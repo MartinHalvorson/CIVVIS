@@ -446,3 +446,118 @@ fn halves_played_as_one_and_then_apart_go_on_alike() {
         );
     }
 }
+
+/// The turns a half holds and the print of each one's world, as its state
+/// document gives them.
+fn prints_of(
+    panes: &mut super::Panes,
+    main: &super::super::Session,
+    pane: &str,
+) -> Vec<(u64, u64)> {
+    let state = asked_of(panes, main, pane, "GET", "/state", &Value::Null);
+    let numbers = |key: &str| -> Vec<u64> {
+        state["debug"][key]
+            .as_array()
+            .unwrap_or_else(|| panic!("debug.{key} is a list"))
+            .iter()
+            .map(|number| number.as_u64().expect("a whole number"))
+            .collect()
+    };
+    let (turns, worlds) = (numbers("turns"), numbers("worlds"));
+    assert_eq!(turns.len(), worlds.len(), "a print for every turn held");
+    assert!(
+        worlds.iter().all(|world| *world < 1 << 53),
+        "a print is a number a page can hold exactly"
+    );
+    turns.into_iter().zip(worlds).collect()
+}
+
+/// A branched timeline is one timeline for as long as the two halves hold
+/// the same world, and two from the turn their worlds differ (operator
+/// 2026-11-21: "branching the timeline should keep 1 timeline where they
+/// share the timeline and then branch to 2 when they actually diverge in
+/// simulated worlds"). Which turn that is, is the engine's to say: every
+/// turn a half holds comes with a print of its world, and two halves hold
+/// the same world on a turn they both give the same print for.
+#[test]
+fn halves_say_up_to_which_turn_they_hold_the_same_world() {
+    let main = small_table();
+    let mut panes = super::Panes::default();
+    let none = Value::Null;
+    let step = json!({"op": "step"});
+    asked_of(&mut panes, &main, "a-x", "GET", "/state", &none);
+    asked_of(&mut panes, &main, "b-x", "GET", "/state", &none);
+    assert_eq!(
+        prints_of(&mut panes, &main, "a-x"),
+        prints_of(&mut panes, &main, "b-x"),
+        "the turns behind a split are the same world in both halves"
+    );
+
+    // Each half is asked to play for itself. Nothing ties the two sessions
+    // together any more, and they are the same world turn after turn.
+    for turn in 2..=5 {
+        for pane in ["a-x", "b-x"] {
+            let stepped = asked_of(&mut panes, &main, pane, "POST", "/debug", &step);
+            assert_eq!(stepped["turn"], json!(turn));
+        }
+    }
+    assert!(!panes.alike("a-x", "b-x"));
+    let together = prints_of(&mut panes, &main, "a-x");
+    assert_eq!(together, prints_of(&mut panes, &main, "b-x"));
+    assert_eq!(
+        together.iter().map(|(turn, _)| *turn).collect::<Vec<_>>(),
+        [1, 2, 3, 4, 5]
+    );
+    let mut seen = std::collections::BTreeSet::new();
+    assert!(
+        together.iter().all(|(_, world)| seen.insert(*world)),
+        "every turn is a world of its own"
+    );
+
+    // B ends a turn as it stands, where A's agent plays it: the worlds part
+    // on the turn that opens, and stay apart however alike they are played
+    // from there. The turns before it are still the same world in both.
+    let ended = json!({"action": {"type": "end_turn"}});
+    asked_of(&mut panes, &main, "a-x", "POST", "/debug", &step);
+    asked_of(&mut panes, &main, "b-x", "POST", "/action", &ended);
+    for pane in ["a-x", "b-x"] {
+        asked_of(&mut panes, &main, pane, "POST", "/debug", &step);
+    }
+    let (a, b) = (
+        prints_of(&mut panes, &main, "a-x"),
+        prints_of(&mut panes, &main, "b-x"),
+    );
+    assert_eq!(a[..5], together[..]);
+    assert_eq!(b[..5], together[..]);
+    assert_eq!((a[5].0, b[5].0), (6, 6));
+    assert_ne!(a[5].1, b[5].1, "turn 6 opened on two worlds");
+    assert_eq!((a[6].0, b[6].0), (7, 7));
+    assert_ne!(a[6].1, b[6].1, "and so did turn 7");
+
+    // Walking back changes nothing that is held, and the turn played again
+    // from a world both hold is the same world again only if the play is.
+    let back = json!({"op": "jump", "turn": 5});
+    for pane in ["a-x", "b-x"] {
+        asked_of(&mut panes, &main, pane, "POST", "/debug", &back);
+    }
+    assert_eq!(prints_of(&mut panes, &main, "a-x"), a);
+    assert_eq!(prints_of(&mut panes, &main, "b-x"), b);
+    for pane in ["a-x", "b-x"] {
+        asked_of(&mut panes, &main, pane, "POST", "/debug", &step);
+    }
+    let (a, b) = (
+        prints_of(&mut panes, &main, "a-x"),
+        prints_of(&mut panes, &main, "b-x"),
+    );
+    assert_eq!(a.len(), 6, "the turns ahead were played over");
+    assert_eq!(a, b, "one world again, from the turn both went back to");
+
+    // A copy holds what it was copied from.
+    asked_of(&mut panes, &main, "a-x", "POST", "/action", &ended);
+    let copy = json!({"op": "copy", "from": "a-x"});
+    asked_of(&mut panes, &main, "b-x", "POST", "/debug", &copy);
+    assert_eq!(
+        prints_of(&mut panes, &main, "a-x"),
+        prints_of(&mut panes, &main, "b-x")
+    );
+}
