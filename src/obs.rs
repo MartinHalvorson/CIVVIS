@@ -1122,6 +1122,10 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         // itself, and a client needs the account to place the blast on the map
         // rather than inferring one from a ring of fallout.
         "nuclear_strikes": nuclear_strikes_json(g),
+        // The whole game, turn by turn, for the result screen's graphs. Only
+        // a finished game sends it: the story is over, so nothing in it is
+        // still fog, and a running game's frames do not carry the weight.
+        "game_stats": if g.is_finished() { game_stats_json(g) } else { Value::Null },
         // Where each unit has walked lately, oldest first. The client draws
         // these as movement tails and walks its move animations along them.
         // Unlike wars and strikes this is exactly the kind of thing fog is
@@ -1636,6 +1640,46 @@ fn recent_events(g: &Game, pid: usize, omniscient: bool) -> Vec<Value> {
 /// The detonations this game has seen, oldest first. `id` is what lets a client
 /// tell a fresh blast from one it has already shown without comparing fields —
 /// two devices can land on the same tile on the same turn.
+/// The result screen's history: one turn axis shared by every major
+/// civilization, and per civilization a series for each figure, `null` on a
+/// turn it did not play (not yet founded, or already gone). Whole numbers,
+/// because a graph two hundred turns wide cannot show a tenth.
+fn game_stats_json(g: &Game) -> Value {
+    let rows = g.turn_stats.as_slice();
+    let mut turns: Vec<u32> = rows.iter().map(|row| row.turn).collect();
+    turns.sort_unstable();
+    turns.dedup();
+    let column = |turn: u32| turns.binary_search(&turn).ok();
+    let mut players: BTreeMap<u16, [Vec<Value>; 6]> = BTreeMap::new();
+    for row in rows {
+        let Some(index) = column(row.turn) else {
+            continue;
+        };
+        let series = players
+            .entry(row.player)
+            .or_insert_with(|| std::array::from_fn(|_| vec![Value::Null; turns.len()]));
+        let figures = [
+            row.science,
+            row.culture,
+            row.production,
+            row.faith,
+            row.gold,
+            f32::from(row.cities),
+        ];
+        for (line, figure) in series.iter_mut().zip(figures) {
+            line[index] = json!(figure.round() as i64);
+        }
+    }
+    json!({
+        "turns": turns,
+        "players": players.into_iter().map(|(player, [science, culture, production, faith, gold, cities])| json!({
+            "id": player,
+            "science": science, "culture": culture, "production": production,
+            "faith": faith, "gold": gold, "cities": cities,
+        })).collect::<Vec<_>>(),
+    })
+}
+
 fn nuclear_strikes_json(g: &Game) -> Vec<Value> {
     g.nuclear_strikes
         .iter()

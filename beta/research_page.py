@@ -34,6 +34,11 @@ The record holds, for three windows of each kind (its last 7 days, its last
 30 days, every game), the games counted and for each victory type: the games
 it ended, the CIVVIS wins among them (Deity only; in self-play every winner is
 a CIVVIS agent), the median turn, and the count on each turn from 1 to 250.
+A victory CIVVIS won at least once also holds CIVVIS's wins on each turn
+(`won_turns`), so the page can draw the Deity games three times (operator
+2026-11-21: "start with all victories by type along timeline, then just the
+deity ai wins, then the civvis wins"): what is left of a turn's count after
+CIVVIS's wins is the Deity AI's.
 The page groups the turns into spans itself; a single turn matters, because
 the Diplomatic victories land on the World Congress's own turns (185, 205,
 225 and 245 at Online speed).
@@ -140,6 +145,11 @@ def window(groups: list[dict], days: int | None) -> dict | None:
             "median": median(turns),
             "turns": per_turn(turns),
         }
+        if won:
+            # Only where there is a win to place: self-play has none, and a
+            # row of 250 zeros per victory and window is weight the page
+            # reads as the same thing when it is missing.
+            victories[victory]["won_turns"] = per_turn(won)
     return {
         "from": min(g["day"] for g in kept),
         "to": newest,

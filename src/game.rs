@@ -4994,6 +4994,22 @@ pub struct WmdPlatform {
 /// answers none of those — a halved city and a ring of fallout do not say who
 /// fired, from what, or with which device — so the engine writes the account
 /// once and everybody reads it.
+/// One major civilization's empire for one turn, as `begin_turn` paid it:
+/// the Science, Culture, Production, Faith and net Gold it collected and the
+/// cities it held. The result screen draws the whole game from these rows,
+/// the way Civ VI's end-of-game graphs do.
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Debug)]
+pub struct TurnStats {
+    pub turn: u32,
+    pub player: u16,
+    pub cities: u16,
+    pub science: f32,
+    pub culture: f32,
+    pub production: f32,
+    pub faith: f32,
+    pub gold: f32,
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub struct NuclearStrike {
     /// Unique for the life of the game, so a client can tell a fresh
@@ -7876,6 +7892,13 @@ pub struct Game {
     /// worth carrying in every frame of a five-hundred-turn game.
     #[serde(default)]
     pub nuclear_strikes: Vec<NuclearStrike>,
+    /// Every major civilization's yields and city count, one row per
+    /// civilization per turn, oldest first: the result screen's graphs. It
+    /// lives behind an `Arc` because a planning or debugger fork copies the
+    /// world, and a pointer is all such a fork should pay for a history it
+    /// never reads. Only the played world writes to it.
+    #[serde(default)]
+    pub turn_stats: Arc<Vec<TurnStats>>,
     /// Where each unit has walked lately, oldest first and bounded like the
     /// strike ledger: a client draws the recent tail, and the full walking
     /// history of a long game is not worth carrying in every frame.
@@ -8268,6 +8291,8 @@ struct GameSer {
     #[serde(default)]
     nuclear_strikes: Vec<NuclearStrike>,
     #[serde(default)]
+    turn_stats: Vec<TurnStats>,
+    #[serde(default)]
     unit_move_trails: Vec<UnitMoveTrail>,
     #[serde(default)]
     barb_pid: Option<usize>,
@@ -8530,6 +8555,7 @@ impl From<GameSer> for Game {
             siege: SiegeCensus::default(),
             concluded_wars: s.concluded_wars,
             nuclear_strikes: s.nuclear_strikes,
+            turn_stats: Arc::new(s.turn_stats),
             unit_move_trails: s.unit_move_trails,
             barb_pid: s.barb_pid,
             barb_camps: s.barb_camps.into_iter().collect(),
@@ -8780,6 +8806,7 @@ impl From<Game> for GameSer {
             wars: g.wars.into_iter().collect(),
             concluded_wars: g.concluded_wars,
             nuclear_strikes: g.nuclear_strikes,
+            turn_stats: Arc::unwrap_or_clone(g.turn_stats),
             unit_move_trails: g.unit_move_trails,
             barb_pid: g.barb_pid,
             barb_camps: g.barb_camps.into_iter().collect(),
@@ -9320,6 +9347,7 @@ impl Game {
             siege: SiegeCensus::default(),
             concluded_wars: Vec::new(),
             nuclear_strikes: Vec::new(),
+            turn_stats: Arc::new(Vec::new()),
             unit_move_trails: Vec::new(),
             barb_pid: None,
             barb_camps: BTreeMap::new(),

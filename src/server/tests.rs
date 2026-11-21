@@ -2102,15 +2102,17 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
     assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
 }
 
-/// The site is five pages, Home, Research, Tournaments, CIVVIS and Strategy
-/// Debugger (the operator's name for the Debugger since 2026-11-21, "change
-/// ai debugger to strategy debugger", after a day as AI Debugger;
+/// The site is five pages, Home, Research, Tournaments, CIVVIS and Strat
+/// Debugger (the operator's name for the Debugger in this list since
+/// 2026-11-21: "shortern to 'Strat Debugger' and make sure it fits on one
+/// line", hours after "change ai debugger to strategy debugger" and a day
+/// as AI Debugger;
 /// Tournaments joined them between Home and CIVVIS on 2026-11-21, and
 /// Research between Home and Tournaments the same day), and every one of
 /// them lists all five in that order, with the page on screen in gold and a
 /// link to the game they are built on under them (operator, 2026-11-19).
 /// The viewer is the last two: a watched simulation lights CIVVIS and a
-/// played game lights Strategy Debugger. Pinned as one literal because the list
+/// played game lights Strat Debugger. Pinned as one literal because the list
 /// is the contract: six links in this order, inside a list that only the
 /// hosts serving a /home, a /research and a /tournaments reveal.
 #[test]
@@ -2121,7 +2123,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         "        <a class=\"home-link\" id=\"researchlink\" href=\"/research\" target=\"_top\">Research</a>\n",
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
-        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">Strategy Debugger</a>\n",
+        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">Strat Debugger</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
         "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
@@ -2159,8 +2161,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // A list that draws itself as a grid outranks the user agent's
     // `[hidden]`, so it has to restate what hidden means or the links
     // appear on desktop builds that honour neither destination.
-    assert!(EMBEDDED_INDEX
-        .contains(".head-links {\n    display: grid; grid-template-columns: 1fr 1fr;"));
+    assert!(EMBEDDED_INDEX.contains(
+        ".head-links {\n    display: grid; grid-template-columns: repeat(10, minmax(0, 1fr));"
+    ));
     assert!(EMBEDDED_INDEX.contains(".head-links[hidden] { display: none; }"));
     assert!(EMBEDDED_INDEX
         .contains("#side[data-type-size=\"compact\"] .head-links {\n    grid-column: 1 / -1;"));
@@ -2177,6 +2180,15 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // which it takes whole.
     assert!(EMBEDDED_INDEX
         .contains(".head-links > :last-child:nth-child(odd) { grid-column: 1 / -1; }"));
+    // Two by two, a link is half its row: five of the list's ten tracks.
+    // STRAT DEBUGGER is 95px wide in that type and half a row holds 84px at
+    // its narrowest (a 195px band), so its row is split six to four with
+    // CIV 6, the shortest name, and it stands on one line there too.
+    assert!(EMBEDDED_INDEX.contains("  .head-links > * { grid-column: span 5; }\n"));
+    assert!(EMBEDDED_INDEX.contains(concat!(
+        "  .head-links > #playlink { grid-column: span 6; }\n",
+        "  .head-links > #civ6link { grid-column: span 4; }\n",
+    )));
     // With room beside the lockup the list is a column on its left
     // (operator, 2026-11-21: the list goes "to the left side" of the
     // civvis.ai title, as it is on Home): the first track of the lockup's
@@ -2184,15 +2196,15 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // right of it and the tagline under all three. The list is still the
     // last thing in the lockup's markup, so each of the three is given its
     // track by name. It applies only while the list is showing, so a
-    // desktop build's lockup keeps the whole band. The column kept the
-    // width it had for four links, so in the column the labels are set a
-    // little smaller and closer and the longest word of the six,
-    // TOURNAMENTS, fits it.
+    // desktop build's lockup keeps the whole band. The column is 92px,
+    // which with its type holds the longest name of the six, STRAT
+    // DEBUGGER, on one line (below).
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  @container (min-width: 233px) {\n",
         "    #side .brand:has(> .head-links:not([hidden])) {\n",
-        "      --site-rail: 88px; --site-mark: clamp(40px, 19cqw, 72px);\n",
+        "      --site-rail: 92px; --site-mark: clamp(40px, 19cqw, 72px);\n",
         "      display: grid; grid-template-columns: var(--site-rail) auto minmax(0, 1fr);\n",
+        "      align-items: center; gap: 7px;\n",
     )));
     assert!(EMBEDDED_INDEX.contains(concat!(
         "    #side .brand:has(> .head-links:not([hidden])) .head-links {\n",
@@ -2208,17 +2220,28 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     )));
     // The column is not on the right any more.
     assert!(!EMBEDDED_INDEX.contains("auto minmax(0, 1fr) var(--site-rail)"));
+    // Every name in the column stands on one line (operator, 2026-11-21:
+    // "make sure it fits on one line"). Measured in Chrome in the system
+    // face: STRAT DEBUGGER is 83.2px at 8.5px type and .02em, against the
+    // 86px inside a 92px column with 2px of padding and a 1px rule each
+    // side. At the 9px and .03em the column had for TOURNAMENTS it is
+    // 88.9px, and the 88px column held 80px. The column's four more pixels
+    // come out of the lockup's two gutters (10px each before, 7px now), so
+    // the column and its gutter take 99px of the band where they took
+    // 98px and neither width at which the lockup changes shape moved: a
+    // 1512px window's band is 247.2px against the 246px threshold. Each
+    // link is one track in the column whatever it spans two by two.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "    #side .brand:has(> .head-links:not([hidden])) .home-link {\n",
-        "      padding: 1px 3px 2px; font-size: 9px; letter-spacing: .03em;\n",
+        "      grid-column: auto; padding: 1px 2px 2px; font-size: 8.5px; letter-spacing: .02em;\n",
         "    }",
     )));
-    // STRATEGY DEBUGGER is wider than the column and than half a row, so a
-    // name may take two lines: the links no longer hold their text to one,
-    // and each centres its name, so the link beside a two-line one in a row
-    // matches it. Measured on the published page with the name swapped in:
-    // 109px on one line against 80px inside the column, cut off at
-    // "STRATEGY DEBU" at every window width while the rule said `nowrap`.
+    assert!(!EMBEDDED_INDEX.contains("--site-rail: 88px"));
+    // The links still do not hold their text to one line by rule: in a
+    // typeface wider than the ones measured a name of two words takes two
+    // lines, each link centring its name so the one beside it in a row
+    // matches, where `nowrap` would cut it off at the box's edge (as it cut
+    // STRATEGY DEBUGGER at "STRATEGY DEBU" on the published page).
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  .home-link {\n",
         "    display: grid; align-content: center; min-width: 0; padding: 2px 5px 3px; overflow: hidden;\n",
@@ -2230,7 +2253,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         .expect("the masthead's link rule");
     assert!(
         !home_link.contains("nowrap"),
-        "a site's name is held to one line again, which cuts STRATEGY DEBUGGER off"
+        "a site's name is held to one line by rule again, which cuts a name too wide for its box"
     );
     // A little wider and the tagline fits beside the column as well, under
     // the globe and the wordmark, and the column then runs the whole height
@@ -2244,7 +2267,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // The wordmark is sized from the lane the column leaves it, and the
     // tagline's two lines are fitted as one so they stay one size in it.
     assert!(EMBEDDED_INDEX
-        .contains("calc((100cqw - var(--site-rail) - var(--site-mark) - 20px) / 4.85)"));
+        .contains("calc((100cqw - var(--site-rail) - var(--site-mark) - 14px) / 4.85)"));
     assert!(EMBEDDED_APP_JS.contains(
         "{selector:\"#side[data-type-size=compact] .tagline span\", min:10, max:12, together:true},"
     ));
@@ -2316,7 +2339,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
 }
 
 /// The home page is one of the site's five pages and lists all five from
-/// its header, Home, Research, Tournaments, CIVVIS and Strategy Debugger, with itself in gold
+/// its header, Home, Research, Tournaments, CIVVIS and Strat Debugger, with itself in gold
 /// and the Civ 6 link under them, as the viewer's masthead does; below that
 /// it is one paragraph and the rankings. The Tournaments table that stood
 /// above the rankings moved to the Tournaments page (operator, 2026-11-21;
@@ -2354,7 +2377,7 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
             "        <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "        <a class=\"site-link\" href=\"../?mode=play\" ",
-            "title=\"You play one civilization. CIVVIS AI agents play the rest.\">Strategy Debugger</a>\n",
+            "title=\"You play one civilization. CIVVIS AI agents play the rest.\">Strat Debugger</a>\n",
             "        <a class=\"site-link\" ",
             "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
             "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
@@ -2365,12 +2388,6 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
         // line, and the page on screen is the gold one.
         "    text-transform: uppercase;\n  }\n  .site-link:hover,",
         ".site-nav { display: grid; flex: none; gap: 4px; }",
-        // The column is as wide as its longest name on one line, which is
-        // STRATEGY DEBUGGER. On a phone under 380px that left the title
-        // too little room (the page ran 15px past a 320px screen), so
-        // there the column is as wide as its longest word and that name
-        // takes two lines.
-        "@media (max-width: 379px) { .site-nav { width: min-content; } }",
         concat!(
             ".site-link[aria-current=\"page\"],\n",
             "  .site-link[aria-current=\"page\"]:hover { background: var(--gold); color: #17130c; }",
@@ -2386,6 +2403,16 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
     ] {
         assert!(landing.contains(piece), "the home page lost {piece}");
     }
+    // The column is as wide as its longest name on one line, STRAT
+    // DEBUGGER: 150px. While that name was STRATEGY DEBUGGER the column was
+    // 178px and a phone under 380px narrowed it to its longest word, which
+    // put the name on two lines. The shorter name stands on one line down
+    // to a 320px phone with the page no wider than the screen (measured),
+    // so no rule narrows the column any more.
+    assert!(
+        !landing.contains("min-content"),
+        "the home page narrows its site list again, which puts STRAT DEBUGGER on two lines"
+    );
     // The tooltips are the turn plate's own sentences, so the home page
     // and the page it opens describe a site the same way.
     for sentence in [

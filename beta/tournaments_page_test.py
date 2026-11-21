@@ -283,19 +283,21 @@ class TournamentsPage(unittest.TestCase):
             '        <a class="site-link" href="./" aria-current="page">Tournaments</a>\n'
             '        <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
             '        <a class="site-link" href="../?mode=play" '
-            'title="You play one civilization. CIVVIS AI agents play the rest.">Strategy Debugger</a>\n'
+            'title="You play one civilization. CIVVIS AI agents play the rest.">Strat Debugger</a>\n'
             '        <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" '
             'target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>\n'
             "      </nav>",
             PAGE,
         )
         self.assertIn('.site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }', PAGE)
-        # Strategy Debugger (operator 2026-11-21: "change ai debugger to
-        # strategy debugger") is the longest name in the column. On a phone
-        # under 380px the column is as wide as its longest word instead, so
-        # the name takes two lines and the title keeps its room.
+        # Strat Debugger (operator 2026-11-21: "shortern to 'Strat Debugger'
+        # and make sure it fits on one line") is the longest name in the
+        # column, which is as wide as that name on one line at every width:
+        # the rule that narrowed the column on a phone under 380px, and put
+        # the longer Strategy Debugger on two lines there, is gone.
         for page in (PAGE, LANDING):
-            self.assertIn("@media (max-width: 379px) { .site-nav { width: min-content; } }", page)
+            self.assertNotIn("min-content", page)
+            self.assertNotIn("Strategy Debugger", page)
         # The home page and the viewer name it third, after Research (which
         # joined between Home and Tournaments the same day; its own test is
         # `research_page_test.py`), each in its own markup.
