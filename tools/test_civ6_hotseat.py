@@ -483,6 +483,78 @@ class UnattendedTableTest(unittest.TestCase):
                                  "no NEXT TURN on the map")
             self.assertEqual(len(clicks), 1)
 
+    def test_one_civvis_seat_and_five_firaxis_ai(self) -> None:
+        # Operator 2026-11-21 ~20:38Z: "for tournament 6 we should just have 1
+        # of our civvis in the game. other 5 are ai."
+        args = game_args(players=6, civvis_seats=1, leader=None)
+        config = hotseat.hotseat_config(args, Path("/tmp/run"), Path("/tmp/run/o.sqlite"))
+        self.assertEqual(config["HotseatSeats"], [0])
+        self.assertEqual(config["HumanPlayers"], 1)
+        self.assertEqual(config["HotseatHumanSeats"], [])
+        self.assertEqual(hotseat.wanted_slots(6, 1), ["host"] + ["computer"] * 5)
+
+    def test_victories_off_reaches_the_setup_defaults(self) -> None:
+        # Operator 2026-11-21 ~20:40Z: "no diplo allowed for any level".
+        args = game_args(players=6, civvis_seats=1, leader=None,
+                         victories_off=["VICTORY_DIPLOMATIC"])
+        config = hotseat.hotseat_config(args, Path("/tmp/run"), Path("/tmp/run/o.sqlite"))
+        self.assertEqual(config["VictoriesOff"], ["VICTORY_DIPLOMATIC"])
+        template = (install.MOD_SOURCE / "CivvisControlConfig.xml").read_text()
+        rendered = install._frontend_defaults_xml(template, config)
+        self.assertIn('<Where VictoryType="VICTORY_DIPLOMATIC"/>', rendered)
+        self.assertIn("V.EnabledByDefault AS DefaultValue", rendered)
+        plain = hotseat.hotseat_config(game_args(players=6, civvis_seats=1, leader=None),
+                                       Path("/tmp/run"), Path("/tmp/run/o.sqlite"))
+        self.assertEqual(plain["VictoriesOff"], [], "every victory as shipped unless asked")
+
+    def test_an_unknown_victory_type_is_refused_before_anything_starts(self) -> None:
+        with patch.object(hotseat, "run") as run:
+            self.assertEqual(hotseat.main(["--civvis-seats", "1", "--players", "6",
+                                           "--victories-off", "VICTORY_DIPLO"]), 2)
+            run.assert_not_called()
+
+    def victory_monitor(self, run_dir: Path) -> "hotseat.Monitor":
+        lines: list[str] = []
+        monitor = hotseat.Monitor(run_dir, "hs", [0],
+                                  game_args(players=6, civvis_seats=1,
+                                            victories_off=["VICTORY_DIPLOMATIC"]),
+                                  lines.append)
+        monitor.lines = lines
+        self.addCleanup(monitor.close)
+        return monitor
+
+    def test_a_victory_asked_off_is_read_back_from_the_game(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor = self.victory_monitor(run_dir)
+            self.seat_event(run_dir, 0, kind="seat", civ="CIVILIZATION_GAUL",
+                            victories={"diplomatic": False, "technology": True})
+            monitor.poll()
+            self.assertIsNone(monitor.setup_fault)
+            self.assertEqual(monitor.victories, {"diplomatic": False, "technology": True})
+            self.assertTrue(any("read back from the game: VICTORY_DIPLOMATIC" in line
+                                for line in monitor.lines), monitor.lines)
+
+    def test_a_victory_still_on_is_a_setup_fault(self) -> None:
+        for switches in ({"diplomatic": True}, {"technology": True}, None):
+            with tempfile.TemporaryDirectory() as tmp:
+                run_dir = Path(tmp)
+                monitor = self.victory_monitor(run_dir)
+                self.seat_event(run_dir, 0, kind="seat", civ="CIVILIZATION_GAUL",
+                                **({} if switches is None else {"victories": switches}))
+                monitor.poll()
+                self.assertIn("VICTORY_DIPLOMATIC", monitor.setup_fault or "", switches)
+                self.assertTrue(any("victory switch not applied" in line
+                                    for line in monitor.lines), monitor.lines)
+
+    def test_a_table_that_asks_nothing_off_has_no_fault(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor = self.monitor(run_dir)
+            self.seat_event(run_dir, 0, kind="seat", civ="CIVILIZATION_GAUL",
+                            victories={"diplomatic": True})
+            monitor.poll()
+            self.assertIsNone(monitor.setup_fault)
     def test_the_huds_seat_watch_is_told_in_the_log(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp)
