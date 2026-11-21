@@ -42,7 +42,7 @@ def run(tag: str, outcome: str, civ: str | None, minute: int, **more) -> dict:
 
 
 class TournamentsPage(unittest.TestCase):
-    def record(self) -> dict:
+    def record(self, *more: dict) -> dict:
         """Four definitions: one played out, one being played, one waiting
         behind a tag prefix of its own, and one whose time came and went."""
         specs = [
@@ -66,8 +66,12 @@ class TournamentsPage(unittest.TestCase):
             run("civvis-20261121T103500Z", "rival_victory", "CIVILIZATION_GAUL", 40),
             run("civvis-20261121T103500Z-cont1", "win", "CIVILIZATION_GAUL", 45, victory="VICTORY_RELIGIOUS"),
             run("civvis-20261121T105000Z", "abandoned", "CIVILIZATION_KOREA", 55),
+            # Runs from the ledger's older tag families sort after every
+            # prefix a scheduled table owns and were played months before.
+            run("settler-20260730T101433Z", "win", None, 0, utc="2026-07-30T10:20:00Z", players=None, map=None),
+            run("civvis-tinywar-20260731T231249Z", "unfinished", None, 0, utc="2026-07-31T23:30:00Z", players=None, map=None),
         ]
-        return tournaments_page.record(rows, specs, ["Rome", "Gran Colombia", "Mali", "Gaul", "Korea"])
+        return tournaments_page.record(rows + list(more), specs, ["Rome", "Gran Colombia", "Mali", "Gaul", "Korea"])
 
     def test_the_record_is_what_runs_what_waits_and_what_has_finished(self):
         record = self.record()
@@ -87,6 +91,11 @@ class TournamentsPage(unittest.TestCase):
         self.assertEqual((second["games"], second["size"], second["wins"], second["losses"]), (3, 5, 1, 2))
         self.assertIsNone(second["end"])
         self.assertEqual(second["idea"], "")
+        # The queue moving on is what retires a definition that never ran: a
+        # table tagged past the ladder's `end`, played after the games ahead
+        # of it. The old runs that merely sort past it retire nothing (above).
+        later = run("civvis-t7-20261121T120000Z", "unfinished", None, 0, utc="2026-11-21T12:10:00Z")
+        self.assertEqual(self.record(later)["scheduled"], [])
         # The totals count every game of every tournament begun.
         self.assertEqual(record["totals"], {"tournaments": 2, "games": 5, "wins": 2, "losses": 3})
         self.assertEqual(record["through"], "2026-11-21 10:55Z")

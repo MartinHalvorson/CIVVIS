@@ -115,18 +115,36 @@ def series_view(row: dict, spec: dict, names: list[str]) -> dict:
     }
 
 
+def passed_over(spec: dict, rows: list[dict]) -> bool:
+    """Whether a definition with no finished game has had its turn and lost it.
+
+    Its `end` closes it once a game tagged at or past that end is played
+    after the games that came before its `start`: the queue moved on without
+    it. Tags alone cannot say so. The ledger holds runs from older tag
+    families (`settler-`, `civvis-tinywar-`) that sort after any prefix a
+    scheduled table owns, played months before it was defined, and they close
+    nothing. `tournament_series` reads a cut-short series the same way.
+    """
+    end = str(spec.get("end") or "")
+    if not end:
+        return False
+    start = str(spec.get("start") or "")
+    played = [(ranks.game_key(row) or "", str(row.get("utc") or "")) for row in rows]
+    before = max((utc for key, utc in played if key < start), default="")
+    return any(key >= end and utc > before for key, utc in played)
+
+
 def record(rows: list[dict], specs: list[dict], names: list[str]) -> dict:
     """The page's three lists and the totals over every game counted."""
     series = ranks.tournament_series(rows, specs, detail=True) or []
     started = {row["definition"] for row in series}
     views = [series_view(row, specs[row["definition"]], names) for row in series]
-    newest = max((key for key in map(ranks.game_key, rows) if key), default="")
     number = max((view["id"] for view in views), default=0)
     scheduled = []
     for place, spec in enumerate(specs):
         # A definition with no finished game is still to be played, unless
-        # games tagged past its `end` exist: then its time came and went.
-        if place in started or (spec.get("end") and newest >= str(spec["end"])):
+        # the queue has moved on past its `end`.
+        if place in started or passed_over(spec, rows):
             continue
         number += 1
         scheduled.append({
