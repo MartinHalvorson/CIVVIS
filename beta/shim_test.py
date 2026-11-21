@@ -322,6 +322,18 @@ def check_read_ahead(dev) -> None:
     )
     assert shape == {"ok": True, "status": 200, "json": "test", "text": "test"}, shape
 
+    # A request is with the engine when `fetch` returns, not a microtask
+    # later: what the caller does next in the same task (the debugger draws
+    # the turn it has) is not ahead of it.
+    told = dev.evaluate(
+        """(() => {
+          const before = window.workerCalls.length;
+          fetch('/runtime');
+          return window.workerCalls.slice(before);
+        })()"""
+    )
+    assert told == ["/runtime"], told
+
 
 def opening_settings(dev) -> list[dict]:
     """Every `/pace` body the engine has been sent, in order."""
