@@ -256,6 +256,9 @@
   // world a preset visit never asked to see; on failure the stock world is
   // exactly what should play, and the report says why.
   let openingPresetStarted = null;
+  // Nothing is waiting behind that request: there is none to make, or it has
+  // been answered. From then on a request goes to the engine as it is made.
+  let openingPresetSettled = PANE !== null || OPENING_PRESET === null;
   function ensureOpeningPreset() {
     // A half of a split opens on the session its host forks for it.
     if (PANE !== null) return Promise.resolve(null);
@@ -268,6 +271,10 @@
         })
         .catch((error) => {
           report.presetError = String(error.message || error);
+          return null;
+        })
+        .then(() => {
+          openingPresetSettled = true;
           return null;
         });
     }
@@ -1030,19 +1037,33 @@
     // routes read their parameters straight off the query string.
     const relative = target.startsWith("http") ? path + new URL(target).search : target;
     const fork = forkNamed(relative);
-    return ensureOpeningPreset()
-      .then(() => {
-        sendOpeningSettings();
-        // A fork answers for itself, and making forks is this file's own
-        // work: neither is a request to the page's engine.
-        if (fork !== null) return askFork(fork, method, options_.body || "").then(json);
-        if (path === "/forks") {
-          dropAhead(false);
-          return forkEngine(safeParse(options_.body || "{}").count).then(json);
-        }
-        return serve(method, relative, options_.body || "");
-      })
-      .catch((error) => json({ error: String(error.message || error) }));
+    const asked = () => {
+      sendOpeningSettings();
+      // A fork answers for itself, and making forks is this file's own
+      // work: neither is a request to the page's engine.
+      if (fork !== null) return askFork(fork, method, options_.body || "").then(json);
+      if (path === "/forks") {
+        dropAhead(false);
+        return forkEngine(safeParse(options_.body || "{}").count).then(json);
+      }
+      return serve(method, relative, options_.body || "");
+    };
+    const failed = (error) => json({ error: String(error.message || error) });
+    // The request is with the engine when this returns, as a request to a
+    // server is on its way when `fetch` returns. Handing it over in a
+    // `then` left it behind whatever the caller did next in the same task:
+    // the debugger asks for the next turn and then draws the one it has, so
+    // the engine sat through every draw before it heard there was a turn to
+    // play (`docs/SIM_DEBUGGER.md`). Only a visit whose link names a world
+    // has anything to wait for, and only until that world is made.
+    if (openingPresetSettled) {
+      try {
+        return asked().catch(failed);
+      } catch (error) {
+        return Promise.resolve(failed(error));
+      }
+    }
+    return ensureOpeningPreset().then(asked).catch(failed);
   };
 
   // ----------------------------------------------------------- first impression
