@@ -7225,6 +7225,10 @@ function updateSpecPauseButtons() {
   collapsed.setAttribute("aria-label", `${action} simulation`);
   collapsed.setAttribute("aria-pressed", String(specPaused));
   collapsed.hidden = !SPEC;
+  // The result card's Pause here is this same pause, so it says the same.
+  const held = document.getElementById("finale-pause");
+  if (held) held.textContent = specPaused ? "Resume" : "Pause here";
+  held?.setAttribute("aria-pressed", String(specPaused));
 }
 function toggleSpecPause() {
   if (!SPEC) return;
@@ -9002,10 +9006,14 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       const oneMoreTurn = st.last_civ_standing === null || st.last_civ_standing === undefined
         ? `<button class="winner-again winner-playon" id="play-on-one-more-turn"
             onclick="playOnPastVictory('last_civ_standing', false)"
-            title="Keep this world playing until only one civilization remains.">One more turn<span class="winner-again-note">(play until only one Civ remains)</span></button>`
+            title="Keep this world playing until only one civilization remains.">One more turn</button>`
         : ``;
+      // Pause here is the simulation's own pause, asked for where the count
+      // is: a paused result stays up, and its count starts again on Resume.
       const winnerActions = SPEC
         ? `${oneMoreTurn}
+          <button class="winner-again winner-playon" id="finale-pause" onclick="toggleSpecPause()"
+            title="Keep this result on screen. The next game waits until you resume.">Pause here</button>
           <button class="primary winner-again" id="finale-new-game" onclick="startNewSimulation()"
             title="Start a new game now.">New Game</button>`
         : `<button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
@@ -9035,6 +9043,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         ${finaleCountdownChoiceMarkup()}${gameStatsMarkup(st)}
       </div>`;
       settleResultActions();
+      updateSpecPauseButtons();
       recordSimulationResult(st, signature, winnerIds);
       armFinaleCountdown(signature);
     }

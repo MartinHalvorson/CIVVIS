@@ -2165,6 +2165,7 @@
      live controls are the only pause and the only restart it offers. */
   body.live-pause-available #specpause,
   body.live-pause-available #collapsepause,
+  body.live-pause-available #finale-pause,
   body.live-pause-available #specbar { display: none !important; }
   #empire {
     position: absolute; z-index: 18;
@@ -2482,8 +2483,8 @@
   }
   /* The result screen's answers keep their hierarchy: the offer that replaces
      the world spans the row, while the three ways to keep it sit side by side
-     underneath. A simulation has just one continuation and one replacement,
-     so those two choices share a row.
+     underneath. A simulation has one continuation, one hold and one
+     replacement, so those choices share a row, however many are on offer.
      `.winner-content > *` sets every child to `display: block` further down
      this sheet at the same specificity, so the grid has to be named through
      its parent to survive. */
@@ -2494,7 +2495,7 @@
   .winner-actions .winner-again { margin: 0; }
   .winner-actions .primary { grid-column: 1 / -1; justify-self: center; }
   .winner-content > .winner-actions.winner-actions-sim {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);
   }
   .winner-content > .winner-actions.winner-actions-sim .primary {
     grid-column: auto; justify-self: stretch;
@@ -2504,12 +2505,6 @@
   .winner-playon {
     width: 100%;
     border-color: color-mix(in srgb, var(--winner-color, #d7b66a) 55%, #4a635a);
-  }
-  /* One more turn says on a smaller second line what it will play to. */
-  .winner-again-note {
-    display: block; margin-top: 3px;
-    font-size: var(--type-label); letter-spacing: .01em; opacity: .85;
-    text-wrap: balance;
   }
   #tip {
     position: fixed; z-index: 30; display: none; max-width: 290px; padding: 10px 13px;
@@ -2824,9 +2819,16 @@
     margin-top: 16px; color: #f6edcf; font-size: var(--type-control); letter-spacing: .10em;
     text-shadow: 0 2px 10px #000, 0 0 18px color-mix(in srgb, var(--winner-color, #d7b66a) 40%, transparent);
   }
+  /* The line keeps the height of a running count when it says one thing
+     instead, Game paused or Starting the next game, so Pause here does not
+     slide out from under the pointer that pressed it. Named through its
+     parent to outrank the block rule above. */
+  .winner-content > .winner-countdown {
+    display: grid; align-content: center; min-height: calc(1.5em + var(--winner-count-size, 36px) + 2px);
+  }
   .winner-countdown-time {
     display: block; margin-top: 2px; color: #fffaf0;
-    font: 700 36px/1 Georgia, serif; font-variant-numeric: tabular-nums; letter-spacing: .02em; text-transform: none;
+    font: 700 var(--winner-count-size, 36px)/1 Georgia, serif; font-variant-numeric: tabular-nums; letter-spacing: .02em; text-transform: none;
     text-shadow: 0 3px 16px #000, 0 0 24px color-mix(in srgb, var(--winner-color, #d7b66a) 65%, transparent);
   }
   /* The between-game interval, offered on the result screen itself and read
@@ -2860,15 +2862,21 @@
      third of the field. */
   #winner.winner-tactics .winner-title { font-size: 24px; }
   #winner.winner-tactics .winner-mark { margin-top: 6px; font-size: 18px; }
-  #winner.winner-tactics .winner-countdown-time { font-size: 28px; }
+  #winner.winner-tactics .winner-countdown { --winner-count-size: 28px; }
   /* Three ways to play on will not share a row a third of the map wide, so
-     the answers stack; the simulation's pair still fits side by side. */
+     the answers stack; the simulation's short answers still fit side by side. */
   #winner.winner-tactics .winner-content > .winner-actions {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* Three of them in that width: each is as wide as its own words need, and
+     gives up its side padding and letter spacing to keep them together. */
   #winner.winner-tactics .winner-content > .winner-actions.winner-actions-sim {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: none; grid-auto-columns: auto; gap: 6px;
   }
+  #winner.winner-tactics .winner-actions-sim .winner-again { padding-inline: 6px; letter-spacing: 0; }
+  /* Pause here keeps the width of its longer reading while it says Resume,
+     so the row does not re-divide under the pointer. */
+  #winner.winner-tactics #finale-pause { min-width: 88px; }
 
   /* Rich panel content */
   .research-card { width: 100%; height: 55px; min-height: 55px; display: grid; grid-template-columns: 32px minmax(0, 1fr) 36px; align-items: center; gap: 10px; }
