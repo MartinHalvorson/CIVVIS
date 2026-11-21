@@ -1089,6 +1089,28 @@ def rescue_popup(monitor: Monitor, log: Log) -> None:
     handled, reason = play.dismiss_visually_confirmed_popup(
         diagnostic_path=monitor.run_dir / "setup" / "rescue-popup.png")
     log(f"stalled seat {monitor.active}: popup rescue — {reason}")
+    if not handled:
+        end_stalled_turn(monitor, log, rows)
+
+
+def end_stalled_turn(monitor: Monitor, log: Log, rows: list[dict]) -> bool:
+    """A CIVVIS seat that sits on its own turn with no popup up: press NEXT TURN.
+
+    Measured on the first unattended table (civvis-t6-20261121T131243Z, 2026-11-21):
+    a World Congress session on seat 1's turn 61 was voted by both CIVVIS seats and
+    the seat's ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION force-dismissed, and then the
+    turn never ended: the map showed NEXT TURN, nothing to dismiss, the AI phase
+    stalled for 11 minutes. Pressing NEXT TURN played on at once. Only a CIVVIS
+    seat's turn (never a person's), with the caller's guards (Civ VI in front,
+    nobody at the keyboard) already passed."""
+    if monitor.active is None or monitor.active_human or monitor.active not in monitor.seats:
+        return False
+    hits = find(rows, "NEXT TURN")
+    if not hits:
+        return False
+    click(log, (hits[0]["x"], hits[0]["y"]))
+    log(f"stalled seat {monitor.active}: nothing to dismiss and NEXT TURN on the map; pressed it")
+    return True
 
 
 def smoke_report(monitor: Monitor, log: Log) -> dict:
