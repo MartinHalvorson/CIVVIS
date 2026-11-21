@@ -460,6 +460,54 @@ fn a_watched_table_keeps_no_timeline() {
     assert!(session.state().get("debug").is_none());
 }
 
+/// An operation asked to answer `lean` does what it always does and answers
+/// without the state document: where the world stands, each seat's score,
+/// and the debugger's own block exactly as the document carries it.
+#[test]
+fn a_lean_answer_says_where_the_world_stands_without_the_state_document() {
+    let mut session = played();
+    let whole = session.debug(&json!({"op": "step"}));
+    let lean = session.debug(&json!({"op": "status", "lean": true}));
+    assert_eq!(lean["lean"], json!(true));
+    assert_eq!(lean["error"], Value::Null);
+    assert_eq!(lean["turn"], whole["turn"]);
+    assert_eq!(lean["current"], whole["current"]);
+    assert_eq!(lean["finished"], whole["finished"]);
+    assert_eq!(lean["winner"], whole["winner"]);
+    assert_eq!(lean["debug"], whole["debug"]);
+    for part in ["map", "players", "cities", "units", "legal_actions"] {
+        assert!(whole.get(part).is_some(), "the state document has {part}");
+        assert!(lean.get(part).is_none(), "a lean answer has no {part}");
+    }
+    let scores = lean["scores"].as_array().expect("every seat's score");
+    assert_eq!(scores.len(), 2, "the two civilizations, not the city-state");
+    assert_eq!(scores[0]["id"], json!(0));
+    assert_eq!(scores[0]["alive"], json!(true));
+    assert_eq!(scores[0]["score"], json!(session.game.score(0)));
+    let rival = scores[1]["id"].as_u64().expect("a seat") as usize;
+    assert_eq!(scores[1]["score"], json!(session.game.score(rival)));
+
+    // The operation itself is the same one: a turn stepped lean is the turn.
+    let (mut one, mut other) = (played(), played());
+    one.debug(&json!({"op": "step"}));
+    let stepped = other.debug(&json!({"op": "step", "lean": true}));
+    assert_eq!(world(&one), world(&other));
+    assert_eq!(stepped["turn"], json!(other.game.turn));
+    let back = other.debug(&json!({"op": "back", "lean": true}));
+    assert_eq!(back["error"], Value::Null);
+    assert_eq!(back["turn"], json!(other.game.turn));
+    assert_eq!(one.debug(&json!({"op": "back"}))["turn"], back["turn"]);
+
+    // A refusal is said the same way, and leaves the world as it was.
+    let refused = other.debug(&json!({"op": "no such thing", "lean": true}));
+    assert!(refused["error"]
+        .as_str()
+        .unwrap()
+        .starts_with("no debugger operation"));
+    assert_eq!(refused["lean"], json!(true));
+    assert_eq!(refused["turn"], back["turn"]);
+}
+
 #[test]
 fn both_front_ends_serve_the_debugger() {
     assert!(include_str!("../wasm.rs").contains("(\"POST\", \"/debug\")"));
