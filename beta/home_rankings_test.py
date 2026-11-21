@@ -107,7 +107,8 @@ class HomeRankings(unittest.TestCase):
             self.assertTrue(row["tilt"], f"{row['id']} lost its tilt")
             self.assertEqual(row["elo"], published["ratings"][row["id"]]["elo"])
         rungs = [row for row in rows if row["kind"] == "rung"]
-        self.assertIn("Prince", [row["name"] for row in rungs])
+        # Rungs the tables cannot tell apart share a row ("Prince · King").
+        self.assertIn("Prince", [name for row in rungs for name in row["name"].split(" · ")])
         # A rung's level number is its place on the engine's own ladder.
         strategies_rs = (ROOT / "src" / "strategies.rs").read_text(encoding="utf-8")
         ladder = re.search(r"CIV6_RUNGS: \[.*?\] = \[(.*?)\];", strategies_rs, re.S)
