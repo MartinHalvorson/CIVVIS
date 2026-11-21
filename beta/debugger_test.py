@@ -10,7 +10,9 @@ each control sends the operation it is for and that the bar shows the answer.
 A split is the same page twice more, in frames, so each half gets a toy engine
 of its own, started from the host's. The toy's score rises faster under one
 Civ AI than the other, which is all it takes to see that each half's steps
-carry its own. A request that names the other half as its twin is answered
+carry its own, and each kept turn has a print of its world that two halves
+share only when they were played the same way, which is what the host's
+timeline branches by. A request that names the other half as its twin is answered
 the way the real engine answers one: when the two toy worlds are the same,
 the other is made a copy of the answer and the answer says so.
 
@@ -109,7 +111,11 @@ window.requestAnimationFrame = drawn => setTimeout(drawn, 0);
 // `eras` is the first turn of each era the game has been through, and
 // `eraAt` a turn on which the next one begins. `seat` is the Civ AI last
 // named for the seat, and `by` the one whose play opened each turn.
-const engine = {turn: 1, marks: [1], saves: [], ids: 0, breaks: [], line: null, stopped: null, score: 0,
+// `worlds` is the print of each kept turn's world: the print of the turn it
+// was played on from, and who played it. Two toy engines that were played
+// the same way from one world give the same prints, as two halves of the
+// real engine do (`world_print`).
+const engine = {turn: 1, marks: [1], worlds: {1: 1}, saves: [], ids: 0, breaks: [], line: null, stopped: null, score: 0,
   seat: null, by: {},
   current: 0, stepped: null, acted: 0, reveal: false, layers: [], wait: 0,
   eras: [{era: 0, name: "ancient", turn: 1}], eraAt: null,
@@ -161,7 +167,8 @@ function engineState(error = null) {
     players: [{id: 0, civ: "rome", score: engine.score, cities: 1, population: 1, military: 1,
       yields: {science: 1, culture: 1, gold: 1, faith: 0}},
       {id: 1, civ: "greece"}, {id: 2, civ: "barbarians", is_barbarian: true}],
-    debug: {turn: engine.turn, turns: [...marks], first: marks[0], last: marks[marks.length - 1],
+    debug: {turn: engine.turn, turns: [...marks], worlds: marks.map(turn => engine.worlds[turn]),
+      first: marks[0], last: marks[marks.length - 1],
       seat: engine.seat, played_ahead: enginePlayedAhead(), beyond: marks.length < kept.length
         ? {from: kept[marks.length], to: kept[kept.length - 1], by: engine.by[kept[marks.length]] || null} : null,
       acted: engine.acted, can_undo: engine.acted > 0 && engine.current === 0,
@@ -196,9 +203,13 @@ async function fetchJSON(path, init = {}) {
   // A turn that opens is whoever's play opened it, and the turns that were
   // ahead of it are gone.
   const played = by => {
-    engine.marks = engine.marks.filter(turn => turn < engine.turn).concat(engine.turn);
+    const behind = engine.marks.filter(turn => turn < engine.turn);
+    engine.marks = behind.concat(engine.turn);
     engine.by = Object.fromEntries(Object.entries(engine.by).filter(([turn]) => +turn < engine.turn));
     if (by) engine.by[engine.turn] = by;
+    const from = engine.worlds[behind[behind.length - 1]] || 0;
+    engine.worlds = Object.fromEntries(Object.entries(engine.worlds).filter(([turn]) => +turn < engine.turn));
+    engine.worlds[engine.turn] = (from * 31 + (by === "stock" ? 2 : by ? 1 : 3)) % 2147483647;
   };
   // The round comes back to the played seat, and that is the next turn.
   const opens = () => {
@@ -1241,6 +1252,58 @@ def check_a_run_takes_the_turns_already_played(bar: Bar) -> None:
     pick(1)
 
 
+# The timeline of a split as it is drawn: whether it has branched and what the
+# tag at the branch says; where each rail's sky is seen from and to, or None
+# for one that is not seen; the turn each marker stands on, or None for one
+# that is put away; and where on the page a turn stands.
+TIMELINE = (
+    "(() => { const lane = key => document.querySelector(`[data-dbg-lane=\"${key}\"]`);"
+    " const box = held => held.getBoundingClientRect();"
+    " const sky = key => { const held = lane(key).querySelector('.dbg-sky');"
+    " return getComputedStyle(held).backgroundImage === 'none' ? null : [box(held).left, box(held).right]; };"
+    " const marker = key => { const held = lane(key).querySelector('.dbg-cursor');"
+    " return held.hidden ? null : +held.querySelector('b').textContent; };"
+    " const tag = lane('').querySelector('.dbg-fork'), slider = document.getElementById('dbg-slider-a'), rail = box(slider);"
+    " const at = turn => rail.left + 7 + (turn - slider.min) / (slider.max - slider.min) * (rail.width - 14);"
+    " return {forked: debugBar.classList.contains('dbg-forked'), tag: tag.hidden ? null : tag.textContent,"
+    " sky: {trunk: sky(''), a: sky('a'), b: sky('b')}, marker: {trunk: marker(''), a: marker('a'), b: marker('b')},"
+    " rail: [box(lane('').querySelector('.dbg-rail')).left, box(lane('').querySelector('.dbg-rail')).right],"
+    " at: Object.fromEntries(TURNS.map(turn => [turn, at(turn)]))}; })()")
+
+
+def timeline(bar: Bar, *turns: int) -> dict:
+    return bar.ev(TIMELINE.replace("TURNS", json.dumps(list(turns))))
+
+
+def one_timeline(bar: Bar, turn: int, why: str) -> None:
+    """The two halves are one world: one rail the length of the game, and one marker on it."""
+    seen = timeline(bar)
+    assert (seen["forked"], seen["tag"], seen["sky"]["a"], seen["sky"]["b"]) == (False, None, None, None), (why, seen)
+    assert seen["marker"] == {"trunk": turn, "a": None, "b": None}, (why, seen)
+    assert seen["sky"]["trunk"][0] == seen["rail"][0] and abs(seen["sky"]["trunk"][1] - seen["rail"][1]) <= 1, (why, seen)
+
+
+def branched(bar: Bar, fork: int, a: int, b: int, why: str) -> None:
+    """The timeline is one rail up to `fork` and a rail for each half from there."""
+    seen = timeline(bar, fork)
+    # The turn it branches on is said at the branch, unless both halves
+    # stand on that very turn: then their marker is there, and says it.
+    assert (seen["forked"], seen["tag"]) == (True, None if a == b == fork else f"⑂ {fork}"), (why, seen)
+    joint = seen["at"][str(fork)]
+    # The trunk ends where the branches begin, on the turn they share last.
+    for edge in (seen["sky"]["trunk"][1], seen["sky"]["a"][0], seen["sky"]["b"][0]):
+        assert abs(edge - joint) <= 1, (why, seen)
+    assert seen["sky"]["trunk"][0] == seen["rail"][0], (why, seen)
+    for letter in "ab":
+        assert abs(seen["sky"][letter][1] - seen["rail"][1]) <= 1, (why, seen)
+    # Two halves on one turn of the trunk have one marker, and a half that is
+    # on a branch has its own.
+    if a == b and a <= fork:
+        assert seen["marker"] == {"trunk": a, "a": None, "b": None}, (why, seen)
+    else:
+        assert seen["marker"] == {"trunk": None, "a": a, "b": b}, (why, seen)
+
+
 def check_the_split(bar: Bar) -> None:
     """Head to head: two halves, a Civ AI each, played to a turn and compared."""
     half = "debugSplit.panes.{}.frame.contentWindow.eval({})".format
@@ -1264,9 +1327,9 @@ def check_the_split(bar: Bar) -> None:
     assert bar.ev("debugSplit.versus && !debugSplit.host.querySelector('[data-dbg-versus]').hidden")
 
     # The host's bar stays up across the top, over the two halves, and its
-    # timeline is two lanes, one for each half. Locked, as a split opens, the
-    # host's deck under the lanes is the one panel for both halves, and each
-    # half's own bar is put away.
+    # timeline is theirs: one timeline, as the split opens, because the two
+    # are the same world. Locked, as a split opens, the host's deck under it
+    # is the one panel for both halves, and each half's own bar is put away.
     deck_shown = "getComputedStyle(document.querySelector('#debugbar .dbg-deck')).display !== 'none'"
     bar_shown = "'getComputedStyle(document.getElementById(\"debugbar\")).display !== \"none\"'"
     bar.until(f"debugBar.classList.contains('dbg-merged') && {deck_shown}", "the host's deck is the one panel of a locked split")
@@ -1275,12 +1338,23 @@ def check_the_split(bar: Bar) -> None:
               " && Math.round(debugSplit.host.getBoundingClientRect().top) === Math.ceil(box.height); })()",
               "the split stands under the host's bar")
     shown = lambda lane: bar.ev(f"getComputedStyle(document.querySelector('[data-dbg-lane=\"{lane}\"]')).display") != "none"
-    assert (shown(""), shown("a"), shown("b")) == (False, True, True)
-    # Each lane has the width of the window to itself, between its two ends.
+    assert (shown(""), shown("a"), shown("b")) == (True, True, True)
+    bar.until("debugSplit.panes.a.marks && debugSplit.panes.b.marks", "both halves say what they hold")
+    one_timeline(bar, start, "a split opens on one timeline")
+    # Each half's slider has the width of the window to itself, between the
+    # timeline's two ends, which are named once.
     wide = bar.ev("['a', 'b'].map(letter => document.getElementById('dbg-slider-' + letter).getBoundingClientRect().width)")
     assert min(wide) > bar.ev("innerWidth") * 0.6, wide
-    assert bar.ev("['a', 'b'].map(letter => document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-start`).textContent"
-                  " + ' ' + document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-finish`).textContent)") == ["1 250"] * 2
+    ends = ("(key => { const lane = document.querySelector(`[data-dbg-lane=\"${key}\"]`);"
+            " return [lane.querySelector('.dbg-start'), lane.querySelector('.dbg-finish')]"
+            ".map(end => end.offsetParent === null ? null : end.textContent); })")
+    assert bar.ev(f"['', 'a', 'b'].map({ends})") == [["1", "250"], [None, None], [None, None]]
+    # The timeline is as tall as the two rows the halves' sliders stand in,
+    # A's over B's, and is not itself pressed.
+    rows = bar.ev("['', 'a', 'b'].map(key => { const box = document.querySelector(`[data-dbg-lane=\"${key}\"] .dbg-rail`)"
+                  ".getBoundingClientRect(); return [box.top, box.bottom]; })")
+    assert rows[0][0] == rows[1][0] and rows[0][1] == rows[2][1] and rows[1][1] <= rows[2][0], rows
+    assert bar.ev("getComputedStyle(document.querySelector('[data-dbg-lane=\"\"] .dbg-rail')).pointerEvents") == "none"
     assert [bar.ev(half(letter, bar_shown)) for letter in "ab"] == [False, False], "a locked half shows a bar of its own"
     lanes = "['a', 'b'].map(letter => +document.getElementById('dbg-slider-' + letter).value)"
     assert bar.ev(lanes) == [start, start], bar.ev(lanes)
@@ -1330,11 +1404,17 @@ def check_the_split(bar: Bar) -> None:
     assert score == [[str(scores[0]), ""], [str(scores[1]), "lead"]], score
     assert bar.ev("[debugSplit.history.a.size, debugSplit.history.b.size]") == [5, 5]
     assert bar.ev("Math.min(...debugSplit.history.a.keys())") == start
-    # Each lane is on its half's turn, and from the turn of the split on it is
-    # drawn in the half's own colour.
+    # Each slider is on its half's turn. The two Civ AIs played different
+    # turns, so the two halves hold different worlds from the first of them:
+    # the timeline is one up to the turn of the split and branches there,
+    # each branch drawn in its half's own colour.
     assert bar.ev(lanes) == [start + 4, start + 4], bar.ev(lanes)
     assert bar.ev("[debugSplit.panes.a.first, debugSplit.panes.b.last]") == [1, start + 4]
     assert bar.ev("['a', 'b'].every(letter => !document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-own`).hidden)")
+    bar.until("debugBar.classList.contains('dbg-forked')", "the timeline branches once the halves hold different worlds")
+    branched(bar, start, start + 4, start + 4, "two Civ AIs played from the split")
+    assert bar.ev("debugSplitFork()") == {"turn": start, "forked": True, "first": {"a": 1, "b": 1},
+                                          "last": {"a": start + 4, "b": start + 4}}
 
     # Unlocked: the host's deck goes, and each half has the tools for its own
     # world again, with neither a timeline nor a picker: the host has both.
@@ -1359,6 +1439,9 @@ def check_the_split(bar: Bar) -> None:
               "both halves go back to the turn of the split")
     assert ops("a")[6:] == [["jump", None]] and ops("b")[6:] == [["jump", None]], (ops("a"), ops("b"))
     assert bar.ev("debugSplit.locked") is False
+    # They stand on the trunk, on the one turn, and still hold the turns each
+    # played: the branches stay, and the two have one marker between them.
+    branched(bar, start, start, start, "both halves walked back to where the timeline branches")
     # They are played again from there, still each by itself.
     play_both_to(start + 6)
     assert ops("a")[7:] == [["step", "jack"]] * 6 and ops("b")[7:] == [["step", "stock"]] * 6, (ops("a"), ops("b"))
@@ -1370,6 +1453,7 @@ def check_the_split(bar: Bar) -> None:
     bar.drag("dbg-slider-b", start + 4)
     bar.until(both(start + 6, start + 4), "B's lane walks B back")
     assert ops("b")[13:] == [["jump", None]] and len(ops("a")) == 13, (ops("a"), ops("b"))
+    branched(bar, start, start + 6, start + 4, "each half on its own branch")
     # A turn ahead of what the half has played is played to, by its own Civ AI.
     bar.drag("dbg-slider-b", start + 8)
     bar.until(both(start + 6, start + 8), "B's lane plays B on")
@@ -1396,10 +1480,14 @@ def check_the_split(bar: Bar) -> None:
     assert ops("b")[-8:] == [["step", "stock"]] * 8, ops("b")
     assert bar.ev("debugSplit.until") is None, "the run is over and the lanes still show where it was headed"
 
-    # A -> B makes B a copy of A, its line in the chart included.
+    branched(bar, start, start + 10, start + 10, "both halves played on, each on its branch")
+    # A -> B makes B a copy of A, its line in the chart included. The two are
+    # one world again, turn for turn, and the timeline is one again.
     bar.click('[data-dbg-split="copy-a"]')
     bar.until("debugSplit.panes.b.numbers.score === debugSplit.panes.a.numbers.score", "B becomes a copy of A")
     assert ops("b")[-1][0] == "copy", ops("b")
+    bar.until("!debugBar.classList.contains('dbg-forked')", "a copy holds the worlds it was copied from")
+    one_timeline(bar, start + 10, "B was made a copy of A")
 
     # Keep B: the split closes and the host plays on from that half.
     kept = bar.ev("debugSplit.panes.b.id")
@@ -1466,8 +1554,10 @@ def check_the_lock(bar: Bar) -> None:
     a, b = bar.ev("[debugSplit.panes.a.id, debugSplit.panes.b.id]")
     bar.until(f"debugBar.classList.contains('dbg-merged') && {deck_idle}", "the one panel is up")
 
-    # The lock joins the two lanes: it stands between the middles of the two
-    # rails, shut, and the two markers are linked while they are on one turn.
+    # The lock joins the two halves: it stands between the middles of their
+    # two rows, shut, and the two are one timeline with one marker on it.
+    bar.until("debugSplit.panes.a.marks && debugSplit.panes.b.marks", "both halves say what they hold")
+    one_timeline(bar, start, "a split opens on one timeline")
     lock = "document.querySelector('[data-dbg-lock]')"
     at = bar.ev("(() => { const middle = name => { const box = document.querySelector(name).getBoundingClientRect();"
                 " return [box.width, (box.top + box.bottom) / 2, box.left]; };"
@@ -1488,6 +1578,9 @@ def check_the_lock(bar: Bar) -> None:
     assert calls("a") == [["/debug", "step", b]], calls("a")
     assert calls("b") == [["/state", None, None]], calls("b")
     assert bar.ev("document.getElementById('dbg-turn').value") == str(start + 1)
+    # They are one world still, and one timeline.
+    bar.until(f"debugSplit.panes.b.marks.turns.includes({start + 1})", "B says it holds the turn its twin played")
+    one_timeline(bar, start + 1, "twins were played a turn")
 
     # A change on the one panel that leaves the turn where it was is asked
     # once as well: a layer.
@@ -1512,6 +1605,12 @@ def check_the_lock(bar: Bar) -> None:
     assert calls("a") == [["/debug", "step", None]] and calls("b") == [["/debug", "step", None]], (calls("a"), calls("b"))
     assert (strategies("a"), strategies("b")) == (["jack"], ["stock"])
     assert not bar.ev(same_score), "the two halves have parted"
+    # That turn is two worlds: the timeline branches on the turn before it,
+    # the last one the halves hold as one, and says so there.
+    bar.until("debugBar.classList.contains('dbg-forked')", "the timeline branches where the two worlds differ")
+    branched(bar, start + 1, start + 2, start + 2, "another Civ AI played B's turn")
+    hover = bar.ev("debugTurnWords(debugLaneModels.b, debugLaneModels.b.branches)")
+    assert hover.endswith("the last turn A and B are the same world"), hover
 
     # The same Civ AI again, but no longer the same world: A names B, the
     # engine finds them apart, and B is asked to play its own turn.
@@ -1534,6 +1633,13 @@ def check_the_lock(bar: Bar) -> None:
     bar.type_turn(start + 1)
     bar.until(f"{both(start + 1, start + 1)} && {deck_idle}", "the turn box walks both halves back")
     assert calls("a") == [["/debug", "jump", b]] and calls("b") == [["/debug", "jump", None]], (calls("a"), calls("b"))
+    # The wheel over the timeline walks them as it walks a whole screen's:
+    # back along the trunk, and on again.
+    bar.wheel('[data-dbg-lane="b"] .dbg-rail input', -100)
+    bar.until(f"{both(start, start)} && {deck_idle}", "the wheel over the timeline walks both halves back")
+    bar.wheel('[data-dbg-lane="a"] .dbg-rail input', 100)
+    bar.until(f"{both(start + 1, start + 1)} && {deck_idle}", "the wheel over the timeline walks both halves on")
+    forget()
     # B's next turn was played by Stock, while B seated it, and B seats Jack
     # now. On B's lane the turns ahead are drawn apart as another Civ AI's,
     # and A's, which Jack played, are A's timeline as before.
@@ -1546,7 +1652,7 @@ def check_the_lock(bar: Bar) -> None:
     bar.until(f"{both(start + 2, start + 2)} && {deck_idle}", "the wheel over the turn box takes both halves on")
     # A walks to the turn it played. B does not walk to Stock's turn: it
     # plays the turn, with the Civ AI it seats now.
-    assert calls("a")[1:] == [["/debug", "forward", b]] and calls("b")[1:] == [["/debug", "step", None]], (calls("a"), calls("b"))
+    assert calls("a") == [["/debug", "forward", b]] and calls("b") == [["/debug", "step", None]], (calls("a"), calls("b"))
     assert strategies("b") == ["jack"], strategies("b")
     bar.until("!debugSplit.panes.b.marks.beyond", "B has played over the turns that were another Civ AI's")
     # Auto-play on the one panel counts A's turns, and the lanes show where it is headed.
@@ -1556,9 +1662,17 @@ def check_the_lock(bar: Bar) -> None:
     bar.until(f"{both(start + 4, start + 4)} && {deck_idle}", "Auto-play on the one panel plays both halves")
     assert bar.note() == f"Played to turn {start + 4}", bar.note()
 
-    # A -> B makes the two the same world again, and they are played once again.
+    # B went back onto the trunk and played its turns again with the Civ AI A
+    # seats. The toy's worlds are then A's turn for turn, and where two
+    # halves hold the same worlds there is one timeline, however each came
+    # by them. (They are still not twins: the layers and the fog differ.)
+    bar.until(f"!debugBar.classList.contains('dbg-forked') && debugSplit.panes.b.marks.turns.includes({start + 4})",
+              "halves that hold the same worlds again are one timeline again")
+    one_timeline(bar, start + 4, "B played its turns again as A played them")
+    # A -> B makes the two the same in everything, and they are played once again.
     bar.click('[data-dbg-split="copy-a"]')
     bar.until(same_score, "B becomes a copy of A")
+    one_timeline(bar, start + 4, "B was made a copy of A")
     forget()
     bar.click('[data-dbg="next"]')
     bar.until(f"{both(start + 5, start + 5)} && {same_score} && {deck_idle}", "a copy is a twin")
@@ -1579,6 +1693,18 @@ def check_the_lock(bar: Bar) -> None:
     bar.ev(half("a", json.dumps("document.querySelector('[data-dbg=\"next\"]').click(), true")))
     bar.until(both(start + 6, start + 5), "A's own panel plays A alone")
     assert calls("a") == [["/debug", "step", None]] and calls("b") == [], (calls("a"), calls("b"))
+    # A has played a turn B has not. That is not two worlds on one turn: the
+    # rail stays one, with A's turn on it in A's colour and row, and each
+    # half's marker where the half stands.
+    bar.until(f"debugSplit.panes.a.marks.turns.includes({start + 6})", "A says it holds the turn it played")
+    seen = timeline(bar)
+    assert (seen["forked"], seen["tag"], seen["sky"]["a"], seen["sky"]["b"]) == (False, None, None, None), seen
+    assert seen["marker"] == {"trunk": None, "a": start + 6, "b": start + 5}, seen
+    own = bar.ev("['a', 'b'].map(letter => { const band = document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-own`);"
+                 " return !band.hidden && band.getBoundingClientRect().width > 0"
+                 " && getComputedStyle(band.parentNode).visibility === 'visible'; })")
+    assert own == [True, False], own
+    assert bar.ev("debugSplitFork()")["turn"] == start + 5
     # Apart, the lock cannot close; B changes a layer of its own meanwhile.
     assert bar.ev(f"[{lock}.disabled, {lock}.getAttribute('aria-pressed')]") == [True, "false"]
     assert "same turn" in bar.ev(f"{lock}.title"), bar.ev(f"{lock}.title")
@@ -1587,6 +1713,10 @@ def check_the_lock(bar: Bar) -> None:
     bar.until(half("b", "'state.debug.layers[1].on'"), "B switches a layer on by itself")
     bar.ev(half("b", json.dumps("document.querySelector('[data-dbg=\"next\"]').click(), true")))
     bar.until(f"{both(start + 6, start + 6)} && !{lock}.disabled", "the lock is offered on the same turn")
+    # B played the same turn by itself, with the same Civ AI, and holds the
+    # world A does: one timeline, though nothing joins the two halves.
+    bar.until(f"debugSplit.panes.b.marks.turns.includes({start + 6})", "B says it holds the turn it played")
+    one_timeline(bar, start + 6, "each half played the same turn by itself")
     # Locked again, B is made the same in what the one panel shows: A's layers.
     forget()
     bar.click('[data-dbg-lock]')
@@ -1596,10 +1726,12 @@ def check_the_lock(bar: Bar) -> None:
     assert calls("a") == [] and calls("b") == [["/debug", "layers", None]], (calls("a"), calls("b"))
     assert [bar.ev(half(letter, bar_shown)) for letter in "ab"] == [False, False]
 
-    # A lane shows what stands on its half's timeline: its breakpoint turns
-    # and its save points. A half's own timeline is put away in a split, so
-    # the lanes are the only place to see them, and a mark is its half's own
-    # to go to. Locked, the other half is brought along.
+    # The timeline shows what stands on each half's: its breakpoint turns and
+    # its save points. A half's own timeline is put away in a split, so the
+    # host's is the only place to see them, and a mark is its half's own to
+    # go to. Locked, the other half is brought along, and what both halves
+    # hold on the trunk is said once: a save point at the top of the
+    # timeline, in A's row, and a breakpoint turn at its foot, in B's.
     mark = "document.querySelector('#debugbar [data-dbg-lane=\"{}\"] .dbg-marks {}')".format
     stop = f'i.stop[data-dbg-turn="{start + 16}"]'
     flag = lambda name: f'i[title^="{name}:"]'
@@ -1607,21 +1739,25 @@ def check_the_lock(bar: Bar) -> None:
     def point(name: str) -> None:
         bar.ev(f"document.querySelector('#dbg-pop-saves [data-dbg-field=pointname]').value = '{name}', true")
         bar.click('[data-dbg="point"]')
-        bar.until(f"{mark('a', flag(name))} && {mark('b', flag(name))} && {deck_idle}",
-                  f"the save point {name}, set on the one panel, stands on both lanes")
+        bar.until(f"{mark('a', flag(name))} && !{mark('b', flag(name))} && debugSplit.panes.b.marks.flags.some("
+                  f"point => point.name === '{name}') && {deck_idle}",
+                  f"the save point {name}, set on the one panel, is both halves' and stands once on the timeline")
 
     point("fork")
     bar.click('[data-dbg="break-plus"]')
-    bar.until(f"{mark('a', stop)} && {mark('b', stop)} && {deck_idle}", "a breakpoint turn stands on both lanes")
+    bar.until(f"!{mark('a', stop)} && {mark('b', stop)} && debugSplit.panes.a.marks.stops.includes({start + 16})"
+              f" && {deck_idle}", "a breakpoint turn is both halves' and stands once on the timeline")
     assert "play to it" in bar.ev(f"{mark('b', stop)}.title"), bar.ev(f"{mark('b', stop)}.title")
     bar.ev(f"{mark('b', stop)}.click(), true")
-    bar.until(f"{both(start + 16, start + 16)} && {deck_idle}", "a breakpoint clicked on B's lane is played to by both halves")
-    # Two lanes stand close. A's breakpoint and B's save point on the same
-    # turn each keep to their own rail, so neither covers the other.
+    bar.until(f"{both(start + 16, start + 16)} && {deck_idle}", "a breakpoint clicked on the timeline is played to by both halves")
+    one_timeline(bar, start + 16, "both halves were played to the breakpoint as one")
+    # A save point and a breakpoint on the same turn stand at the two edges
+    # of the timeline, the save point over the breakpoint, as on a whole screen's.
     point("there")
-    apart = bar.ev(f"(() => {{ const box = held => held.getBoundingClientRect(), dot = box({mark('a', stop)}),"
-                   f" pin = box({mark('b', flag('there'))}); return [dot.bottom, pin.top, Math.abs(dot.left - pin.left)]; }})()")
-    assert apart[0] <= apart[1] and apart[2] < 1, apart
+    apart = bar.ev(f"(() => {{ const box = held => held.getBoundingClientRect(), pin = box({mark('a', flag('there'))}),"
+                   f" dot = box({mark('b', stop)}), sky = box(document.querySelector('[data-dbg-lane=\"\"] .dbg-sky'));"
+                   " return [pin.bottom, dot.top, Math.abs(pin.left - dot.left), sky.top - pin.top, dot.bottom - sky.bottom]; })()")
+    assert apart[0] <= apart[1] and apart[2] < 1 and 0 < apart[3] < 6 and 0 < apart[4] < 6, apart
     forget()
     bar.ev(f"{mark('a', flag('fork'))}.click(), true")
     bar.until(f"{both(start + 6, start + 6)} && {deck_idle}", "a save point clicked on A's lane takes both halves to it")
@@ -1635,6 +1771,9 @@ def check_the_lock(bar: Bar) -> None:
     bar.ev(half("b", json.dumps("document.querySelector('[data-dbg=\"break-plus\"]').click(), true")))
     own = f'i.stop[data-dbg-turn="{start + 17}"]'
     bar.until(f"{mark('b', own)} && !{mark('a', own)}", "a breakpoint B sets by itself stands on B's lane alone")
+    # Unlocked, each half's marks stand in its own row, the ones both hold
+    # too: each is its own half's to go to.
+    assert bar.ev(f"!!{mark('a', stop)} && !!{mark('b', stop)} && !!{mark('a', flag('fork'))} && !!{mark('b', flag('fork'))}")
     forget()
     bar.ev(f"{mark('b', flag('fork'))}.click(), true")
     bar.until(both(start + 6, start + 6), "a save point clicked on B's lane takes B alone to it")
@@ -1726,15 +1865,17 @@ def main() -> int:
         print("a run takes the turns its Civ AI already played from where they are kept, stops on a "
               "breakpoint among them, and plays only the turns past the last of them.")
         check_the_split(bar)
-        print("the split opens at once, seats a Civ AI in each half, plays both to a turn locked and "
-              "unlocked, sets their numbers side by side, starts both again from the split, moves "
-              "each half or both by the lanes in the host's bar, copies, keeps, and hears a half "
+        print("the split opens at once on one timeline, seats a Civ AI in each half, plays both to a "
+              "turn locked and unlocked, branches the timeline on the last turn the two hold as one "
+              "world, sets their numbers side by side, starts both again from the split, moves "
+              "each half or both by its slider in the host's bar, copies, keeps, and hears a half "
               "whose script came late.")
         check_the_lock(bar)
-        print("the lock joins the two lanes and closes only on one turn, the host's deck is the one "
+        print("the lock joins the two halves and closes only on one turn, the host's deck is the one "
               "panel of a locked split and each half's own comes back when it opens, two "
-              "identical halves are played once, and a lane shows its half's breakpoints and "
-              "save points and goes to the one that is clicked.")
+              "identical halves are played once and stay one timeline, a half that plays ahead "
+              "alone does not branch it, and the timeline shows each half's breakpoints and save "
+              "points, once while they are locked, and goes to the one that is clicked.")
         return 0
     finally:
         chrome.terminate()
