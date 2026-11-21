@@ -41,7 +41,9 @@
     font: 15px/1.55 var(--sans);
     -webkit-font-smoothing: antialiased;
   }
-  .shell { width: min(1060px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
+  /* Wider than the home page's 1060px: this page stands a column of its
+     own beside a ten-column table. */
+  .shell { width: min(1480px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
   main { padding-bottom: 48px; }
 
   .site-header {
@@ -112,11 +114,22 @@
   .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
 
-  /* The record: what is running, what is scheduled and what has finished,
-     one under another. Its figures are not written here. `beta/publish.sh`
-     fills the `tournaments-data` slot below (`beta/tournaments_page.py`);
+  /* The record: what is running, what is scheduled and what has finished.
+     Its figures are not written here. `beta/publish.sh` fills the
+     `tournaments-data` slot below (`beta/tournaments_page.py`);
      until it is filled the record stays hidden and one sentence says so. */
   .tour-record { display: grid; gap: 16px; min-width: 0; }
+  /* With the room for it, what is scheduled stands in a column of its own
+     off on the right (operator, 2026-11-21: "lets have schedule in a col off
+     on the right"), beside what is running and what has finished. It spans
+     the rows of all three on its left and is as tall as its own list. In a
+     narrower window the three are one under another, in the order the
+     markup has them. */
+  @media (min-width: 1420px) {
+    .tour-record { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
+    .tour-record > * { grid-column: 1; }
+    .tour-record > #tour-scheduled { grid-column: 2; grid-row: 1 / span 3; }
+  }
   .tour-record[hidden], .tour-section[hidden], .tour-empty[hidden] { display: none; }
   .tour-empty { margin: 0; color: var(--faint); font-size: 13px; }
   .tour-section { min-width: 0; padding: 12px 14px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
@@ -188,6 +201,9 @@
   .rank-table td { padding: 6px 10px 2px 0; border-top: 1px solid var(--border); color: var(--text); vertical-align: top; white-space: nowrap; }
   .rank-table td.is-record { color: #fff; font-weight: 700; }
   .rank-table td.is-note { min-width: 14em; color: var(--muted); font-size: 12px; line-height: 1.45; white-space: normal; }
+  /* The conditions are a few words and may take two lines, which leaves
+     the dates and the two durations their one line each. */
+  .rank-table td.is-conditions { min-width: 10em; white-space: normal; }
   .rank-table td.is-name { min-width: 13em; white-space: normal; }
   .rank-table td.is-name b { display: block; color: #fff; font-weight: 700; white-space: nowrap; }
   .rank-table td.is-name small { display: block; color: var(--muted); font-size: 12px; line-height: 1.4; }
@@ -272,7 +288,7 @@
         <p class="rank-sub" data-sub></p>
         <div class="tour-scroll">
           <table class="rank-table">
-            <thead><tr><th scope="col">Tournament</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Games</th><th scope="col">Record</th><th scope="col">Won</th><th scope="col">Conditions</th><th scope="col">Notes</th></tr></thead>
+            <thead><tr><th scope="col">Tournament</th><th scope="col">Start</th><th scope="col">End</th><th scope="col" title="From the first game starting to the last game ending">Wall time</th><th scope="col" title="The time the games were in play, added up">Run time</th><th scope="col">Games</th><th scope="col">Record</th><th scope="col">Won</th><th scope="col">Conditions</th><th scope="col">Notes</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -286,6 +302,9 @@
         A square is a game, in the order played; hover one for the civ, the ending and the turn.
         A win is any victory. A loss is a rival&#8217;s victory, our elimination, or a game conceded early.
         A launch that never reached a board is not a game.
+        Dates are UTC, on the 24-hour clock.
+        Wall time is from a tournament&#8217;s first game starting to its last game ending.
+        Run time is the time its games were in play, added up, without the time between them.
       </p>
     </div>
   </main>
@@ -385,7 +404,8 @@
       figure.append(el("p", "tour-score", record(t)), el("p", "tour-rate", plural(t.games, "game", "games") + " of " + t.size + (t.games ? " · " + rate(t) + " won" : "")));
       head.append(title, figure);
       card.append(head, strip(t, true), counts(t));
-      card.append(el("p", "tour-meta", [t.conditions, "started " + t.start, t.note].filter(Boolean).join(" · ")));
+      card.append(el("p", "tour-meta", [t.conditions, "started " + t.start,
+        t.wall ? "wall time " + t.wall : "", t.run ? "run time " + t.run : "", t.note].filter(Boolean).join(" · ")));
       const results = list(t.results);
       if (results.length) {
         const mixed = list(t.levels).length > 0;
@@ -444,10 +464,12 @@
         tr.append(name,
           el("td", "", t.start || ""),
           el("td", "", t.end || ""),
+          el("td", "", t.wall || ""),
+          el("td", "", t.run || ""),
           el("td", "", t.games + " / " + t.size),
           el("td", "is-record", record(t)),
           el("td", "", rate(t)),
-          el("td", "", t.conditions || ""),
+          el("td", "is-conditions", t.conditions || ""),
           note);
         const games = el("tr", "is-games");
         const cell = el("td");
