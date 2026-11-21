@@ -10725,7 +10725,9 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
         .expect("matrix");
     assert!(matrix.contains("ties.set(`${pair.first}:${pair.second}`, tie);"));
     assert!(matrix.contains("ties.set(`${pair.second}:${pair.first}`, tie);"));
-    assert!(matrix.contains("if (column.id === row.id) return `<td class=\"self\"></td>`;"));
+    assert!(matrix.contains(
+        "if (column.id === row.id) return `<td class=\"self\" style=\"${jersey(row.id)}\"></td>`;"
+    ));
     // Anything less than a pact is one leader's view, read from the row.
     assert!(matrix.contains("WORLD_POLITICS_ATTITUDES[stances[seat.get(column.id)]]"));
     assert!(matrix.contains("${row.civ} toward ${column.civ}"));
@@ -10744,27 +10746,35 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
             .find("<div id=\"worldpolitics\"")
             .expect("table")
     );
-    assert!(matrix.contains("<td class=\"politics-corner\"></td>"));
-    // The column names run along the bottom, slanted, and every name stands on
-    // its civilization's plate in both jersey colours.
-    assert!(matrix.contains("<tfoot><tr><td class=\"politics-corner\"></td>${foot}</tr></tfoot>"));
-    assert!(!matrix.contains("<thead>"));
-    assert!(matrix.contains("--civ:${pcol(id)};--civ-trim:${pcol2(id)};"));
-    assert!(matrix.contains("--civ-ink:${hudJerseyInk(id)}"));
-    assert!(EMBEDDED_INDEX.contains("transform-origin: 100% 0; transform: rotate(-45deg);"));
-    assert!(panel.contains("list.style.setProperty(\"--politics-run\", `${run}px`);"));
-    assert!(EMBEDDED_INDEX.contains("table.tFoot.rows[0].cells[column]"));
+    // Only the rows are named, each on its civilization's plate in both jersey
+    // colours. A column is that civilization's colour, dimmed to one quiet
+    // lightness, and meets its row on the diagonal, which shows the plate.
+    assert!(!matrix.contains("<thead>") && !matrix.contains("<tfoot>"));
+    assert!(matrix.contains("const jersey = id => `--civ:${pcol(id)};--civ-trim:${pcol2(id)}`;"));
+    assert!(matrix.contains("--civ-ink:${hudJerseyInk(row.id)}"));
+    assert!(matrix.contains("civs.map(civ => `<col style=\"--civ:${pcol(civ.id)}\">`)"));
+    assert!(EMBEDDED_INDEX.contains(".politics-matrix col + col {"));
+    assert!(EMBEDDED_INDEX
+        .contains("background: oklch(from var(--civ) calc(.26 + l * .2) calc(c * .6) h);"));
+    assert!(EMBEDDED_INDEX.contains(
+        ".politics-matrix tbody td.self { background: var(--civ); box-shadow: inset 3px 0 var(--civ-trim); }"
+    ));
+    // Every face keeps a dark rim, so it reads on any civilization's colour.
+    assert!(EMBEDDED_INDEX.contains(".politics-matrix .politics-mark { filter: drop-shadow("));
+    // Pointing at a column lights it and the name of the civilization it is.
+    assert!(EMBEDDED_INDEX.contains("table.tBodies[0].rows[column - 1]?.cells[0]"));
+    // The slanted column names along the bottom are gone, with their corner.
+    for gone in ["politics-corner", "politics-slid", "--politics-run", "--politics-foot", "table.tFoot"] {
+        assert!(!EMBEDDED_INDEX.contains(gone), "{gone}");
+    }
     assert!(!EMBEDDED_INDEX.contains("politics-legend"));
 
-    // Both sets of names stay put while the table scrolls under them. Six rows
-    // always fit, and the labels below stop covering the table while it is open.
-    assert!(EMBEDDED_INDEX.contains(".politics-matrix tbody th { left: 0; z-index: 1;"));
-    assert!(EMBEDDED_INDEX.contains(".politics-matrix tfoot th { bottom: 0; z-index: 2;"));
+    // The names stay put while the table scrolls under them. Six rows always
+    // fit, and the labels below stop covering the table while it is open.
+    assert!(EMBEDDED_INDEX.contains(".politics-matrix tbody th {\n    position: sticky; left: 0; z-index: 1;"));
     assert!(EMBEDDED_INDEX.contains(
-        "#side.deck-stops .politics-list { max-height: max(calc(var(--politics-foot) + 20px + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }"
+        "#side.deck-stops .politics-list { max-height: max(calc(20px + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }"
     ));
-    // Slid sideways, the corner covers the columns that went under the names.
-    assert!(EMBEDDED_INDEX.contains(".politics-slid .politics-corner { z-index: 3;"));
     assert!(EMBEDDED_INDEX.contains(
         "#side.deck-stops #politicssec[open] ~ .sidebar-section:not([open]) { position: static; box-shadow: none; }"
     ));
