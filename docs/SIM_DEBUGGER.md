@@ -34,7 +34,8 @@ engine of its own: a Civ AI is picked for each half, from the strip and from
 the head of its row, both are played to a turn locked and then unlocked,
 each half and then both are moved by the sliders in the host's box, and the
 test reads which Civ AI each half's steps named, the numbers set side by
-side, a copy, and the half that is kept. It reads the timeline as it is
+side (open as the split opens), a copy, and a branch dropped by its name. It
+reads the timeline as it is
 drawn at each step: one rail and one marker while the two halves hold the
 same worlds, a branch for each from the last turn they do, and one rail
 again when one is made a copy of the other. A part holds the lock: that
@@ -47,9 +48,14 @@ until the other plays the same turn, and that the timeline shows each half's
 breakpoint turns and save points and goes to the one that is clicked. A last
 part holds the branch: that Branch stands under the marker and moves with
 it, that a branch made behind the last turn played forks the timeline on
-that turn with the branch holding nothing past it, that each branch has an ✕
-at its left, that closing the timeline as it was leaves the branch as the
-timeline, and that each stretch is named by the Civ AI that played it. A
+that turn with the branch holding nothing past it, that each branch is named
+on itself and has an ✕ after its right end, that closing the timeline as it
+was leaves the branch as the timeline, and that each stretch is named by the
+Civ AI that played it. Two more parts hold what the box asks (Switch or
+Branch for another Civ AI picked on the one timeline, and which Civ AI plays
+a branch that was just made) and the opening view: a page opened as anyone
+opens it draws its first state on two tracks with nothing pressed, once a
+game. Every part before that one asks for the one timeline (`?tracks=1`). A
 control added to the box or the strip is added there.
 
 ## The bar
@@ -63,7 +69,15 @@ again whenever either changes (the left panel folded away, brought back or
 dragged wider). A watched game has no box and is not moved.
 
 Above the timeline is the Civ AI that plays the seat from the open turn, to
-pick there. Under the timeline's marker, wherever the marker stands, is
+pick there. Picking another one there asks first what to do with it
+(operator 2026-11-22: "leading strategies should be editable and when edited
+to a different strategy, should ask to switch or branch"): **Switch**, and
+this timeline plays on with it from the open turn, or **Branch**, and a
+second timeline begins there with it while this one keeps the Civ AI it had.
+Cancel, Escape or a press anywhere else leaves the seat as it was. Until it
+is answered nothing is said to the engine. (The left panel's own picker, in
+the Single player view, seats its pick at once as before.) Under the
+timeline's marker, wherever the marker stands, is
 Branch (operator 2026-11-21: "branch should say "Branch" and should move
 around below where the timeline "cursor" is. always rpesenting the option to
 branch"); it keeps its word in a box of any width. Under that is one row in
@@ -233,6 +247,12 @@ except the last, which has the rail ahead of it to run on over; a name the
 marker stands on steps past the marker, and in a split's rows past an era's
 name as well. The words under the pointer say whose play opened the turn
 there.
+
+A branch of a split is named on itself (operator 2026-11-22: "lets label the
+branches themselves"): once the tree has forked, the name on a branch's
+first stretch begins with the branch's letter, "A · JackOfAllTrades". A
+branch nothing has been played on yet is named by the Civ AI seated in it,
+the one that will play it.
 
 The engine says it in `debug.played_by`: for every kept turn, the ones ahead
 that another Civ AI played too, a list of `from`, `to` and `by`. A stretch
@@ -516,6 +536,25 @@ world as it stood when the screen was split, and from there each can play
 its own history: play one by hand and step the other, or try two answers to
 the same turn.
 
+A game opens that way (operator 2026-11-22: "in ai debugger, the opening
+view should go to the 2 track immediately"): the first state of a game drawn
+under the debugger is branched where it stands, as Branch does it, with
+nothing pressed. It is the opening view and is given once a game
+(`debugOpenOnTwoTracks`, by the game's seed): a branch that is dropped
+leaves the one timeline, which stays one until Branch is pressed or a new
+game begins. A page asked for with `tracks=1` in its address opens on the
+one timeline, and so does a window under 900px wide, a small device, and a
+seat being played by hand in the Single player view.
+
+A branch that was just made begins with A's Civ AI, and the box asks which
+one plays it (operator: "after this, user should be prompted for the
+strategy for the second branch"): a list of every Civ AI the page offers,
+under B's picker, the one seated lit and marked as A's. A press on one seats
+it in B, as B's picker does, and B's picker answers the question as well. A
+press anywhere else, or Escape, leaves B on the Civ AI it began with. A
+branch made from the Switch or Branch question above was made for a Civ AI,
+and is not asked about.
+
 A is the timeline as it was, and B is the branch. A keeps every turn it
 holds, the ones past the open turn included. B begins on the open turn: when
 turns are kept past it, the host tells B so as it loads, and B lets go of
@@ -524,11 +563,12 @@ go of and is asked nothing, so the two stay twins ("Identical halves are
 played once"). Two branches are the most there are: while the screen is
 split there is no Branch, and closing one brings it back.
 
-Each branch has an ✕ at its left, before its letter and its Civ AI (operator
-2026-11-21: "each branch should have an X on the left side. collapsing a
-branch should reduce the tree appropriately"). It closes that branch, and
-the other is the timeline from then on with every turn it holds (`adopt`,
-the same as Keep A and Keep B on the strip). Closing B leaves the timeline
+Each branch has an ✕ after the right end of its row (operator 2026-11-21:
+"each branch should have an X"; 2026-11-22: "move x deletes over to the
+right side please, right after each closable timeline ends"), between the
+row's rail and the game's last turn. It closes that branch, and the other is
+the timeline from then on with every turn it holds (`adopt`, the same as
+Drop A and Drop B on the strip). Closing B leaves the timeline
 as it was. Closing A leaves the branch: one timeline that passes from the
 Civ AI that played up to the fork to the one that played the branch
 (operator: "if the initial is deleted though, the branchbecomes the main
@@ -745,8 +785,8 @@ The strip between the halves holds the split's other controls:
 |---------|--------------|
 | View | On, the two maps move together: panning or zooming one moves the other. Off, each looks where it likes. |
 | ◧ / ⬒ | Switch between side by side and top and bottom |
-| A → B, B → A | Make one half a copy of the other as it stands now, turns behind it included (`copy`) |
-| Keep A, Keep B | Close the split and play on from that half (`adopt`): its session becomes the main one, with every turn it could walk back to. The ✕ at the left of the other branch's row does the same |
+| A ⇒ B, A ⇐ B | Make one half a copy of the other as it stands now, turns behind it included (`copy`). Both are written A then B, and the arrow is the way the copy goes: A ⇒ B makes B a copy of A, A ⇐ B makes A a copy of B. They stand together in the middle of the strip |
+| Drop A, Drop B | Close that branch and play on from the other (`adopt`): the other's session becomes the main one, with every turn it could walk back to. Each stands at its own half's end of the strip, and does what the ✕ of that branch's row does. (They were Keep A and Keep B, named for the half that stays, until 2026-11-22; operator: "keep isnt informing the user of the action of drop") |
 | drag the strip | Resize the halves; double-click makes them equal |
 | VS | Head to head; see below |
 
@@ -754,8 +794,11 @@ A half that moved because it was following is not followed back.
 
 ### Head to head
 
-Head to head is the split used to play two strategies out from one turn. VS
-in the strip widens it to hold:
+Head to head is the split used to play two strategies out from one turn. It
+is open as a split opens (operator 2026-11-22: "Default the stats window
+open"); VS in the strip puts it away and brings it back, and that choice is
+kept on the device (`civvis-debug-versus`). Open, the strip is wide enough
+to hold:
 
 - a Civ AI for each half, the same choice that stands at the head of the
   half's row in the bar. It is the agent that plays that half's seat
@@ -783,8 +826,9 @@ The rivals in each half are played by fresh agents from the split onward, and
 again after any walk along a half's timeline: a half keeps no agents with its
 marks and seats none from them, unlike an unsplit game. So the two halves
 start level every time, at the split and at every rematch, and differ only in
-what the seat does and in what follows from it. A half that is kept (Keep A,
-Keep B) is the game itself again, and keeps its agents from then on.
+what the seat does and in what follows from it. A half that is kept (the
+other was dropped) is the game itself again, and keeps its agents from then
+on.
 
 ### Identical halves are played once
 

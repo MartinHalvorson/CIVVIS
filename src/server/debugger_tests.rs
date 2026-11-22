@@ -1693,12 +1693,25 @@ fn a_branch_begins_on_the_turn_it_is_made_on() {
         "if (letter === \"b\" && debugSplit.branches) debugSplitTell(\"b\", {civvis: \"pane-op\", body: {op: \"branch\"}});",
         // Until it says it holds none of them, they are left out of its line.
         "const cut = letter === \"b\" && debugSplit.branches ? from : Infinity;",
-        // The ✕ at the left of a branch closes it: the other is kept.
+        // The ✕ of a branch closes it: the other is kept. It stands past
+        // the right end of its branch's row (operator, 2026-11-22: "move x
+        // deletes over to the right side please, right after each closable
+        // timeline ends"), and the strip between the halves drops a branch
+        // by the same name ("Should have Drop A and Drop B over Keep").
         "<button class=\"dbg-close\" data-dbg-close=\"${key}\"",
         "if (debugSplit && !closed.disabled) debugSplitClose(closed.dataset.dbgClose === \"a\" ? \"b\" : \"a\");",
-        "#debugbar.dbg-split-on .dbg-close { grid-column: 1; }",
+        "#debugbar.dbg-split-on .dbg-rail { grid-column: 5; }\n  #debugbar.dbg-split-on .dbg-close { grid-column: 6; }",
+        "else if (action === \"drop-a\") debugSplitClose(\"b\");\n    else if (action === \"drop-b\") debugSplitClose(\"a\");",
         // Two branches are the most there are.
         "#debugbar.dbg-split-on .dbg-branch, #debugbar.dbg-split-on .dbg-who { display: none; }",
+        // A branch is named on itself, by its letter and its Civ AI.
+        "letter: fork.forked ? letter.toUpperCase() : null, seated: pane.strategy,",
+        // A game opens on its two tracks, and the box asks which Civ AI
+        // plays the branch: a branch made for one is not asked about.
+        "try { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); debugOpenOnTwoTracks(); }",
+        "debugAsk = seat ? null : {kind: \"seat\", letter: \"b\"};",
+        // Another Civ AI picked on the one timeline is asked about first.
+        "debugAsk = target.value && target.value !== debugStrategy() ? {kind: \"switch\", name: target.value} : null;",
     ] {
         assert!(page.contains(piece), "the branch is missing {piece}");
     }
