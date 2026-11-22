@@ -15,7 +15,7 @@
 // with the world's first unpaused frame, stops while the simulation is paused
 // or a result is on screen, and a new world starts it over from zero. A
 // restart that comes back paused at the opening position therefore sits at
-// 0:00 until somebody presses Start — an unstarted game has no live time.
+// 0.00 until somebody presses Start — an unstarted game has no live time.
 let liveClock = {seed: undefined, ms: 0, runningSince: null};
 const LIVE_CLOCK_STORE = "civvis-live-time-v1";
 function liveClockMs() {
@@ -25,20 +25,30 @@ function liveClockMs() {
 // One reading of the clock, split where the plate splits it: the whole seconds
 // are the value's words and the hundredths of a second follow them (operator
 // 2026-11-21: "add hundredths of a second to the live time count").
+//
+// The reading is seconds and hundredths, `12.34`, and grows a part only when
+// it has one to show: minutes from 60 seconds, `1:00.00`, and hours from 60
+// minutes (operator 2026-11-21: "live time can just default to second and
+// hundredths of a second. if we need minutes, we can add that in at 60s").
+// `spoken` is the same whole seconds for a screen reader, which is told the
+// unit a bare number under a minute does not carry.
 function liveClockReading() {
   const ms = liveClockMs();
   const total = Math.floor(ms / 1000);
-  const seconds = String(total % 60).padStart(2, "0");
+  const two = part => String(part).padStart(2, "0");
   const minutes = Math.floor(total / 60) % 60;
   const hours = Math.floor(total / 3600);
+  const text = hours ? `${hours}:${two(minutes)}:${two(total % 60)}`
+    : minutes ? `${minutes}:${two(total % 60)}` : `${total}`;
   return {
-    text: hours ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`,
-    hundredths: String(Math.floor(ms / 10) % 100).padStart(2, "0"),
+    text,
+    spoken: total < 60 ? `${total} second${total === 1 ? "" : "s"}` : text,
+    hundredths: two(Math.floor(ms / 10) % 100),
   };
 }
 // Start or stop the accumulator against what the page is showing right now.
 // Paused covers the unstarted opening as well: a clock that has never run
-// and is not running reads 0:00, which is what an unstarted game has played.
+// and is not running reads 0.00, which is what an unstarted game has played.
 // On the mirror beside a Civilization VI verification game this page's own
 // simulation never runs — the world is a picture of the Firaxis game — so the
 // clock follows that game instead: it runs while the game plays and stops

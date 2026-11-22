@@ -27819,7 +27819,7 @@ function hudTurnPlate() {
       `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`
     : ``;
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
-    (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
+    (liveTime ? `live time ${liveTime.spoken}; ` : ``) +
     `max speed ${watchPace}; ` +
     `map ${mapRowValue}; ` +
     (liveLevel ? `difficulty level ${liveLevel.level}, ${liveLevel.name}; ` : ``) +
