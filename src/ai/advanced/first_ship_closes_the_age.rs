@@ -107,7 +107,7 @@ impl AdvancedAi {
         let in_time = cities.iter().any(|cid| {
             matches!(g.cities[cid].queue.first(), Some(Item::Unit { unit })
                 if g.rules.units.get(unit).is_some_and(|spec| spec.domain.as_deref() == Some("sea")))
-                && Self::first_ship_for(g, pid, *cid).is_some_and(|(_, turns)| turns < left as f64)
+                && Self::first_ship_for(g, pid, *cid).is_some_and(|(_, turns)| turns.ceil() < left as f64)
         });
         if in_time {
             return false;
@@ -121,7 +121,7 @@ impl AdvancedAi {
             .filter_map(|cid| {
                 Self::first_ship_for(g, pid, *cid).map(|(item, turns)| (*cid, item, turns))
             })
-            .filter(|(_, _, turns)| *turns < left as f64)
+            .filter(|(_, _, turns)| turns.ceil() < left as f64)
             .min_by(|a, b| a.2.total_cmp(&b.2).then(a.0.cmp(&b.0)));
         if let Some((city, item, turns)) = best {
             if g.apply(

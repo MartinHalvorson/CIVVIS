@@ -139,9 +139,15 @@ impl AdvancedAi {
         };
         let item = Item::Unit { unit };
         let cities = g.player_city_ids(pid);
+        // In time means whole production turns strictly fewer than the turns
+        // left: a unit finished at the end of the era's last turn is booked
+        // after the era closes. Live Sejong civvis-t6-20261122T063243Z: the
+        // first Hwacha was claimed at t105 at 4.6 turns "against 5 left", came
+        // out at t111, and its +4 landed in the new era, which opened Dark at
+        // 58 of 59.
         if cities.iter().any(|cid| {
             g.cities[cid].queue.first() == Some(&item)
-                && Self::unique_unit_turns(g, pid, *cid, &item) < left as f64
+                && Self::unique_unit_turns(g, pid, *cid, &item).ceil() < left as f64
         }) {
             return false;
         }
@@ -149,7 +155,7 @@ impl AdvancedAi {
             .iter()
             .filter(|cid| g.can_produce(pid, **cid, &item))
             .map(|cid| (*cid, Self::unique_unit_turns(g, pid, *cid, &item)))
-            .filter(|(_, turns)| turns.is_finite() && *turns < left as f64)
+            .filter(|(_, turns)| turns.is_finite() && turns.ceil() < left as f64)
             .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
         if let Some((city, turns)) = best {
             if g.apply(

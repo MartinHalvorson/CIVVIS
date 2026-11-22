@@ -83,3 +83,23 @@ fn research_takes_bronze_working_when_it_is_missing() {
     );
     assert_eq!(seat(false).unique_unit_age_tech(&g, 0), None);
 }
+
+/// Whole production turns must be strictly fewer than the turns left: live
+/// Sejong `civvis-t6-20261122T063243Z` claimed its first Hwacha at 4.6 turns
+/// against 5 left, the unit came out after the era closed, and the +4 landed
+/// in a Dark Age.
+#[test]
+fn a_unit_finished_on_the_eras_last_turn_is_not_claimed() {
+    let (mut g, city) = board(3);
+    let cost = g.item_cost_for_city(0, city, &hoplite());
+    Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
+        city,
+        Yields {
+            production: cost / 4.6,
+            ..Default::default()
+        },
+    );
+    g.players[0].gold = 0.0;
+    assert!(!seat(true).claim_unique_unit_for_the_age(&mut g, 0));
+    assert_ne!(g.cities[&city].queue.first(), Some(&hoplite()));
+}
