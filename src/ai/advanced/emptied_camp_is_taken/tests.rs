@@ -51,7 +51,9 @@ fn open_at(game: &Game, anchor: Pos, distance: i32) -> Pos {
         .filter(|pos| game.wdist(*pos, anchor) == distance && open(game, *pos))
         .collect();
     ring.sort_unstable();
-    ring.into_iter().next().expect("open ground at the distance")
+    ring.into_iter()
+        .next()
+        .expect("open ground at the distance")
 }
 
 /// A camp three tiles from the capital and a Warrior of ours on an open tile
@@ -107,7 +109,10 @@ fn the_gene_is_an_off_by_default_opt_in() {
     assert!(!AdvancedAi::new().emptied_camp_is_taken);
     let mut live = AdvancedAi::new();
     live.enable_live_bridge_universe();
-    assert!(!live.emptied_camp_is_taken, "nothing arms it on the live seat by itself");
+    assert!(
+        !live.emptied_camp_is_taken,
+        "nothing arms it on the live seat by itself"
+    );
     let enable = crate::ai::advanced::genes::GENES
         .iter()
         .find(|gene| gene.tag == "emptied-camp-is-taken")
@@ -130,9 +135,18 @@ fn a_soldier_beside_an_empty_camp_walks_onto_it() {
         let taken = ai.take_emptied_camps(&mut game, 0, &mut field);
         if on {
             assert_eq!(taken, 1);
-            assert_eq!(game.units[&warrior].pos, camp, "the Warrior must stand on the camp");
-            assert!(!game.barb_camps.contains_key(&camp), "the entry clears the camp");
-            assert!(game.players[0].gold >= gold + 50.0, "the camp pays its bounty");
+            assert_eq!(
+                game.units[&warrior].pos, camp,
+                "the Warrior must stand on the camp"
+            );
+            assert!(
+                !game.barb_camps.contains_key(&camp),
+                "the entry clears the camp"
+            );
+            assert!(
+                game.players[0].gold >= gold + 50.0,
+                "the camp pays its bounty"
+            );
             assert!(ai.battle_planner_claims(warrior), "the plan keeps it there");
         } else {
             assert_eq!(taken, 0);

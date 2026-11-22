@@ -74,8 +74,7 @@ impl AdvancedAi {
             if !g.barb_camps.contains_key(&camp) || !g.sees(&visible, camp) {
                 continue;
             }
-            if g
-                .unit_ids_at(camp)
+            if g.unit_ids_at(camp)
                 .iter()
                 .any(|other| g.units.get(other).is_some_and(|unit| unit.owner != pid))
             {
