@@ -91,6 +91,7 @@ from civ6_play import DEFAULT_CIVVIS_VICTORY as DEFAULT_VICTORY  # noqa: E402
 from civ6_play import ROMAN_LEADER, VICTORY_LANES, resolve_live_leader  # noqa: E402
 from civ6_play import LADDER as DIFFICULTIES, RANDOM_LEADER  # noqa: E402
 from civ6_play import OPTIONS as SETUP_OPTIONS  # noqa: E402
+from civ6_play import read_policy_value  # noqa: E402
 
 # The map scripts `civ6_play` can drive the Create Game panel to. Taken from
 # that module rather than restated here: a list copied into a second file is
@@ -143,6 +144,29 @@ def heal_the_ladder() -> None:
 
 def stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+#: Host policy key: the prefix of every run tag this loop starts. A tournament
+#: is defined by a tag range (`data/tournaments.json`: games from its `start`
+#: tag, before its `end`), so a tournament played in single player needs its
+#: games tagged into its own range: Tournament 6 runs from `civvis-t6-` to
+#: `civvis-t7-`, and a plain `civvis-<stamp>` tag sorts before both, into
+#: Tournament 5's range instead (operator 2026-11-22: finish Tournament 6 in
+#: single player). Unset is the plain `civvis-` prefix.
+TAG_PREFIX_POLICY_KEY = "CIVVIS_TAG_PREFIX"
+TAG_PREFIX = re.compile(r"civvis-(?:t\d+-)?")
+
+
+def run_tag_prefix(read=read_policy_value) -> str:
+    """The policy's run-tag prefix: `civvis-`, or `civvis-t<N>-` for Tournament N."""
+    value = (read(TAG_PREFIX_POLICY_KEY) or "").strip()
+    if not value:
+        return "civvis-"
+    if TAG_PREFIX.fullmatch(value):
+        return value
+    print(f"[policy] ignoring {TAG_PREFIX_POLICY_KEY}={value!r}: a run tag starts "
+          "civvis- or civvis-t<N>-", flush=True)
+    return "civvis-"
 
 
 def run(cmd: list[str], timeout: float = 60.0) -> str:
@@ -3602,7 +3626,7 @@ def main() -> int:
 
         attempt = played + 1
         started += 1
-        tag = f"civvis-{stamp()}"
+        tag = f"{run_tag_prefix()}{stamp()}"
         # ⚠ THE CODE CHANGES BETWEEN ATTEMPTS AND THE LEDGER COULD ONLY SAY SO
         # AFTERWARDS. The harness re-installs the mod at the start of every attempt,
         # so a fix landed mid-batch takes effect on the next row — and every earlier
