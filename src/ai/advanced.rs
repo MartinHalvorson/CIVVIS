@@ -10656,6 +10656,14 @@ pub struct AdvancedAi {
     /// plot the board marks unknown. See
     /// `advanced/settler_fallback_takes_seen_ground.rs`. Off by default.
     settler_fallback_takes_seen_ground: bool,
+    /// `staged-siege-keeps-its-breakers`: while a staged siege has nothing to
+    /// open the walls, a queued ram, tower or gun keeps its city's queue even
+    /// unstarted. See `advanced/staged_siege_keeps_its_breakers.rs`. Off by
+    /// default.
+    staged_siege_keeps_its_breakers: bool,
+    /// The turn a siege's breach reading last left the walls shut, for
+    /// `staged-siege-keeps-its-breakers`.
+    siege_breaker_wanted_turn: Option<u32>,
     /// `strategic-unit-closes-the-dark-age`: one Era Score short of a Normal
     /// Age before the era closes, the first unit of a strategic resource not
     /// used yet, a 1-point Moment. See
@@ -12568,6 +12576,9 @@ mod settler_walk_deadline;
 /// is built, and a Settler's guard cuts down the raider pinning it. Two
 /// genes; see `advanced/siege_response.rs`.
 mod siege_response;
+/// `staged-siege-keeps-its-breakers`: see
+/// `advanced/staged_siege_keeps_its_breakers.rs`.
+mod staged_siege_keeps_its_breakers;
 /// A Settler past its walk allowance takes a safe site within reach. One
 /// opt-in gene; see `advanced/stalled_settler_site.rs`.
 mod stalled_settler_site;
@@ -24895,6 +24906,12 @@ impl AdvancedAi {
         current: &Item,
         plan: &StrategicPlan,
     ) -> bool {
+        // `staged-siege-keeps-its-breakers`: a staged siege that cannot open
+        // the walls also holds an unstarted ram, tower or gun. See
+        // `advanced/staged_siege_keeps_its_breakers.rs`.
+        if self.staged_siege_holds_the_breaker(g, cid, current, plan) {
+            return true;
+        }
         if !self.breaker_keeps_its_queue {
             return false;
         }

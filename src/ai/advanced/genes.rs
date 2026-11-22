@@ -6510,6 +6510,16 @@ pub const GENES: &[Gene] = &[
     // such plots t10-t15 while a seen site worth 160.8 stood seven tiles
     // away. See `advanced/settler_fallback_takes_seen_ground.rs`.
     Gene { tag: "settler-fallback-takes-seen-ground", field: "settler_fallback_takes_seen_ground", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_fallback_takes_seen_ground, disable: AdvancedAi::disable_settler_fallback_takes_seen_ground },
+    // Live Tournament 6/7 / Lv 8 Deity 2026-11-21/22: in 11 of 65 wars the
+    // seat held 1.5-3.5x the rival's military for 13-31 turns and took 0-2
+    // cities; its staged sieges read "nothing to open the walls" while the
+    // strategic scorer displaced every unstarted Siege Tower for a Campus,
+    // University or Industrial Zone (Khmer t6-045704Z, Bulawayo t88-139).
+    // `breaker-keeps-its-queue` holds only invested siege-class guns. While
+    // a staged siege has no breaker, a queued ram, tower or gun keeps its
+    // city's queue, invested or not. Opt-in; see
+    // `advanced/staged_siege_keeps_its_breakers.rs`.
+    Gene { tag: "staged-siege-keeps-its-breakers", field: "staged_siege_keeps_its_breakers", kind: Kind::OptIn, enable: AdvancedAi::enable_staged_siege_keeps_its_breakers, disable: AdvancedAi::disable_staged_siege_keeps_its_breakers },
     // Live Tournament 6/7 / Lv 8 Deity 2026-11-21/22: 26 of 128 Dark Ages were
     // entered exactly one Era Score short. The first unit of each strategic
     // resource is a 1-point Moment (2 first in the world), read 4-5 times a
