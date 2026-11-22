@@ -192,6 +192,129 @@ class GamesAgainstTheAI(unittest.TestCase):
         self.assertEqual((list(record["levels"]), record["level"]), (["4", "5"], 5))
 
 
+class TournamentWinRates(unittest.TestCase):
+    """Operator 2026-11-22: "to the top of win analytics roughly, please list
+    our win rate against lv 4... lv 8 deity ai in tournament games. please
+    list sample sizes, wins, losses in the table too. table should default to
+    last 30 days"."""
+
+    SPECS = [
+        {"name": "Deity series", "start": "civvis-20261001T000000Z", "end": "civvis-t", "series_size": 2,
+         "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"}},
+        {"name": "Level ladder", "start": "civvis-t6-20261121T204000Z", "end": "civvis-t7-", "series_size": 25,
+         "match": {"players": 6, "map": "Continents.lua"}},
+        {"name": "Indefinite", "start": "civvis-t7-", "end": "civvis-t8-", "indefinite": True,
+         "match": {"players": 6, "map": "Continents.lua"}},
+    ]
+    ROWS = [
+        # Before any tournament began: a verification game, not a tournament's.
+        run("civvis-20260920T100000Z", "win", 200, "VICTORY_TECHNOLOGY"),
+        # The Deity series: a loss on 10-20, then a game that took two runs
+        # and was won by the second, which is one win.
+        run("civvis-20261020T100000Z", "rival_victory", 185, "VICTORY_TECHNOLOGY"),
+        run("civvis-20261117T100000Z", "abandoned", 90),
+        run("civvis-20261117T100000Z-cont1", "win", 240, "VICTORY_CULTURE"),
+        # An elimination and a game conceded early are losses; a launch that
+        # never reached a board is not a game.
+        run("civvis-20261118T100000Z", "defeat", 120),
+        run("civvis-20261119T100000Z", "abandoned", 60),
+        run("civvis-20261119T110000Z", "unfinished", 0),
+        # A King game in the Deity series' days is not that tournament's.
+        run("civvis-20261119T120000Z", "win", 230, "VICTORY_TECHNOLOGY", difficulty="DIFFICULTY_KING"),
+        # The ladder, by level, and a table of four players it does not count.
+        run("civvis-t6-20261121T210000Z", "win", 224, "VICTORY_TECHNOLOGY", difficulty="DIFFICULTY_PRINCE"),
+        run("civvis-t6-20261121T220000Z", "win", 230, "VICTORY_CULTURE", difficulty="DIFFICULTY_PRINCE"),
+        run("civvis-t6-20261121T230000Z", "rival_victory", 241, "VICTORY_TECHNOLOGY", difficulty="DIFFICULTY_KING"),
+        run("civvis-t6-20261122T010000Z", "win", 250, "VICTORY_SCORE", difficulty="DIFFICULTY_EMPEROR", players=4),
+        # A level under the table's lowest: a tournament's game, not a row.
+        run("civvis-t6-20261122T020000Z", "win", 210, "VICTORY_TECHNOLOGY", difficulty="DIFFICULTY_WARLORD"),
+        # The indefinite benchmark.
+        run("civvis-t7-20261122T030000Z", "rival_victory", 233, "VICTORY_TECHNOLOGY", difficulty="DIFFICULTY_IMMORTAL"),
+        run("civvis-t7-20261122T040000Z", "rival_victory", 236, "VICTORY_CULTURE"),
+    ]
+
+    def test_the_games_are_the_tournaments_finished_games_by_level(self):
+        games = sorted(research_page.tournament_games(self.ROWS, self.SPECS))
+        self.assertEqual(
+            games,
+            [
+                ("2026-10-20", 8, False),
+                ("2026-11-17", 8, True),
+                ("2026-11-18", 8, False),
+                ("2026-11-19", 8, False),
+                ("2026-11-21", 4, True),
+                ("2026-11-21", 4, True),
+                ("2026-11-21", 5, False),
+                ("2026-11-22", 7, False),
+                ("2026-11-22", 8, False),
+            ],
+        )
+        # They are the games the Auto-Tourneys page counts, level by level:
+        # the same series, the same wins and losses.
+        series = home_rankings.tournament_series(self.ROWS, self.SPECS, detail=True)
+        listed = [
+            ending for row in series for _, ending in row["played"]
+            if home_rankings.level(ending.get("difficulty")) in research_page.RATE_LEVELS
+        ]
+        self.assertEqual(len(listed), len(games))
+        self.assertEqual(sum(ending["outcome"] == "win" for ending in listed), sum(won for _, _, won in games))
+        self.assertEqual(research_page.tournament_games(self.ROWS, []), [])
+
+    def test_a_window_lists_every_level_with_its_games_wins_and_losses(self):
+        self.assertEqual(research_page.RATE_LEVELS, [4, 5, 6, 7, 8])
+        rates = research_page.win_rates(research_page.tournament_games(self.ROWS, self.SPECS))
+        self.assertEqual(list(rates), ["windows"])
+        self.assertEqual(list(rates["windows"]), [key for key, _ in research_page.WINDOWS])
+        row = lambda level, games, wins: {"level": level, "games": games, "wins": wins, "losses": games - wins}
+        # The last 30 days count back from the newest tournament game at any
+        # level, 11-22: the loss of 10-20 is outside them.
+        month = rates["windows"]["30"]
+        self.assertEqual((month["from"], month["to"], month["games"]), ("2026-11-17", "2026-11-22", 8))
+        self.assertEqual(month["levels"], [row(4, 2, 2), row(5, 1, 0), row(6, 0, 0), row(7, 1, 0), row(8, 4, 1)])
+        # Every game holds it, and a level nobody has played is still a row.
+        whole = rates["windows"]["all"]
+        self.assertEqual((whole["from"], whole["to"], whole["games"]), ("2026-10-20", "2026-11-22", 9))
+        self.assertEqual(whole["levels"], [row(4, 2, 2), row(5, 1, 0), row(6, 0, 0), row(7, 1, 0), row(8, 5, 1)])
+        # One window is the same days for every level: Lv 4, last played on
+        # 11-21, and Lv 8 are counted over the same last week.
+        week = rates["windows"]["7"]
+        self.assertEqual((week["from"], week["to"], week["games"]), ("2026-11-17", "2026-11-22", 8))
+        for window in rates["windows"].values():
+            self.assertEqual(window["games"], sum(level["games"] for level in window["levels"]))
+            for level in window["levels"]:
+                self.assertEqual(level["wins"] + level["losses"], level["games"])
+        self.assertIsNone(research_page.win_rates([]))
+
+    def test_the_record_holds_them_off_the_ledger_and_the_definitions(self):
+        with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stderr(io.StringIO()):
+            source = GamesAgainstTheAI().ledger(scratch, self.ROWS)
+            # No definitions in the clone: no table, and the charts' games
+            # are counted as before.
+            bare = research_page.research(source)
+            self.assertIsNone(bare["tournament_rates"])
+            self.assertIn("8", bare["levels"])
+            (source / "data").mkdir()
+            (source / research_page.TOURNAMENTS).write_text(json.dumps({"tournaments": self.SPECS}), encoding="utf-8")
+            record = research_page.research(source)
+            said = io.StringIO()
+            page = source / "index.html"
+            page.write_text(PAGE, encoding="utf-8")
+            with contextlib.redirect_stderr(said):
+                self.assertEqual(research_page.main(["research_page.py", scratch, str(page)]), 0)
+            written = json.loads(research_page.SLOT.search(page.read_text(encoding="utf-8"))[2])
+        self.assertEqual(record["tournament_rates"], research_page.win_rates(research_page.tournament_games(self.ROWS, self.SPECS)))
+        self.assertEqual(written["tournament_rates"], record["tournament_rates"])
+        self.assertIn("9 tournament games into", said.getvalue())
+        self.assertEqual(bare["levels"], record["levels"])
+
+    def test_the_committed_definitions_are_where_the_record_reads_them(self):
+        defined = json.loads((ROOT / research_page.TOURNAMENTS).read_text(encoding="utf-8"))
+        self.assertTrue(defined["tournaments"])
+        # The same file the Auto-Tourneys page counts its tournaments from.
+        self.assertIn('path = source / "data" / "tournaments.json"', (BETA / "tournaments_page.py").read_text(encoding="utf-8"))
+        self.assertEqual(research_page.TOURNAMENTS, pathlib.Path("data/tournaments.json"))
+
+
 class Windows(unittest.TestCase):
     def test_a_window_counts_back_from_the_newest_game(self):
         groups = [
@@ -310,12 +433,16 @@ class Page(unittest.TestCase):
         self.assertIn('python3 "$repo_root/beta/research_page.py" "$repo_root" "$out/research/index.html"', PUBLISH)
         deity = {"name": "CIVVIS vs Lv 8 Deity AI", "windows": {"7": {"games": 3}, "30": {"games": 3}, "all": {"games": 3}}}
         king = {"name": "CIVVIS vs Lv 5 King AI", "windows": {"7": {"games": 1}, "30": {"games": 1}, "all": {"games": 1}}}
-        data = {"turns": 250, "victories": ["science"], "self_play": None, "self_play_taken": "", "levels": {"5": king, "8": deity}, "level": 8}
+        rates = {"windows": {"7": {"games": 2}, "30": {"games": 2}, "all": {"games": 2}}}
+        data = {"turns": 250, "victories": ["science"], "self_play": None, "self_play_taken": "", "levels": {"5": king, "8": deity}, "level": 8,
+                "tournament_rates": rates}
         old = '<html><script type="application/json" id="research-data">null</script><script>data["deity"]</script></html>'
         sent = research_page.for_page(old, data)
         self.assertEqual(sent["deity"], {"name": "CIVVIS vs Deity AI", "windows": deity["windows"]})
         self.assertNotIn("levels", sent)
         self.assertNotIn("level", sent)
+        # Nor the table of win rates, which it has no place for either.
+        self.assertNotIn("tournament_rates", sent)
         self.assertEqual((sent["turns"], sent["victories"], sent["self_play"]), (250, ["science"], None))
         # No Deity games: the old page is told so, as it always was.
         self.assertIsNone(research_page.for_page(old, {**data, "levels": {"5": king}, "level": 5})["deity"])
@@ -396,36 +523,62 @@ class Page(unittest.TestCase):
         # stand against the first; self-play has its own.
         self.assertIn("for (const chart of CHARTS) drawStacks(chart, ymax[chart.kind]);", PAGE)
         self.assertIn("for (const chart of CHARTS) {\n        const th = el(\"th\", \"is-group\", worded(chart.label));", PAGE)
-        # On the page a chart stands under its side's name (operator
-        # 2026-11-22: "games against deity ai on the left and civvis
-        # self-play stuff on the right"), so its title there is the short
-        # one, `head`; `label`, the whole name, heads its columns in the
-        # table of spans.
+        # On the page a chart stands under its kind's name, so its title
+        # there is the short one, `head`; `label`, the whole name, heads its
+        # columns in the table of spans.
         heads = re.findall(r'\{ id: "([\w-]+)", kind: "\w+", side: "\w+", label: "[^"]+", head: "([^"]+)"', PAGE)
         self.assertEqual(
             heads,
             [("ai", "Every victory"), ("ai-rival", "{rung} AI wins"), ("ai-civvis", "CIVVIS wins"), ("self_play", "Every victory")],
         )
         self.assertIn('box.querySelector("[data-title]").textContent = worded(chart.head);', PAGE)
-        # The markup the script fills stands in the same order, each chart
-        # under the title the list gives it for the level the page opens on.
-        at = []
+        # Each chart of the markup the script fills stands under the title
+        # the list gives it for the level the page opens on.
+        at = {}
         for name, head in heads:
             box = (
                 f'<div class="res-kind" id="res-kind-{name}">\n              <h3 class="res-kind-title">'
                 f"<span data-title>{self.worded(head)}</span> <small data-count></small></h3>"
             )
             self.assertEqual(PAGE.count(box), 1, name)
-            at.append(PAGE.index(box))
-        self.assertEqual(at, sorted(at))
-        # The three charts of the games against the AI are the left side's,
-        # the self-play chart the right side's: each side opens on its chart
-        # of every victory, game length split by victory type.
-        left, right = PAGE.index('<div class="res-side" id="res-side-ai">'), PAGE.index('<div class="res-side" id="res-side-self_play">')
-        self.assertLess(left, at[0])
-        self.assertLess(at[2], right)
-        self.assertLess(right, at[3])
+            at[name] = PAGE.index(box)
         self.assertEqual(PAGE.count('<div class="res-kind" id="res-kind-'), len(charts))
+        # On the page the graphs are one wide column in this order (operator
+        # 2026-11-22: "at the very top, we should have a wide civvis self
+        # play graph. below it, the civvis vs lv 8 deity ai. then deity ai
+        # wins, and civvis wins"): self-play's chart of every victory is the
+        # first chart of the page, and the three of the games against the AI
+        # follow it as the list has them.
+        graphs = PAGE.index('<div class="res-graphs">')
+        own, ai = PAGE.index('<section class="res-block" id="res-side-self_play"'), PAGE.index('<section class="res-block" id="res-side-ai"')
+        places = [graphs, own, at["self_play"], ai, at["ai"], at["ai-rival"], at["ai-civvis"], PAGE.index('<aside class="res-lists"')]
+        self.assertEqual(places, sorted(places))
+        self.assertEqual(PAGE.index('class="res-kind"'), at["self_play"] + len("<div "))
+        # One thing stands over the graphs besides the page's own opening
+        # lines, the table of win rates over the tournaments' games (operator
+        # later on 2026-11-22: "to the top of win analytics roughly, please
+        # list our win rate against lv 4... lv 8 deity ai in tournament
+        # games"; `test_the_win_rate_at_each_level_stands_over_the_graphs`).
+        # It is the first block of the graphs' column, so nothing is over
+        # the column and the rankings still stand to its right. The key to
+        # the colours and the span of a column are over the first chart, in
+        # its panel.
+        opening = PAGE[PAGE.index('<div class="res-record" id="res-record" hidden>') : own]
+        self.assertEqual((opening.count("res-section"), opening.count("<h2"), opening.count("<section")), (1, 1, 1))
+        self.assertIn('<section class="res-block" id="res-side-tourney"', opening)
+        self.assertNotIn("res-kind", opening)
+        over = PAGE[PAGE.index('<div class="res-record" id="res-record" hidden>') : graphs]
+        self.assertNotIn("<section", over)
+        self.assertNotIn("<h2", over)
+        key = PAGE[own : at["self_play"]]
+        self.assertIn('<ul class="res-legend" id="res-legend" aria-label="Victory types"></ul>', key)
+        self.assertIn('<div class="res-seg" id="res-span">', key)
+        # The graphs' column is the wide one, twice the rankings', and under
+        # 860px the page is one column, the graphs first.
+        self.assertIn(".res-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; align-items: start; min-width: 0; }", PAGE)
+        self.assertIn("@media (max-width: 859px) { .res-layout { grid-template-columns: minmax(0, 1fr); } }", PAGE)
+        for gone in ("res-sides", 'class="res-side"', "res-side-body", 'id="res-when"', "subgrid"):
+            self.assertNotIn(gone, PAGE)
         # The two sides' charts are the first one split by who won: what is
         # not CIVVIS's win on a turn is the AI's, and every column is a
         # share of all the games counted, so the two add up to the first.
@@ -438,11 +591,12 @@ class Page(unittest.TestCase):
         # civvis self-play. still side by side, just swap the ordering".
         # The script lists per kind in this order: the counts, the figures
         # above each small chart, the hover rows and both tables' rows.
+        # (The column charts at the top of the page are the other way about
+        # since 2026-11-22, self-play's first: see the test above.)
         self.assertIn('const KINDS = ["ai", "self_play"];', PAGE)
-        # And the markup the script fills, in the same order: the two charts,
-        # the line key, the notes and their sources.
+        # And the markup the script fills, in the same order: the line key,
+        # the notes and their sources.
         for first, second in (
-            ('id="res-kind-ai"', 'id="res-kind-self_play"'),
             (">CIVVIS vs Lv 8 Deity AI</span></li>", "</span>CIVVIS self-play (in the victory"),
             ('id="res-note-ai"', 'id="res-note-self"'),
             (">Games against the AI</a>", ">Self-play games</a>"),
@@ -465,6 +619,98 @@ class Page(unittest.TestCase):
             r'<th scope="col">Games</th><th scope="col">Share</th>'
             r'<th scope="col">Median turn</th><th scope="col">Busiest span</th>\s*</tr>',
         )
+
+    def test_each_kind_of_game_counts_a_window_of_its_own_and_the_ai_games_open_on_30_days(self):
+        # Operator 2026-11-22: "default civvis vs ai stuff to last 30 days.
+        # higher levels finish faster". The games against the AI open on
+        # their last 30 days; self-play, thousands of games a week, stays on
+        # its last 7. So each kind has its own control, in its own head, and
+        # the script counts each kind by its own choice.
+        windows = re.findall(
+            r'<div class="res-seg" id="res-window-(\w+)">\s*'
+            r'<button type="button" data-window="7" aria-pressed="(true|false)">Last 7 days</button>\s*'
+            r'<button type="button" data-window="30" aria-pressed="(true|false)">Last 30 days</button>\s*'
+            r'<button type="button" data-window="all" aria-pressed="(true|false)">Every game</button>\s*</div>',
+            PAGE,
+        )
+        # The table of win rates over the tournaments' games, the first
+        # thing on the page, has a third, on 30 days too (operator later
+        # that day: "table should default to last 30 days").
+        self.assertEqual(
+            windows,
+            [("tourney", "false", "true", "false"), ("self_play", "true", "false", "false"), ("ai", "false", "true", "false")],
+        )
+        self.assertNotIn('id="res-window"', PAGE)
+        self.assertIn("return games && games.windows ? games.windows[state.windows[kind]] : null;", PAGE)
+        self.assertIn('choose(group.id, "data-window", (value) => { state.windows[kind] = value; });', PAGE)
+        self.assertNotIn("state.window ", PAGE)
+        self.assertNotIn("state.window]", PAGE)
+        # Each control stands in the head of the kind it counts, after the
+        # kind's name and before its charts.
+        for kind, name in (("tourney", "res-title-tourney"), ("self_play", "res-title-self_play"), ("ai", "res-title-ai")):
+            head = PAGE[PAGE.index(f'<section class="res-block" id="res-side-{kind}"') :]
+            head = head[: head.index("</header>")]
+            self.assertLess(head.index(f'id="{name}"'), head.index(f'id="res-window-{kind}"'), kind)
+        # The record holds every window a control can ask for, for each kind
+        # and at every level (`research_page.kind`).
+        self.assertEqual([key for key, _ in research_page.WINDOWS], ["7", "30", "all"])
+        self.assertEqual(sorted(set(re.findall(r'data-window="(\w+)"', PAGE))), ["30", "7", "all"])
+
+    def test_the_win_rate_at_each_level_stands_over_the_graphs(self):
+        # Operator 2026-11-22: "to the top of win analytics roughly, please
+        # list our win rate against lv 4... lv 8 deity ai in tournament
+        # games. please list sample sizes, wins, losses in the table too.
+        # table should default to last 30 days".
+        # The table is the first block of the graphs' column: over the
+        # self-play graph, with the rankings to its right as before.
+        graphs = PAGE.index('<div class="res-graphs">')
+        side = PAGE.index('<section class="res-block" id="res-side-tourney" aria-labelledby="res-title-tourney">')
+        self.assertEqual(PAGE[graphs:side].strip(), '<div class="res-graphs">')
+        self.assertLess(side, PAGE.index('<section class="res-block" id="res-side-self_play"'))
+        block = PAGE[side : PAGE.index("</section>", side)]
+        self.assertIn('<h2 class="res-side-title" id="res-title-tourney">Win rate vs the Lv 4 to Lv 8 AI</h2>', block)
+        # Its columns: the level, the win rate, then the sample size, the
+        # wins and the losses.
+        self.assertIn(
+            '<table class="rank-table res-rates" id="res-rates" aria-labelledby="res-title-tourney">\n'
+            "                <thead>\n"
+            '                  <tr><th scope="col">AI level</th><th scope="col">Win rate</th><th scope="col">Games</th>'
+            '<th scope="col">Wins</th><th scope="col">Losses</th></tr>\n'
+            "                </thead>\n"
+            "                <tbody></tbody>",
+            block,
+        )
+        # It opens on the last 30 days, by a control of its own in its head.
+        self.assertRegex(
+            block,
+            r'<div class="res-seg" id="res-window-tourney">\s*'
+            r'<button type="button" data-window="7" aria-pressed="false">Last 7 days</button>\s*'
+            r'<button type="button" data-window="30" aria-pressed="true">Last 30 days</button>\s*'
+            r'<button type="button" data-window="all" aria-pressed="false">Every game</button>',
+        )
+        self.assertIn('tourney: "30" }', PAGE)
+        # The script draws a row per level of the window chosen, off the
+        # record's `tournament_rates`: the rate is the wins as a share of the
+        # row's games, and the games, wins and losses follow it.
+        self.assertIn("const RATES = data.tournament_rates && data.tournament_rates.windows ? data.tournament_rates.windows : null;", PAGE)
+        self.assertIn("const w = RATES ? RATES[state.windows.tourney] : null;", PAGE)
+        self.assertIn('tr.append(el("td", games ? "is-rate" : "is-zero", games ? pct(wins / games) : "—"));', PAGE)
+        self.assertIn('for (const n of [games, wins, losses]) tr.append(el("td", games ? "" : "is-zero", fmt(n)));', PAGE)
+        self.assertIn("const render = () => { notes(); drawRates(); draw(); drawTables(); };", PAGE)
+        # A record with no tournament games hides the block, and a hidden
+        # block is not drawn (a block is a grid, which `hidden` alone would
+        # not hide).
+        self.assertIn('document.getElementById("res-side-tourney").hidden = !w;', PAGE)
+        self.assertIn(".res-record[hidden], .res-empty[hidden], .res-kind[hidden], .res-block[hidden] { display: none; }", PAGE)
+        # The table's own rules stand after the shared table's, which they
+        # adjust at the same weight.
+        self.assertLess(PAGE.index(".rank-table td { padding:"), PAGE.index(".res-rates td { padding:"))
+        # What it counts is said under it, with the page its games are
+        # listed on, and what a loss is, as `tournament_games` counts one:
+        # every finished game that CIVVIS did not win.
+        self.assertIn('Every finished game of the tournaments on <a href="../tournaments/">Auto-Tourneys</a>', block)
+        self.assertIn("A win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.", block)
+        self.assertEqual(home_rankings.OUTCOMES, ["win", "defeat", "rival_victory", "abandoned", "unfinished"])
 
     def test_a_level_picks_the_games_against_the_ai(self):
         # Operator 2026-11-21: "on the civvis vs deity ai chart, lets have an
@@ -506,20 +752,22 @@ class Page(unittest.TestCase):
         self.assertIn("width: calc(87.5% + 18px); height: 20px; margin: 0 calc(6.25% - 9px); padding: 0;", PAGE)
         self.assertIn(".res-level-stops { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); }", PAGE)
         # It is at the top of the games against the AI, the first thing
-        # under that side, over its name; the two controls that scope both
-        # sides stay in the row above. The buttons it replaces are gone.
-        side = PAGE.index('<div class="res-side" id="res-side-ai">')
-        self.assertLess(PAGE.index('id="res-window"'), PAGE.index('id="res-span"'))
-        self.assertLess(PAGE.index('id="res-span"'), side)
+        # in their head, over their name. The buttons it replaces are gone.
+        side = PAGE.index('<section class="res-block" id="res-side-ai"')
+        name = PAGE.index('<h2 class="res-side-title" id="res-title-ai"')
         self.assertLess(side, PAGE.index('id="res-level"'))
-        self.assertLess(PAGE.index('id="res-level-stops"'), PAGE.index('<h2 class="res-side-title"'))
-        self.assertLess(PAGE.index('<h2 class="res-side-title"'), PAGE.index('id="res-kind-ai"'))
+        self.assertLess(PAGE.index('id="res-level-stops"'), name)
+        self.assertLess(name, PAGE.index('id="res-kind-ai"'))
+        self.assertNotIn("res-kind", PAGE[side:name])
         for gone in ('<div class="res-seg" id="res-level">', "levelButtons", "#res-level button", 'choose("res-level"'):
             self.assertNotIn(gone, PAGE)
         # The level chosen is the kind drawn wherever the games against the
         # AI are: the record holds a kind per level under `levels`.
         self.assertIn('const games = kind === "ai" ? LEVELS[state.level] : data[kind];', PAGE)
-        self.assertIn('const state = { window: "7", span: 5, level: RUNGS[data.level] ? String(data.level) : "8" };', PAGE)
+        self.assertIn(
+            'const state = { windows: { self_play: "7", ai: "30", tourney: "30" }, span: 5, level: RUNGS[data.level] ? String(data.level) : "8" };',
+            PAGE,
+        )
         self.assertIn('const RUNGS = Object.fromEntries(levelStops.map((stop) => [stop.dataset.level, stop.dataset.rung]));', PAGE)
         self.assertIn('levelSlider.addEventListener("input", () => picked(levelSlider.value));', PAGE)
         self.assertIn("if (stop) picked(stop.dataset.level);", PAGE)
@@ -545,7 +793,7 @@ class Page(unittest.TestCase):
         self.assertIn('for (const node of document.querySelectorAll("[data-say]")) node.textContent = worded(node.dataset.say);', PAGE)
         # The win rate: CIVVIS's wins as a share of the level's games, on the
         # line under the side's name.
-        self.assertIn('<h2 class="res-side-title" data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 8 Deity AI</h2>', PAGE)
+        self.assertIn('<h2 class="res-side-title" id="res-title-ai" data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 8 Deity AI</h2>', PAGE)
         self.assertIn('const rate = document.getElementById("res-counted-ai"), w = win("ai");', PAGE)
         self.assertIn('el("b", "", "CIVVIS won " + fmt(won) + " (" + pct(won / w.games) + ")")', PAGE)
         # No name of one level is left where the level chosen belongs: the
@@ -577,6 +825,8 @@ class Page(unittest.TestCase):
             '        <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
             '        <a class="site-link sub-link" href="../performance/" '
             'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>\n'
+            '        <a class="site-link sub-link" href="../interpretability/" '
+            'title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n'
             '        <a class="site-link" href="../tournaments/" ',
             PAGE,
         )

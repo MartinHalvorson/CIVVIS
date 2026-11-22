@@ -5,7 +5,8 @@
 # The output is one complete LANE of the site — the viewer at its root with
 # the engine compiled to WebAssembly beside it, the landing page at /home, the
 # Research page at /research, the Tournaments page at /tournaments, the
-# Performance page at /performance and the downloads page at /download — a
+# Performance page at /performance, the AI Interpretability page at
+# /interpretability and the downloads page at /download — a
 # plain directory of static files with no
 # host-specific anything beyond the two Cloudflare Pages control files, which
 # any other host simply ignores. Every link between the pages is
@@ -156,6 +157,8 @@ research_page="$source_tree/beta/research.html"
 [ -f "$research_page" ] || research_page="$repo_root/beta/research.html"
 performance_page="$source_tree/beta/performance.html"
 [ -f "$performance_page" ] || performance_page="$repo_root/beta/performance.html"
+interpretability_page="$source_tree/beta/interpretability.html"
+[ -f "$interpretability_page" ] || interpretability_page="$repo_root/beta/interpretability.html"
 mkdir -p "$out/home"
 cp "$landing_page" "$out/home/index.html"
 # The home page is four videos, and its fastest game is whichever record
@@ -164,7 +167,10 @@ cp "$landing_page" "$out/home/index.html"
 # page from before 2026-11-22 carries the two rankings instead (the winningest
 # civs of the verification games, the Civ AI Agents by Elo) and is filled
 # with those, the civs from the run ledger and the agents from the lane's own
-# revision; a page with neither slot is left as it is.
+# revision; a page with neither slot is left as it is. The same run writes
+# the speed timeline over the videos (how many times faster than a person
+# each way of playing gets through a game) from the lane's
+# data/performance/speedup_timeline.json, by beta/speedup_timeline.py.
 python3 "$repo_root/beta/home_rankings.py" "$source_tree" "$out/home/index.html"
 # The Tournaments page (running, scheduled and finished series of the
 # verification games) is filled the same way, from the run ledger. Its
@@ -195,6 +201,15 @@ python3 "$repo_root/beta/home_rankings.py" "$source_tree" "$out/research/index.h
 mkdir -p "$out/performance"
 cp "$performance_page" "$out/performance/index.html"
 python3 "$repo_root/beta/performance_page.py" "$repo_root" "$out/performance/index.html"
+# The AI Interpretability page (the steps of one turn in order, the plan the
+# seats write down through a game, and every gene with what it is worth in
+# wins) is the last page under Charts/. It is filled the same way, from
+# head's source (the turn's steps, the gene ranking) and head's snapshot of
+# the seats' plans in data/interpretability/: both lanes get head's record,
+# facts about the agent as it is.
+mkdir -p "$out/interpretability"
+cp "$interpretability_page" "$out/interpretability/index.html"
+python3 "$repo_root/beta/interpretability_page.py" "$repo_root" "$out/interpretability/index.html"
 # The home page carries no art of its own any more, so there is usually no
 # directory to ship; a pinned revision from when it had photographs still does.
 if [ -d "$landing_assets" ]; then cp -R "$landing_assets" "$out/home/assets"; fi
@@ -434,6 +449,7 @@ edits = {
     out / "tournaments" / "index.html": [],
     out / "research" / "index.html": [],
     out / "performance" / "index.html": [],
+    out / "interpretability" / "index.html": [],
     out / "download" / "index.html": [
         ('href="/test/"', 'href="../"'),  # the lane's own viewer
         ('href="/home"', 'href="../home/"'),

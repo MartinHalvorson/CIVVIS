@@ -10656,6 +10656,11 @@ pub struct AdvancedAi {
     /// plot the board marks unknown. See
     /// `advanced/settler_fallback_takes_seen_ground.rs`. Off by default.
     settler_fallback_takes_seen_ground: bool,
+    /// `strategic-unit-closes-the-dark-age`: one Era Score short of a Normal
+    /// Age before the era closes, the first unit of a strategic resource not
+    /// used yet, a 1-point Moment. See
+    /// `advanced/strategic_unit_closes_the_age.rs`. Off by default.
+    strategic_unit_closes_the_dark_age: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -12559,6 +12564,9 @@ mod siege_response;
 /// A Settler past its walk allowance takes a safe site within reach. One
 /// opt-in gene; see `advanced/stalled_settler_site.rs`.
 mod stalled_settler_site;
+/// `strategic-unit-closes-the-dark-age`: see
+/// `advanced/strategic_unit_closes_the_age.rs`.
+mod strategic_unit_closes_the_age;
 /// `the-worked-backlog-gets-its-builder-first`: a worked backlog two or more
 /// tiles ahead of the Builder charges calls a Builder ahead of the other
 /// idle-queue claims. See
@@ -27976,6 +27984,10 @@ impl AdvancedAi {
         // when it alone closes the Age. Exact no-op while the gene is off. See
         // `advanced/first_ship_closes_the_age.rs`.
         self.claim_first_ship_for_the_age(g, pid);
+        // `strategic-unit-closes-the-dark-age`: one short, the first unit of a
+        // strategic resource not used yet. Exact no-op while the gene is off.
+        // See `advanced/strategic_unit_closes_the_age.rs`.
+        self.claim_strategic_unit_for_the_age(g, pid);
         // `culture-theater-buildings-pass-the-claims`: a Culture seat's next
         // Theater building over the routine claims' passable heads, after
         // every ordinary writer and before the paused-district, near-done

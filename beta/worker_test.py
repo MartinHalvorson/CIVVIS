@@ -411,6 +411,14 @@ def main(argv: list[str] | None = None) -> int:
             performance["status"] == 200 and performance["body"].strip() == "asset:/performance/",
             f"got {performance['status']} {performance['body'][:60]!r}",
         )
+        # And /interpretability, the last page under Charts/.
+        interpretability = hit(path="/interpretability/")
+        check(
+            problems,
+            "/interpretability/ passes through to the AI Interpretability page",
+            interpretability["status"] == 200 and interpretability["body"].strip() == "asset:/interpretability/",
+            f"got {interpretability['status']} {interpretability['body'][:60]!r}",
+        )
         download = hit(path="/download/")
         check(
             problems,
@@ -461,6 +469,11 @@ def main(argv: list[str] | None = None) -> int:
               test_performance["status"] == 200 and test_performance["body"].strip() == "asset:/test/performance/"
               and test_performance["robots"] == "noindex",
               f"got {test_performance['status']} {test_performance['body'][:60]!r} {test_performance['robots']!r}")
+        test_interpretability = hit(path="/test/interpretability/")
+        check(problems, "/test/interpretability/ passes through to the test AI Interpretability page",
+              test_interpretability["status"] == 200 and test_interpretability["body"].strip() == "asset:/test/interpretability/"
+              and test_interpretability["robots"] == "noindex",
+              f"got {test_interpretability['status']} {test_interpretability['body'][:60]!r} {test_interpretability['robots']!r}")
         test_download = hit(path="/test/download/")
         check(problems, "/test/download/ passes through to the test downloads page",
               test_download["status"] == 200 and "asset:/test/download/" in test_download["body"],

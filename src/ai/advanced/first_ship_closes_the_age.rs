@@ -118,11 +118,21 @@ impl AdvancedAi {
         let best = cities
             .iter()
             .filter(|cid| unique.is_none() || g.cities[*cid].queue.first() != unique.as_ref())
+            .filter(|cid| !Self::age_closer_spares_the_head(g, **cid))
             .filter_map(|cid| {
                 Self::first_ship_for(g, pid, *cid).map(|(item, turns)| (*cid, item, turns))
             })
             .filter(|(_, _, turns)| turns.ceil() < left as f64)
             .min_by(|a, b| a.2.total_cmp(&b.2).then(a.0.cmp(&b.0)));
+        if best
+            .as_ref()
+            .is_some_and(|(_, _, turns)| !Self::age_closer_window(left, *turns))
+        {
+            return false;
+        }
+        if best.is_none() && !Self::age_closer_buys_now(left) {
+            return false;
+        }
         if let Some((city, item, turns)) = best {
             if g.apply(
                 pid,

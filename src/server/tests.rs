@@ -2169,8 +2169,8 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // CIVVIS has no branch now, so nothing of the machinery that showed
     // one under it from the first paint is left: no Performance link, no
     // rule that unfolds it, and no head script reading the address for it.
-    // The pages of Charts/, Win Analytics and CIVVIS Performance, are
-    // listed under it on those two pages.
+    // The pages of Charts/, Win Analytics, CIVVIS Performance and AI
+    // Interpretability, are listed under it on those three pages.
     for gone in [
         "perflink",
         "sub-link",
@@ -2206,6 +2206,27 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     .is_file());
     let publish = include_str!("../../beta/publish.sh");
     assert!(publish.contains("cp \"$performance_page\" \"$out/performance/index.html\""));
+    // AI Interpretability is the last page under Charts/ (operator
+    // 2026-11-22: "Add a new chart to the bottom of Charts/ called AI
+    // Interpretablity"): each of the three pages of Charts/ lists all three,
+    // with itself in gold.
+    let interpretability = include_str!("../../beta/interpretability.html");
+    let listed = concat!(
+        "        <a class=\"site-link sub-link\" href=\"../interpretability/\" ",
+        "title=\"How a CIVVIS AI agent decides: one turn step by step, its plan through a game, ",
+        "and what each rule is worth in wins.\">AI Interpretability</a>\n",
+        "        <a class=\"site-link\" href=\"../tournaments/\" ",
+    );
+    assert!(performance.contains(listed));
+    assert!(include_str!("../../beta/research.html").contains(listed));
+    assert!(interpretability.contains(concat!(
+        "\">CIVVIS Performance</a>\n",
+        "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">AI Interpretability</a>\n",
+        "        <a class=\"site-link\" href=\"../tournaments/\" ",
+    )));
+    assert!(interpretability
+        .contains("<script type=\"application/json\" id=\"interpretability-data\">null</script>"));
+    assert!(publish.contains("cp \"$interpretability_page\" \"$out/interpretability/index.html\""));
     // The old label named the destination twice over.
     assert!(!EMBEDDED_INDEX.contains("Open sim debugger"));
     // A list that draws itself as a grid outranks the user agent's
@@ -2395,7 +2416,10 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
 /// The home page is one of the site's five pages and lists all five from
 /// its header, Home, Charts, Auto-Tourneys, CIVVIS and AI Debugger, with itself in gold
 /// and the Civ 6 link under them, as the viewer's masthead does; below that
-/// it is one paragraph and four videos, two by two (operator, 2026-11-22;
+/// it is one paragraph, the speed timeline (operator, 2026-11-22: how many
+/// times faster than a person each way of playing gets through a game;
+/// `beta/speedup_timeline_test.py` pins it) and four videos, two by two
+/// (operator, 2026-11-22;
 /// `beta/home_rankings_test.py` pins them). The rankings that stood there
 /// moved to Win Analytics under Charts/ the same day, and the Tournaments
 /// table that stood above them to the Auto-Tourneys page (operator, 2026-11-21;
@@ -2463,6 +2487,10 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
         // The channel's top playlists are a list under the YouTube button.
         "<ul class=\"utility-lists\" aria-label=\"Top playlists\">",
         "<script type=\"application/json\" id=\"home-videos\">null</script>",
+        // Over the videos, the speed timeline: hidden as written, and
+        // shown with the figures publishing writes into its own slot.
+        "<section class=\"speed\" id=\"speed\" aria-label=\"How many times faster than a person a game is played\" hidden>",
+        "<script type=\"application/json\" id=\"home-speedup\">null</script>",
     ] {
         assert!(landing.contains(piece), "the home page lost {piece}");
     }
