@@ -404,28 +404,49 @@ class HomeRankings(unittest.TestCase):
         # have a single player pov game (should be under performance). Maybe
         # the AI Debugger - Multiverse, Time Travel video in the lower right.
         # lower left please save for a lv 8 victory video lv 8 maya cluture
-        # from the youtube."
+        # from the youtube." And later that day: "swap the positions of the
+        # bottom 2 videos to the Maya Culture win is lower right", "Make the
+        # video Titles above the video and bigger or more readable", "have
+        # the home upper right video start at 6 seconds in".
         tiles = re.findall(
-            r'<figure class="watch-tile" id="(watch-[a-z]+)" data-video="([\w-]{11})">\s*'
-            r'<a class="watch-poster" href="https://www\.youtube\.com/watch\?v=([\w-]{11})" target="_blank" rel="noreferrer">\s*'
+            r'<figure class="watch-tile" id="(watch-[a-z]+)" data-video="([\w-]{11})"( data-start="\d+")?>\s*'
+            r"<figcaption><b>([^<]+)</b> <span data-watch-title>([^<]+)</span> <a [^>]+>[^<]+</a></figcaption>\s*"
+            r'<a class="watch-poster" href="https://www\.youtube\.com/watch\?v=([\w-]{11})((?:&amp;t=\d+s)?)" target="_blank" rel="noreferrer">\s*'
             r'<img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" '
-            r'src="https://i\.ytimg\.com/vi_webp/([\w-]{11})/hq720\.webp">[\s\S]*?'
-            r"<figcaption><b>([^<]+)</b> <span data-watch-title>([^<]+)</span>",
+            r'src="https://i\.ytimg\.com/vi_webp/([\w-]{11})/hq720\.webp">',
             LANDING,
         )
         # Two columns, so document order reads upper left, upper right,
-        # lower left, lower right.
+        # lower left, lower right. A tile's title is the first thing in it,
+        # over its video, which the pattern above reads in that order.
         self.assertEqual(
-            [(ident, video, label, title) for ident, video, _, _, label, title in tiles],
+            [(ident, video, label, title) for ident, video, _, label, title, _, _, _ in tiles],
             [
                 ("watch-fastest", "iHlUWPIqr5g", "Fastest game", "A complete Civ 6 match in under 6 seconds, real-time simulation"),
                 ("watch-pov", "9c8m87e3rCg", "Single player POV", "A full Civ 6 match in 14 seconds"),
-                ("watch-victory", "6PCd4R08UPM", "Lv 8 Deity win", "Maya Culture"),
                 ("watch-debugger", "6W5t0hcR_N4", "AI Debugger", "Multiverse, Time Travel"),
+                ("watch-victory", "6PCd4R08UPM", "Lv 8 Deity win", "Maya Culture"),
             ],
         )
-        for _, video, link, picture, _, _ in tiles:
+        for _, video, _, _, _, link, _, picture in tiles:
             self.assertEqual((link, picture), (video, video))
+        # The single player's game starts 6 seconds in, on the page and on
+        # YouTube; the other three start at their start.
+        self.assertEqual(
+            [(start, at) for _, _, start, _, _, _, at, _ in tiles],
+            [("", ""), (' data-start="6"', "&amp;t=6s"), ("", ""), ("", "")],
+        )
+        self.assertIn('const start = /^[1-9]\\d*$/.test(tile.dataset.start || "") ? tile.dataset.start : "";', LANDING)
+        self.assertIn('poster.href = "https://www.youtube.com/watch?v=" + id + (start ? "&t=" + start + "s" : "");', LANDING)
+        # The titles are the largest type under the page's name, and whole.
+        self.assertIn(".watch-tile figcaption b { color: #fff; font-size: 20px; font-weight: 700; line-height: 1.3; }", LANDING)
+        self.assertIn(".watch-tile figcaption span { order: 3; flex-basis: 100%; min-width: 0; color: var(--text); font-size: 15px; line-height: 1.4; }", LANDING)
+        self.assertNotIn("text-overflow", LANDING[LANDING.index(".watch-grid {") : LANDING.index("</style>")])
+        # The section has no heading over it (operator: "Drop "watch" title
+        # or whatever from this section").
+        self.assertIn('<section class="watch" id="watch" aria-label="Videos">\n      <div class="watch-grid">', LANDING)
+        for gone in ('id="watch-title"', 'class="watch-title"', "aria-labelledby=\"watch", "watch-head", ">Watch<"):
+            self.assertNotIn(gone, LANDING)
         self.assertEqual(LANDING.count('class="watch-tile"'), 4)
         self.assertIn(".watch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));", LANDING)
         self.assertIn("@media (max-width: 639px) { .watch-grid { grid-template-columns: minmax(0, 1fr); } }", LANDING)
@@ -433,12 +454,25 @@ class HomeRankings(unittest.TestCase):
         records = performance_page.videos(json.loads((ROOT / performance_page.VIDEOS).read_text(encoding="utf-8"))["videos"])
         self.assertIn("Single Player POV", {v["id"]: v["title"] for v in records}["9c8m87e3rCg"])
         # The videos stay YouTube's (operator 2026-11-21: "website is a fast
-        # and light surface layer"): a tile is a picture and a link, and the
-        # player is asked for only when a picture is pressed.
+        # and light surface layer"): as written a tile is a picture and a
+        # link, and the script puts the video's player in the picture's place
+        # when the tile is on screen, playing without sound (operator
+        # 2026-11-22: "please have the videos autoplay if possible (no
+        # audio)"). A picture pressed first plays with its sound.
         markup = LANDING[: LANDING.index('<script type="application/json" id="home-videos">')]
         self.assertNotIn("youtube-nocookie", markup)
         self.assertNotIn("<iframe", markup)
-        self.assertIn('player.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0&playsinline=1";', LANDING)
+        self.assertIn(
+            'player.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0&playsinline=1"'
+            ' + (muted ? "&mute=1" : "") + (start ? "&start=" + start : "");',
+            LANDING,
+        )
+        self.assertIn("starts.get(entry.target)(true);", LANDING)
+        self.assertIn("if (seen) { starts.set(tile, play); seen.observe(tile); }", LANDING)
+        self.assertIn("play(false);", LANDING)
+        # Whoever asked their system for less motion keeps the pictures.
+        self.assertIn('const still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;', LANDING)
+        self.assertIn('const seen = !still && "IntersectionObserver" in window && new IntersectionObserver(', LANDING)
         self.assertIn("if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button) return;", LANDING)
         self.assertNotIn("innerHTML", LANDING)
 
@@ -477,12 +511,13 @@ class HomeRankings(unittest.TestCase):
         ):
             self.assertIn(line, LANDING)
 
-    def test_github_and_youtube_stand_out_and_the_top_playlists_are_one_press_away(self):
+    def test_github_and_youtube_stand_out_and_the_top_playlists_are_listed_under_youtube(self):
         # Operator 2026-11-22: "make the GitHub, dev progress stand out a bit
         # more. at (everything open source, free) to the github part. Dev
         # Progress button can change to "YouTube". We should have direct
         # links to watching our top playlists: Lv 8 Deity Wins, Lv 1 - 7
-        # Archive."
+        # Archive." And later that day: "list top playlists under youtube.
+        # maybe in a vertical list".
         for name, page in PAGES.items():
             self.assertIn("<span>GitHub <small>Everything open source, free</small></span>", page, name)
             self.assertRegex(
@@ -499,13 +534,34 @@ class HomeRankings(unittest.TestCase):
             self.assertNotIn("Dev Progress", page, name)
             self.assertIn(".utility-link.is-github { border-color: var(--accent); background: var(--action-bg); }", page, name)
             self.assertIn(".utility-link.is-youtube { border-color: var(--yt-edge); background: var(--yt); }", page, name)
-        lists = re.findall(
-            r'<a class="watch-list" href="https://www\.youtube\.com/playlist\?list=([\w-]+)" target="_blank" rel="noreferrer">'
-            r"<svg[^>]*>.*?</svg>([^<]+)</a>",
-            LANDING,
-        )
-        self.assertEqual(lists, [("PLWcKlP8e8iy4", "Lv 8 Deity Wins"), ("PLecirlzIUSSo", "Lv 1 - 7 Archive")])
-        self.assertLess(LANDING.index('class="watch-list"'), LANDING.index('class="watch-grid"'))
+            # The playlists are a list under the YouTube button, one to a
+            # line, in the header of every page: the button and its list are
+            # one group of the row, and the list is all the group holds
+            # after the button.
+            group = re.search(
+                r'<div class="utility-group">\s*<a class="utility-link is-youtube" [^>]+>.*?</a>\s*'
+                r'<ul class="utility-lists" aria-label="Top playlists">(.*?)</ul>\s*</div>',
+                page,
+                re.S,
+            )
+            self.assertIsNotNone(group, name)
+            lists = re.findall(
+                r'<li><a class="utility-list" href="https://www\.youtube\.com/playlist\?list=([\w-]+)" target="_blank" rel="noreferrer">'
+                r"<svg[^>]*>.*?</svg>([^<]+)</a></li>",
+                group[1],
+            )
+            self.assertEqual(lists, [("PLWcKlP8e8iy4", "Lv 8 Deity Wins"), ("PLecirlzIUSSo", "Lv 1 - 7 Archive")], name)
+            self.assertEqual(group[1].count("<li>"), 2, name)
+            self.assertIn(".utility-group { display: grid; gap: 5px; }", page, name)
+            self.assertIn(".utility-lists { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }", page, name)
+            # The row's links keep their tops in a line, so the list hangs
+            # under its own button and stretches nothing.
+            self.assertIn(
+                ".utility-nav { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 10px; margin-left: auto; }",
+                page,
+                name,
+            )
+            self.assertNotIn("watch-list", page, name)
 
     def test_the_page_lists_no_heuristic_genes(self):
         # The home page once carried the head of the gene ranking under the

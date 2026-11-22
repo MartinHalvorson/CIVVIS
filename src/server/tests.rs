@@ -2453,11 +2453,15 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
         "<nav class=\"utility-nav\" aria-label=\"CIVVIS links\">",
         "id=\"report-open\"",
         // And the four videos, two by two, with the slot the fastest
-        // game's is written into when the site is published. The two
-        // rankings that stood here are on Win Analytics, under Charts/
+        // game's is written into when the site is published. They have no
+        // heading over them (operator, 2026-11-22: "Drop "watch" title or
+        // whatever from this section"), and each has its title over it. The
+        // two rankings that stood here are on Win Analytics, under Charts/
         // (operator, 2026-11-22: "move 2 charts on home/ to charts/").
-        "<section class=\"watch\" id=\"watch\" aria-labelledby=\"watch-title\">",
-        ".watch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 16px; }",
+        "<section class=\"watch\" id=\"watch\" aria-label=\"Videos\">",
+        ".watch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 16px; }",
+        // The channel's top playlists are a list under the YouTube button.
+        "<ul class=\"utility-lists\" aria-label=\"Top playlists\">",
         "<script type=\"application/json\" id=\"home-videos\">null</script>",
     ] {
         assert!(landing.contains(piece), "the home page lost {piece}");
