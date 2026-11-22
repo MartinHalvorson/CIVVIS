@@ -33,15 +33,34 @@ impl Game {
         let _memo = self.query_memo();
         let visible = self.player_visibility(pid);
         let viewers = self.visibility_viewers(pid);
-        let mut tiles = BTreeMap::new();
-        let mut remembered = BTreeMap::new();
-        for viewer in viewers {
-            for (pos, tile) in self.players[viewer].remembered_tiles.iter() {
-                let stamp = self.players[viewer].remembered_tiles.seen_turn(pos);
-                if tiles.get(pos).is_none_or(|(old, _)| stamp >= *old) {
-                    tiles.insert(*pos, (stamp, tile.clone()));
+        // What each hex was last seen as across every viewer's memory: the
+        // newest sighting, a later viewer winning a tie. With one viewer —
+        // every seat with no team-mate or sharing ally — that is the seat's
+        // own memory, read in place; with several, references into theirs.
+        // It used to be a fresh map of copies of every remembered tile, built
+        // for each of the 2,000-odd views a gene-screen game builds, though
+        // the view copies only the tiles it does not see.
+        let merged: Option<BTreeMap<Pos, (u32, &RememberedTile)>> = (viewers.len() > 1).then(|| {
+            let mut tiles = BTreeMap::new();
+            for &viewer in &viewers {
+                let memory = &self.players[viewer].remembered_tiles;
+                for (pos, tile) in memory.iter() {
+                    let stamp = memory.seen_turn(pos);
+                    if tiles.get(pos).is_none_or(|(old, _)| stamp >= *old) {
+                        tiles.insert(*pos, (stamp, tile));
+                    }
                 }
             }
+            tiles
+        });
+        let known = |pos: &Pos| -> Option<&RememberedTile> {
+            match &merged {
+                Some(tiles) => tiles.get(pos).map(|(_, tile)| *tile),
+                None => self.players[pid].remembered_tiles.get(pos),
+            }
+        };
+        let mut remembered = BTreeMap::new();
+        for &viewer in &viewers {
             for (id, city) in &self.players[viewer].remembered_cities {
                 if remembered
                     .get(id)
@@ -85,7 +104,7 @@ impl Game {
                         tile.resource = None;
                     }
                 }
-            } else if let Some((_, known)) = tiles.get(&pos) {
+            } else if let Some(known) = known(&pos) {
                 *tile = known.tile.clone();
             } else {
                 *tile = Tile::new(pos);
@@ -201,9 +220,7 @@ impl Game {
                         .and_then(|id| self.cities.get(&id))
                         .map(|c| c.owner)
                 } else {
-                    tiles
-                        .get(&tile.pos)
-                        .and_then(|(_, remembered)| remembered.owner)
+                    known(&tile.pos).and_then(|remembered| remembered.owner)
                 };
                 tile.owner_city = None;
                 if let Some(owner) = owner.filter(|owner| *owner != pid) {
