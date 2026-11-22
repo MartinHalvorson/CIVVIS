@@ -138,23 +138,21 @@ fn an_era_already_closed_is_left_alone() {
 }
 
 /// A ship whose last production turn is the era's last turn is booked after
-/// the era closes (live Hwacha, `civvis-t6-20261122T063243Z`): 4.6 turns of
-/// work against 5 left is too late, and with no Gold it is left alone.
+/// the era closes (live Hwacha, `civvis-t6-20261122T063243Z`): with exactly
+/// as many turns left as whole production turns, and no Gold to buy, it is
+/// left alone; one turn more and it is built.
 #[test]
 fn a_ship_finished_on_the_eras_last_turn_is_too_late() {
-    let (mut g, city) = coastal_board(2);
-    let galley = Item::Unit {
-        unit: crate::name!("galley"),
-    };
-    let cost = g.item_cost_for_city(0, city, &galley);
-    Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
-        city,
-        Yields {
-            production: cost / 4.6,
-            ..Default::default()
-        },
-    );
-    g.players[0].gold = 0.0;
-    assert!(!seat(true).claim_first_ship_for_the_age(&mut g, 0));
-    assert!(!heads_a_ship(&g, city));
+    for (spare, expected) in [(0, false), (1, true)] {
+        let (mut g, city) = coastal_board(2);
+        let (_, turns) = AdvancedAi::first_ship_for(&g, 0, city).expect("a ship it can build");
+        g.world_era_countdown_end = Some(g.turn + turns.ceil() as u32 + spare);
+        g.players[0].gold = 0.0;
+        assert_eq!(
+            seat(true).claim_first_ship_for_the_age(&mut g, 0),
+            expected,
+            "{turns:.2} turns of work, {spare} spare"
+        );
+        assert_eq!(heads_a_ship(&g, city), expected);
+    }
 }
