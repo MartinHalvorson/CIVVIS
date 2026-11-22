@@ -2169,8 +2169,8 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // CIVVIS has no branch now, so nothing of the machinery that showed
     // one under it from the first paint is left: no Performance link, no
     // rule that unfolds it, and no head script reading the address for it.
-    // The pages of Charts/, Win Analytics and CIVVIS Performance, are
-    // listed under it on those two pages.
+    // The pages of Charts/, Win Analytics, CIVVIS Performance and AI
+    // Interpretability, are listed under it on those three pages.
     for gone in [
         "perflink",
         "sub-link",
@@ -2206,6 +2206,27 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     .is_file());
     let publish = include_str!("../../beta/publish.sh");
     assert!(publish.contains("cp \"$performance_page\" \"$out/performance/index.html\""));
+    // AI Interpretability is the last page under Charts/ (operator
+    // 2026-11-22: "Add a new chart to the bottom of Charts/ called AI
+    // Interpretablity"): each of the three pages of Charts/ lists all three,
+    // with itself in gold.
+    let interpretability = include_str!("../../beta/interpretability.html");
+    let listed = concat!(
+        "        <a class=\"site-link sub-link\" href=\"../interpretability/\" ",
+        "title=\"How a CIVVIS AI agent decides: one turn step by step, its plan through a game, ",
+        "and what each rule is worth in wins.\">AI Interpretability</a>\n",
+        "        <a class=\"site-link\" href=\"../tournaments/\" ",
+    );
+    assert!(performance.contains(listed));
+    assert!(include_str!("../../beta/research.html").contains(listed));
+    assert!(interpretability.contains(concat!(
+        "\">CIVVIS Performance</a>\n",
+        "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">AI Interpretability</a>\n",
+        "        <a class=\"site-link\" href=\"../tournaments/\" ",
+    )));
+    assert!(interpretability
+        .contains("<script type=\"application/json\" id=\"interpretability-data\">null</script>"));
+    assert!(publish.contains("cp \"$interpretability_page\" \"$out/interpretability/index.html\""));
     // The old label named the destination twice over.
     assert!(!EMBEDDED_INDEX.contains("Open sim debugger"));
     // A list that draws itself as a grid outranks the user agent's

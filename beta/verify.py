@@ -186,6 +186,7 @@ def required(mount: str) -> list:
         f"{lane}tournaments/index.html",
         f"{lane}research/index.html",
         f"{lane}performance/index.html",
+        f"{lane}interpretability/index.html",
         f"{lane}download/index.html",
         # Deployment-global rather than lane content: the shell always sits at
         # the site root, whichever lane is being checked.
@@ -462,6 +463,9 @@ def check_gate(dist: pathlib.Path) -> list[str]:
         # And the Performance page, CIVVIS's own, by its slot.
         if b'id="performance-data"' not in get("/performance/").read():
             problems.append("the Performance page is not being served at /performance")
+        # And the AI Interpretability page, the last under Charts/, by its slot.
+        if b'id="interpretability-data"' not in get("/interpretability/").read():
+            problems.append("the AI Interpretability page is not being served at /interpretability")
 
         # So is the downloads page.
         if b"releases/latest/download/" not in get("/download/").read():
@@ -491,6 +495,8 @@ def check_gate(dist: pathlib.Path) -> list[str]:
                 problems.append("the test lane's Research page is not being served at /test/research")
             if b'id="performance-data"' not in get("/test/performance/").read():
                 problems.append("the test lane's Performance page is not being served at /test/performance")
+            if b'id="interpretability-data"' not in get("/test/interpretability/").read():
+                problems.append("the test lane's AI Interpretability page is not being served at /test/interpretability")
             if b"releases/latest/download/" not in get("/test/download/").read():
                 problems.append("/test/download/ is not serving the downloads page")
         else:

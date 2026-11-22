@@ -5,7 +5,8 @@
 # The output is one complete LANE of the site — the viewer at its root with
 # the engine compiled to WebAssembly beside it, the landing page at /home, the
 # Research page at /research, the Tournaments page at /tournaments, the
-# Performance page at /performance and the downloads page at /download — a
+# Performance page at /performance, the AI Interpretability page at
+# /interpretability and the downloads page at /download — a
 # plain directory of static files with no
 # host-specific anything beyond the two Cloudflare Pages control files, which
 # any other host simply ignores. Every link between the pages is
@@ -156,6 +157,8 @@ research_page="$source_tree/beta/research.html"
 [ -f "$research_page" ] || research_page="$repo_root/beta/research.html"
 performance_page="$source_tree/beta/performance.html"
 [ -f "$performance_page" ] || performance_page="$repo_root/beta/performance.html"
+interpretability_page="$source_tree/beta/interpretability.html"
+[ -f "$interpretability_page" ] || interpretability_page="$repo_root/beta/interpretability.html"
 mkdir -p "$out/home"
 cp "$landing_page" "$out/home/index.html"
 # The home page is four videos, and its fastest game is whichever record
@@ -195,6 +198,15 @@ python3 "$repo_root/beta/home_rankings.py" "$source_tree" "$out/research/index.h
 mkdir -p "$out/performance"
 cp "$performance_page" "$out/performance/index.html"
 python3 "$repo_root/beta/performance_page.py" "$repo_root" "$out/performance/index.html"
+# The AI Interpretability page (the steps of one turn in order, the plan the
+# seats write down through a game, and every gene with what it is worth in
+# wins) is the last page under Charts/. It is filled the same way, from
+# head's source (the turn's steps, the gene ranking) and head's snapshot of
+# the seats' plans in data/interpretability/: both lanes get head's record,
+# facts about the agent as it is.
+mkdir -p "$out/interpretability"
+cp "$interpretability_page" "$out/interpretability/index.html"
+python3 "$repo_root/beta/interpretability_page.py" "$repo_root" "$out/interpretability/index.html"
 # The home page carries no art of its own any more, so there is usually no
 # directory to ship; a pinned revision from when it had photographs still does.
 if [ -d "$landing_assets" ]; then cp -R "$landing_assets" "$out/home/assets"; fi
@@ -434,6 +446,7 @@ edits = {
     out / "tournaments" / "index.html": [],
     out / "research" / "index.html": [],
     out / "performance" / "index.html": [],
+    out / "interpretability" / "index.html": [],
     out / "download" / "index.html": [
         ('href="/test/"', 'href="../"'),  # the lane's own viewer
         ('href="/home"', 'href="../home/"'),

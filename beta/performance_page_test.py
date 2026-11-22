@@ -278,6 +278,7 @@ class TheSiteList(unittest.TestCase):
                 ("site-link", "../research/", "Charts/"),
                 ("site-link sub-link", "../research/", "Win Analytics"),
                 ("site-link sub-link", "./", "CIVVIS Performance"),
+                ("site-link sub-link", "../interpretability/", "AI Interpretability"),
                 ("site-link", "../tournaments/", "Auto-Tourneys"),
                 ("site-link", "../", "CIVVIS"),
                 ("site-link", "../?mode=play", "AI Debugger"),
@@ -293,9 +294,9 @@ class TheSiteList(unittest.TestCase):
 
     def test_only_charts_lists_the_branch(self):
         # A branch is folded unless one of its pages is on screen: Win
-        # Analytics, the page Charts/ opens, lists both pages of Charts/
+        # Analytics, the page Charts/ opens, lists every page of Charts/
         # under it as this page does, and Home, Auto-Tourneys and the viewer
-        # (CIVVIS and AI Debugger, the two tools) list neither.
+        # (CIVVIS and AI Debugger, the two tools) list none of them.
         self.assertIn(
             '<a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
             '        <a class="site-link sub-link" href="../performance/" ',
