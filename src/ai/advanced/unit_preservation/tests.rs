@@ -513,3 +513,77 @@ fn trial_stands_keep_exactly_the_reaches_the_move_cannot_touch() {
         "the distant hostiles are kept, not re-read"
     );
 }
+
+/// Read on the board without the retreating unit, `TrialReach` still builds
+/// exactly the fields `with_reach` and `second_turn` build from scratch on
+/// every trial stand, and keeps more of them than when it is read with the
+/// unit still at its origin, which every trial vacates.
+#[test]
+fn trials_read_without_the_retreater_keep_more_and_stay_exact() {
+    let mut g = field();
+    let ours = g.spawn_unit("horseman", 0, at(10, 7));
+    g.units.get_mut(&ours).unwrap().hp = 40;
+    let origin = g.units[&ours].pos;
+    let near: Vec<Pos> = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| {
+            (2..=3).contains(&g.wdist(origin, *pos))
+                && g.map
+                    .get(*pos)
+                    .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                && g.unit_ids_at(*pos).is_empty()
+                && g.city_at(*pos).is_none()
+        })
+        .collect();
+    assert!(near.len() >= 2, "the arena has room");
+    g.spawn_unit("warrior", 1, near[0]);
+    g.spawn_unit("archer", 1, near[near.len() - 1]);
+
+    let mut occupied = TrialReach::new(&g, 0);
+    let mut vacated_board = g.speculative_clone();
+    vacated_board.remove_unit(ours);
+    let mut vacated = TrialReach::new(&vacated_board, 0);
+    let mut stands = vec![origin];
+    stands.extend(g.reachable(ours));
+    assert!(stands.len() > 3, "the horseman has stands to try");
+    for stand in stands {
+        let mut trial = g.speculative_clone();
+        if stand != origin
+            && trial
+                .apply(
+                    0,
+                    &Action::MoveTo {
+                        unit: ours,
+                        to: stand,
+                    },
+                )
+                .is_err()
+        {
+            continue;
+        }
+        let fresh_first = DangerField::with_reach(&trial, 0, true);
+        let fresh_second = DangerField::second_turn(&trial, 0);
+        for trials in [&mut occupied, &mut vacated] {
+            let first = trials.first_field(&trial);
+            assert!(
+                first.same_reaches(&fresh_first),
+                "first turn, stand {stand:?}"
+            );
+            assert!(
+                trials
+                    .second_field(&first, &trial)
+                    .same_reaches(&fresh_second),
+                "second turn, stand {stand:?}"
+            );
+        }
+    }
+    assert!(
+        vacated.kept > occupied.kept,
+        "read without the retreater, the trials keep more ({} against {})",
+        vacated.kept,
+        occupied.kept
+    );
+}
