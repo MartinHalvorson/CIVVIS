@@ -41,17 +41,13 @@ declares, including its own score victory at the turn limit.
 - **Pool tables** seat roster agents against each other at Prince, where the
   rules hand nobody anything. Each round shuffles the whole roster and deals it
   into tables, so every agent sits equally often.
-- **Rung tables** measure a Civilization VI difficulty level. One roster agent
-  is the challenger and sits on the terms a person gets at that rung. Every
-  other seat is the reference agent (`strategies::CIV6_REFERENCE`) with the
-  rung's shipped AI handicap from `data/difficulties.json`. The three rivals
-  are rated as one entrant, `civ6:<rung>`.
-- **Lone tables** are a rung table turned round, and measure the rungs from
-  `strategies::LONE_RUNG_FROM` (Emperor) up. The rung's handicapped rival
-  sits alone in one seat, and a hand of roster agents takes every other seat
-  on the human's terms. It is the same entrant `civ6:<rung>` in the same fit.
-  [Why the upper rungs sit alone](#why-the-upper-rungs-sit-alone) has the
-  reason and the check.
+- **Rung tables** measure a Civilization VI difficulty level. The reference
+  agent (`strategies::CIV6_REFERENCE`) sits alone in one seat with the rung's
+  shipped AI handicap from `data/difficulties.json`, and is rated as the
+  entrant `civ6:<rung>`. A hand of roster agents dealt from a shuffle
+  (`strategies::dealt`) takes every other seat, each on the terms a person
+  gets at that rung. [Why a rung sits alone](#why-a-rung-sits-alone) has the
+  reason.
 
 The fit (`strategies::fit`) is the model `elo::win_shares` already states: a
 seat wins its table with probability proportional to `10^(elo / 400)`. With two
@@ -103,8 +99,7 @@ strategy_elo --run 2026-11-23-15125c4 --add-games 480 --add-rung-games 120 \
 - `--run LABEL` stamps every table the run plays (`"run"` in the log). The
   label starts with the run's date; the scheduled runs add the revision.
 - `--add-games N` and `--add-rung-games M` add N pool tables and M tables at
-  each rung (lone tables from Emperor up), numbered on after the newest table
-  of each series
+  each rung, numbered on after the newest table of each series
   (`strategies::added_indices`), so they are new deals and seeds. A killed run
   resumes under its label rather than adding twice.
 - `--keep-runs K` drops every table outside the newest K runs
@@ -118,16 +113,18 @@ margin (`1291 ±78`).
 
 **Why a window:** a run's tables describe the genome of its day. A window of K
 runs trades freshness for precision: the margin shrinks with the square root
-of the tables in it (about ±75 at 1,320 tables, ±37 at four runs of 1,320),
-while a genome change older than K runs ages out entirely. The scheduled job
-keeps K = 4 runs, one every two days, so no table in the fit is older than
-about eight days. A run costs about 40 minutes on three cores. To narrow the
-margin further, raise the tables per run before raising K.
+of the tables in it (an agent's was about ±75 at 1,320 tables and ±34 at
+4,560), while a genome change older than K runs ages out entirely. The
+scheduled job keeps K = 4 runs, one every two days, so no table in the fit is
+older than about eight days. To narrow the margin further, raise the tables
+per run before raising K.
 
 **Schedule:** on the tournament host a launchd job starts a run every two
-days. It borrows three of the gene screen tournament's seven worker slots for
-the build and the run, gives them back, and ships the new ratings as a PR the
-same way the defaults updates ship.
+days: 960 pool tables, 240 at each rung, twice that at Immortal and four
+times at Deity, about an hour and a half on six cores. It borrows six of the
+gene screen tournament's nine worker slots for the build and the run, gives
+them back, and ships the new ratings as a PR the same way the defaults
+updates ship.
 
 The first re-rate, on 2026-11-21, replaced the 11-11 log outright: 1,320
 tables (`--games 480 --rung-games 120`) on the 242-gene defaults, replacing
@@ -152,6 +149,90 @@ The bootstrap deviation is about 35-40 for each agent (a 95% margin of about
 ±70-80). The upper rungs came down: at Emperor the challengers won 12 of 120
 (2 of 60 before), at Immortal 3 of 120 (0 of 60), at Deity none.
 
+### Why a rung sits alone
+
+Until 2026-11-22 a rung table was the other way round: one roster agent as
+the challenger, and the rung's rival in every other seat. Two things were
+wrong with it.
+
+**It could not see the top of the ladder.** A table says most about a rung
+when either side might win it. Over the 240 tables each rung then had, the
+lone challenger won 21 at Emperor, 4 at Immortal and none at Deity, so Deity
+was published as "at least" and Immortal with a margin of ±158.
+
+**It was not the table the scale is pinned at.** Prince is the reference
+agent's own rating: one seat of it, nothing added, among roster agents. Every
+agent is rated the same way, one seat among others. A table that holds three
+copies of one entrant is a different table, and the fit only joins the two if
+a seat's strength does not depend on who sits beside it.
+
+The fit itself is neutral about that
+(`the_fit_reads_one_distance_from_either_shape_of_table`), so the games were
+asked. On 2026-11-22 both shapes were played side by side and each was fitted
+on its own, over the same pool tables:
+
+| Rung | One challenger, the rival in every other seat | The rival alone | Difference |
+|---|---|---|---|
+| Settler | 860 ±57 (challenger won 147 of 303) | 992 ±67 (rival won 41 of 240) | +132 (3.0 sd) |
+| Chieftain | 846 ±52 (challenger won 152 of 303) | 966 ±64 (rival won 36 of 240) | +120 (2.9 sd) |
+| Warlord | 897 ±52 (challenger won 135 of 303) | 981 ±61 (rival won 38 of 240) | +84 (2.1 sd) |
+| King | 994 ±57 (challenger won 102 of 303) | 1171 ±51 (rival won 84 of 240) | +177 (4.5 sd) |
+| Emperor | 1310 ±79 (challenger won 21 of 240) | 1486 ±61 (rival won 183 of 240) | +176 (3.4 sd) |
+| Immortal | 1590 ±162 (challenger won 4 of 240) | 1635 ±53 (rival won 421 of 480) | +45 (0.5 sd) |
+| Deity | ≥1874 (challenger won 0 of 240) | 1946 ±81 (rival won 938 of 960) | |
+
+The older shape read every rung it could place between about 85 and 175 Elo
+low. Three copies of one rival are easier on the fourth seat than the fit
+reads from one copy. The likely cause is that three seats running one plan
+contest the same prizes; nothing here proves the cause, only the gap.
+Immortal and Deity do not disagree, because the older shape could barely
+place them.
+
+The same gap had the bottom of the ladder wrong. The older shape put Settler,
+Chieftain and Warlord 100 to 150 below Prince and King level with Prince.
+Prince was never measured in that shape, so the 100 to 150 was the shape, not
+the rung. Measured alone, the three lower rungs sit at Prince within their
+margins: what a person is handed there (Combat Strength, experience, gold
+from camps) moves these agents little. King's handicap is worth about 170.
+
+So a rung is now measured the way Prince is: its rival alone, among agents.
+That makes "this agent rates level with Emperor" a like-for-like statement,
+since both numbers come from one seat at a mixed table, and it is a table
+either side can win at every rung.
+
+The older tables stay in `data/strategy_elo_games.jsonl` as `"kind": "rung"`
+until their runs leave the window. They are not fitted, and a rung table is
+logged as `"kind": "lone"`.
+
+The first run in the new shape, `2026-11-22-ca8754f`: 960 pool tables, 240
+at each rung, 480 at Immortal and 960 at Deity (`--rungs`, below).
+
+| Level | Rung | 2026-11-21, older shape | 2026-11-22, alone |
+|---|---|---|---|
+| 1 | Settler | 880 ±65 | 992 ±67 |
+| 2 | Chieftain | 865 ±60 | 966 ±64 |
+| 3 | Warlord | 887 ±57 | 981 ±61 |
+| 4 | Prince | 1000 (the pin) | 1000 (the pin) |
+| 5 | King | 998 ±63 | 1171 ±51 |
+| 6 | Emperor | 1306 ±84 | 1486 ±61 |
+| 7 | Immortal | 1584 ±158 | 1635 ±53 |
+| 8 | Deity | ≥1868 | 1946 ±81 |
+
+The agents did not move beyond their margins (HolyRoller 1258 to 1298,
+TouristTrap 1256 to 1250), and their margins fell from about ±50 to ±34: a
+rung table seats three agents where the older one seated one.
+
+**A rung that wins nearly every table** learns little from each one. Deity's
+rival won 938 of 960 even alone, so its margin is the widest on the ladder at
+four times its neighbours' tables. `--rungs deity,immortal` plays rung tables
+at the named rungs only, to add tables where the margin is:
+
+```bash
+strategy_elo --run 2026-11-22-ca8754f --rungs deity --add-rung-games 960
+```
+
+It adds under the run's label, up to that many tables at each named rung.
+
 ## What the Civilization VI mapping does and does not prove
 
 It measures, in our engine, what each rung's *handicap* is worth: the yield
@@ -159,7 +240,7 @@ percentages, Combat Strength, free units, era boosts and starting buildings the
 real game gives its AI above Prince, and the Combat Strength and experience it
 gives a person below it. Those tables are Firaxis's own rows.
 
-It does not measure Firaxis's AI. The rivals at every rung are our reference
+It does not measure Firaxis's AI. The rival at every rung is our reference
 agent, and the claim "Prince is 1000" is the assumption that the reference
 agent, unassisted, plays about as well as theirs. The spacing between rungs is
 a measurement; where the whole ladder sits against our agents is that one
@@ -176,14 +257,19 @@ chosen by what it predicts at the top of the ladder. Calibration record,
   are still in the log, marked `"reference": "wheels"`, and are not fitted.
 - With `stock`, challengers won 0 of 120 tables at Immortal and Deity, 2 of 60
   at Emperor and 15 of 60 at King. That is the shape of the real record.
+  (These were tables of the shape used until 2026-11-22: one challenger
+  against the rung in every other seat.)
 
 Pass `--reference <id>` with its own `--out` to try another.
 
 The live ladder is the check on it. `docs/CIV6_LADDER.md` records our seat's
 real games against the real AI at each level, and a clean win rate there gives
 that level's Elo directly: with `p` the win rate at a table of `n`,
-`rung − agent = 400·log10((1 − p) / (p·(n − 1)))`. Most recorded attempts were
-stopped or abandoned rather than played out, so they are not yet a win rate.
+`rung − agent = 400·log10((1 − p) / (p·(n − 1)))`. That is the fit's reading
+of a table of `n − 1` equal rivals, the shape
+[that read our own rungs low](#why-a-rung-sits-alone), so expect it to
+understate the rung. Most recorded attempts were stopped or abandoned rather
+than played out, so they are not yet a win rate.
 When a rung has enough finished games, compare, and move `CIV6_REFERENCE` to
 the roster agent that agrees with them.
 
@@ -246,8 +332,8 @@ on our stand-in for Civilization VI's AI, not on that AI.
   accepts `rival_strategy` by id or handle and refuses a name nobody registered.
 
 Difficulty and rival are separate dials. Difficulty is what the rules hand the
-rivals; the agent is how well they play. As measured on 2026-11-21 the
-strongest unhandicapped agent rates level with Emperor and none reaches
-Immortal, so a harder game than that is a strong agent *and* a higher
+rivals; the agent is how well they play. As measured on 2026-11-22 the
+strongest unhandicapped agents rate between King and Emperor and none
+reaches Emperor, so a harder game than that is a strong agent *and* a higher
 Difficulty, and it will be harder than the rung's own number, which was
-measured with the reference agent in the rival seats.
+measured with the reference agent as the rival.
