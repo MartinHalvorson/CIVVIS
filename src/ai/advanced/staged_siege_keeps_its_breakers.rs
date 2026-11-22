@@ -31,18 +31,31 @@
 //! ## What the gene does
 //!
 //! `assess_siege` notes the turn a siege's breach reading leaves the walls
-//! shut (`no_breaker`). For that turn and the next, `breaker_commitment_holds`
-//! also holds a city's head that is a siege-class unit, a Battering Ram or a
+//! shut (`no_breaker`). For that turn and the [`BREAKER_WANTED_TURNS`] after
+//! it, `breaker_commitment_holds` also holds a city's head that is a siege-class unit, a Battering Ram or a
 //! Siege Tower, invested or not. The guard's own exceptions stand: a city the
 //! plan names threatened, or one attacked in the last 4 turns, gives the
 //! queue up, and the under-fire defence writer is a separate step.
+//!
+//! **The window (version of 2026-11-22 14Z).** The first window was that
+//! turn and the next. The siege planner writes its stage reading only on the
+//! turns it reassesses the siege, so the reading comes in clusters with gaps
+//! between them, and over the first armed Tournament 7 games (11 since 11:01Z)
+//! 19 breakers were still displaced: 3 within a turn of a reading, 11 within
+//! 6, 14 within 10, and 8 of them with the siege reading "nothing to open the
+//! walls" again within 10 turns (live Jayavarman `civvis-t7-20261122T112202Z`:
+//! readings at t104 and t108, towers displaced at t106 and t107). The window
+//! is now six turns.
 
 use super::*;
 
 /// How many turns after a siege last read "nothing to open the walls" its
-/// breakers keep their queues: that turn and the next, since a turn's
-/// production can be decided before the turn's siege reading.
-const BREAKER_WANTED_TURNS: u32 = 1;
+/// breakers keep their queues. The planner writes that reading only on the
+/// turns it reassesses the siege, so a live siege goes several turns between
+/// readings, and a turn's production can be decided before the turn's own
+/// reading. Six covered 11 of the 19 breakers the one-turn window let go in
+/// the first armed live games.
+pub(super) const BREAKER_WANTED_TURNS: u32 = 6;
 
 impl AdvancedAi {
     /// `staged-siege-keeps-its-breakers`: a siege's breach reading left the

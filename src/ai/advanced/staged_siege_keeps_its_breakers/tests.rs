@@ -89,9 +89,12 @@ fn a_stale_reading_another_unit_or_a_threatened_city_releases_the_queue() {
     g.cities.get_mut(&city).unwrap().last_attacked = g.turn - 2;
     assert!(!ai.breaker_commitment_holds(&g, city, &unit("siege_tower"), &plan(None)));
     g.cities.get_mut(&city).unwrap().last_attacked = 0;
-    // The next turn still holds; two turns on the reading is stale.
-    g.turn += 1;
-    assert!(ai.breaker_commitment_holds(&g, city, &unit("siege_tower"), &plan(None)));
+    // Every turn of the window still holds, between the planner's readings;
+    // one turn past it the reading is stale.
+    for _ in 0..BREAKER_WANTED_TURNS {
+        g.turn += 1;
+        assert!(ai.breaker_commitment_holds(&g, city, &unit("siege_tower"), &plan(None)));
+    }
     g.turn += 1;
     assert!(!ai.breaker_commitment_holds(&g, city, &unit("siege_tower"), &plan(None)));
 }
