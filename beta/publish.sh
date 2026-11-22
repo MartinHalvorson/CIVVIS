@@ -158,11 +158,13 @@ performance_page="$source_tree/beta/performance.html"
 [ -f "$performance_page" ] || performance_page="$repo_root/beta/performance.html"
 mkdir -p "$out/home"
 cp "$landing_page" "$out/home/index.html"
-# The home page's rankings (the winningest civs of the verification games,
-# the Civ AI Agents by Elo) are derived here rather than committed as a copy
-# that could drift: the civs from the run ledger, the agents from the lane's
-# own revision. A landing page that predates them has no slot and is left as
-# it is; a revision that predates a source shows the other.
+# The home page is four videos, and its fastest game is whichever record
+# leads the lane's data/performance/fastest_game_videos.json: it is written
+# into the page here rather than committed as a copy that could drift. A home
+# page from before 2026-11-22 carries the two rankings instead (the winningest
+# civs of the verification games, the Civ AI Agents by Elo) and is filled
+# with those, the civs from the run ledger and the agents from the lane's own
+# revision; a page with neither slot is left as it is.
 python3 "$repo_root/beta/home_rankings.py" "$source_tree" "$out/home/index.html"
 # The Tournaments page (running, scheduled and finished series of the
 # verification games) is filled the same way, from the run ledger. Its
@@ -179,6 +181,12 @@ python3 "$repo_root/beta/tournaments_page.py" "$repo_root" "$out/tournaments/ind
 mkdir -p "$out/research"
 cp "$research_page" "$out/research/index.html"
 python3 "$repo_root/beta/research_page.py" "$repo_root" "$out/research/index.html"
+# The two rankings stand on this page since 2026-11-22, the winningest civs
+# under the games against the AI and the Civ AI Agents by Elo under
+# self-play. They are derived as they were for the home page: the civs from
+# the run ledger, the agents from the lane's own revision. A page that
+# predates the move has no slot for them and is left as it is.
+python3 "$repo_root/beta/home_rankings.py" "$source_tree" "$out/research/index.html"
 # The Performance page (the fastest game on video, how long a self-play game
 # takes at five percentiles, and game time batch by batch) is CIVVIS's own
 # page in the site list. It is filled the same way, from head's record videos

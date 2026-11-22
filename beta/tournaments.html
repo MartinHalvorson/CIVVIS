@@ -26,6 +26,9 @@
     --action-fg: #a8d8f5;
     --action-hover: #315d7e;
     --gold: #d7b66a;
+    --yt: #b3261e;
+    --yt-edge: #d9534a;
+    --yt-mark: #ff6257;
     --loss: #3d4b5d;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   }
@@ -41,7 +44,7 @@
     font: 15px/1.55 var(--sans);
     -webkit-font-smoothing: antialiased;
   }
-  /* Wider than the home page's 1060px: this page stands a column of its
+  /* Wider than the home page's 1120px: this page stands a column of its
      own beside a ten-column table. */
   .shell { width: min(1480px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
   main { padding-bottom: 48px; }
@@ -80,6 +83,22 @@
   .utility-link:hover,
   .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
   .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The project's two homes stand out from the row (operator, 2026-11-22:
+     "make the GitHub, dev progress stand out a bit more"): GitHub filled in
+     the site's blue, with what it holds under its name ("everything open
+     source, free"), and YouTube in its red. */
+  .utility-link.is-github,
+  .utility-link.is-youtube { min-height: 44px; color: #fff; font-size: 14px; font-weight: 700; }
+  .utility-link.is-github svg,
+  .utility-link.is-youtube svg { width: 20px; height: 20px; }
+  .utility-link.is-github { border-color: var(--accent); background: var(--action-bg); }
+  .utility-link.is-github:hover,
+  .utility-link.is-github:focus-visible { background: var(--action-hover); border-color: #fff; }
+  .utility-link.is-github span { display: grid; line-height: 1.25; }
+  .utility-link.is-github small { color: var(--action-fg); font-size: 11px; font-weight: 500; white-space: nowrap; }
+  .utility-link.is-youtube { border-color: var(--yt-edge); background: var(--yt); }
+  .utility-link.is-youtube:hover,
+  .utility-link.is-youtube:focus-visible { background: #c9342b; border-color: #fff; }
   /* The site's pages, listed in the same order on every one of them with
      the page on screen in gold: Home, Charts, Auto-Tourneys, CIVVIS and AI
      Debugger, and under them the game they are built on. As on the home page, whose
@@ -111,9 +130,10 @@
      the column still has its room. The list is a tree that keeps its
      branches folded (operator, 2026-11-21: "a somewhat collapsable model
      for the info"): a page's own pages are listed under it only on that
-     page. Charts has one, Performance (operator, 2026-11-22: "Move
-     performance from under civvis to charts"), listed under it on Charts
-     and on Performance and folded away here. */
+     page. Charts is a folder of pages and reads "Charts/", with the slash
+     (operator, 2026-11-22: "change just "Charts" to "Charts/" with the
+     intentional slash"). Its pages, Win Analytics and CIVVIS Performance,
+     are listed under it on those two pages and folded away here. */
 
   .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
@@ -272,7 +292,7 @@
            lane's home page and viewer. -->
       <nav class="site-nav" aria-label="CIVVIS sites">
         <a class="site-link" href="../home/">Home</a>
-        <a class="site-link" href="../research/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts</a>
+        <a class="site-link" href="../research/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
         <a class="site-link" href="./" aria-current="page">Auto-Tourneys</a>
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
         <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
@@ -284,13 +304,13 @@
       </div>
     </div>
     <nav class="utility-nav" aria-label="CIVVIS links">
-      <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
+      <a class="utility-link is-github" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
-        GitHub
+        <span>GitHub <small>Everything open source, free</small></span>
       </a>
-      <a class="utility-link" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+      <a class="utility-link is-youtube" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
-        Dev Progress
+        YouTube
       </a>
       <!-- The home page files a report itself, from a dialog; here the same
            button is GitHub's own form, which needs no script on this page. -->
