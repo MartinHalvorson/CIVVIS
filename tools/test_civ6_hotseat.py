@@ -237,6 +237,48 @@ class PersonOptionsTest(unittest.TestCase):
             self.assertIn("PlayIntroVideo 0", (user / "AppOptions.txt").read_text())
 
 
+class ParkUpperLeftTest(unittest.TestCase):
+    """Once setup is over the game leaves the setup half for the saved corner."""
+
+    SAVED = (0, 33, 864, 542)
+
+    def park(self, windows, frame=SAVED, settle_s=3.0):
+        placed, lines, now = [], [], [0.0]
+        seen = iter(windows)
+
+        def sleep(seconds):
+            now[0] += seconds
+
+        with patch.object(hotseat.play.window_layout, "frame_for",
+                          lambda quadrant, screen: frame if quadrant == "upper-left" else None), \
+                patch.object(hotseat.play, "GAME_CONFIGURED", False):
+            got = hotseat.park_upper_left(
+                lines.append, get_window=lambda: next(seen, windows[-1]),
+                get_desktop=lambda: (1728, 1117), place=placed.append, settle_s=settle_s,
+                poll_s=1.0, clock=lambda: now[0], sleep=sleep)
+            configured = hotseat.play.GAME_CONFIGURED
+        return got, placed, lines, configured
+
+    def test_the_full_left_side_goes_to_the_saved_upper_left_frame(self) -> None:
+        got, placed, lines, configured = self.park([(0, 33, 864, 1084), self.SAVED])
+        self.assertEqual(got, self.SAVED)
+        self.assertEqual(placed, [self.SAVED])
+        self.assertTrue(configured)
+        self.assertIn("upper-left", lines[0])
+
+    def test_a_resize_while_the_map_loads_is_put_back(self) -> None:
+        _, placed, _, _ = self.park([(0, 33, 864, 1084), self.SAVED, (0, 0, 1728, 1117), self.SAVED])
+        self.assertEqual(placed, [self.SAVED, self.SAVED])
+
+    def test_a_window_already_in_the_corner_is_left_alone(self) -> None:
+        _, placed, lines, _ = self.park([(0, 34, 864, 541)])
+        self.assertEqual((placed, lines), ([], []))
+
+    def test_no_saved_frame_moves_nothing(self) -> None:
+        got, placed, _, configured = self.park([(0, 33, 864, 1084)], frame=None)
+        self.assertEqual((got, placed, configured), (None, [], False))
+
+
 class FitOnScreenTest(unittest.TestCase):
     """A window as tall as the display is lifted until its bottom shows."""
 
