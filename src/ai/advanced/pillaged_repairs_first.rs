@@ -30,8 +30,41 @@
 //! keeps the queue. A head that is already a repair is left alone.
 //!
 //! Off, nothing changes.
+//!
+//! **`stuck-repair-yields-the-queue`** (opt-in, reads this claim): a repair
+//! the claim asks for turn after turn without it ever standing at the head
+//! is one the host does not start, and the city sat idle behind it. Live
+//! Qin `civvis-t7-20261122T095414Z` (Lv 7, level on techs with the leaders
+//! at t200): Xi'an's pillaged district at (12,21) was asked on 19 turns
+//! running from t198 ("repairs first: repairs to the district ... ahead of an
+//! idle queue", 4 Production, "about 1 turn"); the host answered each produce
+//! `DISTRICT_GOVERNMENT` with `producing=nothing`, so the capital built
+//! nothing until the Netherlands' Science victory at t216. Runs of 7-11 turns
+//! recur elsewhere (Paris's Factory and a district, Aduatuca's Arena,
+//! Noviodunum's district). With the gene, a repair asked on
+//! [`STUCK_REPAIR_TURNS`] consecutive turns (or twice its own turns plus two,
+//! if longer) stands aside for [`STUCK_REPAIR_YIELD_TURNS`]: the claim skips
+//! it and the strategic scorer does not offer it, so the city builds
+//! something else, then the repair is tried again.
 
 use super::*;
+
+/// Consecutive turns a repair may be asked, never started, before it yields.
+pub(super) const STUCK_REPAIR_TURNS: u32 = 4;
+
+/// How long a stuck repair stands aside before it is asked again.
+pub(super) const STUCK_REPAIR_YIELD_TURNS: u32 = 10;
+
+/// `stuck-repair-yields-the-queue`: one repair site's asking run.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct StuckRepair {
+    /// The first turn of the current run of consecutive asks.
+    pub(super) run_from: u32,
+    /// The last turn it was asked.
+    pub(super) last: u32,
+    /// Withheld before this turn.
+    pub(super) until: u32,
+}
 
 /// A hostile soldier this close to the pillaged site holds its repair: it
 /// would pillage the site again.
@@ -82,6 +115,50 @@ impl AdvancedAi {
             })
     }
 
+    /// `stuck-repair-yields-the-queue`: whether `item`, a repair in `cid`,
+    /// stands aside this turn. False with the gene off or for any other item.
+    pub(super) fn stuck_repair_withheld(&self, g: &Game, cid: u32, item: &Item) -> bool {
+        if !self.stuck_repair_yields_the_queue {
+            return false;
+        }
+        let Item::Repair { pos, .. } = item else {
+            return false;
+        };
+        self.stuck_repairs
+            .borrow()
+            .get(&(cid, *pos))
+            .is_some_and(|watch| g.turn < watch.until)
+    }
+
+    /// `stuck-repair-yields-the-queue`: count this turn's ask of `repair` in
+    /// `cid`; true when it has now been asked long enough without starting
+    /// that it yields (and is then withheld).
+    fn stuck_repair_yields(&self, g: &Game, pid: usize, cid: u32, repair: &Item) -> bool {
+        if !self.stuck_repair_yields_the_queue {
+            return false;
+        }
+        let Item::Repair { pos, .. } = repair else {
+            return false;
+        };
+        let turn = g.turn;
+        let own_turns = (g.item_cost_for_city(pid, cid, repair)
+            / g.city_yields(cid).production.max(0.5))
+        .ceil();
+        let limit = (STUCK_REPAIR_TURNS as f64).max(2.0 * own_turns + 2.0);
+        let mut watches = self.stuck_repairs.borrow_mut();
+        let watch = watches.entry((cid, *pos)).or_default();
+        if watch.last + 1 < turn || watch.last > turn {
+            watch.run_from = turn;
+        }
+        watch.last = turn;
+        if f64::from(turn - watch.run_from + 1) >= limit {
+            watch.until = turn + STUCK_REPAIR_YIELD_TURNS;
+            watch.run_from = turn + STUCK_REPAIR_YIELD_TURNS;
+            return true;
+        }
+        false
+    }
+
     /// See the module. Exact no-op with the gene off.
     pub(super) fn claim_pillaged_repairs(&self, g: &mut Game, pid: usize) {
         if !self.pillaged_districts_repair_first {
@@ -98,6 +175,19 @@ impl AdvancedAi {
             let Some(repair) = self.pillaged_repair_item(g, pid, cid) else {
                 continue;
             };
+            // `stuck-repair-yields-the-queue`: a repair standing aside, or one
+            // asked long enough without starting, leaves the queue alone.
+            if self.stuck_repair_withheld(g, cid, &repair) {
+                continue;
+            }
+            if self.stuck_repair_yields(g, pid, cid, &repair) {
+                think!(self.journal(), Cities, Decision,
+                       "{} gives a stuck repair the queue back: {}", g.cities[&cid].name,
+                       Self::plain_item(&repair);
+                       "stuck-repair-yields-the-queue: asked {} turns running and never started, so \
+                        it stands aside for {} turns", STUCK_REPAIR_TURNS, STUCK_REPAIR_YIELD_TURNS);
+                continue;
+            }
             let head = g.cities[&cid].queue.first().cloned();
             if let Some(item) = &head {
                 if !Self::culture_theater_may_defer(g, pid, cid, item, at_major_war) {

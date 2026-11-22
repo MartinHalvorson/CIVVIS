@@ -10661,6 +10661,13 @@ pub struct AdvancedAi {
     /// used yet, a 1-point Moment. See
     /// `advanced/strategic_unit_closes_the_age.rs`. Off by default.
     strategic_unit_closes_the_dark_age: bool,
+    /// `stuck-repair-yields-the-queue`: a repair asked turn after turn and
+    /// never started stands aside for a while. See
+    /// `advanced/pillaged_repairs_first.rs`. Off by default.
+    stuck_repair_yields_the_queue: bool,
+    /// Per (city, site) repair asking runs, for
+    /// `stuck-repair-yields-the-queue`.
+    stuck_repairs: RefCell<BTreeMap<(u32, Pos), pillaged_repairs_first::StuckRepair>>,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -22074,6 +22081,10 @@ impl AdvancedAi {
                 let mut items =
                     g.producible_items(pid, cid)
                         .into_iter()
+                        // `stuck-repair-yields-the-queue`: a repair standing
+                        // aside is not on the menu. See
+                        // `advanced/pillaged_repairs_first.rs`.
+                        .filter(|item| !self.stuck_repair_withheld(g, cid, item))
                         .filter(|item| {
                             let Item::Project { project } = item else {
                                 return true;
@@ -22221,7 +22232,10 @@ impl AdvancedAi {
                     let civilian_only = self.never_an_empty_queue_2 || persistent_idle_recovery;
                     let fallback = {
                         let _memo = g.query_memo();
-                        let items = g.producible_items(pid, cid);
+                        let mut items = g.producible_items(pid, cid);
+                        // `stuck-repair-yields-the-queue`: see
+                        // `advanced/pillaged_repairs_first.rs`.
+                        items.retain(|item| !self.stuck_repair_withheld(g, cid, item));
                         let scores = self.production_values(g, pid, cid, &items, plan, counts);
                         // A city with nothing it wants should build something
                         // that keeps paying, not a surplus soldier it then owes
