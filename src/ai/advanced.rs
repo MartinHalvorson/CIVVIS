@@ -9693,6 +9693,12 @@ pub struct AdvancedAi {
     /// routine work, unless one religion slot is left (never for Arabia). See
     /// `advanced/religion_seat_second_city_first.rs`. Off by default.
     religion_seat_second_city_first: bool,
+    /// `refusals-alone-reopen-the-turn`: a turn re-opens for a fresh view and
+    /// a second plan only when the board refused one of its orders. Ground
+    /// the moves explored, a unit or city the orders created and a strike's
+    /// rolled outcome no longer each buy the whole turn again. See
+    /// `ai::player::take_turn`. Off by default.
+    refusals_alone_reopen_the_turn: bool,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -13625,6 +13631,12 @@ impl AdvancedAi {
                 }
             })
             .collect()
+    }
+
+    /// Whether `refusals-alone-reopen-the-turn` is on, for the observed
+    /// seat's frame executor (`ai/player.rs`).
+    pub(crate) fn refusals_alone_reopen_the_turn_on(&self) -> bool {
+        self.refusals_alone_reopen_the_turn
     }
 
     pub fn current_plan(&self) -> Option<&StrategicPlan> {
