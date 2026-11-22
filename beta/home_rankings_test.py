@@ -347,32 +347,40 @@ class HomeRankings(unittest.TestCase):
         self.assertIn('home_rankings.py" "$source_tree" "$out/research/index.html"', publish)
         self.assertIn('home_rankings.py" "$source_tree" "$out/home/index.html"', publish)
 
-    def test_the_civs_stand_under_the_ai_games_and_the_strategies_under_self_play(self):
-        # Operator 2026-11-22: "move 2 charts on home/ to charts/" and "win
-        # analytics should have games against deity ai on the left and civvis
-        # self-play stuff on the right". The two lists that were the home
-        # page's two columns are cards of Win Analytics' two sides: the civs
-        # under the games against the AI, on the left, and the strategies
-        # under self-play, on the right, each after its side's charts.
+    def test_the_two_rankings_stand_to_the_right_of_the_graphs_strategies_over_civs(self):
+        # Operator 2026-11-22: "move 2 charts on home/ to charts/", and later
+        # that day, of Win Analytics: "player strategies ranking should be
+        # off to the right side of the graphs mentioned above. The winningest
+        # civs on the right below the other table. other tables can move up
+        # accordingly". The two lists that were the home page's two columns
+        # are one column of Win Analytics, to the right of its graphs: the
+        # Civ AI Agents by Elo, and under them the winningest civs. What
+        # follows the graphs, each victory's timing and the figures, comes
+        # straight after.
         at = [
             CHARTS.index(piece)
             for piece in (
-                '<div class="res-side" id="res-side-ai">',
-                'id="res-kind-ai-civvis"',
-                '<section class="res-section rank-card" id="rank-civs" hidden aria-labelledby="rank-civs-title">',
-                '<div class="res-side" id="res-side-self_play">',
+                '<div class="res-layout">',
+                '<div class="res-graphs">',
                 'id="res-kind-self_play"',
+                'id="res-kind-ai-civvis"',
+                '<aside class="res-lists" aria-label="Rankings">',
                 '<section class="res-section rank-card" id="rank-strategies" hidden aria-labelledby="rank-strategies-title">',
+                '<section class="res-section rank-card" id="rank-civs" hidden aria-labelledby="rank-civs-title">',
+                "</aside>",
                 'id="res-each"',
+                'id="res-table"',
             )
         ]
         self.assertEqual(at, sorted(at))
-        self.assertEqual(CHARTS.count('<div class="res-side" id="res-side-'), 2)
-        # Two columns, the heads sharing a row so the charts start level,
-        # and one column, the games against the AI first, under 860px.
-        self.assertIn(".res-sides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px;", CHARTS)
-        self.assertIn("@media (max-width: 859px) { .res-sides { grid-template-columns: minmax(0, 1fr); } }", CHARTS)
-        self.assertIn(".res-side { display: grid; grid-template-rows: subgrid; grid-row: span 2; min-width: 0; }", CHARTS)
+        # Nothing stands between the first screen and the sections after it.
+        self.assertRegex(CHARTS, r"</aside>\s*</div>\s*<section class=\"res-section\" id=\"res-each\"")
+        # Two columns, the graphs' twice the lists' width, both starting at
+        # the top; one column, the graphs first, under 860px.
+        self.assertIn(".res-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; align-items: start; min-width: 0; }", CHARTS)
+        self.assertIn("@media (max-width: 859px) { .res-layout { grid-template-columns: minmax(0, 1fr); } }", CHARTS)
+        self.assertIn(".res-graphs, .res-lists { display: grid; align-content: start; gap: 16px; min-width: 0; }", CHARTS)
+        self.assertNotIn("res-sides", CHARTS)
         for line in (
             "const civs = data.civs;",
             'show("rank-civs", rows, note);',
@@ -569,7 +577,7 @@ class HomeRankings(unittest.TestCase):
         # one now: no card, no reader, no style or script left behind.
         self.assertEqual(sorted(home_rankings.rankings(ROOT)), ["civs", "strategies", "tournaments"])
         self.assertFalse(hasattr(home_rankings, "genes"))
-        self.assertEqual(re.findall(r'id="(rank-[a-z]+)"', CHARTS), ["rank-civs", "rank-strategies"])
+        self.assertEqual(re.findall(r'id="(rank-[a-z]+)"', CHARTS), ["rank-strategies", "rank-civs"])
         page = CHARTS.lower()
         for gone in ("heuristic gene", "gene_heuristic_ranking", "data.genes", "is-gene", "is-off", "rank-stack", "has-civs"):
             self.assertNotIn(gone, page)
