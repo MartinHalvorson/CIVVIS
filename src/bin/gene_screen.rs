@@ -3222,7 +3222,12 @@ fn play_game(
         }
         ais = wrapped.into_iter().map(|seat| seat.inner).collect();
     } else if let Some(planners) = profile.simultaneous {
-        civvis::simultaneous::run_simultaneous_observed(&mut world, &mut ais, planners, &mut observe);
+        civvis::simultaneous::run_simultaneous_observed(
+            &mut world,
+            &mut ais,
+            planners,
+            &mut observe,
+        );
     } else {
         run_game_observed(&mut world, &mut ais, &mut observe);
     }
