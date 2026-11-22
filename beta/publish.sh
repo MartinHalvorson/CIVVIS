@@ -4,8 +4,8 @@
 #
 # The output is one complete LANE of the site — the viewer at its root with
 # the engine compiled to WebAssembly beside it, the landing page at /home, the
-# Research page at /research, the Tournaments page at /tournaments and the
-# downloads page at /download — a
+# Research page at /research, the Tournaments page at /tournaments, the
+# Performance page at /performance and the downloads page at /download — a
 # plain directory of static files with no
 # host-specific anything beyond the two Cloudflare Pages control files, which
 # any other host simply ignores. Every link between the pages is
@@ -154,6 +154,8 @@ tournaments_page="$source_tree/beta/tournaments.html"
 [ -f "$tournaments_page" ] || tournaments_page="$repo_root/beta/tournaments.html"
 research_page="$source_tree/beta/research.html"
 [ -f "$research_page" ] || research_page="$repo_root/beta/research.html"
+performance_page="$source_tree/beta/performance.html"
+[ -f "$performance_page" ] || performance_page="$repo_root/beta/performance.html"
 mkdir -p "$out/home"
 cp "$landing_page" "$out/home/index.html"
 # The home page's rankings (the winningest civs of the verification games,
@@ -177,6 +179,14 @@ python3 "$repo_root/beta/tournaments_page.py" "$repo_root" "$out/tournaments/ind
 mkdir -p "$out/research"
 cp "$research_page" "$out/research/index.html"
 python3 "$repo_root/beta/research_page.py" "$repo_root" "$out/research/index.html"
+# The Performance page (the fastest game on video, how long a self-play game
+# takes at five percentiles, and game time batch by batch) is CIVVIS's own
+# page in the site list. It is filled the same way, from head's record videos
+# and head's snapshot of the games' times in data/performance/: both lanes get
+# head's figures, facts about the games played.
+mkdir -p "$out/performance"
+cp "$performance_page" "$out/performance/index.html"
+python3 "$repo_root/beta/performance_page.py" "$repo_root" "$out/performance/index.html"
 # The home page carries no art of its own any more, so there is usually no
 # directory to ship; a pinned revision from when it had photographs still does.
 if [ -d "$landing_assets" ]; then cp -R "$landing_assets" "$out/home/assets"; fi
@@ -256,6 +266,7 @@ for needle, replacement in [
     ('href="/home"', 'href="home/"'),
     ('href="/research"', 'href="research/"'),
     ('href="/tournaments"', 'href="tournaments/"'),
+    ('href="/performance"', 'href="performance/"'),
 ]:
     page = page.replace(needle, replacement)
     for path in scripts:
@@ -414,6 +425,7 @@ edits = {
     # translate; it is listed for the guard below.
     out / "tournaments" / "index.html": [],
     out / "research" / "index.html": [],
+    out / "performance" / "index.html": [],
     out / "download" / "index.html": [
         ('href="/test/"', 'href="../"'),  # the lane's own viewer
         ('href="/home"', 'href="../home/"'),

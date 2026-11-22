@@ -1,0 +1,18 @@
+{
+  "about": [
+    "The record videos on the Performance page (`beta/performance.html`): the site playing a complete game in real time, start to victory.",
+    "Operator 2026-11-21: \"performance should be a page ... we want the civvis performance charts there. fastest game video.\"",
+    "The video with the fewest `seconds` is the page's video; the rest are listed under it as the earlier records. A new record is a line added here.",
+    "`video` is the YouTube address, `seconds` the time the video shows a game played in, `time` that time as the video's title words it, `posted` the day it went up, `title` its title without the channel's prefix.",
+    "They are the videos of the channel's playlist of self-play performance demos that show one complete game: https://www.youtube.com/playlist?list=PLPI7k77hCAR4"
+  ],
+  "videos": [
+    {"video": "https://www.youtube.com/watch?v=iHlUWPIqr5g", "seconds": 6, "time": "under 6 seconds", "posted": "2026-11-21", "title": "A complete Civ 6 match in under 6 seconds, real-time simulation"},
+    {"video": "https://www.youtube.com/watch?v=ub-F9qgqLAA", "seconds": 9, "time": "9 seconds", "posted": "2026-11-17", "title": "A complete Civ 6 game in 9 seconds (real-time simulation)"},
+    {"video": "https://www.youtube.com/watch?v=2K2mHKYZ9Rg", "seconds": 14, "time": "14 seconds", "posted": "2026-11-13", "title": "Self-play: Phoenicia Culture Win in 14 seconds, real-time simulation"},
+    {"video": "https://www.youtube.com/watch?v=9c8m87e3rCg", "seconds": 14, "time": "14 seconds", "posted": "2026-11-13", "title": "A full Civ 6 match in 14 seconds - Single Player POV"},
+    {"video": "https://www.youtube.com/watch?v=WigkRB3PJ8k", "seconds": 23, "time": "23 seconds", "posted": "2026-11-13", "title": "A full Civ 6 match in 23 seconds - Single player POV"},
+    {"video": "https://www.youtube.com/watch?v=rIKpUNcaD4I", "seconds": 27, "time": "27 seconds", "posted": "2026-11-13", "title": "A full Civ 6 match in 27 seconds (185/250 turns, diplomatic victory)"},
+    {"video": "https://www.youtube.com/watch?v=C4wAsdenSpI", "seconds": 52, "time": "52 seconds", "posted": "2026-11-11", "title": "A full Civ 6 match in 52 seconds (199/250 turns, science victory)"}
+  ]
+}
