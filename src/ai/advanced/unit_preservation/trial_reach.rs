@@ -423,7 +423,6 @@ fn assemble(
             )),
         }
     }
-    widened.sort_unstable();
-    widened.dedup();
+    trial.map.tiles.sort_positions(&mut widened);
     (widened, kept)
 }
