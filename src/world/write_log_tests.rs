@@ -100,3 +100,33 @@ fn differing_positions_names_only_the_tiles_whose_content_changed() {
         "a grid of another map is not compared"
     );
 }
+
+#[test]
+fn sort_positions_is_sort_then_dedup() {
+    let g = TileGrid::new(20, 12);
+    let keys: Vec<Pos> = g.keys().copied().collect();
+    // Long enough for the bit set, out of order and with repeats.
+    let mut long: Vec<Pos> = keys.iter().rev().step_by(2).copied().collect();
+    long.extend(keys.iter().step_by(3).copied());
+    long.extend(keys.iter().step_by(3).copied());
+    assert!(
+        long.len() >= 96,
+        "the grid gives the bit set something to do"
+    );
+    let mut expected = long.clone();
+    expected.sort_unstable();
+    expected.dedup();
+    g.sort_positions(&mut long);
+    assert_eq!(long, expected);
+    // Short, and with a position off the map: the comparison sort.
+    let mut short = vec![keys[5], keys[1], keys[5]];
+    g.sort_positions(&mut short);
+    assert_eq!(short, vec![keys[1], keys[5]]);
+    let mut off = long.clone();
+    off.push((-99, -99));
+    let mut sorted_off = off.clone();
+    sorted_off.sort_unstable();
+    sorted_off.dedup();
+    g.sort_positions(&mut off);
+    assert_eq!(off, sorted_off);
+}

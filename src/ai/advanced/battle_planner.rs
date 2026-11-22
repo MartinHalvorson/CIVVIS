@@ -425,8 +425,7 @@ pub(super) fn widen_to_the_second_turn(
     }
     probe.relocate(uid, saved.pos);
     *probe.units.get_mut(&uid).expect("forecast retains enemy") = saved;
-    reach.sort_unstable();
-    reach.dedup();
+    probe.map.tiles.sort_positions(reach);
 }
 
 /// Stand `uid` on `probe` at the start of a fresh turn (full movement, no

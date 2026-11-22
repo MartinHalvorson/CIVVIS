@@ -486,6 +486,37 @@ impl TileGrid {
         self.tiles.len()
     }
 
+    /// `positions` in ascending order without repeats: what `sort_unstable`
+    /// followed by `dedup` gives, in time linear in the count. The tiles are
+    /// kept in `Pos` order, so marking each position's index in a map-sized
+    /// bit set and reading the set back in index order is that order. Short
+    /// lists, and any position off this map, take the comparison sort.
+    pub fn sort_positions(&self, positions: &mut Vec<Pos>) {
+        const BITS_FROM: usize = 96;
+        let fallback = |positions: &mut Vec<Pos>| {
+            positions.sort_unstable();
+            positions.dedup();
+        };
+        if positions.len() < BITS_FROM {
+            return fallback(positions);
+        }
+        let mut bits = vec![0u64; self.tiles.len().div_ceil(64)];
+        for pos in positions.iter() {
+            let Some(index) = self.index_of(*pos) else {
+                return fallback(positions);
+            };
+            bits[index / 64] |= 1 << (index % 64);
+        }
+        positions.clear();
+        for (word_index, mut word) in bits.into_iter().enumerate() {
+            while word != 0 {
+                let bit = word.trailing_zeros() as usize;
+                word &= word - 1;
+                positions.push(self.tiles[word_index * 64 + bit].pos);
+            }
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.tiles.is_empty()
     }
