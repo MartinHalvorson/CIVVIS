@@ -396,18 +396,35 @@ class Page(unittest.TestCase):
         # stand against the first; self-play has its own.
         self.assertIn("for (const chart of CHARTS) drawStacks(chart, ymax[chart.kind]);", PAGE)
         self.assertIn("for (const chart of CHARTS) {\n        const th = el(\"th\", \"is-group\", worded(chart.label));", PAGE)
-        self.assertIn('box.querySelector("[data-title]").textContent = worded(chart.label);', PAGE)
+        # On the page a chart stands under its side's name (operator
+        # 2026-11-22: "games against deity ai on the left and civvis
+        # self-play stuff on the right"), so its title there is the short
+        # one, `head`; `label`, the whole name, heads its columns in the
+        # table of spans.
+        heads = re.findall(r'\{ id: "([\w-]+)", kind: "\w+", side: "\w+", label: "[^"]+", head: "([^"]+)"', PAGE)
+        self.assertEqual(
+            heads,
+            [("ai", "Every victory"), ("ai-rival", "{rung} AI wins"), ("ai-civvis", "CIVVIS wins"), ("self_play", "Every victory")],
+        )
+        self.assertIn('box.querySelector("[data-title]").textContent = worded(chart.head);', PAGE)
         # The markup the script fills stands in the same order, each chart
         # under the title the list gives it for the level the page opens on.
         at = []
-        for name, _, _, label in charts:
+        for name, head in heads:
             box = (
-                f'<div class="res-kind" id="res-kind-{name}">\n          <h3 class="res-kind-title">'
-                f"<span data-title>{self.worded(label)}</span> <small data-count></small></h3>"
+                f'<div class="res-kind" id="res-kind-{name}">\n              <h3 class="res-kind-title">'
+                f"<span data-title>{self.worded(head)}</span> <small data-count></small></h3>"
             )
             self.assertEqual(PAGE.count(box), 1, name)
             at.append(PAGE.index(box))
         self.assertEqual(at, sorted(at))
+        # The three charts of the games against the AI are the left side's,
+        # the self-play chart the right side's: each side opens on its chart
+        # of every victory, game length split by victory type.
+        left, right = PAGE.index('<div class="res-side" id="res-side-ai">'), PAGE.index('<div class="res-side" id="res-side-self_play">')
+        self.assertLess(left, at[0])
+        self.assertLess(at[2], right)
+        self.assertLess(right, at[3])
         self.assertEqual(PAGE.count('<div class="res-kind" id="res-kind-'), len(charts))
         # The two sides' charts are the first one split by who won: what is
         # not CIVVIS's win on a turn is the AI's, and every column is a
@@ -485,7 +502,7 @@ class Page(unittest.TestCase):
         said = re.findall(r'data-say="([^"]+)">([^<]+)<', PAGE)
         self.assertEqual(
             [template for template, _ in said],
-            ["CIVVIS vs {level} AI", "CIVVIS vs {level} AI", "{rung} AI won"],
+            ["CIVVIS vs {level} AI", "CIVVIS vs {level} AI", "CIVVIS vs {level} AI", "{rung} AI won"],
         )
         for template, text in said:
             self.assertEqual(text, self.worded(template))
@@ -497,11 +514,15 @@ class Page(unittest.TestCase):
         )
         self.assertIn('for (const node of document.querySelectorAll("[data-say]")) node.textContent = worded(node.dataset.say);', PAGE)
         # The win rate: CIVVIS's wins as a share of the level's games, on the
-        # line that says what is counted.
+        # line under the side's name.
+        self.assertIn('<h2 class="res-side-title" data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 8 Deity AI</h2>', PAGE)
+        self.assertIn('const rate = document.getElementById("res-counted-ai"), w = win("ai");', PAGE)
         self.assertIn('el("b", "", "CIVVIS won " + fmt(won) + " (" + pct(won / w.games) + ")")', PAGE)
         # No name of one level is left where the level chosen belongs: the
-        # script names Deity only in the operator's own words.
-        script = PAGE[PAGE.index("<script>") :]
+        # charts' script names Deity only in the operator's own words. (The
+        # script of the two lists, after it, is not about a level chosen.)
+        script = PAGE[PAGE.index("<script>") : PAGE.index("</script>", PAGE.index("<script>"))]
+        self.assertIn("const CHARTS = [", script)
         self.assertEqual(re.findall(r'"[^"\n]*Deity[^"\n]*"', script), [])
 
     def test_every_page_lists_charts_between_home_and_auto_tourneys(self):
@@ -511,31 +532,41 @@ class Page(unittest.TestCase):
         # "musings (rename research)") and is Charts since 2026-11-22
         # (operator: "Change musings to "Charts". Move performance from under
         # civvis to charts. Charts is where almost all our charts can go");
-        # the address, the file and the data kept theirs. Its branch,
-        # Performance, is open under it here.
+        # the address, the file and the data kept theirs. Later that day it
+        # became a folder of pages, named with its slash (operator: "in
+        # charts, we should have at least win analytics, CIVVIS Performance
+        # ... We should change just "Charts" to "Charts/" with the
+        # intentional slash"): this page is Win Analytics, the first under
+        # it and the one Charts/ opens, and the branch is open here with
+        # this page in gold.
         self.assertIn(
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
             '        <a class="site-link" href="../home/">Home</a>\n'
-            '        <a class="site-link" href="./" aria-current="page">Charts</a>\n'
+            '        <a class="site-link" href="./" '
+            'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
+            '        <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
             '        <a class="site-link sub-link" href="../performance/" '
-            'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">Performance</a>\n'
+            'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>\n'
             '        <a class="site-link" href="../tournaments/" ',
             PAGE,
         )
-        self.assertIn(".site-link.sub-link { margin-left: 10px; }", PAGE)
-        self.assertIn('charted on <a href="../performance/">Performance</a>.', PAGE)
+        nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
+        self.assertEqual(nav.count('aria-current="page"'), 1)
+        self.assertIn(".site-link.sub-link { margin-left: 10px; padding: 2px 6px 3px; font-size: 10px; letter-spacing: 0.03em; }", PAGE)
+        self.assertIn('<a href="../performance/">CIVVIS Performance</a>.', PAGE)
         self.assertRegex(PAGE, r'<div class="site-brand">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"[^>]*>[\s\S]*?</nav>\s*<div class="site-lockup">')
-        self.assertIn("<title>Charts · CIVVIS.ai</title>", PAGE)
+        self.assertIn("<title>Win Analytics · CIVVIS.ai</title>", PAGE)
         for page in (PAGE, LANDING, TOURNAMENTS, VIEWER):
             self.assertNotIn(">Research</a>", page)
             self.assertNotIn(">Musings</a>", page)
+            self.assertNotIn(">Charts</a>", page)
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Charts</a>'
+            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Charts/</a>'
                       r'\s*<a class="site-link" href="\.\./tournaments/"'),
-            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Charts</a>'
+            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Charts/</a>'
                           r'\s*<a class="site-link" href="\./" aria-current="page">Auto-Tourneys</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="researchlink" href="/research" target="_top">Charts</a>\s*'
+                     r'<a class="home-link" id="researchlink" href="/research" target="_top">Charts/</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Auto-Tourneys</a>'),
         ):
             self.assertRegex(page, pattern)
