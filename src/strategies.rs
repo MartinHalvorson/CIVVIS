@@ -301,8 +301,9 @@ impl LiveLane {
 /// Firaxis AI" or whatever for the level"; 2026-11-19: "we can change firaxis
 /// ai player name to 8 Deity AI Firaxis format"). The number is the level as
 /// Civ VI counts it, Settler 1 to Deity 8, and `difficulty` is the rung id the
-/// host reported. The home page's strategies list names the levels the same
-/// way (`beta/landing.html`, held to this by `beta/home_rankings_test.py`).
+/// host reported. The site's strategies list, on Win Analytics, names the
+/// levels the same way (`beta/research.html`, held to this by
+/// `beta/home_rankings_test.py`).
 /// Nothing of ours
 /// plays the seat, so it carries no agent id and no rating: the published
 /// rung ratings were measured on our stand-in for that AI, not on it.

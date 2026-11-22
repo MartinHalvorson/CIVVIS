@@ -2117,7 +2117,11 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// only while it is the page on screen. Performance, the one branch, is
 /// Charts' since 2026-11-22 ("Move performance from under civvis to charts
 /// ... This keeps AI Debugger as a clean tool. CIVVIS as a clean tool"), so
-/// the viewer lists the six top-level names and nothing under them.
+/// the viewer lists the six top-level names and nothing under them. Later
+/// that day Charts became a folder of pages, named with its slash ("change
+/// just "Charts" to "Charts/" with the intentional slash"), holding Win
+/// Analytics, the page it opens, and CIVVIS Performance ("in charts, we
+/// should have at least win analytics, CIVVIS Performance").
 /// Pinned as one literal because the list is the contract: six links in
 /// this order, inside a list that only the hosts serving a /home, a
 /// /research and a /tournaments reveal.
@@ -2126,7 +2130,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<nav class=\"head-links\" id=\"headlinks\" aria-label=\"CIVVIS sites\" hidden>\n",
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
-        "        <a class=\"home-link\" id=\"researchlink\" href=\"/research\" target=\"_top\">Charts</a>\n",
+        "        <a class=\"home-link\" id=\"researchlink\" href=\"/research\" target=\"_top\">Charts/</a>\n",
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Auto-Tourneys</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
@@ -2165,7 +2169,8 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // CIVVIS has no branch now, so nothing of the machinery that showed
     // one under it from the first paint is left: no Performance link, no
     // rule that unfolds it, and no head script reading the address for it.
-    // Performance is listed under Charts on the Charts page and on its own.
+    // The pages of Charts/, Win Analytics and CIVVIS Performance, are
+    // listed under it on those two pages.
     for gone in [
         "perflink",
         "sub-link",
@@ -2181,11 +2186,14 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     let performance = include_str!("../../beta/performance.html");
     assert!(performance.contains(concat!(
         "        <a class=\"site-link\" href=\"../research/\" ",
-        "title=\"What the CIVVIS AI agents&#8217; games show.\">Charts</a>\n",
-        "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">Performance</a>\n",
+        "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
+        "        <a class=\"site-link sub-link\" href=\"../research/\" ",
+        "title=\"Who wins, how and when: the games against Civilization VI&#8217;s own AI ",
+        "beside the CIVVIS self-play games.\">Win Analytics</a>\n",
+        "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">CIVVIS Performance</a>\n",
     )));
     assert!(include_str!("../../beta/research.html").contains(concat!(
-        "        <a class=\"site-link\" href=\"./\" aria-current=\"page\">Charts</a>\n",
+        "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">Win Analytics</a>\n",
         "        <a class=\"site-link sub-link\" href=\"../performance/\" ",
     )));
     assert!(performance
@@ -2387,8 +2395,10 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
 /// The home page is one of the site's five pages and lists all five from
 /// its header, Home, Charts, Auto-Tourneys, CIVVIS and AI Debugger, with itself in gold
 /// and the Civ 6 link under them, as the viewer's masthead does; below that
-/// it is one paragraph and the rankings. The Tournaments table that stood
-/// above the rankings moved to the Auto-Tourneys page (operator, 2026-11-21;
+/// it is one paragraph and four videos, two by two (operator, 2026-11-22;
+/// `beta/home_rankings_test.py` pins them). The rankings that stood there
+/// moved to Win Analytics under Charts/ the same day, and the Tournaments
+/// table that stood above them to the Auto-Tourneys page (operator, 2026-11-21;
 /// `beta/tournaments_page_test.py` pins that page). The two-card game menu that stood there, the
 /// world picker the cards opened and the photographs they carried are gone,
 /// and so is everything the Tactics row took with it before them.
@@ -2416,7 +2426,7 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
             "<nav class=\"site-nav\" aria-label=\"CIVVIS sites\">\n",
             "        <a class=\"site-link\" href=\"./\" aria-current=\"page\">Home</a>\n",
             "        <a class=\"site-link\" href=\"../research/\" ",
-            "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts</a>\n",
+            "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
             "        <a class=\"site-link\" href=\"../tournaments/\" ",
             "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
             "running, scheduled and finished.\">Auto-Tourneys</a>\n",
@@ -2442,10 +2452,13 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
         // check finds the page by (`beta/verify.py`).
         "<nav class=\"utility-nav\" aria-label=\"CIVVIS links\">",
         "id=\"report-open\"",
-        // And the rankings, which hide themselves until the slot is filled.
-        "<section class=\"rankings\" id=\"rankings\" hidden aria-label=\"Rankings\">",
-        ".rankings[hidden] { display: none; }",
-        "<script type=\"application/json\" id=\"rankings-data\">null</script>",
+        // And the four videos, two by two, with the slot the fastest
+        // game's is written into when the site is published. The two
+        // rankings that stood here are on Win Analytics, under Charts/
+        // (operator, 2026-11-22: "move 2 charts on home/ to charts/").
+        "<section class=\"watch\" id=\"watch\" aria-labelledby=\"watch-title\">",
+        ".watch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 16px; }",
+        "<script type=\"application/json\" id=\"home-videos\">null</script>",
     ] {
         assert!(landing.contains(piece), "the home page lost {piece}");
     }
@@ -2455,8 +2468,8 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
     // put the name on two lines. Every name stands on one line down to a
     // 320px phone with the page no wider than the screen (measured), so no
     // rule narrows the column. The home page has no pages of its own, so
-    // nothing is folded under it, and it does not list Charts' branch:
-    // that shows only on Charts and on Performance.
+    // nothing is folded under it, and it does not list the pages of
+    // Charts/: those show only on Win Analytics and on CIVVIS Performance.
     assert!(
         !landing.contains("min-content"),
         "the home page narrows its site list again, which puts a name on two lines"
@@ -2468,6 +2481,9 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
         ">Musings</a>",
         ">Tournaments</a>",
         ">Performance</a>",
+        ">Charts</a>",
+        "sub-link",
+        "rankings-data",
     ] {
         assert!(!landing.contains(gone), "the home page still says {gone}");
     }
@@ -2484,7 +2500,10 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
     }
     // What the game menu took with it: the cards, their verbs and tags,
     // the world picker with its lenses and catalogs, the page-wide column
-    // the rankings stood in beside them, and the photographs.
+    // the rankings stood in beside them, and the photographs. The page
+    // has pictures again since 2026-11-22, the four videos' own, and they
+    // are YouTube's: none is a file of the site, so `assets/` stays gone
+    // and every picture is asked of `i.ytimg.com`.
     for gone in [
         "class=\"quadrants\"",
         "class=\"mode-card\"",
@@ -2501,7 +2520,6 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
         "?setup=1",
         "has-rankings",
         "assets/",
-        "<img",
     ] {
         assert!(
             !landing.contains(gone),
@@ -2513,6 +2531,13 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
             .join("beta/assets")
             .exists(),
         "beta/assets holds photographs the home page no longer shows"
+    );
+    assert_eq!(
+        landing.matches("<img").count(),
+        landing
+            .matches("<img alt=\"\" width=\"1280\" height=\"720\" decoding=\"async\" referrerpolicy=\"no-referrer\" src=\"https://i.ytimg.com/vi_webp/")
+            .count(),
+        "the home page shows a picture that is not a video's own"
     );
     // What the Tactics row took with it. The battle catalog was a copy of
     // `historical_scenarios::all()` kept in step by `tools/landing_battles.py`
