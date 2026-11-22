@@ -6,14 +6,14 @@
 //! - **pool** tables seat the registered agents (`strategies::ROSTER`) against
 //!   each other at Prince, where the rules hand nobody anything. Each round
 //!   deals the whole roster out, so every agent sits equally often;
-//! - **rung** tables seat one agent as the challenger, on the terms a person
-//!   gets at that rung, against the reference agent
-//!   (`strategies::CIV6_REFERENCE`) in every other seat with the rung's shipped
-//!   AI handicap. The rivals are rated as one entrant, `civ6:<rung>`;
-//! - **lone** tables are a rung table turned round, for the rungs a lone
-//!   challenger almost never beats (`strategies::LONE_RUNG_FROM` and up): the
-//!   rung's handicapped rival sits alone and every other seat is a challenger
-//!   on the human's terms. Same entrant, same fit, a table either side wins.
+//! - **rung** tables seat the reference agent (`strategies::CIV6_REFERENCE`)
+//!   alone, with the rung's shipped AI handicap, at a table of roster agents
+//!   who each play on the terms a person gets at that rung. It is rated as the
+//!   entrant `civ6:<rung>`. That is the table Prince itself is measured at: the
+//!   reference agent with nothing added, one seat among agents. The log calls
+//!   these `lone`; its older `rung` lines are the retired shape, one
+//!   challenger against the rung in every other seat, which the fit no longer
+//!   reads (`docs/ELO.md` has the comparison that retired it).
 //!
 //! Every finished table is appended to the game log, so a run that is killed
 //! resumes where it stopped and a later run only adds games. The ratings are
@@ -108,13 +108,19 @@ struct Plan {
     seed: u64,
     /// The ledger key in each major seat.
     seats: Vec<String>,
-    /// The seats that play on the human's terms: one on a rung table, every
-    /// seat but the rung's own on a lone table, none at the pool.
+    /// The seats that play on the human's terms: every seat but the rung's
+    /// own on a rung table, none at the pool.
     challengers: Vec<usize>,
 }
 
-/// What separates a rung's lone tables from its rung tables: their deals and
-/// their world seeds. Far past any index a series reaches.
+/// What a rung table is logged as: the rung's rival alone among agents.
+const RUNG_KIND: &str = "lone";
+/// The retired shape's lines, still in logs written before 2026-11-22: one
+/// challenger against the rung in every other seat. Not fitted, and not
+/// counted when a series looks for where its indices end.
+const RETIRED_RUNG_KIND: &str = "rung";
+/// What keeps a rung's deals and world seeds clear of the retired series at
+/// the same rung. Far past any index a series reaches.
 const LONE_SERIES: u64 = 500_000;
 
 /// The `index`th pool table: a hand of the roster (`strategies::dealt`), so
@@ -134,37 +140,10 @@ fn pool_plan(options: &Options, index: usize) -> Plan {
     }
 }
 
-/// The `index`th table at `rung`: the roster takes turns as the challenger,
-/// and the challenger's seat moves round the table.
-fn rung_plan(options: &Options, rung_order: usize, rung: &str, index: usize) -> Plan {
-    let challenger = index % options.players;
-    let agent = ROSTER[(index + rung_order) % ROSTER.len()].id;
-    let seats = (0..options.players)
-        .map(|seat| {
-            if seat == challenger {
-                agent.to_string()
-            } else {
-                strategies::rung_key(rung)
-            }
-        })
-        .collect();
-    Plan {
-        kind: "rung",
-        rung: rung.to_string(),
-        index,
-        seed: options
-            .seed
-            .wrapping_add(1_000_000 * (rung_order as u64 + 1))
-            .wrapping_add(index as u64),
-        seats,
-        challengers: vec![challenger],
-    }
-}
-
-/// The `index`th lone table at `rung`: the rung's rival sits alone, its seat
+/// The `index`th table at `rung`: the rung's rival sits alone, its seat
 /// moving round the table, and a hand of the roster takes every other seat on
 /// the human's terms.
-fn lone_plan(options: &Options, rung_order: usize, rung: &str, index: usize) -> Plan {
+fn rung_plan(options: &Options, rung_order: usize, rung: &str, index: usize) -> Plan {
     let alone = index % options.players;
     let series = options
         .seed
@@ -181,30 +160,12 @@ fn lone_plan(options: &Options, rung_order: usize, rung: &str, index: usize) -> 
         })
         .collect();
     Plan {
-        kind: "lone",
+        kind: RUNG_KIND,
         rung: rung.to_string(),
         index,
         seed: series.wrapping_add(index as u64),
         seats,
         challengers: (0..options.players).filter(|seat| *seat != alone).collect(),
-    }
-}
-
-/// The kind of table that measures `rung`.
-fn rung_kind(rung: &str) -> &'static str {
-    if strategies::lone_rung(rung) {
-        "lone"
-    } else {
-        "rung"
-    }
-}
-
-/// The `index`th table of whichever kind measures `rung`.
-fn measured_plan(options: &Options, rung_order: usize, rung: &str, index: usize) -> Plan {
-    if strategies::lone_rung(rung) {
-        lone_plan(options, rung_order, rung, index)
-    } else {
-        rung_plan(options, rung_order, rung, index)
     }
 }
 
@@ -308,8 +269,9 @@ fn play(options: &Options, plan: &Plan) -> Value {
 
 /// Log lines this run's settings can be rated with. A table played at another
 /// size or length is a different instrument, and so is a rung table whose
-/// rivals were another reference agent. A pool table never seats the
-/// reference as such, so it survives a change of reference.
+/// rival was another reference agent, or one of the retired shape. A pool
+/// table never seats the reference as such, so it survives a change of
+/// reference.
 fn read_log(options: &Options) -> Vec<Value> {
     let Ok(body) = std::fs::read_to_string(&options.log) else {
         return Vec::new();
@@ -319,6 +281,7 @@ fn read_log(options: &Options) -> Vec<Value> {
         .filter(|line| {
             line["players"].as_u64() == Some(options.players as u64)
                 && line["turns"].as_u64() == Some(options.turns as u64)
+                && line["kind"] != RETIRED_RUNG_KIND
                 && (line["kind"] == "pool"
                     || line["reference"].as_str() == Some(options.reference.as_str()))
         })
@@ -561,8 +524,8 @@ fn main() {
                     continue;
                 }
                 series.push(
-                    added(rung_kind(rung), rung, options.add_rung_games)
-                        .map(|index| measured_plan(&options, order, rung, index))
+                    added(RUNG_KIND, rung, options.add_rung_games)
+                        .map(|index| rung_plan(&options, order, rung, index))
                         .collect(),
                 );
             }
@@ -578,11 +541,11 @@ fn main() {
             if *rung == PRINCE {
                 continue;
             }
-            let played = have(rung_kind(rung), rung);
+            let played = have(RUNG_KIND, rung);
             series.push(
                 (0..options.rung_games)
                     .filter(|index| !played.contains(&(*index as u64)))
-                    .map(|index| measured_plan(&options, order, rung, index))
+                    .map(|index| rung_plan(&options, order, rung, index))
                     .collect(),
             );
         }

@@ -11,8 +11,8 @@
 //! is pinned to Civilization VI's own ladder: Prince, the rung where neither
 //! side is handed anything, is [`PRINCE_ELO`], and every other rung is rated
 //! by seating the [`CIV6_REFERENCE`] agent with that rung's shipped handicap
-//! against a challenger playing on the human's terms. `docs/ELO.md` says what
-//! that does and does not prove.
+//! alone at a table of agents playing on the human's terms. `docs/ELO.md`
+//! says what that does and does not prove.
 use crate::ai::{AdvancedAi, Ai, BasicAi, VictoryTarget};
 use crate::shared_sort::SharedSort;
 use serde::Deserialize;
@@ -47,29 +47,6 @@ pub const CIV6_REFERENCE: &str = "stock";
 
 /// Fewer rated tables than this and a rating is shown as provisional.
 pub const PROVISIONAL_TABLES: u32 = 30;
-
-/// The lowest rung whose tables are turned round: the rung's AI alone in one
-/// seat, and a challenger on the human's terms in every other.
-///
-/// A table says most about a rung when either side might win it. One
-/// challenger against a table of the rung's rivals is that table while the
-/// rung rates near the agents, which is the ladder up to King. From Emperor up
-/// a lone challenger wins so seldom (21, 4 and 0 of 240 tables at Emperor,
-/// Immortal and Deity on 2026-11-21) that the tables put a floor under the
-/// rung and little else. The side that rates higher sits alone instead: with
-/// `c` the challengers' strength and `r` the rung's, three challengers against
-/// one rival is the closer table exactly when `r > c`. Move this when the
-/// roster's best agents pass Emperor.
-pub const LONE_RUNG_FROM: &str = "emperor";
-
-/// Whether `rung`'s tables seat its AI alone ([`LONE_RUNG_FROM`]).
-pub fn lone_rung(rung: &str) -> bool {
-    let at = |id: &str| CIV6_RUNGS.iter().position(|(rung, _)| *rung == id);
-    match (at(rung), at(LONE_RUNG_FROM)) {
-        (Some(rung), Some(from)) => rung >= from,
-        _ => false,
-    }
-}
 
 /// The `index`th hand of `seats` roster agents, by id. A round is one shuffle
 /// of the whole roster dealt into hands, so every agent sits equally often; a
@@ -929,24 +906,14 @@ mod tests {
         assert!((ladder[4] - 1450.0).abs() < 1e-6 && (ladder[5] - 1450.0).abs() < 1e-6);
     }
 
+    /// The fit is neutral about a table's shape. A rival four times as
+    /// strong as its challengers loses 1 table in 13 when three of it face
+    /// one challenger, and wins 4 in 7 alone against three; the fit reads the
+    /// same distance out of either, and out of both together. So when real
+    /// tables of the two shapes rate a rung differently (`docs/ELO.md`), the
+    /// games differ, not the arithmetic.
     #[test]
-    fn the_rungs_above_king_seat_their_ai_alone() {
-        let lone: Vec<&str> = CIV6_RUNGS
-            .iter()
-            .map(|(rung, _)| *rung)
-            .filter(|rung| lone_rung(rung))
-            .collect();
-        assert_eq!(lone, ["emperor", "immortal", "deity"]);
-        assert!(!lone_rung(PRINCE), "the pin is never a rung table");
-        assert!(!lone_rung("no such rung"));
-    }
-
-    /// Both shapes of rung table are the same measurement. A rival four
-    /// times as strong as its challengers loses 1 table in 13 when three of
-    /// it face one challenger, and wins 4 in 7 alone against three; the fit
-    /// must read the same distance out of either, and out of both together.
-    #[test]
-    fn a_rung_measures_the_same_alone_as_in_every_other_seat() {
+    fn the_fit_reads_one_distance_from_either_shape_of_table() {
         let crowded: Vec<Table> = (0..260)
             .map(|game| Table {
                 seats: vec![0, 1, 1, 1],
