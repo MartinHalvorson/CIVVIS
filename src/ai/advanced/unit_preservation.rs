@@ -656,8 +656,8 @@ impl AdvancedAi {
             // whose intended site that route would have reached.
             blocked.extend(companions);
             let after = replay(before, pid, actions, &blocked);
-            let trials =
-                shared.get_or_insert_with(|| std::cell::RefCell::new(TrialReach::new(&after.board, pid)));
+            let trials = shared
+                .get_or_insert_with(|| std::cell::RefCell::new(TrialReach::new(&after.board, pid)));
             let mut forecast = ReplyForecast::for_trial(&after.board, trials);
             let unsafe_units: Vec<u32> = affected
                 .iter()
