@@ -134,6 +134,7 @@ fn profile(recipe: &Recipe) -> Profile {
         victories: civvis::game::VictoryConditions::default(),
         field: Vec::new(),
         native_competitions: true,
+        simultaneous: None,
         field_genes: Vec::new(),
         victory_mask: None,
         difficulty: "deity".to_string(),

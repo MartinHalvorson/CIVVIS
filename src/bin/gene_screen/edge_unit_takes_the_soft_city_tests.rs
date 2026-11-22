@@ -102,6 +102,7 @@ fn profile(turns: u32, seed: u64, walls: Option<u32>, journal_base: String) -> P
         victories: civvis::game::VictoryConditions::default(),
         field: Vec::new(),
         native_competitions: true,
+        simultaneous: None,
         field_genes: Vec::new(),
         victory_mask: None,
         difficulty: "deity".to_string(),

@@ -615,6 +615,11 @@ SCREEN = {
 FIELDLESS = {
     "contested_field": "",
     "native_competitions": False,
+    # `gene_screen --turn-structure simultaneous` (the fast self-play probe):
+    # every seat plans against the board as it stood before anybody moved,
+    # which is a different game from the sequential one every column was
+    # measured on. A sequential header omits the leg.
+    "turn_structure": "",
 }
 #: ⭐ THE FIELD THE LEDGER'S GENES WERE MEASURED AGAINST, AND THE SECOND THING
 #: STANDING BETWEEN IT AND A BATCH THAT PLAYED A DIFFERENT GAME.

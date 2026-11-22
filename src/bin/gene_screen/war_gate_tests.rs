@@ -105,6 +105,7 @@ fn recipe(score: bool, journal_base: &str, seed: u64) -> Profile {
         victories: civvis::game::VictoryConditions::default(),
         field: Vec::new(),
         native_competitions: false,
+        simultaneous: None,
         field_genes: Vec::new(),
         victory_mask: None,
         difficulty: "deity".to_string(),

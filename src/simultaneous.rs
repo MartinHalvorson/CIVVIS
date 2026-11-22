@@ -481,6 +481,40 @@ fn close_seat_turn(g: &mut Game, seat: usize, forced: &mut u64) -> bool {
 }
 
 fn run_simultaneous<A: Ai + Send>(g: &mut Game, ais: &mut [A], jobs: usize) -> SimultaneousCensus {
+    run_simultaneous_with(g, ais, jobs, |_| {})
+}
+
+/// A simultaneous game played the way [`crate::ai::run_game_observed`]
+/// plays a sequential one: `observe` sees the board once at the top of every
+/// game turn, and a game still undecided at the turn limit is closed as a
+/// sequential one is (`Game::finish_at_turn_limit`). Planning fans out across
+/// up to `jobs` threads, which, as in [`run_structured_jobs`], is an
+/// execution detail: the same seed plays the same game at any `jobs`.
+pub fn run_simultaneous_observed<A: Ai + Send>(
+    g: &mut Game,
+    ais: &mut [A],
+    jobs: usize,
+    observe: impl FnMut(&Game),
+) -> SimultaneousCensus {
+    g.turn_structure = TurnStructure::Simultaneous;
+    let census = run_simultaneous_with(g, ais, jobs, observe);
+    g.finish_at_turn_limit();
+    census
+}
+
+fn run_simultaneous_with<A: Ai + Send>(
+    g: &mut Game,
+    ais: &mut [A],
+    jobs: usize,
+    mut observe: impl FnMut(&Game),
+) -> SimultaneousCensus {
+    let mut observed_turn = None;
+    let mut look = |g: &Game| {
+        if observed_turn != Some(g.turn) {
+            observed_turn = Some(g.turn);
+            observe(g);
+        }
+    };
     // Same headless observation mode as `run_game`: fog memory is a display
     // cache, not a gameplay input, and planning clones inherit the setting.
     g.set_fog_memory(ais.iter().any(Ai::uses_player_observation));
@@ -494,6 +528,7 @@ fn run_simultaneous<A: Ai + Send>(g: &mut Game, ais: &mut [A], jobs: usize) -> S
     let workers = jobs.max(1).min(ais.len().max(1));
     if workers == 1 {
         while g.winner.is_none() && g.turn <= g.max_turns {
+            look(g);
             if !step_cycle_with_planner(g, &mut census, |prepared| plan_serially(ais, prepared)) {
                 break;
             }
@@ -520,6 +555,7 @@ fn run_simultaneous<A: Ai + Send>(g: &mut Game, ais: &mut [A], jobs: usize) -> S
                 .spawn_scoped(scope, move || prepare_loop(jobs_rx, planner_tx))
                 .expect("the operating system refused a simultaneous prepare worker");
             while g.winner.is_none() && g.turn <= g.max_turns {
+                look(g);
                 if !step_cycle_pipelined(g, &mut census, &jobs_tx) {
                     break;
                 }
