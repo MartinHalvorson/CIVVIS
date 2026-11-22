@@ -112,7 +112,7 @@
       "end": "civvis-t7-",
       "series_size": 25,
       "match": {"players": 6, "map": "Continents.lua"},
-      "note": "Restarted on 2026-11-21 with one CIVVIS agent instead of two; the first attempt's one finished game is not counted."
+      "note": "Restarted on 2026-11-21 with one CIVVIS agent instead of two; the first attempt's one finished game is not counted. Games 1-7 were hotseat tables; from 2026-11-22 the rest are played in single player (one CIVVIS seat, five Firaxis AI at the level), tagged civvis-t6-."
     }
   ]
 }

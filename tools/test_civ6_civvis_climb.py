@@ -3995,3 +3995,28 @@ class OperatorSeatTests(unittest.TestCase):
         args = self._args()
         self.assertEqual(climb.operator_seat(args, path=Path("/nonexistent/policy")), {})
         self.assertEqual(vars(args), vars(self._args()))
+
+
+class RunTagPrefixTest(unittest.TestCase):
+    """A tournament played in single player tags its games into its own range."""
+
+    def prefix(self, value):
+        return climb.run_tag_prefix(read=lambda key: value if key == "CIVVIS_TAG_PREFIX" else None)
+
+    def test_unset_is_the_plain_prefix(self) -> None:
+        self.assertEqual(self.prefix(None), "civvis-")
+        self.assertEqual(self.prefix("  "), "civvis-")
+
+    def test_a_tournament_prefix_is_taken(self) -> None:
+        self.assertEqual(self.prefix("civvis-t6-"), "civvis-t6-")
+        self.assertEqual(self.prefix("civvis-"), "civvis-")
+
+    def test_anything_else_falls_back(self) -> None:
+        for bad in ("civvis-t6", "t6-", "civvis-t6-x-", "../civvis-t6-", "civvis-T6-"):
+            with mock.patch("builtins.print"):
+                self.assertEqual(self.prefix(bad), "civvis-", bad)
+
+    def test_a_tournament_tag_sorts_into_its_range(self) -> None:
+        tag = self.prefix("civvis-t6-") + "20261122T020000Z"
+        self.assertTrue("civvis-t6-20261121T204000Z" < tag < "civvis-t7-")
+        self.assertFalse("civvis-20261120T045254Z" < tag < "civvis-t")
