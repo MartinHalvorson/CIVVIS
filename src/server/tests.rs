@@ -2395,7 +2395,10 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
 /// The home page is one of the site's five pages and lists all five from
 /// its header, Home, Charts, Auto-Tourneys, CIVVIS and AI Debugger, with itself in gold
 /// and the Civ 6 link under them, as the viewer's masthead does; below that
-/// it is one paragraph and four videos, two by two (operator, 2026-11-22;
+/// it is one paragraph, the speed timeline (operator, 2026-11-22: how many
+/// times faster than a person each way of playing gets through a game;
+/// `beta/speedup_timeline_test.py` pins it) and four videos, two by two
+/// (operator, 2026-11-22;
 /// `beta/home_rankings_test.py` pins them). The rankings that stood there
 /// moved to Win Analytics under Charts/ the same day, and the Tournaments
 /// table that stood above them to the Auto-Tourneys page (operator, 2026-11-21;
@@ -2463,6 +2466,10 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
         // The channel's top playlists are a list under the YouTube button.
         "<ul class=\"utility-lists\" aria-label=\"Top playlists\">",
         "<script type=\"application/json\" id=\"home-videos\">null</script>",
+        // Over the videos, the speed timeline: hidden as written, and
+        // shown with the figures publishing writes into its own slot.
+        "<section class=\"speed\" id=\"speed\" aria-label=\"How many times faster than a person a game is played\" hidden>",
+        "<script type=\"application/json\" id=\"home-speedup\">null</script>",
     ] {
         assert!(landing.contains(piece), "the home page lost {piece}");
     }

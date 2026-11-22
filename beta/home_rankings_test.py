@@ -494,8 +494,10 @@ class HomeRankings(unittest.TestCase):
             self.assertIn("the fastest game's video", said.getvalue())
             filled = page.read_text(encoding="utf-8")
             self.assertEqual(json.loads(home_rankings.VIDEOS_SLOT.search(filled)[2]), fastest)
-            # Nothing but the slot moved.
-            self.assertEqual(home_rankings.VIDEOS_SLOT.sub("", filled), home_rankings.VIDEOS_SLOT.sub("", LANDING))
+            # Nothing but the page's slots moved: this one, and the speed
+            # timeline's (`beta/speedup_timeline_test.py` reads that one).
+            bare = lambda text: home_rankings.speedup_timeline.SLOT.sub("", home_rankings.VIDEOS_SLOT.sub("", text))  # noqa: E731
+            self.assertEqual(bare(filled), bare(LANDING))
             # A revision with no list of records: the slot says so, and the
             # tile stays the video it is written with.
             self.assertIsNone(home_rankings.videos(pathlib.Path(scratch)))

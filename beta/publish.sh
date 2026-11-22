@@ -164,7 +164,10 @@ cp "$landing_page" "$out/home/index.html"
 # page from before 2026-11-22 carries the two rankings instead (the winningest
 # civs of the verification games, the Civ AI Agents by Elo) and is filled
 # with those, the civs from the run ledger and the agents from the lane's own
-# revision; a page with neither slot is left as it is.
+# revision; a page with neither slot is left as it is. The same run writes
+# the speed timeline over the videos (how many times faster than a person
+# each way of playing gets through a game) from the lane's
+# data/performance/speedup_timeline.json, by beta/speedup_timeline.py.
 python3 "$repo_root/beta/home_rankings.py" "$source_tree" "$out/home/index.html"
 # The Tournaments page (running, scheduled and finished series of the
 # verification games) is filled the same way, from the run ledger. Its

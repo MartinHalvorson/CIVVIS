@@ -41,6 +41,12 @@ shows. The page carries a second slot for it,
 filled here too (`videos`), so a new record reaches both pages from its one
 line in that file.
 
+Over the videos the home page carries the speed timeline: how many times
+faster than a person each way of playing gets through a game. Its figures
+are a third slot, `home-speedup`, filled here from
+`data/performance/speedup_timeline.json` by `speedup_timeline.timeline`
+(`beta/speedup_timeline.py`).
+
 Nothing here is committed as a copy. The page once kept a hand-synced battle
 catalog and it went the way such copies go; this is derived at publish time
 from the same files the engine embeds, so it cannot drift from them.
@@ -59,6 +65,7 @@ import subprocess
 import sys
 
 import performance_page
+import speedup_timeline
 
 #: How many civs the table shows: the ones that have won, best win rate first.
 TOP_CIVS = 25
@@ -513,8 +520,13 @@ def main(argv: list[str]) -> int:
         records = videos(source)
         text = fill(text, records, VIDEOS_SLOT)
         shown.append("the fastest game's video" if records else "no video")
+    # The home page's speed timeline, on the page that has its slot.
+    if speedup_timeline.SLOT.search(text):
+        timeline = speedup_timeline.timeline(source)
+        text = fill(text, timeline, speedup_timeline.SLOT)
+        shown.append("the speed timeline" if timeline else "no speed timeline")
     if not shown:
-        # A page with neither slot: nothing to fill.
+        # A page with none of the slots: nothing to fill.
         print(f"home_rankings: {page} has no rankings slot and no videos slot; left as it is", file=sys.stderr)
         return 0
     page.write_text(text, encoding="utf-8")
