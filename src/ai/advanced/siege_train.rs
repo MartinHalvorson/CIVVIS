@@ -3072,6 +3072,12 @@ impl AdvancedAi {
             reading
         });
         let no_breaker = !arena && breach.is_some_and(|reading| reading.leaves_walls_shut(&city));
+        // `staged-siege-keeps-its-breakers`: remember that this train waits on
+        // a breaker, so the queues building one keep it. Nothing with the gene
+        // off. See `advanced/staged_siege_keeps_its_breakers.rs`.
+        if no_breaker {
+            self.note_siege_wants_a_breaker(g);
+        }
         // `siege-needs-a-breaker`: walls a breaker at hand can open are
         // opened before the taker comes. The damage budget reads a train
         // with no melee taker in reach as never finishing (`inf`), so a
