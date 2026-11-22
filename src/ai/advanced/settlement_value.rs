@@ -497,8 +497,11 @@ impl AdvancedAi {
                 atlas.restart(g, pid, fresh_key);
                 key = Some(fresh_key);
                 if settlement_atlas_audit() {
-                    let kept: Vec<(Pos, f64)> =
-                        atlas.values.iter().map(|(pos, (value, _))| (*pos, *value)).collect();
+                    let kept: Vec<(Pos, f64)> = atlas
+                        .values
+                        .iter()
+                        .map(|(pos, (value, _))| (*pos, *value))
+                        .collect();
                     drop(atlas);
                     self.audit_settlement_atlas(g, pid, &kept);
                     atlas = self.settlement_atlas.borrow_mut();
@@ -1141,8 +1144,9 @@ impl SettlementAtlas {
                         moved.extend(g.wdisk(city.1, SETTLEMENT_ATLAS_CITY_REACH));
                     }
                 }
-                self.values
-                    .retain(|pos, (_, derived_under)| *derived_under == key && !moved.contains(pos));
+                self.values.retain(|pos, (_, derived_under)| {
+                    *derived_under == key && !moved.contains(pos)
+                });
             }
             None => self.values.clear(),
         }

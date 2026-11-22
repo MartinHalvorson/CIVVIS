@@ -66,5 +66,8 @@ fn every_kept_site_derives_what_it_kept() {
             ..SettlementAtlasTest::default()
         },
     );
-    assert!(audited > 0, "the audit must check kept values, or this proves nothing");
+    assert!(
+        audited > 0,
+        "the audit must check kept values, or this proves nothing"
+    );
 }
