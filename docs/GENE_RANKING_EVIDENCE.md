@@ -184,6 +184,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `emptied-camp-is-taken` | off (unmeasured) | Opt-in gene `emptied-camp-is-taken`: an empty barbarian camp is walked onto this turn; see `advanced/emptied_camp_is_taken.rs`. | 1 \| 1 |
 | `refusals-alone-reopen-the-turn` | off (unmeasured) | Opt-in gene `refusals-alone-reopen-the-turn`; see `ai::player::take_turn`. | 1 \| 1 |
 
 ## Removed from the code
