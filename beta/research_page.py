@@ -55,6 +55,22 @@ that level's, so a snapshot left unrefreshed, or a level last played weeks
 ago, still shows its last week rather than an empty one, and the page says
 which days each window holds.
 
+Over the charts the page opens on a table (operator 2026-11-22: "to the top
+of win analytics roughly, please list our win rate against lv 4... lv 8
+deity ai in tournament games. please list sample sizes, wins, losses in the
+table too. table should default to last 30 days"): CIVVIS's win rate against
+the game's AI at each level from Prince (Lv 4) to Deity (Lv 8), with the
+games, wins and losses it is made of. Its games are the tournaments' own,
+every finished game of every tournament the Auto-Tourneys page lists
+(`data/tournaments.json`, counted by `home_rankings.tournament_series`), so
+the two pages agree: a win is CIVVIS's victory and anything else a finished
+game ended in is a loss, a rival's victory, our elimination or a game
+conceded early. That is a wider count than the charts', which have no place
+for a game without a victory. The record holds it under `tournament_rates`,
+for the same three windows, all five levels in each, and one window's days
+are the same for every level: it is measured back from the newest tournament
+game at any of them, so the rows of the table are the same days' games.
+
 Like the home page's tables this runs inside the script that publishes the
 whole site, so what it cannot read costs the page its figures, said on
 stderr, and never costs the site its publish. Both lanes are sent head's
@@ -104,6 +120,12 @@ OPENING_LEVEL = 8
 #: The windows, newest first: days back from a kind's newest game (`None` is
 #: every game).
 WINDOWS = [("7", 7), ("30", 30), ("all", None)]
+
+#: The tournaments' definitions, in the source tree, and the levels the table
+#: of win rates lists, lowest first: Prince to Deity (operator 2026-11-22:
+#: "our win rate against lv 4... lv 8 deity ai in tournament games").
+TOURNAMENTS = pathlib.Path("data/tournaments.json")
+RATE_LEVELS = [4, 5, 6, 7, 8]
 
 
 def per_turn(turns: dict[int, int]) -> list[int]:
@@ -278,6 +300,44 @@ def self_play_groups(snapshot: dict) -> list[dict]:
     return groups
 
 
+def tournament_games(rows: list[dict], specs: list[dict]) -> list[tuple[str, int, bool]]:
+    """Every finished game of every tournament, at a level the table lists:
+    the day it began, the level the game's AI played at, and whether CIVVIS
+    won it. The games and their endings are `home_rankings.tournament_series`'s
+    own, the count the Auto-Tourneys page shows; a game counts once, whatever
+    series it stands in."""
+    games: dict[str, tuple[str, int, bool]] = {}
+    for series in ranks.tournament_series(rows, specs, detail=True) or []:
+        for key, ending in series["played"]:
+            at = ranks.level(ending.get("difficulty"))
+            day = ranks.began(key, [ending])
+            if at in RATE_LEVELS and day:
+                games[key] = (day, at, ending["outcome"] == "win")
+    return list(games.values())
+
+
+def win_rates(games: list[tuple[str, int, bool]]) -> dict | None:
+    """The table of win rates: for each window, every level of `RATE_LEVELS`
+    with its games, wins and losses. A window counts back from the newest
+    game of them all, so its days are the same for every level, and a level
+    with no game in it is listed with none. `None` without a game."""
+    if not games:
+        return None
+    newest = max(day for day, _, _ in games)
+    windows = {}
+    for key, days in WINDOWS:
+        since = None
+        if days is not None:
+            since = (datetime.date.fromisoformat(newest) - datetime.timedelta(days=days - 1)).isoformat()
+        kept = [game for game in games if since is None or game[0] >= since]
+        levels = []
+        for at in RATE_LEVELS:
+            won = [won for _, level, won in kept if level == at]
+            levels.append({"level": at, "games": len(won), "wins": sum(won), "losses": len(won) - sum(won)})
+        windows[key] = {"from": min(day for day, _, _ in kept), "to": newest, "games": len(kept), "levels": levels}
+    return {"windows": windows}
+
+
 def kind(name: str, groups: list[dict]) -> dict | None:
     windows = {key: window(groups, days) for key, days in WINDOWS}
     if not windows["all"]:
@@ -299,8 +359,8 @@ def research(source: pathlib.Path) -> dict | None:
     # the page opens on `level`, or on the highest level played when nobody
     # has played that one.
     out["levels"] = {}
+    rows = ranks.results(source)
     try:
-        rows = ranks.results(source)
         played = level_groups(rows, lambda tags: limits(source, tags)) if rows else {}
         for level, groups in played.items():
             games = kind(f"CIVVIS vs {level_name(level)} AI", groups)
@@ -309,7 +369,16 @@ def research(source: pathlib.Path) -> dict | None:
     except (ValueError, KeyError, TypeError, AttributeError) as error:
         print(f"research_page: no figures against the game's AI ({error})", file=sys.stderr)
         out["levels"] = {}
-    if not out["self_play"] and not out["levels"]:
+    # The win rate at each level over the tournaments' games, off the same
+    # result lines and the definitions the Auto-Tourneys page reads.
+    out["tournament_rates"] = None
+    try:
+        if rows:
+            specs = json.loads((source / TOURNAMENTS).read_text(encoding="utf-8")).get("tournaments") or []
+            out["tournament_rates"] = win_rates(tournament_games(rows, specs))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+        print(f"research_page: no win rates over the tournaments' games ({error})", file=sys.stderr)
+    if not out["self_play"] and not out["levels"] and not out["tournament_rates"]:
         return None
     out["level"] = OPENING_LEVEL if str(OPENING_LEVEL) in out["levels"] else max(map(int, out["levels"]), default=OPENING_LEVEL)
     return out
@@ -412,7 +481,7 @@ def for_page(page: str, data: dict | None) -> dict | None:
     nothing it has no place for."""
     if data is None or LEVEL_PICKER in page:
         return data
-    out = {key: value for key, value in data.items() if key not in ("levels", "level")}
+    out = {key: value for key, value in data.items() if key not in ("levels", "level", "tournament_rates")}
     deity = data.get("levels", {}).get(str(ranks.CIV6_RUNGS.index("deity") + 1))
     out["deity"] = {**deity, "name": "CIVVIS vs Deity AI"} if deity else None
     return out
@@ -456,6 +525,8 @@ def main(argv: list[str]) -> int:
     else:
         kinds = [*data.get("levels", {}).values(), data.get("deity"), data.get("self_play")]
         said = [f"{k['windows']['all']['games']} {k['name']} games" for k in kinds if k]
+        if data.get("tournament_rates"):
+            said.append(f"{data['tournament_rates']['windows']['all']['games']} tournament games")
         print(f"research_page: wrote {' and '.join(said)} into {page}", file=sys.stderr)
     return 0
 
