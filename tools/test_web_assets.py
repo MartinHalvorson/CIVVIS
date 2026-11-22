@@ -2319,6 +2319,11 @@ for (const [count, cols, rows] of [[4, 2, 2], [6, 3, 2]]) {
 expect(gameStatsMarkup(world(6, 120, true)).includes('<span class="gs-out">Out on turn 61</span>'), "a fallen civilization's last turn");
 eq(gameStatsMarkup({...world(4, 120), map: {script: "battlefield"}}), "", "a Tactics battle has no charts");
 eq(gameStatsMarkup({...world(4, 1)}), "", "one turn is not a history");
+// The card opens small; the charts are behind a Charts button, offered only
+// when there is a history to chart.
+expect(gameStatsButton(world(4, 120)).includes('id="finale-charts"'), "no Charts button on a finished game");
+eq(gameStatsButton({...world(4, 120), map: {script: "battlefield"}}), "", "a Tactics battle offers no charts");
+eq(gameStatsButton(world(4, 1)), "", "one turn offers no charts");
 
 // The drawing, at every size a chart is given from a phone to a large screen,
 // on both scales: everything drawn is inside the chart, every line is inside
@@ -2392,6 +2397,23 @@ class TheResultScreenIsAScreenOfCharts(unittest.TestCase):
             capture_output=True, text=True, timeout=120)
         self.assertEqual(done.returncode, 0, done.stderr.strip()[-3000:])
         self.assertIn("game stats checks passed", done.stdout)
+
+    def test_the_charts_open_from_a_charts_button(self):
+        """Operator, 2026-11-21: "change the end game charts option to only
+        show if the user clicks on a new "Charts" button. Otherwise a smaller
+        screen with the next game countdown".
+
+        The card is built without the charts; its Charts button puts them in
+        and takes them out. A watched game's count is the simulation's, so
+        opening the charts holds the result with Pause here."""
+        app = (ASSETS / "app.js").read_text(encoding="utf-8")
+        self.assertNotIn("${gameStatsMarkup(st)}", app)
+        # Both rows of answers, a watched game's and a played one's.
+        self.assertEqual(app.count("${gameStatsButton(st)}"), 2)
+        moments = (ASSETS / "app_moments.js").read_text(encoding="utf-8")
+        self.assertIn('card.insertAdjacentHTML("beforeend", markup);', moments)
+        self.assertIn("if (SPEC && !specPaused) { toggleSpecPause(); gameStatsHeld = true; }", moments)
+        self.assertIn("if (gameStatsHeld && SPEC && specPaused) toggleSpecPause();", moments)
 
     def test_the_card_takes_the_map_area_and_does_not_scroll(self):
         page = INDEX.read_text(encoding="utf-8")

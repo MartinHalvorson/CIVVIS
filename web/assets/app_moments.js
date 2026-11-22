@@ -280,14 +280,54 @@ function gameStatsLastPlayed(values) {
   return -1;
 }
 
-// Called from the result card's markup. Empty for a running game, a Tactics
-// battle (its card must not cover the field) and a world too young to graph.
+// Whether a result has a history to chart: not a running game, not a Tactics
+// battle (its card must not cover the field), and not a world too young.
+function gameStatsAvailable(st) {
+  const stats = st?.game_stats;
+  return !!stats && Array.isArray(stats.turns) && stats.turns.length >= 2 &&
+    Array.isArray(stats.players) && stats.players.length > 0 && !isBattlefieldMapScript(st.map?.script);
+}
+
+// The result card opens on its verdict and the count to the next game; the
+// charts are one click away, on its Charts button (operator, 2026-11-21).
+// Opening them puts the section into the card, which is what turns the card
+// into the end screen of charts below; closing takes it out again.
+let gameStatsHeld = false;
+function gameStatsButton(st) {
+  gameStatsHeld = false;
+  return gameStatsAvailable(st)
+    ? `<button class="winner-again winner-playon" id="finale-charts" onclick="toggleGameStats()"
+        aria-expanded="false" title="Graphs of every civilization's yields and cities over the whole game.">Charts</button>`
+    : ``;
+}
+// A watched game's count belongs to the simulation, and five seconds is no
+// time to read a chart, so opening them holds the result with the card's own
+// Pause here. Closing them lets it go again, if the charts were what held it.
+function toggleGameStats() {
+  const card = document.querySelector("#winner .winner-content");
+  const button = document.getElementById("finale-charts");
+  if (!card || !button) return;
+  const open = card.querySelector(":scope > .game-stats");
+  if (open) {
+    open.remove();
+    gameStatsObserver?.disconnect();
+    if (gameStatsHeld && SPEC && specPaused) toggleSpecPause();
+    gameStatsHeld = false;
+  } else {
+    const markup = gameStatsMarkup(state);
+    if (!markup) return;
+    card.insertAdjacentHTML("beforeend", markup);
+    if (SPEC && !specPaused) { toggleSpecPause(); gameStatsHeld = true; }
+  }
+  button.textContent = open ? "Charts" : "Hide charts";
+  button.setAttribute("aria-expanded", String(!open));
+}
+
+// The section the Charts button opens. Empty when there is nothing to chart.
 function gameStatsMarkup(st) {
   const stats = st?.game_stats;
   gameStatsView = null;
-  if (!stats || !Array.isArray(stats.turns) || stats.turns.length < 2 ||
-      !Array.isArray(stats.players) || !stats.players.length ||
-      isBattlefieldMapScript(st.map?.script)) return "";
+  if (!gameStatsAvailable(st)) return "";
   const winners = new Set(Array.isArray(st.winners) && st.winners.length ? st.winners : [st.winner]);
   const last = stats.turns.length - 1;
   const rows = stats.players.filter(row => st.players?.[row.id]).map(row => {

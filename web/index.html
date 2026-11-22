@@ -2703,6 +2703,14 @@
   }
   #winner:has(.game-stats) .winner-actions .primary { grid-column: auto; justify-self: stretch; }
   #winner:has(.game-stats) .winner-actions .winner-again { padding: 8px 14px; }
+  /* Charts (app_moments.js) ends the row of answers. A played game's row is
+     three across, so on the short card it takes a line of its own, centred
+     like the first; in the band the row simply has room for one more. */
+  .winner-content > .winner-actions:not(.winner-actions-sim) #finale-charts { grid-column: 1 / -1; justify-self: center; }
+  #winner:has(.game-stats) .winner-content > .winner-actions:not(.winner-actions-sim) {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  #winner:has(.game-stats) .winner-actions:not(.winner-actions-sim) #finale-charts { grid-column: auto; justify-self: stretch; }
   #winner:has(.game-stats) .winner-content > .winner-actions.winner-actions-sim {
     grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: max-content;
     justify-self: end; margin-top: 0;
