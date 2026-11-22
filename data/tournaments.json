@@ -51,7 +51,13 @@
     "tournament 6\" and \"no diplo allowed for any level\": Tournament 6 starts again at the first table tagged after the restart",
     "(`start` is that moment as a table tag), one CIVVIS agent and five Firaxis AI, the Diplomatic victory switched off in every game.",
     "The first attempt's games (two CIVVIS agents; civvis-t6-20261121T131243Z, a win, and one table never finished) sort before",
-    "`start` and count in no tournament."
+    "`start` and count in no tournament.",
+    "Operator 2026-11-22 ~04:50Z: \"please add an indefinite tourney - whenever we have no other tourney, we run lv 6, lv 7, lv 8",
+    "(x 2) games. diplomacy off. benchmark our win rates roughly for these games over time.\": a definition with `indefinite`",
+    "is one series that never fills (no `series_size`); its `end` only bounds the tags it counts, so a tournament played between",
+    "its games pauses it and does not close it. The page shows its win rate by level, over every game and day by day. Its games",
+    "are tagged `civvis-t7-` and played in turn at Lv 6, Lv 7, Lv 8, Lv 8 by the host's conductor whenever no other tournament",
+    "is being played."
   ],
   "descriptions": {
     "1": "Proof of concept, 10 game series",
@@ -113,6 +119,16 @@
       "series_size": 25,
       "match": {"players": 6, "map": "Continents.lua"},
       "note": "Restarted on 2026-11-21 with one CIVVIS agent instead of two; the first attempt's one finished game is not counted. Games 1-7 were hotseat tables; from 2026-11-22 the rest are played in single player (one CIVVIS seat, five Firaxis AI at the level), tagged civvis-t6-."
+    },
+    {
+      "name": "Indefinite benchmark, Lv 6, 7, 8, 8 in turn, 1 CIVVIS agent + 5 AI",
+      "description": "Indefinite: Lv 6, Lv 7, Lv 8 (x 2) whenever no other tourney runs (no Diplo allowed)",
+      "idea": "Whenever no other tournament is being played, one CIVVIS agent plays five Firaxis AI at Lv 6, Lv 7, Lv 8 and Lv 8 again, in turn, with the Diplomatic victory off, so our win rate at each level is measured as it moves over time.",
+      "conditions": "Lv 6, 7, 8, 8 in turn, 6P Continents Online, 1 CIVVIS + 5 AI, no Diplomatic victory",
+      "start": "civvis-t7-",
+      "end": "civvis-t8-",
+      "indefinite": true,
+      "match": {"players": 6, "map": "Continents.lua"}
     }
   ]
 }
