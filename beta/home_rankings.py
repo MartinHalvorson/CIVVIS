@@ -339,6 +339,12 @@ def tournament_series(rows: list[dict], tournaments: list[dict], detail: bool = 
     series began across every definition; the live mirror's Mode reads
     "Tournament <id>: <wins>-<losses>" from the same count. Newest first.
 
+    An `indefinite` definition is one series that never fills (operator
+    2026-11-22: "please add an indefinite tourney - whenever we have no other
+    tourney, we run lv 6, lv 7, lv 8 (x 2) games"): its `size` is `None` and
+    its `end` only bounds the tags it counts. A tournament played between its
+    games (a tag past that `end`) pauses it, it does not close it.
+
     With `detail` each series also carries what the Tournaments page
     (`beta/tournaments_page.py`) draws beyond the table: the place of its
     definition in the list (`definition`) and its games in the order they were
@@ -347,7 +353,8 @@ def tournament_series(rows: list[dict], tournaments: list[dict], detail: bool = 
     """
     out = []
     for place, spec in enumerate(tournaments):
-        size = int(spec.get("series_size") or 10)
+        indefinite = bool(spec.get("indefinite"))
+        size = None if indefinite else int(spec.get("series_size") or 10)
         start = str(spec.get("start") or "")
         end = str(spec.get("end") or "")
         match = spec.get("match") or {}
@@ -362,9 +369,9 @@ def tournament_series(rows: list[dict], tournaments: list[dict], detail: bool = 
             ending = min(games[key], key=lambda row: OUTCOMES.index(row["outcome"]))
             if ending["outcome"] != "unfinished":
                 finished.append((key, ending))
-        blocks = list(range(0, len(finished), size))
+        blocks = [0] if indefinite and finished else list(range(0, len(finished), size or 1))
         for number, first in enumerate(blocks, 1):
-            block = finished[first:first + size]
+            block = finished[first:] if indefinite else finished[first:first + size]
             wins = sum(1 for _, ending in block if ending["outcome"] == "win")
             last = max(str(ending.get("utc") or "") for _, ending in block)
             # A definition closed by its `end` closes its last series too, full
@@ -373,10 +380,10 @@ def tournament_series(rows: list[dict], tournaments: list[dict], detail: bool = 
             # that is a tag prefix another table owns (`civvis-t`) closes
             # nothing on its own: the games played after that table still
             # sort before it and form the next series.
-            closed = len(block) == size or bool(
+            closed = not indefinite and (len(block) == size or bool(
                 end and first == blocks[-1] and any(
                     (game_key(row) or "") >= end and str(row.get("utc") or "") > last
-                    for row in rows))
+                    for row in rows)))
             out.append({
                 "tournament": spec.get("name") or "",
                 "series": number,

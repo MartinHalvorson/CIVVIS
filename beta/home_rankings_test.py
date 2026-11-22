@@ -490,6 +490,25 @@ class HomeRankings(unittest.TestCase):
         self.assertEqual([(s["id"], s["tournament"], s["games"], s["end"] is None) for s in series],
                          [(2, "table", 1, True), (1, "seat", 2, False)])
 
+    def test_an_indefinite_tournament_never_fills_and_a_tournament_between_its_games_pauses_it(self):
+        # Operator 2026-11-22: "please add an indefinite tourney - whenever we
+        # have no other tourney, we run lv 6, lv 7, lv 8 (x 2) games".
+        on = {"players": 6, "map": "Continents.lua"}
+        bench = {"name": "bench", "conditions": "c", "start": "civvis-t7-", "end": "civvis-t8-",
+                 "indefinite": True, "match": on}
+        later = {"name": "later", "conditions": "c", "start": "civvis-t8-", "end": "civvis-t9-",
+                 "series_size": 2, "match": on}
+        rows = [run(f"civvis-t7-20261122T{h:02d}0000Z", "win" if h % 3 else "rival_victory", "ROME",
+                    utc=f"2026-11-22T{h:02d}:40:00Z", **on) for h in range(12)]
+        rows.append(run("civvis-t8-20261122T120000Z", "win", "GAUL", utc="2026-11-22T12:40:00Z", **on))
+        rows.append(run("civvis-t7-20261122T130000Z", "win", "MALI", utc="2026-11-22T13:40:00Z", **on))
+        series = home_rankings.tournament_series(rows, [bench, later])
+        self.assertEqual([(s["id"], s["tournament"], s["games"], s["size"], s["end"]) for s in series],
+                         [(2, "later", 1, 2, None), (1, "bench", 13, None, None)])
+        self.assertEqual(series[1]["wins"], 9)
+        # Before its first game it is one tournament still to come, not ten.
+        self.assertIsNone(home_rankings.tournament_series([], [bench]))
+
     def test_the_tournament_definitions_are_committed_and_read(self):
         specs = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))["tournaments"]
         self.assertTrue(specs)
@@ -501,7 +520,11 @@ class HomeRankings(unittest.TestCase):
             if "end" in spec:
                 self.assertRegex(spec["end"], tag)
                 self.assertGreater(spec["end"], spec["start"])
-            self.assertGreater(spec["series_size"], 0)
+            if spec.get("indefinite"):
+                # One series that never fills: a size would contradict it.
+                self.assertNotIn("series_size", spec)
+            else:
+                self.assertGreater(spec["series_size"], 0)
             self.assertTrue(spec["conditions"])
             if "note" in spec:
                 self.assertIsInstance(spec["note"], str)

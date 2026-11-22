@@ -213,6 +213,15 @@
   .tour-counts dd.is-note { color: var(--muted); font-variant-numeric: normal; }
   .tour-counts dd b { color: #fff; font-weight: 700; }
 
+  /* An indefinite tournament's win rate by level: every game, then day by day. */
+  .tour-bench-box { display: grid; gap: 4px; overflow-x: auto; }
+  .tour-bench { border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .tour-bench th, .tour-bench td { padding: 3px 12px 3px 0; border-top: 1px solid var(--border); text-align: left; white-space: nowrap; }
+  .tour-bench thead th { border-top: 0; color: var(--faint); font-size: 11.5px; font-weight: 500; }
+  .tour-bench tbody th { color: var(--text); font-weight: 600; }
+  .tour-bench td { color: var(--muted); }
+  .tour-bench td.is-all b { color: #fff; font-weight: 700; }
+
   /* The games just finished, newest first. */
   .tour-latest { margin: 0; padding: 0; list-style: none; font-size: 12.5px; line-height: 1.5; }
   .tour-latest li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 3px 0; border-top: 1px solid var(--border); }
@@ -386,12 +395,15 @@
       .filter(Boolean).join(" · ");
     // A square per game in the order played, then an outline per game a
     // running tournament has still to play.
+    // An indefinite tournament (no size) draws its latest 100 games.
     const strip = (t, open) => {
       const row = el("ol", "tour-strip");
       const mixed = list(t.levels).length > 0;
-      list(t.results).forEach((g, i) => {
+      const results = list(t.results);
+      const skipped = t.size == null ? Math.max(0, results.length - 100) : 0;
+      results.slice(skipped).forEach((g, i) => {
         const square = el("li", "tour-game" + (g.won ? " is-win" : ""));
-        square.title = "Game " + (i + 1) + ": " + told(g, mixed);
+        square.title = "Game " + (skipped + i + 1) + ": " + told(g, mixed);
         row.append(square);
       });
       for (let i = t.games; open && i < t.size; i++) {
@@ -426,6 +438,42 @@
       }
       if (note) line("Notes", el("dd", "is-note", note));
       return dl;
+    };
+
+    // An indefinite tournament's win rate by level (operator 2026-11-22:
+    // "benchmark our win rates roughly for these games over time"): every
+    // game, with the 95% range of the rate, then the last days one by one.
+    const percent = (wins, games) => (games ? Math.round(100 * wins / games) + "%" : "");
+    const bench = (b) => {
+      const levels = list(b && b.levels);
+      if (!levels.length) return null;
+      const days = list(b.days);
+      const table = el("table", "tour-bench");
+      const head = el("tr");
+      head.append(el("th", "", "Level"), el("th", "", "All games"));
+      days.forEach((day) => head.append(el("th", "", day)));
+      const thead = el("thead");
+      thead.append(head);
+      const tbody = el("tbody");
+      for (const lv of levels) {
+        const tr = el("tr");
+        const all = el("td", "is-all");
+        all.append(el("b", "", percent(lv.wins, lv.games)),
+          el("span", "", " " + lv.wins + "–" + (lv.games - lv.wins)
+            + (list(lv.range).length === 2 ? " · " + lv.range[0] + "–" + lv.range[1] + "%" : "")));
+        tr.append(el("th", "", "Lv " + lv.level), all);
+        list(lv.days).forEach(([wins, games]) => {
+          const td = el("td", "", games ? percent(wins, games) : "–");
+          if (games) td.title = wins + "–" + (games - wins);
+          tr.append(td);
+        });
+        tbody.append(tr);
+      }
+      table.append(thead, tbody);
+      const box = el("div", "tour-bench-box");
+      box.append(el("p", "tour-latest-title", "Win rate by level"), table,
+        el("p", "tour-legend", "All games: won, record, and the range the true rate lies in 19 times in 20. Then each of the last days that had games (UTC), the day a game ended; hover a day for its record."));
+      return box;
     };
 
     // A tournament's result video, when the channel has one: a link to
@@ -470,9 +518,11 @@
       if (t.idea) about.append(el("p", "tour-idea", t.idea));
       if (video(t)) about.append(video(t));
       const figure = el("div", "tour-figure");
-      figure.append(el("p", "tour-score", record(t)), el("p", "tour-rate", plural(t.games, "game", "games") + " of " + t.size + (t.games ? " · " + rate(t) + " won" : "")));
+      figure.append(el("p", "tour-score", record(t)), el("p", "tour-rate", plural(t.games, "game", "games")
+        + (t.size == null ? " · indefinite" : " of " + t.size) + (t.games ? " · " + rate(t) + " won" : "")));
       head.append(about, figure);
       body.append(head, strip(t, true), counts(t));
+      if (bench(t.benchmark)) body.append(bench(t.benchmark));
       body.append(el("p", "tour-meta", [t.conditions, "started " + t.start,
         t.wall ? "wall time " + t.wall : "", t.run ? "run time " + t.run : "", t.note].filter(Boolean).join(" · ")));
       const results = list(t.results);
@@ -505,7 +555,7 @@
     for (const t of scheduled) {
       const item = el("li", "tour-split");
       const body = el("div", "tour-body");
-      body.append(el("p", "tour-size", plural(t.size, "game", "games")));
+      body.append(el("p", "tour-size", t.size == null ? "Indefinite" : plural(t.size, "game", "games")));
       if (t.idea) body.append(el("p", "tour-idea", t.idea));
       body.append(el("p", "tour-meta", [t.conditions, before ? "after Tournament " + before : "next to start", t.note].filter(Boolean).join(" · ")));
       item.append(identity(t, "div"), body);
@@ -541,7 +591,7 @@
           figure("End", t.end || ""),
           figure("Wall time", t.wall || ""),
           figure("Run time", t.run || ""),
-          figure("Games", t.games + " / " + t.size),
+          figure("Games", t.size == null ? String(t.games) : t.games + " / " + t.size),
           figure("Record", record(t), "is-record"),
           figure("Won", rate(t)),
           figure("Conditions", t.conditions || "", "is-conditions"));

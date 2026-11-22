@@ -66,6 +66,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import math
 import pathlib
 import re
 import sys
@@ -193,6 +194,40 @@ def tally(labels: list[str]) -> list[list]:
     return [[label, count] for label, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))]
 
 
+def wilson(wins: int, games: int, z: float = 1.96) -> list[int] | None:
+    """The 95% range of a win rate, in whole percent (Wilson's interval,
+    which stays honest at 0 or 100% and on a handful of games)."""
+    if not games:
+        return None
+    p = wins / games
+    d = 1 + z * z / games
+    centre = (p + z * z / (2 * games)) / d
+    half = z * math.sqrt(p * (1 - p) / games + z * z / (4 * games * games)) / d
+    return [round(100 * max(0.0, centre - half)), round(100 * min(1.0, centre + half))]
+
+
+def benchmark(played: list, days: int = 7) -> dict:
+    """An indefinite tournament's win rate by level (operator 2026-11-22:
+    "benchmark our win rates roughly for these games over time"): over every
+    game, with its 95% range, and day by day (UTC, the day a game ended) over
+    the last `days` days that had games. A level's day is `[wins, games]`."""
+    by_level: dict[int, list[tuple[str, bool]]] = {}
+    for _, result in played:
+        lv = ranks.level(result.get("difficulty"))
+        if lv:
+            by_level.setdefault(lv, []).append((str(result.get("utc") or "")[:10], result.get("outcome") == "win"))
+    recent = sorted({day for games in by_level.values() for day, _ in games if day})[-days:]
+    levels = []
+    for lv in sorted(by_level):
+        games = by_level[lv]
+        wins = sum(won for _, won in games)
+        levels.append({
+            "level": lv, "wins": wins, "games": len(games), "range": wilson(wins, len(games)),
+            "days": [[sum(won for d, won in games if d == day), sum(1 for d, _ in games if d == day)] for day in recent],
+        })
+    return {"days": [day[5:] for day in recent], "levels": levels}
+
+
 def series_view(row: dict, spec: dict, names: list[str], videos: dict, descriptions: dict) -> dict:
     """A series as the page draws it: the table's row and its games."""
     games = [game(result, names) for _, result in row["played"]]
@@ -225,6 +260,7 @@ def series_view(row: dict, spec: dict, names: list[str], videos: dict, descripti
             for lv in levels
         ] if len(levels) > 1 else [],
         "results": games,
+        **({"benchmark": benchmark(row["played"])} if spec.get("indefinite") else {}),
     }
 
 
@@ -273,7 +309,7 @@ def record(rows: list[dict], specs: list[dict], names: list[str], videos: dict |
             "idea": spec.get("idea") or "",
             "conditions": spec.get("conditions") or "",
             "note": spec.get("note") or "",
-            "size": int(spec.get("series_size") or 10),
+            "size": None if spec.get("indefinite") else int(spec.get("series_size") or 10),
         })
     last = max((str(result.get("utc") or "") for row in series for _, result in row["played"]), default="")
     return {
