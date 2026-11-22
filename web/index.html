@@ -2707,6 +2707,12 @@
      three across, so on the short card it takes a line of its own, centred
      like the first; in the band the row simply has room for one more. */
   .winner-content > .winner-actions:not(.winner-actions-sim) #finale-charts { grid-column: 1 / -1; justify-self: center; }
+  /* A watched result with Charts has four answers in one row, so its short
+     card widens just enough to keep each answer on one line. */
+  #winner:has(.winner-actions-sim > :nth-child(4)):not(:has(.game-stats)) {
+    width: min(660px, calc(100% - 2 * var(--workspace-inline-inset)));
+  }
+  .winner-actions-sim .winner-again { padding-inline: 12px; }
   #winner:has(.game-stats) .winner-content > .winner-actions:not(.winner-actions-sim) {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
