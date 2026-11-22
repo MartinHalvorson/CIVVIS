@@ -115,3 +115,56 @@ fn a_raider_beside_the_site_holds_the_repair() {
     ai.claim_pillaged_repairs(&mut repairing, 0);
     assert_eq!(repairing.cities[&capital].queue.first().cloned(), head);
 }
+
+/// `stuck-repair-yields-the-queue`: the host refuses the repair every turn
+/// (the head is back to the Warrior after each claim, as on the live Qin board),
+/// so after a run of asks the repair stands aside for ten turns and the claim
+/// leaves the queue to the city; with the gene off it asks every turn.
+#[test]
+fn a_repair_the_host_never_starts_gives_the_queue_back() {
+    for stuck_gene in [true, false] {
+        let (mut game, capital, site) = pillaged_capital();
+        let mut ai = seat(true);
+        if stuck_gene {
+            ai.enable_stuck_repair_yields_the_queue();
+        }
+        let warrior = Item::Unit {
+            unit: crate::name!("warrior"),
+        };
+        let mut asked = Vec::new();
+        for _ in 0..30 {
+            ai.claim_pillaged_repairs(&mut game, 0);
+            let took = is_district_repair(game.cities[&capital].queue.first(), site);
+            asked.push(took);
+            // The host refused: the board shows the old head again.
+            let city = game.cities.get_mut(&capital).unwrap();
+            city.queue.clear();
+            city.queue.push(warrior.clone());
+            game.turn += 1;
+        }
+        if stuck_gene {
+            let first_gap = asked
+                .iter()
+                .position(|took| !took)
+                .expect("the repair yields");
+            assert!(
+                first_gap >= STUCK_REPAIR_TURNS as usize - 1,
+                "asked {first_gap} turns"
+            );
+            let gap = asked[first_gap..].iter().take_while(|took| !**took).count();
+            assert!(
+                gap >= STUCK_REPAIR_YIELD_TURNS as usize,
+                "stands aside {gap} turns: {asked:?}"
+            );
+            assert!(
+                asked[first_gap + gap..].iter().any(|took| *took),
+                "then asks again"
+            );
+        } else {
+            assert!(
+                asked.iter().all(|took| *took),
+                "off, the claim asks every turn"
+            );
+        }
+    }
+}

@@ -6529,6 +6529,15 @@ pub const GENES: &[Gene] = &[
     // unit's and the first ship's heads are left alone. Opt-in; see
     // `advanced/strategic_unit_closes_the_age.rs`.
     Gene { tag: "strategic-unit-closes-the-dark-age", field: "strategic_unit_closes_the_dark_age", kind: Kind::OptIn, enable: AdvancedAi::enable_strategic_unit_closes_the_dark_age, disable: AdvancedAi::disable_strategic_unit_closes_the_dark_age },
+    // Live Tournament 7 2026-11-22: Qin (Lv 7, level on techs with the
+    // leaders at t200) asked to repair Xi'an's pillaged district on 19 turns
+    // running from t198; the host refused each produce DISTRICT_GOVERNMENT
+    // (`producing=nothing`) and the capital built nothing until a rival's
+    // Science victory at t216. Runs of 7-11 turns recur (Paris's Factory,
+    // Aduatuca's Arena). A repair asked 4 turns running (or twice its own
+    // turns plus two) without starting stands aside for 10 turns, in the
+    // claim and the scorer. Opt-in; see `advanced/pillaged_repairs_first.rs`.
+    Gene { tag: "stuck-repair-yields-the-queue", field: "stuck_repair_yields_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_stuck_repair_yields_the_queue, disable: AdvancedAi::disable_stuck_repair_yields_the_queue },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

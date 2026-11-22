@@ -189,6 +189,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `refusals-alone-reopen-the-turn` | off (unmeasured) | Opt-in gene `refusals-alone-reopen-the-turn`; see `ai::player::take_turn`. | 1 \| 1 |
 | `staged-siege-keeps-its-breakers` | off (unmeasured) | Opt-in gene `staged-siege-keeps-its-breakers`: a staged siege with nothing to open the walls holds its queued breakers; see `advanced/staged_siege_keeps_its_breakers.rs`. | 1 \| 1 |
 | `strategic-unit-closes-the-dark-age` | off (unmeasured) | Opt-in gene `strategic-unit-closes-the-dark-age`: one short, the first unit of a strategic resource not used yet; see `advanced/strategic_unit_closes_the_age.rs`. | 1 \| 1 |
+| `stuck-repair-yields-the-queue` | off (unmeasured) | Opt-in gene `stuck-repair-yields-the-queue`: a repair never started after turns of asking stands aside; see `advanced/pillaged_repairs_first.rs`. | 1 \| 1 |
 
 ## Removed from the code
 

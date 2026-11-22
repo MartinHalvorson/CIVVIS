@@ -653,6 +653,10 @@ impl AdvancedAi {
         /// first unit of a strategic resource not used yet; see
         /// `advanced/strategic_unit_closes_the_age.rs`.
         strategic_unit_closes_the_dark_age => enable_strategic_unit_closes_the_dark_age, disable_strategic_unit_closes_the_dark_age;
+        /// Opt-in gene `stuck-repair-yields-the-queue`: a repair never started
+        /// after turns of asking stands aside; see
+        /// `advanced/pillaged_repairs_first.rs`.
+        stuck_repair_yields_the_queue => enable_stuck_repair_yields_the_queue, disable_stuck_repair_yields_the_queue;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
