@@ -109,7 +109,10 @@ fn sort_positions_is_sort_then_dedup() {
     let mut long: Vec<Pos> = keys.iter().rev().step_by(2).copied().collect();
     long.extend(keys.iter().step_by(3).copied());
     long.extend(keys.iter().step_by(3).copied());
-    assert!(long.len() >= 96, "the grid gives the bit set something to do");
+    assert!(
+        long.len() >= 96,
+        "the grid gives the bit set something to do"
+    );
     let mut expected = long.clone();
     expected.sort_unstable();
     expected.dedup();
