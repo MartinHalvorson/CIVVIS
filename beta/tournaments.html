@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#171d25">
-<title>Tournaments · CIVVIS.ai</title>
+<title>Auto-Tourneys · CIVVIS.ai</title>
 <meta name="description" content="CIVVIS tournaments: series of verification games against Civilization VI's own AI, running, scheduled and finished.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
 <style>
@@ -81,7 +81,7 @@
   .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
   .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* The site's pages, listed in the same order on every one of them with
-     the page on screen in gold: Home, Musings, Tournaments, CIVVIS and AI
+     the page on screen in gold: Home, Charts, Auto-Tourneys, CIVVIS and AI
      Debugger, and under them the game they are built on. As on the home page, whose
      header this is, the column stands to the left of the title. */
   .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
@@ -105,14 +105,15 @@
   .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .site-link[aria-current="page"],
   .site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }
-  /* The column is as wide as its longest name, TOURNAMENTS, on one line:
-     132px. Every name stands on one line (operator, 2026-11-21: "make sure
+  /* The column is as wide as its longest name, AUTO-TOURNEYS, on one line:
+     145px. Every name stands on one line (operator, 2026-11-21: "make sure
      it fits on one line"), down to a 320px phone, where the title beside
      the column still has its room. The list is a tree that keeps its
      branches folded (operator, 2026-11-21: "a somewhat collapsable model
      for the info"): a page's own pages are listed under it only on that
-     page. CIVVIS has one, Performance, which the viewer lists; none of the
-     pages with this header has any yet. */
+     page. Charts has one, Performance (operator, 2026-11-22: "Move
+     performance from under civvis to charts"), listed under it on Charts
+     and on Performance and folded away here. */
 
   .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
@@ -135,15 +136,32 @@
   }
   .tour-record[hidden], .tour-section[hidden], .tour-empty[hidden] { display: none; }
   .tour-empty { margin: 0; color: var(--faint); font-size: 13px; }
-  .tour-section { min-width: 0; padding: 12px 14px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .tour-section { min-width: 0; padding: 12px 14px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); container: tour / inline-size; }
   .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
   .rank-sub { margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
   .rank-note { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
   .rank-note a { color: var(--accent); }
 
-  /* A tournament in full: its title line, its name, the idea it tests,
-     the record, and a square per game in the order played. */
-  .tour-card { display: grid; gap: 8px; padding: 10px 0 4px; border-top: 1px solid var(--border); }
+  /* Every tournament reads the same way in all three lists (operator,
+     2026-11-22: "lets have The tournaments structure to be tournament
+     number, name, and description on the left third. and everything else
+     moved to the right two thirds"): on the left third its title line,
+     the number and the short description, with the definition's name
+     under it; on the right two thirds the rest, the idea it tests, the
+     record, a square per game, the dates, the conditions and the notes.
+     A list too narrow for two columns (a phone, or Scheduled in its own
+     column) stands the two parts one under the other. */
+  .tour-split { display: grid; gap: 8px 0; }
+  .tour-ident, .tour-body { min-width: 0; }
+  .tour-body { display: grid; gap: 8px; align-content: start; }
+  /* The third is the list's own, gutter and all, as the table's first
+     column is, so the two parts line up from one list to the next. */
+  @container tour (min-width: 640px) {
+    .tour-split { grid-template-columns: 33.333% minmax(0, 1fr); }
+    .tour-split > .tour-ident { padding-right: 24px; }
+  }
+  /* A tournament in full. */
+  .tour-card { padding: 10px 0 4px; border-top: 1px solid var(--border); }
   .tour-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
   .tour-head > div:first-child { min-width: 0; }
   /* A tournament's title line: its number in gold and, after a colon, its
@@ -155,15 +173,15 @@
   .tour-title { margin: 0; color: #fff; font-size: 19px; font-weight: 700; line-height: 1.3; }
   .tour-title .tour-no { color: var(--gold); }
   .tour-name { margin: 2px 0 0; color: var(--muted); font-size: 13px; font-weight: 400; line-height: 1.4; }
-  .tour-idea { margin: 3px 0 0; color: var(--text); font-size: 13.5px; line-height: 1.5; }
+  .tour-idea { margin: 0; color: var(--text); font-size: 13.5px; line-height: 1.5; }
   .tour-meta { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
-  /* A tournament's result video on YouTube, linked under its name when the
+  /* A tournament's result video on YouTube, linked with its games when the
      channel has one. */
-  .tour-video { display: inline-block; margin-top: 4px; color: var(--accent); font-size: 12.5px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .tour-video { display: inline-block; justify-self: start; margin-top: 4px; color: var(--accent); font-size: 12.5px; font-weight: 600; text-decoration: none; white-space: nowrap; }
   .tour-video::before { content: "\25B6\FE0E"; margin-right: 5px; font-size: 10px; vertical-align: 1px; }
   .tour-video:hover, .tour-video:focus-visible { color: #fff; text-decoration: underline; }
   .tour-video:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .tour-figure { flex: none; text-align: right; }
+  .tour-figure { flex: none; margin-left: auto; text-align: right; }
   .tour-score { margin: 0; color: #fff; font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
   .tour-rate { margin: 2px 0 0; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   /* On a phone the record stands under the title line, not beside it.
@@ -186,11 +204,13 @@
   .tour-legend { margin: 0; color: var(--faint); font-size: 11.5px; line-height: 1.5; }
 
   /* The counts under the squares, a line each: wins by victory, losses by
-     how they were lost, and the record per level when the levels differ. */
+     how they were lost, the record per level when the levels differ, and
+     for a finished tournament its notes. */
   .tour-counts { display: grid; gap: 2px; margin: 0; font-size: 12.5px; line-height: 1.5; }
   .tour-counts div { display: flex; flex-wrap: wrap; gap: 0 10px; }
   .tour-counts dt { flex: none; min-width: 52px; color: var(--faint); }
-  .tour-counts dd { margin: 0; color: var(--text); font-variant-numeric: tabular-nums; }
+  .tour-counts dd { flex: 1 1 10em; min-width: 0; margin: 0; color: var(--text); font-variant-numeric: tabular-nums; }
+  .tour-counts dd.is-note { color: var(--muted); font-variant-numeric: normal; }
   .tour-counts dd b { color: #fff; font-weight: 700; }
 
   /* The games just finished, newest first. */
@@ -204,50 +224,56 @@
 
   /* The queue: what is played next, in order. */
   .tour-queue { margin: 0; padding: 0; list-style: none; }
-  .tour-queue li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 16px; padding: 8px 0; border-top: 1px solid var(--border); }
+  .tour-queue li { padding: 8px 0; border-top: 1px solid var(--border); }
+  .tour-queue .tour-body { gap: 2px; }
   .tour-queue .tour-title { font-size: 16px; }
-  .tour-queue .tour-size { color: #fff; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .tour-queue .tour-idea, .tour-queue .tour-meta { grid-column: 1 / -1; }
+  .tour-queue .tour-size { margin: 0; color: #fff; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
-  /* The finished tournaments: the table that stood on the home page, with
-     each tournament's games as squares under its figures. A window too
-     narrow for the table scrolls it sideways rather than the page. */
-  .tour-scroll { overflow-x: auto; container-type: inline-size; }
+  /* The finished tournaments: the table that stood on the home page. A
+     tournament is two rows: its figures, with the cell of its title line
+     and name on their left running down beside both, then its games, its
+     counts and its notes under the figures. The line between two
+     tournaments is drawn over the figures, so the games under them have
+     none. */
+  .tour-scroll { overflow-x: auto; }
   .rank-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
   .rank-table th { padding: 4px 10px 4px 0; color: var(--faint); font-size: 11.5px; font-weight: 500; text-align: left; white-space: nowrap; }
-  .rank-table td { padding: 6px 10px 2px 0; border-top: 1px solid var(--border); color: var(--text); vertical-align: top; white-space: nowrap; }
+  .rank-table td { padding: 10px 10px 2px 0; border-top: 1px solid var(--border); color: var(--text); vertical-align: top; white-space: nowrap; }
   .rank-table td.is-record { color: #fff; font-weight: 700; }
-  .rank-table td.is-note { min-width: 14em; color: var(--muted); font-size: 12px; line-height: 1.45; white-space: normal; }
   /* The conditions are a few words and may take two lines, which leaves
      the dates and the two durations their one line each. */
-  .rank-table td.is-conditions { min-width: 10em; white-space: normal; }
-  .rank-table td.is-name { min-width: 13em; white-space: normal; }
-  .rank-table td.is-name small { display: block; color: var(--muted); font-size: 12px; line-height: 1.4; }
-  /* A finished tournament is three rows: its title line across the whole
-     table, its figures, and its games. The line between two tournaments
-     is drawn over the title, so the figures under it have none. */
-  .rank-table tr.is-title td { padding: 12px 0 0; white-space: normal; }
-  /* Where the table is wider than the window and scrolls sideways, the
-     title line is as wide as the part in view and stays at its left edge,
-     so it is read whole whichever columns are on screen. */
-  .rank-table tr.is-title .tour-title { position: sticky; left: 0; max-width: 100cqi; }
-  .rank-table tr.is-figures td { padding-top: 3px; border-top: 0; }
-  .rank-table tr.is-games td { padding: 4px 10px 8px 0; border-top: 0; white-space: normal; }
+  .rank-table td.is-conditions { min-width: 8em; white-space: normal; }
+  .rank-table .is-ident { width: 33.333%; padding-right: 24px; white-space: normal; }
+  .rank-table tr.is-games td { padding: 4px 10px 12px 0; border-top: 0; white-space: normal; }
   .rank-table tr.is-games .tour-counts { margin-top: 5px; }
+  /* Narrower than the two parts and the figures' one line need, a
+     tournament is its title line and name, then its figures side by side,
+     each under its own label, then its games. */
+  @container tour (max-width: 899px) {
+    .rank-table, .rank-table tbody, .rank-table tr, .rank-table td { display: block; }
+    .rank-table thead { display: none; }
+    .rank-table tr.is-figures { display: flex; flex-wrap: wrap; gap: 4px 16px; padding-top: 10px; border-top: 1px solid var(--border); }
+    .rank-table tr.is-figures td { padding: 0; border-top: 0; }
+    .rank-table td.is-ident { flex: 0 0 100%; width: auto; padding: 0 0 4px; }
+    .rank-table td[data-label]::before { content: attr(data-label); display: block; color: var(--faint); font-size: 11px; font-weight: 400; }
+    .rank-table tr.is-games td { padding: 8px 0 12px; }
+  }
 </style>
 </head>
 <body>
   <header class="shell site-header">
     <div class="site-brand">
       <!-- The site's pages, in the order every one of them lists them, with
-           the page on screen in gold: this is Tournaments, between Musings
-           and the simulation. Every link is lane-relative (this page lives at
+           the page on screen in gold: this is Auto-Tourneys (named
+           Tournaments until 2026-11-22: operator, "make sure Tournaments
+           changes to Auto-Tourneys"), between Charts and the simulation.
+           Every link is lane-relative (this page lives at
            <lane>/tournaments/), so the test lane's page opens the test
            lane's home page and viewer. -->
       <nav class="site-nav" aria-label="CIVVIS sites">
         <a class="site-link" href="../home/">Home</a>
-        <a class="site-link" href="../research/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Musings</a>
-        <a class="site-link" href="./" aria-current="page">Tournaments</a>
+        <a class="site-link" href="../research/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts</a>
+        <a class="site-link" href="./" aria-current="page">Auto-Tourneys</a>
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
         <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
         <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
@@ -313,7 +339,7 @@
         <p class="rank-sub" data-sub></p>
         <div class="tour-scroll">
           <table class="rank-table">
-            <thead><tr><th scope="col">Tournament</th><th scope="col">Start</th><th scope="col">End</th><th scope="col" title="From the first game starting to the last game ending">Wall time</th><th scope="col" title="The time the games were in play, added up">Run time</th><th scope="col">Games</th><th scope="col">Record</th><th scope="col">Won</th><th scope="col">Conditions</th><th scope="col">Notes</th></tr></thead>
+            <thead><tr><th scope="col" class="is-ident">Tournament</th><th scope="col">Start</th><th scope="col">End</th><th scope="col" title="From the first game starting to the last game ending">Wall time</th><th scope="col" title="The time the games were in play, added up">Run time</th><th scope="col">Games</th><th scope="col">Record</th><th scope="col">Won</th><th scope="col">Conditions</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -385,7 +411,7 @@
       });
       return dd;
     };
-    const counts = (t) => {
+    const counts = (t, note) => {
       const dl = el("dl", "tour-counts");
       const line = (label, dd) => { const div = el("div"); div.append(el("dt", "", label), dd); dl.append(div); };
       if (list(t.victories).length) line("Wins", counted(t.victories));
@@ -398,6 +424,7 @@
         });
         line("Levels", dd);
       }
+      if (note) line("Notes", el("dd", "is-note", note));
       return dl;
     };
 
@@ -425,21 +452,28 @@
       return line;
     };
 
+    // A tournament's left third: its title line and the definition's name.
+    const identity = (t, tag) => {
+      const ident = el(tag, "tour-ident");
+      ident.append(titled(t, "h3"), el("p", "tour-name", t.name));
+      return ident;
+    };
+
     // Running: the tournament being played, in full.
     const running = list(data.running);
     const runningBox = document.getElementById("tour-running");
     for (const t of running) {
-      const card = el("article", "tour-card");
+      const card = el("article", "tour-card tour-split");
+      const body = el("div", "tour-body");
       const head = el("div", "tour-head");
-      const title = el("div");
-      title.append(titled(t, "h3"), el("p", "tour-name", t.name));
-      if (t.idea) title.append(el("p", "tour-idea", t.idea));
-      if (video(t)) title.append(video(t));
+      const about = el("div");
+      if (t.idea) about.append(el("p", "tour-idea", t.idea));
+      if (video(t)) about.append(video(t));
       const figure = el("div", "tour-figure");
       figure.append(el("p", "tour-score", record(t)), el("p", "tour-rate", plural(t.games, "game", "games") + " of " + t.size + (t.games ? " · " + rate(t) + " won" : "")));
-      head.append(title, figure);
-      card.append(head, strip(t, true), counts(t));
-      card.append(el("p", "tour-meta", [t.conditions, "started " + t.start,
+      head.append(about, figure);
+      body.append(head, strip(t, true), counts(t));
+      body.append(el("p", "tour-meta", [t.conditions, "started " + t.start,
         t.wall ? "wall time " + t.wall : "", t.run ? "run time " + t.run : "", t.note].filter(Boolean).join(" · ")));
       const results = list(t.results);
       if (results.length) {
@@ -452,8 +486,9 @@
             el("span", "how", g.how + (g.turns != null ? " · turn " + g.turns : "")));
           latest.append(item);
         });
-        card.append(el("p", "tour-latest-title", "Latest games"), latest);
+        body.append(el("p", "tour-latest-title", "Latest games"), latest);
       }
+      card.append(identity(t, "div"), body);
       runningBox.querySelector("[data-cards]").append(card);
     }
     if (running.length) {
@@ -468,12 +503,12 @@
     const queueBox = document.getElementById("tour-scheduled");
     let before = running.length ? running[running.length - 1].id : null;
     for (const t of scheduled) {
-      const item = el("li");
-      const title = el("div");
-      title.append(titled(t, "h3"), el("p", "tour-name", t.name));
-      item.append(title, el("span", "tour-size", plural(t.size, "game", "games")));
-      if (t.idea) item.append(el("p", "tour-idea", t.idea));
-      item.append(el("p", "tour-meta", [t.conditions, before ? "after Tournament " + before : "next to start", t.note].filter(Boolean).join(" · ")));
+      const item = el("li", "tour-split");
+      const body = el("div", "tour-body");
+      body.append(el("p", "tour-size", plural(t.size, "game", "games")));
+      if (t.idea) body.append(el("p", "tour-idea", t.idea));
+      body.append(el("p", "tour-meta", [t.conditions, before ? "after Tournament " + before : "next to start", t.note].filter(Boolean).join(" · ")));
+      item.append(identity(t, "div"), body);
       queueBox.querySelector(".tour-queue").append(item);
       before = t.id;
     }
@@ -481,47 +516,46 @@
       ? plural(scheduled.length, "tournament is", "tournaments are") + " waiting, in the order " + (scheduled.length === 1 ? "it" : "they") + " will be played."
       : "Nothing is scheduled. Until something is, the running definition keeps playing new series.";
 
-    // Finished: the table, newest first. A tournament is its title line
-    // across the table, then its figures, then its games.
+    // Finished: the table, newest first. A tournament is its figures, with
+    // its title line and name in the cell on their left that runs down
+    // beside its games too, then its games, counts and notes.
     const finished = list(data.finished);
     const finishedBox = document.getElementById("tour-finished");
     if (finished.length) {
       const body = finishedBox.querySelector("tbody");
       const columns = finishedBox.querySelectorAll("thead th").length;
+      // A figure carries its column's name, which a window too narrow for
+      // the table's columns shows above it.
+      const figure = (label, text, cls) => {
+        const td = el("td", cls || "", text);
+        td.dataset.label = label;
+        return td;
+      };
       for (const t of finished) {
-        const head = el("tr", "is-title");
-        const line = el("td");
-        line.colSpan = columns;
-        line.append(titled(t, "div"));
-        head.append(line);
         const tr = el("tr", "is-figures");
-        const name = el("td", "is-name");
-        name.append(el("small", "", t.name));
-        if (video(t)) name.append(video(t));
-        // The note is a sentence or two and runs down beside the games,
-        // so the squares stay right under their row however long it is.
-        const note = el("td", "is-note", [t.idea, t.note].filter(Boolean).join(" "));
-        note.rowSpan = 2;
-        tr.append(name,
-          el("td", "", t.start || ""),
-          el("td", "", t.end || ""),
-          el("td", "", t.wall || ""),
-          el("td", "", t.run || ""),
-          el("td", "", t.games + " / " + t.size),
-          el("td", "is-record", record(t)),
-          el("td", "", rate(t)),
-          el("td", "is-conditions", t.conditions || ""),
-          note);
+        const ident = identity(t, "td");
+        ident.classList.add("is-ident");
+        ident.rowSpan = 2;
+        tr.append(ident,
+          figure("Start", t.start || ""),
+          figure("End", t.end || ""),
+          figure("Wall time", t.wall || ""),
+          figure("Run time", t.run || ""),
+          figure("Games", t.games + " / " + t.size),
+          figure("Record", record(t), "is-record"),
+          figure("Won", rate(t)),
+          figure("Conditions", t.conditions || "", "is-conditions"));
         const games = el("tr", "is-games");
         const cell = el("td");
         cell.colSpan = columns - 1;
-        cell.append(strip(t, false), counts(t));
+        cell.append(strip(t, false), counts(t, [t.idea, t.note].filter(Boolean).join(" ")));
+        if (video(t)) cell.append(video(t));
         games.append(cell);
-        body.append(head, tr, games);
+        body.append(tr, games);
       }
       const totals = data.totals || {};
-      finishedBox.querySelector("[data-sub]").textContent = "Newest first, with each tournament’s games under its figures"
-        + (finished.some(video) ? " and its result video, where there is one, under its name." : ".");
+      finishedBox.querySelector("[data-sub]").textContent = "Newest first. Each tournament’s games are under its figures"
+        + (finished.some(video) ? ", with its result video where there is one." : ".");
       finishedBox.querySelector("[data-rank-note]").textContent = totals.games
         ? "Every tournament so far: " + plural(totals.games, "game", "games") + ", "
           + totals.wins + "–" + totals.losses + " (" + (100 * totals.wins / totals.games).toFixed(1) + "% won)"

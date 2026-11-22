@@ -13,13 +13,6 @@
     // none, so the header's Home link only appears on hosts that honour it —
     // the domain itself and Cloudflare Pages previews of it.
     window.CIVVIS_PUBLISHED_SITE = /(^|\.)civvis\.ai$|\.pages\.dev$/.test(location.hostname);
-    // Which of its two pages this is opening as, read off the address the
-    // way `beta/shim.js` reads it, so the site list can show CIVVIS's own
-    // entries from the first paint: a lane's address is a watched simulation
-    // unless it asks for a seat. The first observation settles it for good
-    // (`seat-known`).
-    const mode = (new URLSearchParams(location.search).get("mode") || "").trim().toLowerCase();
-    if (mode !== "play") document.documentElement.classList.add("opens-watching");
     if (window.CIVVIS_PUBLISHED_SITE) {
       document.addEventListener("DOMContentLoaded", () => {
         const links = document.getElementById("headlinks");
@@ -347,31 +340,31 @@
      and the text fitter shrinks the type into the lane instead of wrapping. */
   .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #bccac4; }
-  /* The site's pages from the top down: Home, Musings, Tournaments, CIVVIS
+  /* The site's pages from the top down: Home, Charts, Auto-Tourneys, CIVVIS
      and AI Debugger, and under them the game all five are built on. The block below is how they stand
      when there is no room beside the lockup, or no way to ask whether they
      are showing (`:has`): two by two under the tagline. `display: grid`
      outranks the user agent's `[hidden]`, which is why the block has to say
      what hidden means for itself. */
   .head-links {
-    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 0 0 100%; gap: 3px; margin-top: 8px;
+    display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); flex: 0 0 100%; gap: 3px; margin-top: 8px;
   }
   .head-links[hidden] { display: none; }
-  /* The list is a tree that keeps its branches folded (operator,
-     2026-11-21: "a somewhat collapsable model for the info"). The six names
-     above are its top level and are always showing. A page's own pages are
-     `.sub-link`s written straight after it, and they show only while that
-     page is the one on screen: CIVVIS's are `.under-watch`, and its first
-     is Performance ("a submenu appears under civvis 'Performance' only when
-     CIVVIS is selected"). A page that gains pages of its own gets a class
-     and a rule beside this one. Two by two a branch stands under its page
-     in the second column, where CIVVIS is, with the half row beside it
-     left empty, and the next top-level name starts the row after it. It is
-     not set in from the edge there: PERFORMANCE is 80px wide in this type
-     and half a row holds 84px at its narrowest (a 195px band). */
-  .head-links > .sub-link { display: none; grid-column: 2; }
-  html.opens-watching:not(.seat-known) .head-links > .under-watch,
-  body.watching-sim .head-links > .under-watch { display: grid; }
+  /* Two by two a link is half its row, except on the second row: there
+     AUTO-TOURNEYS takes six tenths and CIVVIS four. In this type the name
+     is 91px and half a row holds 84px at its narrowest (a 195px band), and
+     six tenths of it 104px; CIVVIS is 36px in the 64px left to it. Every
+     name stands on one line (operator, 2026-11-21: "make sure it fits on
+     one line"). The list is a tree that keeps its branches folded
+     (operator, 2026-11-21: "a somewhat collapsable model for the info"): a
+     page's own pages are listed under it only on that page. Performance is
+     Charts' (operator, 2026-11-22: "Move performance from under civvis to
+     charts ... This keeps AI Debugger as a clean tool. CIVVIS as a clean
+     tool"), so this page, which is CIVVIS and AI Debugger, lists the six
+     top-level names and no branch. */
+  .head-links > .home-link { grid-column: span 5; }
+  .head-links > #tourlink { grid-column: span 6; }
+  .head-links > #watchlink { grid-column: span 4; }
   /* A name stands on one line wherever it fits, and every one of them
      does in the typefaces measured. In a wider one a name of two words
      takes two lines, a word to each, and the link beside it in a row is as
@@ -388,11 +381,7 @@
   /* The page on screen is the one in gold. This page is two of them: CIVVIS
      while it watches a simulation, AI Debugger while somebody holds a seat.
      Which of the two is known once the first observation arrives
-     (`seat-known`); until then neither is lit. The branch under CIVVIS
-     cannot wait that long without the box growing a row as the page loads,
-     so until then it goes by the address (`opens-watching`, set by the
-     head script: a lane's address without `mode=play` opens a watched
-     simulation), and by the engine's answer from then on. */
+     (`seat-known`); until then neither is lit. */
   body.watching-sim #watchlink,
   html.seat-known body:not(.watching-sim) #playlink {
     color: #17130c; border-color: #efd184;
@@ -432,21 +421,16 @@
       grid-column: 1; grid-row: 1; grid-template-columns: minmax(0, 1fr);
       align-content: center; justify-self: stretch; margin-top: 0;
     }
-    /* Six to the column, a name to a line, and seven while CIVVIS is on
-       screen with Performance under it. The column is 92px with 7px
+    /* Six to the column, a name to a line. The column is 92px with 7px
        gutters, the size it took for STRAT DEBUGGER (83px in this type
        against the 86px inside the column) while that was the Debugger's
-       name here, and it keeps that size now the name is AI DEBUGGER again,
-       so neither width at which the lockup changes shape has moved.
-       TOURNAMENTS is the longest name now, 72px. A branch is set in 8px
-       from the column's left edge, which leaves 78px inside it for
-       PERFORMANCE's 70px. Each link is one track here, wherever it stands
-       two by two. Six one-line links make the column 111px and seven
-       130px, so the box is 19px taller on CIVVIS than on AI Debugger. */
+       name here, and it keeps that size, so neither width at which the
+       lockup changes shape has moved. AUTO-TOURNEYS is the longest name
+       now, 80px. Each link is one track here, wherever it stands two by
+       two. Six one-line links make the column 111px. */
     #side .brand:has(> .head-links:not([hidden])) .home-link {
       grid-column: auto; padding: 1px 2px 2px; font-size: 8.5px; letter-spacing: .02em;
     }
-    #side .brand:has(> .head-links:not([hidden])) .sub-link { margin-left: 8px; }
   }
   /* From 246px the tagline's two lines fit beside the column too, under the
      globe and the wordmark, so the column runs the whole height of the
@@ -6517,29 +6501,24 @@
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
         <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI strategy development</span></div>
       </div>
-      <!-- The site is five pages, Home, Musings, Tournaments, CIVVIS and AI
+      <!-- The site is five pages, Home, Charts, Auto-Tourneys, CIVVIS and AI
            Debugger, and every one of them lists all five in that order with
            the one on screen in gold. This page is the last two: `./` is the simulation
            the AIs play and `?mode=play` the same game with a seat of your
            own. Both are relative, so they stay in whichever lane they were
            clicked in, and all five leave a split's frame for the whole
            window. Under them is the game itself, on the shop page that sells
-           it. Only the published site has a /home, a /research (the Musings
-           page, which kept its address when it was renamed), a
-           /tournaments and a /performance to go to (`beta/publish.sh` makes
-           the four links lane-relative); the head
-           script unhides the list on the hosts that serve them.
-           Performance is CIVVIS's own entry, listed under it only while
-           CIVVIS is the page on screen. It is a page of the site (operator,
-           2026-11-21: "performance should be a page similar to the home/
-           and other similar pages"): the fastest game on video and how long
-           a self-play game takes. -->
+           it. Only the published site has a /home, a /research (the Charts
+           page, which kept its address through two renames) and a
+           /tournaments (the Auto-Tourneys page, likewise) to go to
+           (`beta/publish.sh` makes the three links lane-relative); the head
+           script unhides the list on the hosts that serve them. Performance
+           is Charts' own page and is listed under it there, not here. -->
       <nav class="head-links" id="headlinks" aria-label="CIVVIS sites" hidden>
         <a class="home-link" id="homelink" href="/home" target="_top">Home</a>
-        <a class="home-link" id="researchlink" href="/research" target="_top">Musings</a>
-        <a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>
+        <a class="home-link" id="researchlink" href="/research" target="_top">Charts</a>
+        <a class="home-link" id="tourlink" href="/tournaments" target="_top">Auto-Tourneys</a>
         <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
-        <a class="home-link sub-link under-watch" id="perflink" href="/performance" target="_top" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes">Performance</a>
         <a class="home-link" id="playlink" href="?mode=play" target="_top">AI Debugger</a>
         <a class="home-link" id="civ6link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>

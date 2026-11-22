@@ -267,20 +267,23 @@ class TournamentsPage(unittest.TestCase):
             finally:
                 home_rankings.results = results
 
-    def test_every_page_lists_tournaments_between_home_and_civvis(self):
+    def test_every_page_lists_auto_tourneys_between_charts_and_civvis(self):
         # Operator 2026-11-21: "Between Home and CIVVIS, we want to add a
         # Tournaments view." This page lists the site's pages as the others
-        # do, with itself in gold. As on the home page, the list stands to
-        # the left of the title (operator 2026-11-21, of the home page: "on
-        # the left side, to the left of civvis.ai").
+        # do, with itself in gold, and is named Auto-Tourneys in the list
+        # and on the tab since 2026-11-22 ("make sure Tournaments changes to
+        # Auto-Tourneys"); its address stayed /tournaments/. As on the home
+        # page, the list stands to the left of the title (operator
+        # 2026-11-21, of the home page: "on the left side, to the left of
+        # civvis.ai").
         self.assertRegex(PAGE, r'<div class="site-brand">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"[^>]*>[\s\S]*?</nav>\s*<div class="site-lockup">')
         self.assertRegex(LANDING, r'<div class="site-brand">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"[^>]*>[\s\S]*?</nav>\s*<div class="site-lockup">')
         self.assertIn(
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
             '        <a class="site-link" href="../home/">Home</a>\n'
             '        <a class="site-link" href="../research/" '
-            'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Musings</a>\n'
-            '        <a class="site-link" href="./" aria-current="page">Tournaments</a>\n'
+            'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts</a>\n'
+            '        <a class="site-link" href="./" aria-current="page">Auto-Tourneys</a>\n'
             '        <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
             '        <a class="site-link" href="../?mode=play" '
             'title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>\n'
@@ -290,30 +293,33 @@ class TournamentsPage(unittest.TestCase):
             PAGE,
         )
         self.assertIn('.site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }', PAGE)
+        self.assertIn("<title>Auto-Tourneys · CIVVIS.ai</title>", PAGE)
         # The Debugger is AI Debugger in this list again (operator
         # 2026-11-21: "AI Debugger (rename plz)", after a day as Strategy
         # Debugger and Strat Debugger), and every name stands on one line
         # ("make sure it fits on one line"): the column is as wide as its
-        # longest name, TOURNAMENTS, at every width, and the rule that
+        # longest name, AUTO-TOURNEYS, at every width, and the rule that
         # narrowed it on a phone under 380px is still gone.
         for page in (PAGE, LANDING, VIEWER):
             self.assertNotIn("Strategy Debugger", page)
             self.assertNotIn("Strat Debugger", page)
         for page in (PAGE, LANDING):
             self.assertNotIn("min-content", page)
-        # The home page and the viewer name it third, after Musings (which
+        # The home page and the viewer name it third, after Charts (which
         # joined between Home and Tournaments the same day as Research; its
         # own test is `research_page_test.py`), each in its own markup.
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Musings</a>'
-                      r'\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Tournaments</a>'
+            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Charts</a>'
+                      r'\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Auto-Tourneys</a>'
                       r'\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="researchlink" href="/research" target="_top">Musings</a>\s*'
-                     r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>\s*'
+                     r'<a class="home-link" id="researchlink" href="/research" target="_top">Charts</a>\s*'
+                     r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Auto-Tourneys</a>\s*'
                      r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>'),
         ):
             self.assertRegex(page, pattern)
+        for page in (PAGE, LANDING, VIEWER):
+            self.assertNotIn(">Tournaments</a>", page)
         # The viewer's link is root-absolute as written and lane-relative as published.
         self.assertIn("""('href="/tournaments"', 'href="tournaments/"')""", PUBLISH)
 
@@ -338,14 +344,14 @@ class TournamentsPage(unittest.TestCase):
             self.assertIn("Tournament 1's video is not a YouTube link", said.getvalue())
         self.videos = ["not", "a", "map"]
         self.assertEqual(self.record()["finished"][0]["video"], "")
-        # The page links it under the tournament's name, in a tab of its
+        # The page links it with the tournament's games, in a tab of its
         # own, and checks the address again before it does.
         for piece in (
             'const link = el("a", "tour-video", "Result video");',
             r'if (!/^https:\/\/www\.youtube\.com\/watch\?v=[\w-]{11}$/.test(t.video || "")) return null;',
             'link.target = "_blank";',
-            "if (video(t)) name.append(video(t));",
-            "if (video(t)) title.append(video(t));",
+            "if (video(t)) cell.append(video(t));",
+            "if (video(t)) about.append(video(t));",
         ):
             self.assertIn(piece, PAGE)
         # The definitions name the three videos the channel has, by number,
@@ -385,33 +391,26 @@ class TournamentsPage(unittest.TestCase):
         for odd in ({"1": ""}, {"1": "   "}, {"1": 7}, {"1": None}, ["not", "a", "map"]):
             self.assertEqual(own(odd), "From the definition")
         # The page writes it on the title line after the number, the same
-        # line in all three lists, with the definition's name under it. In
-        # the finished table that line is a row of its own across the table.
+        # line in all three lists, with the definition's name under it.
         for piece in (
             'line.append(el("span", "tour-no", "Tournament " + t.id + (t.description ? ":" : "")));',
             'if (t.description) line.append(" " + t.description);',
-            'title.append(titled(t, "h3"), el("p", "tour-name", t.name));',
-            'const head = el("tr", "is-title");',
-            "line.colSpan = columns;",
-            'line.append(titled(t, "div"));',
-            'name.append(el("small", "", t.name));',
-            "body.append(head, tr, games);",
+            'ident.append(titled(t, "h3"), el("p", "tour-name", t.name));',
             # The largest line a tournament has, the number in gold.
             "  .tour-title { margin: 0; color: #fff; font-size: 19px; font-weight: 700; line-height: 1.3; }\n"
             "  .tour-title .tour-no { color: var(--gold); }",
             "  .tour-queue .tour-title { font-size: 16px; }",
             # It is read whole on a phone: under it, not beside it, the
-            # record; and in the table, which scrolls sideways there, as
-            # wide as the part in view and held at its left edge.
+            # record.
             "  @media (max-width: 600px) {\n"
             "    .tour-head { display: block; }\n"
             "    .tour-figure { margin-top: 6px; text-align: left; }\n"
             "  }",
-            "  .tour-scroll { overflow-x: auto; container-type: inline-size; }",
-            "  .rank-table tr.is-title .tour-title { position: sticky; left: 0; max-width: 100cqi; }",
         ):
             self.assertIn(piece, PAGE)
-        self.assertEqual(PAGE.count('title.append(titled(t, "h3"), el("p", "tour-name", t.name));'), 2)   # running and scheduled
+        # One title line for all three lists, written by one function.
+        self.assertEqual(PAGE.count("titled(t, "), 1)
+        self.assertEqual(PAGE.count("identity(t, "), 3)   # running, scheduled and finished
         # Bigger than the lines it replaced: the 13px number in the table
         # and the 11.5px number over a 17px name in the two lists.
         for gone in ("tour-number", 'el("b", "", "Tournament " + t.id)', "td.is-name b"):
@@ -430,6 +429,53 @@ class TournamentsPage(unittest.TestCase):
         self.assertEqual(list(defined["descriptions"]), [str(n) for n in range(1, len(defined["descriptions"]) + 1)])
         self.assertGreaterEqual(len(defined["descriptions"]), len(defined["tournaments"]))
 
+    def test_a_tournament_is_its_name_on_the_left_third_and_the_rest_on_the_right(self):
+        # Operator 2026-11-22: "lets have The tournaments structure to be
+        # tournament number, name, and description on the left third. and
+        # everything else moved to the right two thirds."
+        for piece in (
+            # The left third: the title line (number and description) and
+            # the definition's name, the same in all three lists.
+            '    const identity = (t, tag) => {\n'
+            '      const ident = el(tag, "tour-ident");\n'
+            '      ident.append(titled(t, "h3"), el("p", "tour-name", t.name));\n'
+            '      return ident;\n'
+            '    };',
+            # Running and Scheduled: two parts side by side once the list
+            # is wide enough, the third measured as the table's is, so the
+            # parts line up from one list to the next. The list is the
+            # container, so Scheduled in its own column stands them one
+            # under the other.
+            "container: tour / inline-size;",
+            "  @container tour (min-width: 640px) {\n"
+            "    .tour-split { grid-template-columns: 33.333% minmax(0, 1fr); }\n"
+            "    .tour-split > .tour-ident { padding-right: 24px; }\n"
+            "  }",
+            'const card = el("article", "tour-card tour-split");',
+            "card.append(identity(t, \"div\"), body);",
+            'const item = el("li", "tour-split");',
+            "item.append(identity(t, \"div\"), body);",
+            # Finished: the left third is the cell that runs down beside a
+            # tournament's figures and its games, and everything else, the
+            # notes too, is to its right.
+            '<th scope="col" class="is-ident">Tournament</th>',
+            "  .rank-table .is-ident { width: 33.333%; padding-right: 24px; white-space: normal; }",
+            "const ident = identity(t, \"td\");",
+            "ident.rowSpan = 2;",
+            "cell.colSpan = columns - 1;",
+            'cell.append(strip(t, false), counts(t, [t.idea, t.note].filter(Boolean).join(" ")));',
+            'if (note) line("Notes", el("dd", "is-note", note));',
+            "body.append(tr, games);",
+            # Too narrow for that, each figure stands under its own label.
+            "  @container tour (max-width: 899px) {",
+            "    .rank-table td[data-label]::before { content: attr(data-label); display: block;",
+            "td.dataset.label = label;",
+        ):
+            self.assertIn(piece, PAGE)
+        # The title row across the table and the Notes column are gone.
+        for gone in ('el("tr", "is-title")', "tr.is-title", '<th scope="col">Notes</th>', '"is-note", [t.idea'):
+            self.assertNotIn(gone, PAGE)
+
     def test_the_page_draws_three_lists_and_trusts_nothing_as_markup(self):
         for piece in (
             '<section class="tour-section" id="tour-running" hidden aria-labelledby="tour-running-title">',
@@ -437,12 +483,12 @@ class TournamentsPage(unittest.TestCase):
             '<section class="tour-section" id="tour-finished" hidden aria-labelledby="tour-finished-title">',
             # The table that stood on the home page, with the win rate added
             # and, after the two dates, the two durations.
-            '<th scope="col">Tournament</th><th scope="col">Start</th><th scope="col">End</th>'
+            '<th scope="col" class="is-ident">Tournament</th><th scope="col">Start</th><th scope="col">End</th>'
             '<th scope="col" title="From the first game starting to the last game ending">Wall time</th>'
             '<th scope="col" title="The time the games were in play, added up">Run time</th>'
             '<th scope="col">Games</th>'
-            '<th scope="col">Record</th><th scope="col">Won</th><th scope="col">Conditions</th><th scope="col">Notes</th>',
-            'el("td", "", t.wall || ""),\n          el("td", "", t.run || ""),',
+            '<th scope="col">Record</th><th scope="col">Won</th><th scope="col">Conditions</th></tr>',
+            'figure("Wall time", t.wall || ""),\n          figure("Run time", t.run || ""),',
             't.wall ? "wall time " + t.wall : "", t.run ? "run time " + t.run : ""',
             # What the bare dates and the two durations mean, said once.
             "Dates are UTC, on the 24-hour clock.",
