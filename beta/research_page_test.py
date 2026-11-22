@@ -825,6 +825,8 @@ class Page(unittest.TestCase):
             '        <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
             '        <a class="site-link sub-link" href="../performance/" '
             'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>\n'
+            '        <a class="site-link sub-link" href="../interpretability/" '
+            'title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n'
             '        <a class="site-link" href="../tournaments/" ',
             PAGE,
         )
