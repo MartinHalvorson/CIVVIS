@@ -6318,6 +6318,11 @@ pub const GENES: &[Gene] = &[
     // (never for Arabia). Opt-in; see
     // `advanced/religion_seat_second_city_first.rs`.
     Gene { tag: "religion-seat-second-city-first", field: "religion_seat_second_city_first", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_second_city_first, disable: AdvancedAi::disable_religion_seat_second_city_first },
+    // A turn re-opens (a fresh view, a second plan) only when the board
+    // refused one of its orders. Replan frames were a third of a gene-screen
+    // game's compute (2026-11-22, three seeds, 30-37% per turn); this prices
+    // what they buy. Opt-in, unpriced; see `ai::player::take_turn`.
+    Gene { tag: "refusals-alone-reopen-the-turn", field: "refusals_alone_reopen_the_turn", kind: Kind::OptIn, enable: AdvancedAi::enable_refusals_alone_reopen_the_turn, disable: AdvancedAi::disable_refusals_alone_reopen_the_turn },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
