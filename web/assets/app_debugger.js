@@ -25,10 +25,16 @@
 // its own. The timeline is one for as long as the two hold the same world,
 // and forks in two from the last turn they do. It is drawn as a tree on its
 // side: the one timeline is the trunk, in the middle, and from the fork a
-// branch slants up to A's row and another down to B's. Each branch has an ✕
-// at its left that closes it, and the one that is left is the timeline again:
-// when that is B, a timeline that passes from one Civ AI to another on the
-// turn it was branched on.
+// branch slants up to A's row and another down to B's, each named on itself
+// by its letter and its Civ AI. Each branch has an ✕ after its right end that
+// closes it, and the one that is left is the timeline again: when that is B,
+// a timeline that passes from one Civ AI to another on the turn it was
+// branched on.
+//
+// A game opens that way, on its two tracks, and the box asks which Civ AI
+// plays B (as it does whenever a branch is made). On one timeline, picking
+// another Civ AI asks first whether the timeline plays on with it (Switch)
+// or a branch does (Branch).
 //
 // A game under the debugger has two views. The Debugger view is how it opens:
 // the map with the standings across the top, the victory tracker down the
@@ -237,22 +243,25 @@ const DEBUG_BAR_STYLE = `
      trunk leaves it. */
   #debugbar .dbg-half .dbg-rail { height: var(--dbg-row); }
   #debugbar.dbg-split-on .dbg-time {
-    grid-template-columns: auto auto auto auto auto minmax(0, 1fr) auto; grid-template-rows: var(--dbg-row) var(--dbg-row);
+    grid-template-columns: auto auto auto auto minmax(0, 1fr) auto auto; grid-template-rows: var(--dbg-row) var(--dbg-row);
     column-gap: 8px; row-gap: var(--dbg-gap); align-items: center;
   }
   #debugbar.dbg-split-on .dbg-lane { display: contents; }
   #debugbar.dbg-split-on .dbg-lane > * { grid-row: 1 / span 2; }
   #debugbar.dbg-split-on .dbg-lane[data-dbg-lane="a"] > * { grid-row: 1; }
   #debugbar.dbg-split-on .dbg-lane[data-dbg-lane="b"] > * { grid-row: 2; }
-  #debugbar.dbg-split-on .dbg-close { grid-column: 1; }
-  #debugbar.dbg-split-on .dbg-lane-name { grid-column: 2; }
-  #debugbar.dbg-split-on .dbg-lane select.dbg-agent { grid-column: 3; }
-  #debugbar.dbg-split-on .dbg-start { grid-column: 4; }
-  #debugbar.dbg-split-on .dbg-rail { grid-column: 6; }
+  #debugbar.dbg-split-on .dbg-lane-name { grid-column: 1; }
+  #debugbar.dbg-split-on .dbg-lane select.dbg-agent { grid-column: 2; }
+  #debugbar.dbg-split-on .dbg-start { grid-column: 3; }
+  #debugbar.dbg-split-on .dbg-rail { grid-column: 5; }
+  #debugbar.dbg-split-on .dbg-close { grid-column: 6; }
   #debugbar.dbg-split-on .dbg-finish { grid-column: 7; }
-  /* The ✕ at the left of a branch closes it, and the other is the timeline. */
+  /* The ✕ of a branch closes it, and the other is the timeline. It stands at
+     the right, just past where its branch's row ends (operator 2026-11-22:
+     "move x deletes over to the right side please, right after each closable
+     timeline ends"). */
   #debugbar button.dbg-close {
-    min-width: 0; width: 22px; height: 22px; margin: 0 -3px 0 0; padding: 0; border-radius: 50%;
+    min-width: 0; width: 22px; height: 22px; margin: 0; padding: 0; border-radius: 50%;
     color: var(--dbg-own); border-color: var(--dbg-own); font-weight: 700;
   }
   #debugbar button.dbg-close:hover:not(:disabled) { color: #10140f; background: var(--dbg-own); border-color: transparent; }
@@ -343,7 +352,7 @@ const DEBUG_BAR_STYLE = `
      keeps its own. The turn the game begins on stands inside it. */
   #debugbar .dbg-tie { display: none; }
   #debugbar.dbg-split-on .dbg-tie {
-    display: block; grid-column: 5; grid-row: 1 / span 2; align-self: stretch; position: relative;
+    display: block; grid-column: 4; grid-row: 1 / span 2; align-self: stretch; position: relative;
     width: 32px; margin-right: -8px;
   }
   #debugbar .dbg-tie::before {
@@ -544,6 +553,25 @@ const DEBUG_BAR_STYLE = `
   }
   #debugbar .dbg-pop .dbg-line { display: flex; align-items: center; gap: 6px; }
   #debugbar .dbg-pop .dbg-line > span { flex: none; width: 58px; color: var(--muted); }
+  /* What the box asks (debugAsk): which Civ AI plays a branch that was just
+     made, under that branch's picker, or whether a Civ AI picked on the one
+     timeline plays on here or in a branch, under the picker it was picked
+     from. It is the box's own and not the deck's, so an unlocked split
+     shows it too. */
+  #debugbar .dbg-ask {
+    position: absolute; z-index: 5; left: 8px; top: calc(100% + 6px);
+    width: min(300px, calc(100vw - 16px)); max-height: calc(100vh - 110px); overflow-y: auto;
+    display: grid; gap: 8px; padding: 12px; white-space: normal;
+    border-radius: 14px; border: 1px solid #ffd23f; background: #0a1512fa; box-shadow: var(--shadow);
+  }
+  #debugbar .dbg-ask h4 { margin: 0; font: 600 14px Georgia, serif; color: var(--gold-bright, #e7c873); }
+  #debugbar .dbg-ask p { margin: 0; color: var(--muted); line-height: 1.35; }
+  #debugbar .dbg-ask p b { color: var(--text); }
+  #debugbar .dbg-ask-list { display: grid; gap: 4px; }
+  #debugbar .dbg-ask-list button { justify-content: space-between; gap: 10px; padding: 0 9px; font-variant-numeric: tabular-nums; }
+  #debugbar .dbg-ask-list small { font-size: 10.5px; opacity: .75; }
+  #debugbar .dbg-ask .dbg-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  #debugbar .dbg-ask .dbg-line button { padding: 0 11px; font-weight: 700; }
 `;
 
 // The bar, once built, and each lane of its timeline: what is drawn on it
@@ -1104,8 +1132,7 @@ function debugTogglePop(name) {
 // line under the pointer, and the slider that is the hand on it.
 function debugLaneMarkup(key, id, label) {
   return `
-      <div class="dbg-lane${key ? " dbg-half" : ""}" data-dbg-lane="${key}">${key ? `
-        <button class="dbg-close" data-dbg-close="${key}" title="Close branch ${key.toUpperCase()}: ${key === "a" ? "B" : "A"} is the timeline from then on, with every turn it holds" aria-label="Close branch ${key.toUpperCase()}">✕</button>` : ""}
+      <div class="dbg-lane${key ? " dbg-half" : ""}" data-dbg-lane="${key}">
         <span class="dbg-lane-name"${key ? ` title="${key === "a" ? "A: the timeline as it was when it was branched" : "B: the branch"}"` : ""}>${key.toUpperCase()}</span>${key ? `
         <select class="dbg-agent" data-dbg-agent="${key}" title="The Civ AI that plays ${key.toUpperCase()}'s seat when it is stepped, run or played to" aria-label="Civ AI for ${key.toUpperCase()}"></select>` : ""}
         <b class="dbg-start"></b>
@@ -1117,7 +1144,8 @@ function debugLaneMarkup(key, id, label) {
             <button class="dbg-branch" data-dbg="split" title="Branch: a second timeline from this turn, beside this one. This one keeps the turns it holds past here; seat another Civ AI in the branch and play both, and close either with its ✕" aria-label="Branch the timeline on this turn"><i>⑂</i>Branch</button>`}</div></div>
           <input type="range" id="${id}" step="1"${key ? ` data-dbg-half="${key}"` : ""} aria-label="${label}">
           <div class="dbg-marks"></div>
-        </div>
+        </div>${key ? `
+        <button class="dbg-close" data-dbg-close="${key}" title="Close branch ${key.toUpperCase()}: ${key === "a" ? "B" : "A"} is the timeline from then on, with every turn it holds" aria-label="Close branch ${key.toUpperCase()}">✕</button>` : ""}
         <span class="dbg-finish"><i class="dbg-flag"></i><b></b></span>
       </div>`;
 }
@@ -1186,6 +1214,7 @@ function debugBuildBar() {
       </div>
     </div>
     <div class="dbg-hover" id="dbg-hover" hidden></div>
+    <div class="dbg-ask" id="dbg-ask" role="dialog" aria-labelledby="dbg-ask-title" hidden></div>
     <div class="dbg-pop" id="dbg-pop-layers" hidden>
       <h4>Who decides</h4>
       <p>A layer that is on is played by the Civ AI at the top of each of your turns.
@@ -1252,11 +1281,14 @@ function debugBuildBar() {
   }
 
   bar.addEventListener("click", event => {
+    // What the box asked is answered on the box.
+    const answered = event.target.closest("[data-dbg-ask]");
+    if (answered) { debugAnswer(answered); return; }
     if (event.target.closest("[data-dbg-lock]")) {
       if (debugSplit) debugSplitLock(!debugSplit.locked);
       return;
     }
-    // The ✕ at the left of a branch closes it: the other is the timeline.
+    // The ✕ of a branch closes it: the other is the timeline.
     const closed = event.target.closest("[data-dbg-close]");
     if (closed) {
       if (debugSplit && !closed.disabled) debugSplitClose(closed.dataset.dbgClose === "a" ? "b" : "a");
@@ -1359,6 +1391,8 @@ function debugBuildBar() {
       else debugGoToTurn(turn);
     } else if (target.dataset.dbgAgent) {
       target.blur();
+      // A branch seated from its own picker has answered what the box asked.
+      if (debugAsk && debugAsk.kind === "seat" && debugAsk.letter === target.dataset.dbgAgent) debugAsk = null;
       debugSplitSeat(target.dataset.dbgAgent, target.value);
     } else if (debugSplit) {
       // The one panel of a locked split: what is changed on it is the halves'.
@@ -1368,12 +1402,14 @@ function debugBuildBar() {
       target.blur();
       debugGoToTurn(target.value);
     } else if (target.id === "dbg-agent") {
-      // The page's own picker is the one every step reads.
-      const page = document.getElementById("autoplaystrategy");
-      if (page) { page.value = target.value; page.dispatchEvent(new Event("change", {bubbles: true})); }
+      // Another Civ AI picked on the one timeline is not seated yet: the box
+      // asks whether this timeline plays on with it or a branch does
+      // (operator 2026-11-22: "when edited to a different strategy, should
+      // ask to switch or branch"). The one already seated is nothing to ask,
+      // and is said to the engine as any pick is.
       target.blur();
-      drawDebugBar(false);
-      debugSeat();
+      debugAsk = target.value && target.value !== debugStrategy() ? {kind: "switch", name: target.value} : null;
+      if (debugAsk) drawDebugBar(false); else debugSwitchSeat(target.value);
     } else if (target.dataset.dbgLayer) {
       debugOp({op: "layers", layers: debugLayersFromForm()});
     } else if (target.closest("#dbg-pop-breaks")) {
@@ -1437,6 +1473,12 @@ function debugBuildBar() {
     if (delta) walk(delta > 0);
   }, {passive: false});
   bar.addEventListener("keydown", event => {
+    if (event.key === "Escape" && debugAsk) {
+      event.stopPropagation();
+      debugAsk = null;
+      drawDebugBar();
+      return;
+    }
     if (event.key === "Escape" && debugPopOpen) {
       event.stopPropagation();
       debugPopOpen = null;
@@ -1591,10 +1633,18 @@ function debugNameWidth(name) {
 // thing instead, and a name that has stepped on is cut short at the end of
 // its stretch.
 function debugStretchMarkup(model, at, travel, blocks, free) {
-  const stretches = model.by || [];
+  // A branch is named on itself (operator 2026-11-22: "lets label the
+  // branches themselves"): its letter stands before the name on its first
+  // stretch, and a branch nothing has been played on yet is named by the Civ
+  // AI seated in it, the one that will play it (`model.letter`, a half's
+  // lane once the tree has forked; `model.seated`).
+  const waits = !!model.letter && !(model.by || []).length;
+  const stretches = waits ? [{from: model.fork, to: model.fork, by: model.seated || null}] : model.by || [];
   const px = turn => at(turn) / 100 * travel;
   return stretches.map((stretch, index) => {
-    const name = debugPlayedBy(stretch), width = debugNameWidth(name);
+    const who = waits && !stretch.by ? "" : debugPlayedBy(stretch);
+    const name = index === 0 && model.letter ? [model.letter, who].filter(Boolean).join(" · ") : who;
+    const width = debugNameWidth(name);
     const from = px(stretch.from), to = px(stretch.to);
     const last = free && index === stretches.length - 1;
     // How far the name may reach, and where it begins, both from the start
@@ -1940,6 +1990,7 @@ function drawDebugBar(measure = true) {
       debugDrawLane(letter, {name: letter.toUpperCase(), ...axis, first: fork.first[letter], last: fork.last[letter],
         turn: pane.turn ?? from, fork: fork.turn, kept: null, turns: null, ...marks[letter], named: told(letter, "flags"),
         by: stretches(letter, fork.turn, kept(letter)), played: told(letter, "by"),
+        letter: fork.forked ? letter.toUpperCase() : null, seated: pane.strategy,
         beyond: beyond(letter), goal: fork.forked ? goal : null, idle: pane.turn !== null && !debugSplit.busy && !running,
         marker: one ? null : stands[letter], over: one ? stands.a : null,
         branches: fork.forked ? fork.turn : null, tree});
@@ -1960,7 +2011,7 @@ function drawDebugBar(measure = true) {
       : together ? "Unlocked: each simulator keeps its own turn and its own panel. Click to lock them on this turn"
       : "Unlocked: each simulator keeps its own turn and its own panel. They can be locked when both stand on the same turn";
     if (lock.title !== lockTitle) { lock.title = lockTitle; lock.setAttribute("aria-label", lockTitle.split(".")[0]); }
-    if (deck === null) { if (measure) debugDock(bar); return; }
+    if (deck === null) { debugDrawAsk(bar); if (measure) debugDock(bar); return; }
   } else {
     bar.classList.remove("dbg-joined", "dbg-forked");
     // The timeline: the whole game, the turns played on it, the save points
@@ -1977,8 +2028,103 @@ function drawDebugBar(measure = true) {
       eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle: deck.idle});
   }
   debugDrawDeck(bar, deck);
+  debugDrawAsk(bar);
   if (DEBUG_PANE !== null) { debugPaneDeck(deck); debugPaneMarks(timeline); }
   if (measure) debugDock(bar);
+}
+// What the box asks, or null. `seat`: which Civ AI plays a branch that was
+// just made (operator 2026-11-22: "user should be prompted for the strategy
+// for the second branch"). `switch`: another Civ AI was picked on the one
+// timeline, and the timeline either plays on with it or a branch does.
+// A question stays until it is answered, the box is pressed anywhere else,
+// or Escape: unanswered, the branch keeps the Civ AI it began with and the
+// timeline the one it had.
+let debugAsk = null;
+function debugDrawAsk(bar) {
+  const box = document.getElementById("dbg-ask");
+  // A question about a branch is gone with the branch, and one about the one
+  // timeline when the timeline has branched.
+  if (debugAsk && (debugAsk.kind === "seat") !== (debugSplit !== null)) debugAsk = null;
+  box.hidden = debugAsk === null;
+  if (!debugAsk) return;
+  const offered = [...((document.getElementById("autoplaystrategy") || {}).options || [])];
+  let anchor, html;
+  if (debugAsk.kind === "seat") {
+    const letter = debugAsk.letter, name = letter.toUpperCase(), other = letter === "a" ? "b" : "a";
+    const seated = debugSplit.panes[letter].strategy, theirs = debugSplit.panes[other].strategy;
+    const busy = debugSplit.busy || debugSplit.running > 0;
+    anchor = debugLanes[letter].agent;
+    html = `<h4 id="dbg-ask-title">Branch ${name}: which Civ AI plays it?</h4>` +
+      `<p>${name} begins on turn ${debugSplit.from ?? state.turn}, as ${other.toUpperCase()} stands there. The Civ AI picked plays ${name} from here.</p>` +
+      `<div class="dbg-ask-list">${offered.map(option =>
+        `<button data-dbg-ask="seat" value="${escapeAttr(option.value)}"${option.value === seated ? ' class="on"' : ""}${busy ? " disabled" : ""}>` +
+        `<span>${escapeAttr(option.textContent)}</span>${option.value === theirs ? `<small>plays ${other.toUpperCase()}</small>` : ""}</button>`).join("")}</div>`;
+  } else {
+    const picked = escapeAttr(debugAgentName(debugAsk.name)), seated = escapeAttr(debugAgentName(debugStrategy()));
+    anchor = document.getElementById("dbg-agent");
+    html = `<h4 id="dbg-ask-title">${picked} from turn ${state.turn}: switch or branch?</h4>` +
+      `<p><b>Switch</b>: this timeline plays on with ${picked} from here.</p>` +
+      `<p><b>Branch</b>: a second timeline begins here with ${picked}, beside this one, which keeps ${seated}.</p>` +
+      `<div class="dbg-line"><button data-dbg-ask="switch" title="This timeline plays on with ${picked}">Switch</button>` +
+      `<button data-dbg-ask="branch" title="A second timeline from this turn, played by ${picked}">⑂ Branch</button>` +
+      `<button data-dbg-ask="close" title="Keep ${seated}">Cancel</button></div>`;
+  }
+  if (box.dataset.drawn !== html) { box.dataset.drawn = html; box.innerHTML = html; }
+  // Under the picker it is about, and inside the window.
+  const from = anchor.getBoundingClientRect(), frame = bar.getBoundingClientRect();
+  box.style.left = `${Math.max(8, Math.min(from.left - frame.left, frame.width - box.offsetWidth - 8))}px`;
+  box.style.top = `${from.bottom - frame.top + 6}px`;
+}
+// The Civ AI picked for the one timeline is seated: the page's own picker is
+// the one every step reads, and the engine is told at once (`debugSeat`).
+function debugSwitchSeat(name) {
+  const page = document.getElementById("autoplaystrategy");
+  if (page) { page.value = name; page.dispatchEvent(new Event("change", {bubbles: true})); }
+  drawDebugBar(false);
+  debugSeat();
+}
+function debugAnswer(button) {
+  const ask = debugAsk, how = button.dataset.dbgAsk;
+  if (!ask || button.disabled) return;
+  debugAsk = null;
+  if (how === "seat" && ask.kind === "seat" && debugSplit) debugSplitSeat(ask.letter, button.value);
+  else if (how === "switch" && ask.kind === "switch") debugSwitchSeat(ask.name);
+  else if (how === "branch" && ask.kind === "switch") {
+    debugPopOpen = null;
+    debugSplitOpen("row", null, ask.name);
+    // A timeline that could not branch just now is still being asked about.
+    if (!debugSplit) debugAsk = ask;
+  }
+  drawDebugBar();
+}
+// A press anywhere but on the question lets it go. It is heard on its way
+// down, before the bar keeps it from the map.
+document.addEventListener("pointerdown", event => {
+  if (!debugAsk || (event.target instanceof Element && event.target.closest("#dbg-ask"))) return;
+  debugAsk = null;
+  drawDebugBar(false);
+}, true);
+// The game opens on its two tracks (operator 2026-11-22: "the opening view
+// should go to the 2 track immediately"): the first time a game is drawn
+// under the debugger its timeline is branched where it stands, as Branch
+// does it, once a game. A page asked for with `tracks=1` opens on the one
+// timeline, and so does one with no room for two halves (a small device, a
+// narrow window) or one whose seat is being played by hand in the Single
+// player view.
+const DEBUG_OPENS_ON_TWO_TRACKS = (() => {
+  try { return new URLSearchParams(location.search).get("tracks") !== "1"; } catch (_) { return true; }
+})();
+const DEBUG_TWO_TRACKS_FROM = 900;
+let debugOpenedGame = null;
+function debugOpenOnTwoTracks() {
+  if (!DEBUG_OPENS_ON_TWO_TRACKS || DEBUG_PANE !== null || debugSplit || !debugTimeline()) return;
+  const game = String(state.seed ?? "");
+  if (debugOpenedGame === game) return;
+  // A game in the middle of something is opened when it is next drawn idle.
+  if (debugBusy || debugRunning || autoplaying || turnAdvancePending) return;
+  debugOpenedGame = game;
+  if (DEBUG_SMALL_DEVICE || SOLO_UI || window.innerWidth < DEBUG_TWO_TRACKS_FROM) return;
+  debugSplitOpen("row");
 }
 // The deck under the timeline, and the panels that open from it, drawn from
 // one account of a world (`debugDeckNow`): this page's own, or, on the host
@@ -2034,7 +2180,8 @@ function debugDrawDeck(bar, deck) {
   }
   run.classList.toggle("on", deck.running);
   const agent = document.getElementById("dbg-agent");
-  debugOfferAgents(agent, deck.strategy);
+  // While the box asks what to do with another Civ AI, the picker shows it.
+  debugOfferAgents(agent, debugAsk && debugAsk.kind === "switch" ? debugAsk.name : deck.strategy);
   agent.disabled = !idle;
   agent.closest(".dbg-field").hidden = agent.options.length === 0;
   document.getElementById("dbg-turns").disabled = !idle;
@@ -2234,6 +2381,18 @@ const DEBUG_SPLIT_STYLE = `
      It is as wide as a picker's longest listing asks, Elo and whole name. */
   #debugsplit.dbg-versus-on:not(.dbg-col) .dbg-divider { width: min-content; min-width: 138px; }
   #debugsplit .dbg-versus { display: flex; flex-direction: column; gap: 5px; cursor: default; min-width: 0; }
+  /* Head to head is open as a split opens, so the strip holds everything it
+     has in a window of any height: the two copies stand side by side, and so
+     do View and the switch of layout, where the strip is wide enough for
+     two, and in a window too short for the rest the numbers scroll inside
+     the strip. What drops a branch is never off the screen. */
+  #debugsplit .dbg-pair { display: contents; }
+  #debugsplit.dbg-versus-on:not(.dbg-col) .dbg-pair { display: flex; gap: 6px; }
+  #debugsplit.dbg-versus-on:not(.dbg-col) .dbg-pair > button { flex: 1 1 0; min-width: 0; white-space: nowrap; }
+  #debugsplit:not(.dbg-col) .dbg-versus { flex: 0 1 auto; min-height: 0; overflow: hidden auto; scrollbar-width: thin; }
+  /* A window too short for the chart as well goes without it first, so the
+     turn to play both to stays in view. */
+  @media (max-height: 800px) { #debugsplit:not(.dbg-col) .dbg-vs-chart { display: none; } }
   #debugsplit .dbg-versus[hidden] { display: none; }
   #debugsplit.dbg-col .dbg-versus { flex-direction: row; align-items: center; gap: 10px; overflow: hidden; }
   #debugsplit .dbg-versus select, #debugsplit .dbg-versus input {
@@ -2516,7 +2675,9 @@ function drawDebugSplit() {
   back.disabled = debugSplit.busy || debugSplit.running > 0 || debugSplit.from === null ||
     ["a", "b"].every(letter => debugSplit.panes[letter].turn === debugSplit.from);
 }
-function debugSplitOpen(dir, versus = null) {
+// `seat` is the Civ AI the branch is made for, when it was picked before the
+// branch was made. Otherwise B begins with A's, and the box asks.
+function debugSplitOpen(dir, versus = null, seat = null) {
   if (debugSplit || DEBUG_PANE !== null || !debugTimeline() || debugBusy || autoplaying) return;
   if (!document.getElementById("debugsplit-style")) {
     const style = document.createElement("style");
@@ -2531,11 +2692,16 @@ function debugSplitOpen(dir, versus = null) {
     <iframe data-dbg-frame="a" title="Simulator A"></iframe>
     <div class="dbg-divider" role="toolbar" aria-label="Split simulators" title="Drag to resize; double-click to make the halves equal">
       <div class="dbg-pane-name" data-dbg-name="a"></div>
-      <button data-dbg-split="copy-a" title="Make B a copy of A as it stands now, turns behind it included">A → B</button>
-      <button data-dbg-split="keep-a" title="Close the split and keep playing A, with every turn it can walk back to">Keep A</button>
+      <button data-dbg-split="drop-a" title="Drop A: close branch A and keep playing B, with every turn B can walk back to">Drop A</button>
       <span class="dbg-gap"></span>
-      <button data-dbg-split="view">View</button>
-      <button data-dbg-split="flip" title="Switch between side by side and top and bottom"></button>
+      <span class="dbg-pair">
+        <button data-dbg-split="copy-a" title="A ⇒ B: make B a copy of A as it stands now, turns behind it included">A ⇒ B</button>
+        <button data-dbg-split="copy-b" title="A ⇐ B: make A a copy of B as it stands now, turns behind it included">A ⇐ B</button>
+      </span>
+      <span class="dbg-pair">
+        <button data-dbg-split="view">View</button>
+        <button data-dbg-split="flip" title="Switch between side by side and top and bottom"></button>
+      </span>
       <button data-dbg-split="versus" title="Head to head: seat a Civ AI of its own in each half, play both and set their numbers side by side">VS</button>
       <div class="dbg-versus" data-dbg-versus hidden>
         <div class="dbg-vs-line"><span class="dbg-vs-a">A</span><select data-dbg-strategy="a" title="The Civ AI that plays A's seat when A is stepped or run" aria-label="Civ AI for A"></select></div>
@@ -2549,13 +2715,14 @@ function debugSplitOpen(dir, versus = null) {
         </div>
       </div>
       <span class="dbg-gap"></span>
-      <button data-dbg-split="keep-b" title="Close the split and keep playing B, with every turn it can walk back to">Keep B</button>
-      <button data-dbg-split="copy-b" title="Make A a copy of B as it stands now, turns behind it included">B → A</button>
+      <button data-dbg-split="drop-b" title="Drop B: close branch B and keep playing A, with every turn A can walk back to">Drop B</button>
       <div class="dbg-pane-name" data-dbg-name="b"></div>
     </div>
     <iframe data-dbg-frame="b" title="Simulator B"></iframe>`;
-  let remembered = false;
-  try { remembered = localStorage.getItem("civvis-debug-versus") === "1"; } catch (_) {}
+  // Head to head, the numbers of the two side by side, is open unless it was
+  // put away (operator 2026-11-22: "Default the stats window open").
+  let remembered = true;
+  try { remembered = localStorage.getItem("civvis-debug-versus") !== "0"; } catch (_) {}
   // A is the timeline as it stands, and B the branch made on the open turn.
   // When turns are kept ahead of that turn they stay A's, and B is told to
   // begin where it stands (`branches`, until B says it holds none of them).
@@ -2568,8 +2735,9 @@ function debugSplitOpen(dir, versus = null) {
     const frame = host.querySelector(`[data-dbg-frame="${letter}"]`);
     // A half starts on the Civ AI picked here, and is told if it loads on another.
     debugSplit.panes[letter] = {frame, id: `${letter}-${nonce}`, turn: null, first: null, last: null,
-      deck: null, told: null, strategy: debugStrategy()};
+      deck: null, told: null, strategy: letter === "b" && seat ? seat : debugStrategy()};
   }
+  debugAsk = seat ? null : {kind: "seat", letter: "b"};
   debugRememberSeat();
   host.addEventListener("click", event => {
     const stat = event.target.closest("[data-dbg-stat]");
@@ -2585,8 +2753,9 @@ function debugSplitOpen(dir, versus = null) {
       debugSplit.history[to] = new Map(debugSplit.history[from]);
       debugSplitTell(to, {civvis: "pane-copy", from: debugSplit.panes[from].id});
     }
-    else if (action === "keep-a") debugSplitClose("a");
-    else if (action === "keep-b") debugSplitClose("b");
+    // A branch is dropped by its own name, and the other is kept.
+    else if (action === "drop-a") debugSplitClose("b");
+    else if (action === "drop-b") debugSplitClose("a");
     else if (action === "versus") {
       debugSplit.versus = !debugSplit.versus;
       try { localStorage.setItem("civvis-debug-versus", debugSplit.versus ? "1" : "0"); } catch (_) {}
@@ -3004,7 +3173,7 @@ if (DEBUG_PANE !== null) {
   const drawState = render;
   render = function (st, ...rest) {
     const drawn = drawState(st, ...rest);
-    try { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); } catch (error) { console.error("debugger bar", error); }
+    try { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); debugOpenOnTwoTracks(); } catch (error) { console.error("debugger bar", error); }
     return drawn;
   };
   // In the middle of a round stepped a seat at a time the turn is not the
@@ -3045,4 +3214,4 @@ window.addEventListener("resize", () => { if (debugTimeline()) drawDebugBar(); }
 // A page whose first state was drawn before this script arrived has had no
 // `render` of ours yet: draw the bar now, and a half of a split says where it
 // stands, or its host would wait for a report until something moved.
-if (state) { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); }
+if (state) { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); debugOpenOnTwoTracks(); }

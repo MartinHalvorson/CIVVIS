@@ -406,6 +406,10 @@ impl AdvancedAi {
         /// Opt-in gene `emptied-camp-is-taken`: an empty barbarian camp is
         /// walked onto this turn; see `advanced/emptied_camp_is_taken.rs`.
         emptied_camp_is_taken => enable_emptied_camp_is_taken, disable_emptied_camp_is_taken;
+        /// Opt-in gene `first-ship-closes-the-dark-age`: the first ship, a
+        /// Historic Moment, when it closes the Age; see
+        /// `advanced/first_ship_closes_the_age.rs`.
+        first_ship_closes_the_dark_age => enable_first_ship_closes_the_dark_age, disable_first_ship_closes_the_dark_age;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
