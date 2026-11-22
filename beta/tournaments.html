@@ -26,6 +26,9 @@
     --action-fg: #a8d8f5;
     --action-hover: #315d7e;
     --gold: #d7b66a;
+    --yt: #b3261e;
+    --yt-edge: #d9534a;
+    --yt-mark: #ff6257;
     --loss: #3d4b5d;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   }
@@ -41,7 +44,7 @@
     font: 15px/1.55 var(--sans);
     -webkit-font-smoothing: antialiased;
   }
-  /* Wider than the home page's 1060px: this page stands a column of its
+  /* Wider than the home page's 1120px: this page stands a column of its
      own beside a ten-column table. */
   .shell { width: min(1480px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
   main { padding-bottom: 48px; }
@@ -80,6 +83,22 @@
   .utility-link:hover,
   .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
   .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The project's two homes stand out from the row (operator, 2026-11-22:
+     "make the GitHub, dev progress stand out a bit more"): GitHub filled in
+     the site's blue, with what it holds under its name ("everything open
+     source, free"), and YouTube in its red. */
+  .utility-link.is-github,
+  .utility-link.is-youtube { min-height: 44px; color: #fff; font-size: 14px; font-weight: 700; }
+  .utility-link.is-github svg,
+  .utility-link.is-youtube svg { width: 20px; height: 20px; }
+  .utility-link.is-github { border-color: var(--accent); background: var(--action-bg); }
+  .utility-link.is-github:hover,
+  .utility-link.is-github:focus-visible { background: var(--action-hover); border-color: #fff; }
+  .utility-link.is-github span { display: grid; line-height: 1.25; }
+  .utility-link.is-github small { color: var(--action-fg); font-size: 11px; font-weight: 500; white-space: nowrap; }
+  .utility-link.is-youtube { border-color: var(--yt-edge); background: var(--yt); }
+  .utility-link.is-youtube:hover,
+  .utility-link.is-youtube:focus-visible { background: #c9342b; border-color: #fff; }
   /* The site's pages, listed in the same order on every one of them with
      the page on screen in gold: Home, Charts, Auto-Tourneys, CIVVIS and AI
      Debugger, and under them the game they are built on. As on the home page, whose
@@ -111,9 +130,10 @@
      the column still has its room. The list is a tree that keeps its
      branches folded (operator, 2026-11-21: "a somewhat collapsable model
      for the info"): a page's own pages are listed under it only on that
-     page. Charts has one, Performance (operator, 2026-11-22: "Move
-     performance from under civvis to charts"), listed under it on Charts
-     and on Performance and folded away here. */
+     page. Charts is a folder of pages and reads "Charts/", with the slash
+     (operator, 2026-11-22: "change just "Charts" to "Charts/" with the
+     intentional slash"). Its pages, Win Analytics and CIVVIS Performance,
+     are listed under it on those two pages and folded away here. */
 
   .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
@@ -213,6 +233,15 @@
   .tour-counts dd.is-note { color: var(--muted); font-variant-numeric: normal; }
   .tour-counts dd b { color: #fff; font-weight: 700; }
 
+  /* An indefinite tournament's win rate by level: every game, then day by day. */
+  .tour-bench-box { display: grid; gap: 4px; overflow-x: auto; }
+  .tour-bench { border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .tour-bench th, .tour-bench td { padding: 3px 12px 3px 0; border-top: 1px solid var(--border); text-align: left; white-space: nowrap; }
+  .tour-bench thead th { border-top: 0; color: var(--faint); font-size: 11.5px; font-weight: 500; }
+  .tour-bench tbody th { color: var(--text); font-weight: 600; }
+  .tour-bench td { color: var(--muted); }
+  .tour-bench td.is-all b { color: #fff; font-weight: 700; }
+
   /* The games just finished, newest first. */
   .tour-latest { margin: 0; padding: 0; list-style: none; font-size: 12.5px; line-height: 1.5; }
   .tour-latest li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 3px 0; border-top: 1px solid var(--border); }
@@ -272,7 +301,7 @@
            lane's home page and viewer. -->
       <nav class="site-nav" aria-label="CIVVIS sites">
         <a class="site-link" href="../home/">Home</a>
-        <a class="site-link" href="../research/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts</a>
+        <a class="site-link" href="../research/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
         <a class="site-link" href="./" aria-current="page">Auto-Tourneys</a>
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
         <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
@@ -284,13 +313,13 @@
       </div>
     </div>
     <nav class="utility-nav" aria-label="CIVVIS links">
-      <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
+      <a class="utility-link is-github" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
-        GitHub
+        <span>GitHub <small>Everything open source, free</small></span>
       </a>
-      <a class="utility-link" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+      <a class="utility-link is-youtube" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
-        Dev Progress
+        YouTube
       </a>
       <!-- The home page files a report itself, from a dialog; here the same
            button is GitHub's own form, which needs no script on this page. -->
@@ -386,12 +415,15 @@
       .filter(Boolean).join(" · ");
     // A square per game in the order played, then an outline per game a
     // running tournament has still to play.
+    // An indefinite tournament (no size) draws its latest 100 games.
     const strip = (t, open) => {
       const row = el("ol", "tour-strip");
       const mixed = list(t.levels).length > 0;
-      list(t.results).forEach((g, i) => {
+      const results = list(t.results);
+      const skipped = t.size == null ? Math.max(0, results.length - 100) : 0;
+      results.slice(skipped).forEach((g, i) => {
         const square = el("li", "tour-game" + (g.won ? " is-win" : ""));
-        square.title = "Game " + (i + 1) + ": " + told(g, mixed);
+        square.title = "Game " + (skipped + i + 1) + ": " + told(g, mixed);
         row.append(square);
       });
       for (let i = t.games; open && i < t.size; i++) {
@@ -426,6 +458,42 @@
       }
       if (note) line("Notes", el("dd", "is-note", note));
       return dl;
+    };
+
+    // An indefinite tournament's win rate by level (operator 2026-11-22:
+    // "benchmark our win rates roughly for these games over time"): every
+    // game, with the 95% range of the rate, then the last days one by one.
+    const percent = (wins, games) => (games ? Math.round(100 * wins / games) + "%" : "");
+    const bench = (b) => {
+      const levels = list(b && b.levels);
+      if (!levels.length) return null;
+      const days = list(b.days);
+      const table = el("table", "tour-bench");
+      const head = el("tr");
+      head.append(el("th", "", "Level"), el("th", "", "All games"));
+      days.forEach((day) => head.append(el("th", "", day)));
+      const thead = el("thead");
+      thead.append(head);
+      const tbody = el("tbody");
+      for (const lv of levels) {
+        const tr = el("tr");
+        const all = el("td", "is-all");
+        all.append(el("b", "", percent(lv.wins, lv.games)),
+          el("span", "", " " + lv.wins + "–" + (lv.games - lv.wins)
+            + (list(lv.range).length === 2 ? " · " + lv.range[0] + "–" + lv.range[1] + "%" : "")));
+        tr.append(el("th", "", "Lv " + lv.level), all);
+        list(lv.days).forEach(([wins, games]) => {
+          const td = el("td", "", games ? percent(wins, games) : "–");
+          if (games) td.title = wins + "–" + (games - wins);
+          tr.append(td);
+        });
+        tbody.append(tr);
+      }
+      table.append(thead, tbody);
+      const box = el("div", "tour-bench-box");
+      box.append(el("p", "tour-latest-title", "Win rate by level"), table,
+        el("p", "tour-legend", "All games: won, record, and the range the true rate lies in 19 times in 20. Then each of the last days that had games (UTC), the day a game ended; hover a day for its record."));
+      return box;
     };
 
     // A tournament's result video, when the channel has one: a link to
@@ -470,9 +538,11 @@
       if (t.idea) about.append(el("p", "tour-idea", t.idea));
       if (video(t)) about.append(video(t));
       const figure = el("div", "tour-figure");
-      figure.append(el("p", "tour-score", record(t)), el("p", "tour-rate", plural(t.games, "game", "games") + " of " + t.size + (t.games ? " · " + rate(t) + " won" : "")));
+      figure.append(el("p", "tour-score", record(t)), el("p", "tour-rate", plural(t.games, "game", "games")
+        + (t.size == null ? " · indefinite" : " of " + t.size) + (t.games ? " · " + rate(t) + " won" : "")));
       head.append(about, figure);
       body.append(head, strip(t, true), counts(t));
+      if (bench(t.benchmark)) body.append(bench(t.benchmark));
       body.append(el("p", "tour-meta", [t.conditions, "started " + t.start,
         t.wall ? "wall time " + t.wall : "", t.run ? "run time " + t.run : "", t.note].filter(Boolean).join(" · ")));
       const results = list(t.results);
@@ -505,7 +575,7 @@
     for (const t of scheduled) {
       const item = el("li", "tour-split");
       const body = el("div", "tour-body");
-      body.append(el("p", "tour-size", plural(t.size, "game", "games")));
+      body.append(el("p", "tour-size", t.size == null ? "Indefinite" : plural(t.size, "game", "games")));
       if (t.idea) body.append(el("p", "tour-idea", t.idea));
       body.append(el("p", "tour-meta", [t.conditions, before ? "after Tournament " + before : "next to start", t.note].filter(Boolean).join(" · ")));
       item.append(identity(t, "div"), body);
@@ -541,7 +611,7 @@
           figure("End", t.end || ""),
           figure("Wall time", t.wall || ""),
           figure("Run time", t.run || ""),
-          figure("Games", t.games + " / " + t.size),
+          figure("Games", t.size == null ? String(t.games) : t.games + " / " + t.size),
           figure("Record", record(t), "is-record"),
           figure("Won", rate(t)),
           figure("Conditions", t.conditions || "", "is-conditions"));

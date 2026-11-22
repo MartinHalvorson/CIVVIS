@@ -555,6 +555,9 @@ impl AdvancedAi {
         /// seat's first Settler before the Holy Site chain; see
         /// `advanced/religion_seat_second_city_first.rs`.
         religion_seat_second_city_first => enable_religion_seat_second_city_first, disable_religion_seat_second_city_first;
+        /// Opt-in gene `refusals-alone-reopen-the-turn`; see
+        /// `ai::player::take_turn`.
+        refusals_alone_reopen_the_turn => enable_refusals_alone_reopen_the_turn, disable_refusals_alone_reopen_the_turn;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank

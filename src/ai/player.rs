@@ -222,6 +222,7 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
         game.players[pid].city_directives = view.players[pid].city_directives.clone();
         game.board_written();
         let mut executed_movement = Vec::new();
+        let refusals_before = refusal_count(game, pid);
         // `districts-price-the-improvement`: like the live bridge, which sends
         // the host only each city's last Produce of a batch, a city's earlier
         // Produce orders this frame are dropped — so a District the planner
@@ -242,6 +243,17 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
             &mut ai.refused_city_sites,
         );
         ai.reconcile_observed_movement(game, movement_memory, &executed_movement);
+        // `refusals-alone-reopen-the-turn`: ground the orders explored, a unit
+        // or city they created and a strike's rolled outcome no longer each
+        // buy a fresh view and a second plan of the whole turn; an order the
+        // board refused still does, so a refused production order is
+        // replaced this turn instead of leaving its city idle. Replan frames
+        // were a third of a gene-screen game's compute on 2026-11-22.
+        let changed = changed
+            && (!ai.refusals_alone_reopen_the_turn_on()
+                || refusal_count(game, pid) != refusals_before
+                || game.current != pid
+                || game.winner.is_some());
         if !changed {
             break;
         }
@@ -270,6 +282,16 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
             break;
         }
     }
+}
+
+/// Every order the authoritative board has refused this seat, as
+/// `execute_observed_action_recorded` counts them.
+fn refusal_count(game: &Game, pid: usize) -> i64 {
+    game.players[pid]
+        .counters
+        .get("player:refused")
+        .copied()
+        .unwrap_or(0)
 }
 
 /// Block every refused production order in a freshly observed view, so the
@@ -544,3 +566,6 @@ mod plot_refusal_tests;
 
 #[cfg(test)]
 mod kept_yields_tests;
+
+#[cfg(test)]
+mod refusals_alone_reopen_tests;

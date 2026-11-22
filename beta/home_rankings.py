@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""The home page's rankings column, read from the lane's own revision.
+"""The site's two rankings, and the home page's fastest game, read from the
+lane's own revision.
 
     home_rankings.py <source_tree>              print the rankings as JSON
     home_rankings.py <source_tree> <page.html>  write them into the page
 
-The landing page (`beta/landing.html`) carries one empty slot,
+The rankings stood on the home page until 2026-11-22, when the operator moved
+them to Charts ("move 2 charts on home/ to charts/"): Win Analytics
+(`beta/research.html`) carries one empty slot,
 `<script type="application/json" id="rankings-data">null</script>`, and
-`beta/publish.sh` fills it with what this prints. Two rankings:
+`beta/publish.sh` fills it with what this prints. A home page from before the
+move has the same slot and is filled the same way. Two rankings:
 
 - **Winningest civs**: our AI's wins and losses as each civ in the
   verification games against Civilization VI's own AI, best win rate first.
@@ -29,6 +33,14 @@ tournaments a page of their own between Home and CIVVIS
 still lives here, because that page, the live mirror's Mode line and a lane
 pinned to a home page that still has the card all count the same series.
 
+The home page (`beta/landing.html`) is four videos now, and one of them
+follows a record: the fastest game is whichever video leads
+`data/performance/fastest_game_videos.json`, the list the Performance page
+shows. The page carries a second slot for it,
+`<script type="application/json" id="home-videos">null</script>`, which is
+filled here too (`videos`), so a new record reaches both pages from its one
+line in that file.
+
 Nothing here is committed as a copy. The page once kept a hand-synced battle
 catalog and it went the way such copies go; this is derived at publish time
 from the same files the engine embeds, so it cannot drift from them.
@@ -45,6 +57,8 @@ import pathlib
 import re
 import subprocess
 import sys
+
+import performance_page
 
 #: How many civs the table shows: the ones that have won, best win rate first.
 TOP_CIVS = 25
@@ -339,6 +353,12 @@ def tournament_series(rows: list[dict], tournaments: list[dict], detail: bool = 
     series began across every definition; the live mirror's Mode reads
     "Tournament <id>: <wins>-<losses>" from the same count. Newest first.
 
+    An `indefinite` definition is one series that never fills (operator
+    2026-11-22: "please add an indefinite tourney - whenever we have no other
+    tourney, we run lv 6, lv 7, lv 8 (x 2) games"): its `size` is `None` and
+    its `end` only bounds the tags it counts. A tournament played between its
+    games (a tag past that `end`) pauses it, it does not close it.
+
     With `detail` each series also carries what the Tournaments page
     (`beta/tournaments_page.py`) draws beyond the table: the place of its
     definition in the list (`definition`) and its games in the order they were
@@ -347,7 +367,8 @@ def tournament_series(rows: list[dict], tournaments: list[dict], detail: bool = 
     """
     out = []
     for place, spec in enumerate(tournaments):
-        size = int(spec.get("series_size") or 10)
+        indefinite = bool(spec.get("indefinite"))
+        size = None if indefinite else int(spec.get("series_size") or 10)
         start = str(spec.get("start") or "")
         end = str(spec.get("end") or "")
         match = spec.get("match") or {}
@@ -362,9 +383,9 @@ def tournament_series(rows: list[dict], tournaments: list[dict], detail: bool = 
             ending = min(games[key], key=lambda row: OUTCOMES.index(row["outcome"]))
             if ending["outcome"] != "unfinished":
                 finished.append((key, ending))
-        blocks = list(range(0, len(finished), size))
+        blocks = [0] if indefinite and finished else list(range(0, len(finished), size or 1))
         for number, first in enumerate(blocks, 1):
-            block = finished[first:first + size]
+            block = finished[first:] if indefinite else finished[first:first + size]
             wins = sum(1 for _, ending in block if ending["outcome"] == "win")
             last = max(str(ending.get("utc") or "") for _, ending in block)
             # A definition closed by its `end` closes its last series too, full
@@ -373,10 +394,10 @@ def tournament_series(rows: list[dict], tournaments: list[dict], detail: bool = 
             # that is a tag prefix another table owns (`civvis-t`) closes
             # nothing on its own: the games played after that table still
             # sort before it and form the next series.
-            closed = len(block) == size or bool(
+            closed = not indefinite and (len(block) == size or bool(
                 end and first == blocks[-1] and any(
                     (game_key(row) or "") >= end and str(row.get("utc") or "") > last
-                    for row in rows))
+                    for row in rows)))
             out.append({
                 "tournament": spec.get("name") or "",
                 "series": number,
@@ -439,11 +460,32 @@ def for_page(page: str, data: dict) -> dict:
     return {key: value for key, value in data.items() if key != "tournaments"}
 
 
-def fill(page: str, data: dict) -> str | None:
+#: The home page's own slot: the videos of its four that follow a record.
+VIDEOS_SLOT = re.compile(
+    r'(<script type="application/json" id="home-videos">)(.*?)(</script>)', re.S
+)
+
+
+def videos(source: pathlib.Path) -> dict | None:
+    """The home page's videos that follow a record: `fastest`, the fastest
+    game on video, which is the record the Performance page leads with
+    (`performance_page.videos`, fewest seconds first). `None` when the
+    revision has no list of records or the list has no video."""
+    try:
+        listed = json.loads((source / performance_page.VIDEOS).read_text(encoding="utf-8"))["videos"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    records = performance_page.videos(listed)
+    if not records:
+        return None
+    return {"fastest": {key: records[0][key] for key in ("id", "title", "time")}}
+
+
+def fill(page: str, data: dict | None, slot: re.Pattern[str] = SLOT) -> str | None:
     """The page with its slot filled, or `None` when it has no slot."""
     # `<` is escaped so no name or sentence can close the script element.
     text = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
-    filled, count = SLOT.subn(lambda m: m[1] + text + m[3], page, count=1)
+    filled, count = slot.subn(lambda m: m[1] + text + m[3], page, count=1)
     return filled if count else None
 
 
@@ -451,22 +493,32 @@ def main(argv: list[str]) -> int:
     if len(argv) not in (2, 3):
         print(__doc__, file=sys.stderr)
         return 2
-    data = rankings(pathlib.Path(argv[1]))
+    source = pathlib.Path(argv[1])
     if len(argv) == 2:
-        json.dump(data, sys.stdout, ensure_ascii=False, indent=2)
+        json.dump(rankings(source), sys.stdout, ensure_ascii=False, indent=2)
         print()
         return 0
     page = pathlib.Path(argv[2])
     text = page.read_text(encoding="utf-8")
-    data = for_page(text, data)
-    filled = fill(text, data)
-    if filled is None:
-        # A landing page from before the column: nothing to fill.
-        print(f"home_rankings: {page} has no rankings slot; left as it is", file=sys.stderr)
+    shown = []
+    # The rankings, on the page that has their slot: Win Analytics, or a
+    # home page from before they moved there. They are not read for a page
+    # with no place for them.
+    if SLOT.search(text):
+        data = for_page(text, rankings(source))
+        text = fill(text, data)
+        shown += [name for name, value in data.items() if value] or ["no rankings"]
+    # The home page's fastest game, on the page that has its slot.
+    if VIDEOS_SLOT.search(text):
+        records = videos(source)
+        text = fill(text, records, VIDEOS_SLOT)
+        shown.append("the fastest game's video" if records else "no video")
+    if not shown:
+        # A page with neither slot: nothing to fill.
+        print(f"home_rankings: {page} has no rankings slot and no videos slot; left as it is", file=sys.stderr)
         return 0
-    page.write_text(filled, encoding="utf-8")
-    shown = [name for name, value in data.items() if value]
-    print(f"home_rankings: wrote {', '.join(shown) or 'no rankings'} into {page}", file=sys.stderr)
+    page.write_text(text, encoding="utf-8")
+    print(f"home_rankings: wrote {', '.join(shown)} into {page}", file=sys.stderr)
     return 0
 
 

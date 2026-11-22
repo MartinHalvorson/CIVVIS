@@ -15,10 +15,16 @@ import tempfile
 import unittest
 
 import home_rankings
+import performance_page
 
 BETA = pathlib.Path(__file__).resolve().parent
 ROOT = BETA.parent
+# The two rankings stand on Win Analytics, the first page under Charts/, since
+# 2026-11-22 (operator: "move 2 charts on home/ to charts/"); the home page is
+# four videos.
+CHARTS = (BETA / "research.html").read_text(encoding="utf-8")
 LANDING = (BETA / "landing.html").read_text(encoding="utf-8")
+PAGES = {name: (BETA / f"{name}.html").read_text(encoding="utf-8") for name in ("landing", "research", "performance", "tournaments")}
 
 sys.path.insert(0, str(ROOT / "tools"))
 import civ6_ladder  # noqa: E402
@@ -89,7 +95,7 @@ class HomeRankings(unittest.TestCase):
         self.assertEqual(margins["jack"], 78)
         self.assertEqual(margins["holy"], 50.0)
         self.assertEqual((ranking["runs"], ranking["latest_run"]), (2, "2026-11-23"))
-        self.assertIn('" \\u00b1 is the 95% margin of error."', LANDING)
+        self.assertIn('" \\u00b1 is the 95% margin of error."', CHARTS)
 
     def test_the_agents_are_ranked_by_published_elo_under_their_handles(self):
         published = json.loads((ROOT / "data" / "strategy_elo.json").read_text(encoding="utf-8"))
@@ -122,9 +128,9 @@ class HomeRankings(unittest.TestCase):
         # the engine's template, so the two cannot come to disagree.
         template = re.search(r'format!\("\{\} \{\}( [^"]+)", at \+ 1, CIV6_RUNGS\[at\]\.1\)', strategies_rs)
         self.assertEqual(template[1], " AI Firaxis")
-        self.assertIn(f'row("is-rung", "", level(r) + "{template[1]}", "", elo(r), "",', LANDING)
-        self.assertIn('return low + (high > low ? "\\u2013" + high : "") + " " + r.name;', LANDING)
-        self.assertNotIn('"Civ VI "', LANDING)
+        self.assertIn(f'row("is-rung", "", level(r) + "{template[1]}", "", elo(r), "",', CHARTS)
+        self.assertIn('return low + (high > low ? "\\u2013" + high : "") + " " + r.name;', CHARTS)
+        self.assertNotIn('"Civ VI "', CHARTS)
         named = [name for row in rungs for name in row["name"].split(" · ")]
         self.assertEqual(sorted(named), sorted(rung.title() for rung in published["ladder"]))
 
@@ -249,7 +255,7 @@ class HomeRankings(unittest.TestCase):
             '+ "verification games against Civilization VI\\u2019s own AI" + (civs.since ? " since " : "");',
             'if (civs.since) sub.append(el("span", "rank-day", civs.since));',
         ):
-            self.assertIn(line, LANDING)
+            self.assertIn(line, CHARTS)
 
     def test_the_civ_table_shows_the_winners_and_stops_at_its_length(self):
         rows = [run(f"w{n}", "win", f"CIV_{n:02}", victory="VICTORY_SCORE") for n in range(home_rankings.TOP_CIVS + 3)]
@@ -327,83 +333,179 @@ class HomeRankings(unittest.TestCase):
         self.assertEqual(ranking["through"], "2026-11-19")
 
     def test_the_page_carries_one_empty_slot_and_publishing_fills_it(self):
-        self.assertEqual(LANDING.count('<script type="application/json" id="rankings-data">null</script>'), 1)
+        self.assertEqual(CHARTS.count('<script type="application/json" id="rankings-data">null</script>'), 1)
         data = home_rankings.rankings(ROOT)
-        filled = home_rankings.fill(LANDING, data)
+        filled = home_rankings.fill(CHARTS, data)
         slot = home_rankings.SLOT.search(filled)
         self.assertEqual(json.loads(slot[2]), data)
         # Nothing but the slot moved.
-        self.assertEqual(home_rankings.SLOT.sub("", filled), home_rankings.SLOT.sub("", LANDING))
-        # The publish script is what runs it, against the lane's own revision.
+        self.assertEqual(home_rankings.SLOT.sub("", filled), home_rankings.SLOT.sub("", CHARTS))
+        # The publish script is what runs it, against the lane's own revision:
+        # on this page, and on the home page, which had the slot until
+        # 2026-11-22 and still has it in a lane pinned to an older revision.
         publish = (BETA / "publish.sh").read_text(encoding="utf-8")
+        self.assertIn('home_rankings.py" "$source_tree" "$out/research/index.html"', publish)
         self.assertIn('home_rankings.py" "$source_tree" "$out/home/index.html"', publish)
 
-    def test_the_civs_hold_the_left_and_the_strategies_the_right(self):
-        # The rankings section is a two-column grid with two children, each a
-        # card: the civs, then the strategies. Document order is the order
-        # the columns read in, and the order a narrow window stacks them in.
-        opening = '<section class="rankings" id="rankings" hidden aria-label="Rankings">'
-        self.assertEqual(LANDING.count(opening), 1)
-        section = LANDING[LANDING.index(opening) + len(opening):LANDING.index("</main>")]
-        children = []
-        depth = 0
-        for tag in re.finditer(r"<(/?)(section|div)\b([^>]*)>", section):
-            if tag[1]:
-                depth -= 1
-                if depth < 0:
-                    break
-            else:
-                if depth == 0:
-                    children.append(tag[0])
-                depth += 1
-        self.assertEqual(
-            children,
-            [
-                '<section class="rank-card" id="rank-civs" hidden aria-labelledby="rank-civs-title">',
-                '<section class="rank-card" id="rank-strategies" hidden aria-labelledby="rank-strategies-title">',
-            ],
-        )
-        # Two columns and never three. The rule dates from when the
-        # Tournaments table spanned every track above the lists (#5541, #5550)
-        # and is kept now the table has its own page: it is read back and
-        # counted the way the browser counts auto-fit tracks.
-        rule = re.search(
-            r"\.rankings \{ display: grid; grid-template-columns: repeat\(auto-fit, "
-            r"minmax\(min\(100%, max\((\d+)px, calc\(50% - (\d+)px\)\)\), 1fr\)\); gap: (\d+)px;",
-            LANDING,
-        )
-        self.assertIsNotNone(rule)
-        floor, half_gap, gap = (int(figure) for figure in rule.groups())
-        self.assertEqual(half_gap * 2, gap)
-
-        def tracks(width: int) -> int:
-            least = min(width, max(floor, width / 2 - half_gap))
-            return max(1, int((width + gap) // (least + gap)))
-
-        stacks_below = 2 * floor + gap
-        self.assertEqual({tracks(width) for width in range(stacks_below, 2000)}, {2})
-        self.assertEqual({tracks(width) for width in range(120, stacks_below)}, {1})
+    def test_the_civs_stand_under_the_ai_games_and_the_strategies_under_self_play(self):
+        # Operator 2026-11-22: "move 2 charts on home/ to charts/" and "win
+        # analytics should have games against deity ai on the left and civvis
+        # self-play stuff on the right". The two lists that were the home
+        # page's two columns are cards of Win Analytics' two sides: the civs
+        # under the games against the AI, on the left, and the strategies
+        # under self-play, on the right, each after its side's charts.
+        at = [
+            CHARTS.index(piece)
+            for piece in (
+                '<div class="res-side" id="res-side-ai">',
+                'id="res-kind-ai-civvis"',
+                '<section class="res-section rank-card" id="rank-civs" hidden aria-labelledby="rank-civs-title">',
+                '<div class="res-side" id="res-side-self_play">',
+                'id="res-kind-self_play"',
+                '<section class="res-section rank-card" id="rank-strategies" hidden aria-labelledby="rank-strategies-title">',
+                'id="res-each"',
+            )
+        ]
+        self.assertEqual(at, sorted(at))
+        self.assertEqual(CHARTS.count('<div class="res-side" id="res-side-'), 2)
+        # Two columns, the heads sharing a row so the charts start level,
+        # and one column, the games against the AI first, under 860px.
+        self.assertIn(".res-sides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px;", CHARTS)
+        self.assertIn("@media (max-width: 859px) { .res-sides { grid-template-columns: minmax(0, 1fr); } }", CHARTS)
+        self.assertIn(".res-side { display: grid; grid-template-rows: subgrid; grid-row: span 2; min-width: 0; }", CHARTS)
         for line in (
             "const civs = data.civs;",
-            'shown = show("rank-civs", rows, note) || shown;',
+            'show("rank-civs", rows, note);',
             "const strategies = data.strategies;",
-            'shown = show("rank-strategies", rows, note) || shown;',
-            'if (shown) document.getElementById("rankings").hidden = false;',
+            'show("rank-strategies", rows, note);',
         ):
-            self.assertIn(line, LANDING)
+            self.assertIn(line, CHARTS)
         # The Tournaments table stood above the two lists until the operator
         # gave tournaments their own page (2026-11-21: "The tournament tables
-        # on home right now can move to Tournaments"). Nothing of it is left
-        # here but the link to that page (`tournaments_page_test.py`).
-        for gone in ("rank-tournaments", "rank-table", "is-wide", "data.tournaments", "toursShown"):
+        # on home right now can move to Tournaments"). Nothing of it came
+        # along but the link to that page (`tournaments_page_test.py`).
+        for gone in ("rank-tournaments", "is-wide", "data.tournaments", "toursShown"):
+            self.assertNotIn(gone, CHARTS)
             self.assertNotIn(gone, LANDING)
-        self.assertIn('<a class="site-link" href="../tournaments/"', LANDING)
+        self.assertIn('<a class="site-link" href="../tournaments/"', CHARTS)
         # Every game behind the table is one click away, on the branch the
         # table is read from.
         self.assertIn(
             f'href="https://github.com/MartinHalvorson/CIVVIS/blob/{civ6_ladder.LEDGER_BRANCH}/{civ6_ladder.RESULTS_PATH}"',
+            CHARTS,
+        )
+        # And the home page has neither list left, nor their slot.
+        for gone in ("rankings-data", "rank-civs", "rank-strategies", "rank-list", 'id="rankings"'):
+            self.assertNotIn(gone, LANDING)
+
+    def test_the_home_page_is_four_videos_two_by_two(self):
+        # Operator 2026-11-22: "On home, we can have our fastest game youtube
+        # video embedded to watch in the upper left. in upper right, we can
+        # have a single player pov game (should be under performance). Maybe
+        # the AI Debugger - Multiverse, Time Travel video in the lower right.
+        # lower left please save for a lv 8 victory video lv 8 maya cluture
+        # from the youtube."
+        tiles = re.findall(
+            r'<figure class="watch-tile" id="(watch-[a-z]+)" data-video="([\w-]{11})">\s*'
+            r'<a class="watch-poster" href="https://www\.youtube\.com/watch\?v=([\w-]{11})" target="_blank" rel="noreferrer">\s*'
+            r'<img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" '
+            r'src="https://i\.ytimg\.com/vi_webp/([\w-]{11})/hq720\.webp">[\s\S]*?'
+            r"<figcaption><b>([^<]+)</b> <span data-watch-title>([^<]+)</span>",
             LANDING,
         )
+        # Two columns, so document order reads upper left, upper right,
+        # lower left, lower right.
+        self.assertEqual(
+            [(ident, video, label, title) for ident, video, _, _, label, title in tiles],
+            [
+                ("watch-fastest", "iHlUWPIqr5g", "Fastest game", "A complete Civ 6 match in under 6 seconds, real-time simulation"),
+                ("watch-pov", "9c8m87e3rCg", "Single player POV", "A full Civ 6 match in 14 seconds"),
+                ("watch-victory", "6PCd4R08UPM", "Lv 8 Deity win", "Maya Culture"),
+                ("watch-debugger", "6W5t0hcR_N4", "AI Debugger", "Multiverse, Time Travel"),
+            ],
+        )
+        for _, video, link, picture, _, _ in tiles:
+            self.assertEqual((link, picture), (video, video))
+        self.assertEqual(LANDING.count('class="watch-tile"'), 4)
+        self.assertIn(".watch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));", LANDING)
+        self.assertIn("@media (max-width: 639px) { .watch-grid { grid-template-columns: minmax(0, 1fr); } }", LANDING)
+        # The single player's game is one of the Performance page's records.
+        records = performance_page.videos(json.loads((ROOT / performance_page.VIDEOS).read_text(encoding="utf-8"))["videos"])
+        self.assertIn("Single Player POV", {v["id"]: v["title"] for v in records}["9c8m87e3rCg"])
+        # The videos stay YouTube's (operator 2026-11-21: "website is a fast
+        # and light surface layer"): a tile is a picture and a link, and the
+        # player is asked for only when a picture is pressed.
+        markup = LANDING[: LANDING.index('<script type="application/json" id="home-videos">')]
+        self.assertNotIn("youtube-nocookie", markup)
+        self.assertNotIn("<iframe", markup)
+        self.assertIn('player.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0&playsinline=1";', LANDING)
+        self.assertIn("if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button) return;", LANDING)
+        self.assertNotIn("innerHTML", LANDING)
+
+    def test_the_fastest_game_follows_the_record_list(self):
+        # The upper left tile is whichever record leads
+        # data/performance/fastest_game_videos.json, the list the Performance
+        # page shows: publishing writes it into the page's own slot, so a new
+        # record reaches the home page from its one line in that file.
+        self.assertEqual(LANDING.count('<script type="application/json" id="home-videos">null</script>'), 1)
+        records = performance_page.videos(json.loads((ROOT / performance_page.VIDEOS).read_text(encoding="utf-8"))["videos"])
+        fastest = {"fastest": {key: records[0][key] for key in ("id", "title", "time")}}
+        self.assertEqual(home_rankings.videos(ROOT), fastest)
+        self.assertEqual(records[0]["seconds"], min(v["seconds"] for v in records))
+        with tempfile.TemporaryDirectory() as scratch:
+            page = pathlib.Path(scratch) / "index.html"
+            page.write_text(LANDING, encoding="utf-8")
+            with contextlib.redirect_stderr(io.StringIO()) as said:
+                self.assertEqual(home_rankings.main(["home_rankings.py", str(ROOT), str(page)]), 0)
+            self.assertIn("the fastest game's video", said.getvalue())
+            filled = page.read_text(encoding="utf-8")
+            self.assertEqual(json.loads(home_rankings.VIDEOS_SLOT.search(filled)[2]), fastest)
+            # Nothing but the slot moved.
+            self.assertEqual(home_rankings.VIDEOS_SLOT.sub("", filled), home_rankings.VIDEOS_SLOT.sub("", LANDING))
+            # A revision with no list of records: the slot says so, and the
+            # tile stays the video it is written with.
+            self.assertIsNone(home_rankings.videos(pathlib.Path(scratch)))
+            page.write_text(LANDING, encoding="utf-8")
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(home_rankings.main(["home_rankings.py", scratch, str(page)]), 0)
+            self.assertIsNone(json.loads(home_rankings.VIDEOS_SLOT.search(page.read_text(encoding="utf-8"))[2]))
+        for line in (
+            "const fastest = data && data.fastest;",
+            "if (fastest && VIDEO_ID.test(fastest.id)) {",
+            "tile.dataset.video = fastest.id;",
+            'if (fastest.title) tile.querySelector("[data-watch-title]").textContent = fastest.title;',
+        ):
+            self.assertIn(line, LANDING)
+
+    def test_github_and_youtube_stand_out_and_the_top_playlists_are_one_press_away(self):
+        # Operator 2026-11-22: "make the GitHub, dev progress stand out a bit
+        # more. at (everything open source, free) to the github part. Dev
+        # Progress button can change to "YouTube". We should have direct
+        # links to watching our top playlists: Lv 8 Deity Wins, Lv 1 - 7
+        # Archive."
+        for name, page in PAGES.items():
+            self.assertIn("<span>GitHub <small>Everything open source, free</small></span>", page, name)
+            self.assertRegex(
+                page,
+                r'<a class="utility-link is-github" href="https://github\.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">',
+                name,
+            )
+            self.assertRegex(
+                page,
+                r'<a class="utility-link is-youtube" href="https://www\.youtube\.com/@civvis" target="_blank" rel="noreferrer">'
+                r"\s*<svg[^>]*>.*?</svg>\s*YouTube\s*</a>",
+                name,
+            )
+            self.assertNotIn("Dev Progress", page, name)
+            self.assertIn(".utility-link.is-github { border-color: var(--accent); background: var(--action-bg); }", page, name)
+            self.assertIn(".utility-link.is-youtube { border-color: var(--yt-edge); background: var(--yt); }", page, name)
+        lists = re.findall(
+            r'<a class="watch-list" href="https://www\.youtube\.com/playlist\?list=([\w-]+)" target="_blank" rel="noreferrer">'
+            r"<svg[^>]*>.*?</svg>([^<]+)</a>",
+            LANDING,
+        )
+        self.assertEqual(lists, [("PLWcKlP8e8iy4", "Lv 8 Deity Wins"), ("PLecirlzIUSSo", "Lv 1 - 7 Archive")])
+        self.assertLess(LANDING.index('class="watch-list"'), LANDING.index('class="watch-grid"'))
 
     def test_the_page_lists_no_heuristic_genes(self):
         # The home page once carried the head of the gene ranking under the
@@ -411,15 +513,15 @@ class HomeRankings(unittest.TestCase):
         # one now: no card, no reader, no style or script left behind.
         self.assertEqual(sorted(home_rankings.rankings(ROOT)), ["civs", "strategies", "tournaments"])
         self.assertFalse(hasattr(home_rankings, "genes"))
-        self.assertEqual(re.findall(r'id="(rank-[a-z]+)"', LANDING), ["rank-civs", "rank-strategies"])
-        page = LANDING.lower()
+        self.assertEqual(re.findall(r'id="(rank-[a-z]+)"', CHARTS), ["rank-civs", "rank-strategies"])
+        page = CHARTS.lower()
         for gone in ("heuristic gene", "gene_heuristic_ranking", "data.genes", "is-gene", "is-off", "rank-stack", "has-civs"):
             self.assertNotIn(gone, page)
         # A lane pinned to a revision whose page still has the gene card is
         # published by this script too, and its card stays empty and hidden:
         # that page shows a list only when the slot holds its key.
         self.assertNotIn("genes", json.loads(home_rankings.SLOT.search(
-            home_rankings.fill(LANDING, home_rankings.rankings(ROOT)))[2]))
+            home_rankings.fill(CHARTS, home_rankings.rankings(ROOT)))[2]))
 
     def test_a_tournament_is_series_of_finished_games_newest_first(self):
         spec = {"name": "Lv 8 Deity series", "conditions": "Lv 8 6P Continents Online",
@@ -490,6 +592,25 @@ class HomeRankings(unittest.TestCase):
         self.assertEqual([(s["id"], s["tournament"], s["games"], s["end"] is None) for s in series],
                          [(2, "table", 1, True), (1, "seat", 2, False)])
 
+    def test_an_indefinite_tournament_never_fills_and_a_tournament_between_its_games_pauses_it(self):
+        # Operator 2026-11-22: "please add an indefinite tourney - whenever we
+        # have no other tourney, we run lv 6, lv 7, lv 8 (x 2) games".
+        on = {"players": 6, "map": "Continents.lua"}
+        bench = {"name": "bench", "conditions": "c", "start": "civvis-t7-", "end": "civvis-t8-",
+                 "indefinite": True, "match": on}
+        later = {"name": "later", "conditions": "c", "start": "civvis-t8-", "end": "civvis-t9-",
+                 "series_size": 2, "match": on}
+        rows = [run(f"civvis-t7-20261122T{h:02d}0000Z", "win" if h % 3 else "rival_victory", "ROME",
+                    utc=f"2026-11-22T{h:02d}:40:00Z", **on) for h in range(12)]
+        rows.append(run("civvis-t8-20261122T120000Z", "win", "GAUL", utc="2026-11-22T12:40:00Z", **on))
+        rows.append(run("civvis-t7-20261122T130000Z", "win", "MALI", utc="2026-11-22T13:40:00Z", **on))
+        series = home_rankings.tournament_series(rows, [bench, later])
+        self.assertEqual([(s["id"], s["tournament"], s["games"], s["size"], s["end"]) for s in series],
+                         [(2, "later", 1, 2, None), (1, "bench", 13, None, None)])
+        self.assertEqual(series[1]["wins"], 9)
+        # Before its first game it is one tournament still to come, not ten.
+        self.assertIsNone(home_rankings.tournament_series([], [bench]))
+
     def test_the_tournament_definitions_are_committed_and_read(self):
         specs = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))["tournaments"]
         self.assertTrue(specs)
@@ -501,7 +622,11 @@ class HomeRankings(unittest.TestCase):
             if "end" in spec:
                 self.assertRegex(spec["end"], tag)
                 self.assertGreater(spec["end"], spec["start"])
-            self.assertGreater(spec["series_size"], 0)
+            if spec.get("indefinite"):
+                # One series that never fills: a size would contradict it.
+                self.assertNotIn("series_size", spec)
+            else:
+                self.assertGreater(spec["series_size"], 0)
             self.assertTrue(spec["conditions"])
             if "note" in spec:
                 self.assertIsInstance(spec["note"], str)
@@ -514,8 +639,8 @@ class HomeRankings(unittest.TestCase):
 
     def test_a_sentence_cannot_close_the_slot(self):
         data = {"civs": None, "strategies": {"rows": [{"tilt": "</script><b>x"}]}}
-        filled = home_rankings.fill(LANDING, data)
-        self.assertEqual(filled.count("</script>"), LANDING.count("</script>"))
+        filled = home_rankings.fill(CHARTS, data)
+        self.assertEqual(filled.count("</script>"), CHARTS.count("</script>"))
         self.assertEqual(json.loads(home_rankings.SLOT.search(filled)[2]), data)
 
     def test_an_older_revision_publishes_without_either_ranking(self):
@@ -527,7 +652,7 @@ class HomeRankings(unittest.TestCase):
             page.write_text("<html>no slot</html>", encoding="utf-8")
             self.assertEqual(home_rankings.main(["home_rankings.py", empty, str(page)]), 0)
             self.assertEqual(page.read_text(encoding="utf-8"), "<html>no slot</html>")
-            page.write_text(LANDING, encoding="utf-8")
+            page.write_text(CHARTS, encoding="utf-8")
             self.assertEqual(home_rankings.main(["home_rankings.py", empty, str(page)]), 0)
             self.assertEqual(json.loads(home_rankings.SLOT.search(page.read_text(encoding="utf-8"))[2]),
                              {"civs": None, "strategies": None})
@@ -537,8 +662,8 @@ class HomeRankings(unittest.TestCase):
         # page that still has the card is published by this script too and
         # keeps its table; head's page has no card and is not sent the rows.
         data = {"civs": None, "strategies": None, "tournaments": [{"id": 1}]}
-        self.assertEqual(home_rankings.for_page(LANDING, data), {"civs": None, "strategies": None})
-        older = LANDING.replace('id="rank-civs"', 'id="rank-tournaments"></section><section id="rank-civs"', 1)
+        self.assertEqual(home_rankings.for_page(CHARTS, data), {"civs": None, "strategies": None})
+        older = CHARTS.replace('id="rank-civs"', 'id="rank-tournaments"></section><section id="rank-civs"', 1)
         self.assertEqual(home_rankings.for_page(older, data), data)
         with tempfile.TemporaryDirectory() as empty:
             page = pathlib.Path(empty) / "index.html"
