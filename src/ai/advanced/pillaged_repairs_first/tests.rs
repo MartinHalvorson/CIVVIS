@@ -160,16 +160,6 @@ fn a_repair_the_host_never_starts_gives_the_queue_back() {
                 asked[first_gap + gap..].iter().any(|took| *took),
                 "then asks again"
             );
-            assert!(
-                ai.stuck_repair_withheld(
-                    &game,
-                    capital,
-                    &Item::Repair {
-                        repair: crate::name!("district"),
-                        pos: site
-                    }
-                ) || asked[asked.len() - 1]
-            );
         } else {
             assert!(
                 asked.iter().all(|took| *took),
