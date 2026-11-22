@@ -57,6 +57,17 @@ impl AdvancedAi {
     /// Early expansion favors fresh-water and coastal sites. A dry site is
     /// softened only when its player can immediately buy the Granary that
     /// partly repairs its two-Housing floor.
+    /// Everything [`Self::early_city_water_adjustment`] reads that is not
+    /// the site's own ground: `None` once the opening window has closed,
+    /// otherwise whether the Granary is affordable (`None` inside when no
+    /// Granary can be bought). Part of the settlement atlas's key.
+    pub(super) fn early_city_water_inputs(g: &Game, pid: usize) -> Option<Option<bool>> {
+        (g.player_city_ids(pid).len() < EARLY_WATER_PRIORITY_CITY_LIMIT).then(|| {
+            g.new_city_granary_gold_purchase_cost(pid)
+                .map(|price| g.players[pid].gold + f64::EPSILON >= price)
+        })
+    }
+
     pub(super) fn early_city_water_adjustment(g: &Game, pid: usize, pos: Pos) -> f64 {
         if g.player_city_ids(pid).len() >= EARLY_WATER_PRIORITY_CITY_LIMIT {
             return 0.0;

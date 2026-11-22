@@ -1974,12 +1974,23 @@ impl Clone for LaneProgressCache {
 /// settler while the map and city layout remain unchanged. Threat, support,
 /// and defensibility terms stay outside this atlas because units can move
 /// during the acting seat's turn.
+///
+/// ⭐ A restart (a new turn, a new frame, any tile written anywhere) keeps
+/// every value whose inputs provably did not move; see
+/// `SettlementAtlas::restart` in `advanced/settlement_value.rs`. Between
+/// restarts it answers exactly as it always did.
 #[derive(Default)]
 struct SettlementAtlas {
     turn: Option<u32>,
     map_epoch: u64,
     pid: usize,
-    values: BTreeMap<Pos, f64>,
+    /// Each value with the key (`AdvancedAi::settlement_atlas_key`) it was
+    /// derived under.
+    values: BTreeMap<Pos, (f64, u64)>,
+    /// The ground the values were derived on, and every city as
+    /// `(id, position, owner)`, as they stood at the last restart.
+    ground: Option<crate::world::TileGrid>,
+    cities: Vec<(u32, Pos, usize)>,
 }
 
 impl Clone for SettlementAtlas {
@@ -1992,23 +2003,15 @@ impl Clone for SettlementAtlas {
 }
 
 impl SettlementAtlas {
-    fn clear(&mut self) {
+    /// Make the next lookup restart, which keeps only what it can prove.
+    fn expire(&mut self) {
         self.turn = None;
-        self.map_epoch = 0;
-        self.pid = 0;
-        self.values.clear();
     }
 
     fn matches(&self, g: &Game, pid: usize) -> bool {
         self.turn == Some(g.turn) && self.map_epoch == g.map.tiles.epoch() && self.pid == pid
     }
 
-    fn start(&mut self, g: &Game, pid: usize) {
-        self.turn = Some(g.turn);
-        self.map_epoch = g.map.tiles.epoch();
-        self.pid = pid;
-        self.values.clear();
-    }
 }
 
 /// One hostile as it stood at the start of the turn. See
@@ -27061,7 +27064,7 @@ impl AdvancedAi {
         self.clear_priced_risk();
         self.builder_support.clear();
         self.battlefront_frame = None;
-        self.settlement_atlas.borrow_mut().clear();
+        self.settlement_atlas.borrow_mut().expire();
         self.lane_progress_cache.0.borrow_mut().clear();
         // Before anything in this turn is priced. Every science term downstream
         // reads this one number, so the horizon cannot drift between the
@@ -27567,7 +27570,7 @@ impl AdvancedAi {
         // or policy changes land. Those changes affect adjacency and tile
         // pricing, so the production pass starts a fresh static atlas from
         // the final pre-production state.
-        self.settlement_atlas.borrow_mut().clear();
+        self.settlement_atlas.borrow_mut().expire();
         self.lane_progress_cache.0.borrow_mut().clear();
 
         // `saved-work-is-seen`: the host's paused units, buildings and

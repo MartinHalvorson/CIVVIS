@@ -489,10 +489,20 @@ impl AdvancedAi {
         if self.battlefront_frame.is_none() || positions.is_empty() {
             return;
         }
+        let mut key = None;
         let misses = {
             let mut atlas = self.settlement_atlas.borrow_mut();
             if !atlas.matches(g, pid) {
-                atlas.start(g, pid);
+                let fresh_key = Self::settlement_atlas_key(g, pid);
+                atlas.restart(g, pid, fresh_key);
+                key = Some(fresh_key);
+                if settlement_atlas_audit() {
+                    let kept: Vec<(Pos, f64)> =
+                        atlas.values.iter().map(|(pos, (value, _))| (*pos, *value)).collect();
+                    drop(atlas);
+                    self.audit_settlement_atlas(g, pid, &kept);
+                    atlas = self.settlement_atlas.borrow_mut();
+                }
             }
             positions
                 .iter()
@@ -503,12 +513,50 @@ impl AdvancedAi {
         if misses.is_empty() {
             return;
         }
+        let key = key.unwrap_or_else(|| Self::settlement_atlas_key(g, pid));
         let values = self.settlement_static_values_uncached(g, pid, &misses);
         let mut atlas = self.settlement_atlas.borrow_mut();
         if !atlas.matches(g, pid) {
-            atlas.start(g, pid);
+            atlas.restart(g, pid, key);
         }
-        atlas.values.extend(values);
+        atlas
+            .values
+            .extend(values.into_iter().map(|(pos, value)| (pos, (value, key))));
+    }
+
+    /// What a site's static value reads that is neither its own ground nor
+    /// a city: the opening window's Granary price against the treasury, and
+    /// Mohenjo-Daro's fresh water. A value is kept across a restart only
+    /// under the key it was derived under.
+    fn settlement_atlas_key(g: &Game, pid: usize) -> u64 {
+        let early = match Self::early_city_water_inputs(g, pid) {
+            None => 0,
+            Some(None) => 1,
+            Some(Some(false)) => 2,
+            Some(Some(true)) => 3,
+        };
+        let fresh = u64::from(g.mohenjo_daro_waters_every_city(pid));
+        early | fresh << 2
+    }
+
+    /// `CIVVIS_SETTLEMENT_ATLAS_AUDIT`: every value a restart kept is derived
+    /// again on the board it is now asked about, and a difference panics.
+    fn audit_settlement_atlas(&self, g: &Game, pid: usize, kept: &[(Pos, f64)]) {
+        let mut plots = PlotAdjacencies::default();
+        for &(pos, value) in kept {
+            let derived = self.settlement_static_value_sharing(g, pid, pos, &mut plots);
+            assert!(
+                derived.to_bits() == value.to_bits(),
+                "settlement atlas kept {value} at {pos:?} for seat {pid} on turn {}, \
+                 but the site now derives {derived}",
+                g.turn
+            );
+        }
+        SETTLEMENT_ATLAS_TEST.with(|test| {
+            let mut state = test.get();
+            state.audited += kept.len() as u64;
+            test.set(state);
+        });
     }
 
     pub(super) fn settlement_atlas_value(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
@@ -517,7 +565,7 @@ impl AdvancedAi {
             .borrow()
             .values
             .get(&pos)
-            .copied()
+            .map(|(value, _)| *value)
             .unwrap_or_else(|| self.settlement_static_value_uncached(g, pid, pos))
     }
 
@@ -1006,3 +1054,105 @@ impl AdvancedAi {
         )
     }
 }
+
+/// How far over its ground a site's static value reads: the forecast's two
+/// rings, their neighbours for adjacency, water and wonder footprints, and
+/// the third ring the science-wonder term reads, with one ring to spare.
+const SETTLEMENT_ATLAS_GROUND_REACH: i32 = 5;
+
+/// How far a city reaches into a site's static value: the rival-city
+/// penalty inside six, and a city's owner read through its plots (three
+/// rings) by the adjacency terms, with one ring to spare.
+const SETTLEMENT_ATLAS_CITY_REACH: i32 = 8;
+
+/// See `AdvancedAi::audit_settlement_atlas`.
+fn settlement_atlas_audit() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("CIVVIS_SETTLEMENT_ATLAS_AUDIT").is_some())
+        || SETTLEMENT_ATLAS_TEST.with(|test| test.get().audit)
+}
+
+/// What a test on this thread asks of the atlas: `audit` derives every kept
+/// value again, `forget` restarts empty as the atlas did before it kept
+/// anything (the arm a same-game test compares against), and `audited`
+/// counts the values the audit checked.
+#[derive(Clone, Copy, Default)]
+pub(super) struct SettlementAtlasTest {
+    pub(super) audit: bool,
+    pub(super) forget: bool,
+    pub(super) audited: u64,
+}
+
+thread_local! {
+    pub(super) static SETTLEMENT_ATLAS_TEST: std::cell::Cell<SettlementAtlasTest> =
+        const { std::cell::Cell::new(SettlementAtlasTest { audit: false, forget: false, audited: 0 }) };
+}
+
+impl SettlementAtlas {
+    /// Open the atlas for a new (turn, map epoch, seat) under `key`.
+    ///
+    /// It used to start empty. A static value reads only the ground within
+    /// [`SETTLEMENT_ATLAS_GROUND_REACH`] of its site, the cities within
+    /// [`SETTLEMENT_ATLAS_CITY_REACH`] and what `key` carries, and between
+    /// two restarts of one seat almost none of that moves (2026-11-22: 97 to
+    /// 98% of the values a gene-screen game derived again were the values
+    /// it had derived before). So a value is kept when its seat and key are
+    /// the same and nothing in reach changed: the ground compared tile for
+    /// tile against the ground of the last restart, and the cities as
+    /// `(id, position, owner)`. Anything else is derived afresh, as before.
+    fn restart(&mut self, g: &Game, pid: usize, key: u64) {
+        let mut cities: Vec<(u32, Pos, usize)> = g
+            .cities
+            .values()
+            .map(|city| (city.id, city.pos, city.owner))
+            .collect();
+        cities.sort_unstable();
+        let forget = SETTLEMENT_ATLAS_TEST.with(|test| test.get().forget);
+        let changed = match &self.ground {
+            Some(ground) if self.pid == pid && !forget => g.map.tiles.differing_positions(ground),
+            _ => None,
+        };
+        match changed {
+            Some(changed) => {
+                let mut moved = crate::fast_map::FastSet::default();
+                for pos in changed {
+                    moved.extend(g.wdisk(pos, SETTLEMENT_ATLAS_GROUND_REACH));
+                }
+                let mut before = self.cities.iter().peekable();
+                let mut after = cities.iter().peekable();
+                loop {
+                    let city = match (before.peek(), after.peek()) {
+                        (None, None) => break,
+                        (Some(old), Some(new)) if old == new => {
+                            before.next();
+                            after.next();
+                            continue;
+                        }
+                        (Some(old), Some(new)) if old.0 == new.0 => {
+                            moved.extend(g.wdisk(old.1, SETTLEMENT_ATLAS_CITY_REACH));
+                            before.next();
+                            after.next()
+                        }
+                        (Some(old), Some(new)) if old.0 < new.0 => before.next(),
+                        (Some(_), Some(_)) | (None, Some(_)) => after.next(),
+                        (Some(_), None) => before.next(),
+                    };
+                    if let Some(city) = city {
+                        moved.extend(g.wdisk(city.1, SETTLEMENT_ATLAS_CITY_REACH));
+                    }
+                }
+                self.values
+                    .retain(|pos, (_, derived_under)| *derived_under == key && !moved.contains(pos));
+            }
+            None => self.values.clear(),
+        }
+        self.turn = Some(g.turn);
+        self.map_epoch = g.map.tiles.epoch();
+        self.pid = pid;
+        self.ground = Some(g.map.tiles.clone());
+        self.cities = cities;
+    }
+}
+
+#[cfg(test)]
+mod atlas_keeping_tests;

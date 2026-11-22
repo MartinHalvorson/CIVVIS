@@ -17,9 +17,16 @@ impl Game {
     /// Both decide the housing floor. Keeping this at a position instead of
     /// only on [`City`] lets settlement scoring ask the same question before
     /// founding, including the host's observed `Plot:IsFreshWater()` result.
+    /// Mohenjo-Daro's Suzerain bonus: every city of `pid` has fresh water.
+    /// The one thing [`Self::city_site_water`] reads that is not the site's
+    /// own ground.
+    pub(crate) fn mohenjo_daro_waters_every_city(&self, pid: usize) -> bool {
+        self.grants_city_state_unique_bonus(pid, "Mohenjo-Daro")
+    }
+
     pub(crate) fn city_site_water(&self, pid: usize, pos: Pos) -> (bool, bool) {
         let center = &self.map.tiles[&pos];
-        let fresh = self.grants_city_state_unique_bonus(pid, "Mohenjo-Daro")
+        let fresh = self.mohenjo_daro_waters_every_city(pid)
             || center.has_river()
             || self.nbrs(pos).iter().any(|n| {
                 self.map
