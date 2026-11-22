@@ -20,7 +20,6 @@ fn board(short: i64) -> (Game, u32) {
     }
     g.players[0].normal_age_threshold = 8;
     g.players[0].era_score = 8 - short;
-    g.world_era_countdown_end = Some(g.turn + 5);
     Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
         city,
         Yields {
@@ -28,6 +27,9 @@ fn board(short: i64) -> (Game, u32) {
             ..Default::default()
         },
     );
+    // One turn more than the build needs: inside the closers' window.
+    let turns = AdvancedAi::unique_unit_turns(&g, 0, city, &hoplite());
+    g.world_era_countdown_end = Some(g.turn + turns.ceil() as u32 + 1);
     (g, city)
 }
 
@@ -103,4 +105,33 @@ fn a_unit_finished_on_the_eras_last_turn_is_not_claimed() {
         );
         assert_eq!(g.cities[&city].queue.first() == Some(&hoplite()), expected);
     }
+}
+
+/// Too early: with turns in hand the seat is left to earn the points itself.
+/// Live Maya `civvis-t7-20261122T080226Z` took the capital's second Settler for
+/// a Hul'che at t14 with 16 turns left in the era.
+#[test]
+fn an_era_with_turns_in_hand_is_left_alone() {
+    let (mut g, city) = board(3);
+    let turns = AdvancedAi::unique_unit_turns(&g, 0, city, &hoplite());
+    g.world_era_countdown_end = Some(g.turn + turns.ceil() as u32 + 4);
+    assert!(!seat(true).claim_unique_unit_for_the_age(&mut g, 0));
+    assert_ne!(g.cities[&city].queue.first(), Some(&hoplite()));
+}
+
+/// A Settler at the head is never displaced by an age closer.
+#[test]
+fn a_settler_at_the_head_is_left_alone() {
+    let (mut g, city) = board(3);
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .queue
+        .insert(0, settler.clone());
+    g.players[0].gold = 0.0;
+    assert!(!seat(true).claim_unique_unit_for_the_age(&mut g, 0));
+    assert_eq!(g.cities[&city].queue.first(), Some(&settler));
 }

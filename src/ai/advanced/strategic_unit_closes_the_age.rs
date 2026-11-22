@@ -128,11 +128,18 @@ impl AdvancedAi {
         let best = cities
             .iter()
             .filter(|cid| !held_by_another_closer(g, **cid))
+            .filter(|cid| !Self::age_closer_spares_the_head(g, **cid))
             .filter_map(|cid| {
                 Self::strategic_unit_for(g, pid, *cid).map(|(unit, turns)| (*cid, unit, turns))
             })
             .filter(|(_, _, turns)| *turns < left as f64)
             .min_by(|a, b| a.2.total_cmp(&b.2).then(a.0.cmp(&b.0)));
+        if best.is_some_and(|(_, _, turns)| !Self::age_closer_window(left, turns)) {
+            return false;
+        }
+        if best.is_none() && !Self::age_closer_buys_now(left) {
+            return false;
+        }
         if let Some((city, unit, turns)) = best {
             if g.apply(
                 pid,

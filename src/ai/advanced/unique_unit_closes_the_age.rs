@@ -63,6 +63,35 @@ impl AdvancedAi {
         })
     }
 
+    /// `age_closer_window`: whole turns a closer keeps in hand past a build's
+    /// own turns before it claims a queue.
+    pub(super) const AGE_CLOSER_SLACK: f64 = 2.0;
+
+    /// Whether an age closer may claim a queue now: the build of `turns` must
+    /// finish in whole turns strictly inside the era, and the era must be
+    /// close enough that the seat could not reasonably earn the shortfall on
+    /// its own first. Live Maya `civvis-t7-20261122T080226Z`: at t14, sixteen
+    /// turns before the first era closed, the unique-unit claim took the
+    /// capital's second Settler for a Hul'che; the Settler came back at t19
+    /// and the second city at t27.
+    pub(super) fn age_closer_window(left: u32, turns: f64) -> bool {
+        let whole = turns.ceil();
+        whole < left as f64 && left as f64 <= whole + 1.0 + Self::AGE_CLOSER_SLACK
+    }
+
+    /// Whether an age closer may spend Gold now: only once no build can still
+    /// open its window, in the era's last turns.
+    pub(super) fn age_closer_buys_now(left: u32) -> bool {
+        left as f64 <= 1.0 + Self::AGE_CLOSER_SLACK
+    }
+
+    /// A city whose head an age closer never displaces: a Settler. Expansion is
+    /// the strongest predictor of a Deity win in the live games (cities at t60:
+    /// two or three, 1 win in 67; seven or more, 4 in 18).
+    pub(super) fn age_closer_spares_the_head(g: &Game, cid: u32) -> bool {
+        matches!(g.cities[&cid].queue.first(), Some(Item::Unit { unit }) if unit.as_str() == "settler")
+    }
+
     /// The seat's own unique unit, cheapest first.
     pub(super) fn seat_unique_unit(g: &Game, pid: usize) -> Option<Name> {
         g.rules
@@ -154,9 +183,18 @@ impl AdvancedAi {
         let best = cities
             .iter()
             .filter(|cid| g.can_produce(pid, **cid, &item))
+            .filter(|cid| !Self::age_closer_spares_the_head(g, **cid))
             .map(|cid| (*cid, Self::unique_unit_turns(g, pid, *cid, &item)))
             .filter(|(_, turns)| turns.is_finite() && turns.ceil() < left as f64)
             .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+        // Too early: the build still has turns in hand, so the seat gets the
+        // chance to earn the points on its own first.
+        if best.is_some_and(|(_, turns)| !Self::age_closer_window(left, turns)) {
+            return false;
+        }
+        if best.is_none() && !Self::age_closer_buys_now(left) {
+            return false;
+        }
         if let Some((city, turns)) = best {
             if g.apply(
                 pid,
@@ -180,6 +218,7 @@ impl AdvancedAi {
         let bought = cities
             .iter()
             .filter(|cid| g.can_produce(pid, **cid, &item) && !g.purchase_is_blocked(**cid, &item))
+            .filter(|cid| !Self::age_closer_spares_the_head(g, **cid))
             .filter_map(|cid| {
                 g.unit_purchase_cost(pid, *cid, unit.as_str(), "gold")
                     .map(|price| (*cid, price))

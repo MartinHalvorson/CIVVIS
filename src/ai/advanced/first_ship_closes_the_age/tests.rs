@@ -46,7 +46,6 @@ fn coastal_board(short: i64) -> (Game, u32) {
     let city = city.expect("fixture: a coastal city site");
     g.players[0].normal_age_threshold = 8;
     g.players[0].era_score = 8 - short;
-    g.world_era_countdown_end = Some(g.turn + 5);
     Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
         city,
         Yields {
@@ -54,6 +53,9 @@ fn coastal_board(short: i64) -> (Game, u32) {
             ..Default::default()
         },
     );
+    // One turn more than the build needs: inside the closers' window.
+    let (_, turns) = AdvancedAi::first_ship_for(&g, 0, city).expect("fixture: a ship to build");
+    g.world_era_countdown_end = Some(g.turn + turns.ceil() as u32 + 1);
     (g, city)
 }
 
