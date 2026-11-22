@@ -1598,7 +1598,7 @@ const setInterval = (fn, ms) => { timers.push([fn.name, ms]); };
 const writes = {words: 0, hundredths: 0, lookups: 0};
 const value = () => {
   const dataset = {};
-  let hundredths = "00", words = "0:00";
+  let hundredths = "00", words = "0";
   Object.defineProperty(dataset, "hundredths", {
     get: () => hundredths, set: next => { hundredths = next; writes.hundredths++; }});
   return {isConnected: true, dataset,
@@ -1613,20 +1613,27 @@ const document = {querySelector: selector => {
 }};
 __BLOCK__
 const expect = (ok, note) => { if (!ok) throw new Error(note); };
-const reads = (ms, text, hundredths) => {
+const reads = (ms, text, hundredths, spoken = text) => {
   liveClock.ms = ms; liveClock.runningSince = null;
   const reading = liveClockReading();
   expect(reading.text === text && reading.hundredths === hundredths,
     `${ms} ms read ${reading.text}.${reading.hundredths}, wanted ${text}.${hundredths}`);
+  expect(reading.spoken === spoken, `${ms} ms is spoken as ${reading.spoken}, wanted ${spoken}`);
 };
-reads(0, "0:00", "00");
-reads(9, "0:00", "00");
-reads(10, "0:00", "01");
-reads(12_345, "0:12", "34");
-reads(59_999, "0:59", "99");
+// Under a minute the reading is seconds and hundredths and nothing else.
+reads(0, "0", "00", "0 seconds");
+reads(9, "0", "00", "0 seconds");
+reads(10, "0", "01", "0 seconds");
+reads(1_000, "1", "00", "1 second");
+reads(9_990, "9", "99", "9 seconds");
+reads(12_345, "12", "34", "12 seconds");
+reads(59_999, "59", "99", "59 seconds");
+// The minutes arrive at 60 seconds, and the hours at 60 minutes.
 reads(60_000, "1:00", "00");
+reads(65_430, "1:05", "43");
 reads(754_560, "12:34", "56");
 reads(3_599_990, "59:59", "99");
+reads(3_600_000, "1:00:00", "00");
 reads(5_025_678, "1:23:45", "67");
 // The hundredths have no timer: the half-second tick is the only one.
 expect(JSON.stringify(timers) === JSON.stringify([["paintLiveClock", 500]]),
@@ -1639,9 +1646,9 @@ expect(writes.lookups === 0 && writes.words === 0 && writes.hundredths === 0, "a
 // the words only when the second turns.
 liveClock.runningSince = now;
 paintLiveClockWithFrame();
-expect(plate.textContent === "0:04" && plate.dataset.hundredths === "00" &&
+expect(plate.textContent === "4" && plate.dataset.hundredths === "00" &&
        writes.words === 1 && writes.hundredths === 0 && writes.lookups === 1, "the first frame");
-for (const [later, text, hundredths] of [[16, "0:04", "01"], [33, "0:04", "03"], [50, "0:04", "05"]]) {
+for (const [later, text, hundredths] of [[16, "4", "01"], [33, "4", "03"], [50, "4", "05"]]) {
   now = 1_000_000 + later;
   paintLiveClockWithFrame();
   expect(plate.textContent === text && plate.dataset.hundredths === hundredths, `the frame at ${later} ms`);
@@ -1655,15 +1662,22 @@ expect(writes.hundredths === 3, "a frame with nothing new posted");
 // The second turns: the words and the fraction come from one reading.
 now = 1_000_000 + 1_004;
 paintLiveClockWithFrame();
-expect(plate.textContent === "0:05" && plate.dataset.hundredths === "00" && writes.words === 2,
+expect(plate.textContent === "5" && plate.dataset.hundredths === "00" && writes.words === 2,
   "the second did not turn with its fraction");
 // The plate was rebuilt: the next frame finds the new value.
 plate.isConnected = false;
 plate = value();
 now = 1_000_000 + 1_250;
 paintLiveClockWithFrame();
-expect(writes.lookups === 2 && plate.textContent === "0:05" && plate.dataset.hundredths === "25",
+expect(writes.lookups === 2 && plate.textContent === "5" && plate.dataset.hundredths === "25",
   "a rebuilt plate was not followed");
+// The minute turns with a frame: the words grow their minutes there.
+liveClock.ms = 59_990; liveClock.runningSince = now;
+paintLiveClockWithFrame();
+expect(plate.textContent === "59" && plate.dataset.hundredths === "99", "the last hundredth under a minute");
+now += 10;
+paintLiveClockWithFrame();
+expect(plate.textContent === "1:00" && plate.dataset.hundredths === "00", "the minute did not arrive at 60 seconds");
 // No plate at all (a hand-played game has no stopwatch) is not an error.
 plate.isConnected = false;
 plate = null;
@@ -1682,6 +1696,10 @@ class LiveTimeCountsHundredthsWithTheFramesAlreadyPainting(unittest.TestCase):
     screen and by the half-second tick the seconds already had. It is an
     attribute the stylesheet prints, because the type fitter answers every
     change of words in the masthead by measuring all of it.
+
+    Operator, later the same day: "live time can just default to second and
+    hundredths of a second. if we need minutes, we can add that in at 60s".
+    The reading is `12.34` until it has a minute to show, then `1:00.00`.
 
     The stopwatch is a script of its own, ahead of the renderer: app.js stood
     three lines under this file's ceiling when the hundredths arrived."""
@@ -1737,8 +1755,9 @@ class LiveTimeCountsHundredthsWithTheFramesAlreadyPainting(unittest.TestCase):
                       self.source)
         self.assertIn('.turn-live b[data-hundredths]::after { content: "." attr(data-hundredths); font-size: .78em; }',
                       self.page)
-        # What a screen reader is told stays in whole seconds.
-        self.assertIn("(liveTimeText ? `live time ${liveTimeText}; ` : ``) +", self.source)
+        # What a screen reader is told stays in whole seconds, with the unit a
+        # bare number under a minute does not carry.
+        self.assertIn("(liveTime ? `live time ${liveTime.spoken}; ` : ``) +", self.source)
 
     def test_the_row_is_fitted_as_one_reading(self):
         self.assertIn('{selector:"#playerhud .turn-live", min:10, max:14},', self.source)
