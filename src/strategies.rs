@@ -641,7 +641,7 @@ pub fn interleaved(counts: &[usize]) -> Vec<(usize, usize)> {
         .flat_map(|(series, count)| (0..*count).map(move |place| (series, place)))
         .collect();
     // By (place + 1/2) / count, compared as cross products to stay exact.
-    order.sort_by(|a, b| {
+    order.sort_by_shared(|a, b| {
         let left = (2 * a.1 + 1) * counts[b.0];
         let right = (2 * b.1 + 1) * counts[a.0];
         left.cmp(&right).then(a.0.cmp(&b.0))

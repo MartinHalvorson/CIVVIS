@@ -41,6 +41,14 @@
 //! run is killed. `--keep-runs K` then drops every table outside the newest K
 //! runs (`strategies::kept_runs`), so the window tracks the genome while the
 //! margin of error shrinks as runs accumulate.
+//!
+//! `--rungs deity,immortal` plays rung tables at those rungs only. A rung
+//! whose rival wins nearly every table (Deity) learns little from each one,
+//! so its margin wants more tables than its neighbours':
+//!
+//! ```text
+//! strategy_elo --run 2026-11-23-15125c4 --rungs deity --add-rung-games 960
+//! ```
 use civvis::ai::{Ai, BasicAi};
 use civvis::game::{Action, Game, GameOptions};
 use civvis::parallel;
@@ -74,6 +82,8 @@ struct Options {
     run: Option<String>,
     /// Runs the window keeps; 0 keeps the whole log.
     keep_runs: usize,
+    /// The rungs this run plays rung tables at; `None` is every rung.
+    rungs: Option<Vec<String>>,
     log: String,
     out: String,
     fit_only: bool,
@@ -167,6 +177,16 @@ fn rung_plan(options: &Options, rung_order: usize, rung: &str, index: usize) -> 
         seats,
         challengers: (0..options.players).filter(|seat| *seat != alone).collect(),
     }
+}
+
+/// Whether this run plays tables at `rung`: never at the pin, which the pool
+/// measures, and only at the rungs `--rungs` names when it is given.
+fn plays(options: &Options, rung: &str) -> bool {
+    rung != PRINCE
+        && options
+            .rungs
+            .as_ref()
+            .is_none_or(|rungs| rungs.iter().any(|named| named == rung))
 }
 
 fn agent_for(options: &Options, key: &str) -> Box<dyn Ai + Send> {
@@ -468,6 +488,11 @@ fn main() {
         add_rung_games: number(&args, "--add-rung-games", 0) as usize,
         run: text(&args, "--run").filter(|label| !label.is_empty()),
         keep_runs: number(&args, "--keep-runs", 0) as usize,
+        rungs: text(&args, "--rungs").map(|list| {
+            list.split(',')
+                .map(|rung| rung.trim().to_string())
+                .collect()
+        }),
         log: text(&args, "--log").unwrap_or_else(|| DEFAULT_LOG.to_string()),
         out: text(&args, "--out").unwrap_or_else(|| DEFAULT_OUT.to_string()),
         fit_only: args.iter().any(|arg| arg == "--fit-only"),
@@ -476,6 +501,13 @@ fn main() {
     if strategies::find(&options.reference).map(|row| row.id) != Some(options.reference.as_str()) {
         eprintln!("--reference wants a roster id, not {:?}", options.reference);
         std::process::exit(2);
+    }
+
+    for rung in options.rungs.iter().flatten() {
+        if rung == PRINCE || !CIV6_RUNGS.iter().any(|(id, _)| id == rung) {
+            eprintln!("--rungs wants rungs other than {PRINCE} by id, not {rung:?}");
+            std::process::exit(2);
+        }
     }
 
     let adding = options.add_games > 0 || options.add_rung_games > 0;
@@ -520,7 +552,7 @@ fn main() {
                     .collect(),
             );
             for (order, (rung, _)) in CIV6_RUNGS.iter().enumerate() {
-                if *rung == PRINCE {
+                if !plays(&options, rung) {
                     continue;
                 }
                 series.push(
@@ -538,7 +570,7 @@ fn main() {
                 .collect(),
         );
         for (order, (rung, _)) in CIV6_RUNGS.iter().enumerate() {
-            if *rung == PRINCE {
+            if !plays(&options, rung) {
                 continue;
             }
             let played = have(RUNG_KIND, rung);
