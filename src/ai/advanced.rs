@@ -7954,6 +7954,11 @@ pub struct AdvancedAi {
     /// Runs the edge unit's window by itself. See
     /// `advanced/edge_unit_takes_the_soft_city.rs`. Off by default.
     edge_unit_rushes_from_the_capital: bool,
+    /// `emptied-camp-is-taken`: a barbarian camp with nothing standing on it
+    /// is walked onto this turn by a soldier that can reach it and live
+    /// there, before the positions plan holds that soldier back. See
+    /// `advanced/emptied_camp_is_taken.rs`. Off by default.
+    emptied_camp_is_taken: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -12497,6 +12502,8 @@ mod early_conquest;
 /// `edge-unit-takes-the-soft-city`: see
 /// `advanced/edge_unit_takes_the_soft_city.rs`.
 mod edge_unit_takes_the_soft_city;
+/// `emptied-camp-is-taken`: see `advanced/emptied_camp_is_taken.rs`.
+mod emptied_camp_is_taken;
 /// Version two of rapid city expansion keeps the measured-positive opening
 /// pace and safety gates without version one's forced queues, sprawl, or war.
 pub(super) mod rapid_city_expansion;

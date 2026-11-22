@@ -1920,6 +1920,11 @@ impl AdvancedAi {
                 field.share(g);
             }
         }
+        // `emptied-camp-is-taken`: a camp the blows emptied, or one that
+        // stood empty, is walked onto before the rotation and the positions
+        // plan claim the soldier that can reach it. Nothing with the gene off.
+        // See `advanced/emptied_camp_is_taken.rs`.
+        self.take_emptied_camps(g, pid, &mut field);
         if self.doomed_blow_veto_2 {
             doomed.retain(|uid| !strikers.contains(uid));
         }
