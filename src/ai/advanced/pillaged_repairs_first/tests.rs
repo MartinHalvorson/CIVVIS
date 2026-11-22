@@ -168,3 +168,51 @@ fn a_repair_the_host_never_starts_gives_the_queue_back() {
         }
     }
 }
+
+/// `stuck-repair-yields-the-queue`: a repair the host is producing reads back
+/// as the pillaged district at its plot (live Kangaba, `DISTRICT_CAMPUS` over
+/// its pillaged Campus). That head is a repair under way, so the claim keeps
+/// asking as it does with the gene off and nothing is withheld; the same holds
+/// for a pillaged building read back as the building.
+#[test]
+fn a_repair_the_host_is_producing_is_never_set_aside() {
+    let (mut game, capital, site) = pillaged_capital();
+    let mut ai = seat(true);
+    ai.enable_stuck_repair_yields_the_queue();
+    let running = Item::District {
+        district: crate::name!("campus"),
+        pos: site,
+    };
+    let repair = Item::Repair {
+        repair: crate::name!("district"),
+        pos: site,
+    };
+    for turn in 0..20 {
+        // The board as the mirror rebuilds it: the host's head, the repair
+        // under way, read as the Campus at its plot.
+        let city = game.cities.get_mut(&capital).unwrap();
+        city.queue.clear();
+        city.queue.push(running.clone());
+        assert!(
+            !ai.stuck_repair_withheld(&game, capital, &repair),
+            "withheld on turn {turn}"
+        );
+        ai.claim_pillaged_repairs(&mut game, 0);
+        assert!(
+            is_district_repair(game.cities[&capital].queue.first(), site),
+            "the claim still asks on turn {turn}"
+        );
+        game.turn += 1;
+    }
+    assert!(ai.stuck_repairs.borrow().is_empty(), "no run was counted");
+
+    let library = Item::Repair {
+        repair: crate::name!("library"),
+        pos: site,
+    };
+    game.cities.get_mut(&capital).unwrap().queue = vec![Item::Building {
+        building: crate::name!("library"),
+    }];
+    assert!(AdvancedAi::host_is_repairing(&game, capital, &library));
+    assert!(!AdvancedAi::host_is_repairing(&game, capital, &repair));
+}
