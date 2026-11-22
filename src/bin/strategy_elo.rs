@@ -6,10 +6,14 @@
 //! - **pool** tables seat the registered agents (`strategies::ROSTER`) against
 //!   each other at Prince, where the rules hand nobody anything. Each round
 //!   deals the whole roster out, so every agent sits equally often;
-//! - **rung** tables seat one agent as the challenger, on the terms a person
-//!   gets at that rung, against the reference agent
-//!   (`strategies::CIV6_REFERENCE`) in every other seat with the rung's shipped
-//!   AI handicap. The rivals are rated as one entrant, `civ6:<rung>`.
+//! - **rung** tables seat the reference agent (`strategies::CIV6_REFERENCE`)
+//!   alone, with the rung's shipped AI handicap, at a table of roster agents
+//!   who each play on the terms a person gets at that rung. It is rated as the
+//!   entrant `civ6:<rung>`. That is the table Prince itself is measured at: the
+//!   reference agent with nothing added, one seat among agents. The log calls
+//!   these `lone`; its older `rung` lines are the retired shape, one
+//!   challenger against the rung in every other seat, which the fit no longer
+//!   reads (`docs/ELO.md` has the comparison that retired it).
 //!
 //! Every finished table is appended to the game log, so a run that is killed
 //! resumes where it stopped and a later run only adds games. The ratings are
@@ -37,10 +41,17 @@
 //! run is killed. `--keep-runs K` then drops every table outside the newest K
 //! runs (`strategies::kept_runs`), so the window tracks the genome while the
 //! margin of error shrinks as runs accumulate.
+//!
+//! `--rungs deity,immortal` plays rung tables at those rungs only. A rung
+//! whose rival wins nearly every table (Deity) learns little from each one,
+//! so its margin wants more tables than its neighbours':
+//!
+//! ```text
+//! strategy_elo --run 2026-11-23-15125c4 --rungs deity --add-rung-games 960
+//! ```
 use civvis::ai::{Ai, BasicAi};
 use civvis::game::{Action, Game, GameOptions};
 use civvis::parallel;
-use civvis::rng::Rng;
 use civvis::setup::MapSize;
 use civvis::strategies::{
     self, Table, CIV6_REFERENCE, CIV6_RUNGS, MARGIN_Z, PRINCE, PRINCE_ELO, ROSTER,
@@ -71,6 +82,8 @@ struct Options {
     run: Option<String>,
     /// Runs the window keeps; 0 keeps the whole log.
     keep_runs: usize,
+    /// The rungs this run plays rung tables at; `None` is every rung.
+    rungs: Option<Vec<String>>,
     log: String,
     out: String,
     fit_only: bool,
@@ -105,24 +118,27 @@ struct Plan {
     seed: u64,
     /// The ledger key in each major seat.
     seats: Vec<String>,
-    /// The seat that plays on the human's terms, on a rung table.
-    challenger: Option<usize>,
+    /// The seats that play on the human's terms: every seat but the rung's
+    /// own on a rung table, none at the pool.
+    challengers: Vec<usize>,
 }
 
-/// The `index`th pool table. A round is one shuffle of the roster dealt into
-/// tables; a last table that comes up short is filled from the top of the
-/// same shuffle, so no table ever holds one agent twice.
+/// What a rung table is logged as: the rung's rival alone among agents.
+const RUNG_KIND: &str = "lone";
+/// The retired shape's lines, still in logs written before 2026-11-22: one
+/// challenger against the rung in every other seat. Not fitted, and not
+/// counted when a series looks for where its indices end.
+const RETIRED_RUNG_KIND: &str = "rung";
+/// What keeps a rung's deals and world seeds clear of the retired series at
+/// the same rung. Far past any index a series reaches.
+const LONE_SERIES: u64 = 500_000;
+
+/// The `index`th pool table: a hand of the roster (`strategies::dealt`), so
+/// every agent sits equally often and no table holds one agent twice.
 fn pool_plan(options: &Options, index: usize) -> Plan {
-    let per_round = ROSTER.len().div_ceil(options.players);
-    let round = index / per_round;
-    let mut order: Vec<usize> = (0..ROSTER.len()).collect();
-    let mut rng = Rng::new(options.seed ^ (round as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
-    for last in (1..order.len()).rev() {
-        order.swap(last, rng.below(last + 1));
-    }
-    let start = (index % per_round) * options.players;
-    let seats = (0..options.players)
-        .map(|seat| ROSTER[order[(start + seat) % order.len()]].id.to_string())
+    let seats = strategies::dealt(options.seed, index, options.players)
+        .into_iter()
+        .map(str::to_string)
         .collect();
     Plan {
         kind: "pool",
@@ -130,35 +146,47 @@ fn pool_plan(options: &Options, index: usize) -> Plan {
         index,
         seed: options.seed.wrapping_add(index as u64),
         seats,
-        challenger: None,
+        challengers: Vec::new(),
     }
 }
 
-/// The `index`th table at `rung`: the roster takes turns as the challenger,
-/// and the challenger's seat moves round the table.
+/// The `index`th table at `rung`: the rung's rival sits alone, its seat
+/// moving round the table, and a hand of the roster takes every other seat on
+/// the human's terms.
 fn rung_plan(options: &Options, rung_order: usize, rung: &str, index: usize) -> Plan {
-    let challenger = index % options.players;
-    let agent = ROSTER[(index + rung_order) % ROSTER.len()].id;
+    let alone = index % options.players;
+    let series = options
+        .seed
+        .wrapping_add(1_000_000 * (rung_order as u64 + 1))
+        .wrapping_add(LONE_SERIES);
+    let mut hand = strategies::dealt(series, index, options.players - 1).into_iter();
     let seats = (0..options.players)
         .map(|seat| {
-            if seat == challenger {
-                agent.to_string()
-            } else {
+            if seat == alone {
                 strategies::rung_key(rung)
+            } else {
+                hand.next().expect("a hand fills the table").to_string()
             }
         })
         .collect();
     Plan {
-        kind: "rung",
+        kind: RUNG_KIND,
         rung: rung.to_string(),
         index,
-        seed: options
-            .seed
-            .wrapping_add(1_000_000 * (rung_order as u64 + 1))
-            .wrapping_add(index as u64),
+        seed: series.wrapping_add(index as u64),
         seats,
-        challenger: Some(challenger),
+        challengers: (0..options.players).filter(|seat| *seat != alone).collect(),
     }
+}
+
+/// Whether this run plays tables at `rung`: never at the pin, which the pool
+/// measures, and only at the rungs `--rungs` names when it is given.
+fn plays(options: &Options, rung: &str) -> bool {
+    rung != PRINCE
+        && options
+            .rungs
+            .as_ref()
+            .is_none_or(|rungs| rungs.iter().any(|named| named == rung))
 }
 
 fn agent_for(options: &Options, key: &str) -> Box<dyn Ai + Send> {
@@ -184,9 +212,7 @@ fn play(options: &Options, plan: &Plan) -> Value {
     );
     setup.speed = SPEED.to_string();
     setup.difficulty = plan.rung.clone();
-    if let Some(seat) = plan.challenger {
-        setup.human_seats.insert(seat);
-    }
+    setup.human_seats.extend(plan.challengers.iter().copied());
     let mut game = Game::new_with(setup);
     let majors: Vec<usize> = game
         .players
@@ -253,7 +279,7 @@ fn play(options: &Options, plan: &Plan) -> Value {
         "turns": options.turns,
         "reference": options.reference,
         "seats": plan.seats,
-        "challenger": plan.challenger,
+        "challengers": plan.challengers,
         "winner": winner,
         "victory": victory,
         "end_turn": game.turn,
@@ -263,8 +289,9 @@ fn play(options: &Options, plan: &Plan) -> Value {
 
 /// Log lines this run's settings can be rated with. A table played at another
 /// size or length is a different instrument, and so is a rung table whose
-/// rivals were another reference agent. A pool table never seats the
-/// reference as such, so it survives a change of reference.
+/// rival was another reference agent, or one of the retired shape. A pool
+/// table never seats the reference as such, so it survives a change of
+/// reference.
 fn read_log(options: &Options) -> Vec<Value> {
     let Ok(body) = std::fs::read_to_string(&options.log) else {
         return Vec::new();
@@ -274,6 +301,7 @@ fn read_log(options: &Options) -> Vec<Value> {
         .filter(|line| {
             line["players"].as_u64() == Some(options.players as u64)
                 && line["turns"].as_u64() == Some(options.turns as u64)
+                && line["kind"] != RETIRED_RUNG_KIND
                 && (line["kind"] == "pool"
                     || line["reference"].as_str() == Some(options.reference.as_str()))
         })
@@ -460,6 +488,11 @@ fn main() {
         add_rung_games: number(&args, "--add-rung-games", 0) as usize,
         run: text(&args, "--run").filter(|label| !label.is_empty()),
         keep_runs: number(&args, "--keep-runs", 0) as usize,
+        rungs: text(&args, "--rungs").map(|list| {
+            list.split(',')
+                .map(|rung| rung.trim().to_string())
+                .collect()
+        }),
         log: text(&args, "--log").unwrap_or_else(|| DEFAULT_LOG.to_string()),
         out: text(&args, "--out").unwrap_or_else(|| DEFAULT_OUT.to_string()),
         fit_only: args.iter().any(|arg| arg == "--fit-only"),
@@ -468,6 +501,13 @@ fn main() {
     if strategies::find(&options.reference).map(|row| row.id) != Some(options.reference.as_str()) {
         eprintln!("--reference wants a roster id, not {:?}", options.reference);
         std::process::exit(2);
+    }
+
+    for rung in options.rungs.iter().flatten() {
+        if rung == PRINCE || !CIV6_RUNGS.iter().any(|(id, _)| id == rung) {
+            eprintln!("--rungs wants rungs other than {PRINCE} by id, not {rung:?}");
+            std::process::exit(2);
+        }
     }
 
     let adding = options.add_games > 0 || options.add_rung_games > 0;
@@ -489,7 +529,8 @@ fn main() {
                 .filter_map(|line| line["index"].as_u64())
                 .collect()
         };
-        let mut plans = Vec::new();
+        // What each series (the pool, each rung) has to play.
+        let mut series: Vec<Vec<Plan>> = Vec::new();
         // A labelled run: each series adds its count after its newest index.
         let added = |kind: &str, rung: &str, count: usize| {
             let run = options.run.as_deref();
@@ -505,35 +546,50 @@ fn main() {
             )
         };
         if adding {
-            for index in added("pool", PRINCE, options.add_games) {
-                plans.push(pool_plan(&options, index));
-            }
+            series.push(
+                added("pool", PRINCE, options.add_games)
+                    .map(|index| pool_plan(&options, index))
+                    .collect(),
+            );
             for (order, (rung, _)) in CIV6_RUNGS.iter().enumerate() {
-                if *rung == PRINCE {
+                if !plays(&options, rung) {
                     continue;
                 }
-                for index in added("rung", rung, options.add_rung_games) {
-                    plans.push(rung_plan(&options, order, rung, index));
-                }
+                series.push(
+                    added(RUNG_KIND, rung, options.add_rung_games)
+                        .map(|index| rung_plan(&options, order, rung, index))
+                        .collect(),
+                );
             }
         }
         let played = have("pool", PRINCE);
-        for index in (0..options.games).filter(|index| !played.contains(&(*index as u64))) {
-            plans.push(pool_plan(&options, index));
-        }
+        series.push(
+            (0..options.games)
+                .filter(|index| !played.contains(&(*index as u64)))
+                .map(|index| pool_plan(&options, index))
+                .collect(),
+        );
         for (order, (rung, _)) in CIV6_RUNGS.iter().enumerate() {
-            if *rung == PRINCE {
+            if !plays(&options, rung) {
                 continue;
             }
-            let played = have("rung", rung);
-            for index in (0..options.rung_games).filter(|index| !played.contains(&(*index as u64)))
-            {
-                plans.push(rung_plan(&options, order, rung, index));
-            }
+            let played = have(RUNG_KIND, rung);
+            series.push(
+                (0..options.rung_games)
+                    .filter(|index| !played.contains(&(*index as u64)))
+                    .map(|index| rung_plan(&options, order, rung, index))
+                    .collect(),
+            );
         }
-        // Rungs and pool interleave, so a run that is cut short has measured
-        // a little of everything instead of all of one thing.
-        plans.sort_by_key(|plan| plan.index);
+        // Every series advances through its own share together, so a run that
+        // is cut short has measured a little of everything instead of all of
+        // one thing. A table's index cannot order them: each series counts on
+        // from wherever its own log ends.
+        let counts: Vec<usize> = series.iter().map(Vec::len).collect();
+        let plans: Vec<Plan> = strategies::interleaved(&counts)
+            .into_iter()
+            .map(|(series_at, place)| series[series_at][place].clone())
+            .collect();
         println!(
             "{} tables to play ({} already logged), {} jobs",
             plans.len(),

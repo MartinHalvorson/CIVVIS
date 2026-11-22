@@ -11,8 +11,8 @@
 //! is pinned to Civilization VI's own ladder: Prince, the rung where neither
 //! side is handed anything, is [`PRINCE_ELO`], and every other rung is rated
 //! by seating the [`CIV6_REFERENCE`] agent with that rung's shipped handicap
-//! against a challenger playing on the human's terms. `docs/ELO.md` says what
-//! that does and does not prove.
+//! alone at a table of agents playing on the human's terms. `docs/ELO.md`
+//! says what that does and does not prove.
 use crate::ai::{AdvancedAi, Ai, BasicAi, VictoryTarget};
 use crate::shared_sort::SharedSort;
 use serde::Deserialize;
@@ -47,6 +47,25 @@ pub const CIV6_REFERENCE: &str = "stock";
 
 /// Fewer rated tables than this and a rating is shown as provisional.
 pub const PROVISIONAL_TABLES: u32 = 30;
+
+/// The `index`th hand of `seats` roster agents, by id. A round is one shuffle
+/// of the whole roster dealt into hands, so every agent sits equally often; a
+/// last hand that comes up short is filled from the top of the same shuffle,
+/// so no hand ever holds one agent twice. `seed` names the series.
+pub fn dealt(seed: u64, index: usize, seats: usize) -> Vec<&'static str> {
+    let seats = seats.clamp(1, ROSTER.len());
+    let per_round = ROSTER.len().div_ceil(seats);
+    let round = index / per_round;
+    let mut order: Vec<usize> = (0..ROSTER.len()).collect();
+    let mut rng = crate::rng::Rng::new(seed ^ (round as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    for last in (1..order.len()).rev() {
+        order.swap(last, rng.below(last + 1));
+    }
+    let start = (index % per_round) * seats;
+    (0..seats)
+        .map(|seat| ROSTER[order[(start + seat) % order.len()]].id)
+        .collect()
+}
 
 /// The controller a strategy is built on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -610,6 +629,26 @@ pub fn added_indices(
     next..next + count.saturating_sub(mine)
 }
 
+/// The order a run plays its tables in, as (series, place in that series).
+/// `counts` is how many tables each series (the pool, each rung) has to play.
+/// Every series advances through its own share of the run together, so a run
+/// that is cut short has measured a little of everything, however many
+/// tables each series has and wherever its indices start.
+pub fn interleaved(counts: &[usize]) -> Vec<(usize, usize)> {
+    let mut order: Vec<(usize, usize)> = counts
+        .iter()
+        .enumerate()
+        .flat_map(|(series, count)| (0..*count).map(move |place| (series, place)))
+        .collect();
+    // By (place + 1/2) / count, compared as cross products to stay exact.
+    order.sort_by_shared(|a, b| {
+        let left = (2 * a.1 + 1) * counts[b.0];
+        let right = (2 * b.1 + 1) * counts[a.0];
+        left.cmp(&right).then(a.0.cmp(&b.0))
+    });
+    order
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -627,6 +666,24 @@ mod tests {
         );
         assert_eq!(kept(9).len(), 4);
         assert!(kept(3).contains("a") && !kept(3).contains(""));
+    }
+
+    #[test]
+    fn a_run_cut_short_has_played_some_of_every_series() {
+        // A pool of eight tables, two rungs of two, and a rung with none.
+        let counts = [8, 2, 0, 2];
+        let order = interleaved(&counts);
+        assert_eq!(order.len(), 12);
+        for (series, count) in counts.iter().enumerate() {
+            let places: Vec<usize> = order
+                .iter()
+                .filter(|(at, _)| *at == series)
+                .map(|(_, place)| *place)
+                .collect();
+            assert_eq!(places, (0..*count).collect::<Vec<_>>());
+        }
+        let played = |series: usize| order[..6].iter().filter(|(at, _)| *at == series).count();
+        assert_eq!((played(0), played(1), played(3)), (4, 1, 1), "{order:?}");
     }
 
     #[test]
@@ -847,6 +904,61 @@ mod tests {
         assert!((ladder[0] - 1000.0).abs() < 1e-6 && (ladder[1] - 1000.0).abs() < 1e-6);
         assert_eq!(ladder[3], 1200.0);
         assert!((ladder[4] - 1450.0).abs() < 1e-6 && (ladder[5] - 1450.0).abs() < 1e-6);
+    }
+
+    /// The fit is neutral about a table's shape. A rival four times as
+    /// strong as its challengers loses 1 table in 13 when three of it face
+    /// one challenger, and wins 4 in 7 alone against three; the fit reads the
+    /// same distance out of either, and out of both together. So when real
+    /// tables of the two shapes rate a rung differently (`docs/ELO.md`), the
+    /// games differ, not the arithmetic.
+    #[test]
+    fn the_fit_reads_one_distance_from_either_shape_of_table() {
+        let crowded: Vec<Table> = (0..260)
+            .map(|game| Table {
+                seats: vec![0, 1, 1, 1],
+                winner: if game % 13 == 0 { 0 } else { 1 + game % 3 },
+            })
+            .collect();
+        let alone: Vec<Table> = (0..210)
+            .map(|game| Table {
+                seats: vec![1, 0, 0, 0],
+                winner: if game % 7 < 4 { 0 } else { 1 + game % 3 },
+            })
+            .collect();
+        let both: Vec<Table> = crowded.iter().chain(&alone).cloned().collect();
+        let truth = 400.0 * 4.0_f64.log10();
+        for tables in [&crowded, &alone, &both] {
+            let elo = fit(2, tables);
+            assert!((elo[1] - elo[0] - truth).abs() < 12.0, "{elo:?}");
+        }
+        // Per table, the even one says more: the same games give the lone
+        // shape the tighter rating.
+        let spread = |tables: &[Table]| bootstrap_sd(2, &tables[..200], 0, 60, 11)[1];
+        assert!(spread(&alone) < spread(&crowded));
+    }
+
+    #[test]
+    fn a_round_of_hands_seats_every_agent_and_none_twice_at_a_table() {
+        for seats in [3, 4] {
+            let per_round = ROSTER.len().div_ceil(seats);
+            for round in 0..6 {
+                let mut sat: BTreeMap<&str, usize> = BTreeMap::new();
+                for hand in 0..per_round {
+                    let dealt = dealt(77, round * per_round + hand, seats);
+                    assert_eq!(dealt.len(), seats);
+                    let distinct: BTreeSet<&str> = dealt.iter().copied().collect();
+                    assert_eq!(distinct.len(), seats, "{dealt:?}");
+                    for id in dealt {
+                        *sat.entry(id).or_default() += 1;
+                    }
+                }
+                assert_eq!(sat.len(), ROSTER.len(), "every agent sits each round");
+                assert!(sat.values().all(|count| (1..=2).contains(count)), "{sat:?}");
+            }
+        }
+        assert_ne!(dealt(77, 0, 4), dealt(77, ROSTER.len(), 4), "rounds differ");
+        assert_ne!(dealt(77, 0, 3), dealt(78, 0, 3), "series differ");
     }
 
     #[test]
