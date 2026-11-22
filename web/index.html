@@ -2647,16 +2647,125 @@
   .reign-stat b { color: #f3e5bd; font: 700 19px/1.1 Georgia, serif; font-variant-numeric: tabular-nums; }
   .reign-stat small { color: var(--muted); font: 700 10px/1.25 var(--font-ui); letter-spacing: .04em; text-align: center; }
   /* The game in figures (gameStatsMarkup, app_moments.js). A result card
-     holding the graphs widens to fit them and scrolls inside the map area. */
+     holding the graphs is the end screen: it takes the map area, its verdict
+     folds into one band across the top, and the charts share everything
+     under the band in a fixed arrangement, so nothing scrolls. */
   #winner:has(.game-stats) {
-    top: 50%; width: min(1100px, calc(100% - 2 * var(--workspace-inline-inset)));
-    max-height: calc(100% - 24px); overflow-y: auto;
+    top: 50%; width: min(1680px, calc(100% - 2 * var(--workspace-inline-inset)));
+    height: min(1180px, calc(100% - 24px)); padding: 14px 18px 16px; overflow: hidden;
+    container: winner-stats / inline-size;
+  }
+  /* Up to three civilizations sit in one row, which needs no more height
+     than this to read. */
+  #winner:has(.game-stats-one-row) { height: min(600px, calc(100% - 24px)); }
+  /* The band. Each part of the verdict is a child of the card's content and
+     gets a named place: what happened and when on the left, the count beside
+     the answers on the right. A watched game has the count and two or three
+     answers; a played one has its reign and four. */
+  #winner:has(.game-stats) .winner-content {
+    display: grid; height: 100%; align-items: center; column-gap: 14px; text-align: left;
+    grid-template-columns: auto auto auto minmax(0, 1fr) auto auto;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-areas:
+      "kicker  mark    title   verdict reign   reign"
+      "turn    player  player  player  reign   reign"
+      "actions actions actions actions actions choice"
+      "stats   stats   stats   stats   stats   stats";
+  }
+  #winner:has(.game-stats) .winner-content:has(> .winner-actions-sim) {
+    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-areas:
+      "kicker mark   title  verdict count actions"
+      "turn   player player player  count choice"
+      "stats  stats  stats  stats   stats stats";
+  }
+  #winner:has(.game-stats) .winner-content > :not(.game-stats) { min-width: 0; margin: 0; }
+  #winner:has(.game-stats) .winner-kicker { grid-area: kicker; align-self: baseline; }
+  #winner:has(.game-stats) .winner-mark { grid-area: mark; align-self: baseline; font-size: 18px; }
+  #winner:has(.game-stats) .winner-title { grid-area: title; align-self: baseline; font-size: 27px; }
+  #winner:has(.game-stats) .winner-verdict { grid-area: verdict; align-self: baseline; font-size: 16px; }
+  #winner:has(.game-stats) .winner-meta { grid-area: turn; }
+  #winner:has(.game-stats) .winner-meta.winner-player { grid-area: player; }
+  /* The count is set smaller in the band, and the line keeps the height of
+     that smaller count when it says Game paused. */
+  #winner:has(.game-stats) .winner-countdown {
+    grid-area: count; min-width: 128px; text-align: center; line-height: 1.3; --winner-count-size: 26px;
+  }
+  #winner:has(.game-stats) .reign {
+    grid-area: reign; width: auto; gap: 16px; padding: 0; border: 0;
+  }
+  #winner:has(.game-stats) .reign-stat b { font-size: 17px; }
+  #winner:has(.game-stats) .winner-content > .winner-actions {
+    grid-area: actions; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 10px;
+  }
+  #winner:has(.game-stats) .winner-content:not(:has(> .winner-countdown-choice)) > .winner-actions {
+    grid-column: 1 / -1;
+  }
+  #winner:has(.game-stats) .winner-actions .primary { grid-column: auto; justify-self: stretch; }
+  #winner:has(.game-stats) .winner-actions .winner-again { padding: 8px 14px; }
+  #winner:has(.game-stats) .winner-content > .winner-actions.winner-actions-sim {
+    grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: max-content;
+    justify-self: end; margin-top: 0;
+  }
+  /* Pause here keeps the width of its longer reading while it says Resume,
+     so the row does not re-divide under the pointer. */
+  #winner:has(.game-stats) #finale-pause { min-width: 110px; }
+  #winner:has(.game-stats) .winner-content > .winner-countdown-choice {
+    grid-area: choice; justify-self: end; margin-top: 4px;
+  }
+  #winner:has(.game-stats) .winner-content:not(:has(> .winner-actions-sim)) > .winner-countdown-choice {
+    align-self: center; margin-top: 10px;
+  }
+  /* A card too narrow for the band on one line gives the answers their own
+     row, and a narrower one still stacks the verdict. */
+  @container winner-stats (max-width: 940px) {
+    #winner .winner-content:has(> .game-stats),
+    #winner .winner-content:has(> .game-stats):has(> .winner-actions-sim) {
+      grid-template-columns: auto auto auto minmax(0, 1fr) auto;
+      grid-template-rows: auto auto auto auto minmax(0, 1fr);
+      grid-template-areas:
+        "kicker  mark    title   verdict count"
+        "turn    player  player  player  count"
+        "reign   reign   reign   reign   reign"
+        "actions actions actions actions choice"
+        "stats   stats   stats   stats   stats";
+    }
+    #winner .winner-content:has(> .game-stats) > .reign { margin-top: 8px; }
+    #winner .winner-content:has(> .game-stats) > .winner-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #winner .winner-content:has(> .game-stats) > .winner-actions.winner-actions-sim {
+      grid-template-columns: none; justify-self: start; margin-top: 8px;
+    }
+    #winner .winner-content:has(> .game-stats) > .winner-countdown-choice { align-self: center; margin-top: 8px; }
+  }
+  @container winner-stats (max-width: 600px) {
+    #winner .winner-content:has(> .game-stats),
+    #winner .winner-content:has(> .game-stats):has(> .winner-actions-sim) {
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-rows: repeat(7, auto) minmax(0, 1fr);
+      grid-template-areas:
+        "kicker  turn"
+        "title   title"
+        "verdict verdict"
+        "player  player"
+        "reign   reign"
+        "count   choice"
+        "actions actions"
+        "stats   stats";
+    }
+    #winner .winner-content:has(> .game-stats) > .winner-mark { display: none; }
+    #winner .winner-content:has(> .game-stats) > .winner-title { font-size: 22px; }
+    #winner .winner-content:has(> .game-stats) > .winner-countdown { justify-self: start; text-align: left; }
+    #winner .winner-content:has(> .game-stats) > .winner-actions.winner-actions-sim {
+      grid-auto-columns: minmax(0, 1fr); justify-self: stretch;
+    }
+    #winner:has(.game-stats) #finale-pause { min-width: 0; }
   }
   .winner-content > .game-stats {
-    position: relative; margin-top: 18px; padding-top: 14px; border-top: 1px solid #d7b66a33;
+    grid-area: stats; align-self: stretch; position: relative; display: flex; flex-direction: column;
+    min-height: 0; margin-top: 10px; padding-top: 8px; border-top: 1px solid #d7b66a33;
     text-align: left; font: 600 12px/1.35 var(--font-ui);
   }
-  .game-stats-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 10px; color: #cbd3ce; }
+  .game-stats-head { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-bottom: 8px; color: #cbd3ce; }
   .game-stats-title { margin-right: auto; color: var(--gold-bright); font: 600 18px/1.2 Georgia, serif; }
   .game-stats-title small { color: var(--muted); font: 700 10px/1 var(--font-ui); letter-spacing: .08em; text-transform: uppercase; }
   .game-stats-key { display: flex; flex-wrap: wrap; gap: 4px 12px; font-weight: 700; }
@@ -2664,20 +2773,45 @@
   .game-stats i.gs-strip { height: 9px; background: color-mix(in srgb, var(--c) 35%, transparent); border-top: 2px solid var(--c); border-radius: 0; }
   .game-stats-log { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
   .game-stats-log input { width: auto; margin: 0; }
-  .game-stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
-  .game-stats-civ {
-    min-width: 0; margin: 0; padding: 7px 8px 3px; background: #050a08a8;
-    border: 1px solid #ffffff14; border-top: 3px solid var(--civ); border-radius: 10px;
+  /* The arrangement is settled in gameStatsLayout: every cell the same size,
+     and together they take whatever the card has left. */
+  .game-stats-grid {
+    flex: 1; min-height: 0; display: grid; gap: 10px;
+    grid-template-columns: repeat(var(--gs-cols, 3), minmax(0, 1fr));
+    grid-template-rows: repeat(var(--gs-rows, 2), minmax(0, 1fr));
   }
-  .game-stats-civ figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; color: #f3e5bd; font-weight: 800; }
-  .game-stats-civ figcaption small { width: 100%; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
-  .gs-won { color: var(--gold-bright); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
-  .game-stats-chart { display: block; width: 100%; height: auto; overflow: visible; }
-  .game-stats-chart text { fill: #9aa49f; font: 600 9px var(--font-ui); font-variant-numeric: tabular-nums; }
+  .game-stats-civ {
+    display: flex; flex-direction: column; min-width: 0; min-height: 0; margin: 0; padding: 6px 8px 4px;
+    background: #050a08a8; border: 1px solid #ffffff14; border-top: 3px solid var(--civ); border-radius: 10px;
+  }
+  .game-stats-civ figcaption {
+    flex: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px;
+    color: #f3e5bd; font-size: 13px; font-weight: 800;
+  }
+  /* One line of figures. One that does not fit wraps under it, out of sight,
+     and takes its dot along, so a narrow chart loses whole figures from the
+     end and never half a word. */
+  .game-stats-civ figcaption small {
+    display: flex; flex-wrap: wrap; column-gap: 5px; width: 100%; height: 1.35em; overflow: hidden;
+    color: var(--muted); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .game-stats-civ figcaption small span + span::before { content: "\00b7"; margin-right: 5px; }
+  .gs-by { color: #cbd3ce; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .gs-won, .gs-out { margin-left: auto; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+  .gs-won { color: var(--gold-bright); }
+  .gs-out { color: var(--muted); }
+  /* The chart is drawn for the pixels of this box and laid over it, so the
+     drawing never sets the size it was measured from. */
+  .game-stats-plot { flex: 1; position: relative; min-height: 0; overflow: hidden; }
+  .game-stats-chart { position: absolute; inset: 0; display: block; }
+  .game-stats-chart text { fill: #9aa49f; font-family: var(--font-ui); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .game-stats-chart .gs-last { font-weight: 800; }
   .game-stats-chart .gs-grid { stroke: #ffffff17; stroke-width: 1; }
-  .game-stats-chart .gs-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-  .game-stats-chart .gs-cities { fill: #cbd3ce30; stroke: #cbd3ce; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-  .game-stats-chart .gs-cursor { stroke: #f3e5bdaa; stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .game-stats-chart .gs-turn { stroke: #ffffff0d; }
+  .game-stats-chart .gs-zero { stroke: #ffffff4d; }
+  .game-stats-chart .gs-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .game-stats-chart .gs-cities { fill: #cbd3ce30; stroke: #cbd3ce; stroke-width: 1.5; }
+  .game-stats-chart .gs-cursor { stroke: #f3e5bdaa; stroke-width: 1; }
   .game-stats-tip {
     position: absolute; z-index: 2; min-width: 150px; padding: 7px 9px; pointer-events: none;
     color: #e6ebe8; background: #050807f2; border: 1px solid #d7b66a55; border-radius: 8px; box-shadow: 0 6px 20px #000a;
