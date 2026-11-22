@@ -101,4 +101,35 @@ A record run is: `--quiesce`, mains power, a clean build of a commit on
 
 ## The record
 
-<!-- record -->
+**18 games per minute on an M5 Max** (MacBook Pro, 18 cores, 128 GB, mains
+power), build `a57ffc68c6`, the build the self-play tournament was playing.
+Two runs on 2026-11-22, both `--quiesce --minutes 3`, 18 workers:
+
+| Taken (UTC) | Games per minute | Measured minutes | Best minute | First minute | Turns a second | Cores the workers had |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| 05:32 | 18.33 | 17, 18, 20 | 20 | 8 | 59.5 | about 14.7 (sampled) |
+| 05:37 | 18.00 | 17, 18, 19 | 19 | 6 | 58.3 | 14.18 |
+
+What the two runs say:
+
+- **It repeats.** The 60 games finished in both runs ended on the same turn
+  with the same victory in each. Run 2 played each game a median 3.8 % slower
+  (it started at load 21.8, run 1 at 16.1), which moved the headline by 0.33.
+  Treat a difference under about half a game a minute as noise until more
+  runs say otherwise.
+- **A worker finishes about one game a minute.** The games averaged 194 turns
+  and a game took a median 62 to 64 s on its worker.
+- **The workers had 14.2 of the 18 cores.** The rest went to what stays up
+  around a live game: the mirror page in Chrome, the held Civilization VI
+  window, WindowServer and many small processes. A machine with nothing else
+  open would score higher; this is the figure for this host as it runs.
+- **Eighteen games at once run slower than one alone.** Alone on this machine
+  the same build played a 180-turn game in 37 s, 4.9 turns a second (one seed,
+  measured earlier the same day). Here a worker made a median 3.2 turns a
+  second, about two thirds of that. Having 14.2 cores for 18 workers accounts
+  for most of the gap (0.79 x 4.9 = 3.9). The remaining sixth is not
+  attributed yet; a `--workers 6` run would show whether it is the twelve
+  cores of the slower class.
+- The cold first minute finished 6 to 8 games, a third of the steady rate.
+- Each run held the live game for about four minutes, and the game played on
+  afterwards (held at turn 154 the first time and at turn 169 the second).

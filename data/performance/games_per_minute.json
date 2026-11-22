@@ -1,0 +1,144 @@
+{
+ "about": "Games per minute: self-play games finished per minute with one worker per core, by `tools/games_per_minute.py --record`. The test is `docs/GAMES_PER_MINUTE.md`. Newest run last.",
+ "runs": [
+  {
+   "first_minute": 8,
+   "minutes": [
+    17,
+    18,
+    20
+   ],
+   "games_per_minute": 18.33,
+   "best_minute": 20,
+   "games": 55,
+   "turns_per_second": 59.5,
+   "mean_turns": 194.7,
+   "median_game_seconds": 62.1,
+   "games_per_minute_per_worker": 1.019,
+   "taken": "2026-11-22T05:32:38Z",
+   "workers": 18,
+   "machine": {
+    "chip": "Apple M5 Max",
+    "cores": 18,
+    "core_levels": [
+     6,
+     12
+    ],
+    "memory_gb": 128,
+    "os": "Darwin 27.0.0",
+    "power": "mains"
+   },
+   "build": {
+    "commit": "a57ffc68c6d845b0967382a3d6e1af12c11ac4be",
+    "dirty": false,
+    "binary_sha256": "2638b35dfeb8df290bf63978059357d718a93e67d55e797acc15a35607928953"
+   },
+   "setup": {
+    "players": 6,
+    "width": 74,
+    "height": 46,
+    "map": "continents",
+    "speed": "online",
+    "turns": 250,
+    "city_states": 9
+   },
+   "game_args": [],
+   "seed_base": 20261122000000,
+   "conditions": {
+    "quiesced": true,
+    "load_before": 16.1,
+    "workers_cpu_cores": null,
+    "others_cpu_cores": 2.4,
+    "top_others": [
+     [
+      "Google Chrome Helper (Aperitif Renderer)",
+      0.7
+     ],
+     [
+      "Google Chrome Helper (Aperitif)",
+      0.5
+     ],
+     [
+      "Civ6_Exe_Child",
+      0.4
+     ],
+     [
+      "WindowServer",
+      0.3
+     ]
+    ],
+    "workers_cpu_cores_sampled": 14.7,
+    "cpu_speed_limit": null
+   }
+  },
+  {
+   "first_minute": 6,
+   "minutes": [
+    17,
+    18,
+    19
+   ],
+   "games_per_minute": 18.0,
+   "best_minute": 19,
+   "games": 54,
+   "turns_per_second": 58.3,
+   "mean_turns": 194.3,
+   "median_game_seconds": 64.4,
+   "games_per_minute_per_worker": 1.0,
+   "taken": "2026-11-22T05:37:52Z",
+   "workers": 18,
+   "machine": {
+    "chip": "Apple M5 Max",
+    "cores": 18,
+    "core_levels": [
+     6,
+     12
+    ],
+    "memory_gb": 128,
+    "os": "Darwin 27.0.0",
+    "power": "mains"
+   },
+   "build": {
+    "commit": "a57ffc68c6d845b0967382a3d6e1af12c11ac4be",
+    "dirty": false,
+    "binary_sha256": "2638b35dfeb8df290bf63978059357d718a93e67d55e797acc15a35607928953"
+   },
+   "setup": {
+    "players": 6,
+    "width": 74,
+    "height": 46,
+    "map": "continents",
+    "speed": "online",
+    "turns": 250,
+    "city_states": 9
+   },
+   "game_args": [],
+   "seed_base": 20261122000000,
+   "conditions": {
+    "quiesced": true,
+    "load_before": 21.8,
+    "workers_cpu_cores": 14.18,
+    "cpu_speed_limit": null,
+    "others_cpu_cores": 2.6,
+    "top_others": [
+     [
+      "Google Chrome Helper (Aperitif Renderer)",
+      0.7
+     ],
+     [
+      "Google Chrome Helper (Aperitif)",
+      0.6
+     ],
+     [
+      "Civ6_Exe_Child",
+      0.5
+     ],
+     [
+      "WindowServer",
+      0.3
+     ]
+    ]
+   }
+  }
+ ]
+}

@@ -60,6 +60,7 @@ import argparse
 import json
 import os
 import platform
+import resource
 import signal
 import subprocess
 import sys
@@ -209,17 +210,28 @@ def processes() -> list[dict[str, Any]]:
     return rows
 
 
+def children_cpu_seconds() -> float:
+    """CPU time of every child this process has waited for."""
+    usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return usage.ru_utime + usage.ru_stime
+
+
+def speed_limit() -> int | None:
+    """macOS's thermal cap on CPU speed, in percent; None when it reports none."""
+    for line in run("pmset", "-g", "therm").splitlines():
+        if "CPU_Speed_Limit" in line and line.split("=")[-1].strip().isdigit():
+            return int(line.split("=")[-1])
+    return None
+
+
 def cpu_sample(own: set[int]) -> dict[str, Any]:
-    """Who has the CPU right now: the workers, and everything else."""
-    ours = 0.0
+    """What everything but the workers is taking right now (`ps`, so approximate)."""
     others: dict[str, float] = {}
     for row in processes():
-        if row["pid"] in own:
-            ours += row["cpu"]
-        elif row["cpu"] >= 5.0:
+        if row["pid"] not in own and row["cpu"] >= 5.0:
             others[row["name"]] = others.get(row["name"], 0.0) + row["cpu"]
     top = sorted(others.items(), key=lambda item: -item[1])[:4]
-    return {"workers": round(ours), "others": round(sum(others.values())), "top_others": top}
+    return {"others": round(sum(others.values())), "top_others": top}
 
 
 # ── a quiet machine ─────────────────────────────────────────────────────────
@@ -343,6 +355,7 @@ def play(args: argparse.Namespace, run_dir: Path, log) -> dict[str, Any]:
     finishes: list[dict[str, Any]] = []
     samples: list[dict[str, Any]] = []
     load_start = os.getloadavg()[0]
+    cpu_before = children_cpu_seconds()
     start = time.monotonic()
     started_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
@@ -391,11 +404,12 @@ def play(args: argparse.Namespace, run_dir: Path, log) -> dict[str, Any]:
                 worker.kill()
         for worker in workers:
             worker.wait()
+        played = time.monotonic() - start
+        worker_cpu = children_cpu_seconds() - cpu_before  # exact: the kernel's own count
         for handle in logs:
             handle.close()
     header = next((reader.header for reader in rows if reader.header), None) or {}
     result = summarise(finishes, args.minutes, args.workers)
-    busy = [sample["workers"] for sample in samples]
     other = [sample["others"] for sample in samples]
     top: dict[str, float] = {}
     for sample in samples:
@@ -419,7 +433,8 @@ def play(args: argparse.Namespace, run_dir: Path, log) -> dict[str, Any]:
             "conditions": {
                 "quiesced": bool(args.quiesce),
                 "load_before": round(load_start, 1),
-                "workers_cpu_cores": round(sum(busy) / len(busy) / 100, 1) if busy else None,
+                "workers_cpu_cores": round(worker_cpu / played, 2),
+                "cpu_speed_limit": speed_limit(),
                 "others_cpu_cores": round(sum(other) / len(other) / 100, 1) if other else None,
                 "top_others": [
                     [name, round(cpu / 100, 1)]
@@ -457,9 +472,11 @@ def report(result: dict[str, Any]) -> str:
         f"  {result['games']} games, {result['mean_turns']} turns a game,"
         f" {result['turns_per_second']} turns a second,"
         f" median game {result['median_game_seconds']} s on its worker",
-        f"  the workers had {where['workers_cpu_cores']} cores, everything else"
-        f" {where['others_cpu_cores']} ({', '.join(f'{n} {c}' for n, c in where['top_others'])})"
-        f" · load before {where['load_before']} · quiesced: {where['quiesced']}",
+        f"  the workers had {where['workers_cpu_cores']} cores of CPU time, everything else"
+        f" about {where['others_cpu_cores']}"
+        f" ({', '.join(f'{n} {c}' for n, c in where['top_others'])})"
+        f" · load before {where['load_before']} · quiesced: {where['quiesced']}"
+        + (f" · CPU speed limit {where['cpu_speed_limit']} %" if where.get("cpu_speed_limit") else ""),
         f"  build {str(result['build'].get('commit'))[:10]}"
         f"{' (dirty)' if result['build'].get('dirty') else ''}"
         f" · {setup.get('players')}p {setup.get('width')}x{setup.get('height')}"

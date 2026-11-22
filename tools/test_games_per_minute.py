@@ -172,6 +172,8 @@ class RunTests(unittest.TestCase):
             self.assertEqual(result["build"]["commit"], "abc123")
             self.assertEqual(result["setup"]["map"], "continents")
             self.assertFalse(result["conditions"]["quiesced"])
+            # Three sleeping workers use almost no CPU, and the count is theirs alone.
+            self.assertTrue(0 < result["conditions"]["workers_cpu_cores"] < 3)
             leftover = subprocess.run(
                 ["pgrep", "-f", str(binary)], capture_output=True, text=True).stdout.strip()
             self.assertEqual(leftover, "", "the workers are gone when the run ends")
