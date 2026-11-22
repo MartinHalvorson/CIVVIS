@@ -108,13 +108,13 @@ strategy_elo --run 2026-11-23-15125c4 --add-games 480 --add-rung-games 120 \
 
 The published file lists the runs it was fitted on (`runs`) and gives each
 rating a `margin95`: the 95% margin of error, `strategies::MARGIN_Z` (1.96)
-times the bootstrap deviation. The home page lists every agent with that
-margin (`1291 ±78`).
+times the bootstrap deviation. Win Analytics lists every agent and every
+Civilization VI level with that margin (`1954 ±48`).
 
 **Why a window:** a run's tables describe the genome of its day. A window of K
 runs trades freshness for precision: the margin shrinks with the square root
-of the tables in it (an agent's was about ±75 at 1,320 tables and ±34 at
-4,560), while a genome change older than K runs ages out entirely. The
+of the tables in it (an agent's was about ±75 at 1,320 tables, ±34 at 4,560
+and ±28 at 9,120), while a genome change older than K runs ages out entirely. The
 scheduled job keeps K = 4 runs, one every two days, so no table in the fit is
 older than about eight days. To narrow the margin further, raise the tables
 per run before raising K.
@@ -173,15 +173,15 @@ on its own, over the same pool tables:
 
 | Rung | One challenger, the rival in every other seat | The rival alone | Difference |
 |---|---|---|---|
-| Settler | 860 ±57 (challenger won 147 of 303) | 992 ±67 (rival won 41 of 240) | +132 (3.0 sd) |
-| Chieftain | 846 ±52 (challenger won 152 of 303) | 966 ±64 (rival won 36 of 240) | +120 (2.9 sd) |
-| Warlord | 897 ±52 (challenger won 135 of 303) | 981 ±61 (rival won 38 of 240) | +84 (2.1 sd) |
-| King | 994 ±57 (challenger won 102 of 303) | 1171 ±51 (rival won 84 of 240) | +177 (4.5 sd) |
-| Emperor | 1310 ±79 (challenger won 21 of 240) | 1486 ±61 (rival won 183 of 240) | +176 (3.4 sd) |
-| Immortal | 1590 ±162 (challenger won 4 of 240) | 1635 ±53 (rival won 421 of 480) | +45 (0.5 sd) |
-| Deity | ≥1874 (challenger won 0 of 240) | 1946 ±81 (rival won 938 of 960) | |
+| Settler | 873 ±48 (challenger won 147 of 303) | 998 ±46 (rival won 77 of 480) | +126 (3.7 sd) |
+| Chieftain | 858 ±54 (challenger won 152 of 303) | 974 ±44 (rival won 68 of 480) | +116 (3.3 sd) |
+| Warlord | 910 ±55 (challenger won 135 of 303) | 1012 ±47 (rival won 80 of 480) | +103 (2.8 sd) |
+| King | 1008 ±48 (challenger won 102 of 303) | 1188 ±40 (rival won 167 of 480) | +180 (5.7 sd) |
+| Emperor | 1329 ±85 (challenger won 21 of 240) | 1507 ±43 (rival won 363 of 480) | +177 (3.6 sd) |
+| Immortal | 1610 ±161 (challenger won 4 of 240) | 1660 ±43 (rival won 842 of 960) | +50 (0.6 sd) |
+| Deity | ≥1895 (challenger won 0 of 240) | 1954 ±48 (rival won 2,806 of 2,880) | |
 
-The older shape read every rung it could place between about 85 and 175 Elo
+The older shape read every rung it could place between about 100 and 180 Elo
 low. Three copies of one rival are easier on the fourth seat than the fit
 reads from one copy. The likely cause is that three seats running one plan
 contest the same prizes; nothing here proves the cause, only the gap.
@@ -189,11 +189,11 @@ Immortal and Deity do not disagree, because the older shape could barely
 place them.
 
 The same gap had the bottom of the ladder wrong. The older shape put Settler,
-Chieftain and Warlord 100 to 150 below Prince and King level with Prince.
-Prince was never measured in that shape, so the 100 to 150 was the shape, not
+Chieftain and Warlord 90 to 140 below Prince and King level with Prince.
+Prince was never measured in that shape, so the 90 to 140 was the shape, not
 the rung. Measured alone, the three lower rungs sit at Prince within their
 margins: what a person is handed there (Combat Strength, experience, gold
-from camps) moves these agents little. King's handicap is worth about 170.
+from camps) moves these agents little. King's handicap is worth about 190.
 
 So a rung is now measured the way Prince is: its rival alone, among agents.
 That makes "this agent rates level with Emperor" a like-for-like statement,
@@ -204,28 +204,31 @@ The older tables stay in `data/strategy_elo_games.jsonl` as `"kind": "rung"`
 until their runs leave the window. They are not fitted, and a rung table is
 logged as `"kind": "lone"`.
 
-The first run in the new shape, `2026-11-22-ca8754f`: 960 pool tables, 240
-at each rung, 480 at Immortal and 960 at Deity (`--rungs`, below).
+The first run in the new shape, `2026-11-22-ca8754f`: 1,920 pool tables, 480
+at each rung, 960 at Immortal and 2,880 at Deity (`--rungs`, below).
 
 | Level | Rung | 2026-11-21, older shape | 2026-11-22, alone |
 |---|---|---|---|
-| 1 | Settler | 880 ±65 | 992 ±67 |
-| 2 | Chieftain | 865 ±60 | 966 ±64 |
-| 3 | Warlord | 887 ±57 | 981 ±61 |
+| 1 | Settler | 880 ±65 | 998 ±46 |
+| 2 | Chieftain | 865 ±60 | 974 ±44 |
+| 3 | Warlord | 887 ±57 | 1012 ±47 |
 | 4 | Prince | 1000 (the pin) | 1000 (the pin) |
-| 5 | King | 998 ±63 | 1171 ±51 |
-| 6 | Emperor | 1306 ±84 | 1486 ±61 |
-| 7 | Immortal | 1584 ±158 | 1635 ±53 |
-| 8 | Deity | ≥1868 | 1946 ±81 |
+| 5 | King | 998 ±63 | 1188 ±40 |
+| 6 | Emperor | 1306 ±84 | 1507 ±43 |
+| 7 | Immortal | 1584 ±158 | 1660 ±43 |
+| 8 | Deity | ≥1868 | 1954 ±48 |
 
-The agents did not move beyond their margins (HolyRoller 1258 to 1298,
-TouristTrap 1256 to 1250), and their margins fell from about ±50 to ±34: a
-rung table seats three agents where the older one seated one.
+The agents kept their order, and their margins fell from about ±50 to ±28: a
+rung table seats three agents where the older one seated one. Most moved by
+less than 25. HolyRoller moved furthest, 1258 to 1333, and the shape of the
+rung tables is not why (it rates 1324 with the older tables fitted instead).
+It won 63% of its pool tables in this run, against 48% and 57% in the two
+runs before: each run plays the defaults of its day, and they moved its way.
 
 **A rung that wins nearly every table** learns little from each one. Deity's
-rival won 938 of 960 even alone, so its margin is the widest on the ladder at
-four times its neighbours' tables. `--rungs deity,immortal` plays rung tables
-at the named rungs only, to add tables where the margin is:
+rival won 2,806 of 2,880 even alone, so it took six times its neighbours'
+tables to bring its margin level with theirs. `--rungs deity,immortal` plays
+rung tables at the named rungs only, to add tables where the margin is:
 
 ```bash
 strategy_elo --run 2026-11-22-ca8754f --rungs deity --add-rung-games 960

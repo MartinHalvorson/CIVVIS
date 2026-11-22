@@ -128,11 +128,20 @@ class HomeRankings(unittest.TestCase):
         # the engine's template, so the two cannot come to disagree.
         template = re.search(r'format!\("\{\} \{\}( [^"]+)", at \+ 1, CIV6_RUNGS\[at\]\.1\)', strategies_rs)
         self.assertEqual(template[1], " AI Firaxis")
-        self.assertIn(f'row("is-rung", "", level(r) + "{template[1]}", "", elo(r), "",', CHARTS)
+        self.assertIn(
+            f'row("is-rung", "", level(r) + "{template[1]}", "", elo(r), margin(r) ? "\\u00b1" + margin(r) : "",', CHARTS
+        )
         self.assertIn('return low + (high > low ? "\\u2013" + high : "") + " " + r.name;', CHARTS)
         self.assertNotIn('"Civ VI "', CHARTS)
         named = [name for row in rungs for name in row["name"].split(" · ")]
         self.assertEqual(sorted(named), sorted(rung.title() for rung in published["ladder"]))
+        # A level carries its 95% margin as an agent does: the widest of the
+        # rungs sharing its row, and none on the rung the scale is pinned at
+        # unless it shares its row.
+        for row in rungs:
+            margins = [published["ratings"][f"civ6:{name.lower()}"]["margin95"] for name in row["name"].split(" · ")]
+            self.assertEqual(row["margin"], max(margins), row["name"])
+        self.assertGreater(max(row["margin"] for row in rungs), 0)
 
     def test_the_civs_are_ranked_by_win_rate_over_the_recorded_games(self):
         # How a game is counted, over every level and every day; which games

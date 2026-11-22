@@ -1,13 +1,13 @@
 {
   "ladder": {
-    "chieftain": 979.3,
-    "deity": 1945.7,
-    "emperor": 1486.2,
-    "immortal": 1634.6,
-    "king": 1170.6,
+    "chieftain": 985.9,
+    "deity": 1953.6,
+    "emperor": 1506.6,
+    "immortal": 1659.6,
+    "king": 1188.0,
     "prince": 1000.0,
-    "settler": 979.3,
-    "warlord": 980.9
+    "settler": 985.9,
+    "warlord": 1000.0
   },
   "players": 4,
   "prince_elo": 1000.0,
@@ -15,147 +15,147 @@
   "ratings": {
     "civ6:chieftain": {
       "bound": "",
-      "elo": 966.3,
-      "games": 240,
-      "margin95": 64.0,
-      "sd": 32.5,
-      "wins": 36
+      "elo": 973.5,
+      "games": 480,
+      "margin95": 44.0,
+      "sd": 22.5,
+      "wins": 68
     },
     "civ6:deity": {
       "bound": "",
-      "elo": 1945.7,
-      "games": 960,
-      "margin95": 81.0,
-      "sd": 41.3,
-      "wins": 938
+      "elo": 1953.6,
+      "games": 2880,
+      "margin95": 48.0,
+      "sd": 24.6,
+      "wins": 2806
     },
     "civ6:emperor": {
       "bound": "",
-      "elo": 1486.2,
-      "games": 240,
-      "margin95": 61.0,
-      "sd": 31.2,
-      "wins": 183
+      "elo": 1506.6,
+      "games": 480,
+      "margin95": 43.0,
+      "sd": 21.8,
+      "wins": 363
     },
     "civ6:immortal": {
       "bound": "",
-      "elo": 1634.6,
-      "games": 480,
-      "margin95": 53.0,
-      "sd": 27.3,
-      "wins": 421
+      "elo": 1659.6,
+      "games": 960,
+      "margin95": 43.0,
+      "sd": 21.7,
+      "wins": 842
     },
     "civ6:king": {
       "bound": "",
-      "elo": 1170.6,
-      "games": 240,
-      "margin95": 51.0,
-      "sd": 26.3,
-      "wins": 84
+      "elo": 1188.0,
+      "games": 480,
+      "margin95": 40.0,
+      "sd": 20.5,
+      "wins": 167
     },
     "civ6:prince": {
       "bound": "",
       "elo": 1000.0,
-      "games": 1558,
+      "games": 3034,
       "margin95": 0.0,
       "sd": 0.0,
-      "wins": 188
+      "wins": 287
     },
     "civ6:settler": {
       "bound": "",
-      "elo": 992.2,
-      "games": 240,
-      "margin95": 67.0,
-      "sd": 34.1,
-      "wins": 41
+      "elo": 998.2,
+      "games": 480,
+      "margin95": 46.0,
+      "sd": 23.5,
+      "wins": 77
     },
     "civ6:warlord": {
       "bound": "",
-      "elo": 980.9,
-      "games": 240,
-      "margin95": 61.0,
-      "sd": 30.9,
-      "wins": 38
+      "elo": 1012.4,
+      "games": 480,
+      "margin95": 47.0,
+      "sd": 24.1,
+      "wins": 80
     },
     "forward": {
       "bound": "",
-      "elo": 1093.2,
-      "games": 1593,
-      "margin95": 36.0,
-      "sd": 18.1,
-      "wins": 305
+      "elo": 1110.6,
+      "games": 3058,
+      "margin95": 28.0,
+      "sd": 14.5,
+      "wins": 501
     },
     "holy": {
       "bound": "",
-      "elo": 1297.7,
-      "games": 1541,
-      "margin95": 33.0,
-      "sd": 16.8,
-      "wins": 634
+      "elo": 1332.6,
+      "games": 3003,
+      "margin95": 27.0,
+      "sd": 13.9,
+      "wins": 1116
     },
     "jack": {
       "bound": "",
-      "elo": 1121.2,
-      "games": 1561,
-      "margin95": 34.0,
-      "sd": 17.6,
-      "wins": 338
+      "elo": 1141.3,
+      "games": 3026,
+      "margin95": 28.0,
+      "sd": 14.4,
+      "wins": 560
     },
     "moonshot": {
       "bound": "",
-      "elo": 1072.4,
-      "games": 1558,
-      "margin95": 34.0,
-      "sd": 17.4,
-      "wins": 271
+      "elo": 1084.9,
+      "games": 3024,
+      "margin95": 28.0,
+      "sd": 14.2,
+      "wins": 440
     },
     "oldguard": {
       "bound": "",
-      "elo": 470.0,
-      "games": 1570,
-      "margin95": 125.0,
-      "sd": 63.9,
-      "wins": 9
+      "elo": 483.4,
+      "games": 3016,
+      "margin95": 91.0,
+      "sd": 46.4,
+      "wins": 15
     },
     "siege": {
       "bound": "",
-      "elo": 1078.9,
-      "games": 1552,
-      "margin95": 34.0,
-      "sd": 17.4,
-      "wins": 279
+      "elo": 1098.2,
+      "games": 3009,
+      "margin95": 31.0,
+      "sd": 16.0,
+      "wins": 460
     },
     "stock": {
       "bound": "",
       "elo": 1000.0,
-      "games": 1558,
+      "games": 3034,
       "margin95": 0.0,
       "sd": 0.0,
-      "wins": 188
+      "wins": 287
     },
     "swing": {
       "bound": "",
-      "elo": 1031.4,
-      "games": 1564,
-      "margin95": 37.0,
-      "sd": 18.9,
-      "wins": 217
+      "elo": 1043.6,
+      "games": 3034,
+      "margin95": 30.0,
+      "sd": 15.5,
+      "wins": 357
     },
     "tourist": {
       "bound": "",
-      "elo": 1250.1,
-      "games": 1552,
-      "margin95": 33.0,
-      "sd": 16.7,
-      "wins": 554
+      "elo": 1277.5,
+      "games": 3010,
+      "margin95": 28.0,
+      "sd": 14.3,
+      "wins": 944
     },
     "wheels": {
       "bound": "",
-      "elo": 627.3,
-      "games": 1551,
-      "margin95": 79.0,
-      "sd": 40.3,
-      "wins": 24
+      "elo": 630.1,
+      "games": 3026,
+      "margin95": 63.0,
+      "sd": 32.3,
+      "wins": 37
     }
   },
   "reference": "stock",
@@ -170,17 +170,18 @@
     },
     {
       "run": "2026-11-22-ca8754f",
-      "tables": 3600
+      "tables": 8160
     }
   ],
   "speed": "online",
-  "tables": 4560,
+  "tables": 9120,
   "turns": 250,
   "victories": {
-    "culture": 1428,
-    "diplomatic": 147,
-    "domination": 36,
-    "religious": 2024,
-    "science": 925
+    "culture": 3171,
+    "diplomatic": 227,
+    "domination": 59,
+    "religious": 4087,
+    "science": 1575,
+    "score": 1
   }
 }
