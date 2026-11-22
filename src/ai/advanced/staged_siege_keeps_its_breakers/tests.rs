@@ -9,7 +9,8 @@ fn one_city() -> (Game, u32) {
         .unwrap();
     g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
     g.turn = 90;
-    (g, g.player_city_ids(0)[0])
+    let city = g.player_city_ids(0)[0];
+    (g, city)
 }
 
 fn plan(threatened: Option<u32>) -> StrategicPlan {
