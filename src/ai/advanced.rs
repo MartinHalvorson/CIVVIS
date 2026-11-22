@@ -12520,9 +12520,6 @@ mod emptied_camp_is_taken;
 /// `first-ship-closes-the-dark-age`: see
 /// `advanced/first_ship_closes_the_age.rs`.
 mod first_ship_closes_the_age;
-/// `strategic-unit-closes-the-dark-age`: see
-/// `advanced/strategic_unit_closes_the_age.rs`.
-mod strategic_unit_closes_the_age;
 /// Version two of rapid city expansion keeps the measured-positive opening
 /// pace and safety gates without version one's forced queues, sprawl, or war.
 pub(super) mod rapid_city_expansion;
@@ -12567,6 +12564,9 @@ mod siege_response;
 /// A Settler past its walk allowance takes a safe site within reach. One
 /// opt-in gene; see `advanced/stalled_settler_site.rs`.
 mod stalled_settler_site;
+/// `strategic-unit-closes-the-dark-age`: see
+/// `advanced/strategic_unit_closes_the_age.rs`.
+mod strategic_unit_closes_the_age;
 /// `the-worked-backlog-gets-its-builder-first`: a worked backlog two or more
 /// tiles ahead of the Builder charges calls a Builder ahead of the other
 /// idle-queue claims. See
