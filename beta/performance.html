@@ -69,7 +69,8 @@
   .site-title span { color: var(--accent); font-weight: 600; }
   .site-tagline { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
   .site-tagline span { display: block; }
-  .utility-nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-left: auto; }
+  .utility-nav { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 10px; margin-left: auto; }
+  .utility-nav > .utility-link { min-height: 44px; }
   .utility-link {
     display: inline-flex;
     align-items: center;
@@ -105,6 +106,20 @@
   .utility-link.is-youtube { border-color: var(--yt-edge); background: var(--yt); }
   .utility-link.is-youtube:hover,
   .utility-link.is-youtube:focus-visible { background: #c9342b; border-color: #fff; }
+  /* Under YouTube, the channel's top playlists, one to a line (operator,
+     2026-11-22: "list top playlists under youtube. maybe in a vertical
+     list"). The row's links keep their tops in a line, so the list hangs
+     under its button alone, in the room the site list's height leaves. */
+  .utility-group { display: grid; gap: 5px; }
+  .utility-lists { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+  .utility-list {
+    display: flex; align-items: center; gap: 6px; padding: 2px 3px; border-radius: 2px;
+    color: var(--text); font-size: 12.5px; font-weight: 600; line-height: 1.35; text-decoration: none; white-space: nowrap;
+  }
+  .utility-list svg { width: 14px; height: 14px; flex: none; color: var(--yt-mark); }
+  .utility-list:hover,
+  .utility-list:focus-visible { color: #fff; text-decoration: underline; }
+  .utility-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   /* The site's pages, listed in the same order on every one of them with
      the page on screen in gold: Home, Charts, Auto-Tourneys, CIVVIS and AI
      Debugger, and under them the game they are built on. As on the home
@@ -319,10 +334,16 @@
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
         <span>GitHub <small>Everything open source, free</small></span>
       </a>
-      <a class="utility-link is-youtube" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
-        YouTube
-      </a>
+      <div class="utility-group">
+        <a class="utility-link is-youtube" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+          YouTube
+        </a>
+        <ul class="utility-lists" aria-label="Top playlists">
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 8 Deity Wins</a></li>
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLecirlzIUSSo" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 1 - 7 Archive</a></li>
+        </ul>
+      </div>
       <!-- The home page files a report itself, from a dialog; here the same
            button is GitHub's own form, which needs no script on this page. -->
       <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS/issues/new/choose" target="_blank" rel="noreferrer">

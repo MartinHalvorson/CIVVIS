@@ -75,7 +75,8 @@
   .site-title span { color: var(--accent); font-weight: 600; }
   .site-tagline { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
   .site-tagline span { display: block; }
-  .utility-nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-left: auto; }
+  .utility-nav { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 10px; margin-left: auto; }
+  .utility-nav > .utility-link { min-height: 44px; }
   .utility-link {
     display: inline-flex;
     align-items: center;
@@ -111,6 +112,20 @@
   .utility-link.is-youtube { border-color: var(--yt-edge); background: var(--yt); }
   .utility-link.is-youtube:hover,
   .utility-link.is-youtube:focus-visible { background: #c9342b; border-color: #fff; }
+  /* Under YouTube, the channel's top playlists, one to a line (operator,
+     2026-11-22: "list top playlists under youtube. maybe in a vertical
+     list"). The row's links keep their tops in a line, so the list hangs
+     under its button alone, in the room the site list's height leaves. */
+  .utility-group { display: grid; gap: 5px; }
+  .utility-lists { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+  .utility-list {
+    display: flex; align-items: center; gap: 6px; padding: 2px 3px; border-radius: 2px;
+    color: var(--text); font-size: 12.5px; font-weight: 600; line-height: 1.35; text-decoration: none; white-space: nowrap;
+  }
+  .utility-list svg { width: 14px; height: 14px; flex: none; color: var(--yt-mark); }
+  .utility-list:hover,
+  .utility-list:focus-visible { color: #fff; text-decoration: underline; }
+  .utility-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   /* The site's pages, listed in the same order on every one of them with
      the page on screen in gold: Home, Charts, Auto-Tourneys, CIVVIS and AI
      Debugger, and under them the game they are built on. As on the home
@@ -183,24 +198,44 @@
   .res-seg button:hover { background: var(--panel-raised); color: #fff; }
   .res-seg button[aria-pressed="true"] { background: var(--action-bg); color: #fff; }
   .res-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  /* The level of Civilization VI's AI: its eight, Lv 1 Settler to Lv 8
-     Deity, each a button whether or not it has been played, so the row
-     always reads as the game's own ladder. A level with no games is faint.
-     Eight names are wider than a narrow page: there they stand four to a
-     row, and on a phone each is its number over its name. */
-  .res-seg button[data-empty] { color: var(--faint); }
-  .res-seg button[data-empty][aria-pressed="true"] { color: var(--muted); }
-  @media (max-width: 959px) {
-    #res-level { display: inline-grid; grid-template-columns: repeat(4, auto); }
-    #res-level button:nth-child(4n + 1) { border-left: 0; }
-    #res-level button:nth-child(n + 5) { border-top: 1px solid var(--border-strong); }
+  /* The level of Civilization VI's AI: a slider over the games against
+     it, Lv 1 Settler to Lv 8 Deity (operator, 2026-11-22: "civvis vs lv 8
+     deity ai chart should have a lv 1 to lv 8 slider at the top. defaults
+     to 8"). Under the track, the eight levels by number and name, each
+     under its stop: the track runs from the middle of the first name to
+     the middle of the last, so the thumb (18px) stands over the level it
+     is on. All eight are always there, so the scale reads as the game's
+     own ladder; a level with no games is faint, the level chosen white.
+     A scale too narrow for the names shows the numbers alone. */
+  .res-level { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 10px; margin: 0 0 10px; }
+  .res-level > label { color: var(--faint); font-size: 12px; line-height: 20px; white-space: nowrap; }
+  .res-level-scale { display: grid; min-width: 0; container-type: inline-size; }
+  #res-level {
+    -webkit-appearance: none; appearance: none; box-sizing: border-box;
+    width: calc(87.5% + 18px); height: 20px; margin: 0 calc(6.25% - 9px); padding: 0;
+    background: transparent; cursor: pointer;
   }
-  @media (max-width: 479px) {
-    #res-level { display: grid; grid-template-columns: repeat(4, 1fr); }
-    #res-level button { min-width: 0; padding: 5px 2px; line-height: 1.25; }
-    #res-level button span { display: block; }
-    #res-level button span + span { font-size: 11px; font-weight: 500; }
+  #res-level::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--border-strong); }
+  #res-level::-moz-range-track { height: 4px; border-radius: 2px; background: var(--border-strong); }
+  #res-level::-webkit-slider-thumb {
+    -webkit-appearance: none; box-sizing: border-box; width: 18px; height: 18px; margin-top: -7px;
+    border: 2px solid #fff; border-radius: 50%; background: var(--action-bg);
   }
+  #res-level::-moz-range-thumb { box-sizing: border-box; width: 18px; height: 18px; border: 2px solid #fff; border-radius: 50%; background: var(--action-bg); }
+  #res-level:hover::-webkit-slider-thumb { background: var(--action-hover); }
+  #res-level:hover::-moz-range-thumb { background: var(--action-hover); }
+  #res-level:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .res-level-stops { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); }
+  .res-level-stops span { display: grid; justify-items: center; color: var(--muted); font-size: 11.5px; line-height: 1.25; cursor: pointer; white-space: nowrap; }
+  .res-level-stops span::before { content: ""; width: 1px; height: 4px; margin-bottom: 2px; background: var(--border-strong); }
+  .res-level-stops span[data-on]::before { background: #fff; }
+  .res-level-stops b { font-weight: 600; }
+  .res-level-stops small { font-size: 10.5px; }
+  .res-level-stops span[data-empty] { color: var(--faint); }
+  .res-level-stops span:hover,
+  .res-level-stops span[data-on] { color: #fff; }
+  .res-level-stops span[data-on] b { font-weight: 700; }
+  @container (max-width: 419px) { .res-level-stops small { display: none; } }
   /* Under a side's name, what it is in a line: against the AI the win
      rate, which is what a level is picked to see. */
   .res-counted { margin: 1px 0 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
@@ -355,10 +390,16 @@
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
         <span>GitHub <small>Everything open source, free</small></span>
       </a>
-      <a class="utility-link is-youtube" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
-        YouTube
-      </a>
+      <div class="utility-group">
+        <a class="utility-link is-youtube" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+          YouTube
+        </a>
+        <ul class="utility-lists" aria-label="Top playlists">
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 8 Deity Wins</a></li>
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLecirlzIUSSo" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 1 - 7 Archive</a></li>
+        </ul>
+      </div>
       <!-- The home page files a report itself, from a dialog; here the same
            button is GitHub's own form, which needs no script on this page. -->
       <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS/issues/new/choose" target="_blank" rel="noreferrer">
@@ -394,31 +435,12 @@
           Every game that ended in a victory, by the turn it ended on and the victory that ended it.
           Both kinds of game are six players on a Continents map at Online speed, 250 turns.
           A column is the share of the games counted that ended in its span of turns.
-          The games against Civilization VI&#8217;s own AI, on the left, are shown one level at a time, Lv 1 Settler to Lv 8 Deity,
+          The games against Civilization VI&#8217;s own AI, on the left, are shown one level at a time, Lv 1 Settler to Lv 8 Deity, by the slider over them,
           and drawn three times: every victory, then only the AI&#8217;s wins, then only CIVVIS&#8217;s wins.
           All three are shares of the same games, so the second and third add up to the first.
           The self-play games are on the right.
         </p>
         <div class="res-controls">
-          <!-- The level of the game's AI (operator 2026-11-21: "an option to
-               select by level too. so i could for example go to level 4 and
-               see the win rate of civvis against level 4"). It picks the
-               games against the AI everywhere below: the three column
-               charts, the line in each small chart, and the tables. The
-               page opens on Deity, where most of the games were played. -->
-          <div class="res-control" role="group" aria-label="Level of Civilization VI&#8217;s AI">
-            <span>Level</span>
-            <div class="res-seg" id="res-level">
-              <button type="button" data-level="1" data-rung="Settler" aria-pressed="false"><span>Lv 1</span> <span>Settler</span></button>
-              <button type="button" data-level="2" data-rung="Chieftain" aria-pressed="false"><span>Lv 2</span> <span>Chieftain</span></button>
-              <button type="button" data-level="3" data-rung="Warlord" aria-pressed="false"><span>Lv 3</span> <span>Warlord</span></button>
-              <button type="button" data-level="4" data-rung="Prince" aria-pressed="false"><span>Lv 4</span> <span>Prince</span></button>
-              <button type="button" data-level="5" data-rung="King" aria-pressed="false"><span>Lv 5</span> <span>King</span></button>
-              <button type="button" data-level="6" data-rung="Emperor" aria-pressed="false"><span>Lv 6</span> <span>Emperor</span></button>
-              <button type="button" data-level="7" data-rung="Immortal" aria-pressed="false"><span>Lv 7</span> <span>Immortal</span></button>
-              <button type="button" data-level="8" data-rung="Deity" aria-pressed="true"><span>Lv 8</span> <span>Deity</span></button>
-            </div>
-          </div>
           <div class="res-control" role="group" aria-label="Games counted">
             <span>Games</span>
             <div class="res-seg" id="res-window">
@@ -453,6 +475,33 @@
       <div class="res-sides">
         <div class="res-side" id="res-side-ai">
           <header class="res-side-head">
+            <!-- The level of the game's AI (operator 2026-11-21: "an option to
+                 select by level too. so i could for example go to level 4 and
+                 see the win rate of civvis against level 4"; 2026-11-22:
+                 "civvis vs lv 8 deity ai chart should have a lv 1 to lv 8
+                 slider at the top. defaults to 8. but people can change the
+                 level if they want"). It picks the games against the AI
+                 everywhere on the page: the three column charts, the line
+                 in each small chart, and the tables. The page opens on
+                 Deity, where most of the games were played. The slider is
+                 the control; the names under it are its scale, and a press
+                 on one moves the slider there. -->
+            <div class="res-level">
+              <label for="res-level">AI level</label>
+              <div class="res-level-scale">
+                <input type="range" id="res-level" min="1" max="8" step="1" value="8" aria-valuetext="Lv 8 Deity">
+                <div class="res-level-stops" id="res-level-stops" aria-hidden="true">
+                <span data-level="1" data-rung="Settler"><b>Lv 1</b> <small>Settler</small></span>
+                <span data-level="2" data-rung="Chieftain"><b>Lv 2</b> <small>Chieftain</small></span>
+                <span data-level="3" data-rung="Warlord"><b>Lv 3</b> <small>Warlord</small></span>
+                <span data-level="4" data-rung="Prince"><b>Lv 4</b> <small>Prince</small></span>
+                <span data-level="5" data-rung="King"><b>Lv 5</b> <small>King</small></span>
+                <span data-level="6" data-rung="Emperor"><b>Lv 6</b> <small>Emperor</small></span>
+                <span data-level="7" data-rung="Immortal"><b>Lv 7</b> <small>Immortal</small></span>
+                <span data-level="8" data-rung="Deity" data-on><b>Lv 8</b> <small>Deity</small></span>
+                </div>
+              </div>
+            </div>
             <h2 class="res-side-title" data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 8 Deity AI</h2>
             <p class="res-counted" id="res-counted-ai"></p>
           </header>
@@ -577,8 +626,9 @@
     // "an option to select by level too"). The eight levels and their names
     // are the picker's own buttons.
     const LEVELS = data.levels && typeof data.levels === "object" ? data.levels : {};
-    const levelButtons = Array.from(document.querySelectorAll("#res-level button"));
-    const RUNGS = Object.fromEntries(levelButtons.map((b) => [b.dataset.level, b.dataset.rung]));
+    const levelSlider = document.getElementById("res-level");
+    const levelStops = Array.from(document.querySelectorAll("#res-level-stops [data-level]"));
+    const RUNGS = Object.fromEntries(levelStops.map((stop) => [stop.dataset.level, stop.dataset.rung]));
     // The column charts, in the order they stand on the page (operator
     // 2026-11-21: "start with all victories by type along timeline, then
     // just the deity ai wins, then the civvis wins, then the civvis self
@@ -1000,13 +1050,30 @@
         render();
       });
     };
-    // The picker stands on the level drawn, and a level nobody has played
-    // is faint.
-    for (const button of levelButtons) {
-      button.setAttribute("aria-pressed", String(button.dataset.level === state.level));
-      if (!LEVELS[button.dataset.level]) { button.setAttribute("data-empty", ""); button.title = "No games at this level yet"; }
+    // The slider stands on the level drawn, with that level's name lit
+    // under it, and a level nobody has played is faint. Moving the slider,
+    // or pressing a name, draws that level.
+    const level = (value) => {
+      if (RUNGS[value]) state.level = String(value);
+      levelSlider.value = state.level;
+      levelSlider.setAttribute("aria-valuetext", "Lv " + state.level + " " + RUNGS[state.level]);
+      for (const stop of levelStops) stop.toggleAttribute("data-on", stop.dataset.level === state.level);
+    };
+    const picked = (value) => {
+      if (String(value) === state.level) return;
+      level(value);
+      hideTip();
+      render();
+    };
+    for (const stop of levelStops) {
+      if (!LEVELS[stop.dataset.level]) { stop.setAttribute("data-empty", ""); stop.title = "No games at this level yet"; }
     }
-    choose("res-level", "data-level", (value) => { state.level = value; });
+    level(state.level);
+    levelSlider.addEventListener("input", () => picked(levelSlider.value));
+    document.getElementById("res-level-stops").addEventListener("click", (event) => {
+      const stop = event.target.closest("[data-level]");
+      if (stop) picked(stop.dataset.level);
+    });
     choose("res-window", "data-window", (value) => { state.window = value; });
     choose("res-span", "data-span", (value) => { state.span = Number(value) || 5; });
     let queued = 0, lastWidth = document.documentElement.clientWidth;
