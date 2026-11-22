@@ -46,6 +46,15 @@
 //! if longer) stands aside for [`STUCK_REPAIR_YIELD_TURNS`]: the claim skips
 //! it and the strategic scorer does not offer it, so the city builds
 //! something else, then the repair is tried again.
+//!
+//! A repair the host is producing is not stuck. Civilization VI repairs a
+//! district by producing the district at its plot (a building by producing
+//! the building), and the mirror reads that head back as the district at the
+//! repair's plot or the building, so this claim re-asks it every turn. Such a
+//! head ends the run and is never withheld (live Mali
+//! `civvis-t7-20261122T120728Z`: Kangaba's head read `DISTRICT_CAMPUS` t132-134
+//! over its pillaged Campus, the gene set the repair aside at t134, and the
+//! host finished it at t135).
 
 use super::*;
 
@@ -124,10 +133,31 @@ impl AdvancedAi {
         let Item::Repair { pos, .. } = item else {
             return false;
         };
+        if Self::host_is_repairing(g, cid, item) {
+            return false;
+        }
         self.stuck_repairs
             .borrow()
             .get(&(cid, *pos))
             .is_some_and(|watch| g.turn < watch.until)
+    }
+
+    /// Whether the city's head is `repair` already under way on the host.
+    /// Civilization VI repairs a pillaged district by producing the district
+    /// at its plot and a pillaged building by producing the building, and the
+    /// mirror reads that head back as [`Item::District`] at the repair's plot
+    /// or [`Item::Building`] of the repaired building, not as a repair (live
+    /// `civvis-t7-20261122T120728Z`: Kangaba's head read `DISTRICT_CAMPUS`
+    /// t132-134 over its pillaged Campus, repaired at t135).
+    fn host_is_repairing(g: &Game, cid: u32, repair: &Item) -> bool {
+        let Item::Repair { repair: what, pos } = repair else {
+            return false;
+        };
+        match g.cities.get(&cid).and_then(|city| city.queue.first()) {
+            Some(Item::District { pos: at, .. }) => *what == "district" && at == pos,
+            Some(Item::Building { building }) => building == what,
+            _ => false,
+        }
     }
 
     /// `stuck-repair-yields-the-queue`: count this turn's ask of `repair` in
@@ -140,6 +170,11 @@ impl AdvancedAi {
         let Item::Repair { pos, .. } = repair else {
             return false;
         };
+        // A repair the host is already producing has started: its run ends.
+        if Self::host_is_repairing(g, cid, repair) {
+            self.stuck_repairs.borrow_mut().remove(&(cid, *pos));
+            return false;
+        }
         let turn = g.turn;
         let own_turns = (g.item_cost_for_city(pid, cid, repair)
             / g.city_yields(cid).production.max(0.5))
