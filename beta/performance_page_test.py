@@ -275,8 +275,9 @@ class TheSiteList(unittest.TestCase):
             re.findall(r'<a class="([^"]+)" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
             [
                 ("site-link", "../home/", "Home"),
-                ("site-link", "../research/", "Charts"),
-                ("site-link sub-link", "./", "Performance"),
+                ("site-link", "../research/", "Charts/"),
+                ("site-link sub-link", "../research/", "Win Analytics"),
+                ("site-link sub-link", "./", "CIVVIS Performance"),
                 ("site-link", "../tournaments/", "Auto-Tourneys"),
                 ("site-link", "../", "CIVVIS"),
                 ("site-link", "../?mode=play", "AI Debugger"),
@@ -284,23 +285,25 @@ class TheSiteList(unittest.TestCase):
             ],
         )
         self.assertEqual(nav.count('aria-current="page"'), 1)
-        self.assertIn('<a class="site-link sub-link" href="./" aria-current="page">Performance</a>', nav)
-        self.assertIn(".site-link.sub-link { margin-left: 10px; }", PAGE)
-        self.assertIn("<title>Performance · CIVVIS.ai</title>", PAGE)
+        self.assertIn('<a class="site-link sub-link" href="./" aria-current="page">CIVVIS Performance</a>', nav)
+        self.assertIn(".site-link.sub-link { margin-left: 10px; padding: 2px 6px 3px; font-size: 10px; letter-spacing: 0.03em; }", PAGE)
+        self.assertIn("<title>CIVVIS Performance · CIVVIS.ai</title>", PAGE)
         # Every link of the page stays in its lane.
         self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', PAGE), [])
 
     def test_only_charts_lists_the_branch(self):
-        # A branch is folded unless its page, or the branch itself, is on
-        # screen: Charts lists Performance under it, and Home, Auto-Tourneys
-        # and the viewer (CIVVIS and AI Debugger, the two tools) do not.
+        # A branch is folded unless one of its pages is on screen: Win
+        # Analytics, the page Charts/ opens, lists both pages of Charts/
+        # under it as this page does, and Home, Auto-Tourneys and the viewer
+        # (CIVVIS and AI Debugger, the two tools) list neither.
         self.assertIn(
-            '<a class="site-link" href="./" aria-current="page">Charts</a>\n'
+            '<a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
             '        <a class="site-link sub-link" href="../performance/" ',
             RESEARCH,
         )
         for page in (LANDING, TOURNAMENTS, VIEWER):
-            self.assertNotIn(">Performance</a>", page)
+            self.assertNotIn("Performance</a>", page.replace(">CIVVIS Performance</a></figcaption>", ""))
+            self.assertNotIn(">Win Analytics</a>", page)
         for gone in ("perflink", "under-watch", "opens-watching", "sub-link"):
             self.assertNotIn(gone, VIEWER)
 

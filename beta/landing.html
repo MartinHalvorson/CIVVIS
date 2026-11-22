@@ -23,6 +23,9 @@
     --action-fg: #a8d8f5;
     --action-hover: #315d7e;
     --gold: #d7b66a;
+    --yt: #b3261e;
+    --yt-edge: #d9534a;
+    --yt-mark: #ff6257;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   }
 
@@ -38,7 +41,10 @@
     font: 15px/1.55 var(--sans);
     -webkit-font-smoothing: antialiased;
   }
-  .shell { width: min(1060px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
+  /* 1120px, up from 1060px on 2026-11-22: the header's row of links grew
+     when GitHub and YouTube were made to stand out, and at 1060px it no
+     longer fitted on the title's line. */
+  .shell { width: min(1120px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
   main { padding-bottom: 48px; }
 
   .site-header {
@@ -78,6 +84,22 @@
   .utility-link:hover,
   .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
   .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The project's two homes stand out from the row (operator, 2026-11-22:
+     "make the GitHub, dev progress stand out a bit more"): GitHub filled in
+     the site's blue, with what it holds under its name ("everything open
+     source, free"), and YouTube in its red. */
+  .utility-link.is-github,
+  .utility-link.is-youtube { min-height: 44px; color: #fff; font-size: 14px; font-weight: 700; }
+  .utility-link.is-github svg,
+  .utility-link.is-youtube svg { width: 20px; height: 20px; }
+  .utility-link.is-github { border-color: var(--accent); background: var(--action-bg); }
+  .utility-link.is-github:hover,
+  .utility-link.is-github:focus-visible { background: var(--action-hover); border-color: #fff; }
+  .utility-link.is-github span { display: grid; line-height: 1.25; }
+  .utility-link.is-github small { color: var(--action-fg); font-size: 11px; font-weight: 500; white-space: nowrap; }
+  .utility-link.is-youtube { border-color: var(--yt-edge); background: var(--yt); }
+  .utility-link.is-youtube:hover,
+  .utility-link.is-youtube:focus-visible { background: #c9342b; border-color: #fff; }
   /* The site is five pages, Home, Charts, Auto-Tourneys, CIVVIS and AI
      Debugger, and every one of them lists all five in that order, with the game they are
      built on under them and the page on screen in gold. Here they stand in a column
@@ -113,9 +135,10 @@
      the column still has its room. The list is a tree that keeps its
      branches folded (operator, 2026-11-21: "a somewhat collapsable model
      for the info"): a page's own pages are listed under it only on that
-     page. Charts has one, Performance (operator, 2026-11-22: "Move
-     performance from under civvis to charts"), listed under it on Charts
-     and on Performance and folded away here. */
+     page. Charts is a folder of pages and reads "Charts/", with the slash
+     (operator, 2026-11-22: "change just "Charts" to "Charts/" with the
+     intentional slash"). Its pages, Win Analytics and CIVVIS Performance,
+     are listed under it on those two pages and folded away here. */
 
   /* The report dialog: a visitor's bug or feature request, headed for the
      project's GitHub issue tracker — filed by the site itself for anonymous
@@ -200,48 +223,56 @@
   .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
 
-  /* The rankings, in two columns: the winningest civs of the verification
-     games on the left and the Civ AI Agents by published Elo on the right.
-     Their figures are not written here. `beta/publish.sh` fills the
-     `rankings-data` slot below (`beta/home_rankings.py`), and until a slot
-     is filled the section stays hidden and the page is its header and the
-     paragraph above. A list with no source stays hidden on its own and the
-     other takes the row; a window too narrow for two columns stacks them in
-     the same order. `display: grid` outranks the hidden attribute's own
-     rule, so the section has to say what hidden means for itself.
-
-     Two columns and never three: a track is at least half the row (less
-     half the gap) and never under 300px, the width below which the lists
-     stack. The Tournaments table that once stood above them has a page of
-     its own now (`beta/tournaments.html`). */
-  .rankings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(300px, calc(50% - 8px))), 1fr)); gap: 16px; align-items: start; min-width: 0; }
-  .rankings[hidden] { display: none; }
-  .rank-card { min-width: 0; padding: 12px 14px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
-  .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-  .rank-sub { margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
-  /* A date stays on one line: a narrow card would break it at a hyphen. */
-  .rank-day { white-space: nowrap; }
-  .rank-list { margin: 0; padding: 0; list-style: none; }
-  .rank-row {
-    display: grid;
-    grid-template-columns: 18px minmax(0, 1fr) auto;
-    gap: 8px;
-    align-items: baseline;
-    padding: 4px 0;
-    border-top: 1px solid var(--border);
-    font-size: 13px;
-    line-height: 1.4;
+  /* The page is four videos, two by two (operator, 2026-11-22): the
+     fastest game upper left, a single player's view of a game upper right,
+     a Lv 8 victory lower left and the AI Debugger lower right. They are
+     YouTube's and stay there: a tile is the video's picture, and its player
+     is asked for only when the picture is pressed, in the picture's place.
+     Above them, the channel's two top playlists, one press away. A window
+     too narrow for two columns stacks the tiles in reading order. */
+  .watch-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 18px; margin: 0 0 12px; }
+  .watch-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .watch-lists { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--muted); font-size: 12.5px; }
+  .watch-list {
+    display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 12px;
+    border: 1px solid var(--yt-edge); border-radius: 3px; background: var(--panel);
+    color: #fff; font-size: 12.5px; font-weight: 700; text-decoration: none; white-space: nowrap;
   }
-  .rank-n { color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
-  .rank-name { min-width: 0; overflow: hidden; color: var(--text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-  .rank-name small { margin-left: 6px; color: var(--muted); font-size: 11.5px; font-weight: 400; }
-  .rank-value { color: #fff; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
-  .rank-value small { margin-left: 4px; color: var(--faint); font-size: 11px; font-weight: 400; }
-  /* A Civilization VI difficulty level: a landmark on the scale, not an entrant. */
-  .rank-row.is-rung .rank-name,
-  .rank-row.is-rung .rank-value { color: var(--faint); font-size: 12px; font-weight: 500; }
-  .rank-note { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
-  .rank-note a { color: var(--accent); }
+  .watch-list svg { width: 15px; height: 15px; flex: none; color: var(--yt-mark); }
+  .watch-list:hover,
+  .watch-list:focus-visible { background: var(--yt); border-color: var(--yt-mark); }
+  .watch-list:hover svg,
+  .watch-list:focus-visible svg { color: #fff; }
+  .watch-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .watch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 16px; }
+  @media (max-width: 639px) { .watch-grid { grid-template-columns: minmax(0, 1fr); } }
+  .watch-tile { min-width: 0; margin: 0; }
+  .watch-poster {
+    position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden;
+    border: 1px solid var(--border-strong); border-radius: 4px; background: #0d1117;
+  }
+  .watch-poster img, .watch-poster iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .watch-poster img { object-fit: cover; }
+  a.watch-poster:hover,
+  a.watch-poster:focus-visible { border-color: var(--accent); }
+  .watch-poster:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .watch-play {
+    position: absolute; left: 50%; top: 50%; display: grid; place-items: center; width: 68px; height: 48px; margin: -24px 0 0 -34px;
+    border-radius: 12px; background: rgba(13, 17, 23, 0.82); color: #fff;
+  }
+  .watch-play svg { width: 22px; height: 22px; }
+  .watch-poster:hover .watch-play, .watch-poster:focus-visible .watch-play { background: var(--yt); }
+  /* Under a picture: what the video is, its title, and where there is more of it. */
+  .watch-tile figcaption { display: flex; align-items: baseline; gap: 4px 10px; margin-top: 7px; font-size: 13px; line-height: 1.4; }
+  .watch-tile figcaption b { flex: none; color: #fff; font-weight: 700; }
+  .watch-tile figcaption span { min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+  .watch-tile figcaption a { flex: none; margin-left: auto; color: var(--accent); font-size: 12px; text-decoration: none; white-space: nowrap; }
+  .watch-tile figcaption a:hover { text-decoration: underline; }
+  /* On a phone the title has a line of its own, whole. */
+  @media (max-width: 479px) {
+    .watch-tile figcaption { flex-wrap: wrap; }
+    .watch-tile figcaption span { order: 3; flex-basis: 100%; white-space: normal; }
+  }
 </style>
 </head>
 <body>
@@ -262,7 +293,7 @@
            stands to the left of the title. -->
       <nav class="site-nav" aria-label="CIVVIS sites">
         <a class="site-link" href="./" aria-current="page">Home</a>
-        <a class="site-link" href="../research/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts</a>
+        <a class="site-link" href="../research/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
         <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Auto-Tourneys</a>
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
         <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
@@ -274,13 +305,13 @@
       </div>
     </div>
     <nav class="utility-nav" aria-label="CIVVIS links">
-      <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
+      <a class="utility-link is-github" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
-        GitHub
+        <span>GitHub <small>Everything open source, free</small></span>
       </a>
-      <a class="utility-link" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+      <a class="utility-link is-youtube" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
-        Dev Progress
+        YouTube
       </a>
       <button class="utility-link" type="button" id="report-open">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2C6.5 2 2 5.9 2 10.7c0 2.8 1.5 5.3 3.9 6.9L5 22l4.6-2.4c.8.2 1.6.3 2.4.3 5.5 0 10-3.9 10-8.7S17.5 2 12 2zm-1 4.5h2v6h-2v-6zm0 7.5h2v2h-2v-2z"/></svg>
@@ -302,144 +333,115 @@
       you run into.
     </p>
 
-    <!-- The rankings. Two lists, both measured. On the left, the
-         winningest civs: our AI's win rate as each civ in the verification
-         games, which it plays inside Civilization VI against the game's own
-         AI, best win rate first. Only the Lv 8 games that began on or after
-         2026-11-16 count (operator 2026-11-19; `CIVS_LEVEL` and
-         `CIVS_SINCE` in `beta/home_rankings.py`, which the slot carries as
-         `level` and `since`). Every finished game adds its line to the run
-         ledger (`tools/civ6_ladder.py publish-run`), and the table is that
-         record as it stood when the site was built. On the right, the
-         player strategies: the Civ AI Agents by published Elo, with
-         Civilization VI's difficulty levels standing between them as the
-         scale's landmarks. The section is built by the script below from
-         the `rankings-data` slot, which `beta/publish.sh` fills at publish
-         time; a page whose slot still reads `null` (this file opened as it
-         is committed, or a build with neither source) keeps it hidden. -->
-    <section class="rankings" id="rankings" hidden aria-label="Rankings">
-      <section class="rank-card" id="rank-civs" hidden aria-labelledby="rank-civs-title">
-        <h2 class="rank-title" id="rank-civs-title">Winningest civs</h2>
-        <p class="rank-sub">Our AI&#8217;s win rate as each civ, in verification games against Civilization VI&#8217;s own AI.</p>
-        <ol class="rank-list"></ol>
-        <p class="rank-note">
-          <span data-rank-note></span>
-          <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Every game</a>
+    <!-- Four videos, two by two (operator, 2026-11-22: "On home, we can have
+         our fastest game youtube video embedded to watch in the upper left.
+         in upper right, we can have a single player pov game ... the AI
+         Debugger - Multiverse, Time Travel video in the lower right. lower
+         left please save for a lv 8 victory video lv 8 maya cluture"). The
+         videos are YouTube's: a tile shows the video's picture and plays the
+         video in the picture's place when it is pressed. The fastest game is
+         whichever record leads `data/performance/fastest_game_videos.json`:
+         `beta/publish.sh` writes it into the `home-videos` slot below
+         (`beta/home_rankings.py`), and the tile as written here is the
+         record on the day it was written. Above the tiles, the channel's
+         two top playlists (operator: "direct links to watching our top
+         playlists: Lv 8 Deity Wins, Lv 1 - 7 Archive"). The two rankings
+         that stood here are on Charts now, under Win Analytics (operator:
+         "move 2 charts on home/ to charts/"). -->
+    <section class="watch" id="watch" aria-labelledby="watch-title">
+      <div class="watch-head">
+        <h2 class="watch-title" id="watch-title">Watch</h2>
+        <p class="watch-lists">
+          <span>Top playlists</span>
+          <a class="watch-list" href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>Lv 8 Deity Wins</a>
+          <a class="watch-list" href="https://www.youtube.com/playlist?list=PLecirlzIUSSo" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>Lv 1 - 7 Archive</a>
         </p>
-      </section>
-      <section class="rank-card" id="rank-strategies" hidden aria-labelledby="rank-strategies-title">
-        <h2 class="rank-title" id="rank-strategies-title">Player strategies</h2>
-        <p class="rank-sub">Civ AI Agents by Elo. Civilization VI&#8217;s Prince is 1000.</p>
-        <ol class="rank-list"></ol>
-        <p class="rank-note">
-          <span data-rank-note></span>
-          Ratings are refitted when new rating tables are played, not after each game on this site.
-          <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/ELO.md" target="_blank" rel="noreferrer">How the Elo works</a>
-        </p>
-      </section>
+      </div>
+      <div class="watch-grid">
+        <figure class="watch-tile" id="watch-fastest" data-video="iHlUWPIqr5g">
+          <a class="watch-poster" href="https://www.youtube.com/watch?v=iHlUWPIqr5g" target="_blank" rel="noreferrer">
+            <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/iHlUWPIqr5g/hq720.webp">
+            <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+          </a>
+          <figcaption><b>Fastest game</b> <span data-watch-title>A complete Civ 6 match in under 6 seconds, real-time simulation</span> <a href="../performance/">CIVVIS Performance</a></figcaption>
+        </figure>
+        <figure class="watch-tile" id="watch-pov" data-video="9c8m87e3rCg">
+          <a class="watch-poster" href="https://www.youtube.com/watch?v=9c8m87e3rCg" target="_blank" rel="noreferrer">
+            <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/9c8m87e3rCg/hq720.webp">
+            <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+          </a>
+          <figcaption><b>Single player POV</b> <span data-watch-title>A full Civ 6 match in 14 seconds</span> <a href="../performance/">CIVVIS Performance</a></figcaption>
+        </figure>
+        <figure class="watch-tile" id="watch-victory" data-video="6PCd4R08UPM">
+          <a class="watch-poster" href="https://www.youtube.com/watch?v=6PCd4R08UPM" target="_blank" rel="noreferrer">
+            <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/6PCd4R08UPM/hq720.webp">
+            <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+          </a>
+          <figcaption><b>Lv 8 Deity win</b> <span data-watch-title>Maya Culture</span> <a href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer">Lv 8 Deity Wins</a></figcaption>
+        </figure>
+        <figure class="watch-tile" id="watch-debugger" data-video="6W5t0hcR_N4">
+          <a class="watch-poster" href="https://www.youtube.com/watch?v=6W5t0hcR_N4" target="_blank" rel="noreferrer">
+            <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/6W5t0hcR_N4/hq720.webp">
+            <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+          </a>
+          <figcaption><b>AI Debugger</b> <span data-watch-title>Multiverse, Time Travel</span> <a href="../?mode=play">AI Debugger</a></figcaption>
+        </figure>
+      </div>
     </section>
   </main>
 
-  <script type="application/json" id="rankings-data">null</script>
+  <script type="application/json" id="home-videos">null</script>
   <script>
-  // The rankings, built before first paint so the page never reflows around
-  // them. Every figure arrives through textContent: the slot holds names and
-  // sentences from the repository's own files, and none of it is trusted as
-  // markup.
+  // The video tiles. A tile's video is its `data-video`, and the fastest
+  // game's is the record the slot names, when the page was published with
+  // one. Pressed, a picture gives its place to the video's player; a press
+  // that asks for a new tab or window is the link it is, to YouTube.
   (() => {
+    const VIDEO_ID = /^[\w-]{11}$/;
     let data = null;
-    try { data = JSON.parse(document.getElementById("rankings-data").textContent); } catch (_) { return; }
-    if (!data) return;
-    const el = (tag, cls, text) => {
-      const node = document.createElement(tag);
-      if (cls) node.className = cls;
-      if (text != null) node.textContent = text;
-      return node;
-    };
-    const row = (cls, n, name, nameSub, value, valueSub, title) => {
-      const item = el("li", "rank-row" + (cls ? " " + cls : ""));
-      if (title) item.title = title;
-      item.append(el("span", "rank-n", n));
-      const label = el("span", "rank-name", name);
-      if (nameSub) label.append(el("small", "", nameSub));
-      const figure = el("span", "rank-value", value);
-      if (valueSub) figure.append(el("small", "", valueSub));
-      item.append(label, figure);
-      return item;
-    };
-    const show = (id, rows, note) => {
-      const card = document.getElementById(id);
-      if (!card || !rows.length) return false;
-      card.querySelector(".rank-list").append(...rows);
-      card.querySelector("[data-rank-note]").textContent = note;
-      card.hidden = false;
-      return true;
-    };
-    // An entrant that never lost is rated "at least", one that never won "at most".
-    const elo = (r) => (r.bound === "upper" ? "\u2264" : "") + Math.round(r.elo) + (r.bound === "lower" ? "+" : "");
-    // Civilization VI's own AI at a level, named as the viewer names it
-    // beside a live game (`strategies::civ6_ai_seat_json`): the level's
-    // number, its name, then whose AI it is, "8 Deity AI Firaxis". Levels
-    // the tables cannot tell apart share a row and read as a range:
-    // "7–8 Immortal · Deity AI Firaxis".
-    const level = (r) => {
-      const lv = Array.isArray(r.levels) ? r.levels : [];
-      if (!lv.length) return r.name;
-      const low = Math.min(...lv), high = Math.max(...lv);
-      return low + (high > low ? "\u2013" + high : "") + " " + r.name;
-    };
-    let shown = false;
-
-    // The winningest civs, on the left, best win rate first: a row is a
-    // civ's win rate with its record, wins then losses, beside it. Hovering
-    // lists what it won. The slot says which games were counted, one level
-    // (`level`) from one day on (`since`), and the line under the title
-    // repeats it; a table over every level names the highest level a civ
-    // has won at beside it instead.
-    const civs = data.civs;
-    if (civs && Array.isArray(civs.rows)) {
-      const count = (n) => Number(n).toLocaleString("en-US");
-      const plural = (n, one, many) => count(n) + " " + (n === 1 ? one : many);
-      const rows = civs.rows.map((c, i) => row("", String(i + 1), c.name, !civs.level && c.best ? "Lv " + c.best : "",
-        (100 * c.wins / (c.wins + c.losses)).toFixed(1) + "%", count(c.wins) + "\u2013" + count(c.losses),
-        c.name + ": " + plural(c.wins, "win", "wins") + ", " + plural(c.losses, "loss", "losses")
-          + (Array.isArray(c.won) && c.won.length ? ". Won: " + c.won.join(", ") : "")));
-      const sub = document.querySelector("#rank-civs .rank-sub");
-      sub.textContent = "Our AI\u2019s win rate as each civ, in " + (civs.level ? "Lv " + civs.level + " " : "")
-        + "verification games against Civilization VI\u2019s own AI" + (civs.since ? " since " : "");
-      if (civs.since) sub.append(el("span", "rank-day", civs.since));
-      sub.append(".");
-      const note = plural(civs.games, "finished game", "finished games")
-        + (civs.through ? " through " + civs.through : "") + "; "
-        + civs.winners + " of " + plural(civs.played, "civ", "civs") + " played have won."
-        + " A loss is a rival\u2019s victory, our elimination, or a game conceded early;"
-        + " a game stopped any other way is not counted."
-        + (civs.unattributed_wins ? " " + plural(civs.unattributed_wins, "win is", "wins are")
-          + " not listed: the game did not record its civ." : "");
-      shown = show("rank-civs", rows, note) || shown;
+    try { data = JSON.parse(document.getElementById("home-videos").textContent); } catch (_) {}
+    const fastest = data && data.fastest;
+    if (fastest && VIDEO_ID.test(fastest.id)) {
+      const tile = document.getElementById("watch-fastest");
+      if (tile.dataset.video !== fastest.id) {
+        tile.dataset.video = fastest.id;
+        tile.querySelector("img").src = "https://i.ytimg.com/vi_webp/" + fastest.id + "/hq720.webp";
+      }
+      if (fastest.title) tile.querySelector("[data-watch-title]").textContent = fastest.title;
     }
-
-    // The player strategies, on the right.
-    const strategies = data.strategies;
-    // The 95% margin of error (`margin`); a slot built before it carries only `sd`.
-    const margin = (r) => Math.round(r.margin != null ? r.margin : (r.sd ? 1.96 * r.sd : 0));
-    if (strategies && Array.isArray(strategies.rows)) {
-      let place = 0;
-      const rows = strategies.rows.map((r) => r.kind === "rung"
-        ? row("is-rung", "", level(r) + " AI Firaxis", "", elo(r), "", "Civilization VI\u2019s own AI at difficulty level " + level(r))
-        : row("", String(++place), r.name, r.tilt, elo(r), margin(r) ? "\u00b1" + margin(r) : "",
-              r.name + ": won " + r.wins + " of " + r.games + " rated tables"
-                + (margin(r) ? "; 95% interval " + Math.round(r.elo - margin(r)) + "\u2013" + Math.round(r.elo + margin(r)) : "")));
-      const note = (strategies.tables ? Number(strategies.tables).toLocaleString("en-US") + " " : "")
-        + (strategies.players === 4 ? "four-player " : "") + "tables"
-        + (strategies.turns ? " of " + strategies.turns + " turns" : "")
-        + (strategies.runs > 1 ? " over the last " + strategies.runs + " rating runs" : "")
-        + (strategies.latest_run ? ", newest " + strategies.latest_run : "") + "."
-        + " \u00b1 is the 95% margin of error.";
-      shown = show("rank-strategies", rows, note) || shown;
+    for (const tile of document.querySelectorAll(".watch-tile")) {
+      const id = tile.dataset.video;
+      if (!VIDEO_ID.test(id)) continue;
+      const poster = tile.querySelector(".watch-poster"), picture = poster.querySelector("img");
+      const title = tile.querySelector("b").textContent + ": " + tile.querySelector("[data-watch-title]").textContent;
+      poster.href = "https://www.youtube.com/watch?v=" + id;
+      poster.setAttribute("aria-label", "Play the video: " + title);
+      // YouTube's own picture of the video, the wide one; a video without
+      // one answers with a 120px placeholder, and then the picture every
+      // video has is asked for instead.
+      const plain = () => {
+        if (picture.dataset.plain) return;
+        picture.dataset.plain = "1";
+        picture.src = "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg";
+      };
+      const checked = () => { if (picture.naturalWidth <= 120) plain(); };
+      picture.addEventListener("load", checked);
+      picture.addEventListener("error", plain);
+      if (picture.complete && picture.naturalWidth) checked();
+      poster.addEventListener("click", (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button) return;
+        event.preventDefault();
+        const player = document.createElement("iframe");
+        player.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0&playsinline=1";
+        player.title = title;
+        player.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+        player.allowFullscreen = true;
+        const frame = document.createElement("div");
+        frame.className = "watch-poster";
+        frame.append(player);
+        poster.replaceWith(frame);
+      });
     }
-
-    if (shown) document.getElementById("rankings").hidden = false;
   })();
   </script>
 
