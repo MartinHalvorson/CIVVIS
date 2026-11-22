@@ -263,19 +263,22 @@ class ThePage(unittest.TestCase):
 
 
 class TheSiteList(unittest.TestCase):
-    def test_performance_stands_under_civvis_on_this_page_in_gold(self):
+    def test_performance_stands_under_charts_on_this_page_in_gold(self):
         # Operator 2026-11-21: "a submenu appears under civvis 'Performance'
         # only when CIVVIS is selected", then "performance should be a page
-        # similar to the home/ and other similar pages".
+        # similar to the home/ and other similar pages"; 2026-11-22: "Move
+        # performance from under civvis to charts. Charts is where almost
+        # all our charts can go. This keeps AI Debugger as a clean tool.
+        # CIVVIS as a clean tool."
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
         self.assertEqual(
             re.findall(r'<a class="([^"]+)" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
             [
                 ("site-link", "../home/", "Home"),
-                ("site-link", "../research/", "Musings"),
-                ("site-link", "../tournaments/", "Tournaments"),
-                ("site-link", "../", "CIVVIS"),
+                ("site-link", "../research/", "Charts"),
                 ("site-link sub-link", "./", "Performance"),
+                ("site-link", "../tournaments/", "Auto-Tourneys"),
+                ("site-link", "../", "CIVVIS"),
                 ("site-link", "../?mode=play", "AI Debugger"),
                 ("site-link", "https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/", "Civ 6"),
             ],
@@ -287,18 +290,19 @@ class TheSiteList(unittest.TestCase):
         # Every link of the page stays in its lane.
         self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', PAGE), [])
 
-    def test_no_other_page_of_the_header_lists_the_branch(self):
-        for page in (LANDING, RESEARCH, TOURNAMENTS):
-            self.assertNotIn(">Performance</a>", page)
-
-    def test_the_viewer_opens_the_page_from_under_civvis(self):
+    def test_only_charts_lists_the_branch(self):
+        # A branch is folded unless its page, or the branch itself, is on
+        # screen: Charts lists Performance under it, and Home, Auto-Tourneys
+        # and the viewer (CIVVIS and AI Debugger, the two tools) do not.
         self.assertIn(
-            '<a class="home-link sub-link under-watch" id="perflink" href="/performance" target="_top" '
-            'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes">Performance</a>',
-            VIEWER,
+            '<a class="site-link" href="./" aria-current="page">Charts</a>\n'
+            '        <a class="site-link sub-link" href="../performance/" ',
+            RESEARCH,
         )
-        watch, perf, play = (VIEWER.index(f'id="{name}"') for name in ("watchlink", "perflink", "playlink"))
-        self.assertTrue(watch < perf < play)
+        for page in (LANDING, TOURNAMENTS, VIEWER):
+            self.assertNotIn(">Performance</a>", page)
+        for gone in ("perflink", "under-watch", "opens-watching", "sub-link"):
+            self.assertNotIn(gone, VIEWER)
 
     def test_publishing_builds_the_page_into_every_lane(self):
         for line in (

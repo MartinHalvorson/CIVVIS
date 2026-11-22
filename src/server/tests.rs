@@ -2102,37 +2102,33 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
     assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
 }
 
-/// The site is five pages, Home, Musings, Tournaments, CIVVIS and AI
-/// Debugger (the operator's names in this list since 2026-11-21: "home,
-/// musings (rename research), tournaments, civvis, AI Debugger (rename plz),
-/// Civ 6 at the top level"; the Debugger had been Strategy Debugger and then
-/// Strat Debugger that day, and Musings joined between Home and Tournaments
-/// as Research, whose address it keeps), and every one of
-/// them lists all five in that order, with the page on screen in gold and a
-/// link to the game they are built on under them (operator, 2026-11-19).
-/// The viewer is the last two: a watched simulation lights CIVVIS and a
-/// played game lights AI Debugger. The list is a tree that keeps its
-/// branches folded (same request: "a somewhat collapsable model for the
-/// info ... a submenu appears under civvis 'Performance' only when CIVVIS
-/// is selected"): a page's own pages are written straight after it and show
-/// only while it is the page on screen. Performance is a page of the site
-/// (operator, 2026-11-21: "performance should be a page similar to the home/
-/// and other similar pages (musings/research/) etc."), at /performance.
-/// Pinned as one literal because the list is the contract: six links in this
-/// order with CIVVIS's branch under it, inside a list that only the hosts
-/// serving a /home, a /research, a /tournaments and a /performance reveal.
+/// The site is five pages, Home, Charts, Auto-Tourneys, CIVVIS and AI
+/// Debugger (the operator's names in this list: "home, musings (rename
+/// research), tournaments, civvis, AI Debugger (rename plz), Civ 6 at the
+/// top level" on 2026-11-21, then on 2026-11-22 "Change musings to
+/// "Charts"" and "make sure Tournaments changes to Auto-Tourneys"; Charts
+/// joined between Home and Tournaments as Research, and both pages keep
+/// their addresses), and every one of them lists all five in that order,
+/// with the page on screen in gold and a link to the game they are built on
+/// under them (operator, 2026-11-19). The viewer is the last two: a watched
+/// simulation lights CIVVIS and a played game lights AI Debugger. The list
+/// is a tree that keeps its branches folded (2026-11-21: "a somewhat
+/// collapsable model for the info"): a page's own pages are listed under it
+/// only while it is the page on screen. Performance, the one branch, is
+/// Charts' since 2026-11-22 ("Move performance from under civvis to charts
+/// ... This keeps AI Debugger as a clean tool. CIVVIS as a clean tool"), so
+/// the viewer lists the six top-level names and nothing under them.
+/// Pinned as one literal because the list is the contract: six links in
+/// this order, inside a list that only the hosts serving a /home, a
+/// /research and a /tournaments reveal.
 #[test]
 fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<nav class=\"head-links\" id=\"headlinks\" aria-label=\"CIVVIS sites\" hidden>\n",
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
-        "        <a class=\"home-link\" id=\"researchlink\" href=\"/research\" target=\"_top\">Musings</a>\n",
-        "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
+        "        <a class=\"home-link\" id=\"researchlink\" href=\"/research\" target=\"_top\">Charts</a>\n",
+        "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Auto-Tourneys</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
-        "        <a class=\"home-link sub-link under-watch\" id=\"perflink\" ",
-        "href=\"/performance\" target=\"_top\" ",
-        "title=\"How fast the simulator plays: the fastest game on video and how long a self-play game takes\">",
-        "Performance</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
@@ -2166,33 +2162,31 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     }
     assert!(EMBEDDED_APP_JS.contains("document.body.classList.toggle(\"watching-sim\", SPEC);"));
     assert!(EMBEDDED_APP_JS.contains("document.documentElement.classList.add(\"seat-known\");"));
-    // A branch is folded unless its page is the one on screen: Performance
-    // shows under CIVVIS while a simulation is being watched and at no
-    // other time. Waiting for the first observation would grow the box by
-    // a row as the page loads, so until then the branch goes by the
-    // address, which the head script reads the way `beta/shim.js` does
-    // (`mode=play` is a seat, anything else a watched simulation).
-    assert!(EMBEDDED_INDEX.contains(concat!(
-        "  .head-links > .sub-link { display: none; grid-column: 2; }\n",
-        "  html.opens-watching:not(.seat-known) .head-links > .under-watch,\n",
-        "  body.watching-sim .head-links > .under-watch { display: grid; }\n",
-    )));
-    assert!(EMBEDDED_INDEX.contains(concat!(
-        "    const mode = (new URLSearchParams(location.search).get(\"mode\") || \"\").trim().toLowerCase();\n",
-        "    if (mode !== \"play\") document.documentElement.classList.add(\"opens-watching\");\n",
-    )));
-    assert!(include_str!("../../beta/shim.js")
-        .contains("const value = (search.get(name) || \"\").trim().toLowerCase();"));
-    // It opens the site's own Performance page, which the publish script
-    // builds into every lane and makes this link lane-relative for, as it
-    // does for the other pages. That page lists the same six names with
-    // CIVVIS's branch open and itself, in the branch, as the gold one, and
-    // it is where the long write-up in the repository is linked from.
+    // CIVVIS has no branch now, so nothing of the machinery that showed
+    // one under it from the first paint is left: no Performance link, no
+    // rule that unfolds it, and no head script reading the address for it.
+    // Performance is listed under Charts on the Charts page and on its own.
+    for gone in [
+        "perflink",
+        "sub-link",
+        "under-watch",
+        "opens-watching",
+        ">Performance</a>",
+    ] {
+        assert!(
+            !EMBEDDED_INDEX.contains(gone),
+            "the masthead still carries CIVVIS's old branch: {gone}"
+        );
+    }
     let performance = include_str!("../../beta/performance.html");
     assert!(performance.contains(concat!(
-        "        <a class=\"site-link\" href=\"../\" ",
-        "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
+        "        <a class=\"site-link\" href=\"../research/\" ",
+        "title=\"What the CIVVIS AI agents&#8217; games show.\">Charts</a>\n",
         "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">Performance</a>\n",
+    )));
+    assert!(include_str!("../../beta/research.html").contains(concat!(
+        "        <a class=\"site-link\" href=\"./\" aria-current=\"page\">Charts</a>\n",
+        "        <a class=\"site-link sub-link\" href=\"../performance/\" ",
     )));
     assert!(performance
         .contains("<script type=\"application/json\" id=\"performance-data\">null</script>"));
@@ -2203,7 +2197,6 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     ))
     .is_file());
     let publish = include_str!("../../beta/publish.sh");
-    assert!(publish.contains("('href=\"/performance\"', 'href=\"performance/\"'),"));
     assert!(publish.contains("cp \"$performance_page\" \"$out/performance/index.html\""));
     // The old label named the destination twice over.
     assert!(!EMBEDDED_INDEX.contains("Open sim debugger"));
@@ -2211,7 +2204,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // `[hidden]`, so it has to restate what hidden means or the links
     // appear on desktop builds that honour neither destination.
     assert!(EMBEDDED_INDEX.contains(
-        ".head-links {\n    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));"
+        ".head-links {\n    display: grid; grid-template-columns: repeat(10, minmax(0, 1fr));"
     ));
     assert!(EMBEDDED_INDEX.contains(".head-links[hidden] { display: none; }"));
     assert!(EMBEDDED_INDEX
@@ -2225,21 +2218,20 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         "    ('href=\"/research\"', 'href=\"research/\"'),\n",
         "    ('href=\"/tournaments\"', 'href=\"tournaments/\"'),\n",
     )));
-    // Two by two, a link is half its row and the six top-level names make
-    // three even rows: the six-to-four split STRAT DEBUGGER needed went
-    // with the name (AI DEBUGGER is 72px there and half a row holds 84px
-    // at its narrowest, a 195px band). A branch stands in the second
-    // column, under CIVVIS, with the half row beside it empty, so the next
-    // top-level name starts a row of its own; PERFORMANCE is 80px there,
-    // which is why it is not set in from the edge. With the branch always
-    // in the markup the count of links is odd whether or not it shows, so
-    // the rule that gave an odd last link its whole row is gone with the
-    // split.
+    // Two by two, a link is half its row, except on the second row: there
+    // AUTO-TOURNEYS takes six tenths and CIVVIS four. Measured in Chrome in
+    // the system face, AUTO-TOURNEYS is 91.3px in this type and half a row
+    // holds 84px at its narrowest (a 195px band), six tenths 103.8px;
+    // CIVVIS is 36px in the 64.2px left to it.
+    assert!(EMBEDDED_INDEX.contains(concat!(
+        "  .head-links > .home-link { grid-column: span 5; }\n",
+        "  .head-links > #tourlink { grid-column: span 6; }\n",
+        "  .head-links > #watchlink { grid-column: span 4; }\n",
+    )));
     for gone in [
         ".head-links > :last-child:nth-child(odd)",
         ".head-links > #playlink { grid-column: span 6; }",
         ".head-links > #civ6link { grid-column: span 4; }",
-        ".head-links > * { grid-column: span 5; }",
     ] {
         assert!(
             !EMBEDDED_INDEX.contains(gone),
@@ -2282,15 +2274,13 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // type at .02em, 86px inside it, and 7px gutters, so the column and its
     // gutter take 99px of the band and neither width at which the lockup
     // changes shape has moved. Measured in Chrome in the system face:
-    // TOURNAMENTS, the longest name now, is 71.5px and AI DEBUGGER 62.8px.
-    // A branch is set in 8px from the column's left edge, which leaves 78px
-    // for PERFORMANCE's 70.1px. Each link is one track in the column
-    // wherever it stands two by two.
+    // AUTO-TOURNEYS, the longest name now, is 80.2px and AI DEBUGGER
+    // 62.8px. Each link is one track in the column wherever it stands two
+    // by two.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "    #side .brand:has(> .head-links:not([hidden])) .home-link {\n",
         "      grid-column: auto; padding: 1px 2px 2px; font-size: 8.5px; letter-spacing: .02em;\n",
-        "    }\n",
-        "    #side .brand:has(> .head-links:not([hidden])) .sub-link { margin-left: 8px; }\n",
+        "    }\n  }\n",
     )));
     assert!(!EMBEDDED_INDEX.contains("--site-rail: 88px"));
     // The links still do not hold their text to one line by rule: in a
@@ -2395,10 +2385,10 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
 }
 
 /// The home page is one of the site's five pages and lists all five from
-/// its header, Home, Musings, Tournaments, CIVVIS and AI Debugger, with itself in gold
+/// its header, Home, Charts, Auto-Tourneys, CIVVIS and AI Debugger, with itself in gold
 /// and the Civ 6 link under them, as the viewer's masthead does; below that
 /// it is one paragraph and the rankings. The Tournaments table that stood
-/// above the rankings moved to the Tournaments page (operator, 2026-11-21;
+/// above the rankings moved to the Auto-Tourneys page (operator, 2026-11-21;
 /// `beta/tournaments_page_test.py` pins that page). The two-card game menu that stood there, the
 /// world picker the cards opened and the photographs they carried are gone,
 /// and so is everything the Tactics row took with it before them.
@@ -2412,7 +2402,7 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
     let landing = include_str!("../../beta/landing.html");
     for piece in [
         // The site's pages in the viewer's order, this one marked as the
-        // page on screen, Tournaments saying what it lists and the other
+        // page on screen, Auto-Tourneys saying what it lists and the other
         // two saying in the viewer's own words what they open, then the
         // game itself. They stand to the left of the title (operator,
         // 2026-11-21: "on home, lets have the home/civvis/ai debugger/civ 6
@@ -2426,10 +2416,10 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
             "<nav class=\"site-nav\" aria-label=\"CIVVIS sites\">\n",
             "        <a class=\"site-link\" href=\"./\" aria-current=\"page\">Home</a>\n",
             "        <a class=\"site-link\" href=\"../research/\" ",
-            "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Musings</a>\n",
+            "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts</a>\n",
             "        <a class=\"site-link\" href=\"../tournaments/\" ",
             "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
-            "running, scheduled and finished.\">Tournaments</a>\n",
+            "running, scheduled and finished.\">Auto-Tourneys</a>\n",
             "        <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "        <a class=\"site-link\" href=\"../?mode=play\" ",
@@ -2459,14 +2449,14 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
     ] {
         assert!(landing.contains(piece), "the home page lost {piece}");
     }
-    // The column is as wide as its longest name on one line, TOURNAMENTS:
-    // 132px. While the Debugger's name was STRATEGY DEBUGGER the column was
+    // The column is as wide as its longest name on one line, AUTO-TOURNEYS:
+    // 145px. While the Debugger's name was STRATEGY DEBUGGER the column was
     // 178px and a phone under 380px narrowed it to its longest word, which
     // put the name on two lines. Every name stands on one line down to a
     // 320px phone with the page no wider than the screen (measured), so no
     // rule narrows the column. The home page has no pages of its own, so
-    // nothing is folded under it, and it does not list CIVVIS's branch:
-    // that shows only on CIVVIS.
+    // nothing is folded under it, and it does not list Charts' branch:
+    // that shows only on Charts and on Performance.
     assert!(
         !landing.contains("min-content"),
         "the home page narrows its site list again, which puts a name on two lines"
@@ -2475,6 +2465,8 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
         "Strat Debugger",
         "Strategy Debugger",
         ">Research</a>",
+        ">Musings</a>",
+        ">Tournaments</a>",
         ">Performance</a>",
     ] {
         assert!(!landing.contains(gone), "the home page still says {gone}");

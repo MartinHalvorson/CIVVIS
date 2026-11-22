@@ -504,31 +504,39 @@ class Page(unittest.TestCase):
         script = PAGE[PAGE.index("<script>") :]
         self.assertEqual(re.findall(r'"[^"\n]*Deity[^"\n]*"', script), [])
 
-    def test_every_page_lists_research_between_home_and_tournaments(self):
+    def test_every_page_lists_charts_between_home_and_auto_tourneys(self):
         # Operator 2026-11-21: "between home and tournaments, we should add a
         # "Research"." This page lists the site's pages as the others do,
-        # with itself in gold. Its name in the list and on the tab is
-        # Musings since later that day (operator: "musings (rename
-        # research)"); the address, the file and the data kept theirs.
+        # with itself in gold. It was Musings later that day (operator:
+        # "musings (rename research)") and is Charts since 2026-11-22
+        # (operator: "Change musings to "Charts". Move performance from under
+        # civvis to charts. Charts is where almost all our charts can go");
+        # the address, the file and the data kept theirs. Its branch,
+        # Performance, is open under it here.
         self.assertIn(
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
             '        <a class="site-link" href="../home/">Home</a>\n'
-            '        <a class="site-link" href="./" aria-current="page">Musings</a>\n'
+            '        <a class="site-link" href="./" aria-current="page">Charts</a>\n'
+            '        <a class="site-link sub-link" href="../performance/" '
+            'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">Performance</a>\n'
             '        <a class="site-link" href="../tournaments/" ',
             PAGE,
         )
+        self.assertIn(".site-link.sub-link { margin-left: 10px; }", PAGE)
+        self.assertIn('charted on <a href="../performance/">Performance</a>.', PAGE)
         self.assertRegex(PAGE, r'<div class="site-brand">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"[^>]*>[\s\S]*?</nav>\s*<div class="site-lockup">')
-        self.assertIn("<title>Musings · CIVVIS.ai</title>", PAGE)
+        self.assertIn("<title>Charts · CIVVIS.ai</title>", PAGE)
         for page in (PAGE, LANDING, TOURNAMENTS, VIEWER):
             self.assertNotIn(">Research</a>", page)
+            self.assertNotIn(">Musings</a>", page)
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Musings</a>'
+            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Charts</a>'
                       r'\s*<a class="site-link" href="\.\./tournaments/"'),
-            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Musings</a>'
-                          r'\s*<a class="site-link" href="\./" aria-current="page">Tournaments</a>'),
+            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Charts</a>'
+                          r'\s*<a class="site-link" href="\./" aria-current="page">Auto-Tourneys</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="researchlink" href="/research" target="_top">Musings</a>\s*'
-                     r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>'),
+                     r'<a class="home-link" id="researchlink" href="/research" target="_top">Charts</a>\s*'
+                     r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Auto-Tourneys</a>'),
         ):
             self.assertRegex(page, pattern)
 

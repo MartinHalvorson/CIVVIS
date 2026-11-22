@@ -9,7 +9,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
 <style>
   /* The home page's own palette, header and cards (`beta/landing.html`), as
-     the Musings and Tournaments pages repeat them: the pages are one site
+     the Charts and Auto-Tourneys pages repeat them: the pages are one site
      and read as one. Each is a single file with no shared stylesheet, so
      what they share is repeated here. */
   :root {
@@ -29,7 +29,7 @@
     --gold: #d7b66a;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
     /* Every chart of the page draws one thing, game time, so every mark is
-       this one blue: the first of the Musings page's chart colours, checked
+       this one blue: the first of the Charts page's chart colours, checked
        against this panel (#1f2733) at 3:1 and over. A band is the same blue
        let through at a part of its strength. */
     --series: #3987e5;
@@ -84,7 +84,7 @@
   .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
   .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* The site's pages, listed in the same order on every one of them with
-     the page on screen in gold: Home, Musings, Tournaments, CIVVIS and AI
+     the page on screen in gold: Home, Charts, Auto-Tourneys, CIVVIS and AI
      Debugger, and under them the game they are built on. As on the home
      page, whose header this is, the column stands to the left of the title. */
   .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
@@ -111,10 +111,11 @@
   /* The list is a tree that keeps its branches folded (operator,
      2026-11-21: "a somewhat collapsable model for the info"): a page's own
      pages are listed under it only on that page and on those pages. This is
-     CIVVIS's one, so here CIVVIS's branch is open and this page is the gold
+     Charts' one (operator, 2026-11-22: "Move performance from under civvis
+     to charts"), so here Charts' branch is open and this page is the gold
      entry in it, set in from the rest. Every name stands on one line
      (operator, 2026-11-21: "make sure it fits on one line"), and the column
-     is as wide as its longest, which with the step in is PERFORMANCE. */
+     is as wide as its longest, AUTO-TOURNEYS: 145px. */
   .site-link.sub-link { margin-left: 10px; }
 
   .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
@@ -259,19 +260,20 @@
   <header class="shell site-header">
     <div class="site-brand">
       <!-- The site's pages, in the order every one of them lists them, with
-           the page on screen in gold. This is Performance, CIVVIS's own
-           page (operator 2026-11-21: "a submenu appears under civvis
-           'Performance'", then "performance should be a page similar to the
-           home/ and other similar pages"): it stands under CIVVIS, set in,
-           here and on CIVVIS itself, and on no other page. Every link is
-           lane-relative (this page lives at <lane>/performance/), so the
-           test lane's page opens the test lane's other pages and viewer. -->
+           the page on screen in gold. This is Performance, Charts' own
+           page (operator 2026-11-21: "performance should be a page similar
+           to the home/ and other similar pages"; 2026-11-22: "Move
+           performance from under civvis to charts"): it stands under
+           Charts, set in, here and on Charts itself, and on no other page.
+           Every link is lane-relative (this page lives at
+           <lane>/performance/), so the test lane's page opens the test
+           lane's other pages and viewer. -->
       <nav class="site-nav" aria-label="CIVVIS sites">
         <a class="site-link" href="../home/">Home</a>
-        <a class="site-link" href="../research/" title="What the CIVVIS AI agents&#8217; games show.">Musings</a>
-        <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
-        <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
+        <a class="site-link" href="../research/" title="What the CIVVIS AI agents&#8217; games show.">Charts</a>
         <a class="site-link sub-link" href="./" aria-current="page">Performance</a>
+        <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Auto-Tourneys</a>
+        <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
         <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
         <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
