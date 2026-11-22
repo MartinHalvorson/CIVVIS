@@ -645,6 +645,10 @@ impl AdvancedAi {
         /// Opt-in gene `settler-fallback-takes-seen-ground`; see
         /// `advanced/settler_fallback_takes_seen_ground.rs`.
         settler_fallback_takes_seen_ground => enable_settler_fallback_takes_seen_ground, disable_settler_fallback_takes_seen_ground;
+        /// Opt-in gene `strategic-unit-closes-the-dark-age`: one short, the
+        /// first unit of a strategic resource not used yet; see
+        /// `advanced/strategic_unit_closes_the_age.rs`.
+        strategic_unit_closes_the_dark_age => enable_strategic_unit_closes_the_dark_age, disable_strategic_unit_closes_the_dark_age;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
