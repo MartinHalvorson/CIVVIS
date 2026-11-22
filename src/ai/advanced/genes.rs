@@ -6510,6 +6510,15 @@ pub const GENES: &[Gene] = &[
     // such plots t10-t15 while a seen site worth 160.8 stood seven tiles
     // away. See `advanced/settler_fallback_takes_seen_ground.rs`.
     Gene { tag: "settler-fallback-takes-seen-ground", field: "settler_fallback_takes_seen_ground", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_fallback_takes_seen_ground, disable: AdvancedAi::disable_settler_fallback_takes_seen_ground },
+    // Live Tournament 6/7 / Lv 8 Deity 2026-11-21/22: 26 of 128 Dark Ages were
+    // entered exactly one Era Score short. The first unit of each strategic
+    // resource is a 1-point Moment (2 first in the world), read 4-5 times a
+    // game from the host, so a resource no unit of ours has used is one unit
+    // from closing the Age. One short with the era closing, the cheapest such
+    // unit is built in whole turns inside the era, else bought; the unique
+    // unit's and the first ship's heads are left alone. Opt-in; see
+    // `advanced/strategic_unit_closes_the_age.rs`.
+    Gene { tag: "strategic-unit-closes-the-dark-age", field: "strategic_unit_closes_the_dark_age", kind: Kind::OptIn, enable: AdvancedAi::enable_strategic_unit_closes_the_dark_age, disable: AdvancedAi::disable_strategic_unit_closes_the_dark_age },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
