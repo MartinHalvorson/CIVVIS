@@ -40,19 +40,20 @@ impl Game {
         // It used to be a fresh map of copies of every remembered tile, built
         // for each of the 2,000-odd views a gene-screen game builds, though
         // the view copies only the tiles it does not see.
-        let merged: Option<BTreeMap<Pos, (u32, &RememberedTile)>> = (viewers.len() > 1).then(|| {
-            let mut tiles = BTreeMap::new();
-            for &viewer in &viewers {
-                let memory = &self.players[viewer].remembered_tiles;
-                for (pos, tile) in memory.iter() {
-                    let stamp = memory.seen_turn(pos);
-                    if tiles.get(pos).is_none_or(|(old, _)| stamp >= *old) {
-                        tiles.insert(*pos, (stamp, tile));
+        let merged: Option<BTreeMap<Pos, (u32, &RememberedTile)>> =
+            (viewers.len() > 1).then(|| {
+                let mut tiles = BTreeMap::new();
+                for &viewer in &viewers {
+                    let memory = &self.players[viewer].remembered_tiles;
+                    for (pos, tile) in memory.iter() {
+                        let stamp = memory.seen_turn(pos);
+                        if tiles.get(pos).is_none_or(|(old, _)| stamp >= *old) {
+                            tiles.insert(*pos, (stamp, tile));
+                        }
                     }
                 }
-            }
-            tiles
-        });
+                tiles
+            });
         let known = |pos: &Pos| -> Option<&RememberedTile> {
             match &merged {
                 Some(tiles) => tiles.get(pos).map(|(_, tile)| *tile),
