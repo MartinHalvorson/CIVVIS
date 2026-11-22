@@ -645,6 +645,10 @@ impl AdvancedAi {
         /// Opt-in gene `settler-fallback-takes-seen-ground`; see
         /// `advanced/settler_fallback_takes_seen_ground.rs`.
         settler_fallback_takes_seen_ground => enable_settler_fallback_takes_seen_ground, disable_settler_fallback_takes_seen_ground;
+        /// Opt-in gene `staged-siege-keeps-its-breakers`: a staged siege with
+        /// nothing to open the walls holds its queued breakers; see
+        /// `advanced/staged_siege_keeps_its_breakers.rs`.
+        staged_siege_keeps_its_breakers => enable_staged_siege_keeps_its_breakers, disable_staged_siege_keeps_its_breakers;
         /// Opt-in gene `strategic-unit-closes-the-dark-age`: one short, the
         /// first unit of a strategic resource not used yet; see
         /// `advanced/strategic_unit_closes_the_age.rs`.
