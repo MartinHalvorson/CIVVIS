@@ -566,3 +566,6 @@ mod plot_refusal_tests;
 
 #[cfg(test)]
 mod kept_yields_tests;
+
+#[cfg(test)]
+mod refusals_alone_reopen_tests;
