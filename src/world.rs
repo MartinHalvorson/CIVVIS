@@ -498,6 +498,34 @@ impl TileGrid {
         self.tiles.iter()
     }
 
+    /// Every position whose tile differs between this grid and `other`, in
+    /// map order; empty when the two share one allocation, and `None` when
+    /// they are not grids of the same map. A cache that drew conclusions on
+    /// `other` reads this to keep the ones whose ground has not moved, which
+    /// the epoch cannot say: two grids cloned from one board count their
+    /// writes from the same epoch.
+    pub fn differing_positions(&self, other: &TileGrid) -> Option<Vec<Pos>> {
+        if std::sync::Arc::ptr_eq(&self.tiles, &other.tiles) {
+            return Some(Vec::new());
+        }
+        if self.width != other.width
+            || self.height != other.height
+            || self.tiles.len() != other.tiles.len()
+        {
+            return None;
+        }
+        let mut changed = Vec::new();
+        for (tile, before) in self.tiles.iter().zip(other.tiles.iter()) {
+            if tile.pos != before.pos {
+                return None;
+            }
+            if tile != before {
+                changed.push(tile.pos);
+            }
+        }
+        Some(changed)
+    }
+
     pub fn values_mut(&mut self) -> std::slice::IterMut<'_, Tile> {
         self.note_write(None);
         std::sync::Arc::make_mut(&mut self.tiles).iter_mut()

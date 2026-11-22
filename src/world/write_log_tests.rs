@@ -76,3 +76,27 @@ fn a_reader_further_behind_than_the_log_is_told_nothing_is_known() {
     g.get_mut(&a);
     assert_eq!(g.writes_since(recent), Some(vec![a]));
 }
+
+#[test]
+fn differing_positions_names_only_the_tiles_whose_content_changed() {
+    let base = grid();
+    let mut g = base.clone();
+    assert_eq!(
+        g.differing_positions(&base),
+        Some(Vec::new()),
+        "a grid still sharing its tiles differs nowhere"
+    );
+    let (a, b) = (*g.keys().next().unwrap(), *g.keys().nth(9).unwrap());
+    g.get_mut(&a).unwrap().hills = true;
+    g.get_mut(&b);
+    assert_eq!(
+        g.differing_positions(&base),
+        Some(vec![a]),
+        "a tile opened for writing but left as it was has not changed"
+    );
+    assert_eq!(
+        TileGrid::new(9, 6).differing_positions(&base),
+        None,
+        "a grid of another map is not compared"
+    );
+}
