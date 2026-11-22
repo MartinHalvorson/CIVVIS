@@ -238,6 +238,92 @@
   .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
 
+  /* The speed timeline, over the videos (operator, 2026-11-22: "Above the 6
+     seconds video, lets have a timeline: right to left: 5 hrs for me to play
+     a Civ 6 game ... Provide a speedup number: Like 123,654x"). Its one
+     number is how many times faster than a person the fastest way of playing
+     gets through a game. Under it is a line of multipliers by tenfolds, 1x
+     at the right end and the goal at the left, and each way of playing
+     stands where its multiplier puts it, with its name, the time one game
+     takes and its multiplier. The line is drawn solid as far as the fastest
+     stop and dashed from there to the goal, which is the line's last entry.
+     The figures are the page's
+     `home-speedup` slot, written when the site is published
+     (`beta/speedup_timeline.py`), and the section stays hidden on a page
+     that was not.
+
+     As written this is the narrow layout, a list of the stops, slowest
+     first: a line of seven tenfolds does not fit a phone. From 1000px the
+     list becomes the line. */
+  .speed { margin: 0 0 26px; }
+  .speed [hidden] { display: none; }
+  .speed-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; margin: 0 0 8px; }
+  .speed-number { margin: 0; color: var(--gold); font-size: 34px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .speed-claim { margin: 0; color: var(--text); font-size: 15px; }
+  .speed-claim span { color: var(--muted); font-size: 13px; }
+  .speed-aim { margin: 0 0 0 auto; font-size: 13px; }
+  .speed-aim a { color: var(--accent); text-decoration: none; white-space: nowrap; }
+  .speed-aim a:hover { text-decoration: underline; }
+  .speed-axis { display: none; }
+  .speed-line { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
+  .speed-stop { padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .speed-dot { display: none; }
+  .speed-label { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 0 14px; }
+  .speed-name { color: var(--text); font-size: 14px; font-weight: 600; }
+  .speed-what { grid-column: 1; grid-row: 2; color: var(--muted); font-size: 12px; line-height: 1.4; }
+  .speed-read { grid-column: 2; grid-row: 1; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .speed-read b { color: #fff; font-size: 16px; font-weight: 700; }
+  .speed-read i { margin-left: 6px; color: var(--gold); font-size: 14px; font-style: normal; font-weight: 700; }
+  .speed-goal { grid-column: 2; grid-row: 2; color: var(--muted); font-size: 11.5px; text-align: right; white-space: nowrap; }
+  .speed-stop.is-fastest .speed-name { color: #fff; }
+  /* A phone keeps the names and the figures and leaves the sentences out. */
+  @media (max-width: 639px) { .speed-what { display: none; } }
+  @media (min-width: 1000px) {
+    /* The line: 70px of room over it for the stops that stand above, the
+       tenfolds' own marks under it, and the stops that stand below under
+       those. A stop is a point on the line, `--at` of the way from the
+       right end, and its words are 150px wide and centred on it, or end at
+       it when the point is too near an end of the line to centre on. */
+    .speed-track { position: relative; height: 160px; }
+    .speed-axis {
+      display: block; position: absolute; left: 0; right: 0; top: 70px; height: 2px;
+      background: repeating-linear-gradient(to right, var(--border-strong) 0 6px, transparent 6px 10px);
+    }
+    .speed-axis::after {
+      content: ""; position: absolute; right: 0; top: 0; height: 2px; width: calc(var(--reach, 0) * 100%);
+      background: var(--accent);
+    }
+    .speed-tick {
+      position: absolute; right: calc(var(--at) * 100%); top: 0; padding-top: 8px; transform: translateX(50%);
+      color: var(--faint); font-size: 11px; line-height: 1.2; white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
+    .speed-tick::before { content: ""; position: absolute; left: 50%; top: -2px; width: 1px; height: 7px; background: var(--border-strong); }
+    .speed-tick.is-end { transform: none; }
+    .speed-tick.is-end::before { left: auto; right: 0; }
+    .speed-tick.is-start { transform: translateX(100%); }
+    .speed-tick.is-start::before { left: 0; }
+    .speed-line { position: absolute; left: 0; right: 0; top: 70px; height: 0; border: 0; }
+    .speed-stop { position: absolute; right: calc(var(--at) * 100%); top: 0; width: 0; height: 0; padding: 0; border: 0; }
+    .speed-dot {
+      display: block; position: absolute; left: -5px; top: -4px; width: 10px; height: 10px;
+      border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg);
+    }
+    .speed-stop.is-fastest .speed-dot { left: -7px; top: -6px; width: 14px; height: 14px; background: var(--gold); }
+    .speed-label { display: block; position: absolute; left: -75px; width: 150px; text-align: center; line-height: 1.3; }
+    .speed-stop.is-above .speed-label { bottom: 11px; }
+    .speed-stop.is-below .speed-label { top: 29px; }
+    .speed-stop.is-end .speed-label { left: auto; right: -5px; text-align: right; }
+    .speed-stop.is-start .speed-label { left: -5px; text-align: left; }
+    /* The goal is the line's left end, a ring where the stops are dots:
+       nothing has reached it. */
+    .speed-finish { right: 100%; }
+    .speed-finish .speed-dot { background: var(--bg); border: 2px solid var(--gold); box-shadow: none; }
+    .speed-name { display: block; font-size: 13px; white-space: nowrap; }
+    .speed-what { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .speed-read { display: block; text-align: inherit; }
+    .speed-goal { display: block; text-align: inherit; }
+  }
+
   /* The page is four videos, two by two (operator, 2026-11-22): the
      fastest game upper left, a single player's view of a game upper right,
      the AI Debugger lower left and a Lv 8 victory lower right. They are
@@ -341,6 +427,87 @@
       you run into.
     </p>
 
+    <!-- The speed timeline (operator, 2026-11-22: "Above the 6 seconds
+         video, lets have a timeline: right to left: 5 hrs for me to play a
+         Civ 6 game, 10-15 minutes with CIVVIS computer control, how long
+         with Firaxis Civ 6 Deity Sim? CIVVIS self-play should be down to
+         10s or so. Can scale across M5 Max cores to 1 game per second.
+         which is on the left. We should track the multipliers for each one
+         though and see how much we can push things. 1,000,000x speed
+         imrpove would be a huge achievement over playing Civ 6 games.
+         Provide a speedup number: Like 123,654x."). The stops are written
+         here slowest first, with their names; their times, multipliers and
+         places on the line are `data/performance/speedup_timeline.json`,
+         worked out by `beta/speedup_timeline.py` and written into the
+         `home-speedup` slot below when the site is published. Nothing is
+         shown until then: a figure written here would be a copy to keep in
+         step by hand. -->
+    <section class="speed" id="speed" aria-label="How many times faster than a person a game is played" hidden>
+      <div class="speed-head">
+        <p class="speed-number" data-speed="speedup"></p>
+        <p class="speed-claim">faster than playing a game of Civilization VI by hand <span data-speed="was" hidden></span></p>
+        <p class="speed-aim"><a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/SPEEDUP_TIMELINE.md" target="_blank" rel="noreferrer">How it is measured</a></p>
+      </div>
+      <div class="speed-track">
+        <div class="speed-axis" aria-hidden="true"></div>
+        <ol class="speed-line">
+          <li class="speed-stop" data-stop="hand">
+            <span class="speed-dot" aria-hidden="true"></span>
+            <span class="speed-label">
+              <b class="speed-name">Human player</b>
+              <small class="speed-what">One person plays one game of Civilization VI.</small>
+              <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+              <small class="speed-goal" data-speed="goal" hidden></small>
+            </span>
+          </li>
+          <li class="speed-stop" data-stop="control">
+            <span class="speed-dot" aria-hidden="true"></span>
+            <span class="speed-label">
+              <b class="speed-name">CIVVIS computer control</b>
+              <small class="speed-what">CIVVIS plays the real Civilization VI against its Deity AI.</small>
+              <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+              <small class="speed-goal" data-speed="goal" hidden></small>
+            </span>
+          </li>
+          <li class="speed-stop" data-stop="deity_sim">
+            <span class="speed-dot" aria-hidden="true"></span>
+            <span class="speed-label">
+              <b class="speed-name">Firaxis Civ 6 Deity sim</b>
+              <small class="speed-what">The same game in the simulator, on one core: a CIVVIS seat against five Deity rivals that play as Civilization VI&#8217;s AI does.</small>
+              <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+              <small class="speed-goal" data-speed="goal" hidden></small>
+            </span>
+          </li>
+          <li class="speed-stop" data-stop="self_play">
+            <span class="speed-dot" aria-hidden="true"></span>
+            <span class="speed-label">
+              <b class="speed-name">CIVVIS self-play</b>
+              <small class="speed-what">One simulator game on one core, every seat a CIVVIS AI agent.</small>
+              <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+              <small class="speed-goal" data-speed="goal" hidden></small>
+            </span>
+          </li>
+          <li class="speed-stop" data-stop="all_cores">
+            <span class="speed-dot" aria-hidden="true"></span>
+            <span class="speed-label">
+              <b class="speed-name">M5 Max, all 18 cores</b>
+              <small class="speed-what">Self-play on every core of one M5 Max: the time from one finished game to the next.</small>
+              <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+              <small class="speed-goal" data-speed="goal" hidden></small>
+            </span>
+          </li>
+          <li class="speed-stop speed-finish is-above is-start">
+            <span class="speed-dot" aria-hidden="true"></span>
+            <span class="speed-label">
+              <b class="speed-name">Goal</b>
+              <small class="speed-what">A million games in the time a person plays one.</small>
+              <span class="speed-read"><b data-speed="target-time"></b> <i data-speed="target"></i></span>
+            </span>
+          </li>
+        </ol>
+      </div>
+    </section>
+
     <!-- Four videos, two by two (operator, 2026-11-22: "On home, we can have
          our fastest game youtube video embedded to watch in the upper left.
          in upper right, we can have a single player pov game", and later
@@ -397,6 +564,64 @@
   </main>
 
   <script type="application/json" id="home-videos">null</script>
+  <script type="application/json" id="home-speedup">null</script>
+  <script>
+  // The speed timeline. The slot holds every figure as the words the page
+  // shows (`beta/speedup_timeline.py`), so this only puts them where they
+  // go: a stop's time, multiplier and goal into its entry, its place on
+  // the line into `--at`, which side of the line its words stand on, and
+  // the tenfolds' marks along the line. A stop the slot does not name is
+  // not shown, and with no slot the section stays hidden.
+  (() => {
+    let data = null;
+    try { data = JSON.parse(document.getElementById("home-speedup").textContent); } catch (_) {}
+    const section = document.getElementById("speed");
+    if (!section || !data || !Array.isArray(data.stops)) return;
+    const put = (root, name, text) => {
+      const place = root.querySelector('[data-speed="' + name + '"]');
+      if (!place) return;
+      place.textContent = text || "";
+      place.hidden = !text;
+    };
+    const named = new Map(data.stops.map((stop) => [stop.key, stop]));
+    let shown = 0;
+    for (const entry of section.querySelectorAll("[data-stop]")) {
+      const stop = named.get(entry.dataset.stop);
+      entry.hidden = !stop;
+      if (!stop) continue;
+      shown += 1;
+      put(entry, "time", stop.time);
+      put(entry, "times", stop.times);
+      put(entry, "goal", stop.goal);
+      entry.style.setProperty("--at", stop.at);
+      entry.classList.add(stop.side === "above" ? "is-above" : "is-below");
+      // Words centred on a point this near an end of the line would run
+      // off it, so they end at the point instead.
+      entry.classList.toggle("is-end", stop.at < 0.08);
+      entry.classList.toggle("is-start", stop.at > 0.92);
+      entry.classList.toggle("is-fastest", stop.key === data.fastest);
+      // Held over a stop: what it is, how its time was measured, and
+      // where its multiplier stood at its first reading.
+      entry.title = [entry.querySelector(".speed-what").textContent, stop.from, stop.was && "It was " + stop.was + "."]
+        .filter(Boolean).join(" ");
+    }
+    if (!shown) return;
+    put(section, "speedup", data.speedup);
+    put(section, "target", data.goal);
+    put(section, "target-time", data.goal_time);
+    put(section, "was", data.was && "(was " + data.was + ")");
+    const axis = section.querySelector(".speed-axis");
+    axis.style.setProperty("--reach", data.reach);
+    for (const tick of data.ticks || []) {
+      const mark = document.createElement("span");
+      mark.className = "speed-tick" + (tick.at <= 0 ? " is-end" : tick.at >= 1 ? " is-start" : "");
+      mark.style.setProperty("--at", tick.at);
+      mark.textContent = tick.times;
+      axis.append(mark);
+    }
+    section.hidden = false;
+  })();
+  </script>
   <script>
   // The video tiles. A tile's video is its `data-video`, and the fastest
   // game's is the record the slot names, when the page was published with

@@ -1,0 +1,42 @@
+{
+  "about": [
+    "The speed timeline on the home page (`beta/landing.html`): five ways one game of Civilization VI gets played, and how many times faster each is than a person playing it by hand. `docs/SPEEDUP_TIMELINE.md` says how each stop is measured.",
+    "Operator 2026-11-22: \"Above the 6 seconds video, lets have a timeline: right to left: 5 hrs for me to play a Civ 6 game, 10-15 minutes with CIVVIS computer control, how long with Firaxis Civ 6 Deity Sim? CIVVIS self-play should be down to 10s or so. Can scale across M5 Max cores to 1 game per second. which is on the left. We should track the multipliers for each one though and see how much we can push things. 1,000,000x speed imrpove would be a huge achievement over playing Civ 6 games. Provide a speedup number: Like 123,654x.\"",
+    "`stops` are listed slowest first as the operator listed them, and the first is the one the others are measured against. A stop's `readings` are its measurements, oldest first: `taken` the day, `seconds` the time one game takes, `from` how it was measured. The newest reading is the one shown; the older ones are the track of how far the stop has been pushed. A stop with `follows` keeps no readings: it is read from that ledger, one reading for every run that set a record.",
+    "`goal` is the multiplier the line ends at, and a stop's `goal_seconds` its own target (the operator's \"10s or so\" for a self-play game and \"1 game per second\" across the cores).",
+    "Nothing derived is written here. `beta/speedup_timeline.py` works out every multiplier, text and place on the line when the site is published."
+  ],
+  "goal": 1000000,
+  "stops": [
+    {
+      "key": "hand",
+      "readings": [
+        {"taken": "2026-11-22", "seconds": 18000, "from": "The project owner's own figure for one game played by hand: five hours."}
+      ]
+    },
+    {
+      "key": "control",
+      "readings": [
+        {"taken": "2026-11-22", "seconds": 757, "from": "The middle game of the 238 complete Lv 8 (Deity) verification games played from 2026-11-16 to 2026-11-22 (results.jsonl on the ledger branch; a game recorded once, ending in a victory of ours or a rival's), each timed from the stamp in its tag to the stamp of its result. A tenth took under 10.1 minutes and a tenth over 16.3."}
+      ]
+    },
+    {
+      "key": "deity_sim",
+      "readings": [
+        {"taken": "2026-11-22", "seconds": 29.1, "from": "Twelve games on one core, seeds 9101 to 9112, build a57ffc68: `gene_screen --jobs 1 --players 6 --width 74 --height 46 --city-states 9 --map continents --difficulty deity --rivals firaxis-faithful --handicap rivals --rival-chairs 5 --rival-rung -2 --rival-pace`. 349.7 s in all by the games' own `secs`, 19.6 s to 48.3 s a game, ending on turn 151 on average, every one by a science victory. Taken at nice 19 on a host at load 15 with a live Civilization VI game playing, so a quiet machine is faster."}
+      ]
+    },
+    {
+      "key": "self_play",
+      "goal_seconds": 10,
+      "readings": [
+        {"taken": "2026-11-22", "seconds": 57.1, "from": "Twelve standard self-play games on one core, seeds 20261122000000 to 20261122000011, build a57ffc68: `gene_screen --jobs 1` with its defaults (six CIVVIS seats, nine city-states, 74x46 Continents, Online speed, 250 turns). 685.5 s in all by the games' own `secs`, 28.9 s to 102.8 s a game, ending on turn 192 on average. Taken at nice 19 on a host at load 15 with a live Civilization VI game playing, so a quiet machine is faster; a worker of the every-core benchmark, whose neighbours are all busy too, takes 59 s."}
+      ]
+    },
+    {
+      "key": "all_cores",
+      "goal_seconds": 1,
+      "follows": "data/performance/games_per_minute.json"
+    }
+  ]
+}
