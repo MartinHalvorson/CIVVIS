@@ -1607,6 +1607,10 @@ impl AdvancedAi {
         } else {
             self.recovery_since = None;
         }
+        // `religious-seat-dedicates-to-the-evangelists`: a Religion seat takes
+        // Exodus of the Evangelists first; any Dedication left is the ordinary
+        // chooser's. See `advanced/religious_seat_dedicates_to_the_evangelists.rs`.
+        self.dedicate_to_the_evangelists(g, pid);
         if self.golden_dedication_serves_the_conquest {
             let age = g.players[pid].age.clone();
             for dedication in

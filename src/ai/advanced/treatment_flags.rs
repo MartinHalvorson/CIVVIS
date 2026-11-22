@@ -562,6 +562,10 @@ impl AdvancedAi {
         /// Opt-in gene `refusals-alone-reopen-the-turn`; see
         /// `ai::player::take_turn`.
         refusals_alone_reopen_the_turn => enable_refusals_alone_reopen_the_turn, disable_refusals_alone_reopen_the_turn;
+        /// Opt-in gene `religious-seat-dedicates-to-the-evangelists`: a Religion
+        /// seat takes Exodus of the Evangelists; see
+        /// `advanced/religious_seat_dedicates_to_the_evangelists.rs`.
+        religious_seat_dedicates_to_the_evangelists => enable_religious_seat_dedicates_to_the_evangelists, disable_religious_seat_dedicates_to_the_evangelists;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank

@@ -9712,6 +9712,10 @@ pub struct AdvancedAi {
     /// rolled outcome no longer each buy the whole turn again. See
     /// `ai::player::take_turn`. Off by default.
     refusals_alone_reopen_the_turn: bool,
+    /// `religious-seat-dedicates-to-the-evangelists`: a Religion seat takes
+    /// Exodus of the Evangelists whenever the age offers it. See
+    /// `advanced/religious_seat_dedicates_to_the_evangelists.rs`. Off by default.
+    religious_seat_dedicates_to_the_evangelists: bool,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -11571,6 +11575,9 @@ mod embassy_capital;
 
 /// `religion-race-keeps-expanding`: see `advanced/religion_race_expands.rs`.
 mod religion_race_expands;
+/// `religious-seat-dedicates-to-the-evangelists`: see
+/// `advanced/religious_seat_dedicates_to_the_evangelists.rs`.
+mod religious_seat_dedicates_to_the_evangelists;
 /// `russia-settles-the-tundra`: see `advanced/russia_tundra.rs`.
 mod russia_tundra;
 /// `stalled-conquest-takes-science`: see

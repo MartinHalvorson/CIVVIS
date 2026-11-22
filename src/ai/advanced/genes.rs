@@ -6340,6 +6340,17 @@ pub const GENES: &[Gene] = &[
     // game's compute (2026-11-22, three seeds, 30-37% per turn); this prices
     // what they buy. Opt-in, unpriced; see `ai::player::take_turn`.
     Gene { tag: "refusals-alone-reopen-the-turn", field: "refusals_alone_reopen_the_turn", kind: Kind::OptIn, enable: AdvancedAi::enable_refusals_alone_reopen_the_turn, disable: AdvancedAi::disable_refusals_alone_reopen_the_turn },
+    // Live Tournaments 6 and 7 2026-11-22: Exodus of the Evangelists (+2 Era
+    // Score a city converted to our religion, Normal and Dark Ages; +2
+    // Movement and Charges for religious units in a Golden Age) projects 0 on
+    // a native board, whose dedication tally counts research and construction
+    // only, so no Religion seat in 14 games took it in a Normal or Dark Age.
+    // Two Era Score per rise in cities following our religion out-earned the
+    // Dedication chosen in 29 of 35 such eras (mean +2.9), a better next age in
+    // 10, worse in 2. A Religion seat with a founded religion, or the Prophet
+    // race open, takes Exodus whenever it is offered. Opt-in; see
+    // `advanced/religious_seat_dedicates_to_the_evangelists.rs`.
+    Gene { tag: "religious-seat-dedicates-to-the-evangelists", field: "religious_seat_dedicates_to_the_evangelists", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_seat_dedicates_to_the_evangelists, disable: AdvancedAi::disable_religious_seat_dedicates_to_the_evangelists },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
