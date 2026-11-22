@@ -49,9 +49,9 @@ fn only_a_refusal_reopens_the_turn() {
             "seat {seat} replanned {replans} times on {refused} refusals"
         );
     }
-    let (off_replans, off_refused) = off
-        .iter()
-        .fold((0, 0), |(a, b), (replans, refused)| (a + replans, b + refused));
+    let (off_replans, off_refused) = off.iter().fold((0, 0), |(a, b), (replans, refused)| {
+        (a + replans, b + refused)
+    });
     assert!(
         off_replans > off_refused,
         "the control must replan for something besides refusals \
