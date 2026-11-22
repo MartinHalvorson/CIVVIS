@@ -568,9 +568,14 @@ fn trials_read_without_the_retreater_keep_more_and_stay_exact() {
         let fresh_second = DangerField::second_turn(&trial, 0);
         for trials in [&mut occupied, &mut vacated] {
             let first = trials.first_field(&trial);
-            assert!(first.same_reaches(&fresh_first), "first turn, stand {stand:?}");
             assert!(
-                trials.second_field(&first, &trial).same_reaches(&fresh_second),
+                first.same_reaches(&fresh_first),
+                "first turn, stand {stand:?}"
+            );
+            assert!(
+                trials
+                    .second_field(&first, &trial)
+                    .same_reaches(&fresh_second),
                 "second turn, stand {stand:?}"
             );
         }
