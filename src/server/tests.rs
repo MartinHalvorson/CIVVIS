@@ -2115,10 +2115,12 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// branches folded (same request: "a somewhat collapsable model for the
 /// info ... a submenu appears under civvis 'Performance' only when CIVVIS
 /// is selected"): a page's own pages are written straight after it and show
-/// only while it is the page on screen. Pinned as one literal because the
-/// list is the contract: six links in this order with CIVVIS's branch under
-/// it, inside a list that only the hosts serving a /home, a /research and a
-/// /tournaments reveal.
+/// only while it is the page on screen. Performance is a page of the site
+/// (operator, 2026-11-21: "performance should be a page similar to the home/
+/// and other similar pages (musings/research/) etc."), at /performance.
+/// Pinned as one literal because the list is the contract: six links in this
+/// order with CIVVIS's branch under it, inside a list that only the hosts
+/// serving a /home, a /research, a /tournaments and a /performance reveal.
 #[test]
 fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     assert!(EMBEDDED_INDEX.contains(concat!(
@@ -2128,9 +2130,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link sub-link under-watch\" id=\"perflink\" ",
-        "href=\"https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/SIMULATOR_PERFORMANCE.md\" ",
-        "target=\"_blank\" rel=\"noopener\" ",
-        "title=\"How fast the simulator runs: the performance notes on GitHub\">Performance</a>\n",
+        "href=\"/performance\" target=\"_top\" ",
+        "title=\"How fast the simulator plays: the fastest game on video and how long a self-play game takes\">",
+        "Performance</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
@@ -2181,13 +2183,28 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     )));
     assert!(include_str!("../../beta/shim.js")
         .contains("const value = (search.get(name) || \"\").trim().toLowerCase();"));
-    // It opens the long write-up where it lives, in the repository, in a
-    // tab of its own, as the Civ 6 link opens the shop.
+    // It opens the site's own Performance page, which the publish script
+    // builds into every lane and makes this link lane-relative for, as it
+    // does for the other pages. That page lists the same six names with
+    // CIVVIS's branch open and itself, in the branch, as the gold one, and
+    // it is where the long write-up in the repository is linked from.
+    let performance = include_str!("../../beta/performance.html");
+    assert!(performance.contains(concat!(
+        "        <a class=\"site-link\" href=\"../\" ",
+        "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
+        "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">Performance</a>\n",
+    )));
+    assert!(performance
+        .contains("<script type=\"application/json\" id=\"performance-data\">null</script>"));
+    assert!(performance.contains("/blob/main/docs/SIMULATOR_PERFORMANCE.md\""));
     assert!(std::path::Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/docs/SIMULATOR_PERFORMANCE.md"
     ))
     .is_file());
+    let publish = include_str!("../../beta/publish.sh");
+    assert!(publish.contains("('href=\"/performance\"', 'href=\"performance/\"'),"));
+    assert!(publish.contains("cp \"$performance_page\" \"$out/performance/index.html\""));
     // The old label named the destination twice over.
     assert!(!EMBEDDED_INDEX.contains("Open sim debugger"));
     // A list that draws itself as a grid outranks the user agent's

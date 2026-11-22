@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#171d25">
+<title>Performance · CIVVIS.ai</title>
+<meta name="description" content="How fast the CIVVIS simulator plays: the fastest complete game on video, how long a self-play game takes at the 1st, 10th, 50th, 90th and 99th percentile, and game time batch by batch.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
+<style>
+  /* The home page's own palette, header and cards (`beta/landing.html`), as
+     the Musings and Tournaments pages repeat them: the pages are one site
+     and read as one. Each is a single file with no shared stylesheet, so
+     what they share is repeated here. */
+  :root {
+    color-scheme: dark;
+    --bg: #171d25;
+    --panel: #1f2733;
+    --panel-raised: #242f3d;
+    --border: #2e3a4a;
+    --border-strong: #46566a;
+    --text: #e2e8ef;
+    --muted: #93a3b5;
+    --faint: #67788b;
+    --accent: #66c0f4;
+    --action-bg: #274b66;
+    --action-fg: #a8d8f5;
+    --action-hover: #315d7e;
+    --gold: #d7b66a;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    /* Every chart of the page draws one thing, game time, so every mark is
+       this one blue: the first of the Musings page's chart colours, checked
+       against this panel (#1f2733) at 3:1 and over. A band is the same blue
+       let through at a part of its strength. */
+    --series: #3987e5;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    min-width: 320px;
+    margin: 0;
+    overflow-x: hidden;
+    color: var(--text);
+    background: var(--bg);
+    font: 15px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  .shell { width: min(1060px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
+  main { padding-bottom: 48px; }
+
+  .site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding-top: 26px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .site-title { margin: 0; color: #fff; font-size: 26px; font-weight: 700; letter-spacing: 0.04em; }
+  .site-title span { color: var(--accent); font-weight: 600; }
+  .site-tagline { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
+  .site-tagline span { display: block; }
+  .utility-nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-left: auto; }
+  .utility-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    background: var(--panel);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .utility-link svg { width: 15px; height: 15px; flex: none; }
+  .utility-link:hover,
+  .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
+  .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The site's pages, listed in the same order on every one of them with
+     the page on screen in gold: Home, Musings, Tournaments, CIVVIS and AI
+     Debugger, and under them the game they are built on. As on the home
+     page, whose header this is, the column stands to the left of the title. */
+  .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
+  .site-lockup { min-width: 0; }
+  .site-nav { display: grid; flex: none; gap: 4px; }
+  .site-link {
+    display: block;
+    padding: 3px 12px 4px;
+    border-radius: 3px;
+    background: var(--action-bg);
+    color: var(--action-fg);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1.4;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .site-link:hover,
+  .site-link:focus-visible { background: var(--action-hover); color: #fff; }
+  .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .site-link[aria-current="page"],
+  .site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }
+  /* The list is a tree that keeps its branches folded (operator,
+     2026-11-21: "a somewhat collapsable model for the info"): a page's own
+     pages are listed under it only on that page and on those pages. This is
+     CIVVIS's one, so here CIVVIS's branch is open and this page is the gold
+     entry in it, set in from the rest. Every name stands on one line
+     (operator, 2026-11-21: "make sure it fits on one line"), and the column
+     is as wide as its longest, which with the step in is PERFORMANCE. */
+  .site-link.sub-link { margin-left: 10px; }
+
+  .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+  .intro a { color: var(--accent); }
+
+  .res-empty { margin: 0; color: var(--faint); font-size: 13px; }
+  .res-record { display: grid; gap: 16px; min-width: 0; }
+  .res-record[hidden], .res-empty[hidden], .res-section[hidden] { display: none; }
+  .res-section { min-width: 0; padding: 12px 14px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .rank-sub { max-width: 900px; margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
+  .rank-note { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+  .rank-note a { color: var(--accent); }
+  .rank-note p { margin: 0 0 4px; }
+
+  /* The fastest game on video: the record's picture, which plays the video
+     in its place when it is pressed, and beside it the record in words and
+     the records before it. Under 720px the words go under the picture. */
+  .perf-video { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px 22px; align-items: start; margin-top: 10px; }
+  @media (max-width: 719px) { .perf-video { grid-template-columns: minmax(0, 1fr); } }
+  .perf-poster {
+    position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden;
+    border: 1px solid var(--border-strong); border-radius: 4px; background: #0d1117;
+  }
+  .perf-poster img, .perf-poster iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .perf-poster img { object-fit: cover; }
+  .perf-poster:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .perf-play {
+    position: absolute; left: 50%; top: 50%; display: grid; place-items: center; width: 68px; height: 48px; margin: -24px 0 0 -34px;
+    border-radius: 12px; background: rgba(13, 17, 23, 0.82); color: #fff;
+  }
+  .perf-play svg { width: 22px; height: 22px; }
+  .perf-poster:hover .perf-play, .perf-poster:focus-visible .perf-play { background: var(--action-hover); }
+  .perf-record { min-width: 0; }
+  /* The one large figure of the page: the record's time, as its video's
+     title words it. */
+  .perf-hero { margin: 0; color: #fff; font-size: clamp(34px, 5vw, 48px); font-weight: 700; line-height: 1.1; }
+  .perf-hero-title { margin: 6px 0 0; color: var(--text); font-size: 14px; line-height: 1.45; }
+  .perf-posted { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
+  .perf-posted a { color: var(--accent); font-weight: 600; }
+  .perf-earlier-title { margin: 16px 0 2px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+  .perf-earlier { margin: 0; padding: 0; list-style: none; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .perf-earlier a { display: grid; grid-template-columns: 6.2em minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 5px 0; border-top: 1px solid var(--border); color: var(--text); text-decoration: none; }
+  .perf-earlier b { color: #fff; font-weight: 700; }
+  .perf-earlier span { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+  .perf-earlier span.n { color: var(--faint); }
+  .perf-earlier a:hover span:not(.n), .perf-earlier a:focus-visible span:not(.n) { color: var(--accent); }
+  .perf-earlier a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* The control, one row above everything it scopes: which games. */
+  .res-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin: 10px 0 4px; }
+  .res-control { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+  .res-control > span { color: var(--faint); font-size: 12px; }
+  .res-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 3px; overflow: hidden; }
+  .res-seg button {
+    min-height: 28px; padding: 0 10px; border: 0; border-left: 1px solid var(--border-strong); white-space: nowrap;
+    background: var(--panel); color: var(--muted); font: 600 12.5px/1 var(--sans); cursor: pointer;
+  }
+  .res-seg button:first-child { border-left: 0; }
+  .res-seg button[hidden] { display: none; }
+  .res-seg button:hover { background: var(--panel-raised); color: #fff; }
+  .res-seg button[aria-pressed="true"] { background: var(--action-bg); color: #fff; }
+  .res-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .res-counted { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .res-counted b { color: #fff; font-weight: 700; }
+  .res-counted a { color: var(--accent); }
+
+  /* The five percentiles, a tile each in the order asked for (operator
+     2026-11-21: "p1, p10, p50, p90, p99 times for games"): the name, the
+     time in seconds so the five compare at a glance, the same time in
+     minutes where it runs past one, and what the percentile means. Five
+     across; three and two on a phone. */
+  .perf-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 10px 0 0; }
+  @media (max-width: 639px) { .perf-tiles { grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); } }
+  .perf-tile { min-width: 0; padding: 8px 10px 9px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel-raised); }
+  .perf-tile-label { display: block; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: 0.04em; }
+  .perf-tile-value { display: block; color: #fff; font-size: clamp(19px, 2.6vw, 26px); font-weight: 700; line-height: 1.25; white-space: nowrap; }
+  .perf-tile-clock { display: block; min-height: 1.45em; color: var(--text); font-size: 12px; }
+  .perf-tile-say { display: block; color: var(--faint); font-size: 11.5px; line-height: 1.35; }
+  .perf-facts { margin: 8px 0 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .perf-facts b { color: #fff; font-weight: 700; }
+
+  /* The key of the batch chart: the line and its two bands, as they are drawn. */
+  .res-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 2px; padding: 0; list-style: none; color: var(--text); font-size: 12.5px; }
+  .res-legend li { display: inline-flex; align-items: center; gap: 6px; }
+  .res-swatch { width: 14px; height: 10px; border-radius: 2px; flex: none; background: var(--series); }
+  .res-linekey { width: 16px; height: 2px; border-radius: 1px; flex: none; background: var(--series); }
+
+  /* A chart: its title and the plot. The plot is drawn by the script below
+     at the width it is given. */
+  .res-kind { margin-top: 12px; }
+  .res-kind-title { margin: 0; color: #fff; font-size: 14px; font-weight: 700; }
+  .res-plot { position: relative; min-height: 40px; margin-top: 6px; }
+  .res-plot svg { display: block; overflow: visible; }
+  .res-grid line { stroke: var(--border); stroke-width: 1; shape-rendering: crispEdges; }
+  .res-base { stroke: var(--border-strong); stroke-width: 1; shape-rendering: crispEdges; }
+  .res-tick { fill: var(--muted); font: 11px var(--sans); font-variant-numeric: tabular-nums; }
+  .res-axis-title { fill: var(--faint); font: 11px var(--sans); }
+  .res-hover { fill: rgba(255, 255, 255, 0.06); }
+  .res-cross { stroke: var(--muted); stroke-width: 1; shape-rendering: crispEdges; }
+  .perf-mark { stroke: var(--text); stroke-width: 1; shape-rendering: crispEdges; }
+  .perf-mark-name { fill: var(--text); font: 600 11px var(--sans); }
+  .perf-end { fill: var(--muted); font: 600 11px var(--sans); }
+  .perf-tail { margin: 4px 0 0; color: var(--faint); font-size: 11.5px; }
+  .perf-tail[hidden] { display: none; }
+
+  /* The figures as tables: every number the charts draw, without hovering. */
+  .res-scroll { overflow-x: auto; }
+  .rank-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .rank-table th { padding: 4px 12px 4px 0; color: var(--faint); font-size: 11.5px; font-weight: 500; text-align: right; white-space: nowrap; }
+  .rank-table th:first-child, .rank-table td:first-child { text-align: left; }
+  .rank-table td { padding: 5px 12px 5px 0; border-top: 1px solid var(--border); color: var(--text); text-align: right; white-space: nowrap; }
+  .rank-table td:first-child { color: #fff; font-weight: 600; }
+  .rank-table td a { color: var(--accent); text-decoration: none; }
+  .rank-table td a:hover { text-decoration: underline; }
+  .rank-table tr.is-counted td:first-child { box-shadow: inset 2px 0 0 var(--series); padding-left: 8px; }
+  .res-details { margin-top: 10px; }
+  .res-details summary { color: var(--accent); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  .res-details .rank-table td:first-child { font-weight: 500; }
+  .perf-batches-table { margin-top: 10px; }
+  /* The batch table is wider than a phone: its first column, when the batch
+     began, stays in view as it scrolls. */
+  .perf-batches-table .rank-table th:first-child,
+  .perf-batches-table .rank-table td:first-child { position: sticky; left: 0; background: var(--panel); }
+
+  /* One tooltip for both charts: the value first, then what it is. */
+  .res-tip {
+    position: absolute; z-index: 10; min-width: 180px; max-width: 280px; padding: 7px 9px 6px;
+    border: 1px solid var(--border-strong); border-radius: 4px; background: #121820;
+    color: var(--text); font-size: 12px; line-height: 1.45; pointer-events: none;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); font-variant-numeric: tabular-nums;
+  }
+  .res-tip[hidden] { display: none; }
+  .res-tip p { margin: 0 0 3px; color: var(--muted); font-weight: 600; }
+  .res-tip div { display: flex; align-items: center; gap: 7px; }
+  .res-tip b { min-width: 4.2em; color: #fff; font-weight: 700; text-align: right; }
+  .res-tip span.n { margin-left: auto; padding-left: 8px; color: var(--faint); }
+  .res-tip .res-linekey { width: 12px; }
+</style>
+</head>
+<body>
+  <header class="shell site-header">
+    <div class="site-brand">
+      <!-- The site's pages, in the order every one of them lists them, with
+           the page on screen in gold. This is Performance, CIVVIS's own
+           page (operator 2026-11-21: "a submenu appears under civvis
+           'Performance'", then "performance should be a page similar to the
+           home/ and other similar pages"): it stands under CIVVIS, set in,
+           here and on CIVVIS itself, and on no other page. Every link is
+           lane-relative (this page lives at <lane>/performance/), so the
+           test lane's page opens the test lane's other pages and viewer. -->
+      <nav class="site-nav" aria-label="CIVVIS sites">
+        <a class="site-link" href="../home/">Home</a>
+        <a class="site-link" href="../research/" title="What the CIVVIS AI agents&#8217; games show.">Musings</a>
+        <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
+        <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
+        <a class="site-link sub-link" href="./" aria-current="page">Performance</a>
+        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
+        <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
+      </nav>
+      <div class="site-lockup">
+        <h1 class="site-title">CIVVIS<span>.ai</span></h1>
+        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for AI strategy development</span></p>
+      </div>
+    </div>
+    <nav class="utility-nav" aria-label="CIVVIS links">
+      <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
+        GitHub
+      </a>
+      <a class="utility-link" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+        Dev Progress
+      </a>
+      <!-- The home page files a report itself, from a dialog; here the same
+           button is GitHub's own form, which needs no script on this page. -->
+      <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS/issues/new/choose" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2C6.5 2 2 5.9 2 10.7c0 2.8 1.5 5.3 3.9 6.9L5 22l4.6-2.4c.8.2 1.6.3 2.4.3 5.5 0 10-3.9 10-8.7S17.5 2 12 2zm-1 4.5h2v6h-2v-6zm0 7.5h2v2h-2v-2z"/></svg>
+        Suggest Feature / Report Issue
+      </a>
+    </nav>
+  </header>
+
+  <main class="shell">
+    <p class="intro">
+      How fast the simulator plays a complete game of
+      <cite>Sid Meier&#8217;s Civilization VI</cite>, from the first turn to the
+      victory: the fastest game on video, and the time of every self-play game
+      in the tournament batches.
+    </p>
+
+    <!-- The figures. `beta/publish.sh` fills the `performance-data` slot
+         below (`beta/performance_page.py`): the record videos from
+         `data/performance/fastest_game_videos.json`, the games' times from the
+         snapshot in `data/performance/self_play_times.json`. A page whose slot
+         still reads `null` (this file opened as it is committed, or a build
+         with neither) shows the one sentence. -->
+    <p class="res-empty" id="perf-empty">This copy of the page has no figures. They are written in when the site is published.</p>
+    <div class="res-record" id="perf-record" hidden>
+      <!-- The fastest game on video (operator 2026-11-21: "fastest game
+           video"). The video is YouTube's and stays there (operator
+           2026-11-21: "website is a fast and light surface layer ... store
+           the big stuff elsewhere"): the page shows its picture, and its
+           player is asked for only when the picture is pressed. -->
+      <section class="res-section" id="perf-video" aria-labelledby="perf-video-title" hidden>
+        <h2 class="rank-title" id="perf-video-title">The fastest game on video</h2>
+        <p class="rank-sub">
+          The site playing a complete game in real time, from the first turn to the victory, recorded as it ran.
+          The record so far, and the records before it.
+        </p>
+        <div class="perf-video">
+          <a class="perf-poster" id="perf-poster" target="_blank" rel="noreferrer">
+            <img id="perf-poster-img" alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer">
+            <span class="perf-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+          </a>
+          <div class="perf-record">
+            <p class="perf-hero" id="perf-hero"></p>
+            <p class="perf-hero-title" id="perf-hero-title"></p>
+            <p class="perf-posted"><span id="perf-hero-posted"></span><a id="perf-hero-link" target="_blank" rel="noreferrer">Watch on YouTube</a></p>
+            <h3 class="perf-earlier-title" id="perf-earlier-title">Earlier records</h3>
+            <ol class="perf-earlier" id="perf-earlier" aria-labelledby="perf-earlier-title"></ol>
+          </div>
+        </div>
+      </section>
+
+      <!-- How long a self-play game takes (operator 2026-11-21: "p1, p10,
+           p50, p90, p99 times for games for self-play games"). -->
+      <section class="res-section" id="perf-times" aria-labelledby="perf-times-title" hidden>
+        <h2 class="rank-title" id="perf-times-title">How long a self-play game takes</h2>
+        <p class="rank-sub">
+          Every seat a CIVVIS AI agent, six players on a Continents map at Online speed, 250 turns, in the simulator with nothing drawn.
+          A time is one game&#8217;s wall-clock seconds, start to victory.
+          These are a tournament&#8217;s times, not a benchmark&#8217;s: seven games are played at once on one MacBook Pro (M5 Max)
+          that is doing other work too, so a time moves with the machine&#8217;s load as well as with the code.
+        </p>
+        <div class="res-controls">
+          <!-- Which games the tiles and the chart under them count. It opens
+               on the newest finished batch, the games of the newest build:
+               the simulator gets faster build by build, and a longer window
+               mixes the old builds' times into the new one's. -->
+          <div class="res-control" role="group" aria-label="Games counted">
+            <span>Games</span>
+            <div class="res-seg" id="perf-window">
+              <button type="button" data-window="latest" aria-pressed="true">Latest batch</button>
+              <button type="button" data-window="7" aria-pressed="false">Last 7 days</button>
+              <button type="button" data-window="all" aria-pressed="false">Every game</button>
+            </div>
+          </div>
+        </div>
+        <p class="res-counted" id="perf-counted"></p>
+        <div class="perf-tiles" id="perf-tiles"></div>
+        <p class="perf-facts" id="perf-facts"></p>
+        <div class="res-kind">
+          <h3 class="res-kind-title">The games by how long they took</h3>
+          <div class="res-plot" id="perf-spans-plot"></div>
+          <p class="perf-tail" id="perf-tail" hidden></p>
+        </div>
+        <details class="res-details">
+          <summary>Every span of time as a table</summary>
+          <div class="res-scroll">
+            <table class="rank-table" id="perf-spans-table">
+              <thead><tr><th scope="col">Game time</th><th scope="col">Games</th><th scope="col">Share</th><th scope="col">Share so far</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+
+      <!-- Game time batch by batch (operator 2026-11-21: "we want the civvis
+           performance charts there"). -->
+      <section class="res-section" id="perf-batches" aria-labelledby="perf-batches-title" hidden>
+        <h2 class="rank-title" id="perf-batches-title">Game time, batch by batch</h2>
+        <p class="rank-sub">
+          A batch is the self-play games of one build of the simulator, a thousand or more, oldest on the left.
+          The line is the middle game. The darker band holds eight games in ten, and the lighter band all but the
+          fastest and the slowest one in a hundred. The scale goes by multiples, so the same drop anywhere on it is the same
+          share of the time saved. <span id="perf-batches-counted"></span>
+        </p>
+        <ul class="res-legend" aria-label="What is drawn">
+          <li><span class="res-linekey"></span>p50, the middle game</li>
+          <li><span class="res-swatch" style="opacity: 0.42"></span>p10 to p90</li>
+          <li><span class="res-swatch" style="opacity: 0.2"></span>p1 to p99</li>
+        </ul>
+        <div class="res-plot" id="perf-batches-plot"></div>
+        <div class="res-scroll perf-batches-table">
+          <table class="rank-table" id="perf-batches-table">
+            <thead>
+              <tr>
+                <th scope="col">Batch began</th><th scope="col">Build</th><th scope="col">Games</th>
+                <th scope="col">p1</th><th scope="col">p10</th><th scope="col">p50</th><th scope="col">p90</th><th scope="col">p99</th>
+                <th scope="col">Fastest</th><th scope="col">Middle game</th><th scope="col">A turn</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="rank-note">
+          <p id="perf-note"></p>
+          <p>
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/performance/self_play_times.json" target="_blank" rel="noreferrer">The times</a> ·
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/SIMULATOR_PERFORMANCE.md" target="_blank" rel="noreferrer">Where the simulator&#8217;s time goes, and what was done about it</a> ·
+            <a href="https://www.youtube.com/playlist?list=PLPI7k77hCAR4" target="_blank" rel="noreferrer">Every performance video</a>
+          </p>
+        </div>
+      </section>
+    </div>
+  </main>
+  <div class="res-tip" id="perf-tip" role="presentation" hidden></div>
+
+  <script type="application/json" id="performance-data">null</script>
+  <script>
+  // The page, drawn from the slot. Every name and figure arrives through
+  // textContent or an attribute checked first: the slot holds data, never
+  // markup.
+  (() => {
+    let data = null;
+    try { data = JSON.parse(document.getElementById("performance-data").textContent); } catch (_) { return; }
+    if (!data) return;
+    const SVG = "http://www.w3.org/2000/svg";
+    const el = (tag, cls, text) => {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text != null) node.textContent = text;
+      return node;
+    };
+    const svg = (tag, attrs) => {
+      const node = document.createElementNS(SVG, tag);
+      for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+      return node;
+    };
+    const fmt = (n) => Number(n).toLocaleString("en-US");
+    const pct1 = (x) => (x > 0 && x < 0.0005 ? "<0.1%" : (100 * x).toFixed(1) + "%");
+    // A time in seconds, the unit the five percentiles are compared in: a
+    // tenth under 100 seconds, whole seconds from there.
+    const secs = (x) => (x < 99.95 ? Number(x).toFixed(1) : fmt(Math.round(x))) + " s";
+    // The same time by the clock, for a time past a minute: "1 min 33 s",
+    // "1 h 24 min".
+    const clock = (x) => {
+      if (x < 59.95) return secs(x);
+      if (x < 3599.5) { const s = Math.round(x); return Math.floor(s / 60) + " min" + (s % 60 ? " " + (s % 60) + " s" : ""); }
+      const m = Math.round(x / 60);
+      return Math.floor(m / 60) + " h" + (m % 60 ? " " + (m % 60) + " min" : "");
+    };
+    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const day = (iso) => { const [, m, d] = String(iso).split("-").map(Number); return MONTHS[m - 1] + " " + d; };
+    // "Nov 18–21", or "Oct 25–Nov 21" across a month.
+    const days = (from, to) => {
+      if (from === to) return day(to);
+      const [a, b] = [day(from), day(to)];
+      return a.split(" ")[0] === b.split(" ")[0] ? a + "–" + b.split(" ")[1] : a + "–" + b;
+    };
+    // A batch is named for the moment it began, `20261121T184151Z-b41a`: as
+    // the Tournaments page writes a moment, `2026-11-21 18:41`.
+    const began = (batch) => {
+      const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/.exec(String(batch.batch));
+      return m ? m[1] + "-" + m[2] + "-" + m[3] + " " + m[4] + ":" + m[5] : String(batch.began);
+    };
+    const NAMES = { science: "Science", culture: "Culture", diplomatic: "Diplomatic", religious: "Religious", domination: "Domination", score: "Score" };
+
+    const tip = document.getElementById("perf-tip");
+    const showTip = (event, title, rows) => {
+      tip.replaceChildren(el("p", "", title));
+      for (const row of rows) {
+        const line = el("div");
+        const key = el("span", "res-linekey");
+        key.style.background = row.colour || "transparent";
+        if (row.opacity) key.style.opacity = row.opacity;
+        if (row.tall) key.style.height = "8px";
+        line.append(key, el("b", "", row.value), el("span", "", row.name));
+        if (row.n != null) line.append(el("span", "n", row.n));
+        tip.append(line);
+      }
+      tip.hidden = false;
+      const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+      let x = event.pageX + pad, y = event.pageY + pad;
+      if (x + w > window.scrollX + document.documentElement.clientWidth - 8) x = event.pageX - w - pad;
+      if (y + h > window.scrollY + window.innerHeight - 8) y = event.pageY - h - pad;
+      tip.style.left = Math.max(4, x) + "px";
+      tip.style.top = y + "px";
+    };
+    const hideTip = () => { tip.hidden = true; };
+
+    // ---- The fastest game on video.
+    const VIDEO_ID = /^[\w-]{11}$/;
+    const videos = (Array.isArray(data.videos) ? data.videos : []).filter((v) => v && VIDEO_ID.test(v.id));
+    const watch = (v) => "https://www.youtube.com/watch?v=" + v.id;
+    const worded = (text) => { const s = String(text); return s.charAt(0).toUpperCase() + s.slice(1); };
+    if (videos.length) {
+      const record = videos[0];
+      document.getElementById("perf-hero").textContent = worded(record.time);
+      document.getElementById("perf-hero-title").textContent = record.title;
+      document.getElementById("perf-hero-posted").textContent = record.posted ? "Posted " + day(record.posted) + " · " : "";
+      document.getElementById("perf-hero-link").href = watch(record);
+      const poster = document.getElementById("perf-poster"), picture = document.getElementById("perf-poster-img");
+      poster.href = watch(record);
+      poster.setAttribute("aria-label", "Play the video: " + record.title);
+      // YouTube's own picture of the video, the wide one; a video without
+      // one answers with a 120px placeholder, and then the picture every
+      // video has is asked for instead.
+      picture.addEventListener("load", () => {
+        if (picture.naturalWidth <= 120 && !picture.dataset.plain) { picture.dataset.plain = "1"; picture.src = "https://i.ytimg.com/vi/" + record.id + "/hqdefault.jpg"; }
+      });
+      picture.addEventListener("error", () => {
+        if (!picture.dataset.plain) { picture.dataset.plain = "1"; picture.src = "https://i.ytimg.com/vi/" + record.id + "/hqdefault.jpg"; }
+      });
+      picture.src = "https://i.ytimg.com/vi_webp/" + record.id + "/hq720.webp";
+      // Pressed, the picture gives its place to the video's player. A press
+      // that asks for a new tab or window is the link it is, to YouTube.
+      poster.addEventListener("click", (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button) return;
+        event.preventDefault();
+        const player = el("iframe");
+        player.src = "https://www.youtube-nocookie.com/embed/" + record.id + "?autoplay=1&rel=0&playsinline=1";
+        player.title = record.title;
+        player.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+        player.allowFullscreen = true;
+        const frame = el("div", "perf-poster");
+        frame.id = "perf-player";
+        frame.append(player);
+        poster.replaceWith(frame);
+      });
+      const earlier = document.getElementById("perf-earlier");
+      for (const v of videos.slice(1)) {
+        const item = el("li"), link = el("a");
+        link.href = watch(v);
+        link.target = "_blank";
+        link.rel = "noreferrer";
+        link.title = v.title;
+        link.append(el("b", "", worded(v.time)), el("span", "", v.title), el("span", "n", v.posted ? day(v.posted) : ""));
+        item.append(link);
+        earlier.append(item);
+      }
+      document.getElementById("perf-earlier-title").hidden = videos.length < 2;
+      document.getElementById("perf-video").hidden = false;
+    }
+
+    // ---- The self-play games' times.
+    const WINDOWS = data.windows && typeof data.windows === "object" ? data.windows : {};
+    const BATCHES = (Array.isArray(data.batches) ? data.batches : []).filter((b) => b && Array.isArray(b.p) && b.p.length === 5);
+    const PERCENTILES = [1, 10, 50, 90, 99];
+    const SAID = ["1 game in 100 is faster", "1 game in 10 is faster", "the middle game", "1 game in 10 is slower", "1 game in 100 is slower"];
+    const PER = Number(data.spans_per_tenfold) || 20;
+    const windowButtons = Array.from(document.querySelectorAll("#perf-window button"));
+    for (const button of windowButtons) button.hidden = !WINDOWS[button.dataset.window];
+    const state = { window: (windowButtons.find((b) => !b.hidden) || { dataset: {} }).dataset.window };
+    const win = () => WINDOWS[state.window];
+    const COMMIT = /^[0-9a-f]{7,40}$/;
+    const build = (commit) => {
+      if (!COMMIT.test(String(commit))) return document.createTextNode("—");
+      const link = el("a", "", commit);
+      link.href = "https://github.com/MartinHalvorson/CIVVIS/commit/" + commit;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      return link;
+    };
+
+    // Clean ticks for a share axis: 0 and up to five steps of 1, 2, 2.5 or 5
+    // in a power of ten.
+    const ticks = (max) => {
+      if (!(max > 0)) return [0];
+      const raw = max / 4, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+      const step = [1, 2, 2.5, 5, 10].map((s) => s * mag).find((s) => s >= raw);
+      const out = [];
+      for (let t = 0; t <= max + step * 0.001; t += step) out.push(+t.toFixed(10));
+      if (out[out.length - 1] < max) out.push(+(out[out.length - 1] + step).toFixed(10));
+      return out;
+    };
+    // The times a time axis may name, the roundest first: a tick is kept
+    // when it is inside the axis and clear of every tick kept before it.
+    const TIMES = [10, 60, 600, 3600, 36000, 1, 30, 300, 1800, 18000, 5, 120, 1200, 7200, 2, 20, 15, 45, 90, 180, 900, 2700, 10800];
+    const timeName = (t) => (t < 60 ? t + " s" : t < 3600 ? +(t / 60).toFixed(1) + " min" : +(t / 3600).toFixed(1) + " h");
+    const timeTicks = (lo, hi, place, gap) => {
+      const kept = [];
+      for (const t of TIMES) {
+        if (t < lo || t > hi) continue;
+        const at = place(t);
+        if (kept.every((k) => Math.abs(k.at - at) >= gap)) kept.push({ t, at });
+      }
+      return kept;
+    };
+
+    const drawTiles = () => {
+      const w = win();
+      const counted = document.getElementById("perf-counted");
+      counted.replaceChildren(el("b", "", fmt(w.games) + (w.games === 1 ? " game" : " games")));
+      const held = BATCHES.filter((b) => w.batches.includes(b.batch));
+      if (held.length === 1) counted.append(" · the batch begun " + began(held[0]) + " · build ", build(held[0].commit));
+      else counted.append(" · " + fmt(w.batches.length) + " batches · " + days(w.from, w.to));
+      const tiles = document.getElementById("perf-tiles");
+      tiles.replaceChildren();
+      PERCENTILES.forEach((p, i) => {
+        const tile = el("div", "perf-tile");
+        const x = Number(w.p[i]);
+        tile.append(
+          el("span", "perf-tile-label", "p" + p),
+          el("b", "perf-tile-value", secs(x)),
+          el("span", "perf-tile-clock", x >= 59.95 ? clock(x) : ""),
+          el("span", "perf-tile-say", SAID[i]),
+        );
+        tiles.append(tile);
+      });
+      const facts = document.getElementById("perf-facts");
+      const f = w.fastest || {};
+      facts.replaceChildren("Fastest game ", el("b", "", secs(Number(f.secs))),
+        (NAMES[f.victory] ? ", a " + NAMES[f.victory] + " victory on turn " + f.turn : "") + ". The middle game runs "
+        + fmt(w.turns) + " turns, at " + Number(w.a_turn).toFixed(2) + " s a turn.");
+    };
+
+    // ---- The games by how long they took: a column per span of time.
+    const drawSpans = () => {
+      const plot = document.getElementById("perf-spans-plot"), w = win();
+      plot.replaceChildren();
+      const counts = Object.fromEntries(Object.entries(w.spans || {}).map(([i, n]) => [Number(i), Number(n) || 0]));
+      const filled = Object.keys(counts).map(Number);
+      if (!filled.length) return;
+      const width = Math.max(280, plot.clientWidth), height = 236, m = { l: 44, r: 12, t: 24, b: 40 };
+      const inner = width - m.l - m.r;
+      // The axis runs from the fastest game to the slowest, but no further
+      // than a little past four times the p99: a handful of games ran for
+      // hours (a machine asleep, a game left stopped), and an axis that
+      // reached them would give the games themselves a third of its width.
+      // What is off the right is counted under the chart.
+      let lo = Math.min(...filled), hi = Math.min(Math.max(...filled), Math.floor(PER * Math.log10(Number(w.p[4]))) + 12);
+      const off = filled.filter((i) => i > hi).reduce((sum, i) => sum + counts[i], 0);
+      // A span is a column; where a column would be a hairline (a phone),
+      // spans are counted two or four to a column.
+      const group = [1, 2, 4].find((g) => inner / ((hi - lo + 1) / g) >= 7) || 4;
+      lo = Math.floor(lo / group) * group;
+      hi = Math.ceil((hi + 1) / group) * group - 1;
+      const cols = [];
+      for (let i = lo; i <= hi; i += group) {
+        let n = 0;
+        for (let k = 0; k < group; k++) n += counts[i + k] || 0;
+        cols.push({ from: i, n });
+      }
+      const x = (log) => m.l + ((log - lo / PER) / ((hi + 1 - lo) / PER)) * inner;
+      const marks = ticks(Math.max(...cols.map((c) => c.n)) / w.games), top = marks[marks.length - 1];
+      const y = (v) => height - m.b - (top > 0 ? v / top : 0) * (height - m.t - m.b);
+      const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
+      root.setAttribute("aria-label", fmt(w.games) + " self-play games by how long they took: "
+        + PERCENTILES.map((p, i) => "p" + p + " " + secs(Number(w.p[i]))).join(", ") + ". Every figure is in the table below.");
+      const grid = svg("g", { class: "res-grid" });
+      for (const t of marks) {
+        if (t > 0) grid.append(svg("line", { x1: m.l, x2: width - m.r, y1: Math.round(y(t)) + 0.5, y2: Math.round(y(t)) + 0.5 }));
+        const label = svg("text", { class: "res-tick", x: m.l - 6, y: y(t) + 3.5, "text-anchor": "end" });
+        label.textContent = t === 0 ? "0" : (100 * t).toFixed((t * 100) % 1 ? 1 : 0) + "%";
+        root.append(label);
+      }
+      root.append(grid);
+      for (const tick of timeTicks(Math.pow(10, lo / PER), Math.pow(10, (hi + 1) / PER), (t) => x(Math.log10(t)), 52)) {
+        const label = svg("text", { class: "res-tick", x: tick.at, y: height - m.b + 15, "text-anchor": "middle" });
+        label.textContent = timeName(tick.t);
+        root.append(label, svg("line", { class: "res-base", x1: Math.round(tick.at) + 0.5, x2: Math.round(tick.at) + 0.5, y1: height - m.b, y2: height - m.b + 4 }));
+      }
+      root.append(svg("line", { class: "res-base", x1: m.l, x2: width - m.r, y1: Math.round(y(0)) + 0.5, y2: Math.round(y(0)) + 0.5 }));
+      const hover = svg("rect", { class: "res-hover", y: m.t, height: height - m.t - m.b, width: 0, visibility: "hidden" });
+      root.append(hover);
+      const slot = x((lo + group) / PER) - x(lo / PER), barW = Math.min(24, Math.max(1, slot - 2));
+      const spanName = (c) => clock(Math.pow(10, c.from / PER)) + " to " + clock(Math.pow(10, (c.from + group) / PER));
+      const hits = [];
+      for (const c of cols) {
+        const left = x(c.from / PER) + (slot - barW) / 2, base = y(0), yTop = y(c.n / w.games);
+        if (base - yTop > 0.3) {
+          const r = Math.min(4, barW / 2, base - yTop);
+          const bar = svg("path", { d: "M" + left + "," + base + "V" + (yTop + r) + "Q" + left + "," + yTop + " " + (left + r) + "," + yTop
+            + "H" + (left + barW - r) + "Q" + (left + barW) + "," + yTop + " " + (left + barW) + "," + (yTop + r) + "V" + base + "Z" });
+          bar.style.fill = "var(--series)";
+          root.append(bar);
+        }
+        // The hit area is the whole span, the full height of the plot.
+        const hit = svg("rect", { x: x(c.from / PER), y: m.t, width: slot, height: height - m.t - m.b, fill: "transparent" });
+        hit.addEventListener("pointermove", (event) => {
+          hover.setAttribute("x", x(c.from / PER));
+          hover.setAttribute("width", slot);
+          hover.setAttribute("visibility", "visible");
+          showTip(event, spanName(c), [{ colour: "var(--series)", value: pct1(c.n / w.games), name: "of the games", n: fmt(c.n) }]);
+        });
+        hit.addEventListener("pointerleave", () => { hover.setAttribute("visibility", "hidden"); hideTip(); });
+        hits.push(hit);
+      }
+      // The five percentiles, a hairline each with its name over the plot.
+      // The middle one is named first, then the pair around it, then the
+      // outer pair, and a name that would run into one already there is left
+      // to the tiles above.
+      const named = [];
+      for (const i of [2, 1, 3, 0, 4]) {
+        const at = x(Math.log10(Number(w.p[i])));
+        if (!(at >= m.l && at <= width - m.r)) continue;
+        root.append(svg("line", { class: "perf-mark", x1: Math.round(at) + 0.5, x2: Math.round(at) + 0.5, y1: m.t - 4, y2: height - m.b }));
+        if (named.some((n) => Math.abs(n - at) < 30)) continue;
+        named.push(at);
+        const name = svg("text", { class: "perf-mark-name", x: at, y: m.t - 8, "text-anchor": "middle" });
+        name.textContent = "p" + PERCENTILES[i];
+        root.append(name);
+      }
+      root.append(...hits);
+      const title = svg("text", { class: "res-axis-title", x: m.l + inner / 2, y: height - 4, "text-anchor": "middle" });
+      title.textContent = inner < 420 ? "Game time · share of the games" : "Game time · a column is the share of the games that took that long";
+      root.append(title);
+      plot.append(root);
+      const tail = document.getElementById("perf-tail");
+      tail.hidden = !off;
+      if (off) {
+        tail.textContent = fmt(off) + (off === 1 ? " game" : " games") + " (" + pct1(off / w.games) + ") ran longer than "
+          + clock(Math.pow(10, (hi + 1) / PER)) + " and " + (off === 1 ? "is" : "are") + " off the right of the chart; the slowest took " + clock(Number(w.slowest)) + ".";
+      }
+      // The same counts as a table, a row per span as the chart was built
+      // from them, the spans off the chart included.
+      const body = document.querySelector("#perf-spans-table tbody");
+      body.replaceChildren();
+      let seen = 0;
+      for (const i of filled.sort((a, b) => a - b)) {
+        seen += counts[i];
+        const tr = el("tr");
+        tr.append(
+          el("td", "", clock(Math.pow(10, i / PER)) + " to " + clock(Math.pow(10, (i + 1) / PER))),
+          el("td", "", fmt(counts[i])), el("td", "", pct1(counts[i] / w.games)), el("td", "", pct1(seen / w.games)),
+        );
+        body.append(tr);
+      }
+    };
+
+    // ---- Game time batch by batch: the middle game as a line, the other
+    // four percentiles as two bands around it.
+    const drawBatches = () => {
+      const plot = document.getElementById("perf-batches-plot"), w = win();
+      plot.replaceChildren();
+      const n = BATCHES.length;
+      if (!n) return;
+      const width = Math.max(280, plot.clientWidth), height = 270, m = { l: 48, r: 36, t: 10, b: 34 };
+      const inner = width - m.l - m.r, slot = inner / n;
+      const lo = Math.log10(Math.min(...BATCHES.map((b) => b.p[0])) / 1.3), hi = Math.log10(Math.max(...BATCHES.map((b) => b.p[4])) * 1.3);
+      const x = (i) => m.l + (i + 0.5) * slot;
+      const y = (s) => m.t + (1 - (Math.log10(s) - lo) / (hi - lo)) * (height - m.t - m.b);
+      const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
+      const first = BATCHES[0], last = BATCHES[n - 1];
+      root.setAttribute("aria-label", "The middle self-play game's time, batch by batch: " + secs(first.p[2]) + " in the batch begun "
+        + day(first.began) + ", " + secs(last.p[2]) + " in the batch begun " + day(last.began) + ". Every figure is in the table below.");
+      // The batches the tiles above count stand on a wash.
+      const counted = BATCHES.map((b, i) => (w.batches.includes(b.batch) ? i : -1)).filter((i) => i >= 0);
+      if (counted.length && counted.length < n) {
+        root.append(svg("rect", { class: "res-hover", x: x(counted[0]) - slot / 2, y: m.t, width: slot * (counted[counted.length - 1] - counted[0] + 1), height: height - m.t - m.b }));
+      }
+      const grid = svg("g", { class: "res-grid" });
+      for (const tick of timeTicks(Math.pow(10, lo), Math.pow(10, hi), y, 22)) {
+        grid.append(svg("line", { x1: m.l, x2: width - m.r, y1: Math.round(tick.at) + 0.5, y2: Math.round(tick.at) + 0.5 }));
+        const label = svg("text", { class: "res-tick", x: m.l - 6, y: tick.at + 3.5, "text-anchor": "end" });
+        label.textContent = timeName(tick.t);
+        root.append(label);
+      }
+      root.append(grid);
+      root.append(svg("line", { class: "res-base", x1: m.l, x2: width - m.r, y1: height - m.b + 0.5, y2: height - m.b + 0.5 }));
+      // A date under the first batch begun on each day, where it has room.
+      let edge = -Infinity;
+      BATCHES.forEach((b, i) => {
+        if (i && BATCHES[i - 1].began === b.began) return;
+        const text = day(b.began), half = text.length * 3.1;
+        if (x(i) - half < edge + 8) return;
+        edge = x(i) + half;
+        const label = svg("text", { class: "res-tick", x: x(i), y: height - m.b + 15, "text-anchor": "middle" });
+        label.textContent = text;
+        root.append(label);
+      });
+      const band = (a, b, opacity) => {
+        if (n < 2) return;
+        const up = BATCHES.map((bt, i) => x(i).toFixed(1) + "," + y(bt.p[b]).toFixed(1));
+        const down = BATCHES.map((bt, i) => x(i).toFixed(1) + "," + y(bt.p[a]).toFixed(1)).reverse();
+        const area = svg("path", { d: "M" + up.join("L") + "L" + down.join("L") + "Z", opacity });
+        area.style.fill = "var(--series)";
+        root.append(area);
+      };
+      band(0, 4, "0.2");
+      band(1, 3, "0.28");
+      const line = svg("path", { d: "M" + BATCHES.map((b, i) => x(i).toFixed(1) + "," + y(b.p[2]).toFixed(1)).join("L"), fill: "none", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" });
+      line.style.stroke = "var(--series)";
+      root.append(line);
+      BATCHES.forEach((b, i) => {
+        const dot = svg("circle", { cx: x(i), cy: y(b.p[2]), r: 4, "stroke-width": 2 });
+        dot.style.fill = "var(--series)";
+        dot.style.stroke = "var(--panel)";
+        root.append(dot);
+      });
+      // Each percentile is named once, at the newest batch's end of it; a
+      // name that would sit on another's is left to the key above.
+      const ends = [];
+      for (const i of [2, 1, 3, 0, 4]) {
+        const at = y(last.p[i]);
+        if (ends.some((e) => Math.abs(e - at) < 12)) continue;
+        ends.push(at);
+        const name = svg("text", { class: "perf-end", x: x(n - 1) + 10, y: at + 3.5 });
+        name.textContent = "p" + PERCENTILES[i];
+        root.append(name);
+      }
+      const cross = svg("line", { class: "res-cross", y1: m.t, y2: height - m.b, visibility: "hidden" });
+      root.append(cross);
+      const hit = svg("rect", { x: m.l, y: m.t, width: inner, height: height - m.t - m.b, fill: "transparent" });
+      hit.addEventListener("pointermove", (event) => {
+        const box = root.getBoundingClientRect();
+        const i = Math.max(0, Math.min(n - 1, Math.floor((event.clientX - box.left - m.l) / slot)));
+        const b = BATCHES[i];
+        cross.setAttribute("x1", Math.round(x(i)) + 0.5); cross.setAttribute("x2", Math.round(x(i)) + 0.5); cross.setAttribute("visibility", "visible");
+        const key = [{ opacity: "0.2", tall: true }, { opacity: "0.42", tall: true }, {}, { opacity: "0.42", tall: true }, { opacity: "0.2", tall: true }];
+        const rows = [4, 3, 2, 1, 0].map((k) => ({ colour: "var(--series)", ...key[k], value: secs(b.p[k]), name: "p" + PERCENTILES[k], n: b.p[k] >= 59.95 ? clock(b.p[k]) : null }));
+        showTip(event, "Batch begun " + began(b) + " · " + fmt(b.games) + " games", rows);
+      });
+      hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
+      root.append(hit);
+      plot.append(root);
+    };
+
+    const drawBatchTable = () => {
+      const w = win();
+      const body = document.querySelector("#perf-batches-table tbody");
+      body.replaceChildren();
+      for (const b of BATCHES.slice().reverse()) {
+        const tr = el("tr", w.batches.includes(b.batch) && w.batches.length < BATCHES.length ? "is-counted" : "");
+        const made = el("td");
+        made.append(build(b.commit));
+        tr.append(el("td", "", began(b)), made, el("td", "", fmt(b.games)));
+        b.p.forEach((value) => tr.append(el("td", "", secs(Number(value)))));
+        tr.append(el("td", "", secs(Number((b.fastest || {}).secs))), el("td", "", fmt(b.turns) + " turns"), el("td", "", Number(b.a_turn).toFixed(2) + " s"));
+        body.append(tr);
+      }
+      const said = { latest: "The batch on the wash, and marked in the table, is the one counted above.", "7": "The batches on the wash, and marked in the table, are the ones counted above.", all: "" };
+      document.getElementById("perf-batches-counted").textContent = w.batches.length < BATCHES.length ? said[state.window] || "" : "";
+    };
+
+    const draw = () => { drawSpans(); drawBatches(); };
+    const render = () => { drawTiles(); draw(); drawBatchTable(); };
+
+    if (win() && BATCHES.length) {
+      const group = document.getElementById("perf-window");
+      for (const button of windowButtons) button.setAttribute("aria-pressed", String(button.dataset.window === state.window));
+      group.addEventListener("click", (event) => {
+        const button = event.target.closest("button");
+        if (!button || !WINDOWS[button.dataset.window]) return;
+        for (const b of windowButtons) b.setAttribute("aria-pressed", String(b === button));
+        state.window = button.dataset.window;
+        hideTip();
+        render();
+      });
+      document.getElementById("perf-note").textContent = "A batch counts once it is finished; the one still being played is left out. "
+        + "A percentile is read off the games themselves: p10 is the time one game in ten beats. "
+        + "“Last 7 days” counts back from the newest batch’s last game"
+        + (data.taken ? ", and the times are a snapshot taken " + day(data.taken) : "") + ".";
+      document.getElementById("perf-times").hidden = false;
+      document.getElementById("perf-batches").hidden = false;
+    }
+
+    document.getElementById("perf-empty").hidden = true;
+    document.getElementById("perf-record").hidden = false;
+    if (win() && BATCHES.length) {
+      render();
+      let queued = 0, lastWidth = document.documentElement.clientWidth;
+      window.addEventListener("resize", () => {
+        if (document.documentElement.clientWidth === lastWidth || queued) return;
+        queued = requestAnimationFrame(() => { queued = 0; lastWidth = document.documentElement.clientWidth; draw(); });
+      });
+    }
+  })();
+  </script>
+</body>
+</html>

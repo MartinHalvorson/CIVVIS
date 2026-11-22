@@ -403,6 +403,14 @@ def main(argv: list[str] | None = None) -> int:
             research["status"] == 200 and research["body"].strip() == "asset:/research/",
             f"got {research['status']} {research['body'][:60]!r}",
         )
+        # And /performance, CIVVIS's own page.
+        performance = hit(path="/performance/")
+        check(
+            problems,
+            "/performance/ passes through to the Performance page",
+            performance["status"] == 200 and performance["body"].strip() == "asset:/performance/",
+            f"got {performance['status']} {performance['body'][:60]!r}",
+        )
         download = hit(path="/download/")
         check(
             problems,
@@ -448,6 +456,11 @@ def main(argv: list[str] | None = None) -> int:
               test_research["status"] == 200 and test_research["body"].strip() == "asset:/test/research/"
               and test_research["robots"] == "noindex",
               f"got {test_research['status']} {test_research['body'][:60]!r} {test_research['robots']!r}")
+        test_performance = hit(path="/test/performance/")
+        check(problems, "/test/performance/ passes through to the test Performance page",
+              test_performance["status"] == 200 and test_performance["body"].strip() == "asset:/test/performance/"
+              and test_performance["robots"] == "noindex",
+              f"got {test_performance['status']} {test_performance['body'][:60]!r} {test_performance['robots']!r}")
         test_download = hit(path="/test/download/")
         check(problems, "/test/download/ passes through to the test downloads page",
               test_download["status"] == 200 and "asset:/test/download/" in test_download["body"],
