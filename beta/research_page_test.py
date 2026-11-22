@@ -472,30 +472,60 @@ class Page(unittest.TestCase):
         # and see the win rate of civvis against level 4. broken down by
         # victor type and timeline. and i can filter for civvis wins vs Deity
         # AI wins like before."
-        # The picker is the game's eight levels under the site's names for
-        # them, in order, standing on the level the record opens on.
-        buttons = re.findall(
-            r'<button type="button" data-level="(\d)" data-rung="(\w+)" aria-pressed="(true|false)">'
-            r"<span>Lv (\d)</span> <span>(\w+)</span></button>",
+        # And 2026-11-22: "civvis vs lv 8 deity ai chart should have a lv 1
+        # to lv 8 slider at the top. defaults to 8. but people can change the
+        # level if they want."
+        # The picker is a slider over the game's eight levels, standing on
+        # the level the record opens on, Deity.
+        last = len(home_rankings.CIV6_RUNGS)
+        self.assertEqual((last, research_page.OPENING_LEVEL), (8, 8))
+        self.assertIn(
+            f'<input type="range" id="res-level" min="1" max="{last}" step="1" value="{research_page.OPENING_LEVEL}" '
+            f'aria-valuetext="Lv {research_page.OPENING_LEVEL} {home_rankings.CIV6_RUNGS[-1].title()}">',
+            PAGE,
+        )
+        self.assertEqual(PAGE.count('id="res-level"'), 1)
+        self.assertIn('<label for="res-level">AI level</label>', PAGE)
+        # Under it, its scale: the eight levels under the site's names for
+        # them, in order, the opening one lit.
+        stops = re.findall(
+            r'<span data-level="(\d)" data-rung="(\w+)"( data-on)?><b>Lv (\d)</b> <small>(\w+)</small></span>',
             PAGE,
         )
         self.assertEqual(
-            buttons,
+            stops,
             [
-                (str(at), rung.title(), str(at == research_page.OPENING_LEVEL).lower(), str(at), rung.title())
+                (str(at), rung.title(), " data-on" if at == research_page.OPENING_LEVEL else "", str(at), rung.title())
                 for at, rung in enumerate(home_rankings.CIV6_RUNGS, 1)
             ],
         )
-        seg = PAGE[PAGE.index('<div class="res-seg" id="res-level">') :]
-        self.assertEqual(seg[: seg.index("</div>")].count("<button "), len(home_rankings.CIV6_RUNGS))
-        # It stands with the other two controls, ahead of them.
-        self.assertLess(PAGE.index('id="res-level"'), PAGE.index('id="res-window"'))
+        scale = PAGE[PAGE.index('<div class="res-level-stops" id="res-level-stops" aria-hidden="true">') :]
+        self.assertEqual(scale[: scale.index("</div>")].count("<span data-level="), last)
+        # The thumb stands over the level it is on: the track runs from the
+        # middle of the first of the eight names to the middle of the last.
+        self.assertIn("width: calc(87.5% + 18px); height: 20px; margin: 0 calc(6.25% - 9px); padding: 0;", PAGE)
+        self.assertIn(".res-level-stops { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); }", PAGE)
+        # It is at the top of the games against the AI, the first thing
+        # under that side, over its name; the two controls that scope both
+        # sides stay in the row above. The buttons it replaces are gone.
+        side = PAGE.index('<div class="res-side" id="res-side-ai">')
         self.assertLess(PAGE.index('id="res-window"'), PAGE.index('id="res-span"'))
+        self.assertLess(PAGE.index('id="res-span"'), side)
+        self.assertLess(side, PAGE.index('id="res-level"'))
+        self.assertLess(PAGE.index('id="res-level-stops"'), PAGE.index('<h2 class="res-side-title"'))
+        self.assertLess(PAGE.index('<h2 class="res-side-title"'), PAGE.index('id="res-kind-ai"'))
+        for gone in ('<div class="res-seg" id="res-level">', "levelButtons", "#res-level button", 'choose("res-level"'):
+            self.assertNotIn(gone, PAGE)
         # The level chosen is the kind drawn wherever the games against the
         # AI are: the record holds a kind per level under `levels`.
         self.assertIn('const games = kind === "ai" ? LEVELS[state.level] : data[kind];', PAGE)
         self.assertIn('const state = { window: "7", span: 5, level: RUNGS[data.level] ? String(data.level) : "8" };', PAGE)
-        self.assertIn('choose("res-level", "data-level", (value) => { state.level = value; });', PAGE)
+        self.assertIn('const RUNGS = Object.fromEntries(levelStops.map((stop) => [stop.dataset.level, stop.dataset.rung]));', PAGE)
+        self.assertIn('levelSlider.addEventListener("input", () => picked(levelSlider.value));', PAGE)
+        self.assertIn("if (stop) picked(stop.dataset.level);", PAGE)
+        # A page with the slider is still a page with a level picker, so it
+        # is sent the record with a kind per level.
+        self.assertIn(research_page.LEVEL_PICKER, PAGE)
         # Every heading and key that names those games is a sentence the
         # script words for the level chosen, and as the page is written each
         # reads for the level it opens on.

@@ -63,7 +63,8 @@
   /* `margin-left: auto` keeps the row against the right edge even when the
      header's own wrap drops it onto a second line, where `space-between`
      alone would park it back on the left under the title. */
-  .utility-nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-left: auto; }
+  .utility-nav { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 10px; margin-left: auto; }
+  .utility-nav > .utility-link { min-height: 44px; }
   .utility-link {
     display: inline-flex;
     align-items: center;
@@ -100,6 +101,20 @@
   .utility-link.is-youtube { border-color: var(--yt-edge); background: var(--yt); }
   .utility-link.is-youtube:hover,
   .utility-link.is-youtube:focus-visible { background: #c9342b; border-color: #fff; }
+  /* Under YouTube, the channel's top playlists, one to a line (operator,
+     2026-11-22: "list top playlists under youtube. maybe in a vertical
+     list"). The row's links keep their tops in a line, so the list hangs
+     under its button alone, in the room the site list's height leaves. */
+  .utility-group { display: grid; gap: 5px; }
+  .utility-lists { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+  .utility-list {
+    display: flex; align-items: center; gap: 6px; padding: 2px 3px; border-radius: 2px;
+    color: var(--text); font-size: 12.5px; font-weight: 600; line-height: 1.35; text-decoration: none; white-space: nowrap;
+  }
+  .utility-list svg { width: 14px; height: 14px; flex: none; color: var(--yt-mark); }
+  .utility-list:hover,
+  .utility-list:focus-visible { color: #fff; text-decoration: underline; }
+  .utility-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   /* The site is five pages, Home, Charts, Auto-Tourneys, CIVVIS and AI
      Debugger, and every one of them lists all five in that order, with the game they are
      built on under them and the page on screen in gold. Here they stand in a column
@@ -225,30 +240,20 @@
 
   /* The page is four videos, two by two (operator, 2026-11-22): the
      fastest game upper left, a single player's view of a game upper right,
-     a Lv 8 victory lower left and the AI Debugger lower right. They are
-     YouTube's and stay there: a tile is the video's picture, and its player
-     is asked for only when the picture is pressed, in the picture's place.
-     Above them, the channel's two top playlists, one press away. A window
-     too narrow for two columns stacks the tiles in reading order. */
-  .watch-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 18px; margin: 0 0 12px; }
-  .watch-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-  .watch-lists { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--muted); font-size: 12.5px; }
-  .watch-list {
-    display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 12px;
-    border: 1px solid var(--yt-edge); border-radius: 3px; background: var(--panel);
-    color: #fff; font-size: 12.5px; font-weight: 700; text-decoration: none; white-space: nowrap;
-  }
-  .watch-list svg { width: 15px; height: 15px; flex: none; color: var(--yt-mark); }
-  .watch-list:hover,
-  .watch-list:focus-visible { background: var(--yt); border-color: var(--yt-mark); }
-  .watch-list:hover svg,
-  .watch-list:focus-visible svg { color: #fff; }
-  .watch-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .watch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 16px; }
+     the AI Debugger lower left and a Lv 8 victory lower right. They are
+     YouTube's and stay there: a tile is the video's picture until the tile
+     is on screen, and then its player, in the picture's place, playing
+     without sound. A window too narrow for two columns stacks the tiles in
+     reading order. */
+  .watch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 16px; }
   @media (max-width: 639px) { .watch-grid { grid-template-columns: minmax(0, 1fr); } }
-  .watch-tile { min-width: 0; margin: 0; }
+  /* A tile is its title and then its video (operator, 2026-11-22: "Make
+     the video Titles above the video and bigger or more readable"). The
+     video sits at the tile's foot, so two videos in a row line up when one
+     title takes a line more than the other. */
+  .watch-tile { display: flex; flex-direction: column; min-width: 0; margin: 0; }
   .watch-poster {
-    position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden;
+    position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; margin-top: auto;
     border: 1px solid var(--border-strong); border-radius: 4px; background: #0d1117;
   }
   .watch-poster img, .watch-poster iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
@@ -262,17 +267,14 @@
   }
   .watch-play svg { width: 22px; height: 22px; }
   .watch-poster:hover .watch-play, .watch-poster:focus-visible .watch-play { background: var(--yt); }
-  /* Under a picture: what the video is, its title, and where there is more of it. */
-  .watch-tile figcaption { display: flex; align-items: baseline; gap: 4px 10px; margin-top: 7px; font-size: 13px; line-height: 1.4; }
-  .watch-tile figcaption b { flex: none; color: #fff; font-weight: 700; }
-  .watch-tile figcaption span { min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
-  .watch-tile figcaption a { flex: none; margin-left: auto; color: var(--accent); font-size: 12px; text-decoration: none; white-space: nowrap; }
+  /* Over a video: what it is, in the page's largest type after its name,
+     with where there is more of it at the line's end, and under that the
+     video's own title, whole, on as many lines as it needs. */
+  .watch-tile figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1px 12px; margin-bottom: 8px; }
+  .watch-tile figcaption b { color: #fff; font-size: 20px; font-weight: 700; line-height: 1.3; }
+  .watch-tile figcaption span { order: 3; flex-basis: 100%; min-width: 0; color: var(--text); font-size: 15px; line-height: 1.4; }
+  .watch-tile figcaption a { flex: none; margin-left: auto; color: var(--accent); font-size: 13px; text-decoration: none; white-space: nowrap; }
   .watch-tile figcaption a:hover { text-decoration: underline; }
-  /* On a phone the title has a line of its own, whole. */
-  @media (max-width: 479px) {
-    .watch-tile figcaption { flex-wrap: wrap; }
-    .watch-tile figcaption span { order: 3; flex-basis: 100%; white-space: normal; }
-  }
 </style>
 </head>
 <body>
@@ -309,10 +311,16 @@
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
         <span>GitHub <small>Everything open source, free</small></span>
       </a>
-      <a class="utility-link is-youtube" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
-        YouTube
-      </a>
+      <div class="utility-group">
+        <a class="utility-link is-youtube" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+          YouTube
+        </a>
+        <ul class="utility-lists" aria-label="Top playlists">
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 8 Deity Wins</a></li>
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLecirlzIUSSo" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 1 - 7 Archive</a></li>
+        </ul>
+      </div>
       <button class="utility-link" type="button" id="report-open">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2C6.5 2 2 5.9 2 10.7c0 2.8 1.5 5.3 3.9 6.9L5 22l4.6-2.4c.8.2 1.6.3 2.4.3 5.5 0 10-3.9 10-8.7S17.5 2 12 2zm-1 4.5h2v6h-2v-6zm0 7.5h2v2h-2v-2z"/></svg>
         Suggest Feature / Report Issue
@@ -335,56 +343,54 @@
 
     <!-- Four videos, two by two (operator, 2026-11-22: "On home, we can have
          our fastest game youtube video embedded to watch in the upper left.
-         in upper right, we can have a single player pov game ... the AI
-         Debugger - Multiverse, Time Travel video in the lower right. lower
-         left please save for a lv 8 victory video lv 8 maya cluture"). The
-         videos are YouTube's: a tile shows the video's picture and plays the
-         video in the picture's place when it is pressed. The fastest game is
-         whichever record leads `data/performance/fastest_game_videos.json`:
+         in upper right, we can have a single player pov game", and later
+         that day "swap the positions of the bottom 2 videos to the Maya
+         Culture win is lower right", so the AI Debugger's Multiverse, Time
+         Travel video is lower left). Each has its title over it. The videos
+         are YouTube's: a tile shows the video's picture, and its player
+         takes the picture's place when the tile is on screen, playing
+         without sound (operator: "please have the videos autoplay if
+         possible (no audio)"). The single player's game starts 6 seconds
+         in (operator: "have the home upper right video start at 6 seconds
+         in"), which its `data-start` says. The fastest game is whichever
+         record leads `data/performance/fastest_game_videos.json`:
          `beta/publish.sh` writes it into the `home-videos` slot below
          (`beta/home_rankings.py`), and the tile as written here is the
-         record on the day it was written. Above the tiles, the channel's
-         two top playlists (operator: "direct links to watching our top
-         playlists: Lv 8 Deity Wins, Lv 1 - 7 Archive"). The two rankings
-         that stood here are on Charts now, under Win Analytics (operator:
-         "move 2 charts on home/ to charts/"). -->
-    <section class="watch" id="watch" aria-labelledby="watch-title">
-      <div class="watch-head">
-        <h2 class="watch-title" id="watch-title">Watch</h2>
-        <p class="watch-lists">
-          <span>Top playlists</span>
-          <a class="watch-list" href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>Lv 8 Deity Wins</a>
-          <a class="watch-list" href="https://www.youtube.com/playlist?list=PLecirlzIUSSo" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>Lv 1 - 7 Archive</a>
-        </p>
-      </div>
+         record on the day it was written. The section has no heading of
+         its own (operator: "Drop "watch" title or whatever from this
+         section"), and the channel's top playlists are in the header,
+         under YouTube. The two rankings that stood here are on Charts
+         now, under Win Analytics (operator: "move 2 charts on home/ to
+         charts/"). -->
+    <section class="watch" id="watch" aria-label="Videos">
       <div class="watch-grid">
         <figure class="watch-tile" id="watch-fastest" data-video="iHlUWPIqr5g">
+          <figcaption><b>Fastest game</b> <span data-watch-title>A complete Civ 6 match in under 6 seconds, real-time simulation</span> <a href="../performance/">CIVVIS Performance</a></figcaption>
           <a class="watch-poster" href="https://www.youtube.com/watch?v=iHlUWPIqr5g" target="_blank" rel="noreferrer">
             <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/iHlUWPIqr5g/hq720.webp">
             <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
           </a>
-          <figcaption><b>Fastest game</b> <span data-watch-title>A complete Civ 6 match in under 6 seconds, real-time simulation</span> <a href="../performance/">CIVVIS Performance</a></figcaption>
         </figure>
-        <figure class="watch-tile" id="watch-pov" data-video="9c8m87e3rCg">
-          <a class="watch-poster" href="https://www.youtube.com/watch?v=9c8m87e3rCg" target="_blank" rel="noreferrer">
+        <figure class="watch-tile" id="watch-pov" data-video="9c8m87e3rCg" data-start="6">
+          <figcaption><b>Single player POV</b> <span data-watch-title>A full Civ 6 match in 14 seconds</span> <a href="../performance/">CIVVIS Performance</a></figcaption>
+          <a class="watch-poster" href="https://www.youtube.com/watch?v=9c8m87e3rCg&amp;t=6s" target="_blank" rel="noreferrer">
             <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/9c8m87e3rCg/hq720.webp">
             <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
           </a>
-          <figcaption><b>Single player POV</b> <span data-watch-title>A full Civ 6 match in 14 seconds</span> <a href="../performance/">CIVVIS Performance</a></figcaption>
-        </figure>
-        <figure class="watch-tile" id="watch-victory" data-video="6PCd4R08UPM">
-          <a class="watch-poster" href="https://www.youtube.com/watch?v=6PCd4R08UPM" target="_blank" rel="noreferrer">
-            <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/6PCd4R08UPM/hq720.webp">
-            <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
-          </a>
-          <figcaption><b>Lv 8 Deity win</b> <span data-watch-title>Maya Culture</span> <a href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer">Lv 8 Deity Wins</a></figcaption>
         </figure>
         <figure class="watch-tile" id="watch-debugger" data-video="6W5t0hcR_N4">
+          <figcaption><b>AI Debugger</b> <span data-watch-title>Multiverse, Time Travel</span> <a href="../?mode=play">AI Debugger</a></figcaption>
           <a class="watch-poster" href="https://www.youtube.com/watch?v=6W5t0hcR_N4" target="_blank" rel="noreferrer">
             <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/6W5t0hcR_N4/hq720.webp">
             <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
           </a>
-          <figcaption><b>AI Debugger</b> <span data-watch-title>Multiverse, Time Travel</span> <a href="../?mode=play">AI Debugger</a></figcaption>
+        </figure>
+        <figure class="watch-tile" id="watch-victory" data-video="6PCd4R08UPM">
+          <figcaption><b>Lv 8 Deity win</b> <span data-watch-title>Maya Culture</span> <a href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer">Lv 8 Deity Wins</a></figcaption>
+          <a class="watch-poster" href="https://www.youtube.com/watch?v=6PCd4R08UPM" target="_blank" rel="noreferrer">
+            <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/6PCd4R08UPM/hq720.webp">
+            <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+          </a>
         </figure>
       </div>
     </section>
@@ -394,8 +400,11 @@
   <script>
   // The video tiles. A tile's video is its `data-video`, and the fastest
   // game's is the record the slot names, when the page was published with
-  // one. Pressed, a picture gives its place to the video's player; a press
-  // that asks for a new tab or window is the link it is, to YouTube.
+  // one. A tile on screen gives its picture's place to the video's player,
+  // which plays without sound: a browser lets a video start by itself only
+  // muted. A picture pressed before that plays with its sound, and a press
+  // that asks for a new tab or window is the link it is, to YouTube. A
+  // tile with a `data-start` begins that many seconds in, either way.
   (() => {
     const VIDEO_ID = /^[\w-]{11}$/;
     let data = null;
@@ -409,12 +418,24 @@
       }
       if (fastest.title) tile.querySelector("[data-watch-title]").textContent = fastest.title;
     }
+    // Whoever asked their system for less motion keeps the pictures, and
+    // plays a video by pressing it.
+    const still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const starts = new Map();
+    const seen = !still && "IntersectionObserver" in window && new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        seen.unobserve(entry.target);
+        starts.get(entry.target)(true);
+      }
+    }, { threshold: 0.5 });
     for (const tile of document.querySelectorAll(".watch-tile")) {
       const id = tile.dataset.video;
       if (!VIDEO_ID.test(id)) continue;
+      const start = /^[1-9]\d*$/.test(tile.dataset.start || "") ? tile.dataset.start : "";
       const poster = tile.querySelector(".watch-poster"), picture = poster.querySelector("img");
       const title = tile.querySelector("b").textContent + ": " + tile.querySelector("[data-watch-title]").textContent;
-      poster.href = "https://www.youtube.com/watch?v=" + id;
+      poster.href = "https://www.youtube.com/watch?v=" + id + (start ? "&t=" + start + "s" : "");
       poster.setAttribute("aria-label", "Play the video: " + title);
       // YouTube's own picture of the video, the wide one; a video without
       // one answers with a 120px placeholder, and then the picture every
@@ -428,11 +449,11 @@
       picture.addEventListener("load", checked);
       picture.addEventListener("error", plain);
       if (picture.complete && picture.naturalWidth) checked();
-      poster.addEventListener("click", (event) => {
-        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button) return;
-        event.preventDefault();
+      const play = (muted) => {
+        if (!poster.isConnected) return;
+        if (seen) seen.unobserve(tile);
         const player = document.createElement("iframe");
-        player.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0&playsinline=1";
+        player.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0&playsinline=1" + (muted ? "&mute=1" : "") + (start ? "&start=" + start : "");
         player.title = title;
         player.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
         player.allowFullscreen = true;
@@ -440,7 +461,13 @@
         frame.className = "watch-poster";
         frame.append(player);
         poster.replaceWith(frame);
+      };
+      poster.addEventListener("click", (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button) return;
+        event.preventDefault();
+        play(false);
       });
+      if (seen) { starts.set(tile, play); seen.observe(tile); }
     }
   })();
   </script>
