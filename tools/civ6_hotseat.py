@@ -61,6 +61,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -486,6 +487,47 @@ def fit_on_screen(get_window=None, get_desktop=None, place=None) -> tuple | None
         return None
     frame = (x, max(0, screen[1] - height), width, height)
     place(frame)
+    return frame
+
+
+def park_upper_left(log: Log, get_window=None, get_desktop=None, place=None,
+                    settle_s: float = 60.0, poll_s: float = 1.0,
+                    clock=time.monotonic, sleep=time.sleep) -> tuple | None:
+    """Setup is over: the game goes to the operator's saved upper-left frame.
+
+    Setup runs on the computed left half at full height: its readers are
+    calibrated to that frame (see `civ6_play.GAME_CONFIGURED`) and the setup
+    page's bottom row has to show (`fit_on_screen`). Nothing moved the game
+    back afterwards, so every table, and every relaunch after a freeze, left
+    Civ VI on the whole left side of the screen (operator 2026-11-21: "the
+    firaxis civ window keeps getting repositioned to the full left side of
+    the screen. should be only upper left"). The game is still loading here
+    and may resize its window when the map opens, so the frame is held for
+    `settle_s`. Without a saved frame for this screen nothing moves. Returns
+    the frame, or None.
+    """
+    get_window = get_window or play.game_window
+    get_desktop = get_desktop or play.desktop_size
+    frame = play.window_layout.frame_for("upper-left", get_desktop() or None)
+    if frame is None:
+        return None
+    place = place or (lambda target: play.macos_window.place_game(
+        play.GAME_PROCESS, frame=target, get_desktop_size=get_desktop,
+        get_game_window=get_window))
+    play.GAME_CONFIGURED = True
+    deadline = clock() + settle_s
+    moves = 0
+    while True:
+        bounds = get_window()
+        # A point or two of rounding is the window already in place.
+        if bounds is not None and max(abs(a - b) for a, b in zip(bounds, frame)) > 4:
+            place(frame)
+            moves += 1
+        if clock() >= deadline:
+            break
+        sleep(poll_s)
+    if moves:
+        log(f"[setup] setup over: the game window went to the saved upper-left frame {frame}")
     return frame
 
 
@@ -1457,6 +1499,10 @@ def run(args: argparse.Namespace) -> int:
                   f"  CIVVIS takes over the jack seats as soon as the game starts.\n",
                   flush=True)
             log("setup handed to the operator; waiting for the game to start")
+        elif not args.attach and (args.auto_human or getattr(args, "civvis_seats", None)):
+            # In the background: the brains start while the map loads.
+            threading.Thread(target=park_upper_left, args=(log,), name="upper-left",
+                             daemon=True).start()
         brains = Brains(run_dir, args.tag, seats, orders_db, binary, args.victory, log)
         brains.start_all()
         monitor = Monitor(run_dir, args.tag, seats, args, log)
