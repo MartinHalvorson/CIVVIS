@@ -48,6 +48,48 @@ pub const CIV6_REFERENCE: &str = "stock";
 /// Fewer rated tables than this and a rating is shown as provisional.
 pub const PROVISIONAL_TABLES: u32 = 30;
 
+/// The lowest rung whose tables are turned round: the rung's AI alone in one
+/// seat, and a challenger on the human's terms in every other.
+///
+/// A table says most about a rung when either side might win it. One
+/// challenger against a table of the rung's rivals is that table while the
+/// rung rates near the agents, which is the ladder up to King. From Emperor up
+/// a lone challenger wins so seldom (21, 4 and 0 of 240 tables at Emperor,
+/// Immortal and Deity on 2026-11-21) that the tables put a floor under the
+/// rung and little else. The side that rates higher sits alone instead: with
+/// `c` the challengers' strength and `r` the rung's, three challengers against
+/// one rival is the closer table exactly when `r > c`. Move this when the
+/// roster's best agents pass Emperor.
+pub const LONE_RUNG_FROM: &str = "emperor";
+
+/// Whether `rung`'s tables seat its AI alone ([`LONE_RUNG_FROM`]).
+pub fn lone_rung(rung: &str) -> bool {
+    let at = |id: &str| CIV6_RUNGS.iter().position(|(rung, _)| *rung == id);
+    match (at(rung), at(LONE_RUNG_FROM)) {
+        (Some(rung), Some(from)) => rung >= from,
+        _ => false,
+    }
+}
+
+/// The `index`th hand of `seats` roster agents, by id. A round is one shuffle
+/// of the whole roster dealt into hands, so every agent sits equally often; a
+/// last hand that comes up short is filled from the top of the same shuffle,
+/// so no hand ever holds one agent twice. `seed` names the series.
+pub fn dealt(seed: u64, index: usize, seats: usize) -> Vec<&'static str> {
+    let seats = seats.clamp(1, ROSTER.len());
+    let per_round = ROSTER.len().div_ceil(seats);
+    let round = index / per_round;
+    let mut order: Vec<usize> = (0..ROSTER.len()).collect();
+    let mut rng = crate::rng::Rng::new(seed ^ (round as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    for last in (1..order.len()).rev() {
+        order.swap(last, rng.below(last + 1));
+    }
+    let start = (index % per_round) * seats;
+    (0..seats)
+        .map(|seat| ROSTER[order[(start + seat) % order.len()]].id)
+        .collect()
+}
+
 /// The controller a strategy is built on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Chassis {
@@ -847,6 +889,71 @@ mod tests {
         assert!((ladder[0] - 1000.0).abs() < 1e-6 && (ladder[1] - 1000.0).abs() < 1e-6);
         assert_eq!(ladder[3], 1200.0);
         assert!((ladder[4] - 1450.0).abs() < 1e-6 && (ladder[5] - 1450.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_rungs_above_king_seat_their_ai_alone() {
+        let lone: Vec<&str> = CIV6_RUNGS
+            .iter()
+            .map(|(rung, _)| *rung)
+            .filter(|rung| lone_rung(rung))
+            .collect();
+        assert_eq!(lone, ["emperor", "immortal", "deity"]);
+        assert!(!lone_rung(PRINCE), "the pin is never a rung table");
+        assert!(!lone_rung("no such rung"));
+    }
+
+    /// Both shapes of rung table are the same measurement. A rival four
+    /// times as strong as its challengers loses 1 table in 13 when three of
+    /// it face one challenger, and wins 4 in 7 alone against three; the fit
+    /// must read the same distance out of either, and out of both together.
+    #[test]
+    fn a_rung_measures_the_same_alone_as_in_every_other_seat() {
+        let crowded: Vec<Table> = (0..260)
+            .map(|game| Table {
+                seats: vec![0, 1, 1, 1],
+                winner: if game % 13 == 0 { 0 } else { 1 + game % 3 },
+            })
+            .collect();
+        let alone: Vec<Table> = (0..210)
+            .map(|game| Table {
+                seats: vec![1, 0, 0, 0],
+                winner: if game % 7 < 4 { 0 } else { 1 + game % 3 },
+            })
+            .collect();
+        let both: Vec<Table> = crowded.iter().chain(&alone).cloned().collect();
+        let truth = 400.0 * 4.0_f64.log10();
+        for tables in [&crowded, &alone, &both] {
+            let elo = fit(2, tables);
+            assert!((elo[1] - elo[0] - truth).abs() < 12.0, "{elo:?}");
+        }
+        // Per table, the even one says more: the same games give the lone
+        // shape the tighter rating.
+        let spread = |tables: &[Table]| bootstrap_sd(2, &tables[..200], 0, 60, 11)[1];
+        assert!(spread(&alone) < spread(&crowded));
+    }
+
+    #[test]
+    fn a_round_of_hands_seats_every_agent_and_none_twice_at_a_table() {
+        for seats in [3, 4] {
+            let per_round = ROSTER.len().div_ceil(seats);
+            for round in 0..6 {
+                let mut sat: BTreeMap<&str, usize> = BTreeMap::new();
+                for hand in 0..per_round {
+                    let dealt = dealt(77, round * per_round + hand, seats);
+                    assert_eq!(dealt.len(), seats);
+                    let distinct: BTreeSet<&str> = dealt.iter().copied().collect();
+                    assert_eq!(distinct.len(), seats, "{dealt:?}");
+                    for id in dealt {
+                        *sat.entry(id).or_default() += 1;
+                    }
+                }
+                assert_eq!(sat.len(), ROSTER.len(), "every agent sits each round");
+                assert!(sat.values().all(|count| (1..=2).contains(count)), "{sat:?}");
+            }
+        }
+        assert_ne!(dealt(77, 0, 4), dealt(77, ROSTER.len(), 4), "rounds differ");
+        assert_ne!(dealt(77, 0, 3), dealt(78, 0, 3), "series differ");
     }
 
     #[test]

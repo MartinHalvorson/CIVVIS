@@ -46,6 +46,12 @@ declares, including its own score victory at the turn limit.
   other seat is the reference agent (`strategies::CIV6_REFERENCE`) with the
   rung's shipped AI handicap from `data/difficulties.json`. The three rivals
   are rated as one entrant, `civ6:<rung>`.
+- **Lone tables** are a rung table turned round, and measure the rungs from
+  `strategies::LONE_RUNG_FROM` (Emperor) up. The rung's handicapped rival
+  sits alone in one seat, and a hand of roster agents takes every other seat
+  on the human's terms. It is the same entrant `civ6:<rung>` in the same fit.
+  [Why the upper rungs sit alone](#why-the-upper-rungs-sit-alone) has the
+  reason and the check.
 
 The fit (`strategies::fit`) is the model `elo::win_shares` already states: a
 seat wins its table with probability proportional to `10^(elo / 400)`. With two
@@ -97,7 +103,8 @@ strategy_elo --run 2026-11-23-15125c4 --add-games 480 --add-rung-games 120 \
 - `--run LABEL` stamps every table the run plays (`"run"` in the log). The
   label starts with the run's date; the scheduled runs add the revision.
 - `--add-games N` and `--add-rung-games M` add N pool tables and M tables at
-  each rung, numbered on after the newest table of each series
+  each rung (lone tables from Emperor up), numbered on after the newest table
+  of each series
   (`strategies::added_indices`), so they are new deals and seeds. A killed run
   resumes under its label rather than adding twice.
 - `--keep-runs K` drops every table outside the newest K runs
